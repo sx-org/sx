@@ -1,0 +1,46 @@
+// `defer` runs on EVERY exit from the loop body's scope — fall-through,
+// `break`, and `continue` alike (LIFO, including entries from nested blocks
+// between the loop and the jump). Covers `for` ranges and `while`.
+// Regression (issue 0108): break/continue emitted a bare branch and the
+// breaking iteration's defers were silently skipped.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    for 0..3 (i) {
+        defer print("cleanup {}\n", i);
+        if i == 1 { break; }
+        print("body {}\n", i);
+    }
+    print("after break loop\n");
+
+    for 0..3 (i) {
+        defer print("c2 {}\n", i);
+        if i == 1 { continue; }
+        print("b2 {}\n", i);
+    }
+    print("done\n");
+
+    i := 0;
+    while i < 3 {
+        defer print("w{}\n", i);
+        i += 1;
+        if i == 2 { continue; }
+        if i == 3 { break; }
+        print("wbody{}\n", i);
+    }
+    print("while done\n");
+
+    // A break inside a nested block drains the nested block's defers AND the
+    // loop body's, in LIFO order.
+    for 0..2 (j) {
+        defer print("outer {}\n", j);
+        {
+            defer print("inner {}\n", j);
+            if j == 0 { break; }
+        }
+        print("unreached\n");
+    }
+    print("nested done\n");
+    0
+}

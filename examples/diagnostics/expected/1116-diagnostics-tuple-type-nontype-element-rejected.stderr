@@ -1,0 +1,5 @@
+error: tuple type element is not a type (found `int_literal`); a tuple used as a type must list only types, e.g. `Tuple(i32, i32)`
+  --> examples/diagnostics/1116-diagnostics-tuple-type-nontype-element-rejected.sx:11:60
+   |
+11 |     print("bad tuple type size = {}\n", size_of(Tuple(i32, 1)));
+   |                                                            ^

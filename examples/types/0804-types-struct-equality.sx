@@ -1,0 +1,91 @@
+// Struct value equality (issue 0245): `==` / `!=` on two struct values is a
+// recursive FIELD-WISE compare — two structs are equal iff every field is
+// equal. This mirrors the tuple element-wise policy (structs share the tuple
+// layout) and is the only compare that correctly ignores padding bytes.
+//
+// Regression (issue 0245): before the fix, `emit_llvm`'s struct-compare arm
+// only handled a 2-scalar-field shape — a 1-field struct emitted invalid IR, a
+// 3+-field struct SILENTLY compared only fields 0/1 (`S{1,2,3} == S{1,2,999}`
+// returned true), and any non-scalar field (float / nested struct / string)
+// crashed the LLVM verifier. The compare is now lowered field-wise in
+// src/ir/lower/expr.zig (lowerStructEquality) so every field participates and
+// each field is compared against its own type (float→fcmp, string→str_eq,
+// nested struct→recurse, tagged-union field→tag-only).
+#import "modules/std.sx";
+
+S1 :: struct { a: i64; }
+S3 :: struct { a: i64; b: i64; c: i64; }
+S5 :: struct { a: i64; b: i64; c: i64; d: i64; e: i64; }
+Inner :: struct { p: i64; q: i64; }
+Nested :: struct { a: i64; b: Inner; }
+WithStr :: struct { a: i64; s: string; }
+WithF64 :: struct { x: f64; y: f64; }
+Padded :: struct { a: i8; b: i64; }
+Shape :: enum { circle: f32; rect: i32; }
+WithTU :: struct { a: i64; e: Shape; }
+
+report :: (label: string, cond: bool) {
+    if cond { print("{}: true\n", label); } else { print("{}: false\n", label); }
+}
+
+main :: () -> i32 {
+    // 1-field: no longer invalid IR.
+    a1 : S1 = .{ a = 7 };
+    b1 : S1 = .{ a = 7 };
+    c1 : S1 = .{ a = 8 };
+    report("s1 eq", a1 == b1);          // true
+    report("s1 neq", a1 != c1);         // true
+
+    // 3-field: field `c` is no longer silently ignored.
+    a3 : S3 = .{ a = 1, b = 2, c = 3 };
+    b3 : S3 = .{ a = 1, b = 2, c = 3 };
+    c3 : S3 = .{ a = 1, b = 2, c = 999 };
+    report("s3 eq", a3 == b3);          // true
+    report("s3 c-differs", a3 == c3);   // false (was silently true)
+    report("s3 neq", a3 != c3);         // true
+
+    // 5-field: every field participates.
+    a5 : S5 = .{ a = 1, b = 2, c = 3, d = 4, e = 5 };
+    b5 : S5 = .{ a = 1, b = 2, c = 3, d = 4, e = 5 };
+    c5 : S5 = .{ a = 1, b = 2, c = 3, d = 4, e = 6 };
+    report("s5 eq", a5 == b5);          // true
+    report("s5 e-differs", a5 == c5);   // false
+
+    // Nested struct field: recurses.
+    n1 : Nested = .{ a = 1, b = .{ p = 5, q = 6 } };
+    n2 : Nested = .{ a = 1, b = .{ p = 5, q = 6 } };
+    n3 : Nested = .{ a = 1, b = .{ p = 5, q = 7 } };
+    report("nested eq", n1 == n2);      // true
+    report("nested inner-differs", n1 == n3); // false
+
+    // string field: str_eq semantics (content, not pointer identity).
+    st1 : WithStr = .{ a = 1, s = "hi" };
+    st2 : WithStr = .{ a = 1, s = "hi" };
+    st3 : WithStr = .{ a = 1, s = "bye" };
+    report("str eq", st1 == st2);       // true
+    report("str differs", st1 == st3);  // false
+
+    // f64 fields: ordered IEEE compare (fcmp, not a byte icmp).
+    f1 : WithF64 = .{ x = 1.5, y = 2.5 };
+    f2 : WithF64 = .{ x = 1.5, y = 2.5 };
+    f3 : WithF64 = .{ x = 1.5, y = 2.6 };
+    report("f64 eq", f1 == f2);         // true
+    report("f64 differs", f1 == f3);    // false
+
+    // Padding: i8 + i64 has pad bytes a byte-compare would read; field-wise
+    // ignores them.
+    p1 : Padded = .{ a = 1, b = 100 };
+    p2 : Padded = .{ a = 1, b = 100 };
+    p3 : Padded = .{ a = 1, b = 200 };
+    report("pad eq", p1 == p2);         // true
+    report("pad differs", p1 == p3);    // false
+
+    // Tagged-union field: tag-only, matching bare tagged-union `==`.
+    t1 : WithTU = .{ a = 1, e = .circle(1.0) };
+    t2 : WithTU = .{ a = 1, e = .circle(2.0) };  // same tag, differing payload
+    t3 : WithTU = .{ a = 1, e = .rect(1) };      // different tag
+    report("tu same-tag", t1 == t2);    // true  (payload not compared)
+    report("tu diff-tag", t1 == t3);    // false
+
+    0
+}

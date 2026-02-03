@@ -1,0 +1,19 @@
+// A genuinely-undeclared type in an IMPORTED GENERIC struct field must emit
+// "unknown type" even when the struct is instantiated from the main file —
+// 0759 only covered a non-generic imported struct instantiated in-module.
+// Before the fix the generic template's fields resolved in the main-file
+// instantiation context, so the leaf trusted them as main-file decls and
+// silently stubbed `Missing` (the program compiled and printed `b.x`). The
+// template's fields now resolve in the template's own source context, so the
+// undeclared name surfaces.
+//
+// Expected: `error: unknown type 'Missing'` pointing into lib.sx; exit 1.
+// Regression (stdlib E3).
+#import "modules/std.sx";
+#import "0761-modules-imported-generic-undeclared-field/lib.sx";
+
+main :: () -> i32 {
+    b : Bad(i32) = .{ x = 1, y = 2 };
+    print("{}\n", b.x);
+    return 0;
+}

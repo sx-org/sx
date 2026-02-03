@@ -1,0 +1,28 @@
+// A body-local `#run` const of a BRIDGEABLE shape — a scalar, a struct, an
+// array, or an `?Array` optional — evaluates and produces its const value.
+// These are the common cases that must keep working alongside the issue-0182
+// fix (which fails ONLY the unbridgeable-result case, e.g. `[2][]i64`).
+//
+// Regression (issue 0182): the body-local `#run` fold must not regress the
+// bridgeable cases when it learned to fail loudly on an unbridgeable result.
+#import "modules/std.sx";
+
+Pt :: struct { x: i64; y: i64; }
+
+mk_scalar :: () -> i64 { return 42; }
+mk_struct :: () -> Pt { return .{ x = 3, y = 4 }; }
+mk_arr :: () -> [3]i64 { r : [3]i64 = ---; r[0] = 10; r[1] = 20; r[2] = 30; return r; }
+mk_opt :: () -> ?[3]i64 { r : [3]i64 = ---; r[0] = 1; r[1] = 2; r[2] = 3; return r; }
+
+main :: () {
+    N :: #run mk_scalar();
+    S :: #run mk_struct();
+    A :: #run mk_arr();
+    O :: #run mk_opt();
+
+    print("N={}\n", N);
+    print("S={} {}\n", S.x, S.y);
+    print("A={} {} {}\n", A[0], A[1], A[2]);
+    v := O!;
+    print("O={}\n", v[1]);
+}

@@ -1,0 +1,21 @@
+// struct_field_offset(T, i) — the i-th field's byte offset, folded at
+// compile time from the same layout walk typeSizeBytes uses (fields
+// aligned to their own alignment, declaration order). Tuples walk
+// element types; parity with type_info's StructField.offset is pinned.
+#import "modules/std.sx";
+meta :: #import "modules/std/meta.sx";
+
+Padded :: struct { a: u8; b: i64; c: u16; }
+
+parity :: () -> bool {
+    ti := type_info(Padded);
+    if ti == { case .struct: (si) { return si.fields[1].offset == struct_field_offset(Padded, 1); } else: {} }
+    return false;
+}
+PARITY :: #run parity();
+
+main :: () {
+    print("{} {} {}\n", struct_field_offset(Padded, 0), struct_field_offset(Padded, 1), struct_field_offset(Padded, 2));
+    print("tuple: {} {}\n", struct_field_offset(Tuple(u8, i64), 0), struct_field_offset(Tuple(u8, i64), 1));
+    print("parity={}\n", PARITY);
+}

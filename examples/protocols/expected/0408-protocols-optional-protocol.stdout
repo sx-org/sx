@@ -1,0 +1,2 @@
+g initially null
+after assign: g.ping() = 42

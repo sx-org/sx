@@ -1,0 +1,13 @@
+// A union struct-literal may set only ONE arm — a single direct member, or
+// several promoted members of the same anonymous-struct arm. Naming two
+// members that overlay the same storage is a compile error (a later store
+// would otherwise silently clobber an earlier one). This guards that
+// diagnostic. (Companion: examples/types/0194 covers the valid forms.)
+#import "modules/std.sx";
+
+Overlay :: union { f: f32; i: i32; }
+
+main :: () {
+    o : Overlay = .{ f = 3.14, i = 7 };   // ERROR: f and i overlay the same bytes
+    print("{}\n", o.i);
+}

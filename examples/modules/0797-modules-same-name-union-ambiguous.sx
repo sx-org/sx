@@ -1,0 +1,36 @@
+// E6a — per-decl nominal identity for UNION decls. A bare UNION reference is
+// non-transitive AND ambiguity-checked at every site, exactly like the enum
+// (0795) and struct (0767) forms. `main` flat-imports two modules that each author
+// a same-name `Pair` union and authors none itself, so EACH of the following bare
+// UNION forms is a genuine collision the source cannot disambiguate — and each must
+// emit the LOUD "type 'Pair' is ambiguous" diagnostic and poison the result, NEVER
+// silently pick a global `findByName` last-wins author:
+//
+//   - reflection / type-arg slot    `size_of(Pair)`
+//   - typed annotation               `u : Pair = ---`
+//   - type-as-value                  `t : Type = Pair`
+//   - type-category match arm        `case Pair:`
+//
+// Fail-before (pre-E6a): the stateless `type_bridge.resolveInlineUnion`
+// `findByName` short-circuit interned ONE global last-wins `Pair`, so every bare
+// form silently resolved to it and the program exited 0.
+
+#import "modules/std.sx";
+#import "0797-modules-same-name-union-ambiguous/a.sx";
+#import "0797-modules-same-name-union-ambiguous/b.sx";
+
+describe :: ($T: Type) -> i32 {
+    r := if T == {
+        case Pair: 1;
+        else: 0;
+    }
+    r
+}
+
+main :: () -> i32 {
+    sz := size_of(Pair);
+    u : Pair = ---;
+    t : Type = Pair;
+    k := describe(i64);
+    0
+}

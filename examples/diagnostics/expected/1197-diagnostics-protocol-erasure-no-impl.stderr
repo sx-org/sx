@@ -1,0 +1,5 @@
+error: 'Dog' does not implement protocol 'Speaker': no `impl Speaker for Dog` provides method 'speak' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)
+  --> examples/diagnostics/1197-diagnostics-protocol-erasure-no-impl.sx:18:23
+   |
+18 |   h : Holder = .{ s = d.(Speaker), b = 5 };   // <- 'Dog' does not implement 'Speaker'
+   |                       ^^^^^^^^^^^

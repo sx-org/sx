@@ -1,0 +1,35 @@
+// Function aliases dispatch exactly like their target, across every fn
+// kind: plain, runtime-generic ([]$T), and comptime-pack (..$args) — with
+// bare, renamed, and namespace-member RHS. The alias is an ordinary own
+// declaration, so it re-exports one flat-import level (companion file
+// -rich.sx authors the fns aliased here and via the namespace).
+// Regression (issue 0121): comptime-pack fn aliases (and ALL renamed fn
+// aliases) used to fail "unresolved '<alias>'" — only same-name re-exports
+// worked, through the name-keyed global registry.
+#import "modules/std.sx";
+s :: #import "modules/std.sx";
+r :: #import "0546-packs-fn-alias-rich.sx";
+
+pack_sum :: (..$args) -> i64 {
+    args[0] + args[1]
+}
+sum_alias :: pack_sum;        // same-file pack alias (the 0121 repro)
+
+helper2 :: r.helper;          // renamed plain, namespace RHS
+head_of :: r.first_of;        // renamed runtime-generic, namespace RHS
+sum2 :: r.my_pack;            // renamed pack, namespace RHS
+
+my_print :: s.print;          // std's print — comptime pack + $fmt
+my_format :: s.format;        // value-returning sibling
+
+main :: () {
+    print("pack: {}\n", sum_alias(3, 4));
+    print("plain: {}\n", helper2());
+    arr := .[10, 20, 30];
+    xs : []i64 = arr;
+    print("generic: {}\n", head_of(xs));
+    print("ns-pack: {}\n", sum2(20, 22));
+    my_print("std-print: {} {}\n", 1, "two");
+    t := my_format("std-format {}", 42);
+    my_print("{}\n", t);
+}

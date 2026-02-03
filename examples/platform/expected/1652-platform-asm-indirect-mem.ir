@@ -1,0 +1,18 @@
+
+; Function Attrs: nounwind
+define internal i64 @poke() #0 {
+entry:
+  %alloca = alloca i64, align 8
+  store i64 0, ptr %alloca, align 8
+  call void asm sideeffect "        mov x9, #42\0A        str x9, ${0}\0A", "=*m,~{x9}"(ptr elementtype(i64) %alloca)
+  %load = load i64, ptr %alloca, align 8
+  ret i64 %load
+}
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %call = call i64 @poke()
+  %ca.tr = trunc i64 %call to i32
+  ret i32 %ca.tr
+}

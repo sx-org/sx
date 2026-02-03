@@ -1,0 +1,82 @@
+// Tuple-type aliases: a `::` alias of a structural tuple type behaves exactly
+// like the inline `Tuple(...)` form — field access, comptime reflection
+// (struct_field_count / struct_field_name), use as a fn param / return type, alias-of-alias,
+// forward-declared element aliases, generic-instantiation elements, and
+// forward tuple-in-tuple chains all resolve to the same structural tuple
+// TypeId with a truthful layout.
+// Regression (issue 0196): the alias registration kind-list omitted
+// `.tuple_type_expr`, leaving the alias an opaque nominal ("field 'a' not
+// found on type 'NT'" / "unresolved type: 'NT'"). The review fold added the
+// deferred fixpoint (forward elements), stateful element resolution (real
+// List(i64) instantiation instead of an empty stub with a lying size_of),
+// and stub/cycle poisoning.
+#import "modules/std.sx";
+
+NT :: Tuple(a: i64, b: bool);   // named tuple alias
+PT :: Tuple(i64, bool);          // positional tuple alias
+NT2 :: NT;                       // alias-of-alias
+
+// Element referencing an alias declared LATER (0196 review): registration is
+// deferred past the forward-alias fixpoint, so FwdB binds i64 — never a stub.
+FwdT :: Tuple(a: FwdB, c: bool);
+FwdB :: i64;
+
+// Generic-instantiation element: List(i64) instantiates for REAL (the same
+// stateful resolver the inline annotation form uses).
+TL :: Tuple(a: List(i64), b: string);
+
+// Forward tuple-in-tuple chain: Inner is itself a tuple alias declared later.
+Outer :: Tuple(a: Inner, c: bool);
+Inner :: Tuple(d: i64);
+
+// Alias as fn param type.
+sum_nt :: (t: NT) -> i64 {
+    r := t.a;
+    if t.b { r = r + 1; }
+    return r;
+}
+
+// Alias as fn param AND return type.
+bump_pt :: (p: PT) -> PT {
+    return .{p.0 + 1, p.1};
+}
+
+main :: () -> i32 {
+    // Named alias: construction + field access by name.
+    x : NT = .{a = 1, b = true};
+    print("x.a={} x.b={}\n", x.a, x.b);
+
+    // Reflection through the named alias.
+    print("fcNT={} n0={} n1={}\n", struct_field_count(NT), struct_field_name(NT, 0), struct_field_name(NT, 1));
+
+    // Positional alias: construction + positional field access + reflection.
+    p : PT = .{2, false};
+    print("p.0={} p.1={} fcPT={}\n", p.0, p.1, struct_field_count(PT));
+
+    // Alias as fn param / return type.
+    print("sum={}\n", sum_nt(x));
+    q := bump_pt(p);
+    print("q.0={} q.1={}\n", q.0, q.1);
+
+    // Alias-of-alias resolves to the same structural tuple.
+    y : NT2 = .{a = 9, b = false};
+    print("y.a={} fcNT2={}\n", y.a, struct_field_count(NT2));
+
+    // Forward element alias: FwdB (declared after FwdT) is i64, not a stub —
+    // the alias layout matches the inline spelling exactly.
+    f : FwdT = .{a = 5, c = true};
+    print("f.a={} fcFwd={} fwd_so_eq={}\n", f.a, struct_field_count(FwdT), size_of(FwdT) == size_of(Tuple(a: i64, c: bool)));
+
+    // Generic-instantiation element: field access through the instantiated
+    // List works and size_of matches the inline spelling (no stub layout).
+    t : TL = ---;
+    t.a = .{};
+    t.a.append(4);
+    t.b = "hi";
+    print("t.a0={} t.b={} fcTL={} tl_so_eq={}\n", t.a.items[0], t.b, struct_field_count(TL), size_of(TL) == size_of(Tuple(a: List(i64), b: string)));
+
+    // Forward tuple-in-tuple chain.
+    n : Outer = .{a = .{d = 3}, c = true};
+    print("n.a.d={} fcOuter={}\n", n.a.d, struct_field_count(Outer));
+    return 0;
+}

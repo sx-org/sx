@@ -1,0 +1,35 @@
+error: type 'i32' has no '.epsilon' — '.epsilon' applies only to float types (f32/f64); integer types expose only '.min'/'.max'
+  --> examples/types/0160-types-float-numeric-limits-errors.sx:20:10
+   |
+20 |     a := i32.epsilon;
+   |          ^^^^^^^^^^^
+
+error: type 'u8' has no '.inf' — '.inf' applies only to float types (f32/f64); integer types expose only '.min'/'.max'
+  --> examples/types/0160-types-float-numeric-limits-errors.sx:21:10
+   |
+21 |     b := u8.inf;
+   |          ^^^^^^
+
+error: type 'i64' has no '.true_min' — '.true_min' applies only to float types (f32/f64); integer types expose only '.min'/'.max'
+  --> examples/types/0160-types-float-numeric-limits-errors.sx:22:10
+   |
+22 |     c := i64.true_min;
+   |          ^^^^^^^^^^^^
+
+error: type 'bool' has no '.nan' — numeric limits apply only to integer and float types
+  --> examples/types/0160-types-float-numeric-limits-errors.sx:23:10
+   |
+23 |     d := bool.nan;
+   |          ^^^^^^^^
+
+error: type 'string' has no '.max' — numeric limits apply only to integer and float types
+  --> examples/types/0160-types-float-numeric-limits-errors.sx:24:10
+   |
+24 |     e := string.max;
+   |          ^^^^^^^^^^
+
+error: field 'epsilon' not found on type 'Type'
+  --> examples/types/0160-types-float-numeric-limits-errors.sx:25:10
+   |
+25 |     f := MyStruct.epsilon;
+   |          ^^^^^^^^^^^^^^^^

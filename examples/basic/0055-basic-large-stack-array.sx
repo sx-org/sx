@@ -1,0 +1,45 @@
+// Large (64KB+) stack arrays compile and are accessed in place: `---`
+// emits no initializer store, and element reads GEP the array's storage
+// instead of loading the whole array as a value.
+//
+// Regression (issue 0124): both whole-aggregate shapes — the undef
+// store from `---` and `index_get` on the loaded array value —
+// scalarized into one SelectionDAG node per element and segfaulted
+// `sx build` at [65536]u8.
+//
+// Results print via out/int_to_string: `{}` formatting would pull the
+// any_to_string dispatcher, whose array arms materialize every interned
+// array type BY VALUE — the separate issue 0125.
+
+#import "modules/std.sx";
+
+checksum :: () -> i64 {
+    buf : [65536]u8 = ---;
+    i := 0;
+    while i < 65536 {
+        buf[i] = xx (i % 251);
+        i += 1;
+    }
+    sum := 0;
+    i = 0;
+    while i < 65536 {
+        sum += xx buf[i];
+        i += 1;
+    }
+    return sum;
+}
+
+big :: () -> i64 {
+    buf : [131072]i64 = ---;
+    buf[0] = 11;
+    buf[131071] = 31;
+    return buf[0] + buf[131071];
+}
+
+main :: () -> i32 {
+    out(int_to_string(checksum()));
+    out("\n");
+    out(int_to_string(big()));
+    out("\n");
+    return 0;
+}

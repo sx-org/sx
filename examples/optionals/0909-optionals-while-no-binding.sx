@@ -1,0 +1,33 @@
+// Bindingless `while <optional>` must test the optional's has_value flag,
+// exactly like `if <optional>` — not fold the `{T,i1}` aggregate truthy.
+//
+// Regression (issue 0164): a bare optional loop condition emitted `br i1 true`,
+// so the loop never observed `null` and either spun forever (present→drained)
+// or ran when it should have been skipped (already-null).
+#import "modules/std.sx";
+
+main :: () {
+    // Present `?i64` drained to null: the body runs each step until the
+    // optional becomes null, then the loop stops.
+    countdown : ?i64 = 3;
+    runs := 0;
+    while countdown {
+        runs = runs + 1;
+        v := countdown!;          // unwrap the present value
+        if v <= 1 {
+            countdown = null;     // drain → loop must STOP next header eval
+        } else {
+            countdown = v - 1;
+        }
+    }
+    print("drain runs={}\n", runs);     // 3
+
+    // Already-null `?i64`: the body must NOT run at all.
+    empty : ?i64 = null;
+    skipped := 0;
+    while empty {
+        skipped = skipped + 1;
+        empty = null;
+    }
+    print("skip runs={}\n", skipped);   // 0
+}

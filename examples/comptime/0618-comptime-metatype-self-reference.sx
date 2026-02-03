@@ -1,0 +1,50 @@
+// Comptime type construction — SELF-REFERENCE: a recursive enum minted via
+// declare/define. `declare("List")` names a forward type the compiler registers
+// at compile time, so the body can reference it as `*List` (a pointer to a type
+// that isn't defined yet — legal, since a pointer needs no layout). `define`
+// then fills the body in place. A by-VALUE self-reference would be infinite-size
+// and rejected; `*List` is the idiom.
+//
+// Builds a 3-node cons-list (c -> b -> a -> nil), matches through the pointer
+// payload directly (`if p ==`) and via deref (`n.*`), and counts it recursively.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+make_list :: () -> Type {
+    h := declare("List");
+    return define(h, .enum(.{ variants = .[
+        EnumVariant.{ name = "cons", payload = *List },   // self-reference
+        EnumVariant.{ name = "nil",  payload = void },
+    ] }));
+}
+
+List :: make_list();
+
+// Recursive traversal: `count` matches `n.*` (deref) into the same nominal type.
+count :: (n: *List) -> i64 {
+    if n.* == {
+        case .cons: (next) { return 1 + count(next); }
+        case .nil:  { return 0; }
+    }
+    return 0;
+}
+
+main :: () -> i32 {
+    a : List = .nil;
+    b : List = .cons(@a);
+    c : List = .cons(@b);
+
+    // Match the payload pointer directly (match auto-derefs).
+    if c == {
+        case .cons: (p) {
+            if p == {
+                case .cons: { print("c -> cons\n"); }
+                case .nil:  { print("c -> nil\n"); }
+            }
+        }
+        case .nil: { print("c is nil\n"); }
+    }
+
+    print("len = {}\n", count(@c));
+    return 0;
+}

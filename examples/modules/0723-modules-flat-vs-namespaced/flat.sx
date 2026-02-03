@@ -1,0 +1,3 @@
+// Flat-imported author of `value`. A bare `value()` in the consumer binds THIS
+// one — the only bare (flat) author of the name.
+value :: () -> i64 { return 10; }

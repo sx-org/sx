@@ -1,0 +1,281 @@
+// Comptime type metaprogramming — `declare` / `define` (construct a NEW nominal
+// type from data), plus `type_info` / `struct_field_type` (reflect a type → data) and
+// the data model they reflect INTO and construct FROM.
+//
+// This is a SEPARATE on-demand module rather than part of the prelude: its data
+// types would otherwise intern into every module's type table and shift every
+// `.ir` snapshot. Import it explicitly:  #import "modules/std/meta.sx";
+//
+// `declare` / `define` are ordinary sx (over the `intrinsic` primitives
+// `raw_declare_type` / `raw_register_type`); `type_info` / `struct_field_type` are comptime-only
+// compiler builtins — reaching one at runtime is a hard error (the type must be
+// minted / reflected at compile time). `define` builds its member list via
+// `List`, so meta.sx imports `list.sx` (and its `core.sx`) — the two part-files
+// it actually needs (`List` + the core builtins, incl. `struct_field_type`), NOT the
+// whole `std.sx` facade. Importing the facade would drag `map`/`fmt`/etc. into
+// every meta importer's type table for no reason.
+#import "modules/std/core.sx";
+#import "modules/std/list.sx";
+c :: #import "modules/std/c.sx";
+
+// One variant of a constructed enum: a name plus an optional payload type.
+// `payload = void` means a tagless variant (e.g. `closed`).
+EnumVariant :: struct {
+    name: string;
+    payload: Type;
+}
+
+// The shape of an enum/tagged-union being reflected or constructed. The type's
+// NAME is supplied to `declare(name)`, not here — `declare` needs it at compile
+// time to register the forward type so the body can reference itself (`*Name`).
+EnumInfo :: struct {
+    variants: []EnumVariant;
+}
+
+// One field of a reflected or constructed struct: name, type, and — on the
+// REFLECT side — its byte offset within the struct (write-side `define`
+// ignores it; the default keeps construction literals terse).
+StructField :: struct {
+    name: string;
+    type: Type;
+    offset: i64 = 0;
+}
+
+// The shape of a struct being reflected or constructed. As with `EnumInfo`, the
+// type's NAME travels in `declare(name)`, not here.
+StructInfo :: struct {
+    fields: []StructField;
+}
+
+// The element types of a tuple being reflected or constructed. Tuples are
+// POSITIONAL (no field names), so this is just an ordered list of types.
+TupleInfo :: struct {
+    elements: []Type;
+}
+
+// Per-kind payload shapes for the reflect side (1a-S3). `elem`/`pointee`/
+// `inner` carry the component type; sizes are NOT stored here — `size_of(tp)`
+// answers that for any tag.
+IntInfo      :: struct { bits: i64; signed: bool; }
+FloatInfo    :: struct { bits: i64; }
+ArrayInfo    :: struct { elem: Type; len: i64; }
+VectorInfo   :: struct { elem: Type; lanes: i64; }
+SliceInfo    :: struct { elem: Type; }
+PointerInfo  :: struct { pointee: Type; }
+OptionalInfo :: struct { inner: Type; }
+// Untagged-union arms overlay at offset 0 — the shape says so; no special case.
+UnionInfo    :: struct { arms: []StructField; }
+
+// The reflected/constructed type shape — a tagged union EXHAUSTIVE over the
+// type table's kinds (a kind the compiler adds fails the record builder until
+// classified; no catch-all). Only `` .`enum `` / `` .`struct `` / `` .`tuple ``
+// can be MINTED via `define`; every other variant is reflect-only. The first
+// three variants keep their historical order (write-side ordinals). Variant
+// names that collide with keywords use the backtick escape at the DECLARATION;
+// use sites read bare (`.enum`, `.struct` — the leading dot disambiguates).
+TypeInfo :: enum {
+    `enum: EnumInfo;
+    `struct: StructInfo;
+    `tuple: TupleInfo;
+    `union: UnionInfo;
+    int: IntInfo;
+    float: FloatInfo;
+    `bool;
+    string;
+    cstring;
+    `void;
+    array: ArrayInfo;
+    vector: VectorInfo;
+    slice: SliceInfo;
+    pointer: PointerInfo;
+    many_pointer: PointerInfo;
+    optional: OptionalInfo;
+    function;
+    `closure;
+    `protocol;
+    error_set;
+    pack;
+    any;
+    noreturn;
+    usize;
+    isize;
+    type_value;
+}
+
+// ── The low-level compiler-API type-construction primitives ──────────────────
+//
+// These `intrinsic` functions are the compiler's type-construction
+// primitives — serviced by `comptime_vm.callCompilerFn`. They run at LOWERING
+// time (when a `-> Type` builder's result is first referenced), where the
+// compiler still resolves references to the new types. The DSL's `declare` /
+// `define` below are ordinary sx written over them. (Declared here, not imported
+// from `modules/compiler.sx`, so `meta.sx` stays self-contained and doesn't
+// intern `compiler.sx`'s `List(string)` types into every importer's table.)
+//
+// `raw_register_type`'s `Member` is the shared `{ name, ty }` shape it decodes (an
+// `EnumVariant`/`StructField` has the same two-field `{name, type}` layout). The
+// `kind` codes match the read-side `raw_type_kind`:
+//   1 struct · 2 enum (payloadless) · 3 tagged_union · 4 tuple.
+Member :: struct { name: string; ty: Type; }
+
+raw_declare_type  :: (name: string) -> Type intrinsic;
+raw_register_type :: (handle: Type, kind: i64, members: []Member) -> Type intrinsic;
+
+KIND_STRUCT       :: 1;
+KIND_ENUM         :: 2; // an ACTUAL payloadless enum
+KIND_TAGGED_UNION :: 3; // a payload-carrying enum
+KIND_TUPLE        :: 4;
+
+// ── The metatype DSL: `declare` / `define` (sx); `type_info`/`struct_field_type` (builtins)
+//
+//   declare(name)        — mint a NEW empty (undefined) nominal type NAMED
+//                          `name`, returned as a `Type` handle. The compiler
+//                          registers the forward type at compile time (it scans
+//                          for the literal `declare("Name")` spelling), so the
+//                          body of `define` can reference it BY NAME — that's how
+//                          self-reference works (`payload = *List` resolves to the
+//                          forward `List`). Using the type before its `define` is
+//                          a loud error; a pointer to it is fine. A trivial alias
+//                          for `raw_declare_type` (both mint the same forward slot).
+//   define(handle, info) — fill a declared handle's body from a `TypeInfo`, and
+//                          RETURN the handle so the one-shot form chains:
+//                              List :: define(declare("List"), .enum(.{ variants = .[
+//                                  EnumVariant.{ name = "cons", payload = *List },
+//                                  EnumVariant.{ name = "nil",  payload = void } ] }));
+//                          Plain sx: it matches the `TypeInfo` union and calls
+//                          `raw_register_type` with the matching kind code, decoding
+//                          the variant/field/element list into `[]Member`.
+//   type_info($T)        — reflect a type INTO a `TypeInfo` value (the inverse of
+//                          `define`). Still a compiler builtin: building the
+//                          tagged-union value byte-compatibly is a compiler job.
+//   struct_field_type($T, idx)  — the i-th field / variant-payload / element type. A
+//                          compiler builtin that folds at LOWER time, so it
+//                          composes inside `type_eq` / `type_name` / any type-arg
+//                          slot — a property `raw_field_type` (a runtime value)
+//                          can't provide. Declared in `std/core.sx` (it carries
+//                          no data type, so it lives in the prelude) and reaches
+//                          here via the `core.sx` import above.
+type_info  :: ($T: Type) -> TypeInfo intrinsic;
+
+// `declare(name)` is plain sx over the `raw_declare_type` primitive: both mint (or
+// find) the same forward nominal slot — `declare` adds nothing but a name the
+// compiler scans for to forward-register self-references (`*Name`).
+declare :: (name: string) -> Type {
+    return raw_declare_type(name);
+}
+
+// `define(handle, info)` is plain sx over `raw_register_type`: match the `TypeInfo`
+// union, collect the members into a `[]Member`, and register with the kind code.
+// An all-void enum variant set is an ACTUAL enum (kind 2); any payload variant
+// makes it a tagged_union (kind 3) — `raw_register_type` rejects a payload variant
+// under kind 2, so the kind is chosen from whether every payload is `void`.
+define :: (handle: Type, info: TypeInfo) -> Type {
+    if info == {
+        case .`enum: (e) {
+            mems : List(Member) = .{};
+            all_void := true;
+            for e.variants (v) {
+                mems.append(Member.{ name = v.name, ty = v.payload });
+                if v.payload != void { all_void = false; }
+            }
+            kind := KIND_TAGGED_UNION;
+            if all_void { kind = KIND_ENUM; }
+            return raw_register_type(handle, kind, mems.items[0..mems.len]);
+        }
+        case .`struct: (s) {
+            mems : List(Member) = .{};
+            for s.fields (f) {
+                mems.append(Member.{ name = f.name, ty = f.type });
+            }
+            return raw_register_type(handle, KIND_STRUCT, mems.items[0..mems.len]);
+        }
+        case .`tuple: (t) {
+            mems : List(Member) = .{};
+            for t.elements (ety) {
+                mems.append(Member.{ name = "", ty = ety });
+            }
+            return raw_register_type(handle, KIND_TUPLE, mems.items[0..mems.len]);
+        }
+        else: {
+            // Reflect-only shapes (int/float/array/union/...) cannot be minted:
+            // there is nothing nominal to register. Loud, not silent.
+            msg := "define: only struct/enum/tuple TypeInfo shapes can be minted\n";
+            c.write(2, msg.ptr, xx msg.len);
+        }
+    }
+    return handle;
+}
+
+// --- Type constructors built in sx library code (no compiler machinery) ---
+//
+// The channel result types, expressed as type-fns over declare/define. They
+// demonstrate that a programmatically-built enum carries a full enum through
+// codegen: `RecvResult(i64)` constructs and matches like any hand-written enum,
+// and is one nominal type across sites (the type-fn identity path). The channel
+// library (N3) consumes these once it lands.
+
+// The GENERAL enum constructor: mint a nominal enum NAMED `name` from a variant
+// list passed as a VALUE (a `[]EnumVariant`), rather than a hardcoded literal.
+// Because `variants` is an ordinary comptime value, a caller can ASSEMBLE it in
+// a local (conditionally, in a loop, from type args) before minting — see
+// `examples/0620`. `define` decodes the slice via `decodeVariantElements`. The
+// channel constructors above are the special-cased shapes; `make_enum` is the
+// open-ended one every other constructor could be written over.
+//
+// Call it from a non-generic `() -> Type` builder (whose whole body is
+// comptime-evaluated, so locals are in scope) or inline with a literal arg
+// (`E :: make_enum("E", .[ … ])`). A *generic* type-fn comptime-evaluates only
+// its return EXPRESSION, so build the list inline in the return there, not in a
+// preceding local.
+make_enum :: (name: string, variants: []EnumVariant) -> Type {
+    return define(declare(name), .enum(.{ variants = variants }));
+}
+
+// A blocking recv: a value, or the channel was closed (drained).
+RecvResult :: ($T: Type) -> Type {
+    return define(declare("RecvResult"), .enum(.{ variants = .[
+        EnumVariant.{ name = "value",  payload = T    },
+        EnumVariant.{ name = "closed", payload = void },
+    ] }));
+}
+
+// A non-blocking try-recv: a value, currently empty, or closed — three states
+// a bool can't express.
+TryResult :: ($T: Type) -> Type {
+    return define(declare("TryResult"), .enum(.{ variants = .[
+        EnumVariant.{ name = "value",  payload = T    },
+        EnumVariant.{ name = "empty",  payload = void },
+        EnumVariant.{ name = "closed", payload = void },
+    ] }));
+}
+
+// ── Constructing a minted tagged-union VALUE by variant index ─────────────────
+//
+// The read side reflects a type's members (`struct_field_count`/`struct_field_name`/
+// `struct_field_type`) and a value's active payload (`struct_field_value`); `make_variant` is
+// the missing WRITE side. It builds a value of a MINTED tagged-union `E` (one
+// made by `make_enum` / `define(declare, .enum(...))`) whose active variant is
+// `idx`, carrying `payload`. Needed when the variant is selected at RUNTIME but
+// the union was synthesized at comptime so its labels can't be spelled as a
+// literal `.label(payload)` — e.g. the `race` result: an `inline for 0..N (i)`
+// arm constructs the i-th variant of a synthesized `RaceResult`.
+//
+// LAYOUT COUPLING — MINTED ENUMS ONLY: a minted tagged-union is laid out
+// `{ i64 tag @0, payload bytes @ size_of(i64) }` (its `tag_type` is always `i64`
+// — the compiler's `declare`/`define` path fixes it). `make_variant` writes that
+// layout directly. It is NOT valid for a source `enum { … }` whose tag may be
+// narrower, nor for a `#packed`-backed union — spell those with a literal
+// `.label(…)`. Contract (caller-guaranteed, no runtime check, like any raw
+// construction): `0 <= idx < struct_field_count(E)`, and `payload`'s type IS variant
+// `idx`'s payload type. `payload` must be non-void (a payload-less variant has
+// no value to carry — match it by tag).
+make_variant :: ($E: Type, idx: i64, payload: $P) -> E {
+    out : E = ---;
+    base : i64 = xx @out;
+    c.memset(xx base, 0, size_of(E));             // clear tag padding + unused payload bytes
+    tag_ptr : *i64 = xx base;
+    tag_ptr.* = idx;                            // tag @ offset 0 (i64)
+    pay_ptr : *P = xx (base + size_of(i64));    // payload @ offset size_of(i64) (after the tag)
+    pay_ptr.* = payload;
+    return out;
+}

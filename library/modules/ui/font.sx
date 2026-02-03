@@ -1,0 +1,20 @@
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/glyph_cache.sx";
+
+// Global glyph cache pointer for views (Label, Button) to access
+g_font : *GlyphCache = null;
+
+set_global_font :: (font: *GlyphCache) {
+    g_font = font;
+}
+
+// Convenience measurement function for views
+measure_text :: (text: string, font_size: f32) -> Size {
+    if g_font == null {
+        // Fallback approximate measurement
+        scale := font_size / 16.0;
+        return Size.{ width = xx text.len * 8.0 * scale, height = font_size };
+    }
+    g_font.measure_text(text, font_size)
+}

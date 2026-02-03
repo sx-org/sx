@@ -1,0 +1,54 @@
+// Flow-sensitive narrowing: a `?T` proven present by a `!= null` guard
+// converts to its concrete payload `T` in a value position (call arg,
+// `return`, arithmetic). Covers the if-then form, the divergent `== null`
+// guard form, compound `and` / `or`, the `else` arm, and reassignment killing
+// narrowing (the value must be re-narrowed before reuse).
+//
+// Regression (issue 0179): an un-narrowed `?T → concrete` used to unwrap
+// unconditionally — yielding the zero payload of a null optional with no
+// diagnostic. Narrowing is now the ONLY implicit path; everything else is a
+// compile error (see 0920).
+#import "modules/std.sx";
+
+takes_i32 :: (x: i32) { print("i32 {}\n", x); }
+add :: (a: i64, b: i64) -> i64 { return a + b; }
+
+// Divergent `== null` guard narrows the rest of the body.
+guard :: (v: ?i64) -> i64 {
+    if v == null { return -1; }
+    return v;          // v narrowed to i64
+}
+
+// Compound `or` guard narrows both names afterward.
+guard2 :: (a: ?i64, b: ?i64) -> i64 {
+    if a == null or b == null { return 0; }
+    return a + b;      // both narrowed
+}
+
+main :: () {
+    // if-then narrowing
+    n : ?i64 = 41;
+    if n != null { takes_i32(n); }            // i32 41
+
+    // else-branch narrowing (false ⇒ present)
+    m : ?i64 = 7;
+    if m == null { print("none\n"); } else { takes_i32(m); }  // i32 7
+
+    // compound `and` narrows both inside the then-branch
+    a : ?i64 = 3;
+    b : ?i64 = 4;
+    if a != null and b != null { print("sum {}\n", add(a, b)); }  // sum 7
+
+    print("guard 9: {}\n", guard(9));         // 9
+    print("guard null: {}\n", guard(null));   // -1
+    print("guard2: {}\n", guard2(5, 6));      // 11
+    print("guard2 null: {}\n", guard2(5, null)); // 0
+
+    // reassignment kills narrowing; re-narrow before reuse
+    k : ?i64 = 100;
+    if k != null {
+        takes_i32(k);          // i32 100
+        k = 200;               // narrowing killed here
+        if k != null { takes_i32(k); }  // i32 200 (re-narrowed)
+    }
+}

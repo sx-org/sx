@@ -1,0 +1,30 @@
+// A protocol method declared `-> *void` (literal void-pointer return,
+// NOT `Self`) returns the underlying impl's pointer to the caller
+// unchanged. The dispatch path must NOT auto-load from the result —
+// `*void` outside a `Self`-disguise is a real pointer whose pointee
+// size is unknown.
+//
+// Regression: target_type leaks from the surrounding scope (e.g. the
+// enclosing function's return type). The dispatcher used to auto-load
+// `sizeof(target_type)` bytes from every `*void` return, mistaking
+// real pointers for Self-encoded boxes. Result was that
+// `alloc.alloc_bytes(64)` through an Allocator protocol value returned the
+// first 4 bytes of malloc'd memory interpreted as `i32` (= 0 → null).
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    alloc : Allocator = xx gpa;
+
+    p_direct := gpa.alloc_bytes(64);
+    print("direct: null? {}\n", p_direct == null);
+
+    p_protocol := alloc.alloc_bytes(64);
+    print("protocol: null? {}\n", p_protocol == null);
+
+    print("alloc_count: {}\n", gpa.alloc_count);
+
+    0
+}

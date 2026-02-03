@@ -1,0 +1,20 @@
+// Atomic(bool) — a sub-byte (i1) element atomically loaded/stored. LLVM
+// rejects a sub-byte atomic ("atomic memory access' size must be byte-
+// sized"), so codegen performs the access in the byte storage type (i8)
+// and trunc/zext's the value at the boundary. (rmw/cmpxchg on a bool is
+// rejected at the sx level — integer-only — so only load/store apply.)
+// Regression (issue 0152): Atomic(bool) emitted an i1 atomic that failed
+// LLVM verification; Future.canceled: Atomic(bool) in the async layer hit it.
+#import "modules/std.sx";
+#import "modules/std/atomic.sx";
+
+main :: () {
+    a := Atomic(bool).init(false);
+    print("init: {}\n", a.load(.acquire));        // false
+
+    a.store(true, .release);
+    print("after store: {}\n", a.load(.acquire)); // true
+
+    a.store(false, .seq_cst);
+    print("after reset: {}\n", a.load(.seq_cst)); // false
+}

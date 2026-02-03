@@ -1,0 +1,38 @@
+// Feature 1 — TYPE-position pack projection `xs.T`. The per-element protocol
+// type-arg `T` projects into a Pack of types, usable in type/signature
+// positions: a tuple type `Tuple(..xs.T)` and a closure signature
+// `Closure(..xs.T) -> R`. (`T` of each element comes from its
+// `impl Box(T) for <elem>`.)
+
+#import "modules/std.sx";
+
+Box :: protocol(T: Type) {
+    get :: (self: *Self) -> T;
+}
+
+IntCell :: struct { v: i64; }
+StrCell :: struct { s: string; }
+Dbl :: struct { n: i64; }
+impl Box(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
+impl Box(string) for StrCell { get :: (self: *StrCell) -> string => self.s; }
+impl Box(i64) for Dbl { get :: (self: *Dbl) -> i64 => self.n * 2; }
+
+// Tuple type `Tuple(..xs.T)` — heterogeneous (i64, string), matched by the
+// value-projection `.(..xs.get)`.
+snap :: (..xs: Box) -> void {
+    t : Tuple(..xs.T) = .{..xs.get};
+    print("0={} 1={}\n", t.0, t.1);
+}
+
+// Closure signature `Closure(..xs.T) -> i64` — here `Closure(i64, i64) -> i64`.
+// The closure literal's params are contextually typed from the projection.
+fold :: (..xs: Box) -> i64 {
+    cb : Closure(..xs.T) -> i64 = (a, b) => a + b;
+    return cb(xs[0].get(), xs[1].get());
+}
+
+main :: () -> i32 {
+    snap(IntCell.{ v = 42 }, StrCell.{ s = "hi" });   // (i64, string)
+    print("fold={}\n", fold(IntCell.{ v = 10 }, Dbl.{ n = 5 }));   // 10 + 10 = 20
+    0
+}

@@ -1,0 +1,23 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+Point :: struct { x, y: i32; }
+
+main :: () {
+
+    // ========================================================
+    // 18. ARRAYS OF USER-DEFINED TYPES
+    // ========================================================
+    print("=== 18. Array of Structs ===\n");
+    {
+        spts : [2]Point = .[Point.{1, 2}, Point.{3, 4}];
+        spt2 := spts[1];
+        print("arr-struct-x: {}\n", spt2.x);
+        for spts (it) {
+            print("for-struct: {}\n", it);
+        }
+    }
+}

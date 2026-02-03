@@ -1,0 +1,2 @@
+first assert passed
+ASSERTION FAILED at examples/errors/1032-errors-assert.sx:12: two plus two is not five

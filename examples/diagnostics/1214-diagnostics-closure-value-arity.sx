@@ -1,0 +1,54 @@
+// Calls through a callable VALUE (`:=`-bound lambda, struct-field closure,
+// fn-pointer value, callee expression) validate arguments like a top-level
+// fn call: exact arity (closure/fn-ptr types have no defaults and no
+// variadic slot) and no runtime SLICE spread (only a tuple, a fixed array,
+// or a comptime pack has a statically-known length to expand). The same
+// slice-spread rejection covers the DECL path — a NON-variadic top-level fn
+// has no variadic slot to consume the spread, so it must diagnose (never
+// emit undef, even when the placeholder count happens to match the arity).
+// Regression (issues 0188 + 0239): extras were silently dropped, missing
+// args read garbage, and a slice spread reached the call op as undef.
+#import "modules/std.sx";
+
+S :: struct { cb: Closure(i64) -> i64; }
+addfn :: (a: i64, b: i64) -> i64 => a + b;
+take1 :: (a: i64) -> i64 => a;
+
+main :: () {
+    // := -bound lambda: extra arg
+    one := (a: i64) -> i64 => a;
+    print("{}\n", one(1, 2));
+
+    // := -bound lambda: missing arg
+    two := (a: i64, b: i64) -> i64 => a + b;
+    print("{}\n", two(1));
+
+    // zero-param closure called with an arg
+    zero := () -> i64 => 42;
+    print("{}\n", zero(1));
+
+    // struct-field closure: extra arg
+    s := S.{ cb = (x: i64) -> i64 => x + 1 };
+    print("{}\n", s.cb(3, 4));
+
+    // fn-pointer value: extra arg
+    f : (i64, i64) -> i64 = addfn;
+    print("{}\n", f(7, 8, 9));
+
+    // callee expression (force-unwrapped optional closure): extra arg
+    g : ?Closure(i64) -> i64 = (x: i64) -> i64 => x * 3;
+    print("{}\n", g!(4, 5));
+
+    // runtime SLICE spread (no static length): rejected into a closure value…
+    arr := .[10, 20];
+    sl : []i64 = arr[0..2];
+    print("{}\n", two(..sl));
+
+    // …into a fn-pointer value…
+    print("{}\n", f(..sl));
+
+    // …and into a NON-variadic top-level fn (issue 0239: even when the
+    // placeholder count lines up with the arity, as for 1-param take1).
+    print("{}\n", addfn(..sl));
+    print("{}\n", take1(..sl));
+}

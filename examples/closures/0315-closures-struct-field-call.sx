@@ -1,0 +1,41 @@
+// Calling a closure / function-pointer value stored in a STRUCT FIELD
+// (`box.run(args)`) resolves the call's return type correctly — value returns
+// marshal properly, and a failable field (`Closure(..) -> (T, !)`) is `try`/
+// `catch`-able. The call-type resolver mirrors the lowering dispatch: a
+// closure/fn-ptr field is called directly (and shadows a same-named method).
+//
+// Regression (issue 0201): the field-access call path typed such calls as
+// `unresolved` — value returns came out as garbage, failable returns rejected
+// `catch`/`try` ("operand has type 'unresolved'").
+#import "modules/std.sx";
+
+CB :: struct {
+    add: Closure(i64, i64) -> i64;   // closure field, with args
+    fp:  (i64) -> i64;               // bare function-pointer field
+    work: Closure(i64) -> (i64, !);  // failable closure field
+}
+
+triple :: (x: i64) -> i64 { return x * 3; }
+
+// Field call through a `*CB` receiver inside a method, consuming the failable
+// field's error channel.
+run_work :: (self: *CB, n: i64) -> i64 {
+    v := self.work(n) catch { return -1; };
+    return v;
+}
+
+main :: () -> i64 {
+    b : CB = ---;
+    b.add = (x: i64, y: i64) => x + y;
+    b.fp = triple;
+    b.work = (n: i64) -> (i64, !) {
+        if n < 0 { raise error.Negative; }
+        n * 10
+    };
+
+    print("{}\n", b.add(3, 4));      // 7
+    print("{}\n", b.fp(5));          // 15
+    print("{}\n", run_work(@b, 6));  // 60
+    print("{}\n", run_work(@b, -1)); // -1 (error path)
+    return 0;
+}

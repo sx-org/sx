@@ -1,0 +1,155 @@
+// JSON reader (parser) from `modules/std/json.sx` — the inverse of the
+// F2.1 writer.
+//
+// Parses a representative document (nested object + array + a
+// string-with-escapes + ints incl. negatives + bool + null) into the
+// shared value model, then proves:
+//
+//   1. STRUCTURE — the parsed tree has the expected keys (in INSERTION
+//      order), values, and nesting.
+//   2. HEAP DISCIPLINE — an un-escaped string value is a zero-copy VIEW
+//      into the input buffer (its bytes lie inside `src`), while an
+//      escaped string is DECODED into a fresh `alloc`-ed buffer (its
+//      bytes lie OUTSIDE `src`). Composite nodes + the decoded string are
+//      the only allocations, all through the explicit Arena.
+//   3. ROUND-TRIP — feeding the parsed tree back to the writer reproduces
+//      the canonical input byte-for-byte.
+//   4. UNICODE — `\uXXXX` (BMP + 2-byte) and a surrogate pair decode to
+//      the right UTF-8 bytes.
+//   5. FAILURE SURFACING — every malformed input raises the right
+//      `JsonParseError` variant on the error channel, never a bogus value.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+#import "modules/std/json.sx";
+
+// Canonical document: no insignificant whitespace, escapes in the writer's
+// own form — so re-serializing the parse must reproduce it exactly.
+DOC :: "{\"name\":\"plain\",\"esc\":\"a\\nb\",\"xs\":[10,-20],\"yes\":true,\"nil\":null,\"sub\":{\"k\":\"v\"}}";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+// Half-open containment [lo, hi).
+in_range :: (x: i64, lo: i64, hi: i64) -> bool {
+    return x >= lo and x < hi;
+}
+
+// True when `parse(src)` raised `want` — destructure captures the error
+// tag without `try`, so a malformed input never aborts the example.
+raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
+    _, e := parse(src, alloc);
+    e == want
+}
+
+// True when parsing `"a<b>b"` (a string holding the RAW control byte `b`)
+// raises BadControlChar. Built from a byte buffer because a raw control
+// byte can't appear in an sx string literal.
+ctrl_raises :: (b: u8, alloc: Allocator) -> bool {
+    raw : [5]u8 = ---;
+    raw[0] = 34; raw[1] = 97; raw[2] = b; raw[3] = 98; raw[4] = 34;   // "a<b>b"
+    return raises(string.{ ptr = @raw[0], len = 5 }, error.BadControlChar, alloc);
+}
+
+main :: () -> ! {
+    gpa := GPA.init();
+    arena := Arena.init(gpa, 8192);
+    defer arena.deinit();
+
+    // ── 1. Structure ─────────────────────────────────────────────────
+    src := DOC;
+    root := try parse(src, arena);
+
+    is_object := if root == { case .object: true; else: false; };
+    report("root-is-object", is_object);
+
+    o := root.object;
+    report("member-count",   o.len == 6);
+    report("key-order-0",     o.items[0].key == "name");
+    report("string-plain",    o.items[0].val.str == "plain");
+    report("string-escaped",  o.items[1].val.str == "a\nb");   // \n decoded to 0x0A
+
+    xs := o.items[2].val.array;
+    report("array-len",  xs.len == 2);
+    report("array-pos",  xs.items[0].int == 10);
+    report("array-neg",  xs.items[1].int == 0 - 20);
+
+    report("bool-value", o.items[3].val.bool == true);
+
+    is_null := if o.items[4].val == { case .null: true; else: false; };
+    report("null-value", is_null);
+
+    // The nested pair asserted as one expression — a string `==` on each
+    // side of `and`.
+    sub := o.items[5].val.object;
+    report("nested-pair", sub.items[0].key == "k" and sub.items[0].val.str == "v");
+
+    // ── 2. Heap discipline: view vs decoded ──────────────────────────
+    base : i64 = xx src.ptr;
+    stop := base + src.len;
+    p_plain : i64 = xx o.items[0].val.str.ptr;   // "plain": no escape -> VIEW into src
+    p_esc   : i64 = xx o.items[1].val.str.ptr;   // "a\nb": escaped -> DECODED into arena
+    report("plain-is-view",     in_range(p_plain, base, stop));
+    report("escaped-allocated", !in_range(p_esc, base, stop));
+
+    // ── 3. Round-trip back through the writer ────────────────────────
+    buf : [256]u8 = ---;
+    n := try write_to_buffer(root, string.{ ptr = @buf[0], len = 256 });
+    rt := string.{ ptr = @buf[0], len = n };
+    report("round-trip", rt == src);
+
+    // ── 4. Leading/trailing/inner whitespace is insignificant ────────
+    wsv := try parse("  [ 1 , 2 , 3 ]  ", arena);
+    wa := wsv.array;
+    report("ws-count", wa.len == 3);
+    report("ws-first", wa.items[0].int == 1);
+    report("ws-last",  wa.items[2].int == 3);
+
+    // Empty container literals (the manifest/db.json use these).
+    ea := try parse("[]", arena);
+    report("empty-array", ea.array.len == 0);
+    eo := try parse("{}", arena);
+    report("empty-object", eo.object.len == 0);
+
+    // ── 5. Unicode: \uXXXX (1- and 2-byte) + surrogate pair (4-byte) ──
+    // JSON "Aé😀" -> 'A', 'é' (C3 A9), '😀' (F0 9F 98 80). One byte per report.
+    univ := try parse("\"\\u0041\\u00e9\\uD83D\\uDE00\"", arena);
+    u := univ.str;
+    report("uni-len", u.len == 7);
+    report("uni-A",   u[0] == 0x41);                    // U+0041 -> 1 byte
+    report("uni-e1",  u[1] == 0xC3);                    // U+00E9 -> 2 bytes
+    report("uni-e2",  u[2] == 0xA9);
+    report("uni-i0",  u[3] == 0xF0);                    // U+1F600 (surrogate pair) -> 4 bytes
+    report("uni-i1",  u[4] == 0x9F);
+    report("uni-i2",  u[5] == 0x98);
+    report("uni-i3",  u[6] == 0x80);
+
+    // ── 6. Malformed inputs each surface the right error variant ─────
+    report("err-truncated",     raises("{\"a\":",       error.UnexpectedEnd,   xx arena));
+    report("err-bad-escape",    raises("\"a\\xb\"",     error.BadEscape,       xx arena));
+    report("err-trailing-junk", raises("[1,2] x",       error.TrailingGarbage, arena));
+    report("err-bad-token",     raises("xyz",           error.UnexpectedToken, arena));
+    report("err-fraction",      raises("1.5",           error.BadNumber,       xx arena));
+    report("err-leading-zero",  raises("01",            error.BadNumber,       xx arena));
+    report("err-overflow",      raises("9223372036854775808", error.BadNumber, arena));
+    report("err-unterminated",  raises("\"abc",         error.UnexpectedEnd,   xx arena));
+
+    // ── 7. RFC 8259 §7: unescaped control bytes (U+0000..U+001F) ──────
+    // A RAW control byte inside a string is invalid JSON -> BadControlChar.
+    report("err-raw-tab", ctrl_raises(9,  xx arena));   // raw 0x09
+    report("err-raw-lf",  ctrl_raises(10, arena));   // raw 0x0A
+    report("err-raw-nul", ctrl_raises(0,  xx arena));   // raw 0x00
+
+    // POSITIVE: the ESCAPED control forms stay valid and decode to the
+    // exact bytes. JSON "\t\n\u0009" -> 0x09 0x0A 0x09 (3 bytes).
+    esc := try parse("\"\\t\\n\\u0009\"", arena);
+    es := esc.str;
+    report("esc-ctrl-len", es.len == 3);
+    report("esc-tab", es[0] == 0x09);   // \t
+    report("esc-lf",  es[1] == 0x0A);   // \n
+    report("esc-u",   es[2] == 0x09);   // \u0009
+
+    print("=== DONE ===\n");
+    return;
+}

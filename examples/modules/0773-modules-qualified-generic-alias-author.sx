@@ -1,0 +1,28 @@
+// A type alias whose RHS is a qualified generic head `ns.Box(args)` must
+// instantiate the template AUTHORED by `ns`'s module — not the global same-name
+// template that won the last-wins `struct_template_map`. Two namespaces each
+// author a same-name generic `Box($T)` with a DIFFERENT layout (a: one field,
+// b: two fields). `ABox :: a.Box(i64)` and `BBox :: b.Box(i64)` must register
+// aliases over their OWN module's template (sizes 8 and 16) and stay DISTINCT,
+// so the field unique to b's layout (`y`) is reachable only through `BBox`.
+//
+// Regression (Phase E4): before the alias-registration path selected the
+// qualified author, the const-decl alias `.call` branch stripped the head to the
+// bare name and read the global `struct_template_map`, so `ABox` and `BBox` both
+// instantiated the last-wins template (both size 16). attempt-9 fixed the
+// annotation head sites; this pins the alias-registration sibling.
+
+#import "modules/std.sx";
+a :: #import "0773-modules-qualified-generic-alias-author/a.sx";
+b :: #import "0773-modules-qualified-generic-alias-author/b.sx";
+
+ABox :: a.Box(i64);
+BBox :: b.Box(i64);
+
+main :: () -> i32 {
+    ab : ABox = .{ x = 1 };
+    bb : BBox = .{ x = 10, y = 20 };
+    print("alias a={} b={}\n", size_of(ABox), size_of(BBox));
+    print("ab.x={} bb.x={} bb.y={}\n", ab.x, bb.x, bb.y);
+    0
+}

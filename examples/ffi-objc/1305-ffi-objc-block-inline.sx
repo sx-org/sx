@@ -1,0 +1,19 @@
+// `xx <closure>` passed as a `*Block` fn argument auto-allocates the
+// Block instance and passes its address — no named temp required.
+// Matches the ergonomics of ObjC's `^{...}` literal at the call site.
+
+#import "modules/std.sx";
+#import "modules/ffi/objc_block.sx";
+
+invoke_once :: (b: *Block) {
+  invoke_fn : (*Block) -> void abi(.c) = xx b.invoke;
+  invoke_fn(b);
+}
+
+main :: () -> i32 {
+  x : i64 = 7;
+  invoke_once(xx () {
+    print("inline block, x = {}\n", x);
+  });
+  0
+}

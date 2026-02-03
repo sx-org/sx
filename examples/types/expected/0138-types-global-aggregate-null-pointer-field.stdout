@@ -1,0 +1,4 @@
+boxes ptrs=true,true markers=11,22
+ptr arr nulls=true,true,true
+nested q nulls=true,true tags=1,2 labels=100,200
+PASS

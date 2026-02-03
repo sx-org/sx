@@ -1,0 +1,23 @@
+error: type 'Pair' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0797-modules-same-name-union-ambiguous.sx:31:19
+   |
+31 |     sz := size_of(Pair);
+   |                   ^^^^
+
+error: type 'Pair' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0797-modules-same-name-union-ambiguous.sx:32:9
+   |
+32 |     u : Pair = ---;
+   |         ^^^^
+
+error: type 'Pair' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0797-modules-same-name-union-ambiguous.sx:33:16
+   |
+33 |     t : Type = Pair;
+   |                ^^^^
+
+error: type 'Pair' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0797-modules-same-name-union-ambiguous.sx:24:14
+   |
+24 |         case Pair: 1;
+   |              ^^^^

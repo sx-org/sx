@@ -1,0 +1,58 @@
+// A raw value binding whose spelling shadows a builtin FLOAT type name
+// (`` `f64 ``) and whose FLOAT field is read into an INTEGER binding. Field
+// access on such a value is an ORDINARY runtime field read — the unified
+// float→int narrowing rule (F0.11) must treat it EXACTLY like a non-shadowed
+// struct's field read, never as the builtin numeric-limit accessor. So
+// `` `f64.epsilon `` reads the value's `epsilon` field (a runtime f64) and a
+// float→int narrowing TRUNCATES it, identical to a plainly-named `b.epsilon` —
+// it does NOT fold the builtin `f64.epsilon` (= 2.22e-16) into the binding.
+//
+// The receiver is a mutable `:=` local, so its field is a RUNTIME value, not a
+// compile-time constant: reading it after a reassignment yields the new value,
+// proving it can never be const-folded from the initializer literal.
+//
+// Companion to 0161 (value-shadow field reads in NON-narrowing, i64-field
+// contexts). This file exercises the narrowing path 0161 does not: a FLOAT
+// field flowing into an integer binding.
+//
+// Regression (issue 0095 / F0.11-7): the compile-time float evaluator's
+// field-access arm misclassified a raw value-shadow receiver as the builtin
+// numeric-limit accessor, so `` `f64.epsilon `` newly errored under the
+// narrowing rule with the BUILTIN value (2.22e-16) instead of reading the
+// field. The fix mirrors the `is_raw` guard the sibling `isFloatValuedExpr`
+// already applies, so the const-folding cluster agrees: a raw receiver is a
+// field read, only a bare type receiver folds a limit.
+#import "modules/std.sx";
+
+FBox :: struct { epsilon: f64; }
+
+main :: () {
+    // Raw value-shadow of the builtin `f64`, FLOAT field → narrow into i64.
+    // Ordinary field read + runtime float→int truncation: 11.0 → 11.
+    `f64 := FBox.{ epsilon = 11.0 };
+    x : i64 = `f64.epsilon;
+
+    // A NON-integral field value truncates exactly the same way — a runtime
+    // f64 has no compile-time value to fold, so 11.5 → 11 (NOT a non-integral
+    // narrowing error, which would only fire on a compile-time-constant float).
+    `f64b := FBox.{ epsilon = 11.5 };
+    y : i64 = `f64b.epsilon;
+
+    // The value-shadowed read is identical to a plainly-named one: `b.epsilon`
+    // narrows the same way, so the backtick spelling changes nothing.
+    b := FBox.{ epsilon = 11.5 };
+    yb : i64 = b.epsilon;
+
+    print("x={} y={} yb={}\n", x, y, yb);            // 11 11 11
+
+    // The field is a RUNTIME value: reassign, then read → the new value, not
+    // the initializer literal (so const-folding it would be unsound).
+    `f64.epsilon = 4.0;
+    xm : i64 = `f64.epsilon;
+    print("xm={}\n", xm);                            // 4
+
+    // The bare builtin receiver (not raw-escaped) is UNAFFECTED — it still
+    // folds the numeric limit. `f64.max - f64.max` = 0.0 is integral → 0.
+    lim : i64 = f64.max - f64.max;
+    print("lim={}\n", lim);                          // 0
+}

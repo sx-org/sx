@@ -1,0 +1,43 @@
+// Generic-struct head aliases: `BoxAlias :: Box;` binds the alias to the
+// SAME template — instantiation, methods, annotations, and alias chains all
+// resolve through it. Cross-module, a facade's `Box :: r.Box;` re-export is
+// the facade's OWN declaration, so it carries one flat-import level exactly
+// like a plain-struct alias (companion files: -rich.sx authors the decls,
+// -facade.sx re-exports them through a namespace alias).
+// Regression (issue 0120): the alias head used to lower silently to an
+// unresolved type and panic in the LLVM backend at instantiation.
+#import "modules/std.sx";
+#import "0211-generics-struct-alias-head-facade.sx";
+
+LocalBox :: struct ($T: Type) {
+    item: T;
+    get :: (b: *LocalBox(T)) -> T { b.item }
+}
+
+LocalAlias :: LocalBox;
+ChainAlias :: LocalAlias;
+
+main :: () {
+    // Same-file alias: instantiation + field + method.
+    b := LocalAlias(i64).{ item = 3 };
+    print("field: {}\n", b.item);
+    print("method: {}\n", b.get());
+
+    // Alias chain terminates at the template.
+    c := ChainAlias(i64).{ item = 11 };
+    print("chain: {}\n", c.item);
+
+    // Alias as a type annotation head.
+    a : LocalAlias(string) = .{ item = "ann" };
+    print("annot: {}\n", a.item);
+
+    // Cross-module re-exports carried one flat hop from the facade:
+    // plain fn, plain struct (static method), and the generic head.
+    print("helper: {}\n", helper());
+    t := Thing.init();
+    print("thing: {}\n", t.v);
+    f := Box(i64).{ item = 7 };
+    print("facade: {}\n", f.get());
+    x : Box(string) = .{ item = "qq" };
+    print("facade-annot: {}\n", x.item);
+}

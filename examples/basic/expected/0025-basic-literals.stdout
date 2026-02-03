@@ -1,0 +1,18 @@
+=== 1. Literals ===
+decimal: 42
+hex: 255
+binary: 10
+float: 3.140000
+f64: 2.718281
+true: true
+false: false
+escapes: hello	world
+multiline: line1
+line2
+heredoc: raw heredoc
+
+undef-then-set: 77
+enum-lit: .green
+null-ptr: null
+string-len: 5
+empty-string: 0

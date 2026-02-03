@@ -1,0 +1,4 @@
+// Module A aliases `Id` to `i32`. A bare `Id` in this module resolves to A's
+// alias regardless of B's same-name alias (per-source alias visibility).
+Id :: i32;
+a_val :: () -> i64 { x : Id = 100; y : i64 = xx x; return y; }

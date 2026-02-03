@@ -1,0 +1,4 @@
+raw threads: 4 x 1000 locked increments = 4000
+pool: 100 tasks across 4 workers summed to 5050
+backpressure: full backlog refuses
+std.thread ok

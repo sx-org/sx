@@ -1,0 +1,25 @@
+// A value-position block (`x := { … }`, a call argument, …) parses any
+// statement form in its body — including a destructure decl — and yields its
+// trailing expression as the value. Previously a braced value block routed
+// through a restricted expression parser that rejected destructures with
+// "expected ';'".
+//
+// Regression (issue 0065).
+
+#import "modules/std.sx";
+
+pair :: () -> Tuple(i32, i32) { .{5, 7} }
+
+main :: () -> i32 {
+    // destructure decl inside a value-bound block
+    sum := {
+        a, b := pair();
+        a + b               // trailing expression → the block's value
+    };
+    print("sum: {}\n", sum);          // 12
+
+    // block expression directly as a call argument
+    print("sq: {}\n", { x := 4; x * x });   // 16
+
+    sum
+}

@@ -1,0 +1,67 @@
+// Number-literal bases + `_` digit separators.
+//
+// Four base prefixes: decimal, `0x`/`0X` hex, `0o`/`0O` octal, `0b`/`0B`
+// binary. Any base (and a float's fraction) may carry `_` digit separators —
+// pure visual noise, stripped before the value is computed, so `0xNN_NN` ==
+// `0xNNNN` and `1_000` == `1000`. Separators are permissive: repeated (`1__0`)
+// and trailing (`1000_`) underscores are accepted and stripped.
+
+#import "modules/std.sx";
+
+// Generic value-param struct: its `$K` argument is parsed by the type-arg
+// literal parser (parser.zig ~801), a path distinct from the main expression
+// path — so octal/separator literals here exercise that second base-detection
+// block directly.
+Vec :: struct ($K: u32, $T: Type) { data: [K]T; }
+
+main :: () {
+    // Decimal grouping.
+    print("{}\n", 1_000_000);            // 1000000
+
+    // Octal (0o / 0O).
+    print("{}\n", 0o755);                // 493
+    print("{}\n", 0O17);                 // 15
+    print("{}\n", 0o7_5_5);              // 493
+
+    // Hex with separators.
+    print("{}\n", 0xFF_FF);              // 65535
+
+    // Binary with separators.
+    print("{}\n", 0b1010_1010);          // 170
+
+    // Float fraction with a separator.
+    print("{}\n", 3.14_159);             // 3.14159
+
+    // Permissive separators: repeated + trailing.
+    print("{}\n", 1__0);                 // 10
+    print("{}\n", 1000_);                // 1000
+
+    // Leading separator immediately after a base prefix (stripped).
+    print("{}\n", 0x_FF);                // 255
+    print("{}\n", 0o_17);                // 15
+    print("{}\n", 0b_1010);              // 10
+
+    // Full u64-range hex with separators (via cast to u64).
+    big := 0xffff_ffff_ffff_ffff.(u64);
+    print("{}\n", big);                  // 18446744073709551615
+
+    // Array dimensions: separator/octal/hex literals as an array length flow
+    // through the MAIN expression path (parseExpr -> .int_literal), same as any
+    // ordinary literal. Assert their lane counts via `.len`.
+    dec_dim: [1_0]i32 = ---;
+    print("{}\n", dec_dim.len);          // 10
+    hex_dim: [0x1_0]i32 = ---;
+    print("{}\n", hex_dim.len);          // 16
+    oct_dim: [0o10]i32 = ---;
+    print("{}\n", oct_dim.len);          // 8
+
+    // Generic value-param position: the `$K` argument routes through the
+    // type-arg literal parser (parser.zig ~801), NOT the main expression path.
+    // Octal/separator literals here exercise that second base-detection block.
+    oct_arg: Vec(0o10, f32) = ---;
+    print("{}\n", oct_arg.data.len);     // 8
+    sep_arg: Vec(1_0, f32) = ---;
+    print("{}\n", sep_arg.data.len);     // 10
+    hex_arg: Vec(0xF_F, f32) = ---;
+    print("{}\n", hex_arg.data.len);     // 255
+}

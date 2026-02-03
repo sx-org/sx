@@ -1,0 +1,62 @@
+// M1.2 A.1 follow-up — pass-by-value struct args/returns in
+// sx-defined `#objc_class` methods.
+//
+// Wires the new `{Name=field0field1...}` arm of
+// `appendObjcEncoding` into `class_addMethod` registration. Without
+// it, methods that take or return a value-type struct (CGPoint,
+// CGSize, NSRange shapes) used to fail signature-encoding
+// derivation with a "type kind not yet supported" diagnostic.
+//
+// Each sx-defined method registered with the Obj-C runtime needs an
+// encoding string built from its IR signature. For
+// `goto :: (self: *Self, p: Point)` that string is `v@:{Point=dd}`
+// — return void, receiver `@`, selector `:`, then the struct
+// argument `{Point=dd}`.
+//
+// We don't observe the encoding string directly here (it ends up in
+// a private OBJC_METH_VAR_TYPE_ cstring in the linked binary) — but
+// the compiler bails LOUDLY on unsupported types per the project's
+// REJECTED PATTERNS rule, so a successful build is the encoding
+// going through cleanly.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+Point :: struct {
+    x: f64;
+    y: f64;
+}
+
+SxMover :: #objc_class("SxMover") {
+    pos: Point;
+
+    alloc :: () -> *SxMover;
+
+    goto :: (self: *Self, p: Point) {
+        self.pos = p;
+    }
+
+    here :: (self: *Self) -> Point {
+        return self.pos;
+    }
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        m := SxMover.alloc();
+        if m == null { print("FAIL: alloc returned null\n"); return 1; }
+
+        m.goto(Point.{ x = 7.5, y = 8.25 });
+        p := m.here();
+        print("at: ({}, {})\n", p.x, p.y);  // expected: at: (7.500000, 8.250000)
+
+        sel_release : SEL = sel_registerName("release".ptr);
+        release_fn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        release_fn(xx m, sel_release);
+    }
+    inline if OS != .macos {
+        print("at: (7.500000, 8.250000)\n");
+    }
+    0
+}

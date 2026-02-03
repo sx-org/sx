@@ -1,0 +1,68 @@
+// The comptime-int COUNT surface is uniform: every count consumer — array
+// dimension (direct `[N]T` and via type alias), `Vector` lane, generic
+// value-param (struct AND type-fn binder), and `inline for 0..N` — folds the
+// SAME leaf forms to the SAME value through one shared evaluator
+// (`program_index.evalConstIntExpr` / `moduleConstInt`). The leaf forms
+// exercised here: untyped int const (`M`), a named const with an EXPRESSION RHS
+// (`N :: M + 1`), a typed-int const (`S : i64 : 5`), an integral float const
+// (`F :: 4.0` ≡ 4), and an ALIASED integer constraint (`Count :: u32`,
+// `Small :: i8`) on a value-param.
+//
+// Regression (issue 0083): two cells of this surface diverged from the rest.
+// (1) A named const whose RHS is an expression (`N :: M + 1`) did not fold as a
+// count ("not a compile-time integer constant") — `moduleConstInt` read only a
+// literal RHS; it now folds the RHS through the shared `evalConstIntExpr`. (2) An
+// aliased integer constraint (`$K: Count`) bypassed the value-param range gate,
+// which only matched builtin constraint names; the constraint now resolves to
+// its underlying builtin before range-checking, so `$K: Count` behaves exactly
+// like `$K: u32`.
+#import "modules/std.sx";
+
+M     :: 2;          // untyped int const
+N     :: M + 1;      // named const, EXPRESSION RHS  (== 3)
+S     : i64 : 5;     // typed-int const
+KU    : u32 : 3;     // typed-u32 const
+F     :: 4.0;        // integral float const         (== 4)
+Count :: u32;        // integer ALIAS — value-param constraint
+Small :: i8;         // integer ALIAS — value-param constraint
+
+ArrN :: [N]i64;      // array dim via alias: expression const (3)
+ArrF :: [F]i64;      // array dim via alias: integral float   (4)
+ArrS :: [S]i64;      // array dim via alias: typed const      (5)
+
+Buf  :: struct ($K: u32,   $T: Type) { data: [K]T; }
+BufC :: struct ($K: Count, $T: Type) { data: [K]T; }   // ALIASED u32 constraint
+BufS :: struct ($K: Small, $T: Type) { data: [K]T; }   // ALIASED i8 constraint
+
+Make :: ($K: u32, $T: Type) -> Type { return [K]T; }   // type-fn value-param
+
+main :: () {
+    // array dimension — DIRECT
+    a : [N]i64 = ---; a[0] = 7; a[2] = 9;
+    print("dim.direct.expr: len={} a0={} a2={}\n", a.len, a[0], a[2]);
+    f : [F]i64 = ---; f[3] = 40;
+    print("dim.direct.float: len={} f3={}\n", f.len, f[3]);
+
+    // array dimension — via type ALIAS
+    aa : ArrN = ---; aa[2] = 99; print("dim.alias.expr: len={} aa2={}\n", aa.len, aa[2]);
+    af : ArrF = ---;             print("dim.alias.float: len={}\n", af.len);
+    az : ArrS = ---;             print("dim.alias.typed: len={}\n", az.len);
+
+    // Vector lane — expression const (3) and integral float (4)
+    v3 : Vector(N, f32) = .[1.0, 2.0, 3.0];
+    print("lane.expr3: {} {} {}\n", v3.x, v3.y, v3.z);
+    v4 : Vector(F, f32) = .[1.0, 2.0, 3.0, 4.0];
+    print("lane.float4: {}\n", v4.w);
+
+    // generic value-param — struct binder: expr const, aliased u32, aliased i8
+    bn : Buf(N, i64) = ---;   bn.data[2] = 30; print("vp.struct.expr: len={} v={}\n", bn.data.len, bn.data[2]);
+    bc : BufC(KU, i64) = ---; bc.data[2] = 31; print("vp.struct.alias.u32: len={} v={}\n", bc.data.len, bc.data[2]);
+    bs : BufS(4, i64) = ---;  bs.data[3] = 32; print("vp.struct.alias.i8: len={} v={}\n", bs.data.len, bs.data[3]);
+
+    // generic value-param — type-fn binder: expr const
+    mk : Make(N, i64) = ---;  mk[2] = 33; print("vp.typefn.expr: len={} v={}\n", mk.len, mk[2]);
+
+    // inline-for bound — expr const (3) and integral float (4)
+    s := 0; inline for 0..N (i) { s += i; } print("for.expr: {}\n", s);    // 0+1+2 = 3
+    t := 0; inline for 0..F (i) { t += i; } print("for.float: {}\n", t);   // 0+1+2+3 = 6
+}

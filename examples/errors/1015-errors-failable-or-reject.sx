@@ -1,0 +1,19 @@
+// Failable `or` rejection (ERR step E2.4a): the value-terminator form
+// (`lhs or value`) requires a value-carrying failable LHS — a pure failable
+// (`-> !`) has no success value to fall back to, so `or value` is rejected
+// (use `catch` to absorb the error). The positive cases live in
+// `examples/231-failable-or.sx`.
+
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+must :: (n: i32) -> !E {
+    if n < 0 { raise error.Bad; }
+    return;
+}
+
+main :: () -> i32 {
+    x := must(-1) or 0;        // error: `-> !` has no success value to fall back to
+    return 0;
+}

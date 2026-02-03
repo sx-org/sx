@@ -1,0 +1,37 @@
+PI :f32: 3.14159265;
+TAU :f32: 6.28318530;
+DEG2RAD :f32: 0.01745329;
+RAD2DEG :f32: 57.2957795;
+
+sqrt :: (x: $T) -> T intrinsic;
+sin :: (x: $T) -> T intrinsic;
+cos :: (x: $T) -> T intrinsic;
+floor :: (x: $T) -> T intrinsic;
+
+min :: (a: $T, b: T) -> T {
+    if a < b then a else b
+}
+
+max :: (a: $T, b: T) -> T {
+    if a > b then a else b
+}
+
+clamp :: (val: $T, lo: T, hi: T) -> T {
+    if val < lo then lo
+    else if val > hi then hi
+    else val
+}
+
+abs :: (x: $T) -> T {
+    if x < 0 then 0 - x else x
+}
+
+lerp :: (a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+sign :: (x: $T) -> T {
+    if x > 0 then 1
+    else if x < 0 then 0 - 1
+    else 0
+}

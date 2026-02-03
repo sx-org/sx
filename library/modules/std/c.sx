@@ -1,0 +1,126 @@
+// modules/std/c.sx — THE single libc surface. Mirrors Zig's `std.c`: one
+// declaration site for every raw libc/POSIX symbol the stdlib touches, with
+// per-OS quirks (errno location symbol) resolved HERE via `inline if OS`.
+//
+// Every module that needs a libc symbol imports THIS and calls `c.read(...)`
+// etc. — no module redeclares `libc :: #library "c"` or its own `extern`
+// slice. `#library` constants dedup program-wide, and the compiler dedups
+// extern decls by symbol (rejecting a divergent signature), so a single
+// canonical decl here is both the source of truth and drift-proof.
+//
+// Dependency-free by design: imports NOTHING. `inline if OS` is resolved by
+// the compiler's flatten pre-pass and needs no import (see std/target.sx), so
+// even the lowest-level modules (core, map, io) can depend on this with no
+// import cycle.
+
+libc :: #library "c";
+
+// ── memory ────────────────────────────────────────────────────────────────
+// Raw libc allocation + block ops. The Allocator protocol (std/mem.sx) is the
+// real allocation surface; these are the escape hatch allocators build on.
+//
+// The allocation pair keeps sx-side prefixes because function authors are
+// still indexed program-wide: the bare C names can steal unrelated language
+// functions/resolution paths even when every libc use is namespace-qualified.
+// The linked symbols remain `malloc` / `free`.
+libc_malloc :: (size: i64) -> *void extern libc "malloc";
+libc_free :: (ptr: *void) -> void extern libc "free";
+memcpy  :: (dst: *void, src: *void, size: i64) -> *void extern libc;
+memset  :: (dst: *void, val: i64, size: i64) -> void extern libc;
+memmove :: (dst: *void, src: *void, size: i64) -> *void extern libc;
+
+// ── file / io ───────────────────────────────────────────────────────────────
+read   :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc;
+write  :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc;
+close  :: (fd: i32) -> i32 extern libc;
+open   :: (path: [:0]u8, flags: i32, ..args: []i32) -> i32 extern libc;
+lseek  :: (fd: i32, offset: i64, whence: i32) -> i64 extern libc;
+unlink :: (path: [:0]u8) -> i32 extern libc;
+rmdir  :: (path: [:0]u8) -> i32 extern libc;
+mkdir  :: (path: [:0]u8, mode: u32) -> i32 extern libc;
+access :: (path: [:0]u8, mode: i32) -> i32 extern libc;
+chmod  :: (path: [:0]u8, mode: u32) -> i32 extern libc;
+rename :: (oldp: [:0]u8, newp: [:0]u8) -> i32 extern libc;
+
+// ── time ────────────────────────────────────────────────────────────────────
+// std/time.sx owns the clock-id policy; this module owns the raw C ABI type.
+// Native 64-bit targets use two C longs. Emscripten keeps time_t at i64 on
+// wasm32 but C long at i32, padding timespec back to 16 bytes.
+inline if POINTER_SIZE == {
+    case 4: Timespec :: struct {
+        sec:  i64;
+        nsec: i32;
+        _pad: i32;
+    }
+    case 8: Timespec :: struct {
+        sec:  i64;
+        nsec: i64;
+    }
+    else: #error "std/c.sx: unsupported pointer size for C timespec";
+}
+
+clock_gettime :: (clock_id: i32, ts: *Timespec) -> i32 extern libc;
+
+// ── Emscripten ──────────────────────────────────────────────────────────────
+// Kept in the canonical C surface but exposed only on the target that supplies
+// them, so native programs do not carry target-inapplicable externs.
+inline if OS == {
+    case .wasm:
+        emscripten_set_main_loop  :: (func: *void, fps: i32, sim_infinite: i32) extern libc;
+        emscripten_run_script_int :: (script: [:0]u8) -> i32 extern libc;
+    else: {}
+}
+
+// ── virtual memory ──────────────────────────────────────────────────────────
+mmap     :: (addr: *void, len: i64, prot: i32, flags: i32, fd: i32, off: i64) -> *void extern libc;
+mprotect :: (addr: *void, len: i64, prot: i32) -> i32 extern libc;
+munmap   :: (addr: *void, len: i64) -> i32 extern libc;
+
+// ── process ─────────────────────────────────────────────────────────────────
+abort :: () -> noreturn extern libc;
+// `exit` here is the RAW libc `_exit(2)` — immediate termination, no stdio
+// flush / atexit handlers (that's `exit(3)`). We expose it under the clean sx
+// name `exit`, symbol pinned to `_exit`.
+exit :: (code: i32) -> noreturn extern libc "_exit";
+
+// ── errno location (per-OS symbol) ──────────────────────────────────────────
+// `errno` is a macro over a per-thread int* in C. Darwin resolves it via
+// `__error`, glibc/musl via `__errno_location`, and Android's bionic via
+// `__errno`. Callers read the current value through the portable
+// `posix.errno()` wrapper; this is the raw accessor.
+// NO silent fallback: the symbol differs per libc, so an unsupported OS must
+// add its own case — the `else` forces a loud compile error rather than binding
+// the wrong symbol (e.g. windows is `_errno`, NOT `__errno_location`).
+inline if OS == {
+    case .macos:  errno_location :: () -> *i32 extern libc "__error";
+    case .ios:    errno_location :: () -> *i32 extern libc "__error";
+    case .linux:  errno_location :: () -> *i32 extern libc "__errno_location";
+    case .android: errno_location :: () -> *i32 extern libc "__errno";
+    case .windows: errno_location :: () -> *i32 extern libc "_errno";
+    case .wasm:   errno_location :: () -> *i32 extern libc "__errno_location";
+    else:         #error "std/c.sx: errno_location symbol is only known for Darwin (__error), Linux/Emscripten (__errno_location), Android (__errno), and Windows (_errno) — add a case for this target.";
+}
+
+// ── pthread ─────────────────────────────────────────────────────────────────
+// Opaque storage for the C `pthread_mutex_t` / `pthread_cond_t` — sx never
+// reads these bytes; libpthread owns them. `[N]i64` gives the byte count AND the
+// 8-byte alignment (the C type holds a `long`/pointer); `.{}` zero-fills it.
+// 64 bytes = the safe max (darwin's pthread_mutex_t; ≥ musl 40, glibc 40/48).
+// 48 bytes = pthread_cond_t on darwin, musl, and glibc alike (uniform).
+MutexBuf :: struct { slots: [8]i64; }
+CondBuf  :: struct { slots: [6]i64; }
+
+pthread_create  :: (thread: *usize, attr: *void, start: (*void) -> *void abi(.c), arg: *void) -> i32 extern libc;
+pthread_join    :: (thread: usize, retval: **void) -> i32 extern libc;
+pthread_detach  :: (thread: usize) -> i32 extern libc;
+
+pthread_mutex_init    :: (m: *MutexBuf, attr: *void) -> i32 extern libc;
+pthread_mutex_lock    :: (m: *MutexBuf) -> i32 extern libc;
+pthread_mutex_unlock  :: (m: *MutexBuf) -> i32 extern libc;
+pthread_mutex_destroy :: (m: *MutexBuf) -> i32 extern libc;
+
+pthread_cond_init      :: (c: *CondBuf, attr: *void) -> i32 extern libc;
+pthread_cond_wait      :: (c: *CondBuf, m: *MutexBuf) -> i32 extern libc;
+pthread_cond_signal    :: (c: *CondBuf) -> i32 extern libc;
+pthread_cond_broadcast :: (c: *CondBuf) -> i32 extern libc;
+pthread_cond_destroy   :: (c: *CondBuf) -> i32 extern libc;

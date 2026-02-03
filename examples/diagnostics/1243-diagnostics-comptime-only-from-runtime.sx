@@ -1,0 +1,22 @@
+// An `evaluate`-mode intrinsic runs only in the comptime evaluator — it has no
+// runtime symbol. Calling one from the runtime call graph is a build error, not
+// an undefined-symbol link failure.
+//
+// The diagnostic prints the CALL PATH from the runtime root, because the useful
+// question is not "which line called it" but "why is this in the runtime graph
+// at all?" — here the answer is three hops up, in `main`.
+#import "modules/std.sx";
+
+// `raw_intern` mints into the compiler's own string pool; there is nothing for it to
+// do in a shipped binary.
+beta :: () -> u32 {
+    return raw_intern("interned at runtime?");
+}
+
+alpha :: () -> u32 {
+    return beta();
+}
+
+main :: () {
+    print("{}\n", alpha());
+}

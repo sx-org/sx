@@ -1,0 +1,4 @@
+chosen=.green
+palette=.blue,.green,.red
+pair.a=.blue pair.b=.green
+PASS

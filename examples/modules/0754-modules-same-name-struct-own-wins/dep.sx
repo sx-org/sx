@@ -1,0 +1,5 @@
+// A flat-imported module authors its OWN `Widget { a }`. The importing file
+// (`main`) ALSO authors a `Widget` — its own author must win there (0105 case 3),
+// while this module's `Widget` stays a distinct type used by `dep_widget`.
+Widget :: struct { a: i64; }
+dep_widget :: () -> Widget { return Widget.{ a = 9 }; }

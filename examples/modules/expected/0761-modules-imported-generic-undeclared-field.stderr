@@ -1,0 +1,5 @@
+error: unknown type 'Missing'
+  --> examples/modules/0761-modules-imported-generic-undeclared-field/lib.sx:11:8
+   |
+11 |     y: Missing;
+   |        ^^^^^^^

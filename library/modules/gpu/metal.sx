@@ -1,0 +1,701 @@
+// Metal backend for the GPU protocol. iOS-only for now; macOS later.
+//
+// Linking is per-target via the consumer's build.sx:
+//   opts.add_framework("Metal")
+//   opts.add_framework("QuartzCore")   // CAMetalLayer lives here
+// `#framework "Metal"` below adds it to iOS-target link lines automatically;
+// non-iOS targets don't reach the Metal-touching code paths.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/ffi/objc.sx";
+#import "modules/build.sx";
+#import "modules/gpu/types.sx";
+#import "modules/gpu/api.sx";
+
+#framework "Metal";
+
+// MTLCreateSystemDefaultDevice lives in the Metal framework as a plain C
+// function. Returns id<MTLDevice> retained +1; we leak it for now since
+// the device lives for the whole process.
+MTLCreateSystemDefaultDevice :: () -> *void extern;
+
+// Pixel formats.
+MTL_PIXEL_FORMAT_BGRA8_UNORM :u64: 80;
+MTL_PIXEL_FORMAT_RGBA8_UNORM :u64: 70;
+MTL_PIXEL_FORMAT_R8_UNORM    :u64: 10;
+
+// MTLLoadAction / MTLStoreAction.
+MTL_LOAD_ACTION_CLEAR  :u64: 2;
+MTL_STORE_ACTION_STORE :u64: 1;
+
+// MTLStorageMode. For UI atlases + sprites the CPU needs to write pixels
+// and the GPU needs to sample — `.shared` is the safe default. On iOS-sim
+// under Apple Silicon the convenience class method's default storage
+// isn't reliably shared, so we set it explicitly in metal_create_texture_ios.
+MTL_STORAGE_MODE_SHARED :u64: 0;
+
+// MTLPrimitiveType.
+MTL_PRIMITIVE_TYPE_TRIANGLE :u64: 3;
+
+// MTLBlendFactor — the subset used for normal alpha blending.
+MTL_BLEND_FACTOR_SRC_ALPHA       :u64: 4;
+MTL_BLEND_FACTOR_ONE_MINUS_SRC_A :u64: 5;
+
+// CGSize is a 2-element f64 HFA. arm64 Apple ABI puts it in d0,d1 — direct
+// fn-pointer cast on objc_msgSend with a CGSize arg does the right thing.
+CGSize :: struct { width: f64; height: f64; }
+
+// MTLClearColor is a 4-element f64 HFA. Same ABI story — passes in d0..d3.
+MTLClearColor :: struct {
+    red:   f64;
+    green: f64;
+    blue:  f64;
+    alpha: f64;
+}
+
+// MTLOrigin / MTLSize / MTLRegion / MTLScissorRect — integer aggregates.
+// MTLRegion is 48 bytes and MTLScissorRect is 32 bytes; both are passed
+// by value to the Obj-C runtime, which the compiler marshals as
+// `ptr byval(<T>)` via the C-ABI byval coercion. The fn-pointer cast
+// must spell `abi(.c)` so the indirect call applies that coercion.
+MTLOrigin :: struct { x: u64; y: u64; z: u64; }
+MTLSize   :: struct { width: u64; height: u64; depth: u64; }
+MTLRegion :: struct { origin: MTLOrigin; size: MTLSize; }
+MTLScissorRect :: struct { x: u64; y: u64; width: u64; height: u64; }
+
+// Pixel sub-format storage for textures. Tracks the bytes-per-pixel for the
+// upload path (replaceRegion needs bytesPerRow which is bpp × width).
+TextureSlot :: struct {
+    tex: *void = null;
+    bytes_per_pixel: u32 = 0;
+}
+
+MetalGPU :: struct {
+    device:  *void = null;     // id<MTLDevice>
+    queue:   *void = null;     // id<MTLCommandQueue>
+    layer:   *void = null;     // CAMetalLayer*
+    pixel_w: i32   = 0;
+    pixel_h: i32   = 0;
+
+    // Per-frame transients. Live only between begin_frame and end_frame.
+    drawable:   *void = null;  // id<CAMetalDrawable>
+    cmd_buffer: *void = null;  // id<MTLCommandBuffer>
+    encoder:    *void = null;  // id<MTLRenderCommandEncoder>
+
+    // Resource tables. Handles are 1-based indices (0 = invalid).
+    shaders:  List(*void)       = .{};  // MTLRenderPipelineState*
+    buffers:  List(*void)       = .{};  // MTLBuffer*
+    textures: List(TextureSlot) = .{};
+
+    // Captured at init() so resource creation always grows the cache lists
+    // through the long-lived allocator, even when the caller is currently
+    // inside a transient arena context (e.g. glyph atlas grow during render).
+    parent_allocator: Allocator = .{};
+}
+
+impl GPU for MetalGPU {
+    // Two-phase init: callers can `init(null, 0, 0)` first to allocate
+    // device + queue eagerly (lets the UI pipeline compile shaders before
+    // UIKit hands us a layer), then re-call `init(layer, w, h)` once the
+    // CAMetalLayer is available. The second call only updates the layer
+    // ref + dims; device/queue are preserved.
+    init :: (self: *MetalGPU, target: *void, pixel_w: i32, pixel_h: i32) -> bool {
+        inline if OS != .ios { return false; }
+        if target != null {
+            self.layer   = target;
+            self.pixel_w = pixel_w;
+            self.pixel_h = pixel_h;
+        }
+        self.parent_allocator = context.allocator;
+        metal_init_ios(self)
+    }
+
+    shutdown :: (self: *MetalGPU) {
+        // Metal objects clean up at process exit on iOS. A real shutdown
+        // would send `release` to queue + device.
+    }
+
+    resize :: (self: *MetalGPU, pixel_w: i32, pixel_h: i32) {
+        self.pixel_w = pixel_w;
+        self.pixel_h = pixel_h;
+        inline if OS == .ios {
+            metal_resize_ios(self);
+        }
+    }
+
+    begin_frame :: (self: *MetalGPU, clear: ClearColor) -> bool {
+        inline if OS != .ios { return false; }
+        metal_begin_frame_ios(self, clear)
+    }
+
+    end_frame :: (self: *MetalGPU, target_time: f64) {
+        inline if OS == .ios {
+            metal_end_frame_ios(self, target_time);
+        }
+    }
+
+    // ── Resources ────────────────────────────────────────────────────────
+    // Handle = 1-based index into the backing List (0 = invalid). The bulk
+    // of each method lives in an iOS-only helper for readability — the impl
+    // method just guards non-iOS and delegates.
+
+    create_shader :: (self: *MetalGPU, vsrc: string, fsrc: string) -> ShaderHandle {
+        inline if OS != .ios { return 0; }
+        metal_create_shader_ios(self, vsrc)
+    }
+
+    create_buffer :: (self: *MetalGPU, size_bytes: i64) -> BufferHandle {
+        inline if OS != .ios { return 0; }
+        metal_create_buffer_ios(self, size_bytes)
+    }
+
+    update_buffer :: (self: *MetalGPU, buf: BufferHandle, data: *void, size_bytes: i64) {
+        inline if OS == .ios {
+            metal_update_buffer_ios(self, buf, data, size_bytes);
+        }
+    }
+
+    update_buffer_at :: (self: *MetalGPU, buf: BufferHandle, data: *void, size_bytes: i64, byte_offset: i64) {
+        inline if OS == .ios {
+            metal_update_buffer_at_ios(self, buf, data, size_bytes, byte_offset);
+        }
+    }
+
+    create_texture :: (self: *MetalGPU, w: i32, h: i32, format: TextureFormat, pixels: *void) -> TextureHandle {
+        inline if OS != .ios { return 0; }
+        metal_create_texture_ios(self, w, h, format, pixels)
+    }
+
+    update_texture_region :: (self: *MetalGPU, tex: TextureHandle, x: i32, y: i32, w: i32, h: i32, pixels: *void) {
+        inline if OS == .ios {
+            metal_update_texture_region_ios(self, tex, x, y, w, h, pixels);
+        }
+    }
+
+    destroy_shader :: (self: *MetalGPU, sh: ShaderHandle) {
+        inline if OS == .ios {
+            metal_destroy_shader_ios(self, sh);
+        }
+    }
+
+    destroy_buffer :: (self: *MetalGPU, buf: BufferHandle) {
+        inline if OS == .ios {
+            metal_destroy_buffer_ios(self, buf);
+        }
+    }
+
+    destroy_texture :: (self: *MetalGPU, tex: TextureHandle) {
+        inline if OS == .ios {
+            metal_destroy_texture_ios(self, tex);
+        }
+    }
+
+    // ── Per-draw state ───────────────────────────────────────────────────
+    // All operate on `self.encoder`, which is live only between begin_frame
+    // and end_frame. Calling these outside that window is a silent no-op.
+
+    set_shader :: (self: *MetalGPU, sh: ShaderHandle) {
+        inline if OS == .ios {
+            metal_set_shader_ios(self, sh);
+        }
+    }
+
+    set_vertex_buffer :: (self: *MetalGPU, buf: BufferHandle) {
+        inline if OS == .ios {
+            metal_set_vertex_buffer_ios(self, buf);
+        }
+    }
+
+    set_texture :: (self: *MetalGPU, slot: u32, tex: TextureHandle) {
+        inline if OS == .ios {
+            metal_set_texture_ios(self, slot, tex);
+        }
+    }
+
+    set_vertex_constants :: (self: *MetalGPU, slot: u32, data: *void, size_bytes: i64) {
+        inline if OS == .ios {
+            metal_set_vertex_constants_ios(self, slot, data, size_bytes);
+        }
+    }
+
+    set_scissor :: (self: *MetalGPU, x: i32, y: i32, w: i32, h: i32) {
+        inline if OS == .ios {
+            metal_set_scissor_ios(self, x, y, w, h);
+        }
+    }
+
+    disable_scissor :: (self: *MetalGPU) {
+        inline if OS == .ios {
+            metal_disable_scissor_ios(self);
+        }
+    }
+
+    draw_triangles :: (self: *MetalGPU, vertex_offset: i32, vertex_count: i32) {
+        inline if OS == .ios {
+            metal_draw_triangles_ios(self, vertex_offset, vertex_count);
+        }
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// iOS-only helpers — only reachable from `inline if OS == .ios` call sites,
+// so non-iOS builds never reference the unresolved Metal symbols below.
+// ───────────────────────────────────────────────────────────────────────────
+
+// init() may be called twice: once with target==null to create device +
+// queue eagerly (so the UI pipeline can compile shaders before UIKit
+// has a layer for us), then again with target=CAMetalLayer once
+// `-[SxAppDelegate didFinishLaunching:]` has installed the view.
+// Both calls go through this helper; it's idempotent on the device/queue
+// and only touches the layer when one's been supplied.
+metal_init_ios :: (self: *MetalGPU) -> bool {
+    inline if OS != .ios { return false; }
+
+    if self.device == null {
+        self.device = MTLCreateSystemDefaultDevice();
+        if self.device == null { return false; }
+    }
+
+    msg_oo    : (*void, *void, *void)  -> void abi(.c)  = xx objc_msgSend;
+    msg_ou    : (*void, *void, u64)    -> void abi(.c)  = xx objc_msgSend;
+    msg_ob    : (*void, *void, u8)     -> void abi(.c)  = xx objc_msgSend;
+    msg_osize : (*void, *void, CGSize) -> void abi(.c)  = xx objc_msgSend;
+    msg_o     : (*void, *void)         -> *void abi(.c) = xx objc_msgSend;
+
+    if self.queue == null {
+        self.queue = msg_o(self.device, sel_registerName("newCommandQueue".ptr));
+        if self.queue == null { return false; }
+    }
+
+    if self.layer != null {
+        msg_oo(self.layer, sel_registerName("setDevice:".ptr), self.device);
+        msg_ou(self.layer, sel_registerName("setPixelFormat:".ptr), MTL_PIXEL_FORMAT_BGRA8_UNORM);
+        msg_ob(self.layer, sel_registerName("setFramebufferOnly:".ptr), 1);
+
+        // setDrawableSize:(0,0) makes nextDrawable abort via XPC. Skip the
+        // size set when dims are not yet known — the layer's drawableSize
+        // defaults to its bounds×contentsScale until we override it, which
+        // also lets the first frame render at the natural backing size.
+        if self.pixel_w > 0 and self.pixel_h > 0 {
+            size := CGSize.{ width = xx self.pixel_w, height = xx self.pixel_h };
+            msg_osize(self.layer, sel_registerName("setDrawableSize:".ptr), size);
+        }
+    }
+
+    true
+}
+
+metal_resize_ios :: (self: *MetalGPU) {
+    inline if OS != .ios { return; }
+    if self.layer == null { return; }
+
+    msg_osize : (*void, *void, CGSize) -> void abi(.c) = xx objc_msgSend;
+    size := CGSize.{ width = xx self.pixel_w, height = xx self.pixel_h };
+    msg_osize(self.layer, sel_registerName("setDrawableSize:".ptr), size);
+}
+
+metal_begin_frame_ios :: (self: *MetalGPU, clear: ClearColor) -> bool {
+    inline if OS != .ios { return false; }
+    if self.layer == null { return false; }
+    if self.queue == null { return false; }
+    if self.pixel_w <= 0 or self.pixel_h <= 0 { return false; }
+
+    msg_o      : (*void, *void)                -> *void abi(.c) = xx objc_msgSend;
+    msg_oo     : (*void, *void, *void)         -> void abi(.c)  = xx objc_msgSend;
+    msg_oo_ret : (*void, *void, *void)         -> *void abi(.c) = xx objc_msgSend;
+    msg_ou     : (*void, *void, u64)           -> void abi(.c)  = xx objc_msgSend;
+    msg_ouret  : (*void, *void, u64)           -> *void abi(.c) = xx objc_msgSend;
+    msg_oclear : (*void, *void, MTLClearColor) -> void abi(.c)  = xx objc_msgSend;
+
+    // drawable = [layer nextDrawable]
+    self.drawable = msg_o(self.layer, sel_registerName("nextDrawable".ptr));
+    if self.drawable == null { return false; }
+
+    // tex = [drawable texture]
+    drawable_texture := msg_o(self.drawable, sel_registerName("texture".ptr));
+
+    // pass = [MTLRenderPassDescriptor renderPassDescriptor]  (autoreleased)
+    MTLRenderPassDescriptor := objc_getClass("MTLRenderPassDescriptor".ptr);
+    pass := msg_o(MTLRenderPassDescriptor, sel_registerName("renderPassDescriptor".ptr));
+
+    // color0 = pass.colorAttachments[0]
+    attachments := msg_o(pass, sel_registerName("colorAttachments".ptr));
+    color0 := msg_ouret(attachments, sel_registerName("objectAtIndexedSubscript:".ptr), 0);
+
+    msg_oo(color0, sel_registerName("setTexture:".ptr), drawable_texture);
+    msg_ou(color0, sel_registerName("setLoadAction:".ptr), MTL_LOAD_ACTION_CLEAR);
+    msg_ou(color0, sel_registerName("setStoreAction:".ptr), MTL_STORE_ACTION_STORE);
+
+    mtl_clear := MTLClearColor.{
+        red   = xx clear.r,
+        green = xx clear.g,
+        blue  = xx clear.b,
+        alpha = xx clear.a,
+    };
+    msg_oclear(color0, sel_registerName("setClearColor:".ptr), mtl_clear);
+
+    // cmd = [queue commandBuffer]  (autoreleased)
+    self.cmd_buffer = msg_o(self.queue, sel_registerName("commandBuffer".ptr));
+    if self.cmd_buffer == null { self.drawable = null; return false; }
+
+    // encoder = [cmd renderCommandEncoderWithDescriptor:pass]  (autoreleased)
+    self.encoder = msg_oo_ret(self.cmd_buffer,
+        sel_registerName("renderCommandEncoderWithDescriptor:".ptr), pass);
+    if self.encoder == null { self.cmd_buffer = null; self.drawable = null; return false; }
+
+    true
+}
+
+metal_end_frame_ios :: (self: *MetalGPU, target_time: f64) {
+    inline if OS != .ios { return; }
+    if self.encoder == null { return; }
+    if self.cmd_buffer == null { return; }
+    if self.drawable == null { return; }
+
+    msg_v   : (*void, *void)             -> void abi(.c) = xx objc_msgSend;
+    msg_oo  : (*void, *void, *void)      -> void abi(.c) = xx objc_msgSend;
+    msg_ood : (*void, *void, *void, f64) -> void abi(.c) = xx objc_msgSend;
+
+    msg_v(self.encoder, sel_registerName("endEncoding".ptr));
+
+    // target_time > 0 → presentDrawable:atTime: (lockstep path).
+    // target_time == 0 → fall back to presentDrawable: (immediate).
+    if target_time > 0.0 {
+        msg_ood(self.cmd_buffer, sel_registerName("presentDrawable:atTime:".ptr),
+            self.drawable, target_time);
+    } else {
+        msg_oo(self.cmd_buffer, sel_registerName("presentDrawable:".ptr), self.drawable);
+    }
+
+    msg_v(self.cmd_buffer, sel_registerName("commit".ptr));
+
+    self.encoder    = null;
+    self.cmd_buffer = null;
+    self.drawable   = null;
+}
+
+// ── Shader (MSL pipeline state) ──────────────────────────────────────────
+// Compile the MSL source, look up the conventional entry points `vmain`
+// (vertex) and `fmain` (fragment), and produce an `MTLRenderPipelineState`
+// targeted at the layer's BGRA8 surface with standard alpha blending.
+// The fsrc parameter is ignored — Metal's library is one MSL file with
+// both functions; pass the combined source as vsrc.
+
+metal_create_shader_ios :: (self: *MetalGPU, src: string) -> u32 {
+    inline if OS != .ios { return 0; }
+    if self.device == null { return 0; }
+
+    msg_o    : (*void, *void)               -> *void abi(.c) = xx objc_msgSend;
+    msg_oo   : (*void, *void, *void)        -> void abi(.c)  = xx objc_msgSend;
+    msg_oo_r : (*void, *void, *NSString)    -> *void abi(.c) = xx objc_msgSend;
+    msg_ou   : (*void, *void, u64)          -> void abi(.c)  = xx objc_msgSend;
+    msg_ouret: (*void, *void, u64)          -> *void abi(.c) = xx objc_msgSend;
+    msg_ob   : (*void, *void, u8)           -> void abi(.c)  = xx objc_msgSend;
+
+    // [device newLibraryWithSource:src options:nil error:&err]
+    msg_lib : (*void, *void, *NSString, *void, **void) -> *void abi(.c) = xx objc_msgSend;
+    err : *void = null;
+    library := msg_lib(self.device,
+        sel_registerName("newLibraryWithSource:options:error:".ptr),
+        xx src, xx 0, @err);
+    if library == null {
+        NSLog(xx "[metal] MSL compile failed\n");
+        return 0;
+    }
+
+    vfn := msg_oo_r(library, sel_registerName("newFunctionWithName:".ptr),
+        xx "vmain");
+    ffn := msg_oo_r(library, sel_registerName("newFunctionWithName:".ptr),
+        xx "fmain");
+    if vfn == null { NSLog(xx "[metal] missing vmain in MSL\n"); return 0; }
+    if ffn == null { NSLog(xx "[metal] missing fmain in MSL\n"); return 0; }
+
+    MTLRenderPipelineDescriptor := objc_getClass("MTLRenderPipelineDescriptor".ptr);
+    desc := msg_o(MTLRenderPipelineDescriptor, sel_registerName("alloc".ptr));
+    desc = msg_o(desc, sel_registerName("init".ptr));
+
+    msg_oo(desc, sel_registerName("setVertexFunction:".ptr), vfn);
+    msg_oo(desc, sel_registerName("setFragmentFunction:".ptr), ffn);
+
+    // colorAttachments[0]: pixel format + alpha blending.
+    atts := msg_o(desc, sel_registerName("colorAttachments".ptr));
+    att0 := msg_ouret(atts, sel_registerName("objectAtIndexedSubscript:".ptr), 0);
+    msg_ou(att0, sel_registerName("setPixelFormat:".ptr), MTL_PIXEL_FORMAT_BGRA8_UNORM);
+    msg_ob(att0, sel_registerName("setBlendingEnabled:".ptr), 1);
+    msg_ou(att0, sel_registerName("setSourceRGBBlendFactor:".ptr), MTL_BLEND_FACTOR_SRC_ALPHA);
+    msg_ou(att0, sel_registerName("setDestinationRGBBlendFactor:".ptr), MTL_BLEND_FACTOR_ONE_MINUS_SRC_A);
+    msg_ou(att0, sel_registerName("setSourceAlphaBlendFactor:".ptr), MTL_BLEND_FACTOR_SRC_ALPHA);
+    msg_ou(att0, sel_registerName("setDestinationAlphaBlendFactor:".ptr), MTL_BLEND_FACTOR_ONE_MINUS_SRC_A);
+
+    msg_pipe : (*void, *void, *void, **void) -> *void abi(.c) = xx objc_msgSend;
+    err2 : *void = null;
+    state := msg_pipe(self.device,
+        sel_registerName("newRenderPipelineStateWithDescriptor:error:".ptr),
+        desc, @err2);
+    if state == null {
+        NSLog(xx "[metal] pipeline state creation failed\n");
+        return 0;
+    }
+
+    self.shaders.append(state, self.parent_allocator);
+    xx self.shaders.len
+}
+
+// ── Buffers ──────────────────────────────────────────────────────────────
+// Shared-memory MTLBuffer (CPU + GPU visible on UMA hardware). `contents`
+// returns the mapped pointer for c.memcpy uploads.
+
+metal_create_buffer_ios :: (self: *MetalGPU, size_bytes: i64) -> u32 {
+    inline if OS != .ios { return 0; }
+    if self.device == null { return 0; }
+    if size_bytes <= 0 { return 0; }
+
+    // MTLResourceStorageModeShared is the default (option value 0).
+    msg_buf : (*void, *void, u64, u64) -> *void abi(.c) = xx objc_msgSend;
+    buf := msg_buf(self.device,
+        sel_registerName("newBufferWithLength:options:".ptr),
+        xx size_bytes, 0);
+    if buf == null { return 0; }
+
+    self.buffers.append(buf, self.parent_allocator);
+    xx self.buffers.len
+}
+
+metal_update_buffer_ios :: (self: *MetalGPU, handle: u32, data: *void, size_bytes: i64) {
+    inline if OS != .ios { return; }
+    buf := metal_lookup_buffer(self, handle);
+    if buf == null { return; }
+    if data == null { return; }
+    if size_bytes <= 0 { return; }
+
+    msg_o : (*void, *void) -> *void abi(.c) = xx objc_msgSend;
+    dst := msg_o(buf, sel_registerName("contents".ptr));
+    if dst == null { return; }
+    c.memcpy(dst, data, size_bytes);
+}
+
+metal_update_buffer_at_ios :: (self: *MetalGPU, handle: u32, data: *void, size_bytes: i64, byte_offset: i64) {
+    inline if OS != .ios { return; }
+    buf := metal_lookup_buffer(self, handle);
+    if buf == null { return; }
+    if data == null { return; }
+    if size_bytes <= 0 { return; }
+    if byte_offset < 0 { return; }
+
+    msg_o : (*void, *void) -> *void abi(.c) = xx objc_msgSend;
+    base := msg_o(buf, sel_registerName("contents".ptr));
+    if base == null { return; }
+    // Add byte_offset via integer arithmetic — `@dst[i]` on `[*]u8`
+    // already does this, but we keep this form explicit so a future
+    // pointer-arithmetic regression here can't hide.
+    base_i : i64 = xx base;
+    dst_at : *void = xx (base_i + byte_offset);
+    c.memcpy(dst_at, data, size_bytes);
+}
+
+metal_lookup_buffer :: (self: *MetalGPU, handle: u32) -> *void {
+    inline if OS != .ios { return null; }
+    if handle == 0 { return null; }
+    h64 : i64 = xx handle;
+    if h64 > self.buffers.len { return null; }
+    self.buffers.items[handle - 1]
+}
+
+metal_lookup_shader :: (self: *MetalGPU, handle: u32) -> *void {
+    inline if OS != .ios { return null; }
+    if handle == 0 { return null; }
+    h64 : i64 = xx handle;
+    if h64 > self.shaders.len { return null; }
+    self.shaders.items[handle - 1]
+}
+
+// ── Textures ─────────────────────────────────────────────────────────────
+
+metal_create_texture_ios :: (self: *MetalGPU, w: i32, h: i32, format: TextureFormat, pixels: *void) -> u32 {
+    inline if OS != .ios { return 0; }
+    if self.device == null { return 0; }
+    if w <= 0 { return 0; }
+    if h <= 0 { return 0; }
+
+    pixel_format : u64 = 0;
+    bytes_per_pixel : u32 = 0;
+    if format == .rgba8 {
+        pixel_format = MTL_PIXEL_FORMAT_RGBA8_UNORM;
+        bytes_per_pixel = 4;
+    } else {
+        pixel_format = MTL_PIXEL_FORMAT_R8_UNORM;
+        bytes_per_pixel = 1;
+    }
+
+    // [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:width:height:mipmapped:]
+    MTLTextureDescriptor := objc_getClass("MTLTextureDescriptor".ptr);
+    msg_desc : (*void, *void, u64, u64, u64, u8) -> *void abi(.c) = xx objc_msgSend;
+    desc := msg_desc(MTLTextureDescriptor,
+        sel_registerName("texture2DDescriptorWithPixelFormat:width:height:mipmapped:".ptr),
+        pixel_format, xx w, xx h, 0);
+    if desc == null { return 0; }
+
+    // Force shared storage so the CPU can keep writing pixels (atlas updates,
+    // sprite uploads). On iOS-sim under Apple Silicon the convenience class
+    // method's default storage isn't reliably shared for every format.
+    msg_ou_void : (*void, *void, u64) -> void abi(.c) = xx objc_msgSend;
+    msg_ou_void(desc, sel_registerName("setStorageMode:".ptr), MTL_STORAGE_MODE_SHARED);
+
+    msg_oo : (*void, *void, *void) -> *void abi(.c) = xx objc_msgSend;
+    tex := msg_oo(self.device, sel_registerName("newTextureWithDescriptor:".ptr), desc);
+    if tex == null { return 0; }
+
+    slot : TextureSlot = .{ tex = tex, bytes_per_pixel = bytes_per_pixel };
+    self.textures.append(slot, self.parent_allocator);
+
+    if pixels != null {
+        handle : u32 = xx self.textures.len;
+        metal_update_texture_region_ios(self, handle, 0, 0, w, h, pixels);
+    }
+
+    xx self.textures.len
+}
+
+metal_update_texture_region_ios :: (self: *MetalGPU, handle: u32, x: i32, y: i32, w: i32, h: i32, pixels: *void) {
+    inline if OS != .ios { return; }
+    if handle == 0 { return; }
+    h64 : i64 = xx handle;
+    if h64 > self.textures.len { return; }
+    slot := self.textures.items[handle - 1];
+    if slot.tex == null { return; }
+    if pixels == null { return; }
+    if w <= 0 { return; }
+    if h <= 0 { return; }
+
+    region : MTLRegion = .{
+        origin = .{ x = xx x, y = xx y, z = 0 },
+        size   = .{ width = xx w, height = xx h, depth = 1 },
+    };
+    bytes_per_row : u64 = xx (slot.bytes_per_pixel * w.(u32));
+
+    // [tex replaceRegion:region mipmapLevel:0 withBytes:pixels bytesPerRow:bytes_per_row]
+    msg_replace : (*void, *void, MTLRegion, u64, *void, u64) -> void abi(.c) = xx objc_msgSend;
+    msg_replace(slot.tex,
+        sel_registerName("replaceRegion:mipmapLevel:withBytes:bytesPerRow:".ptr),
+        region, 0, pixels, bytes_per_row);
+}
+
+// ── Destroy ──────────────────────────────────────────────────────────────
+// `release` on a Metal object whose retain count reaches zero deallocates
+// it. Our resource Lists hold the only strong reference (Metal returns
+// retained-+1 objects from `new*` and our `append` doesn't retain), so a
+// single `release` is correct. Slots are null'd so a subsequent lookup
+// short-circuits; the List length doesn't shrink (would break later
+// handle->index mapping).
+
+metal_destroy_shader_ios :: (self: *MetalGPU, handle: u32) {
+    inline if OS != .ios { return; }
+    if handle == 0 { return; }
+    h64 : i64 = xx handle;
+    if h64 > self.shaders.len { return; }
+    obj := self.shaders.items[handle - 1];
+    if obj == null { return; }
+    msg : (*void, *void) -> void abi(.c) = xx objc_msgSend;
+    msg(obj, sel_registerName("release".ptr));
+    self.shaders.items[handle - 1] = null;
+}
+
+metal_destroy_buffer_ios :: (self: *MetalGPU, handle: u32) {
+    inline if OS != .ios { return; }
+    if handle == 0 { return; }
+    h64 : i64 = xx handle;
+    if h64 > self.buffers.len { return; }
+    obj := self.buffers.items[handle - 1];
+    if obj == null { return; }
+    msg : (*void, *void) -> void abi(.c) = xx objc_msgSend;
+    msg(obj, sel_registerName("release".ptr));
+    self.buffers.items[handle - 1] = null;
+}
+
+metal_destroy_texture_ios :: (self: *MetalGPU, handle: u32) {
+    inline if OS != .ios { return; }
+    if handle == 0 { return; }
+    h64 : i64 = xx handle;
+    if h64 > self.textures.len { return; }
+    obj := self.textures.items[handle - 1].tex;
+    if obj == null { return; }
+    msg : (*void, *void) -> void abi(.c) = xx objc_msgSend;
+    msg(obj, sel_registerName("release".ptr));
+    self.textures.items[handle - 1].tex = null;
+    self.textures.items[handle - 1].bytes_per_pixel = 0;
+}
+
+// ── Per-draw state ───────────────────────────────────────────────────────
+
+metal_set_shader_ios :: (self: *MetalGPU, sh: u32) {
+    inline if OS != .ios { return; }
+    if self.encoder == null { return; }
+    state := metal_lookup_shader(self, sh);
+    if state == null { return; }
+    msg : (*void, *void, *void) -> void abi(.c) = xx objc_msgSend;
+    msg(self.encoder, sel_registerName("setRenderPipelineState:".ptr), state);
+}
+
+metal_set_vertex_buffer_ios :: (self: *MetalGPU, h: u32) {
+    inline if OS != .ios { return; }
+    if self.encoder == null { return; }
+    buf := metal_lookup_buffer(self, h);
+    if buf == null { return; }
+    // [encoder setVertexBuffer:buf offset:0 atIndex:0]
+    msg : (*void, *void, *void, u64, u64) -> void abi(.c) = xx objc_msgSend;
+    msg(self.encoder, sel_registerName("setVertexBuffer:offset:atIndex:".ptr), buf, 0, 0);
+}
+
+metal_set_texture_ios :: (self: *MetalGPU, slot: u32, h: u32) {
+    inline if OS != .ios { return; }
+    if self.encoder == null { return; }
+    if h == 0 { return; }
+    h64 : i64 = xx h;
+    if h64 > self.textures.len { return; }
+    tex := self.textures.items[h - 1].tex;
+    if tex == null { return; }
+    // [encoder setFragmentTexture:tex atIndex:slot]
+    msg : (*void, *void, *void, u64) -> void abi(.c) = xx objc_msgSend;
+    msg(self.encoder, sel_registerName("setFragmentTexture:atIndex:".ptr), tex, xx slot);
+}
+
+metal_set_vertex_constants_ios :: (self: *MetalGPU, slot: u32, data: *void, size_bytes: i64) {
+    inline if OS != .ios { return; }
+    if self.encoder == null { return; }
+    if data == null { return; }
+    if size_bytes <= 0 { return; }
+    // [encoder setVertexBytes:data length:size_bytes atIndex:slot]
+    msg : (*void, *void, *void, u64, u64) -> void abi(.c) = xx objc_msgSend;
+    msg(self.encoder, sel_registerName("setVertexBytes:length:atIndex:".ptr),
+        data, xx size_bytes, xx slot);
+}
+
+metal_set_scissor_ios :: (self: *MetalGPU, x: i32, y: i32, w: i32, h: i32) {
+    inline if OS != .ios { return; }
+    if self.encoder == null { return; }
+    rect : MTLScissorRect = .{ x = xx x, y = xx y, width = xx w, height = xx h };
+    // [encoder setScissorRect:rect]  (MTLScissorRect is 32 bytes → ptr byval)
+    msg : (*void, *void, MTLScissorRect) -> void abi(.c) = xx objc_msgSend;
+    msg(self.encoder, sel_registerName("setScissorRect:".ptr), rect);
+}
+
+metal_disable_scissor_ios :: (self: *MetalGPU) {
+    inline if OS != .ios { return; }
+    if self.encoder == null { return; }
+    // Metal has no "disable scissor" — set the rect to cover the full
+    // drawable so subsequent draws aren't clipped.
+    rect : MTLScissorRect = .{ x = 0, y = 0, width = xx self.pixel_w, height = xx self.pixel_h };
+    msg : (*void, *void, MTLScissorRect) -> void abi(.c) = xx objc_msgSend;
+    msg(self.encoder, sel_registerName("setScissorRect:".ptr), rect);
+}
+
+metal_draw_triangles_ios :: (self: *MetalGPU, vertex_offset: i32, vertex_count: i32) {
+    inline if OS != .ios { return; }
+    if self.encoder == null { return; }
+    if vertex_count <= 0 { return; }
+    // [encoder drawPrimitives:.triangle vertexStart:offset vertexCount:count]
+    msg : (*void, *void, u64, u64, u64) -> void abi(.c) = xx objc_msgSend;
+    msg(self.encoder, sel_registerName("drawPrimitives:vertexStart:vertexCount:".ptr),
+        MTL_PRIMITIVE_TYPE_TRIANGLE, xx vertex_offset, xx vertex_count);
+}

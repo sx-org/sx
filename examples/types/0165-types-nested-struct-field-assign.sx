@@ -1,0 +1,21 @@
+// Writing through a nested struct field lvalue (`outer.inner.x = v`) and taking
+// the address of a valid field both resolve the field pointer correctly: the
+// lvalue-pointer path (lowerExprAsPtr) GEPs the matched field, never a silent
+// field-0 default. Positive companion to the missing-field diagnostic (1145).
+#import "modules/std.sx";
+
+Inner :: struct { a: i64; b: i64; }
+Outer :: struct { inner: Inner; tag: i64; }
+
+bump :: (p: *i64) { p.* = p.* + 100; }
+
+main :: () {
+    o := Outer.{ inner = Inner.{ a = 1, b = 2 }, tag = 9 };
+    o.inner.a = 11;          // nested struct field store via lowerExprAsPtr
+    o.inner.b = 22;
+    o.tag = 33;              // direct struct field store
+    print("a={} b={} tag={}\n", o.inner.a, o.inner.b, o.tag);
+
+    bump(@o.inner.a);        // address-of a matched nested field
+    print("a2={}\n", o.inner.a);
+}

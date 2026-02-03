@@ -1,0 +1,9 @@
+i32 41
+i32 7
+sum 7
+guard 9: 9
+guard null: -1
+guard2: 11
+guard2 null: 0
+i32 100
+i32 200

@@ -1,0 +1,16 @@
+// A value binding spelled as a reserved type name (`i2`, the `sN` arbitrary-
+// width int syntax) is rejected at its declaration site even when it lives in
+// an IMPORTED module — the reserved-name binding diagnostic covers every
+// compiled module, not just the main file. Without universal coverage the
+// binding reaches lowering and aborts LLVM verification (a loaded aggregate
+// passed by value to a `*Box` param).
+//
+// Regression (issue 0077): the imported-module facet of issue 0076. Expected:
+// one clean diagnostic pointing at the imported module's `i2 := ...`, exit 1 —
+// NOT an LLVM verifier abort.
+#import "modules/std.sx";
+mod :: #import "1120-diagnostics-imported-reserved-type-name/mod.sx";
+
+main :: () -> i32 {
+    return mod.run_imported_reserved_name();
+}

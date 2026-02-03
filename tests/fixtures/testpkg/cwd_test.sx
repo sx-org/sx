@@ -1,0 +1,4 @@
+// This file lives in tests/fixtures/testpkg/ and imports std via the stdlib search path.
+#import "modules/std.sx";
+
+cwd_greet :: () -> string { format("cwd-import-ok") }

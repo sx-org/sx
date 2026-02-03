@@ -1,0 +1,4 @@
+// The second flat-imported author of a same-name `IoErr` error set. A separate
+// nominal identity from a.sx's `IoErr`, so each bare reference is a real collision
+// the importing source cannot disambiguate.
+IoErr :: error { Disk, Net }

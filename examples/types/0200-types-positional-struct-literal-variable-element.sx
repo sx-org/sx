@@ -1,0 +1,63 @@
+// A positional struct literal `S.{ x, ... }` whose first element is a bare
+// VARIABLE reference stores the variable's value, not zero.
+//
+// Regression (issue 0175): the parser PUNS a leading bare identifier into a
+// named field `x = x` (the `Vec4.{ w, z }` shorthand), because it can't tell —
+// without the struct definition — whether `x` names a field or is a positional
+// value. A genuinely positional `.{ x, 2 }` (x not a field) arrived as a
+// spurious mixed named/positional literal and the named branch left every real
+// field at its default (`0 0`). Lowering now reclassifies a punned name that
+// does NOT match any field as positional, and coerces positional elements from
+// the lowered value's actual type.
+#import "modules/std.sx";
+
+P :: struct { a: i64 = 0; b: i64 = 0; }
+Q :: struct { a: i64 = 0; b: f64 = 0.0; }
+Inner :: struct { v: i64 = 0; }
+Outer :: struct { inner: Inner; tag: i64 = 0; }
+
+foo :: () -> i64 { return 9; }
+
+main :: () {
+    x := 5;
+
+    // Positional, variable first element (the core repro).
+    p : P = .{ x, 2 };
+    print("{} {}\n", p.a, p.b);                // 5 2
+
+    // Mixed variable + expression elements.
+    m : P = .{ x, x + 10 };
+    print("{} {}\n", m.a, m.b);                // 5 15
+
+    // i32 variable -> i64 field coercion.
+    y : i32 = 7;
+    c : P = .{ y, 2 };
+    print("{} {}\n", c.a, c.b);                // 7 2
+
+    // int -> float field coercion (positional).
+    q : Q = .{ 3, 2 };
+    print("{} {}\n", q.a, q.b);                // 3 2.000000
+
+    // Call-expression element.
+    e : P = .{ foo(), 1 };
+    print("{} {}\n", e.a, e.b);                // 9 1
+
+    // Genuine shorthand: `a`/`b` ARE fields of P, so punning is correct.
+    a := 11;
+    b := 22;
+    sh : P = .{ a, b };
+    print("{} {}\n", sh.a, sh.b);              // 11 22
+
+    // Mixed named + shorthand (spec form): `b = 99, a`.
+    mn : P = .{ b = 99, a };
+    print("{} {}\n", mn.a, mn.b);              // 11 99
+
+    // Nested [N]Struct positional with a variable element.
+    arr : [2]P = .{ .{ x, 2 }, .{ 3, 4 } };
+    print("{} {} {} {}\n", arr[0].a, arr[0].b, arr[1].a, arr[1].b);  // 5 2 3 4
+
+    // Struct-literal-valued positional field (nested untyped literal resolves
+    // against its slot type).
+    o : Outer = .{ .{ v = x }, 9 };
+    print("{} {}\n", o.inner.v, o.tag);        // 5 9
+}

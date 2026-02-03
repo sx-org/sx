@@ -1,0 +1,64 @@
+// Stream B1 (fibers) B1.5a — fiber park/resume via `suspend_self` + `wake`,
+// the off-queue half of the M:1 scheduler that FiberIo [B1.4] builds on.
+//
+// A running fiber that has nothing to do parks itself with `suspend_self`: it
+// leaves the round-robin queue entirely (unlike `yield_now`, which re-enqueues)
+// and only runs again when another fiber (or an I/O completion) calls `wake` on
+// it. Here fiber A records 10, parks, and is resumed by fiber B to record 11:
+//
+//   A: rec 10, suspend_self ──park──┐
+//   B: rec 20, wake(A), wake(A), rec 21
+//   A: ──resume──> rec 11
+//   → log: 10 20 21 11
+//
+// `wake` is GUARDED on `.suspended`: B's SECOND `wake(A)` is spurious (A is
+// already re-queued by then). An unguarded enqueue would re-link an
+// already-listed node and corrupt the FIFO (segfault); the guard makes a
+// double/spurious/stale wake a safe no-op. `suspended-left: 0` confirms every
+// park was balanced by a wake (an orphaned park would abort the scheduler).
+//
+// aarch64-macOS-pinned (the scheduler's per-arch asm + Apple mmap constants):
+// runs end-to-end on a matching host, ir-only on a mismatch.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+// The shared state both fibers reach through (passed as `*Sh`). `parked` holds
+// the fiber-A handle that B wakes — kept here (rather than a separate
+// `**Fiber`) so the one `*Sh` carries everything the helper fns share.
+Sh :: struct { log: [16]i64; n: i64; parked: *sched.Fiber; }
+rec :: (sh: *Sh, v: i64) { sh.log[sh.n] = v; sh.n = sh.n + 1; }
+
+main :: () -> i64 {
+    sh : Sh = ---; sh.n = 0; sh.parked = null;
+    s := sched.Scheduler.init();
+    ps := @s; psh := @sh;
+
+    // Fiber A: record 10, park, then (after wake) record 11. Store A's handle in
+    // the shared state so B can wake it.
+    mk_a :: (ps: *sched.Scheduler, psh: *Sh) {
+        psh.parked = ps.spawn(() {
+            rec(psh, 10);
+            ps.suspend_self();
+            rec(psh, 11);
+        });
+    }
+    // Fiber B: record 20, wake A (legit) + a spurious second wake (safe no-op),
+    // record 21.
+    mk_b :: (ps: *sched.Scheduler, psh: *Sh) {
+        ps.spawn(() {
+            rec(psh, 20);
+            ps.wake(psh.parked);     // legitimate: A is parked
+            ps.wake(psh.parked);     // spurious: A is now .ready/queued — must no-op
+            rec(psh, 21);
+        });
+    }
+    mk_a(ps, psh);
+    mk_b(ps, psh);
+    s.run();
+
+    print("log:");
+    i := 0; while i < sh.n { print(" {}", sh.log[i]); i = i + 1; }
+    print("\n");
+    print("suspended-left: {}\n", s.n_suspended);
+    return 0;
+}

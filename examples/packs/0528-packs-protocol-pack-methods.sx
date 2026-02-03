@@ -1,0 +1,31 @@
+// Feature 1 — protocol-interface method calls on heterogeneous pack elements.
+//
+// `..xs: Greeter` binds per call shape; each `xs[i]` is the concrete element,
+// and calling the protocol's own method `greet()` on it dispatches to that
+// element's impl. Elements may be DIFFERENT concrete types (Dog, Cat) as long
+// as each conforms to Greeter — this is the protocol-interface access the
+// pack is for. (Protocol method decls omit the implicit `self`; impls list it.)
+
+#import "modules/std.sx";
+
+Greeter :: protocol {
+    greet :: (self: *Self) -> i64;
+}
+
+Dog :: struct { age: i64; }
+Cat :: struct { lives: i64; }
+impl Greeter for Dog { greet :: (self: *Dog) -> i64 => self.age; }
+impl Greeter for Cat { greet :: (self: *Cat) -> i64 => self.lives * 100; }
+
+pair_sum :: (..xs: Greeter) -> i64 {
+    return xs[0].greet() + xs[1].greet();
+}
+
+main :: () -> i32 {
+    d := Dog.{ age = 3 };
+    c := Cat.{ lives = 9 };
+    print("dog+cat={}\n", pair_sum(d, c));   // 3 + 900 = 903 (heterogeneous)
+    print("cat+dog={}\n", pair_sum(c, d));   // 900 + 3 = 903 (order swapped)
+    print("dog+dog={}\n", pair_sum(d, Dog.{ age = 4 })); // 3 + 4 = 7
+    0
+}

@@ -1,0 +1,42 @@
+// Storing a struct field whose own type is a pointer to a two-pointer struct
+// (`*Pair` — the shape `coerceArg` would closure-auto-promote into `{ptr,null}`)
+// must store an 8-byte pointer, never a 16-byte struct that overruns the slot
+// and clobbers the neighbouring field. The shared field-lvalue resolver types
+// the GEP as `*field_ty`, so `emitStore` unwraps exactly one pointer level to
+// the field's own type (`*Pair`, an opaque pointer) instead of the pointee
+// aggregate (`Pair`).
+//
+// Regression (issue 0094, attempt-3 consolidation): the shared `fieldLvaluePtr`
+// resolver used to type struct/tuple GEPs with the bare field value type, so a
+// `*Pair` field stored via the multi-assign / address-of paths promoted the
+// pointer to a 16-byte struct and clobbered the next field (`sentinel` read 0).
+// The single-assign path already used the `*field_ty` convention; folding all
+// three lvalue sites onto the one resolver applies it uniformly.
+
+#import "modules/std.sx";
+
+Pair :: struct { a: *i64; b: *i64; }
+Holder :: struct { pr: *Pair; sentinel: i64; }
+
+main :: () {
+    x : i64 = 7;
+    y : i64 = 9;
+    pair  : Pair = .{ a = @x, b = @y };
+    other : Pair = .{ a = @y, b = @x };
+
+    h : Holder = .{ pr = @pair, sentinel = 99 };
+
+    // single-assign: store a *Pair into h.pr; sentinel must stay 99.
+    h.pr = @other;
+    print("single: a={} b={} sentinel={}\n", h.pr.a.*, h.pr.b.*, h.sentinel);
+
+    // multi-assign: store into h.pr alongside a plain local; sentinel untouched.
+    dummy : i64 = 0;
+    h.pr, dummy = @pair, 1;
+    print("multi: a={} b={} sentinel={}\n", h.pr.a.*, h.pr.b.*, h.sentinel);
+
+    // address-of the *Pair field, store through it; sentinel untouched.
+    ppr := @h.pr;
+    ppr.* = @other;
+    print("addr: a={} b={} sentinel={}\n", h.pr.a.*, h.pr.b.*, h.sentinel);
+}

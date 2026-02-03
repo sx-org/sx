@@ -1,0 +1,203 @@
+=== Tuple Operators ===
+true
+false
+true
+false
+1
+2
+3
+4
+1
+2
+1
+2
+1
+2
+true
+false
+false
+true
+true
+true
+true
+false
+--- directory imports ---
+7
+30
+hello from testpkg
+cwd-import-ok
+--- pipe operator ---
+7
+30
+14
+hello world
+piped ok!
+alloc len: 5
+alloc[0]: 10
+alloc[4]: 50
+bytes len: 3
+--- allocators ---
+gpa allocs: 2
+gpa final: 0
+arena chunks: 1
+arena overflow: 2
+arena a1: 42
+arena a3: 99
+arena reset idx: 0
+arena reset gpa: 1
+arena deinit: 0
+buf pos: 48
+buf overflow: 0
+buf reset: 0
+1 == (1)
+(1) == 1
+1 == 1
+--- optionals ---
+opt x: 42
+opt y: null
+unwrap: 10
+coalesce a: 42
+coalesce b: 99
+chained ?? c: 42
+chained ?? d: 99
+chained ?? e: 0
+if-bind x: 7
+if-bind y: none
+match some: 55
+match none: 0
+wrap pos: 5
+wrap neg: null
+opt field default: null
+opt field set: 42
+opt param a: 42
+opt param b: 0
+opt param 7: 7
+opt reassign: 42.500000
+opt compute assign: 15.000000
+opt re-null: 99.000000
+generic opt 1: 5
+generic opt 2: 7
+generic opt 3: null
+chain some: 10
+chain none: 0
+chain print: 20
+chain null: null
+deep chain 1: 99
+deep chain 2: 0
+narrow x: 42
+narrow y else: null
+narrow else x: 42
+guard some: 42
+guard none: 0
+and both: 10 20
+and one null
+or guard: 7
+or guard null: 0
+nested narrow: 10 20
+guard loop: 3
+block-lambda: 50
+block-lambda: 0
+block-lambda: 100
+hello block
+named-fn-type: 7
+xx-fnptr: 142
+closure-type: fn_ptr-nonnull=true
+closure-type: env-null=true
+closure-call: 15
+auto-promote: 20
+auto-promote-var: 10
+closure-capture: 52
+closure-snapshot: 15
+closure-nocap: 14
+closure-multi: 33
+closure-block: 60
+closure-block: 0
+closure-block: 100
+[LOG] hello
+closure-hof: 30
+closure-hof-bare: 20
+closure-f32: 10.000000
+closure-bool: hello
+closure-2p: 107
+closure-3p: 61
+closure-mix: Alice is 35
+closure-rbool: false true
+closure-reduce: 115
+closure-factory: 105 110
+closure-struct: 10 20
+closure-compose: 30
+closure-indep: 15 50
+opt-closure: none
+opt-closure: 15
+opt-closure-btn: 1 99
+opt-closure-btn: null
+closure-ptr: 3
+closure-enum: 2
+closure-rstr: [INFO] ok
+closure-rstruct: 11 22
+closure-linear: 37
+closure-clamp: 0 100 255
+closure-compose2: 12
+closure-chain: 22
+closure-map: 3 6 9 12 15
+closure-filter: 3 [3 4 5]
+closure-sort: 5 4 3 2 1
+closure-fe: item 0=10
+closure-fe: item 1=20
+closure-fe: item 2=30
+closure-find: 2
+closure-any: false true
+closure-struct-field: -5
+closure-btn: 1 99
+closure-counter: 1 2 3
+closure-acc: 105 115
+closure-loop: 115
+closure-reassign: 11
+closure-reassign: 20
+closure-snapstruct: 15
+closure-cap-promoted: 11
+closure-iife: 15
+closure-toggle: none
+closure-toggle: true
+closure-panel: main 800x600
+closure-chain-call: true
+closure-cond: 10
+closure-form: submitted
+closure-form: no cancel
+closure-null-env: true
+closure-slice: 10 20 30
+closure-arena: 15
+closure-gpa: 17 allocs=0
+closure-opt: 42
+closure-ropt: 50
+closure-ropt: none
+closure-mixed: 10
+closure-mixed: 15
+closure-mixed: 25
+closure-factory-indep: 20 30 40
+closure-deep-chain: 122
+closure-8cap: 36
+closure-4param: 10
+closure-shared-ptr: 7
+closure-f64: true
+closure-zerocap: 49 true
+closure-struct-method: 7
+closure-multi-factory: 10
+closure-multi-factory: 20
+closure-multi-factory: 30
+closure-bool-cap: true false
+closure-as-arg: 142
+closure-strfmt: hello world
+closure-ptr-before: 10
+closure-ptr-after: 42
+closure-neg: -70
+closure-proto-cap: true
+closure-chain-factory: 37
+closure-while-cond: 3
+closure-infer: 7
+closure-infer-arg: 15
+closure-infer-block: 12
+closure-infer-cap: 105
+closure-infer-factory: 35
+closure-infer-compose: 11
+closure-infer-void: 42

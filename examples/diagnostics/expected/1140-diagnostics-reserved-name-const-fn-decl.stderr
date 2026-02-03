@@ -1,0 +1,11 @@
+error: 'i2' is a reserved type name and cannot be used as an identifier
+  --> examples/diagnostics/1140-diagnostics-reserved-name-const-fn-decl.sx:14:1
+   |
+14 | i2 :: 5;
+   | ^^
+
+error: 'u8' is a reserved type name and cannot be used as an identifier
+  --> examples/diagnostics/1140-diagnostics-reserved-name-const-fn-decl.sx:15:1
+   |
+15 | u8 :: (n: i64) -> i64 { return n + 7; }
+   | ^^

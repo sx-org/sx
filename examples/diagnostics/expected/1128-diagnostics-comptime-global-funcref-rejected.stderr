@@ -1,0 +1,1 @@
+error: comptime init of 'fp' produced a reference to function 'add', which cannot be serialized as a static constant (function declarations are not available at global-init time)

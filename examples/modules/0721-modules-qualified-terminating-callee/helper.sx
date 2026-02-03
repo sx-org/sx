@@ -1,0 +1,3 @@
+// Lives in m.sx's OWN flat import — reachable from `foo` but not from the
+// top-level consumer that imports m.sx under a qualified namespace.
+helper :: () -> i64 { return 7; }

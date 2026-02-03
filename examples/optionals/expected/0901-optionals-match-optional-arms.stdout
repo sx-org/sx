@@ -1,0 +1,6 @@
+ok: floating is null
+ok: left h=.leading
+ok: center h=.center
+ok: top_right h=.trailing v=.top
+rect
+text

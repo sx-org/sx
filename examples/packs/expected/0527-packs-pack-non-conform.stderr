@@ -1,0 +1,5 @@
+error: pack argument of type 'Naked' does not conform to protocol 'Show'
+  --> examples/packs/0527-packs-pack-non-conform.sx:22:30
+   |
+22 |     print("{}\n", howmany(a, n));   // `n` does not conform to Show
+   |                              ^

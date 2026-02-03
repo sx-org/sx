@@ -1,0 +1,39 @@
+// G3 — own-wins HALVES for the route-all surfaces 0815 covered only on the
+// ambiguous half. `main` authors its OWN `Box { m }` and flat-imports `dep.sx`
+// (`Box { a }`); each surface below must bind main's OWN `Box`, observed by a
+// `.m` access (disjoint field sets → a wrong-author binding is a hard compile
+// error). Complements 0816 (which covered only the union body-builder child):
+//   - pointer wrapper-alias element   `BoxPtr :: *Box`
+//   - tuple element                   `(Box, i32)`
+//   - enum body-builder child         `WrapE :: enum { V: Box }`
+//   - inline-anonymous union child    `x : union { b: Box }`
+
+#import "modules/std.sx";
+#import "0822-route-all-own-wins-surfaces/dep.sx";
+
+Box :: struct { m: i32; }
+BoxPtr :: *Box;
+WrapE :: enum { V: Box; }
+
+main :: () -> i32 {
+    own : Box = ---;
+    own.m = 10;
+
+    // *Named wrapper-alias element own-wins
+    bp : BoxPtr = @own;
+
+    // tuple element own-wins
+    t : Tuple(Box, i32) = ---;
+    t.0.m = 12;
+
+    // enum body-builder child own-wins (payload must be main's `Box`)
+    we : WrapE = .V(own);
+    ev := we.V.m;
+
+    // inline-anonymous union child own-wins
+    x : union { b: Box; n: i32 } = ---;
+    x.b.m = 13;
+
+    print("bp={} t={} ev={} x={} dep={}\n", bp.m, t.0.m, ev, x.b.m, dep_box());
+    0
+}

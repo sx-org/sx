@@ -1,0 +1,36 @@
+// Value-carrying failable functions (ERR step E2.1a — the producer side of the
+// error-channel tuple ABI). A `-> (T, !E)` function returns EITHER a value OR
+// an error: `return v;` yields the success tuple `{v, 0}` (the compiler appends
+// the no-error slot), and `raise error.X` yields `{undef, tag}` (value slot
+// undefined, error slot = the tag). Today the result is consumed by
+// destructuring `v, err := f()` (which extracts both slots); the value-carrying
+// `try` / `catch` consumers land in E2.1b.
+
+#import "modules/std.sx";
+
+E :: error { Bad, Empty }
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0  { raise error.Bad; }
+    if n == 0 { raise error.Empty; }
+    return n * 10;                       // success → {n*10, 0}
+}
+
+main :: () -> i32 {
+    r : i32 = 0;
+
+    // The value slot is live only where the error is proven absent (ERR E1.8):
+    // read `v1` under an `if !e1` guard, not after a bare tag-compare.
+    v1, e1 := parse(5);                  // success → v1 = 50, e1 = no error
+    if !e1 { r = r + v1; }                // success → +50
+
+    v2, e2 := parse(-1);                 // Bad
+    if e2 == error.Bad   { r = r + 7; }   // true  → +7
+    if e2 == error.Empty { r = r + 200; }  // false
+
+    v3, e3 := parse(0);                  // Empty
+    if e3 == error.Empty { r = r + 3; }   // true  → +3
+
+    print("value-failable result: {}\n", r);   // 50 + 7 + 3 = 60
+    return r;
+}

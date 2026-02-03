@@ -1,0 +1,43 @@
+error: pack 'xs' has no runtime value — a pack is comptime-only and can't be used as a value here
+  --> examples/packs/0536-packs-pack-as-value.sx:14:40
+   |
+14 | storage :: (..xs: Show) -> void { y := xs; _ = y; }          // A: store
+   |                                        ^^
+
+help: to store it, materialize a tuple: `(..xs)`
+   |
+14 | storage :: (..xs: Show) -> void { y := xs; _ = y; }          // A: store
+   |                                        ^^
+
+error: pack 'xs' has no runtime value — a pack is comptime-only and can't be used as a value here
+  --> examples/packs/0536-packs-pack-as-value.sx:15:40
+   |
+15 | call    :: (..xs: Show) -> void { sink(xs); }                // B: pass to a call
+   |                                        ^^
+
+help: materialize a tuple `(..xs)` to store it, or `xx xs` to convert it to an expected `[]any`/`[]P` slice
+   |
+15 | call    :: (..xs: Show) -> void { sink(xs); }                // B: pass to a call
+   |                                        ^^
+
+error: pack 'xs' has no runtime value — a pack is comptime-only and can't be used as a value here
+  --> examples/packs/0536-packs-pack-as-value.sx:16:42
+   |
+16 | ret     :: (..xs: Show) -> i64  { return xs; }               // C: return
+   |                                          ^^
+
+help: to return it, return a tuple `(..xs)` and make the return type that tuple
+   |
+16 | ret     :: (..xs: Show) -> i64  { return xs; }               // C: return
+   |                                          ^^
+
+error: pack 'xs' has no runtime value — a pack is comptime-only and can't be used as a value here
+  --> examples/packs/0536-packs-pack-as-value.sx:17:39
+   |
+17 | iter    :: (..xs: Show) -> void { for xs  (x) { _ = x; } }  // D: runtime iterate
+   |                                       ^^
+
+help: to iterate at comptime use `inline for xs (x)` (or `inline for 0..xs.len (i)` for the index); for a runtime loop declare it as `..xs: []P` (a protocol slice) instead of a pack
+   |
+17 | iter    :: (..xs: Show) -> void { for xs  (x) { _ = x; } }  // D: runtime iterate
+   |                                       ^^

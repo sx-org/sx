@@ -1,0 +1,30 @@
+// Failable error-slot discard rejection (ERR step E1.8 — discard slice). The
+// error slot of a value-carrying failable cannot be dropped on a bare
+// destructure: it must be bound (`v, err := …`) and handled, or the failure
+// routed through `try` / `catch` / `or value` (all of which strip the error
+// channel, so they don't reach this check). Two rejected shapes here:
+//   (1) omitting the error slot entirely (fewer names than slots), and
+//   (2) binding it to `_`.
+// This file is expected to FAIL compilation (exit 1).
+//
+// Run: ./zig-out/bin/sx run examples/236-failable-discard-reject.sx
+
+#import "modules/std.sx";
+
+E :: error { Bad, Empty }
+
+pair :: (n: i32) -> (i32, i32, !E) {
+    if n < 0 { raise error.Bad; }
+    return .{n, n + 1};
+}
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0 { raise error.Bad; }
+    return n * 2;
+}
+
+main :: () -> i32 {
+    a, b := pair(5);     // ERROR: error slot omitted (3 slots, 2 names)
+    v, _ := parse(5);    // ERROR: error slot discarded with `_`
+    return a + b + v;
+}

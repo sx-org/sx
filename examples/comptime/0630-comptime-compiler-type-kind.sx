@@ -1,0 +1,40 @@
+// Comptime compiler API — type-kind + enum-value reflection readers (Phase 3).
+//
+// Completes the READ side the metatype needs to re-express `type_info(T)` as sx:
+//
+//   raw_type_kind(t)            → a stable kind discriminant, to branch on the shape
+//                             (0 other · 1 struct · 2 enum · 3 tagged_union ·
+//                              4 tuple · 5 union · 6 array · 7 vector · 8 error_set)
+//   raw_variant_value(t, i)  → enum variant i's integer value (explicit or ordinal)
+//
+// Together with raw_find_type / raw_field_count / raw_field_name / raw_field_type
+// / raw_type_name (examples 0628–0629), a comptime sx function can now fully
+// reflect a struct/enum/tuple into data — no `intrinsic` needed. All folded at
+// `#run`, all serviced natively by the flat-memory VM.
+
+#import "modules/std.sx";
+
+
+StringId :: u32;
+TypeId   :: u32;
+
+
+Color       :: enum { red; green; blue; }
+WindowFlags :: enum flags u32 { vsync :: 64; resizable :: 4; hidden :: 128; }
+Point       :: struct { x: i64; y: i64; }
+
+color_kind :: #run raw_type_kind(raw_find_type(raw_intern("Color")));   // 2 = enum
+point_kind :: #run raw_type_kind(raw_find_type(raw_intern("Point")));   // 1 = struct
+
+// Plain enum → ordinal values.
+green_val :: #run raw_variant_value(raw_find_type(raw_intern("Color")), 1);   // 1
+
+// Flags enum → explicit values, read by name + value.
+vsync_name :: #run raw_text_of(raw_field_name(raw_find_type(raw_intern("WindowFlags")), 0)); // "vsync"
+vsync_val  :: #run raw_variant_value(raw_find_type(raw_intern("WindowFlags")), 0);          // 64
+
+main :: () {
+    print("Color kind = {}, Point kind = {}\n", color_kind, point_kind);
+    print("Color.green = {}\n", green_val);
+    print("WindowFlags.{} = {}\n", vsync_name, vsync_val);
+}

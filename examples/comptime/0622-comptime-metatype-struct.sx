@@ -1,0 +1,27 @@
+// Comptime STRUCT metaprogramming — `define` constructs a struct (not just an
+// enum), and `type_info` reflects one. Two paths:
+//   1. Programmatic build: `define(declare("Vec2"), .struct(.{ fields = … }))`
+//      mints a nominal struct from a `[]StructField` value.
+//   2. Round-trip: `define(declare("RowCopy"), type_info(Row))` reflects a source
+//      struct INTO a `.struct(StructInfo)` value and reconstructs an identical
+//      one — no literal field list.
+// Both constructed structs build + read like any hand-written struct.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+Vec2 :: define(declare("Vec2"), .struct(.{ fields = .[
+    StructField.{ name = "x", type = f64 },
+    StructField.{ name = "y", type = f64 },
+] }));
+
+Row :: struct { id: i64; score: f64; }
+RowCopy :: define(declare("RowCopy"), type_info(Row));
+
+main :: () -> i32 {
+    v := Vec2.{ x = 1.5, y = -2.0 };
+    print("v = {} {}\n", v.x, v.y);
+
+    r := RowCopy.{ id = 42, score = 9.5 };
+    print("r = {} {}\n", r.id, r.score);
+    return 0;
+}

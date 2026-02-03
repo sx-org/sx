@@ -1,0 +1,42 @@
+// Named multi-return slots are in-scope assignable LOCALS. Assign each by name
+// in the body; with no explicit `return`, the function implicitly returns the
+// slot values once they are all set. A named slot that is never assigned (and
+// has no default) is a compile error — see the companion negative example.
+//
+// This is sugar over the multi-return machinery: `b` below is equivalent to
+// `return sum = f1 + f2, good = f1 > f2`, but reads as straight-line setup.
+#import "modules/std.sx";
+
+// The slot names `sum` / `good` are locals; assigning them IS the return.
+combine :: (f1: i32, f2: i32) -> (sum: i32, good: bool) {
+    good = f1 > f2;
+    sum = f1 + f2;
+}
+
+// A slot local can be read after it is set (here `hi` depends on `lo`).
+bounds :: (n: i32) -> (lo: i32, hi: i32) {
+    lo = n;
+    hi = lo + 10;
+}
+
+// Named slots work with an error channel too (the error is the last slot).
+Err :: error { Negative }
+roots :: (n: i32) -> (val: i32, sq: i32, !) {
+    if n < 0 { raise error.Negative; }
+    val = n;
+    sq = n * n;
+}
+
+main :: () -> i64 {
+    s, g := combine(40, 2);
+    print("combine: sum={} good={}\n", s, g);
+
+    lo, hi := bounds(5);
+    print("bounds: lo={} hi={}\n", lo, hi);
+
+    v, sq := roots(7) catch { print("unexpected\n"); return 1; };
+    print("roots: val={} sq={}\n", v, sq);
+
+    roots(-1) catch { print("roots(-1): caught Negative\n"); return 0; };
+    return 0;
+}

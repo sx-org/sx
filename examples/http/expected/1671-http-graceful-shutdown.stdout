@@ -1,0 +1,4 @@
+graceful: in-flight drained, idle keep-alive closed
+restart: second server served on the same port
+no leak: net-zero across stop+close of two server lifetimes
+ok

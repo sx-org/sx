@@ -1,0 +1,57 @@
+// Comptime VALUE params bind on methods of GENERIC structs.
+//
+// A free function's `$o: Ord` comptime value param binds via
+// lowerComptimeCall → bindComptimeValueParams (see 0627 / 0640). The
+// generic-struct-instance method path (`b.pick(.b)`) takes a different
+// dispatch route: the struct monomorphizes for `T`, but the method's `$o`
+// must STILL bind by inlining the body — a plain call to the monomorphized
+// FuncId would leave `o` unresolved. This locks the composition: `T` is bound
+// from the struct instantiation, `$o` from the comptime value arg, and a
+// `self.field` read through the pointer receiver works inside the inlined body.
+//
+// Regression: composition gap — comptime value params on generic-struct methods.
+#import "modules/std.sx";
+
+Ord :: enum { a; b; c; }
+
+Box :: struct ($T: Type) {
+    value: i64;
+    // Enum comptime value param: `if o == .x` lowers as a tag comparison; the
+    // receiver `self` is bound so `self.value` reads correctly.
+    pick :: (self: *Box(T), $o: Ord) -> i64 {
+        if o == .a { return self.value + 1; }
+        if o == .b { return self.value + 2; }
+        return self.value + 3;
+    }
+    // The bound tag is also readable in a TYPE position ([o]i64), via
+    // comptimeIntNamed — the same accessor the atomics stream uses for
+    // `Atomic($T).load($o)`.
+    size_for :: (self: *Box(T), $o: Ord) -> i64 {
+        arr : [o]i64 = ---;
+        return arr.len;
+    }
+}
+
+Shape :: enum { circle: f64; point; }
+
+Drawer :: struct ($T: Type) {
+    // Tagged-union comptime value param on a generic-struct method.
+    area :: (self: *Drawer(T), $s: Shape) -> i64 {
+        if s == .circle { return 1; }
+        return 0;
+    }
+}
+
+main :: () {
+    b := Box(i64).{ value = 10 };
+    print("{}\n", b.pick(.a));      // 11
+    print("{}\n", b.pick(.b));      // 12
+    print("{}\n", b.pick(.c));      // 13
+    print("{}\n", b.size_for(.a));  // tag 0 → [0]i64 → 0
+    print("{}\n", b.size_for(.b));  // tag 1 → [1]i64 → 1
+    print("{}\n", b.size_for(.c));  // tag 2 → [2]i64 → 2
+
+    d := Drawer(i64).{};
+    print("{}\n", d.area(.circle(2.0)));  // 1
+    print("{}\n", d.area(.point));        // 0
+}

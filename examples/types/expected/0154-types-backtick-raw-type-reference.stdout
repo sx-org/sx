@@ -1,0 +1,5 @@
+struct = 7
+alias  = 11
+enum   = true
+union  = 5
+bare   = 1

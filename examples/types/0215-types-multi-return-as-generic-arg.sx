@@ -1,0 +1,11 @@
+// Negative: a bare-paren `(A, B)` is a MULTI-RETURN signature — valid ONLY as a
+// function/closure return type, never as a value type. As a generic type
+// argument it is rejected (a tuple-valued argument uses `Tuple(A, B)`). This
+// completes the return-position-only gating (param / field / variable positions
+// were already rejected; 0213 covers those).
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    xs : List((i32, bool)) = ---;   // error: multi-return signature, not a type
+    return 0;
+}

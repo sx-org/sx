@@ -1,0 +1,10 @@
+// A value parameter declared `T: Type` (WITHOUT the `$` generic sigil) used in
+// a type position is rejected with a hint to write `$T: Type`. Previously the
+// type resolver silently fabricated a 0-field struct named `T`, so the call
+// compiled and rendered as `T{}` at runtime with no diagnostic.
+// Regression (issue 0064). Expected: one error per `T` use site; exit 1.
+idwrap :: (T: Type, f: Closure() -> T) -> T { return f(); }
+
+main :: () -> i32 {
+    return idwrap(i32, closure(() -> i32 { return 7; }));
+}

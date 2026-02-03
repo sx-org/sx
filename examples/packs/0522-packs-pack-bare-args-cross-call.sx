@@ -1,0 +1,55 @@
+// Regression: bare `$args` slice survives crossing a function-call
+// boundary — both `.len` AND per-element values come through.
+//
+// Before the fix landed in `lazyLowerFunction`, the callee's
+// `args.len` got constant-folded to the outer pack-fn mono's
+// arity. `walk(args: []any) { return args.len; }` lazily lowered
+// inside `probe(..$args)`'s first mono inherited
+// `pack_param_count["args"] = N` from the pack — the
+// `<pack_name>.len` intercept in `lowerFieldAccess` then baked
+// `ret i64 N` into walk's IR. Every subsequent shape's call to
+// walk returned the same constant, regardless of the actual slice
+// it received.
+//
+// `describe(args)` walks element-by-element so a silent
+// truncation surfaces as a missing tail (or a different type at
+// some position) — not just the wrong length.
+//
+// Walking under `#run` is intentional: the bare-`$args` slice
+// carries `const_type` elements that only the interp materialises;
+// LLVM emission leaves the per-element slots as undef (4A.bare
+// semantics — bare-pack is comptime-only).
+//
+// The element type is `[]Type` (a bare `$args` is the list of the
+// pack args' TYPES, each an 8-byte `.type_value`). Declaring it
+// `[]any` (16-byte boxes) read every element past the first at the
+// wrong stride — the legacy interp's loose Value model tolerated it,
+// the byte-accurate comptime VM does not.
+
+#import "modules/std.sx";
+
+describe :: (args: []Type) -> string {
+    s := "[";
+    i : i64 = 0;
+    while i < args.len {
+        if i > 0 { s = concat(s, ", "); }
+        s = concat(s, type_name(args[i]));
+        i = i + 1;
+    }
+    return concat(s, "]");
+}
+
+probe :: (..$args) -> string {
+    list := $args;
+    return describe(list);
+}
+
+run_all :: () {
+    print("0: {}\n", probe());
+    print("1: {}\n", probe(1));
+    print("3: {}\n", probe(1, "x", true));
+    print("5: {}\n", probe(1, 2.0, "x", true, 99));
+}
+#run run_all();
+
+main :: () { print("rt\n"); }

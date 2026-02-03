@@ -1,0 +1,40 @@
+// Comptime-cursor indexing of a named-tuple VALUE: `tup[i]` where `i` is an
+// `inline for` cursor (or a literal) reads the i-th tuple field with its
+// CONCRETE type — not a type-erased `any`. This is the read side `race` needs:
+// pull the i-th `*Task(T_i)` handle out of a named-tuple param keeping its real
+// type, so `field`/method access on it resolves. A tuple's elements are
+// heterogeneous, so there is no runtime element-indexing op — a comptime index
+// lowers exactly like the `.N` field-access path (a `structGet`). A runtime
+// index into a tuple value remains an error (no single element type).
+//
+// (GAP 1 of PLAN-RACE.)
+#import "modules/std.sx";
+
+Box :: struct ($R: Type) { value: R; }
+
+// Read each handle with its concrete type via the `inline for` cursor.
+show_all :: (tup: $T) {
+    inline for 0..struct_field_count(T) (i) {
+        h := tup[i];                       // concrete `*Box(T_i)`, not `any`
+        print("[{}] = {}\n", i, h.value);  // field access resolves
+    }
+}
+
+// Literal-index form, positional tuple.
+first_two :: (tup: $T) -> i64 {
+    a := tup[0];
+    b := tup[1];
+    return a.value + b.value;
+}
+
+main :: () -> i32 {
+    ba : Box(i64)  = .{ value = 7 };
+    bb : Box(bool) = .{ value = true };
+    bc : Box(f64)  = .{ value = 2.5 };
+    show_all(.{a = @ba, b = @bb, c = @bc});   // named tuple of *Box(..)
+
+    p0 : Box(i64) = .{ value = 10 };
+    p1 : Box(i64) = .{ value = 32 };
+    print("sum = {}\n", first_two(.{@p0, @p1}));  // positional, literal index
+    return 0;
+}

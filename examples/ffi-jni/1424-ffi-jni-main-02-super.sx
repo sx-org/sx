@@ -1,0 +1,24 @@
+// `super.method(args)` dispatch inside a `#jni_main` Activity body
+// (chess-on-Pixel migration, R.6). The override of a lifecycle method
+// like `onCreate` needs to invoke the parent's `onCreate` so the
+// Android runtime's setup completes (`SuperNotCalledException`
+// otherwise) — the sx-side body calls `super.onCreate(b)` and the
+// compiler lowers it to JNI `CallNonvirtualVoidMethod` against the
+// parent class declared via `#extends`.
+//
+// No `#extends` here → defaults to `android.app.Activity`. The smoke
+// is compile-only — runtime correctness is verified by APK install
+// + on-device launch, which is the chess deploy.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+Bundle :: #jni_class("android/os/Bundle") extern { }
+
+SxApp :: #jni_main #jni_class("co/swipelab/sxjnimainsuper/SxApp") {
+    onCreate :: (self: *Self, b: *Bundle) {
+        super.onCreate(b);
+    }
+}
+
+main :: () -> i32 { 0 }

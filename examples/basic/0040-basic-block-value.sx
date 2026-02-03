@@ -1,0 +1,46 @@
+// Block value rule: a block's value is its last statement ONLY when that
+// statement is a trailing expression with NO `;`. A trailing `;` discards the
+// value, leaving the block void. This makes value-vs-statement explicit and lets
+// the compiler reject "forgot to produce a value".
+//
+//   { … expr }    → value is `expr`
+//   { … expr; }   → void (value discarded)
+//
+// Match arms are exempt: the arm `;` is an arm terminator, so `case .x: expr;`
+// still yields `expr` (only an explicit inner braced block follows the rule).
+
+#import "modules/std.sx";
+
+// Implicit return: trailing expression, no `;`.
+double :: (n: i32) -> i32 { n * 2 }
+
+// if/else as a value — each branch's last expression has no `;`.
+sign :: (n: i32) -> i32 {
+    if n < 0 { -1 } else if n > 0 { 1 } else { 0 }
+}
+
+// A value-producing block bound to a name.
+sum3 :: (a: i32, b: i32, c: i32) -> i32 {
+    t := { x := a + b; x + c };   // block value is `x + c`
+    t
+}
+
+// Match arms keep their `;` (exempt): the arm `;` is an arm terminator, so each
+// arm still yields its expression as the match value.
+classify :: (n: i32) -> i32 {
+    if n == {
+        case 0:  100;
+        case 1:  10;
+        else:    7;
+    }
+}
+
+main :: () -> i32 {
+    total : i32 = 0;
+    total = total + double(10);       // 20
+    total = total + sign(-7);         // -1
+    total = total + sum3(1, 2, 3);    // 6
+    total = total + classify(1);      // 10
+    print("block-value total: {}\n", total);   // 20 - 1 + 6 + 10 = 35
+    total
+}

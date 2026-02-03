@@ -1,0 +1,53 @@
+// Era-2: EMPTY-VTABLE erasure is legal, with no special case (ruled;
+// Swift ran the refusal for a decade and reversed it, SE-0309). Two
+// shapes reach a zero-slot vtable:
+//   - a MARKER protocol (no methods at all), and
+//   - an all-excluded protocol (every method mentions `Self` past the
+//     receiver — the Eq shape).
+// Both erase; the erased value still carries {ctx, __type_id}, so
+// type_of, the checked downcast, the type switch, the ProtocolRaw view,
+// and free (on an OWNED rvalue erasure) all work with zero dispatchable
+// methods.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Marker :: protocol {}
+
+Eqish :: protocol {
+    eq :: (self: *Self, other: Self) -> bool;   // excluded: Self param
+}
+
+Sq :: struct { side: i64; }
+impl Marker for Sq {}
+impl Eqish for Sq {
+    eq :: (self: *Sq, other: Sq) -> bool { return self.side == other.side; }
+}
+
+main :: () {
+    sq := Sq.{ side = 4 };
+
+    m := sq.(Marker);
+    print("marker type: {}\n", type_of(m) == Sq);
+    print("marker raw:  {}\n", m.(ProtocolRaw).type_id == Sq);
+
+    e := sq.(Eqish);
+    print("eqish type:  {}\n", type_of(e) == Sq);
+
+    // Checked downcast through the {ctx, __type_id} prefix.
+    back := e.(Sq);
+    print("downcast:    {}\n", back.side);
+
+    // Type switch on a protocol subject.
+    if e == {
+        case Sq: (v) { print("switch:      {}\n", v.side); }
+        else: { print("switch:      miss\n"); }
+    }
+
+    // free is legal on an OWNED (rvalue-erased, heap-copied) value even
+    // with an empty vtable.
+    mo : Marker = xx Sq.{ side = 9 };
+    eo : Eqish = xx Sq.{ side = 9 };
+    free(mo);
+    free(eo);
+    print("freed\n");
+}

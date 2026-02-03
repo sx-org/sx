@@ -1,0 +1,42 @@
+// Printing a PAYLOAD-LESS variant of a TAGGED UNION (an enum that also has
+// payload-carrying variants) whose variants carry EXPLICIT tag values.
+//
+// `enum_to_string` (fmt.sx) recovers a variant name via
+// `struct_field_name(T, variant_index(T, val))`. `variant_index` must return the
+// SEQUENTIAL variant ordinal — the inverse of the explicit tag value — so
+// `struct_field_name` is indexed in range. A payload-less variant of a tagged union
+// stores its EXPLICIT tag value at runtime (e.g. `quit` stores 0x100), so
+// `variant_index` must reverse-map 0x100 -> ordinal 0, exactly like the plain
+// enum in 0223.
+//
+// Regression (issue 0280): `variant_index` for a tagged union returned the raw
+// tag (0x100 = 256) instead of the ordinal, so `struct_field_name(Ev, 256)` did an
+// out-of-bounds load of a garbage `string` and `Ev.quit` mis-printed as
+// `.(<?>)`. 0277 fixed the same shape for a PLAIN enum; this extends the
+// tag -> ordinal reverse-map to tagged unions (`explicit_tag_values`).
+
+#import "modules/std.sx";
+
+// A tagged union: `key` carries an i64 payload, so `Ev` is a tagged_union
+// (not a plain enum). Every variant has an explicit tag value.
+Ev :: enum { quit :: 0x100; key :: 0x300: i64; resize :: 0x400: i64; }
+
+// A tagged union whose payload-less variants are NOT the zeroth ordinal, so a
+// raw-tag mis-index could never coincide with the right name by luck.
+Sig :: enum { term :: 0x0F; interrupt :: 0x02; halt :: 0x1A: i64; }
+
+main :: () {
+    // The previously-crashing / mis-printing path: print a payload-less
+    // variant of an explicit-tag tagged union by name.
+    print("{}\n", Ev.quit);          // .quit
+    print("{} {}\n", Sig.term, Sig.interrupt);   // .term .interrupt
+
+    // The explicit tag value is still the value read via `xx` (unchanged).
+    q : i64 = xx Ev.quit;
+    t : i64 = xx Sig.term;
+    print("{} {}\n", q, t);          // 256 15
+
+    // Round-trip through a typed local, then print.
+    v : Ev = Ev.quit;
+    print("{}\n", v);                // .quit
+}

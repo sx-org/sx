@@ -1,0 +1,503 @@
+// Android backend driven by a `#jni_main` Activity (no native_app_glue).
+//
+// Lifecycle:
+//
+//   1. Java `SxApp.onCreate(b)` → native `sx_onCreate`: stash JNIEnv* +
+//      Activity globals, install the AAssetManager into the C file_utils,
+//      construct a `SurfaceView`, register `SxApp` as its
+//      SurfaceHolder.Callback, set as Activity content view.
+//   2. Java `SxApp.surfaceCreated(holder)` → native `sx_surfaceCreated`:
+//      extract the ANativeWindow from the holder's Surface, then
+//      `pthread_create` the render thread on first delivery.
+//   3. Render thread: brings up EGL on the ANativeWindow, then calls
+//      `sx_app_main()` — the user's entry-point, which sets up the
+//      AndroidPlatform / GPU / pipeline globals and ends in
+//      `run_frame_loop(closure(frame))`.
+//   4. `run_frame_loop` drives the loop: drain touch events queue,
+//      invoke `frame_fn`, `eglSwapBuffers`, sleep ~1ms.
+//   5. Java `onTouchEvent` → native `sx_onTouchEvent`: push the
+//      (action,x,y) tuple onto a mutex-guarded queue. `poll_events`
+//      drains the queue into the platform's standard `Event` shape.
+//
+// State model: every piece of mutable Android-backend state lives on
+// `AndroidPlatform` (the EGL handles, the ANativeWindow, the render
+// thread, the touch ring, the frame closure, the user main fn, the
+// touch mutex). Module-level globals are out — they shadow consumer
+// globals on `#import` and produced an integer/float-shadowing render
+// regression on chess before we eliminated them.
+//
+// Vulkan-compatible: same ANativeWindow drives `vkCreate*SurfaceKHR`
+// without changing the lifecycle.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/events.sx";
+#import "modules/platform/types.sx";
+#import "modules/platform/api.sx";
+
+// ── Runtime Java types ──────────────────────────────────────────────────
+
+Bundle   :: #jni_class("android/os/Bundle") extern { }
+JContext :: #jni_class("android/content/Context") extern {
+    getAssets :: (self: *Self) -> *AssetManagerJ;
+}
+AssetManagerJ :: #jni_class("android/content/res/AssetManager") extern { }
+
+Surface :: #jni_class("android/view/Surface") extern { }
+SurfaceHolder :: #jni_class("android/view/SurfaceHolder") extern {
+    getSurface  :: (self: *Self) -> *Surface;
+    addCallback :: (self: *Self, cb: *SurfaceHolderCallback);
+}
+SurfaceView :: #jni_class("android/view/SurfaceView") extern {
+    new        :: (ctx: *JContext) -> *Self;  // no `self: *Self` → class method
+    getHolder  :: (self: *Self) -> *SurfaceHolder;
+}
+SurfaceHolderCallback :: #jni_class("android/view/SurfaceHolder$Callback") extern { }
+
+MotionEvent :: #jni_class("android/view/MotionEvent") extern {
+    getAction :: (self: *Self) -> i32;
+    getX      :: (self: *Self) -> f32;
+    getY      :: (self: *Self) -> f32;
+}
+
+JView :: #jni_class("android/view/View") extern { }
+JWindow :: #jni_class("android/view/Window") extern {
+    getWindowManager :: (self: *Self) -> *JWindowManager;
+}
+JWindowManager :: #jni_class("android/view/WindowManager") extern {
+    getDefaultDisplay :: (self: *Self) -> *JDisplay;
+}
+JDisplay :: #jni_class("android/view/Display") extern {
+    getRefreshRate :: (self: *Self) -> f32;
+}
+ActivityClass :: #jni_class("android/app/Activity") extern {
+    setContentView :: (self: *Self, v: *JView);
+    getWindow :: (self: *Self) -> *JWindow;
+}
+
+// ── Extern C/NDK decls ─────────────────────────────────────────────────
+
+// C side of file_utils — installs the AAssetManager so `read_file_bytes`
+// can route through `AAssetManager_open` when running on Android.
+sx_android_set_asset_manager :: (mgr: *void) extern;
+
+__android_log_print :: (prio: i32, tag: *u8, fmt: *u8) -> i32 extern;
+usleep              :: (us: u32) -> i32 extern;
+
+// libandroid
+ANativeWindow_fromSurface :: (env: *void, surface: *void) -> *void extern;
+ANativeWindow_release     :: (window: *void) extern;
+ANativeWindow_getWidth    :: (window: *void) -> i32 extern;
+ANativeWindow_getHeight   :: (window: *void) -> i32 extern;
+ANativeWindow_setBuffersGeometry :: (w: *void, width: i32, height: i32, fmt: i32) -> i32 extern;
+
+AAssetManager_fromJava :: (env: *void, mgr: *void) -> *void extern;
+
+// EGL. Constants from <EGL/egl.h>. We bring up an ES3 context with a
+// 24-bit RGB framebuffer + 24-bit depth (same shape chess used under
+// the legacy NDK path).
+EGL_DEFAULT_DISPLAY    :: 0;
+EGL_NO_DISPLAY         :*void: null;
+EGL_NO_CONTEXT         :*void: null;
+EGL_NO_SURFACE         :*void: null;
+EGL_TRUE               :u32: 1;
+EGL_FALSE              :u32: 0;
+EGL_NONE               :i32: 0x3038;
+EGL_RED_SIZE           :i32: 0x3024;
+EGL_GREEN_SIZE         :i32: 0x3023;
+EGL_BLUE_SIZE          :i32: 0x3022;
+EGL_ALPHA_SIZE         :i32: 0x3021;
+EGL_DEPTH_SIZE         :i32: 0x3025;
+EGL_RENDERABLE_TYPE    :i32: 0x3040;
+EGL_SURFACE_TYPE       :i32: 0x3033;
+EGL_OPENGL_ES3_BIT     :i32: 0x00000040;
+EGL_WINDOW_BIT         :i32: 0x0004;
+EGL_NATIVE_VISUAL_ID   :i32: 0x302E;
+EGL_CONTEXT_CLIENT_VERSION :i32: 0x3098;
+
+eglGetDisplay          :: (id: u64) -> *void extern;
+eglInitialize          :: (d: *void, major: *i32, minor: *i32) -> u32 extern;
+eglChooseConfig        :: (d: *void, attrs: *i32, configs: **void, sz: i32, num: *i32) -> u32 extern;
+eglGetConfigAttrib     :: (d: *void, cfg: *void, attr: i32, value: *i32) -> u32 extern;
+eglCreateContext       :: (d: *void, cfg: *void, share: *void, attrs: *i32) -> *void extern;
+eglCreateWindowSurface :: (d: *void, cfg: *void, window: *void, attrs: *i32) -> *void extern;
+eglMakeCurrent         :: (d: *void, draw: *void, read: *void, ctx: *void) -> u32 extern;
+eglSwapBuffers         :: (d: *void, surface: *void) -> u32 extern;
+eglSwapInterval        :: (d: *void, interval: i32) -> u32 extern;
+eglDestroyContext      :: (d: *void, ctx: *void) -> u32 extern;
+eglDestroySurface      :: (d: *void, surface: *void) -> u32 extern;
+eglTerminate           :: (d: *void) -> u32 extern;
+
+// ── Touch ring ──────────────────────────────────────────────────────────
+
+TouchEvent :: struct {
+    action: i32;
+    x: f32;
+    y: f32;
+}
+
+// ── AndroidPlatform ─────────────────────────────────────────────────────
+//
+// Every per-instance piece of state — EGL handles, ANativeWindow, render
+// thread, touch ring + mutex, frame closure, user main fn — lives here.
+// No module-level globals: a previous shape had `g_viewport_w : i32` at
+// module scope, which silently shadowed chess's own
+// `g_viewport_w : f32` on `#import` and caused the renderer to receive
+// a logical width cast to i32 instead of the physical pixel width.
+//
+// `logical_w` is the consumer's design width in points (e.g. chess sets
+// 414 to match an iPhone 12 layout). `begin_frame` derives `dpi_scale`
+// from `pixel_w / logical_w` so the renderer sees the design canvas
+// regardless of physical density. Touch coords are divided by the same
+// scale before delivery so layout-side hit-testing matches.
+
+AndroidPlatform :: struct {
+    title:  [:0]u8 = "";
+    width:  i32 = 0;
+    height: i32 = 0;
+
+    // Set by consumer code BEFORE `init` if a fixed design width is
+    // wanted (chess uses 414). When 0, the platform reports
+    // viewport = pixel (1:1 logical/physical) — same as the legacy
+    // hardcoded `dpi_scale = 1.0` behaviour.
+    logical_w: f32 = 0.0;
+
+    // Panel refresh rate in Hz, used to pace run_frame_loop. Consumers
+    // should set it from Display.getRefreshRate() in their Activity's
+    // onCreate (the Window→WindowManager→Display chain in
+    // android_jni.sx); 60 is the fallback when unset/unavailable.
+    frame_hz: f32 = 60.0;
+
+    // ANativeWindow + EGL state (set up by sx_android_attach_window +
+    // egl_init on the render thread).
+    app_window:  *void = null;
+    egl_display: *void = null;
+    egl_context: *void = null;
+    egl_surface: *void = null;
+    egl_config:  *void = null;
+
+    // Pixel-size from ANativeWindow_get{Width,Height}; derived dpi_scale
+    // (pixel_w / logical_w when logical_w > 0, else 1.0).
+    pixel_w:   i32 = 0;
+    pixel_h:   i32 = 0;
+    dpi_scale: f32 = 1.0;
+
+    // Render thread lifecycle. `user_main_fn` is the consumer's `main`
+    // entry, invoked once EGL is current. `should_stop` is checked in
+    // the frame loop; `stop()` flips it.
+    render_thread:         usize = 0;
+    render_thread_started: bool = false;
+    user_main_fn:          () -> void = ---;
+    should_stop:           bool = false;
+    frame_closure:         ?Closure() = null;
+
+    events: List(Event) = .{};
+
+    // Touch ring: single-producer (Java UI thread via sx_android_push_touch)
+    // / single-consumer (render thread via sx_android_drain_touches).
+    // The canonical libc mutex storage is oversized for bionic's
+    // pthread_mutex_t. `touch_mutex_inited` tracks lazy init on first use.
+    touch_queue:           [64]TouchEvent = ---;
+    touch_head:            u32 = 0;
+    touch_tail:            u32 = 0;
+    touch_mutex:           c.MutexBuf = .{};
+    touch_mutex_inited:    bool = false;
+}
+
+// ── User-facing helpers for the consumer's `#jni_main` Activity ────────
+//
+// The consumer (chess, etc.) writes their own `SxApp :: #jni_main
+// #jni_class("...")` declaration with `#implements SurfaceHolderCallback`
+// and the standard lifecycle methods. This file provides the primitives
+// those methods call:
+//
+//   - `sx_android_forward_assets(env, activity)` from onCreate.
+//   - `sx_android_attach_window(plat, env, holder)` from surfaceCreated.
+//   - `sx_android_detach_window(plat)` from surfaceDestroyed.
+//   - `sx_android_set_viewport(plat, w, h)` from surfaceChanged.
+//   - `sx_android_start_render_thread(plat, main_fn)` once the surface
+//     is up.
+//   - `sx_android_push_touch(plat, action, x, y)` from onTouchEvent.
+
+// Extract the AAssetManager from the Activity and install it into the
+// C file_utils so `read_file_bytes` can route through `AAssetManager_open`.
+// Call this from your Activity's `onCreate` (BEFORE any asset read).
+sx_android_forward_assets :: (env: *void, activity: *JContext) {
+    #jni_env(env) {
+        assets := activity.getAssets();
+        aam := AAssetManager_fromJava(env, xx assets);
+        sx_android_set_asset_manager(aam);
+    }
+}
+
+// Extract the ANativeWindow from a SurfaceHolder and stash it on `plat`.
+// Call this from your Activity's `surfaceCreated`. The window stays
+// valid until `sx_android_detach_window` runs (typically in
+// `surfaceDestroyed`).
+sx_android_attach_window :: (plat: *AndroidPlatform, env: *void, holder: *SurfaceHolder) {
+    #jni_env(env) {
+        surface := holder.getSurface();
+        plat.app_window = ANativeWindow_fromSurface(env, xx surface);
+    }
+}
+
+sx_android_detach_window :: (plat: *AndroidPlatform) {
+    if plat.app_window != null {
+        ANativeWindow_release(plat.app_window);
+        plat.app_window = null;
+    }
+}
+
+// Monotonic clock for frame pacing (CLOCK_MONOTONIC = 1).
+android_now_ns :: () -> i64 {
+    ts : c.Timespec = ---;
+    c.clock_gettime(1, @ts);
+    ts.sec * 1000000000 + ts.nsec
+}
+
+sx_android_set_viewport :: (plat: *AndroidPlatform, w: i32, h: i32) {
+    plat.pixel_w = w;
+    plat.pixel_h = h;
+    sx_android_recompute_scale(plat);
+}
+
+// Query the panel's refresh rate (Activity.getWindow → getWindowManager
+// → getDefaultDisplay → getRefreshRate) so run_frame_loop can pace to
+// real vsync (60/90/120) instead of a hardcoded 60. Call from the
+// Activity's onCreate (env available); 60.0 on any failure.
+sx_android_refresh_rate :: (env: *void, activity: *JContext) -> f32 {
+    rate : f32 = 60.0;
+    #jni_env(env) {
+        a : *ActivityClass = xx activity;
+        r := a.getWindow().getWindowManager().getDefaultDisplay().getRefreshRate();
+        if r > 0.0 { rate = r; }
+    }
+    rate
+}
+
+// Start the render thread that brings up EGL on `plat.app_window` and
+// calls `entry_fn` (typically the consumer's `main`). Safe to call once
+// after `sx_android_attach_window` has set the window.
+sx_android_start_render_thread :: (plat: *AndroidPlatform, entry_fn: () -> void) {
+    if plat.render_thread_started { return; }
+    plat.user_main_fn = entry_fn;
+    c.pthread_create(@plat.render_thread, null, sx_android_render_thread_entry, xx plat);
+    plat.render_thread_started = true;
+}
+
+sx_android_render_thread_entry :: (arg: *void) -> *void abi(.c) {
+    plat : *AndroidPlatform = xx arg;
+    while plat.app_window == null and !plat.should_stop {
+        usleep(1000);
+    }
+    if plat.should_stop { return null; }
+
+    if !sx_android_egl_init(plat) {
+        __android_log_print(6, "sxapp".ptr, "EGL bootstrap failed\n".ptr);
+        return null;
+    }
+
+    if plat.user_main_fn != null {
+        fn := plat.user_main_fn;
+        fn();
+    }
+    null
+}
+
+// Bring up EGL on `plat.app_window`. Sets the egl_* fields and makes
+// the context current. Returns false on any failure — caller bails on
+// the render thread.
+sx_android_egl_init :: (plat: *AndroidPlatform) -> bool {
+    plat.egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+    if plat.egl_display == EGL_NO_DISPLAY { return false; }
+
+    major : i32 = 0;
+    minor : i32 = 0;
+    if eglInitialize(plat.egl_display, @major, @minor) == EGL_FALSE { return false; }
+
+    cfg_attrs : [13]i32 = .{
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
+        EGL_SURFACE_TYPE,    EGL_WINDOW_BIT,
+        EGL_RED_SIZE,        8,
+        EGL_GREEN_SIZE,      8,
+        EGL_BLUE_SIZE,       8,
+        EGL_DEPTH_SIZE,      24,
+        EGL_NONE,
+    };
+    num_cfg : i32 = 0;
+    if eglChooseConfig(plat.egl_display, @cfg_attrs[0], @plat.egl_config, 1, @num_cfg) == EGL_FALSE { return false; }
+    if num_cfg < 1 { return false; }
+
+    visual_id : i32 = 0;
+    eglGetConfigAttrib(plat.egl_display, plat.egl_config, EGL_NATIVE_VISUAL_ID, @visual_id);
+    ANativeWindow_setBuffersGeometry(plat.app_window, 0, 0, visual_id);
+
+    ctx_attrs : [3]i32 = .{ EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
+    plat.egl_context = eglCreateContext(plat.egl_display, plat.egl_config, EGL_NO_CONTEXT, @ctx_attrs[0]);
+    if plat.egl_context == EGL_NO_CONTEXT { return false; }
+
+    plat.egl_surface = eglCreateWindowSurface(plat.egl_display, plat.egl_config, plat.app_window, null);
+    if plat.egl_surface == EGL_NO_SURFACE { return false; }
+
+    if eglMakeCurrent(plat.egl_display, plat.egl_surface, plat.egl_surface, plat.egl_context) == EGL_FALSE { return false; }
+
+    // Vsync: pace eglSwapBuffers to the display refresh (the EGL default
+    // is 1, but say it out loud — 0 would free-run the frame loop).
+    eglSwapInterval(plat.egl_display, 1);
+
+    plat.pixel_w = ANativeWindow_getWidth(plat.app_window);
+    plat.pixel_h = ANativeWindow_getHeight(plat.app_window);
+    sx_android_recompute_scale(plat);
+    true
+}
+
+// Recompute `dpi_scale` from `pixel_w / logical_w`. Called on viewport
+// changes and after EGL bringup populates pixel_w/h. Falls back to 1.0
+// when consumer didn't set logical_w (1:1 logical/physical mode).
+sx_android_recompute_scale :: (plat: *AndroidPlatform) {
+    if plat.logical_w > 0.0 and plat.pixel_w > 0 {
+        plat.dpi_scale = xx plat.pixel_w / plat.logical_w;
+    } else {
+        plat.dpi_scale = 1.0;
+    }
+}
+
+// ── Touch event queue ───────────────────────────────────────────────────
+
+sx_android_push_touch :: (plat: *AndroidPlatform, action: i32, x: f32, y: f32) {
+    sx_android_ensure_touch_mutex(plat);
+    c.pthread_mutex_lock(@plat.touch_mutex);
+    next := (plat.touch_tail + 1) % 64;
+    if next != plat.touch_head { // drop on full
+        plat.touch_queue[plat.touch_tail] = TouchEvent.{ action = action, x = x, y = y };
+        plat.touch_tail = next;
+    }
+    c.pthread_mutex_unlock(@plat.touch_mutex);
+}
+
+sx_android_drain_touches :: (plat: *AndroidPlatform, out: *List(Event)) {
+    sx_android_ensure_touch_mutex(plat);
+    c.pthread_mutex_lock(@plat.touch_mutex);
+    inv : f32 = if plat.dpi_scale > 0.0 then 1.0 / plat.dpi_scale else 1.0;
+    while plat.touch_head != plat.touch_tail {
+        t := plat.touch_queue[plat.touch_head];
+        plat.touch_head = (plat.touch_head + 1) % 64;
+        // MotionEvent actions: 0=DOWN, 1=UP, 2=MOVE. Map onto chess's
+        // existing mouse Event variants — touch becomes a left-button
+        // mouse on the same screen coords. Coords come in as physical
+        // pixels; divide by dpi_scale so layout-side hit-testing
+        // matches its own logical-coord frames.
+        pos : Point = .{ x = t.x * inv, y = t.y * inv };
+        if t.action == 0 {
+            out.append(.mouse_down(.{ position = pos, button = .left }));
+        } else if t.action == 1 {
+            out.append(.mouse_up(.{ position = pos, button = .left }));
+        } else if t.action == 2 {
+            out.append(.mouse_moved(.{ position = pos, delta = .{ x = 0, y = 0 } }));
+        }
+    }
+    c.pthread_mutex_unlock(@plat.touch_mutex);
+}
+
+sx_android_ensure_touch_mutex :: (plat: *AndroidPlatform) {
+    if plat.touch_mutex_inited { return; }
+    c.pthread_mutex_init(@plat.touch_mutex, null);
+    plat.touch_mutex_inited = true;
+}
+
+// ── Platform impl ───────────────────────────────────────────────────────
+
+impl Platform for AndroidPlatform {
+    init :: (self: *AndroidPlatform, title: [:0]u8, w: i32, h: i32) -> bool {
+        self.title = title;
+        self.width = w;
+        self.height = h;
+        sx_android_recompute_scale(self);
+        true
+    }
+
+    // NOTE: method order must match the `Platform` protocol declaration
+    // in modules/platform/api.sx. The vtable is built in impl source
+    // order; mismatched order silently routes calls to the wrong method
+    // (chess on Android lost touch entirely because poll_events sat in
+    // begin_frame's slot, etc.).
+
+    run_frame_loop :: (self: *AndroidPlatform, frame_fn: Closure()) {
+        self.frame_closure = frame_fn;
+        // `frame_fn` is expected to call `g_plat.end_frame()` which does
+        // the `eglSwapBuffers` — don't swap again here or the back buffer
+        // is presented twice per render, alternating with the previous
+        // frame's contents → visible flicker.
+        //
+        // Frame pacing: eglSwapInterval(1) (egl_init) blocks the swap on
+        // vsync where the driver honours it, but some surfaces (notably
+        // the emulator's host-GPU pipe) swap immediately and let the loop
+        // free-run at full CPU/GPU. So each frame is also budgeted to the
+        // panel's refresh (`frame_hz`): when the frame (swap included)
+        // already ate the budget there is nothing to sleep, otherwise we
+        // yield the remainder instead of spinning.
+        budget_ns : i64 = (1000000000.0 / self.frame_hz).(i64);
+        while !self.should_stop {
+            t0 := android_now_ns();
+            frame_fn();
+            remaining := budget_ns - (android_now_ns() - t0);
+            if remaining > 0 { usleep((remaining / 1000).(u32)); }
+        }
+    }
+
+    poll_events :: (self: *AndroidPlatform) -> []Event {
+        self.events.len = 0;
+        sx_android_drain_touches(self, @self.events);
+        result : []Event = ---;
+        result.ptr = self.events.items.ptr;
+        result.len = self.events.len;
+        result
+    }
+
+    begin_frame :: (self: *AndroidPlatform) -> FrameContext {
+        // viewport_* is the logical canvas the renderer + layout see —
+        // pixel_w/h divided by dpi_scale. With logical_w unset (1.0
+        // scale) viewport == pixel.
+        inv : f32 = if self.dpi_scale > 0.0 then 1.0 / self.dpi_scale else 1.0;
+        FrameContext.{
+            viewport_w = xx self.pixel_w * inv,
+            viewport_h = xx self.pixel_h * inv,
+            pixel_w = self.pixel_w,
+            pixel_h = self.pixel_h,
+            dpi_scale = self.dpi_scale,
+            delta_time = 0.016,
+            target_present_time = 0.0,
+        }
+    }
+
+    end_frame :: (self: *AndroidPlatform) {
+        if self.egl_display != null and self.egl_surface != null {
+            eglSwapBuffers(self.egl_display, self.egl_surface);
+        }
+    }
+
+    safe_insets :: (self: *AndroidPlatform) -> EdgeInsets {
+        EdgeInsets.{}
+    }
+
+    keyboard :: (self: *AndroidPlatform) -> KeyboardState {
+        KeyboardState.zero()
+    }
+    show_keyboard :: (self: *AndroidPlatform) { }
+    hide_keyboard :: (self: *AndroidPlatform) { }
+
+    stop :: (self: *AndroidPlatform) {
+        self.should_stop = true;
+    }
+
+    shutdown :: (self: *AndroidPlatform) {
+        if self.egl_display != null {
+            eglMakeCurrent(self.egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            if self.egl_surface != null { eglDestroySurface(self.egl_display, self.egl_surface); self.egl_surface = null; }
+            if self.egl_context != null { eglDestroyContext(self.egl_display, self.egl_context); self.egl_context = null; }
+            eglTerminate(self.egl_display);
+            self.egl_display = null;
+        }
+    }
+}

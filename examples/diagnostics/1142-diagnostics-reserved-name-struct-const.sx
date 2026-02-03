@@ -1,0 +1,20 @@
+// A bare reserved/builtin type-name spelling is rejected as the NAME of a
+// STRUCT-BODY constant too — both the untyped (`i2 :: 5`) and the typed
+// (`u8 : i64 : 9`) forms — exactly like a top-level const (examples/1140) or a
+// type decl (examples/1141). A struct member constant is a binding site, so a
+// bare reserved spelling mis-classifies and is rejected; the caret lands ON the
+// constant's name (not at 1:1). The backtick escape (examples/0156) is the only
+// way to spell these names in handwritten sx.
+//
+// Regression (issue 0089 — attempt-5: 0076 holds for struct-body consts, with
+// the caret on the name). Expected: one error per const, caret on the name; exit 1.
+#import "modules/std.sx";
+
+Holder :: struct {
+    i2 :: 5;
+    u8 : i64 : 9;
+}
+
+main :: () -> i32 {
+    return 0;
+}

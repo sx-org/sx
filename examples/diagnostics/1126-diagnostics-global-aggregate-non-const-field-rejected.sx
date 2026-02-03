@@ -1,0 +1,21 @@
+// A module-global aggregate with a NULL pointer field is fine (null is a
+// compile-time constant), but a sibling field initialized from a NON-constant
+// expression (here a runtime function call) must still be rejected loudly. The
+// presence of an accepted `null` must NOT widen the gate to admit the
+// non-constant neighbor.
+// Regression (issue 0081): the null-pointer fix must not regress the
+// reject-loud behavior for genuinely non-constant initializers (issues
+// 0072/0080). Expected: "global 'boxes' must be initialized by a compile-time
+// constant"; exit 1.
+
+#import "modules/std.sx";
+
+runtime_marker :: () -> i64 { return 7; }
+
+Box :: struct { p: *i64; marker: i64; }
+boxes : [1]Box = .[ .{ p = null, marker = runtime_marker() } ];
+
+main :: () -> i32 {
+    print("marker={}\n", boxes[0].marker);
+    return 0;
+}

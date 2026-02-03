@@ -1,0 +1,5 @@
+error: expected ','
+  --> examples/diagnostics/1241-diagnostics-hash-intrinsic-rejected.sx:14:11
+   |
+14 | foo :: ($T: Type) -> i64 #intrinsic;
+   |           ^

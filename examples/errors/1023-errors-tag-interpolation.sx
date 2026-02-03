@@ -1,0 +1,29 @@
+// Error-tag `{}` interpolation (ERR step E3 — tag-name table). Formatting an
+// error-set value with `{}` renders the tag NAME (`BadDigit`), not the raw id,
+// reusing the `any_to_string` dispatch (new `error_set` category → the
+// `error_name` builtin → the always-linked tag-name table indexed by global
+// tag id). Works for a bound tag, a re-raised/caught tag, and inside text.
+
+#import "modules/std.sx";
+
+E :: error { BadDigit, Empty, Overflow }
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0  { raise error.BadDigit; }
+    if n == 0 { raise error.Empty; }
+    return n * 2;
+}
+
+main :: () -> i32 {
+    a : E = error.BadDigit;
+    b : E = error.Overflow;
+    print("a={} b={}\n", a, b);              // a=BadDigit b=Overflow
+
+    // A tag bound by `catch` interpolates too (diverging handler).
+    v := parse(0) catch (e) {
+        print("parse failed with {}\n", e);   // parse failed with Empty
+        return 0;
+    };
+    print("v={}\n", v);                       // not reached (parse(0) raises Empty)
+    return 0;
+}

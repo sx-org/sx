@@ -1,0 +1,5 @@
+Box :: struct($T: Type) {
+    value: T;
+}
+
+Secret :: Box(i32);

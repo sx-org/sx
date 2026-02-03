@@ -1,0 +1,21 @@
+=== 5. Functions ===
+const: 42
+typed-const: 3.140000
+default-init: 0
+implicit-ret: 42
+early-ret: 5
+early-ret2: 99
+void-return: ok
+generic-i32: 42
+generic-f32: 1.500000
+generic-bool: true
+generic-multi: 30
+lambda: 14
+lambda-ret: 5.000000
+local-fn: 7
+fn-nested: 26
+varargs: 15
+spread: 60
+fp: 7
+fp-reassign: 12
+fp-apply: 30

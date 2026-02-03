@@ -1,0 +1,12 @@
+// A module that MINTS a comptime enum via the compiler API and exports it.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";   // raw_declare_type / raw_register_type / Member
+
+build_suit :: () -> Type {
+    return raw_register_type(raw_declare_type("Suit"), 2, .[   // kind 2 = actual enum
+        Member.{ name = "hearts", ty = void },
+        Member.{ name = "spades", ty = void },
+    ]);
+}
+
+Suit :: build_suit();

@@ -1,0 +1,22 @@
+// A call-shaped enum construction `.Variant(payload)` with an UNKNOWN variant
+// name is a HARD ERROR, not a silent construction of the zeroth variant. The
+// payloadless `.Variant` literal and the `case .Variant` pattern already
+// validated the tag against the enum; the payload-carrying construction path
+// (`resolveVariantIndex`, which returns 0 for an unknown name) skipped that
+// check and silently built the first variant.
+//
+// Regression: surfaced while renaming `json.Value`'s tags — a stale
+// `.int_(7)` (the old tag) silently constructed `.null` instead of failing the
+// build, masking the incomplete migration. `hasVariant` now gates all three
+// call-shaped construction sites in lower/call.zig.
+#import "modules/std.sx";
+
+V :: enum {
+    a;
+    b: i64;
+}
+
+main :: () {
+    x : V = .nope(7);   // `nope` is not a variant of V — must be a compile error
+    _ = x;
+}

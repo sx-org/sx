@@ -1,0 +1,59 @@
+error: cannot assign to immutable capture 'x' — it is a by-value copy of the element; capture by reference with '(*x)' and write 'x.* = ...' to modify the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:35:18
+   |
+35 |     for xs (x) { x += 100; }
+   |                  ^^^^^^^^^
+
+error: cannot assign to immutable capture 'i' — a range/index position has no storage to write back into; copy it into a `:=` local to mutate
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:38:26
+   |
+38 |     for xs, 0.. (v, i) { i = 99; }
+   |                          ^^^^^^^
+
+error: cannot assign to immutable capture 'r' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:43:29
+   |
+43 |         case .circle: (r) { r = 5.0; }
+   |                             ^^^^^^^^
+
+error: cannot assign to immutable capture 'n' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:44:27
+   |
+44 |         case .rect: (n) { n = 7; }
+   |                           ^^^^^^
+
+error: cannot assign to immutable capture 'ov' — a match payload binding is a read-only copy of the variant's payload; copy it into a `:=` local to mutate
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:50:28
+   |
+50 |         case .some: (ov) { ov = 9; }
+   |                            ^^^^^^^
+
+error: cannot assign to immutable capture 'e' — a catch/onfail error binding is read-only; copy it into a `:=` local to mutate
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:55:25
+   |
+55 |     must(0) catch (e) { e = error.Bad; };
+   |                         ^^^^^^^^^^^^^^
+
+error: cannot assign to immutable capture 'e' — a catch/onfail error binding is read-only; copy it into a `:=` local to mutate
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:27:18
+   |
+27 |     onfail (e) { e = error.Bad; }           // onfail binding — immutable
+   |                  ^^^^^^^^^^^^^^
+
+error: cannot assign to immutable capture 'x' — a pack-element alias is read-only; copy it into a `:=` local to mutate
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:23:25
+   |
+23 |     inline for xs (x) { x = 999; }          // pack-element alias — immutable
+   |                         ^^^^^^^^
+
+error: cannot assign to immutable capture 'x' — it is a by-value copy of the element; capture by reference with '(*x)' and write 'x.* = ...' to modify the container, or copy it into a `:=` local to mutate
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:65:18
+   |
+65 |     for xs (x) { x, a = 5, 6; }
+   |                  ^
+
+error: cannot assign to constant 'c' — a '::' declaration is immutable; use ':=' to declare a mutable local
+  --> examples/diagnostics/1227-diagnostics-capture-assignment.sx:69:5
+   |
+69 |     c = 10;
+   |     ^^^^^^^

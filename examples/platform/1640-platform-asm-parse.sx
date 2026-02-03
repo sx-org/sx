@@ -1,0 +1,20 @@
+// ASM stream Phase E — x86_64 multi-output asm: `divq` produces quotient in rax
+// and remainder in rdx, returned as a `(quot, rem)` tuple. Two `={rax}`/`={rdx}`
+// value outputs ⇒ LLVM returns a `{ i64, i64 }` struct, which IS sx's tuple
+// representation (so `q, r := …` destructures it directly). x86-pinned via
+// `.build`: ir-only on a non-x86 host (the `.ir` snapshot locks the struct
+// return + `%[name]` rewrite); runs natively on x86_64-linux. See 1647 for a
+// multi-output example that executes on aarch64.
+divmod :: (n: u64, d: u64) -> Tuple(quot: u64, rem: u64) {
+    return asm {
+        "divq %[d]",
+        [quot] "={rax}" -> u64,
+        [rem]  "={rdx}" -> u64,
+        "{rax}" = n,  "{rdx}" = 0,  [d] "r" = d,
+        clobbers(.cc),
+    };
+}
+
+main :: () {
+    q, r := divmod(17, 5);
+}

@@ -1,0 +1,46 @@
+// Type-category match recognition covers every runtime category: a match
+// whose ONLY pattern is `optional` or `error_set` is still a TYPE match
+// (regression — these two were missing from the recognizer, so an
+// only-arm match silently fell to value-match lowering and its arm never
+// fired). The categories themselves classify like any other.
+#import "modules/std.sx";
+
+ParseErr :: error { BadDigit, Overflow };
+
+only_opt :: (t: Type) -> string {
+    if t == {
+        case optional: return "optional";
+        else:          return "other";
+    }
+    "unreached"
+}
+
+only_err :: (t: Type) -> string {
+    if t == {
+        case error_set: return "error_set";
+        else:           return "other";
+    }
+    "unreached"
+}
+
+mixed :: (t: Type) -> string {
+    if t == {
+        case optional:  return "optional";
+        case error_set: return "error_set";
+        case void:      return "void";
+        case struct:    return "struct";
+        else:           return "other";
+    }
+    "unreached"
+}
+
+main :: () {
+    o : ?i64 = 5;
+    print("only optional: {}\n", only_opt(type_of(o)));
+    print("only error_set: {}\n", only_err(ParseErr));
+    print("only neg: {}\n", only_opt(i64));
+    print("mixed opt: {}\n", mixed(type_of(o)));
+    print("mixed err: {}\n", mixed(ParseErr));
+    print("mixed void: {}\n", mixed(void));
+    print("mixed other: {}\n", mixed(f64));
+}

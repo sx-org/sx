@@ -1,0 +1,6 @@
+#import "modules/std.sx";
+// b.sx authors its OWN plain `f`. `show_b`'s bare `f()` must dispatch b.f (2),
+// not the first-wins pack winner from a.sx (1). The selector picks b.f; the
+// early pack/comptime dispatch must NOT hijack it with the winner.
+f :: () -> i64 { return 2; }
+show_b :: () { print("b: f() = {}\n", f()); }

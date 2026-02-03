@@ -1,0 +1,22 @@
+// Feature 1 / Step 1.1 — pack-constrained variadic parameter PARSES.
+//
+// Parse-only probe. The protocol-constrained variadic `..sources: Protocol`
+// (no `[]`, no `$`) now parses to an `ast.Param` with `is_pack = true`,
+// distinct from a slice variadic (`..parts: []T`, `is_pack = false`) and the
+// comptime type-pack (`..$args`, `is_comptime = true`). Sema/lowering for the
+// pack form arrive in Phase 2 — do NOT expect this to compile/run yet.
+//
+// The authoritative checks are the parser unit tests in src/parser.zig
+// ("parse pack-constrained variadic parameter", and the two contrast tests).
+
+// Protocol-constrained pack (the new form):
+map :: (..sources: ValueListenable) => sources;
+
+// With a fixed prefix before the pack:
+combine :: (label: string, ..sources: ValueListenable) => label;
+
+// Contrast — slice variadic (is_pack = false):
+join :: (..parts: []string) => parts;
+
+// Contrast — comptime type pack (is_comptime = true, is_pack = false):
+pick :: (..$args) => args[0];

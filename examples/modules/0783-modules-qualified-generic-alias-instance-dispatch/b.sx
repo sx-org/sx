@@ -1,0 +1,12 @@
+// Author B's generic `Box` — two i64 fields (size 16) whose `tag` returns
+// `self.x + 2`. Same template NAME as A's, different layout/body; it wins the
+// global last-wins `fn_ast_map["Box.tag"]`, so the alias over `a.Box` must NOT
+// dispatch to it.
+Box :: struct($T: Type) {
+    x: T;
+    y: T;
+
+    tag :: (self: *Box) -> T {
+        self.x + 2
+    }
+}

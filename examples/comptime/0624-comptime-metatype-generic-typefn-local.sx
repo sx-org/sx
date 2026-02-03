@@ -1,0 +1,34 @@
+// A GENERIC type-fn (`($T) -> Type`) may use LOCALS before its `return` — the
+// full body is comptime-evaluated, not just the return expression. Here
+// `make_status` assembles a variant list in a local `vs` (whose `ok` payload is
+// the type parameter `T`), then mints `Status` from it via `make_enum`. The
+// equivalent in a non-generic builder already worked (examples/0620); this
+// extends it to the generic case.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+make_status :: ($T: Type) -> Type {
+    vs := .[
+        EnumVariant.{ name = "ok",      payload = T },      // payload = the type arg
+        EnumVariant.{ name = "pending", payload = void },
+        EnumVariant.{ name = "failed",  payload = i64 },    // error code
+    ];
+    return make_enum("Status", vs);
+}
+
+Status :: make_status(f64);
+
+show :: (s: Status) {
+    if s == {
+        case .ok:      (v) { print("ok={}\n", v); }
+        case .pending:     { print("pending\n"); }
+        case .failed:  (e) { print("failed code={}\n", e); }
+    }
+}
+
+main :: () -> i32 {
+    show(.ok(2.5));
+    show(.pending);
+    show(.failed(404));
+    return 0;
+}

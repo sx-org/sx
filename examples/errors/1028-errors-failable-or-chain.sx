@@ -1,0 +1,39 @@
+// Failable `or` chains (ERR step E2.4b). `lhs or rhs` with failable operands
+// is a left-to-right, short-circuit chain: each failing attempt routes to the
+// next operand; the chain resolves when an operand succeeds (or a value
+// terminator absorbs). `try` marks an operand whose failure is visible routing
+// (path-marker rule); a bare failable operand is allowed when a downstream
+// terminator absorbs it. A `catch` over a parenthesized chain redirects the
+// chain's total failure to the handler instead of the function. Absorbed
+// failures clear the trace buffer; `onfail` does not fire for a failure that
+// never leaves its block. This run takes only absorbed paths → exit 120.
+
+#import "modules/std.sx";
+
+E :: error { A, B };
+
+fa :: (n: i32) -> (i32, !E) {
+    if n == 0 { raise error.A; }
+    if n < 0  { raise error.B; }
+    return n;
+}
+
+fv :: (n: i32) -> !E {                       // void (pure) failable
+    if n == 0 { raise error.A; }
+    return;
+}
+
+main :: () -> (i32, !E) {
+    onfail print("onfail fired (BUG)\n");    // must NOT fire — every chain below absorbs
+
+    r : i32 = 0;
+    r = r + (try fa(0) or try fa(7));               // a fails → b succeeds → 7
+    r = r + (try fa(0) or try fa(0) or try fa(3));   // first two fail → third → +3  = 10
+    r = r + (fa(0) or fa(0) or 96);                  // bare chain + value terminator → +96 = 106
+    r = r + ((try fa(0) or try fa(0)) catch (e) 5);    // both fail → catch handler → +5  = 111
+    r = r + ((try fa(0) or try fa(9)) catch (e) 0);    // second succeeds → catch skipped → +9 = 120
+
+    try fv(0) or try fv(1);                          // void chain: first fails → second succeeds
+
+    return r;                                         // success → exit 120; onfail skipped
+}

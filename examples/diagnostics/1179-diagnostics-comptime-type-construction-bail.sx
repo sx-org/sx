@@ -1,0 +1,30 @@
+// A comptime type construction (declare/define, reflection) that leaves a type
+// INCOMPLETE must surface a build-gating DIAGNOSTIC naming the reason — not
+// poison the decl to `.unresolved` silently and let that crash at LLVM emission
+// or hide behind a downstream cascade. Here `declare("Undefined")` mints a
+// forward nominal slot that is NEVER completed by a matching `define(handle, …)`;
+// the compiler rejects the incomplete type at its construction site (exit 1, no
+// panic).
+//
+// NOTE: an EXPLICITLY-defined empty type (empty struct/tuple/enum/tagged_union)
+// is VALID — see examples/0641. The remaining rejection is purely the
+// never-defined `declare` placeholder, which would otherwise panic codegen
+// (`verifySizes`: llvm_size != ir_size on an unsized forward slot).
+//
+// Regression (issue 0140): before the fix this panicked with "unresolved type
+// reached LLVM emission" (exit 134), because the interp's bail detail was
+// dropped (`catch return null`) and `.unresolved` reached codegen unannounced.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+// Declared but never `define`d — an incomplete forward slot.
+mk_undefined :: () -> Type {
+    return declare("Undefined");
+}
+
+Undefined :: mk_undefined();
+
+main :: () -> i32 {
+    u : Undefined = ---;
+    return 0;
+}

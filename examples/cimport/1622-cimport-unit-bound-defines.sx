@@ -1,0 +1,17 @@
+// `#define`/`#flags` reach a unit whose ONLY consumer is hand-curated
+// `extern` decls (PLAN-C C3.3) — no `#include`, no auto-synthesis:
+// the macro decides what the unit-bound decl answers.
+#import "modules/std.sx";
+
+unit :: #import c {
+    #define "UNIT_BASE=33";
+    #flags  "-O2";
+    #source "1622-cimport-unit-bound-defines/unit.c";
+};
+
+unit_answer :: () -> i32 extern unit "unit_answer";
+
+main :: () -> i32 {
+    print("unit answer = {}\n", unit_answer());
+    0
+}

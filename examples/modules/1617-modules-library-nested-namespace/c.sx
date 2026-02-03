@@ -1,0 +1,11 @@
+// Innermost module: owns the #library and its extern fn.
+#import "modules/std.sx";
+
+pcaplib :: #library "pcap";
+pcap_lib_version :: () -> ?cstring extern pcaplib "pcap_lib_version";
+
+pcap_version :: () -> string {
+    p := pcap_lib_version();
+    if p == null { return ""; }
+    return from_cstring(p!);
+}

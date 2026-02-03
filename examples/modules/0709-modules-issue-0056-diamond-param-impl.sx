@@ -1,0 +1,22 @@
+// Regression (issue 0056): a parameterised-protocol (`Into`) impl living in a
+// module reached through more than one import path must register exactly once.
+//
+//   main ─┬─ issue-0056/mid_a ─┐
+//         └─ issue-0056/mid_b ─┴─ issue-0056/common  (holds `impl Into(Wrapped) for i64`)
+//
+// Impl blocks are anonymous (no `declName`), so before the fix the diamond
+// dedup in imports.zig appended the cached node once per path and the second
+// registration tripped: `duplicate impl 'Into' for source 'i64'`. Now the flat
+// decl list also dedups by node identity, so this builds and prints 7.
+#import "modules/std.sx";
+// `Wrapped` lives in the shared `common.sx`; bare-import visibility is
+// non-transitive, so naming it here means importing it here (not via mid_a/b).
+#import "0709-modules-issue-0056/common.sx";
+#import "0709-modules-issue-0056/mid_a.sx";
+#import "0709-modules-issue-0056/mid_b.sx";
+
+main :: () -> i32 {
+    w : Wrapped = xx 7;
+    print("{}\n", w.v);
+    0
+}

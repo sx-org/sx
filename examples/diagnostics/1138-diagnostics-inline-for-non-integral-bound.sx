@@ -1,0 +1,14 @@
+// A NON-integral float (`4.5`) as an `inline for` range bound is a hard error:
+// the loop cursor must be a compile-time integer, so only an integral float
+// (`4.0`, `-2.0`) folds. Clean diagnostic + non-zero exit.
+//
+// Regression (F0.4 attempt 11, Agra ruling): range bounds are exempt from the
+// count negative-rejection (negatives are valid endpoints), but the
+// must-be-integer requirement still applies — `4.5` has no integer value.
+#import "modules/std.sx";
+
+main :: () {
+    s := 0;
+    inline for 0..4.5 (i) { s += i; }
+    print("unreachable: {}\n", s);
+}

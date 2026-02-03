@@ -1,0 +1,19 @@
+// ASM stream Phase 2 — `-> @place` write-through output. An asm result can be
+// STORED through a place (a local / struct field) instead of returned: the
+// place output does NOT join the result tuple. Here one value output is
+// returned (into `main_val`) while a second is written through `@other`. The
+// two are combined to 42. Read-write (`+`) and indirect (`*`) place outputs are
+// not yet implemented (rejected at lowering). aarch64-pinned; ir-only elsewhere.
+compute :: () -> i64 {
+    other : i64 = 0;
+    main_val := asm volatile {
+        #string ASM
+        mov %[m], #5
+        mov %[o], #37
+ASM,
+        [m] "=r" -> i64,        // value output → returned
+        [o] "=r" -> @other,     // place output → stored through @other
+    };
+    return main_val + other;    // 5 + 37 = 42
+}
+main :: () -> i64 { return compute(); }

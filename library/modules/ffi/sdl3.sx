@@ -1,0 +1,353 @@
+// SDL3 bindings. Linking is per-target (handled in build.sx):
+
+// SDL_InitFlags
+SDL_INIT_VIDEO :u32: 0x20;
+
+// SDL_WindowFlags
+SDL_WINDOW_OPENGL              :u64: 0x2;
+SDL_WINDOW_RESIZABLE           :u64: 0x20;
+SDL_WINDOW_HIGH_PIXEL_DENSITY  :u64: 0x2000;
+
+// SDL_GLAttr (enum starting at 0)
+SDL_GL_DOUBLEBUFFER          :i32: 5;
+SDL_GL_DEPTH_SIZE            :i32: 6;
+SDL_GL_CONTEXT_MAJOR_VERSION :i32: 17;
+SDL_GL_CONTEXT_MINOR_VERSION :i32: 18;
+SDL_GL_CONTEXT_FLAGS         :i32: 19;
+SDL_GL_CONTEXT_PROFILE_MASK  :i32: 20;
+
+// SDL_GLProfile
+SDL_GL_CONTEXT_PROFILE_CORE :i32: 0x1;
+SDL_GL_CONTEXT_PROFILE_ES   :i32: 0x4;
+
+// SDL_GLContextFlag
+SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG :i32: 0x2;
+
+// SDL_Keycode — virtual key codes (layout-dependent)
+SDL_Keycode :: enum u32 {
+    // Common
+    unknown :: 0x00;
+    return_key :: 0x0D;
+    escape :: 0x1B;
+    backspace :: 0x08;
+    tab :: 0x09;
+    space :: 0x20;
+    delete_key :: 0x7F;
+
+    // Punctuation
+    exclaim :: 0x21;
+    double_quote :: 0x22;
+    hash :: 0x23;
+    dollar :: 0x24;
+    percent :: 0x25;
+    ampersand :: 0x26;
+    apostrophe :: 0x27;
+    leftparen :: 0x28;
+    rightparen :: 0x29;
+    asterisk :: 0x2A;
+    plus :: 0x2B;
+    comma :: 0x2C;
+    minus :: 0x2D;
+    period :: 0x2E;
+    slash :: 0x2F;
+    colon :: 0x3A;
+    semicolon :: 0x3B;
+    less :: 0x3C;
+    equals :: 0x3D;
+    greater :: 0x3E;
+    question :: 0x3F;
+    at :: 0x40;
+    leftbracket :: 0x5B;
+    backslash :: 0x5C;
+    rightbracket :: 0x5D;
+    caret :: 0x5E;
+    underscore :: 0x5F;
+    grave :: 0x60;
+    leftbrace :: 0x7B;
+    pipe :: 0x7C;
+    rightbrace :: 0x7D;
+    tilde :: 0x7E;
+    plusminus :: 0xB1;
+
+    // Numbers
+    key_0 :: 0x30;
+    key_1 :: 0x31;
+    key_2 :: 0x32;
+    key_3 :: 0x33;
+    key_4 :: 0x34;
+    key_5 :: 0x35;
+    key_6 :: 0x36;
+    key_7 :: 0x37;
+    key_8 :: 0x38;
+    key_9 :: 0x39;
+
+    // Letters
+    a :: 0x61;
+    b :: 0x62;
+    c :: 0x63;
+    d :: 0x64;
+    e :: 0x65;
+    f :: 0x66;
+    g :: 0x67;
+    h :: 0x68;
+    i :: 0x69;
+    j :: 0x6A;
+    k :: 0x6B;
+    l :: 0x6C;
+    m :: 0x6D;
+    n :: 0x6E;
+    o :: 0x6F;
+    p :: 0x70;
+    q :: 0x71;
+    r :: 0x72;
+    s :: 0x73;
+    t :: 0x74;
+    u :: 0x75;
+    v :: 0x76;
+    w :: 0x77;
+    x :: 0x78;
+    y :: 0x79;
+    z :: 0x7A;
+
+    // Function keys
+    f1 :: 0x4000003A;
+    f2 :: 0x4000003B;
+    f3 :: 0x4000003C;
+    f4 :: 0x4000003D;
+    f5 :: 0x4000003E;
+    f6 :: 0x4000003F;
+    f7 :: 0x40000040;
+    f8 :: 0x40000041;
+    f9 :: 0x40000042;
+    f10 :: 0x40000043;
+    f11 :: 0x40000044;
+    f12 :: 0x40000045;
+    f13 :: 0x40000068;
+    f14 :: 0x40000069;
+    f15 :: 0x4000006A;
+    f16 :: 0x4000006B;
+    f17 :: 0x4000006C;
+    f18 :: 0x4000006D;
+    f19 :: 0x4000006E;
+    f20 :: 0x4000006F;
+    f21 :: 0x40000070;
+    f22 :: 0x40000071;
+    f23 :: 0x40000072;
+    f24 :: 0x40000073;
+
+    // Navigation
+    capslock :: 0x40000039;
+    printscreen :: 0x40000046;
+    scrolllock :: 0x40000047;
+    pause :: 0x40000048;
+    insert :: 0x40000049;
+    home :: 0x4000004A;
+    pageup :: 0x4000004B;
+    end :: 0x4000004D;
+    pagedown :: 0x4000004E;
+    right :: 0x4000004F;
+    left :: 0x40000050;
+    down :: 0x40000051;
+    up :: 0x40000052;
+
+    // Keypad
+    numlock :: 0x40000053;
+    kp_divide :: 0x40000054;
+    kp_multiply :: 0x40000055;
+    kp_minus :: 0x40000056;
+    kp_plus :: 0x40000057;
+    kp_enter :: 0x40000058;
+    kp_1 :: 0x40000059;
+    kp_2 :: 0x4000005A;
+    kp_3 :: 0x4000005B;
+    kp_4 :: 0x4000005C;
+    kp_5 :: 0x4000005D;
+    kp_6 :: 0x4000005E;
+    kp_7 :: 0x4000005F;
+    kp_8 :: 0x40000060;
+    kp_9 :: 0x40000061;
+    kp_0 :: 0x40000062;
+    kp_period :: 0x40000063;
+    kp_equals :: 0x40000067;
+    kp_comma :: 0x40000085;
+
+    // Modifiers
+    lctrl :: 0x400000E0;
+    lshift :: 0x400000E1;
+    lalt :: 0x400000E2;
+    lgui :: 0x400000E3;
+    rctrl :: 0x400000E4;
+    rshift :: 0x400000E5;
+    ralt :: 0x400000E6;
+    rgui :: 0x400000E7;
+    mode :: 0x40000101;
+
+    // Editing
+    undo :: 0x4000007A;
+    cut :: 0x4000007B;
+    copy :: 0x4000007C;
+    paste :: 0x4000007D;
+    find :: 0x4000007E;
+
+    // Media
+    mute :: 0x4000007F;
+    volumeup :: 0x40000080;
+    volumedown :: 0x40000081;
+    media_play :: 0x40000106;
+    media_pause :: 0x40000107;
+    media_fast_forward :: 0x40000109;
+    media_rewind :: 0x4000010A;
+    media_next_track :: 0x4000010B;
+    media_previous_track :: 0x4000010C;
+    media_stop :: 0x4000010D;
+    media_eject :: 0x4000010E;
+    media_play_pause :: 0x4000010F;
+
+    // System
+    application :: 0x40000065;
+    power :: 0x40000066;
+    execute :: 0x40000074;
+    help :: 0x40000075;
+    menu :: 0x40000076;
+    select :: 0x40000077;
+    sleep :: 0x40000102;
+    wake :: 0x40000103;
+}
+
+// Event payload structs — match SDL3 layout from byte 4 onward (after the u32 type tag)
+// Common header: reserved (u32), timestamp (u64)
+
+SDL_WindowData :: struct {
+    timestamp: u64;     // event time in nanoseconds
+    window_id: u32;
+    data1: i32;         // event-dependent: x position for moved, width for resized
+    data2: i32;         // event-dependent: y position for moved, height for resized
+}
+
+SDL_Keymod :: enum flags u16 {
+    lshift :: 0b0000_0000_0000_0001;   // left Shift
+    rshift :: 0b0000_0000_0000_0010;   // right Shift
+    level5 :: 0b0000_0000_0000_0100;   // Level 5 Shift
+    lctrl  :: 0b0000_0000_0100_0000;   // left Ctrl
+    rctrl  :: 0b0000_0000_1000_0000;   // right Ctrl
+    lalt   :: 0b0000_0001_0000_0000;   // left Alt
+    ralt   :: 0b0000_0010_0000_0000;   // right Alt
+    lgui   :: 0b0000_0100_0000_0000;   // left GUI (Windows/Cmd key)
+    rgui   :: 0b0000_1000_0000_0000;   // right GUI (Windows/Cmd key)
+    num    :: 0b0001_0000_0000_0000;   // Num Lock
+    caps   :: 0b0010_0000_0000_0000;   // Caps Lock
+    mode   :: 0b0100_0000_0000_0000;   // AltGr
+    scroll :: 0b1000_0000_0000_0000;   // Scroll Lock
+}
+
+SDL_KeyData :: struct {
+    timestamp: u64;     // event time in nanoseconds
+    window_id: u32;     // window with keyboard focus
+    which: u32;         // keyboard instance id, 0 if unknown or virtual
+    scancode: u32;      // physical key code (layout-independent)
+    key: SDL_Keycode;   // virtual key code (layout-dependent)
+    mod: SDL_Keymod;    // active modifier keys
+    raw: u16;           // platform-specific scancode
+    down: u8;           // 1 if pressed, 0 if released
+    repeat: u8;         // 1 if this is a key repeat
+}
+
+SDL_MouseMotionData :: struct {
+    timestamp: u64;     // event time in nanoseconds
+    window_id: u32;     // window with mouse focus
+    which: u32;         // mouse instance id, 0 for touch events
+    state: u32;         // button state bitmask (bit 0 = left, 1 = middle, 2 = right)
+    x: f32;             // x position relative to window
+    y: f32;             // y position relative to window
+    xrel: f32;          // relative motion in x
+    yrel: f32;          // relative motion in y
+}
+
+SDL_MouseButtonData :: struct {
+    timestamp: u64;     // event time in nanoseconds
+    window_id: u32;     // window with mouse focus
+    which: u32;         // mouse instance id, 0 for touch events
+    button: u8;         // button index (1 = left, 2 = middle, 3 = right)
+    down: u8;           // 1 if pressed, 0 if released
+    clicks: u8;         // 1 for single-click, 2 for double-click, etc.
+    _: u8;
+    x: f32;             // x position relative to window
+    y: f32;             // y position relative to window
+}
+
+SDL_MouseWheelData :: struct {
+    timestamp: u64;     // event time in nanoseconds
+    window_id: u32;     // window with mouse focus
+    which: u32;         // mouse instance id
+    x: f32;             // horizontal scroll (positive = right)
+    y: f32;             // vertical scroll (positive = away from user)
+    direction: u32;     // 0 = normal, 1 = flipped (multiply by -1 to normalize)
+    mouse_x: f32;       // mouse x position relative to window
+    mouse_y: f32;       // mouse y position relative to window
+}
+
+SDL_Event :: enum struct { tag: u32; _: u32; payload: [30]u32; } {
+    none :: 0;
+
+    // Application
+    quit :: 0x100;
+
+    // Window
+    window_shown :: 0x202: SDL_WindowData;
+    window_hidden :: 0x203: SDL_WindowData;
+    window_exposed :: 0x204: SDL_WindowData;
+    window_moved :: 0x205: SDL_WindowData;
+    window_resized :: 0x206: SDL_WindowData;
+    window_minimized :: 0x209: SDL_WindowData;
+    window_maximized :: 0x20A: SDL_WindowData;
+    window_restored :: 0x20B: SDL_WindowData;
+    window_mouse_enter :: 0x20C: SDL_WindowData;
+    window_mouse_leave :: 0x20D: SDL_WindowData;
+    window_focus_gained :: 0x20E: SDL_WindowData;
+    window_focus_lost :: 0x20F: SDL_WindowData;
+    window_close_requested :: 0x210: SDL_WindowData;
+    window_destroyed :: 0x219: SDL_WindowData;
+
+    // Keyboard
+    key_down :: 0x300: SDL_KeyData;
+    key_up :: 0x301: SDL_KeyData;
+
+    // Mouse
+    mouse_motion :: 0x400: SDL_MouseMotionData;
+    mouse_button_down :: 0x401: SDL_MouseButtonData;
+    mouse_button_up :: 0x402: SDL_MouseButtonData;
+    mouse_wheel :: 0x403: SDL_MouseWheelData;
+}
+
+// Functions
+SDL_Init               :: (flags: u32) -> bool extern;
+SDL_Quit               :: () -> void extern;
+SDL_CreateWindow       :: (title: [:0]u8, w: i32, h: i32, flags: u64) -> *void extern;
+SDL_DestroyWindow      :: (window: *void) -> void extern;
+SDL_GL_SetAttribute    :: (attr: i32, value: i32) -> bool extern;
+SDL_GL_CreateContext    :: (window: *void) -> *void extern;
+SDL_GL_DestroyContext   :: (context: *void) -> bool extern;
+SDL_GL_MakeCurrent     :: (window: *void, context: *void) -> bool extern;
+SDL_GL_SwapWindow      :: (window: *void) -> bool extern;
+SDL_GL_SetSwapInterval :: (interval: i32) -> bool extern;
+SDL_GL_GetProcAddress  :: (proc: [:0]u8) -> *void extern;
+SDL_PollEvent          :: (event: *SDL_Event) -> bool extern;
+SDL_AddEventWatch      :: (filter: *void, userdata: *void) -> bool extern;
+SDL_GetTicks           :: () -> u64 extern;
+SDL_GetPerformanceCounter   :: () -> u64 extern;
+SDL_GetPerformanceFrequency :: () -> u64 extern;
+SDL_Delay              :: (ms: u32) -> void extern;
+SDL_GetWindowDisplayScale :: (window: *void) -> f32 extern;
+SDL_GetWindowSize          :: (window: *void, w: *i32, h: *i32) -> bool extern;
+SDL_SetWindowSize          :: (window: *void, w: i32, h: i32) -> bool extern;
+SDL_GetWindowSizeInPixels  :: (window: *void, w: *i32, h: *i32) -> bool extern;
+
+SDL_Rect :: struct {
+    x: i32;
+    y: i32;
+    w: i32;
+    h: i32;
+}
+
+SDL_GetPrimaryDisplay       :: () -> u32 extern;
+SDL_GetDisplayUsableBounds  :: (display_id: u32, rect: *SDL_Rect) -> bool extern;

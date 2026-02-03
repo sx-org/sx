@@ -1,0 +1,92 @@
+// Atomics — `Atomic($T)` wrapper + `Ordering`, over the compiler's atomic
+// load/store (later: rmw/cas/fence) IR ops. Consumers reach these through
+// std.sx (`Atomic` / `Ordering` re-exports), never by importing this file.
+//
+// Atomicity is a property of the OPERATION, not the storage: `Atomic(T)` is a
+// transparent 1-field wrapper with `T`'s exact layout/size/align. The ops are
+// `intrinsic` declarations recognized by the intrinsic registry
+// (`tryLowerAtomicIntrinsic`, src/ir/lower/call.zig) and emitted as dedicated
+// atomic IR ops; the `Ordering` argument MUST be a constant enum literal.
+#import "modules/std/core.sx";
+
+Ordering :: enum {
+    relaxed;   // → LLVM Monotonic
+    acquire;   // → LLVM Acquire
+    release;   // → LLVM Release
+    acq_rel;   // → LLVM AcquireRelease
+    seq_cst;   // → LLVM SequentiallyConsistent
+}
+
+// Compiler intrinsics. Not called directly by users — `Atomic(T)`'s methods
+// forward to them. Recognized by name in lowering; the `Ordering` arg MUST be a
+// constant enum literal (a non-literal is a loud diagnostic).
+atomic_load  :: ($T: Type, ptr: *T, o: Ordering) -> T intrinsic;
+atomic_store :: ($T: Type, ptr: *T, v: T, o: Ordering) intrinsic;
+
+// Read-modify-write intrinsics — integer T only. Each returns the OLD value.
+// `min`/`max` are signed or unsigned per T. (No `nand`.)
+atomic_fetch_add :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+atomic_fetch_sub :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+atomic_fetch_and :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+atomic_fetch_or  :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+atomic_fetch_xor :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+atomic_fetch_min :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+atomic_fetch_max :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+
+// Swap (exchange): store `operand`, return the OLD value. Integer T.
+atomic_swap :: ($T: Type, ptr: *T, operand: T, o: Ordering) -> T intrinsic;
+
+// Standalone memory fence. The ordering may NOT be `.relaxed` (LLVM has no
+// monotonic/unordered fence). `$o` is a comptime ordering param.
+atomic_fence :: (o: Ordering) intrinsic;
+fence :: ($o: Ordering) { atomic_fence(o); }
+
+// Compare-exchange intrinsics — integer T only. The result is `?T`:
+// `null` = SUCCESS (the stored value equalled `expected`, replaced by `desired`);
+// a present value is the ACTUAL current value on failure (for a retry loop).
+// `_weak` may fail spuriously (LLVM `cmpxchg weak`) — use it inside a retry loop.
+// Two orderings: `success` (applied when the exchange happens) and `failure`
+// (the load when it doesn't). The failure ordering may not be .release / .acq_rel
+// and may not be stronger than the success ordering (LLVM rule, enforced at lower).
+atomic_cmpxchg      :: ($T: Type, ptr: *T, expected: T, desired: T, success: Ordering, failure: Ordering) -> ?T intrinsic;
+atomic_cmpxchg_weak :: ($T: Type, ptr: *T, expected: T, desired: T, success: Ordering, failure: Ordering) -> ?T intrinsic;
+
+// The ordering is a COMPTIME value param (`$o`): it must be known at compile
+// time because LLVM atomic ordering is an instruction attribute, not a runtime
+// operand. It is explicit (Rust-style — no default), so the caller always states
+// the ordering: `a.load(.acquire)`, `a.store(v, .release)`. An invalid
+// combination (`a.load(.release)`) is a compile error.
+Atomic :: struct ($T: Type) {
+    value: T;
+
+    init :: (v: T) -> Atomic(T) {
+        return .{ value = v };
+    }
+
+    load :: (self: *Atomic(T), $o: Ordering) -> T {
+        return atomic_load(T, @self.value, o);
+    }
+
+    store :: (self: *Atomic(T), v: T, $o: Ordering) {
+        atomic_store(T, @self.value, v, o);
+    }
+
+    // Read-modify-write (integer T). Each returns the value BEFORE the update.
+    fetch_add :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_add(T, @self.value, v, o); }
+    fetch_sub :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_sub(T, @self.value, v, o); }
+    fetch_and :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_and(T, @self.value, v, o); }
+    fetch_or  :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_or(T, @self.value, v, o); }
+    fetch_xor :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_xor(T, @self.value, v, o); }
+    fetch_min :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_min(T, @self.value, v, o); }
+    fetch_max :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_max(T, @self.value, v, o); }
+
+    // Swap: store `v`, return the value BEFORE the swap (integer T).
+    swap :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_swap(T, @self.value, v, o); }
+
+    // Compare-exchange (integer T). Returns `?T`: `null` on success (the value
+    // equalled `expected` and is now `desired`); on failure the ACTUAL current
+    // value (retry with it). `compare_exchange_weak` may fail spuriously — use it
+    // inside a retry loop. `$success` / `$failure` are comptime ordering params.
+    compare_exchange      :: (self: *Atomic(T), expected: T, desired: T, $success: Ordering, $failure: Ordering) -> ?T { return atomic_cmpxchg(T, @self.value, expected, desired, success, failure); }
+    compare_exchange_weak :: (self: *Atomic(T), expected: T, desired: T, $success: Ordering, $failure: Ordering) -> ?T { return atomic_cmpxchg_weak(T, @self.value, expected, desired, success, failure); }
+}

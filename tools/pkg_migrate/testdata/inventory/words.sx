@@ -1,0 +1,25 @@
+// inventory fixture. This comment mentions package import private intrinsic
+// and none of those may count. Only identifier tokens below count.
+
+// 1 hit: `package` as a parameter (typed-decl)
+build :: (package: string, lib: string) -> string {
+    // 2 hits: `package` use + `import` decl-local
+    import := package;
+    // 1 hit: `private` decl-const
+    private :: 7;
+    // 1 hit: `intrinsic` call
+    r := intrinsic(private);
+    // in a string: no hits
+    s := "package import private intrinsic";
+    // in a char literal's neighborhood: no hits ('p' is a char token)
+    c := 'p';
+    // backticked: 1 hit for `import`, flagged (backticked)
+    t := `import;
+    // member access: 1 hit for `private` (member-access)
+    v := obj.private;
+    // heredoc: no hits
+    h := #string XML
+<manifest package="demo" import="x" private intrinsic />
+XML;
+    return s;
+}

@@ -1,0 +1,5 @@
+error: value 5000000000 does not fit in u32 parameter K
+  --> examples/diagnostics/1134-diagnostics-value-param-u32-overflow.sx:15:13
+   |
+15 |     b : Box(5000000000) = ---;
+   |             ^^^^^^^^^^

@@ -1,0 +1,46 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+main :: () {
+
+    // --- inline if (compile-time conditionals) ---
+    print("=== inline if ===\n");
+    {
+        // POINTER_SIZE is 8 on desktop (64-bit)
+        inline if POINTER_SIZE == 8 {
+            print("64-bit\n");
+        } else {
+            print("32-bit\n");
+        }
+
+        // OS enum comparison
+        inline if OS == .wasm {
+            print("wasm\n");
+        } else {
+            print("not wasm\n");
+        }
+
+        // != comparison
+        inline if OS != .unknown {
+            print("known os\n");
+        } else {
+            print("unknown os\n");
+        }
+
+        // nested inline if
+        inline if POINTER_SIZE != 4 {
+            inline if OS != .wasm {
+                print("desktop 64-bit\n");
+            } else {
+                print("wasm 64-bit??\n");
+            }
+        }
+
+        // POINTER_SIZE in regular (non-inline) if expression
+        ps := if POINTER_SIZE == 8 then "8" else "4";
+        print("pointer size via if: {}\n", ps);
+    }
+}

@@ -1,0 +1,42 @@
+// Phase 1 step 1.4 (PLAN-FFI.md): multiple `#objc_call` sites
+// with the same selector. Today (after 1.3) each site emits its
+// own `call @sel_registerName(<"init">)`; the actual SEL handle
+// is recomputed per call.
+//
+// 1.5 lands selector interning: one static `SEL` global per
+// unique selector string (named `OBJC_SELECTOR_REFERENCES_init`,
+// matching clang's convention) populated once via the runtime
+// at module init. Per call site becomes a single load.
+//
+// Runtime behavior is unchanged before vs. after 1.5; the
+// improvement is visible in `sx ir` only. The IR snapshot at
+// `tests/expected/ffi-objc-call-03-selector-sharing.ir` locks
+// in today's shape (4 `call ptr @sel_registerName` instructions,
+// one per call site). After 1.5 lands selector interning, the
+// snapshot updates to ≤2 (one per unique selector string) plus
+// a static `@OBJC_SELECTOR_REFERENCES_<sel>` global and loads at
+// the call sites.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        // Three calls, same selector, same nil receiver. Today these
+        // emit three `sel_registerName("init")` calls. After 1.5 the
+        // emit collapses to one (cached SEL global).
+        #objc_call(void)(null, "init");
+        #objc_call(void)(null, "init");
+        #objc_call(void)(null, "init");
+
+        // A different selector — should remain distinct after 1.5
+        // (one cached SEL per unique string, not per call site).
+        #objc_call(void)(null, "release");
+
+        print("ok\n");
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

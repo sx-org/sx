@@ -1,0 +1,9 @@
+// `empty.abs` must not fall through to the unrelated bare libc `abs` imported
+// through clib. A qualified call is pinned to the named namespace (issue 0282).
+
+empty :: #import "0849-modules-qualified-missing-fn-no-bare-fallback/empty.sx";
+clib :: #import "0849-modules-qualified-missing-fn-no-bare-fallback/clib.sx";
+
+main :: () -> i32 {
+    empty.abs(7)
+}

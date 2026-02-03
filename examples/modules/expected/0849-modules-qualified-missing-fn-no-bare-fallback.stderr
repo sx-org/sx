@@ -1,0 +1,5 @@
+error: namespace 'empty' has no member 'abs'
+  --> examples/modules/0849-modules-qualified-missing-fn-no-bare-fallback.sx:8:5
+   |
+ 8 |     empty.abs(7)
+   |     ^^^^^^^^^

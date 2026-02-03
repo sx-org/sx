@@ -1,0 +1,28 @@
+#import "modules/std.sx";
+
+add :: (a: i32, b: i32) -> i32 { a + b }
+mul :: (a: i32, b: i32) -> i32 { a * b }
+
+apply :: (f: (i32, i32) -> i32, x: i32, y: i32) -> i32 {
+    f(x, y)
+}
+
+main :: () {
+    // Store function in variable
+    fp : (i32, i32) -> i32 = add;
+    print("fp(3,4) = {}\n", fp(3, 4));
+
+    // Reassign to different function
+    fp = mul;
+    print("fp(3,4) = {}\n", fp(3, 4));
+
+    // Pass function pointer as argument
+    print("apply(add,5,6) = {}\n", apply(add, 5, 6));
+    print("apply(mul,5,6) = {}\n", apply(mul, 5, 6));
+}
+
+// ** stdout **
+//fp(3,4) = 7
+//fp(3,4) = 12
+//apply(add,5,6) = 11
+//apply(mul,5,6) = 30

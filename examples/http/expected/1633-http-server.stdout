@@ -1,0 +1,9 @@
+GET 200, keep-alive
+keep-alive reuse ok
+request cap: close + EOF
+POST echo ok
+404 routing ok
+big body grows the buffer and echoes intact
+slow client evicted, healthy client served
+pooled dispatch: GET, echo, 404 across worker threads ok
+http server ok

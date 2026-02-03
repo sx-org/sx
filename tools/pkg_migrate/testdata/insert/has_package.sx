@@ -1,0 +1,7 @@
+// already migrated.
+
+package demo;
+
+main :: () {
+    print("hello\n");
+}

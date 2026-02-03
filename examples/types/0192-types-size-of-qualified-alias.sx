@@ -1,0 +1,18 @@
+// `size_of(alias.Type)` on a module-alias-qualified type must resolve the type,
+// exactly as a declaration `: alias.Type` does. In argument position the
+// qualified name parses as a field-access expression; resolveTypeArg now
+// reconstructs the dotted name and resolves it through the alias map instead of
+// returning `.unresolved`.
+//
+// Regression (issue 0147).
+#import "modules/std.sx";
+sel :: #import "0192-types-size-of-qualified-alias-mod.sx";
+
+main :: () -> i32 {
+    // Qualified through the module alias, in a type-arg slot.
+    print("size={}\n", size_of(sel.Selection));   // 12
+    // Same name also resolves in a declaration (already worked).
+    s : sel.Selection = .{ a = 1, b = 2, c = 3 };
+    print("sum={}\n", s.a + s.b + s.c);            // 6
+    return 0;
+}

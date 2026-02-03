@@ -1,0 +1,40 @@
+// Error return-trace buffer push/clear wiring (ERR step E3.2). A `raise` and a
+// propagating `try` each push a frame; an absorbing site (`catch`, `or value`,
+// a destructure that binds the error) clears the buffer. In debug builds
+// (`sx run` defaults to -O0) these calls are emitted; in release they're
+// skipped entirely (zero overhead). Until E3.3 ships `trace.print_current`,
+// this example observes the buffer directly via the runtime's `sx_trace_len`
+// (linked in for the JIT) — a white-box probe, not the eventual public API.
+
+#import "modules/std.sx";
+
+// Internal runtime symbol (library/vendors/sx_trace_runtime/sx_trace.c).
+sx_trace_len :: () -> u32 extern;
+
+E :: error { Bad }
+
+fail :: (n: i32) -> !E {
+    if n < 0 { raise error.Bad; }   // pushes a frame
+    return;
+}
+
+propagate :: (n: i32) -> !E {
+    try fail(n);                     // on failure: pushes a frame, propagates
+    return;
+}
+
+main :: () -> i32 {
+    // `catch` lets the handler INSPECT the trace, then absorbs: the buffer is
+    // cleared when the handler completes (a non-diverging exit), not on entry.
+    // So inside the handler the frames are still visible (here: the `raise` in
+    // `fail` + the `try fail` propagation in `propagate` = 2 frames)...
+    propagate(-1) catch (e) {
+        print("in catch: len={}\n", sx_trace_len());   // 2 (handler sees the chain)
+    };
+    print("after catch: len={}\n", sx_trace_len());     // 0 (absorbed at handler exit)
+
+    // A success leaves the buffer empty (nothing pushed).
+    propagate(1) catch (e) { };
+    print("after success: len={}\n", sx_trace_len());   // 0
+    return 0;
+}

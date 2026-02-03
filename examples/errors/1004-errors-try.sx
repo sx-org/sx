@@ -1,0 +1,32 @@
+// First runnable `try` (ERR step E1.4a). The STANDALONE form: a failable
+// expression whose failure propagates to the enclosing function's error
+// return (Zig-style). `outer` calls `try inner(n)` — on `inner`'s failure
+// `outer` returns that error; on success it continues. Both are pure
+// failable (`-> !E`). The error-channel tuple ABI for value-carrying
+// `-> (T, !)` and `try` in an `or` chain land in ERR E1.4b/E2.
+
+#import "modules/std.sx";
+
+E :: error { Bad, Worse }
+
+inner :: (n: i32) -> !E {
+    if n < 0 { raise error.Bad; }
+    return;                              // success — no error
+}
+
+// Propagates inner's error (standalone `try`, target = function return).
+outer :: (n: i32) -> !E {
+    try inner(n);
+    return;
+}
+
+main :: () -> i32 {
+    bad  := outer(-1);                   // inner raises Bad -> outer propagates
+    good := outer(7);                    // inner succeeds   -> outer succeeds
+    r : i32 = 0;
+    if bad  == error.Bad   { r = r + 5; }    // true  -> +5
+    if good == error.Bad   { r = r + 1; }     // false (success = no error)
+    if bad  == error.Worse { r = r + 2; }     // false (propagated Bad)
+    print("try result: {}\n", r);             // -> 5
+    return r;
+}

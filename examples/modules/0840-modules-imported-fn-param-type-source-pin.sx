@@ -1,0 +1,13 @@
+// A namespaced import's fn param type (`Failure`) is bare-visible only
+// inside its own module. Typing this call's args resolves each param in
+// the CALLEE module's context — resolved at the call site, the bare leaf
+// is namespaced-only and the call diagnoses "type 'Failure' is not
+// visible" even though the caller never names it bare.
+
+#import "modules/std.sx";
+m :: #import "0840-modules-imported-fn-param-type-source-pin/m.sx";
+
+main :: () {
+    f : m.Failure = .{ code = 7, message = "boom" };
+    print("{}\n", m.describe(f));
+}

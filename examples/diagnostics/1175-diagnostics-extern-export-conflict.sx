@@ -1,0 +1,11 @@
+// Phase 4 (FFI-linkage) interplay diagnostic: `extern` and `export` are the two
+// values of the same linkage axis — a declaration is either an import (`extern`)
+// or a definition (`export`), never both. The parser rejects the redundant
+// second keyword with a clear message (instead of the bare "expected ';'" the
+// body parser would otherwise emit).
+//
+// Expected: one error caret on the second keyword; exit 1.
+
+f :: (a: i32) -> i32 extern export;
+
+main :: () -> i32 { 0 }

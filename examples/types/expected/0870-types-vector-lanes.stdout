@@ -1,0 +1,6 @@
+static: 3
+runtime: 3 (size 16)
+parity: true
+w8: 8
+nonvec: 0
+comptime: 4

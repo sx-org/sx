@@ -1,0 +1,8 @@
+// Negative: a named-return slot may not share a name with a PARAMETER — the slot
+// local would silently shadow the parameter. Rename one.
+#import "modules/std.sx";
+inc :: (sum: i32) -> (sum: i32, ok: bool) {
+    ok = true;
+    sum = sum + 1;
+}
+main :: () -> i64 { s, o := inc(10); print("{} {}\n", s, o); return 0; }

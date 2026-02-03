@@ -1,0 +1,372 @@
+// std.http — Q3.4 DATA-phase TLS cross-direction wants. The transport seam
+// (TlsConn) may return WantWrite from a READ (the session must flush a
+// pending record before it can deliver plaintext) or WantRead from a WRITE
+// (the session needs a peer message before its ciphertext can proceed) —
+// renegotiation / ticket-flush shaped flows. The server must track the
+// wanted DIRECTION on the Conn and drive the OPPOSITE readiness:
+//   - a read-want-write retries on WRITABILITY (the write watch is armed —
+//     readability alone can never unstick it);
+//   - a write-want-read retries on READABILITY, and the write watch must
+//     NOT be armed (a level-triggered writable with a read-direction want
+//     would spin the loop, one futile retry per tick).
+//
+// A pure-sx FAKE TLS provider (byte passthrough over the plain fd) injects
+// the cross-direction wants deterministically at the seam — no real TLS
+// library, so this runs on every host/arch. Modes, one per accepted conn:
+//   R (accept #1): the first data-bearing read DRAINS the fd fully into an
+//     internal buffer and returns (0, WantWrite); the buffered bytes are
+//     only handed out on a retry. The kernel buffer is now empty, so no
+//     readable event will ever fire — only an armed write watch delivers
+//     the retry. Red today: the request stalls silently to eviction.
+//   W (accept #2): the first response write returns (0, WantRead) until one
+//     new inbound byte arrives (consumed internally, like a handshake
+//     record). The retry must come from readability; wr_extra_retries
+//     counts write attempts made while waiting with nothing inbound —
+//     red today: the armed write watch spins retries every tick (fix: 0).
+//     Keep-alive on the same conn afterwards proves the watch state healed.
+//   B (accept #3, pool + stream_request_body): the SECOND data-bearing read
+//     (the body tail) injects the mode-R drain — the CONN_BODY pump must
+//     also retry on writability. Red today: the body stalls to eviction.
+//   H (accept #4, review F1): the want surfaces AFTER the request is fully
+//     read — the read that would return WouldBlock returns WantWrite
+//     instead, so the request DISPATCHES (slow pooled handler) with the
+//     want unresolved. The server must drop the cross-armed watch at
+//     dispatch (reading parks; a level-triggered writable would spin the
+//     loop for the whole handler run and the request was never served).
+//   + net-zero GPA gate across the whole run.
+#import "modules/std.sx";
+#import "modules/std/http/tls.sx";   // TlsConn, TlsAcceptor, TlsStep (flat)
+cstd   :: #import "modules/std/c.sx";
+socket :: #import "modules/std/socket.sx";
+http   :: #import "modules/std/http.sx";
+
+clib :: #library "c";
+usleep :: (usec: i64) -> i32 extern clib;
+
+PORT :: 19017;
+
+// ── fake TLS provider ────────────────────────────────────────────────
+// Passthrough byte relay over the conn's fd with one injected cross-
+// direction want per mode. Single-threaded: every TlsConn call happens on
+// the loop thread (== main here), so the acceptor's counters are plain.
+
+MODE_PASS :: 0;   // pure passthrough (health-check conns)
+MODE_R    :: 1;   // read-cross: drain + WantWrite on the 1st data-bearing read
+MODE_W    :: 2;   // write-cross: WantRead on the 1st response write
+MODE_B    :: 3;   // body-cross: drain + WantWrite on the 2nd data-bearing read
+MODE_H    :: 4;   // dispatch-cross (review F1): WantWrite at the WouldBlock
+                  // position right after the request was fully surfaced
+
+PEND_CAP :: 4096;
+
+FakeConn :: struct {
+    fd: i32 = -1;
+    mode: i64 = MODE_PASS;
+    acc: *FakeAcceptor = null;
+    a: Allocator;
+    // drained-but-unreturned inbound bytes (the injected read-cross holds
+    // them back until the retry).
+    pend: [PEND_CAP]u8 = ---;
+    pend_len: i64 = 0;
+    pend_off: i64 = 0;
+    data_reads: i64 = 0;      // reads that returned (or drained) fresh fd bytes
+    rd_injected: bool = false;
+    // write-cross state
+    wr_waiting: bool = false;
+    wr_injected: bool = false;
+}
+
+// Drain everything the kernel has buffered into pend. Returns bytes drained
+// (-1 on a transport fault).
+drain_fd :: (c: *FakeConn) -> i64 {
+    got : i64 = 0;
+    while c.pend_len < PEND_CAP {
+        n, re := socket.read_nb(c.fd, @c.pend[c.pend_len], xx (PEND_CAP - c.pend_len));
+        if re == error.WouldBlock { break; }
+        if re { if got > 0 { break; } return -1; }
+        c.pend_len += n;
+        got += n;
+    }
+    return got;
+}
+
+impl TlsConn for FakeConn {
+    handshake :: (self: *FakeConn) -> TlsStep {
+        return TlsStep.Done;   // passthrough: no real negotiation
+    }
+
+    read :: (self: *FakeConn, buf: [*]u8, cap: usize) -> (i64, TlsStep) {
+        // Held-back bytes first — the retry after an injected WantWrite.
+        if self.pend_off < self.pend_len {
+            n := self.pend_len - self.pend_off;
+            if n > xx cap { n = xx cap; }
+            cstd.memcpy(buf, @self.pend[self.pend_off], xx n);
+            self.pend_off += n;
+            if self.pend_off == self.pend_len { self.pend_off = 0; self.pend_len = 0; }
+            return n, TlsStep.Done;
+        }
+        // Injection point: mode R on the 1st data-bearing read, mode B on
+        // the 2nd — drain the fd fully (kernel buffer goes quiet: no more
+        // readable events) and demand WRITABILITY for the retry.
+        inject_at : i64 = -1;
+        if self.mode == MODE_R { inject_at = 0; }
+        if self.mode == MODE_B { inject_at = 1; }
+        if !self.rd_injected and inject_at >= 0 and self.data_reads >= inject_at {
+            got := drain_fd(self);
+            if got < 0 { return 0, TlsStep.Fatal; }
+            if got > 0 {
+                self.rd_injected = true;
+                self.data_reads += 1;
+                self.acc.rd_injections += 1;
+                return 0, TlsStep.WantWrite;
+            }
+            return 0, TlsStep.WantRead;   // nothing buffered yet — plain would-block
+        }
+        n, re := socket.read_nb(self.fd, buf, cap);
+        if re == error.WouldBlock {
+            // Mode H: the request bytes have already been surfaced (a
+            // data-bearing read happened); demand WRITABILITY once at the
+            // would-block position, so the want is UNRESOLVED when the
+            // buffered request dispatches.
+            if self.mode == MODE_H and !self.rd_injected and self.data_reads >= 1 {
+                self.rd_injected = true;
+                self.acc.h_injections += 1;
+                return 0, TlsStep.WantWrite;
+            }
+            return 0, TlsStep.WantRead;
+        }
+        if re == error.Closed { return 0, TlsStep.Closed; }
+        if re { return 0, TlsStep.Fatal; }
+        self.data_reads += 1;
+        return n, TlsStep.Done;
+    }
+
+    write :: (self: *FakeConn, buf: [*]u8, len: usize) -> (i64, TlsStep) {
+        if self.mode == MODE_W {
+            if self.wr_waiting {
+                // Needs one fresh peer byte (a "handshake record") before the
+                // write may proceed; consume it internally, exactly like a
+                // real TLS stack. No byte yet → still WantRead — and count
+                // the futile retry: a correct server only re-calls this on
+                // READ readiness, i.e. when the byte is actually there.
+                tick : [8]u8 = ---;
+                n, re := socket.read_nb(self.fd, @tick[0], 8);
+                if re == error.WouldBlock {
+                    self.acc.wr_extra_retries += 1;
+                    return 0, TlsStep.WantRead;
+                }
+                if re { return 0, TlsStep.Fatal; }
+                _ := n;   // consumed (never surfaced as app data)
+                self.wr_waiting = false;
+            } else if !self.wr_injected {
+                self.wr_injected = true;
+                self.wr_waiting = true;
+                self.acc.wr_declared += 1;
+                return 0, TlsStep.WantRead;
+            }
+        }
+        n, we := socket.write_nb(self.fd, buf, len);
+        if we == error.WouldBlock { return 0, TlsStep.WantWrite; }
+        if we { return 0, TlsStep.Fatal; }
+        return n, TlsStep.Done;
+    }
+
+    close :: (self: *FakeConn) {
+        a := self.a;
+        a.destroy(self);
+    }
+}
+
+FakeAcceptor :: struct {
+    a: Allocator;
+    n_accepts: i64 = 0;
+    rd_injections: i64 = 0;   // sanity: the R/B injections actually fired
+    h_injections: i64 = 0;    // sanity: the H (dispatch-cross) want fired
+    wr_declared: i64 = 0;     // sanity: the W want actually surfaced
+    wr_extra_retries: i64 = 0;// write retries while waiting with nothing inbound
+}
+
+impl TlsAcceptor for FakeAcceptor {
+    accept :: (self: *FakeAcceptor, fd: i32) -> ?TlsConn {
+        self.n_accepts += 1;
+        mode := MODE_PASS;
+        if self.n_accepts == 1 { mode = MODE_R; }
+        if self.n_accepts == 2 { mode = MODE_W; }
+        if self.n_accepts == 3 { mode = MODE_B; }
+        if self.n_accepts == 4 { mode = MODE_H; }
+        // create() memory is UNINITIALISED — literal-assign the whole struct
+        // so every flag/counter starts at its default, not heap garbage.
+        s := self.a.create(FakeConn);
+        s.* = .{ fd = fd, mode = mode, acc = self, a = self.a };
+        return xx s;
+    }
+}
+
+// ── handler (pool worker thread) ─────────────────────────────────────
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    _ := ctx;
+    if req.path == "/c" {
+        scratch : [64]u8 = ---;
+        total : i64 = 0;
+        while true {
+            n := req.read_body(@scratch[0], 64);
+            if n <= 0 { break; }
+            total += n;
+        }
+        if total == 12 { resp.body = "got-12"; }
+        else { resp.body = "got-bad"; }
+        return;
+    }
+    if req.path == "/a"  { resp.body = "ok-a"; return; }
+    if req.path == "/b"  { resp.body = "ok-b"; return; }
+    if req.path == "/h"  {
+        // Review F1's damage needed a SLOW pooled handler: the cross-armed
+        // watch spun the loop for the handler's whole runtime and the
+        // completion never landed. Keep the window wide.
+        usleep(80000);
+        resp.body = "ok-h";
+        return;
+    }
+    resp.body = "pong";
+}
+
+// ── client plumbing (plain TCP — the "TLS" is a byte passthrough) ────
+dial :: () -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(PORT, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0; ok := true;
+        while j < needle.len { if hay[i+j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+// Read until a complete response (terminated body via Content-Length) or the
+// tick budget runs out. Small fixed budget: a red-state stall must fail the
+// case quickly, not ride the corpus timeout.
+read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64, needle: string) -> bool {
+    total : i64 = 0;
+    t : i64 = 0;
+    while t < 2500 {
+        srv.tick(1) catch {};
+        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        if !re { total += n; }
+        else if re == error.Closed { break; }
+        s := string.{ ptr = rbuf, len = xx total };
+        if contains(s, needle) and contains(s, "\r\n\r\n") { return true; }
+        t += 1;
+    }
+    return false;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    acc : FakeAcceptor = .{ a = xx gpa };
+    rc : i32 = 1;
+    push .{ allocator = gpa } {
+        rc = run(@acc);
+    }
+    leaked := gpa.alloc_count;
+    if rc != 0 { print("FAIL: case rc={}\n", rc); return rc; }
+    if leaked != 0 { print("LEAK: {} outstanding allocations\n", leaked); return 7; }
+    print("cross-want ok: R served via write-arm, W retries={} declared={}, B body streamed; net-zero GPA\n",
+          acc.wr_extra_retries, acc.wr_declared);
+    0
+}
+
+run :: (acc: *FakeAcceptor) -> i32 {
+    cfg : http.Config = .{
+        port = PORT,
+        timeout_request_ms = 800,     // a red-state stall evicts fast
+        timeout_keepalive_ms = 3000,
+        max_conn = 8,
+        thread_pool_count = 1,        // mode B needs the streamed-body pump
+        thread_pool_backlog = 8,
+        stream_request_body = true,
+    };
+    cfg.tls = xx acc;
+    srv, se := http.Server.init(cfg, route, 0);
+    if se { return 2; }
+
+    rbuf : [4096]u8 = ---;
+
+    // ── R: read-want-write. Full request kernel-buffered BEFORE the first
+    // tick, so the injected drain leaves the kernel quiet: only the armed
+    // write watch can deliver the retry. ──
+    c1 := dial();
+    if c1 < 0 { return 3; }
+    req_a := "GET /a HTTP/1.1\r\nHost: t\r\n\r\n";
+    socket.write(c1, req_a.ptr, xx req_a.len);
+    if !read_response(@srv, c1, @rbuf[0], 4096, "ok-a") { srv.close(); return 10; }
+    socket.close(c1);
+
+    // ── W: write-want-read. Wait for the want to surface (the acceptor's
+    // counter flips on the loop thread == this thread), then send the one
+    // "handshake" byte; the retry must ride READ readiness — zero futile
+    // retries in between. ──
+    c2 := dial();
+    if c2 < 0 { return 4; }
+    req_b := "GET /b HTTP/1.1\r\nHost: t\r\n\r\n";
+    socket.write(c2, req_b.ptr, xx req_b.len);
+    t : i64 = 0;
+    while acc.wr_declared == 0 and t < 2500 { srv.tick(1) catch {}; t += 1; }
+    if acc.wr_declared != 1 { srv.close(); return 11; }
+    // Hold the byte back for a stretch of ticks: a correct server sits
+    // silent (no readiness to act on); the red server's armed write watch
+    // fires every tick and racks up futile retries.
+    t = 0;
+    while t < 20 { srv.tick(1) catch {}; t += 1; }
+    tickle := "\n";
+    socket.write(c2, tickle.ptr, 1);
+    if !read_response(@srv, c2, @rbuf[0], 4096, "ok-b") { srv.close(); return 12; }
+    if acc.wr_extra_retries != 0 { srv.close(); return 13; }
+    // keep-alive on the same conn: the watch state healed.
+    req_b2 := "GET /b2 HTTP/1.1\r\nHost: t\r\n\r\n";
+    socket.write(c2, req_b2.ptr, xx req_b2.len);
+    if !read_response(@srv, c2, @rbuf[0], 4096, "pong") { srv.close(); return 14; }
+    socket.close(c2);
+
+    // ── B: body-cross on the CONN_BODY pump. Headers + 4 body bytes first
+    // (passes through: 1st data-bearing read), then the 8-byte tail arms
+    // the injection. ──
+    c3 := dial();
+    if c3 < 0 { return 5; }
+    req_c := "POST /c HTTP/1.1\r\nHost: t\r\nContent-Length: 12\r\n\r\nabcd";
+    socket.write(c3, req_c.ptr, xx req_c.len);
+    t = 0;
+    while t < 30 { srv.tick(1) catch {}; t += 1; }   // headers dispatched, pump waiting
+    tail := "efghijkl";
+    socket.write(c3, tail.ptr, xx tail.len);
+    if !read_response(@srv, c3, @rbuf[0], 4096, "got-12") { srv.close(); return 15; }
+    socket.close(c3);
+
+    // ── H (review F1): the want is UNRESOLVED at dispatch. The server
+    // must drop the cross-armed watch when reading parks for the handler
+    // (red: the writable spun the loop for the handler's whole runtime and
+    // the request was never served at all). ──
+    c4 := dial();
+    if c4 < 0 { return 6; }
+    req_h := "GET /h HTTP/1.1\r\nHost: t\r\n\r\n";
+    socket.write(c4, req_h.ptr, xx req_h.len);
+    if !read_response(@srv, c4, @rbuf[0], 4096, "ok-h") { srv.close(); return 17; }
+    socket.close(c4);
+
+    // sanity: both read-cross injections fired (R and B) + the dispatch-
+    // cross want (H) actually surfaced before its request was served.
+    if acc.rd_injections != 2 { srv.close(); return 16; }
+    if acc.h_injections != 1 { srv.close(); return 18; }
+
+    srv.close();
+    return 0;
+}

@@ -1,0 +1,35 @@
+// std.time (PLAN-HTTPZ S1): the wall clock reads a plausible epoch and
+// the monotonic clock advances and never runs backwards. The `time`
+// alias rides the std.sx namespace tail like its siblings.
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    now := time.now_secs();
+    if now < 1767225600 {            // before 2026-01-01: implausible
+        print("wall clock implausibly old: {}\n", now);
+        return 1;
+    }
+    if now > 4102444800 {            // after 2100-01-01: implausible
+        print("wall clock implausibly far: {}\n", now);
+        return 1;
+    }
+
+    a := time.mono_ms();
+    b := a;
+    spins := 0;
+    while b == a and spins < 100000000 {   // a real ms tick arrives long before the bound
+        b = time.mono_ms();
+        spins += 1;
+    }
+    if b < a {
+        print("monotonic went backwards: {} -> {}\n", a, b);
+        return 1;
+    }
+    if b == a {
+        print("monotonic never advanced\n");
+        return 1;
+    }
+
+    print("std.time ok\n");
+    return 0;
+}

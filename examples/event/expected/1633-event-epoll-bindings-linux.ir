@@ -1,0 +1,248 @@
+
+; Function Attrs: nounwind
+declare ptr @__errno_location() #0
+
+; Function Attrs: nounwind
+define internal i32 @errno() #0 {
+entry:
+  %call = call ptr @__errno_location()
+  %deref = load i32, ptr %call, align 4
+  ret i32 %deref
+}
+
+; Function Attrs: nounwind
+declare i32 @epoll_create1(i32) #0
+
+; Function Attrs: nounwind
+declare i32 @epoll_ctl(i32, i32, i32, ptr) #0
+
+; Function Attrs: nounwind
+declare i32 @epoll_wait(i32, ptr, i32, i32) #0
+
+; Function Attrs: nounwind
+define internal i1 @ev_readable({ i32, i32, i32 } %0) #0 {
+entry:
+  %alloca = alloca { i32, i32, i32 }, align 8
+  store { i32, i32, i32 } %0, ptr %alloca, align 4
+  %load = load { i32, i32, i32 }, ptr %alloca, align 4
+  %sg = extractvalue { i32, i32, i32 } %load, 0
+  %and = and i32 %sg, 1
+  %cmp.ext = zext i32 %and to i64
+  %icmp = icmp ne i64 %cmp.ext, 0
+  ret i1 %icmp
+}
+
+; Function Attrs: nounwind
+define internal i1 @ev_writable({ i32, i32, i32 } %0) #0 {
+entry:
+  %alloca = alloca { i32, i32, i32 }, align 8
+  store { i32, i32, i32 } %0, ptr %alloca, align 4
+  %load = load { i32, i32, i32 }, ptr %alloca, align 4
+  %sg = extractvalue { i32, i32, i32 } %load, 0
+  %and = and i32 %sg, 4
+  %cmp.ext = zext i32 %and to i64
+  %icmp = icmp ne i64 %cmp.ext, 0
+  ret i1 %icmp
+}
+
+; Function Attrs: nounwind
+define internal i1 @ev_eof({ i32, i32, i32 } %0) #0 {
+entry:
+  %alloca = alloca { i32, i32, i32 }, align 8
+  store { i32, i32, i32 } %0, ptr %alloca, align 4
+  %load = load { i32, i32, i32 }, ptr %alloca, align 4
+  %sg = extractvalue { i32, i32, i32 } %load, 0
+  %and = and i32 %sg, 8208
+  %cmp.ext = zext i32 %and to i64
+  %icmp = icmp ne i64 %cmp.ext, 0
+  ret i1 %icmp
+}
+
+; Function Attrs: nounwind
+define internal i1 @ev_err({ i32, i32, i32 } %0) #0 {
+entry:
+  %alloca = alloca { i32, i32, i32 }, align 8
+  store { i32, i32, i32 } %0, ptr %alloca, align 4
+  %load = load { i32, i32, i32 }, ptr %alloca, align 4
+  %sg = extractvalue { i32, i32, i32 } %load, 0
+  %and = and i32 %sg, 8
+  %cmp.ext = zext i32 %and to i64
+  %icmp = icmp ne i64 %cmp.ext, 0
+  ret i1 %icmp
+}
+
+; Function Attrs: nounwind
+define internal i32 @ev_fd({ i32, i32, i32 } %0) #0 {
+entry:
+  %alloca = alloca { i32, i32, i32 }, align 8
+  store { i32, i32, i32 } %0, ptr %alloca, align 4
+  %load = load { i32, i32, i32 }, ptr %alloca, align 4
+  %sg = extractvalue { i32, i32, i32 } %load, 1
+  ret i32 %sg
+}
+
+; Function Attrs: nounwind
+define internal i32 @ep_create() #0 {
+entry:
+  %call = call i32 @epoll_create1(i32 524288)
+  ret i32 %call
+}
+
+; Function Attrs: nounwind
+define internal i1 @ep_ctl(i32 %0, i32 %1, i32 %2, i32 %3) #0 {
+entry:
+  %alloca = alloca i32, align 4
+  store i32 %0, ptr %alloca, align 4
+  %allocaN = alloca i32, align 4
+  store i32 %1, ptr %allocaN, align 4
+  %allocaN = alloca i32, align 4
+  store i32 %2, ptr %allocaN, align 4
+  %allocaN = alloca i32, align 4
+  store i32 %3, ptr %allocaN, align 4
+  %allocaN = alloca { i32, i32, i32 }, align 8
+  %load = load i32, ptr %allocaN, align 4
+  %loadN = load i32, ptr %allocaN, align 4
+  %si = insertvalue { i32, i32, i32 } undef, i32 %load, 0
+  %siN = insertvalue { i32, i32, i32 } %si, i32 %loadN, 1
+  %siN = insertvalue { i32, i32, i32 } %siN, i32 0, 2
+  store { i32, i32, i32 } %siN, ptr %allocaN, align 4
+  %loadN = load i32, ptr %alloca, align 4
+  %loadN = load i32, ptr %allocaN, align 4
+  %loadN = load i32, ptr %allocaN, align 4
+  %call = call i32 @epoll_ctl(i32 %loadN, i32 %loadN, i32 %loadN, ptr %allocaN)
+  %cmp.ext = sext i32 %call to i64
+  %icmp = icmp eq i64 %cmp.ext, 0
+  ret i1 %icmp
+}
+
+; Function Attrs: nounwind
+define internal i32 @ep_wait(i32 %0, { ptr, i64 } %1, i32 %2, i32 %3) #0 {
+entry:
+  %alloca = alloca i32, align 4
+  %allocaN = alloca i32, align 4
+  store i32 %0, ptr %alloca, align 4
+  %allocaN = alloca { ptr, i64 }, align 8
+  store { ptr, i64 } %1, ptr %allocaN, align 8
+  %allocaN = alloca i32, align 4
+  store i32 %2, ptr %allocaN, align 4
+  %allocaN = alloca i32, align 4
+  store i32 %3, ptr %allocaN, align 4
+  br label %while.hdr.2
+
+while.hdr.2:                                      ; preds = %if.merge.8, %entry
+  br i1 true, label %while.body.3, label %while.exit.4
+
+while.body.3:                                     ; preds = %while.hdr.2
+  %load = load i32, ptr %alloca, align 4
+  %loadN = load { ptr, i64 }, ptr %allocaN, align 8
+  %igp.data = extractvalue { ptr, i64 } %loadN, 0
+  %igp.ptr = getelementptr { i32, i32, i32 }, ptr %igp.data, i64 0
+  %loadN = load i32, ptr %allocaN, align 4
+  %loadN = load i32, ptr %allocaN, align 4
+  %call = call i32 @epoll_wait(i32 %load, ptr %igp.ptr, i32 %loadN, i32 %loadN)
+  store i32 %call, ptr %allocaN, align 4
+  %loadN = load i32, ptr %allocaN, align 4
+  %cmp.ext = sext i32 %loadN to i64
+  %icmp = icmp sge i64 %cmp.ext, 0
+  br i1 %icmp, label %if.then.5, label %if.merge.6
+
+while.exit.4:                                     ; preds = %while.hdr.2
+  ret i32 -1
+
+if.then.5:                                        ; preds = %while.body.3
+  %loadN = load i32, ptr %allocaN, align 4
+  ret i32 %loadN
+
+if.merge.6:                                       ; preds = %while.body.3
+  %callN = call i32 @errno()
+  %cmp.ext11 = sext i32 %callN to i64
+  %icmpN = icmp ne i64 %cmp.ext11, 4
+  br i1 %icmpN, label %if.then.7, label %if.merge.8
+
+if.then.7:                                        ; preds = %if.merge.6
+  ret i32 -1
+
+if.merge.8:                                       ; preds = %if.merge.6
+  br label %while.hdr.2
+}
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %allocaN = alloca [8 x { i32, i32, i32 }], align 8
+  %allocaN = alloca { ptr, i64 }, align 8
+  %allocaN = alloca i32, align 4
+  %call = call i32 @ep_create()
+  %alloca = alloca i32, align 4
+  store i32 %call, ptr %alloca, align 4
+  %load = load i32, ptr %alloca, align 4
+  %callN = call i1 @ep_ctl(i32 %load, i32 1, i32 1, i32 8193)
+  %lnot = xor i1 %callN, true
+  br i1 %lnot, label %if.then.0, label %if.merge.1
+
+if.then.0:                                        ; preds = %entry
+  ret i32 2
+
+if.merge.1:                                       ; preds = %entry
+  %loadN = load i32, ptr %alloca, align 4
+  %callN = call i1 @ep_ctl(i32 %loadN, i32 3, i32 1, i32 5)
+  %igp.ptr = getelementptr { i32, i32, i32 }, ptr %allocaN, i64 0
+  %si = insertvalue { ptr, i64 } undef, ptr %igp.ptr, 0
+  %siN = insertvalue { ptr, i64 } %si, i64 8, 1
+  store { ptr, i64 } %siN, ptr %allocaN, align 8
+  %loadN = load i32, ptr %alloca, align 4
+  %loadN = load { ptr, i64 }, ptr %allocaN, align 8
+  %callN = call i32 @ep_wait(i32 %loadN, { ptr, i64 } %loadN, i32 8, i32 100)
+  store i32 %callN, ptr %allocaN, align 4
+  %loadN = load i32, ptr %allocaN, align 4
+  %cmp.ext = sext i32 %loadN to i64
+  %icmp = icmp sgt i64 %cmp.ext, 0
+  br i1 %icmp, label %if.then.9, label %if.merge.10
+
+if.then.9:                                        ; preds = %if.merge.1
+  %igp.ptr12 = getelementptr { i32, i32, i32 }, ptr %allocaN, i64 0
+  %loadN = load { i32, i32, i32 }, ptr %igp.ptr12, align 4
+  %callN = call i1 @ev_readable({ i32, i32, i32 } %loadN)
+  br i1 %callN, label %if.then.11, label %if.merge.12
+
+if.merge.10:                                      ; preds = %if.merge.18, %if.merge.1
+  %loadN = load i32, ptr %alloca, align 4
+  %callN = call i1 @ep_ctl(i32 %loadN, i32 2, i32 1, i32 0)
+  ret i32 12
+
+if.then.11:                                       ; preds = %if.then.9
+  %igp.ptr17 = getelementptr { i32, i32, i32 }, ptr %allocaN, i64 0
+  %loadN = load { i32, i32, i32 }, ptr %igp.ptr17, align 4
+  %callN = call i32 @ev_fd({ i32, i32, i32 } %loadN)
+  ret i32 %callN
+
+if.merge.12:                                      ; preds = %if.then.9
+  %igp.ptr20 = getelementptr { i32, i32, i32 }, ptr %allocaN, i64 0
+  %loadN = load { i32, i32, i32 }, ptr %igp.ptr20, align 4
+  %callN = call i1 @ev_writable({ i32, i32, i32 } %loadN)
+  br i1 %callN, label %if.then.13, label %if.merge.14
+
+if.then.13:                                       ; preds = %if.merge.12
+  ret i32 4
+
+if.merge.14:                                      ; preds = %if.merge.12
+  %igp.ptr23 = getelementptr { i32, i32, i32 }, ptr %allocaN, i64 0
+  %loadN = load { i32, i32, i32 }, ptr %igp.ptr23, align 4
+  %callN = call i1 @ev_eof({ i32, i32, i32 } %loadN)
+  br i1 %callN, label %if.then.15, label %if.merge.16
+
+if.then.15:                                       ; preds = %if.merge.14
+  ret i32 9
+
+if.merge.16:                                      ; preds = %if.merge.14
+  %igp.ptr26 = getelementptr { i32, i32, i32 }, ptr %allocaN, i64 0
+  %loadN = load { i32, i32, i32 }, ptr %igp.ptr26, align 4
+  %callN = call i1 @ev_err({ i32, i32, i32 } %loadN)
+  br i1 %callN, label %if.then.17, label %if.merge.18
+
+if.then.17:                                       ; preds = %if.merge.16
+  ret i32 8
+
+if.merge.18:                                      ; preds = %if.merge.16
+  br label %if.merge.10
+}

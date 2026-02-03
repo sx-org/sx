@@ -1,0 +1,37 @@
+// E6a — per-decl nominal identity for ENUM decls. A bare ENUM reference is
+// non-transitive AND ambiguity-checked at every site, exactly like the struct
+// leaf (0755) and the non-leaf struct forms (0767). `main` flat-imports two
+// modules that each author a same-name `Dir` enum and authors none itself, so
+// EACH of the following bare ENUM forms is a genuine collision the source cannot
+// disambiguate — and each must emit the LOUD "type 'Dir' is ambiguous" diagnostic
+// and poison the result, NEVER silently pick a global `findByName` last-wins
+// author:
+//
+//   - reflection / type-arg slot    `size_of(Dir)`
+//   - typed enum-value annotation    `d : Dir = .north`
+//   - type-as-value                  `t : Type = Dir`
+//   - type-category match arm        `case Dir:`
+//
+// Fail-before (pre-E6a): the stateless `type_bridge.resolveInlineEnum`
+// `findByName` short-circuit interned ONE global last-wins `Dir`, so every bare
+// form silently resolved to it and the program exited 0.
+
+#import "modules/std.sx";
+#import "0795-modules-same-name-enum-ambiguous/a.sx";
+#import "0795-modules-same-name-enum-ambiguous/b.sx";
+
+describe :: ($T: Type) -> i32 {
+    r := if T == {
+        case Dir: 1;
+        else: 0;
+    }
+    r
+}
+
+main :: () -> i32 {
+    sz := size_of(Dir);
+    d : Dir = .north;
+    t : Type = Dir;
+    k := describe(i64);
+    0
+}

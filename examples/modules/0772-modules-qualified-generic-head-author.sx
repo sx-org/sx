@@ -1,0 +1,29 @@
+// A qualified generic type head `ns.Box(args)` must instantiate the template
+// AUTHORED by `ns`'s module — not the global same-name template that happened to
+// win the last-wins `struct_template_map`. `main` imports two namespaces that
+// each author a same-name generic `Box($T)` with a DIFFERENT layout (a: one
+// field, b: two fields). `a.Box(i64)` and `b.Box(i64)` must resolve to their OWN
+// module's template (sizes 8 and 16) and be DISTINCT types, so a field unique to
+// b's layout (`y`) is reachable only through `b.Box`.
+//
+// This is the ambiguity escape hatch made real: when a bare `Box(i64)` is
+// ambiguous (two flat same-name authors), the diagnostic tells the user to
+// "qualify the reference"; that advice only works if `ns.Box(..)` actually
+// selects ns's author.
+//
+// Regression (Phase E4): before qualified generic-head selection, the head was
+// stripped to the bare name and read from the global `struct_template_map`, so
+// `a.Box(i64)` and `b.Box(i64)` both instantiated the last-wins template (both
+// size 16) — the namespace qualifier was ignored.
+
+#import "modules/std.sx";
+a :: #import "0772-modules-qualified-generic-head-author/a.sx";
+b :: #import "0772-modules-qualified-generic-head-author/b.sx";
+
+main :: () -> i32 {
+    pa : a.Box(i64) = .{ x = 1 };
+    pb : b.Box(i64) = .{ x = 10, y = 20 };
+    print("a={} b={}\n", size_of(a.Box(i64)), size_of(b.Box(i64)));
+    print("pa.x={} pb.x={} pb.y={}\n", pa.x, pb.x, pb.y);
+    0
+}

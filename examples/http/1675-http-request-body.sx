@@ -1,0 +1,345 @@
+// std.http inbound request-body handling (PLAN-HTTPZ S2): the server
+// DECODES an inbound `Transfer-Encoding: chunked` request body into
+// Request.body (the handler sees the assembled body), enforces a
+// configurable max_body with EARLY 413 (declared Content-Length over max,
+// or a chunked body that grows past max — without buffering the whole
+// oversized body), rejects the CL+TE smuggling pair → 400, a non-chunked
+// TE → 501, and malformed chunk framing → 400, while the fixed-body
+// fast path is unchanged (200, exact body). A client that disconnects
+// mid-body closes cleanly (slot freed, no crash). Chunked decode RESUMES
+// across partial reads: the body is sent split across multiple ticks so a
+// chunk straddles read boundaries.
+//
+// Honest model note: the handler runs to completion and receives the
+// FULLY-ASSEMBLED (decoded, bounded) body in Request.body. S2 is bounded
+// incremental ACCUMULATION (decode chunks as they arrive, enforce max
+// early, present the assembled body), NOT handler-visible per-chunk
+// streaming — the run-to-completion handler model can't yield/await.
+//
+// The whole run is under a GPA; net-zero alloc_count after close proves
+// no per-request / decode leak. Single-thread tick harness (1633-style).
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 18975;
+
+// Handler: echo the decoded body back verbatim so the test can assert the
+// server decoded it EXACTLY. /len returns the body length as text.
+handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/len" {
+        resp.body = int_to_string(req.body.len);
+        return;
+    }
+    resp.body = req.body;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len {
+            if hay[i + j] != needle[j] { ok = false; break; }
+            j += 1;
+        }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1, per-OS layout
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+// True when buf[0..len] holds a complete fixed (Content-Length) response.
+resp_complete :: (buf: [*]u8, len: i64) -> bool {
+    s := string.{ ptr = buf, len = xx len };
+    he := -1;
+    i := 0;
+    while i + 3 < s.len {
+        if s[i] == 13 and s[i+1] == 10 and s[i+2] == 13 and s[i+3] == 10 { he = i; break; }
+        i += 1;
+    }
+    if he < 0 { return false; }
+    cl : i64 = 0;
+    seen := false;
+    j := 0;
+    needle := "Content-Length: ";
+    while j + needle.len < s.len {
+        k := 0;
+        ok := true;
+        while k < needle.len { if s[j + k] != needle[k] { ok = false; break; } k += 1; }
+        if ok {
+            d := j + needle.len;
+            while d < s.len and s[d] >= 48 and s[d] <= 57 { cl = cl * 10 + (s[d] - 48); d += 1; }
+            seen = true;
+            break;
+        }
+        j += 1;
+    }
+    if !seen { return false; }
+    return len >= he + 4 + cl;
+}
+
+// Send a whole request, tick until a complete fixed response arrives,
+// return the response text ("" = closed with no response).
+roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
+    fd := dial_port(PORT);
+    if fd < 0 { return ""; }
+    socket.write(fd, reqtext.ptr, xx reqtext.len);
+    total : i64 = 0;
+    tries := 0;
+    out : string = "";
+    while tries < 4000 {
+        srv.tick(2) catch {};
+        n, re := socket.read_nb(fd, @scratch[total], xx (8192 - total));
+        if !re { total += n; }
+        else if re == error.Closed { out = string.{ ptr = scratch, len = xx total }; break; }
+        if resp_complete(scratch, total) { out = string.{ ptr = scratch, len = xx total }; break; }
+        tries += 1;
+    }
+    socket.close(fd);
+    return out;
+}
+
+// Send `reqtext` in `pieces` slices (split across ticks so the chunked
+// decoder must resume across partial reads), then tick until a complete
+// fixed response arrives. Returns the response text.
+roundtrip_split :: (srv: *http.Server, reqtext: string, pieces: i64, scratch: [*]u8) -> string {
+    fd := dial_port(PORT);
+    if fd < 0 { return ""; }
+    sent : i64 = 0;
+    piece := reqtext.len / pieces;
+    if piece < 1 { piece = 1; }
+    total : i64 = 0;
+    tries := 0;
+    out : string = "";
+    while tries < 8000 {
+        // dribble out one slice per tick while bytes remain
+        if sent < reqtext.len {
+            n := piece;
+            if sent + n > reqtext.len { n = reqtext.len - sent; }
+            socket.write(fd, @reqtext.ptr[sent], xx n);
+            sent += n;
+        }
+        srv.tick(2) catch {};
+        rn, re := socket.read_nb(fd, @scratch[total], xx (8192 - total));
+        if !re { total += rn; }
+        else if re == error.Closed { out = string.{ ptr = scratch, len = xx total }; break; }
+        if resp_complete(scratch, total) { out = string.{ ptr = scratch, len = xx total }; break; }
+        tries += 1;
+    }
+    socket.close(fd);
+    return out;
+}
+
+// Extract the response body (bytes after the header terminator).
+body_of :: (r: string) -> string {
+    he := -1;
+    i := 0;
+    while i + 3 < r.len {
+        if r[i] == 13 and r[i+1] == 10 and r[i+2] == 13 and r[i+3] == 10 { he = i; break; }
+        i += 1;
+    }
+    if he < 0 { return ""; }
+    return string.{ ptr = @r.ptr[he + 4], len = r.len - (he + 4) };
+}
+
+str_eq :: (a: string, b: string) -> bool {
+    if a.len != b.len { return false; }
+    i := 0;
+    while i < a.len { if a[i] != b[i] { return false; } i += 1; }
+    return true;
+}
+
+// Count how many connection slots are currently in use (not FREE).
+active_slots :: (srv: *http.Server) -> i64 {
+    s := srv.stats();
+    return s.active_conns;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    rc : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cfg : http.Config = .{
+            port = PORT,
+            timeout_request_ms = 2000,
+            timeout_keepalive_ms = 2000,
+            request_count = 100,
+            max_conn = 8,
+            max_body = 64,            // small ceiling to exercise early 413
+        };
+        srv, se := http.Server.init(cfg, handler, 0);
+        if se { print("server init failed\n"); return 1; }
+
+        scratch : [*]u8 = xx context.allocator.alloc_bytes(8192);
+
+        // ── 1. fixed Content-Length body still works (200, exact body) ──
+        if rc == 0 {
+            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\n\r\nhello", scratch);
+            if !contains(r, "HTTP/1.1 200 OK") or !str_eq(body_of(r), "hello") {
+                print("fixed body: expected 200 'hello'\n"); rc = 1;
+            }
+        }
+
+        // ── 2. chunked decoded EXACTLY (multi-chunk, ext, trailers) ──
+        //    "Wiki" + "pedia" + " in chunks." with a chunk extension on the
+        //    first chunk and a trailer after the zero chunk. Sent split
+        //    across ticks (7 pieces) so chunks straddle read boundaries.
+        if rc == 0 {
+            // build the multi-chunk request under a scratch arena (freed
+            // below) so the test's own concats don't show up as GPA leaks.
+            ta := Arena.init(gpa, 4096);
+            req : string = "";
+            push .{ allocator = ta } {
+                req = concat(
+                    "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n",
+                    concat("4;name=val\r\nWiki\r\n",
+                    concat("5\r\npedia\r\n",
+                    concat("B\r\n in chunks.\r\n",
+                    "0\r\nX-Trailer: ignored\r\n\r\n"))));
+            }
+            r := roundtrip_split(@srv, req, 7, scratch);
+            if !contains(r, "HTTP/1.1 200 OK") or !str_eq(body_of(r), "Wikipedia in chunks.") {
+                print("chunked decode: expected 200 'Wikipedia in chunks.', got body len {}\n", body_of(r).len);
+                rc = 1;
+            }
+            ta.deinit();
+        }
+
+        // ── 3. chunked with NO trailers, single chunk → 200 exact ──
+        if rc == 0 {
+            req := "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
+            r := roundtrip(@srv, req, scratch);
+            if !contains(r, "HTTP/1.1 200 OK") or !str_eq(body_of(r), "hello") {
+                print("chunked single: expected 200 'hello'\n"); rc = 1;
+            }
+        }
+
+        // ── 4. max_body: Content-Length over max (64) → early 413 ──
+        if rc == 0 {
+            // 100 bytes declared; never buffered — rejected on the CL alone.
+            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 100\r\n\r\n", scratch);
+            if !contains(r, "HTTP/1.1 413") {
+                print("CL over max: expected 413\n"); rc = 1;
+            }
+        }
+
+        // ── 5. max_body: chunked body grows past max → 413 ──
+        if rc == 0 {
+            // a single 0x50 (80) byte chunk > 64; rejected the instant the
+            // size header crosses max_body (the 80 data bytes aren't sent).
+            req := "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n50\r\n";
+            r := roundtrip(@srv, req, scratch);
+            if !contains(r, "HTTP/1.1 413") {
+                print("chunked over max: expected 413\n"); rc = 1;
+            }
+        }
+
+        // ── 6. CL + TE together → 400 (smuggling pair) ──
+        if rc == 0 {
+            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n", scratch);
+            if !contains(r, "HTTP/1.1 400") { print("CL+TE: expected 400\n"); rc = 1; }
+        }
+
+        // ── 7. non-chunked TE (gzip) → 501 ──
+        if rc == 0 {
+            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: gzip\r\n\r\n", scratch);
+            if !contains(r, "HTTP/1.1 501") { print("TE gzip: expected 501\n"); rc = 1; }
+        }
+
+        // ── 8. malformed chunk: bad hex size → 400 ──
+        if rc == 0 {
+            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\nZZ\r\nhello\r\n0\r\n\r\n", scratch);
+            if !contains(r, "HTTP/1.1 400") { print("bad hex: expected 400\n"); rc = 1; }
+        }
+
+        // ── 9. malformed chunk: missing CRLF after data → 400 ──
+        if rc == 0 {
+            // "5\r\nhelloXX..." — the byte after the 5 data bytes is not CR.
+            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhelloZZ0\r\n\r\n", scratch);
+            if !contains(r, "HTTP/1.1 400") { print("bad data CRLF: expected 400\n"); rc = 1; }
+        }
+
+        // ── 9b. malformed chunk: `0x`-prefixed size → 400 ──
+        //    The `0` parses as a hex digit, then `x5` is junk after the size.
+        //    Must NOT be swallowed as a 0-size (last) chunk → 400.
+        if rc == 0 {
+            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n0x5\r\nhello\r\n0\r\n\r\n", scratch);
+            if !contains(r, "HTTP/1.1 400") { print("0x-prefix size: expected 400\n"); rc = 1; }
+        }
+
+        // ── 9c. single chunk size over max_body (not i64-wrapping) → 413 ──
+        //    `100` hex = 256 > max_body (64). Must be 413 (over-limit), NOT a
+        //    400 (overflow) — and the 256 data bytes are never buffered.
+        if rc == 0 {
+            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n100\r\n", scratch);
+            if !contains(r, "HTTP/1.1 413") { print("over-max chunk size: expected 413\n"); rc = 1; }
+        }
+
+        // ── 10. mid-body disconnect → server closes cleanly, slot freed ──
+        if rc == 0 {
+            fd := dial_port(PORT);
+            if fd < 0 { print("dial mid-body failed\n"); rc = 1; }
+            else {
+                // partial chunked body, then disconnect before completion
+                partial := "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel";
+                socket.write(fd, partial.ptr, xx partial.len);
+                t := 0;
+                while t < 50 { srv.tick(1) catch {}; t += 1; }   // let the server read the partial
+                socket.close(fd);                                 // disconnect mid-body
+                t = 0;
+                while t < 200 { srv.tick(1) catch {}; t += 1; }   // let the server notice + close
+                if active_slots(@srv) != 0 {
+                    print("mid-body disconnect: slot not freed ({} active)\n", active_slots(@srv));
+                    rc = 1;
+                }
+            }
+        }
+
+        // ── 11. server still healthy after all of the above ──
+        if rc == 0 {
+            r := roundtrip(@srv, "GET /len HTTP/1.1\r\nHost: t\r\nContent-Length: 3\r\n\r\nabc", scratch);
+            if !contains(r, "HTTP/1.1 200 OK") or !str_eq(body_of(r), "3") {
+                print("post-run health: expected 200 '3'\n"); rc = 1;
+            }
+        }
+
+        context.allocator.dealloc_bytes(xx scratch);
+        srv.close();
+
+        leaked = gpa.alloc_count;
+    }
+
+    if rc != 0 { return xx rc; }
+    print("fixed Content-Length body -> 200 exact\n");
+    print("chunked multi-chunk (ext + trailers, split reads) -> 200 exact\n");
+    print("chunked single chunk -> 200 exact\n");
+    print("Content-Length over max_body -> 413 (early)\n");
+    print("chunked body over max_body -> 413 (early)\n");
+    print("Content-Length + Transfer-Encoding -> 400\n");
+    print("Transfer-Encoding: gzip -> 501\n");
+    print("malformed chunk (bad hex) -> 400\n");
+    print("malformed chunk (missing CRLF) -> 400\n");
+    print("malformed chunk (0x-prefix size) -> 400\n");
+    print("chunk size over max_body -> 413\n");
+    print("mid-body disconnect -> clean close, slot freed\n");
+    print("server healthy after run\n");
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations after request-body lifetimes\n", leaked);
+        return 1;
+    }
+    print("no leak: net-zero allocations after request-body handling\n");
+    print("ok\n");
+    return 0;
+}

@@ -1,0 +1,42 @@
+// New tuple syntax (additive over the legacy `(a, b)` forms):
+//   - tuple TYPE `Tuple(A, B)` and named `Tuple(x: A, y: B)`
+//   - tuple VALUE `.(a, b)`, named `.(x = a, y = b)`, 1-tuple `.(n)`
+//   - element access by index `.0` and by name `.x`
+//   - a `-> Tuple(i64, i64)` return type with a `.(b, a)` body
+//   - tuple equality operator over two `.(...)` literals
+// The `Tuple(...)` type mirrors the inline `(A, B)` tuple_type_expr and
+// `.(...)` mirrors the inline `(a, b)` tuple_literal, so both self-type
+// structurally and reuse the existing tuple lowering.
+
+#import "modules/std.sx";
+
+swap :: (a: i64, b: i64) -> Tuple(i64, i64) {
+    .{b, a}
+}
+
+main :: () -> i32 {
+    // Positional value + index access.
+    p := .{1, 2};
+    print("p {} {}\n", p.0, p.1);
+
+    // Named value (`=`) + name access.
+    n := .{x = 10, y = 20};
+    print("n {} {}\n", n.x, n.y);
+
+    // 1-tuple.
+    one := .{7};
+    print("one {}\n", one.0);
+
+    // Tuple return type with a `.(...)` body.
+    s := swap(3, 4);
+    print("swap {} {}\n", s.0, s.1);
+
+    // Named tuple TYPE annotation, filled by a named `.(...)` literal.
+    nt : Tuple(x: i64, y: i64) = .{x = 5, y = 6};
+    print("named-type {} {}\n", nt.x, nt.y);
+
+    // Tuple equality operator over two `.(...)` literals.
+    print("eq {}\n", .{1, 2} == .{1, 2});
+
+    0
+}

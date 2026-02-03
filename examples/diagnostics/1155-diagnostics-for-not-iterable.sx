@@ -1,0 +1,12 @@
+// The collision case of the positional capture rule: `for f(n) { }` reads
+// `(n)` as the capture, making the iterable `f` itself — not iterable, with
+// the parenthesize/add-capture hint.
+
+#import "modules/std.sx";
+
+f :: (n: i64) -> i64 { n }
+
+main :: () {
+    n := 1;
+    for f(n) { }
+}

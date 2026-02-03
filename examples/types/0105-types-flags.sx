@@ -1,0 +1,69 @@
+#import "modules/std.sx";
+
+// Auto power-of-2 values: read=1, write=2, execute=4
+Perms :: enum flags {
+    read;
+    write;
+    execute;
+}
+
+// Explicit values with u32 backing type (e.g. for C interop)
+WindowFlags :: enum flags u32 {
+    vsync     :: 64;
+    resizable :: 4;
+    hidden    :: 128;
+}
+
+// Backing type on plain enums too
+Color :: enum u8 { red; green; blue; }
+
+check_perms :: (p: Perms) {
+    print("  checking: {}\n", p);
+    if p & .read    { print("  - can read\n"); }
+    if p & .write   { print("  - can write\n"); }
+    if p & .execute { print("  - can execute\n"); }
+}
+
+main :: () {
+    // Combine flags with |
+    p :Perms = .read | .write;
+    print("perms: {}\n", p);
+
+    // Test individual flags with &
+    check_perms(p);
+
+    // All flags
+    all :Perms = .read | .write | .execute;
+    print("\nall: {}\n", all);
+    check_perms(all);
+
+    // Single flag
+    r :Perms = .read;
+    print("\nread only: {}\n", r);
+    check_perms(r);
+
+    // Pass flags to functions, match on them
+    print("\nmatch on flags:\n");
+    f :Perms = .execute;
+    if f == {
+        case .read:    print("  read\n");
+        case .write:   print("  write\n");
+        case .execute: print("  execute\n");
+    }
+
+    // Explicit values
+    w :WindowFlags = .vsync | .resizable;
+    print("\nwindow: {}\n", w);
+    print("raw value: {}\n", w.(i64));
+
+    // Backing type on plain enums
+    c :Color = .blue;
+    print("\ncolor: {}\n", c);
+    print("raw: {}\n", c.(i64));
+
+    // Bitwise ops work on plain integers too
+    x := 0xFF & 0x0F;
+    y := 1 | 2 | 4;
+    print("\n0xFF & 0x0F = {}\n", x);
+    print("1 | 2 | 4 = {}\n", y);
+}

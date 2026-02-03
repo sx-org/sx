@@ -1,0 +1,5 @@
+error: cannot slice a temporary array of type '[3]i64' — a slice is a view into the array's storage, and a temporary has none; bind it to a local first (`a := <expr>; a[..]`)
+  --> examples/diagnostics/1229-diagnostics-slice-of-temporary-array.sx:20:18
+   |
+20 |     sl : []i64 = make_arr()[0..2];   // error: cannot slice a temporary array
+   |                  ^^^^^^^^^^

@@ -1,0 +1,7 @@
+// Out-of-range tuple index produces a clear
+// `error: field 'N' not found on type '(i64, i64)'` diagnostic and exit 1.
+
+main :: () -> i32 {
+    t : Tuple(i64, i64) = .{10, 20};
+    return xx t.42;
+}

@@ -1,0 +1,1 @@
+{ "apk": { "out": ".sx-tmp/1666-platform-android-apk-smoke.apk", "bundle_id": "co.swipelab.sxapksmoke", "expect": ["AndroidManifest.xml", "classes.dex", "lib/arm64-v8a/"] } }

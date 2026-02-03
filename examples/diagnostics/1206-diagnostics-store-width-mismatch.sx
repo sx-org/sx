@@ -1,0 +1,34 @@
+// A store into ANY annotated slot whose value type has no coercion to the slot
+// AND a different byte width is a type error — the raw `.none` passthrough would
+// overrun the slot and corrupt adjacent memory (issue 0197). The guard covers
+// every store site, not just plain var-decls: a struct field, an array element,
+// a pointer deref, and a multi-assignment target.
+//
+// Regression (issue 0197): `struct{a:i32; b:i32}` is 8 bytes, but a 16-byte
+// `string` stored raw into one of its fields (or into an i32 array element, or
+// through an `*i32`) overran the slot and SIGSEGV'd / clobbered neighbors. The
+// discriminator is BYTE WIDTH (via `typeSizeBytes`), so a same-width
+// reinterpretation (`*T → [*]T`, a bare fn-ref into a function slot) still
+// passes — only a genuine width mismatch is rejected.
+
+#import "modules/std.sx";
+
+S :: struct { a: i32; b: i32; }
+
+main :: () -> i64 {
+    s : S = ---;
+    s.a = 1; s.b = 2;
+    s.a = "field";          // error: struct field, string ↛ i32
+
+    arr : [3]i32 = .[1, 2, 3];
+    arr[0] = "elem";        // error: array element, string ↛ i32
+
+    n : i32 = 0;
+    p : *i32 = @n;
+    p.* = "deref";          // error: pointer deref, string ↛ i32
+
+    u : i32 = 0; v : i32 = 0;
+    u, v = "multi", 9;      // error: multi-assign target, string ↛ i32
+
+    return 0;
+}

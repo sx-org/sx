@@ -1,0 +1,30 @@
+// Struct literal as the default of `??` (null-coalesce).
+// Regression (issue 0166): a bare `.{ ... }` default was lowered with no
+// target type, so its `struct_init.ty` stayed `.unresolved` and panicked at
+// LLVM emission ("unresolved type reached LLVM emission"). The fix threads the
+// optional's child type `T` into the RHS lowering, so the literal resolves to
+// `T`. Covers both runtime paths: default TAKEN (lhs null) and NOT taken (lhs
+// present), plus a nested struct-literal default and an all-defaulted `.{}`.
+#import "modules/std.sx";
+
+Inner :: struct { x: i64 = 0; }
+T :: struct { a: i64 = 7; b: i64 = 3; inner: Inner; }
+
+mk :: (give: bool) -> ?T {
+    if give { return .{ a = 1, b = 2, inner = .{ x = 4 } }; }
+    return null;
+}
+
+main :: () {
+    // Default NOT taken — lhs has a value.
+    present := mk(true) ?? .{ a = 9, inner = .{ x = 99 } };
+    print("{} {} {}\n", present.a, present.b, present.inner.x);
+
+    // Default TAKEN — lhs is null, struct-literal default selected.
+    absent := mk(false) ?? .{ a = 9, inner = .{ x = 99 } };
+    print("{} {} {}\n", absent.a, absent.b, absent.inner.x);
+
+    // All-defaulted `.{}` default.
+    empty := mk(false) ?? .{};
+    print("{} {} {}\n", empty.a, empty.b, empty.inner.x);
+}

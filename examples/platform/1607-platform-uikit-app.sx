@@ -1,0 +1,45 @@
+// Minimal iOS app entry point — pure sx, no .m files.
+//
+// 1. Register a class `SxAppDelegate : UIResponder <UIApplicationDelegate>`
+//    dynamically, with one method:
+//       application:didFinishLaunchingWithOptions: returns YES (BOOL 1).
+// 2. Call UIApplicationMain(0, null, null, @"SxAppDelegate") to hand off to
+//    UIKit's run loop. This blocks until the app exits.
+//
+// After install + launch, the simulator shows the default black screen
+// (UIWindow not created — that's 5.8) and the AppDelegate callback fires
+// once at startup. The process stays alive because UIApplicationMain
+// drives the iOS run loop.
+
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+
+#framework "UIKit";
+
+UIApplicationMain :: (argc: i32, argv: *void, principal_class: *NSString, delegate_class: *NSString) -> i32 extern;
+
+// IMP for application:didFinishLaunchingWithOptions:
+//   Obj-C: -(BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)opts
+//   Type encoding: "c@:@@"  -- BOOL (signed char), self, _cmd, id, id
+did_finish_launching :: (self: *void, _cmd: *void, app: *void, opts: *void) -> u8 abi(.c) {
+    NSLog(xx "[sx] application:didFinishLaunchingWithOptions: called\n");
+    return 1; // YES
+}
+
+main :: () -> i32 {
+    // SxAppDelegate : UIResponder. We deliberately don't try
+    // `class_addProtocol(UIApplicationDelegate)` — the linker dead-strips the
+    // protocol metadata from UIKit when nothing references it at compile
+    // time, and the C runtime can't look it up by name. UIApplicationMain
+    // duck-types on the method name, so this works without formal conformance.
+    UIResponder := objc_getClass("UIResponder".ptr);
+    SxAppDelegate := objc_allocateClassPair(UIResponder, "SxAppDelegate".ptr, 0);
+
+    sel := sel_registerName("application:didFinishLaunchingWithOptions:".ptr);
+    class_addMethod(SxAppDelegate, sel, xx did_finish_launching, "c@:@@".ptr);
+
+    objc_registerClassPair(SxAppDelegate);
+
+    // Hand off to the iOS run loop. Never returns under normal operation.
+    return UIApplicationMain(0, xx 0, xx 0, xx "SxAppDelegate");
+}

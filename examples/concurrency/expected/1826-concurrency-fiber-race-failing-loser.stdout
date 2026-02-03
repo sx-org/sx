@@ -1,0 +1,3 @@
+winner: b = 42
+a: failed=true canceled=false
+final clock: 10ms

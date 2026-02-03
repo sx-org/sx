@@ -1,0 +1,13 @@
+// issue 0105 case 4 — two-flat-visible → AMBIGUOUS. `main` flat-imports two
+// modules that each author a same-name `Thing`, and authors none itself. A bare
+// `Thing` reference can't be disambiguated, so the compiler emits a LOUD
+// diagnostic ("ambiguous … qualify the reference or remove the duplicate
+// import") and poisons the result — never a silent first-/last-wins pick.
+#import "modules/std.sx";
+#import "0755-modules-same-name-struct-ambiguous/a.sx";
+#import "0755-modules-same-name-struct-ambiguous/b.sx";
+
+main :: () -> i32 {
+    t : Thing = .{ a = 1 };
+    0
+}

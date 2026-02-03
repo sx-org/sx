@@ -1,0 +1,3 @@
+// b.sx authors its OWN `dup` (+2) — the second distinct flat author. Main
+// imports both and authors neither, so `v.dup()` from main is ambiguous.
+dup :: ufcs (x: i64) -> i64 { return x + 2; }

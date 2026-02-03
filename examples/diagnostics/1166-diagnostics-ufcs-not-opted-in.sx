@@ -1,0 +1,11 @@
+// A dot-call on a PLAIN free function (no `ufcs` marker, no alias) is
+// rejected with a tailored help: direct call, pipe, or declare it ufcs.
+
+#import "modules/std.sx";
+
+bump :: (x: i64) -> i64 { x + 1 }
+
+main :: () {
+    f : i64 = 40;
+    print("{}\n", f.bump());
+}

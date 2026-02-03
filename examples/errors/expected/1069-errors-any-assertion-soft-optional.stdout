@@ -1,0 +1,7 @@
+hit: 42
+miss null: true
+coalesce: 9.500000
+if-bind: 42
+else-arm
+struct: 3 4
+typed recv unchanged: true

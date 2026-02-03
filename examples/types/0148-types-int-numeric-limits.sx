@@ -1,0 +1,65 @@
+// Integer numeric-limit accessors: `<IntType>.min` / `.max` fold to a
+// compile-time constant of the QUERIED integer type, driven by the
+// (width, signedness) arithmetic (`sN`: min=-(2^(N-1)), max=2^(N-1)-1; `uN`:
+// min=0, max=2^N-1) — every width 1..64, not just the power-of-two ones, plus
+// `usize`/`isize` (target-width). Usable in expressions and in array-dimension
+// position via the comptime-int path (`[u8.max]T`).
+//
+// The extreme values that the i64-based integer formatter cannot render
+// directly — `i64.min` (i64::MIN) and the all-ones `u64.max`/`usize.max` — are
+// asserted EXACTLY via comparison and untagged-union bit reinterpret, never via
+// the formatter (which prints i64::MIN as a bare "-" and u64.max as "-1").
+#import "modules/std.sx";
+
+// Untagged union for the exact u64.max bit-reinterpret check.
+UU :: union { u: u64; s: i64; }
+
+main :: () -> i32 {
+    // Sub-byte widths — arbitrary bit-width arithmetic, not a per-name table.
+    print("i1.min={} i1.max={}\n", i1.min, i1.max);   // -1 0
+    print("i2.min={} i2.max={}\n", i2.min, i2.max);   // -2 1
+    print("i3.max={}\n", i3.max);                     // 3
+    print("u1.min={} u1.max={}\n", u1.min, u1.max);   // 0 1
+    print("u2.max={}\n", u2.max);                     // 3
+
+    // Byte / word widths.
+    print("i8.min={} i8.max={}\n", i8.min, i8.max);   // -128 127
+    print("u8.max={}\n", u8.max);                     // 255
+    print("i32.min={} i32.max={}\n", i32.min, i32.max); // -2147483648 2147483647
+
+    // i64 extremes: max prints; min (i64::MIN) is pinned by relation since the
+    // formatter cannot render it (this is independent of this feature).
+    print("i64.max={}\n", i64.max);                   // 9223372036854775807
+    print("i64.min+1 == -(i64.max): {}\n", i64.min + 1 == -9223372036854775807); // true
+    print("i64.min + i64.max == -1: {}\n", i64.min + i64.max == -1);             // true
+
+    // u64.max / usize.max = all-ones (18446744073709551615); reinterpret to i64
+    // to confirm the bit pattern is -1 (and NOT a mangled value).
+    o : UU = ---;
+    o.u = u64.max;
+    print("u64.max as i64 == -1: {}\n", o.s == -1);   // true
+    o.u = usize.max;
+    print("usize.max as i64 == -1: {}\n", o.s == -1); // true (host = u64)
+    print("usize.max == u64.max: {}\n", usize.max == u64.max);       // true
+    print("isize.min == i64.min: {}\n", isize.min == i64.min);       // true (host = i64)
+
+    // Result carries the QUERIED type: each binding is declared with the queried
+    // type and round-trips, so a mistyped fold (e.g. boxed as any / widened)
+    // would not type-check here.
+    m3 : i3 = i3.max;
+    mu : u8 = u8.max;
+    ms : i8 = i8.min;
+    print("typed: m3={} mu={} ms={}\n", m3, mu, ms);  // 3 255 -128
+
+    // Array-dimension / comptime-int path: `[u8.max]T` and `[i16.max]T` are
+    // valid counts (255 and 32767), usable end-to-end.
+    a : [u8.max]u8 = ---;
+    a[254] = 7;
+    print("[u8.max]u8 len={} a[254]={}\n", a.len, a[254]); // 255 7
+
+    b : [i16.max]u8 = ---;
+    b[32766] = 9;
+    print("[i16.max]u8 len={} b[32766]={}\n", b.len, b[32766]); // 32767 9
+
+    return 0;
+}

@@ -1,0 +1,300 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/gesture.sx";
+
+// --- PaddingModifier ---
+
+PaddingModifier :: struct {
+    child: ViewChild;
+    insets: EdgeInsets;
+}
+
+impl View for PaddingModifier {
+    size_that_fits :: (self: *PaddingModifier, proposal: ProposedSize) -> Size {
+        iw: ?f32 = null;
+        ih: ?f32 = null;
+        if w := proposal.width { iw = w - self.insets.horizontal(); }
+        if h := proposal.height { ih = h - self.insets.vertical(); }
+        inner := ProposedSize.{ width = iw, height = ih };
+        child_size := self.child.view.size_that_fits(inner);
+        Size.{
+            width = child_size.width + self.insets.horizontal(),
+            height = child_size.height + self.insets.vertical()
+        }
+    }
+
+    layout :: (self: *PaddingModifier, bounds: Frame) {
+        self.child.computed_frame = bounds.inset(self.insets);
+        self.child.view.layout(self.child.computed_frame);
+    }
+
+    render :: (self: *PaddingModifier, ctx: *RenderContext, frame: Frame) {
+        self.child.view.render(ctx, self.child.computed_frame);
+    }
+
+    handle_event :: (self: *PaddingModifier, event: *Event, frame: Frame) -> bool {
+        self.child.view.handle_event(event, self.child.computed_frame)
+    }
+}
+
+// --- FrameModifier ---
+
+FrameModifier :: struct {
+    child: ViewChild;
+    width: ?f32;
+    height: ?f32;
+}
+
+impl View for FrameModifier {
+    size_that_fits :: (self: *FrameModifier, proposal: ProposedSize) -> Size {
+        pw := self.width ?? proposal.width ?? 0.0;
+        ph := self.height ?? proposal.height ?? 0.0;
+        child_proposal := ProposedSize.{ width = pw, height = ph };
+        child_size := self.child.view.size_that_fits(child_proposal);
+        Size.{
+            width = self.width ?? child_size.width,
+            height = self.height ?? child_size.height
+        }
+    }
+
+    layout :: (self: *FrameModifier, bounds: Frame) {
+        child_size := self.child.view.size_that_fits(ProposedSize.{
+            width = self.width ?? bounds.size.width,
+            height = self.height ?? bounds.size.height
+        });
+        // Center child within bounds
+        cx := bounds.origin.x + (bounds.size.width - child_size.width) * 0.5;
+        cy := bounds.origin.y + (bounds.size.height - child_size.height) * 0.5;
+        self.child.computed_frame = Frame.make(cx, cy, child_size.width, child_size.height);
+        self.child.view.layout(self.child.computed_frame);
+    }
+
+    render :: (self: *FrameModifier, ctx: *RenderContext, frame: Frame) {
+        self.child.view.render(ctx, self.child.computed_frame);
+    }
+
+    handle_event :: (self: *FrameModifier, event: *Event, frame: Frame) -> bool {
+        self.child.view.handle_event(event, self.child.computed_frame)
+    }
+}
+
+// --- BackgroundModifier ---
+
+BackgroundModifier :: struct {
+    child: ViewChild;
+    color: Color;
+    corner_radius: f32;
+}
+
+impl View for BackgroundModifier {
+    size_that_fits :: (self: *BackgroundModifier, proposal: ProposedSize) -> Size {
+        self.child.view.size_that_fits(proposal)
+    }
+
+    layout :: (self: *BackgroundModifier, bounds: Frame) {
+        self.child.computed_frame = bounds;
+        self.child.view.layout(bounds);
+    }
+
+    render :: (self: *BackgroundModifier, ctx: *RenderContext, frame: Frame) {
+        if self.corner_radius > 0.0 {
+            ctx.add_rounded_rect(frame, self.color, self.corner_radius);
+        } else {
+            ctx.add_rect(frame, self.color);
+        }
+        self.child.view.render(ctx, self.child.computed_frame);
+    }
+
+    handle_event :: (self: *BackgroundModifier, event: *Event, frame: Frame) -> bool {
+        self.child.view.handle_event(event, self.child.computed_frame)
+    }
+}
+
+// --- OpacityModifier ---
+
+OpacityModifier :: struct {
+    child: ViewChild;
+    alpha: f32;
+}
+
+impl View for OpacityModifier {
+    size_that_fits :: (self: *OpacityModifier, proposal: ProposedSize) -> Size {
+        self.child.view.size_that_fits(proposal)
+    }
+
+    layout :: (self: *OpacityModifier, bounds: Frame) {
+        self.child.computed_frame = bounds;
+        self.child.view.layout(bounds);
+    }
+
+    render :: (self: *OpacityModifier, ctx: *RenderContext, frame: Frame) {
+        prev := ctx.opacity;
+        ctx.push_opacity(self.alpha);
+        self.child.view.render(ctx, self.child.computed_frame);
+        ctx.pop_opacity(prev);
+    }
+
+    handle_event :: (self: *OpacityModifier, event: *Event, frame: Frame) -> bool {
+        self.child.view.handle_event(event, self.child.computed_frame)
+    }
+}
+
+// --- ClipModifier ---
+
+ClipModifier :: struct {
+    child: ViewChild;
+    corner_radius: f32;
+}
+
+impl View for ClipModifier {
+    size_that_fits :: (self: *ClipModifier, proposal: ProposedSize) -> Size {
+        self.child.view.size_that_fits(proposal)
+    }
+
+    layout :: (self: *ClipModifier, bounds: Frame) {
+        self.child.computed_frame = bounds;
+        self.child.view.layout(bounds);
+    }
+
+    render :: (self: *ClipModifier, ctx: *RenderContext, frame: Frame) {
+        ctx.push_clip(frame);
+        self.child.view.render(ctx, self.child.computed_frame);
+        ctx.pop_clip();
+    }
+
+    handle_event :: (self: *ClipModifier, event: *Event, frame: Frame) -> bool {
+        self.child.view.handle_event(event, self.child.computed_frame)
+    }
+}
+
+// --- HiddenModifier ---
+
+HiddenModifier :: struct {
+    child: ViewChild;
+    is_hidden: bool;
+}
+
+impl View for HiddenModifier {
+    size_that_fits :: (self: *HiddenModifier, proposal: ProposedSize) -> Size {
+        if self.is_hidden { return Size.zero(); }
+        self.child.view.size_that_fits(proposal)
+    }
+
+    layout :: (self: *HiddenModifier, bounds: Frame) {
+        if self.is_hidden { return; }
+        self.child.computed_frame = bounds;
+        self.child.view.layout(bounds);
+    }
+
+    render :: (self: *HiddenModifier, ctx: *RenderContext, frame: Frame) {
+        if self.is_hidden { return; }
+        self.child.view.render(ctx, self.child.computed_frame);
+    }
+
+    handle_event :: (self: *HiddenModifier, event: *Event, frame: Frame) -> bool {
+        if self.is_hidden { return false; }
+        self.child.view.handle_event(event, self.child.computed_frame)
+    }
+}
+
+// --- TapGestureModifier ---
+
+TapGestureModifier :: struct {
+    child: ViewChild;
+    gesture: TapGesture;
+}
+
+impl View for TapGestureModifier {
+    size_that_fits :: (self: *TapGestureModifier, proposal: ProposedSize) -> Size {
+        self.child.view.size_that_fits(proposal)
+    }
+
+    layout :: (self: *TapGestureModifier, bounds: Frame) {
+        self.child.computed_frame = bounds;
+        self.child.view.layout(bounds);
+    }
+
+    render :: (self: *TapGestureModifier, ctx: *RenderContext, frame: Frame) {
+        self.child.view.render(ctx, self.child.computed_frame);
+    }
+
+    handle_event :: (self: *TapGestureModifier, event: *Event, frame: Frame) -> bool {
+        if self.gesture.handle_event(event, frame) { return true; }
+        self.child.view.handle_event(event, self.child.computed_frame)
+    }
+}
+
+// --- DragGestureModifier ---
+
+DragGestureModifier :: struct {
+    child: ViewChild;
+    gesture: DragGesture;
+}
+
+impl View for DragGestureModifier {
+    size_that_fits :: (self: *DragGestureModifier, proposal: ProposedSize) -> Size {
+        self.child.view.size_that_fits(proposal)
+    }
+
+    layout :: (self: *DragGestureModifier, bounds: Frame) {
+        self.child.computed_frame = bounds;
+        self.child.view.layout(bounds);
+    }
+
+    render :: (self: *DragGestureModifier, ctx: *RenderContext, frame: Frame) {
+        self.child.view.render(ctx, self.child.computed_frame);
+    }
+
+    handle_event :: (self: *DragGestureModifier, event: *Event, frame: Frame) -> bool {
+        if self.gesture.handle_event(event, frame) { return true; }
+        self.child.view.handle_event(event, self.child.computed_frame)
+    }
+}
+
+// --- Combinators ---
+//
+// ufcs, so a view tree reads as a dot-chain:
+//   label.padding(EdgeInsets.all(8.0)).background(color, 4.0)
+// The pipe spelling composes the same functions: `label |> padding(...)`.
+
+padding :: ufcs (view: View, insets: EdgeInsets) -> PaddingModifier {
+    PaddingModifier.{ child = .{ view = view }, insets = insets }
+}
+
+fixed_frame :: ufcs (view: View, width: ?f32, height: ?f32) -> FrameModifier {
+    FrameModifier.{ child = .{ view = view }, width = width, height = height }
+}
+
+background :: ufcs (view: View, color: Color, corner_radius: f32) -> BackgroundModifier {
+    BackgroundModifier.{ child = .{ view = view }, color = color, corner_radius = corner_radius }
+}
+
+with_opacity :: ufcs (view: View, alpha: f32) -> OpacityModifier {
+    OpacityModifier.{ child = .{ view = view }, alpha = alpha }
+}
+
+clip :: ufcs (view: View, corner_radius: f32) -> ClipModifier {
+    ClipModifier.{ child = .{ view = view }, corner_radius = corner_radius }
+}
+
+hidden :: ufcs (view: View, is_hidden: bool) -> HiddenModifier {
+    HiddenModifier.{ child = .{ view = view }, is_hidden = is_hidden }
+}
+
+on_tap :: ufcs (view: View, handler: Closure()) -> TapGestureModifier {
+    TapGestureModifier.{
+        child = .{ view = view },
+        gesture = TapGesture.{ count = 1, on_tap = handler }
+    }
+}
+
+on_drag :: ufcs (view: View, on_changed: ?Closure(DragValue), on_ended: ?Closure(DragValue)) -> DragGestureModifier {
+    DragGestureModifier.{
+        child = .{ view = view },
+        gesture = DragGesture.{ min_distance = 10.0, on_changed = on_changed, on_ended = on_ended }
+    }
+}

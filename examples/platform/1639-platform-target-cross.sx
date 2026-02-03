@@ -1,0 +1,7 @@
+// Phase 0 (ASM stream) test-infra lock: exercises the corpus runner's
+// CROSS-TARGET ir-only path. The `.build` pins `x86_64-linux`, which does NOT
+// match this aarch64 host, so the runner skips run/build/exec and verifies via
+// `sx ir --target x86_64-linux` only — asserting exit + the `.ir` snapshot +
+// stderr (no `.stdout`). Asm-free on purpose: it locks the harness gating, not
+// any inline-asm lowering (that arrives in Phase A+).
+main :: () -> i64 { return 0; }

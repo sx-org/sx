@@ -1,0 +1,12 @@
+=== 26. #using ===
+using-x: 1
+using-y: 2
+using-z: 3
+pkt-id: 10
+pkt-ver: 42
+pkt-pay: 99
+sprite-px: 10
+sprite-r: 255
+sprite-scale: 1
+say: hello (len=5)
+n=42

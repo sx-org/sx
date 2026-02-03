@@ -1,0 +1,18 @@
+// B1.2 — cancellation rides the `!` error channel (model (a)). `f.cancel()`
+// sets the per-future cancel flag + marks `state = .canceled`, so a
+// subsequent `f.await()` raises `error.Canceled` out of its value-failable
+// `($R, !IoErr)` — caught here with `or`. A future that is NOT canceled
+// awaits its value normally.
+#import "modules/std.sx";
+
+main :: () {
+    // Not canceled → await yields the value. The worker is FAILABLE
+    // (`Closure() -> ($R, !)`) — the unified Phase 3 shape.
+    ok := context.io.async(() -> (i64, !) => 7);
+    print("ok: {}\n", ok.await() or { -1 });
+
+    // Canceled → await raises .Canceled → the `or` default is taken.
+    c := context.io.async(() -> (i64, !) => 7);
+    c.cancel();
+    print("canceled: {}\n", c.await() or { -99 });
+}

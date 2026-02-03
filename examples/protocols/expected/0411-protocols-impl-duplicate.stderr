@@ -1,0 +1,5 @@
+error: duplicate xx conversion from 'i64' to 'Wrap': impls in examples/protocols/0411-protocols-impl-duplicate-impl-a.sx and examples/protocols/0411-protocols-impl-duplicate-impl-b.sx
+  --> examples/protocols/0411-protocols-impl-duplicate.sx:23:17
+   |
+23 |   w : Wrap = xx 7;
+   |                 ^

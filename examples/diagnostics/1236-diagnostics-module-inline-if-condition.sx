@@ -1,0 +1,4 @@
+#import "modules/std.sx";
+FLAG :: true;
+inline if FLAG { helper1236 :: () -> i64 { return 1; } }
+main :: () { _ := helper1236(); }

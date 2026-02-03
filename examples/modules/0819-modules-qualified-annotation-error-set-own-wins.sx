@@ -1,0 +1,19 @@
+// G1 (non-struct kind = error-set) — a qualified `a.IoErr` annotation selects the
+// namespace target's OWN error-set per-decl nominal, distinct from `main`'s
+// same-name `IoErr`. `main` authors `IoErr { Disk }` and namespace-imports `a`
+// (`IoErr { Net }`). The bare `IoErr` binds main's own (so `error.Disk` is valid);
+// the qualified `a.IoErr` binds `a`'s (so `error.Net` is valid). The tag sets are
+// disjoint, so a cross-binding (`a.IoErr = error.Disk`) is a hard membership error
+// — distinct error-set nominals reached through the qualified annotation surface.
+
+#import "modules/std.sx";
+a :: #import "0819-modules-qualified-annotation-error-set-own-wins/dep.sx";
+
+IoErr :: error { Disk }
+
+main :: () -> i32 {
+    e : IoErr = error.Disk;
+    q : a.IoErr = error.Net;
+    print("own={} q={}\n", e, q);
+    0
+}

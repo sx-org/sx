@@ -1,0 +1,82 @@
+// Argument-position `xx <lvalue>` protocol erasure BORROWS for a GENERIC
+// callee exactly like it does for a direct one: the early generic-call arg
+// loop resolves the declared param types up front (in the callee's source,
+// $T bindings inferred from the arg nodes) and lowers each arg under its
+// param target, so the erasure keeps its node-aware lvalue-borrow
+// discipline. Mutations made through the protocol value hit the CALLER'S
+// local — never a silent heap copy through the ambient allocator.
+// Regression (issue 0302): the loop used to clear the target entirely and
+// the later value-wise coercion heap-copied the local via
+// context.allocator (counters landed on the copy; the copy leaked).
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Tracker :: struct {
+    allocs: i64;
+    deallocs: i64;
+}
+impl Allocator for Tracker {
+    alloc_bytes :: (self: *Tracker, size: i64) -> *void {
+        self.allocs += 1;
+        c.libc_malloc(size)
+    }
+    dealloc_bytes :: (self: *Tracker, ptr: *void) {
+        self.deallocs += 1;
+        c.libc_free(ptr);
+    }
+}
+
+CountA :: struct { n: i64; }
+impl Allocator for CountA {
+    alloc_bytes :: (self: *CountA, size: i64) -> *void { self.n += 1; c.libc_malloc(size) }
+    dealloc_bytes :: (self: *CountA, ptr: *void) { c.libc_free(ptr); }
+}
+
+poke :: (a: Allocator) {
+    p := a.alloc_bytes(8);
+    a.dealloc_bytes(p);
+}
+
+gen_poke :: (s: $P, a: Allocator) {
+    p := a.alloc_bytes(8);
+    a.dealloc_bytes(p);
+    _ = s;
+}
+
+// $T-DEPENDENT params keep their (target-less) behavior — only concrete
+// annotations supply targets.
+gen_id :: (x: $T) -> T { x }
+
+main :: () {
+    amb := CountA.{ n = 0 };
+
+    // direct call: borrows (the baseline)
+    t := Tracker.{ allocs = 0, deallocs = 0 };
+    push .{ allocator = amb } {
+        poke(xx t);
+    }
+    print("direct: {}/{} ambient {}\n", t.allocs, t.deallocs, amb.n);
+
+    // generic call: borrows identically — no ambient copy
+    t2 := Tracker.{ allocs = 0, deallocs = 0 };
+    push .{ allocator = amb } {
+        gen_poke(1, xx t2);
+    }
+    print("generic: {}/{} ambient {}\n", t2.allocs, t2.deallocs, amb.n);
+
+    // free(s, xx local) — the S4.4 pairing this fix makes trustworthy
+    t3 := Tracker.{ allocs = 0, deallocs = 0 };
+    s : Sizable = ---;
+    push .{ allocator = t3 } {
+        s = xx Widget.{ value = 5 };
+    }
+    free(s, xx t3);
+    print("free pairing: {}/{}\n", t3.allocs, t3.deallocs);
+
+    // generic $T param unaffected
+    print("id: {}\n", gen_id(42));
+}
+
+Sizable :: protocol { size :: (self: *Self) -> i64; }
+Widget :: struct { value: i64; }
+impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }

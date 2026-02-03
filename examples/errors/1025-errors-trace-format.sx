@@ -1,0 +1,36 @@
+// Error return-trace formatting (ERR step E3.3). `library/modules/std/trace.sx`
+// reads the trace buffer (E3.1, populated by E3.2's raise/try push wiring) and
+// renders it. `trace.print_current()` writes the trace to stderr; the catch
+// handler sees the full chain because the absorption clear fires at handler
+// EXIT, not entry. Frame locations are placeholders until DWARF (ERR E3.0)
+// resolves PCs to file:line; the count + ordering are already meaningful.
+//
+// Note: the trace goes to stderr. The test runner merges stderr+stdout, so the
+// snapshot shows the trace lines interleaved with the `print` (stdout) lines.
+
+#import "modules/std.sx";
+trace :: #import "modules/std/trace.sx";
+
+// Buffer length probe (the runtime symbol; public read API is the trace module).
+sx_trace_len :: () -> u32 extern;
+
+E :: error { BadInput, Overflow }
+
+leaf :: (n: i32) -> !E {
+    if n < 0 { raise error.BadInput; }   // pushes frame 0
+    return;
+}
+
+mid :: (n: i32) -> !E {
+    try leaf(n);                          // propagation pushes frame 1
+    return;
+}
+
+main :: () -> i32 {
+    mid(-1) catch (e) {
+        print("[stdout] caught {}\n", e);   // tag name via the always-linked table
+        trace.print_current();               // [stderr] the 2-frame trace
+    };
+    print("[stdout] recovered; trace buffer now empty (len {})\n", sx_trace_len());
+    return 0;
+}

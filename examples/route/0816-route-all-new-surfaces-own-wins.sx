@@ -1,0 +1,29 @@
+// E6b-R — own-wins-over-flat at the NEW use surfaces route-all funnels through the
+// source-aware engine. `main` flat-imports `dep.sx` (which authors `Box { a }`) AND
+// authors its OWN `Box { m }`; the field sets are DISJOINT, so the observable is
+// field access: `.m` typechecks only against main's `Box`, `.a` only against dep's.
+//
+// `WrapU` is authored only by `main`, so its union field type `Box` resolves at
+// registration (`registerUnionDecl` → the source-aware body builder, E6b-R C1) to
+// MAIN's `Box`. Accessing `w.b.m` therefore typechecks, while `dep_box` uses dep's
+// DISTINCT `Box { a }`.
+//
+// Fail-before (pre-E6b-R): `registerUnionDecl` built the union body through the
+// stateless `type_bridge.buildUnionInfo`, whose `findByName` short-circuit bound
+// the global last-wins `Box`. If dep's `Box { a }` won the slot, `WrapU.b` was
+// dep's `Box` and `w.b.m` was a hard "field not found" — silently wrong nominal.
+// Pass-after: the union field is main's own `Box`, `w.b.m` resolves, exit 0.
+
+#import "modules/std.sx";
+#import "0816-route-all-new-surfaces-own-wins/dep.sx";
+
+Box :: struct { m: i32; }
+
+WrapU :: union { b: Box; n: i32; }
+
+main :: () -> i32 {
+    w : WrapU = ---;
+    w.b.m = 5;
+    print("own={} dep={}\n", w.b.m, dep_box());
+    0
+}

@@ -1,0 +1,3 @@
+// Companion module: defines the nominal types that the facade re-exports.
+Color :: enum { Red; Green; Blue; }
+Shape :: struct { kind: i64 = 0; }

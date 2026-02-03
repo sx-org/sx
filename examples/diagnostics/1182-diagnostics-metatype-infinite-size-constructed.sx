@@ -1,0 +1,27 @@
+// Diagnostic: a comptime-CONSTRUCTED enum (declare/define) that contains itself
+// BY VALUE is infinitely sized and rejected loudly — the same `checkInfiniteSize`
+// guard that covers source decls (examples/1178) also covers minted types. A
+// pointer payload (`*L`) breaks the cycle and is the fix the message suggests
+// (see examples/0618 for the working recursive `*List`).
+//
+// This is the constructed-type companion to 1178, and pins the "use-before-
+// define by value" corner of the metatype validation story: referencing a
+// declared slot by VALUE in its own definition is the one self-reference shape
+// that isn't legal (a `*L` pointer needs no layout, so it is).
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+make :: () -> Type {
+    h := declare("L");
+    return define(h, .enum(.{ variants = .[
+        EnumVariant.{ name = "cons", payload = L },     // by VALUE, not *L
+        EnumVariant.{ name = "nil",  payload = void },
+    ] }));
+}
+
+L :: make();
+
+main :: () -> i32 {
+    x : L = .nil;
+    return 0;
+}

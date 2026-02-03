@@ -1,0 +1,7 @@
+only optional: optional
+only error_set: error_set
+only neg: other
+mixed opt: optional
+mixed err: error_set
+mixed void: void
+mixed other: other

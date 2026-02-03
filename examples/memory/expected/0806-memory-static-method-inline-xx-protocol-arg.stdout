@@ -1,0 +1,3 @@
+Box.init (named-var):  ok
+make_box (inline-xx):  ok
+Box.init (inline-xx):  ok

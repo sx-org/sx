@@ -1,0 +1,31 @@
+// `log.sx` leveled logging + the `is_comptime()` builtin (ERR step E4.1,
+// slice 1). `log.{warn,info,err,debug}` interpolate like `print` and write
+// `LEVEL: <msg>` to stderr. `is_comptime()` is `true` under `#run` (the
+// comptime interpreter) and folds to `false` in compiled code, so a gated
+// branch dead-codes out of the runtime binary.
+//
+// (`log.error` is spelled `log.err` — `error` is a reserved keyword. The
+// `process.exit` / `assert` part of E4.1 is blocked on `noreturn` codegen,
+// issue 0058.)
+//
+// The test runner merges stderr+stdout; the log lines (stderr) precede the
+// single stdout line. Expected exit code: 0.
+
+#import "modules/std.sx";
+log :: #import "modules/std/log.sx";
+
+probe :: () -> i32 {
+    if is_comptime() { return 1; }       // comptime interpreter path
+    return 2;                             // compiled-code path
+}
+
+CT :: #run probe();                       // folds to 1 (run in the interpreter)
+
+main :: () -> i32 {
+    log.warn("disk {}% full", 91);
+    log.info("user {} connected", "alice");
+    log.err("bad fd {}", 7);
+    log.debug("trace x={}", 42);
+    print("[stdout] is_comptime runtime={} comptime={}\n", probe(), CT);
+    return 0;
+}

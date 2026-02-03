@@ -1,0 +1,218 @@
+// std.http — Q3.5 listener address surface: IPv6, explicit bind addresses,
+// Unix-domain sockets, and the getaddrinfo resolver primitive.
+//
+//   Config.bind_addr  — a NUMERIC address literal ("127.0.0.1", "::",
+//                       "::1"); "" keeps the default v4 INADDR_ANY. A
+//                       garbage value is error.Bind — never a fallback.
+//   Config.unix_path  — non-empty = an AF_UNIX listener on that path
+//                       (mutually exclusive with bind_addr / reuse_port —
+//                       error.Config). A stale socket file is unlinked
+//                       before bind; Server.close removes the file.
+//   Config.ipv6_only  — every AF_INET6 listener sets IPV6_V6ONLY
+//                       explicitly from this (deterministic dual-stack,
+//                       never the OS default).
+//   socket.Addr       — generic address value: parse_addr (numeric,
+//                       inet_pton v4→v6), addr_unix, resolve (getaddrinfo,
+//                       first SOCK_STREAM result), connect_to/bind_to,
+//                       addr_family.
+//
+// Cases:
+//   A. bind "::1"  → v6 client 200; a v4 loopback connect is REFUSED
+//      (nothing bound on v4 — proves the family took).
+//   B. bind "127.0.0.1" → v4 client 200.
+//   C. bind "::" ipv6_only=false → BOTH a v4 and a v6 client get 200;
+//      resolve("localhost") round-trips too (either family answer works).
+//   D. bind "::" ipv6_only=true → v6 200, v4 connect REFUSED.
+//   E. unix_path → 200 over the socket file; the file EXISTS while
+//      serving and is GONE after close().
+//   F. guards: unix_path+reuse_port and unix_path+bind_addr are
+//      error.Config; bind_addr="not-an-ip" is error.Bind.
+//   + net-zero GPA gate across the whole run.
+#import "modules/std.sx";
+socket :: #import "modules/std/socket.sx";
+fs     :: #import "modules/std/fs.sx";
+http   :: #import "modules/std/http.sx";
+
+PORT_A :: 19019;
+PORT_B :: 19020;
+PORT_C :: 19021;
+PORT_D :: 19022;
+SOCK_PATH :: ".sx-tmp/1704-http.sock";
+
+handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    _ := req;
+    _ := ctx;
+    resp.body = "pong";
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0; ok := true;
+        while j < needle.len { if hay[i+j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+// Connect a client socket to `a` (blocking connect, then nonblocking for
+// the tick-driven read). -1 = connect refused/failed.
+dial_addr :: (a: *socket.Addr) -> i32 {
+    fd := socket.socket(socket.addr_family(a), socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    if socket.connect_to(fd, a) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+// One GET → expect a 200 "pong" within the tick budget.
+roundtrip :: (srv: *http.Server, fd: i32) -> bool {
+    req := "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
+    socket.write(fd, req.ptr, xx req.len);
+    rbuf : [2048]u8 = ---;
+    total : i64 = 0;
+    t : i64 = 0;
+    while t < 2000 {
+        srv.tick(1) catch {};
+        n, re := socket.read_nb(fd, @rbuf[total], xx (2048 - total));
+        if !re { total += n; }
+        else if re == error.Closed { break; }
+        s := string.{ ptr = @rbuf[0], len = xx total };
+        if contains(s, "HTTP/1.1 200 OK") and contains(s, "pong") { return true; }
+        t += 1;
+    }
+    s := string.{ ptr = @rbuf[0], len = xx total };
+    return contains(s, "HTTP/1.1 200 OK") and contains(s, "pong");
+}
+
+// Serve one client dialed at `a` on a fresh server built from `cfg`;
+// then close the server. 0 ok, else the case-distinct code.
+serve_one :: (cfg: http.Config, a: *socket.Addr, code: i32) -> i32 {
+    srv, se := http.Server.init(cfg, handler, 0);
+    if se { return code; }
+    fd := dial_addr(a);
+    if fd < 0 { srv.close(); return code + 1; }
+    ok := roundtrip(@srv, fd);
+    socket.close(fd);
+    srv.close();
+    if !ok { return code + 2; }
+    return 0;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    rc : i32 = 1;
+    push .{ allocator = gpa } { rc = run(); }
+    leaked := gpa.alloc_count;
+    if rc != 0 { print("FAIL: case rc={}\n", rc); return rc; }
+    if leaked != 0 { print("LEAK: {} outstanding allocations\n", leaked); return 7; }
+    print("bind ok: [::1] v6-only-loopback, 127.0.0.1, dual-stack both families + localhost resolve, ipv6_only refuses v4, unix socket served + unlinked, guards loud; net-zero GPA\n");
+    0
+}
+
+run :: () -> i32 {
+    // ── A. [::1]: v6 serves; v4 loopback is refused ──
+    a6, ok6 := socket.parse_addr("::1", PORT_A);
+    if !ok6 { return 10; }
+    cfg_a : http.Config = .{ port = PORT_A, bind_addr = "::1", timeout_request_ms = 3000, max_conn = 8 };
+    ra := serve_one_with_v4_refusal(cfg_a, @a6, PORT_A, 11);
+    if ra != 0 { return ra; }
+
+    // ── B. 127.0.0.1 ──
+    a4, ok4 := socket.parse_addr("127.0.0.1", PORT_B);
+    if !ok4 { return 20; }
+    cfg_b : http.Config = .{ port = PORT_B, bind_addr = "127.0.0.1", timeout_request_ms = 3000, max_conn = 8 };
+    rb := serve_one(cfg_b, @a4, 21);
+    if rb != 0 { return rb; }
+
+    // ── C. dual-stack "::": BOTH families + resolve("localhost") ──
+    cfg_c : http.Config = .{ port = PORT_C, bind_addr = "::", timeout_request_ms = 3000, max_conn = 8 };
+    srv_c, se_c := http.Server.init(cfg_c, handler, 0);
+    if se_c { return 30; }
+    c6, cok6 := socket.parse_addr("::1", PORT_C);
+    if !cok6 { srv_c.close(); return 31; }
+    fd6 := dial_addr(@c6);
+    if fd6 < 0 { srv_c.close(); return 32; }
+    if !roundtrip(@srv_c, fd6) { socket.close(fd6); srv_c.close(); return 33; }
+    socket.close(fd6);
+    c4, cok4 := socket.parse_addr("127.0.0.1", PORT_C);
+    if !cok4 { srv_c.close(); return 34; }
+    fd4 := dial_addr(@c4);
+    if fd4 < 0 { srv_c.close(); return 35; }
+    if !roundtrip(@srv_c, fd4) { socket.close(fd4); srv_c.close(); return 36; }
+    socket.close(fd4);
+    // resolve("localhost") → whichever family comes back, the dual-stack
+    // listener answers.
+    lh, lok := socket.resolve("localhost", PORT_C);
+    if !lok { srv_c.close(); return 37; }
+    fdl := dial_addr(@lh);
+    if fdl < 0 { srv_c.close(); return 38; }
+    if !roundtrip(@srv_c, fdl) { socket.close(fdl); srv_c.close(); return 39; }
+    socket.close(fdl);
+    srv_c.close();
+
+    // ── D. "::" with ipv6_only=true: v6 serves, v4 refused ──
+    d6, dok6 := socket.parse_addr("::1", PORT_D);
+    if !dok6 { return 40; }
+    cfg_d : http.Config = .{ port = PORT_D, bind_addr = "::", ipv6_only = true, timeout_request_ms = 3000, max_conn = 8 };
+    rd := serve_one_with_v4_refusal(cfg_d, @d6, PORT_D, 41);
+    if rd != 0 { return rd; }
+
+    // ── E. Unix-domain socket: serve + unlink on close ──
+    fs.create_dir_all(".sx-tmp");
+    cfg_e : http.Config = .{ unix_path = SOCK_PATH, timeout_request_ms = 3000, max_conn = 8 };
+    srv_e, se_e := http.Server.init(cfg_e, handler, 0);
+    if se_e { return 50; }
+    if !fs.exists(SOCK_PATH) { srv_e.close(); return 51; }
+    ua, uok := socket.addr_unix(SOCK_PATH);
+    if !uok { srv_e.close(); return 52; }
+    fdu := dial_addr(@ua);
+    if fdu < 0 { srv_e.close(); return 53; }
+    if !roundtrip(@srv_e, fdu) { socket.close(fdu); srv_e.close(); return 54; }
+    socket.close(fdu);
+    srv_e.close();
+    if fs.exists(SOCK_PATH) { return 55; }   // close() must remove the file
+
+    // ── F. loud guards ──
+    cfg_f1 : http.Config = .{ unix_path = SOCK_PATH, reuse_port = true };
+    _, ef1 := http.Server.init(cfg_f1, handler, 0);
+    if ef1 != error.Config { return 60; }
+    cfg_f2 : http.Config = .{ unix_path = SOCK_PATH, bind_addr = "127.0.0.1" };
+    _, ef2 := http.Server.init(cfg_f2, handler, 0);
+    if ef2 != error.Config { return 61; }
+    cfg_f3 : http.Config = .{ port = PORT_B, bind_addr = "not-an-ip" };
+    _, ef3 := http.Server.init(cfg_f3, handler, 0);
+    if ef3 != error.Bind { return 62; }
+    // Q3.5-review MED-1: an out-of-range port must be error.Bind — not a
+    // silent htons truncation onto a kernel-chosen ephemeral port.
+    cfg_f4 : http.Config = .{ port = 65536, bind_addr = "127.0.0.1" };
+    _, ef4 := http.Server.init(cfg_f4, handler, 0);
+    if ef4 != error.Bind { return 63; }
+
+    return 0;
+}
+
+// A server that must SERVE `a` (v6) and REFUSE a plain v4 loopback
+// connect on the same port — proves the bound family. `code` is this
+// case's error base.
+serve_one_with_v4_refusal :: (cfg: http.Config, a: *socket.Addr, port: i64, code: i32) -> i32 {
+    srv, se := http.Server.init(cfg, handler, 0);
+    if se { return code; }
+    fd := dial_addr(a);
+    if fd < 0 { srv.close(); return code + 1; }
+    ok := roundtrip(@srv, fd);
+    socket.close(fd);
+    if !ok { srv.close(); return code + 2; }
+    // v4 loopback must be REFUSED (nothing bound on the v4 side).
+    v4, vok := socket.parse_addr("127.0.0.1", port);
+    if !vok { srv.close(); return code + 3; }
+    fdr := socket.socket(socket.addr_family(@v4), socket.SOCK_STREAM, 0);
+    if fdr < 0 { srv.close(); return code + 4; }
+    refused := socket.connect_to(fdr, @v4) != 0;
+    socket.close(fdr);
+    srv.close();
+    if !refused { return code + 5; }
+    return 0;
+}

@@ -1,0 +1,5 @@
+error: for capture count must match the iterable count — one capture per iterable
+  --> examples/diagnostics/1150-diagnostics-for-capture-arity.sx:8:20
+   |
+ 8 |     for xs, ys (x) { }
+   |                    ^

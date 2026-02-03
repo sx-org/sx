@@ -1,0 +1,5 @@
+method next 1 = 10
+method next 2 = 20
+protocol     = 60
+closure(5)   = 150
+inline if macos = 70

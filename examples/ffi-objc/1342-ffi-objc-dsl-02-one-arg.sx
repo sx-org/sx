@@ -1,0 +1,35 @@
+// Phase 3 step 3.0: one-arg selector mangling. `addObject(o)` derives
+// `addObject:` — the sx method name becomes the keyword, a single
+// trailing `:` for the single arg. Selector arity (count of `:`) must
+// equal sx-side arity excluding self.
+//
+// Pre-3.0: bails at lower.zig with the Phase 3/4 diagnostic.
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+SxProbeOneArg :: #objc_class("SxProbeOneArg") extern {
+    addObject :: (self: *Self, val: i32) -> i32;
+}
+
+addObject_imp :: (self: *void, _cmd: *void, val: i32) -> i32 abi(.c) {
+    val * 2
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        ns_object := objc_getClass("NSObject".ptr);
+        cls := objc_allocateClassPair(ns_object, "SxProbeOneArg".ptr, 0);
+        sel := sel_registerName("addObject:".ptr);
+        class_addMethod(cls, sel, xx addObject_imp, "i@:i".ptr);
+        objc_registerClassPair(cls);
+
+        inst : *SxProbeOneArg = xx class_createInstance(cls, 0);
+        n := inst.addObject(21);
+        print("addObject(21) = {}\n", n);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

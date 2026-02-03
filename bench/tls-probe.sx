@@ -1,0 +1,56 @@
+// TLS T1 milestone probe — NOT a corpus test (it links the heavy 109-file
+// mbedTLS vendor; kept out of the suite). Proves an sx program links the
+// vendored mbedTLS for the host AND aarch64-linux: it initializes an
+// entropy source + CTR_DRBG + an SSL config, applies server stream
+// defaults, and prints the linked mbedTLS version.
+//
+//   ./zig-out/bin/sx build bench/tls-probe.sx -o .sx-tmp/tlsprobe
+//   .sx-tmp/tlsprobe                          # expect "3.6.6", exit 0
+//
+//   ./zig-out/bin/sx build --target aarch64-linux --self-contained \
+//       bench/tls-probe.sx -o .sx-tmp/tlsprobe-l
+//   container run --rm -v "$PWD/.sx-tmp:/work" alpine /work/tlsprobe-l
+#import "modules/std.sx";
+tls :: #import "vendors/mbedtls/mbedtls.sx";
+
+main :: () -> i32 {
+    entropy : tls.Entropy = .{};
+    drbg    : tls.CtrDrbg = .{};
+    conf    : tls.SslConfig = .{};
+
+    tls.mbedtls_entropy_init(@entropy);
+    tls.mbedtls_ctr_drbg_init(@drbg);
+    tls.mbedtls_ssl_config_init(@conf);
+
+    // Seed the DRBG from the entropy source (entropy_func is the collector).
+    rc := tls.mbedtls_ctr_drbg_seed(@drbg, tls.mbedtls_entropy_func, xx @entropy, xx 0, 0);
+    if rc != 0 {
+        print("ctr_drbg_seed failed: {}\n", rc);
+        return 1;
+    }
+
+    // Server-side, TLS-stream, default preset.
+    rc = tls.mbedtls_ssl_config_defaults(
+        @conf,
+        tls.MBEDTLS_SSL_IS_SERVER,
+        tls.MBEDTLS_SSL_TRANSPORT_STREAM,
+        tls.MBEDTLS_SSL_PRESET_DEFAULT,
+    );
+    if rc != 0 {
+        print("ssl_config_defaults failed: {}\n", rc);
+        return 1;
+    }
+
+    // Print the linked mbedTLS version (writes a NUL-terminated C string).
+    ver : [16]u8 = ---;
+    tls.mbedtls_version_get_string(xx @ver);
+    n := 0;
+    while n < 16 and ver[n] != 0 { n = n + 1; }
+    s := string.{ ptr = xx @ver, len = n };
+    print("{}\n", s);
+
+    tls.mbedtls_ssl_config_free(@conf);
+    tls.mbedtls_ctr_drbg_free(@drbg);
+    tls.mbedtls_entropy_free(@entropy);
+    return 0;
+}

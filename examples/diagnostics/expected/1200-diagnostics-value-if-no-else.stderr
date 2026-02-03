@@ -1,0 +1,5 @@
+error: an `if` used as a value must have an `else` branch
+  --> examples/diagnostics/1200-diagnostics-value-if-no-else.sx:14:13
+   |
+14 |     y := if true { 1 };
+   |             ^^^^

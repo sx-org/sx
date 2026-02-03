@@ -1,0 +1,9 @@
+#import "modules/std.sx";
+
+main :: () {
+    fx :: (s:i3) -> i3 {
+        s
+    }
+
+    print("{}\n", fx(-3));
+}

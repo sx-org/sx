@@ -1,0 +1,23 @@
+error: a '.[ ]' literal's type prefix names the aggregate type, not the element type — 'i32' is not an array/vector/slice; annotate the binding instead: `x : [3]i32 = .[ … ]`
+  --> examples/diagnostics/1248-diagnostics-array-literal-scalar-prefix.sx:13:10
+   |
+13 |     a := i32.[1, 2, 3];
+   |          ^^^
+
+error: a '.[ ]' literal's type prefix names the aggregate type, not the element type — 'f32' is not an array/vector/slice; annotate the binding instead: `x : [2]f32 = .[ … ]`
+  --> examples/diagnostics/1248-diagnostics-array-literal-scalar-prefix.sx:15:10
+   |
+15 |     b := f32.[1.5, 2.5];
+   |          ^^^
+
+error: a '.[ ]' literal's type prefix names the aggregate type, not the element type — 'u8' is not an array/vector/slice; annotate the binding instead: `x : [2]u8 = .[ … ]`
+  --> examples/diagnostics/1248-diagnostics-array-literal-scalar-prefix.sx:17:10
+   |
+17 |     c := u8.[1, 2];
+   |          ^^
+
+error: a '.[ ]' literal's type prefix names the aggregate type, not the element type — 'Pt' is not an array/vector/slice; annotate the binding instead: `x : [1]Pt = .[ … ]`
+  --> examples/diagnostics/1248-diagnostics-array-literal-scalar-prefix.sx:19:10
+   |
+19 |     d := Pt.[Pt.{ x = 1 }];
+   |          ^^

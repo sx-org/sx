@@ -1,0 +1,18 @@
+// Phase 2 step 2.0 (PLAN-FFI.md): xfail parser test for the
+// type-introducer `Foo :: #jni_class("java/path/Foo") extern { }` directive.
+//
+// Today's parser doesn't recognize `#jni_class` as a known hash
+// directive after `::`, so it falls through to expression parsing
+// and fails at the `#` token. Step 2.1 (next commit) extends
+// `parseConstBinding` to accept the directive, treat an empty body
+// as an opaque forward declaration, and re-snapshots this file to
+// capture the green behavior.
+
+#import "modules/std.sx";
+
+Foo :: #jni_class("java/path/Foo") extern { }
+
+main :: () -> i32 {
+    print("parse-only ok\n");
+    0
+}

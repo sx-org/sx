@@ -1,0 +1,65 @@
+// Two modules that each export a top-level `parse` — `std.cli.parse`
+// (3-param subcommand dispatch) and `std.json.parse` (2-param document
+// reader) — imported into ONE program under DISTINCT namespaces, with
+// BOTH `parse`s actually called.
+//
+// Regression (issue 0100): same-name cross-module functions collided in
+// the bare-name function table during IR lowering. Lowering re-resolved a
+// call by SHORT name, so importing both modules and calling one bound the
+// wrong-arity same-named function and tripped `lazyLowerFunction`'s
+// param-count assert (panic). The fix resolves each `pkg.parse(...)` to a
+// UNIQUE module-qualified FuncId, so `cli.parse` and `json.parse` are
+// independent identities.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+// `cli` is imported BOTH flat (so its types — `FlagSpec` / `Command` / `Diag` —
+// are bare-visible) AND namespaced (so the same-name `cli.parse` stays a
+// distinct qualified identity from `json.parse`). Post-E1 a bare reference to a
+// namespaced-ONLY type is a "not visible" error, so the flat import is what makes
+// the bare type names below resolve; `json` stays namespaced-only (its `Value`
+// reaches `main` only as `json.parse`'s return type, resolved in `json.sx`'s own
+// context).
+#import "modules/std/cli.sx";
+cli  :: #import "modules/std/cli.sx";
+json :: #import "modules/std/json.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> ! {
+    gpa := GPA.init();
+    arena := Arena.init(gpa, 8192);
+    defer arena.deinit();
+
+    // ── cli.parse: dispatch <group> <command> + a value flag ─────────
+    publish_flags : []FlagSpec = .[
+        FlagSpec.{ name = "out", takes_value = true, required = true },
+    ];
+    cmds : []Command = .[
+        Command.{ group = "ci", command = "publish", flags = publish_flags },
+        Command.{ group = "ci", command = "status",  flags = .[]          },
+    ];
+    argv : []string = .["ci", "publish", "--out", "dist"];
+    d : Diag = .{};
+    p := try cli.parse(argv, cmds, @d);
+    report("cli-group",   p.group == "ci");
+    report("cli-command", p.command == "publish");
+    report("cli-index",   p.cmd_index == 0);
+    report("cli-flag",    p.value_of("out") == "dist");
+
+    // ── json.parse: read a small document into the value model ───────
+    doc := "{\"name\":\"sx\",\"xs\":[1,2,3]}";
+    root := try json.parse(doc, arena);
+    o := root.object;
+    report("json-members", o.len == 2);
+    report("json-key0",    o.items[0].key == "name");
+    report("json-str",     o.items[0].val.str == "sx");
+    xs := o.items[1].val.array;
+    report("json-arr-len", xs.len == 3);
+    report("json-arr-2",   xs.items[2].int == 3);
+
+    print("=== DONE ===\n");
+    return;
+}

@@ -1,0 +1,119 @@
+// Regression (issue 0273) — HashMap / IndexMap struct keys are hashed
+// STRUCTURALLY (field-by-field, padding skipped), consistent with `==`, so a
+// separately-constructed field-equal key is FOUND even when the padding bytes
+// of the two keys differ. Before the fix `map_hash_key` hashed all size_of(K)
+// bytes including indeterminate padding, so equal keys hashed differently and
+// a lookup missed (HashMap) / appended a phantom duplicate (IndexMap).
+//
+// Covers: padded struct key found after stack churn (both map kinds), struct
+// with a string field (content-hashed), struct with an enum field, a nested
+// struct key, and distinct keys not colliding.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+K :: struct { a: u8; b: i64; }              // size 16: 1 byte + 7 pad + 8
+Color :: enum { Red; Green; Blue; }
+SK :: struct { name: string; n: i64; }      // string field → content hash
+EK :: struct { tag: Color; x: i64; }        // enum field → leaf byte hash
+Inner :: struct { p: u8; q: i64; }
+NK :: struct { hd: Inner; z: i32; }          // nested struct
+V3 :: struct { x: i64; y: i64; z: i64; tag: Color; }             // multi-field struct VALUE
+Big :: struct { a: i64; b: i64; c: i64; d: i64; e: i64; f: i64; } // large V → size_of(V) stride
+
+// Dirty the stack between two key literals so their (uninitialised) padding
+// bytes almost surely differ — the exact condition that broke raw-byte hashing.
+churn :: (n: i64) -> i64 {
+    buf : [64]i64 = ---; i := 0; s := 0;
+    while i < 64 { buf[i] = n + i; s += buf[i]; i += 1; } s
+}
+
+report :: (label: string, ok: bool) {
+    print("{}: {}\n", label, if ok then "ok" else "FAIL");
+}
+
+main :: () {
+    gpa := GPA.init();
+
+    // HashMap: padded struct key, separate construction with stack churn between.
+    m : HashMap(K, i64) = .{};
+    m.put(K.{ a = 1, b = 2 }, 100, gpa);
+    churn(7);
+    k2 := K.{ a = 1, b = 2 };
+    report("hashmap struct found", if v := m.get(k2) { v == 100 } else { false });
+    report("hashmap len 1",        m.len == 1);
+    report("hashmap distinct miss", if _ := m.get(K.{ a = 2, b = 2 }) { false } else { true });
+    m.deinit(gpa);
+
+    // IndexMap: same key must not append a phantom duplicate (len stays 1).
+    lm : IndexMap(K, i64) = .{};
+    lm.put(K.{ a = 1, b = 2 }, 100, gpa);
+    churn(11);
+    lk2 := K.{ a = 1, b = 2 };
+    report("indexmap struct found", if v := lm.get(lk2) { v == 100 } else { false });
+    report("indexmap len 1",        lm.len == 1);
+    lm.deinit(gpa);
+
+    // Struct with a string field — the string is content-hashed, so an equal
+    // string over a DIFFERENT backing buffer still matches.
+    sm : HashMap(SK, i64) = .{};
+    sm.put(SK.{ name = "foo", n = 5 }, 42, gpa);
+    churn(3);
+    tmp : [3]u8 = ---; tmp[0] = 'f'; tmp[1] = 'o'; tmp[2] = 'o';
+    sk2 := SK.{ name = string.{ ptr = @tmp[0], len = 3 }, n = 5 };
+    report("string-field found", if v := sm.get(sk2) { v == 42 } else { false });
+    sm.deinit(gpa);
+
+    // Struct with an enum field (enum routes to the leaf byte-hash path).
+    em : HashMap(EK, i64) = .{};
+    em.put(EK.{ tag = .Green, x = 9 }, 7, gpa);
+    churn(5);
+    report("enum-field found",   if v := em.get(EK.{ tag = .Green, x = 9 }) { v == 7 } else { false });
+    report("enum-field distinct", if _ := em.get(EK.{ tag = .Red, x = 9 }) { false } else { true });
+    em.deinit(gpa);
+
+    // Nested struct key — the inner struct recurses field-wise too.
+    nm : HashMap(NK, i64) = .{};
+    nm.put(NK.{ hd = Inner.{ p = 1, q = 2 }, z = 3 }, 55, gpa);
+    churn(13);
+    nk2 := NK.{ hd = Inner.{ p = 1, q = 2 }, z = 3 };
+    report("nested found", if v := nm.get(nk2) { v == 55 } else { false });
+    nm.deinit(gpa);
+
+    // ── G2 (issue 0273 follow-up): non-scalar VALUES round-trip ──────────
+    // The 0273 fix enabled aggregate K *and* V. 0846 above covers struct KEYS;
+    // here the focus is struct VALUES (multi-field, incl. a large-ish V that
+    // exercises the `size_of(V)` array stride) and a struct-KEY→struct-VALUE map.
+
+    // HashMap, multi-field struct value: put / get / overwrite / remove.
+    vm : HashMap(i64, V3) = .{};
+    vm.put(1, V3.{ x = 10, y = 20, z = 30, tag = .Green }, gpa);
+    g2a := if v := vm.get(1) { v.x == 10 and v.y == 20 and v.z == 30 and v.tag == .Green } else { false };
+    report("g2-hashmap-struct-val", g2a);
+    vm.put(1, V3.{ x = 11, y = 22, z = 33, tag = .Blue }, gpa);           // overwrite in place
+    g2b := if v := vm.get(1) { v.x == 11 and v.y == 22 and v.z == 33 and v.tag == .Blue } else { false };
+    report("g2-hashmap-overwrite-val", g2b);
+    report("g2-hashmap-remove-val", vm.remove(1, gpa) and !vm.contains(1) and vm.len == 0);
+    vm.deinit(gpa);
+
+    // IndexMap, multi-field struct value: overwrite keeps insertion order.
+    lvm : IndexMap(i64, V3) = .{};
+    lvm.put(7, V3.{ x = 1, y = 2, z = 3, tag = .Red }, gpa);
+    lvm.put(8, V3.{ x = 4, y = 5, z = 6, tag = .Blue }, gpa);
+    lvm.put(7, V3.{ x = 9, y = 9, z = 9, tag = .Green }, gpa);            // overwrite, order kept
+    g2c := if v := lvm.get(7) { v.x == 9 and v.y == 9 and v.z == 9 and v.tag == .Green } else { false };
+    report("g2-indexmap-struct-val", g2c and lvm.key_at(0) == 7 and lvm.key_at(1) == 8 and lvm.len == 2);
+    lvm.deinit(gpa);
+
+    // Struct KEY → large struct VALUE: all six fields round-trip through
+    // the `size_of(Big)`-strided values array, including after overwrite.
+    kvm : HashMap(K, Big) = .{};
+    kvm.put(K.{ a = 1, b = 2 }, Big.{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6 }, gpa);
+    kvm.put(K.{ a = 9, b = 9 }, Big.{ a = 10, b = 20, c = 30, d = 40, e = 50, f = 60 }, gpa);
+    g2d := if v := kvm.get(K.{ a = 1, b = 2 }) { v.a == 1 and v.b == 2 and v.f == 6 } else { false };
+    g2e := if v := kvm.get(K.{ a = 9, b = 9 }) { v.a == 10 and v.d == 40 and v.f == 60 } else { false };
+    report("g2-struct-key-struct-val", g2d and g2e and kvm.len == 2);
+    kvm.put(K.{ a = 1, b = 2 }, Big.{ a = 100, b = 200, c = 300, d = 400, e = 500, f = 600 }, gpa);
+    g2f := if v := kvm.get(K.{ a = 1, b = 2 }) { v.a == 100 and v.c == 300 and v.f == 600 } else { false };
+    report("g2-struct-key-overwrite-big", g2f and kvm.len == 2);
+    kvm.deinit(gpa);
+}

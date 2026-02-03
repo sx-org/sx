@@ -1,0 +1,36 @@
+// The sx library ships stb_truetype: `#import "vendors/stb_truetype/
+// stb_truetype.sx"` resolves through the stdlib search paths and the
+// implementation compiles through the object cache. Loads the system
+// Helvetica collection and pins INVARIANTS only (font versions vary
+// across macOS releases): init succeeds, the pixel-height scale is
+// positive, the ascender is positive and the descender negative.
+#import "modules/std.sx";
+fs :: #import "modules/std/fs.sx";
+tt :: #import "vendors/stb_truetype/stb_truetype.sx";
+
+main :: () -> i32 {
+    data := fs.read_file("/System/Library/Fonts/Helvetica.ttc");
+    if data == null {
+        print("font missing\n");
+        return 1;
+    }
+    bytes := data!;
+
+    off := tt.stbtt_GetFontOffsetForIndex(bytes.ptr, 0);
+    print("font offset >= 0: {}\n", off >= 0);
+
+    info : *void = xx context.allocator.alloc_bytes(256);
+    ok := tt.stbtt_InitFont(info, bytes.ptr, off);
+    print("init ok: {}\n", ok != 0);
+
+    px : f32 = 32.0;
+    scale := tt.stbtt_ScaleForPixelHeight(info, px);
+    print("scale > 0: {}\n", scale > 0.0);
+
+    ascent : i32 = 0;
+    descent : i32 = 0;
+    linegap : i32 = 0;
+    tt.stbtt_GetFontVMetrics(info, @ascent, @descent, @linegap);
+    print("ascent > 0, descent < 0: {} {}\n", ascent > 0, descent < 0);
+    0
+}

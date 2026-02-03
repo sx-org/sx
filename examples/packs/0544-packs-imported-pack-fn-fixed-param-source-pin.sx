@@ -1,0 +1,22 @@
+// Regression (stdlib E4): an imported pack function whose fixed-prefix param
+// type is visible only in its defining module must resolve during pack
+// monomorphization. `lib.sx` imports `dep.sx` (which defines `Needs`) and
+// exposes `make() -> Needs` plus `use_pack(n: Needs, ..$args)`. `main` imports
+// ONLY `lib.sx`, so `Needs` is two flat hops away and not bare-visible here —
+// main never names it.
+//
+// Before the fix, `monomorphizePackFn` restored the caller's source before
+// re-binding the fixed-prefix params, so `n: Needs` was resolved in main's
+// context and rejected with "type 'Needs' is not visible" — even though the
+// control plain fn `use_plain(n: Needs)` (typed via the source-pinned call-arg
+// path) ran fine. The fixed-prefix param is now resolved under the pack fn's own
+// source (`fd.body.source_file`), matching the rest of the pack signature/body.
+#import "modules/std.sx";
+#import "0544-packs-imported-pack-fn-fixed-param-source-pin/lib.sx";
+
+main :: () -> i32 {
+    x := make();
+    print("plain {}\n", use_plain(x));
+    print("pack {}\n", use_pack(x, 1, 2));
+    return 0;
+}

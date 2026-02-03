@@ -1,0 +1,22 @@
+// Value-carrying failable main `-> (int, !)` (ERR step E4.2). The entry-point
+// wrapper extracts the `{value, error}` tuple main returns: on success it exits
+// with the integer value (truncated to u8, like a plain integer main); on an
+// escaping error it prints the header + trace to stderr and exits 1 (the same
+// reporter as the pure `-> !` form — see 244). This run takes the success path.
+// Expected exit code: 64 (the returned value).
+
+#import "modules/std.sx";
+
+ParseErr :: error { Empty, BadDigit };
+
+inner :: (n: i32) -> (i32, !ParseErr) {
+    if n == 0 { raise error.Empty; }
+    if n < 0 { raise error.BadDigit; }
+    return n * 2;
+}
+
+main :: () -> (i32, !ParseErr) {
+    v := try inner(32);                      // succeeds → v = 64
+    print("v = {}\n", v);
+    return v;                                // success → exit code 64
+}

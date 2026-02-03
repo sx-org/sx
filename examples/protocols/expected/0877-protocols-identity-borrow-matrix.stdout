@@ -1,0 +1,5 @@
+classes: true true false
+aliased: 4 4
+back:    100 100 100
+alloc:   42
+gpa outstanding: 0

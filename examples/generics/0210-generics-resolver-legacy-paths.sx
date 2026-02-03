@@ -1,0 +1,31 @@
+// Resolver E1 lock: the bare-type-leaf cutover to the source-aware
+// `selectNominalLeaf` must NOT touch the NON-leaf type heads. A generic-struct
+// instantiation (`Box(i32)`), a `Vector(N, T)` builtin, and a type-returning
+// function (`Make(3, i64)`) are all resolved by `resolveTypeWithBindings`
+// ABOVE the bare-name leaf switch (`resolveParameterizedWithBindings` /
+// `resolveTypeCallWithBindings` / the `Vector` builtin path), so they stay on
+// the legacy resolution and never reach `selectNominalLeaf`. Parameterized
+// protocols share the same `resolveParameterizedWithBindings` pre-leaf path
+// (covered by 0204/0206). This example pins that all three still resolve
+// identically after the cutover.
+#import "modules/std.sx";
+
+Box :: struct($T: Type) {
+    value: T;
+}
+
+Make :: ($K: u32, $T: Type) -> Type { return [K]T; }
+
+N :: 3;
+
+main :: () {
+    b : Box(i32) = .{ value = 42 };
+    print("box: {}\n", b.value);
+
+    v : Vector(4, f32) = .[1, 2, 3, 4];
+    print("vec: {} {}\n", v.x, v.w);
+
+    a : Make(N, i64) = ---;
+    a[0] = 10; a[2] = 30;
+    print("typefn: len={} a0={} a2={}\n", a.len, a[0], a[2]);
+}

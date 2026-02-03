@@ -1,0 +1,24 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+main :: () {
+
+    // ========================================================
+    // 25. ARRAY LOOP MUTATION
+    // ========================================================
+    print("=== 25. Array Loop Mutation ===\n");
+    {
+        arr : [4]i32 = .[0, 0, 0, 0];
+        i := 0;
+        while i < 4 {
+            arr[i] = xx (i + 1);
+            i += 1;
+        }
+        print("loop-fill: {} {} {} {}\n", arr[0], arr[1], arr[2], arr[3]);
+        arr[2] += 10;
+        print("compound: {}\n", arr[2]);
+    }
+}

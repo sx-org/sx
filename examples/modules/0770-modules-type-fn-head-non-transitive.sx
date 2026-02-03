@@ -1,0 +1,23 @@
+// A type-returning FUNCTION head (`Make(i64)` where `Make :: ($T) -> Type`) is
+// NON-transitive even when a DIRECT flat import authors the same name as a
+// NON-function. `main` flat-imports `b.sx`; `b.sx` declares `Make :: 123` (a
+// value const, not a type-fn) AND flat-imports `c.sx`, whose `Make` IS the
+// type-returning function. The only TYPE-FN author of `Make` is two flat hops
+// away (main → b → c), so the bare `Make(i64)` head must emit the
+// "type 'Make' is not visible" diagnostic and poison — the visible 1-hop
+// `Make :: 123` const must NOT vouch for it.
+//
+// Regression (Phase E4 attempt-7, finding E4-type-fn-head-hidden-by-visible-
+// nonfn): before `headFnLeak` decided visibility from the ELIGIBLE FUNCTION
+// authors it used the module-scope NAME predicate (`isNameVisible`), which the
+// visible non-fn `Make :: 123` satisfied — so the global `fn_ast_map` type-fn
+// silently instantiated and `size_of(Make(i64))` printed 8 at exit 0 instead of
+// the visibility diagnostic.
+
+#import "modules/std.sx";
+#import "0770-modules-type-fn-head-non-transitive/b.sx";
+
+main :: () -> i32 {
+    print("size={}\n", size_of(Make(i64)));
+    0
+}

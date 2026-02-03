@@ -1,0 +1,15 @@
+// issue 0105 / F1 regression — FORWARD + MUTUAL refs between same-name struct
+// shadows. Two flat-imported modules each declare `Box` and `Node`; module B's
+// `Box` forward-refs B's `Node` (declared later) and B's `Node` back-refs B's
+// `Box`. Every cross-reference must bind to B's OWN nominal identities, proving
+// the up-front genuine-shadow reservation: ALL of a genuine shadow's authors are
+// reserved in `type_decl_tids` before any field resolves, so a forward / mutual
+// ref never falls back to the global findByName first-author (A's `Node`).
+#import "modules/std.sx";
+#import "0758-modules-same-name-struct-mutual-ref/a.sx";
+#import "0758-modules-same-name-struct-mutual-ref/b.sx";
+
+main :: () -> i32 {
+    print("b={}\n", b_test());
+    0
+}

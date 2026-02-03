@@ -1,0 +1,5 @@
+error: protocol method must declare its receiver as the first parameter: `self: *Self` (or `self: Self`)
+  --> examples/diagnostics/1190-diagnostics-protocol-missing-receiver.sx:7:16
+   |
+ 7 |     show :: () -> string;        // ERROR: missing `self` receiver
+   |                ^^

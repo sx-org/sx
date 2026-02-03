@@ -1,0 +1,6 @@
+oneshot-pinned: ok
+byte-at-a-time: ok
+split-mid-block: ok
+split-on-boundary: ok
+file-eq-memory: ok
+file-pinned: ok

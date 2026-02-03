@@ -1,0 +1,30 @@
+// The type switch's refusal set — every misuse is LOUD:
+//   1. an arm whose every tag an earlier arm claims is unreachable (the
+//      order hazard: a category before its concrete member, or a duplicate
+//      concrete arm);
+//   2. a category arm cannot bind `(v)` — a kind names many types;
+//   3. value patterns don't apply to an `any` subject (the payload is
+//      never the scrutinee — the old silently-wrong dispatch).
+// (Protocol values as SUBJECTS type-switch since the RTTI type_id word —
+// pinned positively in types/0873.)
+#import "modules/std.sx";
+
+main :: () {
+    av : any = 5;
+    if av == {
+        case int: { print("int\n"); }
+        case i64: (v) { print("i64 {}\n", v); }   // unreachable: int claims i64
+    }
+    if av == {
+        case struct: (s) { _ = s; }               // category arms bind nothing
+        else: {}
+    }
+    if av == {
+        case i64: { }
+        case i64: { }                             // duplicate = unreachable
+    }
+    if av == {
+        case 5: { }                               // value pattern
+        else: {}
+    }
+}

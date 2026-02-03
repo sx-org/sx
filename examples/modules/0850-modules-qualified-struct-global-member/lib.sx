@@ -1,0 +1,2 @@
+P0850Mod :: struct { x: i64 = 0; }
+gp : P0850Mod = .{ x = 7 };

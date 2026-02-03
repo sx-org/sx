@@ -1,0 +1,10 @@
+size_of(*u8)        = 8
+align_of(*u8)       = 8
+size_of(?u8)        = 2
+size_of([3]u8)      = 3
+size_of((i32)->i32) = 8
+size_of((i32, i32)) = 8
+size_of(Ptr)        = 8
+size_of(Maybe)      = 2
+size_of(Arr)        = 3
+size_of(Cb)         = 8

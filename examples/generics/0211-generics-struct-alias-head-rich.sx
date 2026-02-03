@@ -1,0 +1,15 @@
+// Companion of 0211: the authoring module — a plain fn, a plain struct,
+// and a generic struct, all re-exported by -facade.sx via alias decls.
+#import "modules/std.sx";
+
+helper :: () -> i64 { 7 }
+
+Thing :: struct {
+    v: i64;
+    init :: () -> Thing { Thing.{ v = 42 } }
+}
+
+Box :: struct ($T: Type) {
+    item: T;
+    get :: (b: *Box(T)) -> T { b.item }
+}

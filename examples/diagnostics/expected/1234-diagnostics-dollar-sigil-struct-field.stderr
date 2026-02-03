@@ -1,0 +1,5 @@
+error: '$T' cannot introduce a type parameter in a struct field; declare it in the struct header with `struct ($T: Type) { ... }` and reference it as `T`
+  --> examples/diagnostics/1234-diagnostics-dollar-sigil-struct-field.sx:10:20
+   |
+10 | Gen :: struct { v: $T; }
+   |                    ^^

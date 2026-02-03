@@ -1,0 +1,284 @@
+// =====================================================================
+// hash.sx — streaming SHA-256 (FIPS 180-4), pure sx.
+//
+// Content addressing is security-critical, so the digest is computed
+// in-process: no shelling out, no platform crypto library. All 32-bit
+// word arithmetic is done in i64 and masked back to 32 bits with
+// `& MASK32`, so the result is identical regardless of the host's
+// native integer width or overflow behaviour.
+//
+// Zero-heap: the digest path never touches `context.allocator`. The
+// hash is a fixed `[64]u8` of lowercase hex returned by value on the
+// stack, and file hashing streams the input in fixed-size chunks, so
+// peak memory is O(chunk) regardless of file size.
+//
+// Streaming API (the by-value `init` / `*self` pattern):
+//
+//     h := hash.init();        // Sha256, stack-local
+//     h.update("hello, ");     // absorb across calls
+//     h.update("world");
+//     digest := h.final();     // [64]u8, 64-char lowercase hex, by value
+//
+// One-shot convenience:
+//
+//     digest := hash.sha256_hex("abc");        // [64]u8 by value
+//     digest := hash.sha256_file("path\0");    // ?[64]u8, null on I/O error
+//
+// To print or compare a digest, build a `string` VIEW over it (no copy):
+//
+//     d := hash.sha256_hex("abc");
+//     view := string.{ ptr = @d[0], len = 64 };
+// =====================================================================
+
+#import "modules/std/core.sx";     // string
+#import "modules/std/fs.sx";       // open_file, File
+
+// Low 32 bits. SHA-256 is defined over 32-bit words; every add/rotate
+// result is masked back through this so the carry never escapes bit 31.
+MASK32 :: 0xFFFFFFFF;
+
+// Round constants K[0..63] — the first 32 bits of the fractional parts
+// of the cube roots of the first 64 primes (FIPS 180-4 §4.2.2).
+K : [64]i64 = .[
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+
+// 32-bit right rotate. `word` must already be masked to 32 bits.
+rotr :: (word: i64, n: i64) -> i64 {
+    ((word >> n) | (word << (32 - n))) & MASK32
+}
+
+big_sigma0 :: (x: i64) -> i64 { rotr(x, 2) ^ rotr(x, 13) ^ rotr(x, 22) }
+big_sigma1 :: (x: i64) -> i64 { rotr(x, 6) ^ rotr(x, 11) ^ rotr(x, 25) }
+small_sigma0 :: (x: i64) -> i64 { rotr(x, 7) ^ rotr(x, 18) ^ (x >> 3) }
+small_sigma1 :: (x: i64) -> i64 { rotr(x, 17) ^ rotr(x, 19) ^ (x >> 10) }
+
+Sha256 :: struct {
+    h: [8]i64;          // running hash state (each entry masked to 32 bits)
+    buf: [64]u8;        // partial-block buffer
+    buf_len: i64;       // bytes currently in `buf` (0..63)
+    total_len: i64;     // total bytes absorbed so far
+
+    // Crunch the 64-byte block currently in `buf` into the state.
+    process_block :: (self: *Sha256) {
+        w : [64]i64 = ---;
+        t := 0;
+        while t < 16 {
+            base := t * 4;
+            w[t] = ((self.buf[base].(i64)) << 24)
+                 | ((self.buf[base + 1].(i64)) << 16)
+                 | ((self.buf[base + 2].(i64)) << 8)
+                 |  (self.buf[base + 3].(i64));
+            t += 1;
+        }
+        t = 16;
+        while t < 64 {
+            w[t] = (small_sigma1(w[t - 2]) + w[t - 7] + small_sigma0(w[t - 15]) + w[t - 16]) & MASK32;
+            t += 1;
+        }
+
+        a := self.h[0];
+        b := self.h[1];
+        c := self.h[2];
+        d := self.h[3];
+        e := self.h[4];
+        f := self.h[5];
+        g := self.h[6];
+        hh := self.h[7];
+
+        t = 0;
+        while t < 64 {
+            ch := (e & f) ^ (~e & g);
+            temp1 := (hh + big_sigma1(e) + ch + K[t] + w[t]) & MASK32;
+            maj := (a & b) ^ (a & c) ^ (b & c);
+            temp2 := (big_sigma0(a) + maj) & MASK32;
+            hh = g;
+            g = f;
+            f = e;
+            e = (d + temp1) & MASK32;
+            d = c;
+            c = b;
+            b = a;
+            a = (temp1 + temp2) & MASK32;
+            t += 1;
+        }
+
+        self.h[0] = (self.h[0] + a) & MASK32;
+        self.h[1] = (self.h[1] + b) & MASK32;
+        self.h[2] = (self.h[2] + c) & MASK32;
+        self.h[3] = (self.h[3] + d) & MASK32;
+        self.h[4] = (self.h[4] + e) & MASK32;
+        self.h[5] = (self.h[5] + f) & MASK32;
+        self.h[6] = (self.h[6] + g) & MASK32;
+        self.h[7] = (self.h[7] + hh) & MASK32;
+    }
+
+    // Absorb `data`. Safe to call repeatedly; partial blocks are buffered
+    // and crunched as soon as 64 bytes accumulate.
+    update :: (self: *Sha256, data: string) {
+        i := 0;
+        while i < data.len {
+            self.buf[self.buf_len] = data[i];
+            self.buf_len += 1;
+            self.total_len += 1;
+            if self.buf_len == 64 {
+                self.process_block();
+                self.buf_len = 0;
+            }
+            i += 1;
+        }
+    }
+
+    // Finish: apply FIPS padding and emit the 32-byte digest as 64
+    // lowercase hex characters in a stack `[64]u8`, returned by value.
+    // The state is consumed by this call. No heap allocation.
+    final :: (self: *Sha256) -> [64]u8 {
+        bit_len := self.total_len * 8;
+
+        // 0x80 terminator, then zero-pad until 56 bytes mod 64.
+        self.buf[self.buf_len] = 0x80;
+        self.buf_len += 1;
+        if self.buf_len == 64 {
+            self.process_block();
+            self.buf_len = 0;
+        }
+        while self.buf_len != 56 {
+            self.buf[self.buf_len] = 0;
+            self.buf_len += 1;
+            if self.buf_len == 64 {
+                self.process_block();
+                self.buf_len = 0;
+            }
+        }
+
+        // 64-bit big-endian message length in bits.
+        b := 0;
+        while b < 8 {
+            self.buf[56 + b] = xx ((bit_len >> ((7 - b) * 8)) & 0xFF);
+            b += 1;
+        }
+        self.process_block();
+        self.buf_len = 0;
+
+        digest : [64]u8 = ---;
+        i := 0;
+        while i < 8 {
+            word := self.h[i] & MASK32;
+            j := 0;
+            while j < 4 {
+                byte_val := (word >> ((3 - j) * 8)) & 0xFF;
+                pos := (i * 4 + j) * 2;
+                digest[pos]     = nibble_hex((byte_val >> 4) & 0xF);
+                digest[pos + 1] = nibble_hex(byte_val & 0xF);
+                j += 1;
+            }
+            i += 1;
+        }
+        digest
+    }
+}
+
+// Lowercase-hex ASCII byte for a 0..15 nibble.
+nibble_hex :: (n: i64) -> u8 {
+    if n < 10 then xx (n + '0') else xx (n - 10 + 'a')
+}
+
+// Returns the SHA-256 state by value; the caller binds it to a local
+// whose address backs the `*self` methods.
+init :: () -> Sha256 {
+    s : Sha256 = ---;
+    s.h[0] = 0x6a09e667;
+    s.h[1] = 0xbb67ae85;
+    s.h[2] = 0x3c6ef372;
+    s.h[3] = 0xa54ff53a;
+    s.h[4] = 0x510e527f;
+    s.h[5] = 0x9b05688c;
+    s.h[6] = 0x1f83d9ab;
+    s.h[7] = 0x5be0cd19;
+    s.buf_len = 0;
+    s.total_len = 0;
+    s
+}
+
+// One-shot: digest of a single buffer as 64-char lowercase hex,
+// returned by value. No heap allocation.
+sha256_hex :: (data: string) -> [64]u8 {
+    h := init();
+    h.update(data);
+    h.final()
+}
+
+// ── FNV-1a — fast non-cryptographic hash (64-bit) ────────────────────
+//
+// A tiny, allocation-free hash for HASH-TABLE keys (NOT security). It is
+// the default key hash for `std/map.sx` (`HashMap` / `IndexMap`). The
+// 64-bit multiply is left to wrap mod 2^64 in `u64` — that IS the FNV
+// spec (no masking, unlike the 32-bit SHA path above).
+//
+//     h := hash.fnv1a("name");            // u64 digest of the bytes
+//     h := hash.fnv1a_bytes(ptr, len);    // same over a raw byte range
+//
+// Reference vectors (64-bit FNV-1a): fnv1a("") == 0xcbf29ce484222325,
+// fnv1a("a") == 0xaf63dc4c8601ec8c, fnv1a("foobar") == 0x85944171f73967e8.
+
+FNV_OFFSET_BASIS : u64 : 0xcbf29ce484222325;
+FNV_PRIME        : u64 : 0x100000001b3;
+
+// FNV-1a continued from an existing running hash `h`: fold `len` bytes at
+// `data` into `h` and return the updated state. Lets a caller hash a value
+// PIECE BY PIECE — thread the running hash through each field — instead of
+// over one contiguous byte range. `map.sx`'s structural key hash uses this to
+// fold a struct key field-by-field (skipping padding), so field-wise-equal
+// keys hash equally regardless of indeterminate padding bytes.
+fnv1a_fold :: (h: u64, data: [*]u8, len: i64) -> u64 {
+    hh := h;
+    i := 0;
+    while i < len {
+        hh = hh ^ (data[i].(u64));
+        hh = hh * FNV_PRIME;           // wraps mod 2^64 (FNV spec)
+        i += 1;
+    }
+    hh
+}
+
+// Hash `len` bytes at `data`. Content hash — hashes the BYTES, so two
+// distinct buffers with equal contents hash equally (required for string
+// keys, whose `{ptr,len}` identity must NOT leak into the hash). A single
+// fold starting from the canonical FNV offset basis.
+fnv1a_bytes :: (data: [*]u8, len: i64) -> u64 {
+    fnv1a_fold(FNV_OFFSET_BASIS, data, len)
+}
+
+// Convenience over a `string` view — hashes the bytes it points at.
+fnv1a :: (data: string) -> u64 {
+    fnv1a_bytes(data.ptr, data.len)
+}
+
+// Digest of a file's contents, returned by value. Streams the file in
+// fixed 64KB chunks, so peak memory is O(chunk) even for multi-hundred-
+// MB artifacts. Returns null if the file can't be opened. No heap
+// allocation: the chunk buffer is a stack array.
+sha256_file :: (path: [:0]u8) -> ?[64]u8 {
+    handle := open_file(path, .read);
+    if handle == null { return null; }
+    file := handle!;
+    defer file.close();
+
+    h := init();
+    chunk : [65536]u8 = ---;
+    reading := true;
+    while reading {
+        n := file.read(string.{ ptr = @chunk[0], len = 65536 });
+        if n < 0 { return null; }
+        if n == 0 { reading = false; }
+        if n > 0 { h.update(string.{ ptr = @chunk[0], len = n }); }
+    }
+    h.final()
+}

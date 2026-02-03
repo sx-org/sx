@@ -1,0 +1,7 @@
+callback returned        = 42
+hits after first call    = 1
+sum after first call     = 21
+hits after three calls   = 3
+sum after three calls    = 39
+ctx + value              = 142
+hits after ctx callback  = 4

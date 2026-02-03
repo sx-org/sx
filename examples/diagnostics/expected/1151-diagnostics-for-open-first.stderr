@@ -1,0 +1,5 @@
+error: the first iterable must have a bounded length (it drives the loop) — an open range 'a..' may only follow it
+  --> examples/diagnostics/1151-diagnostics-for-open-first.sx:7:17
+   |
+ 7 |     for 0.. (i) { }
+   |                 ^

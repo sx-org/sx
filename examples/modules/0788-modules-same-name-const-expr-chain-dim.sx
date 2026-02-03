@@ -1,0 +1,18 @@
+// issue 0105 / F2 / R1 — same-name const EXPRESSION CHAIN, coherent across a
+// value read AND an array dimension. Two flat-imported modules each declare a
+// same-name `M` and a same-name `K :: M + 1` that reads `M`. Each module uses
+// ITS OWN `K` both as a runtime value (`return K`) and as an array dimension
+// (`[K]u8`).
+//
+// The fold of a SELECTED const's RHS must resolve nested same-name leaves (the
+// `M` inside `K :: M + 1`) in the SELECTED author's source context, not through
+// the global last-wins `module_const_map`. Both observables agree per module:
+// a_len=2 a_val=2, b_len=11 b_val=11.
+#import "modules/std.sx";
+#import "0788-modules-same-name-const-expr-chain-dim/a.sx";
+#import "0788-modules-same-name-const-expr-chain-dim/b.sx";
+
+main :: () -> i32 {
+    print("a_len={} a_val={} b_len={} b_val={}\n", a_len(), a_val(), b_len(), b_val());
+    0
+}

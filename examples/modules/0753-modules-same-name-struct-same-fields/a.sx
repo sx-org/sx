@@ -1,0 +1,3 @@
+// Module A authors `Pair { x, y }`.
+Pair :: struct { x: i64; y: i64; }
+a_pair :: () -> Pair { return Pair.{ x = 1, y = 2 }; }

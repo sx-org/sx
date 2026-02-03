@@ -1,0 +1,16 @@
+// issue 0105 / F4 — same-name VALUE const TYPE inference is source-aware. Two
+// flat-imported modules each declare a top-level `K` with a DIFFERENT declared
+// TYPE (A: `i32`, B: `f64`) and an inferred-return function that reads `K` bare.
+// The inferred return type must come from each module's OWN `K` (own-wins), not
+// the global last-wins const TYPE: `a_k` infers A's `i32` and yields the integer
+// `1` (printed `1`, not `1.000000`), while `b_k` infers B's `f64` and yields
+// `2.500000`. Selection routes through the source-aware `selectModuleConst`, the
+// same author selector emission/folding use — type inference must agree.
+#import "modules/std.sx";
+#import "0793-modules-same-name-const-type-infer/a.sx";
+#import "0793-modules-same-name-const-type-infer/b.sx";
+
+main :: () -> i32 {
+    print("a={} b={}\n", a_k(), b_k());
+    0
+}

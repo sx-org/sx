@@ -1,0 +1,3 @@
+classify(7): doubled=14 big=false
+classify(21): doubled=42 big=true
+classify(-3): caught Negative

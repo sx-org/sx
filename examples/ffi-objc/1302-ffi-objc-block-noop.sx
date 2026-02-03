@@ -1,0 +1,17 @@
+// `xx <closure> : Block` builds an Apple-ABI block whose invoke
+// trampoline delegates to the sx closure. Verifies end-to-end:
+// stdlib Block layout, _NSConcreteStackBlock extern, per-signature
+// invoke trampoline, Into(Block) for Closure() -> void. Runs on
+// macOS — invokes the block's invoke fn directly via a typed fn
+// pointer instead of going through the Obj-C runtime.
+
+#import "modules/std.sx";
+#import "modules/ffi/objc_block.sx";
+
+main :: () -> i32 {
+  cl := () { print("noop block ran\n"); };
+  b : Block = xx cl;
+  invoke_fn : (*Block) -> void abi(.c) = xx b.invoke;
+  invoke_fn(@b);
+  0
+}

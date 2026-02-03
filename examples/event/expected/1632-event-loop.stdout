@@ -1,0 +1,5 @@
+idle wait: 0 events, deadline expired
+readable: fd/udata/nbytes all correct
+writable: immediate, udata correct
+peer close: eof flagged
+event loop ok

@@ -1,0 +1,37 @@
+// The `closure` category in RUNTIME type dispatch: an `any` boxes a
+// closure (the tag round-trips), so the type switch's `case closure:`
+// claims every closure type's tag as one set — symmetric with the static
+// `inline if T ==` fold, where the category selects `free`'s closure
+// arm. The same category classifies in the type-category match on a
+// runtime `Type` value. Category arms are tag SETS and bind no `(v)`.
+#import "modules/std.sx";
+
+describe :: (av: any) -> string {
+    if av == {
+        case int:     return "int";
+        case closure: return "closure";
+        else:         return "other";
+    }
+    "unreached"
+}
+
+main :: () {
+    n := 10;
+    cap := (x: i64) -> i64 { x + n };
+    bare := (x: i64) -> i64 { x * 2 };   // capture-free — still a closure
+
+    print("{}\n", describe(cap));
+    print("{}\n", describe(bare));
+    print("{}\n", describe(42));
+    print("{}\n", describe("s"));
+
+    // The category match on a runtime Type value classifies the same way.
+    if type_of(cap) == {
+        case closure: print("ty: closure\n");
+        else:         print("ty: other\n");
+    }
+    if type_of(42) == {
+        case closure: print("ty: closure\n");
+        else:         print("ty: other\n");
+    }
+}

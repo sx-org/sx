@@ -1,0 +1,14 @@
+// The catch error binding is parenthesized — `catch (e) { }`; a bare
+// binding is rejected with a migration hint. (Same rule as the for-loop
+// capture; `onfail (e) { }` follows it too.)
+
+#import "modules/std.sx";
+
+E :: error { Bad };
+
+f :: () -> (i64, !E) { raise error.Bad; }
+
+main :: () {
+    v := f() catch e { 0 };
+    print("{}\n", v);
+}

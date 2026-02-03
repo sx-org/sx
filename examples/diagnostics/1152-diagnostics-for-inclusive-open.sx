@@ -1,0 +1,8 @@
+// A range with an explicit end marker (`..=` / `..<`) is the bounded form —
+// it requires an end expression; the open form is `a..`.
+
+#import "modules/std.sx";
+
+main :: () {
+    for 0..= (i) { }
+}

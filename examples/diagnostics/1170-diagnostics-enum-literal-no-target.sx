@@ -1,0 +1,11 @@
+// A destination-less enum literal is diagnosed (issue 0098's third hole —
+// it previously panicked the LLVM backend with an unresolved type). Kept
+// as the ONLY error in this file: the diagnostic is cascade-guarded, so it
+// stays silent when the destination type itself already failed to resolve.
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    c := .ios;
+    print("{}\n", c);
+    return 0;
+}

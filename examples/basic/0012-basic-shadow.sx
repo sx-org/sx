@@ -1,0 +1,21 @@
+#import "modules/std.sx";
+main :: () -> i32 {
+    x := 42;
+    {
+        print("scope opened\n");
+        defer print("scope closed\n");
+
+        // define a inner variable x shadowing the one define in the outer scope(s)
+        x:= 6;
+        print("scoped x: {}\n", x); //expect 6
+    }
+    print("main x: {}\n", x); //expect 42
+    0
+}
+
+// ** stdout **
+// scope opened
+// scoped x: 6
+// scope closed
+// main x: 42
+//

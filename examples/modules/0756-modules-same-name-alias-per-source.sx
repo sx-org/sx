@@ -1,0 +1,13 @@
+// issue 0105 case 5 — same-name type ALIAS, per-source visibility. Two
+// flat-imported modules each alias `Id` to a DIFFERENT type (A: `i32`, B:
+// `f64`). Each module's bare `Id` resolves against its OWN source alias, so A's
+// `x : Id` is a 32-bit integer (prints 100) and B's `x : Id` is a float (prints
+// 2.5) — proving aliases are source-keyed, never folded last-wins.
+#import "modules/std.sx";
+#import "0756-modules-same-name-alias-per-source/a.sx";
+#import "0756-modules-same-name-alias-per-source/b.sx";
+
+main :: () -> i32 {
+    print("a={} b={}\n", a_val(), b_val());
+    0
+}

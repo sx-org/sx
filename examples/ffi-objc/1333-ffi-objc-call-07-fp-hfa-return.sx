@@ -1,0 +1,46 @@
+// Phase 1 step 1.9 (PLAN-FFI.md): all-double HFA returns through
+// `#objc_call`. 4×f64 = 32 B, stays in v0..v3 on AAPCS64 and
+// xmm0..xmm3 on SysV AMD64 — same shape as UIEdgeInsets / NSRect /
+// CGRect, the f32-vs-f64 landmine that bit us when we first wrote
+// `safeAreaInsets` in uikit.sx.
+//
+// Nominally covered by ffi-objc-call-05's nil-recv NSRect case,
+// but that only checks that zeros come back. Here we install a
+// real IMP that returns specific non-zero values and verify each
+// field comes through the float-register file intact.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+UIEdgeInsets :: struct {
+    top: f64;
+    left: f64;
+    bottom: f64;
+    right: f64;
+}
+
+insets_imp :: (self: *void, _cmd: *void) -> UIEdgeInsets abi(.c) {
+    UIEdgeInsets.{ top = 1.5, left = 2.5, bottom = 3.5, right = 4.5 }
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        ns_object := objc_getClass("NSObject".ptr);
+        my_cls := objc_allocateClassPair(ns_object, "SxInsetsProbe".ptr, 0);
+        sel := sel_registerName("safeAreaInsets".ptr);
+        // Method type encoding: {UIEdgeInsets=dddd}@: → returns 4×f64,
+        // implicit (self: id, _cmd: SEL). `d` = double.
+        ok := class_addMethod(my_cls, sel, xx insets_imp, "{UIEdgeInsets=dddd}@:".ptr);
+        print("addMethod = {}\n", ok);
+        objc_registerClassPair(my_cls);
+
+        instance := class_createInstance(my_cls, 0);
+        ins := #objc_call(UIEdgeInsets)(instance, "safeAreaInsets");
+        print("insets = ({}, {}, {}, {})\n", ins.top, ins.left, ins.bottom, ins.right);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

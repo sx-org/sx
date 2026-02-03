@@ -1,0 +1,23 @@
+// Rejection counterpart to 1048 (ERR step E1.7). A bare (un-absorbed) failable
+// call in a `defer` / `onfail` body is a compile error — the block is already
+// exiting, so the error has nowhere to propagate. It must be absorbed locally
+// with `catch` or `or <value>`. Both a `defer` and an `onfail` bare call are
+// flagged; the program never runs (exit 1).
+
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+failing :: () -> !E { raise error.Bad; }
+
+work :: (n: i32) -> !E {
+    defer  failing();          // REJECTED: bare failable in a defer body
+    onfail { failing(); }      // REJECTED: bare failable in an onfail body
+    if n < 0 { raise error.Bad; }
+    return;
+}
+
+main :: () -> i32 {
+    a := work(-1);
+    return 0;
+}

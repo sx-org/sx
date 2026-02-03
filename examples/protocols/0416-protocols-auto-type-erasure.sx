@@ -1,0 +1,94 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+Point :: struct { x, y: i32; }
+
+add :: (a: i32, b: i32) -> i32 { a + b }
+
+Counter :: protocol {
+    inc :: (self: *Self);
+    get :: (self: *Self) -> i32;
+}
+
+Summable :: protocol {
+    sum :: (self: *Self) -> i32;
+}
+
+SimpleCounter :: struct { val: i32; }
+
+impl Counter for SimpleCounter {
+    inc :: (self: *SimpleCounter) { self.val += 1; }
+    get :: (self: *SimpleCounter) -> i32 { self.val }
+}
+
+impl Summable for Point {
+    sum :: (self: *Point) -> i32 { self.x + self.y }
+}
+
+// Phase 2: #inline protocol for dynamic dispatch
+
+// Phase 2: #inline protocol for dynamic dispatch
+Adder :: protocol #inline {
+    add :: (self: *Self, n: i32);
+    value :: (self: *Self) -> i32;
+}
+
+Accumulator :: struct {
+    total: i32;
+}
+
+impl Adder for Accumulator {
+    add :: (self: *Accumulator, n: i32) { self.total += n; }
+    value :: (self: *Accumulator) -> i32 { self.total }
+}
+
+main :: () {
+
+    // --- Auto type erasure (AE) ---
+    print("=== Auto Type Erasure ===\n");
+
+    // AE1: function argument — explicit owning copy of an lvalue (an
+    // implicit `use_counter(sc)` is the cutover's demand error)
+    {
+        use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
+        sc := SimpleCounter.{ val = 10 };
+        result := use_counter(sc.(Counter));
+        print("AE1: {}\n", result);
+    }
+
+    // AE2: protocol variable from an lvalue — the postfix owning copy
+    {
+        acc := Accumulator.{ total = 0 };
+        a := acc.(Adder);
+        a.add(5);
+        a.add(3);
+        print("AE2: {}\n", a.value());
+    }
+
+    // AE3: struct literal passed directly (no xx)
+    {
+        use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
+        result := use_counter(SimpleCounter.{ val = 100 });
+        print("AE3: {}\n", result);
+    }
+
+    // AE4: explicit xx still works (not broken)
+    {
+        use_counter :: (c: Counter) -> i32 { c.inc(); c.get() }
+        result := use_counter(xx SimpleCounter.{ val = 50 });
+        print("AE4: {}\n", result);
+    }
+
+    // AE5: transient mutation through a VIEW param — a pointer-to-concrete
+    // produces the `*Adder` view implicitly; mutations reach the original
+    {
+        use_adder :: (a: *Adder) { a.add(10); }
+        acc := Accumulator.{ total = 5 };
+        p := @acc;
+        use_adder(p);
+        print("AE5: {}\n", acc.total);
+    }
+}

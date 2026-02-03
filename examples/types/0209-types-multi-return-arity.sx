@@ -1,0 +1,8 @@
+// Negative: a multi-return's `return` must yield the right number of values.
+// Returning a single value where two are required would leave the second slot
+// uninitialized, so it is a compile error.
+#import "modules/std.sx";
+divmod :: (a: i64, b: i64) -> (i64, i64) {
+    return a / b;   // only one value — needs two
+}
+main :: () -> i64 { q, r := divmod(7, 2); print("{} {}\n", q, r); return 0; }

@@ -1,0 +1,5 @@
+// Module B authors a DIFFERENT same-name value const `K` (2) — a shadow of A's
+// `K`. Each `K` is selected per declaring source, so B's `b_k` reads B's value
+// while A's `a_k` reads A's, never the global last-wins const.
+K :: 2;
+b_k :: () -> i64 { return K; }

@@ -1,0 +1,28 @@
+// Dot-call dispatch for generic struct methods.
+//
+// Covers three shapes:
+//   1. non-generic method:                h.plain()
+//   2. generic method, explicit type arg: h.sized(i32)
+//   3. generic method, inferred from val: h.taking(99)
+
+#import "modules/std.sx";
+
+Holder :: struct {
+    n: i64;
+
+    plain :: (self: *Holder) -> i64 { self.n }
+    sized :: (self: *Holder, $T: Type) -> i64 { size_of(T) }
+    taking :: (self: *Holder, $T: Type, v: T) -> T { v }
+}
+
+main :: () -> i32 {
+    h : *Holder = xx c.libc_malloc(size_of(Holder));
+    h.n = 7;
+
+    print("plain: {}\n", h.plain());
+    print("sized i32: {}\n", h.sized(i32));
+    print("sized i64: {}\n", h.sized(i64));
+    print("taking explicit: {}\n", h.taking(i32, 42));
+    print("taking inferred: {}\n", h.taking(99));
+    0
+}

@@ -1,0 +1,19 @@
+// Stream B1 (fibers) — x86_64 sibling of 1800: `abi(.naked)` emits a naked
+// function whose body is raw x86_64 asm (returns 42 in eax, then its own `ret`).
+//
+// Lowered via LLVM's `naked` attribute (no prologue/epilogue/frame). x86_64-
+// pinned via `.build`: ir-only on a non-x86 host — the `.ir` snapshot locks the
+// `naked` attribute + the bare asm body (`movl $42, %eax` / `ret`) and the
+// frame-pointer-free attribute set — and runs end-to-end (exit 42) on
+// x86_64-linux. The IR text (the `naked` attribute, the `call void asm`) is
+// target-independent; only the asm string differs from the aarch64 1800.
+answer :: () -> i64 abi(.naked) {
+    asm volatile {
+        #string A
+        movl $42, %eax
+        ret
+A
+    };
+}
+
+main :: () -> i64 { return answer(); }

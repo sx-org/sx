@@ -1,0 +1,70 @@
+// Phase 3 step 3.2 — locked-in golden test for the default Obj-C
+// selector mangling rule (Phase 3.0). One fixture covers the common
+// shapes (niladic, 1-arg through 4-arg, camelCase across pieces, and
+// the `#selector(...)` override). The accompanying `.ir` snapshot
+// records each resolved selector string as an `OBJC_METH_VAR_NAME_*`
+// constant — a change to `deriveObjcSelector` produces ONE diff that
+// surfaces every affected case at once.
+//
+// Per the rule:
+//   - Niladic (arity 0): name verbatim. `length` → "length".
+//   - Arity N (1..): split the sx name on `_`; each piece becomes a
+//     keyword with a trailing `:`. Piece count must equal arity.
+//   - `#selector("...")` overrides the mangling entirely; the literal
+//     string is used as the selector. Arity is the user's contract.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+SxManglingProbe :: #objc_class("SxManglingProbe") extern {
+    length                         :: (self: *Self) -> i32;
+    addObject                      :: (self: *Self, a: i32) -> i32;
+    combine_and                    :: (self: *Self, a: i32, b: i32) -> i32;
+    insert_after_index             :: (self: *Self, a: i32, b: i32, c: i32) -> i32;
+    add_observer_for_event         :: (self: *Self, a: i32, b: i32, c: i32, d: i32) -> i32;
+    initWithFrame_options          :: (self: *Self, f: i32, o: i32) -> i32;
+    custom_name                    :: (self: *Self) -> i32 #selector("actualSelectorName");
+}
+
+universal_imp :: (self: *void, _cmd: *void, a: i32, b: i32, c: i32, d: i32) -> i32 abi(.c) {
+    // Returns the arg count's witness; the test doesn't check return
+    // values, only that dispatch succeeds for each selector shape.
+    a + b + c + d
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        ns_object := objc_getClass("NSObject".ptr);
+        cls := objc_allocateClassPair(ns_object, "SxManglingProbe".ptr, 0);
+
+        // Register one IMP per selector we'll dispatch to.
+        class_addMethod(cls, sel_registerName("length".ptr),                              xx universal_imp, "i@:".ptr);
+        class_addMethod(cls, sel_registerName("addObject:".ptr),                          xx universal_imp, "i@:i".ptr);
+        class_addMethod(cls, sel_registerName("combine:and:".ptr),                        xx universal_imp, "i@:ii".ptr);
+        class_addMethod(cls, sel_registerName("insert:after:index:".ptr),                 xx universal_imp, "i@:iii".ptr);
+        class_addMethod(cls, sel_registerName("add:observer:for:event:".ptr),             xx universal_imp, "i@:iiii".ptr);
+        class_addMethod(cls, sel_registerName("initWithFrame:options:".ptr),              xx universal_imp, "i@:ii".ptr);
+        class_addMethod(cls, sel_registerName("actualSelectorName".ptr),                  xx universal_imp, "i@:".ptr);
+
+        objc_registerClassPair(cls);
+
+        inst : *SxManglingProbe = xx class_createInstance(cls, 0);
+
+        // One call per mangling shape; the IR snapshot pins what
+        // selector string each sx name resolves to.
+        _ = inst.length();
+        _ = inst.addObject(1);
+        _ = inst.combine_and(1, 2);
+        _ = inst.insert_after_index(1, 2, 3);
+        _ = inst.add_observer_for_event(1, 2, 3, 4);
+        _ = inst.initWithFrame_options(1, 2);
+        _ = inst.custom_name();
+
+        print("mangling table OK\n");
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

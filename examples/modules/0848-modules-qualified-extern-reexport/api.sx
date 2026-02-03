@@ -1,0 +1,4 @@
+clib :: #import "clib.sx";
+
+// Re-export, do not redeclare: clib.sx remains the sole extern owner.
+abs :: clib.abs;

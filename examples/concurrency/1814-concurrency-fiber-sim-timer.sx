@@ -1,0 +1,73 @@
+// Stream B1 (fibers) B1.4b — deterministic VIRTUAL-TIME timer scheduling (the
+// KEYSTONE), in pure sx over the M:1 scheduler. A fiber `sleep(ms)`s in
+// SIMULATED time; the scheduler wakes fibers in DEADLINE order, advancing a
+// virtual clock that moves only when the ready queue drains and the earliest
+// timer fires. No real wall clock is ever read — the wake ORDER and the
+// observed timestamps are fully reproducible, which is exactly what a
+// deterministic-sim Io test harness needs.
+//
+// HOW IT WORKS. `s.sleep(ms)` arms a timer `{ clock_ms + ms, current }` and
+// parks the fiber off-queue. `s.run` drives ready fibers to quiescence, then
+// fires the earliest pending timer: it advances `clock_ms` to that deadline and
+// `wake`s the sleeper (re-readying it), and repeats until both the ready queue
+// AND the timer set are empty. So a fiber that just woke reads `now_ms()` equal
+// to its own deadline.
+//
+// WHAT THIS PROVES.
+//   - Deadline-ordered wake (NOT spawn order): spawn A, B, C in that order;
+//     A sleep(30), B sleep(10), C sleep(20). Wakes fire B(10), C(20), A(30) —
+//     reordered by deadline, not by spawn order.
+//   - Virtual timestamps: each fiber on wake reads `now_ms()` == its deadline
+//     (10, 20, 30) — the virtual clock landed exactly on the firing deadline.
+//   - FIFO tiebreak: two fibers D, E both sleep(15) — they wake in spawn
+//     (insertion) order D then E, the deterministic equal-deadline contract.
+//
+// §8.1.3 CALIBRATION NOTE. The deterministic virtual-time wake ORDER equals
+// what real `sleep`s would produce: under real blocking sleeps the OS would
+// also wake the shortest sleeper first, i.e. in deadline order. The sim
+// reproduces blocking semantics' OBSERVABLE ordering (and the relative
+// timestamps) without consuming real time or admitting nondeterminism — so a
+// harness can assert exact orderings that a wall-clock test could only
+// approximate. (No real-time variant is run here; the equivalence is the
+// contract the deterministic test relies on.)
+//
+// aarch64-macOS-pinned (the scheduler's `swap_context` asm + guard-page mmap
+// constants are per-arch / Apple-specific): runs end-to-end on a matching host,
+// ir-only on a mismatch.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+// Shared wake log, captured by pointer into each fiber's thunk (closure
+// capture-by-value does not write back, so outputs flow through `*Log`).
+Log :: struct { ids: [16]i64; ts: [16]i64; n: i64; }
+rec :: (l: *Log, id: i64, t: i64) { l.ids[l.n] = id; l.ts[l.n] = t; l.n = l.n + 1; }
+
+main :: () -> i64 {
+    lg : Log = .{ n = 0 };   // ids[] + ts[] zero-filled
+
+    s := sched.Scheduler.init();
+    ps := @s;
+    pl := @lg;
+
+    // Spawn order A, B, C, D, E — but the WAKE order is set by deadline.
+    ps.spawn(() { ps.sleep(30); rec(pl, 1, ps.now_ms()); });   // A: latest
+    ps.spawn(() { ps.sleep(10); rec(pl, 2, ps.now_ms()); });   // B: earliest
+    ps.spawn(() { ps.sleep(20); rec(pl, 3, ps.now_ms()); });   // C: middle
+    // Same-deadline FIFO pair: D before E, both at t=15 → wake D then E.
+    ps.spawn(() { ps.sleep(15); rec(pl, 4, ps.now_ms()); });   // D
+    ps.spawn(() { ps.sleep(15); rec(pl, 5, ps.now_ms()); });   // E
+
+    s.run();
+
+    // Ordering contract: deadline order with a FIFO tiebreak → B, D, E, C, A
+    // at virtual times 10, 15, 15, 20, 30.
+    print("wake order (id @ virtual-ms):\n");
+    i := 0;
+    while i < lg.n {
+        print("  id={} @ {}ms\n", lg.ids[i], lg.ts[i]);
+        i = i + 1;
+    }
+    print("final virtual clock: {}ms\n", s.now_ms());
+    print("spawned: {}\n", s.n_spawned);
+    return 0;
+}

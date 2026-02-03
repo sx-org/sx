@@ -1,0 +1,6 @@
+rvalue:   5
+lvalue:   10 11 (copy independent)
+snapshot: 10 11
+promote:  10 11
+named:    10 gpa=1
+freed:    gpa=0

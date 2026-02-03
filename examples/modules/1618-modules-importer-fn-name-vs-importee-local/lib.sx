@@ -1,0 +1,19 @@
+// Companion module for 1618: declares a LOCAL `h := <fn-ptr field>` inside a
+// function body — the importer declares a module-scope fn also named `h`.
+#import "modules/std.sx";
+
+Cfg :: struct {
+    on_event: (x: i64) -> void = null;
+}
+
+hook :: (x: i64) -> void {
+    print("lib hook {}\n", x);
+}
+
+emit :: (cfg: Cfg, x: i64) {
+    // The importer's module-scope `h` must NOT contaminate this local:
+    // `h` here is a fresh fn-pointer local, and `h(...)` dispatches
+    // indirectly through it.
+    h := cfg.on_event;
+    if h != null { h(x); }
+}

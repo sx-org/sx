@@ -1,0 +1,32 @@
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/events.sx";
+#import "modules/platform/types.sx";
+
+// #identity: a Platform is a named long-lived singleton (an SDL window,
+// the UIKit app, the Android surface owner) that the app mutates through
+// BOTH the erased value and concrete handles — erasure always borrows
+// the named object's storage, never copies it (a snapshot would fork the
+// live platform state).
+Platform :: protocol #identity {
+    init :: (self: *Self, title: [:0]u8, w: i32, h: i32) -> bool;
+
+    run_frame_loop :: (self: *Self, frame_fn: Closure());
+
+    poll_events :: (self: *Self) -> []Event;
+
+    begin_frame :: (self: *Self) -> FrameContext;
+    end_frame :: (self: *Self);
+
+    safe_insets :: (self: *Self) -> EdgeInsets;
+    keyboard :: (self: *Self) -> KeyboardState;
+    show_keyboard :: (self: *Self);
+    hide_keyboard :: (self: *Self);
+
+    // Request the run loop to stop. On iOS/Android this is a no-op
+    // (mobile apps don't quit on user request); on SDL it tears down the
+    // `while !quit` loop.
+    stop :: (self: *Self);
+
+    shutdown :: (self: *Self);
+}

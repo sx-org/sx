@@ -1,0 +1,6 @@
+#import "modules/std.sx";
+// a.sx authors `f` as a comptime pack; imported first → first-wins winner.
+// `show_a`'s bare `f()` is the caller's OWN author (own == winner → existing
+// pack path, byte-for-byte unchanged): dispatched as a.f (the pack → 1).
+f :: (..$args) -> i64 { return 1; }
+show_a :: () { print("a: f() = {}\n", f()); }

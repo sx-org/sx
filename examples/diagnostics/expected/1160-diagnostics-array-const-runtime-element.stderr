@@ -1,0 +1,11 @@
+error: constant 'BAD' must be initialized by compile-time constant elements
+  --> examples/diagnostics/1160-diagnostics-array-const-runtime-element.sx:8:16
+   |
+ 8 | BAD : [2]i64 : .[1, f()];
+   |                ^^^^^^^^^
+
+error: unresolved 'BAD' (in examples/diagnostics/1160-diagnostics-array-const-runtime-element.sx fn main)
+  --> examples/diagnostics/1160-diagnostics-array-const-runtime-element.sx:11:19
+   |
+11 |     print("{}\n", BAD[0]);
+   |                   ^^^

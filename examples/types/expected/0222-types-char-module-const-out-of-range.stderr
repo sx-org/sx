@@ -1,0 +1,5 @@
+error: char literal '🦀' (value 129408) does not fit in u8 (range 0..255) — use a wider type such as u32 to hold this code point
+  --> examples/types/0222-types-char-module-const-out-of-range.sx:12:10
+   |
+12 | C : u8 : '🦀';
+   |          ^^^^^^

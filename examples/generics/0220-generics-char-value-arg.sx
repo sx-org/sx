@@ -1,0 +1,32 @@
+// Char literals as compile-time value arguments to a parametrized type. A
+// char literal is an integer code point, so `Buf('A')` binds `$N = 65` exactly
+// as `Buf(65)` would — and the two are distinct monomorphizations.
+//
+// Regression: the parser's generic type-argument path special-cased only
+// `int_literal` in a value position, so `Buf('A')` failed to parse with
+// "expected type name" even though the value-mangling half (generics.zig) was
+// already char-aware.
+
+#import "modules/std.sx";
+
+Buf :: struct($N: i64) {
+    data: [N]u8;
+}
+
+// Arithmetic on a char value arg still folds (`'A' + 1` = 66).
+Buf2 :: struct($N: i64) {
+    data: [N + 1]u8;
+}
+
+main :: () -> i64 {
+    a : Buf('A') = ---;
+    print("{}\n", a.data.len);        // 65
+
+    z : Buf('\x7f') = ---;
+    print("{}\n", z.data.len);        // 127
+
+    plus : Buf2('A') = ---;
+    print("{}\n", plus.data.len);     // 66
+
+    return 0;
+}

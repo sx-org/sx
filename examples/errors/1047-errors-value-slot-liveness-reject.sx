@@ -1,0 +1,35 @@
+// Rejection counterpart to 1046 (ERR step E1.8). Reading a failable's value slot
+// where its error is NOT proven absent is a compile error. Two unproven shapes:
+//
+//   (A) reading the value inside the `if err { … }` error path itself
+//   (B) reading the value after a bare tag-compare (`if err == error.X`), which
+//       narrows the tag but proves nothing about absence
+//
+// Each read is rejected with the E1.8 diagnostic; the program never runs (exit 1).
+
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0 { raise error.Bad; }
+    return n * 10;
+}
+
+// (A) the read sits on the error path — `err` is present here, not absent.
+bad_a :: () -> i32 {
+    v, err := parse(5);
+    if err { return v; }                  // REJECTED: err present on this path
+    return 0;
+}
+
+// (B) a tag-compare narrows which error, but does not prove there is none.
+bad_b :: () -> i32 {
+    v, err := parse(5);
+    if err == error.Bad { return 1; }
+    return v;                             // REJECTED: err not proven absent
+}
+
+main :: () -> i32 {
+    return bad_a() + bad_b();
+}

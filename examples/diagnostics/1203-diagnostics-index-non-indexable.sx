@@ -1,0 +1,33 @@
+// Indexing a value whose type is NOT an indexable shape — a single-element
+// pointer `*T`, a pointer-to-slice `*[]T`, or a plain struct — is a type
+// error, diagnosed at lowering with a located message.
+//
+// Regression (issue 0183): `expr[i]` on a non-indexable base fell through
+// `lowerIndexExpr` to an `index_get` carrying an `.unresolved` element type,
+// which reached emit_llvm and panicked ("unresolved type reached LLVM
+// emission", exit 134) with no source location. The guard now rejects it
+// cleanly (exit 1). Indexable shapes — `[N]T` / `[]T` / `[*]T` / `string` /
+// `Vector` / `*[N]T` and the optional-chain forms — are unaffected.
+//
+// Aggregate-ladder update: a COMPTIME-constant index into a struct value
+// (`s[0]`) is now the field itself (tuple parity), so the struct arm below
+// pins the RUNTIME-index rejection — there is no runtime `[ ]` on structs
+// (use `struct_field_value(s, j)`).
+//
+// For a single pointer `*T` the message hints at the indexable alternatives
+// (many-pointer `[*]T`, or dereference first); other non-indexable types get
+// the bare "cannot index a value of type '...'" form.
+
+#import "modules/std.sx";
+
+S :: struct { a: i64; }
+
+main :: () {
+    x := 5;
+    p : *i64 = @x;
+    print("{}\n", p[0]);    // error: '*i64' is not indexable (hint form)
+
+    s := S.{ a = 1 };
+    j := 0;
+    print("{}\n", s[j]);    // error: runtime index into 'S' (bare form)
+}

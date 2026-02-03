@@ -1,0 +1,17 @@
+#import "modules/std.sx";
+sum :: (a:$T, b:T) -> T {
+    return a + b;
+}
+
+main :: () {
+    x:=sum(2,3);
+
+    print("sum: {}\n", x);
+    print("sum: {}\n", sum(40,2));
+    print("sum: {}\n", sum(40,2.5));
+}
+
+// ** stdout **
+// sum: 42
+// sum: 42.500000
+//

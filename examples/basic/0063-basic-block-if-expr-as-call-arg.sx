@@ -1,0 +1,29 @@
+// A block-form `if C { A } else { B }` in a VALUE position materializes its
+// selected branch value — as a call argument, and on the RHS of a `:=` var
+// decl or a `=` assignment — the same as the `then`-form. Every spelling below
+// yields the else branch.
+// Regression (issue 0268): block-form-if in argument position, and on an
+// assignment (`=`) RHS, lowered as a statement and yielded a bare 0
+// (segfaulting for a wider branch type like a string) because those value
+// positions did not request value-position lowering.
+#import "modules/std.sx";
+
+take :: (x: i64) { print("got {}\n", x); }
+
+main :: () {
+    take(if false { 1 } else { 2 });   // block-form if as arg
+
+    y := if false { 1 } else { 2 };
+    take(y);                            // := var-decl RHS
+
+    take(if false then 1 else 2);      // then-form
+
+    // `=` assignment RHS (distinct path from `:=`): plain + compound.
+    z := 0;
+    z = if false { 100 } else { 200 };
+    print("assign: {}\n", z);
+
+    w := 100;
+    w += if false { 1 } else { 100 };
+    print("compound: {}\n", w);
+}

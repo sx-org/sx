@@ -1,0 +1,201 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+main :: () {
+
+    // ========================================================
+    // 4. CONTROL FLOW
+    // ========================================================
+    print("=== 4. Control Flow ===\n");
+
+    // If-then-else (inline, as expression)
+    ite := if true then 1 else 2;
+    print("ite: {}\n", ite);
+
+    // If-then-else both branches
+    ie_a := if true then 10 else 20;
+    ie_b := if false then 10 else 20;
+    print("ite-both: {} {}\n", ie_a, ie_b);
+
+    // If block
+    if 1 < 2 {
+        print("if-block: yes\n");
+    }
+
+    // If without else (statement)
+    if false { print("should-not-print\n"); }
+    print("if-no-else: after\n");
+
+    // Nested if
+    nx := 10;
+    if nx > 5 {
+        if nx > 8 {
+            print("nested-if: deep\n");
+        }
+    }
+
+    // If-else-if chain
+    eiv := 2;
+    if eiv == 1 {
+        print("if-else-if: first\n");
+    } else if eiv == 2 {
+        print("if-else-if: second\n");
+    } else {
+        print("if-else-if: other\n");
+    }
+
+    // If block as expression
+    ibe := 10 + if true { 5 } else { 0 };
+    print("if-block-expr: {}\n", ibe);
+
+    // While basic
+    wi := 0;
+    while wi < 5 { wi += 1; }
+    print("while: {}\n", wi);
+
+    // While with false condition (never executes)
+    while false { print("should-not-print\n"); }
+    print("while-false: skipped\n");
+
+    // While with break
+    wb := 0;
+    while wb < 100 {
+        if wb == 7 { break; }
+        wb += 1;
+    }
+    print("while-break: {}\n", wb);
+
+    // While with continue
+    wsum := 0;
+    wc := 0;
+    while wc < 10 {
+        wc += 1;
+        if wc % 2 == 0 { continue; }
+        wsum += wc;
+    }
+    print("while-continue: {}\n", wsum);
+
+    // While sum 1..10
+    wsum2 := 0;
+    wi2 := 1;
+    while wi2 <= 10 {
+        wsum2 += wi2;
+        wi2 += 1;
+    }
+    print("while-sum: {}\n", wsum2);
+
+    // Nested while
+    nw_outer := 0;
+    nw_count := 0;
+    while nw_outer < 3 {
+        nw_inner := 0;
+        while nw_inner < 3 {
+            nw_count += 1;
+            nw_inner += 1;
+        }
+        nw_outer += 1;
+    }
+    print("nested-while: {}\n", nw_count);
+
+    // Nested while with break in inner
+    nb_outer := 0;
+    nb_icount := 0;
+    while nb_outer < 5 {
+        nb_i := 0;
+        while nb_i < 5 {
+            if nb_i == 1 { break; }
+            nb_i += 1;
+        }
+        nb_icount += nb_i;
+        nb_outer += 1;
+        if nb_outer == 2 { break; }
+    }
+    print("nested-break: {} {}\n", nb_outer, nb_icount);
+
+    // For loop basic
+    farr : [4]i32 = .[10, 20, 30, 40];
+    out("for:");
+    for farr (it) {
+        out(" ");
+        out(int_to_string(it));
+    }
+    out("\n");
+
+    // For with print
+    out("for-print:");
+    for farr (it) {
+        print(" {}", it);
+    }
+    out("\n");
+
+    // For with index
+    out("for-idx:");
+    for farr, 0.. (_, ix) {
+        out(" ");
+        out(int_to_string(ix));
+    }
+    out("\n");
+
+    // For with print two args
+    out("for-2arg:");
+    for farr, 0.. (it, ix) {
+        print(" {}@{}", it, ix);
+    }
+    out("\n");
+
+    // For with break
+    out("for-break:");
+    for farr (it) {
+        if it == 30 { break; }
+        print(" {}", it);
+    }
+    out("\n");
+
+    // For with continue
+    out("for-continue:");
+    for farr (it) {
+        if it == 20 { continue; }
+        print(" {}", it);
+    }
+    out("\n");
+
+    // For on slice
+    fsl : []i32 = .[10, 20, 30];
+    out("for-slice:");
+    for fsl (it) {
+        print(" {}", it);
+    }
+    out("\n");
+
+    // For on slice with index
+    out("for-slice-idx:");
+    for fsl, 0.. (it, ix) {
+        print(" {}:{}", ix, it);
+    }
+    out("\n");
+
+    // Nested for
+    nf_a : [2]i32 = .[0, 1];
+    nf_b : [2]i32 = .[0, 1];
+    out("for-nested:");
+    for nf_a (oa) {
+        for nf_b (ob) {
+            print(" ({},{})", oa, ob);
+        }
+    }
+    out("\n");
+
+    // For with break preserving index
+    fbi : [5]i32 = .[10, 20, 30, 40, 50];
+    fbi_idx := 0;
+    for fbi, 0.. (it, ix) {
+        if it == 30 { fbi_idx = ix; break; }
+    }
+    print("for-break-idx: {}\n", fbi_idx);
+
+    // Multiple print placeholders
+    print("multi: {} {} {}\n", 1, 2, 3);
+}

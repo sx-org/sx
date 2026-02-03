@@ -1,0 +1,5 @@
+// a.sx authors `apply` taking a VALUE. It is imported first, so it is the
+// first-wins merge winner. `from_a` calls `apply` bare on a value local — its
+// own author wins (own == winner → existing path, byte-for-byte unchanged).
+apply  :: (x: i64) -> i64 { return x + 1; }
+from_a :: () -> i64 { v : i64 = 10; return apply(v); }

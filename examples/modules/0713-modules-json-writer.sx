@@ -1,0 +1,107 @@
+// JSON value model + writer from `modules/std/json.sx`.
+//
+// Builds a representative value — a nested object holding a string with
+// every escape kind (quote, newline, tab, backslash, a raw control byte),
+// integers spanning zero / a small negative / a small positive / i64 MIN
+// (-9223372036854775808) / i64 MAX (9223372036854775807), a bool, null, an
+// array, and a nested object — then serializes it two ways and asserts the
+// EXACT bytes:
+//
+//   1. into a caller-owned `[]u8` buffer (returns bytes written),
+//   2. streaming straight to a file through an 8-byte staging buffer
+//      (small on purpose, so the writer flushes many times and no
+//      whole-document string is ever held).
+//
+// Both must yield byte-for-byte the same pinned document, with keys in
+// INSERTION ORDER. A too-small buffer must raise `error.Overflow` rather
+// than truncate. The model is built through an explicit Arena allocator
+// and freed in one `deinit`; the writer path allocates nothing.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+#import "modules/std/json.sx";
+#import "modules/std/fs.sx";
+
+// The exact document the writer must produce (insertion order, escaping).
+EXPECT :: "{\"name\":\"a\\\"b\\n\",\"tab\":\"x\\ty\",\"bs\":\"c\\\\d\",\"ctrl\":\"\\u0001\",\"n\":-7,\"zero\":0,\"pos\":7,\"min\":-9223372036854775808,\"max\":9223372036854775807,\"ok\":true,\"nil\":null,\"xs\":[1,-2,3],\"nested\":{\"k\":\"v\"}}";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+build :: (alloc: Allocator) -> Value {
+    // A raw control byte (0x01) viewed as a 1-byte string — exercises the
+    // `\u00XX` path that has no named shorthand. String values are VIEWS,
+    // so the bytes must outlive the writes: back them with `alloc` (the
+    // arena), not a local that dies when `build` returns.
+    cbytes : [*]u8 = xx alloc.alloc_bytes(1);
+    cbytes[0] = 1;
+    ctrl := string.{ ptr = cbytes, len = 1 };
+
+    nested : Object = .{};
+    nested.put("k", .str("v"), alloc);
+
+    xs : List(Value) = .{};
+    xs.append(.int(1), alloc);
+    xs.append(.int(0 - 2), alloc);
+    xs.append(.int(3), alloc);
+
+    obj : Object = .{};
+    obj.put("name", .str("a\"b\n"), alloc);   // quote + newline
+    obj.put("tab",  .str("x\ty"),   alloc);    // tab
+    obj.put("bs",   .str("c\\d"),   alloc);    // backslash
+    obj.put("ctrl", .str(ctrl),     alloc);    // raw control byte -> 
+    obj.put("n",    .int(0 - 7),   alloc);    // small negative int
+    obj.put("zero", .int(0),       alloc);    // zero
+    obj.put("pos",  .int(7),       alloc);    // small positive int
+    // i64 MIN: its magnitude (9223372036854775808) is not a representable
+    // positive i64 literal, so build it from MAX-positive minus one.
+    obj.put("min",  .int(0 - 9223372036854775807 - 1), alloc);
+    obj.put("max",  .int(9223372036854775807),         alloc);  // i64 MAX
+    obj.put("ok",   .bool(true),   alloc);
+    obj.put("nil",  .null,         alloc);
+    obj.put("xs",   .array(xs),     alloc);
+    obj.put("nested", .object(nested), alloc);
+
+    return .object(obj);
+}
+
+main :: () -> ! {
+    gpa := GPA.init();
+    arena := Arena.init(gpa, 4096);
+    defer arena.deinit();
+
+    root := build(xx arena);
+
+    // 1. Write into a caller buffer; assert exact bytes + byte count.
+    buf : [512]u8 = ---;
+    n := try write_to_buffer(root, string.{ ptr = @buf[0], len = 512 });
+    view := string.{ ptr = @buf[0], len = n };
+    print("doc: {}\n", view);
+    report("buffer-exact", view == EXPECT);
+    report("buffer-len",   n == EXPECT.len);
+
+    // 2. A buffer that is one byte too small must raise Overflow.
+    tight : []u8 = string.{ ptr = @buf[256], len = EXPECT.len - 1 };
+    _, oerr := write_to_buffer(root, tight);
+    report("overflow-raised", oerr == error.Overflow);
+
+    // 3. Stream to a file through a tiny staging buffer (forces flushes);
+    //    read it back and assert it equals the same document. Write into the
+    //    repo-local, gitignored scratch dir and unlink afterwards so nothing
+    //    leaks and concurrent runs don't fight over a shared /tmp name.
+    if !create_dir_all(".sx-tmp") { print("mkdir: FAIL\n"); return; }
+    path := ".sx-tmp/sx_0713_json.json";
+    fh := open_file(path, .write);
+    if fh == null { print("open: FAIL\n"); return; }
+    f := fh!;
+    stage : [8]u8 = ---;
+    try write_to_file(root, @f, string.{ ptr = @stage[0], len = 8 });
+    f.close();
+
+    back := read_file(path);
+    delete_file(path);
+    if back == null { print("file-read: FAIL\n"); return; }
+    report("file-exact", back! == EXPECT);
+    return;
+}

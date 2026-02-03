@@ -1,0 +1,6 @@
+// The directly-imported (1-hop) author of the NAME `Make` — but as a value
+// const, NOT a type-returning function. It flat-imports c.sx (where the real
+// `Make` type-fn lives, two hops from a file that imports b.sx). A same-name
+// non-function must not vouch for the 2-hop type-fn head.
+#import "c.sx";
+Make :: 123;

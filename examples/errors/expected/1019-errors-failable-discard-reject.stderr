@@ -1,0 +1,11 @@
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/errors/1019-errors-failable-discard-reject.sx:27:13
+   |
+27 |     a, b := pair(5);     // ERROR: error slot omitted (3 slots, 2 names)
+   |             ^^^^^^^
+
+error: the error slot of a failable cannot be dropped — bind it (`v, err := …`) and handle it, or use `try` / `catch`
+  --> examples/errors/1019-errors-failable-discard-reject.sx:28:13
+   |
+28 |     v, _ := parse(5);    // ERROR: error slot discarded with `_`
+   |             ^^^^^^^^

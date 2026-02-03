@@ -1,0 +1,10 @@
+// Namespace B authors a generic `Box($T)` with `make`. It wins the global
+// last-wins `struct_template_map`, so the qualified head `a.Box(..)` must NOT
+// silently resolve to this when namespace `a` lacks `Box`.
+Box :: struct($T: Type) {
+    x: T;
+
+    make :: (value: T) -> Box(T) {
+        .{ x = value }
+    }
+}

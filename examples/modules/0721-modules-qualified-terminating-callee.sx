@@ -1,0 +1,31 @@
+// Regression (issue 0100 F2): lowering a QUALIFIED imported function whose
+// body terminates must leave the CALLER's lowering state untouched.
+//
+// `m :: #import …` registers `m.foo` as a module-qualified alias with a unique
+// FuncId (the identity fix, issue 0100 / example 0719) and lowers it through
+// `lazyLowerFunction`'s null-FuncId `lowerFunction` path. `foo`'s body folds
+// `if true { return helper(); }` to an unconditional return, so its lowering
+// ends with `block_terminated = true`. The null-FuncId path used to restore
+// every saved caller field EXCEPT `block_terminated`, so that flag leaked back
+// into `main`, and `main`'s own trailing `print` / `return 0` were treated as
+// dead-after-terminator — the compiler rejected `return 0` with "body produces
+// no value". The fix routes all exit paths through one save/restore defer, so
+// the qualified alias is transparent to the caller. (`helper` also lives in
+// m.sx's own flat import, exercising the F1 source-context restore too.)
+
+#import "modules/std.sx";
+m :: #import "0721-modules-qualified-terminating-callee/m.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    // Qualified callee whose body terminates via a constant-folded `if true`.
+    x := m.foo();
+    // Caller statements AFTER the call must still be emitted (not dead).
+    report("terminating-callee", x == 7);
+    print("after\n");
+    // The caller's OWN return — rejected pre-fix because block_terminated leaked.
+    return 0;
+}

@@ -1,0 +1,17 @@
+error: type 'Nums' is not visible; #import the module that declares it
+  --> examples/modules/0765-modules-import-reflection-type-non-transitive.sx:22:27
+   |
+22 |     print("{}\n", size_of(Nums));
+   |                           ^^^^
+
+error: type 'COnly' is not visible; #import the module that declares it
+  --> examples/modules/0765-modules-import-reflection-type-non-transitive.sx:23:28
+   |
+23 |     print("{}\n", size_of(*COnly));
+   |                            ^^^^^
+
+error: type 'Nums' is not visible; #import the module that declares it
+  --> examples/modules/0765-modules-import-reflection-type-non-transitive.sx:24:11
+   |
+24 |     xs := Nums.[1, 2];
+   |           ^^^^

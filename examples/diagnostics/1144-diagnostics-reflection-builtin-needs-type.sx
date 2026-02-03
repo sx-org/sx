@@ -1,0 +1,28 @@
+// The 7 type-introspection builtins (size_of, align_of, struct_field_count,
+// type_name, type_eq, is_unsigned, is_flags) take ONLY types. A
+// value argument is a compile-time error, not a silently-reinterpreted
+// TypeId index.
+//
+// Regression (issue 0090, attempt 2): each builtin used to accept a
+// non-type value and reinterpret it — `is_unsigned(6)` read 6 as a
+// TypeId and returned the signedness of types[6] (`u8` → true);
+// `size_of(true)` sized `typeof(true)` (8). The strict `$T: Type` guard
+// (`Lowering.reflectionTypeArgGuard`) now rejects any argument whose
+// static type is not `Type` and emits "<builtin> expects a type, got
+// '<type>'" at the offending argument, aborting (exit 1).
+//
+// Reject cases use `true`/`1.5` (whose types — bool/f64 — are stable)
+// rather than an integer literal, so the pinned diagnostics don't drift
+// when the int-literal default type changes.
+
+#import "modules/std.sx";
+
+main :: () {
+    print("{}\n", size_of(true));          // bool, not a type
+    print("{}\n", align_of(1.5));          // f64, not a type
+    print("{}\n", struct_field_count(true));      // bool, not a type
+    print("{}\n", type_name(1.5));         // f64, not a type
+    print("{}\n", type_eq(true, false));   // both bool — both rejected
+    print("{}\n", is_unsigned(true)); // bool, not a type
+    print("{}\n", is_flags(1.5));          // f64, not a type
+}

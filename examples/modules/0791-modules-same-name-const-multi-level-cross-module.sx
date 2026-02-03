@@ -1,0 +1,19 @@
+// issue 0105 / F1 / R1 — a MULTI-LEVEL cross-module const chain pins EACH fold
+// level to its own author. `a.sx` declares `M :: 1`, `K :: M + 1` (= 2). `b.sx`
+// declares a full same-name shadow `M :: 10`, `K :: M + 1` (= 11). `c.sx`
+// flat-imports `a.sx` only and declares `BIG :: K + 100` — its `K` is A's, so
+// `BIG` = 102. `main` flat-imports `b.sx` and `c.sx`.
+//
+// Reading `BIG` walks BIG (c) → K (a) → M (a): each level resolves in its OWN
+// author's context, so `BIG` folds A's chain (= 102) even though `main` itself
+// sees only B's `K` (= 11) bare. If any level leaked to the reader's view, `BIG`
+// would fold B's `K` (→ 111). `#import` is non-transitive, so `K` bare in `main`
+// is B's (A is reachable only through C) → bk=11. Output: big=102 bk=11.
+#import "modules/std.sx";
+#import "0791-modules-same-name-const-multi-level-cross-module/b.sx";
+#import "0791-modules-same-name-const-multi-level-cross-module/c.sx";
+
+main :: () -> i32 {
+    print("big={} bk={}\n", BIG, K);
+    0
+}

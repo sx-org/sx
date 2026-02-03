@@ -1,0 +1,5 @@
+error: field '42' not found on type '(i64, i64)'
+  --> examples/diagnostics/1101-diagnostics-err-tuple-oob.sx:6:15
+   |
+ 6 |     return xx t.42;
+   |               ^^^^

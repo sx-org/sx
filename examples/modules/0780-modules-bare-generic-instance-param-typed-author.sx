@@ -1,0 +1,20 @@
+// A BARE generic struct instance method that takes a PARAM (`x.combine(3)`) must
+// type its arguments against — and run the body of — the VISIBLE author's method.
+// The arg-typing path (`resolveCallParamTypes`) reads the instance's STAMPED
+// author for the method's param types, and dispatch runs that same author's body.
+//
+// `b.sx` (one field, size 8) declares `combine(self, v) => self.x + v`; the
+// 2-flat-hop `c.sx` (two fields) declares `combine(self, v) => self.x * v + 16`.
+// Importing only b.sx, `x.combine(3)` on the visible `b.Box` instance must run
+// b's body (`7 + 3 = 10`), not c's (`7 * 3 + 16 = 37`).
+//
+// Regression (Phase E4 finding #1, param-typed instance-method site).
+
+#import "modules/std.sx";
+#import "0780-modules-bare-generic-instance-param-typed-author/b.sx";
+
+main :: () -> i32 {
+    x := Box(i64).make(7);
+    print("combine={}\n", x.combine(3));
+    0
+}

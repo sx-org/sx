@@ -1,0 +1,37 @@
+// Phase 2 step 2.16c (PLAN-FFI.md): xfail then green for the
+// thread-local env fallback in `#jni_call`. When a `#jni_call` site
+// has its env arg omitted AND no `#jni_env` block exists in the same
+// function (e.g., we're in a helper called FROM such a block), the
+// compiler emits a TL load instead of a sema error.
+//
+// The TL is pushed/popped by the `#jni_env(env) { ... }` enclosing
+// scope at runtime; helpers that don't see the lexical scope still
+// pick up the env transparently. Cross-function callers no longer
+// need to thread env as an explicit parameter.
+//
+// Today (2.16b only): lowerJniCall errors when env is omitted and
+// jni_env_stack is empty, because TL emission isn't wired yet.
+
+#import "modules/std.sx";
+
+g_should_call : bool = false;
+
+// Helper fn — no `#jni_env` block in scope. Without TL fallback this
+// errors because the omitted env can't be resolved.
+helper :: (target: *void) {
+    #jni_call(void)(target, "noop", "()V");
+}
+
+unused :: (env: *void, target: *void) {
+    #jni_env(env) {
+        helper(target);
+    }
+}
+
+main :: () -> i32 {
+    if g_should_call {
+        unused(null, null);
+    }
+    print("ok\n");
+    0
+}

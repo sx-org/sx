@@ -1,0 +1,70 @@
+// Phase 0 baseline (PLAN-FFI.md step 0.8): `extern` C call sites
+// embedded inside the major sx surface constructs. None of these
+// touch a new ABI shape — they only verify lowering routes the call
+// through identically regardless of the enclosing context:
+//
+//   1. struct method body                  (Counter.next)
+//   2. protocol impl method body           (impl Doubler for Counter)
+//   3. closure value body                  (closure { ... })
+//   4. comptime-gated branch               (inline if OS == ...)
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+#import c {
+    #include "1216-ffi-08-extern-in-method.h";
+    #source "1216-ffi-08-extern-in-method.c";
+};
+
+// ── 1. Struct method calling a #extern fn ───────────────────────────
+Counter :: struct {
+    seed: i32 = 0;
+    next :: (self: *Counter) -> i32 {
+        v := ffi_method_helper(self.seed);
+        self.seed += 1;
+        v
+    }
+}
+
+// ── 2. Protocol impl method calling a #extern fn ────────────────────
+Doubler :: protocol {
+    doubled :: (self: *Self) -> i32;
+}
+
+impl Doubler for Counter {
+    doubled :: (self: *Counter) -> i32 {
+        ffi_method_helper(self.seed) * 2
+    }
+}
+
+// ── 3. Closure body calling a #extern fn ────────────────────────────
+make_adder :: (bias: i32) -> Closure(i32) -> i32 {
+    closure((x: i32) -> i32 => ffi_method_helper(x) + bias)
+}
+
+main :: () -> i32 {
+    c : Counter = .{ seed = 1 };
+
+    // 1. struct method
+    print("method next 1 = {}\n", c.next());
+    print("method next 2 = {}\n", c.next());
+
+    // 2. protocol method (still operating on the now-bumped Counter)
+    print("protocol     = {}\n", c.doubled());
+
+    // 3. closure
+    adder := make_adder(100);
+    print("closure(5)   = {}\n", adder(5));
+
+    // 4. inline if OS branch — only one arm survives codegen on a
+    //    given target. `inline if X == { case ... }` reads cleaner
+    //    than chained `inline if X == .a; inline if X == .b; ...`.
+    inline if OS == {
+        case .macos: { print("inline if macos = {}\n", ffi_method_helper(7)); }
+        case .ios:   { print("inline if ios = {}\n",   ffi_method_helper(7)); }
+        case .linux: { print("inline if linux = {}\n", ffi_method_helper(7)); }
+        else:        { print("inline if other = {}\n", ffi_method_helper(7)); }
+    }
+
+    0
+}

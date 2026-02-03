@@ -1,0 +1,11 @@
+// The unconsumed chained assertion `v := o?.(T);` panics ONLY on a
+// present, mismatched payload — chain-null flows through as null
+// (pinned in 1070). Same message and exit as the unchained panic.
+#import "modules/std.sx";
+
+main :: () {
+    bx : ?any = 2.5;
+    print("before\n");
+    v := bx?.(i64);
+    print("unreached: {}\n", v == null);
+}

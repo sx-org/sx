@@ -1,0 +1,23 @@
+// Const aggregates fold at compile time: an array const's `.len` and
+// `K[<const idx>]` element reads, and a struct const's field (`LIT.r`),
+// are compile-time integer leaves — usable in array dimensions and in
+// other constants' initializer expressions, source-aware like every
+// const fold.
+
+#import "modules/std.sx";
+
+Color :: struct { r, g, b: i64; }
+K : [4]i64 : .[11, 22, 33, 44];
+LIT :: Color.{ r = 5, g = 0, b = 0 };
+
+N :: K[0] + K[3];
+L :: K.len;
+R :: LIT.r;
+
+main :: () {
+    a : [K.len]u8 = ---;
+    b : [K[1]]u8 = ---;
+    c : [LIT.r]u8 = ---;
+    print("N={} L={} R={}\n", N, L, R);
+    print("dims={} {} {}\n", a.len, b.len, c.len);
+}

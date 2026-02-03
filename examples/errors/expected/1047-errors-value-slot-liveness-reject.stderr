@@ -1,0 +1,11 @@
+error: value `v` from a failable can be used only where its error `err` is proven absent — guard the use with `if !err { … }`, or return early with `if err { return; }` before reading `v`
+  --> examples/errors/1047-errors-value-slot-liveness-reject.sx:22:21
+   |
+22 |     if err { return v; }                  // REJECTED: err present on this path
+   |                     ^
+
+error: value `v` from a failable can be used only where its error `err` is proven absent — guard the use with `if !err { … }`, or return early with `if err { return; }` before reading `v`
+  --> examples/errors/1047-errors-value-slot-liveness-reject.sx:30:12
+   |
+30 |     return v;                             // REJECTED: err not proven absent
+   |            ^

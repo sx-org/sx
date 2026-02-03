@@ -1,0 +1,5 @@
+error: type 'Secret' is not visible; #import the module that declares it
+  --> examples/modules/0749-modules-namespaced-only-bare-param-alias-not-visible.sx:15:9
+   |
+15 |     s : Secret = .{ value = 42 };
+   |         ^^^^^^

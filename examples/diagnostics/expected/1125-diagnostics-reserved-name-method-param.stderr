@@ -1,0 +1,11 @@
+error: 'u8' is a reserved type name and cannot be used as an identifier
+  --> examples/diagnostics/1125-diagnostics-reserved-name-method-param.sx:15:28
+   |
+15 |     greet :: (self: *Self, u8: i64) -> i64 {
+   |                            ^^
+
+error: 'i16' is a reserved type name and cannot be used as an identifier
+  --> examples/diagnostics/1125-diagnostics-reserved-name-method-param.sx:23:27
+   |
+23 |     bump :: (self: *Self, i16: i32) {
+   |                           ^^^

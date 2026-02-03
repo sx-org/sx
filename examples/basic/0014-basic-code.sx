@@ -1,0 +1,9 @@
+#import "modules/std.sx";
+
+generate::() -> string {
+    return "print(\"hello from the other side\n\");";
+}
+
+main :: () {
+    #insert generate();
+}

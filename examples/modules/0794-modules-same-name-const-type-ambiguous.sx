@@ -1,0 +1,15 @@
+// issue 0105 / F4 — same-name VALUE const with DIFFERENT declared TYPES across
+// two flat-imported modules (A: `i32`, B: `f64`), referenced bare at a mixed-type
+// site. A bare `K` here is genuinely ambiguous — there are ≥2 flat-visible same-
+// name authors — so it must diagnose loudly (exit 1), exactly as the same-typed
+// 0787 does. The type-inference change must NOT mask the ambiguity (inferring
+// `.unresolved` for the ambiguous reference) — the emission path still fires the
+// loud author-count diagnostic regardless of the consts' declared types.
+#import "modules/std.sx";
+#import "0794-modules-same-name-const-type-ambiguous/a.sx";
+#import "0794-modules-same-name-const-type-ambiguous/b.sx";
+
+main :: () -> i32 {
+    print("K={}\n", K);
+    0
+}

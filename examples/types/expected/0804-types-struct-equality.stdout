@@ -1,0 +1,17 @@
+s1 eq: true
+s1 neq: true
+s3 eq: true
+s3 c-differs: false
+s3 neq: true
+s5 eq: true
+s5 e-differs: false
+nested eq: true
+nested inner-differs: false
+str eq: true
+str differs: false
+f64 eq: true
+f64 differs: false
+pad eq: true
+pad differs: false
+tu same-tag: true
+tu diff-tag: false

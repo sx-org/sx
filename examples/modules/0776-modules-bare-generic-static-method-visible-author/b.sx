@@ -1,0 +1,12 @@
+// The bare-VISIBLE author: a one-field generic `Box` (size 8) with its own
+// `make`. `b.sx` itself flat-imports `c.sx`, so a file that imports only b.sx
+// reaches `c.Box` at two hops and must NOT pick it (nor `c.Box.make`).
+Box :: struct($T: Type) {
+    x: T;
+
+    make :: (value: T) -> Box(T) {
+        .{ x = value }
+    }
+}
+
+#import "c.sx";

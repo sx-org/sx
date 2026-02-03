@@ -1,0 +1,5 @@
+// Module B authors only a DIFFERENT same-name `M :: 10` — a shadow of A's `M`,
+// with NO `K`. When `main` flat-imports both A and B, the reading module sees
+// two `M`s; folding A's `K :: M + 1` must NOT use this `M` (which would make `M`
+// ambiguous from the reader's view) — it must pin to A's `M`.
+M :: 10;

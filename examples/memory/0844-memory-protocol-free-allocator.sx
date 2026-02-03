@@ -1,0 +1,79 @@
+// The owning-erasure free story (Step 4 S4.4): a protocol value made from
+// an RVALUE (`xx Widget.{…}`) heap-copies its concrete data — `free(s)`
+// releases that backing through `context.allocator` (the allocator current
+// AT THE FREE — a context pushed since the erasure redirects it: the
+// documented drift hazard), and `free(s, allocator)` is the symmetric,
+// drift-immune form that pairs the allocator explicitly. `free` is ONE
+// pure-sx function (std/mem.sx), kind-dispatched at compile time via the
+// inline type match: a protocol arm (ctx via `x.(ProtocolRaw)` — one body
+// for both layouts, default and #inline) and a slice arm; anything else
+// is a compile error.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Sizable :: protocol { size :: (self: *Self) -> i64; }
+Widget :: struct { value: i64; }
+impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
+
+Tracker :: struct {
+    allocs: i64;
+    deallocs: i64;
+}
+impl Allocator for Tracker {
+    alloc_bytes :: (self: *Tracker, size: i64) -> *void {
+        self.allocs += 1;
+        c.libc_malloc(size)
+    }
+    dealloc_bytes :: (self: *Tracker, ptr: *void) {
+        self.deallocs += 1;
+        c.libc_free(ptr);
+    }
+}
+
+main :: () {
+    ta := Tracker.{ allocs = 0, deallocs = 0 };
+    tb := Tracker.{ allocs = 0, deallocs = 0 };
+
+    // free(s, a): erased under A, freed through A while B is the CURRENT
+    // context allocator — the explicit pairing is immune to the drift.
+    s : Sizable = ---;
+    push .{ allocator = ta } {
+        s = xx Widget.{ value = 1 };
+    }
+    push .{ allocator = tb } {
+        free(s, ta);        // implicit borrow at the Allocator param
+    }
+    print("explicit: A {}/{} B {}/{}\n", ta.allocs, ta.deallocs, tb.allocs, tb.deallocs);
+
+    // free(s): pairs with the context allocator current at the free.
+    push .{ allocator = tb } {
+        s2 : Sizable = xx Widget.{ value = 2 };
+        free(s2);
+    }
+    print("context: B {}/{}\n", tb.allocs, tb.deallocs);
+
+    // An Allocator VALUE (a borrow of a named allocator) works as the
+    // explicit-allocator argument. The freed value itself can never be an
+    // Allocator — `Allocator` is `#identity` (borrow-only: rvalue erasure
+    // and `free` of the value refuse at compile time; diagnostics/1255).
+    av : Allocator = xx ta;
+    s3 : Sizable = ---;
+    push .{ allocator = av } {
+        s3 = xx Widget.{ value = 3 };
+    }
+    free(s3, av);
+    print("values: A {}/{}\n", ta.allocs, ta.deallocs);
+
+    // the same unified free serves slices — value-first, allocator second
+    // (or defaulted): the kind-match arm frees the backing.
+    xs := av.alloc(i64, 4);
+    free(xs, av);
+    ys := av.alloc(i64, 2);
+    ys.free(av);
+    zs : []i64 = ---;
+    push .{ allocator = av } {
+        zs = av.alloc(i64, 1);
+        free(zs);                    // context form works for slices too now
+    }
+    print("slices: A {}/{}\n", ta.allocs, ta.deallocs);
+}

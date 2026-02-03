@@ -1,0 +1,17 @@
+// while-optional binding: `while v := opt { ... }` re-evaluates the optional
+// condition each iteration and binds the unwrapped payload `v` in the loop
+// body, looping while the expression is non-null (mirrors `if v := opt { }`).
+// Prints v=0 / v=1 / v=2.
+// Regression (issue 0267): the binding parsed and type-checked but was never
+// lowered, leaving `v` unresolved in the loop body.
+#import "modules/std.sx";
+
+next3 :: (n: *i64) -> ?i64 {
+    if n.* >= 3 { return null; }
+    v := n.*; n.* += 1; return v;
+}
+
+main :: () {
+    n := 0;
+    while v := next3(@n) { print("v={}\n", v); }
+}

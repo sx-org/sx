@@ -1,0 +1,3 @@
+call_a binds a.ping: ok
+call_b binds b.ping: ok
+__m0.ping binds m.ping: ok

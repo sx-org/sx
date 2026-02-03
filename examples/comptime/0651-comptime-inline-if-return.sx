@@ -1,0 +1,39 @@
+// Regression: a `return` inside an `inline if` (a comptime-folded branch),
+// itself inside an `inline for`, must NOT make the compiler drop the function's
+// trailing statements. The `inline if`/`case` branch sets a "block terminated"
+// flag when its taken arm returns; that flag used to leak past the enclosing
+// runtime `if`'s merge block, so the trailing `return -1` was skipped and the
+// function was wrongly rejected as "produces no value". Now the runtime-`if`
+// merge resets the flag to the merge's actual reachability.
+#import "modules/std.sx";
+
+// nested inline-if/else with returns, inside an inline-for, under a runtime if:
+classify :: (idx: i64) -> i64 {
+    inline for 0..3 (i) {
+        if idx == i {
+            inline if i == 0 { return 100; }
+            else { inline if i == 1 { return 200; } else { return 300; } }
+        }
+    }
+    return -1;   // trailing statement — must still be emitted (idx out of range)
+}
+
+// the comptime `case` match form, also with per-arm returns:
+tag :: (idx: i64) -> i64 {
+    inline for 0..3 (i) {
+        if idx == i {
+            inline if i == {
+                case 0: { return 10; }
+                case 1: { return 20; }
+                else:   { return 30; }
+            }
+        }
+    }
+    return -1;
+}
+
+main :: () -> i32 {
+    print("classify: {} {} {} {}\n", classify(0), classify(1), classify(2), classify(9));
+    print("tag: {} {} {} {}\n", tag(0), tag(1), tag(2), tag(9));
+    return 0;
+}

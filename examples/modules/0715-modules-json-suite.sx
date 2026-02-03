@@ -1,0 +1,224 @@
+// Comprehensive pinned suite for `modules/std/json.sx` (writer F2.1 +
+// reader F2.2). Mirrors what 0711 did for std.hash: it LOCKS IN the full
+// round-trip and the complete malformed-input matrix as one coherent
+// pinned example. (0713/0714 stay as the focused writer/reader demos with
+// their heap-discipline narrative; this file is the correctness lock-in.)
+//
+//   PART A — ROUND-TRIP. Build a representative document covering EVERY
+//     value kind (nested object + array, a string carrying every escape
+//     kind `\" \\ \b \f \n \r \t` and a `\u00XX` control, integers 0 /
+//     small-negative / i64 MIN (-9223372036854775808) / i64 MAX
+//     (9223372036854775807), bool, null) through an explicit Arena, then
+//     `build -> write -> parse -> write`: assert the writer's EXACT bytes,
+//     assert `parse` then re-`write` reproduces them (idempotent), and
+//     spot-check the parsed tree's STRUCTURE incl. INSERTION ORDER.
+//   PART B — DECODE POSITIVES. `\/`, the full named-escape set, `\uXXXX`
+//     (BMP 1- and 2-byte) and a SURROGATE PAIR, the escaped control forms,
+//     and raw multi-byte UTF-8 round-tripping through writer + reader.
+//   PART C — MALFORMED MATRIX. One assertion per `JsonParseError` variant
+//     and its key edges, each asserted to RAISE (never crash, never accept).
+//
+// Every model is built through an explicit Arena allocator (heap
+// discipline): scalars carry no heap, string values are views, composites
+// and decoded strings go through `alloc`, and the writer allocates nothing.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+#import "modules/std/json.sx";
+
+// The writer's EXACT output for the PART A document (insertion order,
+// canonical escaping). Hand-pinned so a writer regression fails loudly in
+// the example itself, not only in the captured golden.
+EXPECT :: "{\"esc\":\"\\\"\\\\\\b\\t\\n\\f\\r\\u0001\",\"zero\":0,\"neg\":-7,\"min\":-9223372036854775808,\"max\":9223372036854775807,\"ok\":true,\"nil\":null,\"xs\":[1,-2,3],\"nested\":{\"k\":\"v\"}}";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+// Half-open containment [lo, hi).
+in_range :: (x: i64, lo: i64, hi: i64) -> bool {
+    return x >= lo and x < hi;
+}
+
+// True when `parse(src)` raised exactly `want`. Destructure captures the
+// error tag without `try`, so a malformed input never aborts the example.
+raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
+    _, e := parse(src, alloc);
+    e == want
+}
+
+// True when parsing `"a<b>b"` (a string holding the RAW control byte `b`)
+// raises BadControlChar. Built from a byte buffer because a raw control
+// byte can't appear in an sx string literal.
+ctrl_raises :: (b: u8, alloc: Allocator) -> bool {
+    raw : [5]u8 = ---;
+    raw[0] = 34; raw[1] = 97; raw[2] = b; raw[3] = 98; raw[4] = 34;   // "a<b>b"
+    return raises(string.{ ptr = @raw[0], len = 5 }, error.BadControlChar, alloc);
+}
+
+// Build the PART A document: every value kind, in the insertion order the
+// writer must emit. The `esc` value carries one byte per escape kind; its
+// bytes are backed by `alloc` (string values are VIEWS, so they must
+// outlive `build`).
+build :: (alloc: Allocator) -> Value {
+    ebytes : [*]u8 = xx alloc.alloc_bytes(8);
+    ebytes[0] = 34;    // "   -> \"
+    ebytes[1] = 92;    // \   -> \\
+    ebytes[2] = 8;     // BS  -> \b
+    ebytes[3] = 9;     // TAB -> \t
+    ebytes[4] = 10;    // LF  -> \n
+    ebytes[5] = 12;    // FF  -> \f
+    ebytes[6] = 13;    // CR  -> \r
+    ebytes[7] = 1;     // SOH ->  (control with no named shorthand)
+    esc := string.{ ptr = ebytes, len = 8 };
+
+    nested : Object = .{};
+    nested.put("k", .str("v"), alloc);
+
+    xs : List(Value) = .{};
+    xs.append(.int(1), alloc);
+    xs.append(.int(0 - 2), alloc);
+    xs.append(.int(3), alloc);
+
+    obj : Object = .{};
+    obj.put("esc",  .str(esc),  alloc);
+    obj.put("zero", .int(0),   alloc);
+    obj.put("neg",  .int(0 - 7), alloc);
+    // i64 MIN: |MIN| is not a representable positive i64 literal, so build
+    // it as MAX-positive minus one.
+    obj.put("min",  .int(0 - 9223372036854775807 - 1), alloc);
+    obj.put("max",  .int(9223372036854775807),         alloc);
+    obj.put("ok",   .bool(true), alloc);
+    obj.put("nil",  .null,       alloc);
+    obj.put("xs",   .array(xs),   alloc);
+    obj.put("nested", .object(nested), alloc);
+    return .object(obj);
+}
+
+main :: () -> ! {
+    gpa := GPA.init();
+    arena := Arena.init(gpa, 16384);
+    defer arena.deinit();
+    a : Allocator = xx arena;
+
+    // ── PART A. build -> write -> parse -> write ─────────────────────────
+    root := build(a);
+
+    buf : [512]u8 = ---;
+    n := try write_to_buffer(root, string.{ ptr = @buf[0], len = 512 });
+    canon := string.{ ptr = @buf[0], len = n };
+    print("doc: {}\n", canon);                 // golden pins the exact bytes
+    report("rt-exact", canon == EXPECT);
+    report("rt-len",   n == EXPECT.len);
+
+    // parse the writer's output, then re-serialize: must reproduce it byte
+    // for byte (writer/reader are inverses on the canonical form).
+    tree2 := try parse(canon, a);
+    buf2 : [512]u8 = ---;
+    n2 := try write_to_buffer(tree2, string.{ ptr = @buf2[0], len = 512 });
+    canon2 := string.{ ptr = @buf2[0], len = n2 };
+    report("rt-idempotent", canon2 == canon);
+
+    // Structure of the parsed tree: insertion order + every value kind.
+    o := tree2.object;
+    report("st-count", o.len == 9);
+    report("st-order",
+        o.items[0].key == "esc"  and o.items[1].key == "zero" and
+        o.items[2].key == "neg"  and o.items[3].key == "min"  and
+        o.items[4].key == "max"  and o.items[5].key == "ok"   and
+        o.items[6].key == "nil"  and o.items[7].key == "xs"   and
+        o.items[8].key == "nested");
+    // The escaped string survives the round-trip back to its 8 raw bytes.
+    eexp : [8]u8 = ---;
+    eexp[0] = 34; eexp[1] = 92; eexp[2] = 8; eexp[3] = 9;
+    eexp[4] = 10; eexp[5] = 12; eexp[6] = 13; eexp[7] = 1;
+    report("st-esc", o.items[0].val.str == string.{ ptr = @eexp[0], len = 8 });
+    report("st-zero", o.items[1].val.int == 0);
+    report("st-neg",  o.items[2].val.int == 0 - 7);
+    report("st-min",  o.items[3].val.int == 0 - 9223372036854775807 - 1);
+    report("st-max",  o.items[4].val.int == 9223372036854775807);
+    report("st-bool", o.items[5].val.bool == true);
+    is_null := if o.items[6].val == { case .null: true; else: false; };
+    report("st-null", is_null);
+    xs := o.items[7].val.array;
+    report("st-xs", xs.len == 3 and xs.items[0].int == 1 and
+                    xs.items[1].int == 0 - 2 and xs.items[2].int == 3);
+    sub := o.items[8].val.object;
+    report("st-nested", sub.len == 1 and sub.items[0].key == "k" and
+                        sub.items[0].val.str == "v");
+
+    // ── PART B. decode positives ─────────────────────────────────────────
+    // `\/` decodes to a bare slash (the writer emits it unescaped, so this
+    // is a parse-only form).
+    slash := try parse("\"\\/\"", a);
+    report("dec-slash", slash.str == "/");
+
+    // The full named-escape set in one string: \" \\ \/ \b \f \n \r \t.
+    esc := try parse("\"\\\"\\\\\\/\\b\\f\\n\\r\\t\"", a);
+    sexp : [8]u8 = ---;
+    sexp[0] = 34; sexp[1] = 92; sexp[2] = 47; sexp[3] = 8;
+    sexp[4] = 12; sexp[5] = 10; sexp[6] = 13; sexp[7] = 9;
+    report("dec-escapes", esc.str == string.{ ptr = @sexp[0], len = 8 });
+
+    // \uXXXX: BMP 1-byte (A), BMP 2-byte (é), and a SURROGATE PAIR (😀).
+    // "Aé😀" -> 41 | C3 A9 | F0 9F 98 80  (7 bytes).
+    uni := try parse("\"\\u0041\\u00e9\\uD83D\\uDE00\"", a);
+    uexp : [7]u8 = ---;
+    uexp[0] = 0x41; uexp[1] = 0xC3; uexp[2] = 0xA9;
+    uexp[3] = 0xF0; uexp[4] = 0x9F; uexp[5] = 0x98; uexp[6] = 0x80;
+    report("dec-surrogate", uni.str == string.{ ptr = @uexp[0], len = 7 });
+
+    // POSITIVE counterpart to BadControlChar: the ESCAPED control forms
+    // backslash-t, backslash-n and backslash-u-0009 decode to 09 0A 09.
+    ectrl := try parse("\"\\t\\n\\u0009\"", a);
+    cexp : [3]u8 = ---;
+    cexp[0] = 9; cexp[1] = 10; cexp[2] = 9;
+    report("dec-esc-ctrl", ectrl.str == string.{ ptr = @cexp[0], len = 3 });
+
+    // Raw multi-byte UTF-8 (>= 0x80) round-trips writer -> reader unchanged.
+    ubytes : [*]u8 = xx a.alloc_bytes(7);
+    ubytes[0] = 0x41; ubytes[1] = 0xC3; ubytes[2] = 0xA9;
+    ubytes[3] = 0xF0; ubytes[4] = 0x9F; ubytes[5] = 0x98; ubytes[6] = 0x80;
+    uval : Value = .str(string.{ ptr = ubytes, len = 7 });
+    ubuf : [64]u8 = ---;
+    un := try write_to_buffer(uval, string.{ ptr = @ubuf[0], len = 64 });
+    uback := try parse(string.{ ptr = @ubuf[0], len = un }, a);
+    report("rt-utf8", uback.str == string.{ ptr = @ubytes[0], len = 7 });
+
+    // ── PART C. malformed-input matrix — one assertion per variant + edge ─
+    // UnexpectedToken: bad literal, non-string key, missing comma.
+    report("err-token-literal", raises("xyz",     error.UnexpectedToken, a));
+    report("err-token-key",     raises("{1:2}",   error.UnexpectedToken, a));
+    report("err-token-comma",   raises("[1 2]",   error.UnexpectedToken, a));
+
+    // UnexpectedEnd: truncated object / array / string.
+    report("err-end-object", raises("{\"a\":", error.UnexpectedEnd, a));
+    report("err-end-array",  raises("[1,",     error.UnexpectedEnd, a));
+    report("err-end-string", raises("\"abc",   error.UnexpectedEnd, a));
+
+    // BadEscape: unknown escape, non-hex \u, high surrogate not followed by
+    // a low surrogate.
+    report("err-esc-unknown",   raises("\"a\\xb\"",        error.BadEscape, a));
+    report("err-esc-bad-hex",   raises("\"\\uZZZZ\"",      error.BadEscape, a));
+    report("err-esc-surrogate", raises("\"\\uD83D\\u0041\"", error.BadEscape, a));
+
+    // BadNumber: leading zero, lone minus, fraction, exponent, and an
+    // integer just past i64 MAX (overflow).
+    report("err-num-leadzero", raises("01",  error.BadNumber, a));
+    report("err-num-lonedash", raises("-",   error.BadNumber, a));
+    report("err-num-fraction", raises("1.5", error.BadNumber, a));
+    report("err-num-exponent", raises("1e9", error.BadNumber, a));
+    report("err-num-overflow", raises("9223372036854775808", error.BadNumber, a));
+
+    // TrailingGarbage: junk after a complete value.
+    report("err-trail-array",  raises("[1,2] x", error.TrailingGarbage, a));
+    report("err-trail-scalar", raises("null x",  error.TrailingGarbage, a));
+
+    // BadControlChar: a raw control byte (< 0x20) inside a string.
+    report("err-ctrl-tab", ctrl_raises(9,  a));   // raw 0x09
+    report("err-ctrl-lf",  ctrl_raises(10, a));   // raw 0x0A
+    report("err-ctrl-nul", ctrl_raises(0,  a));   // raw 0x00
+
+    print("=== DONE ===\n");
+    return;
+}

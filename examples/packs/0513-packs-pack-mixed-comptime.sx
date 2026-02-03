@@ -1,0 +1,29 @@
+// Variadic heterogeneous type packs — follow-up #1 (mixed
+// `$comptime + ..$args` pack-fn signatures).
+//
+// Today's `isPackFn` rejects pack-fns that mix any other
+// comptime param with the trailing pack — they fall through
+// to the inline `lowerComptimeCall` path. The inline path
+// doesn't bind non-string comptime params as runtime locals,
+// so a body that uses both `$tag` (i32) AND `..$args` fails
+// at the bare-name lookup of `tag`.
+//
+// Next commit relaxes `isPackFn` to accept "exactly one
+// trailing pack + any number of non-pack comptime params" and
+// `monomorphizePackFn` folds the comptime VALUES into the
+// mangled name (so distinct calls of `tagged(7, ...)` vs
+// `tagged(9, ...)` get distinct monos), then binds the
+// comptime values as both comptime substitutions and runtime
+// locals (for body code that references them by name).
+
+#import "modules/std.sx";
+
+tagged :: ($tag: i32, ..$args) -> i64 {
+    return tag * 100 + args.len;
+}
+
+main :: () -> i32 {
+    print("{}\n", tagged(7, 1, 2, 3));   // 7*100 + 3 = 703
+    print("{}\n", tagged(9));             // 9*100 + 0 = 900
+    return 0;
+}

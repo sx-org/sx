@@ -1,0 +1,4 @@
+type_name         ct=P rt=P
+is_unsigned  ct=true rt=true
+is_unsigned  ct=false rt=false
+size_of           ct=16 rt=16

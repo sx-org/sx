@@ -1,0 +1,52 @@
+// Untyped `.{ ... }` SELF-TYPES as an anonymous STRUCTURAL struct
+// (aggregate-ladder Step 1/2): positional elements mint fields "0"/"1"/…
+// (with `.N` access and comptime `[i]` indexing, tuple parity), named
+// elements mint named fields, and the bare-identifier shorthand `.{ x }`
+// is NAMED by rule — `.{ (x) }` is the positional escape. Identical
+// shapes intern to ONE TypeId at any two sites (structural identity);
+// distinct shapes never merge. A spread splices positionally.
+
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    // Positional: fields "0"/"1", .N access, comptime index.
+    t := .{ 1, 2 };
+    print("{} {} {}\n", t.0, t.1, t[1]);      // 1 2 2
+
+    // Named.
+    p := .{ x = 10, y = 2.5 };
+    print("{} {}\n", p.x, p.y);               // 10 2.500000
+
+    // Shorthand is NAMED; parenthesizing is the positional escape.
+    x := 7;
+    s := .{ x };
+    e := .{ (x) };
+    print("{} {}\n", s.x, e.0);               // 7 7
+
+    // Structural identity: same shape → same type, cross-site.
+    q := .{ x = 99, y = 0.5 };
+    print("{} {}\n", type_eq(type_of(p), type_of(q)), type_eq(type_of(t), type_of(p)));  // true false
+
+    // Value spread splices positionally.
+    u := .{ ..t, 3 };
+    print("{} {} {}\n", u.0, u.1, u.2);       // 1 2 3
+
+    // Struct-value printing (anonymous display name).
+    print("{}\n", p);                          // __anon{x: 10, y: 2.500000}
+
+    // Reflection composes: anon structs are ordinary structs.
+    print("{} {}\n", struct_field_count(type_of(u)), struct_field_name(type_of(p), 0));  // 3 x
+
+    // Self-typing reaches every untyped position: an inferred return, an
+    // array-literal element, and a global `::` const (immutable — a write
+    // through K is the const-assign compile error).
+    print("{}\n", mk().0);                    // 5
+    arr := .[ .{ 1 }, .{ 2 } ];
+    print("{} {}\n", arr[0].0, arr[1].0);     // 1 2
+    print("{} {} {}\n", K.0, K.1, K[2]);      // 1 2 3
+    return 0;
+}
+
+mk :: () { return .{ 5 }; }
+
+K :: .{ 1, 2, 3 };

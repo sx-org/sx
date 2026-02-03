@@ -1,0 +1,34 @@
+// `#identity` refusals (E2): identity protocol values only ever borrow a
+// NAMED object's storage —
+//   - erasing an RVALUE (literal, call result; xx or postfix) refuses
+//     with the bind-it-first fixit;
+//   - `free` on an identity protocol value refuses at compile time
+//     (there is no owned allocation);
+//   - the std `Allocator` is adopted, so an rvalue erasure to it refuses
+//     the same way.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+IdP :: protocol #identity {
+    ping :: (self: *Self) -> i64;
+}
+W :: struct { v: i64; }
+impl IdP for W { ping :: (self: *W) -> i64 { self.v } }
+
+make :: () -> W { W.{ v = 3 } }
+
+main :: () {
+    a : IdP = xx W.{ v = 1 };       // rvalue literal → refusal
+    _ = a;
+    b : IdP = xx make();            // rvalue call result → refusal
+    _ = b;
+    cpost := W.{ v = 2 }.(IdP);     // rvalue postfix → refusal
+    _ = cpost;
+
+    ca : Allocator = xx CAllocator.{};  // adopted std protocol → refusal
+    _ = ca;
+
+    w := W.{ v = 7 };
+    d : IdP = xx w;                 // legal borrow
+    free(d);                        // free on identity → refusal
+}

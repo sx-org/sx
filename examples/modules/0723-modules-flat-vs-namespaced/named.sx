@@ -1,0 +1,4 @@
+// Namespaced-imported author of `value`. Reachable only as `nm.value`; it never
+// enters the flat merge, so it neither shadows the flat author nor makes the
+// bare call ambiguous.
+value :: () -> i64 { return 20; }

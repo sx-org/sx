@@ -1,0 +1,14 @@
+// `.*` on a non-pointer must be a clean compile diagnostic, NOT a codegen
+// panic. Regression: a stale `value.*` (e.g. after a parameter changed from
+// `*T` to `T` by value) used to lower a `.deref` with an `.unresolved` result
+// type, which slipped through to emit_llvm's "unresolved type reached LLVM
+// emission" panic with no source location. `lowerDerefExpr` now diagnoses it.
+// Expected: a clean error pointing at the deref; exit 1.
+
+Point :: struct { x: i32; y: i32; }
+
+main :: () -> i32 {
+    p : Point = .{ x = 3, y = 4 };
+    q := p.*;          // ERROR: `p` is a Point value, not a pointer
+    return q.x;
+}

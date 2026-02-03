@@ -1,0 +1,14 @@
+// An intrinsic binds to the registry by (module, name), not by name alone.
+// `size_of` is an intrinsic because `modules/std/core.sx` declares it; the same
+// spelling in another module names a different function, has no handler, and is
+// rejected at its own declaration span rather than at some later call site.
+//
+// The diagnostic names the owning module, because "unknown intrinsic" would be a
+// lie here — the name is real, the declaration is just in the wrong place.
+
+size_of :: ($T: Type) -> i64 intrinsic;
+
+main :: () {
+    x := size_of(i64);
+    if x == 8 { return; }
+}

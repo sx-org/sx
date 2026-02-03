@@ -1,0 +1,4 @@
+// b.sx authors its OWN `bump` adding 100. `from_b`'s `v.bump()` must dispatch
+// b.sx's author (+100 → 110), not the first-wins winner from a.sx (+1).
+bump   :: ufcs (x: i64) -> i64 { return x + 100; }
+from_b_ufcs :: () -> i64 { v : i64 = 10; return v.bump(); }

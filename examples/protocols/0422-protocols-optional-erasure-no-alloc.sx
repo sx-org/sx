@@ -1,0 +1,86 @@
+// `?Protocol` construction allocation accounting under the ownership
+// model ("P owns, *P views"): wrapping an ALREADY-OWNED `P` into `?P` —
+// decl, struct-literal field, field assign — never allocates again (the
+// optional is an inline sentinel over the same fat value, no re-box);
+// each OWNING erasure (`s.(P)`, rvalue `xx`) allocates exactly once and
+// `free` returns it; the null form allocates nothing. Owned copies are
+// INDEPENDENT of their source (the old borrow contract moved to `*P`
+// views — pinned in 0829).
+// Regression (issue 0213 lineage): the optional wrap used to re-box the
+// receiver through context.allocator — one leaked block per wrap.
+//
+// Rewritten at the E4 ownership cutover: the pre-E4 version pinned
+// zero-alloc BORROW spellings, which are now the demand error (1256).
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+P :: protocol {
+    ping :: (self: *Self) -> i64;
+    bump :: (self: *Self);
+}
+
+S :: struct { v: i64 = 7; }
+
+impl P for S {
+    ping :: (self: *S) -> i64 { return self.v; }
+    bump :: (self: *S) { self.v = self.v + 1; }
+}
+
+H :: struct { op: ?P = null; }
+
+take :: (op: ?P) -> i64 {
+    if op == null { return -1; }
+    return op.ping();
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    fails : i64 = 0;
+    push .{ allocator = gpa } {
+        s := S.{};
+        base := gpa.alloc_count;
+
+        // ONE owning copy...
+        p := s.(P);
+        if gpa.alloc_count != base + 1 { print("owning copy: wrong count\n"); fails = fails + 1; }
+
+        // ...and every ?P wrap of it is allocation-free.
+        op1 : ?P = p;                 // optional decl from owned P
+        h3 : H = .{ op = p };         // struct-literal field from owned P
+        h1 := H.{};
+        h1.op = p;                    // field assign from owned P
+        op5 : ?P = null;              // null
+        if gpa.alloc_count != base + 1 { print("?P wrap allocated\n"); fails = fails + 1; }
+
+        // Direct owning erasure into a ?P slot allocates exactly once.
+        op2 : ?P = s.(P);
+        if gpa.alloc_count != base + 2 { print("owned-into-optional: wrong count\n"); fails = fails + 1; }
+
+        // Call arg: rvalue erasure into a ?P param — one allocation.
+        r := take(xx S.{ v = 7 });
+        if gpa.alloc_count != base + 3 { print("call-arg rvalue: wrong count\n"); fails = fails + 1; }
+
+        // Presence + dispatch through every constructed optional.
+        if op1 == null or op2 == null { print("unexpected null\n"); fails = fails + 1; }
+        if h1.op == null or h3.op == null { print("unexpected null field\n"); fails = fails + 1; }
+        if op5 != null { print("null form not null\n"); fails = fails + 1; }
+        if r != 7 { print("call arg ping wrong: {}\n", r); fails = fails + 1; }
+
+        // Ownership contract: the copy is INDEPENDENT of its source.
+        op1.bump();
+        if s.v != 7 { print("copy bump leaked into source: {}\n", s.v); fails = fails + 1; }
+        if op1.ping() != 8 { print("copy bump lost: {}\n", op1.ping()); fails = fails + 1; }
+        s.v = 42;
+        if op2.ping() != 7 { print("source write leaked into copy\n"); fails = fails + 1; }
+
+        // The owned copies share ONE backing (op1/h1/h3 all wrap `p`):
+        // free it once, plus the two direct erasures.
+        free(p);
+        free(op2!);
+        if gpa.alloc_count != base + 1 { print("frees: wrong count\n"); fails = fails + 1; }
+    }
+    if fails != 0 { print("FAIL {}\n", fails); return 1; }
+    print("ok\n");
+    return 0;
+}

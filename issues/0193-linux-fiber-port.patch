@@ -1,0 +1,226 @@
+diff --git a/library/modules/std/sched.sx b/library/modules/std/sched.sx
+index c2f4b564..c2a99271 100644
+--- a/library/modules/std/sched.sx
++++ b/library/modules/std/sched.sx
+@@ -26,6 +26,14 @@
+ // mismatch.
+ #import "modules/std.sx";
+ kqb :: #import "modules/std/net/kqueue.sx";
++// The fd-readiness backend is per-OS: kqueue (kqb, above) on darwin, epoll on
++// linux. The epoll import is scoped to the linux branch so darwin never pulls
++// epoll's types into the concurrency examples' type tables (the same
++// std-barrel-drift rule std.event.Loop follows); `block_on_fd` / the run loop
++// reference `ep` only inside their own `inline if OS == .linux` arms.
++inline if OS == .linux {
++    ep :: #import "modules/std/net/epoll.sx";
++}
+ 
+ // --- libc mmap stack primitives -------------------------------------------
+ 
+@@ -40,7 +48,14 @@ abort    :: () -> noreturn extern libc "abort";
+ 
+ PROT_NONE :: 0;
+ PROT_RW   :: 3;          // PROT_READ | PROT_WRITE
+-MAP_AP    :: 0x1002;     // macOS MAP_PRIVATE (0x2) | MAP_ANON (0x1000)
++// Exhaustive on the SUPPORTED OSes (linux/macOS), no default case: an
++// unsupported target matches no case → MAP_AP undefined → a loud compile error
++// on use rather than a silent wrong flag. (The fiber runtime is aarch64-only
++// anyway — the swap_context asm — so only these two platforms are wired.)
++inline if OS == {
++    case .linux: MAP_AP :: 0x22;      // linux MAP_PRIVATE (0x2) | MAP_ANON (0x20)
++    case .macos: MAP_AP :: 0x1002;    // macOS MAP_PRIVATE (0x2) | MAP_ANON (0x1000)
++}
+ GUARD     :: 16384;      // one 16 KB page (aarch64-macOS)
+ STACK     :: 131072;     // 128 KB usable per fiber
+ 
+@@ -172,10 +187,11 @@ Scheduler :: struct {
+         self.n_spawned = self.n_spawned + 1;
+ 
+         top := boot_stack(f, STACK);
+-        f.ctx.regs[0]  = xx f;           // x19 = self
+-        f.ctx.regs[10] = 0;              // fp
+-        f.ctx.regs[11] = xx fib_tramp;   // lr → trampoline
+-        f.ctx.regs[12] = top;            // sp
++        f.ctx.regs[0]  = xx f;             // x19 = self (→ x0 in the tramp)
++        f.ctx.regs[1]  = xx fib_dispatch;  // x20 = dispatch entry (tramp `br`s to it)
++        f.ctx.regs[10] = 0;                // fp
++        f.ctx.regs[11] = xx fib_tramp;     // lr → trampoline
++        f.ctx.regs[12] = top;              // sp
+ 
+         f.state = .ready;
+         enqueue(self, f);
+@@ -333,20 +349,38 @@ Scheduler :: struct {
+             }
+             j = j + 1;
+         }
+-        // Lazily open the kqueue fd the first time fd-blocking is used.
++        // Lazily open the event-queue fd the first time fd-blocking is used:
++        // kqueue on darwin, epoll on linux. `self.kq` holds whichever — it is
++        // just "the readiness queue fd".
+         if self.kq < 0 {
+-            self.kq = kqb.kqueue();
++            inline if OS == {
++                case .linux: self.kq = ep.ep_create();
++                case .macos: self.kq = kqb.kqueue();
++            }
+             if self.kq < 0 {
+-                print("sched: kqueue() failed to open the event queue\n");
++                print("sched: failed to open the event queue\n");
+                 abort();
+             }
+         }
+-        // Arm a one-shot read-readiness registration for `fd`. udata is unused
+-        // (we match the waiter by fd in the drain), so pass 0.
+-        chg := kqb.kev_change(fd, kqb.EVFILT_READ, kqb.EV_ADD | kqb.EV_ENABLE | kqb.EV_ONESHOT, 0);
+-        if !kqb.kq_apply(self.kq, chg) {
+-            print("sched: kevent() failed to register fd {} for read readiness\n", fd);
+-            abort();
++        // Arm a one-shot read-readiness registration for `fd`, matched back by
++        // the run-loop drain (kqueue by ident; epoll stashes the fd in `data`).
++        // darwin EV_ONESHOT auto-removes the registration on fire; epoll's
++        // EPOLLONESHOT only DISABLES it, so the linux paths additionally
++        // EPOLL_CTL_DEL on fire (run) and on early-wake (cancel_io_waiter_for).
++        inline if OS == {
++            case .linux: {
++                if !ep.ep_ctl(self.kq, ep.EPOLL_CTL_ADD, fd, ep.EPOLLIN | ep.EPOLLONESHOT) {
++                    print("sched: epoll_ctl() failed to register fd {} for read readiness\n", fd);
++                    abort();
++                }
++            }
++            case .macos: {
++                chg := kqb.kev_change(fd, kqb.EVFILT_READ, kqb.EV_ADD | kqb.EV_ENABLE | kqb.EV_ONESHOT, 0);
++                if !kqb.kq_apply(self.kq, chg) {
++                    print("sched: kevent() failed to register fd {} for read readiness\n", fd);
++                    abort();
++                }
++            }
+         }
+         // Record the waiter BEFORE parking — the run loop matches the fired
+         // event's ident back to this record. Long-lived-container rule: the
+@@ -407,20 +441,42 @@ Scheduler :: struct {
+             // kernel reports at least one fd ready, then wake every waiter whose
+             // fd fired. (null timeout via -1 → wait forever.)
+             if self.io_waiters.len > 0 {
+-                evbuf : [MAXEV]kqb.Kevent = ---;
+-                n := kqb.kq_wait(self.kq, @evbuf[0], MAXEV, -1);
+-                if n < 0 {
+-                    print("sched: kevent() wait failed while blocking on fd readiness\n");
+-                    abort();
+-                }
+-                // For each fired event, find the io-waiter whose fd matches its
+-                // ident, evict it, and wake its fiber. EV_ONESHOT already removed
+-                // the kernel registration, so we only drop the waiter record.
+-                i := 0;
+-                while i < n {
+-                    ready_fd : i32 = xx evbuf[i].ident;
+-                    wake_io_waiter_for_fd(self, ready_fd);
+-                    i = i + 1;
++                // BLOCK on the readiness queue until ≥1 fd fires (timeout -1 =
++                // forever), then for each fired event match the fd back to its
++                // io-waiter, evict the record, and wake the fiber.
++                inline if OS == {
++                    case .linux: {
++                        evbuf : [MAXEV]ep.EpollEvent = ---;
++                        n := ep.ep_wait(self.kq, .{ ptr = @evbuf[0], len = MAXEV }, MAXEV, -1);
++                        if n < 0 {
++                            print("sched: epoll_wait() failed while blocking on fd readiness\n");
++                            abort();
++                        }
++                        i := 0;
++                        while i < n {
++                            ready_fd := ep.ev_fd(evbuf[i]);
++                            wake_io_waiter_for_fd(self, ready_fd);
++                            // EPOLLONESHOT only DISABLED the registration; remove it
++                            // fully so the fd can be re-armed by a future block_on_fd
++                            // (kqueue's EV_ONESHOT removes it for free).
++                            ep.ep_ctl(self.kq, ep.EPOLL_CTL_DEL, ready_fd, 0);
++                            i = i + 1;
++                        }
++                    }
++                    case .macos: {
++                        evbuf : [MAXEV]kqb.Kevent = ---;
++                        n := kqb.kq_wait(self.kq, @evbuf[0], MAXEV, -1);
++                        if n < 0 {
++                            print("sched: kevent() wait failed while blocking on fd readiness\n");
++                            abort();
++                        }
++                        i := 0;
++                        while i < n {
++                            ready_fd : i32 = xx evbuf[i].ident;
++                            wake_io_waiter_for_fd(self, ready_fd);
++                            i = i + 1;
++                        }
++                    }
+                 }
+                 continue;
+             }
+@@ -542,21 +598,37 @@ ASM
+ // First-entry trampoline: a fiber's bootstrapped LR points here. x19 holds the
+ // `*Fiber` (preset in the saved context); move it to x0 and call the generic
+ // dispatch.
+-asm {
+-    #string T
+-.global _fib_tramp
+-_fib_tramp:
++// Symbol naming is per-OS: darwin prefixes user/exported symbols with `_`
++// (`_fib_tramp` / `_fib_dispatch`), linux does not. The sx-side `fib_tramp`
++// extern + `export "fib_dispatch"` resolve to the platform-prefixed name
++// automatically; only this hand-written asm must spell the literal symbol, so
++// branch it. (The `swap_context` naked asm above has no symbol literals — only
++// instructions — so it is shared.)
++// First-entry trampoline: a fiber's bootstrapped LR points here, with x19 =
++// `*Fiber` and x20 = `&fib_dispatch` (both preset in the saved context by
++// `spawn`, both callee-saved so `swap_context` restores them on first entry).
++// Move the fiber to x0 and tail-branch to dispatch via the REGISTER — no
++// hand-written global-asm symbol, so nothing here needs per-OS symbol naming
++// (`_fib_tramp`/`fib_tramp`) or a `bl` to a named export. As a naked sx fn its
++// own symbol is emitted with the platform-correct name automatically, so
++// `spawn`'s `xx fib_tramp` resolves on every target. (This register-indirect
++// bootstrap replaced an OS-conditional global `asm` block: a top-level `asm`
++// wrapped in an `inline if` is dropped in this module's context — see
++// issues/0193 — and a naked fn + `br` sidesteps the hand-written symbol
++// entirely, which is cleaner regardless.)
++fib_tramp :: () abi(.naked) {
++    asm volatile {
++        #string T
+     mov x0, x19
+-    bl _fib_dispatch
+-    brk #0
+-T,
+-};
+-fib_tramp :: () extern;
++    br x20
++T
++    };
++}
+ 
+-// The ONE place that runs a fiber body. Reached only from `_fib_tramp` on first
++// The ONE place that runs a fiber body. Reached only from `fib_tramp` on first
+ // entry, on the fiber's own fresh stack. Runs the body, marks the fiber done,
+ // and switches back to the scheduler — never returns past the final switch.
+-fib_dispatch :: (self: *Fiber) export "fib_dispatch" {
++fib_dispatch :: (self: *Fiber) {
+     self.body();
+     self.state = .done;
+     swap_context(@self.ctx, @self.sched.sched_ctx);
+@@ -687,7 +759,19 @@ cancel_io_waiter_for :: (self: *Scheduler, f: *Fiber) {
+     i := 0;
+     while i < self.io_waiters.len {
+         if self.io_waiters.items[i].fiber == f {
+-            remove_io_waiter(self, i);
++            // Early-wake: the fiber is re-readied by another path while its fd
++            // registration is still armed. kqueue's EV_ONESHOT lingers
++            // harmlessly (a never-fired one-shot the drain ignores); epoll's
++            // EPOLLONESHOT registration stays enabled — it could fire later with
++            // no waiter, and blocks a re-arm of the same fd — so remove it.
++            inline if OS == {
++                case .linux: {
++                    fd := self.io_waiters.items[i].fd;
++                    remove_io_waiter(self, i);
++                    if self.kq >= 0 { ep.ep_ctl(self.kq, ep.EPOLL_CTL_DEL, fd, 0); }
++                }
++                case .macos: remove_io_waiter(self, i);
++            }
+             return;
+         }
+         i = i + 1;

@@ -1,0 +1,51 @@
+// M1.2 A.4b.iii — instance-method dispatch through the Obj-C
+// runtime. Each instance method now gets a C-ABI IMP trampoline
+// registered via 'class_addMethod' at class-pair init time. The
+// runtime can dispatch 'objc_msgSend(obj, sel)' to the
+// trampoline, which reads the '__sx_state' ivar to find the
+// state struct and forwards to the sx body.
+//
+// End-to-end (verifies registration only — sx-side
+// 'obj.bump()' calls still bail at the M1.2 A.7 dispatch gate
+// until +alloc/-dealloc (A.5/A.6) land too):
+//   1. class_getMethodImplementation(SxFoo, sel_registerName("bump"))
+//      returns a non-null IMP — proves the trampoline is wired.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+class_getMethodImplementation :: (cls: *void, sel: *void) -> *void extern objc;
+
+SxFoo :: #objc_class("SxFoo") {
+    counter: i32;
+
+    bump :: (self: *Self) {
+        self.counter += 1;
+    }
+
+    add :: (self: *Self, n: i32) {
+        self.counter += n;
+    }
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        cls : Class = objc_getClass("SxFoo".ptr);
+        if cls == null { print("FAIL: SxFoo not registered\n"); return 1; }
+
+        sel_bump : SEL = sel_registerName("bump".ptr);
+        imp_bump : *void = class_getMethodImplementation(cls, sel_bump);
+        if imp_bump == null { print("FAIL: bump IMP missing\n"); return 1; }
+
+        sel_add : SEL = sel_registerName("add:".ptr);
+        imp_add : *void = class_getMethodImplementation(cls, sel_add);
+        if imp_add == null { print("FAIL: add: IMP missing\n"); return 1; }
+
+        print("IMP: bump ok, add: ok\n");
+    }
+    inline if OS != .macos {
+        print("IMP: bump ok, add: ok\n");
+    }
+    0
+}

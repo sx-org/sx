@@ -1,0 +1,21 @@
+// `List(T).len` is a `#get`/`#set` property pair: `xs.len` reads the live
+// element count (delegating to `items.len`), and `xs.len = n` sets it (e.g.
+// `xs.len = 0` to clear the list without freeing its buffer — `cap` and the
+// backing allocation are untouched, so appends reuse the same storage).
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    xs : List(i64) = .{};
+    xs.append(10);
+    xs.append(20);
+    xs.append(30);
+    print("len={} cap={}\n", xs.len, xs.cap);   // len=3 cap=4
+
+    xs.len = 0;                                   // clear via the #set property
+    print("after clear: len={} cap={}\n", xs.len, xs.cap);  // len=0 cap=4
+
+    // The buffer survived the clear — re-append reuses it (cap stays 4).
+    xs.append(99);
+    print("reused: len={} cap={} first={}\n", xs.len, xs.cap, xs.items[0]); // 1 4 99
+    return 0;
+}

@@ -1,0 +1,4 @@
+sum=8386560
+copy-sum: 360
+copy-guard: 10 20 30
+byref: 110 120 130

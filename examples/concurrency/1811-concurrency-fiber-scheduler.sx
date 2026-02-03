@@ -1,0 +1,79 @@
+// Stream B1 (fibers) B1.5a — the M:1 cooperative fiber scheduler core, in pure
+// sx over `swap_context` (proven in 1807-1809). `Scheduler` drives N fibers,
+// each running a `body: Closure() -> void` on its own guarded `mmap` stack;
+// fibers cooperate by calling `yield_now`, which round-robins control back
+// through the scheduler loop.
+//
+// Round-robin demo: 3 fibers (A=0, B=1, C=2) each append their id to a shared
+// sequence buffer, yielding between each of 3 rounds. Because the scheduler
+// re-enqueues a yielding fiber at the TAIL (FIFO), the interleaving is the
+// deterministic round-robin order:
+//
+//   round 1:  A B C   (0 1 2)
+//   round 2:  A B C   (0 1 2)
+//   round 3:  A B C   (0 1 2)
+//
+//   → sequence: 0 1 2 0 1 2 0 1 2
+//
+// Outputs flow OUT of each fiber through pointers captured in its closure (the
+// shared `Shared` struct), since closure capture-by-value does not write back.
+// Every fiber must reach `.done` (asserted via a per-fiber done flag).
+//
+// aarch64-macOS-pinned (the scheduler's asm + guard-page mmap constants are
+// per-arch / Apple-specific): runs end-to-end on a matching host, ir-only on a
+// mismatch.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+Shared :: struct {
+    seq: [16]i64;     // appended interleaving sequence
+    n: i64;           // count appended
+    done: [3]i64;     // per-fiber done flag (set right before the body returns)
+}
+
+append :: (sh: *Shared, v: i64) {
+    sh.seq[sh.n] = v;
+    sh.n = sh.n + 1;
+}
+
+main :: () -> i64 {
+    sh : Shared = .{ n = 0 };   // seq[] + done[] zero-filled
+
+    s := sched.Scheduler.init();
+    ps := @s;
+    psh := @sh;
+
+    // Three DIFFERENT fiber bodies (distinct captured ids), interleaving via
+    // yield_now. Each appends its id once per round for 3 rounds.
+    spawn_worker :: (ps: *sched.Scheduler, psh: *Shared, my_id: i64) {
+        ps.spawn(() {
+            r := 0;
+            while r < 3 {
+                append(psh, my_id);
+                if r < 2 { ps.yield_now(); }   // cooperate between rounds
+                r = r + 1;
+            }
+            psh.done[my_id] = 1;
+        });
+    }
+
+    spawn_worker(ps, psh, 0);
+    spawn_worker(ps, psh, 1);
+    spawn_worker(ps, psh, 2);
+
+    s.run();
+
+    // Ordering contract: round-robin FIFO interleaving.
+    print("sequence:");
+    i := 0;
+    while i < sh.n {
+        print(" {}", sh.seq[i]);
+        i = i + 1;
+    }
+    print("\n");
+
+    print("spawned: {}\n", s.n_spawned);
+    print("done: {} {} {}\n", sh.done[0], sh.done[1], sh.done[2]);
+    print("all done: {}\n", sh.done[0] + sh.done[1] + sh.done[2]);
+    return 0;
+}

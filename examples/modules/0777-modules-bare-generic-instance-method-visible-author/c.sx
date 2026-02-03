@@ -1,0 +1,16 @@
+// The NON-visible 2-flat-hop author: a two-field generic `Box` (size 16) whose
+// `tag` returns `self.x + 16`. Same template NAME as b's, different body. It wins
+// the global last-wins `fn_ast_map["Box.tag"]`, so a file importing only b.sx
+// must NOT dispatch `x.tag()` to it.
+Box :: struct($T: Type) {
+    x: T;
+    y: T;
+
+    make :: (value: T) -> Box(T) {
+        .{ x = value, y = value }
+    }
+
+    tag :: (self: *Box) -> T {
+        self.x + 16
+    }
+}

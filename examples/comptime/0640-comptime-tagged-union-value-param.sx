@@ -1,0 +1,43 @@
+// Comptime TAGGED-UNION value parameter: `$s: <TaggedUnion>` generalizes the
+// enum value-param mechanism (examples/0627) to a payload-bearing enum. The
+// argument is a constant variant literal — either bare (`.point`) or with a
+// payload (`.circle(5.0)`) — and binds the param so it resolves in the body:
+//   * `if s == .circle` lowers as an ordinary tag comparison,
+//   * the variant tag is comptime-readable in a TYPE position (`[s]i64`),
+//   * a payload read off the bound value (`s.rect`) resolves to the
+//     compile-time-known payload.
+// Distinct variant args monomorphize the inlined body per value.
+#import "modules/std.sx";
+
+Shape :: enum {
+    circle: f64;
+    rect: i64;
+    point;
+}
+
+// Tag comparison in the body — bare AND payload variants both bind.
+classify :: ($s: Shape) -> i64 {
+    if s == .circle { return 1; }
+    if s == .rect { return 2; }
+    return 3;
+}
+
+// Variant tag read as a compile-time integer in a TYPE position (the array
+// dimension), exercising the `comptime_value_bindings` / `comptimeIntNamed`
+// integration contract for a tagged union.
+tag_dim :: ($s: Shape) -> i64 {
+    arr : [s]i64 = ---;
+    return arr.len;
+}
+
+// Payload read off the bound comptime value.
+rect_payload :: ($s: Shape) -> i64 {
+    if s == .rect { return s.rect; }
+    return -1;
+}
+
+main :: () {
+    print("{} {} {}\n", classify(.circle(5.0)), classify(.rect(7)), classify(.point)); // 1 2 3
+    print("{} {} {}\n", tag_dim(.circle(0.0)), tag_dim(.rect(0)), tag_dim(.point));     // 0 1 2
+    print("{}\n", rect_payload(.rect(42)));                                             // 42
+}

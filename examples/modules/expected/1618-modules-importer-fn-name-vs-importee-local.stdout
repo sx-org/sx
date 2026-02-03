@@ -1,0 +1,9 @@
+lib hook 41
+h(1) = 2
+local fnptr 7
+local fnptr 8
+h(2) = 3
+inner nested fn: 103
+outer var: 6
+inner var: 6
+outer nested fn: 103

@@ -1,0 +1,7 @@
+// header paragraph for the whole file.
+
+// doc comment attached to main — the package line must go ABOVE this
+// comment, not between it and the declaration.
+main :: () {
+    print("hello\n");
+}

@@ -1,0 +1,6 @@
+pack: 7
+plain: 7
+generic: 10
+ns-pack: 42
+std-print: 1 two
+std-format 42

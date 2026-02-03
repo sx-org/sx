@@ -1,0 +1,35 @@
+// Stream B2 — `context.io.race` tolerates a FAILING racer (PLAN-IO-UNIFY Phase 4).
+// A `race` is first-SUCCESS-wins: a racer that ends `.failed` is simply not a
+// winner candidate; as long as ANOTHER racer succeeds, `race` returns that winner.
+// Here `a` raises at t=5 and `b` succeeds (42) at t=10, so `b` wins. The failed
+// racer keeps its real outcome label (`.failed`) — `race` only cancels still-
+// in-flight (`.pending`) losers, so it never stomps `a`'s `.failed` to `.canceled`.
+//
+// (Regression: an all-FAILING racer set instead bails loudly — "race — all
+// futures settled without a winner" — rather than dead-locking the scheduler.)
+//
+// aarch64-pinned (the scheduler's per-arch asm): runs end-to-end on a matching
+// host (macOS + linux), ir-only on a mismatch.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+main :: () -> i64 {
+    s := sched.Scheduler.init();
+    ps := @s;
+    push .{ io = xx s } {
+        ps.spawn(() {
+            a := context.io.async(() -> (i64, !) { try context.io.sleep(5);  raise error.Boom; });
+            b := context.io.async(() -> (i64, !) { try context.io.sleep(10); 42 });
+            winner := context.io.race(.{a = a, b = b});
+            if winner == {
+                case .a: (v) { print("winner: a = {}\n", v); }
+                case .b: (v) { print("winner: b = {}\n", v); }
+            }
+            // The failing loser keeps its real outcome — not stomped to .canceled.
+            print("a: failed={} canceled={}\n", a.state == .failed, a.state == .canceled);
+        });
+        ps.run();
+    }
+    print("final clock: {}ms\n", s.now_ms());
+    return 0;
+}

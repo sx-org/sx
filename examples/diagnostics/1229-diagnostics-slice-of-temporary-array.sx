@@ -1,0 +1,23 @@
+// Slicing a TEMPORARY (non-addressable) array is rejected. A slice is a
+// zero-copy view into an array's backing storage (specs.md §Subslicing);
+// a temporary — here the result of a call returning `[3]i64` — has no
+// persistent storage, so a slice of it would be a dangling view the moment
+// the statement ends. The compiler rejects it and steers the user to bind
+// the array to a local first (mirrors Zig, which also rejects slicing an
+// rvalue array).
+//
+// Regression (issue 0225): the old value-lowering path silently sliced a
+// hidden temp instead of diagnosing.
+#import "modules/std.sx";
+
+make_arr :: () -> [3]i64 {
+    a : [3]i64 = ---;
+    a[0] = 1; a[1] = 2; a[2] = 3;
+    return a;
+}
+
+main :: () -> i32 {
+    sl : []i64 = make_arr()[0..2];   // error: cannot slice a temporary array
+    print("{}\n", sl[0]);
+    0
+}

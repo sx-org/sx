@@ -1,0 +1,30 @@
+// Reserved/builtin type names are rejected as binding NAMES across every
+// control-flow and destructuring form, not just plain `var`/param decls: a
+// destructure name (`i2`), an `if`/`while` optional binding (`u8`/`i16`), a
+// `for` capture and index name (`bool`/`i32`), and a match-arm capture
+// (`string`). Each spelling parses as a `.type_expr`, so the address-of family
+// in lowering mis-lowers it (a loaded aggregate passed by value to a `ptr`
+// param → LLVM verifier abort). The declaration-site diagnostic comes from one
+// EXHAUSTIVE binding-name walk, so no syntactic binding form can slip through.
+//
+// Regression (issue 0076, attempt-4 coverage). Expected: one error per
+// offending name; exit 1 — NOT an LLVM verifier abort.
+#import "modules/std.sx";
+
+pair :: () -> Tuple(i64, i64) { .{1, 2} }
+maybe :: () -> ?i64 { return null; }
+
+main :: () -> i32 {
+    i2, rest := pair();                  // destructure name
+    if u8 := maybe() { }                 // if optional binding
+    while i16 := maybe() { break; }      // while optional binding
+    xs := [3]i64.{ 10, 20, 30 };
+    for xs (bool) { }                   // for capture name
+    for xs, 0.. (v, i32) { }                 // for index name
+    opt: ?i64 = 5;
+    r := if opt == {                     // match-arm capture
+        case .some: (string) { 0 }
+        case .none: { 0 }
+    };
+    return 0;
+}

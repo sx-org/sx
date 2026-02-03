@@ -1,0 +1,5 @@
+error: no visible xx conversion from 'i64' to 'Wrap' — impl exists in another module but is not imported
+  --> examples/protocols/0410-protocols-impl-visibility-user.sx:7:17
+   |
+ 7 |   w : Wrap = xx 7;
+   |                 ^

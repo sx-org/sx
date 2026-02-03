@@ -1,0 +1,38 @@
+// A method call on a `*P` view in ITERABLE position: `for v.items() (*x)`
+// classifies like the owned-receiver form — the call plan resolves the
+// protocol method's return type through the view (and through `?P`/`?*P`
+// receivers), so the for-iterable classifier sees the `[]T`.
+// Regression (issue 0312): the plan only recognized bare `P` receivers;
+// a view receiver typed as unresolved and the loop refused with
+// "cannot iterate this expression" (m3te's
+// `for (g_plat.poll_events()) (*ev)` frame loop).
+#import "modules/std.sx";
+
+P :: protocol {
+    items :: (self: *Self) -> []i32;
+}
+
+C :: struct { a : [3]i32 = .[1, 2, 3]; }
+
+impl P for C {
+    items :: (self: *C) -> []i32 {
+        r : []i32 = ---;
+        r.ptr = @self.a[0];
+        r.len = 3;
+        r
+    }
+}
+
+main :: () {
+    c := C.{};
+    v : *P = c;
+    for v.items() (*x) { print("{}\n", x.*); }
+    // Parenthesized spelling too.
+    total := 0;
+    for (v.items()) (x) { total += x; }
+    print("total: {}\n", total);
+    // Owned-receiver parity.
+    o := c.(P);
+    for o.items() (x) { total += x; }
+    print("both:  {}\n", total);
+}

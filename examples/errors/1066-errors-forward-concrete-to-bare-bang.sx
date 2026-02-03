@@ -1,0 +1,157 @@
+// Forwarding a failable result across error sets via `return callee(...)`.
+//
+// Error tags are GLOBAL ids (one shared u32 repr; 0 = "no error"), so a
+// concrete error set forwards soundly through the open bare-`!` channel:
+// the compiler re-packs the value slots plus the raw tag. Covered here:
+//   - concrete `!MyErr` → bare `!`, success value forwards;
+//   - concrete → bare, ERROR forwards and the tag keeps its identity
+//     (`catch` sees `error.Boom`);
+//   - matched-set forward (`!MyErr` → `!MyErr`) still works;
+//   - concrete → concrete where callee ⊆ caller;
+//   - multi-value `(i64, i64, !MyErr)` → `(i64, i64, !)`;
+//   - pure failable `!MyErr` → `!`, `!MyErr` → `!MyErr`, `!MyErr` → `!WideErr`;
+//   - `try` / `or` interop with a forwarded result;
+//   - the arity/slot-fit TIE-BREAK: a returned VALUE tuple whose last element
+//     is error-set-typed (`return v, e` into `(i64, MyErr, !)`) is the value
+//     list, NOT a forward.
+// (Bare `!` → NAMED set is rejected — the inferred set can't be proven ⊆;
+// see examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx.)
+//
+// Regression (issue 0205): the concrete→bare forward used to pack the whole
+// callee `{value, err}` aggregate as element 0 of the caller's own tuple —
+// invalid LLVM IR (`Invalid InsertValueInst operands!`).
+
+#import "modules/std.sx";
+
+MyErr :: error { Boom }
+WideErr :: error { Boom, Other }
+
+inner :: (x: i64) -> (i64, !MyErr) {
+    if x < 0 { raise error.Boom; }
+    return x;
+}
+
+// concrete → bare `!` (the issue-0205 shape)
+fwd :: (x: i64) -> (i64, !) {
+    return inner(x);
+}
+
+// matched set: concrete → same concrete
+fwd_same :: (x: i64) -> (i64, !MyErr) {
+    return inner(x);
+}
+
+// concrete → concrete, callee set ⊆ caller set
+fwd_wide :: (x: i64) -> (i64, !WideErr) {
+    return inner(x);
+}
+
+// multi-value concrete → bare
+inner2 :: (x: i64) -> (i64, i64, !MyErr) {
+    if x < 0 { raise error.Boom; }
+    return x, x + 1;
+}
+fwd2 :: (x: i64) -> (i64, i64, !) {
+    return inner2(x);
+}
+
+// pure failable concrete → bare
+check :: (x: i64) -> !MyErr {
+    if x < 0 { raise error.Boom; }
+}
+fwd_pure :: (x: i64) -> ! {
+    return check(x);
+}
+
+// pure same-set and pure subset (concrete → concrete) forwards
+check_same :: (x: i64) -> !MyErr {
+    return check(x);
+}
+check_wide :: (x: i64) -> !WideErr {
+    return check(x);
+}
+
+// TIE-BREAK: `return v, e` where the second VALUE slot is error-set-typed —
+// the tuple fits the value slots exactly, so it is the value list, not a
+// forward (the type is indistinguishable from a failable `(i64, !MyErr)`).
+pair :: () -> (i64, MyErr, !) {
+    v, e := inner(-1);
+    if e { return 0, e; }
+    return v, e;
+}
+
+// `try` on a forwarded result propagates through the caller's bare channel
+use_try :: (x: i64) -> (i64, !) {
+    v := try fwd(x);
+    return v + 1;
+}
+
+main :: () -> i32 {
+    // success value forwards
+    v, e := fwd(5);
+    if e { return 1; }
+    print("fwd(5) = {}\n", v);
+
+    // error forwards; the tag keeps its global identity through bare `!`
+    _, e2 := fwd(-1);
+    if !e2 { return 2; }
+    if e2 != error.Boom { return 3; }
+    print("fwd(-1) raises Boom\n");
+
+    // catch interop on the forwarded result
+    c := fwd(-1) catch (ce) {
+        if ce != error.Boom { return 4; }
+        print("caught Boom\n");
+        -7
+    };
+    print("catch fallback = {}\n", c);
+
+    // matched-set forward untouched
+    s, es := fwd_same(6);
+    if es { return 5; }
+    print("fwd_same(6) = {}\n", s);
+
+    // concrete → concrete subset forward
+    w, ew := fwd_wide(7);
+    if ew { return 6; }
+    _, ew2 := fwd_wide(-1);
+    if ew2 != error.Boom { return 7; }
+    print("fwd_wide(7) = {}, fwd_wide(-1) raises Boom\n", w);
+
+    // multi-value forward, both slots + error path
+    a, b, em := fwd2(10);
+    if em { return 8; }
+    print("fwd2(10) = {}, {}\n", a, b);
+    _, _, em2 := fwd2(-1);
+    if em2 != error.Boom { return 9; }
+
+    // pure failable forward
+    ep := fwd_pure(1);
+    if ep { return 10; }
+    ep2 := fwd_pure(-1);
+    if ep2 != error.Boom { return 11; }
+    print("fwd_pure ok\n");
+
+    // pure same-set / pure subset forwards
+    eq := check_same(-1);
+    if eq != error.Boom { return 13; }
+    ew3 := check_wide(-1);
+    if ew3 != error.Boom { return 14; }
+    if check_same(1) { return 15; }
+    if check_wide(1) { return 16; }
+    print("pure same/wide ok\n");
+
+    // tie-break: value tuple with an error-set-typed slot is the value list
+    pv, pe, pee := pair();
+    if pee { return 17; }
+    if pe != error.Boom { return 18; }
+    print("pair = {}, Boom-as-value\n", pv);
+
+    // try / or interop
+    t, et := use_try(4);
+    if et { return 12; }
+    o := fwd(-1) or 90;
+    print("try = {}, or = {}\n", t, o);
+
+    return xx v;   // 5
+}

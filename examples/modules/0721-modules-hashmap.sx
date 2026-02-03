@@ -1,0 +1,115 @@
+// HashMap($K,$V) from modules/std/map.sx — the unordered open-addressing map
+// (port of Zig's std HashMapUnmanaged: metadata fingerprint scan, linear
+// probing, tombstone deletion, 80% load, power-of-two growth).
+//
+// Ports the behaviour of Zig's hash_map tests: basic usage + iteration, grow
+// across many rehashes, clear-retaining-capacity, remove (+ tombstone reuse),
+// overwrite-on-existing-key, contains, string keys, and idempotent deinit.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () {
+    gpa := GPA.init();
+
+    // ── basic usage: put 0..5, iterate (sum keys), get each back ──────────
+    m : HashMap(i64, i64) = .{};
+    total : i64 = 0;
+    i := 0;
+    while i < 5 { m.put(i, i * 10, gpa); total += i; i += 1; }
+    report("basic-len", m.len == 5);
+
+    sum_keys : i64 = 0;
+    it := m.next_used(0);
+    while it < m.cap { sum_keys += m.keys[it]; it = m.next_used(it + 1); }
+    report("basic-iter-sum", sum_keys == total);          // 0+1+2+3+4 = 10
+
+    got_all := true;
+    i = 0;
+    while i < 5 { if m.get(i)! != i * 10 { got_all = false; } i += 1; }
+    report("basic-get-all", got_all);
+
+    // ── overwrite on existing key: value replaced, count unchanged ────────
+    m.put(2, 999, gpa);
+    report("overwrite-val", m.get(2)! == 999);
+    report("overwrite-len", m.len == 5);
+
+    // ── contains / absent ────────────────────────────────────────────────
+    report("contains-hit",  m.contains(3));
+    report("contains-miss", !m.contains(42));
+    absent := if x := m.get(42) { false } else { true };
+    report("get-miss-null", absent);
+
+    // ── remove: returns true once, false after; entry gone ───────────────
+    report("remove-hit",  m.remove(3, gpa));
+    report("remove-again", !m.remove(3, gpa));
+    report("remove-len",  m.len == 4);
+    report("remove-gone", !m.contains(3));
+
+    // tombstone reuse: re-insert the removed key, then a churn loop
+    m.put(3, 30, gpa);
+    report("reinsert", m.get(3)! == 30 and m.len == 5);
+    j := 0;
+    while j < 200 { m.put(1000 + j, j, gpa); m.remove(1000 + j, gpa); j += 1; }
+    report("churn-stable", m.len == 5 and m.get(0)! == 0 and m.get(4)! == 40);
+
+    m.deinit(gpa);
+
+    // ── grow: many inserts force several rehashes; all survive ────────────
+    g : HashMap(i64, i64) = .{};
+    N := 5000;
+    i = 0;
+    while i < N { g.put(i, i, gpa); i += 1; }
+    report("grow-len", g.len == N);
+
+    // iterate: count entries, confirm key == value for every live slot
+    cnt : i64 = 0;
+    kv_ok := true;
+    gi := g.next_used(0);
+    while gi < g.cap {
+        if g.keys[gi] != g.values[gi] { kv_ok = false; }
+        cnt += 1; gi = g.next_used(gi + 1);
+    }
+    report("grow-iter-count", cnt == N);
+    report("grow-iter-kv", kv_ok);
+
+    all := true;
+    i = 0;
+    while i < N { if g.get(i)! != i { all = false; } i += 1; }
+    report("grow-get-all", all);
+    g.deinit(gpa);
+
+    // ── clearRetainingCapacity: buffer kept, entries dropped ──────────────
+    c : HashMap(i64, i64) = .{};
+    c.put(1, 1, gpa);
+    report("clear-pre", c.get(1)! == 1 and c.len == 1);
+    cap_before := c.cap;
+    report("clear-cap-pos", cap_before > 0);
+    c.clear();
+    c.clear();                                            // idempotent
+    report("clear-len", c.len == 0);
+    report("clear-cap-kept", c.cap == cap_before);
+    report("clear-gone", !c.contains(1));
+    c.put(2, 2, gpa);                                  // reuse after clear
+    report("clear-reuse", c.get(2)! == 2);
+    c.deinit(gpa);
+
+    // ── string keys (content hash) ───────────────────────────────────────
+    s : HashMap(string, i64) = .{};
+    s.put("alpha", 1, gpa);
+    s.put("beta", 2, gpa);
+    s.put("gamma", 3, gpa);
+    report("str-get", s.get("beta")! == 2);
+    report("str-miss", !s.contains("delta"));
+    s.put("beta", 20, gpa);
+    report("str-overwrite", s.get("beta")! == 20 and s.len == 3);
+    // get_ptr: mutate in place
+    if p := s.get_ptr("alpha") { p.* = 111; }
+    report("str-get-ptr", s.get("alpha")! == 111);
+    s.deinit(gpa);
+    s.deinit(gpa);                                     // idempotent
+    report("str-deinit-len", s.len == 0);
+}

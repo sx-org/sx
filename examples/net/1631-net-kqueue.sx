@@ -1,0 +1,55 @@
+// std/net/kqueue (PLAN-HTTPZ S3): readiness without blocking — an idle
+// registration times out at zero cost, a write makes the peer readable
+// (with the pending byte count in `data` and the registration's udata
+// handed back), and a peer close reports EV_EOF.
+#import "modules/std.sx";
+kq :: #import "modules/std/net/kqueue.sx";
+
+main :: () -> i32 {
+    pair : [2]i32 = ---;
+    if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, @pair[0]) != 0 {
+        print("socketpair failed\n");
+        return 1;
+    }
+    a := pair[0];
+    b := pair[1];
+
+    q := kq.kqueue();
+    if q < 0 { print("kqueue failed\n"); return 1; }
+    if !kq.kq_apply(q, kq.kev_change(a, kq.EVFILT_READ, kq.EV_ADD, 7777)) {
+        print("EV_ADD failed\n");
+        return 1;
+    }
+
+    evs : [4]kq.Kevent = ---;
+
+    // Nothing pending: a bounded wait returns 0 events.
+    n := kq.kq_wait(q, @evs[0], 4, 50);
+    if n != 0 { print("idle wait: expected 0 events, got {}\n", n); return 1; }
+    print("idle wait: timeout, 0 events\n");
+
+    // Bytes pending: READ readiness with the byte count and our udata.
+    msg := "ping";
+    socket.write(b, msg.ptr, 4);
+    n = kq.kq_wait(q, @evs[0], 4, 1000);
+    if n != 1 { print("after write: expected 1 event, got {}\n", n); return 1; }
+    if evs[0].ident != xx a { print("event names the wrong fd\n"); return 1; }
+    if evs[0].filter != kq.EVFILT_READ { print("event names the wrong filter\n"); return 1; }
+    if evs[0].udata != 7777 { print("udata did not round-trip\n"); return 1; }
+    if evs[0].data != 4 { print("pending byte count: expected 4, got {}\n", evs[0].data); return 1; }
+    print("after write: READ ready, 4 pending, udata 7777\n");
+
+    // Drain, then close the peer: readiness again, now flagged EV_EOF.
+    buf : [16]u8 = ---;
+    socket.read(a, @buf[0], 16);
+    socket.close(b);
+    n = kq.kq_wait(q, @evs[0], 4, 1000);
+    if n != 1 { print("after close: expected 1 event, got {}\n", n); return 1; }
+    if (evs[0].flags & kq.EV_EOF) == 0 { print("after close: EV_EOF not set\n"); return 1; }
+    print("after close: EV_EOF\n");
+
+    socket.close(a);
+    socket.close(q);
+    print("kqueue ok\n");
+    return 0;
+}

@@ -1,0 +1,23 @@
+error: cannot assign 'a' of type 'i32' with a value of type 'string'
+  --> examples/diagnostics/1206-diagnostics-store-width-mismatch.sx:21:11
+   |
+21 |     s.a = "field";          // error: struct field, string ↛ i32
+   |           ^^^^^^^
+
+error: cannot assign 'element' of type 'i32' with a value of type 'string'
+  --> examples/diagnostics/1206-diagnostics-store-width-mismatch.sx:24:14
+   |
+24 |     arr[0] = "elem";        // error: array element, string ↛ i32
+   |              ^^^^^^
+
+error: cannot assign 'target' of type 'i32' with a value of type 'string'
+  --> examples/diagnostics/1206-diagnostics-store-width-mismatch.sx:28:11
+   |
+28 |     p.* = "deref";          // error: pointer deref, string ↛ i32
+   |           ^^^^^^^
+
+error: cannot assign 'u' of type 'i32' with a value of type 'string'
+  --> examples/diagnostics/1206-diagnostics-store-width-mismatch.sx:31:12
+   |
+31 |     u, v = "multi", 9;      // error: multi-assign target, string ↛ i32
+   |            ^^^^^^^

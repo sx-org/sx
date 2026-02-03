@@ -1,0 +1,15 @@
+// One C symbol bound twice with DIFFERENT sx signatures is diagnosed
+// (issue 0128): the first registration used to silently win, mis-typing
+// every call through the second declaration. Equal signatures share one
+// registration silently (see std's read/write bound by several modules).
+#import "modules/std.sx";
+
+libc :: #library "c";
+// std/process.sx already binds getenv as `-> *u8`; this view disagrees.
+getenv_opt :: (name: [:0]u8) -> ?[:0]u8 extern libc "getenv";
+
+main :: () -> i32 {
+    p := getenv_opt("PATH");
+    if p == null { return 1; }
+    return 0;
+}

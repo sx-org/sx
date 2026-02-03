@@ -1,0 +1,7 @@
+// The second flat-imported author of same-name `Thing` / `Box` / `Nums`. The
+// distinct shapes (`Thing` a separate nominal identity, `Box` a separate generic
+// template, `Nums` aliased to a different element width) make each bare
+// reference a real collision the importing source cannot disambiguate.
+Thing :: struct { a: i64; }
+Box :: struct($T: Type) { v: T; }
+Nums :: [2]i32;

@@ -1,0 +1,42 @@
+// `onfail` — cleanup that runs only when an error LEAVES the enclosing block
+// (ERR step E1.7). Unlike `defer` (which runs on every exit), `onfail` fires
+// on an error exit — a `raise` or a propagating `try` — and is skipped on
+// success. On an error exit `defer` and `onfail` run interleaved in reverse
+// declaration order. `onfail (e) { … }` binds the in-flight error tag.
+// (Per-attempt-`try` gating and `or`-chain absorption refine this in E2.4b.)
+
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+inner :: (n: i32) -> !E {
+    if n < 0 { raise error.Bad; }
+    return;
+}
+
+// defer + onfail interleave on the error path; only defers on success.
+run :: (n: i32) -> !E {
+    defer  print("defer A\n");
+    onfail print("onfail B\n");
+    defer  print("defer C\n");
+    try inner(n);                       // n<0 → propagates → onfail fires
+    return;
+}
+
+// `onfail e` binds the tag.
+classify :: (n: i32) -> !E {
+    onfail (e) { if e == error.Bad { print("cleanup: bad\n"); } }
+    if n < 0 { raise error.Bad; }
+    return;
+}
+
+main :: () -> i32 {
+    print("[fail]\n");
+    a := run(-1);                       // error → defer C, onfail B, defer A
+    print("[ok]\n");
+    b := run(7);                        // success → defer C, defer A (no onfail)
+    print("[bound]\n");
+    c := classify(-1);                  // onfail binding sees Bad
+    print("[done]\n");
+    return 0;
+}

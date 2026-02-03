@@ -1,0 +1,48 @@
+// Comptime type-call COMPOSITION: a `($T) -> Type` builder reflects a named
+// tuple, projects each element type through `pointee_type` + `struct_field_type`, and mints a
+// tagged-union whose variant labels mirror the tuple's labels — the shape the
+// `race` result synthesis needs (`(a: *Task(A), b: *Task(B))` -> `{ a: A; b: B }`).
+//
+// Exercises three things that previously failed when the index was an `inline for`
+// loop var: a type-call RESULT used as (1) a `Type`-typed struct field value
+// (`payload = struct_field_type(...)`), (2) a nested type-call arg
+// (`struct_field_type(pointee_type(struct_field_type(T, i)), 0)`), and a `struct_field_name(T, i)` folded to
+// a comptime string for a minted variant NAME. All resolve through the same
+// type-call fold as a literal index would.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+// Stand-in for a task handle: a pointer to a generic box carrying the result.
+Box :: struct ($R: Type) { value: R; }
+
+// Mint a tagged-union mirroring a named tuple of `*Box(..)` handles:
+// variant name = tuple label, payload = the box's value type (`*Box(A)` -> `A`).
+ResultOf :: ($T: Type) -> Type {
+    vs : [struct_field_count(T)]EnumVariant = ---;
+    inline for 0..struct_field_count(T) (i) {
+        vs[i] = EnumVariant.{
+            name    = struct_field_name(T, i),                          // folded to a const string
+            payload = struct_field_type(pointee_type(struct_field_type(T, i)), 0),  // *Box(A) -> Box(A) -> A
+        };
+    }
+    return make_enum("ResultOf", vs[0..struct_field_count(T)]);
+}
+
+R :: ResultOf(Tuple(a: *Box(i64), b: *Box(bool), c: *Box(f64)));
+
+use :: (r: R) {
+    if r == {
+        case .a: (v) { print("a (i64)  = {}\n", v); }
+        case .b: (v) { print("b (bool) = {}\n", v); }
+        case .c: (v) { print("c (f64)  = {}\n", v); }
+    }
+}
+
+main :: () -> i32 {
+    use(.a(42));
+    use(.b(true));
+    use(.c(2.5));
+    print("R: variants={} names=({},{},{})\n",
+        variant_count(R), variant_name(R, 0), variant_name(R, 1), variant_name(R, 2));
+    return 0;
+}

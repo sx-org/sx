@@ -1,0 +1,33 @@
+// Match arms whose result types have NO safe coercion in either direction
+// (the store guard's `noneReinterpretIsUnsafe` lattice) are a true mismatch:
+// each offending arm gets a located "match arms have incompatible types"
+// diagnostic. Covers the value-position literal shape, a capture-typed arm
+// against a string arm, and a match whose arm tails are calls.
+// Regression (issue 0236): pre-fix the arms were never unified — the first
+// decisive arm's type won silently and the raw arm values fed a mixed-type
+// phi, failing LLVM verification ("PHI node operands are not the same type
+// as the result!") with no diagnostic.
+#import "modules/std.sx";
+
+Color :: enum { red; green; }
+V :: enum { num: f64; other; }
+
+gi :: () -> i64 { return 4; }
+gs :: () -> string { return "s"; }
+
+main :: () {
+    c : Color = .red;
+
+    // Value position, literal arms: i64 vs string.
+    r := if c == { case .red: { 1 } case .green: { "hi" } };
+    print("{}\n", r);
+
+    // Capture-typed arm (f64 payload) vs string arm.
+    v : V = .num(2.5);
+    s := if v == { case .num: (x) { x } case .other: { "nope" } };
+    print("{}\n", s);
+
+    // Arm tails are calls with incompatible result types.
+    w := if c == { case .red: { gi() } case .green: { gs() } };
+    print("{}\n", w);
+}

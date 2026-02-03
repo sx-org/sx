@@ -1,0 +1,4 @@
+scope opened
+scoped x: 6
+scope closed
+main x: 42

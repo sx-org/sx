@@ -1,0 +1,11 @@
+// In a for header the trailing paren group is the CAPTURE; a call iterable
+// therefore needs one too. `()` cannot be a capture — parse error with the
+// hint (`for f(n) (x) { }` / `for (f(n)) { }` / bind it first).
+
+#import "modules/std.sx";
+
+g :: () -> i64 { 1 }
+
+main :: () {
+    for g() { }
+}

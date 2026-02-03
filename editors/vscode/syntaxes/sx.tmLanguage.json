@@ -1,0 +1,342 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "sx",
+  "scopeName": "source.sx",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#char-literals" },
+    { "include": "#strings" },
+    { "include": "#directives" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#type-declaration" },
+    { "include": "#type-annotation" },
+    { "include": "#constants" },
+    { "include": "#numbers" },
+    { "include": "#operators" },
+    { "include": "#function-declaration" },
+    { "include": "#enum-literal" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.sx",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "char-literals": {
+      "patterns": [
+        {
+          "comment": "Character literal with an escape — '\\n', '\\t', '\\\\', '\\'', '\\0', '\\xNN', '\\u{XXXX}'. Matched before #strings so the double-quote in '\"' is consumed here instead of opening a string.",
+          "name": "string.quoted.single.sx",
+          "match": "'(\\\\(?:x[0-9A-Fa-f]{2}|u\\{[0-9A-Fa-f]+\\}|[ntr\\\\'0]))'",
+          "captures": {
+            "1": { "name": "constant.character.escape.sx" }
+          }
+        },
+        {
+          "comment": "Character literal — a single (possibly multi-byte UTF-8) source char, e.g. 'A', '\"', ' ', 'é'.",
+          "name": "string.quoted.single.sx",
+          "match": "'[^'\\\\]'"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "comment": "#string GLSL heredoc — embedded GLSL highlighting",
+          "begin": "(#string)\\s+(GLSL|VERT|FRAG|VERTEX|FRAGMENT)\\s*$",
+          "end": "^(\\2)",
+          "beginCaptures": {
+            "1": { "name": "keyword.other.directive.sx" },
+            "2": { "name": "entity.name.tag.sx" }
+          },
+          "endCaptures": {
+            "1": { "name": "entity.name.tag.sx" }
+          },
+          "contentName": "meta.embedded.block.glsl",
+          "patterns": [
+            { "include": "source.glsl" }
+          ]
+        },
+        {
+          "comment": "#string SQL heredoc — embedded SQL highlighting",
+          "begin": "(#string)\\s+(SQL)\\s*$",
+          "end": "^(\\2)",
+          "beginCaptures": {
+            "1": { "name": "keyword.other.directive.sx" },
+            "2": { "name": "entity.name.tag.sx" }
+          },
+          "endCaptures": {
+            "1": { "name": "entity.name.tag.sx" }
+          },
+          "contentName": "meta.embedded.block.sql",
+          "patterns": [
+            { "include": "source.sql" }
+          ]
+        },
+        {
+          "comment": "#string HTML heredoc — embedded HTML highlighting",
+          "begin": "(#string)\\s+(HTML)\\s*$",
+          "end": "^(\\2)",
+          "beginCaptures": {
+            "1": { "name": "keyword.other.directive.sx" },
+            "2": { "name": "entity.name.tag.sx" }
+          },
+          "endCaptures": {
+            "1": { "name": "entity.name.tag.sx" }
+          },
+          "contentName": "meta.embedded.block.html",
+          "patterns": [
+            { "include": "text.html.basic" }
+          ]
+        },
+        {
+          "comment": "#string JSON heredoc — embedded JSON highlighting",
+          "begin": "(#string)\\s+(JSON)\\s*$",
+          "end": "^(\\2)",
+          "beginCaptures": {
+            "1": { "name": "keyword.other.directive.sx" },
+            "2": { "name": "entity.name.tag.sx" }
+          },
+          "endCaptures": {
+            "1": { "name": "entity.name.tag.sx" }
+          },
+          "contentName": "meta.embedded.block.json",
+          "patterns": [
+            { "include": "source.json" }
+          ]
+        },
+        {
+          "comment": "#string heredoc — generic (no embedded language)",
+          "begin": "(#string)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\s*$",
+          "end": "^(\\2)",
+          "beginCaptures": {
+            "1": { "name": "keyword.other.directive.sx" },
+            "2": { "name": "entity.name.tag.sx" }
+          },
+          "endCaptures": {
+            "1": { "name": "entity.name.tag.sx" }
+          },
+          "contentName": "string.unquoted.heredoc.sx"
+        },
+        {
+          "comment": "Backtick multi-line string",
+          "begin": "`",
+          "end": "`",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.sx" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.sx" }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.sx",
+              "match": "\\\\[ntr`\"\\\\{}0]"
+            },
+            {
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": { "name": "punctuation.definition.template-expression.begin.sx" }
+              },
+              "endCaptures": {
+                "0": { "name": "punctuation.definition.template-expression.end.sx" }
+              },
+              "patterns": [
+                { "include": "$self" }
+              ]
+            },
+            {
+              "name": "string.quoted.other.sx",
+              "match": "[^`\\\\{}]+"
+            }
+          ]
+        },
+        {
+          "comment": "Double-quoted string",
+          "begin": "\"",
+          "end": "\"",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.string.begin.sx" }
+          },
+          "endCaptures": {
+            "0": { "name": "punctuation.definition.string.end.sx" }
+          },
+          "patterns": [
+            {
+              "name": "constant.character.escape.sx",
+              "match": "\\\\[ntr\"\\\\{}0]"
+            },
+            {
+              "begin": "\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": { "name": "punctuation.definition.template-expression.begin.sx" }
+              },
+              "endCaptures": {
+                "0": { "name": "punctuation.definition.template-expression.end.sx" }
+              },
+              "patterns": [
+                { "include": "$self" }
+              ]
+            },
+            {
+              "name": "string.quoted.double.sx",
+              "match": "[^\"\\\\{}]+"
+            }
+          ]
+        }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "name": "keyword.other.directive.sx",
+          "match": "#(?:run|import|insert|builtin|library)\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.sx",
+          "match": "\\b(if|else|then|return|case|break|defer)\\b"
+        },
+        {
+          "name": "keyword.other.sx",
+          "match": "\\b(enum|struct)\\b"
+        },
+        {
+          "name": "storage.modifier.sx",
+          "match": "\\b(extern|export)\\b"
+        },
+        {
+          "name": "keyword.operator.cast.sx",
+          "match": "\\bxx\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.sx",
+          "match": "\\b(s[0-9]+|u[0-9]+|f32|f64|bool|string)\\b"
+        }
+      ]
+    },
+    "type-declaration": {
+      "patterns": [
+        {
+          "match": "([A-Z][a-zA-Z0-9_]*)\\s*(::)\\s*(?=struct\\b|enum\\b)",
+          "captures": {
+            "1": { "name": "entity.name.type.sx" },
+            "2": { "name": "keyword.operator.declaration.sx" }
+          }
+        }
+      ]
+    },
+    "type-annotation": {
+      "patterns": [
+        {
+          "match": "(?<![:]):\\s*(?![=:])([A-Z][a-zA-Z0-9_]*)\\b",
+          "captures": {
+            "1": { "name": "entity.name.type.sx" }
+          }
+        }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        {
+          "name": "constant.language.sx",
+          "match": "\\b(true|false)\\b"
+        },
+        {
+          "name": "constant.language.undefined.sx",
+          "match": "---"
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.sx",
+          "match": "\\b[0-9]+\\.[0-9]+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.sx",
+          "match": "\\b[0-9]+\\b"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.declaration.sx",
+          "match": "::"
+        },
+        {
+          "name": "keyword.operator.walrus.sx",
+          "match": ":="
+        },
+        {
+          "name": "keyword.operator.arrow.sx",
+          "match": "->|=>"
+        },
+        {
+          "name": "keyword.operator.comparison.sx",
+          "match": "==|!=|<=|>="
+        },
+        {
+          "name": "keyword.operator.assignment.sx",
+          "match": "[+\\-*/]="
+        },
+        {
+          "name": "keyword.operator.sx",
+          "match": "[+\\-*/=<>!]"
+        }
+      ]
+    },
+    "function-declaration": {
+      "patterns": [
+        {
+          "match": "([a-zA-Z_][a-zA-Z0-9_]*)\\s*(::)\\s*(?=\\(|\\{)",
+          "captures": {
+            "1": { "name": "entity.name.function.sx" },
+            "2": { "name": "keyword.operator.declaration.sx" }
+          }
+        }
+      ]
+    },
+    "enum-literal": {
+      "patterns": [
+        {
+          "match": "\\.([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "variable.other.enummember.sx" }
+          }
+        }
+      ]
+    },
+    "identifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.generic-type.sx",
+          "match": "\\$([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "entity.name.type.parameter.sx" }
+          }
+        },
+        {
+          "match": "\\b(io)\\b",
+          "name": "support.module.sx"
+        }
+      ]
+    }
+  }
+}

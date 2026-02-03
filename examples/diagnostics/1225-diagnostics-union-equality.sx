@@ -1,0 +1,20 @@
+// Regression (issue 0233): `==` / `!=` between two untagged-`union` VALUES
+// is rejected with a located diagnostic instead of emitting invalid LLVM IR.
+//
+// An untagged union is a raw byte aggregate (`[N x i8]` storage); its
+// inactive-variant + padding bytes are unspecified, so byte-wise equality is
+// undefined. Previously `a == b` lowered to `icmp eq [8 x i8]` and failed LLVM
+// verification with no diagnostic. Now the binary-op equality lowering
+// (src/ir/lower/expr.zig) diagnoses it at compile time with a hint to compare a
+// specific variant field. The same guard covers fixed arrays (also raw
+// element aggregates with no `==` semantics). Expected exit: 1 (diagnostic).
+#import "modules/std.sx";
+
+Shape :: union { circle: i64; rect: i64; }
+
+main :: () -> i32 {
+    a : Shape = .{ circle = 5 };
+    b : Shape = .{ circle = 5 };
+    if a == b { print("eq\n"); }   // rejected: cannot compare 'Shape' with '=='
+    0
+}

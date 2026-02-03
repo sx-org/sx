@@ -1,0 +1,5 @@
+// Module B aliases the SAME name `Id` to a DIFFERENT type `f64`. A bare `Id` in
+// this module resolves to B's `f64` alias, not A's `i32` — each module's alias
+// is keyed to its own source, so the two never collide last-wins.
+Id :: f64;
+b_val :: () -> f64 { x : Id = 2; return x + 0.5; }

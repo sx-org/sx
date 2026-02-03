@@ -1,0 +1,1 @@
+fetch ok: url round-trip, 302 chain + 303-to-GET + 307-preserves-POST, loop capped + uncapped-returns-3xx, https gated on a dialer, pool reused one conn + redialed after eviction, cross-host followed; net-zero GPA

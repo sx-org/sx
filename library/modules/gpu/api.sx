@@ -1,0 +1,61 @@
+#import "modules/std.sx";
+#import "modules/gpu/types.sx";
+
+// GPU is the rendering-API abstraction. Concrete backends live as siblings
+// of this file: `metal.sx` (iOS, eventually macOS), `vulkan.sx` (Linux/
+// Android, plus macOS via MoltenVK), `webgpu.sx` (wasm). The SDL-backed
+// GL renderer used by the desktop+wasm path stays as-is until those
+// backends land.
+
+// #identity: a GPU backend is a named long-lived singleton (a Metal
+// device+layer, a GLES context owner) reached through concrete handles
+// alongside the erased value — erasure always borrows the named object's
+// storage, never copies it (same class as Platform/Allocator/Io).
+GPU :: protocol #identity {
+    // Bind the GPU to a backend-specific render target (e.g. a
+    // CAMetalLayer on iOS). pixel_w/pixel_h are the drawable's pixel
+    // dimensions; call resize when they change.
+    init :: (self: *Self, target: *void, pixel_w: i32, pixel_h: i32) -> bool;
+    shutdown :: (self: *Self);
+
+    resize :: (self: *Self, pixel_w: i32, pixel_h: i32);
+
+    begin_frame :: (self: *Self, clear: ClearColor) -> bool;
+
+    // target_time is the host clock time at which the drawable should be
+    // presented (units match the platform's CADisplayLink.targetTimestamp
+    // on Apple). Metal forwards it to presentDrawable:atTime: to cap the
+    // pipeline at one frame so the inset slide lands on the same vsync as
+    // UIKit's keyboard view. GL backends ignore it.
+    end_frame :: (self: *Self, target_time: f64);
+
+    create_shader :: (self: *Self, vsrc: string, fsrc: string) -> ShaderHandle;
+    create_buffer :: (self: *Self, size_bytes: i64) -> BufferHandle;
+    update_buffer :: (self: *Self, buf: BufferHandle, data: *void, size_bytes: i64);
+    // Sub-buffer write at a byte offset. Required for Metal where re-using
+    // the same buffer slice across multiple draws in a single command
+    // encoder is a race: the GPU executes draws asynchronously and reads
+    // shared-storage buffer contents at execution time, so the LAST writer
+    // wins if every flush targets offset 0. Renderers that issue more than
+    // one draw per frame must advance their write offset between flushes.
+    update_buffer_at :: (self: *Self, buf: BufferHandle, data: *void, size_bytes: i64, byte_offset: i64);
+    create_texture :: (self: *Self, w: i32, h: i32, format: TextureFormat, pixels: *void) -> TextureHandle;
+    update_texture_region :: (self: *Self, tex: TextureHandle, x: i32, y: i32, w: i32, h: i32, pixels: *void);
+
+    // Release a GPU resource. Implementations release the backing object and
+    // null the slot so the handle becomes inert. Calling with handle 0 or
+    // an already-destroyed handle is a no-op. Handles are not re-used; the
+    // backing List entry stays at its index with a null sentinel.
+    destroy_shader :: (self: *Self, sh: ShaderHandle);
+    destroy_buffer :: (self: *Self, buf: BufferHandle);
+    destroy_texture :: (self: *Self, tex: TextureHandle);
+
+    set_shader :: (self: *Self, sh: ShaderHandle);
+    set_vertex_buffer :: (self: *Self, buf: BufferHandle);
+    set_texture :: (self: *Self, slot: u32, tex: TextureHandle);
+    set_vertex_constants :: (self: *Self, slot: u32, data: *void, size_bytes: i64);
+    set_scissor :: (self: *Self, x: i32, y: i32, w: i32, h: i32);
+    disable_scissor :: (self: *Self);
+
+    draw_triangles :: (self: *Self, vertex_offset: i32, vertex_count: i32);
+}

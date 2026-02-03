@@ -1,0 +1,39 @@
+// Feature 1 — heterogeneous protocol-constrained variadic pack (binding).
+//
+// `..xs: Show` (no `[]`, no `$`) is a pack, not a slice: each call site
+// monomorphizes with the concrete per-position arg types (Decision 1 — a pack
+// is a comptime mechanism, no runtime pack value), and `xs.len` is a comptime
+// constant. Arity and element types vary per call; each call is a distinct
+// specialization.
+//
+// DESIGN (locked): a pack element is viewed THROUGH the protocol — only the
+// protocol's own interface (its methods, and the projections `xs.T` / `xs.value`)
+// is accessible, NOT arbitrary concrete members. So `xs[i].get()` / `xs.T` are
+// the intended interface; `xs[i].v` (a field on the concrete IntBox, not part
+// of `Show`) is an error. Those are still being implemented — this example
+// locks in only the binding + comptime `xs.len`, the protocol-agnostic part.
+
+#import "modules/std.sx";
+
+Show :: protocol(T: Type) {
+    get :: (self: *Self) -> T;
+}
+
+IntBox :: struct { v: i64; }
+StrBox :: struct { s: string; }
+impl Show(i64) for IntBox { get :: (self: *IntBox) -> i64 => self.v; }
+impl Show(string) for StrBox { get :: (self: *StrBox) -> string => self.s; }
+
+howmany :: (..xs: Show) -> i64 {
+    return xs.len;
+}
+
+main :: () -> i32 {
+    a := IntBox.{ v = 42 };
+    b := IntBox.{ v = 7 };
+    c := StrBox.{ s = "cool" };
+    print("n0={}\n", howmany());            // empty pack
+    print("n2={}\n", howmany(a, b));         // two elements
+    print("n3={}\n", howmany(a, b, c));      // heterogeneous: IntBox, IntBox, StrBox
+    0
+}

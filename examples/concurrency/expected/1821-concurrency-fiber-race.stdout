@@ -1,0 +1,6 @@
+winner: a (i64)  = 111
+loser b: canceled=true
+loser c: canceled=true
+completion order (id @ virtual-ms):
+  task 1 @ 10ms
+final virtual clock: 10ms

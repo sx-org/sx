@@ -1,0 +1,29 @@
+// A genuinely-undeclared type name used as a field type inside a MAIN-file
+// GENERIC struct must emit a clean "unknown type" diagnostic, not silently
+// compile.
+//
+// The `UnknownTypeChecker` used to SKIP generic structs entirely ("their field
+// types reference the struct's own `$T`, resolved at instantiation"). That skip
+// was too broad: a field type like `bad: MissingType` — which is NOT a type
+// param and names no declared type — fell through the type leaf's empty-struct
+// stub and the struct silently compiled, mis-sizing every downstream load.
+//
+// The checker now walks generic-struct fields with the struct's own type params
+// (`$T`) in scope: `good: T` resolves (it IS a param) while `bad: MissingType`
+// is reported. A value-param position (a `Vector` lane count, a `$N: u32` arg)
+// is still skipped, so a valid generic struct keeps compiling unchanged.
+//
+// Expected: `error: unknown type 'MissingType'` pointing at the field; exit 1.
+// Regression (stdlib E3).
+#import "modules/std.sx";
+
+Box :: struct($T: Type) {
+    good: T;
+    bad: MissingType;
+}
+
+main :: () -> i32 {
+    b : Box(i64) = .{ good = 7, bad = 0 };
+    print("{}\n", b.good);
+    return 0;
+}

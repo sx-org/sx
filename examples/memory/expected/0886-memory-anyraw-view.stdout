@@ -1,0 +1,9 @@
+tag: true
+data: true
+payload: 42
+round-trip: 42
+assert: 42
+soft: null
+outer: true
+payload tag: i64
+inner data: true

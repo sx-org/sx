@@ -1,0 +1,66 @@
+// ffi-objc-arc-03 — #property(weak) on sx-defined class.
+//
+// Weak contract:
+//   - setter calls objc_storeWeak — does NOT retain.
+//   - getter calls objc_loadWeakRetained + autorelease — auto-nils
+//     if the target has been deallocated.
+//   - -dealloc calls objc_destroyWeak on each weak ivar.
+//
+// Observation: assign a target to the weak property. Drop the
+// caller's strong reference. Read back via the weak getter — should
+// be `null` (the target deallocated when its last strong ref
+// dropped, and the weak slot auto-niled).
+//
+// Pre-M4.B: setter just stores the pointer (no storeWeak); getter
+// reads the raw pointer (no loadWeakRetained). After target's
+// release, the slot points at freed memory — the read returns the
+// stale pointer (not null). The test catches this by comparing the
+// read result to null.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/ffi/objc.sx";
+#import "modules/build.sx";
+
+SxWeakTarget :: #objc_class("SxWeakTarget") {
+    #extends NSObject;
+    tag: i32;
+    alloc :: () -> *SxWeakTarget;
+}
+
+SxWeakHolder :: #objc_class("SxWeakHolder") {
+    #extends NSObject;
+    target: *SxWeakTarget #property(weak);
+    alloc :: () -> *SxWeakHolder;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        gpa := GPA.init();
+        tracker := TrackingAllocator.init(gpa);
+
+        push .{ allocator = tracker } {
+            holder := SxWeakHolder.alloc();
+            target := SxWeakTarget.alloc();
+            holder.target = target;
+            target.release();
+
+            // After release: target's refcount → 0 → target deallocates.
+            // With weak: holder.target should read as null (auto-niled).
+            // Without weak: holder.target reads as the stale pointer.
+            read_back := holder.target;
+            if read_back != null {
+                print("FAIL: weak property didn't auto-nil after target dealloc\n");
+                return 1;
+            }
+
+            holder.release();
+        }
+
+        print("weak property: ok\n");
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

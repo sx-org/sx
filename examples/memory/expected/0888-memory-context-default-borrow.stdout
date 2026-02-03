@@ -1,0 +1,4 @@
+default io present = true
+default allocator present = true
+io borrows c_blocking_io = true
+global-erasure allocator works = true

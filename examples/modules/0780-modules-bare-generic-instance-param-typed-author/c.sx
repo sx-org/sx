@@ -1,0 +1,16 @@
+// The NON-visible 2-flat-hop author: a two-field generic `Box` (size 16) whose
+// `combine` returns `self.x * v + 16`. Same template NAME / method name as b's,
+// different body. It wins the global last-wins `fn_ast_map["Box.combine"]`, so a
+// file importing only b.sx must NOT dispatch `x.combine(..)` to it.
+Box :: struct($T: Type) {
+    x: T;
+    y: T;
+
+    make :: (value: T) -> Box(T) {
+        .{ x = value, y = value }
+    }
+
+    combine :: (self: *Box, v: T) -> T {
+        self.x * v + 16
+    }
+}

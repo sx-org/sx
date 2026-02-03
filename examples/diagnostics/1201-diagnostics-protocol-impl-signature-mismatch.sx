@@ -1,0 +1,22 @@
+// A protocol-method impl with the right NAME but a mismatched RETURN type (or
+// parameter type) is a hard error, not a silent miscompile. Regression (issue
+// 0178): the issue-0176 conformance gate is name-based, so an `impl P for T`
+// whose method returns `bool` where the protocol method returns `i64` passed
+// the gate and built a wrong-ABI thunk — dispatch through the erased protocol
+// silently returned the wrong value (exit 0, no diagnostic). The conformance
+// gate now validates each impl method's signature (arity after `self`, each
+// parameter type, and the return type) against the protocol declaration, with
+// `Self` substituted to the concrete type (so the REQUIRED `*T` / `T` impl form
+// is NOT flagged). A clear type mismatch reports at the erasure site, exit 1.
+
+#import "modules/std.sx";
+
+P :: protocol { val :: (self: *Self) -> i64; }
+T :: struct { n: i64 = 7; }
+impl P for T { val :: (self: *T) -> bool { return true; } }   // return bool != i64
+
+main :: () {
+  t := T.{ n = 7 };
+  p := t.(P);                 // <- 'T' does not implement 'P' (return type)
+  print("{}\n", p.val());
+}

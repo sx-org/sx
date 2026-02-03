@@ -1,0 +1,13 @@
+dim.direct.expr: len=3 a0=7 a2=9
+dim.direct.float: len=4 f3=40
+dim.alias.expr: len=3 aa2=99
+dim.alias.float: len=4
+dim.alias.typed: len=5
+lane.expr3: 1.000000 2.000000 3.000000
+lane.float4: 4.000000
+vp.struct.expr: len=3 v=30
+vp.struct.alias.u32: len=3 v=31
+vp.struct.alias.i8: len=4 v=32
+vp.typefn.expr: len=3 v=33
+for.expr: 3
+for.float: 6

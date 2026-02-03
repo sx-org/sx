@@ -1,0 +1,33 @@
+// Comptime compiler API — read-only reflection readers (Phase 3).
+//
+// `raw_find_type` / `raw_field_count` are bound to the `compiler` library via
+// `intrinsic` (mode `evaluate`), joining the `raw_intern` / `raw_text_of` seed. They are
+// the first REFLECTION readers: the compiler exposes its own type table to
+// comptime sx as plain handles (a `TypeId` is a u32, like a `StringId`), so the
+// calls are clean scalar host-calls — handle in, scalar out, no marshaling.
+//
+//   raw_find_type(name)        → the named type's handle (0 / `unresolved` if absent)
+//   raw_field_count(t)    → its member count (struct fields here)
+//
+// Comptime-only: they run inside `#run`, folding to plain int constants the
+// runtime `main` prints. Chains `raw_intern` → `raw_find_type` → `raw_field_count`.
+
+#import "modules/std.sx";
+
+
+StringId :: u32;
+TypeId   :: u32;
+
+
+Point :: struct { x: i64; y: i64; z: i64; }
+
+// Look the struct up by name and count its fields, all at comptime.
+point_fields :: #run raw_field_count(raw_find_type(raw_intern("Point")));
+
+// A name with no matching type folds to the `unresolved` sentinel (0).
+missing_id :: #run raw_find_type(raw_intern("NoSuchType"));
+
+main :: () {
+    print("Point has {} fields\n", point_fields);
+    print("missing type id = {}\n", missing_id);
+}

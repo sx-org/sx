@@ -1,0 +1,13 @@
+// Module B authors same-name `Box` and `Node` shadows that reference EACH OTHER.
+// B's `Box` has a FORWARD ref to B's `Node` (declared after it), and B's `Node`
+// back-refs B's `Box`. Both forward and mutual refs must resolve to B's OWN
+// nominal TypeIds, not the first same-name authors in A.
+Box  :: struct { y: i64; peer: *Node; }
+Node :: struct { m: i64; owner: *Box; }
+b_test :: () -> i64 {
+    nd := Node.{ m = 99, owner = null };
+    bx := Box.{ y = 7, peer = @nd };
+    // Reads B's Node.m (99); pre-fix the forward ref bound to A's Node (which has
+    // field `n`, not `m`) → "field 'm' not found on type 'Node'".
+    return bx.peer.*.m;
+}

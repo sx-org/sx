@@ -1,0 +1,28 @@
+
+; Function Attrs: nounwind
+define internal i64 @sys_write(i64 %0, ptr %1, i64 %2) #0 {
+entry:
+  %alloca = alloca i64, align 8
+  store i64 %0, ptr %alloca, align 8
+  %allocaN = alloca ptr, align 8
+  store ptr %1, ptr %allocaN, align 8
+  %allocaN = alloca i64, align 8
+  store i64 %2, ptr %allocaN, align 8
+  %load = load i64, ptr %alloca, align 8
+  %loadN = load ptr, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %asm = call i64 asm sideeffect "syscall", "={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},~{memory}"(i64 1, i64 %load, ptr %loadN, i64 %loadN)
+  ret i64 %asm
+}
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %alloca = alloca [3 x i8], align 1
+  store [3 x i8] c"ok\0A", ptr %alloca, align 1
+  %igp.ptr = getelementptr i8, ptr %alloca, i64 0
+  %call = call i64 @sys_write(i64 1, ptr %igp.ptr, i64 3)
+  %allocaN = alloca i64, align 8
+  store i64 %call, ptr %allocaN, align 8
+  ret i32 0
+}

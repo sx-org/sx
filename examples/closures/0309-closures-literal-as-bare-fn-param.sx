@@ -1,0 +1,17 @@
+// Regression (issue 0060): a closure LITERAL passed directly as a bare
+// function-type argument `(T) -> U` and then called inside the callee. The
+// closure's underlying function takes a hidden env arg that a bare fn-ptr slot
+// doesn't pass, so the compiler bridges a capture-free closure to the bare ABI
+// with a generated adapter. Both block and arrow bodies. (The working contrast
+// where the param is a `Closure(...)` type is examples/0302.)
+
+#import "modules/std.sx";
+
+apply :: (f: (i64) -> i64) -> i64 { return f(5); }
+twice :: (f: (i64) -> i64, x: i64) -> i64 { return f(f(x)); }
+
+main :: () {
+    print("block={}\n", apply(closure((x: i64) -> i64 { return x * 2; })));  // 10
+    print("arrow={}\n", apply(closure((x: i64) -> i64 => x * 2)));           // 10
+    print("twice={}\n", twice(closure((x: i64) -> i64 => x + 3), 1));        // ((1+3)+3) = 7
+}

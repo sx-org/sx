@@ -1,0 +1,2 @@
+before
+type assertion failed at examples/errors/1071-errors-any-assertion-chained-panic.sx:9: expected i64, got f64

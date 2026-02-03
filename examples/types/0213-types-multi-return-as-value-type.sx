@@ -1,0 +1,6 @@
+// Negative: a bare-paren `(A, B)` is a multi-return SIGNATURE — valid only as a
+// return type, never as a value type. A tuple-valued field/variable/parameter
+// uses `Tuple(…)`.
+#import "modules/std.sx";
+Point :: struct { coords: (i64, i64); }   // field value type — rejected
+main :: () -> i64 { return 0; }

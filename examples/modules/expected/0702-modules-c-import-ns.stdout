@@ -1,0 +1,2 @@
+tc.add_numbers(10, 20) = 30
+tc.multiply(5, 6) = 30

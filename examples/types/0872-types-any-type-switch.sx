@@ -1,0 +1,64 @@
+// The TYPE SWITCH (Step-4 phase 2): an `any` subject dispatches on its
+// runtime type TAG — never the payload. Arms name concrete types (named,
+// builtin, or COMPOSITE — `[]u8`, `?i64`), which may bind `(v)` as the
+// typed value (exactly what `v := av.(T)` produces, with the tag
+// pre-proven — no panic path); or CATEGORIES (`struct`, `enum`, `float`,
+// `int`, …), which are tag SETS and bind nothing (`xx av` width-dispatches
+// inside int/float arms as in any category match). Arms overlap
+// first-wins — a concrete arm before the category that contains it takes
+// its type out of the set; the reverse order is a loud unreachable-arm
+// error (pinned in diagnostics/1250). Tags are exact: a boxed `?i64`
+// carries the `?i64` tag, never a flattened `i64`. `else:` keeps the
+// subject as `any`. Composes with the optional match for `?any`, and
+// works in value position.
+#import "modules/std.sx";
+
+Point :: struct { x: i64; y: i64; }
+Color :: enum { red; green; blue; }
+
+describe :: (av: any) -> string {
+    r := "?";
+    if av == {
+        case i64: (v) { r = format("int {}", v + 1); }
+        case Point: (p) { r = format("point ({},{})", p.x, p.y); }   // concrete beats `struct` below
+        case []u8: (b) { r = format("{} bytes", b.len); }
+        case ?i64: (o) { r = format("maybe {}", o ?? 0); }
+        case string: (s) { r = format("str '{}'", s); }
+        case struct: { r = "some struct"; }
+        case enum: { r = "some enum"; }
+        case float: { fv : f64 = xx av; r = format("float {}", fv); }
+        else: { r = concat("other: ", type_name(type_of(av))); }
+    }
+    r
+}
+
+main :: () {
+    bytes : []u8 = .[1, 2, 3];
+    o : ?i64 = 7;
+    onull : ?i64 = null;
+    p := Point.{ x = 3, y = 4 };
+    q := Color.red;
+    u : u32 = 9;
+
+    print("{}\n", describe(xx 42));          // int 43
+    print("{}\n", describe(xx p));           // point (3,4)
+    print("{}\n", describe(xx bytes));       // 3 bytes
+    print("{}\n", describe(xx o));           // maybe 7 — exact ?i64 tag
+    print("{}\n", describe(xx onull));       // maybe 0 — a null ?i64 still tags ?i64
+    print("{}\n", describe(xx "hey"));       // str 'hey'
+    print("{}\n", describe(xx q));           // some enum
+    print("{}\n", describe(xx 2.5));         // float 2.500000
+    print("{}\n", describe(xx u));           // other: u32 — no arm names u32
+
+    // value position
+    av : any = 21;
+    x := if av == { case i64: (v) { v * 2 } case f64: { 0 } else: { -1 } };
+    print("value: {}\n", x);
+
+    // ?any composes through the optional match
+    oav : ?any = xx p;
+    if oav == {
+        case .some: (inner) { print("some: {}\n", describe(inner)); }
+        case .none: { print("none\n"); }
+    }
+}

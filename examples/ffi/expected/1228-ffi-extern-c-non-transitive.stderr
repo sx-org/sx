@@ -1,0 +1,11 @@
+error: C function 'c_abs_one' not visible; add #import for the module that declares it
+  --> examples/ffi/1228-ffi-extern-c-non-transitive.sx:11:19
+   |
+11 |     print("{}\n", c_abs_one(-3));
+   |                   ^^^^^^^^^
+
+error: C function 'c_abs_two' not visible; add #import for the module that declares it
+  --> examples/ffi/1228-ffi-extern-c-non-transitive.sx:12:19
+   |
+12 |     print("{}\n", c_abs_two(-4));
+   |                   ^^^^^^^^^

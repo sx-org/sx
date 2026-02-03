@@ -1,0 +1,17 @@
+error: cannot assign through constant 'CP' — constants are immutable (use a '=' global or a local copy for mutable data)
+  --> examples/diagnostics/1223-diagnostics-multi-assign-const-and-narrowing.sx:22:5
+   |
+22 |     CP.x, a = 9, 9;            // error: member target rooted at struct const
+   |     ^^^^
+
+error: cannot assign through constant 'CARR' — constants are immutable (use a '=' global or a local copy for mutable data)
+  --> examples/diagnostics/1223-diagnostics-multi-assign-const-and-narrowing.sx:23:8
+   |
+23 |     a, CARR[1], b = 1, 9, 2;   // error: index target rooted at array const
+   |        ^^^^^^^
+
+error: cannot use a value of type '?i64' as an operand: an optional does not implicitly unwrap; force-unwrap with '!', supply a fallback with '?? <default>', or guard with '!= null'
+  --> examples/diagnostics/1223-diagnostics-multi-assign-const-and-narrowing.sx:28:14
+   |
+28 |         v := o + 1;            // error: stale-narrowed use rejected
+   |              ^

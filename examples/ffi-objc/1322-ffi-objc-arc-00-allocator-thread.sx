@@ -1,0 +1,87 @@
+// ffi-objc-arc-00 — M4.0 end-to-end allocator threading regression.
+//
+// Verifies that the per-instance allocator design from M1.2 A.5 + M4.0
+// is actually wired:
+//   1. `push .{ allocator = tracker } { SxFoo.alloc(); }` →
+//      the state struct is allocated via tracker (not libc).
+//   2. The state struct's first field is `__sx_allocator` (captures the
+//      tracker so -dealloc can free through it).
+//   3. `f.release()` drives refcount → 0 → -dealloc fires → reads the
+//      captured allocator → calls tracker.dealloc_bytes(state).
+//   4. The alloc/dealloc deltas around the call pair balance to (+1, +1)
+//      — exactly one sx-defined-class state struct round-trips.
+//
+// Pre-M4.0 the +alloc IMP used libc `malloc` and -dealloc used libc
+// `free`, both bypassing context.allocator — tracker would have
+// observed (+0, +0) deltas, missing the leak silently.
+//
+// Important: capture tracker counters BEFORE and AFTER the
+// alloc/release with NOTHING else allocating in between. `print`
+// allocates strings (NSString-backed), which would also route through
+// tracker and pollute the deltas.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/ffi/objc.sx";
+#import "modules/build.sx";
+
+SxAllocProbe :: #objc_class("SxAllocProbe") {
+    #extends NSObject;
+    counter: i32;
+    alloc :: () -> *SxAllocProbe;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        gpa := GPA.init();
+        tracker := TrackingAllocator.init(gpa);
+
+        push .{ allocator = tracker } {
+            // Snapshot BEFORE the sx-defined alloc.
+            alloc_before   := tracker.alloc_count;
+            dealloc_before := tracker.dealloc_count;
+
+            f := SxAllocProbe.alloc();
+
+            // Snapshot AFTER alloc, BEFORE release.
+            alloc_after_alloc   := tracker.alloc_count;
+            dealloc_after_alloc := tracker.dealloc_count;
+
+            f.release();
+
+            // Snapshot AFTER release.
+            alloc_after_release   := tracker.alloc_count;
+            dealloc_after_release := tracker.dealloc_count;
+
+            // Verify deltas (do all asserts before any print).
+            alloc_delta_a   := alloc_after_alloc   - alloc_before;
+            dealloc_delta_a := dealloc_after_alloc - dealloc_before;
+            alloc_delta_r   := alloc_after_release   - alloc_after_alloc;
+            dealloc_delta_r := dealloc_after_release - dealloc_after_alloc;
+
+            if alloc_delta_a < 1 {
+                print("FAIL: alloc didn't fire through tracker; delta={}\n", alloc_delta_a);
+                return 1;
+            }
+            if dealloc_delta_a != 0 {
+                print("FAIL: dealloc fired prematurely; delta={}\n", dealloc_delta_a);
+                return 1;
+            }
+            if dealloc_delta_r < 1 {
+                print("FAIL: release→-dealloc didn't route through tracker; delta={}\n", dealloc_delta_r);
+                return 1;
+            }
+            if dealloc_delta_r != alloc_delta_a {
+                print("FAIL: alloc/dealloc deltas mismatched; alloc={} dealloc={}\n",
+                      alloc_delta_a, dealloc_delta_r);
+                return 1;
+            }
+        }
+
+        print("allocator round-trip: ok\n");
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

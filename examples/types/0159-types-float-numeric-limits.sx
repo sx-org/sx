@@ -1,0 +1,94 @@
+// Float numeric-limit accessors: `f32`/`f64` expose `.min` / `.max` (sibling of
+// the integer `.min`/`.max`, NL.1) plus the float-only `.epsilon`,
+// `.min_positive`, `.true_min`, `.inf`, and `.nan`. Each folds, at compile time,
+// to a constant of the QUERIED float type via the same `lowerNumericLimit`
+// intercept as the integer case (`builder.constFloat` + the `std.math`
+// constants), driven by `TypeResolver.floatLimitFor`.
+//
+// The lexer has no exponent notation and the default float formatter is crude
+// (issue 0090), so these limits can be pinned NEITHER by literal comparison NOR
+// by printing. Every accessor is asserted instead by reinterpreting its bits
+// through an untagged union and comparing against the exact IEEE-754 hex
+// pattern — plus the defining-property checks that no other value could satisfy.
+//
+// Semantics (Agra-ruled, consistent with the integer accessors):
+//   .min          = most-NEGATIVE finite (= -max), NOT C's DBL_MIN
+//   .max          = largest finite
+//   .epsilon      = ULP of 1.0 (next f after 1.0 minus 1.0), NOT C#'s denormal Epsilon
+//   .min_positive = smallest positive NORMAL (= C DBL_MIN / Rust MIN_POSITIVE)
+//   .true_min     = smallest positive SUBNORMAL (next value above 0.0)
+//   .inf          = +infinity
+//   .nan          = a quiet NaN
+//
+// Regression (issue 0091): `f64.nan != f64.nan` is true — native float `!=`
+// lowers UNORDERED, so a NaN compares unequal to everything including itself.
+#import "modules/std.sx";
+
+// `bits` mirrors each float's raw IEEE-754 storage. f64 needs 64 bits, f32 32.
+// The f64 union's `bits` (u64) view reads the all-ones-ish positive patterns as
+// their true magnitude; its `s` (i64) view pins the negative `f64.min` pattern
+// (0xFFEF…), whose unsigned form overflows the u64 literal parser, by comparing
+// the signed reinterpret to -4503599627370497.
+Uf64 :: union { f: f64; bits: u64; s: i64; }
+Uf32 :: union { f: f32; bits: u32; }
+
+main :: () -> i32 {
+    o : Uf64 = ---;
+
+    // Read `.true_min` (a subnormal) FIRST and through the union only — never via
+    // arithmetic. Under flush-to-zero / denormals-are-zero CPU modes a subnormal
+    // can flush to 0.0 on the first arithmetic op, so the bit reinterpret is the
+    // only reliable channel for it.
+    o.f = f64.true_min;
+    print("f64.true_min     {}\n", o.bits == 0x0000000000000001);  // true
+
+    o.f = f64.max;
+    print("f64.max          {}\n", o.bits == 0x7FEFFFFFFFFFFFFF);  // true
+    // f64.min = -max; its bit pattern 0xFFEFFFFFFFFFFFFF overflows an unsigned u64
+    // literal, so it is pinned directly via the SIGNED i64 view: -4503599627370497.
+    o.f = f64.min;
+    print("f64.min          {}\n", o.s == -4503599627370497);     // true (bits 0xFFEFFFFFFFFFFFFF)
+    o.f = f64.epsilon;
+    print("f64.epsilon      {}\n", o.bits == 0x3CB0000000000000);  // true
+    o.f = f64.min_positive;
+    print("f64.min_positive {}\n", o.bits == 0x0010000000000000);  // true
+    o.f = f64.inf;
+    print("f64.inf          {}\n", o.bits == 0x7FF0000000000000);  // true
+
+    p : Uf32 = ---;
+    p.f = f32.true_min;
+    print("f32.true_min     {}\n", p.bits == 0x00000001);          // true
+    p.f = f32.max;
+    print("f32.max          {}\n", p.bits == 0x7F7FFFFF);          // true
+    p.f = f32.min;
+    print("f32.min          {}\n", p.bits == 0xFF7FFFFF);          // true
+    p.f = f32.epsilon;
+    print("f32.epsilon      {}\n", p.bits == 0x34000000);          // true
+    p.f = f32.min_positive;
+    print("f32.min_positive {}\n", p.bits == 0x00800000);          // true
+    p.f = f32.inf;
+    print("f32.inf          {}\n", p.bits == 0x7F800000);          // true
+
+    // Defining-property checks — true epsilon is the ULP of 1.0: adding it to 1.0
+    // changes the value, adding half of it does not (round-to-nearest-even).
+    print("(1+eps)!=1       {}\n", (1.0 + f64.epsilon) != 1.0);        // true
+    print("(1+eps/2)==1     {}\n", (1.0 + f64.epsilon/2.0) == 1.0);    // true
+    print("inf>max          {}\n", f64.inf > f64.max);                 // true
+    // f64.min = -max (the 0xFFEF… bit pattern overflows the i64 literal parser).
+    print("min==-max        {}\n", f64.min == -f64.max);              // true
+    print("true_min<min_pos {}\n", f64.true_min < f64.min_positive);  // true
+    print("true_min>0       {}\n", f64.true_min > 0.0);               // true
+    // Quiet NaN: unequal to everything, itself included (mantissa bits not pinned).
+    print("nan!=nan         {}\n", f64.nan != f64.nan);               // true
+
+    // Result carries the QUERIED type: each binding is declared with the float
+    // type and round-trips, so a mistyped fold (boxed as any / wrong width) would
+    // not type-check here.
+    e64 : f64 = f64.epsilon;
+    e32 : f32 = f32.epsilon;
+    q : Uf64 = ---;  q.f = e64;
+    r : Uf32 = ---;  r.f = e32;
+    print("typed eps bits   {}\n", q.bits == 0x3CB0000000000000 and r.bits == 0x34000000); // true
+
+    return 0;
+}

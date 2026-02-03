@@ -1,0 +1,13 @@
+// A char literal whose code point exceeds the target storage type's range
+// is a compile error — the diagnostic names it as a char literal and
+// suggests a wider storage type (u32 holds any Unicode scalar), NOT
+// truncation. `'🦀'` is U+1F980 = 129408, which does not fit in `u8`
+// (range 0..255). Expected: non-zero exit + the char-literal diagnostic.
+
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    c : u8 = '🦀';
+    print("{}\n", c);
+    return 0;
+}

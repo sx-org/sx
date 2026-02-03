@@ -1,0 +1,36 @@
+// E6BR-4 (MIXED pack source — the trap cell) — a pack-closure param-impl source
+// `Closure(*Box, ..$args) -> $R` mixes a CONCRETE fixed prefix (`*Box`) with pack
+// metadata (`..$args`, `$R`). The reconciled choke-point decides template-vs-author
+// AT THE LEAF: `*Box` is resolved SOURCE-AWARE through `resolveCompound` while
+// `..$args`/`$R` stay pack metadata via `PackResolver` — NOT a top-level
+// "contains-unbound → no-author wrapper" router, which would send `*Box` down the
+// global last-wins path (the trap both engines flagged). With two flat `Box`
+// authors and none own, the concrete `*Box` prefix is a genuine collision and the
+// build exits 1 — proving the prefix IS routed source-aware (it caught the
+// ambiguity) while the pack parts did not spuriously error.
+//
+// Fail-before (pre-E6BR-4): the wrapped/pack source fell to the no-author
+// `type_bridge.resolveTemplateSignatureType` wrapper (global last-wins, no
+// diagnostic), so the `*Box` collision registered silently. Protects the pure-pack
+// `Closure(..$args) -> $R` bridge in `library/modules/ffi/objc_block.sx` (0504 /
+// 1302 / 1304 stay byte-identical), whose single author keeps the prefix-free path.
+
+#import "modules/std.sx";
+#import "0829-packs-param-impl-mixed-pack-source-ambiguous/a.sx";
+#import "0829-packs-param-impl-mixed-pack-source-ambiguous/b.sx";
+
+Block :: struct { tag: i32; }
+
+Sink :: protocol(T: Type) {
+    convert :: (self: *Self) -> T;
+}
+
+impl Sink(Block) for Closure(*Box, ..$args) -> $R {
+    convert :: (self: Closure(*Box, ..$args) -> $R) -> Block {
+        .{ tag = 0 }
+    }
+}
+
+main :: () -> i32 {
+    0
+}

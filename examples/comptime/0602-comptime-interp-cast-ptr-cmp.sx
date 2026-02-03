@@ -1,0 +1,35 @@
+// `val.(T)` inside a conditional, evaluated by the IR interpreter
+// during a post-link callback. The `cast` syntax lowers the type arg
+// (`i64`) as a `placeholder` IR op; the interpreter treats placeholders
+// as undef so the comparison runs through unchanged.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+libc :: #library "c";
+popen :: (cmd: [:0]u8, mode: [:0]u8) -> *void extern libc;
+puts  :: (s: [:0]u8) -> i32 extern libc;
+
+R :: struct { x: i32; }
+
+bug :: (cmd: [:0]u8) -> ?R {
+    f := popen(cmd, "r");
+    if f.(i64) == 0 { return null; }
+    R.{ x = 1 }
+}
+
+post_link :: (opt: BuildOptions) -> bool {
+    if r := bug("echo hi") { puts("ok"); } else { puts("null"); }
+    true
+}
+
+// The registrar runs only at compile time (nothing runtime-reachable calls it):
+// comptime evaluator (never the binary), so its `build_options()` /
+// `set_post_link_callback()` compiler-API calls are permitted.
+configure :: () {
+    opts := build_options();
+    on_build(post_link);
+}
+#run configure();
+
+main :: () { print("rt\n"); }

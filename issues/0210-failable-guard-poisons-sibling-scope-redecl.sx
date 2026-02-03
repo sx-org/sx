@@ -1,0 +1,21 @@
+#import "modules/std.sx";
+
+f :: () -> (i64, !) { return 1; }
+g :: () -> i64 { return 5; }
+
+main :: () -> i32 {
+    t := 0;
+    while t < 2 {
+        n, we := f();           // failable pair inside loop A's body
+        if !we { if n != 1 { return 3; } }
+        t += 1;
+    }
+    t = 0;
+    while t < 2 {
+        n := g();               // sibling scope: plain, non-failable decl
+        if n != 5 { return 4; }
+        t += 1;
+    }
+    print("ok\n");
+    return 0;
+}

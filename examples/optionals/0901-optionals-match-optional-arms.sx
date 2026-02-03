@@ -1,0 +1,85 @@
+// Match expression with both `null` arms and concrete struct value arms
+// produces an optional type (?T) and correctly wraps non-null values.
+
+#import "modules/std.sx";
+
+HAlignment :: enum { leading; center; trailing; }
+VAlignment :: enum { top; center; bottom; }
+Alignment :: struct { h: HAlignment; v: VAlignment; }
+
+ALIGN_CENTER          :: Alignment.{ h = .center,   v = .center };
+ALIGN_TOP             :: Alignment.{ h = .center,   v = .top };
+ALIGN_BOTTOM          :: Alignment.{ h = .center,   v = .bottom };
+ALIGN_LEADING         :: Alignment.{ h = .leading,  v = .center };
+ALIGN_TRAILING        :: Alignment.{ h = .trailing, v = .center };
+ALIGN_TOP_LEADING     :: Alignment.{ h = .leading,  v = .top };
+ALIGN_TOP_TRAILING    :: Alignment.{ h = .trailing, v = .top };
+ALIGN_BOTTOM_LEADING  :: Alignment.{ h = .leading,  v = .bottom };
+ALIGN_BOTTOM_TRAILING :: Alignment.{ h = .trailing, v = .bottom };
+
+Zone :: enum {
+    floating;
+    fill;
+    center;
+    top;
+    bottom;
+    left;
+    right;
+    top_left;
+    top_right;
+    bottom_left;
+    bottom_right;
+}
+
+// Match expression as implicit return with mixed null/concrete arms
+zone_to_alignment :: (zone: Zone) -> ?Alignment {
+    if zone == {
+        case .floating:     null;
+        case .fill:         ALIGN_CENTER;
+        case .center:       ALIGN_CENTER;
+        case .top:          ALIGN_TOP;
+        case .bottom:       ALIGN_BOTTOM;
+        case .left:         ALIGN_LEADING;
+        case .right:        ALIGN_TRAILING;
+        case .top_left:     ALIGN_TOP_LEADING;
+        case .top_right:    ALIGN_TOP_TRAILING;
+        case .bottom_left:  ALIGN_BOTTOM_LEADING;
+        case .bottom_right: ALIGN_BOTTOM_TRAILING;
+    }
+}
+
+// Side-effect match inside a function returning bool — must NOT be
+// affected by optional inference (no null arms here)
+NodeType :: enum { rect; text; image; }
+process_node :: (t: NodeType) -> bool {
+    if t == {
+        case .rect: { out("rect\n"); }
+        case .text: { out("text\n"); }
+        case .image: { out("image\n"); }
+    }
+    true
+}
+
+main :: () -> void {
+    // Test null arm
+    r0 := zone_to_alignment(.floating);
+    if a := r0 { print("BUG: floating should be null, got h={}\n", xx a.h); }
+    else { out("ok: floating is null\n"); }
+
+    // Test concrete arms
+    r1 := zone_to_alignment(.left);
+    if a := r1 { print("ok: left h={}\n", xx a.h); }
+    else { out("BUG: left returned null\n"); }
+
+    r2 := zone_to_alignment(.center);
+    if a := r2 { print("ok: center h={}\n", xx a.h); }
+    else { out("BUG: center returned null\n"); }
+
+    r3 := zone_to_alignment(.top_right);
+    if a := r3 { print("ok: top_right h={} v={}\n", xx a.h, xx a.v); }
+    else { out("BUG: top_right returned null\n"); }
+
+    // Test side-effect match (no null arms) still works
+    process_node(.rect);
+    process_node(.text);
+}

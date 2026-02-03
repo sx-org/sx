@@ -1,0 +1,206 @@
+// Type as a first-class value — comprehensive interaction smoke.
+//
+// Every way a user can plausibly touch a `Type` value, in one
+// place. Pre-fix: some sections fail (`<?>`, false, garbage, or
+// compile errors). Post-fix: every section's output matches the
+// header line.
+//
+// Sections labelled `--- N. <thing> ---` so the diff localises
+// which interaction regressed.
+
+#import "modules/std.sx";
+
+// ── Test fixtures ─────────────────────────────────────────────
+
+Point :: struct { x: i32; y: i32; }
+
+Color :: enum { red; green; blue; }
+
+Wrap :: struct ($T: Type) { v: T; }
+
+identity :: ($T: Type, val: T) -> T => val;
+
+// Generic comptime fn that dispatches on type identity (compile-
+// time fold via type_eq → const_bool → inline-if folds the
+// branch away).
+describe :: ($T: Type) -> string {
+    inline if type_eq(T, i64) { return "int64"; }
+    inline if type_eq(T, string) { return "text"; }
+    inline if type_eq(T, bool) { return "boolean"; }
+    return "other";
+}
+
+// Pack-fn collecting per-position types (step 4A.bare path).
+type_list :: (..$args) -> string {
+    list := $args;
+    s := "[";
+    i : i64 = 0;
+    while i < list.len {
+        if i > 0 { s = concat(s, ", "); }
+        s = concat(s, type_name(list[i]));
+        i = i + 1;
+    }
+    return concat(s, "]");
+}
+
+// Type stored in a struct field.
+TypeHolder :: struct { t: Type; }
+
+main :: () -> i32 {
+    // ── 1. Type literal equality ────────────────────────────
+    print("=== 1. literal == ===\n");
+    print("i64 == i64:    {}\n", i64 == i64);
+    print("i64 == string: {}\n", i64 == string);
+    print("*u8 == *u8:    {}\n", *u8 == *u8);
+    print("?i64 == ?i64:  {}\n", ?i64 == ?i64);
+    print("?i64 == ?i32:  {}\n", ?i64 == ?i32);
+
+    // ── 2. type_of(value) ───────────────────────────────────
+    print("=== 2. type_of(value) == T ===\n");
+    a : i64 = 42;
+    b : f64 = 3.14;
+    s : string = "hi";
+    print("type_of(a) == i64:    {}\n", type_of(a) == i64);
+    print("type_of(b) == f64:    {}\n", type_of(b) == f64);
+    print("type_of(s) == string: {}\n", type_of(s) == string);
+    print("type_of(a) == f64:    {}\n", type_of(a) == f64);
+
+    // ── 3. Type variable storage + readback ─────────────────
+    print("=== 3. Type variable storage ===\n");
+    t : Type = f64;
+    print("t == f64:    {}\n", t == f64);
+    print("t == string: {}\n", t == string);
+    t = string;
+    print("after reassign t == string: {}\n", t == string);
+    t = bool;
+    print("t == bool:   {}\n", t == bool);
+
+    // ── 4. type_name on literals + variables ────────────────
+    print("=== 4. type_name ===\n");
+    print("type_name(i64):    {}\n", type_name(i64));
+    print("type_name(*u8):    {}\n", type_name(*u8));
+    print("type_name(Point):  {}\n", type_name(Point));
+    print("type_name(Color):  {}\n", type_name(Color));
+    t = f64;
+    print("type_name(t):      {}\n", type_name(t));
+
+    // ── 5. Print Type values directly ───────────────────────
+    print("=== 5. print Type values ===\n");
+    print("literal: {}\n", i64);
+    t = string;
+    print("var:     {}\n", t);
+    print("type_of(b): {}\n", type_of(b));
+
+    // ── 6. Generic dispatch via $T: Type ────────────────────
+    print("=== 6. generic dispatch ===\n");
+    print("describe(i64):    {}\n", describe(i64));
+    print("describe(string): {}\n", describe(string));
+    print("describe(bool):   {}\n", describe(bool));
+    print("describe(f64):    {}\n", describe(f64));
+
+    // ── 7. identity(T, val) ─────────────────────────────────
+    print("=== 7. identity($T, val) ===\n");
+    print("identity(i64, 7):     {}\n", identity(i64, 7));
+    print("identity(string, hi): {}\n", identity(string, "hi"));
+    print("identity(bool, true): {}\n", identity(bool, true));
+
+    // ── 8. Comptime-generated struct (Wrap($T)) ─────────────
+    print("=== 8. Wrap($T) ===\n");
+    w_int := Wrap(i64).{ v = 42 };
+    w_str := Wrap(string).{ v = "wrapped" };
+    print("Wrap(i64).v:    {}\n", w_int.v);
+    print("Wrap(string).v: {}\n", w_str.v);
+
+    // ── 9. Reflection builtins on Types ─────────────────────
+    print("=== 9. reflection on Type ===\n");
+    print("size_of(i64):      {}\n", size_of(i64));
+    print("size_of(*u8):      {}\n", size_of(*u8));
+    print("align_of(f64):     {}\n", align_of(f64));
+    print("struct_field_count(Point): {}\n", struct_field_count(Point));
+    print("type_eq(i64, i64):    {}\n", type_eq(i64, i64));
+    print("type_eq(i64, string): {}\n", type_eq(i64, string));
+
+    // ── 10. Type pack (..$args) walking ─────────────────────
+    print("=== 10. ..$args walking ===\n");
+    print("type_list():            {}\n", type_list());
+    print("type_list(1):           {}\n", type_list(42));
+    print("type_list(1, \"x\"):    {}\n", type_list(42, "x"));
+    print("type_list(true, 3.14):  {}\n", type_list(true, 3.14));
+
+    // ── 11. Type in struct field ────────────────────────────
+    print("=== 11. Type in struct field ===\n");
+    h := TypeHolder.{ t = i64 };
+    print("h.t == i64:    {}\n", h.t == i64);
+    print("h.t == string: {}\n", h.t == string);
+    print("type_name(h.t): {}\n", type_name(h.t));
+
+    // ── 12. Compound type literals ──────────────────────────
+    print("=== 12. compound literals ===\n");
+    print("type_name(*Point):    {}\n", type_name(*Point));
+    print("type_name([4]i32):    {}\n", type_name([4]i32));
+    print("type_name([]bool):    {}\n", type_name([]bool));
+    print("type_name(?f64):      {}\n", type_name(?f64));
+
+    return 0;
+}
+
+// ** stdout **
+// === 1. literal == ===
+// i64 == i64:    true
+// i64 == string: false
+// *u8 == *u8:    true
+// ?i64 == ?i64:  true
+// ?i64 == ?i32:  false
+// === 2. type_of(value) == T ===
+// type_of(a) == i64:    true
+// type_of(b) == f64:    true
+// type_of(s) == string: true
+// type_of(a) == f64:    false
+// === 3. Type variable storage ===
+// t == f64:    true
+// t == string: false
+// after reassign t == string: true
+// t == bool:   true
+// === 4. type_name ===
+// type_name(i64):    i64
+// type_name(*u8):    *u8
+// type_name(Point):  Point
+// type_name(Color):  Color
+// type_name(t):      f64
+// === 5. print Type values ===
+// literal: i64
+// var:     string
+// type_of(b): f64
+// === 6. generic dispatch ===
+// describe(i64):    int64
+// describe(string): text
+// describe(bool):   boolean
+// describe(f64):    other
+// === 7. identity($T, val) ===
+// identity(i64, 7):     7
+// identity(string, hi): hi
+// identity(bool, true): true
+// === 8. Wrap($T) ===
+// Wrap(i64).v:    42
+// Wrap(string).v: wrapped
+// === 9. reflection on Type ===
+// size_of(i64):      8
+// size_of(*u8):      8
+// align_of(f64):     8
+// struct_field_count(Point): 2
+// type_eq(i64, i64):    true
+// type_eq(i64, string): false
+// === 10. ..$args walking ===
+// type_list():            []
+// type_list(1):           [i64]
+// type_list(1, "x"):      [i64, string]
+// type_list(true, 3.14):  [bool, f64]
+// === 11. Type in struct field ===
+// h.t == i64:    true
+// h.t == string: false
+// type_name(h.t): i64
+// === 12. compound literals ===
+// type_name(*Point):    *Point
+// type_name([4]i32):    [4]i32
+// type_name([]bool):    []bool
+// type_name(?f64):      ?f64

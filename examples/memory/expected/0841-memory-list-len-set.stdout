@@ -1,0 +1,3 @@
+len=3 cap=4
+after clear: len=0 cap=4
+reused: len=1 cap=4 first=99

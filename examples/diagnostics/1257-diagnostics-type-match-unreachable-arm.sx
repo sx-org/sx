@@ -1,0 +1,22 @@
+// The type-category match mirrors the type switch's overlap discipline:
+// arms claim tags first-wins, and an arm left with NO tags — every type
+// it names already claimed by earlier arms — is a LOUD unreachable-arm
+// error, never a silently dead arm. Here `case struct:` claims every
+// struct tag, so the later concrete `case Point:` can never run — the
+// concrete arm must come first.
+#import "modules/std.sx";
+
+Point :: struct { x, y: i64; }
+
+classify :: (t: Type) -> string {
+    if t == {
+        case struct: return "struct";
+        case Point:  return "Point";
+        else:        return "other";
+    }
+    "unreached"
+}
+
+main :: () {
+    print("{}\n", classify(type_of(Point.{ x = 1, y = 2 })));
+}

@@ -1,0 +1,14 @@
+static wire: 16 32 256
+rt vv color: 0 1 2
+rt vv prio: 10 20 30
+rt vv flags: 1 2 4 8
+rt is_flags: true false
+rt vi color: 1
+rt vi prio: 1
+rt vi neg: 0 (vv 0)
+rt vi wire: 2
+rt vn wire: data
+shape idx: 0 name: circle
+payload: 2.500000
+ev idx: 1 name: key payload: 7
+parity: true true

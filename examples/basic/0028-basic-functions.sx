@@ -1,0 +1,106 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+add :: (a: i32, b: i32) -> i32 { a + b }
+
+mul :: (a: i32, b: i32) -> i32 { a * b }
+
+identity :: (x: $T) -> T { x }
+
+pair_add :: (a: $T, b: $U) -> i64 {
+    a.(i64) + b.(i64)
+}
+
+typed_sum :: (..args: []i32) -> i32 {
+    result := 0;
+    for args (it) { result = result + it; }
+    result
+}
+
+apply :: (f: (i32, i32) -> i32, x: i32, y: i32) -> i32 {
+    f(x, y)
+}
+
+void_return :: () {
+    return;
+}
+
+implicit_return :: (x: i32) -> i32 {
+    x * 2
+}
+
+early_return :: (x: i32) -> i32 {
+    if x > 10 { return 99; }
+    x
+}
+
+main :: () {
+
+    // ========================================================
+    // 5. FUNCTIONS & DECLARATIONS
+    // ========================================================
+    print("=== 5. Functions ===\n");
+
+    // Constant binding
+    FORTY_TWO :: 42;
+    print("const: {}\n", FORTY_TWO);
+
+    // Typed constant
+    TYPED_PI : f64 : 3.14;
+    print("typed-const: {}\n", TYPED_PI);
+
+    // Variable with default init
+    di : i32;
+    print("default-init: {}\n", di);
+
+    // Implicit return
+    print("implicit-ret: {}\n", implicit_return(21));
+
+    // Explicit return
+    print("early-ret: {}\n", early_return(5));
+    print("early-ret2: {}\n", early_return(20));
+
+    // Void return
+    void_return();
+    print("void-return: ok\n");
+
+    // Generic — single param
+    print("generic-i32: {}\n", identity(42));
+    print("generic-f32: {}\n", identity(1.5));
+    print("generic-bool: {}\n", identity(true));
+
+    // Generic — multiple params
+    print("generic-multi: {}\n", pair_add(10, 20));
+
+    // Lambda
+    double :: (x: i32) => x * 2;
+    print("lambda: {}\n", double(7));
+
+    // Lambda with return type
+    halve :: (x: f32) -> f32 => x / 2.0;
+    print("lambda-ret: {}\n", halve(10.0));
+
+    // Local function (non-lambda)
+    local_add :: (a: i32, b: i32) -> i32 { a + b }
+    print("local-fn: {}\n", local_add(3, 4));
+
+    // Nested function calls
+    print("fn-nested: {}\n", add(mul(2, 3), mul(4, 5)));
+
+    // Variadic (typed)
+    print("varargs: {}\n", typed_sum(1, 2, 3, 4, 5));
+
+    // Spread
+    spread_arr : [3]i32 = .[10, 20, 30];
+    print("spread: {}\n", typed_sum(..spread_arr));
+
+    // Function pointers
+    fp : (i32, i32) -> i32 = add;
+    print("fp: {}\n", fp(3, 4));
+    fp = mul;
+    print("fp-reassign: {}\n", fp(3, 4));
+    print("fp-apply: {}\n", apply(add, 10, 20));
+}

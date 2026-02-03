@@ -1,0 +1,41 @@
+// Phase 3 (FFI-linkage) — postfix `export` on an `#objc_class` aggregate, the
+// explicit spelling for an sx-DEFINED runtime class (define + register). It is
+// the same lowering as a bare `#objc_class("X") { … }` with no `extern`;
+// `export` just makes the "I define this class" intent explicit (the dual of
+// `extern` for "I reference an existing class"). Mirrors 1339's defined class.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+SxBar :: #objc_class("SxBar") export {
+    counter: i32;
+
+    alloc :: () -> *SxBar;
+
+    bump :: (self: *Self) {
+        self.counter += 1;
+    }
+
+    get :: (self: *Self) -> i32 {
+        return self.counter;
+    }
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        b := SxBar.alloc();
+        if b == null { print("FAIL: alloc returned null\n"); return 1; }
+        b.bump();
+        b.bump();
+        print("counter: {}\n", b.get());  // expected: 2
+
+        sel_release : SEL = sel_registerName("release".ptr);
+        release_fn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        release_fn(xx b, sel_release);
+    }
+    inline if OS != .macos {
+        print("counter: 2\n");
+    }
+    0
+}

@@ -1,0 +1,44 @@
+// Closure-type alias in const-decl (`::`) RHS position.
+//   CB :: Closure(i32) -> i32;
+// The alias is usable everywhere a closure type is: fn param, struct field,
+// return type, and as the target of an `xx` protocol erasure. Parses the
+// `-> R` tail that a bare `Closure(i32)` call previously left dangling.
+//
+// Regression (issue 0231): the const-RHS grammar parsed `Closure(i32)` as a
+// call expression and errored "expected ';'" at `->`. Fixed by routing a
+// `Closure(...)` head in expression position through the closure-type parse
+// (mirrors the existing `Tuple(...)` magic) + registering the resulting
+// `closure_type_expr` node as a type alias in scanDecls.
+#import "modules/std.sx";
+
+CB   :: Closure(i32) -> i32;      // single-arg alias
+CB2  :: Closure(i32, i32) -> i32; // multi-arg alias
+CB0  :: Closure() -> void;        // zero-arg, void return
+CB_B :: CB;                       // alias of a closure-type alias
+
+Holder :: struct { cb: CB; }
+
+apply     :: (f: CB, x: i32) -> i32          { return f(x); }
+apply2    :: (f: CB2, a: i32, b: i32) -> i32 { return f(a, b); }
+apply_b   :: (f: CB_B, x: i32) -> i32        { return f(x); }
+call_held :: (h: Holder, x: i32) -> i32      { return h.cb(x); }
+run0      :: (f: CB0)                         { f(); }
+make      :: () -> CB { inc := (v: i32) -> i32 => v + 1; return xx inc; }
+
+main :: () -> i32 {
+    dbl := (v: i32) -> i32 => v * 2;
+    add := (a: i32, b: i32) -> i32 => a + b;
+
+    print("{}\n", apply(xx dbl, 21));       // 42
+    print("{}\n", apply2(xx add, 20, 22));  // 42
+    print("{}\n", apply_b(xx dbl, 21));     // 42 (alias-of-alias)
+
+    h := Holder.{ cb = xx dbl };
+    print("{}\n", call_held(h, 21));        // 42 (struct field)
+
+    f := make();                            // return type CB
+    print("{}\n", f(41));                   // 42
+
+    run0(xx () -> void => { print("ok\n"); });  // zero-arg void
+    0
+}

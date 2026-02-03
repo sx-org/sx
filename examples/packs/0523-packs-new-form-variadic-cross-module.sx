@@ -1,0 +1,28 @@
+// Regression: new-form variadic `..name: []T` defined in an imported
+// module is callable from another module without crashing LLVM emit.
+//
+// Before the fix in `resolveParamType` + `packVariadicCallArgs`,
+// the new-form variadic's element type went through one extra
+// `sliceOf` wrap (the helpers treated `..parts: []string` the same
+// as the legacy `parts: ..string` and added a slice level on top
+// of the already-declared slice). The double-wrapped `[][]T`
+// signature mismatched what the call-site marshalling emitted as
+// `[N x T]`, producing null/undef Refs that crashed
+// `LLVMBuildExtractValue` inside `emitStrCmp` during emission.
+//
+// Today's stdlib `path_join` uses the new form
+// (`(..parts: []string) -> string`); it lives in `modules/std.sx`
+// and is called here from the test module. Two- and three-arg
+// shapes must round-trip the slice through the function-call
+// boundary and concatenate the parts with '/'. Empty join (no
+// args) returns "".
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    print("{}\n", path_join());
+    print("{}\n", path_join("a"));
+    print("{}\n", path_join("a", "b"));
+    print("{}\n", path_join("a", "b", "c", "d"));
+    return 0;
+}

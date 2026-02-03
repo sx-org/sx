@@ -1,0 +1,5 @@
+error: function returns 'i32' but the last expression's value is discarded by this `;` — drop the `;` to return it (or use an explicit `return`)
+  --> examples/basic/0041-basic-block-value-reject.sx:10:10
+   |
+10 |     n * 2;
+   |          ^

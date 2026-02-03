@@ -1,0 +1,35 @@
+// Variadic heterogeneous type packs — step 4 final slice (4A
+// bare): `$args` referenced bare (without `[...]` indexing) in
+// expression position should evaluate to a comptime `[]Type`
+// slice value — the whole pack passed through as data so
+// builder fns can walk it.
+//
+// Use case (eventual): step 5's generic Into(Block) impl body
+//   convert :: (self: Closure(..$args) -> $R) -> Block {
+//       #insert build_block_convert($args, $R);
+//   }
+// where `build_block_convert(args: []Type, ret: Type) -> string`
+// is a regular sx fn the interp executes — it walks `args` to
+// emit a trampoline fn matching the per-mono signature.
+//
+// Today the parser-arm I wrote for `$<ident>[<int>]` (commit
+// fd03b58, M5.A.next.4.3) REQUIRES the `[` after the pack
+// name; bare `$args` hits a focused diagnostic. This file
+// pins that rejection. Next commit makes the `[` optional —
+// no `[` yields a `comptime_pack_ref` AST node which lowering
+// converts to a `[N x Type]` aggregate of `const_type` values.
+
+#import "modules/std.sx";
+
+len_of :: (..$args) -> i64 {
+    list := $args;
+    return list.len;
+}
+
+main :: () -> i32 {
+    print("{}\n", len_of());
+    print("{}\n", len_of(42));
+    print("{}\n", len_of(1, 2, 3));
+    print("{}\n", len_of("a", true, 3.14, "b"));
+    return 0;
+}

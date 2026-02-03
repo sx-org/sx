@@ -1,0 +1,17 @@
+error: generic return type '$T' cannot be bound — 'make' has no parameter mentioning '$T', so no call site can infer it
+  --> examples/diagnostics/1165-diagnostics-generic-return-unbound.sx:10:15
+   |
+10 | make :: () -> $T { 0 }
+   |               ^^
+
+error: generic return type '$T' cannot be bound — 'Foo.weird' has no parameter mentioning '$T', so no call site can infer it
+  --> examples/diagnostics/1165-diagnostics-generic-return-unbound.sx:14:30
+   |
+14 |     weird :: (self: *Foo) -> $T { 0 }
+   |                              ^^
+
+error: generic return type '$T' cannot be bound — 'IntBox.leak' has no parameter mentioning '$T', so no call site can infer it
+  --> examples/diagnostics/1165-diagnostics-generic-return-unbound.sx:21:32
+   |
+21 |     leak :: (self: *IntBox) -> $T { 0 }
+   |                                ^^

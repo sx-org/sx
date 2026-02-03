@@ -1,0 +1,26 @@
+// A failable function returning a NAMED tuple value `-> (x: A, y: B, !E)`
+// flattens its value fields into the result tuple (`{ x: A, y: B, err }`),
+// keeping the `.x`/`.y` names addressable on both the success value and the
+// `or` fallback. Exercises the success path, a `raise` path, and an
+// `or .(x=.., y=..)` terminator.
+//
+// Regression (issue 0179-adjacent named-tuple-failable miscompile): a named
+// failable tuple used to WRAP as `{ {A,B}, err }` while the value-return
+// lowering inserted the value slots FLAT, producing invalid LLVM
+// (`Invalid InsertValueInst operands`).
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+two :: (n: i64) -> (x: i64, y: i64, !E) {
+    if n < 0 { raise error.Bad; }
+    return .{x = n, y = n + 1};
+}
+
+main :: () {
+    ok := two(5) or .{x = 0, y = 0};
+    print("{} {}\n", ok.x, ok.y);
+
+    bad := two(-1) or .{x = 0, y = 0};
+    print("{} {}\n", bad.x, bad.y);
+}

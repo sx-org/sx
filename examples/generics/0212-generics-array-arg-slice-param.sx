@@ -1,0 +1,41 @@
+// An ARRAY argument at a generic slice param (`xs: []$T`) binds T from
+// the array's element type — the same array→slice promotion concrete
+// slice params perform — for scalar and struct elements, with the
+// return-position `T` resolving to the element type. The slice
+// spelling keeps working unchanged.
+//
+// Regression (issue 0126): the binding extractor only accepted slice
+// args, so `first(a)` left T unbound and the monomorphized body
+// reached LLVM emission with the `.unresolved` sentinel (panic).
+
+#import "modules/std.sx";
+
+P :: struct { x: i64; y: i64; }
+
+first :: (xs: []$T) -> T {
+    return xs[0];
+}
+
+last :: (xs: []$T) -> T {
+    return xs[xs.len - 1];
+}
+
+main :: () -> i32 {
+    a : [3]i64 = ---;
+    a[0] = 7; a[1] = 8; a[2] = 9;
+    print("{}\n", first(a));
+    print("{}\n", last(a));
+
+    bs : [4]u8 = ---;
+    bs[0] = 5; bs[1] = 6; bs[2] = 7; bs[3] = 8;
+    print("{}\n", last(bs));
+
+    ps : [2]P = ---;
+    ps[0] = .{ x = 1, y = 2 };
+    ps[1] = .{ x = 3, y = 4 };
+    print("{}\n", first(ps).y);
+
+    s : []i64 = a;
+    print("{}\n", first(s));
+    return 0;
+}

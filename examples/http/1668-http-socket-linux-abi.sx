@@ -1,0 +1,70 @@
+// PLAN-HTTPZ C3a — std/socket LINUX ABI lock (cross-target). ir-only on a
+// non-linux dev host (the `target` sidecar mismatches host arch+os → the runner
+// asserts .exit + .ir + .stderr from `sx ir --target`); runs end-to-end (exit 0)
+// on a linux runner. Pins the linux-specific facts that were silently WRONG
+// while socket.sx was darwin-only:
+//   - sockaddr_in: no sin_len; sin_family is the 2-byte sa_family_t at offset 0.
+//   - glibc socket-option codes: SOL_SOCKET=1, SO_REUSEADDR=2 (vs BSD 0xffff/4).
+//   - O_NONBLOCK=2048 (vs BSD 4) — set_nonblocking would flip the wrong bit.
+//   - linux errno values (EAGAIN=11, EINPROGRESS=115, ECONNABORTED=103,
+//     ECONNRESET=104) — WouldBlock/reset detection silently broke on the BSD set.
+// The errno slot binds __errno_location (vs darwin __error) — the .ir snapshot
+// captures the symbol. Imports ONLY socket.sx (libc-only) so the IR stays small
+// (mirror of event/1633).
+socket :: #import "modules/std/socket.sx";
+posix   :: #import "modules/std/posix.sx";
+
+main :: () -> i32 {
+    if size_of(socket.SockAddr) != 16 { return 1; }
+    if socket.SOL_SOCKET   != 1   { return 2; }
+    if socket.SO_REUSEADDR != 2   { return 3; }
+    if socket.O_NONBLOCK   != 2048 { return 4; }
+    if posix.EAGAIN       != 11  { return 5; }   // == EWOULDBLOCK on linux
+    if posix.EINPROGRESS  != 115 { return 6; }
+    if posix.ECONNABORTED != 103 { return 7; }
+    if posix.ECONNRESET   != 104 { return 8; }
+
+    // sin_family at offset 0 (no sin_len), 2-byte sa_family_t.
+    a := socket.sockaddr_in(8080, 0);
+    if a.sin_family != 2      { return 9; }
+    if a.sin_port   != 0x901F { return 10; }      // htons(8080)
+    if !socket.is_wouldblock(11) { return 11; }
+
+    // ── Q3.5 additions (review MED-2: pin the linux side of the new
+    // address surface — the base commit's declare-only IR drift pinned
+    // none of it) ──
+    if socket.AF_INET6     != 10  { return 12; }
+    if socket.IPV6_V6ONLY  != 26  { return 13; }
+    if socket.IPPROTO_IPV6 != 41  { return 14; }
+    if socket.SUN_PATH_MAX != 108 { return 15; }
+    if size_of(socket.SockAddrIn6) != 28 { return 16; }
+    if size_of(socket.AddrInfo)    != 48 { return 17; }
+
+    // glibc/musl addrinfo field OFFSETS — ai_addr BEFORE ai_canonname
+    // (darwin is the reverse; a swap would read a canonname pointer as a
+    // sockaddr). The pointer arithmetic bakes the true offsets into the
+    // pinned IR.
+    ai : socket.AddrInfo = .{};
+    base : usize = xx @ai;
+    off_len   : usize = xx @ai.ai_addrlen;
+    off_addr  : usize = xx @ai.ai_addr;
+    off_canon : usize = xx @ai.ai_canonname;
+    off_next  : usize = xx @ai.ai_next;
+    if off_len   - base != 16 { return 18; }
+    if off_addr  - base != 24 { return 19; }
+    if off_canon - base != 32 { return 20; }
+    if off_next  - base != 40 { return 21; }
+
+    // linux sockaddr_in6: family is the 2-byte sa_family_t at offset 0.
+    ip6 : [16]u8 = .{};
+    a6 := socket.sockaddr_in6(8080, @ip6);
+    if a6.sin6_family != 10     { return 22; }
+    if a6.sin6_port   != 0x901F { return 23; }
+
+    // AF_UNIX header shape: family as LE u16 at offset 0 (no sun_len).
+    ua, uok := socket.addr_unix("/tmp/x.sock");
+    if !uok { return 24; }
+    if socket.addr_family(@ua) != 1 { return 25; }
+    if ua.len != 2 + 11 + 1 { return 26; }
+    return 0;
+}

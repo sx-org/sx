@@ -1,0 +1,194 @@
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/ui/glyph_cache.sx"; // `font: GlyphCache` — name it, import it (non-transitive).
+#import "modules/ffi/opengl.sx";
+#import "modules/gpu/api.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/font.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/renderer.sx";
+
+UIPipeline :: struct {
+    renderer: UIRenderer;
+    render_tree: RenderTree;
+    font: GlyphCache;
+    screen_width: f32;
+    screen_height: f32;
+    root: ViewChild;
+    has_root: bool;
+
+    // Frame arena infrastructure. Both arenas are embedded value-typed
+    // fields — Arena.init returns the state by value, so UIPipeline
+    // holds the storage directly. Internal code grabs `*Arena` via
+    // `@self.arena_a` when it needs to call methods through the
+    // protocol; consumers in `tick_with_body` cast to Allocator at the
+    // `push Context` site.
+    arena_a: Arena;
+    arena_b: Arena;
+    frame_index: i64;
+    body: Closure() -> View;
+    has_body: bool;
+    parent_allocator: Allocator;
+
+    // GPU protocol backend. When set, the pipeline propagates this to its
+    // renderer + font, and skips the per-frame GL state setup in
+    // commit_gpu (Metal bakes blend mode into the pipeline state).
+    gpu: ?GPU = null;
+
+    // Set the GPU dispatch BEFORE calling init() / init_font() so the
+    // shaders + atlas land on the right backend. GPU is #identity: this
+    // BORROWS the app's backend singleton — init/resize/frame-control
+    // mutations through the app's concrete handle stay visible here.
+    set_gpu :: (self: *UIPipeline, gpu: GPU) {
+        self.gpu = gpu;
+        self.renderer.gpu = gpu;
+        self.font.gpu = gpu;
+    }
+
+    init :: (self: *UIPipeline, width: f32, height: f32) {
+        self.render_tree = RenderTree.init();
+        self.renderer.init();
+        self.screen_width = width;
+        self.screen_height = height;
+        self.has_root = false;
+        self.has_body = false;
+        self.frame_index = 0;
+    }
+
+    init_font :: (self: *UIPipeline, path: [:0]u8, size: f32, dpi_scale: f32) {
+        self.font.init(path, size);
+        self.font.set_dpi_scale(dpi_scale);
+        self.renderer.dpi_scale = dpi_scale;
+        set_global_font(@self.font);
+    }
+
+    set_root :: (self: *UIPipeline, view: View) {
+        self.root = .{ view = view };
+        self.has_root = true;
+    }
+
+    set_body :: (self: *UIPipeline, body_fn: Closure() -> View) {
+        self.body = body_fn;
+        self.has_body = true;
+        self.parent_allocator = context.allocator;
+        // Initialize both arenas (256KB initial, grows automatically)
+        self.arena_a = Arena.init(self.parent_allocator, 262144);
+        self.arena_b = Arena.init(self.parent_allocator, 262144);
+        self.frame_index = 0;
+    }
+
+    resize :: (self: *UIPipeline, width: f32, height: f32) {
+        self.screen_width = width;
+        self.screen_height = height;
+    }
+
+    // Re-layout and re-render the existing view tree at current screen size.
+    // Does NOT rebuild from body — safe to call from C callbacks (no arena/context needed).
+    tick_relayout :: (self: *UIPipeline) {
+        if self.has_root == false { return; }
+
+        proposal := ProposedSize.fixed(self.screen_width, self.screen_height);
+        self.root.view.size_that_fits(proposal);
+        self.root.computed_frame = Frame.{
+            origin = Point.zero(),
+            size = Size.{ width = self.screen_width, height = self.screen_height }
+        };
+        self.root.view.layout(self.root.computed_frame);
+
+        self.render_tree.clear();
+        ctx := RenderContext.init(@self.render_tree);
+        self.root.view.render(@ctx, self.root.computed_frame);
+
+        self.commit_gpu();
+    }
+
+    // Process a single event through the view tree
+    dispatch_event :: (self: *UIPipeline, event: *Event) -> bool {
+        if self.has_root == false { return false; }
+        self.root.view.handle_event(event, self.root.computed_frame)
+    }
+
+    // Run one frame: layout → render → commit
+    tick :: (self: *UIPipeline) {
+        if self.has_body {
+            self.tick_with_body();
+            return;
+        }
+        if self.has_root == false { return; }
+
+        proposal := ProposedSize.fixed(self.screen_width, self.screen_height);
+
+        // Layout
+        self.root.view.size_that_fits(proposal);
+        self.root.computed_frame = Frame.{
+            origin = Point.zero(),
+            size = Size.{ width = self.screen_width, height = self.screen_height }
+        };
+        self.root.view.layout(self.root.computed_frame);
+
+        // Render to tree
+        self.render_tree.clear();
+        ctx := RenderContext.init(@self.render_tree);
+        self.root.view.render(@ctx, self.root.computed_frame);
+
+        // Commit to GPU
+        self.commit_gpu();
+    }
+
+    tick_with_body :: (self: *UIPipeline) {
+        build_arena : *Arena = if (self.frame_index & 1) == 0 then @self.arena_a else @self.arena_b;
+        build_arena.reset();
+
+        // Reset render_tree nodes (backing is stale after arena reset)
+        self.render_tree.nodes.items = null;
+        self.render_tree.nodes.len = 0;
+        self.render_tree.nodes.cap = 0;
+
+        push .{ allocator = build_arena } {
+            // Workaround: self.body() crashes through struct field (issue-0010)
+            body_fn := self.body;
+            root_view := body_fn();
+            self.root = .{ view = root_view };
+            self.has_root = true;
+
+            proposal := ProposedSize.fixed(self.screen_width, self.screen_height);
+            self.root.view.size_that_fits(proposal);
+            self.root.computed_frame = Frame.{
+                origin = Point.zero(),
+                size = Size.{ width = self.screen_width, height = self.screen_height }
+            };
+            self.root.view.layout(self.root.computed_frame);
+
+            self.render_tree.clear();
+            ctx := RenderContext.init(@self.render_tree);
+            self.root.view.render(@ctx, self.root.computed_frame);
+
+            self.commit_gpu();
+        }
+
+        self.frame_index += 1;
+    }
+
+    commit_gpu :: (self: *UIPipeline) {
+        if self.gpu == null {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDisable(GL_DEPTH_TEST);
+        }
+
+        self.renderer.begin(self.screen_width, self.screen_height, self.font.texture_id);
+        self.renderer.process(@self.render_tree);
+        // Push any glyphs rasterized during process() to the GPU atlas BEFORE
+        // the final draw is recorded. On Metal we deferred per-render_text
+        // uploads so this is the single point where the atlas reaches the
+        // GPU. On the GL path it's a no-op (uploads already happened inline).
+        self.font.upload_atlas_to_gpu();
+        self.renderer.flush();
+
+        if self.gpu == null {
+            glDisable(GL_BLEND);
+        }
+    }
+}

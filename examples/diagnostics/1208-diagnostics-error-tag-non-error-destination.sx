@@ -1,0 +1,24 @@
+// An `error.X` tag literal does not flow into a NOMINAL non-error destination
+// (struct / enum / union / tagged union). Per the spec's context rule the tag
+// is an error-set value against a named-set destination and a raw u32 global
+// id in an untyped / integer context — an aggregate destination is neither,
+// and the old raw-u32 fallback silently reinterpreted the tag id as the
+// aggregate's bytes (a struct param read the id back as its first field).
+//
+// Regression (issue 0212, sub-defect 2): `f(error.Fault)` into a struct-typed
+// param compiled silently and produced garbage (r=5, the global tag id); an
+// annotated init `s : S = error.Fault` did the same. Both are now loud
+// compile-time errors. The integer context stays valid: `id : u32 = error.X`.
+
+#import "modules/std.sx";
+
+S :: struct { x: i32; }
+
+f :: (s: S) -> i32 { return s.x; }
+
+main :: () -> i32 {
+    r := f(error.Fault);        // error: tag into a struct-typed param
+    s : S = error.Fault;        // error: tag into an annotated struct init
+    print("r={} s.x={}\n", r, s.x);
+    return 0;
+}

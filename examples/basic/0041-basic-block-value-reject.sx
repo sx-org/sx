@@ -1,0 +1,13 @@
+// Rejection counterpart to 0040: a value-position block whose last expression's
+// value is discarded by a trailing `;` produces no value. A `-> T` function
+// whose body ends that way is a compile error (it used to silently return a
+// zero default). Drop the `;` to return the value, or use an explicit `return`.
+
+#import "modules/std.sx";
+
+// `n * 2;` discards the value → the function returns nothing.
+double :: (n: i32) -> i32 {
+    n * 2;
+}
+
+main :: () -> i32 { double(5) }

@@ -1,0 +1,11 @@
+error: 'u8' is a reserved type name and cannot be used as an identifier
+  --> examples/diagnostics/1122-diagnostics-reserved-name-impl-method.sx:19:24
+   |
+19 |     go :: (self: *Box, u8: i64) {
+   |                        ^^
+
+error: 'i2' is a reserved type name and cannot be used as an identifier
+  --> examples/diagnostics/1122-diagnostics-reserved-name-impl-method.sx:20:9
+   |
+20 |         i2 := Box.{ total = 1 };
+   |         ^^

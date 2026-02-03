@@ -1,0 +1,46 @@
+// Variadic heterogeneous type packs — `..$args` — impl matching
+// lock-in.
+//
+// Step 1d slice for the pack feature (see
+// ~/.claude/plans/lets-see-options-for-merry-dijkstra.md). Pins
+// today's concrete-only impl-matching behaviour: a user-declared
+// `impl Into(Block) for Closure(..$args) -> $R` does NOT match
+// any concrete closure source type. The xx cast site hits the
+// existing "no `Into(Block) for <src>` impl" diagnostic even
+// though the pack impl is reachable.
+//
+// Next commit (1d.B) teaches `tryUserConversion` /
+// `registerParamImpl` to walk a second `param_impl_pack_map`
+// when the concrete-key miss happens. Pack impls bind their
+// `$args` and `$R` to the concrete source closure's tail types
+// and return; monomorphisation proceeds against those bindings.
+//
+// The `Closure(i32, bool) -> bool` shape is not covered by
+// stdlib's hand-rolled impls (only `Closure() -> void` and
+// `Closure(bool) -> void`) and not covered by 96-block-multi-arg's
+// `Closure(i32, *void) -> void` impl, so the pack impl is the
+// only candidate.
+
+#import "modules/std.sx";
+#import "modules/ffi/objc_block.sx";
+
+impl Into(Block) for Closure(..$args) -> $R {
+    convert :: (self: Closure(..$args) -> $R) -> Block {
+        .{
+            isa = @_NSConcreteStackBlock,
+            flags = 0,
+            reserved = 0,
+            invoke = null,
+            descriptor = xx @__sx_block_descriptor,
+            sx_env = self.env,
+            sx_fn = self.fn_ptr,
+        }
+    }
+}
+
+main :: () -> i32 {
+    cl := (a: i32, b: bool) => true;
+    b : *Block = xx cl;
+    print("pack impl match ok\n");
+    return 0;
+}

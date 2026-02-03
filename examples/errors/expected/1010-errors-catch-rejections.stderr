@@ -1,0 +1,5 @@
+error: `catch` requires a failable expression; operand has type 'i32'
+  --> examples/errors/1010-errors-catch-rejections.sx:11:5
+   |
+11 |     plain() catch (e) { return 1; };   // error: operand has type i32 (not failable)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

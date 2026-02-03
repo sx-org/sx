@@ -1,0 +1,18 @@
+// =====================================================================
+// vendors/kb_text_shape — Jimmy Lefevre's kb_text_shape (OpenType text
+// shaping) as a `#import c` unit (c/, see README.md for version +
+// provenance).
+//
+// `#import "vendors/kb_text_shape/kb_text_shape.sx"` gives any sx
+// program text shaping with no system dependency. The decls come from
+// c/kbts_api.h — a hand-curated MINIMAL declaration header covering
+// only the bound surface (the full upstream header is ~30k lines and
+// is included only by the implementation unit). Shape contexts, fonts,
+// runs, and glyphs are opaque pointers on the sx side; see
+// modules/ui/glyph_cache.sx for the reference consumer.
+// =====================================================================
+
+#import c {
+    #include "c/kbts_api.h";
+    #source  "c/kb_text_shape_impl.c";
+};

@@ -1,0 +1,23 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+// --- Extern function binding ---
+libc :: #library "c";
+
+c_abs :: (n: i32) -> i32 extern libc "abs";
+
+// --- Protocol declarations (Phase 1: static dispatch only) ---
+
+main :: () {
+
+    // ========================================================
+    // 15. EXTERN FUNCTION BINDING
+    // ========================================================
+    print("=== 15. Extern ===\n");
+
+    // Symbol rename: c_abs maps to C's abs()
+    print("extern-rename: {}\n", c_abs(xx -42));
+}

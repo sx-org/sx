@@ -1,0 +1,11 @@
+error: integer literal 300 does not fit in i8 (range -128..127) — use an explicit `xx` / `.(T)` to truncate
+  --> examples/diagnostics/1156-diagnostics-int-literal-out-of-range.sx:8:14
+   |
+ 8 |     x : i8 = 300;
+   |              ^^^
+
+error: integer literal 256 does not fit in u8 (range 0..255) — use an explicit `xx` / `.(T)` to truncate
+  --> examples/diagnostics/1156-diagnostics-int-literal-out-of-range.sx:10:14
+   |
+10 |     y : u8 = 256;
+   |              ^^^

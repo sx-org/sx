@@ -1,0 +1,34 @@
+// Comptime type construction — identity: a type-fn that builds a type with
+// `define(declare("Box"), ...)` must memoize by the instantiation's mangled name, so
+// `Box(i64)` resolved at two INDEPENDENT sites (here: a return type and a
+// parameter type) is ONE `TypeId`. A value built at one site is therefore
+// assignable / matchable at the other — nominal identity. If the minted result
+// were not registered under the mangled instantiation name, the two sites would
+// mint distinct types and `consume(build())` would be a type error.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+Box :: ($T: Type) -> Type {
+    return define(declare("Box"), .enum(.{ variants = .[
+        EnumVariant.{ name = "some", payload = T    },
+        EnumVariant.{ name = "none", payload = void },
+    ] }));
+}
+
+build :: () -> Box(i64) {            // site A resolves Box(i64)
+    return Box(i64).some(7);
+}
+
+consume :: (b: Box(i64)) {           // site B resolves Box(i64) independently
+    if b == {
+        case .some: (n) { print("some {}\n", n); }
+        case .none: { print("none\n"); }
+    }
+}
+
+main :: () -> i32 {
+    consume(build());                // typechecks ONLY if site A == site B
+    b : Box(i64) = .none;
+    consume(b);
+    return 0;
+}

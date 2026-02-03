@@ -1,0 +1,181 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/layout.sx";
+
+VStack :: struct {
+    children: List(ViewChild);
+    spacing: f32;
+    alignment: HAlignment;
+
+    add :: (self: *VStack, view: View) {
+        self.children.append(.{ view = view });
+    }
+}
+
+impl View for VStack {
+    size_that_fits :: (self: *VStack, proposal: ProposedSize) -> Size {
+        measure_vstack(@self.children, proposal, self.spacing)
+    }
+
+    layout :: (self: *VStack, bounds: Frame) {
+        layout_vstack(@self.children, bounds, self.spacing, self.alignment);
+    }
+
+    render :: (self: *VStack, ctx: *RenderContext, frame: Frame) {
+        i := 0;
+        while i < self.children.len {
+            child := @self.children.items[i];
+            child.view.render(ctx, child.computed_frame);
+            i += 1;
+        }
+    }
+
+    handle_event :: (self: *VStack, event: *Event, frame: Frame) -> bool {
+        // Iterate children in reverse (front-to-back for overlapping)
+        i := self.children.len - 1;
+        while i >= 0 {
+            child := @self.children.items[i];
+            if child.view.handle_event(event, child.computed_frame) {
+                return true;
+            }
+            i -= 1;
+        }
+        false
+    }
+}
+
+HStack :: struct {
+    children: List(ViewChild);
+    spacing: f32;
+    alignment: VAlignment;
+
+    add :: (self: *HStack, view: View) {
+        self.children.append(.{ view = view });
+    }
+}
+
+impl View for HStack {
+    size_that_fits :: (self: *HStack, proposal: ProposedSize) -> Size {
+        measure_hstack(@self.children, proposal, self.spacing)
+    }
+
+    layout :: (self: *HStack, bounds: Frame) {
+        layout_hstack(@self.children, bounds, self.spacing, self.alignment);
+    }
+
+    render :: (self: *HStack, ctx: *RenderContext, frame: Frame) {
+        i := 0;
+        while i < self.children.len {
+            child := @self.children.items[i];
+            child.view.render(ctx, child.computed_frame);
+            i += 1;
+        }
+    }
+
+    handle_event :: (self: *HStack, event: *Event, frame: Frame) -> bool {
+        i := self.children.len - 1;
+        while i >= 0 {
+            child := @self.children.items[i];
+            if child.view.handle_event(event, child.computed_frame) {
+                return true;
+            }
+            i -= 1;
+        }
+        false
+    }
+}
+
+ZStack :: struct {
+    children: List(ViewChild);
+    alignment: Alignment;
+
+    add :: (self: *ZStack, view: View) {
+        self.children.append(.{ view = view });
+    }
+}
+
+impl View for ZStack {
+    size_that_fits :: (self: *ZStack, proposal: ProposedSize) -> Size {
+        measure_zstack(@self.children, proposal)
+    }
+
+    layout :: (self: *ZStack, bounds: Frame) {
+        layout_zstack(@self.children, bounds, self.alignment);
+    }
+
+    render :: (self: *ZStack, ctx: *RenderContext, frame: Frame) {
+        // Render back-to-front (first child is bottommost)
+        i := 0;
+        while i < self.children.len {
+            child := @self.children.items[i];
+            child.view.render(ctx, child.computed_frame);
+            i += 1;
+        }
+    }
+
+    handle_event :: (self: *ZStack, event: *Event, frame: Frame) -> bool {
+        // Handle front-to-back (last child is topmost)
+        i := self.children.len - 1;
+        while i >= 0 {
+            child := @self.children.items[i];
+            if child.view.handle_event(event, child.computed_frame) {
+                return true;
+            }
+            i -= 1;
+        }
+        false
+    }
+}
+
+// Spacer — fills available space
+
+Spacer :: struct {
+    min_length: f32;
+
+}
+
+impl View for Spacer {
+    size_that_fits :: (self: *Spacer, proposal: ProposedSize) -> Size {
+        w := proposal.width ?? self.min_length;
+        h := proposal.height ?? self.min_length;
+        Size.{ width = max(w, self.min_length), height = max(h, self.min_length) }
+    }
+
+    layout :: (self: *Spacer, bounds: Frame) {}
+    render :: (self: *Spacer, ctx: *RenderContext, frame: Frame) {}
+    handle_event :: (self: *Spacer, event: *Event, frame: Frame) -> bool { false }
+}
+
+// Rect — simple colored rectangle view
+
+RectView :: struct {
+    color: Color;
+    corner_radius: f32;
+    preferred_width: f32;
+    preferred_height: f32;
+
+}
+
+impl View for RectView {
+    size_that_fits :: (self: *RectView, proposal: ProposedSize) -> Size {
+        w := proposal.width ?? self.preferred_width;
+        h := proposal.height ?? self.preferred_height;
+        Size.{ width = w, height = h }
+    }
+
+    layout :: (self: *RectView, bounds: Frame) {}
+
+    render :: (self: *RectView, ctx: *RenderContext, frame: Frame) {
+        if self.corner_radius > 0.0 {
+            ctx.add_rounded_rect(frame, self.color, self.corner_radius);
+        } else {
+            ctx.add_rect(frame, self.color);
+        }
+    }
+
+    handle_event :: (self: *RectView, event: *Event, frame: Frame) -> bool { false }
+}

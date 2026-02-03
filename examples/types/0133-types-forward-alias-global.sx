@@ -1,0 +1,22 @@
+// Forward identifier type alias as a TOP-LEVEL annotation — a global var
+// and a typed module constant whose annotation is a forward alias
+// (`A :: B; B :: i32;`) resolve to the alias target, the same as the
+// ordered form, instead of a fabricated stub.
+// Regression (issue 0070): top-level global / typed-const annotations were
+// resolved inside the scan loop BEFORE the forward-alias fixpoint ran, so
+// `g : A` got a stub type that mismatched its initializer at LLVM
+// verification. Global/const annotation resolution now runs in scan pass 2,
+// after the fixpoint.
+#import "modules/std.sx";
+
+A :: B;
+B :: i32;
+
+g : A = 7;
+K : A : 35;
+
+main :: () -> i32 {
+    print("global g: {}\n", g);
+    print("const K:  {}\n", K);
+    return g + K;
+}

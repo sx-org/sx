@@ -1,0 +1,3 @@
+// The second flat-imported author of a same-name `Thing`. With both visible and
+// no own author in `main`, a bare `Thing` reference is genuinely ambiguous.
+Thing :: struct { b: i64; }

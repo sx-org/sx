@@ -1,0 +1,15 @@
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %call = call i64 @answer__i64()
+  %ca.tr = trunc i64 %call to i32
+  ret i32 %ca.tr
+}
+
+; Function Attrs: naked noinline nounwind
+define internal i64 @answer__i64() #1 {
+entry:
+  call void asm sideeffect "        mov x0, #42\0A        ret\0A", ""()
+  unreachable
+}

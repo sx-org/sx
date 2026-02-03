@@ -1,0 +1,40 @@
+// 1a-S3b — the field family accepts RUNTIME Type values: struct_field_
+// name/type/offset and variant_name/type read master-index tables
+// ([N x ptr] by tag → per-type arrays). This is the PLAN's `describe`
+// acceptance shape: full metadata walk from a Type value obtained at
+// runtime (incl. via an any's tag). Layout matches the comptime folds
+// by construction (same TypeTable queries) — pinned by the parity
+// lines. An index >= the member count is undefined behavior (caller
+// gates on the counts, exactly like the static forms).
+#import "modules/std.sx";
+
+Header  :: struct { magic: u16; flags: u8; }
+Packet  :: struct { header: Header; name: string; kind: i16; }
+Color   :: enum { red; green; blue; }
+
+describe :: (tp: Type) {
+    print("{} (size {}, align {})\n", type_name(tp), size_of(tp), align_of(tp));
+    i := 0;
+    while i < struct_field_count(tp) {
+        print("  +{} {}: {}\n", struct_field_offset(tp, i), struct_field_name(tp, i), type_name(struct_field_type(tp, i)));
+        i += 1;
+    }
+    j := 0;
+    while j < variant_count(tp) {
+        print("  .{}\n", variant_name(tp, j));
+        j += 1;
+    }
+}
+
+main :: () {
+    describe(type_of(Packet.{ header = .{ magic = 1, flags = 2 }, name = "x", kind = -1 }));
+    describe(type_of(Color.red));
+    av : any = Header.{ magic = 7, flags = 9 };
+    describe(type_of(av));
+    // parity: runtime answers == comptime folds
+    tp : Type = Packet;
+    print("parity: {} {} {}\n",
+        struct_field_offset(tp, 1) == struct_field_offset(Packet, 1),
+        struct_field_name(tp, 2) == struct_field_name(Packet, 2),
+        type_eq(struct_field_type(tp, 0), struct_field_type(Packet, 0)));
+}

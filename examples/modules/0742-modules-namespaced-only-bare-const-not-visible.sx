@@ -1,0 +1,15 @@
+// Bare module-const visibility under a NAMESPACED-only import — the const
+// sibling of 0736 (folded req #1 of the source-aware resolver, Phase E1).
+// `dep.sx` is imported only as `dep :: #import`, so its top-level `DEP_LEN`
+// is reachable ONLY as `dep.DEP_LEN`. A BARE `DEP_LEN` in a comptime
+// array-dimension position must NOT resolve: bare module-const visibility
+// joins over the FLAT import edges (`flat_import_graph`), and a namespaced
+// alias is not a flat edge. Before the fix the bare const leaked through the
+// global `module_const_map` first-match (and its float-fold fallback) straight
+// into the `[VAL]i32` dimension, so the array silently got length 3.
+dep :: #import "0742-modules-namespaced-only-bare-const-not-visible/dep.sx";
+
+main :: () -> i32 {
+    arr : [DEP_LEN]i32 = ---;
+    0
+}

@@ -1,0 +1,39 @@
+// Explicitly-typed tuple construction `Tuple(...).( ... )` — the `Tuple(...)`
+// TYPE followed by a `.( ... )` initializer, exactly like `Point.{ ... }` for
+// structs. Symmetric trio (mirrors structs `Point` / `Point.{...}` / `.{...}`):
+//   - tuple TYPE      `Tuple(A, B)`            (annotation / return / arg)
+//   - anonymous VALUE `.(a, b)`               (contextually typed)
+//   - typed VALUE     `Tuple(A, B).(a, b)`    (explicit type + initializer)
+// A `Tuple(...).(...)` value equals the anonymous `.(...)` against that type.
+// Named forms keep `:` in the type and `=` in the value.
+
+#import "modules/std.sx";
+
+// A `-> Tuple(i64, i64)` return type with a `.(b, a)` body.
+swap :: (a: i64, b: i64) -> Tuple(i64, i64) {
+    .{b, a}
+}
+
+main :: () -> i32 {
+    // Annotation + anonymous value.
+    t : Tuple(i64, i64) = .{1, 2};
+    print("t = {} {}\n", t.0, t.1);                // t = 1 2
+
+    // Explicitly-typed construction — same value as `.(3, 4)` against the type.
+    u := Tuple(i64, i64).{3, 4};
+    print("u = {} {}\n", u.0, u.1);                // u = 3 4
+
+    // Named: annotation + value uses `=` for the value fields.
+    p : Tuple(x: i64, y: i64) = .{x = 5, y = 6};
+    print("p = {} {}\n", p.x, p.y);                // p = 5 6
+
+    // Named: explicitly-typed construction.
+    q := Tuple(x: i64, y: i64).{x = 7, y = 8};
+    print("q = {} {}\n", q.x, q.y);                // q = 7 8
+
+    // Function returning a tuple via a `.(b, a)` body.
+    s := swap(10, 20);
+    print("s = {} {}\n", s.0, s.1);                // s = 20 10
+
+    0
+}

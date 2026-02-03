@@ -1,0 +1,28 @@
+// E6b — own-wins-over-flat for ERROR-SET per-decl nominal identity. `main`
+// flat-imports `dep.sx` (which authors `IoErr { Net }`) AND authors its OWN
+// `IoErr { Disk }`. A bare `IoErr` reference in `main` resolves to `main`'s OWN
+// author, not the flat-imported one (the querying source's author wins outright —
+// no ambiguity), so `e : IoErr = error.Disk` binds `main`'s set (whose `Disk` tag
+// dep's `IoErr` lacks) while `dep_err()` returns dep's DISTINCT `IoErr`.
+//
+// Fail-before (pre-E6b): the stateless `type_bridge.resolveInlineErrorSet`
+// `findByName` short-circuit interned ONE global last-wins `IoErr`, so `main`'s
+// `IoErr` and dep's `IoErr` collapsed to a single nominal. Whichever author won
+// the global slot, the OTHER module's tag is not in it — so exactly one of
+// `error.Disk` (main) / `error.Net` (dep, in `dep_err`'s body) fails its
+// membership check and the program exits 1.
+//
+// Pass-after: distinct nominal TypeIds — `error.Disk` validates against main's
+// `{ Disk }` and `error.Net` against dep's `{ Net }`, both pass, exit 0.
+
+#import "modules/std.sx";
+#import "0812-modules-same-name-error-set-own-wins/dep.sx";
+
+IoErr :: error { Disk }
+
+main :: () -> i32 {
+    e : IoErr = error.Disk;
+    d := dep_err();
+    print("own={} dep={}\n", e, d);
+    0
+}

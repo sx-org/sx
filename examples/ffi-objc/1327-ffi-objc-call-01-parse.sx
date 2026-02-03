@@ -1,0 +1,25 @@
+// Phase 1 step 1.0 (PLAN-FFI.md): xfail test for the `#objc_call`
+// parser. The shape is `#objc_call(ReturnT)(receiver, "selector:",
+// args...)` — return type in the first parens, then a normal call.
+// Today the parser rejects this; the snapshot captures the rejection.
+//
+// Phase 1.1 adds the parse rule and the snapshot updates to whatever
+// the next pipeline stage produces (sema / codegen can't lower the
+// intrinsic until later steps).
+//
+// Phase 1.3+ wires the lowering (selector interning + objc_msgSend
+// dispatch) and the test eventually runs cleanly against Foundation.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    // `#objc_call(void)` with a null receiver — never executed (this
+    // file's purpose is parser surface coverage). `inline if false`
+    // would suppress sema/codegen too, but for the parse-only step
+    // we want the AST to actually carry the node.
+    inline if false {
+        #objc_call(void)(null, "init");
+    }
+    print("parse-only ok\n");
+    0
+}

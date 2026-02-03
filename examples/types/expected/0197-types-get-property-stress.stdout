@@ -1,0 +1,10 @@
+is_pos=true neg=-7 twice_neg=-14
+positive
+origin=(7,7)
+paren neg()=-7
+n=4 head=100
+tail=400
+n+head=104
+loop-bound total=1000
+via ptr is_pos=true
+via deref is_pos=true

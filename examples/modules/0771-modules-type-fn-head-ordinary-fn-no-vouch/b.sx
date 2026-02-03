@@ -1,0 +1,7 @@
+// The directly-imported (1-hop) author of the NAME `Make` — but as an ORDINARY
+// function (`() -> i32`), NOT a type-returning function. It flat-imports c.sx
+// (where the real `Make` type-fn lives, two hops from a file that imports b.sx).
+// A same-name ordinary function must not vouch for the 2-hop type-fn head: it has
+// zero `$`-params, so it cannot be the type head `Make(i64)` is instantiating.
+#import "c.sx";
+Make :: () -> i32 { return 7; }

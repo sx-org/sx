@@ -1,0 +1,12 @@
+// A `$T` comptime-type-param sigil in a struct FIELD type is invalid — a
+// generic struct declares its type params in the header (`struct ($T: Type)`)
+// and references them WITHOUT `$` in fields. Writing `$T` as a field type
+// leaves `T` unbound; previously the field type silently resolved to the
+// `.unresolved` sentinel and panicked the LLVM backend ("unresolved type
+// reached LLVM emission"). It must now be a clean located diagnostic.
+// Regression (issue 0278). Expected: one located error; exit 1; no panic.
+#import "modules/std.sx";
+
+Gen :: struct { v: $T; }
+
+main :: () { print("hi\n"); }

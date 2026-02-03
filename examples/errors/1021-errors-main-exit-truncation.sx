@@ -1,0 +1,14 @@
+// Entry-point exit-code truncation (ERR step E4.2, non-failable integer main).
+// `main :: () -> T` (integer) exits with the return value truncated to u8 —
+// matching C `main` / the OS exit-status byte, so the JIT (`sx run`) and an AOT
+// binary agree. Here 1105 & 0xFF == 81, so this program exits 81 (NOT 1, which
+// was the old buggy "out of 0..255 range -> failure" behavior).
+//
+// Run: ./zig-out/bin/sx run examples/238-main-exit-truncation.sx ; echo $?   # 81
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    print("returning 1105 -> exit {}\n", 1105 & 0xFF);   // 81
+    return 1105;
+}

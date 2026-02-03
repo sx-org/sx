@@ -1,0 +1,5 @@
+error: type 'Color' is not visible; #import the module that declares it
+  --> examples/modules/0744-modules-namespaced-only-bare-enum-not-visible.sx:11:9
+   |
+11 |     c : Color = .green;
+   |         ^^^^^

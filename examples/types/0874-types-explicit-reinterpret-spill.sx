@@ -1,0 +1,33 @@
+// Explicit aggregate↔scalar reinterprets are SPILL-MEDIATED (issue 0305):
+// the escape hatch's promise ("reinterpret the bits, width be damned") is
+// delivered through a memory slot typed as the larger side — so the result
+// is a genuinely target-typed value in EVERY context (icmp, call args,
+// arithmetic), not just store positions. Regression (issue 0305): the raw
+// SSA passthrough crashed the LLVM verifier at the first value-context use.
+#import "modules/std.sx";
+
+Sizable :: protocol { size :: (self: *Self) -> i64; }
+Widget :: struct { value: i64; }
+impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
+Pair :: struct { a: i32; b: i32; }
+
+main :: () {
+    w := Widget.{ value = 4 };
+
+    // aggregate → scalar: single-field struct reads back its field bits
+    n := w.(i64);
+    print("agg-to-scalar: {}\n", n);
+
+    // scalar → aggregate: the historic direction (i64 0 → zeroed wrapper)
+    z := 0;
+    p := z.(Pair);
+    print("scalar-to-agg: {} {}\n", p.a, p.b);
+
+    // the 0305 crash shape: aggregate → pointer used in a VALUE context
+    pv := w.(*Sizable);          // defined-garbage pointer (explicit opt-in,
+    print("value-ctx: {}\n", pv != null);   // pointer doctrine) — must COMPILE
+
+    // widening reinterpret zero-fills the uncovered bytes (deterministic)
+    q := n.(Pair);
+    print("widen: {}\n", q.a);
+}

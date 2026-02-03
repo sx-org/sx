@@ -1,0 +1,55 @@
+// Test: compound assignment operators on global variables
+// Ensures += -= *= /= %= &= |= ^= <<= >>= all do load-modify-store
+
+#import "modules/std.sx";
+
+g_add : i64 = 10;
+g_sub : i64 = 10;
+g_mul : i64 = 10;
+g_div : i64 = 100;
+g_mod : i64 = 10;
+g_and : i64 = 0xff;
+g_or  : i64 = 0x0f;
+g_xor : i64 = 0xff;
+g_shl : i64 = 1;
+g_shr : i64 = 256;
+
+main :: () -> void {
+    // += repeated: should accumulate, not reset
+    g_add += 1;
+    g_add += 1;
+    g_add += 1;
+    print("add: {}\n", g_add);  // 13
+
+    g_sub -= 3;
+    g_sub -= 2;
+    print("sub: {}\n", g_sub);  // 5
+
+    g_mul *= 2;
+    g_mul *= 3;
+    print("mul: {}\n", g_mul);  // 60
+
+    g_div /= 5;
+    g_div /= 4;
+    print("div: {}\n", g_div);  // 5
+
+    g_mod %= 3;
+    print("mod: {}\n", g_mod);  // 1
+
+    g_and &= 0x0f;
+    print("and: {}\n", g_and);  // 15
+
+    g_or |= 0xf0;
+    print("or: {}\n", g_or);   // 255
+
+    g_xor ^= 0x0f;
+    print("xor: {}\n", g_xor); // 240
+
+    g_shl <<= 4;
+    g_shl <<= 2;
+    print("shl: {}\n", g_shl); // 64
+
+    g_shr >>= 3;
+    g_shr >>= 2;
+    print("shr: {}\n", g_shr); // 8
+}

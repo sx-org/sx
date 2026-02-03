@@ -1,0 +1,28 @@
+// export function (FFI-linkage stream, Phase 2): define an sx function with
+// the bare `export` linkage modifier — external linkage + C ABI + no sx ctx —
+// so a companion C translation unit can call back into it by its plain symbol
+// name. The C side (`#source`) declares `sx_square` as a normal `extern int`
+// and calls it; sx `main` drives the C side via `call_sx_square`. Mirrors the
+// import-direction `extern` examples (1223–1225) for the define direction.
+//
+// Without `export`, an sx-defined fn is `internal` linkage + carries the
+// implicit `__sx_ctx` slot, so the C object can neither resolve nor correctly
+// call the symbol — this is the gap `export` fills.
+#import "modules/std.sx";
+
+#import c {
+    #include "1226-ffi-export-fn.h";
+    #source "1226-ffi-export-fn.c";
+};
+
+// sx-defined, exported to C: external linkage + C ABI + no implicit ctx.
+sx_square :: (n: i32) -> i32 export {
+    return n * n;
+}
+
+main :: () -> i32 {
+    // call_sx_square (C) calls back into sx_square, adds 1.
+    print("call_sx_square(6) = {}\n", call_sx_square(6));
+    print("call_sx_square(9) = {}\n", call_sx_square(9));
+    0
+}

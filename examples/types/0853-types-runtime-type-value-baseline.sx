@@ -1,0 +1,26 @@
+// 1a-S1 BASELINE — the dynamic reflection paths that work TODAY with a
+// runtime `Type` value (an i64 tag at runtime, spec §Type): type_of on
+// values and any, type_name / is_unsigned through locals, params, and
+// []Type elements. Pinned BEFORE runtime reflection (PLAN-RUNTIME-
+// REFLECTION 1a) so the S2/S3 boundary move is visible against a green
+// baseline.
+#import "modules/std.sx";
+
+Point :: struct { x: i64; y: i64; }
+
+describe :: (tp: Type) -> string { type_name(tp) }
+
+main :: () {
+    x : u16 = 9;
+    tp := type_of(x);                       // runtime Type value
+    print("local:  {} unsigned={}\n", type_name(tp), is_unsigned(tp));
+    print("param:  {}\n", describe(tp));
+
+    p := Point.{ x = 1, y = 2 };
+    tps : [2]Type = .[type_of(x), type_of(p)];
+    print("elem0:  {}\n", type_name(tps[0]));
+    print("elem1:  {}\n", type_name(tps[1]));
+
+    av : any = p;
+    print("anytag: {}\n", type_name(type_of(av)));
+}

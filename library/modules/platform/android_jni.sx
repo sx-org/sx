@@ -1,0 +1,31 @@
+// Declarative JNI class bindings for the standard Android system-bar
+// inset chain (`Activity.getWindow → Window.getDecorView → View
+// .getRootWindowInsets → WindowInsets.getSystemWindowInset{Top,Left,
+// Bottom,Right}`). Intended to be imported under a named namespace
+// (e.g. `Jni :: #import "library/modules/platform/android_jni.sx"`) so
+// the bare class names don't pollute the top-level namespace —
+// `View` in particular collides with `modules/ui/view.sx`'s protocol.
+// Inside the namespace these are referenced as `Jni.Activity`,
+// `Jni.Window`, etc. The compiler registers the decls both qualified
+// and bare in `runtime_class_map`, so cross-class refs in method
+// signatures (`getWindow :: (self: *Self) -> *Window`) still resolve
+// against the bare name within the namespace.
+
+WindowInsets :: #jni_class("android/view/WindowInsets") extern {
+    getSystemWindowInsetTop    :: (self: *Self) -> i32;
+    getSystemWindowInsetLeft   :: (self: *Self) -> i32;
+    getSystemWindowInsetBottom :: (self: *Self) -> i32;
+    getSystemWindowInsetRight  :: (self: *Self) -> i32;
+}
+
+View :: #jni_class("android/view/View") extern {
+    getRootWindowInsets :: (self: *Self) -> *WindowInsets;
+}
+
+Window :: #jni_class("android/view/Window") extern {
+    getDecorView :: (self: *Self) -> *View;
+}
+
+Activity :: #jni_class("android/app/Activity") extern {
+    getWindow :: (self: *Self) -> *Window;
+}

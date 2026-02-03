@@ -1,0 +1,18 @@
+// Passing a `*T` where a `T` value is expected is caught at the call site —
+// not only for `for xs (*m)` loop captures (see 215) but for any pointer,
+// here a `*Move` parameter forwarded into a by-value parameter. Without the
+// check this slipped through to the LLVM verifier as "Call parameter type
+// does not match function signature".
+
+#import "modules/std.sx";
+
+Move :: struct { flag: i64; }
+
+take :: (m: Move) -> i64 { return m.flag; }
+
+forward :: (m: *Move) -> i64 { return take(m); }
+
+main :: () -> i32 {
+    mv : Move = .{ flag = 7 };
+    return xx forward(@mv);
+}

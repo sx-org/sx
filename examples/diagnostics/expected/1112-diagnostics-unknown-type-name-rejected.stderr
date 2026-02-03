@@ -1,0 +1,5 @@
+error: unknown type 'Coordnate'
+  --> examples/diagnostics/1112-diagnostics-unknown-type-name-rejected.sx:8:8
+   |
+ 8 |     y: Coordnate;   // typo for a non-existent type
+   |        ^^^^^^^^^

@@ -1,0 +1,23 @@
+error: cannot match on untagged union 'Shape' — it has no discriminant; use a tagged union (enum with payloads) instead
+  --> examples/diagnostics/1220-diagnostics-untagged-union-match.sx:19:13
+   |
+19 |     r := if s == { case .circle: { 1 } case .rect: { 2 } };
+   |             ^
+
+error: cannot match on untagged union 'Shape' — it has no discriminant; use a tagged union (enum with payloads) instead
+  --> examples/diagnostics/1220-diagnostics-untagged-union-match.sx:23:8
+   |
+23 |     if s == { case .circle: { print("c\n"); } case .rect: { print("r\n"); } }
+   |        ^
+
+error: cannot match on untagged union 'Shape' — it has no discriminant; use a tagged union (enum with payloads) instead
+  --> examples/diagnostics/1220-diagnostics-untagged-union-match.sx:27:13
+   |
+27 |     q := if p == { case .circle: { 1 } else: { 0 } };
+   |             ^
+
+error: cannot match on untagged union 'Shape' — it has no discriminant; use a tagged union (enum with payloads) instead
+  --> examples/diagnostics/1220-diagnostics-untagged-union-match.sx:34:13
+   |
+34 |     t := if s == { case Shape: { 1 } else: { 0 } };
+   |             ^

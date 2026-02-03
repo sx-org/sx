@@ -1,0 +1,5 @@
+error: this function returns 2 values — return them as `return a, b`, not a single value
+  --> examples/types/0209-types-multi-return-arity.sx:6:12
+   |
+ 6 |     return a / b;   // only one value — needs two
+   |            ^^^^^

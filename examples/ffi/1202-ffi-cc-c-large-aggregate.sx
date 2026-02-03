@@ -1,0 +1,31 @@
+// Regression test for issue-0025 path A.
+//
+// sx functions declared with `abi(.c)` that take a composite > 16 bytes
+// by value must marshal the arg through `ptr byval(<T>)` per AAPCS64 / SysV
+// AArch64: the caller copies the struct to an alloca, passes the alloca
+// pointer with a `byval(<T>)` attribute, and the callee's entry block loads
+// the struct back from the pointer.
+//
+// Before the fix, abiCoerceParamType returned the raw LLVM struct type for
+// >16-byte composites (TODO at src/ir/emit_llvm.zig:2793), so the C ABI
+// promise was silently violated whenever sx-emitted C-callable code
+// interoperated with a real C caller.
+
+#import "modules/std.sx";
+
+Wide :: struct {
+    a: i64;
+    b: i64;
+    c: i64;
+    d: i64;
+}
+
+accept_c :: (w: Wide) -> i64 abi(.c) {
+    w.a + w.b + w.c + w.d
+}
+
+main :: () -> i32 {
+    w := Wide.{ a = 1, b = 10, c = 100, d = 1000 };
+    if accept_c(w) != 1111 { return 1; }
+    0
+}

@@ -1,0 +1,21 @@
+// Phase 1 step 1.20 (PLAN-FFI.md): `#jni_call(f64)` (jdouble return).
+// First non-integer return type for JNI — exercises the LLVM
+// `double` ret path through CallDoubleMethod (vtable slot 58).
+
+#import "modules/std.sx";
+
+g_should_call : bool = false;
+
+read_double :: (env: *void, target: *void) -> f64 {
+    #jni_env(env) {
+        #jni_call(f64)(target, "getValue", "()D")
+    }
+}
+
+main :: () -> i32 {
+    if g_should_call {
+        _ := read_double(null, null);
+    }
+    print("ok\n");
+    0
+}

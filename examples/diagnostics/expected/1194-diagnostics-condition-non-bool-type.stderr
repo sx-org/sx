@@ -1,0 +1,5 @@
+error: condition must be a bool, integer, pointer, or optional, but has type 'S'
+  --> examples/diagnostics/1194-diagnostics-condition-non-bool-type.sx:14:8
+   |
+14 |     if s { return 1; }   // ERROR: condition must be a bool, integer, pointer, or optional
+   |        ^

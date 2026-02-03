@@ -1,0 +1,7 @@
+pairs=1,2 3,4
+solo=7,9
+wa=5 xs=11,22,33
+nested0=1 xs=1,2,3
+nested1=2 xs=4,5,6
+after-store=100 999
+PASS

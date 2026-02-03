@@ -1,0 +1,3 @@
+// Namespace target authoring its OWN `Box { a }`. The importer (`main`) also
+// authors a same-name bare `Box { m }`; the qualified `a.Box` must bind THIS one.
+Box :: struct { a: i32; }

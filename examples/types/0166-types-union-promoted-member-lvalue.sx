@@ -1,0 +1,32 @@
+// Taking the address of a promoted anonymous-struct union member yields a
+// pointer to that member's slot, so mutating through the pointer is visible
+// through the member. The write path (`v.x = 41`) and the read path already
+// resolve promoted members; the lvalue-pointer path (`@v.x`) now resolves them
+// too, via the shared field-lvalue resolver.
+//
+// Regression (issue 0094, attempt 2): lowerExprAsPtr's union branch handled
+// only DIRECT union field names, so `@v.x` on a promoted member reported
+// "field 'x' not found on type 'Vec2'" even though `v.x = 41` worked. The
+// over-rejection is gone, and a member that is NOT at offset 0 (`v.y`) resolves
+// to its own slot — not a default field 0.
+
+#import "modules/std.sx";
+
+Vec2 :: union {
+    data: [2]i64;
+    struct { x: i64; y: i64; };
+}
+
+bump :: (p: *i64) {
+    p.* = p.* + 1;
+}
+
+main :: () {
+    v : Vec2 = ---;
+    v.x = 41;
+    v.y = 100;
+    bump(@v.x);          // promoted member at offset 0 → 42
+    bump(@v.y);          // promoted member at offset 8 → 101 (its own slot)
+    print("x={}\n", v.x);
+    print("y={}\n", v.y);
+}

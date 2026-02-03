@@ -1,0 +1,35 @@
+// Backtick raw-identifier escape: a leading backtick makes the following
+// identifier RAW — its text excludes the backtick and it is never the
+// reserved/builtin keyword, so a reserved type-name spelling (`i2`, `u8`, …)
+// can be used as an ordinary identifier. Exercised in every VALUE position:
+// global, local, param, struct field + member access, function name + call,
+// and a later reference. (A raw identifier in TYPE position references a
+// backtick-declared type instead — see examples/0154.) A *bare* `i2` is still
+// the reserved type name (see examples/1119), so the escape is the only way to
+// spell these as values.
+// Regression (issue 0089).
+#import "modules/std.sx";
+
+// Global named with a reserved type spelling.
+`u8 := 100;
+
+// Function whose name is a reserved type spelling, with a reserved-name param.
+`i2 :: (`i1: i64) -> i64 { return `i1 * 2; }
+
+Point :: struct {
+    `i2: f64;   // field name is a reserved type spelling
+    `u16: i64;
+}
+
+main :: () {
+    // Local with a reserved type spelling; later reference resolves to it.
+    `i64 := 7;
+    `i64 = `i64 + 1;
+    print("local  = {}\n", `i64);
+
+    print("global = {}\n", `u8);
+    print("fn     = {}\n", `i2(21));   // calls the `i2 function
+
+    p := Point.{ `i2 = 2.5, `u16 = 9 };
+    print("field  = {} {}\n", p.`i2, p.`u16);
+}

@@ -1,0 +1,10 @@
+// An identifier used in a LOCAL variable's type annotation that names no
+// declared type is rejected, exactly like a signature or struct-field use.
+// Previously a body-level annotation bypassed the check: the type resolver's
+// empty-struct stub silently gave the local a 0-field type, so `v: Coordnate
+// = 5` compiled and ran (the `5` dropped) with no diagnostic. Regression
+// (issue 0064, body-level positions). Expected: error at the annotation; exit 1.
+main :: () -> i32 {
+    v: Coordnate = 5;
+    return 0;
+}

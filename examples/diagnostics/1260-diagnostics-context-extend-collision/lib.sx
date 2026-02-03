@@ -1,0 +1,4 @@
+// Companion module: declares the same context field as the importer.
+#import "modules/std.sx";
+
+#context_extend tracer: i64 = 7;

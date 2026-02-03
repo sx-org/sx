@@ -1,0 +1,5 @@
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    if false then 40 else 42
+}

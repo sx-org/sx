@@ -1,0 +1,6 @@
+exit=0, stdout=hello world
+false exit=1
+unset var: null (ok)
+ls is absolute (ok)
+missing exec: null (ok)
+ok

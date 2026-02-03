@@ -1,0 +1,2 @@
+// Shared type for 179-impl-visibility — Wrap struct.
+Wrap :: struct { v: i64 = 0; }

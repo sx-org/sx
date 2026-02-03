@@ -1,0 +1,5 @@
+// b.sx authors its OWN `cfg` defaulting to 20. `from_b`'s `cfg()` omits the
+// arg; the omitted trailing default must come from b.sx's author (20), not the
+// first-wins winner from a.sx (10).
+cfg    :: (n: i64 = 20) -> i64 { return n; }
+from_b :: () -> i64 { return cfg(); }

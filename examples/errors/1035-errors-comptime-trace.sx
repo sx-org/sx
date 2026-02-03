@@ -1,0 +1,33 @@
+// Comptime return-trace resolution (ERR E3.0 slice 3b). A `#run` block that
+// raises, propagates via `try`, and catches the error, then formats the trace
+// with `trace.print_current()`. At comptime a frame is a packed
+// `(func_id, span.start)` (not a `*Frame`); the interpreter's `.trace_resolve`
+// unpacks it and resolves `file:line:col` via the module + source map — so the
+// comptime trace prints the same `func at file:line:col` form as a runtime one.
+// Expected exit: 0 (the error is caught; the trace is printed during the build).
+
+#import "modules/std.sx";
+trace :: #import "modules/std/trace.sx";
+
+TErr :: error { Bad };
+
+leaf :: () -> !TErr {
+    raise error.Bad;
+}
+
+mid :: () -> !TErr {
+    try leaf();
+}
+
+probe :: () {
+    mid() catch (e) {
+        print("comptime caught {}\n", e);
+        trace.print_current();
+    };
+}
+
+#run probe();
+
+main :: () -> i32 {
+    return 0;
+}

@@ -1,0 +1,16 @@
+valid GET -> 200
+overflow Content-Length -> 400
+duplicate Content-Length -> 400
+Transfer-Encoding: chunked -> 200 (decoded)
+Content-Length + Transfer-Encoding -> 400
+duplicate Transfer-Encoding -> 400
+Transfer-Encoding: gzip -> 501
+Transfer-Encoding empty value -> 501
+Transfer-Encoding spaces-only value -> 501
+whitespace before colon -> 400
+header value with colon/spaces -> 200
+unsupported HTTP version -> 505
+malformed HTTP version -> 400
+over-long header line -> 431
+too many headers -> 431
+ok

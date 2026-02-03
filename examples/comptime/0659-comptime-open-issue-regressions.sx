@@ -1,0 +1,17 @@
+#import "modules/std.sx";
+
+S0659 :: struct { a: i64 = 0; }
+gs0659 : S0659 = .{ a = 7 };
+get_a_0659 :: () -> i64 { return gs0659.a; }
+K_AGG_0659 :: #run get_a_0659();
+K_IIFE_0659 :: #run () -> i64 { return 15; }();
+K_MATCH_0659 :: #run {
+    b := 2;
+    c := true;
+    if b == { case 1: 100; else: if c { 42 } else { 0 }; }
+};
+
+main :: () -> i32 {
+    print("{} {} {}\n", K_AGG_0659, K_IIFE_0659, K_MATCH_0659);
+    0
+}

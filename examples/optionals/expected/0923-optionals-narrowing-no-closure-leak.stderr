@@ -1,0 +1,5 @@
+error: cannot use a value of type '?i64' where 'i64' is expected: an optional does not implicitly unwrap; force-unwrap with '!', supply a fallback with '?? <default>', bind it (`if v := ...`), or guard with '!= null'
+  --> examples/optionals/0923-optionals-narrowing-no-closure-leak.sx:20:19
+   |
+20 |         g := () { takes_i64(n); };
+   |                   ^^^^^^^^^^^^

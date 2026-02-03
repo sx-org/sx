@@ -1,0 +1,30 @@
+// `Alias.new(args)` constructor dispatch on a `extern #jni_class`
+// (chess-on-Pixel migration, R.6). The sx-side `static new :: (...) ->
+// *Self;` member lowers to JNI `FindClass + GetMethodID("<init>", sig)
+// + NewObject(env, clazz, mid, args...)`.
+//
+// This smoke instantiates a `SurfaceView` from inside the Activity's
+// `onCreate` body — chess's render surface starts the same way.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+Bundle  :: #jni_class("android/os/Bundle") extern { }
+JContext :: #jni_class("android/content/Context") extern { }
+
+SurfaceView :: #jni_class("android/view/SurfaceView") extern {
+    new :: (ctx: *JContext) -> *Self;  // no `self: *Self` → class method
+}
+
+g_held_view : *void = null;
+
+SxApp :: #jni_main #jni_class("co/swipelab/sxjnictor/SxApp") {
+    onCreate :: (self: *Self, b: *Bundle) {
+        super.onCreate(b);
+        ctx : *JContext = xx self; // Activity IS a JContext (extends JContext).
+        view := SurfaceView.new(ctx);
+        g_held_view = xx view; // keep alive so LLVM doesn't DCE the construction.
+    }
+}
+
+main :: () -> i32 { 0 }

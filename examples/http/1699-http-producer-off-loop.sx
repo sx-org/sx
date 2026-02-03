@@ -1,0 +1,352 @@
+// std.http — Q3.2 stream producers run OFF the loop thread (pool mode).
+//
+// A streamed response's producer used to be pulled on the LOOP thread after
+// the worker's job — and the per-request arena — had been freed: producer_ctx
+// pointing at request-derived or arena memory was a use-after-free class
+// (the documented "ctx must be caller-owned" footgun), and a slow producer
+// stalled every other connection. Q3.2 moves the pulls onto the WORKER that
+// ran the handler, inside the job's push scope, feeding the loop through a
+// bounded channel — so ctx may now reference per-request-arena memory and
+// req views, and the loop never runs producer code.
+//
+// Cases (pool(1) server — a single worker makes pinning observable):
+//   1. POST /stream: the handler allocates its producer state IN THE
+//      PER-REQUEST ARENA (the exact UAF class), seeded from req.body; the
+//      producer streams 1 MB derived from that state — 16x the 64 KB channel,
+//      so the worker-side blocking feed + loop-side hungry/wake cycle is
+//      exercised throughout. The client de-chunks and verifies every byte.
+//      The producer also records its thread id: it must NOT be the loop
+//      thread (the tick harness runs the loop on main) — the deterministic
+//      red assertion pre-fix.
+//   2. SAME connection: /ping still answers (keep-alive after a worker-fed
+//      chunked response; the slot's channel was released).
+//   3. GET /big (4 MB): the client reads ~64 KB and disconnects mid-stream —
+//      the write fault aborts the channel, the blocked feeder unblocks and
+//      the worker exits its pump. Proven by case 4: with pool(1), a
+//      still-pinned worker would hang every later request.
+//   4. /ping on a fresh connection answers (the single worker survived the
+//      aborted stream).
+//   5. GPA leak gate: net-zero after srv.close() (channel, job, scratch).
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+clib :: #library "c";
+pthread_self :: () -> usize extern clib;
+usleep :: (usec: i64) -> i32 extern clib;
+
+PORT :: 19014;
+STREAM_TOTAL :: 1000000;
+BIG_TOTAL :: 4194304;
+
+Obs :: struct {
+    prod_tid: usize = 0;   // thread id observed inside the producer
+    main_tid: usize = 0;   // the loop (tick-harness main) thread id
+}
+
+// Producer state — deliberately allocated in the PER-REQUEST ARENA by the
+// handler: valid post-fix (the worker pumps inside the push scope), the
+// UAF class pre-fix.
+StreamState :: struct {
+    seed: i64 = 0;
+    total: i64 = 0;
+    obs: *Obs = null;
+}
+
+producer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64 {
+    st : *StreamState = xx ctx;
+    if st.obs.prod_tid == 0 { st.obs.prod_tid = pthread_self(); }
+    left := st.total - offset;
+    if left <= 0 { return 0; }
+    n := if dst_cap < left then dst_cap else left;
+    i : i64 = 0;
+    while i < n {
+        dst[i] = xx ((st.seed + (offset + i) * 7) % 251);
+        i += 1;
+    }
+    return n;
+}
+
+checksum :: (s: string) -> i64 {
+    h : i64 = 0;
+    i := 0;
+    while i < s.len {
+        h = (h * 31 + s[i]) % 1000000007;
+        i += 1;
+    }
+    return h;
+}
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/stream" or req.path == "/big" or req.path == "/slowbig" {
+        obs : *Obs = xx ctx;
+        // /slowbig: sleep BEFORE streaming so Server.close can run while
+        // this worker is still mid-handler — before the stream channel is
+        // registered (the Q3.2-review HIGH close-deadlock window).
+        if req.path == "/slowbig" { usleep(300000); }
+        st : *StreamState = xx context.allocator.alloc_bytes(size_of(StreamState));
+        st.* = StreamState.{
+            seed = checksum(req.body),
+            total = if req.path == "/stream" then STREAM_TOTAL else BIG_TOTAL,
+            obs = obs,
+        };
+        resp.stream(producer, xx st);
+        return;
+    }
+    resp.body = "pong";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+num_after :: (hay: string, key: string) -> i64 {
+    i := 0;
+    while i + key.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < key.len { if hay[i + j] != key[j] { ok = false; break; } j += 1; }
+        if ok {
+            p := i + key.len;
+            v : i64 = 0;
+            d : i64 = 0;
+            while p < hay.len and hay[p] >= 48 and hay[p] <= 57 {
+                v = v * 10 + xx (hay[p] - 48);
+                p += 1;
+                d += 1;
+            }
+            if d == 0 { return -1; }
+            return v;
+        }
+        i += 1;
+    }
+    return -1;
+}
+
+send_all :: (srv: *http.Server, fd: i32, s: string) {
+    sent : i64 = 0;
+    while sent < s.len {
+        n, we := socket.write_nb(fd, @s.ptr[sent], xx (s.len - sent));
+        if !we { sent += n; }
+        srv.tick(1) catch {};
+    }
+}
+
+// Read one complete Content-Length response (1698's helper).
+read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
+    total : i64 = 0;
+    t : i64 = 0;
+    while t < 20000 {
+        srv.tick(1) catch {};
+        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        if !re { total += n; }
+        else if re == error.Closed { return total; }
+        resp := string.{ ptr = rbuf, len = xx total };
+        he := -1;
+        i := 0;
+        while i + 3 < resp.len {
+            if resp[i] == 13 and resp[i+1] == 10 and resp[i+2] == 13 and resp[i+3] == 10 { he = i + 4; break; }
+            i += 1;
+        }
+        if he >= 0 {
+            cl := num_after(resp, "Content-Length: ");
+            if cl >= 0 and total >= he + cl { return total; }
+        }
+        t += 1;
+    }
+    return 0;
+}
+
+// Read a full chunked response: until the buffer ends with the terminating
+// "0\r\n\r\n" (the data pattern's consecutive bytes always differ by 7 mod
+// 251, so the terminator sequence cannot occur inside chunk data).
+read_chunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
+    total : i64 = 0;
+    t : i64 = 0;
+    while t < 200000 {
+        srv.tick(1) catch {};
+        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        if !re { total += n; }
+        else if re == error.Closed { return total; }
+        if total >= 5
+            and rbuf[total-5] == 48 and rbuf[total-4] == 13 and rbuf[total-3] == 10
+            and rbuf[total-2] == 13 and rbuf[total-1] == 10 {
+            return total;
+        }
+        t += 1;
+    }
+    return 0;
+}
+
+// De-chunk `body` and verify every data byte against the producer's
+// pattern; true only when the framing parses and the reassembled length
+// and bytes match exactly.
+dechunk_check :: (body: string, seed: i64, expect_total: i64) -> bool {
+    p : i64 = 0;
+    total : i64 = 0;
+    while true {
+        size : i64 = 0;
+        digits : i64 = 0;
+        while p < body.len {
+            ch := body[p];
+            hv : i64 = -1;
+            if ch >= 48 and ch <= 57 { hv = xx (ch - 48); }
+            else if ch >= 97 and ch <= 102 { hv = xx (ch - 97 + 10); }
+            else if ch >= 65 and ch <= 70 { hv = xx (ch - 65 + 10); }
+            if hv < 0 { break; }
+            size = size * 16 + hv;
+            digits += 1;
+            p += 1;
+        }
+        if digits == 0 { return false; }
+        if p + 1 >= body.len or body[p] != 13 or body[p + 1] != 10 { return false; }
+        p += 2;
+        if size == 0 { break; }
+        if p + size + 1 >= body.len { return false; }
+        i : i64 = 0;
+        while i < size {
+            v : u8 = xx ((seed + (total + i) * 7) % 251);
+            if body[p + i] != v { return false; }
+            i += 1;
+        }
+        total += size;
+        p += size;
+        if body[p] != 13 or body[p + 1] != 10 { return false; }
+        p += 2;
+    }
+    return total == expect_total;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+    obs : Obs = .{};
+    obs.main_tid = pthread_self();
+
+    push .{ allocator = gpa } {
+        cap : i64 = 1310720;   // 1.25 MB — the 1 MB stream + framing + head
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{
+            port = PORT,
+            timeout_request_ms = 5000,
+            timeout_keepalive_ms = 5000,
+            request_count = 50,
+            max_conn = 4,
+            thread_pool_count = 1,     // pool(1): a pinned worker is observable
+            thread_pool_backlog = 16,
+            handler_timeout_ms = 5000,
+        };
+        srv, se := http.Server.init(cfg, route, xx @obs);
+        if se { print("init failed\n"); return 1; }
+
+        // ── case 1: 1 MB worker-fed chunked stream, arena-owned ctx ───
+        seed := checksum("seed-abc");
+        c1 := dial_port(PORT);
+        if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
+        send_all(@srv, c1, "POST /stream HTTP/1.1\r\nHost: t\r\nContent-Length: 8\r\n\r\nseed-abc");
+        r1 := read_chunked(@srv, c1, rbuf, cap);
+        resp1 := string.{ ptr = rbuf, len = xx r1 };
+        if !contains(resp1, "HTTP/1.1 200 OK") { print("case1: no 200\n"); failed = 1; }
+        if !contains(resp1, "Transfer-Encoding: chunked") { print("case1: not chunked\n"); failed = 1; }
+        he := -1;
+        i : i64 = 0;
+        while i + 3 < r1 {
+            if rbuf[i] == 13 and rbuf[i+1] == 10 and rbuf[i+2] == 13 and rbuf[i+3] == 10 { he = xx i + 4; break; }
+            i += 1;
+        }
+        if he < 0 { print("case1: no header end\n"); failed = 1; }
+        else if !dechunk_check(string.{ ptr = @rbuf[he], len = xx (r1 - he) }, seed, STREAM_TOTAL) {
+            print("case1: stream bytes wrong\n");
+            failed = 1;
+        }
+
+        // ── case 2: keep-alive after the worker-fed stream ────────────
+        send_all(@srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r2 := read_response(@srv, c1, rbuf, cap);
+        resp2 := string.{ ptr = rbuf, len = xx r2 };
+        if !contains(resp2, "pong") { print("case2: no pong\n"); failed = 1; }
+        socket.close(c1);
+
+        // ── case 3: mid-stream disconnect aborts the feeder ───────────
+        c2 := dial_port(PORT);
+        if c2 < 0 { print("dial c2 failed\n"); srv.close(); return 1; }
+        send_all(@srv, c2, "GET /big HTTP/1.1\r\nHost: t\r\n\r\n");
+        got : i64 = 0;
+        t : i64 = 0;
+        while t < 20000 and got < 65536 {
+            srv.tick(1) catch {};
+            n, re := socket.read_nb(c2, @rbuf[0], 16384);
+            if !re { got += n; }
+            else if re == error.Closed { break; }
+            t += 1;
+        }
+        socket.close(c2);   // mid-stream disconnect
+        t = 0;
+        while t < 20000 and srv.in_flight() > 0 {
+            srv.tick(1) catch {};
+            t += 1;
+        }
+
+        // ── case 4: the single worker survived the aborted stream ─────
+        c3 := dial_port(PORT);
+        if c3 < 0 { print("dial c3 failed\n"); srv.close(); return 1; }
+        send_all(@srv, c3, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r4 := read_response(@srv, c3, rbuf, cap);
+        resp4 := string.{ ptr = rbuf, len = xx r4 };
+        if !contains(resp4, "pong") { print("case4: worker pinned — no pong\n"); failed = 1; }
+        socket.close(c3);
+
+        // ── case 5: close() while a worker is mid-handler, PRE-register ──
+        // (Q3.2-review HIGH, reproduced deadlock): the /slowbig worker is
+        // still SLEEPING — its stream channel does not exist yet — when
+        // close() runs, so the one-shot registry sweep cannot see it. The
+        // closing flag makes the late registration abort the pump; close()
+        // must return (pre-fix it joined a feeder blocked forever on a
+        // full channel).
+        c5 := dial_port(PORT);
+        if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
+        send_all(@srv, c5, "GET /slowbig HTTP/1.1\r\nHost: t\r\n\r\n");
+        t = 0;
+        while t < 50 {   // dispatch lands; the worker sleeps 300 ms
+            srv.tick(1) catch {};
+            t += 1;
+        }
+
+        srv.close();   // must return: the late-registered chan aborts its pump
+        socket.close(c5);
+
+        // ── the producer must have run OFF the loop thread ────────────
+        if obs.prod_tid == 0 { print("producer never ran\n"); failed = 1; }
+        if obs.prod_tid == obs.main_tid { print("producer ran ON the loop thread\n"); failed = 1; }
+
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

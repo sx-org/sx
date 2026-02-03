@@ -1,0 +1,25 @@
+// Stream B1 (fibers) — an `abi(.naked)` function with PARAMETERS reads its args
+// from ABI registers (the shape the fiber context-switch needs: `swap_context`
+// reads `from`/`to` from x0/x1).
+//
+// A naked function has no frame, so params are NOT spilled to stack slots — they
+// stay in their ABI registers and the asm body reads them directly. Here `a` is
+// in x0, `b` in x1 (aarch64 AAPCS), and the result returns in x0: `add x0, x0,
+// x1`. The lowering skips the param-alloca loop for `.naked` (decl.zig /
+// generic.zig); the LLVM args are declared-but-unused, which the verifier allows
+// (spilling them would emit `store i64 %0, …` → "cannot use argument of naked
+// function"). aarch64-pinned; runs end-to-end (exit 42), ir-only on a mismatch.
+//
+// Regression for an adversarial-review finding: before the param-alloca guard, a
+// param-bearing `.naked` fn emitted invalid LLVM (loud verifier error) instead of
+// a working naked function.
+add :: (a: i64, b: i64) -> i64 abi(.naked) {
+    asm volatile {
+        #string A
+        add x0, x0, x1
+        ret
+A
+    };
+}
+
+main :: () -> i64 { return add(40, 2); }

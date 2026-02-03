@@ -1,0 +1,7 @@
+// One of two flat-imported authors of a same-name type-returning function
+// `Make :: ($T) -> Type`. Its body returns a two-field struct; b.sx's returns a
+// one-field struct, so a bare `Make(i64)` head is a genuine collision the
+// importing source cannot disambiguate.
+Make :: ($T: Type) -> Type {
+    return struct { x: T; y: T; };
+}

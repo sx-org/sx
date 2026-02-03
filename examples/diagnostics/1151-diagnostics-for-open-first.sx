@@ -1,0 +1,8 @@
+// The FIRST iterable drives the loop, so it must be bounded; an open range
+// `a..` may only follow it.
+
+#import "modules/std.sx";
+
+main :: () {
+    for 0.. (i) { }
+}

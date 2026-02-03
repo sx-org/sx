@@ -1,0 +1,14 @@
+== D9 collision inventory: `package` / `import` / `private` / `intrinsic` as ordinary identifiers ==
+(comments, string/char literals, and #string heredocs excluded by the scanner)
+
+library/modules/platform/bundle.sx:949:48: package [typed-decl(param/field/local)] | build_android_manifest :: (opts: BuildOptions, package: string, lib_name: string) -> string abi(.compiler) {
+library/modules/platform/bundle.sx:950:27: package [use] | pkg_esc := xml.escape(package);
+
+== summary ==
+package: 2
+  typed-decl(param/field/local): 1
+  use: 1
+import: 0
+private: 0
+intrinsic: 0
+total identifier hits: 2 in 1 file(s) (scanned 1357 .sx file(s))

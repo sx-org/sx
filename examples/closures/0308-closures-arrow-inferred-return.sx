@@ -1,0 +1,24 @@
+// Regression (issue 0059): a function with NO explicit return type infers it
+// from the body, which references the function's own parameters. The inference
+// must see those params — before the fix they weren't in scope during
+// return-type resolution, so the inferred type came out `.unresolved` and tripped
+// the LLVM-emission guard ("unresolved type reached LLVM emission"). Whether it
+// slipped through used to depend on a same-named binding lingering from earlier
+// lowering. Covers the arrow (`=>`) and inferred-via-`return` forms, at top level
+// and as locals.
+
+#import "modules/std.sx";
+
+dbl :: (x: i32) => x * 2;            // top-level arrow, inferred return
+inc :: (x: i32) { return x + 1; }    // top-level block, inferred via `return`
+
+main :: () {
+    print("{}\n", dbl(7));           // 14
+    print("{}\n", inc(41));          // 42
+
+    tripl :: (x: i32) => x * 3;      // local arrow, inferred return
+    print("{}\n", tripl(4));         // 12
+
+    half :: (x: f32) => x / 2.0;     // inferred float return
+    print("{}\n", half(9.0));        // 4.500000
+}

@@ -1,0 +1,18 @@
+// Regression (issue 0102, Phase C): a BARE call whose own author is a plain free
+// fn must DISPATCH to that author, not the first-wins winner — even when the
+// winner is a comptime PACK (`..$args`) of the same name. a.sx (imported first)
+// authors `f` as a pack → first-wins winner; b.sx authors its OWN plain `f`. In
+// b.sx, `f()` must reach b.f (returns 2). Before the fix, lowerCall's early
+// pack/comptime/generic dispatch keyed off the first-wins winner (a's pack) and
+// invoked it (returns 1) BEFORE consuming the selected author — so plan-selected
+// author and lowered+dispatched author disagreed. The early dispatch now reads
+// the SAME `SelectedFunc` the main dispatch binds (fix-0102 F2).
+#import "modules/std.sx";
+#import "0741-modules-flat-same-name-bare-pack-winner/a.sx";
+#import "0741-modules-flat-same-name-bare-pack-winner/b.sx";
+
+main :: () -> i32 {
+    show_a();   // a-side: own == winner (the pack) → returns 1, byte-for-byte unchanged
+    show_b();   // b-side: selected own plain author → returns 2, not the pack winner
+    0
+}

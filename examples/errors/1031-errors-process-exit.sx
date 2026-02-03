@@ -1,0 +1,15 @@
+// `process.exit` (ERR step E4.1): immediate process termination with an exit
+// code. No `defer` / `onfail` cleanup runs and no error-trace frames are pushed
+// — it's POSIX `_exit(2)`. Here a runtime call exits 42; the line after never
+// runs. (sx `print` writes unbuffered via `write(2)`, so the "starting" line
+// still appears despite `_exit` skipping the stdio flush.) Expected exit: 42.
+
+#import "modules/std.sx";
+proc :: #import "modules/std/process.sx";
+
+main :: () -> i32 {
+    print("starting\n");
+    proc.exit(42);
+    print("unreachable\n");
+    return 0;
+}

@@ -1,0 +1,4 @@
+// An unrelated module's generic `Box($T)` (two fields, size 16). The qualified
+// head `a.Box(..)` must NOT silently resolve to this template via the bare
+// global last-wins map.
+Box :: struct($T: Type) { x: T; y: T; }

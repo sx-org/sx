@@ -1,0 +1,11 @@
+error: duplicate context field 'allocator': the Context namespace is program-global and flat — every field name must be declared exactly once
+  --> library/modules/std/mem.sx:139:1
+    |
+139 | #context_extend allocator: Allocator = c_allocator;
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: 'allocator' first declared here, by examples/diagnostics/1261-diagnostics-context-extend-collision-stdlib.sx
+  --> examples/diagnostics/1261-diagnostics-context-extend-collision-stdlib.sx:9:1
+   |
+ 9 | #context_extend allocator: i64 = 0;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

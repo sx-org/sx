@@ -1,0 +1,6 @@
+direct d0=3 d7=21 len=8
+alias a0=7 a7=99 len=8
+alias i0=hi i7=yo
+alias p0x=1 p0y=2 p7x=5
+nested g00=1 g77=10
+fwd f0=4 f4=40 len=5

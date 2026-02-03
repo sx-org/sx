@@ -1,0 +1,5 @@
+error: asm expression with no outputs must be marked `volatile`
+  --> examples/platform/1641-platform-asm-missing-volatile.sx:5:14
+   |
+ 5 | nope :: () { asm { "nop" }; }
+   |              ^^^^^^^^^^^^^

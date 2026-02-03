@@ -1,0 +1,19 @@
+// A reserved/builtin type-name spelling is rejected as the NAME of a `::`
+// declaration too — both a constant (`i2 :: 5`) and a function
+// (`u8 :: (…) {…}`). A function name and a const name are binding sites just
+// like `i2 := …`; previously the `::` decl forms slipped past the
+// reserved-name check, so a bare reserved-name function compiled silently and
+// became callable — bypassing the backtick rule that handwritten sx must use.
+// The backtick escape (`` `i2 :: … ``, examples/0153) is the only way to spell
+// these names; `#import c` extern decls remain exempt (examples/1220).
+//
+// Regression (issue 0089). Expected: one error per declaration, each caret on
+// the declared name; exit 1.
+#import "modules/std.sx";
+
+i2 :: 5;
+u8 :: (n: i64) -> i64 { return n + 7; }
+
+main :: () -> i32 {
+    return 0;
+}

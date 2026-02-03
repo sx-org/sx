@@ -1,0 +1,37 @@
+// The sx library ships SQLite: `#import "vendors/sqlite/sqlite.sx"`
+// resolves through the stdlib search paths, compiles the vendored
+// amalgamation as a `#import c` unit (cached), and the bindings just
+// work — no system dependency, no flags. Pins the vendored version
+// (an OS libsqlite3 of another version must never shadow the unit)
+// and a typed round trip.
+#import "modules/std.sx";
+sq :: #import "vendors/sqlite/sqlite.sx";
+
+main :: () -> i32 {
+    v := sq.sqlite_version();
+    if v != "3.53.2" {
+        print("unexpected sqlite version: {}\n", v);
+        return 1;
+    }
+
+    db, oe := sq.Sqlite.open(":memory:");
+    if oe { print("open failed\n"); return 1; }
+    ee := false;
+    db.exec("CREATE TABLE t (name TEXT, n INTEGER); INSERT INTO t VALUES ('a', 1), ('b', 2)") catch { ee = true; };
+    if ee { print("exec failed: {}\n", db.errmsg()); db.close(); return 1; }
+
+    st, pe := db.prepare("SELECT name, n FROM t WHERE n > ?1 ORDER BY n");
+    if pe { print("prepare failed\n"); db.close(); return 1; }
+    st.bind_int64(1, 1) catch { ee = true; };
+    rc, se := st.step();
+    serr := false;
+    if se { serr = true; }
+    if serr or ee { print("step failed\n"); st.finalize(); db.close(); return 1; }
+    if rc == sq.SQLITE_ROW {
+        print("row: {} {}\n", st.column_text(0), st.column_int64(1));
+    }
+    st.finalize();
+    db.close();
+    print("vendored sqlite {} ok\n", v);
+    0
+}

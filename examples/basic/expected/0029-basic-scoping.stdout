@@ -1,0 +1,23 @@
+=== 6. Scoping ===
+inner: 200
+outer: 100
+shadow-type: 42
+shadow-type: 3.140000
+nest3: 3
+nest2: 2
+nest1: 1
+scope-isolate: 100
+scope-reuse: 1
+scope-reuse: 2
+scope-reuse: 1
+defer-a
+defer-b
+defer-c
+d4
+d3
+d2
+d1
+inner-defer
+outer-defer
+defer-in-if: body
+defer-in-if: deferred

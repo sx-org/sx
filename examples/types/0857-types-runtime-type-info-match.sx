@@ -1,0 +1,34 @@
+// 1a-S3b-3 — runtime `type_info(tp)`: the const __sx_type_infos records
+// (one per TypeId, bytes matching the sx TypeInfo layout; master
+// [N x ptr] by tag) loaded and MATCHED at runtime — kind-first dispatch
+// with typed per-arm payloads (struct fields carry name+offset; enums
+// their variants). This is the reflection walker's core dispatch.
+#import "modules/std.sx";
+meta :: #import "modules/std/meta.sx";
+Padded :: struct { a: u8; b: i64; c: u16; }
+Color  :: enum { red; green; blue; }
+Overlay :: union { as_int: i64; bytes: [8]u8; }
+
+kind_of :: (tp: Type) -> string {
+    ti := type_info(tp);
+    if ti == {
+        case .struct: (si) { return format("struct n={} f1={}@{}", si.fields.len, si.fields[1].name, si.fields[1].offset); }
+        case .enum: (ei) { return format("enum n={} v2={}", ei.variants.len, ei.variants[2].name); }
+        case .union: (ui) { return format("union n={}", ui.arms.len); }
+        case .int: (ii) { return format("int {}sig={}", ii.bits, ii.signed); }
+        case .array: (ai) { return format("array [{}]{}", ai.len, type_name(ai.elem)); }
+        case .string: { return "string"; }
+        else: { return "other"; }
+    }
+    return "?";
+}
+
+main :: () {
+    print("{}\n", kind_of(type_of(Padded.{ a = 1, b = 2, c = 3 })));
+    print("{}\n", kind_of(type_of(Color.red)));
+    av : any = Overlay.{ as_int = 5 };
+    print("{}\n", kind_of(type_of(av)));
+    ts : [3]Type = .[i16, [4]f32, string];
+    k := 0;
+    while k < 3 { print("{}\n", kind_of(ts[k])); k += 1; }
+}

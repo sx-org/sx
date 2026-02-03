@@ -1,0 +1,24 @@
+// A user generic ufcs method whose name collides with a stdlib re-export must
+// resolve by RECEIVER TYPE, not last-wins. `cancel` here is also re-exported by
+// std.sx (io.sx's `cancel :: ufcs (f: *Future($R))`); calling `(@x).cancel()` on
+// a `*Box(i64)` must pick the user's `cancel(*Box($R))` and bind `$R := i64`.
+//
+// Regression (issue 0157): UFCS dispatch resolved the name via a single
+// last-wins `fn_ast_map` entry with no receiver filtering, so the stdlib
+// `*Future($R)` overload won, `$R` never bound, and `.unresolved` reached LLVM
+// → panic. Fixed by selecting the most receiver-specific binding author across
+// all module authors (src/ir/lower/call.zig `selectUfcsGenericByReceiver`).
+#import "modules/std.sx";
+
+Box :: struct ($R: Type) { value: R; flag: i64; }
+
+// Same name as std.sx's re-exported `cancel` (generic ufcs over `*Future($R)`),
+// but a different receiver — the receiver type disambiguates.
+cancel :: ufcs (b: *Box($R)) { b.flag = 1; }
+
+main :: () -> i64 {
+    x : Box(i64) = ---; x.value = 7; x.flag = 0;
+    (@x).cancel();          // resolves to the user `cancel` by receiver type
+    print("{}\n", x.flag);  // 1
+    return 0;
+}

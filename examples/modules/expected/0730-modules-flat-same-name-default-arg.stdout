@@ -1,0 +1,2 @@
+from_a binds a.cfg default (10): ok
+from_b binds b.cfg default (20): ok

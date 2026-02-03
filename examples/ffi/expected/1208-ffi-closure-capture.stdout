@@ -1,0 +1,2 @@
+ok (passthrough works) = true
+ok (passthrough via #objc_call) = true

@@ -1,0 +1,7 @@
+var: 3 9
+arg: 47
+ret: 5 6
+nested: 1 2 8
+reassign: 11 12
+arr: 20 21
+optslice: 3 1 3

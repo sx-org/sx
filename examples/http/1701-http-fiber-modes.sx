@@ -1,0 +1,316 @@
+// std.http — Q3.3 fiber-mode coverage: the paths 1700 doesn't reach
+// (Q3.3-review LOW). One fiber server with stream_request_body = FALSE:
+//   1. POST /sum with a Content-Length body — ACCUMULATE-fiber dispatch
+//      (full-request job copy; req.read_body serves the cursor over the
+//      complete body, so handler code is mode-agnostic) — byte-exact
+//      len + checksum.
+//   2. HEAD /hello — automatic HEAD through run_fiber_job: the response
+//      carries the GET-equivalent Content-Length with ZERO body bytes on
+//      the wire (the client asserts the stream ends at the header block).
+//   3. GET /chunky — resp.stream FROM A FIBER: the producer follows the
+//      INLINE lifetime contract (pulled by the loop AFTER the fiber is
+//      reaped — ctx is a caller-owned struct on main's stack, never the
+//      fiber's); 100 KB chunked body de-chunked and verified byte-exact.
+//   4. GPA leak gate net-zero after close + runner.deinit().
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+fs :: #import "modules/std/http/fiber_sched.sx";
+
+PORT :: 19016;
+SUM_LEN :: 50000;
+CHUNKY_LEN :: 100000;
+
+// Caller-owned producer state (main's stack — outlives the response, per
+// the inline/fiber producer contract).
+ChunkyState :: struct {
+    seed: i64 = 0;
+    total: i64 = 0;
+}
+
+producer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64 {
+    st : *ChunkyState = xx ctx;
+    left := st.total - offset;
+    if left <= 0 { return 0; }
+    n := if dst_cap < left then dst_cap else left;
+    i : i64 = 0;
+    while i < n {
+        dst[i] = xx ((st.seed + (offset + i) * 7) % 251);
+        i += 1;
+    }
+    return n;
+}
+
+checksum :: (s: string) -> i64 {
+    h : i64 = 0;
+    i := 0;
+    while i < s.len {
+        h = (h * 31 + s[i]) % 1000000007;
+        i += 1;
+    }
+    return h;
+}
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/sum" {
+        scratch : [8192]u8 = ---;
+        total : i64 = 0;
+        h : i64 = 0;
+        while true {
+            n := req.read_body(@scratch[0], 8192);
+            if n <= 0 { break; }
+            i : i64 = 0;
+            while i < n { h = (h * 31 + scratch[i]) % 1000000007; i += 1; }
+            total += n;
+        }
+        resp.body = concat("len=", concat(int_to_string(total), concat(" sum=", int_to_string(h))));
+        return;
+    }
+    if req.path == "/chunky" {
+        st : *ChunkyState = xx ctx;   // caller-owned (main's stack)
+        resp.stream(producer, xx st);
+        return;
+    }
+    resp.body = "hello";   // GET or HEAD /hello
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+num_after :: (hay: string, key: string) -> i64 {
+    i := 0;
+    while i + key.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < key.len { if hay[i + j] != key[j] { ok = false; break; } j += 1; }
+        if ok {
+            p := i + key.len;
+            v : i64 = 0;
+            d : i64 = 0;
+            while p < hay.len and hay[p] >= 48 and hay[p] <= 57 {
+                v = v * 10 + xx (hay[p] - 48);
+                p += 1;
+                d += 1;
+            }
+            if d == 0 { return -1; }
+            return v;
+        }
+        i += 1;
+    }
+    return -1;
+}
+
+send_all :: (srv: *http.Server, fd: i32, s: string) {
+    sent : i64 = 0;
+    while sent < s.len {
+        n, we := socket.write_nb(fd, @s.ptr[sent], xx (s.len - sent));
+        if !we { sent += n; }
+        srv.tick(1) catch {};
+    }
+}
+
+read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
+    total : i64 = 0;
+    t : i64 = 0;
+    while t < 20000 {
+        srv.tick(1) catch {};
+        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        if !re { total += n; }
+        else if re == error.Closed { return total; }
+        resp := string.{ ptr = rbuf, len = xx total };
+        he := -1;
+        i := 0;
+        while i + 3 < resp.len {
+            if resp[i] == 13 and resp[i+1] == 10 and resp[i+2] == 13 and resp[i+3] == 10 { he = i + 4; break; }
+            i += 1;
+        }
+        if he >= 0 {
+            cl := num_after(resp, "Content-Length: ");
+            if cl >= 0 and total >= he + cl { return total; }
+        }
+        t += 1;
+    }
+    return 0;
+}
+
+// Read a chunked response until the terminating "0\r\n\r\n" (the data
+// pattern's consecutive bytes differ by 7 mod 251 — the terminator cannot
+// occur inside chunk data; see 1699).
+read_chunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
+    total : i64 = 0;
+    t : i64 = 0;
+    while t < 200000 {
+        srv.tick(1) catch {};
+        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        if !re { total += n; }
+        else if re == error.Closed { return total; }
+        if total >= 5
+            and rbuf[total-5] == 48 and rbuf[total-4] == 13 and rbuf[total-3] == 10
+            and rbuf[total-2] == 13 and rbuf[total-1] == 10 {
+            return total;
+        }
+        t += 1;
+    }
+    return 0;
+}
+
+dechunk_check :: (body: string, seed: i64, expect_total: i64) -> bool {
+    p : i64 = 0;
+    total : i64 = 0;
+    while true {
+        size : i64 = 0;
+        digits : i64 = 0;
+        while p < body.len {
+            ch := body[p];
+            hv : i64 = -1;
+            if ch >= 48 and ch <= 57 { hv = xx (ch - 48); }
+            else if ch >= 97 and ch <= 102 { hv = xx (ch - 97 + 10); }
+            else if ch >= 65 and ch <= 70 { hv = xx (ch - 65 + 10); }
+            if hv < 0 { break; }
+            size = size * 16 + hv;
+            digits += 1;
+            p += 1;
+        }
+        if digits == 0 { return false; }
+        if p + 1 >= body.len or body[p] != 13 or body[p + 1] != 10 { return false; }
+        p += 2;
+        if size == 0 { break; }
+        if p + size + 1 >= body.len { return false; }
+        i : i64 = 0;
+        while i < size {
+            v : u8 = xx ((seed + (total + i) * 7) % 251);
+            if body[p + i] != v { return false; }
+            i += 1;
+        }
+        total += size;
+        p += size;
+        if body[p] != 13 or body[p + 1] != 10 { return false; }
+        p += 2;
+    }
+    return total == expect_total;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+    chunky : ChunkyState = .{ seed = 4242, total = CHUNKY_LEN };
+
+    push .{ allocator = gpa } {
+        cap : i64 = 131072;   // 128 KB — the chunked body + framing + heads
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        runner := fs.SchedRunner.init();
+        cfg : http.Config = .{
+            port = PORT,
+            timeout_request_ms = 5000,
+            timeout_keepalive_ms = 5000,
+            request_count = 50,
+            max_conn = 4,
+            fibers = xx runner,          // fiber mode, ACCUMULATE bodies
+        };
+        srv, se := http.Server.init(cfg, route, xx @chunky);
+        if se { print("init failed\n"); return 1; }
+
+        // ── case 1: accumulate-fiber body + read_body cursor ──────────
+        body : [*]u8 = xx context.allocator.alloc_bytes(SUM_LEN);
+        sum : i64 = 0;
+        i : i64 = 0;
+        while i < SUM_LEN {
+            body[i] = xx ((i * 13 + 7) % 251);
+            sum = (sum * 31 + body[i]) % 1000000007;
+            i += 1;
+        }
+        c1 := dial_port(PORT);
+        if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
+        send_all(@srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 50000\r\n\r\n");
+        send_all(@srv, c1, string.{ ptr = body, len = SUM_LEN });
+        r1 := read_response(@srv, c1, rbuf, cap);
+        resp1 := string.{ ptr = rbuf, len = xx r1 };
+        if !contains(resp1, "HTTP/1.1 200 OK") { print("case1: no 200\n"); failed = 1; }
+        if num_after(resp1, "len=") != SUM_LEN { print("case1: bad len {}\n", num_after(resp1, "len=")); failed = 1; }
+        if num_after(resp1, "sum=") != sum { print("case1: bad sum\n"); failed = 1; }
+
+        // ── case 2: HEAD through the fiber path — headers only ────────
+        send_all(@srv, c1, "HEAD /hello HTTP/1.1\r\nHost: t\r\n\r\n");
+        // a HEAD response is the header block alone: read until \r\n\r\n,
+        // then a few extra ticks must produce NOTHING further
+        h_total : i64 = 0;
+        he : i64 = -1;
+        t : i64 = 0;
+        while t < 20000 and he < 0 {
+            srv.tick(1) catch {};
+            n, re := socket.read_nb(c1, @rbuf[h_total], xx (cap - h_total));
+            if !re { h_total += n; }
+            k : i64 = 0;
+            while k + 3 < h_total {
+                if rbuf[k] == 13 and rbuf[k+1] == 10 and rbuf[k+2] == 13 and rbuf[k+3] == 10 { he = k + 4; break; }
+                k += 1;
+            }
+            t += 1;
+        }
+        t = 0;
+        while t < 50 {
+            srv.tick(1) catch {};
+            n, re := socket.read_nb(c1, @rbuf[h_total], xx (cap - h_total));
+            if !re { h_total += n; }
+            t += 1;
+        }
+        hresp := string.{ ptr = rbuf, len = xx h_total };
+        if !contains(hresp, "HTTP/1.1 200 OK") { print("case2: no 200\n"); failed = 1; }
+        if num_after(hresp, "Content-Length: ") != 5 { print("case2: CL {} (want 5)\n", num_after(hresp, "Content-Length: ")); failed = 1; }
+        if he < 0 or h_total != he { print("case2: body bytes on a HEAD ({} past headers)\n", h_total - he); failed = 1; }
+
+        // ── case 3: resp.stream from a fiber (inline producer contract) ──
+        send_all(@srv, c1, "GET /chunky HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r3 := read_chunked(@srv, c1, rbuf, cap);
+        resp3 := string.{ ptr = rbuf, len = xx r3 };
+        if !contains(resp3, "HTTP/1.1 200 OK") { print("case3: no 200\n"); failed = 1; }
+        if !contains(resp3, "Transfer-Encoding: chunked") { print("case3: not chunked\n"); failed = 1; }
+        che : i64 = -1;
+        i = 0;
+        while i + 3 < r3 {
+            if rbuf[i] == 13 and rbuf[i+1] == 10 and rbuf[i+2] == 13 and rbuf[i+3] == 10 { che = xx i + 4; break; }
+            i += 1;
+        }
+        if che < 0 { print("case3: no header end\n"); failed = 1; }
+        else if !dechunk_check(string.{ ptr = @rbuf[che], len = xx (r3 - che) }, 4242, CHUNKY_LEN) {
+            print("case3: stream bytes wrong\n");
+            failed = 1;
+        }
+        socket.close(c1);
+
+        srv.close();
+        runner.deinit();
+
+        context.allocator.dealloc_bytes(xx body);
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

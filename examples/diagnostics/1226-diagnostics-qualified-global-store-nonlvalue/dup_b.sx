@@ -1,0 +1,2 @@
+// Companion for 1226's ambiguous leg — second author of `shared`.
+shared : i64 = 2;

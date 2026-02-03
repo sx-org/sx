@@ -1,0 +1,19 @@
+// Writes through a module constant are compile errors — for every target
+// chain rooted at a const: a struct const's field (this used to compile
+// and BUS-ERROR at runtime — issue 0116), an array const's element,
+// a compound assignment, and a bare scalar const. A local that shadows
+// the const name stays writable (see 0177/0178 for the value semantics).
+
+#import "modules/std.sx";
+
+Color :: struct { r, g, b: i64; }
+WHITE :: Color.{ r = 255, g = 255, b = 255 };
+K : [4]i64 : .[11, 22, 33, 44];
+N : i64 : 4;
+
+main :: () {
+    WHITE.r = 0;
+    K[0] = 5;
+    K[1] += 2;
+    N = 9;
+}

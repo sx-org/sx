@@ -1,0 +1,5 @@
+// A facade that RE-EXPORTS another module's types via alias decls — the
+// std.sx / std/http.sx prelude-facade pattern.
+inner :: #import "inner.sx";   // file-relative sibling
+Color :: inner.Color;   // enum re-export
+Shape :: inner.Shape;   // struct re-export

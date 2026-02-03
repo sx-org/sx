@@ -1,0 +1,38 @@
+// Comptime type construction from a List grown at compile time: assemble the
+// variant set in a `List(EnumVariant)` via `.append` (which allocates + grows
+// its backing through the comptime `context.allocator`), then mint an enum from
+// the grown backing sliced to its length — `vs.items[0..vs.len]`. The comptime
+// VM evaluates the List growth, the slice, and `define`/`declare` end-to-end.
+//
+// A `[*]T` many-pointer (the List's bare `items` field) carries no length, so it
+// must be sliced with `[0..len]` to form a `[]T`; passing `vs.items` bare is a
+// rejected coercion (see the diagnostic example for that path).
+//
+// Regression (issue 0141): the List-grown form used to segfault in the comptime
+// VM's slice decoder.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+make_enum :: (name: string, variants: []EnumVariant) -> Type {
+    return define(declare(name), .enum(.{ variants = variants }));
+}
+
+build_color :: () -> Type {
+    vs : List(EnumVariant) = .{};
+    vs.append(EnumVariant.{ name = "red",   payload = void });
+    vs.append(EnumVariant.{ name = "green", payload = i64 });
+    vs.append(EnumVariant.{ name = "blue",  payload = void });
+    return make_enum("Color", vs.items[0..vs.len]);
+}
+
+Color :: build_color();
+
+main :: () -> i32 {
+    c : Color = .green(7);
+    if c == {
+        case .red:       { print("red\n"); }
+        case .green: (v) { print("green={}\n", v); }
+        case .blue:      { print("blue\n"); }
+    }
+    return 0;
+}

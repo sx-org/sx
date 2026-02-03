@@ -1,0 +1,25 @@
+// The SOFT assertion `av.(?T)` (third temperament, ruled in on top of
+// the error variant): mismatch is a VALUE — `null` — never a failure or
+// panic; the optional IS the check (comma-ok parity). The asserted type
+// is the inner T, the result is exactly `?T`, and it composes with the
+// whole optional toolbox: `?? d` coalescing, `if v := … { }` binding
+// with typed narrowing, `== null` tests. A typed receiver keeps the
+// conversion regime (`5.(?i64)` is the xx optional wrap, no check).
+#import "modules/std.sx";
+
+Point :: struct { x: i64; y: i64; }
+
+main :: () {
+    av : any = 42;
+    hit := av.(?i64);
+    print("hit: {}\n", hit ?? -1);
+    miss := av.(?f64);
+    print("miss null: {}\n", miss == null);
+    print("coalesce: {}\n", av.(?f64) ?? 9.5);
+    if v := av.(?i64) { print("if-bind: {}\n", v); }
+    if w := av.(?bool) { print("unreached: {}\n", w); } else { print("else-arm\n"); }
+    p := Point.{ x = 3, y = 4 };
+    pv : any = p;
+    if q := pv.(?Point) { print("struct: {} {}\n", q.x, q.y); }
+    print("typed recv unchanged: {}\n", (5.(?i64)) != null);
+}

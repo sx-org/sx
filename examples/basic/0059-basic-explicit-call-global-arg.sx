@@ -1,0 +1,24 @@
+// An explicit call `f(g)` (and the qualified `T.method(g)`) passing a MUTABLE
+// module-global value to a `*T` parameter must pass the global's live address —
+// mutations through the pointer land on the global, not a throwaway copy.
+//
+// Regression (issue 0202 sibling): the implicit address-of for a `*T` arg only
+// handled local allocas; a global identifier fell through to a loaded copy, so
+// `f(g)` silently mutated nothing. Const globals stay on the copy path (a `*T`
+// into `.rodata` would SIGBUS) — covered by 0058.
+
+Counter :: struct {
+    n: i64 = 0;
+    bump :: (self: *Counter) { self.n += 1; }
+}
+
+inc :: (c: *Counter) { c.n += 1; }
+
+g : Counter = .{};
+
+main :: () -> i32 {
+    inc(g);                 // free function, value arg -> *T
+    Counter.bump(g);        // qualified method, value arg -> *T
+    g.bump();               // UFCS sugar (issue 0202 proper)
+    return xx g.n;          // 3
+}

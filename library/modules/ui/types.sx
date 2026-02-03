@@ -1,0 +1,220 @@
+#import "modules/std.sx";
+#import "modules/math";
+
+Point :: struct {
+    x, y: f32;
+
+    zero :: () -> Point => .{ x = 0.0, y = 0.0 };
+
+    add :: (self: Point, b: Point) -> Point {
+        Point.{ x = self.x + b.x, y = self.y + b.y }
+    }
+
+    sub :: (self: Point, b: Point) -> Point {
+        Point.{ x = self.x - b.x, y = self.y - b.y }
+    }
+
+    scale :: (self: Point, s: f32) -> Point {
+        Point.{ x = self.x * s, y = self.y * s }
+    }
+
+    distance :: (self: Point, b: Point) -> f32 {
+        dx := self.x - b.x;
+        dy := self.y - b.y;
+        sqrt(dx * dx + dy * dy)
+    }
+}
+
+Size :: struct {
+    width, height: f32;
+
+    zero :: () -> Size => .{ width = 0.0, height = 0.0 };
+
+    contains :: (self: Size, point: Point) -> bool {
+        point.x >= 0.0 and point.x <= self.width and point.y >= 0.0 and point.y <= self.height
+    }
+}
+
+Frame :: struct {
+    origin: Point;
+    size: Size;
+
+    zero :: () -> Frame { Frame.{ origin = Point.zero(), size = Size.zero() } }
+
+    make :: (x: f32, y: f32, w: f32, h: f32) -> Frame {
+        Frame.{ origin = Point.{ x = x, y = y }, size = Size.{ width = w, height = h } }
+    }
+
+    max_x :: (self: Frame) -> f32 { self.origin.x + self.size.width }
+    max_y :: (self: Frame) -> f32 { self.origin.y + self.size.height }
+    mid_x :: (self: Frame) -> f32 { self.origin.x + self.size.width * 0.5 }
+    mid_y :: (self: Frame) -> f32 { self.origin.y + self.size.height * 0.5 }
+
+    contains :: (self: Frame, point: Point) -> bool {
+        point.x >= self.origin.x and point.x <= self.max_x()
+        and point.y >= self.origin.y and point.y <= self.max_y()
+    }
+
+    intersection :: (self: Frame, other: Frame) -> Frame {
+        x1 := max(self.origin.x, other.origin.x);
+        y1 := max(self.origin.y, other.origin.y);
+        x2 := min(self.max_x(), other.max_x());
+        y2 := min(self.max_y(), other.max_y());
+        if x2 <= x1 or y2 <= y1 
+            then .zero()
+            else .make(x1, y1, x2 - x1, y2 - y1)
+    }
+
+    inset :: (self: Frame, insets: EdgeInsets) -> Frame {
+        Frame.make(
+            self.origin.x + insets.left,
+            self.origin.y + insets.top,
+            self.size.width - insets.left - insets.right,
+            self.size.height - insets.top - insets.bottom
+        )
+    }
+
+    expand :: (self: Frame, amount: f32) -> Frame {
+        Frame.make(
+            self.origin.x - amount,
+            self.origin.y - amount,
+            self.size.width + amount * 2.0,
+            self.size.height + amount * 2.0
+        )
+    }
+}
+
+EdgeInsets :: struct {
+    top, left, bottom, right: f32;
+
+    zero :: () -> EdgeInsets { EdgeInsets.{ top = 0.0, left = 0.0, bottom = 0.0, right = 0.0 } }
+
+    all :: (v: f32) -> EdgeInsets {
+        EdgeInsets.{ top = v, left = v, bottom = v, right = v }
+    }
+
+    symmetric :: (h: f32, v: f32) -> EdgeInsets {
+        EdgeInsets.{ top = v, left = h, bottom = v, right = h }
+    }
+
+    horizontal :: (self: EdgeInsets) -> f32 { self.left + self.right }
+    vertical :: (self: EdgeInsets) -> f32 { self.top + self.bottom }
+}
+
+Color :: struct {
+    r, g, b, a: u8;
+
+    rgba :: (r: u8, g: u8, b: u8, a: u8) -> Color {
+        Color.{ r = r, g = g, b = b, a = a }
+    }
+
+    rgb :: (r: u8, g: u8, b: u8) -> Color {
+        Color.{ r = r, g = g, b = b, a = 255 }
+    }
+
+    rf :: (self: Color) -> f32 { xx self.r / 255.0 }
+    gf :: (self: Color) -> f32 { xx self.g / 255.0 }
+    bf :: (self: Color) -> f32 { xx self.b / 255.0 }
+    af :: (self: Color) -> f32 { xx self.a / 255.0 }
+
+    with_alpha :: (self: Color, a: u8) -> Color {
+        Color.{ r = self.r, g = self.g, b = self.b, a = a }
+    }
+
+    lerp :: (self: Color, b: Color, t: f32) -> Color {
+        Color.{
+            r = xx (self.r + (b.r - self.r) * t),
+            g = xx (self.g + (b.g - self.g) * t),
+            b = xx (self.b + (b.b - self.b) * t),
+            a = xx (self.a + (b.a - self.a) * t),
+        }
+    }
+}
+
+// Named color constants
+COLOR_WHITE       :: Color.{ r = 255, g = 255, b = 255, a = 255 };
+COLOR_BLACK       :: Color.{ r = 0,   g = 0,   b = 0,   a = 255 };
+COLOR_RED         :: Color.{ r = 255, g = 59,  b = 48,  a = 255 };
+COLOR_GREEN       :: Color.{ r = 52,  g = 199, b = 89,  a = 255 };
+COLOR_BLUE        :: Color.{ r = 0,   g = 122, b = 255, a = 255 };
+COLOR_YELLOW      :: Color.{ r = 255, g = 204, b = 0,   a = 255 };
+COLOR_ORANGE      :: Color.{ r = 255, g = 149, b = 0,   a = 255 };
+COLOR_GRAY        :: Color.{ r = 142, g = 142, b = 147, a = 255 };
+COLOR_DARK_GRAY   :: Color.{ r = 44,  g = 44,  b = 46,  a = 255 };
+COLOR_LIGHT_GRAY  :: Color.{ r = 209, g = 209, b = 214, a = 255 };
+COLOR_TRANSPARENT :: Color.{ r = 0,   g = 0,   b = 0,   a = 0   };
+
+// Size proposal — optional dimensions (null = flexible)
+ProposedSize :: struct {
+    width: ?f32;
+    height: ?f32;
+
+    fixed :: (w: f32, h: f32) -> ProposedSize {
+        ProposedSize.{ width = w, height = h }
+    }
+
+    flexible :: () -> ProposedSize {
+        ProposedSize.{ width = null, height = null }
+    }
+}
+
+HAlignment :: enum {
+    leading;
+    center;
+    trailing;
+}
+
+VAlignment :: enum {
+    top;
+    center;
+    bottom;
+}
+
+Alignment :: struct {
+    h: HAlignment;
+    v: VAlignment;
+}
+
+ALIGN_CENTER       :: Alignment.{ h = .center,   v = .center };
+ALIGN_TOP_LEADING  :: Alignment.{ h = .leading,  v = .top };
+ALIGN_TOP          :: Alignment.{ h = .center,   v = .top };
+ALIGN_TOP_TRAILING :: Alignment.{ h = .trailing, v = .top };
+ALIGN_LEADING      :: Alignment.{ h = .leading,  v = .center };
+ALIGN_TRAILING     :: Alignment.{ h = .trailing, v = .center };
+ALIGN_BOTTOM          :: Alignment.{ h = .center,   v = .bottom };
+ALIGN_BOTTOM_LEADING  :: Alignment.{ h = .leading,  v = .bottom };
+ALIGN_BOTTOM_TRAILING :: Alignment.{ h = .trailing, v = .bottom };
+
+// Compute x offset for a child of child_width inside container_width
+align_h :: (alignment: HAlignment, child_width: f32, container_width: f32) -> f32 {
+    if alignment == {
+        case .leading: 0.0;
+        case .center: { (container_width - child_width) * 0.5 }
+        case .trailing: container_width - child_width;
+    }
+}
+
+// Compute y offset for a child of child_height inside container_height
+align_v :: (alignment: VAlignment, child_height: f32, container_height: f32) -> f32 {
+    if alignment == {
+        case .top: 0.0;
+        case .center: { (container_height - child_height) * 0.5 }
+        case .bottom: container_height - child_height;
+    }
+}
+
+// --- Lerpable implementations ---
+
+#import "modules/ui/animation.sx";
+
+impl Lerpable for Point {
+    lerp :: (self: Point, b: Point, t: f32) -> Point {
+        Point.{ x = self.x + (b.x - self.x) * t, y = self.y + (b.y - self.y) * t }
+    }
+}
+
+impl Lerpable for Size {
+    lerp :: (self: Size, b: Size, t: f32) -> Size {
+        Size.{ width = self.width + (b.width - self.width) * t, height = self.height + (b.height - self.height) * t }
+    }
+}

@@ -1,0 +1,21 @@
+// fix-0102d site 4 (issue 0102): two flat FILE imports each author a same-name
+// free function `compute` (a.sx returns 7, b.sx returns 70) and each evaluates
+// it at comptime via `NAME :: #run compute();`. The #run body must resolve the
+// bare callee from ITS OWN module's source context (own-author wins), so a.sx's
+// const is 7 and b.sx's is 70. Before the fix, the #run body lowered with the
+// main file's source perspective, where `compute` is authored by two flat
+// imports and neither is main's own — so it was reported AMBIGUOUS and the
+// build failed. Regression: per-source comptime #run callee resolution.
+#import "modules/std.sx";
+#import "0733-modules-flat-same-name-comptime-run/a.sx";
+#import "0733-modules-flat-same-name-comptime-run/b.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("a.sx #run binds a.compute (7)", get_a() == 7);
+    report("b.sx #run binds b.compute (70)", get_b() == 70);
+    0
+}

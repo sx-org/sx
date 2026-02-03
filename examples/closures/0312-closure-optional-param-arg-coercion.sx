@@ -1,0 +1,33 @@
+// Calling a closure VALUE whose parameter is `?T` coerces the argument to the
+// param type, just like a call to a top-level function does: a concrete arg
+// wraps to a present optional, and `null` becomes an absent optional.
+//
+// Regression (issue 0186): the closure-value call path lowered args without
+// coercing to the closure's declared param types, so a concrete `7` arrived as
+// a bare payload (read ABSENT) and `null` reached a `{T,i1}` slot as a bare
+// pointer (LLVM verifier failure). Fixed by typing args against the closure's
+// params (`resolveCallParamTypes`) AND coercing them at the call site
+// (`coerceClosureCallArgs`).
+#import "modules/std.sx";
+
+main :: () {
+    pick := (p: ?i64) -> i64 {
+        if p == null { return -1; }
+        return p;            // narrowed inside the lambda body
+    };
+    print("pick 7: {}\n", pick(7));        // 7   (concrete arg wraps present)
+    print("pick null: {}\n", pick(null));  // -1  (null arg → absent)
+
+    // also via a closure stored in a struct field
+    Holder :: struct { f: Closure(?i64) -> i64; }
+    h := Holder.{ f = pick };
+    print("h 5: {}\n", h.f(5));            // 5
+    print("h null: {}\n", h.f(null));      // -1
+
+    // and via a plain function-pointer VALUE (same coercion contract)
+    fp : (?i64) -> i64 = target;
+    print("fp 8: {}\n", fp(8));            // 8
+    print("fp null: {}\n", fp(null));      // -1
+}
+
+target :: (p: ?i64) -> i64 { if p == null { return -1; } return p; }

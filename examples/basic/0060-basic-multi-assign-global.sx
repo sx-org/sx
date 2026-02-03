@@ -1,0 +1,70 @@
+// Multi-assign to a module global: an identifier target in `a, b = x, y;`
+// that names a module global stores through the global, same as single-assign
+// `g = v;`. Also covers the `_` discard leg (`g, _ = x, y` evaluates y and
+// drops it) and mixing a global target with a local one in the same statement.
+//
+// Also pinned: each RHS value types against ITS target (the multi-assign
+// twin of single-assign's target-typing preamble) —
+//   - a `null` RHS lowers as the TARGET's optional type, global and local
+//     (previously it typed against the enclosing fn's return type and
+//     coerceToType wrapped a PRESENT Some(0) into the optional);
+//   - an enum-literal RHS resolves against the enum target's type.
+// The optional global is null-INITIALIZED and set at runtime because a
+// non-null optional-global initializer miscompiles today (issue 0234).
+//
+// Regression (issue 0218): lowerMultiAssign's ident-target arm had no global
+// fallback — `g_total, a = 40, 50;` compiled but never wrote `g_total`.
+//
+// Regression (issue 0249): lowerMultiAssign's INDEX-target arm addressed a
+// GLOBAL array base via `lowerExpr` (a load of the whole array into a
+// register), so `g_arr[1], a = 77, 4;` GEP+stored into that throwaway copy and
+// the write was silently dropped — the read-back showed the original value.
+// Single-assign already took the in-place `global_addr` path. Also covers a
+// two-index global-array multi-assign and a swap (`g_swap[0], g_swap[1] =
+// g_swap[1], g_swap[0]`, RHS-before-stores) so the fix can't regress into
+// store-then-read ordering.
+
+#import "modules/std.sx";
+
+Color :: enum { red; green; blue; }
+
+g_total : i64 = 0;
+g_opt : ?i64 = null;
+g_col : Color = .green;
+g_arr : [3]i64 = .[ 10, 20, 30 ];
+g_swap : [2]i64 = .[ 1, 2 ];
+
+main :: () -> i32 {
+    a := 1;
+    g_total, a = 40, 50;        // global target + local target
+    print("g={} a={}\n", g_total, a);
+
+    g_total, _ = g_total + 2, a + 99;   // global target + `_` discard leg
+    print("g={}\n", g_total);
+
+    // Optional targets take a `null` RHS typed against the TARGET, not the
+    // enclosing fn's return type — global and local, first/last position.
+    g_opt, a = 7, 1;                    // scalar → optional coercion into the global
+    print("opt_set={}\n", g_opt ?? -1);
+    g_opt, a = null, 2;                 // null → optional GLOBAL
+    lo : ?i64 = 9;
+    a, lo = 3, null;                    // null → optional LOCAL (last position)
+    print("g_opt_null={} lo_null={} a={}\n", g_opt == null, lo == null, a);
+
+    // Enum-literal RHS resolves against the enum global target's type.
+    g_col, a = .red, 4;
+    print("col_red={} a={}\n", g_col == Color.red, a);
+
+    // GLOBAL array index target (issue 0249) — the store must land in the
+    // global's storage in place, not a loaded copy. Mixed with a local target.
+    g_arr[1], a = 77, 5;
+    print("arr1={} a={}\n", g_arr[1], a);            // arr1=77
+    // Two global-array index targets in one statement (first + last).
+    g_arr[0], g_arr[2] = 88, 99;
+    print("arr={} {} {}\n", g_arr[0], g_arr[1], g_arr[2]);  // 88 77 99
+    // Swap through global-array indices: both RHS reads happen BEFORE either
+    // store, so the values exchange rather than one clobbering the other.
+    g_swap[0], g_swap[1] = g_swap[1], g_swap[0];
+    print("swap={} {}\n", g_swap[0], g_swap[1]);     // 2 1
+    0
+}

@@ -1,0 +1,11 @@
+error: constant 'BAD' declares [3] elements but its initializer has 2
+  --> examples/diagnostics/1161-diagnostics-array-const-dim-mismatch.sx:6:16
+   |
+ 6 | BAD : [3]i64 : .[1, 2];
+   |                ^^^^^^^
+
+error: unresolved 'BAD' (in examples/diagnostics/1161-diagnostics-array-const-dim-mismatch.sx fn main)
+  --> examples/diagnostics/1161-diagnostics-array-const-dim-mismatch.sx:9:19
+   |
+ 9 |     print("{}\n", BAD[0]);
+   |                   ^^^

@@ -1,0 +1,31 @@
+// A `u64` integer literal larger than `i64.max`, written with an explicit
+// `.(u64)` cast, is accepted in `:=`-inferred and call-argument positions —
+// the literal is range-checked against the CAST's target type, not the
+// ambient default `i64`.
+//
+// Regression (issue 0275): the cast operand was lowered before the cast
+// target was applied, so `0xcbf....(u64)` fired the i64 fits-check on the
+// literal ("does not fit in i64") even though the cast to u64 was present. A
+// literal that genuinely overflows the target still errors; only the
+// target-typing was wrong.
+
+#import "modules/std.sx";
+
+takes_u64 :: (v: u64) { print("arg={}\n", v); }
+
+main :: () {
+    // `:=` inference: the literal fits u64 (> i64.max), so `x` infers u64.
+    x := 0xcbf29ce484222325.(u64);
+    print("{}\n", x);                    // 14695981039346656037
+
+    // Max u64 via cast.
+    y := 0xffffffffffffffff.(u64);
+    print("{}\n", y);                    // 18446744073709551615
+
+    // Call-argument position.
+    takes_u64(0xcbf29ce484222325.(u64));
+
+    // `xx` to u64 (truncating cast) accepts max u64 too.
+    z : u64 = xx 0xffffffffffffffff;
+    print("{}\n", z);                    // 18446744073709551615
+}

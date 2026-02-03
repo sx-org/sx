@@ -1,0 +1,27 @@
+// A `void` (zero-sized) struct/tuple field is legitimate (e.g. `Future(void)`)
+// and must NOT crash the compiler. It lowers to a zero-width `[0 x i8]` LLVM
+// slot (TypeLowering.fieldLLVMType), and aggregate init skips storing a value
+// into it (emitStructInit) — so the struct stays sized and field access past
+// the void field is correct, instead of the old unsized-type SIGTRAP / a
+// corrupt aggregate constant.
+//
+// Regression (issue 0150).
+#import "modules/std.sx";
+
+Holder :: struct { v: void; ok: bool; }
+
+Box :: struct($T: Type) { v: T; tag: i32; }
+
+main :: () -> i32 {
+    h : Holder = .{ ok = true };
+    if h.ok { print("ok\n"); }
+
+    // Through a generic instantiated at `void`.
+    b : Box(void) = .{ tag = 7 };
+    print("tag={}\n", b.tag);
+
+    // A tuple with a void element.
+    t : Tuple(void, i32) = .{ {}, 9 };
+    print("t1={}\n", t.1);
+    return 0;
+}

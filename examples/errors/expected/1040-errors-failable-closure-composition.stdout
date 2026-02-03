@@ -1,0 +1,3 @@
+bare ok=10 err=-2
+chain ok=10 err=0
+widen=10

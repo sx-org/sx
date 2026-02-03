@@ -1,0 +1,28 @@
+// The L8 retrofit: `allocator` and `io` are ordinary `#context_extend`
+// declarations (std/mem.sx, std/io.sx) whose defaults are the erasure of the
+// stdlib's own instance globals — a BORROW per #identity semantics, so the
+// default context's receivers are real addresses, never null:
+//   - a `?Protocol` wrap of a default capability is PRESENT (null ctx is the
+//     absent sentinel and must never appear in a live protocol value);
+//   - the identity downcast hands back the borrowed global.
+// The same fold is user-spellable: a protocol-typed global initialized from
+// an impl global (no `xx` needed — the declared type states the erasure).
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/std/io.sx";
+
+fallback : Allocator = c_allocator;
+
+main :: () {
+    maybe_io : ?Io = context.io;
+    print("default io present = {}\n", maybe_io != null);
+    maybe_alloc : ?Allocator = context.allocator;
+    print("default allocator present = {}\n", maybe_alloc != null);
+
+    recv : *CBlockingIo = xx context.io;
+    print("io borrows c_blocking_io = {}\n", recv == @c_blocking_io);
+
+    p := fallback.alloc_bytes(32);
+    print("global-erasure allocator works = {}\n", p != null);
+    fallback.dealloc_bytes(p);
+}

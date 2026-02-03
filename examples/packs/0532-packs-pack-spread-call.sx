@@ -1,0 +1,26 @@
+// Feature 1 — pack spread into a call's positional arguments. `f(..xs.get)`
+// projects `get` over the pack and spreads the resulting tuple into f's params:
+//   add2(..xs.get)  ≈  add2(xs[0].get(), xs[1].get())
+// The canonical's `mapper(..sources.value)` is this shape.
+
+#import "modules/std.sx";
+
+Box :: protocol(T: Type) {
+    get :: (self: *Self) -> i64;
+}
+IntCell :: struct { v: i64; }
+Dbl :: struct { n: i64; }
+impl Box(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
+impl Box(i64) for Dbl { get :: (self: *Dbl) -> i64 => self.n * 2; }
+
+add2 :: (a: i64, b: i64) -> i64 { return a + b; }
+add3 :: (a: i64, b: i64, c: i64) -> i64 { return a + b + c; }
+
+via2 :: (..xs: Box) -> i64 { return add2(..xs.get); }
+via3 :: (..xs: Box) -> i64 { return add3(..xs.get); }
+
+main :: () -> i32 {
+    print("two={}\n", via2(IntCell.{ v = 10 }, Dbl.{ n = 5 }));            // 10 + 10 = 20
+    print("three={}\n", via3(Dbl.{ n = 1 }, IntCell.{ v = 2 }, Dbl.{ n = 3 })); // 2 + 2 + 6 = 10
+    0
+}

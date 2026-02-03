@@ -1,0 +1,33 @@
+// Phase 6 / issue 0054 — generic-struct → parameterized-protocol erasure.
+//   - A generic-struct impl method `self: *Box` now resolves `self.field` to the
+//     concrete INSTANCE (the template name binds to the instance type), so
+//     `self.x` works (was "field not found on type 'Box'").
+//   - `xx c` erases a generic-struct instance (`Combined__i64_i64`) to a
+//     parameterized protocol (`VL(i64)`) via the generic
+//     `impl VL($R) for Combined($R, ..$Ts)`: the thunk monomorphizes the
+//     template method for the instance and dispatch works (was a trap).
+
+#import "modules/std.sx";
+
+VL :: protocol(T: Type) { get :: (self: *Self) -> T; }
+IntCell :: struct { v: i64; }
+impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
+
+Combined :: struct($R: Type, ..$Ts: []Type) {
+    sources: Tuple(..VL(Ts));
+    value:   $R;
+}
+impl VL($R) for Combined($R, ..$Ts) { get :: (self: *Combined) -> $R => self.value; }
+
+make :: (..sources: VL) -> VL(i64) {
+    c : Combined(i64, ..sources.T) = ---;
+    c.value = 99;
+    c.sources = .{..sources};
+    return c.(VL(i64));          // owning copy — escapes this frame
+}
+
+main :: () -> i32 {
+    r := make(IntCell.{ v = 1 });
+    print("{}\n", r.get());      // 99 (dispatch through the erased Combined)
+    0
+}

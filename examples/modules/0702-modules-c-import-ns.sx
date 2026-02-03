@@ -1,0 +1,10 @@
+#import "modules/std.sx";
+tc :: #import "tests/fixtures/test_c.sx";
+
+main :: () -> i32 {
+    a := tc.add_numbers(10, 20);
+    b := tc.multiply(5, 6);
+    print("tc.add_numbers(10, 20) = {}\n", a);
+    print("tc.multiply(5, 6) = {}\n", b);
+    0
+}

@@ -1,0 +1,153 @@
+#import "modules/std/core.sx";   // Source_Location
+#import "modules/std/fmt.sx";    // print, concat, substr, alloc_string, to_cstring, from_cstring
+c :: #import "modules/std/c.sx"; // c.exit (_exit) + the shared libc handle
+trace :: #import "modules/std/trace.sx";
+
+// =====================================================================
+// process.sx — subprocess + environment stdlib (POSIX backend).
+//
+// Scope (Phase 1A): one entry point `run(cmd)` that shells out to
+// /bin/sh, captures stdout, returns exit code + stdout. Plus
+// `env(name)` / `find_executable(name)`. The bundler uses these to
+// invoke `codesign`, `plutil`, `security`, `aapt2`, `javac`, `d8`,
+// `keytool`, `apksigner`.
+//
+// Roadmap: phase 1B replaces `popen` with `posix_spawn` + pipes so
+// we can capture stderr separately and pass argv without shell
+// quoting. Until then, callers responsible for quoting + use 2>&1
+// to fold stderr into the captured stream.
+// =====================================================================
+
+// The module-specific externs below (not in the shared c.sx surface) bind
+// through the shared libc handle.
+libc :: c.libc;
+
+// ── Low-level libc bindings ─────────────────────────────────────────
+
+popen  :: (cmd: [:0]u8, mode: [:0]u8) -> *void extern libc;
+pclose :: (stream: *void) -> i32 extern libc;
+fread  :: (ptr: [*]u8, size: usize, nmemb: usize, stream: *void) -> usize extern libc;
+feof   :: (stream: *void) -> i32 extern libc;
+getenv :: (name: cstring) -> ?cstring extern libc;
+system :: (cmd: [:0]u8) -> i32 extern libc;
+
+// ── Public types ─────────────────────────────────────────────────────
+
+ProcessResult :: struct {
+    /// Exit code as reported by `WEXITSTATUS(status)`. 0 = success.
+    /// Note: doesn't distinguish "killed by signal" from "exited
+    /// non-zero"; phase 1B will return a tagged union.
+    exit_code: i32;
+    stdout:    string;
+}
+
+// ── Public API ───────────────────────────────────────────────────────
+
+// Run a shell command, capture stdout, wait for exit. Returns null if
+// the shell itself couldn't be spawned. A non-zero exit_code with
+// valid stdout means the command ran and exited non-zero — distinct
+// from spawn failure.
+//
+// `cmd` is interpreted by /bin/sh — callers MUST quote arguments
+// containing spaces or shell metacharacters. To capture stderr along
+// with stdout, append " 2>&1" to the command.
+run :: (cmd: [:0]u8) -> ?ProcessResult {
+    f := popen(cmd, "r");
+    if f.(i64) == 0 { return null; }
+
+    out := "";
+    buf := alloc_string(4096);
+    loop := true;
+    while loop {
+        n := fread(buf.ptr, 1, 4096, f);
+        if n == 0 { loop = false; }
+        if n > 0 {
+            chunk : string = ---;
+            chunk.ptr = buf.ptr;
+            chunk.len = n.(i64);
+            out = concat(out, chunk);
+        }
+    }
+    raw_status := pclose(f);
+    if raw_status < 0 { return null; }
+    // POSIX wait(2) status encoding: low byte = signal (if signaled),
+    // next byte = exit code (if normally exited). For our MVP we just
+    // surface the exit-code byte; the signal case is folded into the
+    // non-zero return.
+    exit_code := (raw_status >> 8) & 0xFF;
+    if exit_code == 0 {
+        if (raw_status & 0x7F) != 0 {
+            // Killed by signal — surface as a non-zero exit.
+            exit_code = 128 + (raw_status & 0x7F);
+        }
+    }
+    ProcessResult.{ exit_code = exit_code, stdout = out }
+}
+
+// Read an environment variable. Returns null if unset; an empty
+// string if set to "".
+env :: (name: [:0]u8) -> ?string {
+    p := getenv(to_cstring(name));
+    if p == null { return null; }
+    v := from_cstring(p!);
+    if v.len == 0 { return ""; }
+    substr(v, 0, v.len)
+}
+
+// Locate an executable by walking `$PATH`. Returns the absolute path
+// to the first hit, or null if not found anywhere. Uses `command -v`
+// under the shell; cheap and matches what the bundler ultimately
+// shells out to anyway.
+find_executable :: (name: [:0]u8) -> ?string {
+    // Compose `command -v <name>` — name is assumed shell-safe
+    // (executable names like `codesign`, `javac`, `aapt2`).
+    cmd := concat("command -v ", name);
+    // Need null-terminated for popen.
+    cmd_z := alloc_string(cmd.len);
+    c.memcpy(cmd_z.ptr, cmd.ptr, cmd.len);
+    if r := run(cmd_z) {
+        if r.exit_code != 0 { return null; }
+        // Strip the trailing newline that `command -v` emits.
+        out := r.stdout;
+        if out.len > 0 {
+            if out[out.len - 1] == '\n' { out = substr(out, 0, out.len - 1); }
+        }
+        if out.len == 0 { return null; }
+        return out;
+    }
+    null
+}
+
+// ── Process termination (ERR step E4.1) ───────────────────────────────
+
+// Bound to POSIX `_exit(2)` (immediate termination — no atexit, no stdio
+// flush), NOT libc `exit(3)`. Two reasons: (1) it matches `process.exit`'s
+// "immediate stop, no cleanup" contract; (2) sx's `print` writes unbuffered
+// via `write(2)`, so skipping the stdio flush loses nothing. Binding the
+// symbol `"exit"` would also collide with this module's own `exit` function
+// at the link level. The `_exit` binding lives in the shared c.sx surface
+// (`c.exit`).
+
+// Stop the process immediately with exit code `code`. Does NOT unwind:
+// no `defer` / `onfail` cleanup runs, no error-trace frames are pushed —
+// it's the POSIX `_exit(2)` syscall. At comptime (`#run`) it terminates the
+// COMPILER with the same code after printing a diagnostic naming the call site
+// (`loc` defaults to `#caller_location`); in compiled code the `is_comptime()`
+// branch folds away to just the syscall.
+exit :: (code: u8, loc: Source_Location = #caller_location) -> noreturn {
+    if is_comptime() {
+        print("\nprocess.exit({}) called from {} at {}:{}\n", code, loc.func, loc.file, loc.line);
+        trace.print_interpreter_frames();
+    }
+    c.exit(xx code)
+}
+
+// Abort with a message when `cond` is false. Prints `ASSERTION FAILED at
+// <file>:<line>: <msg>` (the caller's location, via `#caller_location`) then
+// exits 1; a true condition is a no-op.
+assert :: (cond: bool, msg: string, loc: Source_Location = #caller_location) {
+    if !cond {
+        print("ASSERTION FAILED at {}:{}: {}\n", loc.file, loc.line, msg);
+        exit(1);
+    }
+}

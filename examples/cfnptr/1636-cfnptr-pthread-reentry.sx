@@ -1,0 +1,29 @@
+// PLAN-HTTPZ C2: the C->sx re-entry contract. A real OS thread enters
+// sx through a `abi(.c)` entry (which has NO implicit context),
+// fabricates its own Context via `push .{ allocator = gpa }`,
+// and calls default-conv sx code that allocates through it.
+#import "modules/std.sx";
+
+clib :: #library "c";
+pthread_create :: (thread: *usize, attr: *void, start: (*void) -> *void abi(.c), arg: *void) -> i32 extern clib;
+pthread_join   :: (thread: usize, retval: **void) -> i32 extern clib;
+
+entry :: (arg: *void) -> *void abi(.c) {
+    p : *i64 = xx arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } {
+        s := concat("th", "read");      // allocate through the thread's OWN context
+        if s.len == 6 { p.* = p.* * 2; }
+    }
+    return null;
+}
+
+main :: () -> i32 {
+    v : i64 = 21;
+    th : usize = 0;
+    if pthread_create(@th, null, entry, xx @v) != 0 { print("create failed\n"); return 1; }
+    pthread_join(th, null);
+    if v != 42 { print("wrong result: {}\n", v); return 1; }
+    print("pthread into sx ok: {}\n", v);
+    return 0;
+}

@@ -1,0 +1,26 @@
+// Wrong argument counts to fixed-arity functions are rejected at the call
+// site — bare calls, flat-imported stdlib fns, method dot-calls, and ufcs
+// dot-calls — instead of reaching LLVM verification ("Incorrect number of
+// arguments passed to called function!").
+// Regression (issue 0123).
+
+#import "modules/std.sx";
+
+add2 :: (a: i64, b: i64) -> i64 { return a + b; }
+
+Point :: struct {
+    x: i64;
+    scaled :: (self: Point, k: i64) -> i64 { return self.x * k; }
+}
+
+bump :: ufcs (p: Point, by: i64) -> i64 { return p.x + by; }
+
+main :: () -> i32 {
+    _ = add2(1, 2, 3);           // plain bare call, too many
+    _ = add2(1);                 // plain bare call, too few
+    _ = concat("a", "b", "c");   // flat-imported stdlib fn, too many
+    p := Point.{ x = 5 };
+    _ = p.scaled(2, 9);          // method dot-call, too many
+    _ = p.bump(1, 2);            // ufcs dot-call, too many
+    return 0;
+}

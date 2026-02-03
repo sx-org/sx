@@ -1,0 +1,24 @@
+// An array dimension that folds to a valid compile-time integer but exceeds a
+// `u32` is a hard error — and it must report the SAME precise diagnostic whether
+// the array is written directly (`a : [5_000_000_000]i64`, see example 1130) or
+// behind a type ALIAS (`Big :: [5_000_000_000]i64`, here). Both forms now route
+// the dimension through one shared folder + one shared message map, so they
+// cannot diverge.
+//
+// Regression (issue 0083 / F0.4 attempt 7): the stateless alias-registration
+// path collapsed `foldDimU32`'s distinct `.too_large` outcome into `null` and
+// emitted ONE generic "an array dimension is not a compile-time integer
+// constant" message — FALSE, since 5_000_000_000 IS a compile-time integer
+// constant; it merely doesn't fit a `u32`. The alias path now consults the
+// shared fold and emits the precise "does not fit in u32" message, matching the
+// direct form. (A genuinely non-const alias dim still gets the generic message —
+// see example 1129.)
+#import "modules/std.sx";
+
+Big :: [5000000000]i64;
+
+main :: () {
+    a : Big = ---;
+    a[0] = 7;
+    print("unreachable: {}\n", a[0]);
+}

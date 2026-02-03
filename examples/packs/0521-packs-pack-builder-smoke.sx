@@ -1,0 +1,48 @@
+// Variadic heterogeneous type packs — step 4A end-to-end
+// smoke. Exercises the FULL chain step 5's generic
+// `Into(Block)` impl needs:
+//
+//   1. A pack-fn that passes its bound `$args` to a builder
+//      via `#run` / `#insert` (here `#run` for simplicity).
+//   2. The builder receives a `[]Type` slice and walks it,
+//      calling `type_name(list[i])` per position.
+//   3. `type_name(list[i])` is the DYNAMIC form — the index_expr
+//      argument can't be statically resolved at lower time, so
+//      the lowering emits a `callBuiltin(.type_name, ...)` that
+//      the interp's arm handles by reading the runtime
+//      `Value.type_tag(TypeId)` and returning the per-position
+//      name.
+//
+// The smoke demonstrates that step 4's full surface — bare
+// `$args` (whole pack as []Type) + dynamic reflection
+// intrinsics + per-position type discovery at interp time —
+// hangs together end-to-end. This is the foundation step 5's
+// builder-driven generic Into(Block) impl rests on.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+// Generic "describe pack" builder. Receives the pack as
+// []Type, returns a joined string with each type's name.
+describe :: (..$args) -> string {
+    list := $args;
+    s := "[";
+    i : i64 = 0;
+    while i < list.len {
+        if i > 0 { s = concat(s, ", "); }
+        s = concat(s, type_name(list[i]));
+        i = i + 1;
+    }
+    s = concat(s, "]");
+    return s;
+}
+
+run_all :: () {
+    print("{}\n", describe());                        // []
+    print("{}\n", describe(42));                       // [i64]
+    print("{}\n", describe(42, "hi"));                 // [i64, string]
+    print("{}\n", describe(true, 3.14, "x", 99));       // [bool, f64, string, i64]
+}
+#run run_all();
+
+main :: () { print("rt\n"); }

@@ -1,0 +1,229 @@
+// std.http H5 — per-request handler timeout (pool mode).
+//
+// A slow handler that overruns Config.handler_timeout_ms must NOT
+// permanently consume server capacity. In POOL mode the handler runs on a
+// WORKER thread, so the LOOP thread enforces a hard deadline: a connection
+// sitting in CONN_HANDLING past handler_timeout_ms gets a 504, is closed,
+// and the worker's eventual (late) completion is DISCARDED (gen-checked in
+// drain_completions) — no double-response, no double-free.
+//
+// This drives a single-thread tick harness (the 1633/1670 shape) and proves:
+//   1. A request whose handler exceeds handler_timeout_ms → the client gets
+//      504, the connection is freed.
+//   2. The server stays RESPONSIVE: a second, fast request on another
+//      connection gets a normal 200 (the loop was never blocked, capacity
+//      remained).
+//   3. The slow worker's LATE completion is discarded cleanly (ticks driven
+//      past the slow handler's return — no crash, no double-response).
+//   4. Run under a GPA: net-zero allocations after close (the timed-out
+//      completion's response buffer was freed when discarded).
+//   5. Server.stats().timeouts reflects the timeout.
+//
+// LIMITATION (intentional): the slow handler RETURNS (usleep, then sets a
+// body) rather than looping forever. A never-returning handler would hang
+// the worker join inside Server.close(), making this test un-exitable —
+// there is no pthread_cancel. Pool mode bounds a slow handler's *impact*
+// (the connection is freed on time); it does not kill the worker.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+clib :: #library "c";
+usleep :: (usec: i64) -> i32 extern clib;
+
+PORT :: 18990;
+HANDLER_TIMEOUT_MS :: 40;
+SLOW_SLEEP_US :: 200000;   // 200 ms — well past the 40 ms handler deadline
+
+// Slow-but-RETURNING handler: sleeps past the deadline, then returns a body.
+// The loop will already have 504'd + freed its connection by the time this
+// completes; its completion is then discarded.
+slow_handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    usleep(SLOW_SLEEP_US);
+    resp.body = "slow-late";   // never reaches the client (connection freed)
+}
+
+// Fast handler (dispatched to a free worker): returns immediately → 200.
+fast_handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/fast" { resp.body = "fast-ok"; return; }
+    resp.body = "ok";
+}
+
+// Router: /slow → slow_handler, everything else → fast_handler.
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/slow" { slow_handler(req, resp, ctx); return; }
+    fast_handler(req, resp, ctx);
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+resp_complete :: (buf: [*]u8, len: i64) -> bool {
+    s := string.{ ptr = buf, len = xx len };
+    he := -1;
+    i := 0;
+    while i + 3 < s.len {
+        if s[i] == 13 and s[i+1] == 10 and s[i+2] == 13 and s[i+3] == 10 { he = i; break; }
+        i += 1;
+    }
+    if he < 0 { return false; }
+    cl : i64 = 0;
+    seen := false;
+    j := 0;
+    needle := "Content-Length: ";
+    while j + needle.len < s.len {
+        k := 0;
+        ok := true;
+        while k < needle.len { if s[j + k] != needle[k] { ok = false; break; } k += 1; }
+        if ok {
+            d := j + needle.len;
+            while d < s.len and s[d] >= 48 and s[d] <= 57 { cl = cl * 10 + (s[d] - 48); d += 1; }
+            seen = true;
+            break;
+        }
+        j += 1;
+    }
+    if !seen { return false; }
+    return len >= he + 4 + cl;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 16384;
+        sbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);   // slow-conn scratch
+        fbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);   // fast-conn scratch
+
+        cfg : http.Config = .{
+            port = PORT,
+            timeout_request_ms = 5000,
+            timeout_keepalive_ms = 5000,
+            request_count = 50,
+            max_conn = 8,
+            thread_pool_count = 2,        // pool mode — loop enforces the deadline
+            thread_pool_backlog = 16,
+            handler_timeout_ms = HANDLER_TIMEOUT_MS,
+        };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        // Connection A: the slow request. Occupies a worker for 200 ms.
+        ca := dial_port(PORT);
+        if ca < 0 { print("dial A failed\n"); srv.close(); return 1; }
+        slow_req := "GET /slow HTTP/1.1\r\nHost: t\r\n\r\n";
+        socket.write(ca, slow_req.ptr, xx slow_req.len);
+
+        // Tick enough to accept + dispatch the slow request (CONN_HANDLING),
+        // then keep ticking past the 40 ms handler deadline so the loop's
+        // sweep fires the 504. The slow worker is STILL busy (sleeps 200 ms).
+        sa_total : i64 = 0;
+        slow_resp : string = "";
+        t : i64 = 0;
+        while t < 120 {   // ~120 ms of 1 ms ticks — past the 40 ms deadline
+            srv.tick(1) catch {};
+            n, re := socket.read_nb(ca, @sbuf[sa_total], xx (cap - sa_total));
+            if !re { sa_total += n; }
+            else if re == error.Closed {
+                slow_resp = string.{ ptr = sbuf, len = xx sa_total };
+                break;
+            }
+            if resp_complete(sbuf, sa_total) {
+                slow_resp = string.{ ptr = sbuf, len = xx sa_total };
+                break;
+            }
+            t += 1;
+        }
+        if slow_resp.len == 0 { slow_resp = string.{ ptr = sbuf, len = xx sa_total }; }
+
+        // (1) The slow connection got a 504.
+        if !contains(slow_resp, "HTTP/1.1 504") {
+            print("expected 504 for slow handler, got: {}\n", slow_resp);
+            failed = 1;
+        }
+
+        // (2) Server stays RESPONSIVE: a second, fast request on a NEW
+        // connection — issued while the slow worker may still be busy —
+        // returns a normal 200. (Pool has 2 workers, so a free one serves it
+        // even if the slow worker is occupied; and the loop was never blocked.)
+        cb := dial_port(PORT);
+        if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
+        fast_req := "GET /fast HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
+        socket.write(cb, fast_req.ptr, xx fast_req.len);
+        fb_total : i64 = 0;
+        fast_resp : string = "";
+        t = 0;
+        while t < 200 {
+            srv.tick(1) catch {};
+            n, re := socket.read_nb(cb, @fbuf[fb_total], xx (cap - fb_total));
+            if !re { fb_total += n; }
+            else if re == error.Closed {
+                fast_resp = string.{ ptr = fbuf, len = xx fb_total };
+                break;
+            }
+            if resp_complete(fbuf, fb_total) {
+                fast_resp = string.{ ptr = fbuf, len = xx fb_total };
+                break;
+            }
+            t += 1;
+        }
+        if !contains(fast_resp, "HTTP/1.1 200 OK") or !contains(fast_resp, "fast-ok") {
+            print("expected responsive 200 fast-ok, got: {}\n", fast_resp);
+            failed = 1;
+        }
+
+        // (3) Drive ticks well past the slow handler's 200 ms return so its
+        // LATE completion is queued and DISCARDED by drain_completions (gen
+        // mismatch — the slot was freed). No crash, no double-response.
+        t = 0;
+        while t < 250 {
+            srv.tick(1) catch {};
+            t += 1;
+        }
+
+        // (5) stats().timeouts reflects the handler timeout.
+        st := srv.stats();
+        if st.timeouts < 1 {
+            print("expected stats.timeouts >= 1, got {}\n", st.timeouts);
+            failed = 1;
+        }
+
+        socket.close(ca);
+        socket.close(cb);
+        srv.close();   // joins the slow worker; its late completion (if any
+                       // still pending) is freed by close's drain — net-zero.
+
+        context.allocator.dealloc_bytes(xx sbuf);
+        context.allocator.dealloc_bytes(xx fbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    // (4) net-zero allocations: the timed-out completion's buffer was freed.
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations after handler-timeout lifecycle\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

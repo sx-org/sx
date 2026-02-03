@@ -1,0 +1,8 @@
+i64 string bool
+true false true false
+inline-if folded: same
+Allocator/CAllocator: true
+Allocator/i64: false
+Wrap(i64)/i32: true
+Wrap(i64)/bool: false
+Wrap(bool)/i32: false

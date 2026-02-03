@@ -1,0 +1,13 @@
+ffi_id_int(-42)         = -42
+ffi_id_short(-1234)     = -1234
+ffi_id_i64(huge)        = 9000000000000000000
+ffi_id_uint(0xDEADBEEF) = 3735928559
+ffi_id_ushort(0xFFFF)   = 65535
+ffi_id_u64(0x7FEE...)   = 9218551421072305134
+ffi_id_schar(127)       = 127
+ffi_id_uchar(255)       = 255
+ffi_id_f32(3.5)         = 3.500000
+ffi_id_f64(1.5)         = 1.500000
+ffi_id_ptr roundtrip    = true
+ffi_add_int(7, 8)       = 15
+ffi_add_double(0.25, 0.75) = 1.000000

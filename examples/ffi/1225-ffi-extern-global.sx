@@ -1,0 +1,15 @@
+// extern data global (FFI-linkage stream, Phase 1.2): reference a symbol
+// defined elsewhere (here libSystem's __stdinp) via the bare `extern`
+// linkage modifier on a typed var decl — the extern-named counterpart of
+// `<name> : <type> extern;` (see examples/1205). The optional
+// `extern [LIB] ["csym"]` tail mirrors the fn form; bare here (the sx name
+// IS the C symbol, resolved against the default-linked libSystem).
+#import "modules/std.sx";
+
+__stdinp : *void extern;
+
+main :: () -> i32 {
+    addr_bits : u64 = xx @__stdinp;
+    print("stdin extern global non-null: {}\n", addr_bits != 0);
+    0
+}

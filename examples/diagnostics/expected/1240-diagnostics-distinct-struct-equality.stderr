@@ -1,0 +1,5 @@
+error: cannot compare values of distinct types 'S1240' and 'T1240'
+  --> examples/diagnostics/1240-diagnostics-distinct-struct-equality.sx:4:54
+   |
+ 4 | main :: () { s := S1240.{}; t := T1240.{}; _ := s == t; }
+   |                                                      ^

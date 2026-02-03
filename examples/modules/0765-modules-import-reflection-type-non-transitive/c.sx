@@ -1,0 +1,3 @@
+Nums :: [2]i64;
+
+COnly :: struct { v: i64 = 0; }

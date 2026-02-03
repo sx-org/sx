@@ -1,0 +1,13 @@
+// Companion module for examples/1205-ffi-extern-global.sx (PLAN-FFI 0.10).
+// Declares the same `extern` extern global as the main file; the
+// linker should treat both decls as one symbol. We deliberately don't
+// READ `@__stdinp` from inside a helper fn body — that path is busted
+// today (see examples/issue-0037.sx) — we just expose a trivial fn so
+// this file participates in the link and the cross-file decl
+// coexistence is exercised.
+
+__stdinp : *void extern;
+
+stdinp_addr_present :: () -> i32 {
+    1
+}

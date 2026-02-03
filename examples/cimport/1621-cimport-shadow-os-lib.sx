@@ -1,0 +1,18 @@
+// Unit-first JIT resolution (PLAN-C C2): a `#source` unit defining a
+// symbol that ALSO lives in an OS image already loaded into the
+// compiler process (libz, via libLLVM) still wins — the unit's dylib
+// is a priority symbol-search target ahead of the process-wide
+// fallback. The unit's zlibCompileFlags answers 0xDEADBEEF; the OS
+// one answers real flag bits, so `true` proves the unit won.
+// Regression (PLAN-C C0.3 xfail, flipped by C2.1).
+#import "modules/std.sx";
+
+zshadow :: #import c {
+    #include "1621-cimport-shadow-os-lib/shadow.h";
+    #source  "1621-cimport-shadow-os-lib/shadow.c";
+};
+
+main :: () -> i32 {
+    print("from_unit: {}\n", zshadow.zlibCompileFlags() == 3735928559);
+    0
+}

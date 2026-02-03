@@ -1,0 +1,48 @@
+// A module-global aggregate initializer may carry `null` in a pointer field:
+// `null` is a compile-time constant (the zero pointer), so the field reads back
+// as null with NO prior store, and its non-pointer neighbors keep their declared
+// values. Covered shapes: an array-of-struct with a null pointer field, a global
+// array of all-null pointers, and a nested struct-in-struct with a null pointer.
+// Regression (issue 0081): the constant-aggregate serializer had no
+// `.null_literal` arm, so a `null` in a pointer field made the whole aggregate
+// look non-constant and the global was rejected with "must be initialized by a
+// compile-time constant". The fix serializes a null literal to a constant zero
+// pointer (the same way a top-level pointer global `p : *i64 = null;` does)
+// while still rejecting genuinely non-constant fields (see diagnostics 1126).
+
+#import "modules/std.sx";
+
+Box :: struct { p: *i64; marker: i64; }
+Inner :: struct { q: *i64; tag: i64; }
+Outer :: struct { inner: Inner; label: i64; }
+
+// array-of-struct with null pointer fields + scalar neighbors
+boxes : [2]Box = .[ .{ p = null, marker = 11 }, .{ p = null, marker = 22 } ];
+// global array of all-null pointers
+ptrs : [3]*i64 = .[ null, null, null ];
+// nested: struct containing a struct with a null pointer field
+nested : [2]Outer = .[
+    .{ inner = .{ q = null, tag = 1 }, label = 100 },
+    .{ inner = .{ q = null, tag = 2 }, label = 200 },
+];
+
+main :: () {
+    print("boxes ptrs={},{} markers={},{}\n",
+        boxes[0].p == null, boxes[1].p == null, boxes[0].marker, boxes[1].marker);
+    print("ptr arr nulls={},{},{}\n", ptrs[0] == null, ptrs[1] == null, ptrs[2] == null);
+    print("nested q nulls={},{} tags={},{} labels={},{}\n",
+        nested[0].inner.q == null, nested[1].inner.q == null,
+        nested[0].inner.tag, nested[1].inner.tag,
+        nested[0].label, nested[1].label);
+
+    if boxes[0].p == null and boxes[1].p == null
+        and boxes[0].marker == 11 and boxes[1].marker == 22
+        and ptrs[0] == null and ptrs[1] == null and ptrs[2] == null
+        and nested[0].inner.q == null and nested[1].inner.q == null
+        and nested[0].inner.tag == 1 and nested[1].inner.tag == 2
+        and nested[0].label == 100 and nested[1].label == 200 {
+        print("PASS\n");
+    } else {
+        print("FAIL: global aggregate null pointer field mis-serialized\n");
+    }
+}

@@ -1,0 +1,31 @@
+// E6BR-4 (param-impl ARG, own-wins) — a parameterised-impl PROTOCOL TYPE-ARG under
+// a wrapper (`impl Tagged(*Box) for Holder`) is resolved through the same
+// source-aware registration helper (`resolveRegistrationSigTypeInSource` with the
+// `.param_impl_arg` purpose), pinned to the impl's defining module (main). The arg
+// `*Box` flows through `resolveCompound` → `resolveNominalLeaf` and selects main's
+// OWN `Box { m }` rather than the flat-imported `dep.sx` `Box { a }`, so the impl
+// registers and `Holder.tag` is callable. (The `param_impl_map` key is name-based,
+// so own-wins registration and any later lookup agree by construction; this cell
+// locks that the wrapped arg routes through the engine, not the no-author leaf.)
+
+#import "modules/std.sx";
+#import "0828-protocols-param-impl-arg-wrapped-own-wins/dep.sx";
+
+Box :: struct { m: i32; }
+Holder :: struct { n: i32; }
+
+Tagged :: protocol(T: Type) {
+    tag :: (self: *Self) -> i32;
+}
+
+impl Tagged(*Box) for Holder {
+    tag :: (self: *Holder) -> i32 {
+        self.n
+    }
+}
+
+main :: () -> i32 {
+    h : Holder = .{ n = 7 };
+    print("tag={} dep={}\n", h.tag(), dep_box());
+    0
+}

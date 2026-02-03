@@ -1,0 +1,59 @@
+// Optional-chained postfix cast `o?.(T)` — the full matrix (ruled
+// 2026-07-17). Chain-null is ALWAYS a value (null result), never a
+// failure; each temperament's failure handling applies only to a
+// PRESENT payload. A typed optional receiver maps the CONVERSION
+// regime (never fails); a `?any` receiver maps the assertion:
+//   try o?.(T)  → (?T, !CastError): null → null, match → value,
+//                 present mismatch → raises `mismatch`
+//   o?.(T) or d → same failable through `or`
+//   o?.(T)      → unconsumed: panics only on a present mismatch
+//                 (pinned separately, exits 1)
+//   o?.(?T)     → soft: chain-null and mismatch-null CONFLATE
+// An optional TARGET flattens (`ap?.(?i64)` is ?i64, one null level).
+#import "modules/std.sx";
+
+use :: () -> ! {
+    // A. typed optional receiver — conversion map + flatten.
+    an : ?bool = null;
+    ap : ?bool = true;
+    print("a1 null: {}\n", an?.(i64) == null);
+    print("a2: {}\n", ap?.(i64) ?? -1);
+    print("a3: {}\n", ap?.(f64) ?? 9.5);
+    print("a4: {}\n", an?.(f64) ?? 9.5);
+    print("a5 flat: {}\n", ap?.(?i64) ?? -1);
+    print("a6 flat null: {}\n", an?.(?i64) == null);
+    // B. ?any receiver — assertion map.
+    bn : ?any = null;
+    bm : ?any = 42;
+    bx : ?any = 2.5;
+    t1 := try bn?.(i64);
+    print("t1 null: {}\n", t1 == null);
+    t2 := try bm?.(i64);
+    print("t2: {}\n", t2 ?? -1);
+    o1 := bn?.(i64) or null;
+    print("o1 null: {}\n", o1 == null);
+    o2 := bm?.(i64) or null;
+    print("o2: {}\n", o2 ?? -1);
+    o3 := bx?.(i64) or null;
+    print("o3 null: {}\n", o3 == null);
+    nil : ?i64 = null;
+    c1 := bx?.(i64) catch (e) { print("tag: {}\n", e); nil };
+    print("c1 null: {}\n", c1 == null);
+    // Unconsumed, non-panicking states.
+    p1 := bn?.(i64);
+    print("p1 null: {}\n", p1 == null);
+    p2 := bm?.(i64);
+    print("p2: {}\n", p2 ?? -1);
+    // Soft through the chain: both miss kinds conflate to null.
+    print("s1 null: {}\n", bn?.(?i64) == null);
+    print("s2 null: {}\n", bx?.(?i64) == null);
+    print("s3: {}\n", bm?.(?i64) ?? -1);
+    print("s4: {}\n", bx?.(?i64) ?? 7);
+    // Present mismatch through try propagates — last.
+    t3 := try bx?.(i64);
+    print("unreached: {}\n", t3 == null);
+}
+
+main :: () {
+    use() catch (e) { print("outer: {}\n", e); };
+}

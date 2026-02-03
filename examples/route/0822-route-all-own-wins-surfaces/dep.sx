@@ -1,0 +1,10 @@
+// A flat-imported module authoring its OWN `Box { a }`, a DISTINCT nominal from
+// main's `Box { m }`. The four route-all surfaces in `main` must each bind main's
+// own `Box`; the disjoint field sets make a wrong binding a hard compile error.
+Box :: struct { a: i32; }
+
+dep_box :: () -> i32 {
+    b : Box = ---;
+    b.a = 99;
+    return b.a;
+}

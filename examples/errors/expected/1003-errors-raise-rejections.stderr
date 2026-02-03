@@ -1,0 +1,17 @@
+error: error tag 'error.NotInSet' is not in error set 'ParseErr'
+  --> examples/errors/1003-errors-raise-rejections.sx:17:11
+   |
+17 |     raise error.NotInSet;            // error: NotInSet not in ParseErr
+   |           ^^^^^^^^^^^^^^
+
+error: error tag 'error.Weird' is not in caller's error set 'ParseErr'
+  --> examples/errors/1003-errors-raise-rejections.sx:24:5
+   |
+24 |     raise e;                         // error: OtherErr not subset of ParseErr
+   |     ^^^^^^^^
+
+error: `raise` is only valid inside a failable function (a return type with `!` or `!Named`)
+  --> examples/errors/1003-errors-raise-rejections.sx:30:5
+   |
+30 |     raise error.BadDigit;            // error: main (-> i32) is not failable
+   |     ^^^^^^^^^^^^^^^^^^^^^

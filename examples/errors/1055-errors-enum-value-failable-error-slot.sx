@@ -1,0 +1,44 @@
+// Enum-valued value-carrying failable: the SUCCESS path must zero the trailing
+// error slot. Regression (issue 0097). A `-> (Enum, !E)` `return .variant`
+// resolves the enum literal against the function's VALUE type (the enum), not
+// the failable tuple — otherwise the literal mis-resolves (tag 0) and is stamped
+// with the tuple type, which the success-return lowering mistakes for a forwarded
+// full tuple and leaves the error slot UNDEFINED (read back as garbage nonzero).
+//
+// This pins the slot at RUNTIME on the success path (e.(i64), bare `if e`,
+// and `e == error.X`) — not only via the `if !e` proof that the compiler can
+// fold away. It also exercises a non-zero ordinal (`.blue` = 2) so a value slot
+// that collapses to 0 is caught, and asserts the error PATH still carries the
+// right tag and `error_name`.
+
+#import "modules/std.sx";
+
+Color :: enum { red; green; blue; }
+E :: error { Nope }
+
+pick :: (s: string) -> (Color, !E) {
+    if s == "red"  { return .red; }
+    if s == "blue" { return .blue; }       // non-zero ordinal (2)
+    raise error.Nope;
+}
+
+main :: () -> i32 {
+    // ── success path: error slot MUST read 0 at runtime ──
+    c, e := pick("red");
+    print("success err int = {}\n", e.(i64));             // 0
+    if e { print("bare-if e: ERROR (WRONG)\n"); } else { print("bare-if e: ok\n"); }
+    if e == error.Nope { print("e == Nope (WRONG)\n"); } else { print("e != Nope (ok)\n"); }
+    if !e { print("guard !e: c = {}\n", c.(i64)); }        // 0 (red)
+
+    // ── non-zero ordinal: value slot must carry the real ordinal ──
+    c2, e2 := pick("blue");
+    if !e2 { print("blue: err int = {}, c = {}\n", e2.(i64), c2.(i64)); }  // 0, 2
+
+    // ── error path: the right tag flows through ──
+    c3, e3 := pick("xxx");
+    print("error err nonzero = {}\n", e3.(i64) != 0);     // true (ordinal is program-global, not pinned)
+    if e3 == error.Nope { print("error: is Nope (ok)\n"); } else { print("error: not Nope (WRONG)\n"); }
+    print("error tag name = {}\n", error_name(e3));       // Nope
+
+    return 0;
+}

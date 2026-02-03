@@ -1,0 +1,3 @@
+strerror ok
+?cstring ok
+round trip ok

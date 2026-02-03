@@ -1,0 +1,17 @@
+// A generic value-param arg that does not fit the param's declared integer type
+// (`Box(5_000_000_000)` for `$K: u32`) is a hard error — a clean diagnostic +
+// non-zero exit, NOT a silent truncating bind.
+//
+// Regression (F0.4 attempt 8, item 1): `resolveValueParamArg` bound the folded
+// i64 without range-checking the declared type, so an out-of-u32 arg compiled
+// and ran. The bind now routes a `u32` count through the shared
+// `program_index.foldDimU32` gate (the same one array dims / Vector lanes use),
+// so an oversized value is rejected before instantiation.
+#import "modules/std.sx";
+
+Box :: struct ($K: u32) { value: i64; }
+
+main :: () {
+    b : Box(5000000000) = ---;
+    print("unreachable\n");
+}

@@ -1,0 +1,3 @@
+// `Needs` lives two flat-import hops away from `main` (main -> lib -> dep), so
+// it is NOT bare-visible at the call site under non-transitive visibility.
+Needs :: struct { v: i64; }

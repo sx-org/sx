@@ -1,0 +1,78 @@
+// E6BR-4 (own-wins) — a protocol method-signature names a same-name `Box` under
+// every WRAPPER / COMPOUND form, and each must resolve SOURCE-AWARE (pinned to the
+// protocol's defining module = main), selecting main's OWN `Box { m }` rather than
+// the global last-wins `Box { a }` from the flat-imported `dep.sx`.
+//
+// The reconciled choke-point (resolveRegistrationSigTypeInSource → the recursive
+// source-aware engine) recurses every structural shape and resolves the leaf
+// author own-wins. The E6BR-4 RED CELL is the WRAPPED RETURN `() -> *Box`: pre-fix
+// the wrapped sig fell to the no-author `type_bridge.resolveTemplateSignatureType`
+// (global last-wins) and typed the result as `dep`'s `Box { a }`, so `bp.m` was
+// `field 'm' not found on type 'Box'`. Discriminating returns: `*Box`, `?Box`,
+// `(Box,Box)`, `[2]Box` (each observed by a `.m` access). Routing-only params:
+// `*Box`, `?Box`, `[]Box`, `[2]Box`, `(Box,Box)`, nested `*?[]Box` — all resolved
+// through the same `resolveCompound` recursion at protocol-decl registration.
+
+#import "modules/std.sx";
+#import "0824-protocols-same-name-method-wrapped-own-wins/dep.sx";
+
+Box :: struct { m: i32; }
+Holder :: struct { b: Box = ---; }
+
+Provider :: protocol {
+    // discriminating wrapped/compound RETURNS
+    getp :: (self: *Self) -> *Box;
+    geto :: (self: *Self) -> ?Box;
+    gett :: (self: *Self) -> Tuple(Box, Box);
+    geta :: (self: *Self) -> [2]Box;
+    // routing-only wrapped/compound PARAMS
+    sump :: (self: *Self, p: *Box) -> i32;
+    sumo :: (self: *Self, o: ?Box) -> i32;
+    sums :: (self: *Self, s: []Box) -> i32;
+    suma :: (self: *Self, a: [2]Box) -> i32;
+    sumt :: (self: *Self, t: Tuple(Box, Box)) -> i32;
+    sumn :: (self: *Self, n: *?[]Box) -> i32;
+}
+
+impl Provider for Holder {
+    getp :: (self: *Holder) -> *Box { @self.b }
+    geto :: (self: *Holder) -> ?Box { self.b }
+    gett :: (self: *Holder) -> Tuple(Box, Box) { .{self.b, self.b} }
+    geta :: (self: *Holder) -> [2]Box { r : [2]Box = ---; r[0] = self.b; r[1] = self.b; r }
+    sump :: (self: *Holder, p: *Box) -> i32 { p.m }
+    sumo :: (self: *Holder, o: ?Box) -> i32 { o!.m }
+    sums :: (self: *Holder, s: []Box) -> i32 { s[0].m }
+    suma :: (self: *Holder, a: [2]Box) -> i32 { a[0].m }
+    sumt :: (self: *Holder, t: Tuple(Box, Box)) -> i32 { t.0.m }
+    sumn :: (self: *Holder, n: *?[]Box) -> i32 { if n == null { 0 } else { 6 } }
+}
+
+main :: () -> i32 {
+    h : Holder = ---;
+    h.b.m = 7;
+    p := h.(Provider);
+
+    // discriminating returns — `.m` only resolves if each binds main's `Box`
+    bp := p.getp();
+    bo := p.geto();
+    bt := p.gett();
+    ba := p.geta();
+
+    // routing-only params, constructed in main and passed through the protocol
+    one : Box = ---; one.m = 1;
+    arr : [2]Box = ---; arr[0].m = 2; arr[1].m = 3;
+    sl : []Box = arr[0..2];
+    osl : ?[]Box = sl;
+    tup : Tuple(Box, Box) = .{one, one};
+
+    sp := p.sump(@one);
+    so := p.sumo(one);
+    ss := p.sums(sl);
+    sa := p.suma(arr);
+    st := p.sumt(tup);
+    sn := p.sumn(@osl);
+
+    print("p={} o={} t={} a={} | sp={} so={} ss={} sa={} st={} sn={} dep={}\n",
+        bp.m, bo!.m, bt.0.m, ba[0].m, sp, so, ss, sa, st, sn, dep_box());
+    0
+}

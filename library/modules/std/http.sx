@@ -1,0 +1,71 @@
+// std.http — the HTTP facade.
+//
+// Every name here is a RE-EXPORT; the implementations live in the part-files
+// under std/http/ (same prelude-facade pattern as std.sx + std/):
+//
+//   http/types.sx   shared types + parsing — Request, Response, headers,
+//                   chunked decode, status reasons (server AND client)
+//   http/tls.sx     the TLS transport seam — TlsConn / TlsAcceptor protocols
+//                   + the TLS_WANT_*/FATAL return-code contract
+//   http/server.sx  the event-loop server — Config, Server, Stats, EventKind
+//   http/router.sx  method+path routing, query/form/JSON helpers
+//   http/client.sx  a minimal blocking HTTP/1.1 client (http.Client)
+//
+// A consumer does `#import "modules/std.sx"` (which carries `http`) and reaches
+// the whole API under one namespace: http.Server, http.Request, http.Router,
+// http.TlsAcceptor, … — no separate http_router import. The part-files can
+// also be imported directly for a leaner dependency (e.g. a TLS provider that
+// needs only http/tls.sx, or a client that needs only http/types.sx).
+
+types  :: #import "modules/std/http/types.sx";
+tls    :: #import "modules/std/http/tls.sx";
+fiber  :: #import "modules/std/http/fiber.sx";
+server :: #import "modules/std/http/server.sx";
+router :: #import "modules/std/http/router.sx";
+client :: #import "modules/std/http/client.sx";
+
+// ── shared types + parsing (types.sx) ───────────────────────────────
+Request        :: types.Request;
+Response       :: types.Response;
+StreamProducer :: types.StreamProducer;
+find_header    :: types.find_header;
+count_header   :: types.count_header;
+reason_for     :: types.reason_for;
+
+// ── TLS transport seam (tls.sx) ─────────────────────────────────────
+TlsConn     :: tls.TlsConn;
+TlsAcceptor :: tls.TlsAcceptor;
+TlsStep     :: tls.TlsStep;
+
+// ── fiber-handler seam (fiber.sx) ───────────────────────────────────
+// The provider (http/fiber_sched.sx, aarch64 fiber runtime) is NOT
+// re-exported — importing it compiles the context-switch asm, so it
+// stays a direct opt-in import, like a TLS provider.
+FiberRunner :: fiber.FiberRunner;
+
+// ── server (server.sx) ──────────────────────────────────────────────
+HttpErr        :: server.HttpErr;
+Config         :: server.Config;
+Stats          :: server.Stats;
+EventKind      :: server.EventKind;
+Server         :: server.Server;
+
+// ── router (router.sx) ──────────────────────────────────────────────
+Router         :: router.Router;
+RouteCtx       :: router.RouteCtx;
+Route          :: router.Route;
+RouteHandler   :: router.RouteHandler;
+KV             :: router.KV;
+dispatch       :: router.dispatch;
+
+// ── client (client.sx) ──────────────────────────────────────────────
+// The public entry is `http.Client` (static methods request/dial/send/recv);
+// the free functions are NOT re-exported because a re-exported free function's
+// struct return type (ClientResponse) is not visible at the call site, whereas
+// a static method on the named `Client` type pins resolution to client.sx.
+Client         :: client.Client;
+ClientResponse :: client.ClientResponse;
+ClientErr      :: client.ClientErr;
+ClientOpts     :: client.ClientOpts;   // Q3.6a: open/open_addr options
+ClientConn     :: client.ClientConn;   // Q3.6a: an open client session
+ClientPool     :: client.ClientPool;   // Q3.6b: single-threaded keep-alive pool

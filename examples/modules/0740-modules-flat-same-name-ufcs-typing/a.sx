@@ -1,0 +1,6 @@
+#import "modules/std.sx";
+// a.sx authors `tag` returning a string; imported first → first-wins winner.
+// `show_a`'s `v.tag()` is the caller's OWN author (own == winner → existing UFCS
+// path, byte-for-byte unchanged): typed AND dispatched as a.tag (string).
+tag :: ufcs (x: i64) -> string { return "a-string"; }
+show_a :: () { v : i64 = 10; print("a: v.tag() = {}\n", v.tag()); }

@@ -1,0 +1,5 @@
+error: main: return type must be void, an integer, or `!`; got 'string'
+  --> examples/errors/1022-errors-main-signature-reject.sx:13:15
+   |
+13 | main :: () -> string {        // ERROR: return type must be void, an integer, or `!`
+   |               ^^^^^^

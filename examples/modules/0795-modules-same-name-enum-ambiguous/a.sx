@@ -1,0 +1,4 @@
+// One of two flat-imported authors of a same-name `Dir` enum. With both modules
+// flat-visible from a file that authors none itself, every bare reference to the
+// name is genuinely ambiguous.
+Dir :: enum { north; south; east; west; }

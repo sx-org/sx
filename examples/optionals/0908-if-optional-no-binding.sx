@@ -1,0 +1,29 @@
+// Bindingless `if <optional>` must test the optional's has_value flag, not
+// fold the `{T,i1}` aggregate truthy. Covers struct-form optionals (`?i64`,
+// `?P`) in both states, exercising BOTH branches — without any `|x|` binding.
+//
+// Regression (issue 0164): a bare `if opt { }` over a struct-repr optional
+// emitted `br i1 true`, so a null optional took the present branch.
+#import "modules/std.sx";
+
+P :: struct { x: i64; }
+
+check_i64 :: (n: ?i64) {
+    if n { print("i64 present\n"); } else { print("i64 absent\n"); }
+}
+
+check_p :: (p: ?P) {
+    if p { print("P present\n"); } else { print("P absent\n"); }
+}
+
+main :: () {
+    a : ?i64 = null;
+    b : ?i64 = 42;
+    check_i64(a);   // i64 absent
+    check_i64(b);   // i64 present
+
+    p_null : ?P = null;
+    p_some : ?P = P.{ x = 9 };
+    check_p(p_null);   // P absent
+    check_p(p_some);   // P present
+}

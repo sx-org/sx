@@ -1,0 +1,15 @@
+// `assert` (ERR steps E4.1 / E4.1b): a false condition prints `ASSERTION
+// FAILED at <file>:<line>: <msg>` (the caller's location, via the
+// `#caller_location` default param) and exits 1; a true condition is a no-op.
+// Built on `process.exit`. Expected exit code: 1.
+
+#import "modules/std.sx";
+proc :: #import "modules/std/process.sx";
+
+main :: () -> i32 {
+    proc.assert(2 + 2 == 4, "arithmetic");                 // passes → no-op
+    print("first assert passed\n");
+    proc.assert(2 + 2 == 5, "two plus two is not five");   // fails → abort
+    print("unreachable\n");
+    return 0;
+}

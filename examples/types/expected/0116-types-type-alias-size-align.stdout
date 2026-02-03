@@ -1,0 +1,7 @@
+direct i32:        4
+alias i32:         4
+chain i32:         4
+align alias:       4
+align chain:       4
+size struct-alias: 16
+align struct-alias:8

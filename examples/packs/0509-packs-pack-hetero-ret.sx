@@ -1,0 +1,25 @@
+// Variadic heterogeneous type packs — generic `$R` with
+// heterogeneous element pick. `foo(..$args) -> $R => args[2]`
+// returns the THIRD arg's value; the ret type is inferred from
+// the third arg's concrete type per call shape.
+//
+// foo(42, 3.2, "hello")  → returns "hello" (string).
+//
+// Exercises:
+// - generic `$R` inference for non-zeroth pack indices.
+// - heterogeneous mixed-type call args binding into distinct
+//   types per position (i64, f64, string).
+// - `pack_arg_types` type-only binding for `inferExprType`
+//   pre-mono-scope: without it, the synthesized-ident detour
+//   loses the type because the scope isn't set up yet during
+//   return-type inference.
+
+#import "modules/std.sx";
+
+foo :: (..$args) -> $R => args[2];
+
+main :: () -> i32 {
+    a := foo(42, 3.2, "hello");
+    print("{}\n", a);
+    return 0;
+}

@@ -1,0 +1,12 @@
+Packet (size 32, align 8)
+  +0 header: Header
+  +8 name: string
+  +24 kind: i16
+Color (size 8, align 8)
+  .red
+  .green
+  .blue
+Header (size 4, align 2)
+  +0 magic: u16
+  +2 flags: u8
+parity: true true true

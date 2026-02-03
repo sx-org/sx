@@ -1,0 +1,41 @@
+// Vector-typed struct fields align to the VECTOR's ABI alignment (its
+// pow2-rounded size), matching LLVM's natural vector alignment — not to
+// the element alignment. The `xx @a.v - xx @a` pointer arithmetic reads
+// LLVM's real layout, so each line pins walk == codegen; the reflection
+// offset (struct_field_offset) must agree because interior `any` views
+// (struct_field_value) GEP with it.
+//
+// Regression: the sx layout walk used element alignment, silently
+// diverging from LLVM for every vector field (wrong reflection offsets;
+// total-size mismatches tripped emit_llvm's verifySizes assert, so most
+// such structs could not compile at all).
+
+#import "modules/std.sx";
+
+V3   :: struct { pre: u16; v: Vector(3, f32); post: i16; }
+V2   :: struct { pre: u8; v: Vector(2, f32); }
+V4d  :: struct { pre: u8; v: Vector(4, f64); }
+V8   :: struct { pre: u8; v: Vector(8, u8); }
+V16i :: struct { pre: u8; v: Vector(16, i32); }
+
+check :: (name: string, base: i64, field: i64, walk: i64, sz: i64) {
+    print("{}: v@{} walk={} size={} {}\n", name, field - base, walk, sz,
+        if field - base == walk { "OK" } else { "MISMATCH" });
+}
+
+main :: () {
+    a := V3.{ pre = 1, v = .[1.0, 2.0, 3.0], post = 2 };
+    check("V3", xx @a, xx @a.v, struct_field_offset(V3, 1), size_of(V3));
+    b := V2.{ pre = 1, v = .[1.0, 2.0] };
+    check("V2", xx @b, xx @b.v, struct_field_offset(V2, 1), size_of(V2));
+    c := V4d.{ pre = 1, v = .[1.0, 2.0, 3.0, 4.0] };
+    check("V4d", xx @c, xx @c.v, struct_field_offset(V4d, 1), size_of(V4d));
+    d := V8.{ pre = 1, v = .[1, 2, 3, 4, 5, 6, 7, 8] };
+    check("V8", xx @d, xx @d.v, struct_field_offset(V8, 1), size_of(V8));
+    e := V16i.{ pre = 1, v = .[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] };
+    check("V16i", xx @e, xx @e.v, struct_field_offset(V16i, 1), size_of(V16i));
+
+    // The interior view reads the right lanes through the same offsets.
+    av : any = a;
+    print("{}\n", struct_field_value(av, 1));   // [1.000000, 2.000000, 3.000000]
+}

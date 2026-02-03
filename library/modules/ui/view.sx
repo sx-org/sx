@@ -1,0 +1,23 @@
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+
+View :: protocol {
+    // Measure: given a size proposal, return desired size
+    size_that_fits :: (self: *Self, proposal: ProposedSize) -> Size;
+
+    // Place: position children within the given bounds
+    layout :: (self: *Self, bounds: Frame);
+
+    // Render: emit render nodes
+    render :: (self: *Self, ctx: *RenderContext, frame: Frame);
+
+    // Event handling: return true if the event was consumed
+    handle_event :: (self: *Self, event: *Event, frame: Frame) -> bool;
+}
+
+// A child view with its computed frame (set during layout)
+ViewChild :: struct {
+    view: View;
+    computed_frame: Frame = .zero();
+}

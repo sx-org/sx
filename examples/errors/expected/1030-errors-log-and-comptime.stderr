@@ -1,0 +1,4 @@
+WARN:  disk 91% full
+INFO:  user alice connected
+ERROR: bad fd 7
+DEBUG: trace x=42

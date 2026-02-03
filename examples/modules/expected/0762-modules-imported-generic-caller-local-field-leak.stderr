@@ -1,0 +1,5 @@
+error: unknown type 'LocalOnly'
+  --> examples/modules/0762-modules-imported-generic-caller-local-field-leak/lib.sx:8:8
+   |
+ 8 |     y: LocalOnly;
+   |        ^^^^^^^^^

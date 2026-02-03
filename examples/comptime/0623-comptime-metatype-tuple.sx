@@ -1,0 +1,23 @@
+// Comptime TUPLE metaprogramming — `define` constructs a tuple and `type_info`
+// reflects one, completing the reflect/construct triad (enum 0619, struct 0622,
+// tuple here). Tuples are POSITIONAL, so `TupleInfo` is just a `[]Type` (no field
+// names). Two paths:
+//   1. Programmatic build: `define(declare("Pair"), .tuple(.{ elements = … }))`.
+//   2. Round-trip: `define(declare("TripleCopy"), type_info(Tuple(i64, bool, f64)))`
+//      reflects a source tuple type INTO a `.tuple(TupleInfo)` value and
+//      reconstructs it — no literal element list.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+Pair :: define(declare("Pair"), .tuple(.{ elements = .[ i64, f64 ] }));
+
+TripleCopy :: define(declare("TripleCopy"), type_info(Tuple(i64, bool, f64)));
+
+main :: () -> i32 {
+    p : Pair = .{ 3, 2.5 };
+    print("p = {} {}\n", p.0, p.1);
+
+    t : TripleCopy = .{ 7, true, 1.5 };
+    print("t = {} {} {}\n", t.0, t.1, t.2);
+    return 0;
+}

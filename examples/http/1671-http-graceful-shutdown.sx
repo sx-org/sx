@@ -1,0 +1,243 @@
+// std.http H3 (PLAN-HTTPZ): graceful shutdown.
+//
+// Server.stop() requests a clean quiesce — stop accepting, close idle
+// keep-alives, drain in-flight requests within shutdown_timeout_ms — and
+// makes run() return. run() does NOT call close(); the caller owns
+// teardown, so a fresh Server can be init'd + driven again in the same
+// process (no global state blocks a restart). This drives the whole
+// thing in ONE thread via Server.tick (deterministic + corpus-safe):
+//
+//   1. GRACEFUL IN-FLIGHT: connect a keep-alive client, send a request
+//      but DON'T tick it to completion; open a SECOND, idle keep-alive
+//      connection; call stop(); drive the drain (begin_stop + tick while
+//      in_flight()). Assert the in-flight request still got its full
+//      response (graceful, not dropped) and the idle keep-alive was
+//      closed immediately.
+//   2. START/STOP/RESTART: after the first server is stopped+closed,
+//      init a SECOND server on the SAME port and serve a request —
+//      proves no leaked FD/port and no global state (SO_REUSEADDR is set
+//      by init).
+//   3. NET-ZERO LEAK: the whole thing runs under a GPA whose alloc_count
+//      is bumped on every alloc/dealloc, asserted zero after both servers
+//      are stopped + closed.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 18981;
+
+handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/echo" { resp.body = req.body; return; }
+    resp.body = "ok";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+resp_complete :: (buf: [*]u8, len: i64) -> bool {
+    s := string.{ ptr = buf, len = xx len };
+    he := -1;
+    i := 0;
+    while i + 3 < s.len {
+        if s[i] == 13 and s[i+1] == 10 and s[i+2] == 13 and s[i+3] == 10 { he = i; break; }
+        i += 1;
+    }
+    if he < 0 { return false; }
+    cl : i64 = 0;
+    seen := false;
+    j := 0;
+    needle := "Content-Length: ";
+    while j + needle.len < s.len {
+        k := 0;
+        ok := true;
+        while k < needle.len { if s[j + k] != needle[k] { ok = false; break; } k += 1; }
+        if ok {
+            d := j + needle.len;
+            while d < s.len and s[d] >= 48 and s[d] <= 57 { cl = cl * 10 + (s[d] - 48); d += 1; }
+            seen = true;
+            break;
+        }
+        j += 1;
+    }
+    if !seen { return false; }
+    return len >= he + 4 + cl;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+// Send a request and tick the server until its full response arrives.
+roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: i64) -> string {
+    socket.write(fd, reqtext.ptr, xx reqtext.len);
+    total : i64 = 0;
+    tries := 0;
+    while tries < 2000 {
+        srv.tick(5) catch {};
+        n, re := socket.read_nb(fd, @scratch[total], xx (cap - total));
+        if !re { total += n; }
+        else if re == error.Closed { return string.{ ptr = scratch, len = xx total }; }
+        if resp_complete(scratch, total) { return string.{ ptr = scratch, len = xx total }; }
+        tries += 1;
+    }
+    return "";
+}
+
+// True once `fd` has been closed by the peer (read sees EOF / Closed).
+peer_closed :: (srv: *http.Server, fd: i32) -> bool {
+    probe : [64]u8 = ---;
+    tries := 0;
+    while tries < 200 {
+        srv.tick(5) catch {};
+        zq, ze := socket.read_nb(fd, @probe[0], 64);
+        if ze == error.Closed { return true; }
+        if !ze and zq == 0 { return true; }
+        tries += 1;
+    }
+    return false;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    rc : i32 = 0;
+    leaked : i64 = 0;
+    push .{ allocator = gpa } {
+        cap : i64 = 8192;
+        scratch : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{
+            port = PORT,
+            timeout_request_ms = 2000,
+            timeout_keepalive_ms = 2000,
+            request_count = 50,
+            max_conn = 8,
+            shutdown_timeout_ms = 3000,
+        };
+
+        // ── server #1 ────────────────────────────────────────────────
+        srv, se := http.Server.init(cfg, handler, 0);
+        if se { print("server1 init failed\n"); context.allocator.dealloc_bytes(xx scratch); rc = 1; }
+        else {
+            // An IDLE keep-alive connection: complete one request, then
+            // leave the socket open (CONN_KEEPALIVE on the server). It
+            // must be closed immediately on stop().
+            idle := dial_port(PORT);
+            if idle < 0 { print("idle dial failed\n"); rc = 1; }
+            if rc == 0 {
+                ri := roundtrip(@srv, idle, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
+                if !contains(ri, "HTTP/1.1 200 OK") { print("idle warmup bad\n"); rc = 1; }
+            }
+
+            // An IN-FLIGHT request: send it in TWO pieces. The first piece
+            // (headers + partial body) is buffered by the server BEFORE
+            // stop — so the connection sits in CONN_READING with bytes
+            // pending (genuinely in-flight, not idle), and stop() must
+            // drain it rather than drop it. The body's tail arrives AFTER
+            // stop, during the drain.
+            busy := dial_port(PORT);
+            if rc == 0 and busy < 0 { print("busy dial failed\n"); rc = 1; }
+            if rc == 0 {
+                head := "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\n\r\nho";
+                socket.write(busy, head.ptr, xx head.len);
+                // Tick so the server reads + buffers the partial request
+                // (CONN_READING, read_len > 0) — it cannot serve yet
+                // (2 of 5 body bytes), so it stays in-flight.
+                p := 0;
+                while p < 5 { srv.tick(5) catch {}; p += 1; }
+
+                // Request stop. From here the drain must still deliver the
+                // in-flight response and close the idle keep-alive.
+                srv.stop();
+                srv.begin_stop();
+
+                // Send the rest of the body during the drain.
+                tail := "wdy";
+                socket.write(busy, tail.ptr, xx tail.len);
+
+                // Idle keep-alive is closed the instant begin_stop runs.
+                if !peer_closed(@srv, idle) { print("idle keep-alive not closed on stop\n"); rc = 1; }
+
+                // Drive the bounded drain (what run() does after stopping),
+                // and concurrently read the in-flight response — it must
+                // arrive in full within the shutdown deadline. The server
+                // serves the request once the tail lands, then in_flight()
+                // falls to 0; we keep reading until the response is whole.
+                total : i64 = 0;
+                got := false;
+                drain_deadline := event.deadline_in(cfg.shutdown_timeout_ms);
+                while !event.expired(drain_deadline) {
+                    srv.tick(20) catch {};
+                    n, re := socket.read_nb(busy, @scratch[total], xx (cap - total));
+                    if !re { total += n; }
+                    if resp_complete(scratch, total) { got = true; break; }
+                    if srv.in_flight() == 0 and total == 0 { continue; }
+                }
+
+                resp := string.{ ptr = scratch, len = xx total };
+                if !got { print("in-flight request was dropped, not drained\n"); rc = 1; }
+                else if !contains(resp, "HTTP/1.1 200 OK") { print("in-flight bad status\n"); rc = 1; }
+                else if !contains(resp, "howdy") { print("in-flight body lost\n"); rc = 1; }
+                else if srv.in_flight() != 0 { print("drain left work in flight\n"); rc = 1; }
+
+                socket.close(busy);
+                socket.close(idle);
+            }
+            srv.close();
+        }
+
+        // ── server #2: restart on the SAME port ──────────────────────
+        if rc == 0 {
+            srv2, se2 := http.Server.init(cfg, handler, 0);
+            if se2 { print("server2 init failed (port leaked?)\n"); rc = 1; }
+            else {
+                c := dial_port(PORT);
+                if c < 0 { print("restart dial failed\n"); rc = 1; }
+                else {
+                    r := roundtrip(@srv2, c, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 7\r\n\r\nrestart", scratch, cap);
+                    if !contains(r, "HTTP/1.1 200 OK") or !contains(r, "restart") {
+                        print("restart server did not serve\n"); rc = 1;
+                    }
+                    socket.close(c);
+                }
+                // Graceful stop of the second server too.
+                srv2.stop();
+                srv2.begin_stop();
+                dl := event.deadline_in(cfg.shutdown_timeout_ms);
+                while srv2.in_flight() > 0 and !event.expired(dl) { srv2.tick(20) catch {}; }
+                srv2.close();
+            }
+        }
+
+        // Capture the leak count with NO intervening print() — print
+        // allocates transient format scratch through this same GPA, which
+        // would be outstanding at the read and masquerade as a leak. All
+        // success reporting happens AFTER the scope closes (mirrors 1670).
+        context.allocator.dealloc_bytes(xx scratch);
+        leaked = gpa.alloc_count;
+    }
+
+    if rc != 0 { return rc; }
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations after stop+close of both servers\n", leaked);
+        return 1;
+    }
+    print("graceful: in-flight drained, idle keep-alive closed\n");
+    print("restart: second server served on the same port\n");
+    print("no leak: net-zero across stop+close of two server lifetimes\n");
+    print("ok\n");
+    return 0;
+}

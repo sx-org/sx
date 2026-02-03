@@ -1,0 +1,129 @@
+// The prelude facade: every name here is a RE-EXPORT. The implementations
+// live in the part-files (std/core.sx — compiler-coupled primitives,
+// std/fmt.sx — formatting + string helpers, std/list.sx — List); each
+// alias below is an ordinary OWN declaration of this file, so a flat
+// `#import "modules/std.sx"` sees the whole prelude bare, one hop —
+// visibility never chains, aliases are the re-export mechanism. The
+// part-file namespaces (`core` / `fmt` / `list`) and the namespace tail at
+// the bottom are carried to flat importers the same one level.
+
+core :: #import "modules/std/core.sx";
+fmt  :: #import "modules/std/fmt.sx";
+list :: #import "modules/std/list.sx";
+map  :: #import "modules/std/map.sx";
+
+// --- Compiler-resolved types ---
+// (`string` and `Vector` have no alias here: they are language primitives the
+// type system resolves by name program-wide. They are declared nowhere and
+// cannot be re-bound.)
+
+Context         :: core.Context;
+Allocator       :: core.Allocator;
+Io              :: core.Io;
+SpawnOpts       :: core.SpawnOpts;
+PinTarget       :: core.PinTarget;
+ParkToken       :: core.ParkToken;
+Into            :: core.Into;
+ClosureRaw      :: core.ClosureRaw;
+SliceRaw        :: core.SliceRaw;
+StringRaw       :: core.StringRaw;
+ProtocolRaw     :: core.ProtocolRaw;
+AnyRaw          :: core.AnyRaw;
+Source_Location :: core.Source_Location;
+
+// --- Type system & reflection intrinsics ---
+// (no aliases: an intrinsic is a compiler feature, not a library export. The
+// compiler dispatches `size_of` / `struct_field_count` / … from its registry before
+// name resolution, so they resolve with no import at all — the declarations in
+// std/core.sx are their source identity, not their reachability. Same reason
+// `string` and `Vector` have no alias here.)
+
+// --- Output ---
+
+out :: core.out;
+
+// --- Formatting ---
+
+print  :: fmt.print;
+format :: fmt.format;
+
+// Postfix-assertion runtime (`av.(T)` / `av.(?T)` on a type-erased
+// receiver): the three compiler-rewrite targets. Their
+// `CastError { mismatch }` set has no alias here — error sets cannot be
+// aliased (issue 0299); the `mismatch` TAG is global by name, so a
+// caller's own set (or an inferred `!`) absorbs it.
+__sx_cast_assert         :: fmt.__sx_cast_assert;
+__sx_cast_or_panic       :: fmt.__sx_cast_or_panic;
+__sx_cast_maybe          :: fmt.__sx_cast_maybe;
+__sx_chain_cast_assert   :: fmt.__sx_chain_cast_assert;
+__sx_chain_cast_or_panic :: fmt.__sx_chain_cast_or_panic;
+__sx_chain_cast_maybe    :: fmt.__sx_chain_cast_maybe;
+
+any_to_string      :: fmt.any_to_string;
+int_to_string      :: fmt.int_to_string;
+uint_to_string     :: fmt.uint_to_string;
+int_to_hex_string  :: fmt.int_to_hex_string;
+float_to_string    :: fmt.float_to_string;
+bool_to_string     :: fmt.bool_to_string;
+struct_to_string   :: fmt.struct_to_string;
+enum_to_string     :: fmt.enum_to_string;
+flags_to_string    :: fmt.flags_to_string;
+vector_to_string   :: fmt.vector_to_string;
+array_to_string    :: fmt.array_to_string;
+slice_to_string    :: fmt.slice_to_string;
+pointer_to_string  :: fmt.pointer_to_string;
+optional_to_string :: fmt.optional_to_string;
+
+// --- String ops & allocation helpers ---
+
+concat      :: fmt.concat;
+substr      :: fmt.substr;
+path_join   :: fmt.path_join;
+alloc_string :: fmt.alloc_string;
+cstring_len  :: fmt.cstring_len;
+from_cstring :: fmt.from_cstring;
+to_cstring   :: fmt.to_cstring;
+alloc_slice :: fmt.alloc_slice;
+
+// fmt internals, re-exported only because they were always part of the
+// flat prelude surface.
+build_format    :: fmt.build_format;
+hex_group       :: fmt.hex_group;
+decompose_u16x4 :: fmt.decompose_u16x4;
+
+// --- Containers ---
+
+List :: list.List;
+HashMap :: map.HashMap;
+IndexMap :: map.IndexMap;
+
+// --- Async / Io capability (impls in std/io.sx) ---
+
+io_mod      :: #import "modules/std/io.sx";
+CBlockingIo :: io_mod.CBlockingIo;
+Future      :: io_mod.Future;
+FutureState :: io_mod.FutureState;
+IoErr       :: io_mod.IoErr;
+async       :: io_mod.async;
+await       :: io_mod.await;
+cancel      :: io_mod.cancel;
+// `timeout` / `Future(void)` are DEFERRED (B1.4) pending issue 0150
+// (a `void` struct field SIGTRAPs the compiler). Re-export once it lands.
+
+// --- The stdlib namespace tail: flat-importing std.sx carries these ---
+
+c       :: #import "modules/std/c.sx";
+posix   :: #import "modules/std/posix.sx";
+mem     :: #import "modules/std/mem.sx";
+fs      :: #import "modules/std/fs.sx";
+process :: #import "modules/std/process.sx";
+socket  :: #import "modules/std/socket.sx";
+json    :: #import "modules/std/json.sx";
+xml     :: #import "modules/std/xml.sx";
+cli     :: #import "modules/std/cli.sx";
+hash    :: #import "modules/std/hash.sx";
+log     :: #import "modules/std/log.sx";
+test    :: #import "modules/std/test.sx";
+time    :: #import "modules/std/time.sx";
+event   :: #import "modules/std/event.sx";
+thread  :: #import "modules/std/thread.sx";

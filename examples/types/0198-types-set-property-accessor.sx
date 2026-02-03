@@ -1,0 +1,63 @@
+// `#set` property accessors — the write counterpart of `#get`. A method
+// `name :: (self: *T, value: V) #set { ... }` is invoked via field-assign
+// syntax (`obj.name = rhs`) rather than `obj.name(rhs)`. A property may carry
+// BOTH a `#get` and a `#set` of the same name (reads pick the getter, writes
+// pick the setter); compound assignment (`+=`) reads via `#get` then writes via
+// `#set`. Works on plain structs and generic-struct instances, as a multi-assign
+// target, and the compound form evaluates the receiver exactly once.
+#import "modules/std.sx";
+
+// get + set pair on the same name, with a scaling setter so we can see which
+// path fired.
+Temp :: struct {
+    raw: i64 = 0;
+    celsius :: (self: *Temp) -> i64 #get => self.raw;
+    celsius :: (self: *Temp, v: i64) #set { self.raw = v; }
+}
+
+// Generic instance: setter takes the type parameter as its value type.
+Box :: struct ($T: Type) {
+    slot: T;
+    val :: (self: *Box(T)) -> T #get => self.slot;
+    val :: (self: *Box(T), v: T) #set { self.slot = v; }
+}
+
+main :: () -> i64 {
+    t : Temp = .{};
+    t.celsius = 30;                         // setter
+    print("celsius={}\n", t.celsius);       // 30 (getter)
+    t.celsius += 5;                          // get-modify-set
+    print("after +=5: {}\n", t.celsius);    // 35
+    t.celsius *= 2;                          // get-modify-set
+    print("after *=2: {}\n", t.celsius);    // 70
+
+    b : Box(i64) = .{ slot = 1 };
+    b.val = 99;                              // setter (value type is T = i64)
+    print("box={}\n", b.val);                // 99
+    b.val -= 9;
+    print("box={}\n", b.val);                // 90
+
+    // Multi-assign with property targets — a swap proves all RHS values are
+    // evaluated before any setter fires.
+    p : Temp = .{ raw = 1 };
+    q : Temp = .{ raw = 2 };
+    p.celsius, q.celsius = q.celsius, p.celsius;
+    print("swap: p={} q={}\n", p.celsius, q.celsius);   // 2 1
+
+    // Compound assign through a property evaluates the receiver EXACTLY ONCE:
+    // a moving receiver reads and writes the SAME element (not two different ones).
+    g_idx = 0;
+    cells[0] = .{ raw = 10 };
+    cells[1] = .{ raw = 20 };
+    next_cell().celsius += 1;                 // reads & writes cells[0]
+    print("once: c0={} c1={} idx={}\n", cells[0].celsius, cells[1].celsius, g_idx);  // 11 20 1
+    return 0;
+}
+
+g_idx : i64 = 0;
+cells : [2]Temp = .[ .{}, .{} ];
+next_cell :: () -> *Temp {
+    cur := g_idx;
+    g_idx = g_idx + 1;
+    return @cells[cur];
+}

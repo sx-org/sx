@@ -1,0 +1,32 @@
+// G4 — own-wins halves for the §D row-2 SUB-FORM wrappers (`?Named`, `[]Named`,
+// `[N]Named`). Each wraps a named element type whose resolution recurses through
+// the SAME source-aware `resolveCompound` element path that `*Named` uses (0822),
+// so they share one routing mechanism rather than a per-form path. `main` authors
+// its OWN `Box { m }` and flat-imports `dep.sx` (`Box { a }`); each wrapped
+// element must bind main's own `Box`, observed by a `.m` access (disjoint field
+// sets → a wrong-author binding is a hard compile error).
+
+#import "modules/std.sx";
+#import "0823-route-all-own-wins-subform-wrappers/dep.sx";
+
+Box :: struct { m: i32; }
+
+main :: () -> i32 {
+    seed : Box = ---;
+    seed.m = 1;
+
+    // ?Named element own-wins
+    opt : ?Box = seed;
+    o := opt!;
+
+    // [N]Named element own-wins
+    arr : [2]Box = ---;
+    arr[0].m = 2;
+    arr[1].m = 3;
+
+    // []Named element own-wins
+    sl : []Box = arr[0..2];
+
+    print("opt={} arr={} sl={} dep={}\n", o.m, arr[0].m, sl[1].m, dep_box());
+    0
+}

@@ -1,0 +1,66 @@
+// std.http — the sched.sx-backed FiberRunner provider (Q3.3).
+//
+// Opt-in: importing this module compiles the M:1 fiber runtime (std/sched
+// — aarch64-pinned context-switch asm). A fiber-handler server does:
+//
+//     fs :: #import "modules/std/http/fiber_sched.sx";
+//     …
+//     runner := fs.SchedRunner.init();          // value, allocator-style
+//     cfg : http.Config = .{ …, fibers = xx runner };
+//     srv, e := http.Server.init(cfg, handler, ctx);
+//     … srv.run() / tick loop … srv.close();
+//     runner.deinit();                          // caller owns the runner
+//
+// The runner (and the allocator its Scheduler captured at init) must
+// OUTLIVE the Server. drive() maps to Scheduler.poll(0), which drains the
+// ready queue and never blocks; a handler that used the scheduler's own
+// fd-blocking would make poll bail loudly (fiber handlers do their I/O
+// waiting through req.read_body — the server's loop owns the fds).
+#import "modules/std/http/fiber.sx";
+sched :: #import "modules/std/sched.sx";
+
+SchedRunner :: struct {
+    s: sched.Scheduler;
+
+    // Value-return construction (allocator convention). Captures the
+    // CURRENT context.allocator into the Scheduler — fiber structs and
+    // closure envs are reaped through it, so it must outlive the runner.
+    init :: () -> SchedRunner {
+        return SchedRunner.{ s = sched.Scheduler.init() };
+    }
+
+    // Terminal. Call AFTER Server.close() — the server has driven every
+    // spawned fiber to completion by then (close wakes + drives), so the
+    // scheduler is quiescent and only its backings remain to free.
+    deinit :: (self: *SchedRunner) {
+        self.s.deinit();
+    }
+}
+
+impl FiberRunner for SchedRunner {
+    spawn :: (self: *SchedRunner, entry: *void, arg: *void) -> usize {
+        f := self.s.spawn(() {
+            entry_fn : (*void) -> void = xx entry;
+            entry_fn(arg);
+        });
+        return xx f;
+    }
+
+    wake :: (self: *SchedRunner, handle: usize) {
+        if handle == 0 { return; }
+        f : *sched.Fiber = xx handle;
+        self.s.wake(f);
+    }
+
+    suspend_current :: (self: *SchedRunner) {
+        self.s.suspend_self();
+    }
+
+    drive :: (self: *SchedRunner) {
+        // poll(0) drains every ready fiber and returns without blocking
+        // (it aborts loudly if a fiber used the scheduler's own fd-wait —
+        // fiber handlers must wait through req.read_body instead). The
+        // virtual-time return value is meaningless here (no timers).
+        self.s.poll(0);
+    }
+}

@@ -1,0 +1,9 @@
+x.a=1 x.b=true
+fcNT=2 n0=a n1=b
+p.0=2 p.1=false fcPT=2
+sum=2
+q.0=3 q.1=false
+y.a=9 fcNT2=2
+f.a=5 fcFwd=2 fwd_so_eq=true
+t.a0=4 t.b=hi fcTL=2 tl_so_eq=true
+n.a.d=3 fcOuter=2

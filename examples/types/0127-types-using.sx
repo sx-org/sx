@@ -1,0 +1,47 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+main :: () {
+
+    // === 26. #using struct composition ===
+    print("=== 26. #using ===\n");
+    {
+        UBase :: struct { x: i32; y: i32; }
+        UExt :: struct { #using UBase; z: i32; }
+        e := UExt.{ x = 1, y = 2, z = 3 };
+        print("using-x: {}\n", e.x);
+        print("using-y: {}\n", e.y);
+        print("using-z: {}\n", e.z);
+
+        // #using in middle position
+        UHeader :: struct { version: i32; }
+        UPacket :: struct { id: i32; #using UHeader; payload: i32; }
+        p := UPacket.{ id = 10, version = 42, payload = 99 };
+        print("pkt-id: {}\n", p.id);
+        print("pkt-ver: {}\n", p.version);
+        print("pkt-pay: {}\n", p.payload);
+
+        // Multiple #using
+        UPos :: struct { px: i32; py: i32; }
+        UCol :: struct { r: i32; g: i32; }
+        USprite :: struct { #using UPos; #using UCol; scale: i32; }
+        s := USprite.{ px = 10, py = 20, r = 255, g = 128, scale = 1 };
+        print("sprite-px: {}\n", s.px);
+        print("sprite-r: {}\n", s.r);
+        print("sprite-scale: {}\n", s.scale);
+    }
+
+    // --- Comptime format ---
+    {
+        ct_body :: "hello";
+        ct_msg :: format("say: {} (len={})", ct_body, ct_body.len);
+        print("{}\n", ct_msg);
+
+        ct_num :: 42;
+        ct_num_msg :: format("n={}", ct_num);
+        print("{}\n", ct_num_msg);
+    }
+}

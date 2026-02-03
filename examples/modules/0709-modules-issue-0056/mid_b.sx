@@ -1,0 +1,3 @@
+#import "common.sx";
+
+mid_b_marker :: () -> i64 { 2 }

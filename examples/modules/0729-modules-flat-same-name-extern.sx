@@ -1,0 +1,14 @@
+// fix-0102c (issue 0102) F3 regression: two flat FILE imports each `extern`
+// the SAME libc symbol under the SAME sx name `absval`. The bare-call resolver
+// must NOT count `extern` (non-plain) authors when deciding ambiguity — it
+// filters them out, returns "no rerouting", and the existing first-wins extern
+// dispatch binds the call. A same-name extern collision therefore compiles and
+// runs (master behavior), it does NOT error as ambiguous.
+#import "modules/std.sx";
+#import "0729-modules-flat-same-name-extern/a.sx";
+#import "0729-modules-flat-same-name-extern/b.sx";
+
+main :: () -> i32 {
+    print("absval = {}\n", absval(-7));
+    0
+}

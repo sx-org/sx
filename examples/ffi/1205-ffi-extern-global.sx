@@ -1,0 +1,32 @@
+// Extern data globals via `<name> : <type> extern;`. Lets sx code
+// reference libSystem / framework symbols (NSConcreteStackBlock,
+// __stdinp, etc.) for FFI bridges. Mirrors the long-standing
+// `<fn> :: (...) -> ... extern;` form on the function side.
+//
+// Cross-file dimension (PLAN-FFI step 0.10): the helper companion
+// `1205-ffi-extern-global-helper.sx` ALSO declares `__stdinp : *void extern;`.
+// Both files referencing the same extern symbol must link cleanly —
+// LLVM dedupes the named global, the C linker resolves both refs to
+// the one libSystem symbol.
+//
+// We *don't* check that the helper computes the same address — see
+// issue-0037 (helper-function-scoped `@extern_global` lowers to
+// undef today). When that fixes, fold the helper's address back into
+// the equality check here.
+
+#import "modules/std.sx";
+#import "1205-ffi-extern-global-helper.sx";
+
+__stdinp : *void extern;
+
+main :: () -> i32 {
+  addr_bits : u64 = xx @__stdinp;
+  print("stdin extern global non-null: {}\n", addr_bits != 0);
+  // Force the helper symbol to participate in linking (otherwise the
+  // imported file's #extern decl might get dropped by the
+  // dead-code stripper). The actual return value is busted today
+  // — see issue-0037.
+  _ := stdinp_addr_present();
+  print("helper file linked: true\n");
+  0
+}

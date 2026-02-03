@@ -1,0 +1,76 @@
+// Generic struct `Animated($T: Lerpable)` monomorphized with a struct type — the
+// `#inline` protocol constraint participates in method dispatch via `self.from.lerp(...)`.
+
+#import "modules/std.sx";
+#import "modules/math";
+
+Lerpable :: protocol #inline {
+    lerp :: (self: *Self, b: Self, t: f32) -> Self;
+}
+
+Size :: struct {
+    width, height: f32;
+    zero :: () -> Size => .{ width = 0.0, height = 0.0 };
+}
+
+impl Lerpable for Size {
+    lerp :: (self: Size, b: Size, t: f32) -> Size {
+        Size.{ width = self.width + (b.width - self.width) * t,
+               height = self.height + (b.height - self.height) * t }
+    }
+}
+
+Animated :: struct ($T: Lerpable) {
+    current: T;
+    from: T;
+    to: T;
+    elapsed: f32;
+    duration: f32;
+    active: bool;
+
+    make :: (value: T) -> Animated(T) {
+        Animated(T).{
+            current = value, from = value, to = value,
+            elapsed = 0.0, duration = 0.0, active = false
+        }
+    }
+
+    set_immediate :: (self: *Animated(T), value: T) {
+        self.current = value;
+        self.from = value;
+        self.to = value;
+        self.active = false;
+    }
+
+    animate_to :: (self: *Animated(T), target: T, dur: f32) {
+        self.from = self.current;
+        self.to = target;
+        self.elapsed = 0.0;
+        self.duration = dur;
+        self.active = true;
+    }
+
+    tick :: (self: *Animated(T), dt: f32) {
+        if !self.active { return; }
+        self.elapsed += dt;
+        t := clamp(self.elapsed / self.duration, 0.0, 1.0);
+        self.current = self.from.lerp(self.to, t);
+        if t >= 1.0 {
+            self.current = self.to;
+            self.active = false;
+        }
+    }
+}
+
+main :: () -> void {
+    anim := Animated(Size).make(Size.zero());
+    anim.set_immediate(Size.{ width = 100.0, height = 50.0 });
+    print("after set: {}x{}\n", anim.current.width, anim.current.height);
+
+    anim.animate_to(Size.{ width = 200.0, height = 100.0 }, 1.0);
+    anim.tick(0.5);
+    print("mid anim: {}x{}\n", anim.current.width, anim.current.height);
+
+    anim.tick(0.5);
+    print("end anim: {}x{}\n", anim.current.width, anim.current.height);
+}

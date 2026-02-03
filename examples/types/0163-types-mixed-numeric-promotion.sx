@@ -1,0 +1,35 @@
+// Mixed int+float arithmetic infers as the FLOAT result, operand-order-independent.
+//
+// `print("{}", expr)` selects integer- vs float-formatting from the STATIC type
+// `inferExprType` reports for the argument (not the lowered value's type), so it
+// exercises the binary-op inference arm directly — distinct from the typed-const
+// validation path. Before the attempt-3 fix, binary-op inference was LHS-biased:
+// `n + 0.5` (int LHS) inferred `i64` and printed a truncated `2`, while `0.5 + n`
+// (float LHS) inferred `f64` and printed `2.5`. The fix routes both through the
+// shared promotion rule (`Lowering.arithResultType`, the same one `lowerBinaryOp`
+// applies for the value), so an int operand with a float operand promotes to the
+// float in either order.
+//
+// Regression (issue 0088, attempt 3 — the inferExprType numeric-promotion root fix).
+
+#import "modules/std.sx";
+
+main :: () {
+    n := 2;   // runtime i64
+
+    // Addition, both operand orders — both promote to f64 → 2.5.
+    print("add: {} {}\n", n + 0.5, 0.5 + n);
+
+    // Multiplication, both orders — both promote → 3.0.
+    print("mul: {} {}\n", n * 1.5, 1.5 * n);
+
+    // Subtraction / division with the int on the left.
+    print("sub: {} div: {}\n", n - 0.5, n / 4.0);
+
+    // f32 operand promotes too (int LHS, f32 RHS).
+    half : f32 = 0.5;
+    print("f32: {}\n", n + half);
+
+    // A pure-int expression is unaffected — stays i64, prints as an integer.
+    print("int: {}\n", n + 3);
+}

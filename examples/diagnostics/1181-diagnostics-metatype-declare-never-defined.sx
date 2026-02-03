@@ -1,0 +1,14 @@
+// A `declare("X")` that is never completed by `define(handle, info)` is rejected
+// loudly. `declare` mints an empty (undefined) nominal slot; without a matching
+// `define` it has zero variants, which is never a usable type — sizing /
+// constructing it would otherwise panic at codegen. The diagnostic names the
+// type and points at the bare `declare` so the missing `define` is obvious.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+Undef :: declare("Undef");          // never define()d
+
+main :: () -> i32 {
+    x : Undef = ---;
+    return 0;
+}

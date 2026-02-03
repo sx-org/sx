@@ -1,0 +1,28 @@
+// Feature 1 — value-position pack projection: `xs.<method>` projects a
+// (zero-arg) protocol method over every element into a TUPLE of the per-element
+// results. For a parameterised `Box(T)`, each element's method returns its own
+// `T`, so the projected tuple is heterogeneous.
+//
+//   xs.get  ≈  (xs[0].get(), xs[1].get())
+
+#import "modules/std.sx";
+
+Box :: protocol(T: Type) {
+    get :: (self: *Self) -> T;
+}
+
+IntCell :: struct { v: i64; }
+StrCell :: struct { s: string; }
+impl Box(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
+impl Box(string) for StrCell { get :: (self: *StrCell) -> string => self.s; }
+
+show :: (..xs: Box) -> void {
+    vals := xs.get;                       // tuple (i64, string)
+    print("0={} 1={}\n", vals.0, vals.1);
+}
+
+main :: () -> i32 {
+    show(IntCell.{ v = 42 }, StrCell.{ s = "hi" });
+    show(StrCell.{ s = "x" }, IntCell.{ v = 7 });   // order swapped → (string, i64)
+    0
+}

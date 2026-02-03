@@ -1,0 +1,112 @@
+// std.http — HTTP/1.1 requires exactly one Host header (RFC 9112 §3.2).
+//
+// Q1.1: an HTTP/1.1 request without a Host header, or with more than one,
+// is malformed and MUST be rejected with 400 — a proxy/origin disagreement
+// about which Host applies is a classic cache-poisoning / routing vector,
+// and silently serving Host-less 1.1 hides broken clients. HTTP/1.0
+// predates Host and stays exempt.
+//
+// Asserts: 1.1 without Host → 400; 1.1 with duplicate Host → 400; a normal
+// 1.1 request with one Host → 200; a Host-less 1.0 request → 200; GPA
+// net-zero after close.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 18998;
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    resp.body = "served";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+// One connection, one request, read to EOF (all cases close: errors close,
+// the 200 cases send Connection: close / are 1.0).
+roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
+    fd := dial_port(PORT);
+    if fd < 0 { return ""; }
+    socket.write(fd, req.ptr, xx req.len);
+    total : i64 = 0;
+    stall : i64 = 0;
+    done := false;
+    while !done and stall < 400 {
+        srv.tick(1) catch {};
+        got : i64 = 0;
+        while true {
+            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            if !re { total += n; got += n; continue; }
+            if re == error.Closed { done = true; }
+            break;
+        }
+        if got > 0 { stall = 0; } else { stall += 1; }
+    }
+    socket.close(fd);
+    return string.{ ptr = buf, len = xx total };
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 16384;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{ port = PORT, max_conn = 4, request_count = 10 };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        // (a) 1.1 without Host → 400
+        r := roundtrip(@srv, "GET / HTTP/1.1\r\nX-Other: 1\r\nConnection: close\r\n\r\n", rbuf, cap);
+        if !contains(r, "HTTP/1.1 400") { print("missing Host: expected 400\n"); failed = 1; }
+
+        // (b) 1.1 with duplicate Host → 400
+        r = roundtrip(@srv, "GET / HTTP/1.1\r\nHost: a\r\nHost: b\r\nConnection: close\r\n\r\n", rbuf, cap);
+        if !contains(r, "HTTP/1.1 400") { print("duplicate Host: expected 400\n"); failed = 1; }
+
+        // (c) normal 1.1 with one Host → 200
+        r = roundtrip(@srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        if !contains(r, "HTTP/1.1 200 OK") or !contains(r, "served") {
+            print("single Host: expected 200\n"); failed = 1;
+        }
+
+        // (d) Host-less 1.0 stays served (Host predates 1.1)
+        r = roundtrip(@srv, "GET / HTTP/1.0\r\n\r\n", rbuf, cap);
+        if !contains(r, "HTTP/1.1 200 OK") or !contains(r, "served") {
+            print("1.0 without Host: expected 200\n"); failed = 1;
+        }
+
+        srv.close();
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

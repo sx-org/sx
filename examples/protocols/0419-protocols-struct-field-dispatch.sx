@@ -1,0 +1,50 @@
+// Dispatch a protocol method THROUGH a protocol-typed struct field.
+// Regression (issue 0176): the issue's repro used a plain free function to
+// "satisfy" the protocol — which is NOT impl-driven conformance, so erasure
+// built a vtable of unreachable thunks and the first dispatch SIGABRT'd with no
+// diagnostic. With a real `impl` block the field dispatch must work; the
+// non-conforming case is now a loud diagnostic (see the negative example).
+//
+// Covers: struct-literal init, field-assign init, reassigning a protocol field
+// to a DIFFERENT concrete impl, a protocol method with args + non-void return,
+// a protocol field beside a non-protocol field (offsets), a nested struct
+// holding a struct holding a protocol field, and passing the holder by value
+// into another function before dispatching.
+
+#import "modules/std.sx";
+
+Speaker :: protocol { greet :: (self: *Self, x: i64) -> i64; }
+
+Dog :: struct { n: i64 = 0; }
+impl Speaker for Dog { greet :: (self: *Dog, x: i64) -> i64 { return self.n + x; } }
+
+Cat :: struct { m: i64 = 0; }
+impl Speaker for Cat { greet :: (self: *Cat, x: i64) -> i64 { return self.m * x; } }
+
+Holder :: struct { s: Speaker; b: i64 = 0; t: Speaker; }
+Outer  :: struct { h: Holder; }
+
+run :: (h: Holder) -> i64 { return h.s.greet(10) + h.t.greet(2); }
+
+main :: () {
+  d := Dog.{ n = 42 };
+  c := Cat.{ m = 5 };
+
+  // struct-literal init: two protocol fields straddling a non-protocol one
+  // (explicit owning copies — the cutover's spelling for lvalue sources).
+  h : Holder = .{ s = d.(Speaker), b = 7, t = c.(Speaker) };
+  print("lit: {} {} {}\n", h.s.greet(10), h.b, h.t.greet(3));   // 52 7 15
+
+  // field-assign init, then reassign each field to a DIFFERENT concrete impl.
+  h2 : Holder = .{ s = d.(Speaker), b = 0, t = c.(Speaker) };
+  h2.s = c.(Speaker);
+  h2.t = d.(Speaker);
+  print("reassign: {} {}\n", h2.s.greet(4), h2.t.greet(8));     // 20 50
+
+  // nested struct holding a struct holding a protocol field.
+  o : Outer = .{ h = .{ s = d.(Speaker), b = 1, t = c.(Speaker) } };
+  print("nested: {} {}\n", o.h.s.greet(0), o.h.t.greet(2));     // 42 10
+
+  // pass the holder by value into a function, dispatch there.
+  print("passed: {}\n", run(h));                                 // 52 + 10 = 62
+}

@@ -1,0 +1,4 @@
+// b.sx authors its OWN `greet`. `from_b`'s bare `greet` must bind b.sx's
+// author (2), not the first-wins winner from a.sx.
+greet  :: () -> i64 { return 2; }
+from_b :: () -> i64 { return greet(); }

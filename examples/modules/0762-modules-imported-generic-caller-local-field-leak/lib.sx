@@ -1,0 +1,9 @@
+// Flat-imported generic struct whose field `y: LocalOnly` names a type that is
+// declared only as a BLOCK-LOCAL in the CALLER (`main`). The template's fields
+// resolve in THIS module's source context (E3 attempt-4), and a block-local type
+// is visible only within its own source, so `LocalOnly` is genuinely undeclared
+// here — the source-aware leaf surfaces it instead of binding the caller's local.
+Bad :: struct($T: Type) {
+    x: T;
+    y: LocalOnly;
+}

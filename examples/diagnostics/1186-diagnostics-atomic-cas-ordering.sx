@@ -1,0 +1,12 @@
+// Atomic compare-exchange dual-ordering validation: the FAILURE ordering may not
+// be stronger than the SUCCESS ordering (LLVM rule). Here failure=.seq_cst (rank
+// 3) is stronger than success=.relaxed (rank 0) → loud diagnostic, not invalid IR.
+// Calls the intrinsic directly so the diagnostic span is stable (user file, not
+// the lib forward site). Stream A (atomics) A.2.
+#import "modules/std.sx";
+#import "modules/std/atomic.sx";
+
+main :: () {
+    n : i64 = 0;
+    _ := atomic_cmpxchg(i64, @n, 0, 1, .relaxed, .seq_cst);
+}

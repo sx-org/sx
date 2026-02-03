@@ -1,0 +1,4 @@
+// The second flat-imported author of a same-name `Dir` enum. A separate nominal
+// identity from a.sx's `Dir`, so each bare reference is a real collision the
+// importing source cannot disambiguate.
+Dir :: enum { north; south; east; west; }

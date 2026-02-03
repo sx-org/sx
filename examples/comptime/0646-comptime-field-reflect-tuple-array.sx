@@ -1,0 +1,46 @@
+// Comptime field reflection (`struct_field_count` / `struct_field_name` / `struct_field_type`) over
+// ALL aggregate kinds — struct, enum, tuple (positional + named), array, vector.
+//
+// Regression (issue 0195): `struct_field_count` / `struct_field_name` were broken on tuples
+// and arrays/vectors. `struct_field_count` silently returned 0 (a missing `.tuple` arm
+// in the count switches), and `struct_field_name` SEGFAULTED — the LLVM backend built a
+// zero-length name array for those kinds while sizing the GEP at the (sometimes
+// non-zero) count, so `struct_field_name(T, i)` indexed past a `[0 x string]` global.
+// Fixed by driving BOTH the name-array build and the GEP sizing from the one
+// source of truth (`memberCount`/`memberName`), so they can never diverge again.
+// A member with no name (positional-tuple / array / vector element) reflects as
+// the empty string "" — one slot per member, always in-bounds.
+#import "modules/std.sx";
+
+S :: struct { a: i64; b: bool; }
+E :: enum { X; Y; Z; }
+
+main :: () -> i32 {
+    // struct: named fields
+    print("struct: fc={} fn=({},{}) ft0={}\n",
+        struct_field_count(S), struct_field_name(S, 0), struct_field_name(S, 1), type_name(struct_field_type(S, 0)));
+
+    // enum: variant names (the variant_* family — struct_field_* rejects enums)
+    print("enum: fc={} fn=({},{},{})\n",
+        variant_count(E), variant_name(E, 0), variant_name(E, 1), variant_name(E, 2));
+
+    // positional tuple: element types, no names → ""
+    print("postuple: fc={} ft=({},{}) fn0=[{}]\n",
+        struct_field_count(Tuple(i64, bool)),
+        type_name(struct_field_type(Tuple(i64, bool), 0)), type_name(struct_field_type(Tuple(i64, bool), 1)),
+        struct_field_name(Tuple(i64, bool), 0));
+
+    // named tuple: element labels recovered
+    print("namtuple: fc={} fn=({},{})\n",
+        struct_field_count(Tuple(a: i64, b: bool)),
+        struct_field_name(Tuple(a: i64, b: bool), 0), struct_field_name(Tuple(a: i64, b: bool), 1));
+
+    // arrays/vectors left the struct_field_* family: lengths/lanes read via
+    // `.len` on the VALUE, elements via native indexing (typed).
+    arr : [4]i64 = .[10, 20, 30, 40];
+    vec : Vector(4, f32) = .[1.0, 2.0, 3.0, 4.0];
+    print("array: len={} a1={}\n", arr.len, arr[1]);
+    print("vector: len={} v1={}\n", vec.len, vec[1]);
+
+    return 0;
+}

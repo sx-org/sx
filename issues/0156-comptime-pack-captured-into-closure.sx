@@ -1,0 +1,20 @@
+// issue 0156 Part 2 (OPEN, non-blocking) — a deferred `..` spread crashes the
+// backend instead of working or diagnosing. `..` is comptime-pack-only; spreading
+// a concrete tuple `w(..t)` panics (`unresolved type reached LLVM emission`), and
+// capturing a comptime pack into a closure then spreading it segfaults at runtime
+// (the deferred body re-expands the pack from the now-gone caller locals).
+//
+// Part 1 (the `$R`-single-type-arg-in-a-pack-fn LLVM panic) was a SEPARATE bug,
+// now FIXED — see examples/generics/0216-generics-typearg-in-pack-fn-body.sx.
+//
+// Not a fiber-async blocker: deferred async uses a nullary thunk that captures
+// its inputs at the call site, so no `..` spread crosses the deferral.
+#import "modules/std.sx";
+main :: () {
+    w := (a: i64, b: i64) -> i64 => a + b;
+    t := .{40, 2};
+    out : i64 = 0; po := @out;
+    captured :: () { po.* = w(..t); };   // tuple spread inside a closure → panics
+    captured();
+    print("out: {}\n", out);                // want: out: 42 (or a clean diagnostic)
+}

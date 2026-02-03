@@ -1,0 +1,18 @@
+body 0
+cleanup 0
+cleanup 1
+after break loop
+b2 0
+c2 0
+c2 1
+b2 2
+c2 2
+done
+wbody1
+w1
+w2
+w3
+while done
+inner 0
+outer 0
+nested done

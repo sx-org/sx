@@ -1,0 +1,15 @@
+// Namespace aliases carry ONE level: an alias declared by a module is
+// usable in that module's DIRECT flat importers only. Two flat hops away
+// (`facade.sx` declares `t`, `facade2.sx` flat-imports facade, this file
+// flat-imports facade2) the alias is NOT visible — the carry does not
+// chain, mirroring bare-name non-transitivity (0763).
+//
+// Regression (issue 0114): the bare `alias.fn()` call path used to serve
+// this from the global qualified registration at any import depth.
+
+#import "modules/std.sx";
+#import "0832-modules-namespace-alias-two-hop-not-visible/facade2.sx";
+
+main :: () {
+    print("{}\n", t.helper());
+}

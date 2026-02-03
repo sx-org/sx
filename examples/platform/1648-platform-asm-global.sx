@@ -1,0 +1,20 @@
+// ASM stream Phase F — top-level (global) `asm { … }`: a template-only block at
+// module scope, lowered to LLVM `module asm` (LLVMAppendModuleInlineAsm). It
+// defines a symbol that a lib-less `extern` declaration calls into — the
+// import direction reuses the existing C-FFI extern path, no new surface.
+// Built+run via `aot` (a module-asm symbol lives in the final linked binary,
+// not the JIT host); aarch64-macos-pinned, so ir-only on a non-matching host.
+asm {
+    #string ASM
+.global _my_add
+_my_add:
+    add x0, x0, x1
+    ret
+ASM,
+};
+
+my_add :: (a: i64, b: i64) -> i64 extern;
+
+main :: () -> i64 {
+    return my_add(40, 2);   // 42, computed by the global-asm routine
+}

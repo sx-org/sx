@@ -1,0 +1,28 @@
+// Generic `Into(Block)` impl with a `string`-typed arg in the
+// closure signature. The block trampoline declares the param with
+// abi(.c); without the abi-collapse fix, sx `string` got
+// silently collapsed to `ptr` (the libc `char *` heuristic) and
+// the caller's 16-byte `{ptr, len}` value mismatched the
+// trampoline's 8-byte `ptr` slot. Result: segfault inside the
+// trampoline's first read.
+//
+// The fix lives in `abiCoerceParamTypeEx`: the `string`/`slice` →
+// `ptr` collapse only applies to `is_extern` extern decls (libc
+// interop). sx-internal `abi(.c)` keeps the full slice
+// shape, which lands as `[2 x i64]` at the LLVM signature site
+// and matches the caller's two-register pass on AArch64.
+
+#import "modules/std.sx";
+#import "modules/ffi/objc_block.sx";
+
+g_s: string = "";
+
+main :: () -> i32 {
+    cl := (s: string) { g_s = s; };
+    b : Block = xx cl;
+    invoke_fn : (*Block, string) -> void abi(.c) = xx b.invoke;
+    invoke_fn(@b, "hello");
+    if g_s.len == 0 { print("FAIL: empty\n"); return 1; }
+    print("got: <{}>\n", g_s);
+    0
+}

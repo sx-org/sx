@@ -1,0 +1,5 @@
+error: Vector lane count must be a positive compile-time integer constant
+  --> examples/vectors/1502-vectors-runtime-lane-not-const.sx:14:16
+   |
+14 |     v : Vector(lanes(), f32) = ---;
+   |                ^^^^^^^

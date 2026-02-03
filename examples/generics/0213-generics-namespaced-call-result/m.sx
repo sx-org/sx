@@ -1,0 +1,9 @@
+#import "modules/std.sx";
+
+pick :: (a: $T, b: T) -> T {
+    if a > b then a else b
+}
+
+double :: (x: $T) -> T {
+    x + x
+}

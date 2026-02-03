@@ -1,0 +1,13 @@
+// extern with a "csym" rename (FFI-linkage stream, Phase 1.2): the sx name
+// `c_abs` binds C's `abs` via the optional symbol-name override after the
+// `extern` keyword — mirrors `extern "abs"`. The optional `LIB` ident slot
+// (extern_lib) sits before the string; here it's omitted (libc is
+// default-linked).
+#import "modules/std.sx";
+
+c_abs :: (n: i32) -> i32 extern "abs";
+
+main :: () -> i32 {
+    print("c_abs(-42) = {}\n", c_abs(xx -42));
+    0
+}

@@ -1,0 +1,36 @@
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+
+ImageView :: struct {
+    texture_id: u32;
+    width: f32;
+    height: f32;
+    tint: Color;
+}
+
+impl View for ImageView {
+    size_that_fits :: (self: *ImageView, proposal: ProposedSize) -> Size {
+        pw := proposal.width ?? self.width;
+        ph := proposal.height ?? self.height;
+        // Maintain aspect ratio: fit within proposal
+        aspect := self.width / self.height;
+        if pw / ph > aspect {
+            Size.{ width = ph * aspect, height = ph }
+        } else {
+            Size.{ width = pw, height = pw / aspect }
+        }
+    }
+
+    layout :: (self: *ImageView, bounds: Frame) {}
+
+    render :: (self: *ImageView, ctx: *RenderContext, frame: Frame) {
+        ctx.add_image(frame, self.texture_id);
+    }
+
+    handle_event :: (self: *ImageView, event: *Event, frame: Frame) -> bool {
+        false
+    }
+}

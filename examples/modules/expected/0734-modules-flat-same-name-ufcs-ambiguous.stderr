@@ -1,0 +1,5 @@
+error: 'dup' is ambiguous; declared by multiple imported modules — qualify the call
+  --> examples/modules/0734-modules-flat-same-name-ufcs-ambiguous.sx:14:19
+   |
+14 |     print("{}\n", v.dup());
+   |                   ^^^^^

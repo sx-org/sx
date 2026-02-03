@@ -1,0 +1,26 @@
+// Bare function values occupy one target pointer word in every destination:
+// inferred and annotated locals, aggregate fields, assignments, and arguments.
+// Regression (issue 0318): wasm32 must not inherit the legacy 64-bit word size.
+#import "modules/std/core.sx";
+
+Callback :: (ctx: *void, data: string) -> bool;
+Holder :: struct { callback: Callback; }
+
+accept :: (ctx: *void, data: string) -> bool {
+    _ = ctx;
+    return data.len == 0;
+}
+
+invoke :: (callback: Callback) -> bool => callback(null, "");
+
+main :: () -> i32 {
+    inferred := accept;
+    annotated : Callback = accept;
+    holder := Holder.{ callback = accept };
+    holder.callback = accept;
+    if !inferred(null, "") { return 1; }
+    if !annotated(null, "") { return 2; }
+    if !holder.callback(null, "") { return 3; }
+    if !invoke(accept) { return 4; }
+    return 0;
+}

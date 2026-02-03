@@ -1,0 +1,46 @@
+// Generic value-carrying failable functions (`($T) -> (T, !E)`) whose body ends in
+// a trailing success EXPRESSION (no explicit `return`) must set the success
+// error slot to 0 — the caller's `catch` must NOT fire and the value must be
+// intact across instantiations (i64 / string / struct), and `or` must yield the
+// real value not the fallback.
+// Regression (issue 0190): `lowerGenericInstance` hand-rolled a body-return
+// (coerceToType+ret) that missed the value-failable success routing, leaving
+// the error-tag slot uninitialized → phantom catch on success / value
+// corruption for generic instantiations.
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+Point :: struct { x: i64; y: i64; }
+
+// Generic trailing-expression success — instantiated at i64 / string / struct.
+gen :: ($T: Type, v: T) -> (T, !E) { v }
+
+// Generic that RAISES — the caller's catch must still fire.
+gfail :: ($T: Type, v: T, bad: bool) -> (T, !E) {
+    if bad { raise error.Bad; }
+    v
+}
+
+main :: () -> i32 {
+    a := gen(i64, 42) catch (e) { print("PHANTOM i64\n"); return 1; };
+    print("i64: {}\n", a);
+
+    s := gen(string, "hello") catch (e) { print("PHANTOM string\n"); return 1; };
+    print("string: {}\n", s);
+
+    p := gen(Point, Point.{ x = 3, y = 4 }) catch (e) { print("PHANTOM struct\n"); return 1; };
+    print("struct: ({},{})\n", p.x, p.y);
+
+    // `or`-form on success must yield the real value, not the fallback.
+    o := gen(i64, 7) or 999;
+    print("or: {}\n", o);
+
+    // A generic that raises still propagates to the caller's catch.
+    gfail(i64, 0, true) catch (e) {
+        print("raise caught\n");
+        return 0;
+    };
+    print("UNEXPECTED no error\n");
+    return 1;
+}

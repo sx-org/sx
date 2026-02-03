@@ -1,0 +1,20 @@
+f64.true_min     true
+f64.max          true
+f64.min          true
+f64.epsilon      true
+f64.min_positive true
+f64.inf          true
+f32.true_min     true
+f32.max          true
+f32.min          true
+f32.epsilon      true
+f32.min_positive true
+f32.inf          true
+(1+eps)!=1       true
+(1+eps/2)==1     true
+inf>max          true
+min==-max        true
+true_min<min_pos true
+true_min>0       true
+nan!=nan         true
+typed eps bits   true

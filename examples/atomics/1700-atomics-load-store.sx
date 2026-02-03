@@ -1,0 +1,17 @@
+// Atomic($T) load/store with explicit memory orderings, single-thread.
+// Stream A (atomics) A.0 + A.0.5 — the ordering is a comptime `$o: Ordering`
+// param (explicit, Rust-style): a.load(.acquire) emits `load atomic … acquire`.
+// An invalid combination (a.load(.release)) is a compile error (see 1131).
+#import "modules/std.sx";
+#import "modules/std/atomic.sx";
+
+main :: () {
+    a := Atomic(i64).init(7);
+    print("init: {}\n", a.load(.seq_cst));
+
+    a.store(42, .release);
+    print("after store: {}\n", a.load(.acquire));
+
+    a.store(a.load(.relaxed) + 1, .seq_cst);
+    print("incremented: {}\n", a.load(.seq_cst));
+}

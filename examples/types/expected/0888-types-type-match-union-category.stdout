@@ -1,0 +1,11 @@
+untagged: union
+enum: other
+tagged: union
+both untagged: union-first
+both tagged: union-first
+both enum: enum
+concrete first: Point
+category rest: struct
+static untagged: union
+static enum: other
+boxed: true

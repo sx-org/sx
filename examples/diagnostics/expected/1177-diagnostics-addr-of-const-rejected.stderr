@@ -1,0 +1,17 @@
+error: cannot take the address of constant 'N' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)
+  --> examples/diagnostics/1177-diagnostics-addr-of-const-rejected.sx:14:11
+   |
+14 |     takes(@N);          // module scalar const — no storage
+   |           ^^
+
+error: cannot take the address of constant 'x' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)
+  --> examples/diagnostics/1177-diagnostics-addr-of-const-rejected.sx:16:11
+   |
+16 |     takes(@x);          // local scalar const — no storage
+   |           ^^
+
+error: cannot take the address of constant 'N' — a scalar '::' constant has no storage (use a '=' variable or a local copy for mutable data)
+  --> examples/diagnostics/1177-diagnostics-addr-of-const-rejected.sx:17:49
+   |
+17 |     asm volatile { "mov %[c], #99", [c] "=r" -> @N };   // write-through to a const
+   |                                                 ^^

@@ -1,0 +1,6 @@
+[]
+[i64]
+[i64, string]
+[bool, f64, string, i64]
+--- build done ---
+rt

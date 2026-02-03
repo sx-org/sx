@@ -1,0 +1,5 @@
+error: atomic ops require a scalar type (integer/float/bool/pointer/enum/vector) of size 1/2/4/8/16 bytes — '[8]u8' is not eligible
+  --> examples/diagnostics/1130-diagnostics-atomic-nonscalar.sx:8:22
+   |
+ 8 |     x := atomic_load([8]u8, @arr, .seq_cst);
+   |                      ^^^^^

@@ -1,0 +1,19 @@
+// ASM stream — symbol operand (`"s"`) on x86_64 (cross-arch sibling of the
+// aarch64 1656). A DIRECT `call` to an `export`ed sx function by symbol, written
+// with the SAME portable `%[fn]` as the aarch64 example — the compiler injects
+// the `:c` operand modifier for symbol operands, so the symbol prints bare on
+// every target (x86 would otherwise render `$cb`, a bad call target). The
+// backend emits the platform-mangled name (`call cb` on Linux). x86-pinned;
+// ir-only here, runs on x86_64-linux. Round trip: sx → asm → call cb → sx → 42.
+cb :: (n: i64) -> i64 export "cb" { return n + 1; }
+
+tramp :: (n: i64) -> i64 {
+    return asm volatile {
+        "call %[fn]",
+        [ret] "={rax}" -> i64,
+        "{rdi}" = n,                // arg in rdi (SysV)
+        [fn]   "s" = cb,            // symbol operand → direct `call cb`
+        clobbers(.rcx, .rdx, .rsi, .r8, .r9, .r10, .r11, .memory),
+    };
+}
+main :: () -> i64 { if tramp(41) != 42 { return 1; } return 0; }

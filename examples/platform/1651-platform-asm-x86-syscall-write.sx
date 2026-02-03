@@ -1,0 +1,27 @@
+// ASM stream — x86_64 Linux `write(2)` via a raw `syscall`. The canonical inline-
+// asm use case: SYS_write (rax=1) with fd/buf/count pinned to rdi/rsi/rdx, the
+// `syscall` instruction clobbering rcx + r11 (+ memory), and the byte count
+// returned in rax. Demonstrates register-pinned inputs, a pinned value output,
+// a pointer input (`*u8` → rsi), and `clobbers(.…)` lowering all at once.
+//
+// x86-pinned via `.build`: ir-only on a non-x86 host — the `.ir` snapshot locks
+// the exact constraint string (`={rax},{rax},{rdi},{rsi},{rdx},~{rcx},~{r11},
+// ~{memory}`), which is the §II.11 silent-miscompile risk zone — and runs
+// natively on x86_64-linux (printing "ok\n"). See 1640 for an x86 multi-output
+// example, 1645/1647/1649/1650 for aarch64 examples that execute on this host.
+sys_write :: (fd: i64, buf: *u8, count: i64) -> i64 {
+    return asm volatile {
+        "syscall",
+        [ret] "={rax}" -> i64,      // return: bytes written, in rax
+        "{rax}" = 1,                // SYS_write (x86_64 Linux)
+        "{rdi}" = fd,               // fd
+        "{rsi}" = buf,              // buf
+        "{rdx}" = count,            // count
+        clobbers(.rcx, .r11, .memory),
+    };
+}
+
+main :: () {
+    msg : [3]u8 = .[111, 107, 10];      // "ok\n"
+    n := sys_write(1, @msg[0], 3);
+}

@@ -1,0 +1,18 @@
+// Top-level global initialized from a module constant copies the constant's
+// value (not a silent zero). `K : A : 42; g : A = K;` resolves the forward
+// alias `A` to `i32` and materializes `g`'s static initializer from `K`.
+// Regression (issue 0071): `registerTopLevelGlobal`'s init_val switch only
+// handled literals/array/struct literals; an identifier initializer fell
+// through to a null payload and the global silently zero-initialized.
+#import "modules/std.sx";
+
+A :: B;
+B :: i32;
+
+K : A : 42;
+g : A = K;
+
+main :: () -> i32 {
+    print("g={}\n", g);
+    return g;
+}

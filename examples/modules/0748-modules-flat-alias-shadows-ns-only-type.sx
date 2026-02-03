@@ -1,0 +1,18 @@
+// A flat-visible (here own-module) type ALIAS must resolve even when a
+// namespaced-only import authors a same-name NAMED type — the alias↔named-type
+// analog of 0745/0746 (R4, FALSE-REJECTION direction). `dep.sx` is namespaced
+// (`ns :: #import`) and authors a top-level `Secret` STRUCT; `main` authors its
+// OWN top-level alias `Secret :: i32`. A bare `Secret` must resolve to MAIN's
+// alias (`i32`), NOT be poisoned by the invisible same-name struct: the alias is
+// the only flat-visible TYPE author. Before the fix the leaf saw the global
+// `findByName` struct and, finding no NAMED-type author in `main` (an alias is a
+// `const_decl`, not a named type), wrongly rejected the bare reference as "not
+// visible". Regression (issue R4).
+ns :: #import "0748-modules-flat-alias-shadows-ns-only-type/dep.sx";
+
+Secret :: i32;
+
+main :: () -> i32 {
+    x : Secret = 42;
+    x
+}

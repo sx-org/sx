@@ -1,0 +1,30 @@
+// A reserved/builtin type name used as a PARAMETER name is rejected inside the
+// two method-with-body forms that carry their params as bare name lists rather
+// than `Param` nodes: a protocol default-body method (`u8`) and a sx-defined
+// runtime-class (`#objc_class`) method (`i16`). The declaration-site diagnostic
+// underlines the OFFENDING PARAMETER itself, not the enclosing `protocol` /
+// `#objc_class` block — each method's `param_name_spans` is threaded from the
+// parser so the caret lands on the parameter token.
+//
+// Regression (issue 0076, attempt-5 span precision). Expected: one error per
+// offending parameter, each caret on the parameter name; exit 1.
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+Greeter :: protocol {
+    greet :: (self: *Self, u8: i64) -> i64 {
+        return u8;
+    }
+}
+
+SxFoo :: #objc_class("SxFoo") {
+    counter: i32;
+
+    bump :: (self: *Self, i16: i32) {
+        self.counter += i16;
+    }
+}
+
+main :: () -> i32 {
+    return 0;
+}

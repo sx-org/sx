@@ -1,0 +1,693 @@
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/math";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/animation.sx";
+#import "modules/ui/font.sx";
+
+// =============================================================================
+// DockZone — where a panel can be dropped
+// =============================================================================
+
+DockZone :: enum {
+    floating;
+    fill;
+    center;
+    top;
+    bottom;
+    left;
+    right;
+    top_left;
+    top_right;
+    bottom_left;
+    bottom_right;
+}
+
+dock_zone_get_hint_frame :: (zone: DockZone, bounds: Frame, hint_size: f32) -> Frame {
+    pad :f32: 8.0;
+    cx := bounds.origin.x + (bounds.size.width - hint_size) * 0.5;
+    cy := bounds.origin.y + (bounds.size.height - hint_size) * 0.5;
+
+    if zone == {
+        case .floating:    Frame.zero();
+        case .fill:        Frame.make(cx, cy, hint_size * 1.2, hint_size * 1.2);
+        case .center:      Frame.make(cx, cy, hint_size, hint_size);
+        case .top:         Frame.make(cx, bounds.origin.y + pad, hint_size, hint_size);
+        case .bottom:      Frame.make(cx, bounds.max_y() - hint_size - pad, hint_size, hint_size);
+        case .left:        Frame.make(bounds.origin.x + pad, cy, hint_size, hint_size);
+        case .right:       Frame.make(bounds.max_x() - hint_size - pad, cy, hint_size, hint_size);
+        case .top_left:    Frame.make(bounds.origin.x + pad, bounds.origin.y + pad, hint_size, hint_size);
+        case .top_right:   Frame.make(bounds.max_x() - hint_size - pad, bounds.origin.y + pad, hint_size, hint_size);
+        case .bottom_left: Frame.make(bounds.origin.x + pad, bounds.max_y() - hint_size - pad, hint_size, hint_size);
+        case .bottom_right:Frame.make(bounds.max_x() - hint_size - pad, bounds.max_y() - hint_size - pad, hint_size, hint_size);
+    }
+}
+
+dock_zone_get_preview_frame :: (zone: DockZone, bounds: Frame) -> Frame {
+    hw := bounds.size.width * 0.5;
+    hh := bounds.size.height * 0.5;
+
+    if zone == {
+        case .floating:    Frame.zero();
+        case .fill:        bounds;
+        case .center:      Frame.make(bounds.origin.x + bounds.size.width * 0.25, bounds.origin.y + bounds.size.height * 0.25, bounds.size.width * 0.5, bounds.size.height * 0.5);
+        case .top:         Frame.make(bounds.origin.x, bounds.origin.y, bounds.size.width, hh);
+        case .bottom:      Frame.make(bounds.origin.x, bounds.origin.y + hh, bounds.size.width, hh);
+        case .left:        Frame.make(bounds.origin.x, bounds.origin.y, hw, bounds.size.height);
+        case .right:       Frame.make(bounds.origin.x + hw, bounds.origin.y, hw, bounds.size.height);
+        case .top_left:    Frame.make(bounds.origin.x, bounds.origin.y, hw, hh);
+        case .top_right:   Frame.make(bounds.origin.x + hw, bounds.origin.y, hw, hh);
+        case .bottom_left: Frame.make(bounds.origin.x, bounds.origin.y + hh, hw, hh);
+        case .bottom_right:Frame.make(bounds.origin.x + hw, bounds.origin.y + hh, hw, hh);
+    }
+}
+
+dock_zone_to_alignment :: (zone: DockZone) -> ?Alignment {
+    if zone == {
+        case .floating:     null;
+        case .fill:         ALIGN_CENTER;
+        case .center:       ALIGN_CENTER;
+        case .top:          ALIGN_TOP;
+        case .bottom:       ALIGN_BOTTOM;
+        case .left:         ALIGN_LEADING;
+        case .right:        ALIGN_TRAILING;
+        case .top_left:     ALIGN_TOP_LEADING;
+        case .top_right:    ALIGN_TOP_TRAILING;
+        case .bottom_left:  ALIGN_BOTTOM_LEADING;
+        case .bottom_right: ALIGN_BOTTOM_TRAILING;
+    }
+}
+
+dock_zone_should_fill :: (zone: DockZone) -> bool {
+    zone == .fill
+}
+
+// =============================================================================
+// DockInteraction — persistent drag state for the dock
+// =============================================================================
+
+DOCK_ANIM_DURATION :f32: 0.19;  // 190ms
+
+DockInteraction :: struct {
+    // Drag state
+    dragging_child: i64;       // -1 = none
+    drag_start_pos: Point;
+    drag_offset: Point;
+    click_fraction_x: f32;
+    click_fraction_y: f32;
+    hovered_zone: i64;         // -1 = none, else DockZone ordinal
+
+    // Per-child state
+    natural_sizes: List(Size);
+    alignment_overrides: List(Alignment);
+    has_alignment_override: List(bool);
+    is_floating: List(bool);
+    is_fill: List(bool);
+    floating_positions: List(Point);
+    child_bounds: List(Frame);
+    anim_sizes: List(Animated(Size));
+    header_pressed: List(bool);
+
+    child_count: i64;
+    parent_allocator: Allocator;  // GPA — used for persistent list growth
+
+    init :: (self: *DockInteraction) {
+        self.dragging_child = -1;
+        self.drag_start_pos = Point.zero();
+        self.drag_offset = Point.zero();
+        self.click_fraction_x = 0.0;
+        self.click_fraction_y = 0.0;
+        self.hovered_zone = -1;
+        self.child_count = 0;
+        self.parent_allocator = context.allocator;  // capture GPA at init time
+
+        self.natural_sizes = List(Size).{};
+        self.alignment_overrides = List(Alignment).{};
+        self.has_alignment_override = List(bool).{};
+        self.is_floating = List(bool).{};
+        self.is_fill = List(bool).{};
+        self.floating_positions = List(Point).{};
+        self.child_bounds = List(Frame).{};
+        self.anim_sizes = List(Animated(Size)).{};
+        self.header_pressed = List(bool).{};
+    }
+
+    ensure_capacity :: (self: *DockInteraction, count: i64) {
+        if self.child_count >= count { return; }
+        while self.child_count < count {
+            self.natural_sizes.append(Size.zero(), self.parent_allocator);
+            self.alignment_overrides.append(ALIGN_CENTER, self.parent_allocator);
+            self.has_alignment_override.append(false, self.parent_allocator);
+            self.is_floating.append(false, self.parent_allocator);
+            self.is_fill.append(false, self.parent_allocator);
+            self.floating_positions.append(Point.zero(), self.parent_allocator);
+            self.child_bounds.append(Frame.zero(), self.parent_allocator);
+            self.anim_sizes.append(Animated(Size).make(Size.zero()), self.parent_allocator);
+            self.header_pressed.append(false, self.parent_allocator);
+            self.child_count += 1;
+        }
+    }
+
+    set_target_size :: (self: *DockInteraction, index: i64, target: Size) {
+        if index >= self.child_count { return; }
+        anim := @self.anim_sizes.items[index];
+        cur := anim.to;
+
+        // First time (target is ~0): jump immediately, don't animate from zero
+        if cur.width < 1.0 and cur.height < 1.0 {
+            anim.set_immediate(target);
+            return;
+        }
+
+        // Only animate if target changed significantly
+        if abs(cur.width - target.width) > 0.5 or abs(cur.height - target.height) > 0.5 {
+            anim.animate_to(target, DOCK_ANIM_DURATION);
+        }
+    }
+
+    get_animated_size :: (self: *DockInteraction, index: i64) -> Size {
+        if index >= self.child_count { return Size.zero(); }
+        (@self.anim_sizes.items[index]).current
+    }
+
+    tick_animations :: (self: *DockInteraction, dt: f32) {
+        i := 0;
+        while i < self.child_count {
+            anim := @self.anim_sizes.items[i];
+            anim.tick(dt);
+            i += 1;
+        }
+    }
+
+    get_hovered_dock_zone :: (self: *DockInteraction) -> ?DockZone {
+        if self.hovered_zone < 0 { return null; }
+        // Map ordinal back to DockZone
+        self.hovered_zone.(DockZone)
+    }
+
+    set_hovered_dock_zone :: (self: *DockInteraction, zone: ?DockZone) {
+        if z := zone {
+            self.hovered_zone = xx z;
+        } else {
+            self.hovered_zone = -1;
+        }
+    }
+}
+
+start_dragging :: (interaction: *DockInteraction, child_index: i64, pos: Point, panel_frame: Frame) {
+    interaction.dragging_child = child_index;
+    interaction.drag_start_pos = pos;
+    interaction.drag_offset = Point.zero();
+
+    if panel_frame.size.width > 0.0 {
+        interaction.click_fraction_x = (pos.x - panel_frame.origin.x) / panel_frame.size.width;
+    } else {
+        interaction.click_fraction_x = 0.0;
+    }
+    if panel_frame.size.height > 0.0 {
+        interaction.click_fraction_y = (pos.y - panel_frame.origin.y) / panel_frame.size.height;
+    } else {
+        interaction.click_fraction_y = 0.0;
+    }
+}
+
+// =============================================================================
+// Helper functions
+// =============================================================================
+
+zone_by_index :: (i: i64) -> DockZone {
+    if i == {
+        case 0: .fill;
+        case 1: .center;
+        case 2: .top;
+        case 3: .bottom;
+        case 4: .left;
+        case 5: .right;
+        case 6: .top_left;
+        case 7: .top_right;
+        case 8: .bottom_left;
+        case 9: .bottom_right;
+    }
+}
+
+find_hovered_zone :: (bounds: Frame, pos: Point, hint_size: f32, enable_corners: bool) -> ?DockZone {
+    count : i64 = if enable_corners then 10 else 6;
+    i : i64 = 0;
+    while i < count {
+        zone := zone_by_index(i);
+        hint := dock_zone_get_hint_frame(zone, bounds, hint_size);
+        expanded := hint.expand(8.0);
+        if expanded.contains(pos) { return zone; }
+        i += 1;
+    }
+    null
+}
+
+calculate_origin :: (bounds: Frame, child_size: Size, alignment: Alignment) -> Point {
+    x : f32 = bounds.origin.x;
+    if alignment.h == .center {
+        x = bounds.origin.x + (bounds.size.width - child_size.width) * 0.5;
+    }
+    if alignment.h == .trailing {
+        x = bounds.origin.x + bounds.size.width - child_size.width;
+    }
+
+    y : f32 = bounds.origin.y;
+    if alignment.v == .center {
+        y = bounds.origin.y + (bounds.size.height - child_size.height) * 0.5;
+    }
+    if alignment.v == .bottom {
+        y = bounds.origin.y + bounds.size.height - child_size.height;
+    }
+
+    Point.{ x = x, y = y }
+}
+
+get_size_proposal_for_alignment :: (alignment: Alignment, bounds_size: Size, is_fill: bool) -> ProposedSize {
+    if is_fill { return ProposedSize.fixed(bounds_size.width, bounds_size.height); }
+
+    // Edge docking: constrain one axis, leave other natural
+    if alignment.h == .leading or alignment.h == .trailing {
+        if alignment.v == .center {
+            return ProposedSize.{ width = null, height = bounds_size.height };
+        }
+    }
+    if alignment.v == .top or alignment.v == .bottom {
+        if alignment.h == .center {
+            return ProposedSize.{ width = bounds_size.width, height = null };
+        }
+    }
+    // Center or corners: natural size
+    ProposedSize.flexible()
+}
+
+get_final_size_for_alignment :: (alignment: Alignment, child_size: Size, bounds_size: Size, is_fill: bool) -> Size {
+    if is_fill { return bounds_size; }
+
+    // Left/Right edges: fill height
+    if alignment.h == .leading or alignment.h == .trailing {
+        if alignment.v == .center {
+            return Size.{ width = child_size.width, height = bounds_size.height };
+        }
+    }
+    // Top/Bottom edges: fill width
+    if alignment.v == .top or alignment.v == .bottom {
+        if alignment.h == .center {
+            return Size.{ width = bounds_size.width, height = child_size.height };
+        }
+    }
+    // Center or corners: natural size
+    child_size
+}
+
+draw_zone_indicator :: (ctx: *RenderContext, frame: Frame, zone: DockZone, color: Color) {
+    indicator_size := frame.size.width * 0.4;
+    cx := frame.mid_x();
+    cy := frame.mid_y();
+    offset := frame.size.width * 0.15;
+
+    if zone == {
+        case .floating: {}
+        case .fill: {
+            s := indicator_size * 0.8;
+            ctx.add_rect(Frame.make(cx - s * 0.5, cy - s * 0.5, s, s), color);
+        }
+        case .center: {
+            s := indicator_size * 0.5;
+            ctx.add_rect(Frame.make(cx - s * 0.5, cy - s * 0.5, s, s), color);
+        }
+        case .top: {
+            ctx.add_rect(Frame.make(cx - indicator_size * 0.5, cy - offset - indicator_size * 0.25, indicator_size, indicator_size * 0.5), color);
+        }
+        case .bottom: {
+            ctx.add_rect(Frame.make(cx - indicator_size * 0.5, cy + offset - indicator_size * 0.25, indicator_size, indicator_size * 0.5), color);
+        }
+        case .left: {
+            ctx.add_rect(Frame.make(cx - offset - indicator_size * 0.25, cy - indicator_size * 0.5, indicator_size * 0.5, indicator_size), color);
+        }
+        case .right: {
+            ctx.add_rect(Frame.make(cx + offset - indicator_size * 0.25, cy - indicator_size * 0.5, indicator_size * 0.5, indicator_size), color);
+        }
+        case .top_left: {
+            s := indicator_size * 0.5;
+            ctx.add_rect(Frame.make(cx - offset, cy - offset, s, s), color);
+        }
+        case .top_right: {
+            s := indicator_size * 0.5;
+            ctx.add_rect(Frame.make(cx + offset - s, cy - offset, s, s), color);
+        }
+        case .bottom_left: {
+            s := indicator_size * 0.5;
+            ctx.add_rect(Frame.make(cx - offset, cy + offset - s, s, s), color);
+        }
+        case .bottom_right: {
+            s := indicator_size * 0.5;
+            ctx.add_rect(Frame.make(cx + offset - s, cy + offset - s, s, s), color);
+        }
+    }
+}
+
+// =============================================================================
+// DockPanel — a draggable panel within a Dock
+// =============================================================================
+
+DockPanel :: struct {
+    child: ViewChild;
+    title: string;
+    dock: Alignment;
+    fill: bool;
+    background: Color;
+    header_background: Color;
+    header_text_color: Color;
+    corner_radius: f32;
+    header_height: f32;
+    dock_interaction: *DockInteraction;
+    panel_index: i64;
+
+    DEFAULT_BG        :Color: Color.rgba(26, 26, 31, 242);
+    DEFAULT_HEADER_BG  :Color: Color.rgba(38, 38, 46, 255);
+    DEFAULT_HEADER_TEXT:Color: COLOR_WHITE;
+    DEFAULT_RADIUS     :f32: 8.0;
+    DEFAULT_HEADER_H   :f32: 28.0;
+
+    make :: (title: string, dock: Alignment, content: View) -> DockPanel {
+        DockPanel.{
+            child = .{ view = content },
+            title = title,
+            dock = dock,
+            fill = false,
+            background = DockPanel.DEFAULT_BG,
+            header_background = DockPanel.DEFAULT_HEADER_BG,
+            header_text_color = DockPanel.DEFAULT_HEADER_TEXT,
+            corner_radius = DockPanel.DEFAULT_RADIUS,
+            header_height = DockPanel.DEFAULT_HEADER_H,
+            dock_interaction = null,  // set by Dock.add_panel
+            panel_index = 0
+        }
+    }
+}
+
+impl View for DockPanel {
+    size_that_fits :: (self: *DockPanel, proposal: ProposedSize) -> Size {
+        content_size := self.child.view.size_that_fits(ProposedSize.{ width = proposal.width, height = null });
+        w := if pw := proposal.width { min(content_size.width, pw) } else { content_size.width };
+        Size.{ width = w, height = content_size.height + self.header_height }
+    }
+
+    layout :: (self: *DockPanel, bounds: Frame) {
+        content_frame := Frame.make(
+            bounds.origin.x,
+            bounds.origin.y + self.header_height,
+            bounds.size.width,
+            bounds.size.height - self.header_height
+        );
+        self.child.computed_frame = content_frame;
+        self.child.view.layout(content_frame);
+    }
+
+    render :: (self: *DockPanel, ctx: *RenderContext, frame: Frame) {
+        // Panel background
+        ctx.add_rounded_rect(frame, self.background, self.corner_radius);
+
+        // Header background
+        header_frame := Frame.make(frame.origin.x, frame.origin.y, frame.size.width, self.header_height);
+        ctx.add_rounded_rect(header_frame, self.header_background, self.corner_radius);
+
+        // Title text
+        title_size := measure_text(self.title, 12.0);
+        title_x := header_frame.origin.x + (header_frame.size.width - title_size.width) * 0.5;
+        title_y := header_frame.origin.y + (header_frame.size.height - title_size.height) * 0.5;
+        title_frame := Frame.make(title_x, title_y, title_size.width, title_size.height);
+        ctx.add_text(title_frame, self.title, 12.0, self.header_text_color);
+
+        // Child content
+        self.child.view.render(ctx, self.child.computed_frame);
+    }
+
+    handle_event :: (self: *DockPanel, event: *Event, frame: Frame) -> bool {
+        header_frame := Frame.make(frame.origin.x, frame.origin.y, frame.size.width, self.header_height);
+        idx := self.panel_index;
+
+        if event.* == {
+            case .mouse_down: (d) {
+                if header_frame.contains(d.position) {
+                    self.dock_interaction.header_pressed.items[idx] = true;
+                    start_dragging(self.dock_interaction, idx, d.position, frame);
+                    return true;
+                }
+            }
+            case .mouse_up: (d) {
+                if self.dock_interaction.header_pressed.items[idx] {
+                    self.dock_interaction.header_pressed.items[idx] = false;
+                }
+            }
+        }
+
+        // Forward to child content
+        self.child.view.handle_event(event, self.child.computed_frame)
+    }
+}
+
+// =============================================================================
+// Dock — dockable container with drag-and-drop zones
+// =============================================================================
+
+Dock :: struct {
+    children: List(ViewChild);
+    alignments: List(Alignment);
+    interaction: *DockInteraction;  // heap-allocated, shared with DockPanels
+    delta_time: *f32;
+
+    // Config
+    background: ?Color;
+    corner_radius: f32;
+    hint_size: f32;
+    hint_color: Color;
+    hint_active_color: Color;
+    preview_color: Color;
+    enable_corners: bool;
+    on_dock: ?Closure(i64, DockZone);
+
+    make :: (interaction: *DockInteraction, delta_time: *f32) -> Dock {
+        Dock.{
+            children = List(ViewChild).{},
+            alignments = List(Alignment).{},
+            interaction = interaction,
+            delta_time = delta_time,
+            background = null,
+            corner_radius = 0.0,
+            hint_size = 40.0,
+            hint_color = Color.rgba(77, 153, 255, 153),
+            hint_active_color = Color.rgba(77, 153, 255, 230),
+            preview_color = Color.rgba(77, 153, 255, 64),
+            enable_corners = true,
+            on_dock = null
+        }
+    }
+
+    add_panel :: (self: *Dock, panel: DockPanel) {
+        idx := self.children.len;
+        p := panel;
+        p.dock_interaction = self.interaction;  // share heap pointer
+        p.panel_index = idx;
+        self.alignments.append(panel.dock);
+        self.children.append(.{ view = p });
+
+        // Apply initial fill flag
+        if panel.fill {
+            self.interaction.ensure_capacity(idx + 1);
+            self.interaction.is_fill.items[idx] = true;
+        }
+    }
+}
+
+impl View for Dock {
+    size_that_fits :: (self: *Dock, proposal: ProposedSize) -> Size {
+        Size.{
+            width = proposal.width ?? 800.0,
+            height = proposal.height ?? 600.0
+        }
+    }
+
+    layout :: (self: *Dock, bounds: Frame) {
+        interaction := self.interaction;
+        interaction.ensure_capacity(self.children.len);
+
+        dt : f32 = self.delta_time.*;
+        interaction.tick_animations(dt);
+
+        i : i64 = 0;
+        while i < self.children.len {
+            child := @self.children.items[i];
+
+            natural_size := child.view.size_that_fits(ProposedSize.flexible());
+            interaction.natural_sizes.items[i] = natural_size;
+
+            is_being_dragged := interaction.dragging_child == i;
+
+            fl_val : bool = interaction.is_floating.items[i];
+            if fl_val {
+                // Floating: use natural size, position from stored floating pos
+                child_size := natural_size;
+                origin := interaction.floating_positions.items[i];
+                origin.x += bounds.origin.x;
+                origin.y += bounds.origin.y;
+
+                // Store bounds for hit testing (before drag offset)
+                interaction.child_bounds.items[i] = Frame.make(origin.x, origin.y, child_size.width, child_size.height);
+
+                // Apply drag offset if this is the dragged child
+                if is_being_dragged {
+                    origin.x += interaction.drag_offset.x;
+                    origin.y += interaction.drag_offset.y;
+                }
+
+                child.computed_frame = Frame.make(origin.x, origin.y, child_size.width, child_size.height);
+                child.view.layout(child.computed_frame);
+            } else {
+                // Docked: use alignment-based sizing
+                has_ovr : bool = interaction.has_alignment_override.items[i];
+                alignment := if has_ovr
+                    then interaction.alignment_overrides.items[i]
+                    else self.alignments.items[i];
+
+                is_fill := interaction.is_fill.items[i] and !is_being_dragged;
+
+                size_proposal := if is_being_dragged
+                    then ProposedSize.flexible()
+                    else get_size_proposal_for_alignment(alignment, bounds.size, is_fill);
+
+                child_size := child.view.size_that_fits(size_proposal);
+
+                target_size := if is_being_dragged
+                    then child_size
+                    else get_final_size_for_alignment(alignment, child_size, bounds.size, is_fill);
+
+                // Animate size transitions
+                interaction.set_target_size(i, target_size);
+                final_size := interaction.get_animated_size(i);
+
+                // Position
+                origin : Point = ---;
+                if is_being_dragged {
+                    current_touch := interaction.drag_start_pos.add(interaction.drag_offset);
+                    origin.x = current_touch.x - interaction.click_fraction_x * final_size.width;
+                    origin.y = current_touch.y - interaction.click_fraction_y * final_size.height;
+                } else {
+                    origin = calculate_origin(bounds, final_size, alignment);
+                }
+
+                if !is_being_dragged {
+                    interaction.child_bounds.items[i] = Frame.make(origin.x, origin.y, final_size.width, final_size.height);
+                }
+
+                child.computed_frame = Frame.make(origin.x, origin.y, final_size.width, final_size.height);
+                child.view.layout(child.computed_frame);
+            }
+
+            i += 1;
+        }
+    }
+
+    render :: (self: *Dock, ctx: *RenderContext, frame: Frame) {
+        // Background
+        if bg := self.background {
+            if self.corner_radius > 0.0 {
+                ctx.add_rounded_rect(frame, bg, self.corner_radius);
+            } else {
+                ctx.add_rect(frame, bg);
+            }
+        }
+
+        // Draw children
+        i : i64 = 0;
+        while i < self.children.len {
+            child := @self.children.items[i];
+            child.view.render(ctx, child.computed_frame);
+            i += 1;
+        }
+
+        // Draw drag overlay when dragging
+        if self.interaction.dragging_child >= 0 {
+            // Preview overlay for hovered zone
+            if zone := self.interaction.get_hovered_dock_zone() {
+                preview_frame := dock_zone_get_preview_frame(zone, frame);
+                ctx.add_rounded_rect(preview_frame, self.preview_color, 8.0);
+            }
+
+            // Zone hint indicators
+            count : i64 = if self.enable_corners then 10 else 6;
+            j : i64 = 0;
+            while j < count {
+                zone := zone_by_index(j);
+                hint_frame := dock_zone_get_hint_frame(zone, frame, self.hint_size);
+                is_hovered := self.interaction.hovered_zone == xx zone;
+                color := if is_hovered then self.hint_active_color else self.hint_color;
+                ctx.add_rounded_rect(hint_frame, color, self.hint_size * 0.25);
+                draw_zone_indicator(ctx, hint_frame, zone, COLOR_WHITE);
+                j += 1;
+            }
+        }
+    }
+
+    handle_event :: (self: *Dock, event: *Event, frame: Frame) -> bool {
+        interaction := self.interaction;
+
+        // Pre-handle: intercept drag events when actively dragging
+        if interaction.dragging_child >= 0 {
+            if event.* == {
+                case .mouse_moved: (d) {
+                    interaction.drag_offset = d.position.sub(interaction.drag_start_pos);
+                    // Update hovered zone
+                    zone := find_hovered_zone(frame, d.position, self.hint_size, self.enable_corners);
+                    interaction.set_hovered_dock_zone(zone);
+                    return true;
+                }
+                case .mouse_up: (d) {
+                    child_idx := interaction.dragging_child;
+                    if child_idx >= 0 and child_idx < self.children.len {
+                        if zone := interaction.get_hovered_dock_zone() {
+                            // Dock to zone
+                            if alignment := dock_zone_to_alignment(zone) {
+                                interaction.alignment_overrides.items[child_idx] = alignment;
+                                interaction.has_alignment_override.items[child_idx] = true;
+                            }
+                            interaction.is_floating.items[child_idx] = false;
+                            interaction.is_fill.items[child_idx] = dock_zone_should_fill(zone);
+                        } else {
+                            // Float: compute floating position from current cursor
+                            natural_size := interaction.natural_sizes.items[child_idx];
+                            fp_x := d.position.x - interaction.click_fraction_x * natural_size.width - frame.origin.x;
+                            fp_y := d.position.y - interaction.click_fraction_y * natural_size.height - frame.origin.y;
+                            interaction.floating_positions.items[child_idx] = Point.{ x = fp_x, y = fp_y };
+                            interaction.is_floating.items[child_idx] = true;
+                            interaction.is_fill.items[child_idx] = false;
+                        }
+                    }
+
+                    // Reset drag state
+                    interaction.dragging_child = -1;
+                    interaction.drag_offset = Point.zero();
+                    interaction.click_fraction_x = 0.0;
+                    interaction.click_fraction_y = 0.0;
+                    interaction.hovered_zone = -1;
+                    return true;
+                }
+            }
+        }
+
+        // Forward to children (reverse order: last drawn = top = first to handle)
+        i := self.children.len - 1;
+        while i >= 0 {
+            child := @self.children.items[i];
+            if child.view.handle_event(event, child.computed_frame) {
+                return true;
+            }
+            i -= 1;
+        }
+        false
+    }
+}

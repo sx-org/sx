@@ -1,0 +1,989 @@
+// std.http — a minimal blocking HTTP/1.1 client.
+//
+// Factored out of the loopback round-trip helpers the server tests hand-rolled
+// (connect → send a request → read the response). It SHARES the parsing types
+// with the server (types.sx): a response's `Content-Length` is found via the
+// very same `find_header`. The facade re-exports it as http.Client /
+// http.ClientResponse / http.dial.
+//
+// Sockets are BLOCKING — open a connection and call `request`. NOTE: a blocking
+// client cannot interleave a server driven by `tick` on the SAME thread; run
+// such a server on another thread (thread.Thread.spawn(... srv.run ...)) and
+// drive the client from the main thread (see the corpus example).
+//
+// SCOPE (deliberately minimal):
+//   • `recv` reads a response delimited by Content-Length, or — when no
+//     Content-Length is present — by the peer closing the connection. It does
+//     NOT decode `Transfer-Encoding: chunked`; against a keep-alive response
+//     with neither Content-Length nor close it would block. (std.http's own
+//     server always sends Content-Length on the fixed-body path.)
+//   • `send` builds the request through `context.allocator` and does not free
+//     it; drive a long-lived client under an arena (or reset per request).
+//   • `method`/`path`/`host`/`extra_headers` are sent verbatim (no CRLF
+//     sanitisation) — pass trusted values.
+#import "modules/std/core.sx";         // Allocator
+#import "modules/std/fmt.sx";          // concat, int_to_string
+#import "modules/std/list.sx";         // List
+clib :: #import "modules/std/c.sx";    // block ops (`c` is a ClientConn local throughout)
+socket :: #import "modules/std/socket.sx";
+#import "modules/std/http/tls.sx";     // TlsConn, TlsDialer (Q3.6a client TLS seam)
+types :: #import "modules/std/http/types.sx";
+
+ClientErr :: error {
+    Connect,    // socket()/connect()/resolve failed, or the connect timed out
+    Tls,        // the TLS dial failed (setup/handshake/VERIFICATION), or an
+                // https URL was fetched without a dialer configured
+    Send,       // write() failed (an expired io timeout included)
+    Recv,       // read() failed or timed out, the peer closed before a full
+                // response, or chunked framing was malformed
+    TooLarge,   // the response did not fit the caller's buffer
+    BadStatus,  // the status line was malformed / no header terminator
+    Url,        // fetch: the URL did not parse (scheme/host/port)
+    Redirect,   // fetch: the redirect chain exceeded max_redirects
+    Closed,     // recv_on: the peer closed before sending ANY response byte —
+                // a clean EOF or an RST, which are the same fact reported
+                // differently depending on a race — the stale-keep-alive
+                // signature (the pool's ONLY safe retry window besides a send
+                // fault: the request provably never executed)
+}
+
+// ── Q3.6a: sessions ──────────────────────────────────────────────────
+
+// Options for `open`/`open_addr`. Zero values mean "unbounded/plaintext" —
+// the pre-Q3.6a behavior.
+ClientOpts :: struct {
+    // Bound the CONNECT (nonblocking connect + poll + SO_ERROR, then the fd
+    // returns to blocking). 0 = a plain blocking connect.
+    connect_timeout_ms: i64 = 0;
+    // Bound every subsequent read/write (SO_RCVTIMEO/SNDTIMEO — per
+    // OPERATION, not per response; an expiry surfaces as Send/Recv). 0 =
+    // unbounded.
+    io_timeout_ms: i64 = 0;
+    // Client TLS provider (e.g. tls_mbedtls.TlsClientConfig). null =
+    // plaintext. The provider must outlive every connection it minted.
+    tls: ?TlsDialer = null;
+    // SNI/verification hostname for the TLS dial. "" = the host `open` was
+    // given (open_addr has no host, so TLS there REQUIRES this). fetch
+    // applies an explicit value to the FIRST hop only — a cross-host
+    // redirect verifies against ITS OWN host.
+    tls_host: string = "";
+    // Q3.6b: how many redirects fetch follows (301/302/303 switch to GET
+    // and drop the body; 307/308 preserve method + body). 0 = return the
+    // 3xx un-followed; exceeding the cap is error.Redirect.
+    max_redirects: i64 = 5;
+}
+
+// An open client connection: the fd plus the optional TLS session all
+// send/recv on this conn route through.
+ClientConn :: struct {
+    fd: i32 = -1;
+    tls: ?TlsConn = null;
+}
+
+// Open a connection to a prebuilt address (any family — unix included).
+// See ClientOpts for the timeout/TLS behavior.
+open_addr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
+    c : ClientConn = .{};
+    fd := socket.socket(socket.addr_family(a), socket.SOCK_STREAM, 0);
+    if fd < 0 { raise error.Connect; }
+    if opts.connect_timeout_ms > 0 {
+        if !socket.connect_timed(fd, a, opts.connect_timeout_ms) {
+            socket.close(fd);
+            raise error.Connect;
+        }
+    } else {
+        if socket.connect_to(fd, a) != 0 { socket.close(fd); raise error.Connect; }
+    }
+    if opts.io_timeout_ms > 0 {
+        if !socket.set_io_timeout(fd, opts.io_timeout_ms) { socket.close(fd); raise error.Connect; }
+    }
+    c.fd = fd;
+    if opts.tls != null {
+        if opts.tls_host.len == 0 { socket.close(fd); raise error.Tls; }
+        tc := opts.tls.connect(fd, opts.tls_host);
+        if tc == null { socket.close(fd); raise error.Tls; }
+        c.tls = tc;
+    }
+    return c;
+}
+
+// Resolve `host` (DNS or numeric) and open a connection. The TLS
+// verification name defaults to `host` when opts.tls_host is "".
+open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !ClientErr) {
+    a, ok := socket.resolve(host, port);
+    if !ok { raise error.Connect; }
+    o := opts;
+    if o.tls != null and o.tls_host.len == 0 { o.tls_host = host; }
+    return open_addr(@a, o);
+}
+
+// Close the connection (TLS close_notify + session teardown first).
+close_conn :: (c: *ClientConn) {
+    if c.tls != null {
+        c.tls.close();
+        c.tls = null;
+    }
+    if c.fd >= 0 {
+        socket.close(c.fd);
+        c.fd = -1;
+    }
+}
+
+// One write step through the session. Over a BLOCKING fd a Want step can
+// only mean an io-timeout expiry (EAGAIN through the TLS bio) — retrying
+// would wait the whole timeout again, forever; it is a Send failure.
+conn_write_step :: (c: *ClientConn, buf: [*]u8, len: i64) -> i64 {
+    if c.tls != null {
+        n, step := c.tls.write(buf, xx len);
+        if step == TlsStep.Done { return n; }
+        return -1;
+    }
+    n := socket.write(c.fd, buf, xx len);
+    if n <= 0 { return -1; }
+    return n;
+}
+
+// `conn_read_step` sentinel: the read failed because the peer RST the conn.
+// Distinct from -1 (any other read fault) so the caller can tell a stale
+// keep-alive apart from a genuine receipt failure.
+READ_RESET :i64: -2;
+
+// One read step: > 0 bytes, 0 = orderly end of stream, READ_RESET = the peer
+// reset the conn, -1 = any other fault/timeout.
+conn_read_step :: (c: *ClientConn, buf: [*]u8, cap: i64) -> i64 {
+    if c.tls != null {
+        n, step := c.tls.read(buf, xx cap);
+        if step == TlsStep.Done { return n; }
+        if step == TlsStep.Closed { return 0; }
+        return -1;   // Want (io timeout on a blocking fd) or Fatal
+    }
+    n := socket.read(c.fd, buf, xx cap);
+    if n < 0 {
+        // READ_RESET, not a generic fault: an idle keep-alive conn the peer
+        // has closed answers the request we just wrote with an RST, and the
+        // RST discards the queued EOF — so this read reports ECONNRESET where
+        // a hair earlier it would have reported a clean 0. Same "never
+        // executed" fact; `recv_on` must not let the timing decide.
+        if socket.is_conn_reset(socket.errno()) { return READ_RESET; }
+        return -1;
+    }
+    return xx n;
+}
+
+// A parsed HTTP response. `headers_raw` is the raw block between the status
+// line and the body; `body` is the entity body. All views point INTO the
+// caller's read buffer (valid until that buffer is reused).
+ClientResponse :: struct {
+    status: i64 = 0;
+    reason: string = "";
+    headers_raw: string = "";
+    body: string = "";
+
+    // Case-insensitive header lookup (`name` lowercase); "" when absent.
+    // Reuses the server-side parser by viewing headers_raw as a request
+    // header block — the shared-types payoff.
+    header :: (self: *ClientResponse, name: string) -> string {
+        req : types.Request = .{ headers_raw = self.headers_raw };
+        return types.find_header(@req, name);
+    }
+}
+
+// Open a blocking TCP connection to ip:port. `ip` is a packed IPv4 address in
+// the order socket.sockaddr_in wants (e.g. 0x0100007F for 127.0.0.1).
+dial :: (ip: u32, port: i64) -> (i32, !ClientErr) {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { raise error.Connect; }
+    addr := socket.sockaddr_in(port, ip);
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); raise error.Connect; }
+    return fd;
+}
+
+// Send one HTTP/1.1 request on `fd`. `extra_headers` is preformatted
+// "Name: value\r\n" lines (may be ""); a Content-Length is added automatically
+// for a non-empty `body`. Concats through the current context allocator.
+send :: (fd: i32, method: string, path: string, host: string, extra_headers: string, body: string) -> !ClientErr {
+    req := concat(method, " ");
+    req = concat(req, path);
+    req = concat(req, " HTTP/1.1\r\nHost: ");
+    req = concat(req, host);
+    req = concat(req, "\r\n");
+    if body.len > 0 {
+        req = concat(req, "Content-Length: ");
+        req = concat(req, int_to_string(body.len));
+        req = concat(req, "\r\n");
+    }
+    req = concat(req, extra_headers);
+    req = concat(req, "\r\n");
+    if body.len > 0 { req = concat(req, body); }
+
+    sent : i64 = 0;
+    while sent < req.len {
+        n := socket.write(fd, @req.ptr[sent], xx (req.len - sent));
+        if n <= 0 { raise error.Send; }
+        sent += n;
+    }
+    return;
+}
+
+// Parse the status code out of a status line "HTTP/1.1 200 OK". Returns
+// (status, reason); status 0 signals a malformed line.
+parse_status_line :: (line: string) -> (i64, string) {
+    // skip the version token to the first space
+    p : i64 = 0;
+    while p < line.len and line.ptr[p] != ' ' { p += 1; }
+    if p >= line.len { return 0, ""; }
+    p += 1;
+    // three status digits
+    code : i64 = 0;
+    digits : i64 = 0;
+    while p < line.len and line.ptr[p] >= '0' and line.ptr[p] <= '9' {
+        code = code * 10 + xx (line.ptr[p] - '0');
+        p += 1; digits += 1;
+    }
+    if digits == 0 { return 0, ""; }
+    if p < line.len and line.ptr[p] == ' ' { p += 1; }
+    reason := string.{ ptr = @line.ptr[p], len = line.len - p };
+    return code, reason;
+}
+
+// Read a full response on `fd` into `buf` (caller-owned, `cap` bytes). Blocks
+// until the headers + the Content-Length body are in (or, for a response with
+// no Content-Length, until the peer closes). Returns views INTO `buf`.
+recv :: (fd: i32, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+    total : i64 = 0;
+    head_end : i64 = -1;     // index just past the "\r\n\r\n"
+    content_len : i64 = -1;  // -1 = no Content-Length seen
+    while true {
+        if total >= cap { raise error.TooLarge; }
+        n := socket.read(fd, @buf[total], xx (cap - total));
+        if n < 0 { raise error.Recv; }
+        if n == 0 { break; }   // peer closed
+        total += n;
+
+        if head_end < 0 {
+            i : i64 = 0;
+            while i + 3 < total {
+                if buf[i] == '\r' and buf[i+1] == '\n' and buf[i+2] == '\r' and buf[i+3] == '\n' {
+                    head_end = i + 4;
+                    break;
+                }
+                i += 1;
+            }
+            if head_end >= 0 {
+                // status-line end (first CRLF)
+                sl : i64 = 0;
+                while sl + 1 < head_end and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
+                hdr_start := sl + 2;
+                hdrs := string.{ ptr = @buf[hdr_start], len = head_end - 2 - hdr_start };
+                tmp : types.Request = .{ headers_raw = hdrs };
+                cl := types.find_header(@tmp, "content-length");
+                if cl.len > 0 {
+                    v : i64 = 0;
+                    k : i64 = 0;
+                    while k < cl.len and cl.ptr[k] >= '0' and cl.ptr[k] <= '9' { v = v * 10 + xx (cl.ptr[k] - '0'); k += 1; }
+                    content_len = v;
+                }
+            }
+        }
+        if head_end >= 0 {
+            if content_len < 0 { continue; }            // no CL → drain until close
+            if total - head_end >= content_len { break; } // full body in
+        }
+    }
+    if head_end < 0 { raise error.BadStatus; }
+    // Q3.6a-review H1 (legacy surface too — no divergence between the two
+    // recv paths): a close short of the declared Content-Length is a
+    // truncated response, never a fabricated full-length body view.
+    if content_len >= 0 and total - head_end < content_len { raise error.Recv; }
+
+    // status line views
+    sl : i64 = 0;
+    while sl + 1 < total and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
+    status_line := string.{ ptr = buf, len = sl };
+    code, reason := parse_status_line(status_line);
+    if code == 0 { raise error.BadStatus; }
+
+    hdr_start := sl + 2;
+    body_len := if content_len >= 0 then content_len else total - head_end;
+    resp : ClientResponse = .{
+        status = code,
+        reason = reason,
+        headers_raw = string.{ ptr = @buf[hdr_start], len = head_end - 2 - hdr_start },
+        body = string.{ ptr = @buf[head_end], len = body_len },
+    };
+    return resp;
+}
+
+// Send one HTTP/1.1 request on an open ClientConn (TLS-aware `send`).
+// Unlike the legacy `send`, the request is built into ONE allocation and
+// freed before returning — no arena required, nothing retained (a concat
+// chain would leak every intermediate into the caller's context).
+send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_headers: string, body: string) -> !ClientErr {
+    // Content-Length digits on the stack.
+    clbuf : [20]u8 = ---;
+    cln : i64 = 0;
+    if body.len > 0 {
+        v := body.len;
+        tmp : [20]u8 = ---;
+        tn : i64 = 0;
+        while v > 0 { tmp[tn] = xx ('0' + v % 10); v = v / 10; tn += 1; }
+        while tn > 0 { tn -= 1; clbuf[cln] = tmp[tn]; cln += 1; }
+    }
+    total := method.len + 1 + path.len + 11            // "<m> <p> HTTP/1.1\r\n"
+           + 6 + host.len + 2;                         // "Host: <h>\r\n"
+    if body.len > 0 { total += 16 + cln + 2; }         // "Content-Length: <n>\r\n"
+    total += extra_headers.len + 2 + body.len;         // "<extra>\r\n<body>"
+    p : [*]u8 = xx context.allocator.alloc_bytes(total);
+    w : i64 = 0;
+    w = put(p, w, method);
+    p[w] = ' '; w += 1;
+    w = put(p, w, path);
+    w = put(p, w, " HTTP/1.1\r\n");
+    w = put(p, w, "Host: ");
+    w = put(p, w, host);
+    w = put(p, w, "\r\n");
+    if body.len > 0 {
+        w = put(p, w, "Content-Length: ");
+        cli : i64 = 0;
+        while cli < cln { p[w] = clbuf[cli]; w += 1; cli += 1; }
+        w = put(p, w, "\r\n");
+    }
+    w = put(p, w, extra_headers);
+    w = put(p, w, "\r\n");
+    w = put(p, w, body);
+
+    sent : i64 = 0;
+    failed := false;
+    while sent < w {
+        n := conn_write_step(c, @p[sent], w - sent);
+        if n <= 0 { failed = true; break; }
+        sent += n;
+    }
+    context.allocator.dealloc_bytes(xx p);
+    if failed { raise error.Send; }
+    return;
+}
+
+// Append `s` into the request build at offset `w`, returning the new offset.
+put :: (p: [*]u8, w: i64, s: string) -> i64 {
+    if s.len > 0 { clib.memcpy(@p[w], s.ptr, xx s.len); }
+    return w + s.len;
+}
+
+// ── Q3.6b: URL fetch + redirects ─────────────────────────────────────
+
+// A parsed URL target. `host`/`path` are VIEWS into the parsed text.
+Url :: struct {
+    https: bool = false;
+    host: string = "";
+    port: i64 = 0;      // defaulted from the scheme when absent
+    path: string = "/";
+}
+
+starts_with :: (s: string, prefix: string) -> bool {
+    if s.len < prefix.len { return false; }
+    i : i64 = 0;
+    while i < prefix.len {
+        if s[i] != prefix[i] { return false; }
+        i += 1;
+    }
+    return true;
+}
+
+// Minimal absolute URL: scheme://host[:port][/path...]. Bracketed v6
+// literals supported ([::1]:8080); userinfo/query-split/fragments are the
+// caller's problem (the path view carries everything after the authority).
+parse_url :: (url: string) -> (Url, bool) {
+    u : Url = .{};
+    rest : string = "";
+    if starts_with(url, "http://") {
+        u.https = false;
+        u.port = 80;
+        rest = string.{ ptr = @url.ptr[7], len = url.len - 7 };
+    } else if starts_with(url, "https://") {
+        u.https = true;
+        u.port = 443;
+        rest = string.{ ptr = @url.ptr[8], len = url.len - 8 };
+    } else {
+        return u, false;
+    }
+    if rest.len == 0 { return u, false; }
+    // authority: [v6] or a name/v4 up to ':' or '/'
+    he : i64 = 0;          // just past the host
+    ps : i64 = 0;          // where ':' / '/' scanning resumes
+    if rest[0] == '[' {
+        he = 1;
+        while he < rest.len and rest[he] != ']' { he += 1; }
+        if he >= rest.len { return u, false; }
+        u.host = string.{ ptr = @rest.ptr[1], len = he - 1 };
+        ps = he + 1;
+    } else {
+        while he < rest.len and rest[he] != ':' and rest[he] != '/' { he += 1; }
+        u.host = string.{ ptr = rest.ptr, len = he };
+        ps = he;
+    }
+    if u.host.len == 0 { return u, false; }
+    if ps < rest.len and rest[ps] == ':' {   // port
+        ps += 1;
+        v : i64 = 0;
+        d : i64 = 0;
+        while ps < rest.len and rest[ps] >= '0' and rest[ps] <= '9' {
+            v = v * 10 + xx (rest[ps] - '0');
+            ps += 1;
+            d += 1;
+        }
+        // review L2: bound the digit COUNT too — an attacker-controlled
+        // Location with 2^64-ish digits wrapped i64 back into range.
+        if d == 0 or d > 5 or v < 1 or v > 65535 { return u, false; }
+        u.port = v;
+    }
+    if ps < rest.len {
+        if rest[ps] != '/' { return u, false; }   // junk between port and path
+        u.path = string.{ ptr = @rest.ptr[ps], len = rest.len - ps };
+    }
+    // review L4 (RFC 9112): the fragment is never part of the request
+    // target — strip it here so neither fetch loop sends one on the wire.
+    fi : i64 = 0;
+    while fi < u.path.len {
+        if u.path[fi] == '#' {
+            u.path = string.{ ptr = u.path.ptr, len = fi };
+            break;
+        }
+        fi += 1;
+    }
+    if u.path.len == 0 { u.path = "/"; }
+    return u, true;
+}
+
+// One request against a parsed URL over a FRESH connection; the conn is
+// returned (still open) alongside the response for the caller to reuse or
+// close. `verify_host` is the TLS name ("" = the URL host).
+fetch_hop :: (u: Url, method: string, body: string, opts: ClientOpts, verify_host: string, buf: [*]u8, cap: i64) -> (ClientConn, ClientResponse, !ClientErr) {
+    o := opts;
+    if u.https {
+        if o.tls == null { raise error.Tls; }   // never plaintext to an https target
+        if verify_host.len > 0 { o.tls_host = verify_host; }
+        else { o.tls_host = u.host; }
+    } else {
+        o.tls = null;                            // an http hop is plaintext even with a dialer configured
+    }
+    c, oe := open(u.host, u.port, o);
+    if oe { raise oe; }
+    se := send_on(@c, method, u.path, u.host, "", body);
+    if se { close_conn(@c); raise se; }
+    r, re := recv_on(@c, buf, cap);
+    if re { close_conn(@c); raise re; }
+    return c, r;
+}
+
+// Does a Connection header value contain the "close" token (ASCII-case-
+// insensitive, as one element of the comma-separated list, OWS-trimmed)?
+// Truncate at '#' — fragments never go on the wire (RFC 9112). "" → "/".
+strip_fragment :: (s: string) -> string {
+    i : i64 = 0;
+    while i < s.len {
+        if s[i] == '#' { break; }
+        i += 1;
+    }
+    if i == 0 { return "/"; }
+    return string.{ ptr = s.ptr, len = i };
+}
+
+connection_says_close :: (v: string) -> bool {
+    i : i64 = 0;
+    while i < v.len {
+        // token start: skip OWS and commas
+        while i < v.len and (v[i] == ' ' or v[i] == '\t' or v[i] == ',') { i += 1; }
+        s := i;
+        while i < v.len and v[i] != ',' { i += 1; }
+        e := i;
+        while e > s and (v[e - 1] == ' ' or v[e - 1] == '\t') { e -= 1; }
+        if e - s == 5 {
+            same := true;
+            want := "close";
+            j : i64 = 0;
+            while j < 5 {
+                ch := v[s + j];
+                if ch >= 'A' and ch <= 'Z' { ch = ch + ' '; }
+                if ch != want[j] { same = false; break; }
+                j += 1;
+            }
+            if same { return true; }
+        }
+    }
+    return false;
+}
+
+// "chunked" exactly, ASCII-case-insensitively (RFC 9112: the only coding we
+// implement; it must also be the FINAL one, which an exact match enforces).
+te_is_chunked :: (te: string) -> bool {
+    if te.len != 7 { return false; }
+    want := "chunked";
+    i : i64 = 0;
+    while i < 7 {
+        ch := te[i];
+        if ch >= 'A' and ch <= 'Z' { ch = ch + ' '; }
+        if ch != want[i] { return false; }
+        i += 1;
+    }
+    return true;
+}
+
+is_redirect :: (status: i64) -> bool {
+    return status == 301 or status == 302 or status == 303 or status == 307 or status == 308;
+}
+
+// Fetch `url`, following redirects per opts.max_redirects. 301/302/303
+// re-issue as a bodyless GET; 307/308 preserve method + body. A relative
+// Location keeps the scheme/host/port; an absolute one re-resolves (and
+// re-verifies TLS against ITS host — an explicit opts.tls_host pins the
+// FIRST hop only). A 3xx without a Location is returned as-is.
+//
+// Cross-scheme hops: an https→http Location is followed as PLAINTEXT
+// (curl-parity would warn — treat redirect targets you don't control as
+// untrusted); http→https needs opts.tls (error.Tls mid-chain otherwise).
+// Timeouts are per OPERATION per HOP — a full chain can take up to
+// (max_redirects + 1) × (connect + io) timeouts.
+fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+    // Owned copies of the current target — Location views the response
+    // buffer, which the next hop overwrites.
+    hostb : [256]u8 = ---;
+    pathp : [*]u8 = null;      // owned location copy (heap; freed each hop)
+    freeing := false;          // pathp needs a free
+
+    u, ok := parse_url(url);
+    if !ok { raise error.Url; }
+    m := method;
+    b := body;
+    hops : i64 = 0;
+    first := true;
+    while true {
+        // Materialize the host into the stack buffer and REPOINT u.host at
+        // it — a later relative hop must not leave u.host viewing a freed
+        // previous location copy (absolute-then-relative chains).
+        if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.dealloc_bytes(xx pathp); } raise error.Url; }
+        hbp : [*]u8 = xx @hostb[0];
+        if u.host.ptr != hbp {
+            clib.memcpy(hbp, u.host.ptr, xx u.host.len);
+            u.host = string.{ ptr = hbp, len = u.host.len };
+        }
+        hu := u;
+
+        vh := if first then opts.tls_host else "";
+        c, r, he := fetch_hop(hu, m, b, opts, vh, buf, cap);
+        if he { if freeing { context.allocator.dealloc_bytes(xx pathp); } raise he; }
+
+        if !is_redirect(r.status) or opts.max_redirects <= 0 {
+            close_conn(@c);
+            if freeing { context.allocator.dealloc_bytes(xx pathp); }
+            return r;
+        }
+        loc := r.header("location");
+        if loc.len == 0 {
+            close_conn(@c);
+            if freeing { context.allocator.dealloc_bytes(xx pathp); }
+            return r;
+        }
+        hops += 1;
+        if hops > opts.max_redirects {
+            close_conn(@c);
+            if freeing { context.allocator.dealloc_bytes(xx pathp); }
+            raise error.Redirect;
+        }
+        // Build the next target BEFORE the buffer is reused: copy the
+        // location out, then re-parse.
+        np : [*]u8 = xx context.allocator.alloc_bytes(loc.len);
+        clib.memcpy(np, loc.ptr, xx loc.len);
+        locv := string.{ ptr = np, len = loc.len };
+        close_conn(@c);
+        if freeing { context.allocator.dealloc_bytes(xx pathp); }
+        pathp = np;
+        freeing = true;
+
+        if starts_with(locv, "http://") or starts_with(locv, "https://") {
+            nu, nok := parse_url(locv);
+            if !nok { context.allocator.dealloc_bytes(xx pathp); raise error.Url; }
+            u = nu;   // host/path view pathp — copied into hostb / kept owned next iteration
+        } else if locv.len > 0 and locv[0] == '/' {   // '/'-relative: keep authority
+            u.path = strip_fragment(locv);   // review L4 — parse_url strips the absolute arm
+        } else {
+            context.allocator.dealloc_bytes(xx pathp);
+            raise error.Url;   // relative-without-slash — unsupported
+        }
+        if r.status == 301 or r.status == 302 or r.status == 303 {
+            m = "GET";
+            b = "";
+        }
+        first = false;
+    }
+    raise error.Url;   // unreachable — the loop returns or raises
+}
+
+// Read a full response on an open ClientConn into `buf` (TLS-aware `recv`,
+// plus Q3.6a: Transfer-Encoding: chunked responses are decoded IN PLACE via
+// the shared types.decode_chunked — body views the decoded bytes; the
+// framing is fully consumed, so a keep-alive conn is reusable after).
+recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+    total : i64 = 0;
+    head_end : i64 = -1;
+    content_len : i64 = -1;
+    chunked := false;
+    scan : types.ChunkScan = .{};
+    decoded : i64 = -1;
+    while true {
+        if head_end >= 0 and chunked {
+            // resumable validation over what is buffered so far
+            r := types.decode_chunked(@buf[head_end], total - head_end, cap - head_end, scan);
+            if r.status == types.ChunkStatus.OK {
+                decoded = r.decoded_len;
+                break;
+            }
+            // Q3.6a-review M1: a body DECLARED past the buffer is the same
+            // condition as the raw fill hitting cap — TooLarge (a grow-and-
+            // retry caller keys on it), not "malformed framing".
+            if r.status == types.ChunkStatus.TOO_BIG { raise error.TooLarge; }
+            if r.status != types.ChunkStatus.NEED_MORE { raise error.Recv; }   // BAD / OVERFLOW framing
+            scan.rp = r.resume_rp;
+            scan.decoded = r.resume_decoded;
+        }
+        if head_end >= 0 and !chunked {
+            if content_len >= 0 and total - head_end >= content_len { break; }   // full body in
+        }
+        if total >= cap { raise error.TooLarge; }
+        n := conn_read_step(c, @buf[total], cap - total);
+        // An RST before ANY byte is the same stale-keep-alive fact as an EOF
+        // before any byte: the peer had already closed, so the request never
+        // executed. Which of the two the kernel reports is a race (the RST our
+        // request provokes discards the FIN's queued EOF), so both must reach
+        // the pool as `Closed` — otherwise the retry fires only sometimes.
+        // Once a byte HAS arrived the response is in flight, and a reset is a
+        // genuine receipt failure like any other.
+        if n == READ_RESET and total == 0 { raise error.Closed; }
+        if n < 0 { raise error.Recv; }
+        if n == 0 {
+            // Q3.6b-review H1: EOF before ANY byte is the stale-keep-alive
+            // signature — its own class, so a pool retry can distinguish
+            // "never executed" from every receipt failure (which may have).
+            if total == 0 { raise error.Closed; }
+            // Q3.6a-review H1: a close is only a legitimate delimiter for a
+            // response WITHOUT framing. Mid-chunked or short of the declared
+            // Content-Length it is a truncated response — returning it would
+            // present len bytes of uninitialized buffer as body.
+            if chunked { raise error.Recv; }
+            if content_len >= 0 and total - head_end < content_len { raise error.Recv; }
+            break;
+        }
+        total += n;
+
+        if head_end < 0 {
+            i : i64 = 0;
+            while i + 3 < total {
+                if buf[i] == '\r' and buf[i+1] == '\n' and buf[i+2] == '\r' and buf[i+3] == '\n' {
+                    head_end = i + 4;
+                    break;
+                }
+                i += 1;
+            }
+            if head_end >= 0 {
+                sl : i64 = 0;
+                while sl + 1 < head_end and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
+                hdr_start := sl + 2;
+                hdrs := string.{ ptr = @buf[hdr_start], len = head_end - 2 - hdr_start };
+                tmp : types.Request = .{ headers_raw = hdrs };
+                te := types.find_header(@tmp, "transfer-encoding");
+                if te.len > 0 {
+                    // Q3.6a-review M2: only the "chunked" coding is
+                    // implemented — decode ONLY that (case-insensitive);
+                    // any other Transfer-Encoding is refused LOUDLY rather
+                    // than silently mis-decoded as chunked framing.
+                    if !te_is_chunked(te) { raise error.Recv; }
+                    chunked = true;
+                }
+                else {
+                    cl := types.find_header(@tmp, "content-length");
+                    if cl.len > 0 {
+                        v : i64 = 0;
+                        k : i64 = 0;
+                        while k < cl.len and cl.ptr[k] >= '0' and cl.ptr[k] <= '9' { v = v * 10 + xx (cl.ptr[k] - '0'); k += 1; }
+                        content_len = v;
+                    }
+                }
+            }
+        }
+    }
+    if head_end < 0 { raise error.BadStatus; }
+
+    sl : i64 = 0;
+    while sl + 1 < total and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
+    status_line := string.{ ptr = buf, len = sl };
+    code, reason := parse_status_line(status_line);
+    if code == 0 { raise error.BadStatus; }
+
+    hdr_start := sl + 2;
+    body_len := if decoded >= 0 then decoded
+                else if content_len >= 0 then content_len
+                else total - head_end;
+    resp : ClientResponse = .{
+        status = code,
+        reason = reason,
+        headers_raw = string.{ ptr = @buf[hdr_start], len = head_end - 2 - hdr_start },
+        body = string.{ ptr = @buf[head_end], len = body_len },
+    };
+    return resp;
+}
+
+// Convenience: dial ip:port, send the request, read the response into `buf`,
+// close the connection. One blocking round-trip.
+request :: (ip: u32, port: i64, method: string, path: string, host: string, extra_headers: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+    fd := try dial(ip, port);
+    defer socket.close(fd);
+    try send(fd, method, path, host, extra_headers, body);
+    return recv(fd, buf, cap);
+}
+
+// ── Q3.6b: keep-alive connection pool ────────────────────────────────
+
+// One pooled keep-alive connection, keyed (https, host, port). `host` is a
+// pool-owned copy.
+PoolEntry :: struct {
+    host: [*]u8 = null;
+    host_len: i64 = 0;
+    port: i64 = 0;
+    https: bool = false;
+    conn: ClientConn;
+    live: bool = false;
+}
+
+// A SINGLE-THREADED keep-alive pool: fetch reuses an open connection to the
+// same (scheme, host, port) when one exists; a REUSED connection that
+// faults at send or receive is dropped and the request retried ONCE on a
+// fresh dial (the stale-keep-alive race — the server may have evicted the
+// idle conn between requests). NOT thread-safe; one pool per thread.
+// Entries grow through the allocator captured at init (the long-lived-
+// container rule), which must outlive the pool.
+ClientPool :: struct {
+    opts: ClientOpts;
+    entries: List(PoolEntry);
+    a: Allocator;
+
+    init :: (opts: ClientOpts) -> ClientPool {
+        return .{ opts = opts, a = context.allocator };
+    }
+
+    // Fetch through the pool. Redirect hops are followed with the SAME
+    // pooling (each hop reuses/creates its host's entry).
+    fetch :: (self: *ClientPool, method: string, url: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+        u, ok := parse_url(url);
+        if !ok { raise error.Url; }
+        m := method;
+        b := body;
+        hostb : [256]u8 = ---;
+        pathp : [*]u8 = null;
+        freeing := false;
+        hops : i64 = 0;
+        first := true;
+        while true {
+            if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.dealloc_bytes(xx pathp); } raise error.Url; }
+            hbp : [*]u8 = xx @hostb[0];
+            if u.host.ptr != hbp {
+                clib.memcpy(hbp, u.host.ptr, xx u.host.len);
+                u.host = string.{ ptr = hbp, len = u.host.len };
+            }
+            r, he := self.hop(u, m, b, first, buf, cap);
+            if he { if freeing { context.allocator.dealloc_bytes(xx pathp); } raise he; }
+            if !is_redirect(r.status) or self.opts.max_redirects <= 0 {
+                if freeing { context.allocator.dealloc_bytes(xx pathp); }
+                return r;
+            }
+            loc := r.header("location");
+            if loc.len == 0 {
+                if freeing { context.allocator.dealloc_bytes(xx pathp); }
+                return r;
+            }
+            hops += 1;
+            if hops > self.opts.max_redirects {
+                if freeing { context.allocator.dealloc_bytes(xx pathp); }
+                raise error.Redirect;
+            }
+            np : [*]u8 = xx context.allocator.alloc_bytes(loc.len);
+            clib.memcpy(np, loc.ptr, xx loc.len);
+            locv := string.{ ptr = np, len = loc.len };
+            if freeing { context.allocator.dealloc_bytes(xx pathp); }
+            pathp = np;
+            freeing = true;
+            if starts_with(locv, "http://") or starts_with(locv, "https://") {
+                nu, nok := parse_url(locv);
+                if !nok { context.allocator.dealloc_bytes(xx pathp); raise error.Url; }
+                u = nu;
+            } else if locv.len > 0 and locv[0] == '/' {
+                u.path = locv;
+            } else {
+                context.allocator.dealloc_bytes(xx pathp);
+                raise error.Url;
+            }
+            if r.status == 301 or r.status == 302 or r.status == 303 {
+                m = "GET";
+                b = "";
+            }
+            first = false;
+        }
+        raise error.Url;   // unreachable — the loop returns or raises
+    }
+
+    // One pooled request: reuse the entry when live, else dial + store.
+    // RETRY POLICY (Q3.6b-review H1): a fresh dial retries a REUSED conn
+    // only when the request provably never executed — a SEND fault, or the
+    // peer closing before any response byte (error.Closed, the stale-keep-
+    // alive signature). Every receipt failure after bytes arrived
+    // (TooLarge/BadStatus/Recv) propagates AS ITSELF: the server may have
+    // executed the request, and re-sending would double side effects.
+    hop :: (self: *ClientPool, u: Url, method: string, body: string, first: bool, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+        idx := self.find(u);
+        reused := idx >= 0 and self.entries.items[idx].live;
+        attempt : i64 = 0;
+        while true {
+            if idx < 0 or !self.entries.items[idx].live {
+                c, oe := self.dial_entry(u, first);
+                if oe { raise oe; }
+                idx = self.store(u, c);
+                reused = false;
+            }
+            e := @self.entries.items[idx];
+            se := send_on(@e.conn, method, u.path, u.host, "", body);
+            if se {
+                self.drop(idx);
+                idx = -1;
+                if reused and attempt == 0 { attempt += 1; reused = false; continue; }
+                raise se;
+            }
+            r, re := recv_on(@e.conn, buf, cap);
+            if re {
+                self.drop(idx);
+                idx = -1;
+                if re == error.Closed and reused and attempt == 0 {
+                    attempt += 1;
+                    reused = false;
+                    continue;
+                }
+                raise re;
+            }
+            // The server may close after this response (its request_count
+            // cap / an error close): drop the conn when it SAID so —
+            // "close" as a token of the comma-separated list, per RFC
+            // (review M2: a length-only match dropped on any 5-char value
+            // and MISSED "close, ..." lists).
+            if connection_says_close(r.header("connection")) { self.drop(idx); }
+            return r;
+        }
+        raise error.Send;   // unreachable — the loop returns or raises
+    }
+
+    dial_entry :: (self: *ClientPool, u: Url, first: bool) -> (ClientConn, !ClientErr) {
+        o := self.opts;
+        if u.https {
+            if o.tls == null { raise error.Tls; }
+            if !(first and o.tls_host.len > 0) { o.tls_host = u.host; }
+        } else {
+            o.tls = null;
+        }
+        return open(u.host, u.port, o);
+    }
+
+    find :: (self: *ClientPool, u: Url) -> i64 {
+        i : i64 = 0;
+        while i < self.entries.len {
+            e := @self.entries.items[i];
+            if e.live and e.https == u.https and e.port == u.port and e.host_len == u.host.len {
+                same := true;
+                j : i64 = 0;
+                while j < e.host_len {
+                    if e.host[j] != u.host[j] { same = false; break; }
+                    j += 1;
+                }
+                if same { return i; }
+            }
+            i += 1;
+        }
+        return -1;
+    }
+
+    store :: (self: *ClientPool, u: Url, c: ClientConn) -> i64 {
+        // reuse a dead slot first
+        i : i64 = 0;
+        while i < self.entries.len {
+            if !self.entries.items[i].live { break; }
+            i += 1;
+        }
+        hp : [*]u8 = xx self.a.alloc_bytes(u.host.len);
+        j : i64 = 0;
+        while j < u.host.len { hp[j] = u.host[j]; j += 1; }
+        ne : PoolEntry = .{ host = hp, host_len = u.host.len, port = u.port,
+                            https = u.https, conn = c, live = true };
+        if i < self.entries.len {
+            old := @self.entries.items[i];
+            if old.host != null { self.a.dealloc_bytes(xx old.host); }
+            self.entries.items[i] = ne;
+        } else {
+            self.entries.append(ne, self.a);
+        }
+        return i;
+    }
+
+    drop :: (self: *ClientPool, idx: i64) {
+        e := @self.entries.items[idx];
+        if !e.live { return; }
+        close_conn(@e.conn);
+        e.live = false;
+    }
+
+    // Close every pooled connection and release the entry storage.
+    close :: (self: *ClientPool) {
+        i : i64 = 0;
+        while i < self.entries.len {
+            e := @self.entries.items[i];
+            if e.live { close_conn(@e.conn); e.live = false; }
+            if e.host != null { self.a.dealloc_bytes(xx e.host); e.host = null; }
+            i += 1;
+        }
+        self.entries.deinit(self.a);
+    }
+}
+
+// The client entry point. Its methods are thin static wrappers over the
+// free functions above. This mirrors http.Server: a consumer reaching the
+// client through the facade names `http.Client`, which pins resolution to
+// THIS module so the ClientResponse return type is visible at the call site
+// (a re-exported FREE function's struct return type is not — that is why the
+// public surface is `http.Client.request`, not `http.request`).
+Client :: struct {
+    // Open a blocking TCP connection to ip:port (see free `dial`).
+    dial :: (ip: u32, port: i64) -> (i32, !ClientErr) { return dial(ip, port); }
+    // Send one request on an open fd (see free `send`).
+    send :: (fd: i32, method: string, path: string, host: string, extra_headers: string, body: string) -> !ClientErr {
+        return send(fd, method, path, host, extra_headers, body);
+    }
+    // Read a full response on an open fd (see free `recv`).
+    recv :: (fd: i32, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) { return recv(fd, buf, cap); }
+    // One blocking round-trip: dial → send → recv → close (see free `request`).
+    request :: (ip: u32, port: i64, method: string, path: string, host: string, extra_headers: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+        return request(ip, port, method, path, host, extra_headers, body, buf, cap);
+    }
+    // ── Q3.6a sessions (see the free functions above) ────────────────
+    open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !ClientErr) {
+        return open(host, port, opts);
+    }
+    open_addr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
+        return open_addr(a, opts);
+    }
+    send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_headers: string, body: string) -> !ClientErr {
+        return send_on(c, method, path, host, extra_headers, body);
+    }
+    recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+        return recv_on(c, buf, cap);
+    }
+    close_conn :: (c: *ClientConn) { close_conn(c); }
+    // ── Q3.6b (see the free `fetch`) ─────────────────────────────────
+    fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
+        return fetch(method, url, body, opts, buf, cap);
+    }
+}

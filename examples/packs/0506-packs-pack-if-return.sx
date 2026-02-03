@@ -1,0 +1,39 @@
+// Variadic heterogeneous type packs — control-flow follow-up to
+// issue-0045 fix (commit 9e78790).
+//
+// issue-0045's fix routes inline-comptime-body `return X;` into a
+// result slot so the caller's basic block isn't terminated
+// mid-flight. But the fix sets `block_terminated = true` after
+// the inline return — which leaks PAST the enclosing `if`'s
+// merge block. When the body shape is
+//   if cond { return X; }
+//   return Y;
+// only the then-branch's `return X;` runs; `block_terminated`
+// stays true in the merge block, so `lowerBlockValue`'s loop
+// exits before the trailing `return Y;` lowers. The trailing
+// return never stores into the slot — for the false-condition
+// path the load reads uninitialised stack memory.
+//
+// Pack-fn `..$args` is the shortest repro because `args.len`
+// gives a comptime-feeling test for the condition. The bug is
+// actually shape-agnostic — any comptime body with `if cond
+// { return X; }; return Y;` regresses the same way.
+//
+// `maybe()` with zero call-args takes the false branch and
+// should fall through to `return -1;`. Today it loads garbage
+// from the uninitialised slot.
+
+#import "modules/std.sx";
+
+maybe :: (..$args) -> i64 {
+    if args.len > 0 {
+        return 42;
+    }
+    return -1;
+}
+
+main :: () -> i32 {
+    print("{}\n", maybe());      // expect -1
+    print("{}\n", maybe(99));    // expect 42
+    return 0;
+}

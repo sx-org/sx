@@ -1,0 +1,16 @@
+// A `Vector` lane count that is not a compile-time integer (here a runtime
+// function call) is a hard error — a clean sx diagnostic with a non-zero exit,
+// NOT a fabricated `<0 x float>` lane that crashes LLVM verification.
+//
+// Regression (issue 0083): the Vector lane resolver hand-rolled an `else => 0`
+// switch that silently fabricated a 0-lane vector for a non-const lane. It now
+// folds the lane through the shared const-int evaluator and, when that yields no
+// compile-time integer, emits this diagnostic and halts the build.
+#import "modules/std.sx";
+
+lanes :: () -> u32 { return 3; }
+
+main :: () {
+    v : Vector(lanes(), f32) = ---;
+    print("unreachable: {}\n", v.x);
+}

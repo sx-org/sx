@@ -1,0 +1,22 @@
+// A write to a sub-field of a tagged-union variant's payload (`s.rect.w = ...`)
+// is NOT rejected: the immediate object is the payload struct, so it mutates a
+// field of the already-active variant in place and leaves the tag alone. This
+// pins the scope of issue 0136's guard — only a WHOLE-variant member write
+// (`s.rect = ...`) is rejected; nested sub-field writes keep working.
+
+#import "modules/std.sx";
+
+Shape :: enum {
+    circle: f32;
+    rect: struct { w, h: f32; };
+}
+
+main :: () {
+    s : Shape = .rect(.{ w = 1.0, h = 2.0 });
+    s.rect.w = 9.0;                  // nested sub-field write — allowed
+    r := s.rect;
+    print("w={} h={}\n", r.w, r.h);  // 9 2
+
+    s = .circle(3.5);                // construction reassign — allowed
+    print("c={}\n", s.circle);       // 3.5
+}

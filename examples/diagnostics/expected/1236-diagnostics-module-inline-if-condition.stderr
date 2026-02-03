@@ -1,0 +1,5 @@
+error: cannot evaluate this module-scope `inline if` condition; use an OS/ARCH/POINTER_SIZE comparison
+  --> examples/diagnostics/1236-diagnostics-module-inline-if-condition.sx:3:11
+   |
+ 3 | inline if FLAG { helper1236 :: () -> i64 { return 1; } }
+   |           ^^^^

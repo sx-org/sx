@@ -1,0 +1,5 @@
+error: type 'Box' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0829-packs-param-impl-mixed-pack-source-ambiguous.sx:28:31
+   |
+28 | impl Sink(Block) for Closure(*Box, ..$args) -> $R {
+   |                               ^^^

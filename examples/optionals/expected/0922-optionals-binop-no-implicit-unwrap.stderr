@@ -1,0 +1,5 @@
+error: cannot use a value of type '?i64' as an operand: an optional does not implicitly unwrap; force-unwrap with '!', supply a fallback with '?? <default>', or guard with '!= null'
+  --> examples/optionals/0922-optionals-binop-no-implicit-unwrap.sx:12:10
+   |
+12 |     c := a + b;            // error: optional operand does not implicitly unwrap
+   |          ^

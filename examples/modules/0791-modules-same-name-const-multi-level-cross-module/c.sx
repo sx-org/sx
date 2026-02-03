@@ -1,0 +1,5 @@
+// Module C flat-imports A only and authors `BIG :: K + 100`. Its bare `K` is A's
+// (= 2), so `BIG` folds to 102. The leaf must pin to A across the import into
+// `main`, which itself sees a different same-name `K` (B's = 11).
+#import "a.sx";
+BIG :: K + 100;

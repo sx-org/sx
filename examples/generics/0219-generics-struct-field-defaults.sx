@@ -1,0 +1,57 @@
+// Generic-struct field DEFAULTS survive instantiation and apply in struct
+// literals — a generic instance's declared defaults are carried onto the
+// monomorphized type, not silently zero-filled.
+//
+// Regression (issue 0221): `struct_defaults_map` was keyed by the plain decl
+// name, so an instantiated generic's mangled struct name never matched and
+// unset defaulted fields read 0. Now `instantiateGenericStruct` registers the
+// template's defaults under the mangled instance name, and dependent defaults
+// (a default referencing a bare type param `T`) are monomorphized at the
+// literal site with the instance's type bindings installed.
+#import "modules/std.sx";
+
+Inner :: struct { v: i64 = 11; }
+Box   :: struct($T: Type) { item: T; tag: i64 = 1; count: i64 = 9; }
+Outer :: struct($U: Type) { boxed: U; label: i64 = 99; }
+Dep   :: struct($T: Type) { item: T; sz: i64 = size_of(T); }
+
+// Alias-instantiation leg: the alias name carries the instance's defaults
+// AND its mirrored type bindings (registerGenericStructAlias), so both a
+// constant and a DEPENDENT default apply through the alias spelling too.
+BI :: Box(i64);
+DA :: Dep(i16);
+
+main :: () {
+    // Base case: nested non-generic default (item.v == 11) AND the generic's
+    // own default (tag == 1).
+    b : Box(Inner) = .{ item = .{} };
+    print("{} {}\n", b.tag, b.item.v);        // 1 11
+
+    // Two instantiations of the same generic, different args — defaults in both.
+    x : Box(i64)  = .{ item = 5 };
+    y : Box(bool) = .{ item = true };
+    print("{} {}\n", x.tag, y.tag);           // 1 1
+
+    // Explicit override mixed with a defaulted field.
+    m : Box(i64) = .{ item = 4, tag = 20 };
+    print("{} {} {}\n", m.item, m.tag, m.count); // 4 20 9
+
+    // Positional literal — trailing defaulted fields still apply.
+    p : Box(i64) = .{ 7 };
+    print("{} {} {}\n", p.item, p.tag, p.count); // 7 1 9
+
+    // Generic-in-generic: outer default + inner generic default + inner
+    // non-generic default all survive.
+    o : Outer(Box(Inner)) = .{ boxed = .{ item = .{} } };
+    print("{} {} {}\n", o.label, o.boxed.tag, o.boxed.item.v); // 99 1 11
+
+    // Dependent default — `sz = size_of(T)` is monomorphized PER instance.
+    d8 : Dep(i64) = .{ item = 5 };
+    d2 : Dep(i16) = .{ item = 5 };
+    print("{} {}\n", d8.sz, d2.sz);           // 8 2
+
+    // Alias spelling: constant default + dependent default through the alias.
+    ab : BI = .{ item = 3 };
+    ad : DA = .{ item = 5 };
+    print("{} {} {}\n", ab.tag, ab.count, ad.sz); // 1 9 2
+}

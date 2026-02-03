@@ -1,0 +1,23 @@
+// FNV-1a — the fast non-cryptographic 64-bit hash backing std/map.sx's
+// HashMap / IndexMap. Verifies the canonical reference vectors and the
+// content-hash property (equal bytes → equal hash regardless of buffer
+// identity). Also exercises the u64 offset-basis constant (a literal with
+// the high bit set, `0xcbf29ce484222325`).
+#import "modules/std.sx";
+
+main :: () {
+    // Canonical 64-bit FNV-1a reference vectors.
+    print("empty  {}\n", hash.fnv1a(""));        // 0xcbf29ce484222325
+    print("a      {}\n", hash.fnv1a("a"));        // 0xaf63dc4c8601ec8c
+    print("foobar {}\n", hash.fnv1a("foobar"));   // 0x85944171f73967e8
+
+    // Content hash: two distinct backing buffers with equal bytes hash equal.
+    b1 := "hello";
+    tmp : [5]u8 = ---;
+    tmp[0] = 'h'; tmp[1] = 'e'; tmp[2] = 'l'; tmp[3] = 'l'; tmp[4] = 'o';
+    b2 := string.{ ptr = @tmp[0], len = 5 };
+    print("content-eq {}\n", hash.fnv1a(b1) == hash.fnv1a(b2));   // true
+
+    // Distinct content → (almost surely) distinct hash.
+    print("distinct   {}\n", hash.fnv1a("foo") != hash.fnv1a("bar"));   // true
+}

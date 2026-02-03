@@ -1,0 +1,10 @@
+?T getter: 8
+?*T getter: 8
+null getter: -1
+?T field: 4
+?*List len: 3
+cold ?*Cell count: 5
+cold ?*Cell head: 99
+cold ?Cell count: 5
+?*Cell field n: 5
+?*Cell field slot: 99

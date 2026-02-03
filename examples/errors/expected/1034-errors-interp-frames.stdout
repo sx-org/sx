@@ -1,0 +1,5 @@
+comptime call frames (most recent call last):
+  at __run_0
+  at inner
+  at probe
+--- build done ---

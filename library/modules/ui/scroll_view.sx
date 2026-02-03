@@ -1,0 +1,149 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+
+ScrollAxes :: enum { vertical; horizontal; both; }
+
+// Persistent scroll state — lives outside the frame arena
+ScrollState :: struct {
+    offset: Point;
+    content_size: Size;
+    viewport_size: Size;
+    dragging: bool;
+    drag_pending: bool;
+    drag_start: Point;
+    drag_offset: Point;
+}
+
+ScrollView :: struct {
+    child: ViewChild;
+    state: *ScrollState;
+    axes: ScrollAxes;
+
+    SCROLL_SPEED  :f32: 20.0;
+    DRAG_THRESHOLD :f32: 4.0;
+
+    clamp_offset :: (self: *ScrollView) {
+        s := self.state;
+        max_x := max(0.0, s.content_size.width - s.viewport_size.width);
+        max_y := max(0.0, s.content_size.height - s.viewport_size.height);
+
+        if self.axes == .vertical or self.axes == .both {
+            s.offset.y = clamp(s.offset.y, 0.0, max_y);
+        } else {
+            s.offset.y = 0.0;
+        }
+
+        if self.axes == .horizontal or self.axes == .both {
+            s.offset.x = clamp(s.offset.x, 0.0, max_x);
+        } else {
+            s.offset.x = 0.0;
+        }
+    }
+}
+
+impl View for ScrollView {
+    size_that_fits :: (self: *ScrollView, proposal: ProposedSize) -> Size {
+        // ScrollView takes all proposed space (default 200 if unspecified)
+        Size.{
+            width = proposal.width ?? 200.0,
+            height = proposal.height ?? 200.0
+        }
+    }
+
+    layout :: (self: *ScrollView, bounds: Frame) {
+        s := self.state;
+        s.viewport_size = bounds.size;
+
+        // Measure child with infinite space on scroll axes
+        child_proposal := ProposedSize.{
+            width = if self.axes == .horizontal or self.axes == .both then null else bounds.size.width,
+            height = if self.axes == .vertical or self.axes == .both then null else bounds.size.height
+        };
+        s.content_size = self.child.view.size_that_fits(child_proposal);
+        self.clamp_offset();
+
+        // Layout child offset by scroll position
+        self.child.computed_frame = Frame.make(
+            bounds.origin.x - s.offset.x,
+            bounds.origin.y - s.offset.y,
+            s.content_size.width,
+            s.content_size.height
+        );
+        self.child.view.layout(self.child.computed_frame);
+    }
+
+    render :: (self: *ScrollView, ctx: *RenderContext, frame: Frame) {
+        ctx.push_clip(frame);
+        self.child.view.render(ctx, self.child.computed_frame);
+        ctx.pop_clip();
+    }
+
+    handle_event :: (self: *ScrollView, event: *Event, frame: Frame) -> bool {
+        s := self.state;
+
+        if pos := event_position(event) {
+            if !frame.contains(pos) { return false; }
+        }
+
+        if event.* == {
+            case .mouse_wheel: (d) {
+                if self.axes == .vertical or self.axes == .both {
+                    s.offset.y -= d.delta.y * ScrollView.SCROLL_SPEED;
+                }
+                if self.axes == .horizontal or self.axes == .both {
+                    s.offset.x -= d.delta.x * ScrollView.SCROLL_SPEED;
+                }
+                self.clamp_offset();
+                return true;
+            }
+            case .mouse_down: (d) {
+                s.drag_pending = true;
+                s.drag_start = d.position;
+                s.drag_offset = s.offset;
+                self.child.view.handle_event(event, self.child.computed_frame);
+                return true;
+            }
+            case .mouse_moved: (d) {
+                if s.drag_pending and !s.dragging {
+                    dx := d.position.x - s.drag_start.x;
+                    dy := d.position.y - s.drag_start.y;
+                    dist := sqrt(dx * dx + dy * dy);
+                    if dist >= ScrollView.DRAG_THRESHOLD {
+                        s.dragging = true;
+                        s.drag_pending = false;
+                        cancel :Event = .mouse_up(.{
+                            position = .{ x = 0.0 - 10000.0, y = 0.0 - 10000.0 },
+                            button = .none
+                        });
+                        self.child.view.handle_event(@cancel, self.child.computed_frame);
+                    }
+                }
+                if s.dragging {
+                    if self.axes == .vertical or self.axes == .both {
+                        s.offset.y = s.drag_offset.y - (d.position.y - s.drag_start.y);
+                    }
+                    if self.axes == .horizontal or self.axes == .both {
+                        s.offset.x = s.drag_offset.x - (d.position.x - s.drag_start.x);
+                    }
+                    self.clamp_offset();
+                    return true;
+                }
+                return self.child.view.handle_event(event, self.child.computed_frame);
+            }
+            case .mouse_up: {
+                was_dragging := s.dragging;
+                s.dragging = false;
+                s.drag_pending = false;
+                if was_dragging {
+                    return true;
+                }
+                return self.child.view.handle_event(event, self.child.computed_frame);
+            }
+        }
+        self.child.view.handle_event(event, self.child.computed_frame)
+    }
+}

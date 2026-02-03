@@ -1,0 +1,10 @@
+#import "modules/std.sx";
+
+Failure :: struct {
+    code: i64 = 0;
+    message: string = "";
+}
+
+describe :: (f: Failure) -> i64 {
+    return f.code;
+}

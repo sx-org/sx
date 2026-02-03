@@ -1,0 +1,4 @@
+// The second flat-imported author of a same-name `Pair` union. A separate nominal
+// identity from a.sx's `Pair`, so each bare reference is a real collision the
+// importing source cannot disambiguate.
+Pair :: union { f: f32; i: i32; }

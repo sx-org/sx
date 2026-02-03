@@ -1,0 +1,5 @@
+error: expected capture variable name (a call iterable also needs a capture: `for f(n) (x) { }`)
+  --> examples/diagnostics/1154-diagnostics-for-call-needs-capture.sx:10:11
+   |
+10 |     for g() { }
+   |           ^

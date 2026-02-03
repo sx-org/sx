@@ -1,0 +1,30 @@
+// Feature 1 — method calls on a PARAMETERIZED protocol pack (the canonical
+// shape: `..xs: ValueListenable` where each element conforms with its own
+// type-arg). Calling the protocol method `get()` on `xs[i]` resolves to the
+// concrete element's impl, even though each element binds a different `T`.
+//
+// (Parameterised-protocol impl methods with a concrete source type are now
+// registered as `<Source>.<method>`, so UFCS — and thus `xs[i].get()` —
+// resolves them.)
+
+#import "modules/std.sx";
+
+Box :: protocol(T: Type) {
+    get :: (self: *Self) -> T;
+}
+
+IntCell :: struct { v: i64; }
+StrCell :: struct { s: string; }
+impl Box(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
+impl Box(string) for StrCell { get :: (self: *StrCell) -> string => self.s; }
+
+describe :: (..xs: Box) -> void {
+    // xs[0] : Box(i64), xs[1] : Box(string) — different type-args per position.
+    print("first={} second={}\n", xs[0].get(), xs[1].get());
+}
+
+main :: () -> i32 {
+    describe(IntCell.{ v = 11 }, StrCell.{ s = "hi" });
+    describe(StrCell.{ s = "x" }, IntCell.{ v = 99 });
+    0
+}

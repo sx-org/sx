@@ -1,0 +1,44 @@
+// Concrete arms in the runtime type-category match resolve through the
+// full type resolver: a BUILTIN name (`case i64:`) is one tag and claims
+// it first-wins ahead of the category that contains it, and composite
+// type expressions (`case ?i64:`, `case []u8:`) work the same way.
+// `string` / `bool` / `void` stay single-type arms as before.
+// Regression (issue 0315): builtin names resolved through the user-type
+// name map, got zero tags, and the arm was silently dead — `conc(i64)`
+// answered "int" and, without the category arm, "other".
+#import "modules/std.sx";
+
+conc :: (t: Type) -> string {
+    if t == {
+        case i64: return "i64";
+        case int: return "int";
+        else:     return "other";
+    }
+    "unreached"
+}
+
+comp :: (t: Type) -> string {
+    if t == {
+        case ?i64:     return "?i64";
+        case []u8:     return "[]u8";
+        case string:   return "string";
+        case optional: return "optional";
+        else:          return "other";
+    }
+    "unreached"
+}
+
+main :: () {
+    print("i64: {}\n", conc(i64));
+    print("u8: {}\n", conc(u8));
+    print("f64: {}\n", conc(f64));
+
+    o : ?i64 = 5;
+    q : ?f64 = 1.5;
+    s : []u8 = .[1, 2];
+    print("opt exact: {}\n", comp(type_of(o)));
+    print("opt category: {}\n", comp(type_of(q)));
+    print("slice: {}\n", comp(type_of(s)));
+    print("string: {}\n", comp(string));
+    print("neg: {}\n", comp(f32));
+}

@@ -1,0 +1,4 @@
+// d2's author of `tag`. `caller2` (also in d2) binds d2's own `tag` (200),
+// even though d1's `tag` is the first-wins merge winner.
+tag     :: () -> i64 { return 200; }
+caller2 :: () -> i64 { return tag(); }

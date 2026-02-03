@@ -1,0 +1,10 @@
+cli-group: ok
+cli-command: ok
+cli-index: ok
+cli-flag: ok
+json-members: ok
+json-key0: ok
+json-str: ok
+json-arr-len: ok
+json-arr-2: ok
+=== DONE ===

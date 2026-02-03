@@ -1,0 +1,237 @@
+// std.http H2 (PLAN-HTTPZ): memory lifecycle / leak gate.
+//
+// Server.init allocates the conns array, each connection's read buffer
+// (grown lazily), and — in pooled mode — the PoolState struct, its
+// completion ring, and the thread.Pool (struct + tasks + threads).
+// Server.close must free ALL of it from the SAME allocator init used.
+//
+// This drives a start/serve/stop loop for THREE scenarios:
+//   1. an inline server (thread_pool_count = 0),
+//   2. a pooled server (thread_pool_count = 2), each pushing a real
+//      request (including a large body that forces the read buffer to
+//      grow) so the lazily-grown buffers actually get allocated and must
+//      be freed, and
+//   3. a POOLED server CLOSED WITH REQUESTS STILL IN-FLIGHT — slow
+//      handlers are dispatched to workers, the loop is ticked just enough
+//      that connections sit in CONN_HANDLING (not yet drained), then
+//      close runs. Workers finish during pool shutdown and queue
+//      completions into ps.done that were never drained; close must free
+//      each completion's response bytes (the in-flight-close leak fix).
+// The whole loop runs under a GPA whose alloc_count is bumped atomically
+// on every alloc/dealloc — so a non-zero alloc_count at the end is a leak.
+// The atomic counter is what makes the pooled gate trustworthy: the loop
+// thread and worker threads bump it concurrently.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+cstd :: #import "modules/std/c.sx";
+
+clib :: #library "c";
+usleep :: (usec: i64) -> i32 extern clib;
+
+PORT :: 18970;
+
+handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/echo" { resp.body = req.body; return; }
+    resp.body = "ok";
+}
+
+// Slow handler for the in-flight-close scenario: sleeps so the request
+// lingers in CONN_HANDLING on a worker thread while the loop ticks.
+slow_handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    usleep(80000);   // 80 ms
+    resp.body = "ok";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+resp_complete :: (buf: [*]u8, len: i64) -> bool {
+    s := string.{ ptr = buf, len = xx len };
+    he := -1;
+    i := 0;
+    while i + 3 < s.len {
+        if s[i] == 13 and s[i+1] == 10 and s[i+2] == 13 and s[i+3] == 10 { he = i; break; }
+        i += 1;
+    }
+    if he < 0 { return false; }
+    cl : i64 = 0;
+    seen := false;
+    j := 0;
+    needle := "Content-Length: ";
+    while j + needle.len < s.len {
+        k := 0;
+        ok := true;
+        while k < needle.len { if s[j + k] != needle[k] { ok = false; break; } k += 1; }
+        if ok {
+            d := j + needle.len;
+            while d < s.len and s[d] >= 48 and s[d] <= 57 { cl = cl * 10 + (s[d] - 48); d += 1; }
+            seen = true;
+            break;
+        }
+        j += 1;
+    }
+    if !seen { return false; }
+    return len >= he + 4 + cl;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+// Send one request, tick the server to completion, return the response.
+roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: i64) -> string {
+    socket.write(fd, reqtext.ptr, xx reqtext.len);
+    total : i64 = 0;
+    tries := 0;
+    while tries < 2000 {
+        srv.tick(5) catch {};
+        n, re := socket.read_nb(fd, @scratch[total], xx (cap - total));
+        if !re { total += n; }
+        else if re == error.Closed { return string.{ ptr = scratch, len = xx total }; }
+        if resp_complete(scratch, total) { return string.{ ptr = scratch, len = xx total }; }
+        tries += 1;
+    }
+    return "";
+}
+
+// One server lifetime: init, serve a small GET and a large POST (the
+// big body forces a read-buffer grow), then close. `port` is bumped per
+// round so a lingering TIME_WAIT socket never collides.
+serve_once :: (port: i64, pool_count: i64, scratch: [*]u8, cap: i64) -> bool {
+    cfg : http.Config = .{
+        port = port,
+        timeout_request_ms = 1000,
+        timeout_keepalive_ms = 1000,
+        request_count = 50,
+        max_conn = 8,
+        thread_pool_count = pool_count,
+        thread_pool_backlog = 16,
+    };
+    srv, se := http.Server.init(cfg, handler, 0);
+    if se { print("init failed (pool={})\n", pool_count); return false; }
+
+    c := dial_port(port);
+    if c < 0 { print("dial failed (pool={})\n", pool_count); srv.close(); return false; }
+
+    // small GET
+    r1 := roundtrip(@srv, c, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
+    if !contains(r1, "HTTP/1.1 200 OK") { print("small GET bad (pool={})\n", pool_count); socket.close(c); srv.close(); return false; }
+
+    // large POST: body past READ_BUF_INITIAL forces grow_read_buf on the
+    // server side. Build the request into ONE explicit buffer (no concat
+    // chain, which would allocate uncounted-then-freed scratch through the
+    // GPA and muddy the leak gate); fill the body in place.
+    big_n := 40000;
+    hdr := "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 40000\r\n\r\n";
+    req_len : i64 = hdr.len + big_n;
+    rbuf : [*]u8 = xx context.allocator.alloc_bytes(req_len);
+    cstd.memcpy(rbuf, hdr.ptr, hdr.len);
+    f := 0;
+    while f < big_n { rbuf[hdr.len + f] = 97 + (f % 26).(u8); f += 1; }
+    r2 := roundtrip(@srv, c, string.{ ptr = rbuf, len = req_len }, scratch, cap);
+    ok := contains(r2, "HTTP/1.1 200 OK") and contains(r2, "Content-Length: 40000");
+    context.allocator.dealloc_bytes(xx rbuf);
+    if !ok { print("large POST bad (pool={})\n", pool_count); socket.close(c); srv.close(); return false; }
+
+    socket.close(c);
+    srv.close();
+    return true;
+}
+
+// Scenario 3: a pooled server closed while requests are still in-flight.
+// Dial `n` connections, send a slow request on each, tick a small fixed
+// budget (well under the 80ms handler time) so the connections reach
+// CONN_HANDLING but no completion has drained, then close. close joins
+// the workers (they finish + queue completions) and must free every
+// in-flight completion's response bytes. Returns true on success.
+serve_inflight_close :: (port: i64, n: i64) -> bool {
+    cfg : http.Config = .{
+        port = port,
+        timeout_request_ms = 5000,
+        timeout_keepalive_ms = 5000,
+        request_count = 50,
+        max_conn = 32,
+        thread_pool_count = 4,
+        thread_pool_backlog = 32,
+    };
+    srv, se := http.Server.init(cfg, slow_handler, 0);
+    if se { print("inflight init failed\n"); return false; }
+
+    fds : [16]i32 = ---;
+    i : i64 = 0;
+    while i < n {
+        fds[i] = dial_port(port);
+        if fds[i] < 0 { print("inflight dial {} failed\n", i); srv.close(); return false; }
+        i += 1;
+    }
+    req := "GET /slow HTTP/1.1\r\nHost: t\r\n\r\n";
+    i = 0;
+    while i < n {
+        socket.write(fds[i], req.ptr, xx req.len);
+        i += 1;
+    }
+    // Tick ~30ms total (30 ticks * 1ms) — long enough to accept and
+    // dispatch all connections (CONN_HANDLING), short enough that the
+    // 80ms handlers have NOT completed, so their completions are still
+    // pending when close runs.
+    t : i64 = 0;
+    while t < 30 {
+        srv.tick(1) catch {};
+        t += 1;
+    }
+    srv.close();
+    i = 0;
+    while i < n { socket.close(fds[i]); i += 1; }
+    return true;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+
+    // Scratch + the whole start/stop loop run under the GPA so every
+    // server alloc/dealloc moves its counter. The scratch buffer itself
+    // is freed before we read the counter.
+    rounds := 4;
+    leaked : i64 = 0;
+    push .{ allocator = gpa } {
+        cap : i64 = 50000;
+        scratch : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        r := 0;
+        while r < rounds {
+            // inline server
+            if !serve_once(PORT + r * 8, 0, scratch, cap) { return 1; }
+            // pooled server
+            if !serve_once(PORT + r * 8 + 2, 2, scratch, cap) { return 1; }
+            // pooled server closed with requests still in-flight
+            if !serve_inflight_close(PORT + r * 8 + 4, 12) { return 1; }
+            r += 1;
+        }
+
+        context.allocator.dealloc_bytes(xx scratch);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations after {} server lifetimes\n", leaked, rounds * 3);
+        return 1;
+    }
+    print("no leak: net-zero allocations across {} inline + {} pooled + {} in-flight-close server lifetimes\n", rounds, rounds, rounds);
+    print("ok\n");
+    return 0;
+}

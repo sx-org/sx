@@ -1,0 +1,31 @@
+// Real OS-argv accessor from `modules/std/cli.sx` (extern _NSGetArgv).
+//
+// Only DETERMINISTIC structural invariants are asserted — the actual arg
+// contents depend on how the test is invoked (under `sx run` the process
+// argv is the interpreter's: ["sx", "run", "<this file>"]), so we never
+// pin exact strings:
+//   - argc >= 1            (every process has argv[0])
+//   - argv[0] is non-empty (the executable path)
+//   - os_argc() agrees with the filled slice length (no truncation)
+//
+// `buf` is a stack `[64]string`; `os_args` fills it with zero-copy views
+// over the C runtime's argv block — no heap, no per-arg allocation.
+
+#import "modules/std.sx";
+#import "modules/std/cli.sx";
+
+main :: () {
+    buf : [64]string = ---;
+    args := os_args(buf[0..64]);
+
+    if args.len >= 1 { print("argc>=1: ok\n"); }
+    else { print("argc>=1: FAIL ({})\n", args.len); }
+
+    if args.len >= 1 {
+        if args[0].len > 0 { print("arg0-nonempty: ok\n"); }
+        else { print("arg0-nonempty: FAIL\n"); }
+    }
+
+    if os_argc() == args.len { print("argc-consistent: ok\n"); }
+    else { print("argc-consistent: FAIL (os_argc={} len={})\n", os_argc(), args.len); }
+}

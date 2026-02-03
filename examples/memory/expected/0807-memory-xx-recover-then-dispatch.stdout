@@ -1,0 +1,4 @@
+recovered == gpa? true
+alloc count after first alloc: 1
+recovered2 == gpa? true
+alloc count after dealloc: 0

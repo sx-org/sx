@@ -1,0 +1,12 @@
+// An integer literal that does not fit its integer target type is a
+// compile error (no silent wrap): both faces diagnosed in one run.
+// Regression (issue 0112): `x : i8 = 300` bound 44, `y : u8 = 256` bound 0.
+
+#import "modules/std.sx";
+
+main :: () {
+    x : i8 = 300;
+    print("x: {}\n", x);
+    y : u8 = 256;
+    print("y: {}\n", y);
+}

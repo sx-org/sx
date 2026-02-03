@@ -1,0 +1,16 @@
+// issue 0105 / F1 regression — a SELF-REFERENCE inside a same-name struct shadow.
+// Two flat-imported modules each declare a top-level `Box`; module B's `Box` has
+// a field `next: *Box` referencing its own name. The shadow must resolve that
+// self-ref to ITS OWN nominal identity, not the first same-name author (A's
+// `Box`), so `head.next.*.y` reads B's `y` (= 42). Proves the reserve-before-
+// fields ordering: a shadow author's decl key is recorded before its fields are
+// resolved, so a self / forward ref binds via `type_decl_tids`, never the global
+// findByName first-author fallback.
+#import "modules/std.sx";
+#import "0757-modules-same-name-struct-self-ref/a.sx";
+#import "0757-modules-same-name-struct-self-ref/b.sx";
+
+main :: () -> i32 {
+    print("a={} b={}\n", a_box(), b_chain());
+    0
+}

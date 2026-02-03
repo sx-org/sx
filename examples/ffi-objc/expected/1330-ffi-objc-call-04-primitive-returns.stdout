@@ -1,0 +1,4 @@
+nil class    = true
+nil hash     = 0
+meta non-null = true
+hash non-zero = true

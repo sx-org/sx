@@ -1,0 +1,29 @@
+// A generic struct's VALUE param (`$N: u32`) is a compile-time integer, not a
+// type. Naming it in a TYPE position — here a field type `x: N` — must emit a
+// clean diagnostic, NOT silently compile.
+//
+// The parser marks any reference to a struct's own type param `is_generic`
+// (so `x: T` for a real `$T: Type` resolves without a `$`). That marking is
+// the same for a value param, so the unknown-type walk used to skip `x: N`
+// entirely; the field's type leaf then resolved to the `.unresolved` sentinel
+// and PANICKED at LLVM emission ("unresolved type reached LLVM emission").
+//
+// The checker now distinguishes TYPE params (`$T: Type`, `$T: SomeProtocol`,
+// the `..$Ts` pack) from VALUE params (`$N: u32`) using the binder's own rule:
+// a value param named in a type position gets the tailored hint. A value param
+// in a VALUE position (a `[N]u8` array dimension, a `Vector` lane count) still
+// works (see 0147 / 0201).
+//
+// Expected: `error: 'N' is a value parameter, not a type`; exit 1.
+// Regression (stdlib E3).
+#import "modules/std.sx";
+
+Bad :: struct($N: u32) {
+    x: N;
+}
+
+main :: () -> i32 {
+    b : Bad(3) = .{ x = 1 };
+    print("{}\n", b.x);
+    return 0;
+}

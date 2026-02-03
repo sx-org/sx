@@ -1,0 +1,15 @@
+// A `Vector` lane count that folds to a valid compile-time integer but exceeds a
+// `u32` (`Vector(5_000_000_000, f32)`) is a hard error — a clean sx diagnostic
+// with a non-zero exit, NOT a compiler panic.
+//
+// Regression (issue 0087 / F0.4 attempt 6): the lane folded to a valid i64 (5e9)
+// and was then narrowed with an unchecked `@intCast` to u32, aborting the
+// COMPILER with "integer does not fit in destination type". The lane now narrows
+// through the single range-checked `program_index.foldDimU32`, which reports an
+// out-of-u32-range lane as this diagnostic and halts the build.
+#import "modules/std.sx";
+
+main :: () {
+    v : Vector(5000000000, f32) = ---;
+    print("unreachable: {}\n", v.x);
+}

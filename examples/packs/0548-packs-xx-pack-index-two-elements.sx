@@ -1,0 +1,25 @@
+// Erase two DISTINCT comptime-pack elements to protocol locals — each gets
+// its own heap copy and resolves to its OWN concrete type's method (IntCell.get
+// vs Doubler.get), proving the per-element erasure picks the right vtable.
+//
+// Regression (issue 0135): single-element `xx pack[i]` erasure to a protocol
+// scalar was unsupported (the bare pack lowered as a value and errored).
+
+#import "modules/std.sx";
+
+VL :: protocol(T: Type) { get :: (self: *Self) -> T; }
+IntCell :: struct { v: i64; }
+impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
+Doubler :: struct { n: i64; }
+impl VL(i64) for Doubler { get :: (self: *Doubler) -> i64 => self.n * 2; }
+
+sum_two :: (..sources: VL) -> i64 {
+    a : VL(i64) = xx sources[0];   // erase element 0
+    b : VL(i64) = xx sources[1];   // erase element 1
+    return a.get() + b.get();
+}
+
+main :: () -> i32 {
+    print("{}\n", sum_two(IntCell.{ v = 10 }, Doubler.{ n = 16 }));  // 10 + (16*2) = 42
+    0
+}

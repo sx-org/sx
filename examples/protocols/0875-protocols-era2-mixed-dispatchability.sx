@@ -1,0 +1,57 @@
+// Era-2 per-method erasability, the POSITIVE matrix on a MIXED protocol:
+// a method whose signature mentions `Self` past the receiver (`combine`)
+// has no vtable/#inline slot, but the protocol still erases and every
+// DISPATCHABLE method works — through an owned `P`, through a `*P` view,
+// and for both layouts (vtable + #inline). Slot filtering is consistent:
+// the excluded method sits BETWEEN two dispatchable ones, so any
+// decl-order/slot-order confusion would misdispatch `name` into `combine`.
+// The excluded method stays fully usable where Self IS known: concrete
+// receivers and generic bounds ($T: Type/Shape). Conformance still
+// requires impls to provide it. The refusal itself: diagnostics/1253.
+#import "modules/std.sx";
+
+Shape :: protocol {
+    area :: (self: *Self) -> i64;
+    combine :: (self: *Self, other: Self) -> i64;  // excluded: Self param
+    name :: (self: *Self) -> string;
+}
+
+InlShape :: protocol #inline {
+    area :: (self: *Self) -> i64;
+    combine :: (self: *Self, other: Self) -> i64;  // excluded: Self param
+    name :: (self: *Self) -> string;
+}
+
+Sq :: struct { side: i64; }
+impl Shape for Sq {
+    // Conformance still demands the excluded method — this impl is required.
+    area :: (self: *Sq) -> i64 { return self.side * self.side; }
+    combine :: (self: *Sq, other: Sq) -> i64 { return self.side + other.side; }
+    name :: (self: *Sq) -> string { return "square"; }
+}
+impl InlShape for Sq {}
+
+combine_bound :: (a: $T/Shape, b: T) -> i64 {
+    return a.combine(b);   // generic bound: Self is the bound T — legal
+}
+
+main :: () {
+    sq := Sq.{ side = 4 };
+
+    // Vtable layout: dispatchable methods through an owned P.
+    s := sq.(Shape);
+    print("vtable: {} {}\n", s.area(), s.name());
+
+    // #inline layout: same filtered slots as fn-ptr fields.
+    i := sq.(InlShape);
+    print("inline: {} {}\n", i.area(), i.name());
+
+    // *P view dispatch over the same filtered slots.
+    pv : *Shape = @s;
+    print("view:   {} {}\n", pv.area(), pv.name());
+
+    // Excluded method: concrete receiver (static dispatch) still works...
+    print("direct: {}\n", sq.combine(Sq.{ side = 1 }));
+    // ...and the generic-bound path keeps it callable with Self known.
+    print("bound:  {}\n", combine_bound(sq, Sq.{ side = 6 }));
+}

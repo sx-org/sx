@@ -1,0 +1,36 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+add :: (a: i32, b: i32) -> i32 { a + b }
+
+main :: () {
+
+    // ── Trailing commas ──────────────────────────────────────────
+    print("=== Trailing Commas ===\n");
+    {
+        // Struct literal with trailing comma
+        Vec4 :: struct { x: f64; y: f64; z: f64; w: f64; }
+        v := Vec4.{
+            x = 1.0,
+            y = 2.0,
+            z = 3.0,
+            w = 4.0,
+        };
+        assert(v.x == 1.0);
+        assert(v.w == 4.0);
+
+        // Function call with trailing comma
+        add :: (a: i64, b: i64) -> i64 { return a + b; }
+        r := add(10, 20,);
+        assert(r == 30);
+
+        // Array literal with trailing comma
+        arr := .[1, 2, 3,];
+        assert(arr[2] == 3);
+
+        print("trailing commas ok\n");
+    }
+}

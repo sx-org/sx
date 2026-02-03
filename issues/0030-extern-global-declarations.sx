@@ -1,0 +1,14 @@
+// Repro for issue 0030 (OPEN feature request): cross-file sx `extern` globals.
+// Want: `extern G : T;` declares a reference to a global defined in another sx
+// file (resolved at link time), mirroring `extern` functions. Today this is a
+// parse error — the form doesn't exist. Distinct from `name : T extern;`
+// (an external C data symbol; see examples/1205-ffi-extern-global.sx).
+//
+// Expected (once implemented): parses; `g_x` resolves to a global defined
+// elsewhere. Actual: error "expected '::', ':=', or ':' after identifier".
+
+#import "modules/std.sx";
+
+extern g_x : *void;
+
+main :: () -> i32 { 0; }

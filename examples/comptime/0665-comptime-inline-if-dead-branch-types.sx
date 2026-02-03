@@ -1,0 +1,40 @@
+// A statically-dead `inline if` branch is dropped WHOLE: its type
+// annotations are not resolved, exactly as its statements are not
+// lowered — a type that exists only on another target (or behind a
+// disabled feature const) must not error from a pruned branch. Covers
+// the bool-const, `OS ==` binary, and/or, and `OS == { case }` match
+// forms; the taken branch always runs.
+// Regression (issue 0290): the unknown-type checker walked BOTH
+// branches unconditionally, so `x : *Missing` in a dead branch failed
+// the build even though lowering discarded it.
+#import "modules/std.sx";
+
+ENABLED :: false;
+
+main :: () {
+    inline if ENABLED {
+        a : *MissingA = null;
+        missing_fn(a);
+    } else {
+        print("const ok\n");
+    }
+    inline if OS == .ios {
+        c : *MissingC = null;
+        print("{}\n", c);
+    } else {
+        print("os ok\n");
+    }
+    inline if OS == .ios or OS == .android {
+        d : *MissingD = null;
+        print("{}\n", d);
+    } else {
+        print("or ok\n");
+    }
+    inline if OS == {
+        case .ios: {
+            e : *MissingE = null;
+            print("{}\n", e);
+        }
+        else: { print("match ok\n"); }
+    }
+}

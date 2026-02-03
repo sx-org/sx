@@ -1,0 +1,5 @@
+and: true false false
+or: false true true
+mixed: true
+ne: true
+payload: true false

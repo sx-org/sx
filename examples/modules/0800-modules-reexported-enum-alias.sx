@@ -1,0 +1,29 @@
+// A RE-EXPORTED ENUM — `fac.Color` where the facade declares `Color ::
+// inner.Color` — resolves to the real enum when used as a PARAMETER type, so a
+// `==` comparison against a variant and an `xx`→int cast both work.
+//
+// Regression (issue 0206): a qualified-RHS alias (`A :: ns.Type`, RHS a
+// field_access) was never resolved into the type-alias map — it stayed
+// `.pending` and adopted the empty-struct `{}` stub. That silently
+// name-reconciled for a STRUCT target but left a non-struct target (enum /
+// union / error set) as `{}`: an enum param degraded to `{}`, so `c ==
+// fac.Color.Green` emitted `icmp eq {} , i64` (invalid IR) and `xx c` read 0.
+// Fix: the forward-alias fixpoint now resolves a `field_access` RHS by pinning
+// the namespace to its target module and resolving the leaf there (the same
+// path the qualified `: ns.Type` annotation uses).
+
+fac :: #import "0800-modules-reexported-enum-alias/facade.sx";
+
+classify :: (c: fac.Color) -> i64 {        // param typed via re-exported enum alias
+    if c == fac.Color.Green { return 2; }  // comparison: was icmp eq {} , i64
+    return 0;
+}
+ordinal :: (c: fac.Color) -> i64 { return xx c; }   // xx enum→int: was always 0
+
+use_shape :: (s: fac.Shape) -> i64 { return s.kind; }   // struct via the same alias shape
+
+main :: () -> i32 {
+    sh : fac.Shape = .{ kind = 30 };
+    // 2 (classify Green) + 1 (ordinal Green) + 30 (shape) = 33
+    return xx (classify(fac.Color.Green) + ordinal(fac.Color.Green) + use_shape(sh));
+}

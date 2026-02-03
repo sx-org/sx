@@ -1,0 +1,15 @@
+// 1a-S2 AOT — the runtime-reflection scalar tables in a real linked
+// binary (not just JIT): __sx_type_sizes/_aligns/_struct_field_counts/
+// _variant_counts/_flag_bits + the tag-compare type_eq.
+#import "modules/std.sx";
+
+Header :: struct { magic: u16; flags: u8; }
+Kind   :: enum { alpha; beta; }
+
+main :: () {
+    th : Type = Header;
+    tk : Type = Kind;
+    print("{} {} {} {} {} {}\n",
+        size_of(th), align_of(th), struct_field_count(th),
+        variant_count(tk), is_flags(tk), type_eq(th, Header));
+}

@@ -1,0 +1,30 @@
+// Phase 2 step 2.16b (PLAN-FFI.md): xfail then green for the
+// lexical-direct env resolution inside a `#jni_env` scope.
+//
+// `#jni_call(T)(target, "name", "sig", args...)` — three args before
+// the first string literal — has the env omitted. The lowering walks
+// the in-progress AST visit stack to find the enclosing `#jni_env(env)`
+// block and uses that env value directly as the IR-level env arg.
+// No thread-local read, no per-call lookup; env stays register-
+// resident across loop bodies (the hot-path optimisation).
+//
+// Today's lower expects 4+ args and errors when called with 3.
+
+#import "modules/std.sx";
+
+g_should_call : bool = false;
+
+unused_jni :: (env: *void, target: *void) {
+    #jni_env(env) {
+        // Omitted env — env comes from the enclosing #jni_env scope.
+        #jni_call(void)(target, "noop", "()V");
+    }
+}
+
+main :: () -> i32 {
+    if g_should_call {
+        unused_jni(null, null);
+    }
+    print("ok\n");
+    0
+}

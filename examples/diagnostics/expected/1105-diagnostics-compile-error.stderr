@@ -1,0 +1,5 @@
+error: intentional compile error from #run
+  --> examples/diagnostics/1105-diagnostics-compile-error.sx:12:6
+   |
+12 | #run compile_error("intentional compile error from #run");
+   |      ^^^^^^^^^^^^^

@@ -1,0 +1,58 @@
+// Constructing a PAYLOAD-CARRYING variant of a TAGGED UNION whose variants
+// carry EXPLICIT tag values must store the EXPLICIT tag value at runtime — the
+// same encoding `match` switches on and C-interop uses — NOT the sequential
+// ordinal.
+//
+// Regression (issue 0281):
+//   Defect 1 — call-shaped construction `Ev.key(5)` stored the ORDINAL (1)
+//   while `match` switched on the explicit tag (0x300 = 768), so a payloadful
+//   match matched no case and fell through to `else`/unreachable (mis-dispatch
+//   / UB). Fixed so construction stores the explicit value: the ordinal now
+//   indexes `fields[]` for the payload-type lookup only.
+//
+//   Defect 2 — the struct-literal construction form `Ev.key.{ 42 }` with a
+//   SCALAR payload panicked ("unresolved type reached LLVM emission"): the
+//   qualified `Ev.key` field_access wasn't routed to the tagged-enum path, and
+//   even the inferred `.key.{ 42 }` form wrapped the scalar in an invalid
+//   `insertvalue i64`. Both now construct the variant with payload 42.
+//
+// All FOUR paths must agree on the explicit tag encoding: call-shaped
+// construction, struct-literal construction, `match`, and the formatter (0280).
+
+#import "modules/std.sx";
+
+K :: struct { a: i64; b: i64; }
+
+// Explicit-tag tagged union: payload-less `quit`, scalar-payload `key`, and
+// struct-payload `mouse`. None of the explicit values equal a small ordinal.
+Ev :: enum { quit :: 0x100; key :: 0x300: i64; mouse :: 0x400: K; }
+
+handle :: (e: Ev) -> i64 {
+    r := if e == {
+        case .quit:      1;
+        case .key:  (k)  { 100 + k }
+        case .mouse: (m) { m.a + m.b }
+        else: -999;
+    };
+    r
+}
+
+main :: () {
+    // (a) call-shaped construction, payloadful — reaches the .key arm.
+    print("{}\n", handle(Ev.key(5)));        // 105
+    // (b) struct-literal construction, scalar payload — same arm, same value.
+    print("{}\n", handle(Ev.key.{ 5 }));     // 105
+    // Inferred `.key.{ ... }` form (target-typed).
+    k2 : Ev = .key.{ 7 };
+    print("{}\n", handle(k2));               // 107
+    // Struct-payload variant, flattened fields.
+    print("{}\n", handle(Ev.mouse.{ 3, 4 })); // 7
+    // Payload-less variant still dispatches.
+    print("{}\n", handle(Ev.quit));          // 1
+
+    // (d) The formatter prints the variant by name (issue 0280 reverse-map),
+    // consistent with the explicit encoding both construction forms now store.
+    print("{}\n", Ev.key(5));                // .key(5)
+    print("{}\n", Ev.key.{ 42 });            // .key(42)
+    print("{}\n", Ev.quit);                  // .quit
+}

@@ -1,0 +1,5 @@
+use_one    = 2.000000
+use_two    = 2.000000
+via_cast   = 2.000000
+use_struct = f32
+gen_concr  = 2.000000

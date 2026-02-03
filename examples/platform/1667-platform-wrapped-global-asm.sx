@@ -1,0 +1,36 @@
+// ASM stream — top-level (global) `asm { … }` wrapped in a comptime
+// `inline if OS == { case … }`: the taken arm's module-scope asm must emit into
+// the LLVM module exactly like an unwrapped block, so the symbol it defines is
+// DEFINED in the object (not `U`) and a lib-less `extern` can call it.
+// Regression (issue 0194): the branch body is statement-parsed, so the wrapped
+// asm surfaced from the flatten pass as an `.asm_expr` node that lowering's
+// decl walk silently skipped — the symbol vanished and the link failed. The
+// flatten pass now retags a surfaced template-only asm to `.asm_global`.
+// Per-OS arms carry the platform symbol spelling (darwin `_`-prefixes exported
+// symbols, linux does not). Built+run via `aot` (a module-asm symbol lives in
+// the final linked binary, not the JIT host); aarch64-pinned via `target:
+// macos`, so ir-only on a non-matching host.
+inline if OS == {
+    case .linux: asm {
+        #string ASM
+.global wrapped_add
+wrapped_add:
+    add x0, x0, x1
+    ret
+ASM,
+    };
+    case .macos: asm {
+        #string ASM
+.global _wrapped_add
+_wrapped_add:
+    add x0, x0, x1
+    ret
+ASM,
+    };
+}
+
+wrapped_add :: (a: i64, b: i64) -> i64 extern;
+
+main :: () -> i64 {
+    return wrapped_add(40, 2);   // 42, computed by the wrapped global-asm routine
+}

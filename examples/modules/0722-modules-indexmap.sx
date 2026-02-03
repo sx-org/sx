@@ -1,0 +1,102 @@
+// IndexMap($K,$V) from modules/std/map.sx — the INSERTION-ORDERED map
+// (port of Zig's std ArrayHashMap: an ordered `entries` array that is the
+// source of truth + iteration order, plus a separate hash index that only
+// accelerates lookup).
+//
+// Ports the behaviour of Zig's array_hash_map tests: insertion order is
+// preserved through put / overwrite / grow; get / contains; ORDER-PRESERVING
+// remove vs O(1) order-breaking swap_remove; string + int keys; idempotent
+// deinit.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () {
+    gpa := GPA.init();
+
+    // ── insertion order is preserved (the core guarantee) ────────────────
+    m : IndexMap(string, i64) = .{};
+    m.put("one", 1, gpa);
+    m.put("two", 2, gpa);
+    m.put("three", 3, gpa);
+    m.put("four", 4, gpa);
+    report("len", m.len == 4);
+    report("order",
+        m.key_at(0) == "one" and m.key_at(1) == "two" and
+        m.key_at(2) == "three" and m.key_at(3) == "four");
+    report("val-order",
+        m.val_at(0) == 1 and m.val_at(1) == 2 and
+        m.val_at(2) == 3 and m.val_at(3) == 4);
+
+    // ── get / contains ───────────────────────────────────────────────────
+    report("get", m.get("three")! == 3);
+    report("contains-hit", m.contains("two"));
+    report("contains-miss", !m.contains("nope"));
+    absent := if x := m.get("nope") { false } else { true };
+    report("get-miss-null", absent);
+
+    // ── overwrite keeps the entry's ORIGINAL position ────────────────────
+    m.put("two", 22, gpa);
+    report("overwrite-val", m.get("two")! == 22);
+    report("overwrite-len", m.len == 4);
+    report("overwrite-pos", m.key_at(1) == "two" and m.val_at(1) == 22);
+
+    // get_ptr: mutate in place
+    if p := m.get_ptr("one") { p.* = 111; }
+    report("get-ptr", m.get("one")! == 111);
+
+    // ── ORDER-PRESERVING remove: drop "two", order stays one/three/four ──
+    report("remove-hit", m.remove("two", gpa));
+    report("remove-again", !m.remove("two", gpa));
+    report("remove-len", m.len == 3);
+    report("remove-order",
+        m.key_at(0) == "one" and m.key_at(1) == "three" and m.key_at(2) == "four");
+    report("remove-lookup", m.get("four")! == 4 and !m.contains("two"));
+    m.deinit(gpa);
+
+    // ── swap_remove: O(1) but BREAKS order (last moves into the hole) ─────
+    s : IndexMap(i64, i64) = .{};
+    k := 0;
+    while k < 5 { s.put(k, k * 10, gpa); k += 1; }   // 0,1,2,3,4
+    report("sr-pre-order", s.key_at(1) == 1 and s.key_at(4) == 4);
+    report("sr-remove", s.swap_remove(1, gpa));      // last (4) fills slot 1
+    report("sr-len", s.len == 4);
+    report("sr-swapped", s.key_at(1) == 4);             // order broken by design
+    report("sr-gone", !s.contains(1));
+    report("sr-others", s.get(0)! == 0 and s.get(4)! == 40 and s.get(2)! == 20);
+    s.deinit(gpa);
+
+    // ── grow: order held across many rehashes ────────────────────────────
+    g : IndexMap(i64, i64) = .{};
+    N := 2000;
+    i := 0;
+    while i < N { g.put(i, i * 2, gpa); i += 1; }
+    report("grow-len", g.len == N);
+    // entries are still in insertion order 0,1,2,...
+    order_ok := true;
+    i = 0;
+    while i < N { if g.key_at(i) != i or g.val_at(i) != i * 2 { order_ok = false; } i += 1; }
+    report("grow-order", order_ok);
+    // lookup still works
+    all := true;
+    i = 0;
+    while i < N { if g.get(i)! != i * 2 { all = false; } i += 1; }
+    report("grow-get-all", all);
+    g.deinit(gpa);
+
+    // ── clear keeps buffers, drops entries + order ───────────────────────
+    c : IndexMap(i64, i64) = .{};
+    c.put(7, 7, gpa);
+    c.put(8, 8, gpa);
+    c.clear();
+    report("clear-len", c.len == 0);
+    report("clear-gone", !c.contains(7));
+    c.put(9, 9, gpa);
+    report("clear-reuse", c.get(9)! == 9 and c.key_at(0) == 9);
+    c.deinit(gpa);
+    c.deinit(gpa);
+    report("deinit-idem", c.len == 0);
+}

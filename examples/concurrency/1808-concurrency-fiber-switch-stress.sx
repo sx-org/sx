@@ -1,0 +1,256 @@
+// Stream B1 (fibers) B1.3a-2 — the context-switch STRESS GATE (design §10.7):
+// explicitly scribble EVERY callee-saved register with a sentinel, switch, and
+// verify every one survived. This is the correctness gate the run/snapshot
+// tests can't be — a switch that drops a register "happens to print right".
+//
+// `swap_context` here saves the COMPLETE AAPCS64 callee-saved set: the integer
+// regs x19-x28 + x29(fp) + x30(lr) + sp, AND the FP regs d8-d15. Per AAPCS64
+// §6.1.2 only the LOW 64 bits of v8-v15 are callee-saved, so `d8-d15` is exactly
+// sufficient (q8-q15 is not required). x18 is the Apple platform register —
+// reserved, never touched. (1807 is the foundational GP-only switch; this is the
+// complete one + the explicit gate.)
+//
+// The gate is a 2-fiber MUTUAL scribble: A loads sentinels base_A+1.. into every
+// callee-saved reg and yields; while A is suspended, B loads its OWN distinct
+// sentinels into the same physical registers; when A resumes it checks every reg
+// still holds base_A — which is only possible if `swap_context` saved+restored
+// it. (A single fiber yielding to an idle peer would NOT exercise preservation —
+// the peer must clobber the registers. Validated adversarially: dropping the
+// d8-d15 save/restore makes this report 8 mismatches; dropping x27/x28 reports 2.)
+//
+// Honest scope (what a register-sentinel gate does NOT cover, all spec-correct
+// for a call-boundary swap but worth stating): NZCV flags, FPSR, FPCR (rounding
+// mode — thread-global, bleeds across fibers if changed), and TPIDR_EL0/TLS
+// (errno, allocator thread-caches — shared by same-thread fibers) are not
+// swapped. fp=0 bootstrap means unwinders/signal handlers can't walk past a
+// fiber's trampoline (no CFI for the swap). These matter at the N×M:1 / signals
+// stages, not for the single-thread switch this gate proves.
+//
+// aarch64-pinned (per-arch asm + 21-slot save area); runs end-to-end here,
+// ir-only on a mismatch. x86_64 sibling + mmap guard-page stacks are B1.3b.
+#import "modules/std.sx";
+
+// 21 slots: [0..9]=x19..x28 [10]=fp [11]=lr [12]=sp [13..20]=d8..d15.
+FiberCtx :: struct { regs: [21]u64; }
+
+Fiber :: struct {
+    ctx: FiberCtx;
+    peer: *FiberCtx;   // scribble_verify yields here — the clobberer
+    next: *FiberCtx;   // where to switch after verifying
+    base: u64;
+    mismatches: i64;
+}
+
+// The complete switch: save callee-saved (x19-x28, fp, lr, sp, d8-d15) into
+// *from, load from *to, ret onto to's stack. x0=from, x1=to (read straight from
+// the ABI registers — a naked fn has no frame). `export`ed so scribble_verify
+// can reach it by symbol with `bl`.
+swap_context :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) export "swap_context" {
+    asm volatile {
+        #string ASM
+        stp x19, x20, [x0, #0]
+        stp x21, x22, [x0, #16]
+        stp x23, x24, [x0, #32]
+        stp x25, x26, [x0, #48]
+        stp x27, x28, [x0, #64]
+        stp x29, x30, [x0, #80]
+        mov x9, sp
+        str x9, [x0, #96]
+        stp d8, d9,   [x0, #104]
+        stp d10, d11, [x0, #120]
+        stp d12, d13, [x0, #136]
+        stp d14, d15, [x0, #152]
+        ldp x19, x20, [x1, #0]
+        ldp x21, x22, [x1, #16]
+        ldp x23, x24, [x1, #32]
+        ldp x25, x26, [x1, #48]
+        ldp x27, x28, [x1, #64]
+        ldp x29, x30, [x1, #80]
+        ldr x9, [x1, #96]
+        mov sp, x9
+        ldp d8, d9,   [x1, #104]
+        ldp d10, d11, [x1, #120]
+        ldp d12, d13, [x1, #136]
+        ldp d14, d15, [x1, #152]
+        ret
+ASM
+    };
+}
+
+// Load sentinel base+1..+10 into x19-x28 and base+11..+18 into d8-d15, yield to
+// `peer`, and on resume count the registers that did NOT survive. Naked, so it
+// honors its caller's ABI by hand: a 176-byte frame saves the CALLER's
+// callee-saved (which it clobbers) + base (x2 is not preserved across the swap);
+// after the swap it reloads base, compares every reg, restores the caller's
+// regs, and returns the mismatch count in x0. The original return address is
+// saved (frame+88) before the `bl` and reloaded after — the swap round-trips
+// sp+lr, so execution resumes right after the `bl` on the same frame.
+scribble_verify :: (self_ctx: *FiberCtx, peer: *FiberCtx, base: u64) -> i64 abi(.naked) export "scribble_verify" {
+    asm volatile {
+        #string SV
+        sub sp, sp, #176
+        stp x19, x20, [sp, #0]
+        stp x21, x22, [sp, #16]
+        stp x23, x24, [sp, #32]
+        stp x25, x26, [sp, #48]
+        stp x27, x28, [sp, #64]
+        stp x29, x30, [sp, #80]
+        stp d8, d9,   [sp, #96]
+        stp d10, d11, [sp, #112]
+        stp d12, d13, [sp, #128]
+        stp d14, d15, [sp, #144]
+        str x2, [sp, #160]
+        add x19, x2, #1
+        add x20, x2, #2
+        add x21, x2, #3
+        add x22, x2, #4
+        add x23, x2, #5
+        add x24, x2, #6
+        add x25, x2, #7
+        add x26, x2, #8
+        add x27, x2, #9
+        add x28, x2, #10
+        add x9, x2, #11
+        fmov d8, x9
+        add x9, x2, #12
+        fmov d9, x9
+        add x9, x2, #13
+        fmov d10, x9
+        add x9, x2, #14
+        fmov d11, x9
+        add x9, x2, #15
+        fmov d12, x9
+        add x9, x2, #16
+        fmov d13, x9
+        add x9, x2, #17
+        fmov d14, x9
+        add x9, x2, #18
+        fmov d15, x9
+        bl _swap_context
+        ldr x2, [sp, #160]
+        mov x10, #0
+        add x9, x2, #1
+        cmp x19, x9
+        cinc x10, x10, ne
+        add x9, x2, #2
+        cmp x20, x9
+        cinc x10, x10, ne
+        add x9, x2, #3
+        cmp x21, x9
+        cinc x10, x10, ne
+        add x9, x2, #4
+        cmp x22, x9
+        cinc x10, x10, ne
+        add x9, x2, #5
+        cmp x23, x9
+        cinc x10, x10, ne
+        add x9, x2, #6
+        cmp x24, x9
+        cinc x10, x10, ne
+        add x9, x2, #7
+        cmp x25, x9
+        cinc x10, x10, ne
+        add x9, x2, #8
+        cmp x26, x9
+        cinc x10, x10, ne
+        add x9, x2, #9
+        cmp x27, x9
+        cinc x10, x10, ne
+        add x9, x2, #10
+        cmp x28, x9
+        cinc x10, x10, ne
+        add x9, x2, #11
+        fmov x11, d8
+        cmp x11, x9
+        cinc x10, x10, ne
+        add x9, x2, #12
+        fmov x11, d9
+        cmp x11, x9
+        cinc x10, x10, ne
+        add x9, x2, #13
+        fmov x11, d10
+        cmp x11, x9
+        cinc x10, x10, ne
+        add x9, x2, #14
+        fmov x11, d11
+        cmp x11, x9
+        cinc x10, x10, ne
+        add x9, x2, #15
+        fmov x11, d12
+        cmp x11, x9
+        cinc x10, x10, ne
+        add x9, x2, #16
+        fmov x11, d13
+        cmp x11, x9
+        cinc x10, x10, ne
+        add x9, x2, #17
+        fmov x11, d14
+        cmp x11, x9
+        cinc x10, x10, ne
+        add x9, x2, #18
+        fmov x11, d15
+        cmp x11, x9
+        cinc x10, x10, ne
+        ldp x19, x20, [sp, #0]
+        ldp x21, x22, [sp, #16]
+        ldp x23, x24, [sp, #32]
+        ldp x25, x26, [sp, #48]
+        ldp x27, x28, [sp, #64]
+        ldp x29, x30, [sp, #80]
+        ldp d8, d9,   [sp, #96]
+        ldp d10, d11, [sp, #112]
+        ldp d12, d13, [sp, #128]
+        ldp d14, d15, [sp, #144]
+        mov x0, x10
+        add sp, sp, #176
+        ret
+SV
+    };
+}
+
+asm {
+    #string T
+.global _fib_tramp
+_fib_tramp:
+    mov x0, x19
+    bl _fib_body
+    brk #0
+T,
+};
+
+fib_tramp :: () extern;
+
+fib_body :: (self: *Fiber) export "fib_body" {
+    self.mismatches = scribble_verify(@self.ctx, self.peer, self.base);
+    swap_context(@self.ctx, self.next);
+}
+
+STACK :: 131072;
+
+boot :: (f: *Fiber) {
+    base : *void = context.allocator.alloc_bytes(STACK);
+    top : u64 = (xx base) + STACK;
+    top = top - (top % 16);
+    f.ctx.regs[0]  = xx f;            // x19 = self
+    f.ctx.regs[10] = 0;              // fp
+    f.ctx.regs[11] = xx fib_tramp;   // lr → trampoline
+    f.ctx.regs[12] = top;            // sp
+    // Zero the FP save slots so the first switch-to loads 0 (not garbage) into
+    // d8-d15 — removes the first-entry foot-gun (adversarial-review note).
+    i := 13;
+    while i < 21 { f.ctx.regs[i] = 0; i = i + 1; }
+    f.mismatches = -1;
+}
+
+main :: () -> i64 {
+    main_ctx : FiberCtx = ---;
+    a : Fiber = ---;  a.base = 0x5000;
+    b : Fiber = ---;  b.base = 0x6000;
+    a.peer = @b.ctx;  a.next = @b.ctx;     // A yields to B, then hands B the baton
+    b.peer = @a.ctx;  b.next = @main_ctx;  // B yields to A, then returns to main
+    boot(@a);  boot(@b);
+    swap_context(@main_ctx, @a.ctx);
+    print("A mismatches: {}\n", a.mismatches);   // 0 — every callee-saved survived
+    print("B mismatches: {}\n", b.mismatches);   // 0
+    return 0;
+}

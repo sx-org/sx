@@ -1,0 +1,230 @@
+// std.http — pool-mode job-owned request bytes (no use-after-free).
+//
+// Regression: HandlerJob.req used to hold string VIEWS into the connection's
+// read_buf. When a handler overran handler_timeout_ms, the loop 504'd and
+// freed the slot (handler_timeout_sweep) while the worker was still running —
+// a NEW connection could then reuse the slot, overwrite the read buffer with
+// its own request, and (past READ_BUF_INITIAL) grow_read_buf would dealloc
+// the very buffer the stuck worker was still reading: silent corruption or a
+// use-after-free. The gen check only protected the completion, never the
+// worker's live reads.
+//
+// The fix: at dispatch the job takes ownership of a COPY of the raw request
+// bytes (one allocation: job header + bytes tail, freed together in
+// run_handler_job); the worker never touches the conn's read buffer.
+//
+// This test forces the exact overlap:
+//   1. Connection A POSTs /slow with a known body; its handler sleeps 200 ms
+//      (past the 40 ms handler deadline), THEN checksums req.body + req.path.
+//   2. The loop 504s A and frees its slot at ~40 ms.
+//   3. Connection B immediately reuses the slot with a DIFFERENT body big
+//      enough (~24 KB) to force grow_read_buf — which reallocs (and deallocs)
+//      the buffer the worker's views used to point into. B gets a normal 200.
+//   4. After the worker returns and the pool is joined (srv.close), the
+//      checksum it computed must match A's body exactly — proof the worker
+//      read job-owned bytes, not the recycled/freed connection buffer.
+//   5. GPA leak gate: net-zero after close (the job's single allocation —
+//      header + bytes — was freed in run_handler_job; the discarded late
+//      completion's buffer was freed in drain_completions).
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+clib :: #library "c";
+usleep :: (usec: i64) -> i32 extern clib;
+
+PORT :: 18991;
+HANDLER_TIMEOUT_MS :: 40;
+SLOW_SLEEP_US :: 200000;    // 200 ms — well past the 40 ms handler deadline
+A_BODY_LEN :: 512;          // connection A's body (pattern: i * 7 % 251)
+B_BODY_LEN :: 24576;        // connection B's body — forces grow_read_buf past 16 KB
+
+// What the slow worker observed, written AFTER its sleep (i.e. after the
+// slot was recycled). Read by main only after srv.close() joins the pool.
+Observed :: struct {
+    sum: i64 = 0;        // checksum over req.body as the worker saw it
+    body_len: i64 = 0;   // req.body.len as the worker saw it
+    path_ok: i64 = 0;    // 1 if req.path still read "/slow"
+    ran: i64 = 0;        // the slow handler completed
+}
+
+checksum :: (s: string) -> i64 {
+    h : i64 = 0;
+    i := 0;
+    while i < s.len {
+        h = (h * 31 + s[i]) % 1000000007;
+        i += 1;
+    }
+    return h;
+}
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/slow" {
+        obs : *Observed = xx ctx;
+        // Sleep PAST the handler deadline — the loop 504s + frees the slot,
+        // and connection B reuses/rewrites/grows the read buffer meanwhile.
+        usleep(SLOW_SLEEP_US);
+        // NOW read the request views. Pre-fix these pointed into the
+        // recycled (then freed) conn buffer; post-fix they are job-owned.
+        obs.sum = checksum(req.body);
+        obs.body_len = req.body.len;
+        if req.path == "/slow" { obs.path_ok = 1; }
+        obs.ran = 1;
+        resp.body = "slow-late";   // discarded (slot already 504'd + freed)
+        return;
+    }
+    resp.body = "ok-b";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+// Send all of `s` on a nonblocking fd, ticking the server so it drains.
+send_all :: (srv: *http.Server, fd: i32, s: string) {
+    sent : i64 = 0;
+    while sent < s.len {
+        n, we := socket.write_nb(fd, @s.ptr[sent], xx (s.len - sent));
+        if !we { sent += n; }
+        srv.tick(1) catch {};
+    }
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+    obs : Observed = .{};
+    a_expect_sum : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 65536;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{
+            port = PORT,
+            timeout_request_ms = 5000,
+            timeout_keepalive_ms = 5000,
+            request_count = 50,
+            max_conn = 4,
+            thread_pool_count = 2,
+            thread_pool_backlog = 16,
+            handler_timeout_ms = HANDLER_TIMEOUT_MS,
+        };
+        srv, se := http.Server.init(cfg, route, xx @obs);
+        if se { print("init failed\n"); return 1; }
+
+        // ── connection A: POST /slow with a known body ────────────────
+        a_body : [*]u8 = xx context.allocator.alloc_bytes(A_BODY_LEN);
+        i : i64 = 0;
+        while i < A_BODY_LEN { a_body[i] = xx ((i * 7) % 251); i += 1; }
+        a_body_s := string.{ ptr = a_body, len = A_BODY_LEN };
+        a_expect_sum = checksum(a_body_s);
+
+        ca := dial_port(PORT);
+        if ca < 0 { print("dial A failed\n"); srv.close(); return 1; }
+        // Content-Length literals match A_BODY_LEN / B_BODY_LEN (no concat —
+        // it would allocate under the GPA leak gate).
+        a_head := "POST /slow HTTP/1.1\r\nHost: t\r\nContent-Length: 512\r\n\r\n";
+        send_all(@srv, ca, a_head);
+        send_all(@srv, ca, a_body_s);
+
+        // Tick past the 40 ms handler deadline: the loop 504s A and FREES
+        // its slot while the worker still sleeps (200 ms).
+        a_total : i64 = 0;
+        got_504 := false;
+        t : i64 = 0;
+        while t < 120 and !got_504 {
+            srv.tick(1) catch {};
+            n, re := socket.read_nb(ca, @rbuf[a_total], xx (cap - a_total));
+            if !re { a_total += n; }
+            a_resp := string.{ ptr = rbuf, len = xx a_total };
+            if contains(a_resp, "HTTP/1.1 504") { got_504 = true; }
+            t += 1;
+        }
+        if !got_504 { print("expected 504 for slow handler\n"); failed = 1; }
+        socket.close(ca);
+
+        // ── connection B: immediately reuse the slot, overwrite + GROW ──
+        // the read buffer while the worker still holds its request. B's body
+        // is a DIFFERENT pattern, so pre-fix the worker's checksum would see
+        // B's bytes (or freed memory), never A's.
+        b_body : [*]u8 = xx context.allocator.alloc_bytes(B_BODY_LEN);
+        i = 0;
+        while i < B_BODY_LEN { b_body[i] = xx (255 - (i % 199)); i += 1; }
+
+        cb := dial_port(PORT);
+        if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
+        b_head := "POST /b HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Length: 24576\r\n\r\n";
+        send_all(@srv, cb, b_head);
+        send_all(@srv, cb, string.{ ptr = b_body, len = B_BODY_LEN });
+
+        b_total : i64 = 0;
+        got_b := false;
+        t = 0;
+        while t < 300 and !got_b {
+            srv.tick(1) catch {};
+            n, re := socket.read_nb(cb, @rbuf[b_total], xx (cap - b_total));
+            if !re { b_total += n; }
+            else if re == error.Closed { got_b = true; }
+            b_resp := string.{ ptr = rbuf, len = xx b_total };
+            if contains(b_resp, "ok-b") { got_b = true; }
+            t += 1;
+        }
+        b_resp := string.{ ptr = rbuf, len = xx b_total };
+        if !contains(b_resp, "HTTP/1.1 200 OK") or !contains(b_resp, "ok-b") {
+            print("expected 200 ok-b on the reused slot\n");
+            failed = 1;
+        }
+        socket.close(cb);
+
+        // Drive ticks past the worker's 200 ms return so its late completion
+        // is queued and discarded (gen mismatch) — then close joins the pool.
+        t = 0;
+        while t < 250 { srv.tick(1) catch {}; t += 1; }
+
+        srv.close();   // joins workers: `obs` writes are now visible + stable
+
+        // ── the worker must have seen A's request, byte-exact ─────────
+        if obs.ran != 1 { print("slow handler never completed\n"); failed = 1; }
+        if obs.path_ok != 1 { print("worker saw a corrupted path\n"); failed = 1; }
+        if obs.body_len != A_BODY_LEN {
+            print("worker saw body_len {} (want {})\n", obs.body_len, A_BODY_LEN);
+            failed = 1;
+        }
+        if obs.sum != a_expect_sum {
+            print("worker saw a corrupted body (checksum {} want {})\n", obs.sum, a_expect_sum);
+            failed = 1;
+        }
+
+        context.allocator.dealloc_bytes(xx a_body);
+        context.allocator.dealloc_bytes(xx b_body);
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

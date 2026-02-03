@@ -1,0 +1,64 @@
+// 1a-S3a — `type_info` is kind-first and EXHAUSTIVE: every type-table
+// kind reflects into its TypeInfo variant (previously only enum/
+// struct/tuple). Also pins StructField.offset (from the same layout
+// walk the field accessors use) and the union arm (arms overlay at 0).
+#import "modules/std.sx";
+meta :: #import "modules/std/meta.sx";
+
+Padded  :: struct { a: u8; b: i64; c: u16; }
+Overlay :: union { as_int: i64; as_bytes: [8]u8; }
+WithVec :: struct { v: Vector(3, f32); }
+
+describe :: ($T: Type) -> string {
+    ti := type_info(T);
+    if ti == {
+        case .struct: (si) {
+            return format("struct fields={} f1.name={} f1.off={}", si.fields.len, si.fields[1].name, si.fields[1].offset);
+        }
+        case .union: (ui) {
+            return format("union arms={} a1.off={}", ui.arms.len, ui.arms[1].offset);
+        }
+        case .int: (ii) { return format("int bits={} signed={}", ii.bits, ii.signed); }
+        case .float: (fi) { return format("float bits={}", fi.bits); }
+        case .array: (ai) { return format("array len={} elem={}", ai.len, type_name(ai.elem)); }
+        case .vector: (vi) { return format("vector lanes={} elem={}", vi.lanes, type_name(vi.elem)); }
+        case .slice: (sl) { return format("slice elem={}", type_name(sl.elem)); }
+        case .pointer: (pi) { return format("pointer pointee={}", type_name(pi.pointee)); }
+        case .optional: (oi) { return format("optional inner={}", type_name(oi.inner)); }
+        case .string: { return "string"; }
+        case .bool: { return "bool"; }
+        else: { return "other"; }
+    }
+    return "?";
+}
+
+// The TypeInfo VALUE lives in comptime memory — consume it there (#run
+// folds each description to a string constant). Runtime `type_info(tp)`
+// consumption is S3b's const-record path, pinned separately.
+D_STRUCT  :: #run describe(Padded);
+D_UNION   :: #run describe(Overlay);
+D_I16     :: #run describe(i16);
+D_U32     :: #run describe(u32);
+D_F32     :: #run describe(f32);
+D_ARR     :: #run describe([4]i64);
+D_VEC     :: #run describe(struct_field_type(WithVec, 0));
+D_SLICE   :: #run describe([]u8);
+D_PTR     :: #run describe(*Padded);
+D_OPT     :: #run describe(?i32);
+D_STR     :: #run describe(string);
+D_BOOL    :: #run describe(bool);
+
+main :: () {
+    print("{}\n", D_STRUCT);
+    print("{}\n", D_UNION);
+    print("{}\n", D_I16);
+    print("{}\n", D_U32);
+    print("{}\n", D_F32);
+    print("{}\n", D_ARR);
+    print("{}\n", D_VEC);
+    print("{}\n", D_SLICE);
+    print("{}\n", D_PTR);
+    print("{}\n", D_OPT);
+    print("{}\n", D_STR);
+    print("{}\n", D_BOOL);
+}

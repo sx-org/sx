@@ -1,0 +1,2 @@
+// a.sx authors `dup` (+1). One of two distinct flat authors of `dup`.
+dup :: ufcs (x: i64) -> i64 { return x + 1; }

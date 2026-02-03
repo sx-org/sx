@@ -1,0 +1,236 @@
+// std.http — parsing correctness under heavily split delivery (Q0.5 lock).
+//
+// Locks the behavior the incremental-parse optimization must preserve: a
+// request whose bytes dribble in across MANY partial reads — the header
+// block split mid-line, chunk framing split mid-size-line and mid-data —
+// must parse to exactly the same result as a single-write delivery, and
+// the connection must remain usable (keep-alive) afterwards.
+//
+// (Why this exists: the terminator scan used to restart from byte 0 on
+// every read_more cycle, and the chunked decoder revalidated ALL framing
+// from scratch each cycle — O(n²) on slow-dripped requests, a slowloris
+// CPU amplifier. The optimization keeps a per-Conn scan cursor + resumable
+// chunk-scan state; THIS test pins the semantics it must not change.)
+//
+//   1. A request with 24 headers delivered 7 bytes per tick → 200; the
+//      handler sees all headers (asserted via a probe header's value).
+//   2. A chunked POST (32 chunks × 100 bytes, chunk extensions + trailer)
+//      delivered 13 bytes per tick → 200 with the decoded body's len +
+//      checksum echoed back byte-exact.
+//   3. A pipelined plain request straight after, same connection → 200
+//      (per-request parse state fully reset).
+//   4. GPA leak gate: net-zero.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 18995;
+N_CHUNKS :: 32;
+CHUNK_DATA :: 100;
+
+checksum :: (s: string) -> i64 {
+    h : i64 = 0;
+    i := 0;
+    while i < s.len {
+        h = (h * 31 + s[i]) % 1000000007;
+        i += 1;
+    }
+    return h;
+}
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/hdr" {
+        // echo the probe header so the split header block is proven intact
+        v := http.find_header(req, "x-probe-23");
+        resp.body = v;
+        return;
+    }
+    if req.path == "/body" {
+        // echo "<len>:<checksum>" of the decoded body
+        resp.body = concat(int_to_string(req.body.len),
+                     concat(":", int_to_string(checksum(req.body))));
+        return;
+    }
+    resp.body = "plain-ok";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+// Send `s` in `piece`-byte slices, ticking the server between slices.
+send_split :: (srv: *http.Server, fd: i32, s: string, piece: i64) {
+    sent : i64 = 0;
+    while sent < s.len {
+        want := piece;
+        if sent + want > s.len { want = s.len - sent; }
+        off : i64 = 0;
+        while off < want {
+            n, we := socket.write_nb(fd, @s.ptr[sent + off], xx (want - off));
+            if !we { off += n; }
+            srv.tick(1) catch {};
+        }
+        sent += want;
+        srv.tick(1) catch {};
+    }
+}
+
+// Read one full response (headers + Content-Length body); leaves the
+// connection open (keep-alive).
+read_response :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
+    total : i64 = 0;
+    stall : i64 = 0;
+    while stall < 400 {
+        srv.tick(1) catch {};
+        got : i64 = 0;
+        while true {
+            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            if !re { total += n; got += n; continue; }
+            break;
+        }
+        if got > 0 { stall = 0; } else { stall += 1; }
+        // complete when the declared Content-Length body is fully in
+        s := string.{ ptr = buf, len = xx total };
+        he := -1;
+        i := 0;
+        while i + 3 < s.len {
+            if s[i] == 13 and s[i+1] == 10 and s[i+2] == 13 and s[i+3] == 10 { he = i; break; }
+            i += 1;
+        }
+        if he >= 0 {
+            cl : i64 = -1;
+            needle := "Content-Length: ";
+            j := 0;
+            while j + needle.len < s.len {
+                k := 0;
+                ok := true;
+                while k < needle.len { if s[j + k] != needle[k] { ok = false; break; } k += 1; }
+                if ok {
+                    d := j + needle.len;
+                    cl = 0;
+                    while d < s.len and s[d] >= 48 and s[d] <= 57 { cl = cl * 10 + (s[d] - 48); d += 1; }
+                    break;
+                }
+                j += 1;
+            }
+            if cl >= 0 and total >= he + 4 + cl { return string.{ ptr = buf, len = xx (he + 4 + cl) }; }
+        }
+    }
+    return string.{ ptr = buf, len = xx total };
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 32768;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        req_arena := Arena.init(gpa, 65536);
+
+        cfg : http.Config = .{
+            port = PORT,
+            timeout_request_ms = 8000,
+            timeout_keepalive_ms = 8000,
+            request_count = 50,
+            max_conn = 4,
+        };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        ca := dial_port(PORT);
+        if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
+
+        // ── 1. header block split 7 bytes at a time ───────────────────
+        push .{ allocator = req_arena } {
+            r1 := "GET /hdr HTTP/1.1\r\nHost: t\r\n";
+            i := 0;
+            while i < 24 {
+                r1 = concat(r1, concat("X-Probe-", concat(int_to_string(i),
+                       concat(": val-", concat(int_to_string(i), "\r\n")))));
+                i += 1;
+            }
+            r1 = concat(r1, "\r\n");
+            send_split(@srv, ca, r1, 7);
+        }
+        resp1 := read_response(@srv, ca, rbuf, cap);
+        if !contains(resp1, "HTTP/1.1 200 OK") or !contains(resp1, "val-23") {
+            print("split-header request failed\n");
+            failed = 1;
+        }
+
+        // ── 2. chunked body: 32 chunks, ext + trailer, split by 13 ────
+        body_want : i64 = N_CHUNKS * CHUNK_DATA;
+        chk : i64 = 0;
+        push .{ allocator = req_arena } {
+            // build the full decoded body first for the expected checksum
+            full : [*]u8 = xx context.allocator.alloc_bytes(body_want);
+            i := 0;
+            while i < body_want { full[i] = xx (65 + (i % 26)); i += 1; }
+            chk = checksum(string.{ ptr = full, len = body_want });
+
+            r2 := "POST /body HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n";
+            c := 0;
+            while c < N_CHUNKS {
+                // "64;ext=1\r\n" + 100 data bytes + "\r\n"  (0x64 = 100)
+                r2 = concat(r2, "64;ext=1\r\n");
+                r2 = concat(r2, string.{ ptr = @full[c * CHUNK_DATA], len = CHUNK_DATA });
+                r2 = concat(r2, "\r\n");
+                c += 1;
+            }
+            r2 = concat(r2, "0\r\nX-Trailer: ignored\r\n\r\n");
+            send_split(@srv, ca, r2, 13);
+        }
+        resp2 := read_response(@srv, ca, rbuf, cap);
+        expect2 : string = "";
+        push .{ allocator = req_arena } {   // arena-owned, freed at deinit
+            expect2 = concat(int_to_string(body_want), concat(":", int_to_string(chk)));
+        }
+        ok2 := contains(resp2, "HTTP/1.1 200 OK") and contains(resp2, expect2);
+        if !ok2 {
+            print("split-chunked request failed (want {})\n", expect2);
+            failed = 1;
+        }
+
+        // ── 3. pipelined plain request on the same connection ─────────
+        r3 := "GET /plain HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
+        socket.write(ca, r3.ptr, xx r3.len);
+        resp3 := read_response(@srv, ca, rbuf, cap);
+        if !contains(resp3, "HTTP/1.1 200 OK") or !contains(resp3, "plain-ok") {
+            print("follow-up plain request failed\n");
+            failed = 1;
+        }
+
+        socket.close(ca);
+        srv.close();
+        req_arena.deinit();
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

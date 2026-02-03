@@ -1,0 +1,4 @@
+// ASM stream Phase B — two asm operands may not share a `[name]`: the `%[name]`
+// template reference (and the result tuple field) would be ambiguous.
+f :: () -> u64 { return asm volatile { "nop", [x] "=r" -> u64, [x] "r" = 5 }; }
+main :: () { v := f(); }

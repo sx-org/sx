@@ -1,0 +1,3 @@
+init: 7
+after store: 42
+incremented: 43

@@ -1,0 +1,91 @@
+# Linux CI for the sx compiler (HTTPZ Phase C4).
+#
+# The dev host is macOS; this workflow is the FIRST place the compiler is built
+# and the full suite is run on Linux. The compiler is Zig + LLVM 22 (linked
+# dynamically); `build.zig` is already Linux-aware (libstdc++ link, multiarch
+# system-lib dir) and takes `-Dllvm-prefix` to point at the apt LLVM install.
+#
+# STATUS: scaffolding. The corpus is gated for the obvious host-specific cases
+# (`ffi-objc` → macOS-only via the runner's `categoryHostOs`; Apple `.app`
+# bundles + Android `.apk` already self-skip off their host). The FIRST run on a
+# real runner is the triage step for the remainder: any example that fails only
+# because a Linux runtime/lib is absent gets gated with a `host_os` `.build`
+# directive (one-off) or added to `categoryHostOs` (whole category). See
+# current/CHECKPOINT-HTTPZ.md "C4".
+
+name: CI (Linux)
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  LLVM_PREFIX: /usr/lib/llvm-22
+  # The sx binary links libLLVM-22.so dynamically; make it findable at run time
+  # (the corpus runner spawns ./zig-out/bin/sx per example).
+  LD_LIBRARY_PATH: /usr/lib/llvm-22/lib
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM 22 + clang + dev headers
+        run: |
+          wget -q https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 22 all
+          sudo apt-get update
+          # g++ provides the libstdc++ headers clang_shim.cpp is compiled
+          # against (apt LLVM is libstdc++-built); build.zig finds them via
+          # `g++ -dumpversion`.
+          sudo apt-get install -y \
+            llvm-22-dev libclang-22-dev libclang-cpp22-dev libpolly-22-dev \
+            zlib1g-dev libzstd-dev libtinfo-dev g++
+          echo "llvm-config: $(/usr/lib/llvm-22/bin/llvm-config --version)"
+          echo "g++: $(g++ -dumpversion)"
+
+      - name: Install Zig 0.16.0
+        # Direct download of the tagged RELEASE tarball from ziglang.org. We do
+        # NOT use setup-zig: its mirror set routed 0.16.0 to the dev-builds path
+        # (/builds) and 404'd. 0.16.0 is a clean release (no -dev suffix), so it
+        # lives under /download/<ver>/. Zig changed the tarball name around 0.15
+        # to arch-first (`zig-x86_64-linux-<ver>`); try that then the legacy
+        # os-first name as a fallback.
+        run: |
+          set -euo pipefail
+          V=0.16.0
+          BASE="https://ziglang.org/download/$V"
+          for NAME in "zig-x86_64-linux-$V" "zig-linux-x86_64-$V"; do
+            echo "trying $BASE/$NAME.tar.xz"
+            if curl -fSL "$BASE/$NAME.tar.xz" -o zig.tar.xz; then
+              tar -xf zig.tar.xz
+              echo "$PWD/$NAME" >> "$GITHUB_PATH"
+              "$PWD/$NAME/zig" version
+              exit 0
+            fi
+          done
+          echo "::error::could not download Zig $V from $BASE"; exit 1
+
+      # ffi-jni examples need a JVM (jni.h + libjvm) at build/run time. If they
+      # turn out to need Linux-specific gating, tag them host_os and drop this.
+      - name: Install a JDK (ffi-jni)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build the sx compiler
+        run: zig build -Dllvm-prefix=${{ env.LLVM_PREFIX }}
+
+      - name: Pre-warm the vendored-C object cache (mbedTLS)
+        # examples/http/1679 cold-compiles 109 mbedTLS .c files; warming the
+        # content-addressed .sx-cache here keeps that example under the 10s
+        # per-example corpus timeout.
+        run: ./zig-out/bin/sx run bench/tls-probe.sx || true
+
+      - name: Run the suite (unit tests + example/issue corpus)
+        run: zig build test -Dllvm-prefix=${{ env.LLVM_PREFIX }}

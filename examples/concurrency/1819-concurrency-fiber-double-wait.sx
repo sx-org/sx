@@ -1,0 +1,22 @@
+// A `Future` allows ONE awaiter — a second concurrent `await` on the same pending
+// future would overwrite the single `park` slot, and completion would wake only
+// the second, stranding the first forever. Regression (B1.4a review, P1-c): the
+// guard aborts loudly instead of silently deadlocking. Now over the unified
+// `context.io` async layer (PLAN-IO-UNIFY Phase 5 — the bespoke `Task`/`wait` is
+// retired).
+//
+// aborts (exit 134) after the diagnostic — aarch64-macOS-pinned.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+S :: struct { t: *Future(i64); }
+main :: () -> i64 {
+    st : S = ---; st.t = null;
+    s := sched.Scheduler.init(); ps := @s; pst := @st;
+    mkprod :: (ps: *sched.Scheduler, pst: *S) { pst.t = context.io.async(() -> (i64, !) { ps.yield_now(); 42 }); }
+    mkw :: (ps: *sched.Scheduler, pst: *S) { ps.spawn(() { x := pst.t.await() or { -1 }; print("got {}\n", x); }); }
+    push .{ io = xx s } {
+        mkprod(ps, pst); mkw(ps, pst); mkw(ps, pst);   // second waiter → loud abort
+        s.run();
+    }
+    return 0;
+}

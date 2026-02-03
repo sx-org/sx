@@ -1,0 +1,19 @@
+// Passing an optional (`?T`) where a `bool` is expected is a hard type error,
+// not a silent miscompile. Regression (issue 0169): the coercion classifier's
+// "optional → concrete (unwrap+narrow)" rule used to accept `?i64 → bool`
+// (both child and dst are builtin), unwrapping the payload and narrowing it to
+// `i1` — which silently produced `false` for EVERY optional, present or null
+// alike. There is no implicit optional→bool coercion in the language (only
+// `T → ?T` wrapping and flow-sensitive narrowing); a bool position wants an
+// explicit presence test. The classifier now rejects `?T → bool` (payload not
+// itself a bool) at the coercion site (exit 1) with a `!= null` fix-it. The
+// `if opt {}` presence test (issue 0164) is a separate path and still works.
+
+#import "modules/std.sx";
+
+takes_bool :: (b: bool) { if b { print("true\n"); } else { print("false\n"); } }
+
+main :: () {
+  a : ?i64 = 42;
+  takes_bool(a);   // <- '?i64' cannot be used where 'bool' is expected
+}

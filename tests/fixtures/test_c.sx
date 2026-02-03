@@ -1,0 +1,4 @@
+#import c {
+    #include "vendors/test_c/test.h";
+    #source "vendors/test_c/test.c";
+};

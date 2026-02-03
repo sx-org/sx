@@ -1,0 +1,5 @@
+error: cannot slice a temporary array — a slice is a view into the array's storage, and a temporary (an array literal, a call result) has none; bind it to a local first (`a := <expr>; a[..]`)
+  --> examples/diagnostics/1230-diagnostics-slice-of-array-literal.sx:13:18
+   |
+13 |     sl : []i64 = .[ 1, 2, 3 ][0..2];   // error: cannot slice a temporary array
+   |                  ^^^^^^^^^^^^

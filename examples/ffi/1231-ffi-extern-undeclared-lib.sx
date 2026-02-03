@@ -1,0 +1,19 @@
+// An `extern LIB "csym"` reference must name something real, exactly like
+// its `extern LIB` twin (example 1620): `nosuchunit` names neither a
+// #library constant nor a named `#import c` unit, so this is a compile-time
+// diagnostic — the bogus library reference is caught BEFORE the symbol
+// would silently resolve through whatever image happens to carry it.
+//
+// Regression (FFI-linkage Part B): `checkExternRefs` validated only a
+// `extern` (extern-import shape) library_ref and skipped the `extern` keyword's
+// `extern_lib`, so a bogus `extern` lib reference compiled silently (the
+// symbol resolved via the default image and ran). Prerequisite for
+// migrating the fn-decl `extern` path onto `extern`.
+#import "modules/std.sx";
+
+c_abs :: (n: i32) -> i32 extern nosuchunit "abs";
+
+main :: () -> i32 {
+    print("c_abs = {}\n", c_abs(-5));
+    0
+}

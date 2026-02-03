@@ -1,0 +1,23 @@
+tag: BadDigit
+parsed: 10
+got: BadDigit
+catch-expr: 100
+catch-match: 1
+or-default ok: 10
+  logged BadDigit
+or-default err: -1
+or-value: 55
+or-chain: 16
+pair-catch: 0 0
+pair-ok: 8 10
+check absorbed
+acquire fail:
+  onfail B
+  defer A
+acquire ok:
+  defer A
+closure-run: 12
+closure-run-err: -9
+widen: 10
+wrap: 42
+errors ok

@@ -1,0 +1,17 @@
+error: a closure value cannot be passed as a bare function-pointer `(...) -> ...` — its environment can't be carried across the bare ABI; pass the closure literal directly at the call site, or declare the parameter type as `Closure(...)`
+  --> examples/errors/1045-errors-closure-var-bare-slot-reject.sx:23:10
+   |
+23 |     _ := bare(inc, 9);          // reject: closure value → bare slot
+   |          ^^^^^^^^^^^^
+
+error: a closure value cannot be passed as a bare function-pointer `(...) -> ...` — its environment can't be carried across the bare ABI; pass the closure literal directly at the call site, or declare the parameter type as `Closure(...)`
+  --> examples/errors/1045-errors-closure-var-bare-slot-reject.sx:24:10
+   |
+24 |     _ := baref(inc, 9);         // reject: also the ∅-widening crossing
+   |          ^^^^^^^^^^^^^
+
+error: a closure value cannot be passed as a bare function-pointer `(...) -> ...` — its environment can't be carried across the bare ABI; pass the closure literal directly at the call site, or declare the parameter type as `Closure(...)`
+  --> examples/errors/1045-errors-closure-var-bare-slot-reject.sx:25:10
+   |
+25 |     _ := bare(add, 9);          // reject: capturing closure → bare slot
+   |          ^^^^^^^^^^^^

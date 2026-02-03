@@ -1,0 +1,11 @@
+error: error tag 'error.Fault' cannot be used where 'S' is expected; an error tag is only an error-set value (or its raw u32 id in an integer context)
+  --> examples/diagnostics/1208-diagnostics-error-tag-non-error-destination.sx:20:12
+   |
+20 |     r := f(error.Fault);        // error: tag into a struct-typed param
+   |            ^^^^^^^^^^^
+
+error: error tag 'error.Fault' cannot be used where 'S' is expected; an error tag is only an error-set value (or its raw u32 id in an integer context)
+  --> examples/diagnostics/1208-diagnostics-error-tag-non-error-destination.sx:21:13
+   |
+21 |     s : S = error.Fault;        // error: tag into an annotated struct init
+   |             ^^^^^^^^^^^

@@ -1,0 +1,106 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+Perms :: enum flags { read; write; execute; }
+
+WindowFlags :: enum flags u32 { vsync :: 64; resizable :: 4; hidden :: 128; }
+
+// --- Top-level functions ---
+
+main :: () {
+
+    // ========================================================
+    // 9. FLAGS
+    // ========================================================
+    print("=== 9. Flags ===\n");
+
+    // Combine flags
+    perm : Perms = .read | .write;
+    print("flags: {}\n", perm);
+
+    // Test flag
+    if perm & .read { print("has-read: yes\n"); }
+    if perm & .execute { print("has-exec: yes\n"); }
+
+    // Test flag negative
+    pt : Perms = .write;
+    if pt & .read {
+        print("flags-neg: has-read\n");
+    } else {
+        print("flags-neg: no-read\n");
+    }
+
+    // Single flag
+    ps : Perms = .execute;
+    print("flags-single: {}\n", ps);
+
+    // All flags
+    pall : Perms = .read | .write | .execute;
+    print("flags-all: {}\n", pall);
+
+    // Cast to int
+    print("flags-raw: {}\n", perm.(i64));
+
+    // Flags with explicit values
+    wf : WindowFlags = .vsync | .resizable;
+    print("flags-explicit: {}\n", wf);
+    print("flags-explicit-raw: {}\n", wf.(i64));
+
+    // --- Multi-target assignment (swap) ---
+    print("--- swap ---\n");
+
+    // Variable swap
+    {
+        sa := 10;
+        sb := 20;
+        sa, sb = sb, sa;
+        print("var swap: {} {}\n", sa, sb);
+    }
+
+    // Array element swap
+    {
+        sarr : [3]i64 = .[1, 2, 3];
+        sarr[0], sarr[2] = sarr[2], sarr[0];
+        print("arr swap: {} {}\n", sarr[0], sarr[2]);
+    }
+
+    // 3-way rotation
+    {
+        ra := 1;
+        rb := 2;
+        rc := 3;
+        ra, rb, rc = rc, ra, rb;
+        print("3-way: {} {} {}\n", ra, rb, rc);
+    }
+
+    // --- Tuple destructuring ---
+    print("--- destructure ---\n");
+
+    // Basic tuple destructuring
+    {
+        da, db := .{10, 20};
+        print("basic: {} {}\n", da, db);
+    }
+
+    // Destructure from function return
+    {
+        dswap :: (a: i64, b: i64) -> Tuple(i64, i64) { .{b, a} }
+        dx, dy := dswap(1, 2);
+        print("fn: {} {}\n", dx, dy);
+    }
+
+    // Discard with _
+    {
+        _, dsecond := .{100, 200};
+        print("discard: {}\n", dsecond);
+    }
+
+    // Three elements
+    {
+        da3, db3, dc3 := .{1, 2, 3};
+        print("triple: {} {} {}\n", da3, db3, dc3);
+    }
+}

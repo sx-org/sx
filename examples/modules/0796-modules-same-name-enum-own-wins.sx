@@ -1,0 +1,22 @@
+// E6a — own-wins-over-flat for ENUM per-decl nominal identity. `main` flat-imports
+// `dep.sx` (which authors `Dir { east; west }`) AND authors its OWN `Dir { north;
+// south }`. A bare `Dir` reference in `main` resolves to `main`'s OWN author, not
+// the flat-imported one (the querying source's author wins outright — no
+// ambiguity), so `d : Dir = .north` binds `main`'s enum (whose `.north` variant
+// dep's `Dir` lacks) while `dep_dir()` returns dep's DISTINCT `Dir`.
+//
+// Fail-before (pre-E6a): the stateless `type_bridge.resolveInlineEnum` `findByName`
+// short-circuit interned ONE global last-wins `Dir`, so `main`'s `Dir` and dep's
+// `Dir` collapsed to a single nominal — `.north` would resolve against whichever
+// author won the global slot, silently wrong with no diagnostic.
+
+#import "modules/std.sx";
+#import "0796-modules-same-name-enum-own-wins/dep.sx";
+
+Dir :: enum { north; south; }
+
+main :: () -> i32 {
+    d : Dir = .north;
+    print("own={} dep={}\n", d, dep_dir());
+    0
+}

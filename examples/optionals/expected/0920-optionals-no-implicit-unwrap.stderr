@@ -1,0 +1,5 @@
+error: cannot use a value of type '?i64' where 'i32' is expected: an optional does not implicitly unwrap; force-unwrap with '!', supply a fallback with '?? <default>', bind it (`if v := ...`), or guard with '!= null'
+  --> examples/optionals/0920-optionals-no-implicit-unwrap.sx:15:5
+   |
+15 |     takes_i32(n);    // error: optional does not implicitly unwrap
+   |     ^^^^^^^^^^^^

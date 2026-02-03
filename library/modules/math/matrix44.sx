@@ -1,0 +1,117 @@
+// Column-major 4x4 float matrix (OpenGL convention)
+// data[col * 4 + row]
+
+Mat4 :: struct {
+    data: [16]f32;
+
+    identity :: () -> Mat4 {
+        Mat4.{ data = .[
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0
+        ]}
+    }
+
+    zero :: () -> Mat4 {
+        Mat4.{ data = .[
+            0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0
+        ]}
+    }
+
+    mul :: (self: Mat4, b: Mat4) -> Mat4 {
+        r := Mat4.zero();
+        col := 0;
+        while col < 4 {
+            row := 0;
+            while row < 4 {
+                sum : f32 = 0.0;
+                k := 0;
+                while k < 4 {
+                    sum = sum + self.data[k * 4 + row] * b.data[col * 4 + k];
+                    k += 1;
+                }
+                r.data[col * 4 + row] = sum;
+                row += 1;
+            }
+            col += 1;
+        }
+        r
+    }
+
+    translate :: (x: f32, y: f32, z: f32) -> Mat4 {
+        m := Mat4.identity();
+        m.data[12] = x;
+        m.data[13] = y;
+        m.data[14] = z;
+        m
+    }
+
+    scale :: (x: f32, y: f32, z: f32) -> Mat4 {
+        m := Mat4.zero();
+        m.data[0] = x;
+        m.data[5] = y;
+        m.data[10] = z;
+        m.data[15] = 1.0;
+        m
+    }
+
+    rotate_x :: (angle: f32) -> Mat4 {
+        c := cos(angle);
+        s := sin(angle);
+        m := Mat4.identity();
+        m.data[5] = c;
+        m.data[6] = s;
+        m.data[9] = 0.0 - s;
+        m.data[10] = c;
+        m
+    }
+
+    rotate_y :: (angle: f32) -> Mat4 {
+        c := cos(angle);
+        s := sin(angle);
+        m := Mat4.identity();
+        m.data[0] = c;
+        m.data[2] = 0.0 - s;
+        m.data[8] = s;
+        m.data[10] = c;
+        m
+    }
+
+    rotate_z :: (angle: f32) -> Mat4 {
+        c := cos(angle);
+        s := sin(angle);
+        m := Mat4.identity();
+        m.data[0] = c;
+        m.data[1] = s;
+        m.data[4] = 0.0 - s;
+        m.data[5] = c;
+        m
+    }
+
+    ortho :: (left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Mat4 {
+        m := Mat4.zero();
+        m.data[0] = 2.0 / (right - left);
+        m.data[5] = 2.0 / (top - bottom);
+        m.data[10] = 0.0 - 2.0 / (far - near);
+        m.data[12] = 0.0 - (right + left) / (right - left);
+        m.data[13] = 0.0 - (top + bottom) / (top - bottom);
+        m.data[14] = 0.0 - (far + near) / (far - near);
+        m.data[15] = 1.0;
+        m
+    }
+
+    perspective :: (fov: f32, aspect: f32, near: f32, far: f32) -> Mat4 {
+        half_tan := sin(fov * 0.5) / cos(fov * 0.5);
+        m := Mat4.zero();
+        m.data[0] = 1.0 / (aspect * half_tan);
+        m.data[5] = 1.0 / half_tan;
+        m.data[10] = 0.0 - (far + near) / (far - near);
+        m.data[11] = 0.0 - 1.0;
+        m.data[14] = 0.0 - 2.0 * far * near / (far - near);
+        m
+    }
+}

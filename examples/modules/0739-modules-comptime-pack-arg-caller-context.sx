@@ -1,0 +1,25 @@
+// Caller-owned helpers passed as VARIADIC comptime-pack args (`..$args`) to a
+// NAMESPACED imported metaprogram resolve in the CALLER's visibility context —
+// not the metaprogram's defining module (regression, issue 0106 follow-up).
+//
+// `std.print :: ($fmt: string, ..$args)` is authored in `std.sx`; the pack args
+// `caller_num()` / `caller_two()` are authored HERE in the caller. The body's
+// typed `args[i]` substitution (via packArgNodeAt) lowers each pack arg under
+// the metaprogram's defining-module pin, so without stamping the pack-arg nodes
+// with the caller's source, the bare names `caller_num` / `caller_two` were
+// wrongly checked against `std.sx` and rejected as "not visible". The fixed
+// comptime param (`$fmt`) already got this treatment; this extends it to every
+// node in the variadic pack. The metaprogram's OWN code (build_format / out)
+// still resolves in `std.sx`, so the defining-context pin stays intact.
+//
+// Two pack positions lock that EVERY pack arg is stamped, not just the first.
+// i64 values only — accepted by print at runtime today (no 0107/0108 coupling).
+std :: #import "modules/std.sx";
+
+caller_num :: () -> i64 { return 42; }
+caller_two :: () -> i64 { return 7; }
+
+main :: () -> i32 {
+    std.print("{} {}\n", caller_num(), caller_two());
+    return 0;
+}

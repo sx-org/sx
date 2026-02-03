@@ -1,0 +1,24 @@
+// Regression: top-level `inline if OS == .X { ... }` body decls get
+// hoisted to the actual top level. Before this commit, the `if_expr`
+// landed in `root.decls` but `scanDecls` had no `.if_expr` arm, so the
+// body was silently dropped — chess's
+// `inline if OS == .android { SxApp :: #jni_main #jni_class(...) { ... } }`
+// was invisible to the compiler. Fix:
+// `imports.flattenComptimeConditionals` runs at the head of
+// `resolveImports` and replaces matching arms with their body stmts
+// (recursively, so a nested `inline if` inside a hoisted arm also
+// hoists).
+//
+// Three patterns covered: a global `var_decl`, an `#import`, and a
+// nested `inline if` whose else arm fires on host macOS.
+
+#import "modules/std.sx";
+
+inline if OS == .android {
+    #import "modules/std.sx";
+    g_value : i64 = 99;
+} else {
+    g_value : i64 = 42;
+}
+
+main :: () { print("{}\n", g_value); }

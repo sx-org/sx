@@ -1,0 +1,31 @@
+// B1.2 / B2 — the async ergonomic layer over the `Io` capability, blocking
+// default. `context.io.async(worker)` submits a NULLARY `worker: Closure() -> $R`
+// and returns a `*Future($R)` handle; under the blocking `CBlockingIo` the worker
+// runs to completion inline, so the Future is born `.ready`. `f.await()` yields
+// the result (a value-failable `($R, !IoErr)`, handled with `or`).
+// `context.io.now_ms()` reads the clock through the same capability.
+//
+// Worker form: a nullary failable lambda capturing any inputs at the CALL SITE
+// (`() -> (i64, !) => compute(a, b)`) — the colorblind shape that also works when
+// the worker is deferred onto a fiber (a captured variadic pack can't cross the
+// fiber boundary).
+#import "modules/std.sx";
+
+main :: () {
+    // Inputs captured at the call site. The worker is FAILABLE
+    // (`Closure() -> ($R, !)`) — the unified Phase 3 shape; a body that never
+    // raises is a degenerate failable that always succeeds.
+    s := context.io.async(() -> (i64, !) => 40 + 2);
+    print("sum: {}\n", s.await() or { -1 });
+
+    d := context.io.async(() -> (i64, !) => 21 * 2);
+    print("double: {}\n", d.await() or { -1 });
+
+    // A worker that closes over a local.
+    base := 42;
+    n := context.io.async(() -> (i64, !) => base);
+    print("nullary: {}\n", n.await() or { -1 });
+
+    // The Io capability also carries a clock.
+    if context.io.now_ms() >= 0 { print("clock ok\n"); }
+}

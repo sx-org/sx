@@ -1,0 +1,75 @@
+// Phase 0 baseline (PLAN-FFI.md step 0.2): small structs (≤16 bytes)
+// passed by value into a C `extern` fn and returned by value. Four
+// shapes that exercise distinct aggregate ABI paths:
+//   Vec2   — 8 B,  two f32        (register pair, float)
+//   Vec4f  — 16 B, four f32       (HFA — homogeneous float aggregate)
+//   Pair64 — 16 B, two i64        (9..16 B int — [2 x i64] coercion slot)
+//   Quad32 — 16 B, four i32       (9..16 B int — same slot as Pair64)
+//
+// Pair64 / Quad32 were originally excluded (LLVM verifier rejected the
+// struct<->[2 x i64] type mismatch — see git history for issue-0036);
+// folded back in once emit_llvm.zig's coerceArg learned to bridge
+// struct <-> array via the abi.struct2arr / abi.arr2struct branches.
+
+#import "modules/std.sx";
+
+// `#source` only — c_import would rewrite struct-typed params/returns
+// in the .h to *void (its struct/opaque pointer default), losing the
+// by-value ABI. The hand-written extern decls below keep sx's
+// struct types end-to-end.
+#import c {
+    #source "1210-ffi-02-small-struct.c";
+};
+
+Vec2   :: struct { x: f32; y: f32; }
+Vec4f  :: struct { x: f32; y: f32; z: f32; w: f32; }
+Pair64 :: struct { a: i64; b: i64; }
+Quad32 :: struct { a: i32; b: i32; c: i32; d: i32; }
+
+ffi_vec2_make :: (x: f32, y: f32) -> Vec2 extern;
+ffi_vec2_swap :: (v: Vec2)        -> Vec2 extern;
+ffi_vec2_sum  :: (v: Vec2)        -> f32  extern;
+
+ffi_vec4f_make    :: (x: f32, y: f32, z: f32, w: f32) -> Vec4f extern;
+ffi_vec4f_reverse :: (v: Vec4f)                       -> Vec4f extern;
+ffi_vec4f_sum     :: (v: Vec4f)                       -> f32   extern;
+
+ffi_pair64_make :: (a: i64, b: i64) -> Pair64 extern;
+ffi_pair64_swap :: (p: Pair64)      -> Pair64 extern;
+ffi_pair64_sum  :: (p: Pair64)      -> i64    extern;
+
+ffi_quad32_make    :: (a: i32, b: i32, c: i32, d: i32) -> Quad32 extern;
+ffi_quad32_reverse :: (q: Quad32)                      -> Quad32 extern;
+ffi_quad32_sum     :: (q: Quad32)                      -> i32    extern;
+
+main :: () -> i32 {
+    // ── Vec2 (8 bytes, float pair) ─────────────────────────────────
+    v := ffi_vec2_make(1.5, 2.5);
+    print("vec2 make   = ({}, {})\n", v.x, v.y);
+    w := ffi_vec2_swap(v);
+    print("vec2 swap   = ({}, {})\n", w.x, w.y);
+    print("vec2 sum    = {}\n", ffi_vec2_sum(v));
+
+    // ── Vec4f (16 bytes, HFA) ──────────────────────────────────────
+    f := ffi_vec4f_make(1.0, 2.0, 3.0, 4.0);
+    print("vec4f make  = ({}, {}, {}, {})\n", f.x, f.y, f.z, f.w);
+    g := ffi_vec4f_reverse(f);
+    print("vec4f rev   = ({}, {}, {}, {})\n", g.x, g.y, g.z, g.w);
+    print("vec4f sum   = {}\n", ffi_vec4f_sum(f));
+
+    // ── Pair64 (16 bytes, 2×i64 — [2 x i64] coercion path) ─────────
+    p := ffi_pair64_make(100, 200);
+    print("pair64 make = ({}, {})\n", p.a, p.b);
+    pp := ffi_pair64_swap(p);
+    print("pair64 swap = ({}, {})\n", pp.a, pp.b);
+    print("pair64 sum  = {}\n", ffi_pair64_sum(p));
+
+    // ── Quad32 (16 bytes, 4×i32 — same coercion path as Pair64) ────
+    q := ffi_quad32_make(10, 20, 30, 40);
+    print("quad32 make = ({}, {}, {}, {})\n", q.a, q.b, q.c, q.d);
+    r := ffi_quad32_reverse(q);
+    print("quad32 rev  = ({}, {}, {}, {})\n", r.a, r.b, r.c, r.d);
+    print("quad32 sum  = {}\n", ffi_quad32_sum(q));
+
+    0
+}

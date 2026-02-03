@@ -1,0 +1,23 @@
+// Serializable struct constants are IMMUTABLE GLOBALS (one storage, no
+// per-use rebuild): literal fields, const-EXPRESSION fields (`K + 1`),
+// another const's field (`LIT.r`), and a const array's element (`A[1]`)
+// all serialize. The const is addressable (`@LIT`) and copies stay
+// independent.
+
+#import "modules/std.sx";
+
+Color :: struct { r, g, b: i64; }
+K :: 10;
+A : [2]i64 : .[7, 8];
+LIT  :: Color.{ r = 255, g = 0, b = 0 };
+EXPR :: Color.{ r = K + 1, g = K * 2, b = A[1] };
+REF  :: Color.{ r = LIT.r, g = 1, b = 2 };
+
+main :: () {
+    print("lit={} expr={} {} {} ref={}\n", LIT.r, EXPR.r, EXPR.g, EXPR.b, REF.r);
+    p := @LIT;
+    print("via-ptr={}\n", p.r);
+    c := LIT;
+    c.r = 9;
+    print("copy={} const={}\n", c.r, LIT.r);
+}

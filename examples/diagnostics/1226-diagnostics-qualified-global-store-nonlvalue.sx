@@ -1,0 +1,23 @@
+// A qualified store through a namespace-import alias must reject a member that
+// is NOT a mutable global: a CONST (`lib.LIB_C = 3`) and a FUNCTION
+// (`lib.lib_fn = 3`) each diagnose cleanly at the assignment site, rather than
+// silently dropping the write or failing "unresolved 'lib'". An AMBIGUOUS
+// member (`amb.shared` where the target module flat-imports two modules that
+// both declare `shared`) diagnoses too. ALL errors point at THIS file — the
+// classification runs in the target module's visibility context, but the
+// diagnostics are emitted after the source-file restore, so the caller-file
+// spans never render against the imported module's (shorter) text.
+//
+// Regression (issue 0223): qualified module-global assignment — non-lvalue
+// member rejection + ambiguous-member attribution (review fold).
+
+#import "modules/std.sx";
+lib :: #import "1226-diagnostics-qualified-global-store-nonlvalue/lib.sx";
+amb :: #import "1226-diagnostics-qualified-global-store-nonlvalue/amb.sx";
+
+main :: () -> i32 {
+    lib.LIB_C = 3;      // const member — immutable
+    lib.lib_fn = 3;     // fn member — not a mutable global
+    amb.shared = 9;     // ambiguous member — two flat authors in the target
+    0
+}

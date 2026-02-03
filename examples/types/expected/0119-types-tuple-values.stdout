@@ -1,0 +1,12 @@
+pair 40 2
+named 10 10 20
+locals 40 2
+field 7 9
+ret 2 1
+pass 11
+eq true
+concat 1 4
+rep 1 2
+mem true
+lex true
+mixed 42 hi

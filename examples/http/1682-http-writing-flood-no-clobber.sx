@@ -1,0 +1,202 @@
+// std.http — an over-cap flood must not clobber an in-flight response.
+//
+// Regression: while a slot was CONN_WRITING (response draining, write watch
+// armed), a client flooding pipelined bytes past read_buf_cap made read_more
+// fire respond_error_close(413/431) — which serialized a SECOND response
+// over c.out_buf: the old (partially sent) buffer leaked, out_len shrank
+// below out_sent, and the wire stream was cut mid-body with error bytes.
+//
+// The fix: at the buffer cap with a response in flight, the server STOPS
+// READING (drops the read watch, discards the over-cap bytes) and sets
+// close_after — the in-flight response finishes byte-exact, then the
+// connection closes. No second response is ever serialized over a draining
+// one.
+//
+// This test:
+//   1. GET /big → an 8 MB fixed body; the client's SO_RCVBUF is clamped
+//      pre-connect so the kernel cannot swallow it — the server provably
+//      parks in CONN_WRITING (polled via the slot's write_armed) while the
+//      client refuses to read.
+//   2. The client floods 64 KB of garbage (read_buf_cap is 8 KB) while the
+//      response is in flight.
+//   3. The client then drains everything to EOF and asserts the response is
+//      BYTE-EXACT: status 200, declared Content-Length, body checksum, and
+//      NOTHING after the body (no spliced 413/431, no truncation).
+//   4. The connection closes (close_after honored).
+//   5. GPA leak gate: net-zero (pre-fix leaked the clobbered 8 MB out_buf).
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 18993;
+BODY_LEN :: 8388608;    // 8 MB — beyond send-buffer autotune caps on both OSes
+                        // (the client's receive window is clamped in dial_port,
+                        // so the kernel cannot swallow the body: the server
+                        // reliably parks in CONN_WRITING)
+FLOOD_LEN :: 65536;     // 64 KB of garbage vs an 8 KB read_buf_cap
+
+checksum :: (buf: [*]u8, len: i64) -> i64 {
+    h : i64 = 0;
+    i : i64 = 0;
+    while i < len {
+        h = (h * 31 + buf[i]) % 1000000007;
+        i += 1;
+    }
+    return h;
+}
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    // 8 MB pattern body from the per-request arena (serialize copies it).
+    b : [*]u8 = xx context.allocator.alloc_bytes(BODY_LEN);
+    i : i64 = 0;
+    while i < BODY_LEN { b[i] = xx ((i * 13 + 7) % 251); i += 1; }
+    resp.body = string.{ ptr = b, len = BODY_LEN };
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    // Clamp the receive buffer BEFORE connect: fixes the advertised window
+    // (and disables receive autotuning on linux), so the unread response
+    // jams the server's send side deterministically on every OS.
+    rsz : i32 = 65536;
+    socket.setsockopt(fd, socket.SOL_SOCKET, socket.SO_RCVBUF, @rsz, 4);
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = BODY_LEN + 4096;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{
+            port = PORT,
+            read_buf_cap = 8192,        // small: the flood crosses it fast
+            timeout_request_ms = 10000,
+            timeout_keepalive_ms = 10000,
+            request_count = 50,
+            max_conn = 4,
+        };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        ca := dial_port(PORT);
+        if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
+
+        req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";
+        socket.write(ca, req.ptr, xx req.len);
+
+        // Let the server accept, serve, and PARK mid-write. Deterministic:
+        // poll the slot until the write watch is armed (a write actually
+        // WouldBlocked — the response is provably in flight), instead of
+        // guessing with a fixed tick count. Slot 0: first conn on a fresh
+        // server; CONN_WRITING == 2 (server.sx state constants).
+        parked := false;
+        t : i64 = 0;
+        while t < 3000 and !parked {
+            srv.tick(1) catch {};
+            c0 := srv.conns[0];
+            if c0.state == 2 and c0.write_armed { parked = true; }
+            t += 1;
+        }
+        if !parked { print("server never parked mid-write\n"); failed = 1; }
+
+        // Flood garbage while the response is in flight. The server buffers
+        // up to read_buf_cap then hits the grow-failure branch — pre-fix it
+        // serialized a 431 over the draining response.
+        junk : [*]u8 = xx context.allocator.alloc_bytes(FLOOD_LEN);
+        i : i64 = 0;
+        while i < FLOOD_LEN { junk[i] = 88; i += 1; }   // 'X': no CRLF, no header end
+        fsent : i64 = 0;
+        t = 0;
+        while fsent < FLOOD_LEN and t < 300 {
+            n, we := socket.write_nb(ca, @junk[fsent], xx (FLOOD_LEN - fsent));
+            if !we { fsent += n; }
+            // 3x the 8 KB cap already landed and the kernel is backed up
+            // (the fixed server stopped reading): the over-cap branch has
+            // fired — no need to force the rest through.
+            else if we == error.WouldBlock and fsent >= 24576 { break; }
+            else if we != error.WouldBlock { break; }   // server reset us (pre-fix path)
+            srv.tick(1) catch {};
+            t += 1;
+        }
+
+        // Drain the response to EOF — everything available per tick (~a
+        // clamped-window's worth per round, so a few hundred fast rounds;
+        // well inside the server's delivery deadline and the corpus budget).
+        total : i64 = 0;
+        done := false;
+        stall : i64 = 0;
+        while !done and stall < 500 {
+            srv.tick(1) catch {};
+            got : i64 = 0;
+            while true {
+                n, re := socket.read_nb(ca, @rbuf[total], xx (cap - total));
+                if !re { total += n; got += n; continue; }
+                if re == error.Closed { done = true; }  // orderly EOF after close_after
+                break;                                  // WouldBlock: next tick
+            }
+            if got > 0 { stall = 0; } else { stall += 1; }
+        }
+
+        // Parse: header end + status + Content-Length.
+        he : i64 = -1;
+        i = 0;
+        while i + 3 < total {
+            if rbuf[i] == 13 and rbuf[i+1] == 10 and rbuf[i+2] == 13 and rbuf[i+3] == 10 { he = i; break; }
+            i += 1;
+        }
+        if he < 0 { print("no response header terminator\n"); failed = 1; }
+        head := string.{ ptr = rbuf, len = if he > 0 then he else 0 };
+        ok200 := false;
+        if head.len >= 15 {
+            s := "HTTP/1.1 200 OK";
+            ok200 = true;
+            i = 0;
+            while i < 15 { if head[i] != s[i] { ok200 = false; break; } i += 1; }
+        }
+        if !ok200 { print("in-flight response corrupted: not a clean 200\n"); failed = 1; }
+
+        if failed == 0 {
+            body_start := he + 4;
+            got_body := total - body_start;
+            if got_body != BODY_LEN {
+                print("body truncated/extended: {} bytes (want {})\n", got_body, BODY_LEN);
+                failed = 1;
+            } else {
+                // byte-exact: same pattern checksum, nothing spliced in
+                want : i64 = 0;
+                i = 0;
+                while i < BODY_LEN {
+                    want = (want * 31 + ((i * 13 + 7) % 251)) % 1000000007;
+                    i += 1;
+                }
+                got := checksum(@rbuf[body_start], got_body);
+                if got != want {
+                    print("body corrupted: checksum {} (want {})\n", got, want);
+                    failed = 1;
+                }
+            }
+        }
+
+        socket.close(ca);
+        srv.close();
+        context.allocator.dealloc_bytes(xx junk);
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

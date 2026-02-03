@@ -1,0 +1,15 @@
+// Entry-point signature gate (ERR step E4.2). `main` must take no parameters
+// and have one of: void, an integer (POSIX exit code), `-> !` (failable, no
+// value), or `-> (int, !)` (failable + integer exit code). Anything else is a
+// clean diagnostic — previously `main :: () -> string` SEGFAULTED (the JIT
+// calls main as `() -> i32`, so a string return is read as garbage). Accepted
+// shapes are exercised elsewhere (238 integer-exit truncation, 244 `-> !`,
+// 245 `-> (int, !)`). This file is expected to FAIL compilation (exit 1).
+//
+// Run: ./zig-out/bin/sx run examples/239-main-signature-reject.sx
+
+#import "modules/std.sx";
+
+main :: () -> string {        // ERROR: return type must be void, an integer, or `!`
+    return "not an exit code";
+}

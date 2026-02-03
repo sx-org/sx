@@ -1,0 +1,18 @@
+// fix-0102c (issue 0102): two flat FILE imports each author a same-name free
+// function `greet`. The first-wins import merge keeps exactly one `greet` in
+// the merged scope, but each module's OWN code must bind its OWN author when it
+// calls `greet` bare. `from_a` (in a.sx) returns 1; `from_b` (in b.sx) returns
+// 2 — per-source binding, resolved by identity, not first-wins.
+#import "modules/std.sx";
+#import "0722-modules-flat-same-name-own/a.sx";
+#import "0722-modules-flat-same-name-own/b.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("from_a binds a.greet", from_a() == 1);
+    report("from_b binds b.greet", from_b() == 2);
+    0
+}

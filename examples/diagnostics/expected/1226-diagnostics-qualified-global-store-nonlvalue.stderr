@@ -1,0 +1,17 @@
+error: cannot assign to 'lib.LIB_C' — it is a constant, not a mutable global
+  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:19:5
+   |
+19 |     lib.LIB_C = 3;      // const member — immutable
+   |     ^^^^^^^^^
+
+error: cannot assign to 'lib.lib_fn' — it is a function, not a mutable global
+  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:20:5
+   |
+20 |     lib.lib_fn = 3;     // fn member — not a mutable global
+   |     ^^^^^^^^^^
+
+error: 'shared' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:21:5
+   |
+21 |     amb.shared = 9;     // ambiguous member — two flat authors in the target
+   |     ^^^^^^^^^^

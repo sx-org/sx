@@ -1,0 +1,23 @@
+// A many-pointer `[*]T` carries NO length, so it cannot coerce to a slice `[]T`
+// implicitly — doing so would pass a bare 8-byte pointer where a 16-byte
+// `{ptr,len}` fat pointer is expected, silently corrupting the callee's view of
+// the data (garbage length, mis-aligned element reads). The compiler rejects it
+// loudly and tells the user to supply the length via `ptr[0..len]`.
+//
+// Regression (issue 0141): this silent mis-coercion segfaulted the comptime VM
+// and failed LLVM verification at runtime; it now produces a clean diagnostic.
+#import "modules/std.sx";
+
+sum :: (s: []i64) -> i64 {
+    total := 0;
+    for s (x) { total += x; }
+    return total;
+}
+
+main :: () -> i32 {
+    a : [4]i64 = .[10, 20, 30, 40];
+    mp : [*]i64 = xx @a[0];   // a genuine many-pointer (carries no length)
+    r := sum(mp);             // [*]i64 → []i64 — rejected; needs mp[0..len]
+    print("{}\n", r);
+    return 0;
+}

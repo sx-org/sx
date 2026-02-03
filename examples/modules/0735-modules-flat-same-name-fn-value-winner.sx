@@ -1,0 +1,17 @@
+// fix-0102d site 2 / attempt-2 (issue 0102): the first-wins winner's body is
+// independently BROKEN (references an undefined symbol) and is never used. A
+// shadow author from a later flat import takes its OWN `pick` as a function
+// VALUE (`g : () -> i64 = pick`). The value must bind the shadow (own-author
+// wins) and the broken winner must NOT be lowered — a rerouted fn value never
+// uses the winner. Before the fix the fn-value site eagerly lazily-lowered the
+// name-keyed winner BEFORE the resolver rerouted, surfacing the winner's
+// `unresolved 'missing_from_a'` for a function the value never touches.
+// Regression: per-source function-value conversion must not pre-lower the winner.
+#import "modules/std.sx";
+#import "0735-modules-flat-same-name-fn-value-winner/a.sx";
+#import "0735-modules-flat-same-name-fn-value-winner/b.sx";
+
+main :: () -> i32 {
+    print("from_b_value = {}\n", from_b_value());
+    0
+}

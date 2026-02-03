@@ -1,0 +1,32 @@
+// Phase 1 step 1.16 (PLAN-FFI.md): two `#jni_call` sites against the
+// same (class, method, sig) tuple. Today each site emits its own
+// `GetObjectClass` + `GetMethodID` call (no caching yet); after 1.17
+// the lowering collapses to one cached `jmethodID` per unique
+// (class, method, sig).
+//
+// Runtime: unreachable. The JNI dispatch is all indirect through
+// `*env` — no external symbol declarations — so the IR loads cleanly
+// into the host JIT, and the dereferences never execute because the
+// guarding `g_should_call` global stays false. A plain `if false`
+// would get constant-folded, taking the `unused_jni` body out of the
+// IR with it; the runtime-readable global keeps the call alive so
+// the JNI lowering is visible to the IR snapshot.
+
+#import "modules/std.sx";
+
+g_should_call : bool = false;
+
+unused_jni :: (env: *void, target: *void) {
+    #jni_env(env) {
+        #jni_call(void)(target, "noop", "()V");
+        #jni_call(void)(target, "noop", "()V");
+    }
+}
+
+main :: () -> i32 {
+    if g_should_call {
+        unused_jni(null, null);
+    }
+    print("ok\n");
+    0
+}

@@ -1,0 +1,27 @@
+// E6BR-4 (param-impl SOURCE, ambiguous) — because a parameterised-impl wrapped
+// SOURCE type is now registered SOURCE-AWARE (the source `*Box` flows through
+// `resolveRegistrationSigTypeInSource` → `resolveCompound` → `resolveNominalLeaf`),
+// a genuinely ambiguous same-name element poisons LOUDLY at registration instead of
+// silently selecting a global `findByName` last-wins author. `main` flat-imports two
+// `Box` authors and declares none itself, so `impl Into(Marker) for *Box` cannot
+// pick a `Box` and the build exits 1.
+//
+// Fail-before (pre-E6BR-4): the source `*Box` fell to the no-author
+// `type_bridge.resolveTemplateSignatureType` wrapper (global last-wins, no
+// diagnostic), so the collision was registered silently.
+
+#import "modules/std.sx";
+#import "0827-protocols-param-impl-source-wrapped-ambiguous/a.sx";
+#import "0827-protocols-param-impl-source-wrapped-ambiguous/b.sx";
+
+Marker :: struct { v: i32; }
+
+impl Into(Marker) for *Box {
+    convert :: (self: *Box) -> Marker {
+        .{ v = 0 }
+    }
+}
+
+main :: () -> i32 {
+    0
+}

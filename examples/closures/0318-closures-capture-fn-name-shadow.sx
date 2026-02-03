@@ -1,0 +1,42 @@
+// Closure capture: a local/param that SHADOWS a global fn name is captured
+// like any other binding — the lexical scope wins over the program-wide fn
+// table (specs §Variable Shadowing — innermost wins).
+//
+// Regression (issue 0251): `collectCaptures` used to consult `fn_ast_map`
+// BEFORE the lexical scope, so a local named like ANY program fn (here `out`,
+// which the std prelude declares) was never captured — the closure body then
+// read/wrote a garbage address (silent wrong behavior / crash). The fix
+// mirrors issue 0217: `Scope.lookupNearest` resolves the binding at the
+// nearest declaring depth; the fn-name skip applies only when no binding
+// exists.
+#import "modules/std.sx";
+
+// `out` collides with the std prelude fn `out :: (str: string) -> void`.
+
+// 1. Local pointer shadow, mutated THROUGH the closure — result visible.
+mutate :: () -> i64 {
+    result : i64 = 0;
+    out := @result;              // local named like the prelude fn `out`
+    c := () => { out.* = 42; };  // must capture `out`, not skip it
+    c();
+    result
+}
+
+// 2. Param shadow, captured by value.
+add_one :: (out: i64) -> i64 {
+    c := () => out + 1;
+    c()
+}
+
+// 3. No shadow: the closure calls the REAL prelude fn `out` (unchanged).
+call_real :: () {
+    c := () => { out("real-out\n"); };
+    c();
+}
+
+main :: () -> i32 {
+    print("{}\n", mutate());     // 42
+    print("{}\n", add_one(41));  // 42
+    call_real();                 // real-out
+    0
+}

@@ -1,0 +1,26 @@
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+// Post-link callback registration. The compiler invokes `post_link`
+// after `target.link()` returns (sx build). Under `sx run` (JIT) the
+// callback is registered but never invoked because there's no link
+// phase — so the only thing this example prints under the test
+// runner is `runtime main`. The post-link path is exercised via
+// `sx build` separately.
+
+puts :: (s: [:0]u8) -> i32 extern libc;
+
+post_link :: (opt: BuildOptions) -> bool {
+    puts("[post-link] callback fired");
+    true
+}
+
+configure :: () {
+    opts := build_options();
+    on_build(post_link);
+}
+#run configure();
+
+main :: () {
+    print("runtime main\n");
+}

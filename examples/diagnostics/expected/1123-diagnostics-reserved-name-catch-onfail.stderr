@@ -1,0 +1,11 @@
+error: 'i64' is a reserved type name and cannot be used as an identifier
+  --> examples/diagnostics/1123-diagnostics-reserved-name-catch-onfail.sx:20:13
+   |
+20 |     onfail (i64) { }                  // onfail tag binding
+   |             ^^^
+
+error: 'u8' is a reserved type name and cannot be used as an identifier
+  --> examples/diagnostics/1123-diagnostics-reserved-name-catch-onfail.sx:21:20
+   |
+21 |     must(n) catch (u8) { return; };   // catch tag binding
+   |                    ^^

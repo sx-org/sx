@@ -1,0 +1,41 @@
+// Phase 1 step 1.6 (PLAN-FFI.md): non-void return shapes through
+// `#objc_call`. Each return type triggers a distinct LLVMBuildCall2
+// function-type combination so emit_llvm's per-call-site lowering
+// has to pick the right ABI per call.
+//
+// We exercise both nil-recv (libobjc guarantees zero result for
+// every shape) and real-recv paths so the ABI is verified beyond
+// "the runtime no-oped the call."
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        // ── Nil-recv quick smoke ───────────────────────────────────
+        nil_cls := #objc_call(*void)(null, "class");
+        print("nil class    = {}\n", nil_cls == null);
+
+        nil_n := #objc_call(i64)(null, "hash");
+        print("nil hash     = {}\n", nil_n);
+
+        // ── Real-recv: NSObject ────────────────────────────────────
+        // *void return: [NSObject class] -> NSObject's metaclass (non-null,
+        // and conveniently == self when sent to the class itself).
+        ns_object := objc_getClass("NSObject".ptr);
+        meta := #objc_call(*void)(ns_object, "class");
+        print("meta non-null = {}\n", meta != null);
+
+        // i64 return: [obj hash] returns NSUInteger. On the NSObject
+        // class itself the value is implementation-defined but stable
+        // within a process — pinning it as non-zero is enough for ABI
+        // verification.
+        h := #objc_call(i64)(ns_object, "hash");
+        print("hash non-zero = {}\n", h != 0);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

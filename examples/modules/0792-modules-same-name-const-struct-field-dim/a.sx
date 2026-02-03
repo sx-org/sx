@@ -1,0 +1,5 @@
+// Module A authors `K :: 2` and a struct `Box` whose array field is dimensioned
+// by A's `K`. `size_of(Box)` folds the field dimension against A's `K` (= 2).
+K :: 2;
+Box :: struct { arr: [K]u8; }
+a_sz :: () -> i64 { return size_of(Box); }

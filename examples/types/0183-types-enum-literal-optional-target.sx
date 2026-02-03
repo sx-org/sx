@@ -1,0 +1,34 @@
+// Enum literals flowing into OPTIONAL destinations resolve against the
+// optional's CHILD type and wrap (issue 0098). Pre-fix, the literal fell
+// into resolveVariantValue's non-enum fallback: variant 0, mis-typed as
+// the optional itself — `return .android_apk;` was observed by callers as
+// `.ios` or even null, layout-dependent.
+#import "modules/std.sx";
+
+Platform :: enum u8 { ios; android_apk; macos; linux; windows; }
+
+classify :: (n: i64) -> ?Platform {
+    if n == 1 { return .android_apk; }   // return: literal into ?Platform
+    if n == 2 { return .windows; }       // non-zero, non-adjacent variant
+    return null;
+}
+
+main :: () -> i32 {
+    p := classify(1);
+    if p == null { print("BUG: null\n"); return 1; }
+    if p! != .android_apk { print("BUG: wrong variant\n"); return 2; }
+
+    w := classify(2);
+    if w == null or w! != .windows { print("BUG: windows\n"); return 3; }
+
+    if classify(9) != null { print("BUG: not null\n"); return 4; }
+
+    // assignment + reassignment: literal into a ?Platform slot
+    q : ?Platform = .macos;
+    if q == null or q! != .macos { print("BUG: assign\n"); return 5; }
+    q = .linux;
+    if q! != .linux { print("BUG: reassign\n"); return 6; }
+
+    print("ok\n");
+    return 0;
+}

@@ -1,0 +1,13 @@
+// A tuple type (`Tuple(i32, i32)` at a type-demanding site like `size_of`) must
+// list only types. A non-type
+// element — here the `1` in `Tuple(i32, 1)` — is rejected with a user-facing
+// diagnostic instead of silently fabricating an `i64` field for that slot.
+// Regression (issue 0067).
+// Expected: a clean "tuple type element is not a type" error at the `1`; exit 1.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    print("bad tuple type size = {}\n", size_of(Tuple(i32, 1)));
+    0
+}

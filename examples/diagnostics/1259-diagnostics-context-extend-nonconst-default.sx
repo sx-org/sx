@@ -1,0 +1,11 @@
+// L5, comptime half: a `#context_extend` default must fold to a compile-time
+// constant — it is baked into `__sx_default_context`, which exists before
+// `main` runs. A runtime call cannot initialize it; the serializer rejects it
+// loudly instead of zero-filling the field.
+#import "modules/std.sx";
+
+now_ms :: () -> i64 { return 42; }
+
+#context_extend started_at: i64 = now_ms();
+
+main :: () {}

@@ -1,0 +1,3 @@
+// Module A authors its OWN value const `K` (1) and reads it bare.
+K :: 1;
+a_k :: () -> i64 { return K; }

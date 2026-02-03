@@ -1,0 +1,5 @@
+error: type 'Make' is not visible; #import the module that declares it
+  --> examples/modules/0771-modules-type-fn-head-ordinary-fn-no-vouch.sx:23:32
+   |
+23 |     print("size={}\n", size_of(Make(i64)));
+   |                                ^^^^

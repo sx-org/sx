@@ -1,0 +1,25 @@
+// Phase 1 step 1.3 (PLAN-FFI.md): smallest end-to-end `#objc_call`.
+// Void return, nil receiver — Obj-C runtime guarantees that messages
+// to nil are no-ops with a zero result, so we don't need to set up
+// a real object graph to exercise the lowering surface.
+//
+// Today (step 1.3, test-add): codegen rejects the FfiIntrinsicCall
+// AST node. Snapshot pins the failure mode.
+// Next (step 1.3, make-green): emit_llvm.zig synthesizes
+//   %sel = call ptr @sel_registerName(ptr @"sel:init")
+//   call void @objc_msgSend(ptr null, ptr %sel)
+// per call site (no selector interning until step 1.5).
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        #objc_call(void)(null, "init");
+        print("ok\n");
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

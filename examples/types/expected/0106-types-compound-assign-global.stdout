@@ -1,0 +1,10 @@
+add: 13
+sub: 5
+mul: 60
+div: 5
+mod: 1
+and: 15
+or: 255
+xor: 240
+shl: 64
+shr: 8

@@ -1,0 +1,97 @@
+#import "modules/std/core.sx";   // string
+#import "modules/std/fmt.sx";    // concat, format
+c :: #import "modules/std/c.sx"; // libc write
+
+// =====================================================================
+// trace.sx — error return-trace formatting (ERR step E3.3).
+//
+// Reads the thread-local return-trace buffer (ERR E3.1, populated by the
+// push/clear wiring in E3.2) and renders it. A `raise` / propagating `try`
+// pushes a frame; an absorbing site (`catch` / `or value` / destructure)
+// clears the buffer. So at format time the buffer holds exactly the frames
+// of failures that escaped to where you're formatting — typically inside a
+// `catch` handler (the clear fires when the handler completes, so the body
+// still sees the chain) or the (future) failable-`main` wrapper.
+//
+// Frame resolution (ERR E3.0 slice 3a): in compiled code a frame is a pointer
+// to an interned `TraceFrame` the compiler stamped in at the push site, so the
+// location resolves in-process with no DWARF and no symbolizer. (The comptime
+// path — a packed `(func_id, ir_offset)` resolved via the interpreter's IR
+// tables — lands with slice 3b.)
+// =====================================================================
+
+
+// The compiled return-trace frame. Named `TraceFrame` (not `Frame`) so it never
+// collides with a UI / geometry `Frame` a consumer flat-imports — same-name
+// types are now distinct nominal identities (issue 0105), so a bare `Frame` must
+// resolve unambiguously to the consumer's own. Layout MUST match
+// `getFrameStructType` in src/ir/emit_llvm.zig and `SxFrame` in
+// library/vendors/sx_trace_runtime/sx_trace.c.
+TraceFrame :: struct {
+    file: string;
+    line: i32;
+    col: i32;
+    func: string;
+    line_text: string;    // the source line, for the snippet + caret
+}
+
+// `n` spaces — used to position the `^` caret under a column.
+spaces :: (n: i32) -> string {
+    s := "";
+    i : i32 = 0;
+    while i < n {
+        s = concat(s, " ");
+        i = i + 1;
+    }
+    s
+}
+
+// The error-trace buffer C API (library/vendors/sx_trace_runtime/sx_trace.c),
+// linked in for the JIT and auto-injected for AOT when traces are used.
+// `frame_at` returns the raw stored `u64`; `__trace_resolve_frame` turns it
+// into a `TraceFrame` — by reinterpreting the stamped `*TraceFrame` in compiled code, or
+// by resolving the packed `(func_id, span.start)` in the comptime interpreter.
+sx_trace_len       :: () -> u32 extern;
+sx_trace_truncated :: () -> u32 extern;
+sx_trace_frame_at  :: (i: u32) -> u64 extern;
+
+// Render the current trace buffer to a string (allocated from
+// context.allocator). Empty buffer → "" so callers can cheaply skip output.
+to_string :: () -> string {
+    n := sx_trace_len();
+    if n == 0 { return ""; }
+
+    result := "error return trace (most recent call last):\n";
+    if sx_trace_truncated() != 0 {
+        result = concat(result, "  ... older frames omitted (buffer full)\n");
+    }
+
+    i : u32 = 0;
+    while i < n {
+        f := __trace_resolve_frame(sx_trace_frame_at(i));
+        result = concat(result, format("  {} at {}:{}:{}\n", f.func, f.file, f.line, f.col));
+        if f.line_text.len > 0 {
+            result = concat(result, format("    {}\n", f.line_text));
+            result = concat(result, concat("    ", concat(spaces(f.col - 1), "^\n")));
+        }
+        i = i + 1;
+    }
+    result
+}
+
+// Write the current trace to stderr (fd 2). No-op when the buffer is empty.
+print_current :: () {
+    s := to_string();
+    if s.len > 0 {
+        c.write(2, s.ptr, xx s.len);
+    }
+}
+
+// Dump the comptime (`#run`) interpreter call-frame chain (ERR E4.1). At
+// comptime the interpreter walks its active sx frames and appends them to the
+// build output; in compiled code this folds to nothing (there is no
+// interpreter stack — the only caller is a dead `is_comptime()` branch).
+// Frame source locations await IR-offset resolution, so only names print today.
+print_interpreter_frames :: () {
+    __interp_print_frames();
+}

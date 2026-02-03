@@ -1,0 +1,3 @@
+// d1's author of `tag`. `caller1` (also in d1) binds d1's own `tag` (100).
+tag     :: () -> i64 { return 100; }
+caller1 :: () -> i64 { return tag(); }

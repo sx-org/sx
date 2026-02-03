@@ -1,0 +1,8 @@
+nan != nan: true
+nan == nan: false
+nan != 1.0: true
+nan == 1.0: false
+1.0 != 2.0: true
+1.0 != 1.0: false
+2.0 != 2.0: false
+comptime nan != nan: true

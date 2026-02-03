@@ -1,0 +1,24 @@
+// A `dual`-mode intrinsic is dispatched two ways: folded at lowering when the
+// type argument is statically resolvable, and serviced by the comptime VM when
+// it is not. `type_name` / `is_unsigned` / `type_info` are the only three
+// (see `ir/intrinsics.zig`).
+//
+// The point of this example is that BOTH stages agree: the same intrinsic
+// evaluated behind `#run` and at runtime yields the same answer.
+#import "modules/std.sx";
+
+P :: struct { a: i64; b: f32; }
+
+// `#run` forces evaluation in the comptime VM.
+CT_NAME     :: #run type_name(P);
+CT_UNSIGNED :: #run is_unsigned(u32);
+CT_SIGNED   :: #run is_unsigned(i32);
+CT_SIZE     :: #run size_of(P);
+
+main :: () {
+    // comptime vs runtime — the two columns must match.
+    print("type_name         ct={} rt={}\n", CT_NAME, type_name(P));
+    print("is_unsigned  ct={} rt={}\n", CT_UNSIGNED, is_unsigned(u32));
+    print("is_unsigned  ct={} rt={}\n", CT_SIGNED, is_unsigned(i32));
+    print("size_of           ct={} rt={}\n", CT_SIZE, size_of(P));
+}

@@ -1,0 +1,40 @@
+// A multi-assign target that resolves to no assignable storage is a compile
+// error — an identifier target in `a, b = x, y;` with no local slot and no
+// visible global must diagnose, never silently discard the store. Parity with
+// the single-assign diagnostic (issue 0216 / example 1212).
+//
+// Also pinned here (same lowering arm, diagnostics accumulate so none masks
+// another):
+//   - a by-ref loop capture (`for xs (*x)`) as a multi-assign target WITHOUT
+//     `.*` — no store path through the bare name; the error points at
+//     `x.* = ...` (and the capture SHADOWS a same-named global: the store
+//     must never resolve past it to different storage);
+//   - a `::` constant as a multi-assign target — the global fallback must
+//     reject it, mirroring single-assign's const-write rejection (issue 0116).
+//
+// Regression (issue 0218): `a, undeclared_b = b, a;` compiled and ran — the
+// ident-target arm of lowerMultiAssign only consulted local scope and dropped
+// the store on lookup failure; a module-global target was also dropped (no
+// global fallback at all — the positive global case is pinned by
+// examples/basic/0060-basic-multi-assign-global.sx).
+
+#import "modules/std.sx";
+
+GC :: 5;
+g : i64 = 0;
+
+main :: () -> i32 {
+    a := 1;
+    b := 2;
+    a, undeclared_b = b, a;     // typo'd target — plain multi-assign to an undeclared name
+    xs : [2]i64 = .[1, 2];
+    for xs (*x) {
+        x, a = 9, 9;            // by-ref capture target assigned without `.*`
+    }
+    for xs (*g) {
+        g, a = 9, 9;            // capture shadows the module global `g` — same diagnostic
+    }
+    GC, a = 1, 2;               // `::` const as a multi-assign target
+    print("a={} b={}\n", a, b);
+    0
+}

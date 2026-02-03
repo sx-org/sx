@@ -1,0 +1,4 @@
+// One of two flat-imported authors of a same-name `IoErr` error set. With both
+// modules flat-visible from a file that authors none itself, the `-> !IoErr`
+// closure-literal channel is genuinely ambiguous.
+IoErr :: error { Disk, Net }

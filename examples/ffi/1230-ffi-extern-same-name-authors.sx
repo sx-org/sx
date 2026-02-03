@@ -1,0 +1,21 @@
+// Two flat FILE imports each declare the SAME libc symbol `absval` via the
+// `extern` keyword (the linkage-keyword twin of example 0729's `extern`
+// form). The bare-call resolver must NOT count extern authors when deciding
+// ambiguity — they are external C symbols, never rerouted by the bare-call
+// machinery, so the existing first-wins extern dispatch binds the
+// call and a same-name extern collision compiles + runs (prints 7), it does
+// NOT error as ambiguous.
+//
+// Regression (FFI-linkage Part B): `isPlainFreeFn` / `isPlainFreeFnDecl`
+// excluded a `extern` body but classified an empty-block `extern` fn as a
+// plain free function, so the two extern authors were wrongly counted as an
+// ambiguous bare-call collision. Prerequisite for migrating the fn-decl
+// `extern` path onto `extern`.
+#import "modules/std.sx";
+#import "1230-ffi-extern-same-name-authors/a.sx";
+#import "1230-ffi-extern-same-name-authors/b.sx";
+
+main :: () -> i32 {
+    print("absval = {}\n", absval(-7));
+    0
+}

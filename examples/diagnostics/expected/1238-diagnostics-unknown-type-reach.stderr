@@ -1,0 +1,29 @@
+error: unknown type 'BadFieldDefault1238'
+  --> examples/diagnostics/1238-diagnostics-unknown-type-reach.sx:5:16
+   |
+ 5 |     bad: i64 = BadFieldDefault1238.{};
+   |                ^^^^^^^^^^^^^^^^^^^^^^
+
+error: unknown type 'BadMethod1238'
+  --> examples/diagnostics/1238-diagnostics-unknown-type-reach.sx:6:44
+   |
+ 6 |     method :: (self: *S1238) -> i64 { x := BadMethod1238.{}; _ := x; return self.a; }
+   |                                            ^^^^^^^^^^^^^^^^
+
+error: unknown type 'BadImpl1238'
+  --> examples/diagnostics/1238-diagnostics-unknown-type-reach.sx:8:58
+   |
+ 8 | impl P1238 for S1238 { f :: (self: *S1238) -> i64 { x := BadImpl1238.{}; _ := x; return self.a; } }
+   |                                                          ^^^^^^^^^^^^^^
+
+error: unknown type 'BadGlobal1238'
+  --> examples/diagnostics/1238-diagnostics-unknown-type-reach.sx:9:10
+   |
+ 9 | g1238 := BadGlobal1238.{};
+   |          ^^^^^^^^^^^^^^^^
+
+error: unknown type 'BadParamDefault1238'
+  --> examples/diagnostics/1238-diagnostics-unknown-type-reach.sx:10:33
+   |
+10 | with_default1238 :: (x: S1238 = BadParamDefault1238.{}) -> i64 { return x.a; }
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^

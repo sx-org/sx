@@ -1,0 +1,29 @@
+error: type 'Thing' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0767-modules-ambiguous-bare-type-forms.sx:33:19
+   |
+33 |     sz := size_of(Thing);
+   |                   ^^^^^
+
+error: type 'Nums' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0767-modules-ambiguous-bare-type-forms.sx:34:11
+   |
+34 |     xs := Nums.[1, 2];
+   |           ^^^^
+
+error: type 'Box' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0767-modules-ambiguous-bare-type-forms.sx:35:9
+   |
+35 |     x : Box(i64) = .{ v = 3 };
+   |         ^^^^^^^^
+
+error: type 'Thing' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0767-modules-ambiguous-bare-type-forms.sx:36:16
+   |
+36 |     t : Type = Thing;
+   |                ^^^^^
+
+error: type 'Thing' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0767-modules-ambiguous-bare-type-forms.sx:26:14
+   |
+26 |         case Thing: 1;
+   |              ^^^^^

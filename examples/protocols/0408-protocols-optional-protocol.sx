@@ -1,0 +1,34 @@
+// `?Protocol = null` — optional protocol boxes use sentinel-shape
+// (ctx == null is the "none" state), so they cost no extra storage
+// beyond the protocol's standard 2-pointer layout. Method calls on
+// a non-null optional protocol auto-unwrap and dispatch through the
+// vtable / inline fn-ptrs as usual.
+
+#import "modules/std.sx";
+
+GPU :: protocol {
+  ping :: (self: *Self) -> i64;
+}
+
+Impl :: struct {}
+impl GPU for Impl {
+  ping :: (self: *Impl) -> i64 { 42 }
+}
+
+main :: () -> i32 {
+  g : ?GPU = null;
+  if g != null {
+    print("BAD: g not null at start\n");
+  } else {
+    print("g initially null\n");
+  }
+
+  g = Impl.{}.(GPU);
+  if g != null {
+    n := g.ping();
+    print("after assign: g.ping() = {}\n", n);
+  } else {
+    print("BAD: g still null after assign\n");
+  }
+  0
+}

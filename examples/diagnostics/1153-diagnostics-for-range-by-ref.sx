@@ -1,0 +1,8 @@
+// Range elements are synthesized values with no storage — `*` capture is
+// rejected.
+
+#import "modules/std.sx";
+
+main :: () {
+    for 0..3 (*i) { }
+}

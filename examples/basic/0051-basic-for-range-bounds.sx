@@ -1,0 +1,63 @@
+// Range bound markers: each side of `..` takes `=` (inclusive) or `<`
+// (exclusive); defaults are start-inclusive, end-exclusive (`a..b` == `a=..<b`).
+// Covers the full matrix, open ranges with start markers, comptime unrolling,
+// runtime bounds, arbitrary expressions at EITHER end (expression parsing
+// stops at the range token), and that `<` / `<<` comparisons still lex
+// normally.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    for 0<..<5 (i) { print("{} ", i); }
+    print("| 0<..<5\n");
+    for 0=..=5 (i) { print("{} ", i); }
+    print("| 0=..=5\n");
+    for 0<..=5 (i) { print("{} ", i); }
+    print("| 0<..=5\n");
+    for 0=..<5 (i) { print("{} ", i); }
+    print("| 0=..<5\n");
+    for 0..<5 (i) { print("{} ", i); }
+    print("| 0..<5\n");
+    for 0..=5 (i) { print("{} ", i); }
+    print("| 0..=5\n");
+
+    // Exclusive-start open range following a bounded first iterable.
+    xs : [3]i64 = .[10, 20, 30];
+    for xs, 2<.. (x, i) { print("{}@{} ", x, i); }
+    print("| xs, 2<..\n");
+
+    // Explicit inclusive-start open form (synonym of `5..`).
+    for xs, 5=.. (x, i) { print("{}@{} ", x, i); }
+    print("| xs, 5=..\n");
+
+    // Comptime-unrolled with markers.
+    s := 0;
+    inline for 0<..=3 (i) { s += i; }
+    print("inline 0<..=3 sum={}\n", s);
+
+    // Runtime bounds with markers.
+    lo := 1;
+    hi := 4;
+    for lo<..=hi (i) { print("{} ", i); }
+    print("| lo<..=hi\n");
+
+    // Arbitrary expressions at either end of the range token.
+    x := 2;
+    n := 0;
+    sum := 0;
+    for x+2..=42 (e) { n += 1; sum += e; }      // expression start: 4 .. 42
+    print("x+2..=42: n={} sum={}\n", n, sum);
+    n2 := 0;
+    for x+2<..<x*21 (e) => n2 += 1;             // both ends: 5 .. 41
+    print("x+2<..<x*21: n2={}\n", n2);
+    n3 := 0;
+    for 0..x*3 (i) => n3 += 1;                  // expression end: 0 .. 5
+    print("0..x*3: n3={}\n", n3);
+
+    // Comparison operators still lex normally.
+    a := 3;
+    if a < 5 { print("cmp ok\n"); }
+    b := a << 1;
+    print("shl={}\n", b);
+    0
+}

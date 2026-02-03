@@ -1,0 +1,46 @@
+// Value-position match arms UNIFY their result types over the implicit-
+// coercion lattice, symmetrically — arm order never picks the type:
+//   - int ⊔ float = the float type, in BOTH orders (preserves the
+//     issue-0226 pinned "f64 payload arm + int-literal arm → f64");
+//   - narrower ⊔ wider int = the wider int (no silent truncation);
+//   - a `null` arm makes the result optional (?T) wherever it appears.
+// Arm values coerce to the unified type before the merge, exactly like the
+// if/else-expression merge's `coerceToType` — but joined instead of
+// first-branch-wins.
+// Regression (issue 0236): pre-fix the first decisive arm's type won —
+// `.other` first turned the 2.5 payload into 2 (f64 silently fptosi'd to
+// i64), an i32 first arm truncated a 9000000000 i64 arm, and a trailing
+// `null` arm was invisible to the result type.
+#import "modules/std.sx";
+
+Color :: enum { red; green; }
+V :: enum { num: f64; other; }
+
+main :: () {
+    // int ⊔ float = float — capture-typed f64 arm FIRST (the 0226 pinned order)...
+    a : V = .num(2.5);
+    r1 := if a == { case .num: (x) { x } case .other: { 1 } };
+    print("{}\n", r1);
+
+    // ...and int-literal arm FIRST (pre-fix: silently truncated 2.5 to 2).
+    r2 := if a == { case .other: { 1 } case .num: (x) { x } };
+    print("{}\n", r2);
+
+    // i32 ⊔ i64 = i64 in both orders (pre-fix: i32-first truncated the i64 arm).
+    c : Color = .green;
+    small : i32 = 5;
+    big : i64 = 9000000000;
+    r3 := if c == { case .red: { small } case .green: { big } };
+    print("{}\n", r3);
+    r4 := if c == { case .red: { big } case .green: { small } };
+    print("{}\n", r4);
+
+    // A trailing `null` arm still makes the result optional (pre-fix only a
+    // null arm BEFORE the first value arm did).
+    d : Color = .red;
+    r5 := if d == { case .red: { 42 } case .green: { null } };
+    if v := r5 { print("some {}\n", v); } else { print("none\n"); }
+    e : Color = .green;
+    r6 := if e == { case .red: { 42 } case .green: { null } };
+    if w := r6 { print("some {}\n", w); } else { print("none\n"); }
+}

@@ -1,0 +1,6 @@
+read: hello fs
+basename(/a/b/c.txt) = c.txt
+basename(foo) = foo
+dirname(/a/b/c.txt) = /a/b
+dirname(foo) = .
+ok

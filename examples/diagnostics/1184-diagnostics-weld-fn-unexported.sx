@@ -1,0 +1,15 @@
+// `abi(.compiler)` is gone. `abi(...)` carries genuine calling conventions only
+// — `.c`, `.naked`, and the default sx convention.
+//
+// It used to mean two unrelated things, both now spelled properly: a bodiless
+// declaration was the compiler-API surface (that is an `intrinsic` now, bound by
+// the registry — see 1189 / 1242), and a bodied one was a build callback (that
+// is an ordinary function now, registered with `on_build`, kept out of the
+// binary by reachability rather than by its ABI — see 1664).
+//
+// This pins the rejection, so the spelling cannot creep back.
+#import "modules/std.sx";
+
+not_a_real_compiler_fn :: (x: i64) -> i64 abi(.compiler);
+
+main :: () { print("unreached\n"); }

@@ -1,0 +1,35 @@
+// A typed module-level constant whose initializer does not match its
+// annotation is a compile-time type error — not a silently-accepted const.
+// Each declaration below pairs an initializer with an incompatible annotation,
+// so the compiler must emit a `type mismatch` diagnostic at the initializer and
+// abort (exit 1) rather than registering a usable const.
+//
+// Regression (issue 0088): `N : string : 4` was accepted; `print(N)` then
+// segfaulted (an integer emitted as a `string` const → a bogus pointer) and
+// `[N]i64` folded `N` to 4. The fix rejects the declaration at the root. The
+// validation is type-based, so a const-EXPRESSION initializer (`E : string :
+// M + 2`, `V : string : -M`) is rejected just like a literal — not skipped
+// because its node kind isn't a literal (issue 0088, attempt 2).
+//
+// The mixed-numeric pair (`i64 : M + 0.5`, `i64 : 0.5 + M`) is rejected in BOTH
+// operand orders: arithmetic binary-op inference now promotes int+float to the
+// float result (`Lowering.arithResultType`), so an i64 annotation no longer
+// matches a float-producing initializer regardless of which operand is the
+// float (issue 0088, attempt 3 — the inferExprType promotion root fix).
+
+#import "modules/std.sx";
+
+M :: 2;
+
+N  : string : 4;        // integer literal where a string is annotated
+F  : i64    : "x";      // string literal where an integer is annotated
+B  : i64    : true;     // boolean literal where an integer is annotated
+G  : i64    : 1.5;      // float literal where an integer is annotated
+E  : string : M + 2;    // integer EXPRESSION where a string is annotated
+V  : string : -M;       // integer (unary) expression where a string is annotated
+BAD  : i64  : M + 0.5;  // mixed int+float (int LHS) → f64, rejected vs i64
+BAD2 : i64  : 0.5 + M;  // mixed float+int (float LHS) → f64, rejected vs i64 — order-independent
+
+main :: () {
+    print("unreachable\n");
+}

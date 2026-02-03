@@ -1,0 +1,295 @@
+#import "modules/std.sx";
+
+// ============================================================
+// Dot-shorthand tests: .identifier(args) unification
+// Tests both tagged enum backward compat and struct static methods
+// ============================================================
+
+// --- Type declarations ---
+
+Color :: enum { red; green; blue; }
+
+Shape :: enum {
+    circle: f32;
+    rect: struct { w, h: f32; };
+    none;
+}
+
+Vec2 :: struct {
+    x: f32;
+    y: f32;
+
+    create :: (x: f32, y: f32) -> Vec2 { Vec2.{ x = x, y = y } }
+    zero :: () -> Vec2 { Vec2.{ x = 0.0, y = 0.0 } }
+    unit_x :: () -> Vec2 { Vec2.{ x = 1.0, y = 0.0 } }
+    add :: (a: Vec2, b: Vec2) -> Vec2 { Vec2.{ x = a.x + b.x, y = a.y + b.y } }
+    scale :: (v: Vec2, s: f32) -> Vec2 { Vec2.{ x = v.x * s, y = v.y * s } }
+    len :: (v: Vec2) -> i32 { xx (v.x + v.y) }
+}
+
+EdgeInsets :: struct {
+    top: f32;
+    right: f32;
+    bottom: f32;
+    left: f32;
+
+    all :: (v: f32) -> EdgeInsets { EdgeInsets.{ top = v, right = v, bottom = v, left = v } }
+    symmetric :: (h: f32, v: f32) -> EdgeInsets { EdgeInsets.{ top = v, right = h, bottom = v, left = h } }
+    horizontal :: (h: f32) -> EdgeInsets { EdgeInsets.{ top = 0.0, right = h, bottom = 0.0, left = h } }
+}
+
+Trio :: struct {
+    a: i32;
+    b: i32;
+    c: i32;
+
+    make :: (a: i32, b: i32, c: i32) -> Trio { Trio.{ a = a, b = b, c = c } }
+    sum :: (t: Trio) -> i32 { t.a + t.b + t.c }
+}
+
+Result :: enum {
+    ok: i32;
+    err: string;
+}
+
+main :: () {
+    // ============================================================
+    // SECTION 1: Tagged enum backward compatibility
+    // ============================================================
+    print("--- tagged enum compat ---\n");
+
+    // T1: .variant(payload) in typed variable declaration
+    {
+        sh : Shape = .circle(3.14);
+        print("T1: {}\n", sh.circle);
+    }
+
+    // T2: Bare .variant (no payload) in typed variable
+    {
+        sh : Shape = .none;
+        ms := if sh == {
+            case .circle: 1;
+            case .rect: 2;
+            case .none: 3;
+        };
+        print("T2: {}\n", ms);
+    }
+
+    // T3: .variant with struct payload
+    {
+        sh : Shape = .rect(.{ 5.0, 3.0 });
+        print("T3: {} {}\n", sh.rect.w, sh.rect.h);
+    }
+
+    // T4: Qualified Type.variant(payload) still works
+    {
+        sh := Shape.circle(2.71);
+        print("T4: {}\n", sh.circle);
+    }
+
+    // T5: Match with payload capture
+    {
+        sh : Shape = .circle(9.5);
+        if sh == {
+            case .circle: (r) { print("T5: {}\n", r); }
+            case .rect: (sz) { print("T5: rect\n"); }
+            case .none: print("T5: none\n");
+        }
+    }
+
+    // T6: Return .variant(payload) from function
+    {
+        make_shape :: (r: f32) -> Shape { .circle(r) }
+        sh := make_shape(4.2);
+        print("T6: {}\n", sh.circle);
+    }
+
+    // T7: Reassignment with .variant(payload) and bare .variant
+    {
+        sh : Shape = .circle(1.0);
+        print("T7a: {}\n", sh.circle);
+        sh = .rect(.{ 2.0, 3.0 });
+        print("T7b: {} {}\n", sh.rect.w, sh.rect.h);
+        sh = .none;
+        ms := if sh == {
+            case .circle: 1;
+            case .rect: 2;
+            case .none: 3;
+        };
+        print("T7c: {}\n", ms);
+    }
+
+    // T8: .variant(payload) as function argument (match-as-expression)
+    {
+        describe :: (sh: Shape) -> i32 {
+            if sh == {
+                case .circle: 10;
+                case .rect: 20;
+                case .none: 30;
+            }
+        }
+        print("T8a: {}\n", describe(.circle(7.0)));
+        print("T8b: {}\n", describe(.rect(.{ 3.0, 4.0 })));
+        print("T8c: {}\n", describe(.none));
+    }
+
+    // T9: Tagged enum with string payload
+    {
+        r : Result = .ok(42);
+        ms := if r == {
+            case .ok: (v) { v }
+            case .err: (e) { -1 }
+        };
+        print("T9: {}\n", ms);
+    }
+
+    // T10: Match as expression returning tagged enum
+    {
+        select :: (n: i32) -> Shape {
+            if n == {
+                case 0: .none;
+                case 1: .circle(1.0);
+                else: .rect(.{ 9.0, 9.0 });
+            }
+        }
+        print("T10a: {}\n", if select(0) == { case .none: 1; else: 0; });
+        print("T10b: {}\n", select(1).circle);
+        print("T10c: {}\n", select(2).rect.w);
+    }
+
+    // ============================================================
+    // SECTION 2: Struct static method shorthand
+    // ============================================================
+    print("--- struct static shorthand ---\n");
+
+    // S1: .method(args) as function argument (the motivating use case)
+    {
+        print_vec :: (v: Vec2) { print("S1: {} {}\n", v.x, v.y); }
+        print_vec(.create(3.0, 4.0));
+    }
+
+    // S2: .method(args) in typed variable declaration
+    {
+        v : Vec2 = .create(5.0, 6.0);
+        print("S2: {} {}\n", v.x, v.y);
+    }
+
+    // S3: Return .method(args) from function with return type
+    {
+        make_vec :: () -> Vec2 { .create(7.0, 8.0) }
+        v := make_vec();
+        print("S3: {} {}\n", v.x, v.y);
+    }
+
+    // S4: Zero-arg static method (factory)
+    {
+        print_vec :: (v: Vec2) { print("S4: {} {}\n", v.x, v.y); }
+        print_vec(.zero());
+        print_vec(.unit_x());
+    }
+
+    // S5: Three-arg static method (proves multi-arg works)
+    {
+        print_trio :: (t: Trio) { print("S5: {}\n", t.a + t.b + t.c); }
+        print_trio(.make(10, 20, 30));
+    }
+
+    // S6: Two-arg shorthand matching the EdgeInsets use case
+    {
+        apply_insets :: (ei: EdgeInsets) { print("S6: {} {} {} {}\n", ei.top, ei.right, ei.bottom, ei.left); }
+        apply_insets(.all(8.0));
+        apply_insets(.symmetric(16.0, 8.0));
+        apply_insets(.horizontal(12.0));
+    }
+
+    // S7: Result of .method() used in further computation
+    {
+        v : Vec2 = .create(3.0, 4.0);
+        print("S7: {}\n", Vec2.len(v));
+    }
+
+    // S8: Chained qualified + shorthand — ensure both work together
+    {
+        v1 := Vec2.create(1.0, 2.0);
+        print_vec :: (v: Vec2) { print("S8: {} {}\n", v.x, v.y); }
+        print_vec(.create(3.0, 4.0));
+        print("S8q: {} {}\n", v1.x, v1.y);
+    }
+
+    // S9: Static method taking struct of same type as args
+    {
+        v : Vec2 = .add(.create(1.0, 2.0), .create(3.0, 4.0));
+        print("S9: {} {}\n", v.x, v.y);
+    }
+
+    // S10: Static method + piped result
+    {
+        v := Vec2.create(2.0, 3.0) |> Vec2.scale(2.0);
+        print("S10: {} {}\n", v.x, v.y);
+    }
+
+    // ============================================================
+    // SECTION 3: Edge cases mixing both
+    // ============================================================
+    print("--- edge cases ---\n");
+
+    // E1: Both tagged enum and struct shorthand in same scope
+    {
+        sh : Shape = .circle(5.0);
+        v : Vec2 = .create(1.0, 2.0);
+        print("E1: {} {} {}\n", sh.circle, v.x, v.y);
+    }
+
+    // E2: Function taking both types — each resolves correctly
+    {
+        use_both :: (sh: Shape, v: Vec2) {
+            ms : i32 = 0;
+            if sh == { case .circle: (r) { ms = xx r; } else: {} }
+            print("E2: {} {} {}\n", ms, v.x, v.y);
+        }
+        use_both(.circle(9.0), .create(1.0, 2.0));
+    }
+
+    // E3: Bare .variant (no parens) as function arg
+    {
+        check_none :: (sh: Shape) -> i32 {
+            if sh == { case .none: 1; else: 0; }
+        }
+        print("E3: {}\n", check_none(.none));
+    }
+
+    // E4: Nested shorthand — .method takes a struct param created with shorthand
+    // (inner .create must resolve via the method's parameter type, not the outer type)
+    {
+        v : Vec2 = .add(Vec2.create(1.0, 2.0), Vec2.create(3.0, 4.0));
+        print("E4: {} {}\n", v.x, v.y);
+    }
+
+    // E5: Tagged enum .variant(payload) in match-as-expression
+    {
+        sh : Shape = .circle(42.0);
+        r : i32 = 0;
+        if sh == {
+            case .circle: (v) { r = xx v; }
+            case .rect: (sz) { r = xx sz.w; }
+            case .none: r = xx -1;
+        }
+        print("E5: {}\n", r);
+    }
+
+    // E6: Color enum (plain, not tagged) still works with bare .variant
+    {
+        c : Color = .green;
+        ci : i32 = xx c;
+        print("E6: {}\n", ci);
+    }
+
+    // E7: Struct shorthand in typed variable, then pass to function
+    {
+        ei : EdgeInsets = .symmetric(10.0, 20.0);
+        show :: (e: EdgeInsets) { print("E7: {} {}\n", e.top, e.left); }
+        show(ei);
+    }
+
+    print("=== DONE ===\n");
+}

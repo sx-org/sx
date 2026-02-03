@@ -1,0 +1,29 @@
+// Regression test for issue-0039 — directory-import scan order.
+//
+// When a directory is imported, the resolver iterates files
+// alphabetically. Inside the directory, `aaa_uses.sx` comes BEFORE
+// `types.sx` but its `make_my` returns `MyEnum` (defined in
+// `types.sx`). The combined directory module must put `aaa_uses.sx`'s
+// transitive imports (which include `MyEnum`) into the global scan
+// stream BEFORE `aaa_uses.sx`'s own decls so the tagged_union for
+// MyEnum is registered before `make_my`'s return type is resolved.
+//
+// Pre-fix, the dir-import implementation appended each file's
+// `own_decls` before its `decls`, which inverted that order and
+// caused `MyEnum` to be registered as a placeholder struct via the
+// `resolveTypeName` fallback. The later `enum_decl` scan then
+// short-circuited via `findByName` and never upgraded the placeholder
+// to the real tagged_union, surfacing as "cannot infer enum type
+// for '.b'" at the `return .b(42)` site.
+
+#import "modules/std.sx";
+#import "0707-modules-import-dir-scan-order";
+
+main :: () -> i32 {
+    e := make_my();
+    if e == {
+        case .a: { print("a\n"); }
+        case .b: (v) { print("b={}\n", v); }
+    }
+    0
+}

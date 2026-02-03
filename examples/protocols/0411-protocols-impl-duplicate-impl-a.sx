@@ -1,0 +1,9 @@
+// Helper A — one of two conflicting impls for the same (i64, Wrap) pair.
+#import "modules/std.sx";
+#import "./0411-protocols-impl-duplicate-types.sx";
+
+impl Into(Wrap) for i64 {
+  convert :: (self: i64) -> Wrap {
+    .{ v = self * 10 }
+  }
+}

@@ -1,0 +1,40 @@
+// Generic `??` preserves the optional's presence across monomorphization.
+//
+// Regression (issue 0180): a `??` inside a generic fn whose lhs is a
+// type-param-typed optional `?T` used to drop the RHS default and return the
+// zero payload — a null `?i32` arriving as the `?T` arg was silently coerced
+// to the monomorphized `?i64` with the has-bit hardcoded to `true` (the
+// optional→optional arg coercion unwrapped-then-rewrapped-present), so
+// `x ?? d` saw a present zero and returned 0 instead of `d`.
+#import "modules/std.sx";
+
+Pt :: struct { x: i64 = 0; y: i64 = 0; }
+
+unwrap_or :: (d: $T, x: ?T) -> T { return x ?? d; }
+
+main :: () {
+    // ?i32: null -> default, present -> value.
+    bi : ?i32 = null;
+    print("a={}\n", unwrap_or(99, bi));
+    ci : ?i32 = 5;
+    print("b={}\n", unwrap_or(99, ci));
+
+    // ?i64 instantiation.
+    bl : ?i64 = null;
+    print("c={}\n", unwrap_or(7, bl));
+    dl : ?i64 = 42;
+    print("d={}\n", unwrap_or(7, dl));
+
+    // ?*i64 instantiation: null -> the &v default.
+    bp : ?*i64 = null;
+    v : i64 = 123;
+    print("e={}\n", unwrap_or(@v, bp).*);
+
+    // ?Struct instantiation: null -> default struct, present -> the value.
+    ps : ?Pt = null;
+    rp := unwrap_or(Pt.{ x = 1, y = 2 }, ps);
+    print("f={} {}\n", rp.x, rp.y);
+    qs : ?Pt = Pt.{ x = 8, y = 9 };
+    rq := unwrap_or(Pt.{ x = 1, y = 2 }, qs);
+    print("g={} {}\n", rq.x, rq.y);
+}

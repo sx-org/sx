@@ -1,0 +1,7 @@
+p: {x: 10, y: 20}
+c: {r: 255, g: 128, b: 0}
+n: 42
+s: hello
+b: true
+&p: *Point@0xADDR
+&p: *Point@0xADDR

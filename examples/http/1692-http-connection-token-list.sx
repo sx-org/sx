@@ -1,0 +1,166 @@
+// std.http — Connection header as a token list (RFC 9110 §7.6.1).
+//
+// Q1.6: `Connection` is a comma-separated list of case-insensitive
+// tokens with optional OWS around each — `Connection: close, TE` MUST
+// read as close, and `Connection: closefoo` must NOT (token match, not
+// substring/prefix). If both `close` and `keep-alive` appear, close
+// wins. The server used to exact-match the whole value, so any request
+// with more than one Connection option silently kept the wrong mode.
+//
+// Close cases assert the response's own `Connection: close` header AND
+// a real EOF. Keep cases prove liveness by pipelining a second request
+// (itself close-marked) in the same write: two 200s arrive only if the
+// server honored keep-alive for the first.
+//
+// Asserts: 1.1 "close, TE" / "TE, close" / "close , TE" (OWS) → close +
+// EOF; 1.0 "Keep-Alive, TE" → kept (two responses); 1.1 "closefoo" →
+// NOT close (two responses); GPA net-zero after close.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 19006;
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    resp.body = "served";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+count_occurrences :: (hay: string, needle: string) -> i64 {
+    n : i64 = 0;
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { n += 1; i += needle.len; } else { i += 1; }
+    }
+    return n;
+}
+
+// Write the blob, read until EOF or stall. eof reports whether the
+// server closed the connection.
+exchange :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64, eof: *bool) -> string {
+    fd := dial_port(PORT);
+    if fd < 0 { eof.* = false; return ""; }
+    socket.write(fd, req.ptr, xx req.len);
+    total : i64 = 0;
+    stall : i64 = 0;
+    done := false;
+    while !done and stall < 200 {
+        srv.tick(1) catch {};
+        got : i64 = 0;
+        while true {
+            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            if !re { total += n; got += n; continue; }
+            if re == error.Closed { done = true; }
+            break;
+        }
+        if got > 0 { stall = 0; } else { stall += 1; }
+    }
+    socket.close(fd);
+    eof.* = done;
+    return string.{ ptr = buf, len = xx total };
+}
+
+check :: (r: string, frag: string, label: string, failed: *i64) {
+    if !contains(r, frag) {
+        print("{}: expected \"{}\"\n", label, frag);
+        failed.* = 1;
+    }
+}
+
+// A close-list case: one request, server must announce close and FIN.
+expect_close :: (srv: *http.Server, req: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
+    eof := false;
+    r := exchange(srv, req, buf, cap, @eof);
+    check(r, "HTTP/1.1 200 OK", label, failed);
+    check(r, "Connection: close", label, failed);
+    if !eof {
+        print("{}: server did not close\n", label);
+        failed.* = 1;
+    }
+}
+
+// A keep-list case: the first request must be kept alive — proven by a
+// pipelined close-marked second request answered on the same conn.
+expect_kept :: (srv: *http.Server, two_reqs: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
+    eof := false;
+    r := exchange(srv, two_reqs, buf, cap, @eof);
+    if count_occurrences(r, "HTTP/1.1 200 OK") != 2 {
+        print("{}: expected two responses on one connection\n", label);
+        failed.* = 1;
+    }
+    check(r, "Connection: keep-alive", label, failed);
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 16384;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{ port = PORT, max_conn = 4, request_count = 10 };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        // (a) close first in the list
+        expect_close(@srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close, TE\r\n\r\n",
+            "close-first", rbuf, cap, @failed);
+
+        // (b) close not first
+        expect_close(@srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: TE, close\r\n\r\n",
+            "close-last", rbuf, cap, @failed);
+
+        // (c) OWS around the token
+        expect_close(@srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close , TE\r\n\r\n",
+            "close-ows", rbuf, cap, @failed);
+
+        // (d) 1.0 + "Keep-Alive, TE" (case + list) → kept; the pipelined
+        // 1.0 follow-up (default close) proves it
+        expect_kept(@srv,
+            "GET / HTTP/1.0\r\nConnection: Keep-Alive, TE\r\n\r\nGET / HTTP/1.0\r\n\r\n",
+            "1.0 keep-list", rbuf, cap, @failed);
+
+        // (e) "closefoo" is NOT the close token — 1.1 default keep-alive
+        // must survive; the close-marked follow-up proves liveness
+        expect_kept(@srv,
+            "GET / HTTP/1.1\r\nHost: t\r\nConnection: closefoo\r\n\r\nGET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n",
+            "closefoo", rbuf, cap, @failed);
+
+        srv.close();
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

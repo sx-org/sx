@@ -1,0 +1,23 @@
+error: 'v' is not part of protocol 'Show' — a pack element exposes only the protocol's interface
+  --> examples/diagnostics/1164-diagnostics-inline-for-pack-rejections.sx:15:23
+   |
+15 |         print("{}\n", x.v);
+   |                       ^^^
+
+error: a pack element cannot be captured by reference
+  --> examples/diagnostics/1164-diagnostics-inline-for-pack-rejections.sx:19:21
+   |
+19 |     inline for xs (*x) { }
+   |                     ^
+
+error: inline for: pack 'xs' has 2 elements but the unroll is 5 iterations
+  --> examples/diagnostics/1164-diagnostics-inline-for-pack-rejections.sx:22:22
+   |
+22 |     inline for 0..5, xs (i, x) { }
+   |                      ^^
+
+error: inline for: each iterable must be a comptime range or a pack — `inline for 0..N (i) { }` / `inline for xs (x) { }`
+  --> examples/diagnostics/1164-diagnostics-inline-for-pack-rejections.sx:30:16
+   |
+30 |     inline for arr (x) { }
+   |                ^^^

@@ -1,0 +1,21 @@
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+// P5.4 — the `on_build` override. A user `#run on_build(build);` replaces the
+// stdlib `default_pipeline` as the build driver; the compiler invokes it after
+// codegen with the `BuildOptions` handle. This build GROWS a `List` on the build
+// VM (comptime List growth works only on the VM — issue 0141; the legacy interp
+// fails it) then DELEGATES to `default_pipeline` for the real emit + link, so a
+// working binary is still produced → "runtime main".
+
+build :: (opt: BuildOptions) -> bool {
+    names := List(string).{};
+    names.append("alpha");
+    names.append("beta");
+    names.append("gamma");
+    if names.len != 3 { return false; }
+    return default_pipeline(opt);
+}
+#run on_build(build);
+
+main :: () { print("runtime main\n"); }

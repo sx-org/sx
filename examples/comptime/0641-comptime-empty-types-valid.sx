@@ -1,0 +1,36 @@
+// A comptime-constructed type with NO members is VALID for every kind:
+//   - an empty struct `struct {}` and empty tuple `()` are zero-size aggregates
+//     you can instantiate (`.{}`),
+//   - an empty enum and an empty tagged_union are valid uninhabited / zero-member
+//     types — legitimate to NAME and reference even though they have no
+//     constructible value (no variant to construct).
+//
+// This mirrors normal sx, where `struct {}` and `enum {}` already codegen fine;
+// the metatype `define`/`declare` path now agrees (the old blanket
+// "a type with no members is never valid" rejection is gone).
+//
+// The ONLY thing still rejected on this path is a bare `declare("X")` that is
+// never completed by a matching `define` — an INCOMPLETE forward slot that would
+// panic codegen. That case is exercised by examples/1179.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+// Explicitly-defined empty types of every kind.
+EmptyStruct :: define(declare("EmptyStruct"), .struct(.{ fields = .[] }));
+EmptyTuple  :: define(declare("EmptyTuple"),  .tuple(.{ elements = .[] }));
+EmptyEnum   :: define(declare("EmptyEnum"),   .enum(.{ variants = .[] }));
+// An empty tagged_union (kind 3): no variants, but a valid named type. (The
+// `define` DSL maps an all-void variant set to a payloadless enum, so reach for
+// the raw_register_type primitive directly to mint a 0-variant tagged_union.)
+EmptyUnion  :: raw_register_type(declare("EmptyUnion"), 3, .[]);
+
+main :: () -> i32 {
+    // Instantiate the constructible ones.
+    s : EmptyStruct = .{};
+    t : EmptyTuple  = .{};
+    _ = s;
+    _ = t;
+    // EmptyEnum / EmptyUnion are uninhabited — valid as types, no value to make.
+    print("empty struct/tuple/enum/tagged_union are all valid\n");
+    return 0;
+}

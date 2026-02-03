@@ -1,0 +1,5 @@
+error: 'T' does not implement protocol 'P': method 'val' has a mismatched signature — return type: protocol declares 'i64', impl declares 'bool' (a protocol-method impl must match the protocol's declared types exactly, with `Self` written as `T`)
+  --> examples/diagnostics/1201-diagnostics-protocol-impl-signature-mismatch.sx:20:8
+   |
+20 |   p := t.(P);                 // <- 'T' does not implement 'P' (return type)
+   |        ^^^^^

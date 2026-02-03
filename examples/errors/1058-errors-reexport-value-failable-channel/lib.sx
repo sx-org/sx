@@ -1,0 +1,8 @@
+// Implementation module: a generic value-failable `ufcs` fn + its error set.
+#import "modules/std.sx";
+
+LE  :: error { Bad }
+Box :: struct ($R: Type) { v: R; }
+
+// Returns `($R, !LE)` — a value-failable. `$R` is inferred from the arg.
+get :: ufcs (b: *Box($R)) -> ($R, !LE) { return b.v; }

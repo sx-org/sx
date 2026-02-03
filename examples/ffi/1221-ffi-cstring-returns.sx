@@ -1,0 +1,31 @@
+// Extern `-> [:0]u8` / `-> ?[:0]u8` returns: C hands back ONE `char *`;
+// the fat sx string is synthesized at the call boundary ({ptr, strlen};
+// NULL maps to the optional's null / an empty string) — issue 0128.
+// Pre-fix, the call read the pointer register pair as {ptr, len} and the
+// length was garbage (bus error on print).
+#import "modules/std.sx";
+
+libc :: #library "c";
+err_text :: (code: i32) -> [:0]u8 extern libc "strerror";
+sig_text :: (sig: i32) -> ?[:0]u8 extern libc "strsignal";
+dlerror  :: () -> ?[:0]u8 extern libc;
+
+main :: () -> i32 {
+    // plain: strerror(0) = "Undefined error: 0" on macOS — assert shape,
+    // not the exact text (locale/platform variance)
+    t := err_text(2);
+    if t.len < 5 { print("BUG: strerror too short ({})\n", t.len); return 1; }
+    print("strerror(2) len ok\n");
+
+    // optional, non-null branch
+    o := sig_text(2);
+    if o == null { print("BUG: strsignal null\n"); return 2; }
+    if o!.len < 3 { print("BUG: strsignal too short\n"); return 3; }
+    print("optional non-null ok\n");
+
+    // optional, NULL branch: dlerror() with no pending error is NULL
+    d := dlerror();
+    if d != null { print("BUG: dlerror non-null\n"); return 4; }
+    print("optional null ok\n");
+    return 0;
+}

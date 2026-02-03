@@ -1,0 +1,52 @@
+// std.time — wall and monotonic clocks over clock_gettime(2)
+// (PLAN-HTTPZ S1).
+//
+//   now_secs()  wall clock, unix epoch seconds (CLOCK_REALTIME).
+//   mono_ms()   monotonic milliseconds for deadlines/timeouts —
+//               unaffected by wall-clock steps (NTP, manual set);
+//               meaningful only as a difference between two reads in
+//               one process, never as an absolute time.
+//
+// PER-OS: clock ids differ (CLOCK_MONOTONIC is 6 on Darwin, 1 on
+// Linux/Android/Emscripten), so select them at declaration-flatten time.
+//
+// No error channel: clock_gettime fails only on an unknown clock id
+// (ours are module constants) or a bad pointer (ours is a stack slot),
+// so the wrappers are total.
+
+c :: #import "modules/std/c.sx";
+Timespec :: c.Timespec;
+
+inline if OS == {
+    case .macos:
+        CLOCK_REALTIME  :i32: 0;
+        CLOCK_MONOTONIC :i32: 6;
+    case .ios:
+        CLOCK_REALTIME  :i32: 0;
+        CLOCK_MONOTONIC :i32: 6;
+    case .linux:
+        CLOCK_REALTIME  :i32: 0;
+        CLOCK_MONOTONIC :i32: 1;
+    case .android:
+        CLOCK_REALTIME  :i32: 0;
+        CLOCK_MONOTONIC :i32: 1;
+    case .wasm:
+        CLOCK_REALTIME  :i32: 0;
+        CLOCK_MONOTONIC :i32: 1;
+    else:
+        #error "std/time.sx: clock ids are not defined for this target";
+}
+
+// Wall clock as unix epoch seconds.
+now_secs :: () -> i64 {
+    ts : Timespec = .{};
+    c.clock_gettime(CLOCK_REALTIME, @ts);
+    return ts.sec;
+}
+
+// Monotonic milliseconds since an arbitrary process-local origin.
+mono_ms :: () -> i64 {
+    ts : Timespec = .{};
+    c.clock_gettime(CLOCK_MONOTONIC, @ts);
+    return ts.sec * 1000 + ts.nsec / 1000000;
+}

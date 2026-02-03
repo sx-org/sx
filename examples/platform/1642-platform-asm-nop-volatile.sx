@@ -1,0 +1,5 @@
+// ASM stream — the no-output `volatile` form runs end-to-end: a bare `nop`
+// (no operands, no result) assembles and executes cleanly (exit 0). Confirms
+// the no-output⇒volatile rule's positive side AND the zero-operand emit path.
+nop :: () { asm volatile { "nop" }; }
+main :: () { nop(); }

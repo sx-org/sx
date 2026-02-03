@@ -1,0 +1,9 @@
+// One of two flat-imported `Box` authors; with no own author the param-impl
+// SOURCE `*Box` is a genuine collision.
+Box :: struct { a: i32; }
+
+a_box :: () -> i32 {
+    b : Box = ---;
+    b.a = 1;
+    return b.a;
+}

@@ -1,0 +1,8 @@
+// Reaches shapes.sx via a NAMESPACED import; re-exports a helper over its Suit.
+#import "modules/std.sx";
+s :: #import "shapes.sx";
+
+name_of :: (x: s.Suit) -> string {
+    if x == { case .hearts: { return "hearts"; } case .spades: { return "spades"; } }
+    return "?";
+}

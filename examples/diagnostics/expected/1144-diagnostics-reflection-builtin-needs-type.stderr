@@ -1,0 +1,47 @@
+error: size_of expects a type, got 'bool'
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:21:27
+   |
+21 |     print("{}\n", size_of(true));          // bool, not a type
+   |                           ^^^^
+
+error: align_of expects a type, got 'f64'
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:22:28
+   |
+22 |     print("{}\n", align_of(1.5));          // f64, not a type
+   |                            ^^^
+
+error: struct_field_count expects a type, got 'bool'
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:23:38
+   |
+23 |     print("{}\n", struct_field_count(true));      // bool, not a type
+   |                                      ^^^^
+
+error: type_name expects a type, got 'f64'
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:24:29
+   |
+24 |     print("{}\n", type_name(1.5));         // f64, not a type
+   |                             ^^^
+
+error: type_eq expects a type, got 'bool'
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:25:27
+   |
+25 |     print("{}\n", type_eq(true, false));   // both bool — both rejected
+   |                           ^^^^
+
+error: type_eq expects a type, got 'bool'
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:25:33
+   |
+25 |     print("{}\n", type_eq(true, false));   // both bool — both rejected
+   |                                 ^^^^^
+
+error: is_unsigned expects a type, got 'bool'
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:26:31
+   |
+26 |     print("{}\n", is_unsigned(true)); // bool, not a type
+   |                               ^^^^
+
+error: is_flags expects a type, got 'f64'
+  --> examples/diagnostics/1144-diagnostics-reflection-builtin-needs-type.sx:27:28
+   |
+27 |     print("{}\n", is_flags(1.5));          // f64, not a type
+   |                            ^^^

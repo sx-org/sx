@@ -1,0 +1,63 @@
+// The ownership cutover (E4) POSITIVE matrix — "P owns, *P views":
+//   - rvalue implicit erasure OWNS (the invariant, unchanged);
+//   - postfix on an LVALUE owns an independent copy;
+//   - postfix on a *Concrete SNAPSHOTS the pointee;
+//   - postfix on a *P view PROMOTES (well-typed view → owned; the fresh
+//     ctx is rt_size_of(type_id) bytes, fn/vtable words reused);
+//   - `.(P, alloc)` routes the copy through a NAMED allocator (lvalue-
+//     only arg), pairing with `free(p, alloc)`;
+//   - `free` is legal on every owned P.
+// The demand diagnostics for the retired implicit/xx lvalue spellings
+// are pinned in diagnostics/1256.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Sizable :: protocol {
+    size :: (self: *Self) -> i64;
+    bump :: (self: *Self);
+}
+W :: struct { v: i64; }
+impl Sizable for W {
+    size :: (self: *W) -> i64 { self.v }
+    bump :: (self: *W) { self.v += 1; }
+}
+
+make :: () -> W { W.{ v = 5 } }
+
+main :: () {
+    gpa := GPA.init();
+    w := W.{ v = 10 };
+
+    // rvalue implicit erasure owns (heap copy via context.allocator).
+    r : Sizable = xx make();
+    print("rvalue:   {}\n", r.size());
+    free(r);
+
+    // postfix lvalue → independent owning copy.
+    s := w.(Sizable);
+    s.bump();
+    print("lvalue:   {} {} (copy independent)\n", w.v, s.size());
+    free(s);
+
+    // postfix *Concrete → snapshot of the pointee.
+    pw : *W = @w;
+    snap := pw.(Sizable);
+    snap.bump();
+    print("snapshot: {} {}\n", w.v, snap.size());
+    free(snap);
+
+    // postfix *P → promotion (view becomes an owned, independent value).
+    o := w.(Sizable);
+    pv : *Sizable = @o;
+    prom := pv.(Sizable);
+    prom.bump();
+    print("promote:  {} {}\n", o.size(), prom.size());
+    free(prom);
+    free(o);
+
+    // named allocator: .(P, gpa) pairs with free(p, gpa).
+    n := w.(Sizable, gpa);
+    print("named:    {} gpa={}\n", n.size(), gpa.alloc_count);
+    free(n, gpa);
+    print("freed:    gpa={}\n", gpa.alloc_count);
+}

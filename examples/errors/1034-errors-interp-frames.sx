@@ -1,0 +1,23 @@
+// `trace.print_interpreter_frames()` (ERR step E4.1). At comptime (`#run`) it
+// dumps the interpreter's active sx call-frame chain (most recent call last) to
+// the build output; in compiled code it folds to nothing (no interpreter stack
+// — the only real caller is `process.exit`'s dead `is_comptime()` branch). The
+// dump frame itself is omitted; frame source locations await IR-offset
+// resolution, so only names print today. Expected exit: 0.
+
+#import "modules/std.sx";
+trace :: #import "modules/std/trace.sx";
+
+probe :: () {
+    trace.print_interpreter_frames();    // dumps the chain: __run_0 → inner → probe
+}
+
+inner :: () {
+    probe();
+}
+
+#run inner();                             // top-level #run drives the chain
+
+main :: () -> i32 {
+    return 0;
+}

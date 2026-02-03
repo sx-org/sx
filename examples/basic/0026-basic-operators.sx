@@ -1,0 +1,166 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+add :: (a: i32, b: i32) -> i32 { a + b }
+
+mul :: (a: i32, b: i32) -> i32 { a * b }
+
+// P4 edge: Chained default→default calls
+Chained :: protocol {
+    base :: (self: *Self, msg: string) -> i32;
+    wrap :: (self: *Self, msg: string) -> i32 {
+        self.base(msg) + 1
+    }
+    double_wrap :: (self: *Self, msg: string) -> i32 {
+        self.wrap(msg) + self.wrap(msg)
+    }
+}
+
+main :: () {
+
+    // ========================================================
+    // 2. OPERATORS & PRECEDENCE
+    // ========================================================
+    print("=== 2. Operators ===\n");
+
+    // Arithmetic
+    print("add: {}\n", 3 + 4);
+    print("sub: {}\n", 10 - 3);
+    print("mul: {}\n", 6 * 7);
+    print("div: {}\n", 20 / 4);
+    print("mod: {}\n", 17 % 5);
+    print("neg: {}\n", -(5));
+
+    // Comparisons
+    print("eq: {}\n", 5 == 5);
+    print("neq: {}\n", 5 != 3);
+    print("lt: {}\n", 3 < 5);
+    print("gt: {}\n", 5 > 3);
+    print("le: {}\n", 5 <= 5);
+    print("ge: {}\n", 5 >= 3);
+
+    // Chained comparisons
+    v := 50;
+    print("chain: {}\n", 0 <= v <= 100);
+    print("chain-gt: {}\n", 100 > v > 0);
+    print("chain-mixed: {}\n", 100 > v >= 0);
+
+    // Equality chains
+    print("eq-chain: {}\n", 5 == 5 == 5);
+    print("eq-chain-f: {}\n", 5 == 5 == 6);
+
+    // Bitwise
+    print("band: {}\n", 0xFF & 0x0F);
+    print("bor: {}\n", 1 | 2 | 4);
+
+    // Bitwise XOR
+    print("bxor: {}\n", 0xFF ^ 0x0F);
+    print("bxor2: {}\n", 6 ^ 3);
+
+    // Bitwise NOT
+    print("bnot: {}\n", ~0);
+    print("bnot2: {}\n", ~1);
+
+    // Shifts
+    print("shl: {}\n", 1 << 4);
+    print("shr: {}\n", 256 >> 4);
+    print("shl2: {}\n", 3 << 3);
+    print("shr2: {}\n", 255 >> 1);
+
+    // Bitwise on variables
+    bv1 := 0xFF;
+    bv2 := 0x0F;
+    print("band-var: {}\n", bv1 & bv2);
+    bv3 := 1;
+    bv4 := 6;
+    print("bor-var: {}\n", bv3 | bv4);
+    print("bxor-var: {}\n", bv1 ^ bv2);
+    print("shl-var: {}\n", bv3 << 4);
+    print("shr-var: {}\n", bv1 >> 4);
+    print("bnot-var: {}\n", ~bv2);
+
+    // Bitwise compound assignment
+    bca := 0xFF;
+    bca &= 0x0F;
+    print("and-assign: {}\n", bca);
+    bco := 0x0F;
+    bco |= 0xF0;
+    print("or-assign: {}\n", bco);
+    bcx := 0xFF;
+    bcx ^= 0x0F;
+    print("xor-assign: {}\n", bcx);
+    bcs := 1;
+    bcs <<= 8;
+    print("shl-assign: {}\n", bcs);
+    bcr := 256;
+    bcr >>= 4;
+    print("shr-assign: {}\n", bcr);
+
+    // Modulo on variables
+    mv1 := 17;
+    mv2 := 5;
+    print("mod-var: {}\n", mv1 % mv2);
+
+    // Logical (short-circuit)
+    print("and: {}\n", true and true);
+    print("and-false: {}\n", true and false);
+    print("or: {}\n", false or true);
+    print("or-false: {}\n", false or false);
+
+    // Short-circuit verification
+    print("short-and: {}\n", false and true);
+    print("short-or: {}\n", true or false);
+
+    // Compound assignment
+    ca := 10;
+    ca += 5;
+    print("ca+=: {}\n", ca);
+    ca -= 3;
+    print("ca-=: {}\n", ca);
+    ca *= 2;
+    print("ca*=: {}\n", ca);
+    ca /= 6;
+    print("ca/=: {}\n", ca);
+
+    // Precedence
+    print("prec1: {}\n", 2 + 3 * 4);
+    print("prec2: {}\n", (2 + 3) * 4);
+
+    // xx explicit cast
+    big2 : f64 = 200.7;
+    small : u8 = xx big2;
+    print("xx-cast: {}\n", small);
+
+    // Implicit widening conversions
+    wu : u8 = 200;
+    ws : i64 = wu;
+    print("widen-u8-i64: {}\n", ws);
+
+    wi3 : i32 = 42;
+    wf : f64 = wi3;
+    print("widen-i32-f64: {}\n", wf);
+
+    wf32 : f32 = 1.5;
+    wf64 : f64 = wf32;
+    print("widen-f32-f64: {}\n", wf64);
+
+    wu2 : u8 = 100;
+    ws2 : i16 = wu2;
+    print("widen-u8-i16: {}\n", ws2);
+
+    // More xx narrowing
+    xl : i64 = 12345;
+    xs : i32 = xx xl;
+    print("xx-i64-i32: {}\n", xs);
+
+    xd : f64 = 1.5;
+    xf : f32 = xx xd;
+    print("xx-f64-f32: {}\n", xf);
+
+    xdf : f64 = 7.9;
+    xdi : i32 = xx xdf;
+    print("xx-f64-i32: {}\n", xdi);
+}

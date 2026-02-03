@@ -1,0 +1,25 @@
+// Scalar binary operators check operand-type compatibility. The result
+// type is otherwise taken from the left operand, so mixing a non-numeric
+// type (here `string`) would lower as `<op> : i64` and either reinterpret
+// the string's bytes (arithmetic / bitwise → garbage) or feed mismatched
+// types to `icmp` (ordering → LLVM verifier failure). All such mismatches
+// are now rejected at compile time:
+//   - arithmetic `+ - * / %`  (numeric / vector / pointer operands)
+//   - ordering   `< <= > >=`  (numeric / enum / pointer operands)
+//   - bitwise    `& | ^`      (integer / enum operands)
+//   - shift      `<< >>`      (integer / enum operands)
+// Legitimate mixes (int+float promotion, flags-enum bitwise, enum/pointer
+// comparison) are unaffected — see `examples/50-smoke.sx`.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    n : i64 = 40;
+    s : string = "nope";
+    a := n + s;      // arithmetic: i64 + string
+    b := s * n;      // arithmetic: non-numeric LHS (string * i64)
+    c := n < s;      // ordering:   i64 < string
+    d := n & s;      // bitwise:    i64 & string
+    e := n << s;     // shift:      i64 << string
+    0
+}

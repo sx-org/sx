@@ -1,0 +1,17 @@
+// fix-0102c (issue 0102): two flat DIRECTORY imports each author a same-name
+// `tag`. A directory flat-import exposes the directory's authored functions, so
+// `caller1`/`caller2` are visible here, and each binds its OWN directory's `tag`
+// when it calls bare — per-source binding across directory imports (100 / 200).
+#import "modules/std.sx";
+#import "0725-modules-flat-dir-same-name/d1";
+#import "0725-modules-flat-dir-same-name/d2";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("caller1 binds d1.tag", caller1() == 100);
+    report("caller2 binds d2.tag", caller2() == 200);
+    0
+}

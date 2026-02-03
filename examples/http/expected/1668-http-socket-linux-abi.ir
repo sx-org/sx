@@ -1,0 +1,426 @@
+
+@str = private unnamed_addr constant [12 x i8] c"/tmp/x.sock\00", align 1
+
+; Function Attrs: nounwind
+define internal i16 @htons(i64 %0) #0 {
+entry:
+  %alloca = alloca i64, align 8
+  store i64 %0, ptr %alloca, align 8
+  %load = load i64, ptr %alloca, align 8
+  %and = and i64 %load, 255
+  %shl = shl i64 %and, 8
+  %loadN = load i64, ptr %alloca, align 8
+  %ashr = ashr i64 %loadN, 8
+  %andN = and i64 %ashr, 255
+  %or = or i64 %shl, %andN
+  %trunc = trunc i64 %or to i16
+  ret i16 %trunc
+}
+
+; Function Attrs: nounwind
+define internal { { [128 x i8], i32 }, i1 } @addr_unix({ ptr, i64 } %0) #0 {
+entry:
+  %alloca = alloca { ptr, i64 }, align 8
+  %allocaN = alloca i64, align 8
+  store { ptr, i64 } %0, ptr %alloca, align 8
+  %allocaN = alloca { [128 x i8], i32 }, align 8
+  store { [128 x i8], i32 } { [128 x i8] undef, i32 0 }, ptr %allocaN, align 4
+  %load = load { ptr, i64 }, ptr %alloca, align 8
+  %len = extractvalue { ptr, i64 } %load, 1
+  %icmp = icmp eq i64 %len, 0
+  br i1 %icmp, label %or.merge.47, label %or.rhs.46
+
+or.rhs.46:                                        ; preds = %entry
+  %loadN = load { ptr, i64 }, ptr %alloca, align 8
+  %lenN = extractvalue { ptr, i64 } %loadN, 1
+  %icmpN = icmp sge i64 %lenN, 108
+  br label %or.merge.47
+
+or.merge.47:                                      ; preds = %or.rhs.46, %entry
+  %bp = phi i1 [ true, %entry ], [ %icmpN, %or.rhs.46 ]
+  br i1 %bp, label %if.then.48, label %if.merge.49
+
+if.then.48:                                       ; preds = %or.merge.47
+  %loadN = load { [128 x i8], i32 }, ptr %allocaN, align 4
+  %ti = insertvalue { { [128 x i8], i32 }, i1 } undef, { [128 x i8], i32 } %loadN, 0
+  %tiN = insertvalue { { [128 x i8], i32 }, i1 } %ti, i1 false, 1
+  ret { { [128 x i8], i32 }, i1 } %tiN
+
+if.merge.49:                                      ; preds = %or.merge.47
+  %loadN = load { ptr, i64 }, ptr %alloca, align 8
+  %lenN = extractvalue { ptr, i64 } %loadN, 1
+  %add = add i64 2, %lenN
+  %addN = add i64 %add, 1
+  %trunc = trunc i64 %addN to i8
+  call void @un_header(ptr %allocaN, i8 %trunc)
+  store i64 0, ptr %allocaN, align 8
+  br label %while.hdr.50
+
+while.hdr.50:                                     ; preds = %while.body.51, %if.merge.49
+  %loadN = load i64, ptr %allocaN, align 8
+  %loadN = load { ptr, i64 }, ptr %alloca, align 8
+  %lenN = extractvalue { ptr, i64 } %loadN, 1
+  %icmpN = icmp slt i64 %loadN, %lenN
+  br i1 %icmpN, label %while.body.51, label %while.exit.52
+
+while.body.51:                                    ; preds = %while.hdr.50
+  %loadN = load { ptr, i64 }, ptr %alloca, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %ig.data = extractvalue { ptr, i64 } %loadN, 0
+  %ig.ptr = getelementptr i8, ptr %ig.data, i64 %loadN
+  %ig.val = load i8, ptr %ig.ptr, align 1
+  %loadN = load i64, ptr %allocaN, align 8
+  %addN = add i64 2, %loadN
+  %gep = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %allocaN, i32 0, i32 0
+  %igp.ptr = getelementptr i8, ptr %gep, i64 %addN
+  store i8 %ig.val, ptr %igp.ptr, align 1
+  %loadN = load i64, ptr %allocaN, align 8
+  %addN = add i64 %loadN, 1
+  store i64 %addN, ptr %allocaN, align 8
+  br label %while.hdr.50
+
+while.exit.52:                                    ; preds = %while.hdr.50
+  %loadN = load { ptr, i64 }, ptr %alloca, align 8
+  %lenN = extractvalue { ptr, i64 } %loadN, 1
+  %addN = add i64 2, %lenN
+  %gepN = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %allocaN, i32 0, i32 0
+  %igp.ptr25 = getelementptr i8, ptr %gepN, i64 %addN
+  store i8 0, ptr %igp.ptr25, align 1
+  %loadN = load { ptr, i64 }, ptr %alloca, align 8
+  %lenN = extractvalue { ptr, i64 } %loadN, 1
+  %addN = add i64 2, %lenN
+  %addN = add i64 %addN, 1
+  %truncN = trunc i64 %addN to i32
+  %gepN = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %allocaN, i32 0, i32 1
+  store i32 %truncN, ptr %gepN, align 4
+  %loadN = load { [128 x i8], i32 }, ptr %allocaN, align 4
+  %tiN = insertvalue { { [128 x i8], i32 }, i1 } undef, { [128 x i8], i32 } %loadN, 0
+  %tiN = insertvalue { { [128 x i8], i32 }, i1 } %tiN, i1 true, 1
+  ret { { [128 x i8], i32 }, i1 } %tiN
+}
+
+; Function Attrs: nounwind
+define internal { i16, i16, i32, i64 } @sockaddr_in(i64 %0, i32 %1) #0 {
+entry:
+  %alloca = alloca i64, align 8
+  store i64 %0, ptr %alloca, align 8
+  %allocaN = alloca i32, align 4
+  store i32 %1, ptr %allocaN, align 4
+  %load = load i64, ptr %alloca, align 8
+  %call = call i16 @htons(i64 %load)
+  %loadN = load i32, ptr %allocaN, align 4
+  %si = insertvalue { i16, i16, i32, i64 } { i16 2, i16 undef, i32 undef, i64 undef }, i16 %call, 1
+  %siN = insertvalue { i16, i16, i32, i64 } %si, i32 %loadN, 2
+  %siN = insertvalue { i16, i16, i32, i64 } %siN, i64 0, 3
+  ret { i16, i16, i32, i64 } %siN
+}
+
+; Function Attrs: nounwind
+define internal { i16, i16, i32, [16 x i8], i32 } @sockaddr_in6(i64 %0, ptr %1) #0 {
+entry:
+  %alloca = alloca i64, align 8
+  store i64 %0, ptr %alloca, align 8
+  %allocaN = alloca ptr, align 8
+  store ptr %1, ptr %allocaN, align 8
+  %load = load i64, ptr %alloca, align 8
+  %call = call i16 @htons(i64 %load)
+  %loadN = load ptr, ptr %allocaN, align 8
+  %deref = load [16 x i8], ptr %loadN, align 1
+  %si = insertvalue { i16, i16, i32, [16 x i8], i32 } { i16 10, i16 undef, i32 undef, [16 x i8] undef, i32 undef }, i16 %call, 1
+  %siN = insertvalue { i16, i16, i32, [16 x i8], i32 } %si, i32 0, 2
+  %siN = insertvalue { i16, i16, i32, [16 x i8], i32 } %siN, [16 x i8] %deref, 3
+  %siN = insertvalue { i16, i16, i32, [16 x i8], i32 } %siN, i32 0, 4
+  ret { i16, i16, i32, [16 x i8], i32 } %siN
+}
+
+; Function Attrs: nounwind
+define internal void @un_header(ptr %0, i8 %1) #0 {
+entry:
+  %alloca = alloca ptr, align 8
+  store ptr %0, ptr %alloca, align 8
+  %allocaN = alloca i8, align 1
+  store i8 %1, ptr %allocaN, align 1
+  %load = load i8, ptr %allocaN, align 1
+  %allocaN = alloca i8, align 1
+  store i8 %load, ptr %allocaN, align 1
+  %loadN = load ptr, ptr %alloca, align 8
+  %gep = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %loadN, i32 0, i32 0
+  %igp.ptr = getelementptr i8, ptr %gep, i64 0
+  store i8 1, ptr %igp.ptr, align 1
+  %loadN = load ptr, ptr %alloca, align 8
+  %gepN = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %loadN, i32 0, i32 0
+  %igp.ptr6 = getelementptr i8, ptr %gepN, i64 1
+  store i8 0, ptr %igp.ptr6, align 1
+  ret void
+}
+
+; Function Attrs: nounwind
+define internal i32 @addr_family(ptr %0) #0 {
+entry:
+  %alloca = alloca ptr, align 8
+  store ptr %0, ptr %alloca, align 8
+  %load = load ptr, ptr %alloca, align 8
+  %gep = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %load, i32 0, i32 0
+  %igp.ptr = getelementptr i8, ptr %gep, i64 0
+  %loadN = load i8, ptr %igp.ptr, align 1
+  %zext = zext i8 %loadN to i32
+  %loadN = load ptr, ptr %alloca, align 8
+  %gepN = getelementptr inbounds nuw { [128 x i8], i32 }, ptr %loadN, i32 0, i32 0
+  %igp.ptr4 = getelementptr i8, ptr %gepN, i64 1
+  %loadN = load i8, ptr %igp.ptr4, align 1
+  %zextN = zext i8 %loadN to i32
+  %shl = shl i32 %zextN, 8
+  %or = or i32 %zext, %shl
+  ret i32 %or
+}
+
+; Function Attrs: nounwind
+define internal i1 @is_wouldblock(i32 %0) #0 {
+entry:
+  %alloca = alloca i32, align 4
+  store i32 %0, ptr %alloca, align 4
+  %load = load i32, ptr %alloca, align 4
+  %icmp = icmp eq i32 %load, 11
+  ret i1 %icmp
+}
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %alloca = alloca { i16, i16, i32, i64 }, align 8
+  %allocaN = alloca { i32, i32, i32, i32, i32, i64, i64, i64 }, align 8
+  %allocaN = alloca i64, align 8
+  %allocaN = alloca i64, align 8
+  %allocaN = alloca i64, align 8
+  %allocaN = alloca i64, align 8
+  %allocaN = alloca i64, align 8
+  %allocaN = alloca [16 x i8], align 1
+  %allocaN = alloca { i16, i16, i32, [16 x i8], i32 }, align 8
+  %allocaN = alloca { [128 x i8], i32 }, align 8
+  %allocaN = alloca i1, align 1
+  br i1 false, label %if.then.0, label %if.merge.1
+
+if.then.0:                                        ; preds = %entry
+  ret i32 1
+
+if.merge.1:                                       ; preds = %entry
+  br i1 false, label %if.then.2, label %if.merge.3
+
+if.then.2:                                        ; preds = %if.merge.1
+  ret i32 2
+
+if.merge.3:                                       ; preds = %if.merge.1
+  br i1 false, label %if.then.4, label %if.merge.5
+
+if.then.4:                                        ; preds = %if.merge.3
+  ret i32 3
+
+if.merge.5:                                       ; preds = %if.merge.3
+  br i1 false, label %if.then.6, label %if.merge.7
+
+if.then.6:                                        ; preds = %if.merge.5
+  ret i32 4
+
+if.merge.7:                                       ; preds = %if.merge.5
+  br i1 false, label %if.then.8, label %if.merge.9
+
+if.then.8:                                        ; preds = %if.merge.7
+  ret i32 5
+
+if.merge.9:                                       ; preds = %if.merge.7
+  br i1 false, label %if.then.10, label %if.merge.11
+
+if.then.10:                                       ; preds = %if.merge.9
+  ret i32 6
+
+if.merge.11:                                      ; preds = %if.merge.9
+  br i1 false, label %if.then.12, label %if.merge.13
+
+if.then.12:                                       ; preds = %if.merge.11
+  ret i32 7
+
+if.merge.13:                                      ; preds = %if.merge.11
+  br i1 false, label %if.then.14, label %if.merge.15
+
+if.then.14:                                       ; preds = %if.merge.13
+  ret i32 8
+
+if.merge.15:                                      ; preds = %if.merge.13
+  %call = call { i16, i16, i32, i64 } @sockaddr_in(i64 8080, i32 0)
+  store { i16, i16, i32, i64 } %call, ptr %alloca, align 8
+  %load = load { i16, i16, i32, i64 }, ptr %alloca, align 8
+  %sg = extractvalue { i16, i16, i32, i64 } %load, 0
+  %cmp.ext = zext i16 %sg to i64
+  %icmp = icmp ne i64 %cmp.ext, 2
+  br i1 %icmp, label %if.then.16, label %if.merge.17
+
+if.then.16:                                       ; preds = %if.merge.15
+  ret i32 9
+
+if.merge.17:                                      ; preds = %if.merge.15
+  %loadN = load { i16, i16, i32, i64 }, ptr %alloca, align 8
+  %sgN = extractvalue { i16, i16, i32, i64 } %loadN, 1
+  %cmp.ext3 = zext i16 %sgN to i64
+  %icmpN = icmp ne i64 %cmp.ext3, 36895
+  br i1 %icmpN, label %if.then.18, label %if.merge.19
+
+if.then.18:                                       ; preds = %if.merge.17
+  ret i32 10
+
+if.merge.19:                                      ; preds = %if.merge.17
+  %callN = call i1 @is_wouldblock(i32 11)
+  %lnot = xor i1 %callN, true
+  br i1 %lnot, label %if.then.20, label %if.merge.21
+
+if.then.20:                                       ; preds = %if.merge.19
+  ret i32 11
+
+if.merge.21:                                      ; preds = %if.merge.19
+  br i1 false, label %if.then.22, label %if.merge.23
+
+if.then.22:                                       ; preds = %if.merge.21
+  ret i32 12
+
+if.merge.23:                                      ; preds = %if.merge.21
+  br i1 false, label %if.then.24, label %if.merge.25
+
+if.then.24:                                       ; preds = %if.merge.23
+  ret i32 13
+
+if.merge.25:                                      ; preds = %if.merge.23
+  br i1 false, label %if.then.26, label %if.merge.27
+
+if.then.26:                                       ; preds = %if.merge.25
+  ret i32 14
+
+if.merge.27:                                      ; preds = %if.merge.25
+  br i1 false, label %if.then.28, label %if.merge.29
+
+if.then.28:                                       ; preds = %if.merge.27
+  ret i32 15
+
+if.merge.29:                                      ; preds = %if.merge.27
+  br i1 false, label %if.then.30, label %if.merge.31
+
+if.then.30:                                       ; preds = %if.merge.29
+  ret i32 16
+
+if.merge.31:                                      ; preds = %if.merge.29
+  br i1 false, label %if.then.32, label %if.merge.33
+
+if.then.32:                                       ; preds = %if.merge.31
+  ret i32 17
+
+if.merge.33:                                      ; preds = %if.merge.31
+  store { i32, i32, i32, i32, i32, i64, i64, i64 } zeroinitializer, ptr %allocaN, align 8
+  %pti = ptrtoint ptr %allocaN to i64
+  store i64 %pti, ptr %allocaN, align 8
+  %gep = getelementptr inbounds nuw { i32, i32, i32, i32, i32, i64, i64, i64 }, ptr %allocaN, i32 0, i32 4
+  %ptiN = ptrtoint ptr %gep to i64
+  store i64 %ptiN, ptr %allocaN, align 8
+  %gepN = getelementptr inbounds nuw { i32, i32, i32, i32, i32, i64, i64, i64 }, ptr %allocaN, i32 0, i32 5
+  %ptiN = ptrtoint ptr %gepN to i64
+  store i64 %ptiN, ptr %allocaN, align 8
+  %gepN = getelementptr inbounds nuw { i32, i32, i32, i32, i32, i64, i64, i64 }, ptr %allocaN, i32 0, i32 6
+  %ptiN = ptrtoint ptr %gepN to i64
+  store i64 %ptiN, ptr %allocaN, align 8
+  %gepN = getelementptr inbounds nuw { i32, i32, i32, i32, i32, i64, i64, i64 }, ptr %allocaN, i32 0, i32 7
+  %ptiN = ptrtoint ptr %gepN to i64
+  store i64 %ptiN, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %sub = sub i64 %loadN, %loadN
+  %icmpN = icmp ne i64 %sub, 16
+  br i1 %icmpN, label %if.then.34, label %if.merge.35
+
+if.then.34:                                       ; preds = %if.merge.33
+  ret i32 18
+
+if.merge.35:                                      ; preds = %if.merge.33
+  %loadN = load i64, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %subN = sub i64 %loadN, %loadN
+  %icmpN = icmp ne i64 %subN, 24
+  br i1 %icmpN, label %if.then.36, label %if.merge.37
+
+if.then.36:                                       ; preds = %if.merge.35
+  ret i32 19
+
+if.merge.37:                                      ; preds = %if.merge.35
+  %loadN = load i64, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %subN = sub i64 %loadN, %loadN
+  %icmpN = icmp ne i64 %subN, 32
+  br i1 %icmpN, label %if.then.38, label %if.merge.39
+
+if.then.38:                                       ; preds = %if.merge.37
+  ret i32 20
+
+if.merge.39:                                      ; preds = %if.merge.37
+  %loadN = load i64, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %subN = sub i64 %loadN, %loadN
+  %icmpN = icmp ne i64 %subN, 40
+  br i1 %icmpN, label %if.then.40, label %if.merge.41
+
+if.then.40:                                       ; preds = %if.merge.39
+  ret i32 21
+
+if.merge.41:                                      ; preds = %if.merge.39
+  store [16 x i8] undef, ptr %allocaN, align 1
+  %callN = call { i16, i16, i32, [16 x i8], i32 } @sockaddr_in6(i64 8080, ptr %allocaN)
+  store { i16, i16, i32, [16 x i8], i32 } %callN, ptr %allocaN, align 4
+  %loadN = load { i16, i16, i32, [16 x i8], i32 }, ptr %allocaN, align 4
+  %sgN = extractvalue { i16, i16, i32, [16 x i8], i32 } %loadN, 0
+  %cmp.ext39 = zext i16 %sgN to i64
+  %icmpN = icmp ne i64 %cmp.ext39, 10
+  br i1 %icmpN, label %if.then.42, label %if.merge.43
+
+if.then.42:                                       ; preds = %if.merge.41
+  ret i32 22
+
+if.merge.43:                                      ; preds = %if.merge.41
+  %loadN = load { i16, i16, i32, [16 x i8], i32 }, ptr %allocaN, align 4
+  %sgN = extractvalue { i16, i16, i32, [16 x i8], i32 } %loadN, 1
+  %cmp.ext43 = zext i16 %sgN to i64
+  %icmpN = icmp ne i64 %cmp.ext43, 36895
+  br i1 %icmpN, label %if.then.44, label %if.merge.45
+
+if.then.44:                                       ; preds = %if.merge.43
+  ret i32 23
+
+if.merge.45:                                      ; preds = %if.merge.43
+  %callN = call { { [128 x i8], i32 }, i1 } @addr_unix({ ptr, i64 } { ptr @str, i64 11 })
+  %tg = extractvalue { { [128 x i8], i32 }, i1 } %callN, 0
+  store { [128 x i8], i32 } %tg, ptr %allocaN, align 4
+  %tgN = extractvalue { { [128 x i8], i32 }, i1 } %callN, 1
+  store i1 %tgN, ptr %allocaN, align 1
+  %loadN = load i1, ptr %allocaN, align 1
+  %lnotN = xor i1 %loadN, true
+  br i1 %lnotN, label %if.then.53, label %if.merge.54
+
+if.then.53:                                       ; preds = %if.merge.45
+  ret i32 24
+
+if.merge.54:                                      ; preds = %if.merge.45
+  %callN = call i32 @addr_family(ptr %allocaN)
+  %cmp.ext52 = sext i32 %callN to i64
+  %icmpN = icmp ne i64 %cmp.ext52, 1
+  br i1 %icmpN, label %if.then.55, label %if.merge.56
+
+if.then.55:                                       ; preds = %if.merge.54
+  ret i32 25
+
+if.merge.56:                                      ; preds = %if.merge.54
+  %loadN = load { [128 x i8], i32 }, ptr %allocaN, align 4
+  %sgN = extractvalue { [128 x i8], i32 } %loadN, 1
+  %cmp.ext56 = zext i32 %sgN to i64
+  %icmpN = icmp ne i64 %cmp.ext56, 14
+  br i1 %icmpN, label %if.then.57, label %if.merge.58
+
+if.then.57:                                       ; preds = %if.merge.56
+  ret i32 26
+
+if.merge.58:                                      ; preds = %if.merge.56
+  ret i32 0
+}

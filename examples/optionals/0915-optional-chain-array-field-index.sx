@@ -1,0 +1,89 @@
+// Optional-chain `?.` reaching an indexable field, then indexing it:
+// `opt?.xs[i]`. The `?.` makes the whole expression optional — it short-
+// circuits to null when the receiver is null, else unwraps and indexes —
+// so `opt?.xs[i]` is `?ElemType`, coalesced/unwrapped at the use site.
+//
+// Regression (issue 0181): `opt?.xs[i]` typed its element through
+// `getElementType(?[N]T)` as `.unresolved`, and an `index_get` on the
+// optional value reached LLVM emission (panic: "unresolved type reached
+// LLVM emission", exit 134). This is the `?.`-chain analogue of issue 0101
+// (the `!`-unwrap form, fixed earlier).
+//
+// Also covers the `?*[N]T` shape — a `?.` field that is a POINTER to an
+// array. Indexing auto-derefs (GEP the pointee array element through the
+// unwrapped pointer), so `opt?.p[i]` is `?ElemType` too. `getElementType`
+// has no pointer arm, so the dispatch guard / typer consult
+// `ptrToArrayElem` first (else this branch was unreachable dead code and
+// the `?*[N]T` case fell through to the same exit-134 panic).
+
+#import "modules/std.sx";
+
+Arr3 :: struct { xs: [3]i64; }
+Pt   :: struct { x: i64; y: i64; }
+Holder :: struct { ps: [2]Pt; sl: []i64; }
+
+PArr :: struct { p: *[3]i64; }   // pointer-to-array field
+PU8  :: struct { p: *[4]u8;  }   // sub-word element
+
+g_i64 : [3]i64 = ---;
+g_u8  : [4]u8  = ---;
+
+mk_parr :: (present: bool) -> ?PArr {
+    if present { return PArr.{ p = @g_i64 }; }
+    return null;
+}
+mk_pu8 :: () -> ?PU8 { return PU8.{ p = @g_u8 }; }
+
+mk_arr :: (present: bool) -> ?Arr3 {
+    if present {
+        r : Arr3 = ---;
+        r.xs[0] = 1; r.xs[1] = 2; r.xs[2] = 3;
+        return r;
+    }
+    return null;
+}
+
+mk_holder :: (data: []i64) -> ?Holder {
+    r : Holder = ---;
+    r.ps[0].x = 10; r.ps[0].y = 11;
+    r.ps[1].x = 20; r.ps[1].y = 21;
+    r.sl = data;
+    return r;
+}
+
+main :: () {
+    // Present receiver: unwraps + indexes.
+    print("present[0]: {}\n", mk_arr(true)?.xs[0] ?? 99);   // 1
+    print("present[2]: {}\n", mk_arr(true)?.xs[2] ?? 99);   // 3
+
+    // Null receiver: short-circuits to null, coalesced to the default.
+    print("null:       {}\n", mk_arr(false)?.xs[0] ?? 99);  // 99
+
+    // Result is `?ElemType` — bind it, then unwrap.
+    x := mk_arr(true)?.xs[1];                                // ?i64
+    print("bound:      {}\n", x ?? 0);                       // 2
+    print("unwrap:     {}\n", mk_arr(true)?.xs[2]!);         // 3
+
+    // Struct-element array `[2]Pt`: indexing yields `?Pt`.
+    p := mk_holder(.[])?.ps[1];                              // ?Pt
+    print("struct.x:   {}\n", p?.x ?? -1);                   // 20
+    print("struct.y:   {}\n", p?.y ?? -1);                   // 21
+
+    // Slice field through the chain.
+    arr : [3]i64 = .[5, 6, 7];
+    print("slice[1]:   {}\n", mk_holder(arr[..])?.sl[1] ?? -1); // 6
+
+    // Pointer-to-array field `?*[N]T`: indexing auto-derefs through the
+    // unwrapped pointer (GEP the pointee array element), multi-element.
+    g_i64[0] = 10; g_i64[1] = 20; g_i64[2] = 30;
+    print("ptr[0]:     {}\n", mk_parr(true)?.p[0] ?? 99);   // 10
+    print("ptr[1]:     {}\n", mk_parr(true)?.p[1] ?? 99);   // 20
+    print("ptr[2]:     {}\n", mk_parr(true)?.p[2] ?? 99);   // 30
+    // Null receiver short-circuits — no deref of the null pointer.
+    print("ptr null:   {}\n", mk_parr(false)?.p[0] ?? 99);  // 99
+
+    // Sub-word element `?*[4]u8` — adjacent lanes not clobbered.
+    g_u8[0] = 7; g_u8[1] = 8; g_u8[2] = 9; g_u8[3] = 200;
+    print("u8[0]:      {}\n", mk_pu8()?.p[0] ?? 0);          // 7
+    print("u8[3]:      {}\n", mk_pu8()?.p[3] ?? 0);          // 200
+}

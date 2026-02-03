@@ -1,0 +1,11 @@
+// Author B's generic `Box` — two i64 fields (size 16). Same template NAME as
+// A's, different layout AND different `make` (sets `y = value + 100`). The
+// qualified static head must select by namespace author for both.
+Box :: struct($T: Type) {
+    x: T;
+    y: T;
+
+    make :: (value: T) -> Box(T) {
+        .{ x = value, y = value + 100 }
+    }
+}

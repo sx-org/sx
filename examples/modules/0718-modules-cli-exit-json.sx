@@ -1,0 +1,69 @@
+// std.cli EXIT-CODE + `--json` contract (F3.3 — FOUNDATION MILESTONE CLOSE).
+//
+// The minimal contract `dist` (and any sx CLI front-end) relies on:
+//
+//   1. NAMED EXIT CODES — `EX_OK` (0) and `EX_USAGE` (64, the sysexits.h
+//      usage-error code) are public constants in `std.cli`.
+//   2. TERMINATORS — `exit_ok()` / `exit_usage()` end the process with the
+//      matching code, routing through the canonical `process.exit(code: u8)`.
+//   3. `--json` MODE — the reserved global `--json` flag surfaces as
+//      `parsed.json`: TRUE when `--json` is in the argv, FALSE when it is not.
+//      In json mode stdout carries ONLY the machine result; human text goes
+//      to stderr (here via `log.err`, which writes `ERROR: …` to fd 2).
+//
+// The run DELIBERATELY ends on the usage path: after the assertions it
+// triggers an `UnknownCommand`, writes the human diagnostic to STDERR, and
+// terminates via `exit_usage()` — so the process exits 64 (EX_USAGE),
+// captured in expected/0718-…​.exit. (sx `print`/`out` are unbuffered, so the
+// stdout assertion lines still appear despite the `_exit`.)
+
+#import "modules/std.sx";
+#import "modules/std/cli.sx";
+log :: #import "modules/std/log.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> ! {
+    publish_flags : []FlagSpec = .[
+        FlagSpec.{ name = "out", takes_value = true, required = true },
+    ];
+    cmds : []Command = .[
+        Command.{ group = "ci", command = "publish", flags = publish_flags },
+    ];
+
+    // ── 1. Named exit-code constants (the dist contract) ──────────────
+    report("ex-ok-is-0",     EX_OK == 0);
+    report("ex-usage-is-64", EX_USAGE == 64);
+
+    // ── 2. `--json` detection — true with the flag, false without ─────
+    d : Diag = .{};
+    with_json    : []string = .["ci", "publish", "--out", "dist", "--json"];
+    without_json : []string = .["ci", "publish", "--out", "dist"];
+    pj := try parse(with_json,    cmds, @d);
+    pn := try parse(without_json, cmds, @d);
+    report("json-set-true",  pj.json);
+    report("json-set-false", !pn.json);
+
+    // ── 3. json mode keeps stdout machine-pure ────────────────────────
+    // When `parsed.json`, the front-end emits ONLY the machine result on
+    // stdout. `out` writes the bytes verbatim (no `{}` interpolation), so
+    // the JSON braces are literal.
+    if pj.json {
+        out("{\"out\":\"");
+        out(pj.value_of("out"));
+        out("\"}\n");
+    }
+
+    // ── 4. Usage error → human text to stderr → exit_usage() (= 64) ───
+    // A bad command raises a `CliError`. The front-end maps every usage
+    // error to `EX_USAGE`: it writes the human diagnostic to STDERR (stdout
+    // stays machine-clean) and terminates with the usage code via the
+    // canonical `process.exit`.
+    bad : []string = .["ci", "deploy", "--out", "x"];   // unknown command
+    _, e := parse(bad, cmds, @d);
+    report("usage-error-raised", e == error.UnknownCommand);
+    log.err("unknown command '{}' (argv index {})", d.token, d.index);
+    exit_usage();                                       // -> _exit(EX_USAGE = 64)
+}

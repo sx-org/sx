@@ -1,0 +1,54 @@
+// Era-2 per-method erasability, the REFUSALS:
+//   - calling an excluded method (Self past the receiver) through an
+//     erased `P` value — the diagnostic names the offending parameter and
+//     shows the generic-bound fixit;
+//   - the same through a `*P` view (the e8fd6f74 arms funnel into the
+//     same dispatch);
+//   - a `-> Self` return excludes too (the return-position wording);
+//   - conformance is UNCHANGED: an impl missing the excluded method still
+//     fails erasure (the vtable losing the slot does not relax `impl`).
+#import "modules/std.sx";
+
+Eq :: protocol {
+    eq :: (self: *Self, other: Self) -> bool;   // excluded: Self param
+    id :: (self: *Self) -> i64;                 // dispatchable
+}
+
+Cloneable :: protocol {
+    clone :: (self: *Self) -> Self;             // excluded: Self return
+}
+
+Point :: struct { x: i64; }
+impl Eq for Point {
+    eq :: (self: *Point, other: Point) -> bool { return self.x == other.x; }
+    id :: (self: *Point) -> i64 { return self.x; }
+}
+impl Cloneable for Point {
+    clone :: (self: *Point) -> Point { return Point.{ x = self.x }; }
+}
+
+// Missing the excluded `eq` — conformance still requires it.
+Bad :: struct { y: i64; }
+impl Eq for Bad {
+    id :: (self: *Bad) -> i64 { return self.y; }
+}
+
+main :: () {
+    p := Point.{ x = 1 };
+    q := Point.{ x = 1 };
+
+    e := p.(Eq);
+    print("{}\n", e.id());          // dispatchable — fine
+    print("{}\n", e.eq(q));         // excluded through P → refusal + fixit
+
+    pv : *Eq = @e;
+    print("{}\n", pv.eq(q));        // excluded through *P → same refusal
+
+    c := p.(Cloneable);
+    p2 := c.clone();                // Self return → return-position refusal
+    _ = p2;
+
+    b := Bad.{ y = 2 };
+    eb := b.(Eq);                   // missing excluded method → conformance error
+    _ = eb;
+}

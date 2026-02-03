@@ -1,0 +1,47 @@
+// Phase 1.3 — the closure env-buffer heap-copy in `lowerLambda` must
+// dispatch through `context.allocator`, not `.heap_alloc` directly.
+// So when a `push .{ allocator = tracer }` block is active, a
+// capturing closure created inside it MUST allocate its env through
+// the tracker.
+//
+// Mirrors the shape of `130-xx-value-routes-through-context-allocator.sx`
+// for the protocol-erasure heap path — same Tracer, same install via
+// `push Context`, same `Tracer.count = 1` assertion. Different
+// allocation site (closure env vs xx-value heap copy).
+
+#import "modules/std.sx";
+
+Tracer :: struct {
+    count: i64;
+
+    init :: () -> *Tracer {
+        t : *Tracer = xx c.libc_malloc(size_of(Tracer));
+        t.count = 0;
+        t
+    }
+}
+
+impl Allocator for Tracer {
+    alloc_bytes :: (self: *Tracer, size: i64) -> *void {
+        self.count += 1;
+        return c.libc_malloc(size);
+    }
+    dealloc_bytes :: (self: *Tracer, ptr: *void) {
+        c.libc_free(ptr);
+    }
+}
+
+main :: () -> i32 {
+    tracer := Tracer.init();
+    push .{ allocator = tracer } {
+        // Capturing closure. lowerLambda allocates an env struct on the
+        // stack, copies the captures in, then heap-copies the env via
+        // `allocViaContext` — which dispatches through the installed
+        // tracer's `alloc`.
+        captured : i64 = 100;
+        add_capture := closure((y: i64) -> i64 => y + captured);
+        _ = add_capture(1);
+    }
+    print("Tracer.count = {}\n", tracer.count);
+    0
+}

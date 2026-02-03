@@ -1,0 +1,26 @@
+// A comptime `#run` global initializer that yields a function reference cannot
+// be serialized to a static constant: at global-init time (Pass 0) functions
+// are not yet declared, and the comptime serialization path has no later
+// re-emit, so the func_ref can never resolve to a real function pointer. The
+// compiler must reject this with a diagnostic AND a CLEAN non-zero exit — never
+// print the error and then fall through into an undef initializer that crashes
+// (pre-fix: the diagnostic printed, emission continued, and the JIT segfaulted
+// calling through the undef pointer → exit 134).
+// Regression (issue 0079 follow-up): every global-init serialization bail now
+// routes through `failGlobalInit`, which sets the halt flag so the driver aborts
+// after emit() instead of shipping the placeholder.
+// Expected: "comptime init of 'fp' produced a reference to function 'add'…";
+// exit 1, no segfault.
+
+#import "modules/std.sx";
+
+add :: (a: i32, b: i32) -> i32 { a + b }
+
+pick :: () -> (i32, i32) -> i32 { return add; }
+
+fp :: #run pick();
+
+main :: () -> i32 {
+    print("{}\n", fp(3, 4));
+    return 0;
+}

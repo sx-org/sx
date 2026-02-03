@@ -1,0 +1,23 @@
+// modules/std/target.sx — compiler-injected target facts. Dependency-free
+// (imports NOTHING) so any low-level module can read the target enums/values
+// without pulling the std barrel.
+//
+// The compiler sets OS / ARCH / POINTER_SIZE per build target (name-matched in
+// src/imports.zig). NOTE: a top-level `inline if OS/ARCH/POINTER_SIZE`
+// conditional is resolved by the compiler's flatten pre-pass and needs NO
+// import at all (that is how std/net/epoll.sx selects its layout). Import this
+// module only when you need the enum TYPE (`OperatingSystem` / `Architecture`)
+// or a value in a non-`inline if` position.
+//
+// build.sx imports this (flat) so the decls stay registered in the standard
+// import graph — NOT to re-export them (flat import doesn't propagate to a
+// module's importers). Code that names the OperatingSystem / Architecture TYPE
+// imports this module directly; OS / ARCH / POINTER_SIZE values and `inline if`
+// conditions are resolved by the compiler by name and need no import.
+
+OperatingSystem :: enum { macos; linux; windows; wasm; ios; android; unknown; }
+Architecture :: enum { aarch64; x86_64; wasm32; wasm64; unknown; }
+
+OS : OperatingSystem = .unknown;
+ARCH : Architecture = .unknown;
+POINTER_SIZE : i64 = 8;

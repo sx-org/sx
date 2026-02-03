@@ -1,0 +1,20 @@
+// fix-0102c (issue 0102): a user namespace alias literally named `__m0`
+// coexists with flat same-name imports. fix-0102 resolves same-name authors by
+// FnDecl IDENTITY — there are no synthetic `__m0`-style names to collide with —
+// so a user namespace spelled `__m0` is just an ordinary namespace: `call_a`
+// binds a.ping (1), `call_b` binds b.ping (2), and `__m0.ping` reaches m.ping (99).
+#import "modules/std.sx";
+#import "0727-modules-user-ns-m0/a.sx";
+#import "0727-modules-user-ns-m0/b.sx";
+__m0 :: #import "0727-modules-user-ns-m0/m.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("call_a binds a.ping", call_a() == 1);
+    report("call_b binds b.ping", call_b() == 2);
+    report("__m0.ping binds m.ping", __m0.ping() == 99);
+    0
+}

@@ -1,0 +1,22 @@
+// Assigning a struct LITERAL to a named-struct member of a plain `union`.
+// `u.b = .{ code = 9 }` types the literal as the union member's struct type
+// `S` and stores it — the target type propagates to a union-member lvalue
+// exactly as it does to a struct field.
+//
+// Regression (issue 0133): the literal used to lower as `.unresolved` (the
+// target-type path only inspected struct fields, not union members) and trip
+// the LLVM-emission tripwire in emitStructInit.
+
+#import "modules/std.sx";
+
+S :: struct { code: i64; }
+U :: union { a: i64; b: S; }
+
+main :: () {
+    u : U = ---;
+    u.b = .{ code = 9 };          // union member <- struct literal
+    print("code={}\n", u.b.code); // 9
+
+    u.a = 5;                      // scalar member still works
+    print("a={}\n", u.a);         // 5
+}

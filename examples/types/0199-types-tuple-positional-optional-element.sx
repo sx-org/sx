@@ -1,0 +1,34 @@
+// A positional literal `.{ a, b }` whose target is a TUPLE coerces each
+// element to the tuple's per-position field type — so an optional field gets a
+// properly wrapped `{T,i1}` value, an int element narrows/widens to a float
+// field, etc.
+//
+// Regression (issue 0174): the positional struct-literal path coerced
+// array/vector elements and struct fields but NOT tuple fields, so a bare
+// `i64` was stored straight into a `{i64,i1}` optional slot — a present
+// optional read back as absent.
+#import "modules/std.sx";
+
+main :: () {
+    // Optional + float fields.
+    t : Tuple(?i64, f64) = .{ 7, 3.0 };
+    print("{} {}\n", t.0 ?? -1, t.1);          // 7 3.000000
+
+    // int -> float coercion on a tuple element.
+    u : Tuple(f64, i64) = .{ 3, 4 };
+    print("{} {}\n", u.0, u.1);                // 3.000000 4
+
+    // Named tuple.
+    n : Tuple(x: ?i64, y: f64) = .{ 5, 2.5 };
+    print("{} {}\n", n.x ?? -1, n.y);          // 5 2.500000
+
+    // Variable elements flowing into an optional tuple field.
+    a := 9;
+    b := 1.5;
+    v : Tuple(?i64, f64) = .{ a, b };
+    print("{} {}\n", v.0 ?? -1, v.1);          // 9 1.500000
+
+    // A bare `null` element into an optional tuple field.
+    w : Tuple(?i64, i64) = .{ null, 8 };
+    print("{} {}\n", w.0 ?? -1, w.1);          // -1 8
+}

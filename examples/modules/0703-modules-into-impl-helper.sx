@@ -1,0 +1,12 @@
+// Helper for 93-into-import-scope.sx: declares Wrap + an impl Into for it.
+// No paired tests/expected file — not executed standalone by the runner.
+
+#import "modules/std.sx";
+
+Wrap :: struct { v: i64 = 0; }
+
+impl Into(Wrap) for i64 {
+  convert :: (self: i64) -> Wrap {
+    .{ v = self * 10 }
+  }
+}

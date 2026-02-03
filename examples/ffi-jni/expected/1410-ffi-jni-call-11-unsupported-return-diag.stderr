@@ -1,0 +1,5 @@
+error: JNI method 'Buf.get' returns 'i8', which isn't supported by the JNI call-method lowering yet — only void/bool/i32/i64/f32/f64 and pointers are wired up
+  --> examples/ffi-jni/1410-ffi-jni-call-11-unsupported-return-diag.sx:24:14
+   |
+24 |         _ := b.get();
+   |              ^^^^^

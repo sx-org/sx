@@ -1,0 +1,17 @@
+error: cannot match on untagged union 'Shape' — it has no discriminant; use a tagged union (enum with payloads) instead
+  --> examples/diagnostics/1211-diagnostics-untagged-union-payload-binding.sx:18:13
+   |
+18 |     r := if s == { case .circle: (v) { v } case .rect: (v) { v * 2 } };
+   |             ^
+
+error: cannot match on untagged union 'Shape' — it has no discriminant; use a tagged union (enum with payloads) instead
+  --> examples/diagnostics/1211-diagnostics-untagged-union-payload-binding.sx:22:13
+   |
+22 |     q := if p == { case .circle: (v) { v } else: { 0 } };
+   |             ^
+
+error: this case pattern cannot bind a payload from subject type 'Color' — only tagged union (enum with payload) variants are bindable
+  --> examples/diagnostics/1211-diagnostics-untagged-union-payload-binding.sx:26:25
+   |
+26 |     w := if c == { case .red: (v) { v } case .green: { 0 } };
+   |                         ^^^^

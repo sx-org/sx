@@ -1,0 +1,11 @@
+// Alphabetically FIRST file in the directory. Its own decl uses
+// `MyEnum`, defined in a sibling file (`types.sx`). The directory
+// import pass must register `MyEnum` BEFORE this file's `make_my`
+// is scanned, or `MyEnum` falls back to a placeholder struct and
+// `return .b(42)` fails with "cannot infer enum type".
+
+#import "types.sx";
+
+make_my :: () -> MyEnum {
+    return .b(42);
+}

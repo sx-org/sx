@@ -1,0 +1,66 @@
+// Optional closures: `?Closure(...) -> R`.
+//
+// Runtime repr is the sentinel form — the optional IS the closure struct
+// `{fn_ptr, env}`; has_value = `fn_ptr != null`, no separate flag word.
+// Covers: present vs null truthiness, `== null` / `!= null`, force-unwrap +
+// call-through (with and without captures), `??` coalesce, pass-as-param,
+// return, and args + non-void return.
+//
+// Regression (issue 0170): `g!()` where `g : ?Closure(...)` previously lowered
+// to a `call_indirect` that treated the closure `{fn,env}` struct as a bare
+// fn pointer (LLVM "Called function must be a pointer!"); the indirect-call
+// catch-all also hardcoded an `.i64` return type. The else-arm in
+// `src/ir/lower/call.zig` now dispatches to `call_closure` when the callee
+// expression's static type is a closure, and uses the real return type.
+
+#import "modules/std.sx";
+
+take :: (g: ?Closure() -> void) {
+  if g { g!(); } else { print("param-absent\n"); }
+}
+
+give :: () -> ?Closure() -> void {
+  return () => print("from-give\n");
+}
+
+main :: () {
+  // With captures.
+  n := 7;
+  a : ?Closure() -> void = () => print("a n={}\n", n);
+  if a { print("a-present\n"); } else { print("a-absent\n"); }
+  a!();
+
+  // Without captures.
+  b : ?Closure() -> void = () { print("b-called\n"); };
+  if b { b!(); }
+
+  // Null tests absent; == / != null.
+  c : ?Closure() -> void = null;
+  if c { print("c-present\n"); } else { print("c-absent\n"); }
+  print("c==null: {}\n", c == null);
+  print("c!=null: {}\n", c != null);
+
+  // Reassign: null -> value -> null.
+  c = () { print("c-reassigned\n"); };
+  if c { c!(); }
+  c = null;
+  if c { print("c2-present\n"); } else { print("c2-absent\n"); }
+
+  // Coalesce: null falls back, present uses self.
+  fallback := () { print("fallback\n"); };
+  (c ?? fallback)();
+  e : ?Closure() -> void = () { print("e-real\n"); };
+  (e ?? fallback)();
+
+  // Pass as param (present + null).
+  take(a);
+  take(c);
+
+  // Return an optional closure.
+  r := give();
+  if r { r!(); }
+
+  // Args + non-void return.
+  add : ?Closure(i64, i64) -> i64 = (x: i64, y: i64) => x + y;
+  if add { print("add: {}\n", add!(3, 4)); }
+}

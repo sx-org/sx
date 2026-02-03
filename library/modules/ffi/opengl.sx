@@ -1,0 +1,200 @@
+// OpenGL 3.3 Core — runtime-loaded function pointers
+// No #library needed — caller provides a loader (e.g. SDL_GL_GetProcAddress)
+
+// Constants
+GL_FALSE             :i32: 0;
+GL_TRUE              :i32: 1;
+GL_DEPTH_TEST        :u32: 0x0B71;
+GL_CULL_FACE         :u32: 0x0B44;
+GL_BLEND             :u32: 0x0BE2;
+GL_TRIANGLES         :u32: 4;
+GL_LINES             :u32: 1;
+GL_FLOAT             :u32: 0x1406;
+GL_UNSIGNED_INT      :u32: 0x1405;
+GL_VERTEX_SHADER     :u32: 0x8B31;
+GL_FRAGMENT_SHADER   :u32: 0x8B30;
+GL_COMPILE_STATUS    :u32: 0x8B81;
+GL_LINK_STATUS       :u32: 0x8B82;
+GL_ARRAY_BUFFER      :u32: 0x8892;
+GL_ELEMENT_ARRAY_BUFFER :u32: 0x8893;
+GL_STATIC_DRAW       :u32: 0x88E4;
+GL_COLOR_BUFFER_BIT  :u32: 0x4000;
+GL_DEPTH_BUFFER_BIT  :u32: 0x0100;
+GL_FRONT_AND_BACK    :u32: 0x0408;
+GL_LINE              :u32: 0x1B01;
+GL_FILL              :u32: 0x1B02;
+
+// Function pointer variables (mutable, loaded at runtime)
+glClearColor             : (f32, f32, f32, f32) -> void abi(.c) = ---;
+glClear                  : (u32) -> void abi(.c) = ---;
+glEnable                 : (u32) -> void abi(.c) = ---;
+glDisable                : (u32) -> void abi(.c) = ---;
+glViewport               : (i32, i32, i32, i32) -> void abi(.c) = ---;
+glFlush                  : () -> void abi(.c) = ---;
+glDrawArrays             : (u32, i32, i32) -> void abi(.c) = ---;
+glPolygonMode            : (u32, u32) -> void abi(.c) = ---;
+glLineWidth              : (f32) -> void abi(.c) = ---;
+glCreateShader           : (u32) -> u32 abi(.c) = ---;
+glShaderSource           : (u32, i32, *[:0]u8, *i32) -> void abi(.c) = ---;
+glCompileShader          : (u32) -> void abi(.c) = ---;
+glGetShaderiv            : (u32, u32, *i32) -> void abi(.c) = ---;
+glGetShaderInfoLog       : (u32, i32, *i32, [*]u8) -> void abi(.c) = ---;
+glCreateProgram          : () -> u32 abi(.c) = ---;
+glAttachShader           : (u32, u32) -> void abi(.c) = ---;
+glLinkProgram            : (u32) -> void abi(.c) = ---;
+glGetProgramiv           : (u32, u32, *i32) -> void abi(.c) = ---;
+glGetProgramInfoLog      : (u32, i32, *i32, [*]u8) -> void abi(.c) = ---;
+glUseProgram             : (u32) -> void abi(.c) = ---;
+glDeleteShader           : (u32) -> void abi(.c) = ---;
+glGenVertexArrays        : (i32, *u32) -> void abi(.c) = ---;
+glGenBuffers             : (i32, *u32) -> void abi(.c) = ---;
+glBindVertexArray        : (u32) -> void abi(.c) = ---;
+glBindBuffer             : (u32, u32) -> void abi(.c) = ---;
+glBufferData             : (u32, isize, *void, u32) -> void abi(.c) = ---;
+glVertexAttribPointer    : (u32, i32, u32, u8, i32, *void) -> void abi(.c) = ---;
+glEnableVertexAttribArray : (u32) -> void abi(.c) = ---;
+glGetUniformLocation     : (u32, [*]u8) -> i32 abi(.c) = ---;
+glUniformMatrix4fv       : (i32, i32, u8, [*]f32) -> void abi(.c) = ---;
+glUniform3f              : (i32, f32, f32, f32) -> void abi(.c) = ---;
+glDepthFunc              : (u32) -> void abi(.c) = ---;
+glUniform1f              : (i32, f32) -> void abi(.c) = ---;
+GL_LESS                  :u32: 0x0201;
+GL_LEQUAL                :u32: 0x0203;
+GL_SCISSOR_TEST          :u32: 0x0C11;
+GL_DYNAMIC_DRAW          :u32: 0x88E8;
+GL_TEXTURE_2D            :u32: 0x0DE1;
+GL_TEXTURE_MIN_FILTER    :u32: 0x2801;
+GL_TEXTURE_MAG_FILTER    :u32: 0x2800;
+GL_NEAREST               :u32: 0x2600;
+GL_RGBA                  :u32: 0x1908;
+GL_UNSIGNED_BYTE         :u32: 0x1401;
+GL_SRC_ALPHA             :u32: 0x0302;
+GL_ONE_MINUS_SRC_ALPHA   :u32: 0x0303;
+GL_TEXTURE0              :u32: 0x84C0;
+GL_LINEAR                :u32: 0x2601;
+GL_RED                   :u32: 0x1903;
+GL_R8                    :u32: 0x8229;
+GL_UNPACK_ALIGNMENT      :u32: 0x0CF5;
+
+glScissor                : (i32, i32, i32, i32) -> void abi(.c) = ---;
+glBufferSubData          : (u32, isize, isize, *void) -> void abi(.c) = ---;
+glGenTextures            : (i32, *u32) -> void abi(.c) = ---;
+glBindTexture            : (u32, u32) -> void abi(.c) = ---;
+glTexImage2D             : (u32, i32, i32, i32, i32, i32, u32, u32, *void) -> void abi(.c) = ---;
+glTexParameteri          : (u32, u32, i32) -> void abi(.c) = ---;
+glBlendFunc              : (u32, u32) -> void abi(.c) = ---;
+glReadPixels             : (i32, i32, i32, i32, u32, u32, *void) -> void abi(.c) = ---;
+glActiveTexture          : (u32) -> void abi(.c) = ---;
+glUniform1i              : (i32, i32) -> void abi(.c) = ---;
+glPixelStorei            : (u32, i32) -> void abi(.c) = ---;
+glTexSubImage2D          : (u32, i32, i32, i32, i32, i32, u32, u32, *void) -> void abi(.c) = ---;
+glDeleteTextures         : (i32, *u32) -> void abi(.c) = ---;
+
+glGenFramebuffers              : (i32, *u32) -> void abi(.c) = ---;
+glGenRenderbuffers             : (i32, *u32) -> void abi(.c) = ---;
+glBindFramebuffer              : (u32, u32) -> void abi(.c) = ---;
+glBindRenderbuffer             : (u32, u32) -> void abi(.c) = ---;
+glFramebufferRenderbuffer      : (u32, u32, u32, u32) -> void abi(.c) = ---;
+glGetRenderbufferParameteriv   : (u32, u32, *i32) -> void abi(.c) = ---;
+glCheckFramebufferStatus       : (u32) -> u32 abi(.c) = ---;
+
+GL_TEXTURE_WRAP_S        :u32: 0x2802;
+GL_TEXTURE_WRAP_T        :u32: 0x2803;
+GL_CLAMP_TO_EDGE         :u32: 0x812F;
+
+// Loader: call once after creating GL context
+// Pass in a proc loader (e.g. SDL_GL_GetProcAddress)
+load_gl :: (get_proc: ([*]u8) -> *void abi(.c)) {
+    glClearColor          = xx get_proc("glClearColor");
+    glClear               = xx get_proc("glClear");
+    glEnable              = xx get_proc("glEnable");
+    glDisable             = xx get_proc("glDisable");
+    glViewport            = xx get_proc("glViewport");
+    glFlush               = xx get_proc("glFlush");
+    glDrawArrays          = xx get_proc("glDrawArrays");
+    glPolygonMode         = xx get_proc("glPolygonMode");
+    glLineWidth           = xx get_proc("glLineWidth");
+    glCreateShader        = xx get_proc("glCreateShader");
+    glShaderSource        = xx get_proc("glShaderSource");
+    glCompileShader       = xx get_proc("glCompileShader");
+    glGetShaderiv         = xx get_proc("glGetShaderiv");
+    glGetShaderInfoLog    = xx get_proc("glGetShaderInfoLog");
+    glCreateProgram       = xx get_proc("glCreateProgram");
+    glAttachShader        = xx get_proc("glAttachShader");
+    glLinkProgram         = xx get_proc("glLinkProgram");
+    glGetProgramiv        = xx get_proc("glGetProgramiv");
+    glGetProgramInfoLog   = xx get_proc("glGetProgramInfoLog");
+    glUseProgram          = xx get_proc("glUseProgram");
+    glDeleteShader        = xx get_proc("glDeleteShader");
+    glGenVertexArrays     = xx get_proc("glGenVertexArrays");
+    glGenBuffers          = xx get_proc("glGenBuffers");
+    glBindVertexArray     = xx get_proc("glBindVertexArray");
+    glBindBuffer          = xx get_proc("glBindBuffer");
+    glBufferData          = xx get_proc("glBufferData");
+    glVertexAttribPointer = xx get_proc("glVertexAttribPointer");
+    glEnableVertexAttribArray = xx get_proc("glEnableVertexAttribArray");
+    glGetUniformLocation  = xx get_proc("glGetUniformLocation");
+    glUniformMatrix4fv    = xx get_proc("glUniformMatrix4fv");
+    glUniform3f           = xx get_proc("glUniform3f");
+    glDepthFunc           = xx get_proc("glDepthFunc");
+    glUniform1f           = xx get_proc("glUniform1f");
+    glScissor             = xx get_proc("glScissor");
+    glBufferSubData       = xx get_proc("glBufferSubData");
+    glGenTextures         = xx get_proc("glGenTextures");
+    glBindTexture         = xx get_proc("glBindTexture");
+    glTexImage2D          = xx get_proc("glTexImage2D");
+    glTexParameteri       = xx get_proc("glTexParameteri");
+    glBlendFunc           = xx get_proc("glBlendFunc");
+    glReadPixels          = xx get_proc("glReadPixels");
+    glActiveTexture       = xx get_proc("glActiveTexture");
+    glUniform1i           = xx get_proc("glUniform1i");
+    glPixelStorei         = xx get_proc("glPixelStorei");
+    glTexSubImage2D       = xx get_proc("glTexSubImage2D");
+    glDeleteTextures      = xx get_proc("glDeleteTextures");
+
+    glGenFramebuffers            = xx get_proc("glGenFramebuffers");
+    glGenRenderbuffers           = xx get_proc("glGenRenderbuffers");
+    glBindFramebuffer            = xx get_proc("glBindFramebuffer");
+    glBindRenderbuffer           = xx get_proc("glBindRenderbuffer");
+    glFramebufferRenderbuffer    = xx get_proc("glFramebufferRenderbuffer");
+    glGetRenderbufferParameteriv = xx get_proc("glGetRenderbufferParameteriv");
+    glCheckFramebufferStatus     = xx get_proc("glCheckFramebufferStatus");
+}
+
+
+// --- Shader utilities ---
+
+create_program :: (vert_src: [:0]u8, frag_src: [:0]u8) -> u32 {
+    vs := compile_shader(GL_VERTEX_SHADER, vert_src);
+    fs := compile_shader(GL_FRAGMENT_SHADER, frag_src);
+
+    prog := glCreateProgram();
+    glAttachShader(prog, vs);
+    glAttachShader(prog, fs);
+    glLinkProgram(prog);
+
+    status : i32 = 0;
+    glGetProgramiv(prog, GL_LINK_STATUS, @status);
+    if status == GL_FALSE {
+        log_buf: [512]u8 = ---;
+        glGetProgramInfoLog(prog, 512, null, @log_buf[0]);
+    }
+
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    return prog;
+}
+
+compile_shader :: (shader_type : u32, source: [:0]u8) -> u32 {
+    shader := glCreateShader(shader_type);
+    glShaderSource(shader, 1, source, null);
+    glCompileShader(shader);
+
+    status : i32 = 0;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, @status);
+    if status == GL_FALSE {
+        log_buf : [512]u8 = ---;
+        glGetShaderInfoLog(shader, 512, null, @log_buf[0]);
+    }
+    return shader;
+}

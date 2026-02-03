@@ -1,0 +1,61 @@
+// M1.2 A.6 — synthesized `-dealloc` IMP frees the sx state
+// struct and chains to `[super dealloc]` via
+// `objc_msgSendSuper2`.
+//
+// Round-trip:
+//   1. [SxFoo alloc] returns a fresh instance with state bound.
+//   2. release the instance — runtime invokes our -dealloc IMP.
+//   3. Verify the IMP fired: another alloc/release cycle works
+//      without crashes, and the runtime reports the class
+//      properly implements -dealloc.
+//
+// Full instance-state round-trips (sx-side `f := SxFoo.alloc();
+// f.bump();`) await A.7's dispatch-gate opening.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+class_getInstanceVariable :: (cls: *void, name: [*]u8) -> *void extern objc;
+class_getMethodImplementation :: (cls: *void, sel: *void) -> *void extern objc;
+
+SxFoo :: #objc_class("SxFoo") {
+    counter: i32;
+
+    bump :: (self: *Self) {
+        self.counter += 1;
+    }
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        cls : Class = objc_getClass("SxFoo".ptr);
+        if cls == null { print("FAIL: SxFoo not registered\n"); return 1; }
+
+        // Confirm the runtime sees our -dealloc IMP.
+        sel_dealloc : SEL = sel_registerName("dealloc".ptr);
+        imp_dealloc : *void = class_getMethodImplementation(cls, sel_dealloc);
+        if imp_dealloc == null { print("FAIL: dealloc IMP missing\n"); return 1; }
+
+        // alloc + release — synthesized -dealloc IMP fires inside.
+        sel_alloc : SEL = sel_registerName("alloc".ptr);
+        alloc_fn : (cls: *void, sel: *void) -> *void abi(.c) = xx objc_msgSend;
+        instance : *void = alloc_fn(cls, sel_alloc);
+        if instance == null { print("FAIL: +alloc returned null\n"); return 1; }
+
+        sel_release : SEL = sel_registerName("release".ptr);
+        release_fn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        release_fn(instance, sel_release);
+
+        // Run another cycle to confirm dealloc didn't corrupt runtime state.
+        instance2 : *void = alloc_fn(cls, sel_alloc);
+        if instance2 == null { print("FAIL: +alloc round 2 returned null\n"); return 1; }
+        release_fn(instance2, sel_release);
+
+        print("dealloc: ok\n");
+    }
+    inline if OS != .macos {
+        print("dealloc: ok\n");
+    }
+    0
+}

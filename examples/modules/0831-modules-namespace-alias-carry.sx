@@ -1,0 +1,20 @@
+// Namespace aliases are module surface: a `ns :: #import` declared by a
+// module is usable by that module's DIRECT flat importers (the carry rule —
+// no `pub` keyword). Covers every qualified shape through BOTH a direct and
+// a carried alias: plain fn, struct static method + instance method, type
+// annotation, enum variant, module const, generic struct.
+
+#import "modules/std.sx";
+#import "0831-modules-namespace-alias-carry/facade.sx";
+
+main :: () {
+    print("{} ", r.helper());          // plain fn (carried)
+    t := r.Thing.init();               // static method
+    print("{} ", t.get());
+    x : r.Thing = r.Thing.init();      // type annotation
+    print("{} ", x.v);
+    print("{} ", r.LIMIT);             // module const
+    print("{} ", r.Color.green);       // enum variant
+    b := r.Box(i64).{ item = 3 };      // generic struct
+    print("{}\n", b.item);
+}

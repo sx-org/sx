@@ -1,0 +1,5 @@
+error: '$' introduces a generic parameter only in its declaration; write 'T' here
+  --> examples/diagnostics/1237-diagnostics-dollar-use-reflection.sx:2:46
+   |
+ 2 | sz1237 :: ($T: Type) -> i64 { return size_of($T); }
+   |                                              ^^

@@ -1,0 +1,7 @@
+#import "modules/std/core.sx";     // out
+
+assert :: (condition: bool) {
+    if !condition {
+        out("assertion failed\n");
+    }
+}

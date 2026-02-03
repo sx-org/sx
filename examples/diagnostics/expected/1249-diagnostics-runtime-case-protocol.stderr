@@ -1,0 +1,5 @@
+error: 'case protocol:' needs a compile-time subject — use `inline if` over a generic type param (a protocol value carries no runtime type tag)
+  --> examples/diagnostics/1249-diagnostics-runtime-case-protocol.sx:12:14
+   |
+12 |         case protocol: print("?\n");
+   |              ^^^^^^^^

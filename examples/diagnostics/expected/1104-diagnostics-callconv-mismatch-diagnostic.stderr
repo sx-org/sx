@@ -1,0 +1,5 @@
+error: call-convention mismatch: 'sx_handler' is declared with default sx convention but the target type expects abi(.c)
+  --> examples/diagnostics/1104-diagnostics-callconv-mismatch-diagnostic.sx:12:37
+   |
+12 |     fp : (*void) -> *void abi(.c) = sx_handler;
+   |                                     ^^^^^^^^^^

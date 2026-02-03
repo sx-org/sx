@@ -1,0 +1,11 @@
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %asm = call i64 asm "mov ${0}, #99", "=r"()
+  %alloca = alloca i64, align 8
+  store i64 %asm, ptr %alloca, align 8
+  %load = load i64, ptr %alloca, align 8
+  %ca.tr = trunc i64 %load to i32
+  ret i32 %ca.tr
+}

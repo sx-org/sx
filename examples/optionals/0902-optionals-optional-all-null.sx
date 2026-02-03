@@ -1,0 +1,39 @@
+// Struct with multiple `?f32` fields, all set to `null` simultaneously, passed
+// into a protocol-dispatched method. Exercises the all-null-payload path through
+// the boxed call.
+
+#import "modules/std.sx";
+
+ProposedSize :: struct {
+    width: ?f32;
+    height: ?f32;
+}
+
+Sizable :: protocol {
+    size :: (self: *Self, proposal: ProposedSize) -> f32;
+}
+
+Widget :: struct {}
+
+impl Sizable for Widget {
+    size :: (self: *Widget, proposal: ProposedSize) -> f32 {
+        w := if pw := proposal.width { pw } else { 100.0 };
+        h := if ph := proposal.height { ph } else { 100.0 };
+        w + h
+    }
+}
+
+main :: () -> void {
+    w := Widget.{};
+    s := w.(Sizable);
+
+    // These work:
+    r1 := s.size(ProposedSize.{ width = 50.0, height = null });
+    print("r1 = {}\n", r1);
+    r2 := s.size(ProposedSize.{ width = null, height = 50.0 });
+    print("r2 = {}\n", r2);
+
+    // This fails with "scalar-to-vector conversion failed":
+    r3 := s.size(ProposedSize.{ width = null, height = null });
+    print("r3 = {}\n", r3);
+}

@@ -1,0 +1,22 @@
+// `#caller_location` (ERR step E4.1b). As a parameter's default value it
+// resolves to a `Source_Location` of the CALL site — file, line:col, and the
+// enclosing function — rather than the callee's signature. Explicitly
+// forwarding a `Source_Location` through an inner call preserves the outermost
+// site (so a logging wrapper reports where IT was called). Expected exit: 0.
+
+#import "modules/std.sx";
+
+note :: (loc: Source_Location = #caller_location) {
+    print("note from {} (line {})\n", loc.func, loc.line);
+}
+
+// Forwards its own caller location through to `note`.
+wrap :: (loc: Source_Location = #caller_location) {
+    note(loc);
+}
+
+main :: () -> i32 {
+    note();              // call site → func main
+    wrap();              // forwarded → still reports this line in main
+    return 0;
+}

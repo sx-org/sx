@@ -1,0 +1,20 @@
+error: unhandled error reached main: error.A
+error return trace (most recent call last):
+  fa at 1029-errors-failable-or-chain-propagate.sx:14:17
+        if n == 0 { raise error.A; }
+                    ^
+  main at 1029-errors-failable-or-chain-propagate.sx:19:10
+        v := try fa(0) or try fa(0) or try fa(0);   // all fail → propagate to main
+             ^
+  fa at 1029-errors-failable-or-chain-propagate.sx:14:17
+        if n == 0 { raise error.A; }
+                    ^
+  main at 1029-errors-failable-or-chain-propagate.sx:19:10
+        v := try fa(0) or try fa(0) or try fa(0);   // all fail → propagate to main
+             ^
+  fa at 1029-errors-failable-or-chain-propagate.sx:14:17
+        if n == 0 { raise error.A; }
+                    ^
+  main at 1029-errors-failable-or-chain-propagate.sx:19:10
+        v := try fa(0) or try fa(0) or try fa(0);   // all fail → propagate to main
+             ^

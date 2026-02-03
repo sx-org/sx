@@ -1,0 +1,26 @@
+// Multi-return CLOSURE types and lambda literals work via the same tuple
+// machinery as function multi-returns (D3): a `Closure() -> (A, B)` value's call
+// result destructures (`a, b := cb()`), single-binds with field access
+// (`c := cb(); c.0`), and a `() { return v1, v2; }` lambda literal satisfies a
+// multi-return closure parameter. No dedicated ClosureInfo marker is needed —
+// the return slots ride as the reused `.tuple` TypeId, consistent with the
+// function-decl multi-return surface.
+#import "modules/std.sx";
+
+apply :: (cb: Closure() -> (i32, bool)) -> i32 {
+    a, b := cb();                 // destructure a multi-return closure result
+    return if b { a } else { 0 };
+}
+
+main :: () -> i64 {
+    cb : Closure() -> (i32, bool) = () { return 7, true; };
+    x, y := cb();
+    print("{} {}\n", x, y);       // 7 true
+
+    c := cb();                    // single-bind + positional field access
+    print("{} {}\n", c.0, c.1);   // 7 true
+
+    r := apply(() { return 9, true; });  // lambda literal as the closure arg
+    print("{}\n", r);             // 9
+    return 0;
+}

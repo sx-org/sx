@@ -1,0 +1,5 @@
+error: 'N' is a value parameter, not a type; introduce a generic type parameter with `$N: Type`
+  --> examples/types/0172-types-value-param-as-field-type.sx:22:8
+   |
+22 |     x: N;
+   |        ^

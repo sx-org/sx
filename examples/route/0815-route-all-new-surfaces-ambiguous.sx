@@ -1,0 +1,35 @@
+// E6b-R — route-all: the NEW use surfaces a same-name type reaches now funnel
+// through the source-aware engine, so an ambiguous bare name poisons LOUDLY at
+// each of them instead of silently picking a global `findByName` last-wins author.
+// `main` flat-imports two same-name `Box` struct authors and authors none itself,
+// so every bare `Box` below is a genuine collision. `Box` is the kind-agnostic
+// canary (the bare-leaf forms — annotations / size_of / match / `!Named` — are
+// already locked per kind by 0755/0795/0797/0811); these cells exercise the
+// surfaces E6b-R added:
+//
+//   - wrapper-alias element            `BoxPtr :: *Box`         (engine wrapper aliasing)
+//   - union body-builder child          `WrapU :: union { b: Box }` (C1, registerUnionDecl)
+//   - enum body-builder child           `WrapE :: enum { V: Box }`  (C1, registerEnumDecl)
+//   - tuple-type element                `size_of(Tuple(Box, i32))`  (O1/K5)
+//   - inline-anonymous body child       `x : union { b: Box }`      (inline-anon engine arm)
+//
+// Fail-before (pre-E6b-R): each of these resolved `Box` through the stateless
+// `type_bridge.resolveAstType` global last-wins, silently binding one arbitrary
+// author with NO diagnostic. Pass-after: every surface emits the LOUD
+// "type 'Box' is ambiguous" and the build exits 1.
+
+#import "modules/std.sx";
+#import "0815-route-all-new-surfaces-ambiguous/a.sx";
+#import "0815-route-all-new-surfaces-ambiguous/b.sx";
+
+BoxPtr :: *Box;
+
+WrapU :: union { b: Box; n: i32; }
+
+WrapE :: enum { V: Box; }
+
+main :: () -> i32 {
+    sz := size_of(Tuple(Box, i32));
+    x : union { b: Box; n: i32 } = ---;
+    0
+}

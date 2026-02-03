@@ -1,0 +1,42 @@
+// `List(Protocol)` appended from inside a helper function, dispatched
+// repeatedly from `main` after the helper returns. Exercises the heap-copy
+// path for both implicit-erasure-on-append and pre-erased protocol values.
+
+#import "modules/std.sx";
+
+Sizable :: protocol {
+    size :: (self: *Self) -> i64;
+}
+
+Leaf :: struct { value: i64; }
+impl Sizable for Leaf {
+    size :: (self: *Leaf) -> i64 { self.value }
+}
+
+add :: (items: *List(Sizable), w: Leaf) {
+    p := w;
+    items.append(p.(Sizable));  // explicit owning copy — survives this frame
+}
+
+main :: () -> void {
+    // Works: protocol value created in main, appended to list
+    out("=== Created in main ===\n");
+    list_a : List(Sizable) = .{};
+    s : Sizable = Leaf.{ value = 42 };
+    list_a.append(s);
+    r1 := list_a.items[0].size();
+    print("first:  {} (expected 42)\n", r1);
+    r2 := list_a.items[0].size();
+    print("second: {} (expected 42)\n", r2);
+
+    // BUG: protocol value created in add(), first dispatch works, second crashes
+    out("=== Created in add() ===\n");
+    list_b : List(Sizable) = .{};
+    add(@list_b, Leaf.{ value = 99 });
+    r3 := list_b.items[0].size();
+    print("first:  {} (expected 99)\n", r3);   // works (stack not yet clobbered)
+    r4 := list_b.items[0].size();
+    print("second: {} (expected 99)\n", r4);   // CRASH: stack memory reused
+
+    out("=== OK ===\n");
+}

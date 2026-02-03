@@ -1,0 +1,4 @@
+// The second flat-imported author of a same-name `Box` struct. A separate nominal
+// identity from a.sx's `Box`, so each bare reference is a real collision the
+// importing source cannot disambiguate.
+Box :: struct { x: i32; }

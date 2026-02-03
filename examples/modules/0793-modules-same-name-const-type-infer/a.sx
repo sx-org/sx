@@ -1,0 +1,5 @@
+// Module A authors its OWN `K` declared `i32`. Its inferred-return `a_k` reads
+// `K` bare; the inferred return type must be A's `i32`, so the value prints as
+// the integer `1`, never coerced to B's `f64`.
+K : i32 : 1;
+a_k :: () { return K; }

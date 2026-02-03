@@ -1,0 +1,5 @@
+error: this arm is unreachable — earlier arms already claim every type it names (a concrete arm must come BEFORE the category that contains it)
+  --> examples/diagnostics/1257-diagnostics-type-match-unreachable-arm.sx:14:14
+   |
+14 |         case Point:  return "Point";
+   |              ^^^^^

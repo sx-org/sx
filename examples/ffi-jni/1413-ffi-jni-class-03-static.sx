@@ -1,0 +1,19 @@
+// Phase 2 step 2.3 (PLAN-FFI.md): xfail then green for class/static
+// method declarations inside a `#jni_class` body.
+//
+// Instance vs class method is determined by the first param's TYPE:
+// `(self: *Self, ...)` ⇒ instance, anything else (here, `(n: i32)`)
+// ⇒ class method, dispatched via `GetStaticMethodID` /
+// `CallStatic*` at lowering time (Phase 2.12). No explicit `static`
+// keyword; the param shape carries the signal.
+
+#import "modules/std.sx";
+
+Math :: #jni_class("java/lang/Math") extern {
+    abs :: (n: i32) -> i32;  // no `self: *Self` → class method
+}
+
+main :: () -> i32 {
+    print("parse-only ok\n");
+    0
+}

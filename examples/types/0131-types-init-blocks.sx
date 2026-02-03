@@ -1,0 +1,200 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+Point :: struct { x, y: i32; }
+
+add :: (a: i32, b: i32) -> i32 { a + b }
+
+Counter :: protocol {
+    inc :: (self: *Self);
+    get :: (self: *Self) -> i32;
+}
+
+Summable :: protocol {
+    sum :: (self: *Self) -> i32;
+}
+
+SimpleCounter :: struct { val: i32; }
+
+impl Counter for SimpleCounter {
+    inc :: (self: *SimpleCounter) { self.val += 1; }
+    get :: (self: *SimpleCounter) -> i32 { self.val }
+}
+
+impl Summable for Point {
+    sum :: (self: *Point) -> i32 { self.x + self.y }
+}
+
+// Phase 2: #inline protocol for dynamic dispatch
+
+// Phase 7: Generic struct impls
+Pair :: struct ($T: Type) {
+    a: T;
+    b: T;
+}
+
+impl Summable for Pair($T) {
+    sum :: (self: *Pair(T)) -> i32 {
+        xx self.a + xx self.b
+    }
+}
+
+// P6.5: Struct type param constraints
+
+// Init block test struct
+Builder :: struct {
+    total: i32;
+    count: i32;
+
+    add :: (self: *Builder, val: i32) {
+        self.total += val;
+        self.count += 1;
+    }
+}
+
+// Global variable for address-of test
+
+main :: () {
+
+    // --- Init Blocks (IB) ---
+    print("=== Init Blocks ===\n");
+
+    // IB1: basic init block with struct methods
+    {
+        b := Builder.{ total = 0, count = 0 } {
+            self.add(10);
+            self.add(20);
+            self.add(30);
+        };
+        print("IB1: {} {}\n", b.total, b.count);
+    }
+
+    // IB2: nested init blocks (self shadows correctly)
+    {
+        b1 := Builder.{ total = 0, count = 0 } {
+            self.add(100);
+            b2 := Builder.{ total = 0, count = 0 } {
+                self.add(42);
+            };
+            self.add(b2.total);
+        };
+        print("IB2: {} {}\n", b1.total, b1.count);
+    }
+
+    // IB3: empty init block
+    {
+        b := Builder.{ total = 5, count = 1 } {};
+        print("IB3: {} {}\n", b.total, b.count);
+    }
+
+    // IB4: conditional inside init block
+    {
+        add_extra := true;
+        b := Builder.{ total = 0, count = 0 } {
+            self.add(10);
+            if add_extra {
+                self.add(90);
+            }
+        };
+        print("IB4: {}\n", b.total);
+    }
+
+    // IB5: init block + auto type erasure combined
+    {
+        use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
+        result := use_counter(SimpleCounter.{ val = 0 } {
+            self.val = 50;
+        });
+        print("IB5: {}\n", result);
+    }
+
+    // ============================================================
+    // SECTION: Struct static method shorthand (.method(args) syntax)
+    // ============================================================
+    print("--- struct static method shorthand ---\n");
+
+    // SM1: Basic shorthand — .create(args) resolves to Dims.create(args)
+    {
+        Dims :: struct {
+            w: f32;
+            h: f32;
+
+            create :: (w: f32, h: f32) -> Dims {
+                Dims.{ w = w, h = h }
+            }
+
+            square :: (size: f32) -> Dims {
+                Dims.{ w = size, h = size }
+            }
+        }
+        use_dims :: (d: Dims) { print("SM1: {} {}\n", d.w, d.h); }
+        use_dims(.create(16.0, 8.0));
+        use_dims(.square(5.0));
+    }
+
+    // SM2: Shorthand in variable declaration with explicit type
+    {
+        Pair :: struct {
+            a: i64;
+            b: i64;
+
+            make :: (a: i64, b: i64) -> Pair {
+                Pair.{ a = a, b = b }
+            }
+        }
+        p : Pair = .make(10, 20);
+        print("SM2: {} {}\n", p.a, p.b);
+    }
+
+    // ============================================================
+    // OPTIONAL IF-ELSE COERCION
+    // ============================================================
+    {
+        print("--- optional if-else coercion ---\n");
+        OptF :: struct { width: ?f32; }
+        x :f32: 10.0;
+
+        // null in then branch
+        f1 := OptF.{ width = if true then null else x };
+        print("opt-if1: {}\n", f1.width ?? 99.0);
+
+        // value in then branch, null in else
+        f2 := OptF.{ width = if true then x else null };
+        print("opt-if2: {}\n", f2.width ?? 99.0);
+
+        // both branches are values
+        f3 := OptF.{ width = if false then 5.0 else x };
+        print("opt-if3: {}\n", f3.width ?? 99.0);
+
+        // standalone optional variable
+        val: ?f32 = if true then null else 42.0;
+        print("opt-if4: {}\n", val ?? 0.0);
+
+        val2: ?f32 = if false then null else 42.0;
+        print("opt-if5: {}\n", val2 ?? 0.0);
+    }
+
+    // --- usize / isize ---
+    {
+        a : usize = 42;
+        b : isize = 0 - 7;
+        print("usize: {}\n", a);
+        print("isize: {}\n", b);
+
+        // arithmetic
+        c : usize = a + 8;
+        print("usize+8: {}\n", c);
+
+        // coercion from i32
+        x : i32 = 10;
+        y : usize = xx x;
+        print("i32->usize: {}\n", y);
+
+        // coercion to i64
+        z : i64 = xx a;
+        print("usize->i64: {}\n", z);
+    }
+}

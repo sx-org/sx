@@ -1,0 +1,27 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+// ============================================================
+// Struct constants test
+Phys :: struct {
+    x, y: f32;
+    GRAVITY :f32: 9.81;
+    MAX_SPEED :: 100;
+}
+
+// Init block test struct
+
+main :: () {
+
+    // --- Struct Constants ---
+    print("=== Struct Constants ===\n");
+    {
+        print("gravity: {}\n", Phys.GRAVITY);                   // gravity: 9.810000
+        print("max speed: {}\n", Phys.MAX_SPEED);               // max speed: 100
+        p := Phys.{ x = 0.0, y = Phys.GRAVITY };
+        print("p.y: {}\n", p.y);                                // p.y: 9.810000
+    }
+}

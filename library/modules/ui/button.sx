@@ -1,0 +1,91 @@
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/label.sx";
+#import "modules/ui/font.sx";
+
+ButtonStyle :: struct {
+    background: Color;
+    foreground: Color;
+    hover_bg: Color;
+    pressed_bg: Color;
+    corner_radius: f32;
+    padding: EdgeInsets;
+
+    default :: () -> ButtonStyle {
+        ButtonStyle.{
+            background = COLOR_BLUE,
+            foreground = COLOR_WHITE,
+            hover_bg = Color.rgb(0, 100, 220),
+            pressed_bg = Color.rgb(0, 80, 180),
+            corner_radius = 6.0,
+            padding = EdgeInsets.symmetric(16.0, 8.0)
+        }
+    }
+}
+
+Button :: struct {
+    label: string;
+    font_size: f32;
+    style: ButtonStyle;
+    on_tap: ?Closure();
+    hovered: bool;
+    pressed: bool;
+
+}
+
+impl View for Button {
+    size_that_fits :: (self: *Button, proposal: ProposedSize) -> Size {
+        text_size := measure_text(self.label, self.font_size);
+        Size.{
+            width = text_size.width + self.style.padding.horizontal(),
+            height = text_size.height + self.style.padding.vertical()
+        }
+    }
+
+    layout :: (self: *Button, bounds: Frame) {}
+
+    render :: (self: *Button, ctx: *RenderContext, frame: Frame) {
+        bg := if self.pressed then self.style.pressed_bg
+              else if self.hovered then self.style.hover_bg
+              else self.style.background;
+
+        ctx.add_rounded_rect(frame, bg, self.style.corner_radius);
+
+        // Text centered in frame
+        text_size := measure_text(self.label, self.font_size);
+        text_x := frame.origin.x + (frame.size.width - text_size.width) * 0.5;
+        text_y := frame.origin.y + (frame.size.height - text_size.height) * 0.5;
+        text_frame := Frame.make(text_x, text_y, text_size.width, text_size.height);
+        ctx.add_text(text_frame, self.label, self.font_size, self.style.foreground);
+    }
+
+    handle_event :: (self: *Button, event: *Event, frame: Frame) -> bool {
+        if event.* == {
+            case .mouse_moved: (d) {
+                self.hovered = frame.contains(d.position);
+                return false;
+            }
+            case .mouse_down: (d) {
+                if frame.contains(d.position) {
+                    self.pressed = true;
+                    return true;
+                }
+            }
+            case .mouse_up: (d) {
+                if self.pressed {
+                    self.pressed = false;
+                    if frame.contains(d.position) {
+                        if handler := self.on_tap {
+                            handler();
+                        }
+                    }
+                    return true;
+                }
+            }
+        }
+        false
+    }
+}

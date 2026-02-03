@@ -1,0 +1,41 @@
+error: 'w' is an lvalue and 'Sizable' values own their storage — an implicit erasure here would silently heap-copy it; write the copy ('w.(Sizable)' or 'w.(Sizable, <alloc>)') or pass a view ('*Sizable' parameter) for transient use
+  --> examples/diagnostics/1256-diagnostics-ownership-demand.sx:27:19
+   |
+27 |     a : Sizable = w;            // implicit lvalue at a decl → demand
+   |                   ^
+
+error: 'w' is an lvalue and 'Sizable' values own their storage — an implicit erasure here would silently heap-copy it; write the copy ('w.(Sizable)' or 'w.(Sizable, <alloc>)') or pass a view ('*Sizable' parameter) for transient use
+  --> examples/diagnostics/1256-diagnostics-ownership-demand.sx:29:22
+   |
+29 |     b : Sizable = xx w;         // xx lvalue → same demand
+   |                      ^
+
+error: 'w' is an lvalue and 'Sizable' values own their storage — an implicit erasure here would silently heap-copy it; write the copy ('w.(Sizable)' or 'w.(Sizable, <alloc>)') or pass a view ('*Sizable' parameter) for transient use
+  --> examples/diagnostics/1256-diagnostics-ownership-demand.sx:31:17
+   |
+31 |     _ = use_val(w);             // implicit lvalue call arg → demand
+   |                 ^
+
+error: the operand is an lvalue and 'Sizable' values own their storage — an implicit erasure here would silently heap-copy it; write the copy (postfix '.(Sizable)' or '.(Sizable, <alloc>)') or pass a view ('*Sizable' parameter) for transient use
+  --> examples/diagnostics/1256-diagnostics-ownership-demand.sx:32:18
+   |
+32 |     h : Holder = .{ s = w };    // implicit lvalue struct field → demand
+   |                  ^^^^^^^^^^
+
+error: 'pw' is a pointer and 'Sizable' values own their storage — an implicit erasure here would silently alias or copy the pointee; write the snapshot ('pw.(Sizable)' copies the pointee, 'pw.(Sizable, <alloc>)' through a named allocator) or pass a view ('*Sizable' parameter) for transient use
+  --> examples/diagnostics/1256-diagnostics-ownership-demand.sx:35:22
+   |
+35 |     c : Sizable = xx pw;        // pointer-to-concrete at a P target → demand
+   |                      ^^
+
+error: the allocator argument of an owning erasure must be an LVALUE naming an allocator — bind it first (the value must outlive the erasure so `free(p, a)` can pair with it)
+  --> examples/diagnostics/1256-diagnostics-ownership-demand.sx:38:22
+   |
+38 |     d := w.(Sizable, mk_gpa()); // allocator argument must be an lvalue
+   |                      ^^^^^^^^
+
+error: '.(IdP, alloc)' on an '#identity' protocol — identity erasure is a borrow and allocates nothing; write '.(IdP)'
+  --> examples/diagnostics/1256-diagnostics-ownership-demand.sx:40:10
+   |
+40 |     e := w.(IdP, context.allocator); // .(P, alloc) on #identity → refusal
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^

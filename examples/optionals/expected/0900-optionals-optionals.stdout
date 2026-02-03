@@ -1,0 +1,20 @@
+x = 42
+y = null
+x! = 42
+x ?? 0 = 42
+y ?? 99 = 99
+if-bind x: 42
+if-bind y: none
+match some: 42
+match none: 0
+p?.value = 10
+q?.value = 0
+o1.inner?.val = 99
+o2.inner?.val = 0
+narrowed a: 10
+guard 42: 42
+guard null: 0
+both: 10 20
+guard2: 7
+default next: null
+comptime: 141

@@ -1,0 +1,15 @@
+// The `protocol` type category exists ONLY in the static fold (`inline if`
+// over a bound generic type param) — a protocol value carries no runtime
+// type tag to switch on until the phase-2 RTTI story, so a runtime
+// `case protocol:` arm would be silently dead. It is a pointed compile
+// error instead.
+#import "modules/std.sx";
+
+main :: () {
+    av : any = 5;
+    t := type_of(av);
+    if t == {
+        case protocol: print("?\n");
+        case int: print("int\n");
+    }
+}

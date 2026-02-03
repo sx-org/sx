@@ -1,0 +1,23 @@
+// A QUALIFIED generic static-method head (`a.Box(i64).make(7)`) must instantiate
+// — and call the `make` of — the template AUTHORED by namespace `a`, for BOTH
+// the type layout and the method body. Two namespaces each author a same-name
+// generic `Box($T)` with a DIFFERENT layout and a DIFFERENT `make` (a: one field;
+// b: two fields, sets `y = v+100`). `a.Box(i64).make(7)` and `b.Box(i64).make(9)`
+// must select their OWN module's author.
+//
+// Regression (Phase E4 finding #2, qualified static-method site): the static-head
+// path only handled an IDENTIFIER inner callee (`Box(..)`), so the qualified
+// inner callee `a.Box(..)` (a `.field_access`) was not routed through
+// `qualifiedStructTemplate` — `a.Box(i64).make(7)` resolved to nothing
+// (unresolved, exit 1).
+
+#import "modules/std.sx";
+a :: #import "0779-modules-qualified-generic-static-method-author/a.sx";
+b :: #import "0779-modules-qualified-generic-static-method-author/b.sx";
+
+main :: () -> i32 {
+    xa := a.Box(i64).make(7);
+    xb := b.Box(i64).make(9);
+    print("a.x={} b.x={} b.y={} sizes={} {}\n", xa.x, xb.x, xb.y, size_of(type_of(xa)), size_of(type_of(xb)));
+    0
+}

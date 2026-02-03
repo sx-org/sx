@@ -1,0 +1,10 @@
+error: by-reference loop capture 'm' has type '*Move', but 'Move' is expected here
+  --> examples/diagnostics/1107-diagnostics-ref-capture-value-arg-diagnostic.sx:15:14
+   |
+15 |         take(m);
+   |              ^
+
+help: dereference it to pass the value: `m.*`
+   |
+15 | m.*
+   |              ^

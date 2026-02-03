@@ -1,0 +1,25 @@
+// Phase 2 step 2.4 (PLAN-FFI.md): xfail then green for the `#extends`
+// and `#implements` body items inside a `#jni_class` declaration.
+//
+// `#extends Alias;` declares a single-inheritance superclass reference
+// using the sx-side alias name (not the runtime Java path — that lives
+// in the alias's own `#jni_class(...)` directive arg). `#implements
+// Alias;` is repeatable and records interface conformance.
+//
+// Step 2.4 introduces `hash_extends` and `hash_implements` tokens and
+// refactors `JniClassDecl.methods` into a `members` tagged union that
+// holds method/extends/implements variants.
+
+#import "modules/std.sx";
+
+View :: #jni_class("android/view/View") extern { }
+
+Window :: #jni_class("android/view/Window") extern {
+    #extends View;
+    getDecorView :: (self: *Self) -> *View;
+}
+
+main :: () -> i32 {
+    print("parse-only ok\n");
+    0
+}

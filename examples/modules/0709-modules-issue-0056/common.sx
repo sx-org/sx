@@ -1,0 +1,12 @@
+// A parameterised-protocol (`Into`) impl living in a module reachable through
+// more than one import path. Each path must NOT re-register the impl.
+// Impl blocks are anonymous (`declName() == null`), so the diamond-import
+// dedup in imports.zig (`mergeFlat`) skips them and appends the node once per
+// path — `registerParamImpl` then trips its same-file duplicate check.
+Wrapped :: struct { v: i64; }
+
+impl Into(Wrapped) for i64 {
+    convert :: (self: i64) -> Wrapped {
+        return .{ v = self };
+    }
+}

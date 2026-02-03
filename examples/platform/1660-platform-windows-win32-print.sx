@@ -1,0 +1,29 @@
+// Windows x86_64 — print "42" and exit(0) through the Win32 system-call
+// boundary. The Windows analog of the Linux raw-`syscall` write (see
+// 1651): Windows has no stable raw syscall ABI (NtWriteFile's ordinal
+// shifts between OS builds), so the documented boundary IS kernel32 —
+// `GetStdHandle` + `WriteFile` to print, `ExitProcess` to terminate.
+//
+// Exercises the bundled-`zig` link backend end to end: built with
+// `--target windows-gnu --self-contained`, zig cc (mingw) auto-resolves
+// kernel32, producing a PE32+ that prints "42\n" and exits 0.
+//
+// Pinned `x86_64-windows-gnu` via `.build`: ir-only on this non-Windows
+// host (the `.ir` snapshot locks the Win64-ABI lowering of the three
+// extern calls); runs end-to-end on a Windows x86_64 runner.
+
+kernel32 :: #library "kernel32";
+
+// DWORD = u32, HANDLE/LPVOID = *void, BOOL = i32.
+GetStdHandle :: (n_std_handle: u32) -> *void extern;
+WriteFile :: (file: *void, buf: *u8, n: u32, written: *u32, overlapped: *void) -> i32 extern;
+ExitProcess :: (code: u32) -> void extern;
+
+main :: () {
+    // STD_OUTPUT_HANDLE = (DWORD)-11 = 0xFFFFFFF5.
+    out := GetStdHandle(0xFFFFFFF5);
+    msg : [3]u8 = .[52, 50, 10];    // "42\n"
+    written : u32 = 0;
+    WriteFile(out, @msg[0], 3, @written, null);
+    ExitProcess(0);
+}

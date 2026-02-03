@@ -1,0 +1,11 @@
+error: 'T' is a value parameter, not a type; introduce a generic type parameter with `$T: Type`
+  --> examples/diagnostics/1111-diagnostics-nondollar-type-param-rejected.sx:6:37
+   |
+ 6 | idwrap :: (T: Type, f: Closure() -> T) -> T { return f(); }
+   |                                     ^
+
+error: 'T' is a value parameter, not a type; introduce a generic type parameter with `$T: Type`
+  --> examples/diagnostics/1111-diagnostics-nondollar-type-param-rejected.sx:6:43
+   |
+ 6 | idwrap :: (T: Type, f: Closure() -> T) -> T { return f(); }
+   |                                           ^

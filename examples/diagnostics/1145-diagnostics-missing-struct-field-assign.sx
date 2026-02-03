@@ -1,0 +1,29 @@
+// Assigning to a field that does not exist on a struct produces the same
+// `field 'X' not found on type 'Y'` diagnostic as the read path (1100), and
+// exits 1 — never the `.unresolved` LLVM-emission panic, never a silent store
+// into a neighbouring field.
+//
+// Regression (issue 0094): the lvalue field lookup left `field_ty = .unresolved`
+// (lowerAssignment's assignment-target path) or silently GEP'd field 0 as `.i64`
+// (lowerExprAsPtr's fallback / lowerMultiAssign's struct loop), so a missing-field
+// store either built a pointer-to-`.unresolved` that panicked at LLVM emission or
+// silently wrote field 0. All three lvalue sites now emit the field-not-found
+// diagnostic: the assignment-target path (`p.q`), the nested lvalue-pointer path
+// (`o.missing.a`), and the multi-target store path (`p.r, y`).
+
+Point :: struct { x: i64; }
+Inner :: struct { a: i64; }
+Outer :: struct { inner: Inner; }
+
+main :: () -> i32 {
+    p := Point.{ x = 1 };
+    p.q = 2;                              // site 1: lowerAssignment target path
+
+    o := Outer.{ inner = Inner.{ a = 1 } };
+    o.missing.a = 5;                      // site 2: lowerExprAsPtr fallback
+
+    y : i64 = 0;
+    p.r, y = 3, 4;                        // site 3: lowerMultiAssign field path
+
+    return 0;
+}

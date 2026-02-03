@@ -1,0 +1,6 @@
+local         running=true x=42 name=default
+g_empty       running=true x=42 name=default
+g_partial     running=true x=99 name=default
+g_override    running=false x=42 name=default
+g_reorder     running=false x=7 name=hi
+g_positional  running=false x=13 name=pos

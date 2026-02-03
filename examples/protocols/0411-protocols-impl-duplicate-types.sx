@@ -1,0 +1,2 @@
+// Shared type for 180-impl-duplicate.
+Wrap :: struct { v: i64 = 0; }

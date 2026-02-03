@@ -1,0 +1,35 @@
+// Free-function dot-calls are OPT-IN. Two opt-in spellings:
+//   name :: ufcs (params) { body }   — the fn itself is dot-callable
+//   name :: ufcs target;             — dot-callable (renaming) alias
+// A plain fn is callable directly or via `|>` only (see 1166 for the
+// rejection). Generic ufcs fns dispatch through normal monomorphization,
+// and the plan-side return type binds from the receiver (structured
+// params like `[]$T` included).
+
+#import "modules/std.sx";
+
+bump  :: (x: i64) -> i64 { x + 1 }
+bump2 :: ufcs (x: i64) -> i64 { x + 2 }
+bump3 :: ufcs bump;
+
+Counter :: struct { n: i64; }
+inc :: ufcs (c: *Counter, by: i64) -> i64 { c.n += by; c.n }
+
+gfirst :: ufcs (xs: []$T) -> T { xs[0] }
+
+main :: () {
+    f : i64 = 40;
+    print("marked: {}\n", f.bump2());      // 42
+    print("alias: {}\n", f.bump3());       // 41
+    print("direct: {}\n", bump(f));        // 41 — plain fn, direct
+    print("pipe: {}\n", f |> bump());      // 41 — plain fn, pipe
+    print("marked-direct: {}\n", bump2(f)); // 42 — marked fn callable directly
+
+    c := Counter.{ n = 10 };
+    print("ptr-recv: {}\n", c.inc(5));     // 15 — auto address-of receiver
+
+    arr := .[7, 8, 9];
+    xs : []i64 = arr;
+    print("generic-dot: {}\n", xs.gfirst());     // 7
+    print("generic-direct: {}\n", gfirst(xs));   // 7 — plan types it i64, not a T stub
+}

@@ -1,0 +1,10 @@
+padded-size: 24 parity=true
+padded-align: 8 parity=true
+nested-size: 6 parity=true
+union-size: 8 parity=true
+padded-sfc: 3 parity=true
+union-sfc: 2 parity=true
+color-vc: 3 parity=true
+eq=true neq=false
+flags: color=false flags=true
+any-tag: vc=3 size=8

@@ -1,0 +1,38 @@
+// `#run` of a function returning an OPTIONAL value must bridge the comptime
+// VM register → host Value through the reg→value optional arm.
+//
+// Regression (issue 0162): a `#run` whose function returned `?T` / `?i64`
+// previously failed comptime evaluation with
+//   "reg→value: aggregate shape not bridged yet"
+// because the VM's regToValue bridge handled scalars/structs/slices/tuples
+// but bailed on an OPTIONAL-typed result. The fix reads the optional's
+// has_value flag (at offset sizeof(child)); when set it bridges the payload
+// recursively into a `{ payload, i1=true }` aggregate (the host serializes
+// that to `{T, i1}`), and when clear (or the value is the bare null sentinel)
+// it yields `.null_val` (serialized to a zero `{T, i1}` = absent).
+//
+// Exercises: present `?T` (optional of struct), present `?i64` (optional of
+// scalar), and a NULL-returning `?i64`. The values are read via `!` (unwrap)
+// and `??` (coalesce), which read the has_value flag correctly.
+
+#import "modules/std.sx";
+
+T :: struct { a: i64 = 0; b: i64 = 0; }
+
+mk_struct :: () -> ?T   { t : T = .{ a = 7, b = 11 }; return t; }
+mk_scalar :: () -> ?i64 { return 5; }
+mk_null   :: () -> ?i64 { return null; }
+
+X :: #run mk_struct();  // present ?T
+Y :: #run mk_scalar();  // present ?i64
+N :: #run mk_null();    // null ?i64
+
+main :: () {
+    // Present optional-of-struct: payload bridged field-by-field.
+    print("X.a = {}\n", X!.a);
+    print("X.b = {}\n", X!.b);
+    // Present optional-of-scalar.
+    print("Y   = {}\n", Y ?? -1);
+    // Null optional: coalesce takes the default.
+    print("N   = {}\n", N ?? -1);
+}

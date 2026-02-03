@@ -1,0 +1,2 @@
+// A flat-visible VALUE/FUNCTION named `Secret` (not a type).
+Secret :: () -> i32 { 0 }

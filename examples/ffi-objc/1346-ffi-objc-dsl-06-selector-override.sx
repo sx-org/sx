@@ -1,0 +1,41 @@
+// Phase 3 step 3.2 (PLAN-FFI.md): `#selector("explicit:string")`
+// override on `#objc_class` members. Escape hatch for cases where the
+// sx-side method name doesn't conveniently produce the target selector
+// through the default mangling rule (Phase 3.0 — split on `_`, each
+// piece becomes a keyword with a trailing `:`).
+//
+// Surface form mirrors `#jni_method_descriptor("(Sig)Ret")` — sits
+// after the optional `-> ReturnType` and before the body / terminator.
+//
+// Pre-3.2: the parser doesn't know the `#selector` token; snapshot
+// captures the parser error (exit=1). Next commit wires lexer + parser
+// + AST + lowering and the snapshot flips to working output.
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+NSObject :: #objc_class("NSObject") extern {
+    // Default mangling would yield selector "gimme" — NSObject has no
+    // such IMP. The override pins it to the real selector
+    // "description". Static method (no `self: *Self` first param).
+    gimme :: () -> *void #selector("description");
+}
+
+// Instance-method override exercises a different lowering path
+// (`lowerObjcMethodCall` rather than `lowerObjcStaticCall`). Parse-
+// only on this side — main only invokes the static path because we
+// don't have a real NSDictionary in scope, but the declaration locks
+// in the parser + AST + lowering wiring for the multi-arg shape.
+NSDictionary :: #objc_class("NSDictionary") extern {
+    lookup :: (self: *Self, key: *void) -> *void #selector("objectForKey:");
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        d := NSObject.gimme();
+        print("static override non-null: {}\n", d != null);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

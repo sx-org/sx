@@ -1,0 +1,16 @@
+// An un-narrowed `?T` does NOT implicitly unwrap to its concrete payload in a
+// value position — it is a compile error pointing at the explicit forms.
+//
+// Regression (issue 0179): passing a `?i64` where `i32` is expected used to
+// compile and unconditionally extract the payload, so a NULL optional yielded
+// `0` with no diagnostic (silent miscompile across the whole `?T → concrete`
+// family, incl. `?bool → bool`). The legal extractions are `!` / `??` /
+// binding / `case` / a `!= null` guard (see 0919); everything else is rejected.
+#import "modules/std.sx";
+
+takes_i32 :: (x: i32) { print("got {}\n", x); }
+
+main :: () {
+    n : ?i64 = null;
+    takes_i32(n);    // error: optional does not implicitly unwrap
+}

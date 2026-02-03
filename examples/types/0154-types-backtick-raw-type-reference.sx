@@ -1,0 +1,42 @@
+// Backtick raw identifier in TYPE position (the universal model, issue 0089):
+// `` `name `` is the LITERAL identifier `name` used as a type reference, never
+// the builtin/reserved spelling. A reserved type spelling (`i2`, `u8`, …) can
+// therefore both DECLARE a type (struct / enum / union / error-set / alias) and
+// be REFERENCED as that type via the backtick — while a BARE `i2` in type
+// position remains the signed-int type (see `add` below) and a bare reserved-
+// name declaration still errors (see examples/1141). The backtick is required
+// to declare or reference these names; it is never part of the name's text.
+// Regression (issue 0089 — attempt-4 universal raw identifier).
+#import "modules/std.sx";
+
+// Type-introducing decls whose NAME is a reserved spelling.
+`i2 :: struct { x: i64; }
+`i8 :: enum { A; B; }
+`u16 :: union { i: i32; f: f32; }
+`u32 :: error { Bad, Empty }
+RawAlias :: `i2;   // alias to a backtick-declared struct
+
+// A bare `i2` in type position is still the 2-bit signed int.
+add :: (a: i2, b: i2) -> i2 { return a + b; }
+
+main :: () -> i32 {
+    // Reference the backtick struct as a type; field access works.
+    v : `i2 = ---;
+    v.x = 7;
+
+    // Reference via a normal alias too.
+    a : RawAlias = ---;
+    a.x = 11;
+
+    // Backtick enum / union type references.
+    e : `i8 = .A;
+    u : `u16 = ---;
+    u.i = 5;
+
+    print("struct = {}\n", v.x);
+    print("alias  = {}\n", a.x);
+    print("enum   = {}\n", e == .A);
+    print("union  = {}\n", u.i);
+    print("bare   = {}\n", add(1, 0));   // bare i2 = the 2-bit int type
+    return 0;
+}

@@ -1,0 +1,6 @@
+big24 make    = (1, 2, 3)
+big24 rotate  = (3, 1, 2)
+big24 sum     = 6
+big48 make    = (10, 20, 30, 40, 50, 60)
+big48 reverse = (60, 50, 40, 30, 20, 10)
+big48 sum     = 210

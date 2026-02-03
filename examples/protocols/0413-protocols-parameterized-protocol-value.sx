@@ -1,0 +1,22 @@
+// Phase 4.2 — parameterized protocol as a runtime VALUE type. `VL(i64)` is a
+// 16-byte protocol value {ctx, vtable} (a plain protocol was already, but a
+// parameterized one used to resolve to a 0-field stub). A conforming struct
+// `xx`-erases into it, and method dispatch uses the bound type-arg
+// (`get -> T` becomes `get -> i64` for `VL(i64)`).
+
+#import "modules/std.sx";
+
+VL :: protocol(T: Type) { get :: (self: *Self) -> T; }
+IntCell :: struct { v: i64; }
+StrCell :: struct { s: string; }
+impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
+impl VL(string) for StrCell { get :: (self: *StrCell) -> string => self.s; }
+
+main :: () -> i32 {
+    a : VL(i64) = xx IntCell.{ v = 42 };
+    print("a.get={}\n", a.get());          // 42 (T = i64)
+
+    b : VL(string) = xx StrCell.{ s = "hi" };
+    print("b.get={}\n", b.get());          // hi (T = string)
+    0
+}

@@ -1,0 +1,231 @@
+// IndexMap($K,$V) extended API — companion to 0722. Ports Zig's std
+// array_hash_map tests for getOrPut(+index) / fetchPut / fetchRemove /
+// fetchSwapRemove / pop / ensureTotalCapacity / capacity / clone / iterator /
+// reindex. (Basic insertion-order/get/remove/swap_remove/grow/clear are in 0722.)
+//
+// Zig tests ported: "basic hash map usage" (fetchPut/getOrPut+index/
+// fetchSwapRemove/fetchOrderedRemove), "iterator hash map", "ensure capacity",
+// "big map", "clone", "pop()", "reIndex" (adapted — no direct array writes).
+// Skipped Zig-only: Adapted/AutoContext variants, allocation-failure injection,
+// sort, store_hash, 0-sized keys.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () {
+    gpa := GPA.init();
+
+    // ── basic usage: fetchPut / getOrPut(+index) / fetch{Swap,}Remove ─────
+    m : IndexMap(i64, i64) = .{};
+    n1 := if x := m.fetch_put(1, 11, gpa) { false } else { true };
+    n2 := if x := m.fetch_put(2, 22, gpa) { false } else { true };
+    n3 := if x := m.fetch_put(3, 33, gpa) { false } else { true };
+    n4 := if x := m.fetch_put(4, 44, gpa) { false } else { true };
+    report("fp-fresh", n1 and n2 and n3 and n4);
+    report("fp-old", m.fetch_put(1, 111, gpa)! == 11);
+
+    gop1 := m.get_or_put(1, gpa);
+    report("gop-found", gop1.found_existing and gop1.value_ptr.* == 111 and gop1.index == 0);
+    gop1.value_ptr.* = 77;
+    report("gop-mut", m.get(1)! == 77);
+
+    gop2 := m.get_or_put(99, gpa);
+    report("gop-new-index", !gop2.found_existing and gop2.index == 4);   // appended at tail
+    gop2.value_ptr.* = 42;
+    report("gop-new", m.get(99)! == 42);
+
+    // fetch_swap_remove: O(1), BREAKS order (last entry fills the hole)
+    report("fsr", m.fetch_swap_remove(2, gpa)! == 22);
+    fsr_miss := if x := m.fetch_swap_remove(2, gpa) { false } else { true };
+    report("fsr-miss", fsr_miss and !m.contains(2));
+    report("fsr-order", m.key_at(1) == 99);          // 99 (was last) moved to slot 1
+
+    // fetch_remove: ORDER-PRESERVING
+    report("fr", m.fetch_remove(99, gpa)! == 42);
+    report("fr-order", m.key_at(0) == 1 and m.key_at(1) == 3 and m.key_at(2) == 4);
+    m.deinit(gpa);
+
+    // ── ensureTotalCapacity: capacity stable under putAssumeCapacity ──────
+    e : IndexMap(i64, i64) = .{};
+    e.ensure_total_capacity(20, gpa);
+    cap0 := e.capacity();
+    report("etc-cap>=20", cap0 >= 20);
+    i := 0;
+    while i < 20 { e.fetch_put_assume_capacity(i, i + 10); i += 1; }
+    report("etc-noresize", e.capacity() == cap0 and e.len == 20);
+    order_e := true;
+    i = 0;
+    while i < 20 { if e.key_at(i) != i or e.val_at(i) != i + 10 { order_e = false; } i += 1; }
+    report("etc-order", order_e);
+    e.deinit(gpa);
+
+    // ── iterator (insertion order) after an order-preserving remove+reindex
+    it_m : IndexMap(i64, i64) = .{};
+    k := 0;
+    while k < 6 { it_m.put(k, k * 100, gpa); k += 1; }   // 0..5
+    it_m.remove(2, gpa);                                  // -> 0,1,3,4,5
+    it_m.reindex(xx gpa);
+    seq_ok := true;
+    idx := 0;
+    prev := -1;
+    it := it_m.iterator();
+    while kv := it.next() {
+        if kv.key_ptr.* <= prev { seq_ok = false; }         // strictly increasing
+        prev = kv.key_ptr.*;
+        idx += 1;
+    }
+    report("iter-order", seq_ok and idx == 5);
+    report("iter-lookup", it_m.get(5)! == 500 and !it_m.contains(2));
+    it_m.deinit(gpa);
+
+    // ── pop(): remove last, order preserved, values match ────────────────
+    pm : IndexMap(i64, i64) = .{};
+    i = 0;
+    while i < 9 { pm.put(i, i, gpa); i += 1; }
+    pop_ok := true;
+    expect := 8;
+    while p := pm.pop(xx gpa) {
+        if p.key != expect or p.value != expect { pop_ok = false; }
+        expect -= 1;
+    }
+    report("pop", pop_ok and pm.len == 0);
+    pm.deinit(gpa);
+
+    // ── clone: independent, insertion order preserved ────────────────────
+    o : IndexMap(i64, i64) = .{};
+    i = 0;
+    while i < 10 { o.put(i, i * 10, gpa); i += 1; }
+    cp := o.clone(xx gpa);
+    clone_ok := cp.len == 10;
+    i = 0;
+    while i < 10 { if cp.key_at(i) != i or cp.val_at(i) != i * 10 { clone_ok = false; } i += 1; }
+    report("clone", clone_ok);
+    cp.put(0, 999, gpa);                                  // mutate clone only
+    report("clone-indep", o.get(0)! == 0 and cp.get(0)! == 999);
+    o.deinit(gpa);
+    cp.deinit(gpa);
+
+    // ── big map: put, overwrite a subset, verify (Zig "big map") ─────────
+    b : IndexMap(i64, i64) = .{};
+    i = 0;
+    while i < 8 { b.put(i, i + 10, gpa); i += 1; }
+    got_ok := true;
+    i = 0;
+    while i < 8 { if b.get(i)! != i + 10 { got_ok = false; } i += 1; }
+    while i < 16 { if b.contains(i) { got_ok = false; } i += 1; }
+    report("big-get", got_ok);
+    i = 4;
+    while i < 8 { b.put(i, i + 12, gpa); i += 1; }        // overwrite 4..8 in place
+    ov_ok := true;
+    i = 0;
+    while i < 4 { if b.get(i)! != i + 10 { ov_ok = false; } i += 1; }
+    while i < 8 { if b.get(i)! != i + 12 { ov_ok = false; } i += 1; }
+    report("big-overwrite", ov_ok);
+    b.deinit(gpa);
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Coverage backfill (G7,G8,G10,G12,G13,G14,G16).
+    // ═════════════════════════════════════════════════════════════════════
+
+    // ── G7: swap_remove / remove boundary cases ──────────────────────────
+    // (a) swap_remove the LAST entry — the `e == last` no-copy branch.
+    s7 : IndexMap(i64, i64) = .{};
+    i = 0; while i < 4 { s7.put(i, i * 10, gpa); i += 1; }        // [0,1,2,3]
+    report("g7-swap-last",
+           s7.swap_remove(3, gpa) and s7.len == 3 and !s7.contains(3)
+           and s7.key_at(0) == 0 and s7.key_at(1) == 1 and s7.key_at(2) == 2);
+    // (b) swap_remove a MIDDLE entry — the last entry fills the hole (order breaks).
+    report("g7-swap-mid",
+           s7.swap_remove(0, gpa) and s7.len == 2
+           and s7.key_at(0) == 2 and s7.key_at(1) == 1 and s7.get(2)! == 20 and s7.get(1)! == 10);
+    s7.deinit(gpa);
+    // (c) fetch_swap_remove the ONLY element of a 1-entry map.
+    one7 : IndexMap(i64, i64) = .{};
+    one7.put(42, 420, gpa);
+    report("g7-swap-only",
+           one7.fetch_swap_remove(42, gpa)! == 420 and one7.len == 0 and !one7.contains(42));
+    one7.deinit(gpa);
+    // (d) order-preserving remove of index 0 (whole-array shift down).
+    op7 : IndexMap(i64, i64) = .{};
+    i = 0; while i < 4 { op7.put(i, i, gpa); i += 1; }            // [0,1,2,3]
+    report("g7-remove-head",
+           op7.remove(0, gpa) and op7.len == 3
+           and op7.key_at(0) == 1 and op7.key_at(1) == 2 and op7.key_at(2) == 3);
+    // (e) order-preserving remove of the TAIL (zero-iteration shift).
+    report("g7-remove-tail",
+           op7.remove(3, gpa) and op7.len == 2 and op7.key_at(0) == 1 and op7.key_at(1) == 2);
+    // (f) remove-to-empty, then re-add.
+    op7.remove(1, gpa); op7.remove(2, gpa);
+    report("g7-emptied", op7.len == 0 and !op7.contains(1) and !op7.contains(2));
+    op7.put(7, 77, gpa);
+    report("g7-readd", op7.len == 1 and op7.get(7)! == 77 and op7.key_at(0) == 7);
+    op7.deinit(gpa);
+
+    // ── G8: IndexIter.reset re-iterates all entries, order intact ─────────
+    r8 : IndexMap(i64, i64) = .{};
+    i = 0; while i < 6 { r8.put(i, i * 10, gpa); i += 1; }
+    it8 := r8.iterator();
+    c8a := 0; s8a := 0;
+    while kv := it8.next() { c8a += 1; s8a += kv.value_ptr.*; }
+    it8.reset();
+    c8b := 0; ord8 := true; prev8 := -1;
+    while kv := it8.next() { if kv.key_ptr.* <= prev8 { ord8 = false; } prev8 = kv.key_ptr.*; c8b += 1; }
+    report("g8-reset", c8a == 6 and c8b == 6 and s8a == 150 and ord8);
+    r8.deinit(gpa);
+
+    // ── G10: get_or_put_value sets on fresh, KEEPS on existing, order kept ─
+    gv10 : IndexMap(i64, i64) = .{};
+    gv10.put(1, 1, gpa);
+    r10a := gv10.get_or_put_value(5, 10, gpa);       // fresh → 10, appended
+    report("g10-fresh", !r10a.found_existing and gv10.get(5)! == 10 and gv10.key_at(1) == 5);
+    r10b := gv10.get_or_put_value(5, 99, gpa);       // existing → NOT overwritten
+    report("g10-keep", r10b.found_existing and gv10.get(5)! == 10);
+    gv10.put(2, 2, gpa);
+    report("g10-order", gv10.key_at(0) == 1 and gv10.key_at(1) == 5 and gv10.key_at(2) == 2 and gv10.len == 3);
+    gv10.deinit(gpa);
+
+    // ── G12: pop() keeps the index valid for SURVIVORS ───────────────────
+    // Entries don't shift on pop, but the index must drop the popped entry
+    // (a missing reindex would leave its slot stale → contains(popped) true).
+    p12 : IndexMap(i64, i64) = .{};
+    i = 0; while i < 5 { p12.put(i, i * 10, gpa); i += 1; }       // [0..4]
+    g12_ok := true;
+    e12 := p12.pop(xx gpa)!;                            // pop 4
+    if e12.key != 4 or p12.contains(4) { g12_ok = false; }
+    j12 := 0; while j12 < 4 { if p12.get(j12)! != j12 * 10 or !p12.contains(j12) { g12_ok = false; } j12 += 1; }
+    e12b := p12.pop(xx gpa)!;                           // pop 3
+    if e12b.key != 3 or p12.contains(3) { g12_ok = false; }
+    j12 = 0; while j12 < 3 { if p12.get(j12)! != j12 * 10 or !p12.contains(j12) { g12_ok = false; } j12 += 1; }
+    report("g12-pop-survivors-resolve", g12_ok and p12.len == 3);
+    p12.deinit(gpa);
+
+    // ── G13: re-insert after remove takes a FRESH tail slot ──────────────
+    // Distinct from an in-place overwrite (which keeps position): remove(20)
+    // then put(20,·) re-appends 20 at the tail.
+    o13 : IndexMap(i64, i64) = .{};
+    o13.put(10, 1, gpa); o13.put(20, 2, gpa); o13.put(30, 3, gpa);   // [10,20,30]
+    o13.remove(20, gpa);                             // [10,30]
+    o13.put(20, 999, gpa);                           // re-add → tail
+    report("g13-reinsert-tail",
+           o13.key_at(0) == 10 and o13.key_at(1) == 30 and o13.key_at(2) == 20
+           and o13.val_at(2) == 999 and o13.len == 3);
+    o13.deinit(gpa);
+
+    // ── G14: iterate a never-allocated (cap 0) IndexMap — no crash ────
+    z14 : IndexMap(i64, i64) = .{};
+    z14c := 0;
+    z14it := z14.iterator();
+    while kv := z14it.next() { z14c += 1; }
+    report("g14-empty-iter", z14c == 0 and z14.len == 0 and z14.capacity() == 0);
+
+    // ── G16: get_ptr returns null on a miss ──────────────────────────────
+    gp16 : IndexMap(i64, i64) = .{};
+    gp16.put(1, 100, gpa);
+    hit16  := if p := gp16.get_ptr(1)   { p.* == 100 } else { false };
+    miss16 := if p := gp16.get_ptr(999) { false } else { true };
+    report("g16-get_ptr-null-miss", hit16 and miss16);
+    gp16.deinit(gpa);
+}

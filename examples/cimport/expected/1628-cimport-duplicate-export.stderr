@@ -1,0 +1,1 @@
+error: C symbol 'clash' is defined by multiple '#import c' sources: 'examples/cimport/1628-cimport-duplicate-export/a.c' and 'examples/cimport/1628-cimport-duplicate-export/b.c' — all units share one link namespace

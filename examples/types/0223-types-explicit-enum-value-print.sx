@@ -1,0 +1,34 @@
+// Printing a payload-less enum variant that carries an EXPLICIT value
+// (`K :: 7`). `enum_to_string` maps the runtime value back to a variant name
+// via `variant_index(T, val)` then `struct_field_name(T, idx)`. `variant_index` must
+// return the SEQUENTIAL variant ordinal (the inverse of `variant_value`) —
+// NOT the raw explicit value — otherwise `struct_field_name` is indexed out of range.
+//
+// Regression (issue 0277): `variant_index` lowered to a bare `enum_tag`, so for
+// an explicit-valued variant it returned the value (7) instead of the ordinal
+// (2); `struct_field_name(E, 7)` then did an out-of-bounds GEP on the 3-entry name
+// array → segfault. `K :: 7` inside an enum body is an explicit-valued
+// variant (specs.md §7, `esc :: '\x1b'`), not an associated constant.
+
+#import "modules/std.sx";
+
+// Mix of auto (A=0, B=1) and explicit (K=7) values.
+E :: enum { A; B; K :: 7; }
+
+// Every variant explicit, none coinciding with its ordinal.
+F :: enum { X :: 3; Y :: 7; Z :: 11; }
+
+main :: () {
+    // Read each variant by name — the previously-crashing path.
+    print("{} {} {}\n", E.A, E.B, E.K);        // .A .B .K
+    print("{} {} {}\n", F.X, F.Y, F.Z);        // .X .Y .Z
+
+    // The explicit value is still readable via `xx` (unchanged).
+    ek : i64 = xx E.K;
+    fz : i64 = xx F.Z;
+    print("{} {}\n", ek, fz);                  // 7 11
+
+    // Round-trip through a typed local, then print.
+    v : E = E.K;
+    print("{}\n", v);                          // .K
+}

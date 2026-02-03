@@ -1,0 +1,13 @@
+// Bare TYPE visibility under a NAMESPACED-only import — the ENUM sibling of 0743
+// (struct), covering the second registered nominal kind for the source-aware
+// nominal leaf (Phase E1). `dep.sx` is imported only as `dep :: #import`, so its
+// top-level `Color` enum is reachable ONLY as `dep.Color`. A BARE `Color` in a
+// type position must NOT resolve — bare-TYPE visibility joins over the FLAT
+// import edges, and a namespaced alias is not a flat edge. Before the fix the
+// bare enum leaked through the global `findByName` first-match.
+dep :: #import "0744-modules-namespaced-only-bare-enum-not-visible/dep.sx";
+
+main :: () -> i32 {
+    c : Color = .green;
+    if c == .green { 0 } else { 9 }
+}

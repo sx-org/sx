@@ -1,0 +1,29 @@
+error: type 'Box' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0815-route-all-new-surfaces-ambiguous.sx:25:12
+   |
+25 | BoxPtr :: *Box;
+   |            ^^^
+
+error: type 'Box' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0815-route-all-new-surfaces-ambiguous.sx:27:21
+   |
+27 | WrapU :: union { b: Box; n: i32; }
+   |                     ^^^
+
+error: type 'Box' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0815-route-all-new-surfaces-ambiguous.sx:29:20
+   |
+29 | WrapE :: enum { V: Box; }
+   |                    ^^^
+
+error: type 'Box' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0815-route-all-new-surfaces-ambiguous.sx:32:20
+   |
+32 |     sz := size_of((Box, i32));
+   |                    ^^^
+
+error: type 'Box' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0815-route-all-new-surfaces-ambiguous.sx:33:20
+   |
+33 |     x : union { b: Box; n: i32 } = ---;
+   |                    ^^^

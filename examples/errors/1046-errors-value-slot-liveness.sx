@@ -1,0 +1,60 @@
+// Path-sensitive value-slot liveness (ERR step E1.8). After `v, err := f()`, the
+// value slot `v` is "live only where `err` is proven absent". Every read of `v`
+// below sits on a path where the compiler can prove `err == null`:
+//
+//   • `if !err { … v … }`            — proven inside the guard
+//   • `if err { return } … v …`      — proven on the fall-through
+//   • `if err { raise } … v …`       — fall-through in a failable function
+//   • `if err { … } else { … v … }`  — proven in the else branch
+//   • `!err and <reads v>`          — short-circuit keeps the proof
+//
+// A bare tag-compare (`if err == error.X`) proves NOTHING about absence — see the
+// rejection regression in 1047. (Regression for the E1.8 path-sensitive slice.)
+
+#import "modules/std.sx";
+
+E :: error { Bad, Empty }
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0  { raise error.Bad; }
+    if n == 0 { raise error.Empty; }
+    return n * 10;
+}
+
+// Early-return guard: the fall-through proves `err` absent.
+guarded :: (n: i32) -> i32 {
+    v, err := parse(n);
+    if err { return -1; }
+    return v;                              // err proven absent here
+}
+
+// `if err { raise }` in a failable function: same fall-through proof.
+relay :: (n: i32) -> (i32, !E) {
+    v, err := parse(n);
+    if err { raise err; }
+    return v + 1;                          // err proven absent here
+}
+
+main :: () -> i32 {
+    total : i32 = 0;
+
+    // (1) proven inside `if !err`
+    v1, e1 := parse(5);
+    if !e1 { total = total + v1; }          // +50
+
+    // (2) proven in the else branch
+    v2, e2 := parse(7);
+    if e2 { total = total + 1; } else { total = total + v2; }  // +70
+
+    // (3) short-circuit `&&` keeps the proof for the rhs
+    v3, e3 := parse(3);
+    if !e3 and v3 > 0 { total = total + v3; }  // +30
+
+    // (4) early-return / raise helpers
+    total = total + guarded(4);             // +40
+    total = total + guarded(-1);            // -1
+    total = total + (relay(2) catch (e) 0);   // parse(2)=20 → +1 = 21
+
+    print("liveness total: {}\n", total);   // 50+70+30+40-1+21 = 210
+    return total;
+}

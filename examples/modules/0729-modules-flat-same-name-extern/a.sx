@@ -1,0 +1,5 @@
+// One of two flat authors of `absval`, a `extern` libc binding. A consumer
+// flat-importing BOTH must NOT see this as an ambiguous bare-call collision —
+// extern authors are never rerouted by the bare-call resolver, so the call
+// falls to the existing first-wins extern dispatch.
+absval :: (n: i32) -> i32 extern libc "abs";

@@ -1,0 +1,63 @@
+// Tuple values: construction, element access, struct-field storage,
+// return, and operators. Regression for the tuple-construction bug where
+// an inferred `:=` tuple literal lowered its element values under the
+// enclosing fn's (narrower) return `target_type`, mismatching the
+// independently-inferred i64 field types and yielding garbage on read.
+
+#import "modules/std.sx";
+
+Box :: struct { xs: Tuple(i32, i32); }
+
+swap :: (a: i64, b: i64) -> Tuple(i64, i64) { .{b, a} }
+fst  :: (t: Tuple(i64, i64)) -> i64 { t.0 }
+
+main :: () -> i32 {
+    // Inferred positional tuple + numeric field access.
+    pair := .{40, 2};
+    print("pair {} {}\n", pair.0, pair.1);
+
+    // Named tuple: named + numeric access (numeric aliases are a TUPLE
+    // feature — an untyped named `.{ }` is an anonymous struct, so the
+    // named-tuple type is spelled out).
+    named : Tuple(x: i64, y: i64) = .{x = 10, y = 20};
+    print("named {} {} {}\n", named.x, named.0, named.1);
+
+    // Element into a typed local (access path, not just print).
+    a : i64 = pair.0;
+    b : i64 = pair.1;
+    print("locals {} {}\n", a, b);
+
+    // Tuple-typed struct field: store a tuple value, read both elements.
+    box : Box = ---;
+    box.xs = .{7, 9};
+    print("field {} {}\n", box.xs.0, box.xs.1);
+
+    // Return a tuple from a function.
+    s := swap(1, 2);
+    print("ret {} {}\n", s.0, s.1);
+
+    // Pass a tuple by value.
+    print("pass {}\n", fst(.{11, 22}));
+
+    // Operators: equality, concatenation, repetition, membership, lex.
+    // (Tuple-typed operands — the exotic operators are tuple-only; an
+    // untyped `.{ }` is an anonymous struct.)
+    ta : Tuple(i64, i64) = .{1, 2};
+    tb : Tuple(i64, i64) = .{3, 4};
+    tc : Tuple(i64, i64) = .{1, 3};
+    tm : Tuple(i64, i64, i64) = .{1, 2, 3};
+    print("eq {}\n", ta == ta);
+    c := ta + tb;
+    print("concat {} {}\n", c.0, c.3);
+    r := ta * 3;
+    print("rep {} {}\n", r.0, r.5);
+    print("mem {}\n", 3 in tm);
+    print("lex {}\n", ta < tc);
+
+    // Mixed-size fields: a tuple with both an i64 and a string (16-byte fat
+    // pointer). Field types are tracked per-position, so reading each back is
+    // typed correctly (i64 prints as a number, string as text).
+    mixed := .{42, "hi"};
+    print("mixed {} {}\n", mixed.0, mixed.1);
+    0
+}

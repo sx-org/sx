@@ -1,0 +1,36 @@
+// std.http — the fiber-handler seam (Q3.3).
+//
+// server.sx never imports sched.sx — the fiber runtime's context-switch is
+// aarch64-pinned naked asm, and importing it would break std/http on every
+// other arch (and drag the scheduler into non-fiber programs). Instead a
+// *provider* module (fiber_sched.sx, over std/sched.sx) IMPLEMENTS the
+// protocol below; ONLY a program that imports the provider and sets
+// `Config.fibers` compiles the fiber runtime — the exact TlsAcceptor
+// pattern. The runner's state must OUTLIVE the Server (Config.fibers
+// borrows it), and its teardown is the caller's (deinit after
+// Server.close).
+//
+// The model behind the seam: one FIBER per request, run cooperatively ON
+// the loop thread. The server spawns a fiber per dispatched request,
+// WAKES it when body bytes arrive (or the connection dies), and DRIVES
+// all ready fibers at tick boundaries. A handler inside a fiber may call
+// req.read_body, which SUSPENDS the fiber until the wake — this is what
+// lifts Q3.1's pool-only streaming restriction. Handlers must not use the
+// scheduler's own sleep()/block_on_fd() (the server drives fibers with a
+// non-blocking poll that cannot serve them; the provider bails loudly).
+FiberRunner :: protocol #identity {
+    // Spawn a fiber running `entry(arg)` (entry is an sx `(*void) -> void`
+    // fn pointer, erased). The fiber is enqueued READY — it first runs at
+    // the next drive(). Returns an opaque fiber handle for wake().
+    spawn :: (self: *Self, entry: *void, arg: *void) -> usize;
+    // Re-ready a SUSPENDED fiber (a wake of a ready/running fiber is a
+    // safe no-op). Called by the loop when body bytes / eof / a fault
+    // arrive for the fiber's request.
+    wake :: (self: *Self, handle: usize);
+    // Park the CURRENTLY RUNNING fiber until a wake. Must be called from
+    // inside a fiber (the provider bails loudly otherwise).
+    suspend_current :: (self: *Self);
+    // Run every ready fiber until all are done or suspended. NEVER blocks
+    // — called by the server at tick boundaries.
+    drive :: (self: *Self);
+}

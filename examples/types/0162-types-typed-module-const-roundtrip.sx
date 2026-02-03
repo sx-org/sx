@@ -1,0 +1,68 @@
+// Valid typed module-level constants compile, fold, and print correctly across
+// every initializer/annotation pairing the registrar accepts:
+//   - integer literal → integer     (`K : i64 : 4`)   — usable as an array count too
+//   - integer literal → float       (`W : f32 : 800`)
+//   - float literal   → float       (`PI : f32 : 3.14159`)
+//   - string literal  → string      (`S : string : "hi"`)
+//   - null            → pointer     (`P : *void : null`)
+//   - integer EXPRESSION → integer  (`KE : i64 : M + 2`) — usable as a count too
+//   - integer EXPRESSION → float    (`WE : f32 : M + 2`)
+//   - MIXED int+float EXPRESSION → float (`MF : f64 : M + 0.5`, both operand orders)
+//   - INTEGRAL float literal → integer (`KF : i64 : 4.0` → 4) — folds under the
+//     unified narrowing rule (F0.11), usable as a count too
+//   - INTEGRAL float EXPRESSION → integer (`KFE : i64 : M + 2.0` → 4)
+//
+// Companion to the negative example 1143: the issue-0088 fix rejects a typed
+// const whose initializer mismatches its annotation, and these correctly-typed
+// consts must keep working (no over-rejection) — including const-EXPRESSION
+// initializers, whose type-based validation (attempt 2) must accept a correctly
+// typed expression even though it isn't a literal.
+//
+// `MF`/`MFR` pin the attempt-3 inferExprType promotion fix: a mixed int+float
+// arithmetic expression infers as the float result regardless of operand order,
+// so it matches an `f64` annotation (and folds to 2.5, not a truncated 2).
+#import "modules/std.sx";
+
+M :: 2;
+
+K   : i64    : 4;
+W   : f32    : 800;
+PI  : f32    : 3.14159;
+S   : string : "hi";
+P   : *void  : null;
+KE  : i64    : M + 2;
+WE  : f32    : M + 2;
+MF  : f64    : M + 0.5;
+MFR : f64    : 0.5 + M;
+KF  : i64    : 4.0;       // integral float literal → folds to 4
+KFE : i64    : M + 2.0;   // integral float expression → folds to 4
+
+main :: () {
+    // Integer const: prints AND drives an array dimension (len 4).
+    a : [K]i64 = ---;
+    a[0] = 10;
+    a[3] = 40;
+    print("K={} len={} a0={} a3={}\n", K, a.len, a[0], a[3]);
+
+    // Integer-into-float and float consts print as floats.
+    print("W={} PI={}\n", W, PI);
+
+    // String const prints its text.
+    print("S={}\n", S);
+
+    // Null pointer const is null.
+    print("P_is_null={}\n", P == null);
+
+    // Integer const-EXPRESSION: prints AND drives an array dimension (len 4).
+    b : [KE]i64 = ---;
+    print("KE={} len={} WE={}\n", KE, b.len, WE);
+
+    // Mixed int+float const-EXPRESSION folds to the promoted float (2.5),
+    // operand-order-independent.
+    print("MF={} MFR={}\n", MF, MFR);
+
+    // Integral float const (literal + expression): folds to its integer under
+    // the unified narrowing rule; `KF` also drives an array dimension (len 4).
+    cc : [KF]i64 = ---;
+    print("KF={} len={} KFE={}\n", KF, cc.len, KFE);
+}

@@ -1,0 +1,48 @@
+// Implicit array→slice COERCION is a zero-copy VIEW for an addressable array,
+// matching the explicit `arr[0..]` subslice (issue 0225). Passing a named
+// array where a `[]T` is expected — `fill(arr)` with `fill :: (s: []T)` — now
+// aliases the array's storage, so a write through the slice param lands in the
+// caller's array. Covers the local, global, and struct-field legs, plus a
+// slice-typed local bound from a named array (`s : []T = arr`).
+//
+// Regression (issue 0264). Sibling of 0842 (the 0225 explicit-subslice alias).
+
+#import "modules/std.sx";
+
+g : [3]i64 = .[ 1, 2, 3 ];
+
+S :: struct { a: [3]i64; }
+
+fill :: (s: []i64) {
+    s[0] = 99;
+}
+
+main :: () -> i32 {
+    // Leg 1: local array coerced to a slice ARGUMENT — write-through visible.
+    arr : [3]i64 = .[ 1, 2, 3 ];
+    fill(arr);
+    if arr[0] != 99 { print("local FAIL: {}\n", arr[0]); return 1; }
+
+    // Leg 2: global array argument.
+    fill(g);
+    if g[0] != 99 { print("global FAIL: {}\n", g[0]); return 2; }
+
+    // Leg 3: struct-field array argument.
+    x : S = .{ a = .[ 1, 2, 3 ] };
+    fill(x.a);
+    if x.a[0] != 99 { print("field FAIL: {}\n", x.a[0]); return 3; }
+
+    // Leg 4: slice-typed local BOUND from a named array aliases it too.
+    b : [3]i64 = .[ 5, 6, 7 ];
+    s : []i64 = b;
+    s[0] = 42;
+    if b[0] != 42 { print("bound FAIL: {}\n", b[0]); return 4; }
+
+    // Leg 5: an array LITERAL bound to a slice local is a self-contained copy
+    // (its own entry-alloca backing) — sound, and reads back correctly.
+    lit : []i64 = .[ 8, 9 ];
+    if lit[0] != 8 or lit[1] != 9 { print("literal FAIL\n"); return 5; }
+
+    print("array->slice coercion aliases: ok\n");
+    0
+}

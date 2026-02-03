@@ -1,0 +1,24 @@
+// A `.[ ]` literal's type prefix names the AGGREGATE type
+// (`Vector(3, f32).[…]`, an array-type alias) — never the element type.
+// A prefix resolving to a non-array/vector/slice (scalar `i32.[…]`,
+// struct `Pt.[…]`) is refused with a pointer at the annotated form.
+// Before the refusal the prefix was silently IGNORED: elements fell
+// back to the literal default, so `i32.[1, 2, 3]` built a `[3]i64`.
+// Regression (issue 0293).
+#import "modules/std.sx";
+
+Pt :: struct { x: i64; }
+
+main :: () -> i64 {
+    a := i32.[1, 2, 3];
+    print("{}\n", type_name(type_of(a)));
+    b := f32.[1.5, 2.5];
+    print("{}\n", type_name(type_of(b)));
+    c := u8.[1, 2];
+    print("{}\n", type_name(type_of(c)));
+    d := Pt.[Pt.{ x = 1 }];
+    print("{}\n", type_name(type_of(d)));
+    ok : [3]i32 = .[1, 2, 3];
+    print("{}\n", type_name(type_of(ok)));  // the annotated form stays
+    return 0;
+}

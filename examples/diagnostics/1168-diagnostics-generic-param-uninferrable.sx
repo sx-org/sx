@@ -1,0 +1,19 @@
+// A direct call to a generic fn whose arguments cannot bind a TYPE
+// param diagnoses at the call site instead of monomorphizing with the
+// param unbound. A `string` arg at a `[]$T` param is the canonical
+// uninferrable shape (string deliberately does not bind `[]$T`); it
+// used to stamp `.unresolved` through the body and PANIC the compiler
+// at LLVM emission via the sentinel tripwire.
+//
+// Regression (issue 0126, diagnostic half).
+
+#import "modules/std.sx";
+
+first :: (xs: []$T) -> T {
+    return xs[0];
+}
+
+main :: () -> i32 {
+    print("{}\n", first("abc"));
+    return 0;
+}

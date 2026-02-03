@@ -1,0 +1,6 @@
+V3: v@16 walk=16 size=48 OK
+V2: v@8 walk=8 size=16 OK
+V4d: v@32 walk=32 size=64 OK
+V8: v@8 walk=8 size=16 OK
+V16i: v@64 walk=64 size=128 OK
+[1.000000, 2.000000, 3.000000]

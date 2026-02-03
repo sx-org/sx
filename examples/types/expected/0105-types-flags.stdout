@@ -1,0 +1,26 @@
+perms: .read | .write
+  checking: .read | .write
+  - can read
+  - can write
+
+all: .read | .write | .execute
+  checking: .read | .write | .execute
+  - can read
+  - can write
+  - can execute
+
+read only: .read
+  checking: .read
+  - can read
+
+match on flags:
+  execute
+
+window: .vsync | .resizable
+raw value: 68
+
+color: .blue
+raw: 2
+
+0xFF & 0x0F = 15
+1 | 2 | 4 = 7

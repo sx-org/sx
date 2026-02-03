@@ -1,0 +1,82 @@
+// SHA-256 known-answer vectors for `modules/std/hash.sx`.
+//
+// Pins published digests for: the empty input, "abc", the two NIST
+// multi-block sample vectors, the padding/length boundaries around the
+// 56-byte (one-block-with-length) and 64-byte (block) edges, and the
+// classic large repeats (1000 and 1,000,000 'a'). Each expected hex is
+// hard-coded from FIPS 180-4 / NIST CAVP and cross-checked with
+// `shasum -a 256`.
+//
+// The digest is a zero-heap `[64]u8`; we compare it via a `string` view
+// (no copy). Repeat vectors are built by streaming an 'a'-filled stack
+// buffer, so even the 1,000,000 case allocates nothing on the heap.
+
+#import "modules/std.sx";
+#import "modules/std/hash.sx";
+
+check :: (label: string, got: [64]u8, want: string) {
+    view := string.{ ptr = @got[0], len = 64 };
+    if view == want {
+        print("{}: ok\n", label);
+    } else {
+        print("{}: FAIL got {} want {}\n", label, view, want);
+    }
+}
+
+// Digest of `total` bytes of 'a', streamed in 1000-byte chunks so peak
+// memory stays O(chunk) for the 1,000,000 case. `total == 0` yields the
+// empty-input digest (the loop body never runs).
+hash_a :: (total: i64) -> [64]u8 {
+    chunk : [1000]u8 = ---;
+    k := 0;
+    while k < 1000 { chunk[k] = 97; k += 1; }   // 97 = 'a'
+
+    h := init();
+    remaining := total;
+    while remaining > 0 {
+        take := if remaining < 1000 then remaining else 1000;
+        h.update(string.{ ptr = @chunk[0], len = take });
+        remaining -= take;
+    }
+    h.final()
+}
+
+main :: () {
+    check("empty", sha256_hex(""),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    check("abc", sha256_hex("abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+
+    // NIST CAVP sample vectors (56-byte and 112-byte multi-block).
+    check("nist-56", sha256_hex("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+        "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1");
+    check("nist-112", sha256_hex("abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"),
+        "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1");
+
+    // Padding/length boundaries around the 56- and 64-byte edges, using
+    // 'a' repeats so the boundary is exercised independently of content.
+    check("len-0",   hash_a(0),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    check("len-55",  hash_a(55),
+        "9f4390f8d30c2dd92ec9f095b65e2b9ae9b0a925a5258e241c9f1e910f734318");
+    check("len-56",  hash_a(56),
+        "b35439a4ac6f0948b6d6f9e3c6af0f5f590ce20f1bde7090ef7970686ec6738a");
+    check("len-57",  hash_a(57),
+        "f13b2d724659eb3bf47f2dd6af1accc87b81f09f59f2b75e5c0bed6589dfe8c6");
+    check("len-63",  hash_a(63),
+        "7d3e74a05d7db15bce4ad9ec0658ea98e3f06eeecf16b4c6fff2da457ddc2f34");
+    check("len-64",  hash_a(64),
+        "ffe054fe7ae0cb6dc65c3af9b61d5209f439851db43d0ba5997337df154668eb");
+    check("len-65",  hash_a(65),
+        "635361c48bb9eab14198e76ea8ab7f1a41685d6ad62aa9146d301d4f17eb0ae0");
+    check("len-119", hash_a(119),
+        "31eba51c313a5c08226adf18d4a359cfdfd8d2e816b13f4af952f7ea6584dcfb");
+    check("len-120", hash_a(120),
+        "2f3d335432c70b580af0e8e1b3674a7c020d683aa5f73aaaedfdc55af904c21c");
+
+    // Large repeats (FIPS 180-4 / classic vectors).
+    check("a-1000",    hash_a(1000),
+        "41edece42d63e8d9bf515a9ba6932e1c20cbc9f5a5d134645adb5db1b9737ea3");
+    check("a-1000000", hash_a(1000000),
+        "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
+}

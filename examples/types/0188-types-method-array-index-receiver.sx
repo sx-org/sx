@@ -1,0 +1,26 @@
+// A `*self` method called directly on an array-index place (`arr[i].method()`)
+// must mutate the LIVE array slot, not a throwaway copy. `fixupMethodReceiver`
+// now takes the real address of `.index_expr`/`.deref_expr` receivers (via
+// `lowerExprAsPtr`), mirroring the explicit-argument path — instead of falling
+// through to an alloca+store-of-value that the callee then mutates in vain.
+//
+// Regression (issue 0145).
+#import "modules/std.sx";
+
+S :: struct {
+    flag: bool;
+    set :: (self: *S) { self.flag = true; }
+}
+
+A :: struct { items: [4]S; }
+
+main :: () -> i32 {
+    a : A = .{};
+    a.items[1].set();                          // direct: must mutate the slot
+    print("direct = {}\n", a.items[1].flag);   // true
+
+    p := @a.items[1];
+    p.set();                                   // via explicit pointer
+    print("ptr    = {}\n", a.items[1].flag);   // true
+    0
+}

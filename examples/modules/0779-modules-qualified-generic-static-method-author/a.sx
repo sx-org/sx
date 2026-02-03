@@ -1,0 +1,8 @@
+// Author A's generic `Box` — one i64 field (size 8). Its `make` sets only `x`.
+Box :: struct($T: Type) {
+    x: T;
+
+    make :: (value: T) -> Box(T) {
+        .{ x = value }
+    }
+}

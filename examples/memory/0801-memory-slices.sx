@@ -1,0 +1,31 @@
+#import "modules/std.sx";
+
+main :: () {
+    arr : [5]i32 = .[3, 1, 4, 1, 5];
+    print("arr.len = {}\n", arr.len);
+
+    // subslice array
+    sub := arr[1..4];
+    print("arr[1..4] = {}\n", sub);
+    print("sub.len = {}\n", sub.len);
+
+    // open-ended
+    head := arr[..3];
+    tail := arr[2..];
+    print("arr[..3] = {}\n", head);
+    print("arr[2..] = {}\n", tail);
+
+    // slice of slice
+    sl : []i32 = .[10, 20, 30, 40, 50];
+    mid := sl[1..4];
+    print("sl[1..4] = {}\n", mid);
+    rest := mid[1..];
+    print("mid[1..] = {}\n", rest);
+
+    // string subslicing
+    msg := "hello world";
+    word := msg[6..11];
+    print("msg[6..11] = {}\n", word);
+    prefix := msg[..5];
+    print("msg[..5] = {}\n", prefix);
+}

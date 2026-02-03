@@ -1,0 +1,9 @@
+closure-rstruct: 11 22
+closure-local: 13 24
+closure-tiny: 15
+closure-wide: 70
+closure-hfa: 0.750000
+fnptr-point: 3
+fnptr-tiny: 11
+fnptr-wide: 300
+fnptr-hfa: 4.000000

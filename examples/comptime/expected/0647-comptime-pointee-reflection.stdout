@@ -1,0 +1,4 @@
+pointee_type(*i64)  = i64
+pointee_type(*bool) = bool
+pointee_type(*Box(f64)) field0 = f64
+Payload(*Box(i64)) value = 42

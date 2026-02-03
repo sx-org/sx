@@ -1,0 +1,17 @@
+// The NON-visible 2-flat-hop author: a two-field generic `Box` (size 16) with a
+// BY-VALUE receiver `dbl` (`self: Box`) returning `self.x * 2 + 100`. Its
+// by-value receiver ABI (`{i64,i64}`) differs from b's (`{i64}`); it wins the
+// global last-wins `fn_ast_map["Box.dbl"]`, so a file importing only b.sx must
+// NOT dispatch `x.dbl()` to it.
+Box :: struct($T: Type) {
+    x: T;
+    y: T;
+
+    make :: (value: T) -> Box(T) {
+        .{ x = value, y = value }
+    }
+
+    dbl :: (self: Box) -> T {
+        self.x * 2 + 100
+    }
+}

@@ -1,0 +1,133 @@
+#import "modules/std.sx";
+#import "modules/ffi/sdl3.sx";
+#import "modules/ui/types.sx";
+
+MouseButton :: enum {
+    none;
+    left;
+    middle;
+    right;
+}
+
+MouseButtonData :: struct { position: Point; button: MouseButton; }
+MouseMotionData :: struct { position: Point; delta: Point; }
+MouseWheelData  :: struct { position: Point; delta: Point; }
+
+// Platform-neutral keycode. Each backend translates its native codes to this
+// (see `keycode_from_sdl`), so app code never depends on a platform key enum.
+Keycode :: enum {
+    unknown;
+    escape;
+    enter;
+    space;
+    tab;
+    backspace;
+    delete;
+    left;
+    right;
+    up;
+    down;
+}
+
+KeyData         :: struct { key: Keycode; }
+ResizeData      :: struct { size: Size; }
+
+Event :: enum {
+    none;
+    quit;
+    mouse_down: MouseButtonData;
+    mouse_up: MouseButtonData;
+    mouse_moved: MouseMotionData;
+    mouse_wheel: MouseWheelData;
+    key_down: KeyData;
+    key_up: KeyData;
+    text_input: string;
+    window_resize: ResizeData;
+}
+
+event_position :: (e: *Event) -> ?Point {
+    if e == {
+        case .mouse_down: (d) { return d.position; }
+        case .mouse_up: (d) { return d.position; }
+        case .mouse_moved: (d) { return d.position; }
+        case .mouse_wheel: (d) { return d.position; }
+    }
+    null
+}
+
+// Map a platform (SDL) keycode to the neutral `Keycode`. Only the keys the app
+// consumes are mapped; everything else is `.unknown`. Letters/digits arrive via
+// `text_input`, not here.
+// TODO: extend as more keys are needed.
+keycode_from_sdl :: (k: SDL_Keycode) -> Keycode {
+    if k == {
+        case .escape:     return .escape;
+        case .return_key: return .enter;
+        case .space:      return .space;
+        case .tab:        return .tab;
+        case .backspace:  return .backspace;
+        case .delete_key: return .delete;
+        case .left:       return .left;
+        case .right:      return .right;
+        case .up:         return .up;
+        case .down:       return .down;
+    }
+    .unknown
+}
+
+// Translate SDL_Event → our Event type
+translate_sdl_event :: (sdl: *SDL_Event) -> Event {
+    if sdl == {
+        case .quit: {
+            return .quit;
+        }
+        case .key_down: (data) {
+            return .key_down(.{ key = keycode_from_sdl(data.key) });
+        }
+        case .key_up: (data) {
+            return .key_up(.{ key = keycode_from_sdl(data.key) });
+        }
+        case .mouse_motion: (data) {
+            return .mouse_moved(.{
+                position = .{ x = data.x, y = data.y },
+                delta = .{ x = data.xrel, y = data.yrel }
+            });
+        }
+        case .mouse_button_down: (data) {
+            btn :MouseButton = if data.button == {
+                case 1: .left;
+                case 2: .middle;
+                case 3: .right;
+                else: .none;
+            };
+            return .mouse_down(.{
+                position = .{ x = data.x, y = data.y },
+                button = btn
+            });
+        }
+        case .mouse_button_up: (data) {
+            btn :MouseButton = if data.button == {
+                case 1: .left;
+                case 2: .middle;
+                case 3: .right;
+                else: .none;
+            };
+            return .mouse_up(.{
+                position = .{ x = data.x, y = data.y },
+                button = btn
+            });
+        }
+        case .mouse_wheel: (data) {
+            return .mouse_wheel(.{
+                position = .{ x = data.mouse_x, y = data.mouse_y },
+                delta = .{ x = data.x, y = data.y }
+            });
+        }
+        case .window_resized: (data) {
+            return .window_resize(.{
+                size = .{ width = xx data.data1, height = xx data.data2 }
+            });
+        }
+    }
+    .none
+}

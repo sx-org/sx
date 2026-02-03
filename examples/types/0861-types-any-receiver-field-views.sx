@@ -1,0 +1,46 @@
+// struct_field_value / variant_payload on an `any` RECEIVER: reads go
+// THROUGH the view via the runtime reflection tables — the result is
+//   { struct_field_type(tag, i),  av.data + struct_field_offset(tag, i) }
+// so field access composes by repeated calls with no copies (the
+// walker's recursion pattern), aliasing the boxed value's storage.
+// For a tagged union the offset table answers the payload offset, so
+// variant_payload composes the same way. The comptime VM mirrors the
+// whole composition (the #run below).
+
+#import "modules/std.sx";
+
+Header :: struct { magic: u16; flags: u8; }
+Packet :: struct { header: Header; name: string; kind: i16; }
+Shape :: enum { circle: f64; square: i64; }
+Pair :: struct { a: i64; b: i64; }
+
+read_b :: (p: Pair) -> i64 {
+    av : any = p;
+    struct_field_value(av, 1).(i64)
+}
+
+main :: () -> i64 {
+    pkt := Packet.{ header = .{ magic = 0x1234, flags = 255 }, name = "hello", kind = -2 };
+    av : any = pkt;
+
+    print("{}\n", struct_field_value(av, 1));    // hello
+    print("{}\n", struct_field_value(av, 2));    // -2
+
+    // Nested composition: field 0's view is Header-tagged; read through it.
+    hv := struct_field_value(av, 0);
+    print("{} {}\n", struct_field_value(hv, 0), struct_field_value(hv, 1));  // 4660 255
+
+    // The whole chain aliases pkt (av borrows its storage).
+    pkt.kind = 77;
+    print("{}\n", struct_field_value(av, 2));    // 77
+
+    // Tagged-union live payload through an any view.
+    s := Shape.square(42);
+    sv : any = s;
+    print("{}\n", variant_payload(sv, variant_index(Shape, s)));  // 42
+
+    // Comptime parity: the same composition on the comptime VM.
+    K :: #run read_b(Pair.{ a = 1, b = 41 });
+    print("{}\n", K + 1);                        // 42
+    return 0;
+}

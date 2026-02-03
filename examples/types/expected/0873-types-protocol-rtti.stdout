@@ -1,0 +1,14 @@
+Circle Rect
+12 12
+r=2
+soft null
+soft r=2
+or w=9
+catch: mismatch
+caught w=1
+ok w=3
+circle r=2
+some struct
+view: Circle
+inline: GPA
+copy: 99 orig 2

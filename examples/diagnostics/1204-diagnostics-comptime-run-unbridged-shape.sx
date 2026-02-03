@@ -1,0 +1,27 @@
+// A body-local `#run` const whose comptime function returns a shape the comptime
+// VM cannot BRIDGE to a host value (here `[2][]i64` — an array of slices) must
+// FAIL the build with a located `comptime init of '<name>' failed: <reason>`
+// diagnostic — the SAME loud failure a GLOBAL `#run` const produces — NOT
+// silently fall back to a runtime call over the wrapper's `---` storage.
+//
+// Regression (issue 0182): the body-local `#run` fold left the runtime call in
+// place when the result couldn't bridge, so `mk()` ran at runtime over
+// uninitialized storage → garbage, exit 0, no diagnostic (a silent miscompile).
+// The fix surfaces the BRIDGE bail loudly and gates the build (exit 1). An
+// EXECUTION bail (a body the VM can't run but the runtime computes correctly,
+// e.g. `0.0/0.0` → NaN) still falls through to the runtime call — only an
+// unbridgeable RESULT fails here.
+#import "modules/std.sx";
+
+mk :: () -> [2][]i64 {
+    a : []i64 = ---;
+    r : [2][]i64 = ---;
+    r[0] = a;
+    r[1] = a;
+    return r;
+}
+
+main :: () {
+    L :: #run mk();          // unbridgeable comptime result → clean build error
+    print("{}\n", L[0][0]);
+}

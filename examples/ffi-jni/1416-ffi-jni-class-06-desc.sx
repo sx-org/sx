@@ -1,0 +1,20 @@
+// Phase 2 step 2.6 (PLAN-FFI.md): xfail then green for the
+// `#jni_method_descriptor("(Sig)Ret")` per-method JNI-descriptor
+// override.
+//
+// The default descriptor is derived from sx types (Phase 2.8); this
+// directive is the escape hatch when the auto-derived signature
+// doesn't match (e.g., synthetic methods, ambiguous overloads,
+// accessing JNI internals). It appears trailing the method's return
+// type, before the terminating `;`.
+
+#import "modules/std.sx";
+
+Foo :: #jni_class("com/example/Foo") extern {
+    weirdMethod :: (self: *Self) -> i32 #jni_method_descriptor("()I");
+}
+
+main :: () -> i32 {
+    print("parse-only ok\n");
+    0
+}

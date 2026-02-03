@@ -1,0 +1,11 @@
+error: named return 's' may be unset (not assigned on every path) and has no default — assign it on every path, give it a default, or end with an explicit `return`
+  --> examples/types/0208-types-named-return-conditional-unset.sx:9:39
+   |
+ 9 | pick :: (c: bool) -> (s: i64, y: i64) {
+   |                                       ^
+10 |     if c { s = 10; }   // `s` unset on the else path
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+11 |     y = 1;
+   | ^^^^^^^^^^
+12 | }
+   | ^

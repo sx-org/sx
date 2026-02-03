@@ -1,0 +1,96 @@
+#import "modules/std.sx";
+
+// --- Closure Basics ---
+
+// Factory: returns a new closure each time
+make_adder :: (n: i64) -> Closure(i64) -> i64 {
+    return closure((x: i64) -> i64 => x + n);
+}
+
+// Higher-order function: accepts any Closure(i64) -> i64
+apply :: (f: Closure(i64) -> i64, x: i64) -> i64 { return f(x); }
+
+// Reduce: fold over a slice with a closure
+reduce :: (arr: []i64, f: Closure(i64, i64) -> i64, init: i64) -> i64 {
+    acc := init;
+    i : i64 = 0;
+    while i < arr.len { acc = f(acc, arr[i]); i += 1; }
+    return acc;
+}
+
+// Auto-promoted bare function
+triple :: (x: i64) -> i64 { return x * 3; }
+
+// Struct with optional closure callback
+Widget :: struct {
+    name: string;
+    on_update: ?Closure(i64) -> void;
+}
+
+main :: () {
+    // 1. Basic closure with capture
+    offset := 100;
+    add_offset := closure((x: i64) -> i64 => x + offset);
+     
+    print("basic: {}\n", add_offset(42));
+
+    // 2. Capture by value (snapshot semantics)
+    n := 10;
+    snap := closure((x: i64) -> i64 => x + n);
+    n = 999;
+    print("snapshot: {}\n", snap(5));
+
+    // 3. Block-body closure with control flow
+    clamp := closure((x: i64) -> i64 {
+        if x < 0 { return 0; }
+        if x > 100 { return 100; }
+        return x;
+    });
+    print("clamp: {} {} {}\n", clamp(50), clamp(0 - 10), clamp(200));
+
+    // 4. Void closure with string capture
+    tag := "INFO";
+    logger := closure((msg: string) {
+        print("[{}] {}\n", tag, msg);
+    });
+    logger("system ready");
+
+    // 5. Factory pattern
+    add5 := make_adder(5);
+    add10 := make_adder(10);
+    print("factory: {} {}\n", add5(100), add10(100));
+
+    // 6. Auto-promotion: bare fn passed where Closure expected
+    print("auto-promote: {}\n", apply(triple, 7));
+
+    // 7. Closure passed to higher-order function
+    factor := 4;
+    print("hof: {}\n", apply(closure((x: i64) -> i64 => x * factor), 10));
+
+    // 8. Reduce with closure
+    nums : []i64 = .[1, 2, 3, 4, 5];
+    total := reduce(nums, closure((acc: i64, x: i64) -> i64 => acc + x), 0);
+    print("reduce: {}\n", total);
+
+    // 9. Closure captures closure
+    inner := closure((x: i64) -> i64 => x + 10);
+    outer := closure((x: i64) -> i64 => inner(x) * 2);
+    print("compose: {}\n", outer(5));
+
+    // 10. Multiple closures from same scope
+    base := 100;
+    cl_add := closure((x: i64) -> i64 => x + base);
+    cl_mul := closure((x: i64) -> i64 => x * base);
+    print("multi: {} {}\n", cl_add(5), cl_mul(5));
+
+    // 11. Optional closures
+    w1 := Widget.{ name = "slider", on_update = closure((val: i64) {
+        print("widget: {} = {}\n", "slider", val);
+    }) };
+    w2 := Widget.{ name = "label", on_update = null };
+
+    if h := w1.on_update { h(42); }
+    if h := w2.on_update { h(0); } else { print("widget: no handler\n"); }
+
+    print("=== DONE ===\n");
+}

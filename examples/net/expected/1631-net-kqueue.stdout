@@ -1,0 +1,4 @@
+idle wait: timeout, 0 events
+after write: READ ready, 4 pending, udata 7777
+after close: EV_EOF
+kqueue ok

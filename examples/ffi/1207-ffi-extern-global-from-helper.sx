@@ -1,0 +1,28 @@
+// `xx @<extern_global>` round-trips through a non-main helper
+// function: the helper's `xx @__stdinp` cast lowers to a `bitcast`
+// IR opcode that emit_llvm.zig dispatches to `LLVMBuildPtrToInt`
+// (BitCast doesn't accept ptr↔int on modern LLVM with opaque
+// pointers), and a `u64`-returning function correctly returns
+// the address.
+//
+// Was issue-0037 — the helper used to emit `ret i64 undef` because
+// `coerceToType` had no pointer↔integer case, so the explicit
+// `xx ptr` cast produced an unchanged pointer value handed to a
+// `ret i64` slot.
+
+#import "modules/std.sx";
+
+__stdinp : *void extern;
+
+stdinp_addr_via_helper :: () -> u64 {
+    xx @__stdinp
+}
+
+main :: () -> i32 {
+    direct  : u64 = xx @__stdinp;
+    via_helper := stdinp_addr_via_helper();
+    print("direct non-null = {}\n", direct != 0);
+    print("helper non-null = {}\n", via_helper != 0);
+    print("eq              = {}\n", direct == via_helper);
+    0
+}

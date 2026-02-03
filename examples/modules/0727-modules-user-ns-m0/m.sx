@@ -1,0 +1,3 @@
+// Imported under a user namespace literally named `__m0`. Reached as
+// `__m0.ping` (99); coexists with the flat `ping` collision.
+ping :: () -> i64 { return 99; }

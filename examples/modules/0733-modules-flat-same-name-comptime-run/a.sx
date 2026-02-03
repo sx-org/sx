@@ -1,0 +1,6 @@
+// a.sx authors `compute` returning 7 and evaluates it at comptime. Imported
+// first → first-wins winner; own == winner, but the #run must still lower in
+// a.sx's source context so the bare `compute` resolves at all (not ambiguous).
+compute :: () -> i64 { return 7; }
+A_VAL :: #run compute();
+get_a :: () -> i64 { return A_VAL; }

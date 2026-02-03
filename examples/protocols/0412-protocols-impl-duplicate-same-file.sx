@@ -1,0 +1,19 @@
+// Duplicate impl detection (same-file) — two `impl Into(MyA) for i64`
+// declarations in the same file produce a "duplicate impl" diagnostic
+// at registration time, not silently shadow one with the other. Sibling
+// case to `examples/180-impl-duplicate.sx` which covers the
+// cross-module variant.
+
+#import "modules/std.sx";
+
+MyA :: struct { v: i64 = 0; }
+
+impl Into(MyA) for i64 {
+  convert :: (self: i64) -> MyA { .{ v = self } }
+}
+
+impl Into(MyA) for i64 {
+  convert :: (self: i64) -> MyA { .{ v = self * 2 } }
+}
+
+main :: () -> i32 { 0 }

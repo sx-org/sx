@@ -1,0 +1,5 @@
+error: this function returns a single value, but a list of 2 was given
+  --> examples/types/0212-types-single-return-comma.sx:5:5
+   |
+ 5 |     return 1, 2;   // single-value return, two given
+   |     ^^^^^^^^^^^^

@@ -1,0 +1,21 @@
+// A type-returning FUNCTION head (`Make(i64)` where `Make :: ($T) -> Type`) is
+// NON-transitive AND ambiguity-checked, exactly like the parameterized generic-
+// struct / protocol heads (0767) and the nominal leaf (0755). `main` flat-imports
+// two modules that each author a same-name `Make` type-fn with a different body
+// and authors none itself, so the bare `Make(i64)` head is a genuine collision —
+// it must emit the LOUD "type 'Make' is ambiguous" diagnostic and poison, NEVER
+// silently instantiate whichever single author `fn_ast_map` happens to hold.
+//
+// Regression (Phase E4 attempt-6, finding #2): before `headFnLeak` did bare-call
+// ambiguity selection it only checked `isNameVisible` (both authors ARE visible),
+// so two flat `Make` type-fns silently instantiated one author — `size_of(Make(i64))`
+// printed 16 (a.sx's two-field body) at exit 0 instead of the ambiguity diagnostic.
+
+#import "modules/std.sx";
+#import "0769-modules-ambiguous-type-fn-head/a.sx";
+#import "0769-modules-ambiguous-type-fn-head/b.sx";
+
+main :: () -> i32 {
+    print("size={}\n", size_of(Make(i64)));
+    0
+}

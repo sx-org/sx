@@ -1,0 +1,26 @@
+// Free-function UFCS with a pointer first-param (issue 0063). `recv.fn(args)`
+// on a value `recv` whose matching free function takes `*T` now takes the
+// receiver's address (the same implicit address-of as a struct-defined method),
+// so mutations through the pointer are visible. Also: a function reached ONLY
+// via UFCS is lazily lowered (previously declared-but-never-emitted → undefined
+// symbol at link).
+
+#import "modules/std.sx";
+
+Counter :: struct { n: i32; }
+
+// FREE functions (defined outside the struct), pointer first param.
+bump :: ufcs (c: *Counter) -> i32 { c.n += 1; return c.n; }
+// reached ONLY via UFCS — must still be emitted.
+reset :: ufcs (c: *Counter) { c.n = 0; }
+
+main :: () -> i32 {
+    c := Counter.{ n = 10 };
+    a := c.bump();   // 11, mutates c
+    b := c.bump();   // 12
+    print("a={} b={} n={}\n", a, b, c.n);  // a=11 b=12 n=12
+
+    c.reset();       // UFCS-only free fn
+    print("after reset n={}\n", c.n);      // after reset n=0
+    return 0;
+}

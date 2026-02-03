@@ -1,0 +1,27 @@
+// E6b — ambiguity guard for an ERROR-SET name in a CLOSURE-LITERAL return
+// annotation (`closure(() -> !IoErr { … })`). `main` flat-imports two modules
+// that each author a same-name `IoErr` and authors none itself, so the closure
+// literal's `-> !IoErr` channel is a genuine collision the source cannot
+// disambiguate. It must emit the LOUD "type 'IoErr' is ambiguous" diagnostic and
+// poison the channel — NEVER silently pick a global `findByName` last-wins author.
+//
+// NOTE on fail-before/pass-after: unlike the OWN-WINS sibling (0813), this
+// AMBIGUITY case does NOT fail-before on attempt-1's binary. The pre-lowering
+// closure-shape pass (`convergeClosureShapeSets` → `recordClosureShape`) resolves
+// every closure literal's return annotation through the source-aware
+// `resolveType` (`resolveTypeWithBindings`), which attempt-1 already routed
+// error-set authors through — so the ambiguity is detected there and reported
+// regardless of `lowerLambda`. (For a `-> !Named` set that pass bails early after
+// resolving, so the OWN-WINS membership in 0813 still flowed through the stateless
+// `lowerLambda` path that attempt-2 fixes.) This example is the standing GUARD
+// that the lambda `-> !Named` ambiguity stays reported across both source-aware
+// sites; 0813 is the one that exercises attempt-2's `lowerLambda` channel fix.
+
+#import "modules/std.sx";
+#import "0814-modules-same-name-error-set-lambda-ambiguous/a.sx";
+#import "0814-modules-same-name-error-set-lambda-ambiguous/b.sx";
+
+main :: () -> i32 {
+    fail_io := closure(() -> !IoErr { return; });
+    return 0;
+}

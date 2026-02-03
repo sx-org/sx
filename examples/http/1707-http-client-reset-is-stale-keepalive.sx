@@ -1,0 +1,75 @@
+// std.http client — a peer RST before any response byte is the stale-keep-alive
+// signature, exactly like a clean EOF (issue 0285).
+//
+// When a server drops an idle keep-alive conn, the request the client writes
+// into it provokes an RST, and that RST DISCARDS the FIN's queued EOF. So the
+// same fact — "the peer had already closed, the request never executed" —
+// reaches the client as either a clean 0 or an ECONNRESET depending purely on
+// which lands first. `recv_on` must report both as `error.Closed`; that is the
+// class `ClientPool.hop` retries on, so classifying the RST as `Recv` made the
+// pool's transparent redial fire only sometimes (~8% of 1706 runs failed).
+//
+// Forcing the RST deterministically, single-threaded, no timing race: close a
+// socket that still has UNREAD data in its receive queue and the kernel sends
+// RST instead of FIN (POSIX/BSD). So: connect, send a request the server never
+// reads, close the server side — the client's next read sees ECONNRESET.
+#import "modules/std.sx";
+http   :: #import "modules/std/http.sx";
+socket :: #import "modules/std/socket.sx";
+
+PORT :: 19030;
+
+main :: () -> i32 {
+    // A plain listener — no http.Server: this test never wants the request read.
+    lfd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if lfd < 0 { print("listener socket failed\n"); return 1; }
+    one : i32 = 1;
+    socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEADDR, @one, 4);
+    addr := socket.sockaddr_in(PORT, 0x0100007F);
+    if socket.bind(lfd, @addr, 16) != 0 { print("bind failed\n"); return 1; }
+    if socket.listen(lfd, 4) != 0 { print("listen failed\n"); return 1; }
+
+    // Blocking loopback connect completes against the listen queue with no
+    // accept yet, so this stays single-threaded.
+    opts : http.ClientOpts = .{ connect_timeout_ms = 2000, io_timeout_ms = 2000 };
+    c, oe := http.Client.open("127.0.0.1", PORT, opts);
+    if oe { print("open failed\n"); return 2; }
+
+    afd := socket.accept(lfd, null, null);
+    if afd < 0 { print("accept failed\n"); return 3; }
+
+    // The request lands in afd's receive queue and is deliberately never read.
+    se := http.Client.send_on(@c, "GET", "/hello", "127.0.0.1", "", "");
+    if se { print("send_on failed\n"); return 4; }
+
+    // Let it arrive, then close with it unread → RST rather than FIN.
+    sleep_ms(100);
+    socket.close(xx afd);
+    sleep_ms(100);
+
+    buf : [4096]u8 = ---;
+    r, re := http.Client.recv_on(@c, @buf[0], 4096);
+    _ := r;
+    if !re {
+        print("FAIL: recv_on returned a response from a reset conn\n");
+        return 5;
+    }
+    if re != error.Closed {
+        // Pre-fix this was error.Recv — a class ClientPool.hop does NOT retry,
+        // so the pool surfaced the error instead of redialing.
+        print("FAIL: reset classified as Recv, not Closed (issue 0285)\n");
+        return 6;
+    }
+
+    http.Client.close_conn(@c);
+    socket.close(lfd);
+    print("reset before any byte classified as Closed (retryable)\n");
+    return 0;
+}
+
+clib :: #library "c";
+usleep :: (usec: i64) -> i32 extern clib;
+
+sleep_ms :: (ms: i64) {
+    usleep(ms * 1000);
+}

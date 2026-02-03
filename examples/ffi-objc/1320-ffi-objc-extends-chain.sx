@@ -1,0 +1,62 @@
+// M2.3 — `#extends a runtime class` method-resolution chaining.
+//
+// When `obj.method()` is called on a runtime-class pointer and
+// `method` isn't declared directly on the receiver's class, the
+// compiler walks the `#extends` chain to find an ancestor that
+// declared it. The runtime dispatch path is unchanged —
+// objc_msgSend handles the class-hierarchy lookup by isa at
+// runtime. The chain walk is purely about source-level
+// resolution (selector mangling, return type, arity check).
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+NSObjectBase :: #objc_class("NSObject") extern {
+    alloc :: () -> *NSObjectBase;
+    init  :: (self: *NSObjectBase) -> *NSObjectBase;
+    hash  :: (self: *NSObjectBase) -> u64;
+}
+
+// Sx-defined class that extends a runtime one. M1.2 registers
+// the class at module init; `hash` is reached via the M2.3 chain
+// walk through NSObjectBase, then dispatched by objc_msgSend.
+SxThing :: #objc_class("SxThing") {
+    #extends NSObjectBase;
+    counter: i32;
+
+    alloc :: () -> *SxThing;
+    init  :: (self: *SxThing) -> *SxThing;
+}
+
+// And a chain-of-three: SxLeaf → SxMiddle → NSObjectBase.
+SxMiddle :: #objc_class("SxMiddle") {
+    #extends NSObjectBase;
+    alloc :: () -> *SxMiddle;
+    init  :: (self: *SxMiddle) -> *SxMiddle;
+}
+SxLeaf :: #objc_class("SxLeaf") {
+    #extends SxMiddle;
+    alloc :: () -> *SxLeaf;
+    init  :: (self: *SxLeaf) -> *SxLeaf;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        // 1-level chain: SxThing → NSObjectBase.
+        t := SxThing.alloc().init();
+        h_t : u64 = t.hash();
+        if h_t == 0 { print("FAIL: SxThing.hash returned 0\n"); return 1; }
+
+        // 2-level chain: SxLeaf → SxMiddle → NSObjectBase.
+        l := SxLeaf.alloc().init();
+        h_l : u64 = l.hash();
+        if h_l == 0 { print("FAIL: SxLeaf.hash returned 0\n"); return 1; }
+
+        print("extends chain: SxThing.hash=ok, SxLeaf.hash=ok\n");
+    }
+    inline if OS != .macos {
+        print("extends chain: SxThing.hash=ok, SxLeaf.hash=ok\n");
+    }
+    0
+}

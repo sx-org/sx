@@ -1,0 +1,30 @@
+// Comptime slice over a non-string AGGREGATE: assemble a pool of candidate
+// variants in a local array, then mint an enum from a SUBSLICE of it. This
+// exercises the interp's `subslice` op on an array VALUE (`dirs[0..2]`) — which
+// used to bail ("slice over non-string aggregates not yet supported") — now
+// yielding a real `[]EnumVariant` the `define` decoder reads.
+//
+// `Axis` is built from only the first two of four directions, so `.south` /
+// `.west` are NOT variants of it.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+build_axis :: () -> Type {
+    dirs := .[
+        EnumVariant.{ name = "north", payload = void },
+        EnumVariant.{ name = "east",  payload = i64 },   // carries a bearing
+        EnumVariant.{ name = "south", payload = void },
+        EnumVariant.{ name = "west",  payload = void },
+    ];
+    return make_enum("Axis", dirs[0..2]);   // first two only — a comptime subslice
+}
+
+Axis :: build_axis();
+
+main :: () -> i32 {
+    a : Axis = .north;
+    b : Axis = .east(90);
+    if a == { case .north: { print("north\n"); } case .east: (d) { print("east {}\n", d); } }
+    if b == { case .north: { print("north\n"); } case .east: (d) { print("east {}\n", d); } }
+    return 0;
+}

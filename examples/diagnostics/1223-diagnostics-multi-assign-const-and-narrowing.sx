@@ -1,0 +1,32 @@
+// Multi-assign shares single-assign's write guards (issues 0229 + 0228):
+//
+// 1. Root-const rejection (issue 0116 machinery): a MEMBER or INDEX target
+//    whose chain roots at a `::` constant is rejected per-target — previously
+//    only IDENT targets were guarded and `CP.x, a = 9, 9;` wrote through the
+//    const. A deref target (`GP.*`) stays accepted: writing through a pointer
+//    VALUE is not a write to the named root (same as single-assign).
+// 2. Flow-narrowing invalidation: a multi-assign to a narrowed optional name
+//    kills the narrowing (parity with `o = null;`), so a stale-narrowed use
+//    after `o, a = null, 1;` diagnoses instead of reading a null optional as
+//    its payload.
+//
+// Regression (issues 0228, 0229). All diagnostics batch; exit 1.
+#import "modules/std.sx";
+
+P :: struct { x: i64 = 0; y: i64 = 0; }
+CP :: P.{ x = 1, y = 2 };
+CARR :: .[1, 2, 3];
+
+main :: () -> i32 {
+    a := 0; b := 0;
+    CP.x, a = 9, 9;            // error: member target rooted at struct const
+    a, CARR[1], b = 1, 9, 2;   // error: index target rooted at array const
+
+    o : ?i64 = 5;
+    if o != null {
+        o, a = null, 1;        // multi-assign un-narrows 'o'
+        v := o + 1;            // error: stale-narrowed use rejected
+        b = v;
+    }
+    0
+}

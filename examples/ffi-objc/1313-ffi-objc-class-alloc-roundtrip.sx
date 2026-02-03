@@ -1,0 +1,54 @@
+// M1.2 A.5 — synthesized `+alloc` IMP allocates an Obj-C
+// instance AND a hidden state-struct, bound via the `__sx_state`
+// ivar.
+//
+// Round-trip below:
+//   1. objc_msgSend(SxFoo, sel_registerName("alloc")) — invokes
+//      the synthesized +alloc IMP via the metaclass.
+//   2. Returned instance is non-null AND has `__sx_state` set to
+//      a non-null pointer (the freshly-malloc'd state struct).
+//   3. The state was c.memset'd to zero in the IMP — confirms via
+//      reading the raw bytes.
+//
+// Once A.6 lands (-dealloc) and A.7 opens the dispatch gate,
+// sx-side `SxFoo.alloc().init()` and method calls will exercise
+// the full lifecycle.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+class_getInstanceVariable :: (cls: *void, name: [*]u8) -> *void extern objc;
+
+SxFoo :: #objc_class("SxFoo") {
+    counter: i32;
+
+    bump :: (self: *Self) {
+        self.counter += 1;
+    }
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        cls : Class = objc_getClass("SxFoo".ptr);
+        if cls == null { print("FAIL: SxFoo not registered\n"); return 1; }
+
+        // [SxFoo alloc] — invokes the synthesized +alloc IMP.
+        sel_alloc : SEL = sel_registerName("alloc".ptr);
+        msg_fn : (cls: *void, sel: *void) -> *void abi(.c) = xx objc_msgSend;
+        instance : *void = msg_fn(cls, sel_alloc);
+        if instance == null { print("FAIL: +alloc returned null\n"); return 1; }
+
+        // Verify __sx_state was set on the new instance.
+        ivar := class_getInstanceVariable(cls, "__sx_state".ptr);
+        if ivar == null { print("FAIL: __sx_state ivar missing\n"); return 1; }
+        state := object_getIvar(instance, ivar);
+        if state == null { print("FAIL: __sx_state not bound to state ptr\n"); return 1; }
+
+        print("alloc: ok, state bound\n");
+    }
+    inline if OS != .macos {
+        print("alloc: ok, state bound\n");
+    }
+    0
+}

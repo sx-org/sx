@@ -1,0 +1,621 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+Point :: struct { x, y: i32; }
+
+Color :: enum { red; green; blue; }
+
+Shape :: enum {
+    circle: f32;
+    rect: struct { w, h: f32; };
+    none;
+}
+
+Overlay :: union {
+    f: f32;
+    i: i32;
+}
+
+Vec2 :: union {
+    data: [2]f32;
+    struct { x, y: f32; };
+}
+
+Defaults :: struct {
+    a: i32;
+    b: i32 = 99;
+    c: i32 = ---;
+}
+
+OptNode :: struct {
+    value: i32;
+    next: ?i32;
+}
+
+OptInner :: struct { val: i32; }
+
+OptOuter :: struct { inner: ?OptInner; }
+
+MyFloat :: f64;
+
+Perms :: enum flags { read; write; execute; }
+
+Status :: enum u8 { ok; err; timeout; }
+
+WindowFlags :: enum flags u32 { vsync :: 64; resizable :: 4; hidden :: 128; }
+
+// --- Top-level functions ---
+
+add :: (a: i32, b: i32) -> i32 { a + b }
+
+mul :: (a: i32, b: i32) -> i32 { a * b }
+
+identity :: (x: $T) -> T { x }
+
+pair_add :: (a: $T, b: $U) -> i64 {
+    a.(i64) + b.(i64)
+}
+
+typed_sum :: (..args: []i32) -> i32 {
+    result := 0;
+    for args (it) { result = result + it; }
+    result
+}
+
+apply :: (f: (i32, i32) -> i32, x: i32, y: i32) -> i32 {
+    f(x, y)
+}
+
+void_return :: () {
+    return;
+}
+
+implicit_return :: (x: i32) -> i32 {
+    x * 2
+}
+
+early_return :: (x: i32) -> i32 {
+    if x > 10 { return 99; }
+    x
+}
+
+vec3 :: (x: f32, y: f32, z: f32) -> Vector(3, f32) {
+    .[x, y, z]
+}
+
+point_sum :: (p: Point) -> i32 { p.x + p.y }
+
+// #run compile-time constants
+
+// #run compile-time constants
+CT_VAL :: #run add(10, 15);
+
+CT_MUL :: #run mul(6, 7);
+
+CT_CHAIN :: #run add(CT_VAL, 5);
+
+// #run compile-time optional tests
+
+// #run compile-time optional tests
+ct_opt_coalesce :: () -> i32 {
+    x: ?i32 = 42;
+    y: ?i32 = null;
+    return (x ?? 0) + (y ?? 99);
+}
+
+ct_opt_unwrap :: () -> i32 {
+    x: ?i32 = 77;
+    return x!;
+}
+
+ct_opt_guard :: () -> i32 {
+    x: ?i32 = 10;
+    if x == null { return -1; }
+    return x;
+}
+
+CT_OPT_COALESCE :: #run ct_opt_coalesce();
+
+CT_OPT_UNWRAP :: #run ct_opt_unwrap();
+
+CT_OPT_GUARD :: #run ct_opt_guard();
+
+// #insert helpers
+
+// #insert helpers
+gen_code :: () -> string {
+    return "print(\"insert-ok\\n\");";
+}
+
+gen_val :: () -> string {
+    return "print(\"insert-gen: {}\\n\", 42);";
+}
+
+// --- Error handling (failable functions: sets, raise/try/catch/or/onfail) ---
+
+SmokeErr :: error { Empty, BadDigit, Overflow }
+
+// value-carrying, named set: raise three tags or succeed
+
+// value-carrying, named set: raise three tags or succeed
+sm_parse :: (n: i32) -> (i32, !SmokeErr) {
+    if n < 0  { raise error.BadDigit; }
+    if n == 0 { raise error.Empty; }
+    if n > 99 { raise error.Overflow; }
+    return n * 2;
+}
+
+// pure failable, inferred set (ad-hoc tag minted into `!`)
+
+// pure failable, inferred set (ad-hoc tag minted into `!`)
+sm_check :: (ok: bool) -> ! {
+    if !ok { raise error.NotReady; }
+    return;
+}
+
+// multi-value, inferred set: `try` propagates; the SCC pass absorbs SmokeErr
+
+// multi-value, inferred set: `try` propagates; the SCC pass absorbs SmokeErr
+sm_pair :: (a: i32, b: i32) -> (i32, i32, !) {
+    x := try sm_parse(a);
+    y := try sm_parse(b);
+    return .{x, y};
+}
+
+// `catch` block that diverges (logs the tag, then returns a fallback)
+
+// `catch` block that diverges (logs the tag, then returns a fallback)
+sm_or_default :: (n: i32) -> i32 {
+    return sm_parse(n) catch (e) {
+        print("  logged {}\n", e);
+        return -1;
+    };
+}
+
+// `onfail` + `defer` interleave: cleanup runs only on the error path
+
+// `onfail` + `defer` interleave: cleanup runs only on the error path
+sm_acquire :: (fail: bool) -> (i32, !) {
+    defer  print("  smoke defer A\n");
+    onfail print("  smoke onfail B\n");
+    if fail { raise error.Acquire; }
+    return 7;
+}
+
+// `or`-chain: try a, fall to try b; propagate if both fail
+
+// `or`-chain: try a, fall to try b; propagate if both fail
+sm_first :: (a: i32, b: i32) -> (i32, !) {
+    v := try sm_parse(a) or try sm_parse(b);
+    return v;
+}
+
+// --- Extern function binding ---
+
+// --- Extern function binding ---
+libc :: #library "c";
+
+c_abs :: (n: i32) -> i32 extern libc "abs";
+
+// --- Protocol declarations (Phase 1: static dispatch only) ---
+
+Counter :: protocol {
+    inc :: (self: *Self);
+    get :: (self: *Self) -> i32;
+}
+
+Summable :: protocol {
+    sum :: (self: *Self) -> i32;
+}
+
+SimpleCounter :: struct { val: i32; }
+
+impl Counter for SimpleCounter {
+    inc :: (self: *SimpleCounter) { self.val += 1; }
+    get :: (self: *SimpleCounter) -> i32 { self.val }
+}
+
+impl Summable for Point {
+    sum :: (self: *Point) -> i32 { self.x + self.y }
+}
+
+// Phase 2: #inline protocol for dynamic dispatch
+
+// Phase 2: #inline protocol for dynamic dispatch
+Adder :: protocol #inline {
+    add :: (self: *Self, n: i32);
+    value :: (self: *Self) -> i32;
+}
+
+Accumulator :: struct {
+    total: i32;
+}
+
+impl Adder for Accumulator {
+    add :: (self: *Accumulator, n: i32) { self.total += n; }
+    value :: (self: *Accumulator) -> i32 { self.total }
+}
+
+Doubler :: struct { val: i32; }
+
+impl Adder for Doubler {
+    add :: (self: *Doubler, n: i32) { self.val = self.val + n + n; }
+    value :: (self: *Doubler) -> i32 { self.val }
+}
+
+// Phase 4: default methods
+
+// Phase 4: default methods
+Repeater :: protocol {
+    say :: (self: *Self, msg: string);
+    say_twice :: (self: *Self, msg: string) {
+        self.say(msg);
+        self.say(msg);
+    }
+}
+
+Printer :: struct { count: i32; }
+
+impl Repeater for Printer {
+    say :: (self: *Printer, msg: string) {
+        self.count += 1;
+        out(msg);
+    }
+}
+
+// P4 edge: Chained default→default calls
+
+// P4 edge: Chained default→default calls
+Chained :: protocol {
+    base :: (self: *Self, msg: string) -> i32;
+    wrap :: (self: *Self, msg: string) -> i32 {
+        self.base(msg) + 1
+    }
+    double_wrap :: (self: *Self, msg: string) -> i32 {
+        self.wrap(msg) + self.wrap(msg)
+    }
+}
+
+ChainImpl :: struct { val: i32; }
+impl Chained for ChainImpl {
+    base :: (self: *ChainImpl, msg: string) -> i32 {
+        self.val += 1;
+        msg.len
+    }
+}
+
+// Phase 5: Self type
+
+// Phase 5: Self type
+Eq :: protocol {
+    eq :: (self: *Self, other: Self) -> bool;
+}
+
+impl Eq for Point {
+    eq :: (self: *Point, other: Point) -> bool {
+        self.x == other.x and self.y == other.y
+    }
+}
+
+Cloneable :: protocol {
+    clone :: (self: *Self) -> Self;
+}
+
+impl Cloneable for Point {
+    clone :: (self: *Point) -> Point {
+        Point.{ x = self.x, y = self.y }
+    }
+}
+
+impl Eq for i64 {
+    eq :: (self: *i64, other: i64) -> bool {
+        self.* == other
+    }
+}
+
+// Phase 6: Generic constraints
+
+// Phase 6: Generic constraints
+are_equal :: ($T: Type/Eq, a: T, b: T) -> bool {
+    a.eq(b)
+}
+
+Hashable :: protocol {
+    hash :: (self: *Self) -> i64;
+}
+
+impl Hashable for Point {
+    hash :: (self: *Point) -> i64 {
+        xx self.x * 31 + xx self.y
+    }
+}
+
+eq_and_hash :: ($T: Type/Eq/Hashable, a: T, b: T) -> bool {
+    if a.hash() != b.hash() { return false; }
+    a.eq(b)
+}
+
+// P6.4: inline constraint syntax ($T/Protocol)
+
+// P6.4: inline constraint syntax ($T/Protocol)
+sum_of_inline :: (a: $T/Summable, b: T) -> i32 {
+    a.sum() + b.sum()
+}
+
+// Phase 7: Generic struct impls
+
+// Phase 7: Generic struct impls
+Pair :: struct ($T: Type) {
+    a: T;
+    b: T;
+}
+
+impl Summable for Pair($T) {
+    sum :: (self: *Pair(T)) -> i32 {
+        xx self.a + xx self.b
+    }
+}
+
+// P6.5: Struct type param constraints
+
+// P6.5: Struct type param constraints
+SumBox :: struct ($T: Type/Summable) {
+    val: T;
+}
+
+// ============================================================
+// Struct constants test
+
+// ============================================================
+// Struct constants test
+Phys :: struct {
+    x, y: f32;
+    GRAVITY :f32: 9.81;
+    MAX_SPEED :: 100;
+}
+
+// Init block test struct
+
+// Init block test struct
+Builder :: struct {
+    total: i32;
+    count: i32;
+
+    add :: (self: *Builder, val: i32) {
+        self.total += val;
+        self.count += 1;
+    }
+}
+
+// Global variable for address-of test
+
+// Global variable for address-of test
+g_smoke_val : i32 = 42;
+
+write_to_ptr :: (p: *i32) {
+    p.* = 99;
+}
+
+main :: () {
+
+    // ========================================================
+    // PROTOCOLS (Phase 1: static dispatch)
+    // ========================================================
+    print("=== Protocols ===\n");
+
+    // P1.1: Basic protocol + impl, direct call on concrete type
+    {
+        sc := SimpleCounter.{ val = 0 };
+        sc.inc();
+        sc.inc();
+        sc.inc();
+        print("P1.1: {}\n", sc.get());
+    }
+
+    // P1.2: impl in separate scope (retroactive conformance)
+    {
+        p := Point.{ x = 10, y = 20 };
+        print("P1.2: {}\n", p.sum());
+    }
+
+    // P2.1: #inline protocol — xx conversion + dynamic dispatch
+    {
+        acc := Accumulator.{ total = 0 };
+        a := acc.(Adder);              // owning copy (postfix erasure)
+        a.add(10);
+        a.add(20);
+        a.add(12);
+        print("P2.1: {}\n", a.value());
+    }
+
+    // P2.2: pass protocol value to function
+    {
+        use_adder :: (a: Adder, n: i32) -> i32 {
+            a.add(n);
+            a.value()
+        }
+        acc := Accumulator.{ total = 100 };
+        result := use_adder(acc.(Adder), 50);
+        print("P2.2: {}\n", result);
+    }
+
+    // P2.3: different impls through same protocol type
+    {
+        acc := Accumulator.{ total = 0 };
+        dbl := Doubler.{ val = 0 };
+        a1 := acc.(Adder);
+        a2 := dbl.(Adder);
+        a1.add(5);
+        a2.add(5);
+        print("P2.3: {} {}\n", a1.value(), a2.value());
+    }
+
+    // P3.1: vtable-pointer protocol (default, no #inline)
+    {
+        sc := SimpleCounter.{ val = 0 };
+        c := sc.(Counter);
+        c.inc();
+        c.inc();
+        c.inc();
+        c.inc();
+        c.inc();
+        print("P3.1: {}\n", c.get());
+    }
+
+    // P3.2: vtable protocol passed to function
+    {
+        use_counter :: (c: Counter) -> i32 {
+            c.inc();
+            c.inc();
+            c.get()
+        }
+        sc := SimpleCounter.{ val = 10 };
+        result := use_counter(sc.(Counter));
+        print("P3.2: {}\n", result);
+    }
+
+    // P4.1: default method calls required method (static dispatch)
+    {
+        pr := Printer.{ count = 0 };
+        pr.say_twice("hi ");
+        print("\nP4.1: {}\n", pr.count);
+    }
+
+    // P4.2: default method via dynamic dispatch (vtable)
+    {
+        pr := Printer.{ count = 0 };
+        r : *Repeater = @pr;          // borrowed VIEW — mutations reach pr
+        r.say_twice("yo ");
+        print("\nP4.2: {}\n", pr.count);
+    }
+
+    // P4.3: chained default→default calls via vtable
+    {
+        ci := ChainImpl.{ val = 0 };
+        ch : *Chained = @ci;          // view — ci.val is asserted below
+        // double_wrap calls wrap twice, wrap calls base once each
+        // base("hi") returns 2 (len), wrap adds 1 → 3, double_wrap = 3 + 3 = 6
+        result := ch.double_wrap("hi");
+        // base was called 2 times (once per wrap call)
+        print("P4.3: {} {}\n", result, ci.val);
+    }
+
+    // P5.1: Self type in protocol — static dispatch
+    {
+        p1 := Point.{ x = 1, y = 2 };
+        p2 := Point.{ x = 1, y = 2 };
+        p3 := Point.{ x = 3, y = 4 };
+        print("P5.1: {} {}\n", p1.eq(p2), p1.eq(p3));
+    }
+
+    // P5.2: Self in return position
+    {
+        p := Point.{ x = 10, y = 20 };
+        p2 := p.clone();
+        print("P5.2: {} {}\n", p2.x, p2.y);
+    }
+
+    // P5.5: impl for primitive type
+    {
+        x := 42;
+        y := 42;
+        z := 99;
+        r1 := x.eq(y);
+        r2 := x.eq(z);
+        print("P5.5: {} {}\n", r1, r2);
+    }
+
+    // P5.3: Self-typed argument via a generic bound. Calling `eq` through
+    // an ERASED `Eq` value is a compile error (Era-2 per-method
+    // erasability: `other: Self` has no expressible type through erasure —
+    // the old erased form passed it UNCHECKED); the generic bound keeps
+    // Self known. The refusal itself is pinned in diagnostics/1253.
+    {
+        p1 := Point.{ x = 1, y = 2 };
+        p2 := Point.{ x = 1, y = 2 };
+        p3 := Point.{ x = 3, y = 4 };
+        print("P5.3: {} {}\n", are_equal(p1, p2), are_equal(p1, p3));
+    }
+
+    // P6.1: Single constraint — constrained generic function
+    {
+        p1 := Point.{ x = 1, y = 2 };
+        p2 := Point.{ x = 1, y = 2 };
+        p3 := Point.{ x = 3, y = 4 };
+        print("P6.1: {} {}\n", are_equal(p1, p2), are_equal(p1, p3));
+    }
+
+    // P6.2: Constraint with primitive type
+    {
+        print("P6.2: {} {}\n", are_equal(42, 42), are_equal(42, 99));
+    }
+
+    // P6.3: Multiple constraints
+    {
+        p1 := Point.{ x = 1, y = 2 };
+        p2 := Point.{ x = 1, y = 2 };
+        p3 := Point.{ x = 3, y = 4 };
+        print("P6.3: {} {}\n", eq_and_hash(p1, p2), eq_and_hash(p1, p3));
+    }
+
+    // P6.4: inline constraint syntax ($T/Protocol)
+    {
+        // sum_of_inline uses $T/Summable inline (not $T: Type/Summable)
+        p1 := Point.{ x = 10, y = 20 };
+        p2 := Point.{ x = 3, y = 7 };
+        print("P6.4: {}\n", sum_of_inline(p1, p2));
+    }
+
+    // P6.5: Struct type param constraints ($T: Type/Summable)
+    {
+        box := SumBox(Point).{ val = Point.{ x = 5, y = 15 } };
+        print("P6.5: {}\n", box.val.sum());
+    }
+
+    // P7.1: impl for generic struct
+    {
+        p := Pair(i32).{ a = 10, b = 20 };
+        print("P7.1: {}\n", p.sum());
+    }
+
+    // P7.2: generic struct impl with different type arg
+    {
+        p1 := Pair(i32).{ a = 3, b = 7 };
+        p2 := Pair(i64).{ a = 100, b = 200 };
+        print("P7.2: {} {}\n", p1.sum(), p2.sum());
+    }
+
+    // P2.4: xx in function return position (tested in standalone test_return.sx)
+    // Covered by: make_adder :: (acc: *Accumulator) -> Adder { xx acc; }
+
+    // P2.6: protocol values in arrays — each element OWNS its copy
+    // (the cutover: reads go through the erased values, not the sources).
+    {
+        acc := Accumulator.{ total = 0 };
+        dbl := Doubler.{ val = 0 };
+        adders : [2]Adder = .[acc.(Adder), dbl.(Adder)];
+        i := 0;
+        while i < 2 {
+            adders[i].add(5);
+            i += 1;
+        }
+        print("P2.6: {} {}\n", adders[0].value(), adders[1].value());
+    }
+
+    // P2.7: xx on inline struct literal (no intermediate variable)
+    {
+        use_adder :: (a: Adder) -> i32 { a.add(10); a.value() }
+        result := use_adder(xx Accumulator.{ total = 5 });
+        print("P2.7: {}\n", result);
+    }
+
+    // P3.3: xx on inline struct literal with vtable protocol
+    {
+        use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
+        result := use_counter(xx SimpleCounter.{ val = 100 });
+        print("P3.3: {}\n", result);
+    }
+}

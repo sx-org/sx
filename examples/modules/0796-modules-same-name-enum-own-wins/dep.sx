@@ -1,0 +1,6 @@
+// A flat-imported module authors its OWN `Dir { east; west }`. The importing file
+// (`main`) ALSO authors a `Dir` — its own author must win there (own-wins), while
+// this module's `Dir` stays a DISTINCT nominal type used by `dep_dir`. The variant
+// sets are disjoint, so a cross-binding to the wrong `Dir` is a hard compile error.
+Dir :: enum { east; west; }
+dep_dir :: () -> Dir { return .west; }

@@ -1,0 +1,359 @@
+// std.http — Q3.1 streaming request-body reader (pool mode).
+//
+// Config.stream_request_body dispatches a body-carrying request at
+// HEADERS-COMPLETE: req.body is "" and the handler pulls the decoded body
+// incrementally via req.read_body(dst, cap) — >0 bytes, 0 = end of body,
+// -1 = connection fault. The worker BLOCKS when no bytes are buffered; the
+// loop thread keeps reading + decoding the framing into a bounded channel,
+// so a body far larger than max_body (and the channel) streams through
+// bounded memory.
+//
+// Cases (single pooled server, max_body = 4096 — every streamed body here
+// is 25-50x over it, proving the exemption):
+//   1. POST /sum, Content-Length 200000, sent split across ticks: the
+//      handler read-loops 8 KB pieces, responds "len=<n> sum=<h>" — must
+//      match the client-side count/checksum exactly (incremental delivery,
+//      byte-exact, order-exact).
+//   2. SAME connection (keep-alive after a fully-drained streamed body):
+//      chunked body — 3 chunks (50000, 100 with a chunk extension, 70000)
+//      + a trailer, framing split across ticks; same exactness contract.
+//   3. /slowsum on a fresh conn: the worker sleeps 60 ms BEFORE reading, so
+//      the client's 200000 bytes FILL the 64 KB channel → the loop parks the
+//      read watch (backpressure); the draining worker wakes it back up. Same
+//      len/sum contract proves no byte was lost or reordered across the stall.
+//   4. /reject: handler responds 413 after ONE read, without draining — the
+//      response carries Connection: close (the reader never saw end-of-body)
+//      and the server closes the connection after it drains.
+//   5. /count: client disconnects mid-body — the handler's read_body returns
+//      -1 (fault) after exactly the bytes that arrived; the slot is freed and
+//      the server stays healthy (fresh /ping conn → 200 pong).
+//   6. GPA leak gate: net-zero after srv.close() (channel, job, wbuf all
+//      reclaimed; the discarded /count completion freed).
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+clib :: #library "c";
+usleep :: (usec: i64) -> i32 extern clib;
+
+PORT :: 19013;
+CL_BODY_LEN :: 200000;   // cases 1 + 3
+CH1 :: 50000;            // case 2 chunk sizes
+CH2 :: 100;
+CH3 :: 70000;
+COUNT_SENT :: 10000;     // case 5 bytes delivered before the disconnect
+
+// Worker-side observations, read by main only after srv.close() joins the pool.
+Obs :: struct {
+    count_rc: i64 = -99;    // /count's final read_body return (-1 expected)
+    count_got: i64 = 0;     // bytes /count consumed before the fault
+    reject_ran: i64 = 0;
+    ext_rc: i64 = -99;      // /countb's final read_body return (-1 expected)
+    ext_got: i64 = 0;       // bytes /countb consumed before the framing abort
+}
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    obs : *Obs = xx ctx;
+    if req.path == "/sum" or req.path == "/slowsum" {
+        if req.path == "/slowsum" { usleep(60000); }   // let the channel fill (backpressure)
+        scratch : [8192]u8 = ---;
+        total : i64 = 0;
+        h : i64 = 0;
+        while true {
+            n := req.read_body(@scratch[0], 8192);
+            if n <= 0 { break; }
+            i : i64 = 0;
+            while i < n { h = (h * 31 + scratch[i]) % 1000000007; i += 1; }
+            total += n;
+        }
+        resp.body = concat("len=", concat(int_to_string(total), concat(" sum=", int_to_string(h))));
+        return;
+    }
+    if req.path == "/reject" {
+        scratch : [4096]u8 = ---;
+        req.read_body(@scratch[0], 4096);   // one piece, then bail without draining
+        obs.reject_ran = 1;
+        resp.status = 413;
+        resp.body = "too big";
+        return;
+    }
+    if req.path == "/count" {
+        scratch : [4096]u8 = ---;
+        got : i64 = 0;
+        rc : i64 = 0;
+        while true {
+            rc = req.read_body(@scratch[0], 4096);
+            if rc <= 0 { break; }
+            got += rc;
+        }
+        obs.count_rc = rc;
+        obs.count_got = got;
+        resp.body = "counted";   // discarded — the conn is gone
+        return;
+    }
+    if req.path == "/countb" {
+        scratch : [4096]u8 = ---;
+        got : i64 = 0;
+        rc : i64 = 0;
+        while true {
+            rc = req.read_body(@scratch[0], 4096);
+            if rc <= 0 { break; }
+            got += rc;
+        }
+        obs.ext_rc = rc;
+        obs.ext_got = got;
+        resp.body = "counted-b";
+        return;
+    }
+    resp.body = "pong";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+// The decimal right after the first occurrence of `key`; -1 when absent or
+// no digit follows. Allocation-free (the GPA gate forbids client concats).
+num_after :: (hay: string, key: string) -> i64 {
+    i := 0;
+    while i + key.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < key.len { if hay[i + j] != key[j] { ok = false; break; } j += 1; }
+        if ok {
+            p := i + key.len;
+            v : i64 = 0;
+            d : i64 = 0;
+            while p < hay.len and hay[p] >= 48 and hay[p] <= 57 {
+                v = v * 10 + xx (hay[p] - 48);
+                p += 1;
+                d += 1;
+            }
+            if d == 0 { return -1; }
+            return v;
+        }
+        i += 1;
+    }
+    return -1;
+}
+
+// Send all of `s` on a nonblocking fd, ticking the server so it drains.
+send_all :: (srv: *http.Server, fd: i32, s: string) {
+    sent : i64 = 0;
+    while sent < s.len {
+        n, we := socket.write_nb(fd, @s.ptr[sent], xx (s.len - sent));
+        if !we { sent += n; }
+        srv.tick(1) catch {};
+    }
+}
+
+// Read one COMPLETE response into rbuf (headers + the full Content-Length
+// body), ticking the server. Returns the total bytes read (0 = never
+// completed within the tick budget).
+read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
+    total : i64 = 0;
+    t : i64 = 0;
+    while t < 20000 {
+        srv.tick(1) catch {};
+        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        if !re { total += n; }
+        else if re == error.Closed { return total; }
+        resp := string.{ ptr = rbuf, len = xx total };
+        he := -1;
+        i := 0;
+        while i + 3 < resp.len {
+            if resp[i] == 13 and resp[i+1] == 10 and resp[i+2] == 13 and resp[i+3] == 10 { he = i + 4; break; }
+            i += 1;
+        }
+        if he >= 0 {
+            cl := num_after(resp, "Content-Length: ");
+            if cl >= 0 and total >= he + cl { return total; }
+        }
+        t += 1;
+    }
+    return 0;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+    obs : Obs = .{};
+
+    push .{ allocator = gpa } {
+        cap : i64 = 65536;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{
+            port = PORT,
+            timeout_request_ms = 5000,
+            timeout_keepalive_ms = 5000,
+            request_count = 50,
+            max_conn = 4,
+            max_body = 4096,             // streamed bodies must be EXEMPT
+            thread_pool_count = 2,
+            thread_pool_backlog = 16,
+            handler_timeout_ms = 5000,
+            stream_request_body = true,
+        };
+        srv, se := http.Server.init(cfg, route, xx @obs);
+        if se { print("init failed\n"); return 1; }
+
+        // ── case 1: Content-Length 200000 streamed, split delivery ────
+        body : [*]u8 = xx context.allocator.alloc_bytes(CL_BODY_LEN);
+        sum1 : i64 = 0;
+        i : i64 = 0;
+        while i < CL_BODY_LEN {
+            body[i] = xx ((i * 13 + 7) % 251);
+            sum1 = (sum1 * 31 + body[i]) % 1000000007;
+            i += 1;
+        }
+        body_s := string.{ ptr = body, len = CL_BODY_LEN };
+
+        c1 := dial_port(PORT);
+        if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
+        send_all(@srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 200000\r\n\r\n");
+        // three slices so body bytes straddle read cycles
+        send_all(@srv, c1, string.{ ptr = body, len = 70001 });
+        send_all(@srv, c1, string.{ ptr = @body[70001], len = 59999 });
+        send_all(@srv, c1, string.{ ptr = @body[130000], len = CL_BODY_LEN - 130000 });
+        r1 := read_response(@srv, c1, rbuf, cap);
+        resp1 := string.{ ptr = rbuf, len = xx r1 };
+        if !contains(resp1, "HTTP/1.1 200 OK") { print("case1: no 200\n"); failed = 1; }
+        if num_after(resp1, "len=") != CL_BODY_LEN { print("case1: bad len {}\n", num_after(resp1, "len=")); failed = 1; }
+        if num_after(resp1, "sum=") != sum1 { print("case1: bad sum\n"); failed = 1; }
+
+        // ── case 2: chunked streamed on the SAME conn (keep-alive) ────
+        ch1 : [*]u8 = xx context.allocator.alloc_bytes(CH1);
+        ch2 : [*]u8 = xx context.allocator.alloc_bytes(CH2);
+        ch3 : [*]u8 = xx context.allocator.alloc_bytes(CH3);
+        sum2 : i64 = 0;
+        i = 0;
+        while i < CH1 { ch1[i] = xx ((i * 3 + 1) % 251); sum2 = (sum2 * 31 + ch1[i]) % 1000000007; i += 1; }
+        i = 0;
+        while i < CH2 { ch2[i] = xx ((i * 5 + 2) % 251); sum2 = (sum2 * 31 + ch2[i]) % 1000000007; i += 1; }
+        i = 0;
+        while i < CH3 { ch3[i] = xx ((i * 11 + 5) % 251); sum2 = (sum2 * 31 + ch3[i]) % 1000000007; i += 1; }
+
+        send_all(@srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n");
+        send_all(@srv, c1, "c350\r\n");                                   // 50000
+        send_all(@srv, c1, string.{ ptr = ch1, len = 30000 });            // split mid-chunk
+        send_all(@srv, c1, string.{ ptr = @ch1[30000], len = CH1 - 30000 });
+        send_all(@srv, c1, "\r\n64;n=2\r\n");                             // CRLF + 100 w/ chunk-ext
+        send_all(@srv, c1, string.{ ptr = ch2, len = CH2 });
+        send_all(@srv, c1, "\r\n11170\r\n");                              // CRLF + 70000
+        send_all(@srv, c1, string.{ ptr = ch3, len = CH3 });
+        send_all(@srv, c1, "\r\n0\r\nX-Trail: yes\r\n\r\n");              // terminator + trailer
+        r2 := read_response(@srv, c1, rbuf, cap);
+        resp2 := string.{ ptr = rbuf, len = xx r2 };
+        if !contains(resp2, "HTTP/1.1 200 OK") { print("case2: no 200\n"); failed = 1; }
+        if num_after(resp2, "len=") != CH1 + CH2 + CH3 { print("case2: bad len {}\n", num_after(resp2, "len=")); failed = 1; }
+        if num_after(resp2, "sum=") != sum2 { print("case2: bad sum\n"); failed = 1; }
+        socket.close(c1);
+
+        // ── case 3: backpressure — worker sleeps, channel fills, park+wake ──
+        c3 := dial_port(PORT);
+        if c3 < 0 { print("dial c3 failed\n"); srv.close(); return 1; }
+        send_all(@srv, c3, "POST /slowsum HTTP/1.1\r\nHost: t\r\nContent-Length: 200000\r\n\r\n");
+        send_all(@srv, c3, body_s);
+        r3 := read_response(@srv, c3, rbuf, cap);
+        resp3 := string.{ ptr = rbuf, len = xx r3 };
+        if !contains(resp3, "HTTP/1.1 200 OK") { print("case3: no 200\n"); failed = 1; }
+        if num_after(resp3, "len=") != CL_BODY_LEN { print("case3: bad len {}\n", num_after(resp3, "len=")); failed = 1; }
+        if num_after(resp3, "sum=") != sum1 { print("case3: bad sum\n"); failed = 1; }
+        socket.close(c3);
+
+        // ── case 4: early response without draining → 413 + close ────
+        c4 := dial_port(PORT);
+        if c4 < 0 { print("dial c4 failed\n"); srv.close(); return 1; }
+        send_all(@srv, c4, "POST /reject HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
+        send_all(@srv, c4, string.{ ptr = body, len = 8192 });   // partial body only
+        r4 := read_response(@srv, c4, rbuf, cap);
+        resp4 := string.{ ptr = rbuf, len = xx r4 };
+        if !contains(resp4, "HTTP/1.1 413") { print("case4: no 413\n"); failed = 1; }
+        if !contains(resp4, "Connection: close") { print("case4: no close\n"); failed = 1; }
+        socket.close(c4);
+
+        // ── case 4b: bare CR inside a chunk extension → framing abort ──
+        // Parity with the accumulate decoder (Q3.1-review LOW): the size
+        // line ends at its FIRST CR, which must be CRLF. The valid first
+        // chunk's 3 bytes are delivered before the abort; the reader then
+        // gets -1, and the worker's response ships with Connection: close.
+        c4b := dial_port(PORT);
+        if c4b < 0 { print("dial c4b failed\n"); srv.close(); return 1; }
+        send_all(@srv, c4b, "POST /countb HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n");
+        send_all(@srv, c4b, "3\r\nabc\r\n");
+        send_all(@srv, c4b, "5;a\rb\r\n");   // bare CR inside the chunk-ext
+        r4b := read_response(@srv, c4b, rbuf, cap);
+        resp4b := string.{ ptr = rbuf, len = xx r4b };
+        if !contains(resp4b, "counted-b") { print("case4b: no response\n"); failed = 1; }
+        if !contains(resp4b, "Connection: close") { print("case4b: no close\n"); failed = 1; }
+        socket.close(c4b);
+
+        // ── case 5: client disconnect mid-body → read_body faults ─────
+        c5 := dial_port(PORT);
+        if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
+        send_all(@srv, c5, "POST /count HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
+        send_all(@srv, c5, string.{ ptr = body, len = COUNT_SENT });
+        socket.close(c5);   // mid-body disconnect
+        // drain: tick until nothing is in flight (fault propagated, late
+        // completion discarded), with a generous stall-based cap
+        t : i64 = 0;
+        while t < 20000 and srv.in_flight() > 0 {
+            srv.tick(1) catch {};
+            t += 1;
+        }
+
+        // ── server still healthy ──────────────────────────────────────
+        c6 := dial_port(PORT);
+        if c6 < 0 { print("dial c6 failed\n"); srv.close(); return 1; }
+        send_all(@srv, c6, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r6 := read_response(@srv, c6, rbuf, cap);
+        resp6 := string.{ ptr = rbuf, len = xx r6 };
+        if !contains(resp6, "HTTP/1.1 200 OK") or !contains(resp6, "pong") {
+            print("health check failed\n");
+            failed = 1;
+        }
+        socket.close(c6);
+
+        srv.close();   // joins the pool: obs writes are now visible + stable
+
+        if obs.reject_ran != 1 { print("case4: reject handler never ran\n"); failed = 1; }
+        if obs.ext_rc != -1 { print("case4b: read_body rc {} (want -1)\n", obs.ext_rc); failed = 1; }
+        if obs.ext_got != 3 { print("case4b: got {} bytes (want 3)\n", obs.ext_got); failed = 1; }
+        if obs.count_rc != -1 { print("case5: read_body rc {} (want -1)\n", obs.count_rc); failed = 1; }
+        if obs.count_got != COUNT_SENT { print("case5: got {} bytes (want {})\n", obs.count_got, COUNT_SENT); failed = 1; }
+
+        context.allocator.dealloc_bytes(xx body);
+        context.allocator.dealloc_bytes(xx ch1);
+        context.allocator.dealloc_bytes(xx ch2);
+        context.allocator.dealloc_bytes(xx ch3);
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

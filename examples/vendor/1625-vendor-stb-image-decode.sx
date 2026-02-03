@@ -1,0 +1,35 @@
+// The sx library ships stb_image: `#import "vendors/stb_image/
+// stb_image.sx"` resolves through the stdlib search paths and the
+// implementation compiles through the object cache. Decodes a 2x2
+// 24-bit BMP built in memory — fully deterministic: dimensions,
+// channel count, and the top-left pixel (blue) are pinned.
+#import "modules/std.sx";
+stb :: #import "vendors/stb_image/stb_image.sx";
+
+main :: () -> i32 {
+    // BITMAPFILEHEADER (14) + BITMAPINFOHEADER (40) + 2 rows of
+    // 2 BGR pixels padded to 4-byte rows (8 each) = 70 bytes.
+    // Bottom row: red, green; top row: blue, white (BMP is bottom-up).
+    bmp : [70]u8 = .{
+        66, 77, 70, 0, 0, 0, 0, 0, 0, 0, 54, 0, 0, 0,
+        40, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0, 1, 0, 24, 0,
+        0, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 255, 0, 255, 0, 0, 0,
+        255, 0, 0, 255, 255, 255, 0, 0,
+    };
+
+    w : i32 = 0;
+    h : i32 = 0;
+    ch : i32 = 0;
+    img := stb.stbi_load_from_memory(@bmp[0], 70, @w, @h, @ch, 3);
+    if xx img == 0 {
+        print("decode failed\n");
+        return 1;
+    }
+    p : [*]u8 = xx img;
+    print("decoded {}x{} ({} channels)\n", w, h, ch);
+    print("top-left pixel: {} {} {}\n", p[0], p[1], p[2]);
+    stb.stbi_image_free(xx img);
+    0
+}

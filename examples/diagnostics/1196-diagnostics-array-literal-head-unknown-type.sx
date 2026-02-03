@@ -1,0 +1,21 @@
+// A typed array/slice literal head (`([N]T).[…]` / `([]T).[…]`) names its
+// element type exactly like a declaration annotation, so an UNDEFINED element
+// type name must be rejected with the same `unknown type '<name>'` diagnostic
+// the declaration path emits — NOT silently compiled.
+//
+// Regression (issues 0173–0175 adversarial review): the 0173 fix taught the
+// lowering's `resolveArrayLiteralType` to resolve a structural `[N]?T` head,
+// but for an UNDEFINED element name the resolver returned a forward-reference
+// empty-struct STUB instead of `.unresolved`. So `([2]?Undefined).[…]`
+// compiled silently (exit 0, "ok") with a wrong empty-struct element, where
+// `x: [2]?Undefined = ---` correctly errored. The unknown-type checker
+// (`semantic_diagnostics.zig` `walkBodyTypes`) now validates the array
+// literal's `type_expr` head through the same `checkTypeNodeForUnknown` walk a
+// declaration uses, so a genuinely-undeclared head element name is a loud,
+// located error (exit 1) — never a silent empty-struct compile or a raw panic.
+#import "modules/std.sx";
+
+main :: () {
+    arr := ([2]?Undefined).[ null, null ];
+    print("ok\n");
+}

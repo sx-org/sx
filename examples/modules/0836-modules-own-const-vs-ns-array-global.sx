@@ -1,0 +1,15 @@
+// The MAIN file's own typed scalar const `K : i64 : 4` vs a namespaced
+// module's same-named array global: the main file's bare `K` is its own
+// scalar — type inference must not borrow the array global's type either
+// (the print pack used to format the whole 4-element array).
+//
+// Regression (issue 0115).
+
+#import "modules/std.sx";
+h :: #import "0836-modules-own-const-vs-ns-array-global/h.sx";
+
+K : i64 : 4;
+
+main :: () {
+    print("K={} use_k={}\n", K, h.use_k());
+}

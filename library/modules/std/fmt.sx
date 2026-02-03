@@ -1,0 +1,671 @@
+// Formatting + string helpers: the `*_to_string` family, `any_to_string`,
+// the comptime `format` / `print` pair, and the slice/string allocation
+// helpers they build on. Consumers never import this file directly —
+// std.sx re-exports every public name here.
+#import "modules/std/core.sx";
+c :: #import "modules/std/c.sx";
+
+// --- Slice & string allocation ---
+
+alloc_string :: (size: i64) -> string {
+    raw := context.allocator.alloc_bytes(size + 1);
+    c.memset(raw, 0, size + 1);
+    s : string = ---;
+    s.ptr = xx raw;
+    s.len = size;
+    s
+}
+
+alloc_slice :: ($T: Type, count: i64) -> []T {
+    raw := context.allocator.alloc_bytes(count * size_of(T));
+    c.memset(raw, 0, count * size_of(T));
+    s : []T = ---;
+    s.ptr = xx raw;
+    s.len = count;
+    s
+}
+
+int_to_string :: (n: i64) -> string {
+    if n == 0 { return "0"; }
+    neg := n < 0;
+    // Extract digits straight from `n` without ever negating it: `0 - n`
+    // overflows for i64::MIN (its magnitude is unrepresentable as a
+    // positive i64). sx `%` truncates toward zero, so `n % 10` keeps n's
+    // sign; take each remainder's absolute value for the digit.
+    tmp := alloc_string(20);
+    i := 19;
+    v := n;
+    while v != 0 {
+        d := v % 10;
+        if d < 0 { d = 0 - d; }
+        tmp[i] = d + '0';
+        v = v / 10;
+        i -= 1;
+    }
+    if neg { tmp[i] = '-'; i -= 1; }
+    substr(tmp, i + 1, 19 - i)
+}
+
+// Unsigned decimal of `n`'s 64 bits — renders the full u64 range
+// (0 .. 18446744073709551615). Used by `any_to_string` for unsigned
+// integer values, which an i64-based formatter would misread (e.g. a
+// u64 all-ones value as -1).
+uint_to_string :: (n: i64) -> string {
+    if n == 0 { return "0"; }
+    // Long division by 10 across the four unsigned 16-bit limbs, most
+    // significant first. Each step folds the running remainder into the
+    // next limb; the per-step accumulator stays well within i64
+    // (max 9*65536 + 65535), so signed `/` and `%` are exact.
+    g := decompose_u16x4(n);
+    tmp := alloc_string(20);
+    i := 19;
+    while g[0] != 0 or g[1] != 0 or g[2] != 0 or g[3] != 0 {
+        rem := 0;
+        k := 0;
+        while k < 4 {
+            acc := rem * 65536 + g[k];
+            g[k] = acc / 10;
+            rem = acc % 10;
+            k += 1;
+        }
+        tmp[i] = rem + '0';
+        i -= 1;
+    }
+    substr(tmp, i + 1, 19 - i)
+}
+
+bool_to_string :: (b: bool) -> string {
+    if b then "true" else "false"
+}
+
+float_to_string :: (f: f64) -> string {
+    neg := f < 0.0;
+    v := if neg then 0.0 - f else f;
+    int_part := v.(i64);
+    frac := ((v - int_part.(f64)) * 1000000.0).(i64);
+    if frac < 0 { frac = 0 - frac; }
+    istr := int_to_string(int_part);
+    fstr := int_to_string(frac);
+    il := istr.len;
+    fl := fstr.len;
+    prefix := if neg then 1 else 0;
+    total := prefix + il + 1 + 6;
+    buf := alloc_string(total);
+    pos := 0;
+    if neg { buf[0] = '-'; pos = 1; }
+    c.memcpy(@buf[pos], istr.ptr, il);
+    pos = pos + il;
+    buf[pos] = '.';
+    pos += 1;
+    pad := 6 - fl;
+    c.memset(@buf[pos], '0', pad);
+    pos = pos + pad;
+    c.memcpy(@buf[pos], fstr.ptr, fl);
+    buf
+}
+
+hex_group :: (buf: string, offset: i64, val: i64) {
+    i := offset + 3;
+    v := val;
+    while i >= offset {
+        d := v % 16;
+        buf[i] = if d < 10 then d + '0' else d - 10 + 'a';
+        v = v / 16;
+        i -= 1;
+    }
+}
+
+// Split the 64 bits of `n` into four unsigned 16-bit limbs, most
+// significant first: [g3, g2, g1, g0]. A negative input is treated as
+// its two's-complement unsigned bit pattern — each limb is corrected
+// back into 0..65535 — so callers get correct unsigned arithmetic out
+// of a signed-only integer type. Shared by the hex and unsigned-decimal
+// formatters.
+decompose_u16x4 :: (n: i64) -> [4]i64 {
+    g0 := n % 65536;
+    if g0 < 0 { g0 = g0 + 65536; }
+    r1 := (n - g0) / 65536;
+    g1 := r1 % 65536;
+    if g1 < 0 { g1 = g1 + 65536; }
+    r2 := (r1 - g1) / 65536;
+    g2 := r2 % 65536;
+    if g2 < 0 { g2 = g2 + 65536; }
+    r3 := (r2 - g2) / 65536;
+    g3 := r3 % 65536;
+    if g3 < 0 { g3 = g3 + 65536; }
+    limbs : [4]i64 = ---;
+    limbs[0] = g3;
+    limbs[1] = g2;
+    limbs[2] = g1;
+    limbs[3] = g0;
+    limbs
+}
+
+int_to_hex_string :: (n: i64) -> string {
+    if n == 0 { return "0"; }
+
+    g := decompose_u16x4(n);
+    buf := alloc_string(16);
+    hex_group(buf, 0, g[0]);
+    hex_group(buf, 4, g[1]);
+    hex_group(buf, 8, g[2]);
+    hex_group(buf, 12, g[3]);
+
+    // Skip leading zeros (keep at least 1 digit)
+    start := 0;
+    while start < 15 {
+        if buf[start] != '0' { break; }
+        start += 1;
+    }
+    substr(buf, start, 16 - start)
+}
+
+concat :: (a: string, b: string) -> string {
+    al := a.len;
+    bl := b.len;
+    buf := alloc_string(al + bl);
+    c.memcpy(buf.ptr, a.ptr, al);
+    c.memcpy(@buf[al], b.ptr, bl);
+    buf
+}
+
+substr :: (s: string, start: i64, len: i64) -> string {
+    buf := alloc_string(len);
+    c.memcpy(buf.ptr, @s[start], len);
+    buf
+}
+
+// ── cstring: the C-boundary string ────────────────────────────────────
+// `cstring` is ONE pointer to a null-terminated u8 buffer — C's `char *`.
+// It carries no length (`cstring_len` walks to the terminator) and
+// crosses `extern` boundaries verbatim in both directions; `?cstring`
+// is the nullable case (null pointer = absent). String LITERALS coerce
+// to `cstring` implicitly — their bytes are terminated constants; every
+// other `string` must materialize through `to_cstring`.
+
+// Byte length of `c` (strlen — O(n), walks to the terminator).
+cstring_len :: (c: cstring) -> i64 {
+    p : [*]u8 = xx c;
+    n := 0;
+    while p[n] != '\0' { n += 1; }
+    n
+}
+
+// A zero-copy string VIEW over `c`'s bytes ({ptr, strlen}). The view
+// shares C's buffer — `substr` it if it must outlive the source.
+from_cstring :: (c: cstring) -> string {
+    p : [*]u8 = xx c;
+    string.{ ptr = p, len = cstring_len(c) }
+}
+
+// An owned, terminated copy of `s` as a `cstring`.
+to_cstring :: (s: string) -> cstring {
+    z := alloc_string(s.len);
+    c.memcpy(z.ptr, s.ptr, s.len);
+    xx z.ptr
+}
+
+// Join path components with the POSIX separator ('/'). Skips empty
+// components and collapses duplicate separators at component
+// boundaries. Used for bundle paths where Apple .app and Android APK
+// both expect POSIX-style paths.
+path_join :: (..parts: []string) -> string {
+    result := "";
+    i := 0;
+    while i < parts.len {
+        p := parts[i];
+        if p.len > 0 {
+            if result.len > 0 {
+                tail := result[result.len - 1];
+                head := p[0];
+                if tail == '/' {
+                    if head == '/' {
+                        p = substr(p, 1, p.len - 1);
+                    }
+                } else {
+                    if head != '/' {
+                        result = concat(result, "/");
+                    }
+                }
+            }
+            result = concat(result, p);
+        }
+        i += 1;
+    }
+    result
+}
+
+struct_to_string :: (s: $T) -> string {
+    // No type-name prefix (Step-2 print decision): a struct VALUE prints
+    // `{x: 1, y: 2}`; a TYPE value keeps printing its name.
+    result := "{";
+    i := 0;
+    while i < struct_field_count(T) {
+        if i > 0 { result = concat(result, ", "); }
+        result = concat(result, struct_field_name(T, i));
+        result = concat(result, ": ");
+        result = concat(result, any_to_string(struct_field_value(s, i)));
+        i += 1;
+    }
+    concat(result, "}")
+}
+
+vector_to_string :: (v: $T) -> string {
+    result := "[";
+    i := 0;
+    while i < v.len {
+        if i > 0 { result = concat(result, ", "); }
+        elem : any = v[i];
+        result = concat(result, any_to_string(elem));
+        i += 1;
+    }
+    concat(result, "]")
+}
+
+array_to_string :: (a: $T) -> string {
+    result := "[";
+    i := 0;
+    while i < a.len {
+        if i > 0 { result = concat(result, ", "); }
+        elem : any = a[i];
+        result = concat(result, any_to_string(elem));
+        i += 1;
+    }
+    concat(result, "]")
+}
+
+slice_to_string :: (items: []$T) -> string {
+    result := "[";
+    i := 0;
+    while i < items.len {
+        if i > 0 { result = concat(result, ", "); }
+        elem : any = items[i];
+        result = concat(result, any_to_string(elem));
+        i += 1;
+    }
+    concat(result, "]")
+}
+
+pointer_to_string :: (p: $T) -> string {
+    addr : i64 = xx p;
+    if addr == 0 { "null" } else {
+        concat(type_name(T), concat("@0x", int_to_hex_string(addr)))
+    }
+}
+
+flags_to_string :: (val: $T) -> string {
+    v := val.(i64);
+    result := "";
+    i := 0;
+    while i < variant_count(T) {
+        fv := variant_value(T, i);
+        if v & fv {
+            if result.len > 0 { result = concat(result, " | "); }
+            result = concat(result, concat(".", variant_name(T, i)));
+        }
+        i += 1;
+    }
+    if result.len == 0 { result = "0"; }
+    result
+}
+
+enum_to_string :: (u: $T) -> string {
+    if is_flags(T) { return flags_to_string(u); }
+    idx := variant_index(T, u);
+    result := concat(".", variant_name(T, idx));
+    payload := variant_payload(u, idx);
+    pstr := any_to_string(payload);
+    if pstr.len > 0 {
+        result = concat(result, concat("(", concat(pstr, ")")));
+    }
+    result
+}
+
+optional_to_string :: (o: $T) -> string {
+    if o == null { return "null"; }
+    return any_to_string(o!);
+}
+
+any_to_string :: (val: any) -> string {
+    result := "<?>";
+    type := type_of(val);
+    if type == {
+        case void: result = "";
+        case int: {
+            if is_unsigned(type) { result = uint_to_string(xx val); }
+            else { result = int_to_string(xx val); }
+        }
+        case string: { s : string = xx val; result = s; }
+        case bool: result = bool_to_string(xx val);
+        case float: result = float_to_string(xx val);
+        // Structs walk WITHOUT monomorphizing: one compiled body serves
+        // every struct type — the field count/name come from the runtime
+        // reflection tables, and each field is an interior VIEW into the
+        // boxed value (no per-type struct_to_string instantiation, no
+        // copies). Output is identical to struct_to_string's.
+        case struct: {
+            // No type-name prefix (Step-2 print decision): a struct VALUE
+            // prints `{x: 1, y: 2}`; a TYPE value keeps printing its name
+            // (the `case type:` arm below). Also kills the `List__i32{…}`
+            // monomorph-name and `__anon{…}` leakage in prints.
+            r := "{";
+            fi := 0;
+            n := struct_field_count(type);
+            while fi < n {
+                if fi > 0 { r = concat(r, ", "); }
+                r = concat(r, struct_field_name(type, fi));
+                r = concat(r, ": ");
+                r = concat(r, any_to_string(struct_field_value(val, fi)));
+                fi += 1;
+            }
+            result = concat(r, "}");
+        }
+        // Enums / tagged unions walk the runtime variant tables: the tag
+        // word reads through the view (__sx_any_tag_word — narrow/signed
+        // backings included), values/names/payload views come from the
+        // same tables the static folds answer from. One body for every
+        // enum type; output matches enum_to_string / flags_to_string.
+        case enum: {
+            if is_flags(type) {
+                v := __sx_any_tag_word(type, val);
+                r := "";
+                fi := 0;
+                while fi < variant_count(type) {
+                    fv := variant_value(type, fi);
+                    if v & fv {
+                        if r.len > 0 { r = concat(r, " | "); }
+                        r = concat(r, concat(".", variant_name(type, fi)));
+                    }
+                    fi += 1;
+                }
+                if r.len == 0 { r = "0"; }
+                result = r;
+            } else {
+                idx := variant_index(type, val);
+                r := concat(".", variant_name(type, idx));
+                pstr := any_to_string(variant_payload(val, idx));
+                if pstr.len > 0 {
+                    r = concat(r, concat("(", concat(pstr, ")")));
+                }
+                result = r;
+            }
+        }
+        case error_set: { tagid : u32 = xx val; result = error_name(tagid); }
+        // Vectors walk by element VIEW like arrays; the lane count comes
+        // from the lanes table (a vector's ABI size is pow2-rounded, so
+        // size/elem_size would over-count e.g. 3 lanes as 4).
+        case vector: {
+            et := struct_field_type(type, 0);
+            n := vector_lanes(type);
+            r := "[";
+            vi := 0;
+            while vi < n {
+                if vi > 0 { r = concat(r, ", "); }
+                r = concat(r, any_to_string(any_element(val, et, vi)));
+                vi += 1;
+            }
+            result = concat(r, "]");
+        }
+        // Arrays walk by element VIEW (`any_element` stride math over the
+        // boxed storage) — one body for every array type, and the whole
+        // array is never loaded as a value, so the O(N) SelectionDAG
+        // scalarization that crippled `[65536]u8` (issue 0125) cannot
+        // recur. An array's ABI size is exact (no pow2 rounding), so the
+        // element count IS size/elem_size. Output matches the old
+        // `array_to_string` (`[a, b, c]`).
+        case array: {
+            et := struct_field_type(type, 0);
+            esz := size_of(et);
+            n := if esz > 0 { size_of(type) / esz } else { 0 };
+            r := "[";
+            ai := 0;
+            while ai < n {
+                if ai > 0 { r = concat(r, ", "); }
+                r = concat(r, any_to_string(any_element(val, et, ai)));
+                ai += 1;
+            }
+            result = concat(r, "]");
+        }
+        // A slice value is a {ptr, len} header — read it through the view
+        // as the string layout (same two words), then walk the elements as
+        // views assembled over the buffer (the element type row of a
+        // runtime slice tag answers — issue 0300).
+        case slice: {
+            et := struct_field_type(type, 0);
+            esz := size_of(et);
+            hdr : *string = xx raw_any_data(val);
+            base : i64 = xx hdr.ptr;
+            n := hdr.len;
+            r := "[";
+            si := 0;
+            while si < n {
+                if si > 0 { r = concat(r, ", "); }
+                ep : *void = xx (base + si * esz);
+                r = concat(r, any_to_string(raw_make_any(et, ep)));
+                si += 1;
+            }
+            result = concat(r, "]");
+        }
+        // A pointer is one word behind the view: 0 prints null, else the
+        // pointer TYPE's name @ the address (pointer_to_string's format).
+        case pointer: {
+            pw : [*]i64 = xx raw_any_data(val);
+            addr := pw[0];
+            if addr == 0 { result = "null"; }
+            else { result = concat(type_name(type), concat("@0x", int_to_hex_string(addr))); }
+        }
+        // Optionals classify their repr by size: pointer-like children
+        // collapse into one word (null = zero word); everything else is
+        // { T, flag byte at offset size_of(child) }. A present payload is
+        // a child-typed view over the same storage, recursed.
+        case optional: {
+            child := struct_field_type(type, 0);
+            csz := size_of(child);
+            present := false;
+            if size_of(type) == csz {
+                pw : [*]i64 = xx raw_any_data(val);
+                present = pw[0] != 0;
+            } else {
+                pb : [*]u8 = xx raw_any_data(val);
+                b : i64 = xx pb[csz];
+                present = b != 0;
+            }
+            if present { result = any_to_string(raw_make_any(child, raw_any_data(val))); }
+            else { result = "null"; }
+        }
+        case type: result = type_name(val);
+    }
+    result
+}
+
+build_format :: (fmt: string) -> string {
+    code := "result := \"\"; ";
+    seg_start := 0;
+    i := 0;
+    arg_idx := 0;
+    while i < fmt.len {
+        if fmt[i] == '{' {
+            if i + 1 < fmt.len {
+                if fmt[i + 1] == '}' {
+                    if i > seg_start {
+                        code = concat(code, "result = concat(result, substr(fmt, ");
+                        code = concat(code, int_to_string(seg_start));
+                        code = concat(code, ", ");
+                        code = concat(code, int_to_string(i - seg_start));
+                        code = concat(code, ")); ");
+                    }
+                    code = concat(code, "result = concat(result, any_to_string(args[");
+                    code = concat(code, int_to_string(arg_idx));
+                    code = concat(code, "])); ");
+                    arg_idx += 1;
+                    i += 2;
+                    seg_start = i;
+                } else if fmt[i + 1] == '{' {
+                    code = concat(code, "result = concat(result, substr(fmt, ");
+                    code = concat(code, int_to_string(seg_start));
+                    code = concat(code, ", ");
+                    code = concat(code, int_to_string(i - seg_start + 1));
+                    code = concat(code, ")); ");
+                    i += 2;
+                    seg_start = i;
+                } else {
+                    i += 1;
+                }
+            } else {
+                i += 1;
+            }
+        } else if fmt[i] == '}' {
+            if i + 1 < fmt.len {
+                if fmt[i + 1] == '}' {
+                    code = concat(code, "result = concat(result, substr(fmt, ");
+                    code = concat(code, int_to_string(seg_start));
+                    code = concat(code, ", ");
+                    code = concat(code, int_to_string(i - seg_start + 1));
+                    code = concat(code, ")); ");
+                    i += 2;
+                    seg_start = i;
+                } else {
+                    i += 1;
+                }
+            } else {
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    if seg_start < fmt.len {
+        code = concat(code, "result = concat(result, substr(fmt, ");
+        code = concat(code, int_to_string(seg_start));
+        code = concat(code, ", ");
+        code = concat(code, int_to_string(fmt.len - seg_start));
+        code = concat(code, ")); ");
+    }
+    code
+}
+
+format :: ($fmt: string, ..$args) -> string {
+    #insert build_format(fmt);
+    #insert "return result;";
+}
+
+print :: ($fmt: string, ..$args) {
+    #insert build_format(fmt);
+    #insert "out(result);";
+}
+
+// ── Postfix-assertion runtime (aggregate ladder Step 4) ─────────────────
+// `av.(T)` on a type-erased receiver is a CHECKED assertion. The compiler
+// rewrites the consumed forms (`try av.(T)`, `av.(T) or d`, `av.(T) catch`)
+// to `__sx_cast_assert` — graceful mismatch via the error channel — and the
+// unconsumed form (`v := av.(T);`) to `__sx_cast_or_panic` (Go/Odin panic
+// parity; the deliberate carve-out from the unconsumed-failable rule).
+
+CastError :: error { mismatch }
+
+__sx_cast_assert :: (av: any, $T: Type) -> (T, !CastError) {
+    if !type_eq(type_of(av), T) { raise error.mismatch; }
+    return xx av;
+}
+
+__sx_cast_or_panic :: (av: any, $T: Type, loc: Source_Location = #caller_location) -> T {
+    if !type_eq(type_of(av), T) {
+        print("type assertion failed at {}:{}: expected {}, got {}\n", loc.file, loc.line, T, type_of(av));
+        c.exit(1);
+    }
+    return xx av;
+}
+
+// The SOFT assertion form `av.(?T)`: mismatch is a value (`null`), never a
+// failure — the optional IS the check (comma-ok parity).
+__sx_cast_maybe :: (av: any, $T: Type) -> ?T {
+    if !type_eq(type_of(av), T) { return null; }
+    v : T = xx av;
+    return v;
+}
+
+// ── Optional-chained assertions `o?.(T)` on a `?any` receiver ──────────
+// Chain-null is always a VALUE (null result), never a failure; each
+// temperament's failure handling applies only to a PRESENT payload.
+// (Bodies are self-contained rather than delegating to the unchained
+// helpers: a nested generic `try` does not bind `$T` through the outer
+// instantiation.)
+
+// Consumed forms (`try o?.(T)`, `o?.(T) or d`, `… catch`): mismatch of a
+// present payload goes down the error channel; null passes through.
+__sx_chain_cast_assert :: (o: ?any, $T: Type) -> (?T, !CastError) {
+    if av := o {
+        if !type_eq(type_of(av), T) { raise error.mismatch; }
+        v : T = xx av;
+        r : ?T = v;
+        return r;
+    }
+    return null;
+}
+
+// Unconsumed form (`v := o?.(T);`): a present, mismatched payload panics.
+__sx_chain_cast_or_panic :: (o: ?any, $T: Type, loc: Source_Location = #caller_location) -> ?T {
+    if av := o {
+        if !type_eq(type_of(av), T) {
+            print("type assertion failed at {}:{}: expected {}, got {}\n", loc.file, loc.line, T, type_of(av));
+            c.exit(1);
+        }
+        v : T = xx av;
+        r : ?T = v;
+        return r;
+    }
+    return null;
+}
+
+// Soft form (`o?.(?T)`): chain-null and mismatch-null CONFLATE.
+__sx_chain_cast_maybe :: (o: ?any, $T: Type) -> ?T {
+    if av := o {
+        if !type_eq(type_of(av), T) { return null; }
+        v : T = xx av;
+        r : ?T = v;
+        return r;
+    }
+    return null;
+}
+
+// ── The runtime variant walk (enum/tagged-union values behind an `any`) ──
+// The tag word of the variant value `av` views: little-endian byte assembly
+// of the low `__sx_variant_tag_width(t)` bytes (a payload-less enum's whole
+// value; a tagged union's tag slot at offset 0 — never the wider header a
+// backing-type union may carry). A negative width means a signed backing /
+// tag type: sign-extend so small negative explicit values round-trip.
+__sx_any_tag_word :: (t: Type, av: any) -> i64 {
+    w := __sx_variant_tag_width(t);
+    signed := false;
+    if w < 0 { signed = true; w = -w; }
+    p : [*]u8 = xx raw_any_data(av);
+    v := 0;
+    i := 0;
+    while i < w {
+        b : i64 = xx p[i];
+        v = v | (b << (8 * i));
+        i += 1;
+    }
+    if signed {
+        if w < 8 {
+            shift := 64 - 8 * w;
+            v = (v << shift) >> shift;
+        }
+    }
+    v
+}
+
+// `variant_index(t, av)` with a RUNTIME t lowers to this scan: value → the
+// sequential ordinal, over the runtime variant-value table (explicit values
+// and explicit tags included). No match falls back to the tag itself — the
+// identity seed the static form uses (an auto-tagged value IS its ordinal).
+__sx_variant_index :: (t: Type, av: any) -> i64 {
+    v := __sx_any_tag_word(t, av);
+    n := variant_count(t);
+    i := 0;
+    while i < n {
+        if variant_value(t, i) == v { return i; }
+        i += 1;
+    }
+    v
+}

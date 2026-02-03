@@ -1,0 +1,28 @@
+// A reserved/builtin type name is rejected as the error-tag binding of a
+// `catch` (`u8`) and of an `onfail` (`i64`). Both are reached through the
+// exhaustive binding-name walk's `catch_expr` / `onfail_stmt` arms. The tag is
+// a scalar, so before the diagnostic these spellings were silently accepted
+// (they never reached the address-of mis-lowering) — the binding must still be
+// rejected at its declaration.
+//
+// Regression (issue 0076, attempt-4 coverage). Expected: one error for each
+// binding; exit 1.
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+must :: (n: i32) -> !E {
+    if n < 0 { raise error.Bad; }
+    return;
+}
+
+classify :: (n: i32) -> !E {
+    onfail (i64) { }                  // onfail tag binding
+    must(n) catch (u8) { return; };   // catch tag binding
+    return;
+}
+
+main :: () -> i32 {
+    classify(-1) catch { };
+    return 0;
+}

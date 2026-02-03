@@ -1,0 +1,25 @@
+// Phase 4.2 (core) — a generic struct with a pack type-param `..$Ts: []Type`
+// and a pack-shaped tuple field `(..$Ts)`. Each instantiation binds the
+// remaining type args as the pack, so the field is a tuple of those per-position
+// types. Storing the whole tuple field and reading its elements both work.
+
+#import "modules/std.sx";
+
+Box :: struct($R: Type, ..$Ts: []Type) {
+    r:    $R;
+    pair: Tuple(..$Ts);   // tuple of the pack's element types
+}
+
+main :: () -> i32 {
+    // Box(i64, i32, string): R=i64, Ts=[i32, string], pair: (i32, string).
+    a : Box(i64, i32, string) = ---;
+    a.r = 7;
+    a.pair = .{42, "hi"};                 // whole-tuple field store
+    print("a: r={} 0={} 1={}\n", a.r, a.pair.0, a.pair.1);
+
+    // A different shape → a different per-position tuple field.
+    b : Box(bool, string, bool) = ---;   // Ts=[string, bool], pair: (string, bool)
+    b.pair = .{"x", true};
+    print("b: 0={} 1={}\n", b.pair.0, b.pair.1);
+    0
+}

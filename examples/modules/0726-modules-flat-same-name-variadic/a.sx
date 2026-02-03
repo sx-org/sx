@@ -1,0 +1,11 @@
+// a.sx is the first-wins winner for both names. `combine` is FIXED arity;
+// `pick` is VARIADIC. `from_a_*` call them bare — a authors the winner, so
+// they resolve through the existing path and pack against a's own shapes.
+combine :: (x: i64, y: i64) -> i64 { return x + y; }
+pick :: (..xs: []i64) -> i64 {
+    result := 0;
+    for xs (it) { result = result + it; }
+    result
+}
+from_a_combine :: () -> i64 { return combine(10, 20); }
+from_a_pick :: () -> i64 { return pick(1, 2, 3); }

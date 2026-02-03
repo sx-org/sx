@@ -1,0 +1,121 @@
+// iOS-only: bring up UIKitPlatform in Metal mode, clear the screen dark
+// blue each frame, then draw a colored triangle via the GPU protocol —
+// exercises create_shader (MSL compile + pipeline state), create_buffer
+// + update_buffer, set_shader, set_vertex_buffer, and draw_triangles.
+// Step 3b will port the UI renderer to use this same surface.
+//
+// Build for iOS sim:
+//   /Users/agra/projects/sx/zig-out/bin/sx build --target ios-sim \
+//     examples/63-metal-clear.sx \
+//     -o /tmp/MetalClear --bundle /tmp/MetalClear.app \
+//     --bundle-id co.swipelab.metalclear -F ~/Library/Frameworks
+//   codesign --force --sign - --timestamp=none /tmp/MetalClear.app
+//   xcrun simctl install booted /tmp/MetalClear.app
+//   xcrun simctl launch --terminate-running-process booted co.swipelab.metalclear
+//
+// This file is iOS-only and not part of the JIT regression suite (no
+// tests/expected/63-metal-clear.txt). The test runner skips it on macOS.
+
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+#import "modules/build.sx";
+#import "modules/platform/api.sx";
+#import "modules/platform/uikit.sx";
+#import "modules/gpu/types.sx";
+#import "modules/gpu/api.sx";
+#import "modules/gpu/metal.sx";
+
+#framework "UIKit";
+#framework "QuartzCore";
+#framework "OpenGLES";
+
+// Pass-through vertex + fragment shader for a colored triangle. Vertex
+// layout is { packed_float2 pos; packed_float4 color; } = 24 bytes —
+// `packed_*` types have 4-byte alignment so the struct doesn't get
+// padded between fields (a plain `float4` would force 16-byte alignment
+// and pad the struct out to 32 bytes per vertex). Entry-point names
+// (vmain / fmain) match what MetalGPU.create_shader looks up.
+TRI_MSL :: #string MSL
+#include <metal_stdlib>
+using namespace metal;
+
+struct Vertex {
+    packed_float2 pos;
+    packed_float4 color;
+};
+
+struct RasterizerData {
+    float4 position [[position]];
+    float4 color;
+};
+
+vertex RasterizerData vmain(uint vid [[vertex_id]],
+                            constant Vertex* vertices [[buffer(0)]]) {
+    RasterizerData out;
+    out.position = float4(vertices[vid].pos, 0.0, 1.0);
+    out.color = float4(vertices[vid].color);
+    return out;
+}
+
+fragment float4 fmain(RasterizerData in [[stage_in]]) {
+    return in.color;
+}
+MSL;
+
+TRI_VERTS : [18]f32 = .[
+    -0.6, -0.4,   1.0, 0.0, 0.0, 1.0,
+     0.6, -0.4,   0.0, 1.0, 0.0, 1.0,
+     0.0,  0.6,   0.0, 0.0, 1.0, 1.0,
+];
+
+g_plat   : *UIKitPlatform = null;
+g_gpu    : *MetalGPU      = null;
+g_shader : ShaderHandle   = 0;
+g_vbuf   : BufferHandle   = 0;
+
+frame :: () {
+    if g_plat == null { return; }
+    if g_gpu  == null { return; }
+
+    // Lazy-init the GPU on the first frame where the layer is available
+    // (the layer is created during -[SxAppDelegate didFinishLaunching:]
+    // which fires AFTER our main() returns into UIApplicationMain).
+    if g_gpu.layer == null {
+        if g_plat.gl_layer == null { return; }
+        if !g_gpu.init(g_plat.gl_layer, g_plat.pixel_w, g_plat.pixel_h) { return; }
+    }
+
+    // Compile shader + upload vertex buffer once.
+    if g_shader == 0 {
+        g_shader = g_gpu.create_shader(TRI_MSL, "");
+        if g_shader == 0 { return; }
+    }
+    if g_vbuf == 0 {
+        g_vbuf = g_gpu.create_buffer(72);  // 3 verts × 24 bytes
+        if g_vbuf == 0 { return; }
+        g_gpu.update_buffer(g_vbuf, xx @TRI_VERTS, 72);
+    }
+
+    bg : ClearColor = .{ r = 0.07, g = 0.10, b = 0.18, a = 1.0 };
+    if !g_gpu.begin_frame(bg) { return; }
+    g_gpu.set_shader(g_shader);
+    g_gpu.set_vertex_buffer(g_vbuf);
+    g_gpu.draw_triangles(0, 3);
+    g_gpu.end_frame(0.0);
+}
+
+main :: () -> i32 {
+    inline if OS != .ios { return 0; }
+
+    plat : *UIKitPlatform = xx context.allocator.alloc_bytes(size_of(UIKitPlatform));
+    plat.gpu_mode = .metal;
+    if !plat.init("Metal Clear", 0, 0) { return 1; }
+    g_plat = plat;
+
+    gpu : *MetalGPU = xx context.allocator.alloc_bytes(size_of(MetalGPU));
+    g_gpu = gpu;
+
+    plat.run_frame_loop(closure(frame));
+    plat.shutdown();
+    0
+}

@@ -1,0 +1,70 @@
+// Stream B1 (fibers) B1.5 — the M:1 colorblind async stack, end-to-end.
+//
+// One program exercises the whole pure-sx runtime together: the M:1 scheduler
+// (B1.5a), the suspending fiber-task async layer `go`/`wait` (B1.4a), and the
+// deterministic virtual-time timers `sleep`/`now_ms` (B1.4b) — all over the
+// `abi(.naked)` `swap_context` on guarded `mmap` stacks (B1.0–B1.3).
+//
+// A coordinator fiber launches three async tasks; each `sleep`s a different
+// duration, records its completion (id @ virtual-ms) into a shared log, then
+// returns a value. The coordinator `wait`s on all three (in SPAWN order) and
+// sums their results. Because tasks complete in DEADLINE order — not spawn
+// order, not await order — the completion log is the deterministic contract:
+//
+//   task A: sleep 30 → returns 100
+//   task B: sleep 10 → returns 20
+//   task C: sleep 20 → returns 3
+//   completion order (by deadline): B@10, C@20, A@30
+//   coordinator awaits A,B,C → sum = 123, final virtual clock = 30
+//
+// `wait(A)` parks the coordinator until A finishes at t=30; B and C finish
+// earlier (at 10 and 20) and are already `.ready` by the time their `wait`s run,
+// so they return without re-parking — the values are correct regardless of await
+// order, while the timer-driven schedule fixes the completion ORDER. Fully
+// deterministic + reproducible (virtual time, no real clock).
+//
+// aarch64-macOS-pinned (the scheduler's per-arch asm + Apple mmap constants):
+// runs end-to-end on a matching host, ir-only on a mismatch.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+Log :: struct { id: [8]i64; at: [8]i64; n: i64; }
+rec :: (l: *Log, id: i64, at: i64) { l.id[l.n] = id; l.at[l.n] = at; l.n = l.n + 1; }
+
+main :: () -> i64 {
+    lg : Log = ---; lg.n = 0;
+    s := sched.Scheduler.init();
+    ps := @s; pl := @lg;
+
+    // The coordinator runs as a fiber so `await` has a `current` to park. The
+    // scheduler is installed as `context.io`, so the unified async layer
+    // (`context.io.async`/`await`/`sleep`/`now_ms`) reaches it inside the workers.
+    push .{ io = xx s } {
+        ps.spawn(() {
+            // Launch three async workers; each sleeps, logs its completion, returns.
+            a := context.io.async(() -> (i64, !) { try context.io.sleep(30); rec(pl, 1, context.io.now_ms()); 100 });
+            b := context.io.async(() -> (i64, !) { try context.io.sleep(10); rec(pl, 2, context.io.now_ms()); 20 });
+            c := context.io.async(() -> (i64, !) { try context.io.sleep(20); rec(pl, 3, context.io.now_ms()); 3 });
+
+            // Await in SPAWN order; results come back correct regardless.
+            va := a.await() or { -1 };
+            vb := b.await() or { -1 };
+            vc := c.await() or { -1 };
+            sum := va + vb + vc;
+
+            rec(pl, 9, sum);   // sentinel row: id=9 carries the sum in `at`
+        });
+        ps.run();
+    }
+
+    print("completion order (id @ virtual-ms):\n");
+    i := 0;
+    while i < lg.n {
+        if lg.id[i] == 9 { print("sum: {}\n", lg.at[i]); }
+        else { print("  task {} @ {}ms\n", lg.id[i], lg.at[i]); }
+        i = i + 1;
+    }
+    print("final virtual clock: {}ms\n", s.now_ms());
+    print("tasks: {}\n", s.n_spawned);
+    return 0;
+}

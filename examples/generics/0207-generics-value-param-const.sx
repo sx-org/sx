@@ -1,0 +1,29 @@
+// A generic value parameter (`$K: u32`) bound from a named const or a
+// constant-foldable expression resolves to the SAME monomorphised instantiation
+// as the literal form: `Vec(N, f32)` (N a module const) and `Vec(M + 1, f32)`
+// (a const expression) are both `Vec(3, f32)`. The struct-copy assignment is the
+// proof — it type-checks only because the two spellings name one instantiation.
+//
+// Regression (issue 0083): the value-param binder hand-rolled an `else => 0`
+// switch, so a named-const value arg either fabricated a 0 binding under a wrong
+// mangled name or was rejected outright as "unknown type 'N'". It now folds
+// through the shared const-int evaluator (`program_index.evalConstIntExpr`).
+#import "modules/std.sx";
+
+N :: 3;
+M :: 2;
+
+Vec :: struct ($K: u32, $T: Type) { data: [K]T; }
+
+main :: () {
+    a : Vec(N, f32) = ---;            // named-const value param
+    a.data[0] = 10.0; a.data[1] = 20.0; a.data[2] = 30.0;
+    print("named: len={} a0={} a2={}\n", a.data.len, a.data[0], a.data[2]);
+
+    e : Vec(M + 1, f32) = ---;        // const-expr value param (M + 1 == 3)
+    e.data[0] = 1.0; e.data[2] = 9.0;
+    print("expr: len={} e2={}\n", e.data.len, e.data[2]);
+
+    b : Vec(3, f32) = a;              // same instantiation → struct copy type-checks
+    print("copy: len={} b2={}\n", b.data.len, b.data[2]);
+}

@@ -1,0 +1,6 @@
+// Module B authors a DIFFERENT same-name `K :: 7` and same-name struct `Box`.
+// `size_of(Box)` folds the field dimension against B's `K` (= 7), so the layout
+// differs from A's — never collapsed to a global last-wins `K`.
+K :: 7;
+Box :: struct { arr: [K]u8; }
+b_sz :: () -> i64 { return size_of(Box); }

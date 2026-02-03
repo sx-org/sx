@@ -1,0 +1,11 @@
+#import "modules/std.sx";
+#import "layer.sx";
+
+Document :: struct {
+    layers: List(Layer);
+    active: i64;
+}
+
+layer_at :: (d: *Document, i: i64) -> *Layer {
+    @d.layers.items[i]
+}

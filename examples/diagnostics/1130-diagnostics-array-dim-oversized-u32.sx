@@ -1,0 +1,15 @@
+// An array dimension that folds to a valid compile-time integer but exceeds a
+// `u32` (`[5_000_000_000]i64`) is a hard error — a clean sx diagnostic with a
+// non-zero exit, NOT a compiler panic.
+//
+// Regression (issue 0087 / F0.4 attempt 6): the dimension folded to a valid i64
+// (5e9) and was then narrowed with an unchecked `@intCast` to u32, aborting the
+// COMPILER with "integer does not fit in destination type". Every dim/lane fold
+// now narrows through the single range-checked `program_index.foldDimU32`, which
+// reports an out-of-u32-range dimension as this diagnostic and halts the build.
+#import "modules/std.sx";
+
+main :: () {
+    a : [5000000000]i64 = ---;
+    print("unreachable: {}\n", a.len);
+}

@@ -1,0 +1,3 @@
+// One of two flat authors of `dup`. A consumer that flat-imports BOTH and calls
+// `dup` bare cannot pick between them.
+dup :: () -> i64 { return 1; }

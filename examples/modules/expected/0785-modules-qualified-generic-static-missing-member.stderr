@@ -1,0 +1,5 @@
+error: namespace 'a' has no member 'Box'
+  --> examples/modules/0785-modules-qualified-generic-static-missing-member.sx:16:10
+   |
+16 |     x := a.Box(i64).make(7);
+   |          ^^^^^

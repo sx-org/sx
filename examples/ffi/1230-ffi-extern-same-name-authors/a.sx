@@ -1,0 +1,6 @@
+// One of two flat authors of `absval`, an `extern` libc binding — the
+// `extern` twin of example 0729's `extern libc "abs"`. A consumer
+// flat-importing BOTH must NOT see this as an ambiguous bare-call
+// collision: extern authors (external C symbols) are excluded from the
+// bare-call ambiguity verdict, exactly like their `extern` twins.
+absval :: (n: i32) -> i32 extern libc "abs";

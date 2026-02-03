@@ -1,0 +1,5 @@
+error: unknown type 'Coordnate'
+  --> examples/diagnostics/1113-diagnostics-unknown-type-local-var-rejected.sx:8:8
+   |
+ 8 |     v: Coordnate = 5;
+   |        ^^^^^^^^^

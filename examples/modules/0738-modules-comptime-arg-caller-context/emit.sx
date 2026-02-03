@@ -1,0 +1,9 @@
+// Library metaprogram: builds a `print(...)` statement at compile time from the
+// comptime `$who` value. `concat`/`print` are flat-imported here and resolve in
+// THIS module's context (the 0106 defining-module pin). The substituted caller
+// `$`-arg, by contrast, resolves in the CALLER's context.
+#import "modules/std.sx";
+
+emit :: ($who: string) {
+    #insert concat(concat("print(\"hello ", who), "\\n\");");
+}

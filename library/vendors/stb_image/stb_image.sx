@@ -1,0 +1,19 @@
+// =====================================================================
+// vendors/stb_image — Sean Barrett's stb_image (decode) and
+// stb_image_write (encode) as one `#import c` unit (c/, see README.md
+// for versions + provenance).
+//
+// `#import "vendors/stb_image/stb_image.sx"` gives any sx program
+// image decode/encode with no system dependency and no build flags:
+// the decls are synthesized from the headers, and the implementation
+// compiles through sx's content-addressed object cache — once per
+// machine, not once per run.
+// =====================================================================
+
+#import c {
+    #include "c/stb_image.h";
+    #source  "c/stb_image_impl.c";
+
+    #include "c/stb_image_write.h";
+    #source  "c/stb_image_write_impl.c";
+};

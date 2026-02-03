@@ -1,0 +1,30 @@
+// Comptime type construction: mint a NEW nominal enum from a `TypeInfo` value
+// via the `define(declare("E"), info)` primitives, then construct one of its
+// variants and match on it — exercising that a programmatically-built enum
+// (with NO backing AST decl) flows through enum codegen unmodified (layout /
+// construct / match), byte-identical to a hand-written enum.
+//
+// The enum has two variants: `value` carrying an i64 payload, and `closed` with
+// no payload (`payload = void`).
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+E :: define(declare("E"), .enum(.{ variants = .[
+    EnumVariant.{ name = "value",  payload = i64  },
+    EnumVariant.{ name = "closed", payload = void },
+] }));
+
+main :: () -> i32 {
+    e := E.value(3);
+    if e == {
+        case .value: (v) { print("value {}\n", v); }
+        case .closed: { print("closed\n"); }
+    }
+
+    c : E = .closed;
+    if c == {
+        case .value: (v) { print("value {}\n", v); }
+        case .closed: { print("closed\n"); }
+    }
+    return 0;
+}

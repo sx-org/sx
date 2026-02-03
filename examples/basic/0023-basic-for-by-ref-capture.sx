@@ -1,0 +1,25 @@
+// `for xs (*x)` binds each element by pointer — no per-element copy.
+// Mutations write back, and a pointer subject matches through the deref.
+#import "modules/std.sx";
+
+Shape :: enum {
+    circle: f32;
+    none;
+}
+
+main :: () -> i32 {
+    // By-ref mutation writes back into the array (impossible with a value copy).
+    xs : [3]i64 = .[1, 2, 3];
+    for xs (*x) { x.* = x + 100; }
+    print("{} {} {}\n", xs[0], xs[1], xs[2]);
+
+    // Pointer subject matches through the deref; payload reads through the ref.
+    shapes : [2]Shape = .[.circle(2.0), .none];
+    for shapes (*s) {
+        if s == {
+            case .circle: (r) { print("circle {}\n", r); }
+            case .none:        { print("none\n"); }
+        }
+    }
+    0
+}

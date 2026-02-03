@@ -1,0 +1,10 @@
+// Namespaced helper module. It authors a top-level type alias `B` whose
+// spelling collides with the importer's own `B`. Because the import is
+// NAMESPACED (`ns :: #import`), `dep.B` is NOT flat-visible to the importer —
+// but its alias write still lands in the global `type_alias_map` (last-wins),
+// which is exactly what the source-aware forward-alias fixpoint must ignore.
+B :: u8;
+
+width :: () -> i32 {
+    return 8;
+}

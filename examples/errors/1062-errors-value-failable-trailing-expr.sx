@@ -1,0 +1,43 @@
+// Value-carrying failable functions (`-> (T, !E)`) whose body ends in a trailing
+// success EXPRESSION (no explicit `return`) must set the success error slot to
+// 0 — the caller's `catch` must NOT fire and the success value must be intact.
+// Regression (issue 0190): `lowerValueBody` used to `coerceToType`+`ret` the
+// bare success value to the full failable tuple, leaving the error-tag slot
+// uninitialized → phantom catch on success (and dropped value for string /
+// multi-value returns).
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+// Single-value trailing-expression success.
+val :: () -> (i64, !E) { 99 }
+
+// String trailing-expression success.
+sval :: () -> (string, !E) { "hi" }
+
+// Multi-value (tuple) trailing-expression success.
+mval :: () -> (i64, i64, !E) { .{1, 2} }
+
+// A real error still propagates through the value-failable channel.
+fval :: (n: i64) -> (i64, !E) {
+    if n < 0 { raise error.Bad; }
+    n + 1
+}
+
+main :: () -> i32 {
+    x := val() catch (e) { print("PHANTOM val\n"); return 1; };
+    print("x={}\n", x);
+
+    s := sval() catch (e) { print("PHANTOM sval\n"); return 1; };
+    print("s={}\n", s);
+
+    t := mval() catch (e) { print("PHANTOM mval\n"); return 1; };
+    print("t=({},{})\n", t.0, t.1);
+
+    ok := fval(10) catch (e) { print("PHANTOM fval-ok\n"); return 1; };
+    print("ok={}\n", ok);
+
+    fval(-1) catch (e) { print("real error caught\n"); return 0; };
+    print("UNEXPECTED no error\n");
+    return 1;
+}

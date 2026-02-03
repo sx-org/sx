@@ -1,0 +1,31 @@
+=== 7. Builtins ===
+out-ok
+sqrt: 3.000000
+sqrt-f64: 4.000000
+sizeof-i32: 4
+sizeof-f64: 8
+sizeof-struct: 8
+alignof-u8: 1
+alignof-i32: 4
+alignof-i64: 8
+alignof-struct: 4
+typeof: int
+typeof-float: float
+typeof-string: string
+typeof-bool: bool
+typeof-struct: struct
+typeof-enum: enum
+typename: Point
+fieldcount: 2
+fieldcount-enum: 3
+fieldname0: x
+fieldname1: y
+fieldname-enum0: red
+fieldname-enum2: blue
+fieldval0: 11
+fieldval1: 22
+fieldidx: 1
+fieldidx-tagged: 0
+fieldidx-tagged2: 2
+cast: 3
+cast-int-f64: 42.000000

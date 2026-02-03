@@ -1,0 +1,120 @@
+// Stream B1 (fibers) — `Scheduler.deinit` releases the scheduler's owned heap
+// + fd resources, closing the documented bounded leaks (kq fd / List backings).
+// Verified by a tracking `GPA`: deinit drives the live allocation count DOWN,
+// and resets the kqueue fd to -1.
+//
+// Scenario (one run that touches every freed resource):
+//   - a SLEEPER fiber `sleep(5)`s              → exercises the `timers` List
+//   - a READER fiber `block_on_fd`s a pipe     → exercises the kqueue fd + the
+//                                                `io_waiters` List
+//   - a WRITER fiber writes 3 bytes            → makes the pipe readable
+// After `run()` drains all of it, `deinit()` frees: the `timers` / `io_waiters`
+// List backings, and CLOSES the kqueue fd (resetting `kq` to -1). The Fibers
+// were already reaped during `run()`. (The unified `context.io.async` layer's
+// Futures are NOT scheduler-tracked — they leak with the closure-env residual
+// below; the bespoke `go`/`Task`/`task_allocs` path was retired in Phase 5.)
+//
+// WHAT IT PROVES (the contract; numbers below are the snapshot):
+//   - `freed by deinit: N` — live allocations reclaimed by `deinit` (> 0).
+//   - `live after deinit: 0` — NO residual. Each spawned fiber's body-closure heap
+//     env is reclaimed at reap (`reap_fiber` frees `body.env` via the spawn-time
+//     allocator snapshotted in `dctx`), and `deinit` frees the List backings + kq
+//     fd — so the live count returns to zero.
+//   - `kq open after run: 1` then `kq after deinit: -1` — the lazily-opened
+//     kqueue fd was genuinely open after the fd round and is closed by deinit.
+//   - `read: 3 [97 98 99]` — the fd path actually ran (reader blocked, woke via
+//     kqueue, read 'a' 'b' 'c'), so the kq we close is a real, used fd.
+//
+// Counts are captured into locals BEFORE any `print` — `print` itself allocates
+// format temporaries through the same GPA, which would otherwise pollute the
+// reading.
+//
+// aarch64-macOS-pinned (`.build {"target":"macos"}`, matches host → runs
+// end-to-end): sched.sx's switch asm + the kqueue path are per-arch/Apple.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+// Raw libc fd primitives — canonical signatures (the extern dedupe rejects a
+// divergent re-binding of the same C symbol). `close` matches sched.sx's own.
+pipe   :: (fds: *i32) -> i32 extern libc "pipe";
+read   :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc "read";
+write  :: (fd: i32, buf: [*]u8, count: usize) -> isize extern libc "write";
+close  :: (fd: i32) -> i32 extern libc "close";
+
+S :: struct {
+    read_n: i64;
+    bytes: [8]u8;
+    read_done: bool;
+}
+
+main :: () -> i64 {
+    st : S = .{ read_n = 0, read_done = false };   // bytes[] zero-filled; read() fills it
+
+    fds : [2]i32 = ---;
+    if pipe(@fds[0]) != 0 {
+        print("1820: pipe() failed\n");
+        return 1;
+    }
+    read_fd := fds[0];
+    write_fd := fds[1];
+
+    // Captured under the GPA scope; printed after it closes.
+    after_run     : i64 = 0;
+    after_deinit  : i64 = 0;
+    kq_open_run   : bool = false;
+    kq_after      : i32 = 0;
+
+    gpa := mem.GPA.init();
+    push .{ allocator = gpa } {
+        s := sched.Scheduler.init();
+        ps := @s; pst := @st;
+
+        // SLEEPER — arms a virtual-time timer, then parks.
+        ps.spawn(() { ps.sleep(5); });
+
+        // READER — blocks on the empty pipe until kqueue reports it readable.
+        mk_reader :: (ps: *sched.Scheduler, pst: *S, rfd: i32) {
+            ps.spawn(() {
+                ps.block_on_fd(rfd, true);
+                n := read(rfd, xx @pst.bytes[0], xx 3);
+                pst.read_n = xx n;
+                pst.read_done = true;
+            });
+        }
+        // WRITER — writes 'a' 'b' 'c', making the pipe readable.
+        mk_writer :: (ps: *sched.Scheduler, wfd: i32) {
+            ps.spawn(() {
+                buf : [3]u8 = ---;
+                buf[0] = xx 97; buf[1] = xx 98; buf[2] = xx 99;
+                write(wfd, xx @buf[0], xx 3);
+            });
+        }
+        mk_reader(ps, pst, read_fd);
+        mk_writer(ps, write_fd);
+
+        ps.run();
+
+        after_run   = gpa.alloc_count;
+        kq_open_run = s.kq >= 0;
+        ps.deinit();
+        after_deinit = gpa.alloc_count;
+        kq_after     = s.kq;
+    }
+
+    print("read: {} [", st.read_n);
+    i := 0;
+    while i < st.read_n {
+        if i > 0 { print(" "); }
+        print("{}", st.bytes[i]);
+        i = i + 1;
+    }
+    print("]\n");
+    print("freed by deinit: {}\n", after_run - after_deinit);
+    print("live after deinit: {}\n", after_deinit);
+    print("kq open after run: {}\n", kq_open_run);
+    print("kq after deinit: {}\n", kq_after);
+
+    close(read_fd);
+    close(write_fd);
+    return 0;
+}

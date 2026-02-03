@@ -1,0 +1,22 @@
+// A match arm with a variant name that doesn't exist on the subject's
+// enum/tagged-union produces `error: no variant 'X' on type 'Y'` instead of
+// falling back to the arm index (which used to cause duplicate switch cases
+// and LLVM verification failures).
+
+#import "modules/std.sx";
+
+Shape :: enum {
+    circle: f32;
+    rect: struct { w, h: f32; };
+    none;
+}
+
+main :: () {
+    s :Shape = .circle(3.14);
+    if s == {
+        case .circle: (r) { print("r={}\n", r); }
+        case .Bogus: (x) { print("bogus={}\n", x); }
+        case .none: print("none\n");
+        case .rect: print("rect\n");
+    }
+}

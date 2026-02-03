@@ -1,0 +1,5 @@
+error: a type-category match arm names a type or a category — value patterns don't apply to a 'Type' subject
+  --> examples/diagnostics/1258-diagnostics-type-match-value-pattern.sx:10:14
+   |
+10 |         case 5:   print("five\n");
+   |              ^

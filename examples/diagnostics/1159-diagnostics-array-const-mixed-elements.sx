@@ -1,0 +1,12 @@
+// An untyped array-literal constant infers its element type from the
+// elements (ints -> i64; a numeric int/float mix promotes to f64). A
+// NON-NUMERIC mix has no unified element type — diagnosed, with the
+// annotation as the fix.
+
+#import "modules/std.sx";
+
+BAD :: .["alpha", 1];
+
+main :: () {
+    print("{}\n", BAD[0]);
+}

@@ -1,0 +1,17 @@
+// =====================================================================
+// vendors/stb_truetype — Sean Barrett's stb_truetype (TTF/TTC
+// parsing, glyph metrics, bitmap rasterization) as a `#import c` unit
+// (c/, see README.md for version + provenance).
+//
+// `#import "vendors/stb_truetype/stb_truetype.sx"` gives any sx
+// program font loading with no system dependency: the decls are
+// synthesized from the header, and the implementation compiles
+// through sx's content-addressed object cache. `stbtt_fontinfo` is
+// opaque on the sx side — allocate a 256-byte blob and pass its
+// pointer (see modules/ui/glyph_cache.sx for the established idiom).
+// =====================================================================
+
+#import c {
+    #include "c/stb_truetype.h";
+    #source  "c/stb_truetype_impl.c";
+};

@@ -1,0 +1,57 @@
+// A store to a module-global array element writes the global's live storage,
+// so a subsequent read sees the stored value — not the array initializer.
+// Covers constant index, variable index, and a cross-function store, on a
+// scalar global array, a struct-element global array (element-stride), and a
+// nested-array global (recursive lvalue).
+// Regression (issue 0079): global-array element stores were silently dropped
+// (read returned the initializer) because the indexed lvalue base loaded the
+// global by value into a temp instead of addressing the global's storage.
+
+#import "modules/std.sx";
+
+g : [3]i64 = .[10, 20, 30];
+
+Pair :: struct { a: i64; b: i64; }
+gp : [2]Pair = .[ .{ a = 1, b = 2 }, .{ a = 3, b = 4 } ];
+
+grid : [2][3]i64 = .[ .[0, 0, 0], .[0, 0, 0] ];
+
+write_global :: (i: i64, v: i64) { g[i] = v; }
+
+main :: () {
+    // Scalar global array — const index.
+    g[1] = 222;
+    print("g[1]={}\n", g[1]);            // 222
+
+    // Scalar global array — variable index.
+    k := 2;
+    g[k] = 333;
+    print("g[k]={}\n", g[k]);            // 333
+
+    // Scalar global array — store from another function.
+    write_global(0, 111);
+    print("g[0]={}\n", g[0]);            // 111
+
+    // Struct-element global array (16-byte stride) — const and var index.
+    gp[0] = .{ a = 10, b = 20 };
+    j := 1;
+    gp[j] = .{ a = 30, b = 40 };
+    print("gp[0]={},{}\n", gp[0].a, gp[0].b);   // 10,20
+    print("gp[j]={},{}\n", gp[j].a, gp[j].b);   // 30,40
+
+    // Nested-array global — element is [3]i64, recursive indexed lvalue.
+    grid[1][2] = 7;
+    r := 0;
+    grid[r][0] = 5;
+    print("grid[1][2]={}\n", grid[1][2]);       // 7
+    print("grid[0][0]={}\n", grid[r][0]);       // 5
+
+    if g[1] == 222 and g[2] == 333 and g[0] == 111
+        and gp[0].a == 10 and gp[0].b == 20
+        and gp[1].a == 30 and gp[1].b == 40
+        and grid[1][2] == 7 and grid[0][0] == 5 {
+        print("PASS\n");
+    } else {
+        print("FAIL: global array element store dropped\n");
+    }
+}

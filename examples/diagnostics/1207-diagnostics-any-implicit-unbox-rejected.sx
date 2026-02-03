@@ -1,0 +1,22 @@
+// An `any` does not IMPLICITLY unbox to a concrete type. A blind unbox
+// reinterprets the boxed payload word as the target with NO runtime tag check,
+// so a wrong target silently yields garbage (a scalar) or dereferences the
+// payload as a pointer and segfaults (an aggregate). sx rejects the implicit
+// unbox at compile time — like the no-implicit-optional-unwrap rule — and
+// directs the user to `match` on the value's type or an explicit `xx`.
+//
+// Regression (issue 0198): `s : S = some_any` segfaulted and `f : f64 = some_any`
+// silently produced 0.0; both are now compile errors. The fix is in `coerceMode`
+// (`.unbox_any` arm, mode == .implicit). The `xx` escape hatch and the
+// compiler-generated type-dispatch / pack-extraction unboxes are unaffected.
+
+#import "modules/std.sx";
+
+S :: struct { a: i64; }
+
+main :: () -> i64 {
+    x : any = 5;
+    n : i64 = x;            // error: 'any' does not implicitly unbox to 'i64'
+    s : S = x;              // error: 'any' does not implicitly unbox to 'S'
+    return 0;
+}

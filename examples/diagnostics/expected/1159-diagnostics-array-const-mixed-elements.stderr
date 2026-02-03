@@ -1,0 +1,11 @@
+error: constant 'BAD' mixes incompatible element types — annotate the array type
+  --> examples/diagnostics/1159-diagnostics-array-const-mixed-elements.sx:8:19
+   |
+ 8 | BAD :: .["alpha", 1];
+   |                   ^
+
+error: unresolved 'BAD' (in examples/diagnostics/1159-diagnostics-array-const-mixed-elements.sx fn main)
+  --> examples/diagnostics/1159-diagnostics-array-const-mixed-elements.sx:11:19
+   |
+11 |     print("{}\n", BAD[0]);
+   |                   ^^^

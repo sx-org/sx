@@ -1,0 +1,43 @@
+// Assigning to `list.items` writes exactly the items-pointer field even when
+// the element type `T` is larger than the pointer (40-byte BigNode here), so
+// a sibling field of the enclosing struct is not corrupted.
+
+#import "modules/std.sx";
+
+// 40-byte struct — triggers the bug.
+// Shrink to [4]i64 (32 bytes) and the bug goes away.
+BigNode :: struct {
+    data: [5]i64;   // 40 bytes
+}
+
+Tree :: struct {
+    nodes: List(BigNode);   // items(8) + len(8) + cap(8) = 24 bytes
+    generation: i64;        // 8 bytes — total 32 bytes
+}
+
+Container :: struct {
+    tree: Tree;
+    sentinel: i64;
+
+    do_work :: (self: *Container) {
+        self.tree.nodes.items = xx 0;   // BUG: corrupts self.sentinel
+    }
+}
+
+main :: () -> void {
+    obj : *Container = xx context.allocator.alloc_bytes(size_of(Container));
+    c.memset(obj, 0, size_of(Container));
+    obj.sentinel = 0xDEADBEEF;
+
+    print("size_of BigNode = {}\n", size_of(BigNode));
+    print("before: sentinel = {}\n", obj.sentinel);
+
+    obj.do_work();
+
+    print("after:  sentinel = {}\n", obj.sentinel);
+    if obj.sentinel != 0xDEADBEEF {
+        print("BUG: sentinel was corrupted!\n");
+    } else {
+        out("OK\n");
+    }
+}

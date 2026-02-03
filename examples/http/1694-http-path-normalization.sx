@@ -1,0 +1,205 @@
+// std.http — path percent-decode + dot-segment normalization (Q1.8;
+// RFC 3986 §2.1, §5.2.4).
+//
+// The server decodes the ROUTABLE PATH (never the query — the router's
+// permissive query/form decode is unchanged) and removes dot segments
+// before the handler/router sees it, so "/a/./b/../c" and "/a%20b" route
+// on their canonical spellings. Policy (each → 400, loudly, documented):
+//   • %00 or any decoded control byte (CR/LF splitting, NUL);
+//   • %2F — a decoded '/' changes segmentation (the classic
+//     encoded-slash bypass; Apache's AllowEncodedSlashes=off);
+//   • %3F — a literal '?' in the path is unrepresentable in the
+//     combined path+query request model;
+//   • a malformed escape ("%zz", truncated "%a");
+//   • ".." climbing above the root.
+// Decode happens BEFORE dot-removal, so "%2e%2e" cannot smuggle a "..".
+//
+// The handler echoes "p:<req.path>" so every rewrite is byte-observable.
+//
+// Asserts: %20 decodes; "./" + "../" collapse with the query preserved
+// UNdecoded; %2e%2e traversal → 400; above-root → 400; %00 → 400;
+// %2F → 400; malformed escape → 400; %0D%0A → 400; clean fast path
+// unchanged; "/a/.." → "/"; trailing "/a/." → "/a/"; pooled request
+// with a SHRINKING path (decode + pop) rebuilt byte-exact; GPA net-zero.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT_A :: 19008;
+PORT_B :: 19009;
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    resp.body = concat("p:", req.path);
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -> string {
+    fd := dial_port(port);
+    if fd < 0 { return ""; }
+    socket.write(fd, req.ptr, xx req.len);
+    total : i64 = 0;
+    stall : i64 = 0;
+    done := false;
+    while !done and stall < 400 {
+        srv.tick(1) catch {};
+        got : i64 = 0;
+        while true {
+            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            if !re { total += n; got += n; continue; }
+            if re == error.Closed { done = true; }
+            break;
+        }
+        if got > 0 { stall = 0; } else { stall += 1; }
+    }
+    socket.close(fd);
+    return string.{ ptr = buf, len = xx total };
+}
+
+check :: (r: string, frag: string, label: string, failed: *i64) {
+    if !contains(r, frag) {
+        print("{}: expected \"{}\"\n", label, frag);
+        failed.* = 1;
+    }
+}
+
+ends_with :: (hay: string, tail: string) -> bool {
+    if tail.len > hay.len { return false; }
+    off := hay.len - tail.len;
+    i := 0;
+    while i < tail.len {
+        if hay[off + i] != tail[i] { return false; }
+        i += 1;
+    }
+    return true;
+}
+
+// One GET on PORT_A; the echoed canonical path is asserted BOTH-ANCHORED:
+// it must start right after the header terminator and run to EOF, so a
+// non-normalized "p:/a/.." can never satisfy a "p:/" expectation.
+expect_path :: (srv: *http.Server, target: string, want: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
+    req := concat("GET ", concat(target, " HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"));
+    r := roundtrip(srv, PORT_A, req, buf, cap);
+    check(r, "HTTP/1.1 200 OK", label, failed);
+    if !ends_with(r, concat("\r\n\r\np:", want)) {
+        print("{}: body is not exactly \"p:{}\"\n", label, want);
+        failed.* = 1;
+    }
+}
+
+expect_400 :: (srv: *http.Server, target: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
+    req := concat("GET ", concat(target, " HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n"));
+    r := roundtrip(srv, PORT_A, req, buf, cap);
+    check(r, "HTTP/1.1 400", label, failed);
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 16384;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{ port = PORT_A, max_conn = 4, request_count = 10 };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        // request-building concats live in a throwaway arena so the GPA
+        // gate below counts only real server leaks
+        req_arena := Arena.init(gpa, 65536);
+        push .{ allocator = req_arena } {
+            // (a) percent-decode in the path
+            expect_path(@srv, "/a%20b", "/a b", "pct-decode", rbuf, cap, @failed);
+
+            // (b) dot segments collapse; the query survives UNdecoded
+            expect_path(@srv, "/a/./b/../c?x=%2F", "/a/c?x=%2F", "dots+query", rbuf, cap, @failed);
+
+            // (c) %2e%2e must not smuggle a ".." past the normalizer
+            expect_400(@srv, "/%2e%2e/etc", "encoded traversal", rbuf, cap, @failed);
+
+            // (d) ".." climbing above the root
+            expect_400(@srv, "/a/../../b", "above-root", rbuf, cap, @failed);
+
+            // (e) NUL
+            expect_400(@srv, "/a%00b", "pct-nul", rbuf, cap, @failed);
+
+            // (f) encoded slash changes segmentation
+            expect_400(@srv, "/a%2Fb", "pct-slash", rbuf, cap, @failed);
+
+            // (g) malformed escape
+            expect_400(@srv, "/a%zzb", "bad escape", rbuf, cap, @failed);
+
+            // (h) decoded CRLF
+            expect_400(@srv, "/a%0D%0Ab", "pct-crlf", rbuf, cap, @failed);
+
+            // (i) clean fast path is untouched
+            expect_path(@srv, "/plain", "/plain", "clean", rbuf, cap, @failed);
+
+            // (j) "/a/.." is the root
+            expect_path(@srv, "/a/..", "/", "pop-to-root", rbuf, cap, @failed);
+
+            // (k) trailing "/." keeps the directory shape
+            expect_path(@srv, "/a/.", "/a/", "trailing-dot", rbuf, cap, @failed);
+        }
+        req_arena.deinit();
+
+        srv.close();
+
+        // (l) pooled: a path that SHRINKS (decode + pop) must rebuild
+        // byte-exact over the job-owned copy
+        cfgp : http.Config = .{ port = PORT_B, max_conn = 4, request_count = 10, thread_pool_count = 1 };
+        srvp, spe := http.Server.init(cfgp, route, 0);
+        if spe { print("pool init failed\n"); return 1; }
+        r := roundtrip(@srvp, PORT_B, "GET /x/%41/../y?k=%20 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "pooled status", @failed);
+        // end-anchored: a rebuild that kept the OLD (pre-shrink) length
+        // would leave a stale tail after the echo and fail this
+        if !ends_with(r, "\r\n\r\np:/x/y?k=%20") {
+            print("pooled shrunken path: body mismatch\n");
+            failed = 1;
+        }
+
+        // (m) absolute-form + encoded/dot path: path_off points into the
+        // MIDDLE of the target; the rewrite must leave the authority (and
+        // everything after the target) intact
+        r = roundtrip(@srvp, PORT_B, "GET http://h:8080/a%20b/./z/../c?q=%2F HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "absolute-form status", @failed);
+        if !ends_with(r, "\r\n\r\np:/a b/c?q=%2F") {
+            print("absolute-form canonical path: body mismatch\n");
+            failed = 1;
+        }
+        srvp.close();
+
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

@@ -1,0 +1,5 @@
+error: Obj-C selector for 'SxProbeMismatch.something_extra' has 2 keyword(s) but the call passes 1 argument(s); split the sx method name on '_' so it produces exactly 1 keyword(s), or override with `#selector("...")`
+  --> examples/ffi-objc/1344-ffi-objc-dsl-04-mismatch.sx:18:14
+   |
+18 |         n := inst.something_extra(7);
+   |              ^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,88 @@
+// std.http — a persistently failing loop must surface and stop, not spin.
+//
+// Regression: run() swallowed every tick() error (`catch {}`), so a
+// persistent Loop.wait() failure — e.g. the kernel queue fd dying — became
+// a silent 100% CPU spin forever. No log, no return, no recovery.
+//
+// The fix: run() counts CONSECUTIVE tick failures, emits LISTEN_ERROR (the
+// observability hook; detail = the consecutive count) on each, backs off
+// between retries, and after LOOP_FAULT_LIMIT consecutive failures gives up
+// cleanly — quiesces (skipping the drain, whose ticks would also fail) and
+// returns. A single transient failure resets the count.
+//
+// This test kills the loop's kernel queue out from under a running server
+// and calls run() on the main thread:
+//   • pre-fix: run() never returns → the example TIMES OUT (that is the red).
+//   • post-fix: run() returns in ~100 ms after 5 LISTEN_ERROR emissions.
+// Asserts the hook saw >= LOOP_FAULT_LIMIT consecutive-failure events and
+// the GPA gate stays net-zero after close.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 18996;
+
+Counter :: struct {
+    listen_errors: i64 = 0;
+    last_detail: i64 = 0;
+}
+
+on_event :: (ctx: usize, ev: http.EventKind, slot: i64, detail: i64) {
+    c : *Counter = xx ctx;
+    if ev == http.EventKind.LISTEN_ERROR {
+        c.listen_errors += 1;
+        c.last_detail = detail;
+    }
+}
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    resp.body = "ok";
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        counter : Counter = .{};
+        cfg : http.Config = .{
+            port = PORT,
+            max_conn = 4,
+            on_event = on_event,
+            on_event_ctx = xx @counter,
+        };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        // Kill the readiness queue out from under the loop: every wait()
+        // from here on fails immediately.
+        inline if OS == .linux {
+            socket.close(srv.loop.epfd);
+        } else {
+            socket.close(srv.loop.kq);
+        }
+
+        // Pre-fix this never returns (the corpus timeout is the red).
+        srv.run();
+
+        if counter.listen_errors < 5 {
+            print("expected >= 5 LISTEN_ERROR emissions, got {}\n", counter.listen_errors);
+            failed = 1;
+        }
+        if counter.last_detail < 5 {
+            print("expected the consecutive count in detail, got {}\n", counter.last_detail);
+            failed = 1;
+        }
+
+        srv.close();
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

@@ -1,0 +1,284 @@
+#import "modules/std/core.sx";   // string, Allocator, Context
+#import "modules/std/fmt.sx";    // alloc_string, substr, path_join
+
+// =====================================================================
+// fs.sx — file system stdlib (POSIX backend).
+//
+// Allocation contract: every returned `string` or slice is allocated
+// from `context.allocator`. Callers are responsible for releasing it
+// (typically via an arena reset).
+//
+// Handle ownership: `File` is a small value-typed handle wrapping the
+// POSIX file descriptor. Methods are provided for read/write/close;
+// the value is invalid (fd == -1) after `close()`.
+//
+// Scope (Phase 1A): file I/O + directory creation/deletion + path
+// helpers needed for `.app` bundling. Recursive walkers, `stat`, and
+// the full path module land in subsequent phases.
+// =====================================================================
+
+// Low-level libc bindings live in the central libc surface (std/c.sx);
+// call them qualified as `c.open` / `c.read` / … The public API below wraps
+// them — users should not call these directly.
+c :: #import "modules/std/c.sx";
+
+// Linux, Android, and Emscripten use the Linux asm-generic open flag values;
+// Darwin uses the BSD values. Keep this fail-closed at the target boundary:
+// adding another POSIX target requires choosing its ABI here.
+inline if OS == {
+    case .linux:
+        O_RDONLY :i32: 0x0000;
+        O_WRONLY :i32: 0x0001;
+        O_RDWR   :i32: 0x0002;
+        O_APPEND :i32: 0x0400;
+        O_CREAT  :i32: 0x0040;
+        O_TRUNC  :i32: 0x0200;
+    case .android:
+        O_RDONLY :i32: 0x0000;
+        O_WRONLY :i32: 0x0001;
+        O_RDWR   :i32: 0x0002;
+        O_APPEND :i32: 0x0400;
+        O_CREAT  :i32: 0x0040;
+        O_TRUNC  :i32: 0x0200;
+    case .wasm:
+        O_RDONLY :i32: 0x0000;
+        O_WRONLY :i32: 0x0001;
+        O_RDWR   :i32: 0x0002;
+        O_APPEND :i32: 0x0400;
+        O_CREAT  :i32: 0x0040;
+        O_TRUNC  :i32: 0x0200;
+    case .macos:
+        O_RDONLY :i32: 0x0000;
+        O_WRONLY :i32: 0x0001;
+        O_RDWR   :i32: 0x0002;
+        O_APPEND :i32: 0x0008;
+        O_CREAT  :i32: 0x0200;
+        O_TRUNC  :i32: 0x0400;
+    case .ios:
+        O_RDONLY :i32: 0x0000;
+        O_WRONLY :i32: 0x0001;
+        O_RDWR   :i32: 0x0002;
+        O_APPEND :i32: 0x0008;
+        O_CREAT  :i32: 0x0200;
+        O_TRUNC  :i32: 0x0400;
+    else:
+        #error "std/fs.sx: POSIX open flags are not defined for this target";
+}
+
+SEEK_SET :i32: 0;
+SEEK_CUR :i32: 1;
+SEEK_END :i32: 2;
+
+F_OK :i32: 0;
+
+// ── Public types ─────────────────────────────────────────────────────
+
+OpenMode :: enum {
+    read;        // O_RDONLY
+    write;       // O_WRONLY | O_CREAT | O_TRUNC
+    append;      // O_WRONLY | O_CREAT | O_APPEND
+    read_write;  // O_RDWR
+}
+
+SeekFrom :: enum { set; current; end; }
+
+File :: struct {
+    fd: i32 = -1;
+
+    is_valid :: (self: *File) -> bool { self.fd >= 0 }
+
+    close :: (self: *File) -> bool {
+        if self.fd < 0 { return false; }
+        rc := c.close(self.fd);
+        self.fd = -1;
+        rc == 0
+    }
+
+    read :: (self: *File, buf: string) -> i64 {
+        if self.fd < 0 { return -1; }
+        n := c.read(self.fd, buf.ptr, xx buf.len);
+        n.(i64)
+    }
+
+    write :: (self: *File, data: string) -> i64 {
+        if self.fd < 0 { return -1; }
+        n := c.write(self.fd, data.ptr, xx data.len);
+        n.(i64)
+    }
+
+    seek :: (self: *File, offset: i64, whence: SeekFrom) -> i64 {
+        if self.fd < 0 { return -1; }
+        w := SEEK_SET;
+        if whence == .current { w = SEEK_CUR; }
+        if whence == .end     { w = SEEK_END; }
+        c.lseek(self.fd, offset, w)
+    }
+}
+
+// ── High-level file API ─────────────────────────────────────────────
+// Named `open_file` (not `open`) so they don't shadow libc's `open`
+// symbol; the latter is needed for `extern libc` to resolve. Same
+// idea for `delete_file`/`delete_dir` vs libc's `unlink`/`rmdir`,
+// `set_mode` vs libc's `chmod`, etc.
+
+mode_to_flags :: (m: OpenMode) -> i32 {
+    if m == .read       { return O_RDONLY; }
+    if m == .write      { return O_WRONLY | O_CREAT | O_TRUNC; }
+    if m == .append     { return O_WRONLY | O_CREAT | O_APPEND; }
+    if m == .read_write { return O_RDWR; }
+    O_RDONLY
+}
+
+open_file :: (path: [:0]u8, mode: OpenMode) -> ?File {
+    fd := c.open(path, mode_to_flags(mode), 420); // 0o644 = 420
+    if fd < 0 { return null; }
+    File.{ fd = fd }
+}
+
+// One-shot read: opens, slurps the whole file into a fresh buffer,
+// closes. Returns null on any failure. Uses libc directly (not File
+// methods) so it remains callable from the post-link IR interpreter,
+// which doesn't yet handle `*Self` method dispatch on locally-
+// unwrapped optionals.
+read_file :: (path: [:0]u8) -> ?string {
+    fd := c.open(path, O_RDONLY, 0);
+    if fd < 0 { return null; }
+    size := c.lseek(fd, 0, SEEK_END);
+    if size < 0 { c.close(fd); return null; }
+    c.lseek(fd, 0, SEEK_SET);
+    buf := alloc_string(size);
+    n := c.read(fd, buf.ptr, xx size);
+    c.close(fd);
+    if n.(i64) != size { return null; }
+    buf
+}
+
+// One-shot write: creates / truncates and writes the whole buffer.
+write_file :: (path: [:0]u8, data: string) -> bool {
+    fd := c.open(path, O_WRONLY | O_CREAT | O_TRUNC, 420); // 0o644
+    if fd < 0 { return false; }
+    n := c.write(fd, data.ptr, xx data.len);
+    c.close(fd);
+    n.(i64) == data.len.(i64)
+}
+
+append_file :: (path: [:0]u8, data: string) -> bool {
+    fd := c.open(path, O_WRONLY | O_CREAT | O_APPEND, 420);
+    if fd < 0 { return false; }
+    n := c.write(fd, data.ptr, xx data.len);
+    c.close(fd);
+    n.(i64) == data.len.(i64)
+}
+
+// ── Single-syscall ops ───────────────────────────────────────────────
+
+exists :: (path: [:0]u8) -> bool {
+    c.access(path, F_OK) == 0
+}
+
+delete_file :: (path: [:0]u8) -> bool {
+    c.unlink(path) == 0
+}
+
+delete_dir :: (path: [:0]u8) -> bool {
+    c.rmdir(path) == 0
+}
+
+create_dir :: (path: [:0]u8) -> bool {
+    c.mkdir(path, 493) == 0 // 0o755 = 493
+}
+
+set_mode :: (path: [:0]u8, mode: u32) -> bool {
+    c.chmod(path, mode) == 0
+}
+
+move :: (oldp: [:0]u8, newp: [:0]u8) -> bool {
+    c.rename(oldp, newp) == 0
+}
+
+// Recursive mkdir -p. Walks the path and creates each missing
+// segment. Treats existing directories as success.
+create_dir_all :: (path: [:0]u8) -> bool {
+    if path.len == 0 { return true; }
+    if exists(path) { return true; }
+    last := path.len - 1;
+    while last > 0 {
+        if path[last] == '/' { break; }
+        last -= 1;
+    }
+    if last > 0 {
+        parent := alloc_string(last);
+        c.memcpy(parent.ptr, path.ptr, last);
+        if !create_dir_all(parent) { return false; }
+    }
+    create_dir(path)
+}
+
+// Copy a file by streaming through a 64KB buffer. Uses libc directly
+// (not File methods) — same interpreter-compat reason as read_file.
+// No metadata is preserved beyond what `open` creates (mode 0644).
+// Caller is responsible for setting executable bits with `set_mode`.
+copy_file :: (src: [:0]u8, dst: [:0]u8) -> bool {
+    src_fd := c.open(src, O_RDONLY, 0);
+    if src_fd < 0 { return false; }
+    dst_fd := c.open(dst, O_WRONLY | O_CREAT | O_TRUNC, 420);
+    if dst_fd < 0 {
+        c.close(src_fd);
+        return false;
+    }
+    ok := true;
+    buf := alloc_string(65536);
+    loop := true;
+    while loop {
+        n := c.read(src_fd, buf.ptr, 65536);
+        if n < 0 { ok = false; loop = false; }
+        if n == 0 { loop = false; }
+        if n > 0 {
+            w := c.write(dst_fd, buf.ptr, xx n);
+            if w != n.(isize) { ok = false; loop = false; }
+        }
+    }
+    c.close(src_fd);
+    c.close(dst_fd);
+    ok
+}
+
+// ── Path helpers ─────────────────────────────────────────────────────
+// `path_join` is in std.sx (used widely beyond fs). These are the
+// fs-adjacent helpers — basename/dirname operate purely on text.
+
+basename :: (p: string) -> string {
+    if p.len == 0 { return ""; }
+    last := p.len - 1;
+    while last > 0 {
+        if p[last] != '/' { break; }
+        last -= 1;
+    }
+    end := last + 1;
+    while last > 0 {
+        if p[last - 1] == '/' { return substr(p, last, end - last); }
+        last -= 1;
+    }
+    substr(p, 0, end)
+}
+
+dirname :: (p: string) -> string {
+    if p.len == 0 { return ""; }
+    last := p.len - 1;
+    while last > 0 {
+        if p[last] != '/' { break; }
+        last -= 1;
+    }
+    while last > 0 {
+        if p[last] == '/' {
+            while last > 0 {
+                if p[last - 1] != '/' { break; }
+                last -= 1;
+            }
+            return substr(p, 0, last);
+        }
+        last -= 1;
+    }
+    if p[0] == '/' { return "/"; }
+    "."
+}

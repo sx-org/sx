@@ -1,0 +1,5 @@
+error: 'i2' is a reserved type name and cannot be used as an identifier
+  --> examples/types/0125-types-type-named-var-rejected.sx:10:5
+   |
+10 |     i2 := 42;
+   |     ^^

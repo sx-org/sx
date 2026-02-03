@@ -1,0 +1,8 @@
+dstr  = 1 2
+if    = 42
+for   = 10 @ 0
+for   = 20 @ 1
+for   = 30 @ 2
+match = 10
+call  = 11 11
+field = 7 9 | 7 9

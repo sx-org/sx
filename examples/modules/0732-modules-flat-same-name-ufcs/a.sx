@@ -1,0 +1,5 @@
+// a.sx authors `bump` adding 1. Imported first → first-wins winner. `from_a`'s
+// `v.bump()` resolves a.sx's own author (own == winner → existing UFCS path,
+// byte-for-byte unchanged).
+bump   :: ufcs (x: i64) -> i64 { return x + 1; }
+from_a_ufcs :: () -> i64 { v : i64 = 10; return v.bump(); }

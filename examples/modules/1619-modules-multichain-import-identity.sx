@@ -1,0 +1,35 @@
+// Diamond-import + directory-import identity: `Layer` (declared in the
+// companion's layer.sx) is reached through SEVERAL chains — main's direct
+// `document.sx` import, transitively via toolbar.sx and canvas_view.sx, and
+// alongside a directory-module import (`mymod`). The same source file must
+// resolve to ONE module instance — one `Layer` type identity — through every
+// chain, so a `*Layer` produced by one chain typechecks in a function from
+// another.
+//
+// Regression (issue 0148): import-path keys were not canonicalized, so an
+// ABSOLUTE entry path split the same file into two cache keys (abs via the
+// entry's base_dir, cwd-relative via a sibling's fallback) → two `Layer`
+// identities → "type 'Layer' is not visible". The corpus runs relative entry
+// paths only; the abs-vs-rel unification is carried by the `canonicalizePath`
+// unit tests in src/imports.test.zig. This example pins the import SHAPE.
+#import "modules/std.sx";
+#import "1619-modules-multichain-import-identity/mymod";
+#import "1619-modules-multichain-import-identity/document.sx";
+#import "1619-modules-multichain-import-identity/layer.sx";
+#import "1619-modules-multichain-import-identity/toolbar.sx";
+#import "1619-modules-multichain-import-identity/canvas_view.sx";
+
+main :: () -> i32 {
+    d := Document.{ layers = List(Layer).{}, active = 0 };
+    d.layers.append(make_layer(7));
+    t := Toolbar.{ doc = @d, hover_tool = -1 };
+    c := CanvasView.{ doc = @d };
+    print("toolbar: {}\n", tb_active_id(@t));
+    print("canvas: {}\n", cv_active_id(@c));
+    // Cross-chain identity: `layer_at` (document chain) feeds `cv_id_of`
+    // (canvas chain) — compiles only if both chains share ONE `Layer`.
+    print("cross: {}\n", cv_id_of(layer_at(@d, 0)));
+    w := Widget.{ w = 3 };
+    print("widget: {}\n", w.w);
+    0
+}

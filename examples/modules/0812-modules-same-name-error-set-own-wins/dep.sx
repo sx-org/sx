@@ -1,0 +1,10 @@
+// A flat-imported module authors its OWN `IoErr { Net }`. The importing file
+// (`main`) ALSO authors an `IoErr` — its own author must win there (own-wins),
+// while this module's `IoErr` stays a DISTINCT nominal type used by `dep_err`.
+// The tag sets are disjoint, so a cross-binding to the wrong `IoErr` is a hard
+// compile error (`Net` is not in main's `{ Disk }`, and vice-versa).
+IoErr :: error { Net }
+
+dep_err :: () -> IoErr {
+    return error.Net;
+}

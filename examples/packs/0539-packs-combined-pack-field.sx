@@ -1,0 +1,29 @@
+// Phase 4.2 — the canonical `Combined` struct's storage layer: a generic
+// struct whose field is a pack of PARAMETERIZED-protocol values,
+// `sources: Tuple(..VL(Ts))` → `Tuple(VL(T0), VL(T1), …)`. Each `VL(Ti)` is a real
+// 16-byte protocol value (issue: parameterized-protocol value types), and
+// `Tuple(..VL(Ts))` applies `VL` per pack element. Instantiate + whole-tuple store
+// of `xx`-erased values + per-element method dispatch all work.
+
+#import "modules/std.sx";
+
+VL :: protocol(T: Type) { get :: (self: *Self) -> T; }
+IntCell :: struct { v: i64; }
+StrCell :: struct { s: string; }
+impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
+impl VL(string) for StrCell { get :: (self: *StrCell) -> string => self.s; }
+
+Combined :: struct($R: Type, ..$Ts: []Type) {
+    sources: Tuple(..VL(Ts));   // (VL(T0), VL(T1), …) — tuple of protocol values
+    value:   $R;
+}
+
+main :: () -> i32 {
+    // Combined(i64, i64, string): R=i64, Ts=[i64, string],
+    // sources: (VL(i64), VL(string)).
+    c : Combined(i64, i64, string) = ---;
+    c.sources = .{xx IntCell.{ v = 10 }, xx StrCell.{ s = "hi" }};
+    c.value = 99;
+    print("{} {} {}\n", c.sources.0.get(), c.sources.1.get(), c.value);  // 10 hi 99
+    0
+}

@@ -1,0 +1,33 @@
+// Indexing an array whose element type is an optional `[N]?T` must load the
+// full `{T,i1}` element aggregate: a positional `.{ ... }` literal coerces each
+// element to the optional element type, so a present element reads back present
+// and an absent one absent. Covers a scalar payload (`?i64`), a struct payload
+// (`?Pt`), write-then-read, and direct-use of the indexed value (`??`, `if`).
+//
+// Regression (issue 0168): the positional struct-literal path treated array
+// targets as having no named fields and skipped per-element coercion, storing a
+// bare `T`/`null` into a `{T,i1}` slot — corrupting the array (a present
+// element read back as absent; indexing it segfaulted).
+#import "modules/std.sx";
+
+Pt :: struct { x: i64; y: i64; }
+
+main :: () {
+  // Scalar payload — read present + absent.
+  arr : [2]?i64 = .{ null, 7 };
+  print("idx ?? : {}\n", arr[1] ?? -1);       // 7
+  e := arr[1];
+  if e { print("e present\n"); } else { print("e absent\n"); }       // present
+  if arr[0] { print("a0 present\n"); } else { print("a0 absent\n"); }  // absent
+
+  // Write an absent slot, then read it back.
+  w : [2]?i64 = .{ null, null };
+  w[0] = 99;
+  print("w0: {}\n", w[0] ?? -1);   // 99
+  print("w1: {}\n", w[1] ?? -1);   // -1
+
+  // Struct payload `?Pt`.
+  pts : [2]?Pt = .{ null, .{ x = 5, y = 6 } };
+  if pts[0] { print("pt0 present\n"); } else { print("pt0 absent\n"); }  // absent
+  if p := pts[1] { print("pt1: {} {}\n", p.x, p.y); }                    // 5 6
+}

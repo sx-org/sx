@@ -1,0 +1,39 @@
+// Bare-TYPE references are NON-transitive AND ambiguity-checked at every site,
+// not just the nominal leaf annotation (0755). `main` flat-imports two modules
+// that each author a same-name `Thing` / `Box` / `Nums` and authors none itself,
+// so EACH of the following bare forms is a genuine collision the source cannot
+// disambiguate — and each must emit the LOUD "type ... is ambiguous" diagnostic
+// (consistent with the leaf, 0755) and poison the result, NEVER silently pick a
+// global `findByName` / `struct_template_map` author:
+//
+//   - reflection / type-arg slot    `size_of(Thing)`
+//   - typed array/vector-literal     `Nums.[1, 2]`
+//   - parameterized generic head     `Box(i64)`
+//   - type-as-value                  `t : Type = Thing`
+//   - type-category match arm        `case Thing:`
+//
+// Regression (Phase E4 attempt-5): before the bare-type gate carried the full
+// source-aware author outcome, these non-leaf sites used a boolean leak-check
+// that dropped the AMBIGUOUS outcome — two direct flat same-name authors fell
+// through to a global pick (exit 0 / cascade) instead of the loud diagnostic.
+
+#import "modules/std.sx";
+#import "0767-modules-ambiguous-bare-type-forms/a.sx";
+#import "0767-modules-ambiguous-bare-type-forms/b.sx";
+
+describe :: ($T: Type) -> i32 {
+    r := if T == {
+        case Thing: 1;
+        else: 0;
+    }
+    r
+}
+
+main :: () -> i32 {
+    sz := size_of(Thing);
+    xs := Nums.[1, 2];
+    x : Box(i64) = .{ v = 3 };
+    t : Type = Thing;
+    d := describe(i64);
+    0
+}

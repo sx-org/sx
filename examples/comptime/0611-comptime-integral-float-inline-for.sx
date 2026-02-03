@@ -1,0 +1,14 @@
+// An `inline for 0..M` bound accepts an integral float constant — `M :: 3.0`
+// unrolls the same three iterations as `M :: 3`. The inline-for bound folder
+// (`evalComptimeInt`) delegates to the shared const-int evaluator, so the
+// integral-float rule (issue 0083 / F0.4 attempt 8, Agra ruling) applies here
+// too.
+#import "modules/std.sx";
+
+M :: 3.0;
+
+main :: () {
+    s := 0;
+    inline for 0..M (i) { s += i; }
+    print("sum 0..M = {}\n", s);          // 0 + 1 + 2 = 3
+}

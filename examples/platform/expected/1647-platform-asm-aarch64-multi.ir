@@ -1,0 +1,31 @@
+
+; Function Attrs: nounwind
+define internal { i64, i64 } @split(i64 %0) #0 {
+entry:
+  %alloca = alloca i64, align 8
+  store i64 %0, ptr %alloca, align 8
+  %load = load i64, ptr %alloca, align 8
+  %asm = call { i64, i64 } asm "        and ${0}, ${2}, #0xff\0A        lsr ${1}, ${2}, #8\0A", "=r,=r,r"(i64 %load)
+  %tg = extractvalue { i64, i64 } %asm, 0
+  %tgN = extractvalue { i64, i64 } %asm, 1
+  %ti = insertvalue { i64, i64 } undef, i64 %tg, 0
+  %tiN = insertvalue { i64, i64 } %ti, i64 %tgN, 1
+  ret { i64, i64 } %tiN
+}
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %call = call { i64, i64 } @split(i64 4660)
+  %tg = extractvalue { i64, i64 } %call, 0
+  %alloca = alloca i64, align 8
+  store i64 %tg, ptr %alloca, align 8
+  %tgN = extractvalue { i64, i64 } %call, 1
+  %allocaN = alloca i64, align 8
+  store i64 %tgN, ptr %allocaN, align 8
+  %load = load i64, ptr %alloca, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %add = add i64 %load, %loadN
+  %ca.tr = trunc i64 %add to i32
+  ret i32 %ca.tr
+}

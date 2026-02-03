@@ -1,0 +1,64 @@
+// The growable container of the prelude. Consumers never import this file
+// directly — std.sx re-exports `List`.
+#import "modules/std/core.sx";
+c :: #import "modules/std/c.sx";
+
+// `items` is a `[]T` slice whose `.len` IS the live element count, so a `List`
+// is directly iterable: `for xs.items (e) { ... }`. `cap` is the allocated
+// capacity (`>= items.len`); the buffer spans `cap` elements, the slice spans
+// the live `items.len`. The `len` `#get` accessor exposes the live count as
+// `xs.len` (read), delegating to `items.len`; writes use `xs.items.len`.
+List :: struct ($T: Type) {
+    items: []T = .[];   // empty slice ({ptr, len=0}); `.[]` is the empty-slice
+                        // literal — `.{}` would init the slice's underlying
+                        // {ptr,len} struct (and currently yields a garbage len).
+    cap: i64 = 0;
+
+    // No-paren read accessor: `xs.len` → the live element count.
+    len :: (self: *List(T)) -> i64 #get => self.items.len;
+    // Write accessor: `xs.len = n` sets the live count (e.g. `xs.len = 0` to
+    // clear without freeing). Mirrors the `#get` above; the buffer / `cap` are
+    // untouched, so `n` must be `<= cap`.
+    len :: (self: *List(T), v: i64) #set { self.items.len = v; }
+
+    append :: (list: *List(T), item: T, alloc: Allocator = context.allocator) {
+        if list.items.len >= list.cap {
+            new_cap := if list.cap == 0 then 4 else list.cap * 2;
+            new_ptr : [*]T = xx alloc.alloc_bytes(new_cap * size_of(T));
+            if list.items.len > 0 {
+                c.memcpy(new_ptr, list.items.ptr, list.items.len * size_of(T));
+                alloc.dealloc_bytes(list.items.ptr);
+            }
+            list.items.ptr = new_ptr;   // keep the live len; only the buffer moves
+            list.cap = new_cap;
+        }
+        list.items.ptr[list.items.len] = item;   // write at the live index (within cap)
+        list.items.len += 1;
+    }
+
+    ensure_capacity :: (list: *List(T), n: i64, alloc: Allocator = context.allocator) {
+        if list.cap >= n { return; }
+        new_cap := if list.cap == 0 then 4 else list.cap;
+        while new_cap < n { new_cap = new_cap * 2; }
+        new_ptr : [*]T = xx alloc.alloc_bytes(new_cap * size_of(T));
+        if list.items.len > 0 {
+            c.memcpy(new_ptr, list.items.ptr, list.items.len * size_of(T));
+            alloc.dealloc_bytes(list.items.ptr);
+        }
+        list.items.ptr = new_ptr;
+        list.cap = new_cap;
+    }
+
+    deinit :: (list: *List(T), alloc: Allocator = context.allocator) {
+        // `cap > 0` is the ownership signal: a List holds an allocated buffer
+        // ONLY after a growth set `cap`. Guarding on `cap` (not `items.ptr`)
+        // makes deinit idempotent and safe on a never-grown / borrowed-items
+        // list — and `.[]` leaves a len-0 slice whose ptr need not be null.
+        if list.cap > 0 {
+            alloc.dealloc_bytes(list.items.ptr);
+        }
+        list.items.ptr = null;
+        list.items.len = 0;
+        list.cap = 0;
+    }
+}

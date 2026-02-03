@@ -1,0 +1,55 @@
+// An abi(.c) fn-pointer call mirrors the callee declaration's C-ABI
+// signature exactly: <=8-byte non-HFA struct params pack to i64,
+// 9-16-byte to [2 x i64], >16-byte pass byval, HFAs and fat
+// string/slice stay unpacked (the sx-internal is_extern_c_api=false
+// convention, as for block trampolines); a <=16-byte struct RETURN
+// comes back register-coerced and a >16-byte non-HFA return uses the
+// sret hidden out-pointer.
+// Regression (issue 0295): the indirect call site used raw LLVM types
+// (second field of a packed struct arg arrived zeroed; sret returns
+// read garbage). Also pins the sret callee body reading its params
+// AFTER the hidden out-pointer slot (they were off by one).
+#import "modules/std.sx";
+
+Point :: struct { x: i32; y: i32; }
+Tiny :: struct { a: u8; b: u8; }
+Mid :: struct { x: i64; y: i32; }
+Big :: struct { x: i64; y: i64; z: i64; }
+Hfa :: struct { x: f32; y: f32; }
+
+add_pt :: (p: Point) -> i32 abi(.c) { return p.x + p.y; }
+add_tiny :: (t: Tiny) -> i32 abi(.c) { return xx t.a + xx t.b; }
+add_mid :: (m: Mid) -> i64 abi(.c) { return m.x + xx m.y; }
+add_big :: (b: Big) -> i64 abi(.c) { return b.x + b.y + b.z; }
+add_hfa :: (h: Hfa) -> f32 abi(.c) { return h.x + h.y; }
+str_len :: (s: string) -> i64 abi(.c) { return s.len; }
+mk_pt :: (x: i32, y: i32) -> Point abi(.c) { return Point.{ x = x, y = y }; }
+mk_big :: (x: i64) -> Big abi(.c) { return Big.{ x = x, y = x * 2, z = x * 3 }; }
+
+main :: () -> i64 {
+    // Param matrix through abi(.c) fn pointers.
+    fp1 : (Point) -> i32 abi(.c) = add_pt;
+    print("pt: {}\n", fp1(Point.{ x = 1, y = 2 }));
+    fp2 : (Tiny) -> i32 abi(.c) = add_tiny;
+    print("tiny: {}\n", fp2(Tiny.{ a = 5, b = 6 }));
+    fp3 : (Mid) -> i64 abi(.c) = add_mid;
+    print("mid: {}\n", fp3(Mid.{ x = 100, y = 20 }));
+    fp4 : (Big) -> i64 abi(.c) = add_big;
+    print("big: {}\n", fp4(Big.{ x = 1, y = 2, z = 3 }));
+    fp5 : (Hfa) -> f32 abi(.c) = add_hfa;
+    print("hfa: {}\n", fp5(Hfa.{ x = 1.5, y = 2.5 }));
+    fp6 : (string) -> i64 abi(.c) = str_len;
+    print("str: {}\n", fp6("hello"));
+
+    // Return matrix: register-coerced small struct + sret big struct,
+    // through the fn pointer and direct (the sret body param shift).
+    fp7 : (i32, i32) -> Point abi(.c) = mk_pt;
+    r := fp7(30, 40);
+    print("mkpt: {} {}\n", r.x, r.y);
+    fp8 : (i64) -> Big abi(.c) = mk_big;
+    b := fp8(7);
+    print("mkbig: {} {} {}\n", b.x, b.y, b.z);
+    d := mk_big(9);
+    print("direct: {} {} {}\n", d.x, d.y, d.z);
+    return 0;
+}

@@ -1,0 +1,5 @@
+error: 'v' is not part of protocol 'Box' — a pack element exposes only the protocol's interface
+  --> examples/packs/0530-packs-pack-interface-only.sx:16:12
+   |
+16 |     return xs[0].v;   // `v` is not part of Box — error
+   |            ^^^^^^^

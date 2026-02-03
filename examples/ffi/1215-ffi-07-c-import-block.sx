@@ -1,0 +1,25 @@
+// Phase 0 baseline (PLAN-FFI.md step 0.7): `#import c { #include /
+// #source }` end-to-end, with the new stdlib-path resolution
+// (src/imports.zig added this session). The header + .c live ONLY
+// under `library/vendors/sx_ffi_resolve_test/` — not the sx repo
+// root vendors/ — so the path can be found only by the stdlib
+// search branch (`<exe>/../../library` etc.), not by the CWD or
+// importing-file's-dir branches.
+//
+// `#include` triggers c_import.zig's auto-synthesis of `extern`
+// fn decls from the C header; `#source` adds the .c to the build's
+// object list. Together they let the sx side call the C functions
+// by their declared names with no manual decls.
+
+#import "modules/std.sx";
+
+#import c {
+    #include "vendors/sx_ffi_resolve_test/sx_ffi_resolve_test.h";
+    #source "vendors/sx_ffi_resolve_test/sx_ffi_resolve_test.c";
+};
+
+main :: () -> i32 {
+    print("add(3, 4)  = {}\n", sx_ffi_resolve_test_add(3, 4));
+    print("mul(6, 7)  = {}\n", sx_ffi_resolve_test_mul(6, 7));
+    0
+}

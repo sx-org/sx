@@ -1,0 +1,11 @@
+// A protocol whose method returns a module-local named type `Q`, plus a struct
+// that impls it. Both `Q` and the protocol `P` are declared HERE; a consumer
+// reaches them only namespaced (`inner.P`), so `Q` is not bare-visible there.
+Q :: struct { v: i64 = 0; }
+P :: protocol {
+    get :: (self: *Self) -> ?Q;
+}
+Impl :: struct { x: i64 = 0; }
+impl P for Impl {
+    get :: (self: *Impl) -> ?Q { Q.{ v = 42 } }
+}

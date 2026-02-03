@@ -1,0 +1,27 @@
+// Initializing (or reassigning) an explicitly-annotated slot with a value
+// whose type has NO coercion to the annotation is a type error, diagnosed at
+// lowering with a located message.
+//
+// Regression (issue 0197): `x : i32 = "hi"` was accepted with no diagnostic —
+// the incompatible value passed through a `.none` coercion plan UNCHANGED, so a
+// 16-byte `string` was stored into a 4-byte `i32` slot, bit-mangling the slot
+// and SIGSEGV'ing at run time (`sx ir` lowered fine; only the run crashed). The
+// guard (`checkAssignable`) now rejects an un-coercible initializer at every
+// store-into-annotated-slot site — var-decl, body-local const-decl, and
+// reassignment — emitting a diagnostic and aborting the build cleanly (exit 1).
+//
+// The explicit `xx` / `.(T)` escape hatch is unaffected: a deliberate
+// reinterpretation (pointer↔int, etc.) still passes through.
+
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    x : i32 = "hi";        // error: cannot initialize 'x' (string ↛ i32)
+
+    y : i32 = 0;
+    y = "nope";            // error: cannot reassign 'y' (string ↛ i32)
+
+    C : i32 : "also";      // error: cannot initialize 'C' (string ↛ i32)
+
+    return 0;
+}

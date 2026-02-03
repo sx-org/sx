@@ -1,0 +1,44 @@
+// Protocol method signatures resolve their param/return type NAMES in the
+// protocol's OWN declaring module (own-wins visibility), so a bare type name
+// that collides with a same-name namespaced import binds to the local author.
+//
+// Here the user's `Event` enum shares its name with the stdlib
+// `std/event.sx` `Event :: struct` (pulled in, namespaced as `event`, by
+// `#import "modules/std.sx"`). `Plat.one_event` returns the user's `Event`;
+// `ev := g_plat.one_event()` infers that type, so the `case .key_up:(e)`
+// payload binds a `KeyData` and `.escape` resolves against `Keycode`.
+//
+// Regression (issue 0132): `registerProtocolDecl` used to resolve method
+// signature types through the flat, visibility-UNAWARE `type_bridge`
+// resolver, which picked the stdlib `event.Event` struct instead — typing
+// `ev` as a fieldless struct, binding `.unresolved`, and emitting
+// "enum literal '.escape' has no destination type to resolve against". The
+// fix pins resolution to `pd.source_file`, mirroring the parameterized-
+// protocol and concrete-fn signature paths.
+//
+// Expect: prints `escape!`, exit 0.
+
+#import "modules/std.sx";
+
+Keycode :: enum { unknown; escape; enter; }
+KeyData :: struct { key: Keycode; }
+Event   :: enum { none; key_up: KeyData; }
+
+Plat :: protocol { one_event :: (self: *Self) -> Event; }
+
+Impl :: struct { dummy: i64; }
+impl Plat for Impl {
+    one_event :: (self: *Impl) -> Event { return .key_up(.{ key = .escape }); }
+}
+
+main :: () {
+    impl : Impl = .{ dummy = 0 };
+    g_plat := impl.(Plat);
+    ev := g_plat.one_event();          // type INFERRED from protocol return
+    if ev == {
+        case .key_up: (e) {
+            // `e` is KeyData (payload of the user's Event), `.escape` a Keycode
+            if e.key == .escape { print("escape!\n"); }
+        }
+    }
+}

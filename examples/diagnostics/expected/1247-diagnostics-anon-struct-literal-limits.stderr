@@ -1,0 +1,5 @@
+error: an untyped '.{ }' literal cannot mix positional and named elements — name all elements or none
+  --> examples/diagnostics/1247-diagnostics-anon-struct-literal-limits.sx:9:10
+   |
+ 9 |     m := .{ 1, y = 2 };        // error: mixed positional and named
+   |          ^^^^^^^^^^^^^

@@ -1,0 +1,28 @@
+// Step 2.5 — contextual typing for closure literals with N (heterogeneous)
+// params. An untyped lambda `(a, b, c) => ...` takes each param's type
+// positionally from the expected `Closure(T0, T1, T2) -> R` signature, in both
+// assignment and argument position. (Previously only the first param — or
+// all-same-typed params — resolved; trailing params silently defaulted to i64.)
+
+#import "modules/std.sx";
+
+// argument-position: lambda typed from the parameter's closure type.
+apply2 :: (f: Closure(i64, string) -> i64, x: i64, s: string) -> i64 {
+    return f(x, s);
+}
+apply3 :: (f: Closure(i64, i64, string) -> i64, a: i64, b: i64, c: string) -> i64 {
+    return f(a, b, c);
+}
+
+main :: () -> i32 {
+    // assignment-position, mixed (i64, string) params — `b` is string.
+    cb : Closure(i64, string) -> i64 = (a, b) => a + b.len;
+    print("cb={}\n", cb(10, "hello"));     // 10 + 5 = 15
+
+    // argument-position, 2 params.
+    print("r={}\n", apply2((a, b) => a + b.len, 10, "hello"));   // 15
+
+    // argument-position, 3 params (i64, i64, string).
+    print("q={}\n", apply3((a, b, c) => a + b + c.len, 1, 2, "xyz"));  // 1+2+3 = 6
+    0
+}

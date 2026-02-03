@@ -1,0 +1,12 @@
+// issue 0131 regression: a protocol method call must arity-check like a
+// plain call. `Allocator.dealloc_bytes` declares (ptr); calling it with
+// an extra argument used to compile and silently drop the extra.
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    a : Allocator = xx gpa;
+    p := a.alloc_bytes(64);
+    a.dealloc_bytes(p, 12345);
+    return 0;
+}

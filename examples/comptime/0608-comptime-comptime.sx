@@ -1,0 +1,83 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+add :: (a: i32, b: i32) -> i32 { a + b }
+
+mul :: (a: i32, b: i32) -> i32 { a * b }
+
+// #run compile-time constants
+CT_VAL :: #run add(10, 15);
+
+CT_MUL :: #run mul(6, 7);
+
+CT_CHAIN :: #run add(CT_VAL, 5);
+
+// #run compile-time optional tests
+
+// #run compile-time optional tests
+ct_opt_coalesce :: () -> i32 {
+    x: ?i32 = 42;
+    y: ?i32 = null;
+    return (x ?? 0) + (y ?? 99);
+}
+
+ct_opt_unwrap :: () -> i32 {
+    x: ?i32 = 77;
+    return x!;
+}
+
+ct_opt_guard :: () -> i32 {
+    x: ?i32 = 10;
+    if x == null { return -1; }
+    return x;
+}
+
+CT_OPT_COALESCE :: #run ct_opt_coalesce();
+
+CT_OPT_UNWRAP :: #run ct_opt_unwrap();
+
+CT_OPT_GUARD :: #run ct_opt_guard();
+
+// #insert helpers
+
+// #insert helpers
+gen_code :: () -> string {
+    return "print(\"insert-ok\\n\");";
+}
+
+gen_val :: () -> string {
+    return "print(\"insert-gen: {}\\n\", 42);";
+}
+
+// --- Error handling (failable functions: sets, raise/try/catch/or/onfail) ---
+
+main :: () {
+
+    // ========================================================
+    // 8. COMPILE-TIME
+    // ========================================================
+    print("=== 8. Comptime ===\n");
+
+    // #run constant
+    print("run-const: {}\n", CT_VAL);
+
+    // #run with expression
+    print("run-expr: {}\n", CT_MUL);
+
+    // #run chained dependency
+    print("run-chain: {}\n", CT_CHAIN);
+
+    // #run comptime optionals
+    print("ct-opt-coalesce: {}\n", CT_OPT_COALESCE);           // ct-opt-coalesce: 141
+    print("ct-opt-unwrap: {}\n", CT_OPT_UNWRAP);               // ct-opt-unwrap: 77
+    print("ct-opt-guard: {}\n", CT_OPT_GUARD);                 // ct-opt-guard: 10
+
+    // #insert with function
+    #insert gen_code();
+
+    // #insert additional
+    #insert gen_val();
+}

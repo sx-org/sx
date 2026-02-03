@@ -1,0 +1,28 @@
+// `??` on an alias-of-optional with a struct-literal default — present + null.
+//
+// Regression (issue 0180): `?Opt ?? S.{...}` where `Opt :: ?S` must resolve
+// the alias child to the same struct TypeId on both branches and lower the
+// struct-literal default against that resolved child (issue-0166 threading),
+// so the present-payload and the default share the merge TypeId. Both the
+// null path (default) and the present path (the payload) are exercised.
+#import "modules/std.sx";
+
+S :: struct { a: i64 = 0; b: i64 = 0; }
+Opt :: ?S;
+
+main :: () {
+    // null lhs -> the struct-literal default.
+    o : Opt = null;
+    x := o ?? S.{ a = 7, b = 8 };
+    print("a={} {}\n", x.a, x.b);
+
+    // present lhs -> the payload, default ignored.
+    o2 : Opt = S.{ a = 1, b = 2 };
+    y := o2 ?? S.{ a = 7, b = 8 };
+    print("b={} {}\n", y.a, y.b);
+
+    // untyped `.{}` default against the alias child (issue-0166 path).
+    o3 : Opt = null;
+    z := o3 ?? .{};
+    print("c={} {}\n", z.a, z.b);
+}

@@ -1,0 +1,12 @@
+// A compile-time index into an array constant is bounds-checked at fold
+// time — out of range is a diagnostic, never a wrap or a silent
+// runtime read.
+
+#import "modules/std.sx";
+
+K : [4]i64 : .[11, 22, 33, 44];
+
+main :: () {
+    b : [K[9]]u8 = ---;
+    print("{}\n", b.len);
+}

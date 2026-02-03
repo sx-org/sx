@@ -1,0 +1,6 @@
+// Companion module for 1620 — a mutable module global reachable through a
+// namespace-import alias, plus a const and a fn to prove the store path
+// rejects non-lvalue qualified members.
+lib_g : i64 = 0;
+LIB_C :: 99;
+lib_fn :: () -> i64 { 7 }

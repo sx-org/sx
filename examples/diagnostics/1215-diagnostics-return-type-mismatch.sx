@@ -1,0 +1,15 @@
+// Returning a value whose type has NO coercion to the declared return type
+// is a compile error — the compiler must NOT bit-weld the value into the
+// return slot (a 16-byte string "returned" as i64 used to ship the string's
+// pointer as the integer, exit 0). Both the trailing-expression and the
+// explicit-`return` forms diagnose.
+// Regression (issue 0191).
+#import "modules/std.sx";
+
+bad_trailing :: () -> i64 { "not an int" }
+bad_explicit :: () -> i64 { return "also not an int"; }
+
+main :: () {
+    print("{}\n", bad_trailing());
+    print("{}\n", bad_explicit());
+}

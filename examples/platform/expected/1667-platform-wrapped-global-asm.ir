@@ -1,0 +1,16 @@
+
+module asm ".global _wrapped_add"
+module asm "_wrapped_add:"
+module asm "    add x0, x0, x1"
+module asm "    ret"
+
+; Function Attrs: nounwind
+declare i64 @wrapped_add(i64, i64) #0
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %call = call i64 @wrapped_add(i64 40, i64 2)
+  %ca.tr = trunc i64 %call to i32
+  ret i32 %ca.tr
+}

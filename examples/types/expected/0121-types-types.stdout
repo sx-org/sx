@@ -1,0 +1,75 @@
+=== 3. Types ===
+i8: 127
+i16: 32000
+i32: 100000
+u8: 255
+u16: 65000
+u32: 4000000
+alias: 1.500000
+struct-pos: {x: 1, y: 2}
+struct-prefix: {x: 3, y: 4}
+struct-named: {x: 20, y: 10}
+struct-shorthand: {x: 5, y: 6}
+defaults: a=0 b=99
+field-assign: {x: 42, y: 99}
+enum: .red
+enum-eq: true
+enum-neq: true
+backing: .err
+tagged: .circle(3.140000)
+payload: 3.140000
+void-variant: .none
+reassign: .circle(1.000000)
+reassign2: .rect({w: 5.000000, h: 3.000000})
+enum-prefix: .circle(2.500000)
+match: rect
+match-expr: 10
+match-expr-else: 99
+capture: 9.500000
+capture-arrow: 7.500000
+else-match: other
+int-match: two
+int-match-else: unknown
+bool-match-t: yes
+bool-match-f: no
+bool: true
+union-f: 3.140000
+union-i: 1078523331
+promoted-x: 1.000000
+promoted-data0: 1.000000
+arr[2]: 30
+arr.len: 5
+arr-assign: [1, 99, 3]
+sl[0]: 1
+sl.len: 5
+sl-assign: [10, 55, 30]
+sub: [20, 30, 40]
+head: [10, 20, 30]
+tail: [30, 40, 50]
+slice-of-slice: [20, 30]
+strsub: world
+str-prefix: hello
+str-suffix: world
+global-addr-of: 99
+deref: {x: 10, y: 20}
+auto-deref: 10
+mp[0]: 10
+mp[3]: 40
+mp-write: 99
+ptr==null: true
+ptr!=null: false
+ptr2==null: false
+ptr2!=null: true
+ptr-nested-field: 1.000000 2.000000 3.000000
+mp-store-sentinel: 42
+vec-construct: [1.000000, 3.000000, 2.000000]
+vec-add: [5.000000, 7.000000, 9.000000]
+vec-sub: [4.000000, 3.000000, 2.000000]
+vec-mul: [2.000000, 6.000000, 12.000000]
+vec-div: [5.000000, 3.000000, 2.000000]
+vec-scalar: [2.000000, 6.000000, 4.000000]
+vec-neg: [-1.000000, -3.000000, -2.000000]
+vec-x: 10.000000
+vec-y: 20.000000
+vec-z: 30.000000
+vec-idx: 20.000000

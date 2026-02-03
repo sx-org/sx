@@ -1,0 +1,41 @@
+// Chained runtime-class method dispatch: `Cls.static().instance(...)`
+// resolves the inner call's return type so the outer dispatch's
+// receiver type is known. Pre-fix this collapsed to i64 in
+// `inferExprType`, the runtime_class_map lookup missed, and lowering
+// emitted `error: unresolved 'init'` (or 'initWithWindowScene' etc.)
+// — see issues/0043 for the chess uikit.sx C4 migration that hit it.
+//
+// Two return-type shapes covered: explicit `*ClassName` (alloc here)
+// and `*Self` (init). Both must propagate through the chain so the
+// next `.method(...)` finds the runtime-class declaration.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+NSObject :: #objc_class("NSObject") extern {
+    alloc :: () -> *NSObject;
+    init :: (self: *Self) -> *Self;
+}
+
+NSObjectSelfReturn :: #objc_class("NSObject") extern {
+    alloc :: () -> *Self;
+    init :: (self: *Self) -> *Self;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        a := NSObject.alloc().init();
+        if a != null {
+            print("explicit-then-self ok\n");
+        }
+        b := NSObjectSelfReturn.alloc().init();
+        if b != null {
+            print("self-then-self ok\n");
+        }
+    }
+    inline if OS != .macos {
+        print("explicit-then-self ok\n");
+        print("self-then-self ok\n");
+    }
+    0
+}

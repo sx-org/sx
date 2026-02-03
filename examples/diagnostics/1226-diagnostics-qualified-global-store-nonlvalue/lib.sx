@@ -1,0 +1,3 @@
+// Companion for 1226 — a const and a fn member, neither an lvalue.
+LIB_C :: 99;
+lib_fn :: () -> i64 { 7 }

@@ -1,0 +1,37 @@
+// Comptime compiler API — field-level reflection readers (Phase 3).
+//
+// Builds on the `raw_find_type` / `raw_field_count` readers (example 0628) with the
+// per-member readers, all on the same plain-`u32`-handle shape (scalar in,
+// handle out — no marshaling):
+//
+//   raw_field_name(t, i)  → the i-th member's name handle (StringId)
+//   raw_field_type(t, i)  → the i-th member's type handle (TypeId)
+//   raw_type_name(t)   → a named type's own name handle (StringId)
+//
+// Reflecting `Pair { lo: Point; hi: Point; }`: read each field's name, and the
+// nominal name of each field's type. Chains
+// raw_intern → raw_find_type → raw_field_{name,type} → (raw_type_name) → raw_text_of,
+// all folded at comptime, all serviced natively by the flat-memory VM.
+
+#import "modules/std.sx";
+
+
+StringId :: u32;
+TypeId   :: u32;
+
+
+Point :: struct { x: i64; y: i64; }
+Pair  :: struct { lo: Point; hi: Point; }
+
+pair    :: #run raw_find_type(raw_intern("Pair"));
+n       :: #run raw_field_count(raw_find_type(raw_intern("Pair")));
+f0_name :: #run raw_text_of(raw_field_name(raw_find_type(raw_intern("Pair")), 0));
+f1_name :: #run raw_text_of(raw_field_name(raw_find_type(raw_intern("Pair")), 1));
+// field 0's type is `Point` — read its nominal name through the type handle.
+f0_type :: #run raw_text_of(raw_type_name(raw_field_type(raw_find_type(raw_intern("Pair")), 0)));
+
+main :: () {
+    print("Pair has {} fields\n", n);
+    print("field 0 = {} : {}\n", f0_name, f0_type);
+    print("field 1 = {} : {}\n", f1_name, f0_type);
+}

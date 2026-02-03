@@ -1,0 +1,6 @@
+=== inline if ===
+64-bit
+not wasm
+known os
+desktop 64-bit
+pointer size via if: 8

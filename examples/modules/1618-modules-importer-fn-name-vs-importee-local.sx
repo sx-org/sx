@@ -1,0 +1,54 @@
+// Cross-module name isolation. Regression (issue 0217): a module-scope fn in
+// the IMPORTER named like a LOCAL inside an imported module's function body
+// broke that module's own `h := ...; h(...)` sites with "'h' is not visible"
+// — call-position resolution consulted the program-wide fn table before the
+// lexical scope. A callable local binding (fn pointer / closure) now shadows
+// any same-named top-level fn in call position, matching value-position
+// resolution and spec §Variable Shadowing.
+#import "modules/std.sx";
+lib :: #import "1618-modules-importer-fn-name-vs-importee-local/lib.sx";
+
+// Module-scope fn named like the importee's LOCAL `h`.
+h :: (x: i64) -> i64 { return x + 1; }
+
+shadow_target :: (x: i64) -> void { print("local fnptr {}\n", x); }
+
+main :: () -> i32 {
+    cfg : lib.Cfg = .{ on_event = lib.hook };
+    lib.emit(cfg, 41);
+    print("h(1) = {}\n", h(1));
+
+    // Same-module shadow: a local fn-pointer named `h` shadows THIS
+    // module's own `h` in both call and value position.
+    {
+        h : (x: i64) -> void = shadow_target;
+        h(7);
+        f := h;
+        f(8);
+    }
+    // Shadow gone — the module-scope `h` is back.
+    print("h(2) = {}\n", h(2));
+
+    // Nested-fn shadowing (0217 review F1): shadowing is by DEPTH across
+    // both local namespaces — an INNER nested fn beats an outer callable
+    // var, and an INNER callable var beats an outer nested fn.
+    {
+        h : (x: i64) -> i64 = double_it;                // outer callable var
+        {
+            h :: (x: i64) -> i64 { return x + 100; }    // inner nested fn wins
+            print("inner nested fn: {}\n", h(3));       // 103
+        }
+        print("outer var: {}\n", h(3));                 // 6
+    }
+    {
+        h :: (x: i64) -> i64 { return x + 100; }        // outer nested fn
+        {
+            h : (x: i64) -> i64 = double_it;            // inner var wins
+            print("inner var: {}\n", h(3));             // 6
+        }
+        print("outer nested fn: {}\n", h(3));           // 103
+    }
+    0
+}
+
+double_it :: (x: i64) -> i64 { return x * 2; }

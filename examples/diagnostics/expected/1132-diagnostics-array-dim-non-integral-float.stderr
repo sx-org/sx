@@ -1,0 +1,5 @@
+error: array dimension must be an integer, but '4.5' is a non-integral float
+  --> examples/diagnostics/1132-diagnostics-array-dim-non-integral-float.sx:17:10
+   |
+17 |     a : [N]i64 = ---;
+   |          ^

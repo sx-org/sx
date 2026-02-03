@@ -1,0 +1,24 @@
+// A `$T`-generic RETURN type with no parameter mentioning `$T` is rejected
+// at the declaration: the fn isn't a template (type params derive from
+// params), and no call site could ever bind the return. All three declare
+// surfaces diagnose: a top-level fn, a struct-body method, and a
+// (non-parameterised) impl method. Each used to PANIC the compiler at LLVM
+// emission via the `.unresolved` tripwire — even when never called.
+
+#import "modules/std.sx";
+
+make :: () -> $T { 0 }
+
+Foo :: struct {
+    x: i64;
+    weird :: (self: *Foo) -> $T { 0 }
+}
+
+Show2 :: protocol { show2 :: (self: *Self) -> string; }
+IntBox :: struct { v: i64; }
+impl Show2 for IntBox {
+    show2 :: (self: *IntBox) -> string { "x" }
+    leak :: (self: *IntBox) -> $T { 0 }
+}
+
+main :: () { print("ok\n"); }

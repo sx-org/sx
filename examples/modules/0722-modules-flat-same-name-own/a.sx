@@ -1,0 +1,5 @@
+// a.sx authors `greet`. Its own `from_a` calls `greet` bare — under fix-0102c
+// that binds a.sx's OWN author (own-author wins), even though b.sx also
+// authors `greet` and the first-wins merge keeps only one in the merged scope.
+greet  :: () -> i64 { return 1; }
+from_a :: () -> i64 { return greet(); }

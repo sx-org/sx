@@ -1,0 +1,38 @@
+// struct_field_value returns an interior VIEW `{field type tag, pointer
+// into the receiver}` — not a boxed copy. For an addressable receiver
+// the view borrows the struct's own storage, so mutations of the struct
+// between taking the view and reading it stay VISIBLE through the view.
+// This is 1b's one deliberate semantic change (the old lowering boxed a
+// copy of the field at call time).
+
+#import "modules/std.sx";
+
+Point :: struct { x: i64; y: i16; }
+
+main :: () -> i64 {
+    p := Point.{ x = 1, y = 2 };
+
+    // Take views of both fields, THEN mutate the struct.
+    vx := struct_field_value(p, 0);
+    vy := struct_field_value(p, 1);
+    p.x = 42;
+    p.y = -7;
+    print("{} {}\n", vx, vy);            // 42 -7 — views alias p
+
+    // Reading through a typed unbox sees the same storage.
+    print("{}\n", vx.(i64) + 1);    // 43
+
+    // A view of a nested field composes through the GEP chain.
+    Outer :: struct { p: Point; tag: i64; }
+    o := Outer.{ p = .{ x = 5, y = 6 }, tag = 9 };
+    vp := struct_field_value(o.p, 1);
+    o.p.y = 100;
+    print("{}\n", vp);                   // 100
+
+    // An RVALUE receiver spills to a frame temp — the view is of the
+    // temp (stable, but aliases nothing).
+    mk :: () -> Point { Point.{ x = 10, y = 20 } }
+    vr := struct_field_value(mk(), 0);
+    print("{}\n", vr);                   // 10
+    return 0;
+}

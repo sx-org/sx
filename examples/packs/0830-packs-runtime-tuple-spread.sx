@@ -1,0 +1,82 @@
+// Value spread (specs.md §"Tuple parallels") + pack capture materialization.
+// Regression (issue 0156 Part 2): a `..` spread crossing a deferred / value
+// boundary used to crash — a comptime pack captured into a closure segfaulted
+// (the deferred body re-expanded the spawner's dead locals), and spreading a
+// concrete tuple panicked ("unresolved type reached LLVM emission").
+//
+// Locked-in semantics:
+//  - `..t` on a concrete TUPLE / fixed ARRAY value spreads its elements into
+//    a call's positional args (so a materialized pack `.(..xs)` re-spreads);
+//  - a tuple spread also feeds a pack-fn call (each element its own pack arg)
+//    and a slice-variadic call (elements repack into the slice);
+//  - `.(..t)` re-splices a tuple value's fields into a new tuple literal;
+//  - capturing a pack into a closure MATERIALIZES the monomorphized element
+//    values into the env as a tuple — the deferred body spreads/indexes that
+//    tuple, never the spawner's frame.
+
+#import "modules/std.sx";
+
+add2 :: (a: i64, b: i64) -> i64 => a + b;
+join :: (s: string, n: i64) -> string { return format("{}-{}", s, n); }
+sum  :: (..xs: []i64) -> i64 { s := 0; for xs (x) { s = s + x; } return s; }
+
+// pack → tuple → re-spread (the spec's `stored := .(..xs); f(..stored)` shape)
+respread :: (..xs: any) -> i64 {
+    stored := .{..xs};
+    return add2(..stored);
+}
+
+// pack captured into a closure that OUTLIVES the spawner's frame
+make_thunk :: (..args: any) -> Closure() -> i64 {
+    return () -> i64 => add2(..args);
+}
+
+// pack captured into a closure: spread AND comptime-indexed
+capture_both :: (dst: *string, ..args: any) {
+    captured := () => { dst.* = join(..args); };
+    captured();
+}
+capture_index :: (po: *i64, ..args: any) {
+    captured := () => { po.* = args[0] + args[1]; };
+    captured();
+}
+
+main :: () -> i32 {
+    // tuple spread into a fixed-arity fn
+    t := .{40, 2};
+    print("tuple: {}\n", add2(..t));                 // 42
+
+    // array spread into a fixed-arity fn
+    arr := .[40, 2];
+    print("array: {}\n", add2(..arr));               // 42
+
+    // materialized pack re-spread
+    print("respread: {}\n", respread(30, 12));       // 42
+
+    // tuple spread into a pack fn (each element its own pack arg)
+    t3 := .{1, "two", 3};
+    print("packfn: {} {} {}\n", ..t3);               // 1 two 3
+
+    // tuple spread into a slice variadic (elements repack into the slice)
+    print("variadic: {}\n", sum(..t));               // 42
+
+    // tuple-literal re-splice
+    t2 := .{..t3};
+    print("resplice: {} {}\n", t2.0, t2.1);          // 1 two
+
+    // deferred closure over a captured (materialized) pack
+    thunk := make_thunk(40, 2);
+    print("thunk: {}\n", thunk());                   // 42
+
+    // heterogeneous pack captured + spread inside the closure
+    s := "";
+    capture_both(@s, "id", 7);
+    print("captured: {}\n", s);                      // id-7
+
+    // pack captured + comptime-indexed inside the closure
+    n : i64 = 0;
+    capture_index(@n, 40, 2);
+    print("indexed: {}\n", n);                       // 42
+
+    0
+}

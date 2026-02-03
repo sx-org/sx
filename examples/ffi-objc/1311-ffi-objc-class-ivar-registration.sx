@@ -1,0 +1,51 @@
+// M1.2 A.4b.i — '__sx_state' ivar registration on sx-defined
+// '#objc_class'.
+//
+// Class-pair init now:
+//   1. allocs the class pair
+//   2. registers a single '__sx_state : *void' ivar
+//   3. finalises the class
+//   4. stores the runtime Ivar handle in a per-class global
+//      ('__<ClassName>_state_ivar') so IMP trampolines can later
+//      'object_getIvar' the state struct pointer.
+//
+// Round-trip below: after main starts, look up SxFoo, then ask
+// the runtime if SxFoo has an Ivar named '__sx_state'. Returns
+// non-null iff registration succeeded.
+//
+// IMP trampolines (A.4b.ii) and the '+alloc' / '-dealloc'
+// overrides (A.5 / A.6) come next.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+class_getInstanceVariable :: (cls: *void, name: [*]u8) -> *void extern objc;
+
+SxFoo :: #objc_class("SxFoo") {
+    counter: i32;
+
+    bump :: (self: *Self) {
+        self.counter += 1;
+    }
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        cls : Class = objc_getClass("SxFoo".ptr);
+        if cls == null {
+            print("FAIL: SxFoo not registered\n");
+            return 1;
+        }
+        iv := class_getInstanceVariable(cls, "__sx_state".ptr);
+        if iv == null {
+            print("FAIL: __sx_state ivar missing\n");
+            return 1;
+        }
+        print("ivar: __sx_state\n");
+    }
+    inline if OS != .macos {
+        print("ivar: __sx_state\n");
+    }
+    0
+}

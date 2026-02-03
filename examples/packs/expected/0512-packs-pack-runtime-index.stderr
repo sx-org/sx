@@ -1,0 +1,5 @@
+error: pack 'args' must be indexed by a compile-time constant — a pack is comptime-only and has no runtime value
+  --> examples/packs/0512-packs-pack-runtime-index.sx:18:24
+   |
+18 |         x : any = args[i];   // ERROR: runtime index into a comptime-only pack
+   |                        ^

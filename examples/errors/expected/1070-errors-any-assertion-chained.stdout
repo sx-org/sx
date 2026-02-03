@@ -1,0 +1,20 @@
+a1 null: true
+a2: 1
+a3: 1.000000
+a4: 9.500000
+a5 flat: 1
+a6 flat null: true
+t1 null: true
+t2: 42
+o1 null: true
+o2: 42
+o3 null: true
+tag: mismatch
+c1 null: true
+p1 null: true
+p2: 42
+s1 null: true
+s2 null: true
+s3: 42
+s4: 7
+outer: mismatch

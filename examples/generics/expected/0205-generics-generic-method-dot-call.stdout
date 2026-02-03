@@ -1,0 +1,5 @@
+plain: 7
+sized i32: 4
+sized i64: 8
+taking explicit: 42
+taking inferred: 99

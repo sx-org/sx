@@ -1,0 +1,5 @@
+error: type 'Box' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0821-protocols-same-name-method-ambiguous.sx:13:18
+   |
+13 |     get :: () -> Box;
+   |                  ^^^

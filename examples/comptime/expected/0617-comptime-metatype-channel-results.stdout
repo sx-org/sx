@@ -1,0 +1,4 @@
+recv value 42
+recv closed
+try value 7
+try empty

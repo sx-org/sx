@@ -1,0 +1,1 @@
+{ "aot": true, "bundle": { "app": ".sx-tmp/1665-platform-macos-bundle-smoke.app", "expect": ["Contents/Info.plist", "Contents/MacOS", "Contents/_CodeSignature"] } }

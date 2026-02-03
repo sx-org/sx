@@ -1,0 +1,66 @@
+// `#identity` ownership class (E2): protocol values of an identity
+// protocol only ever BORROW a named object's storage — in EVERY erasure
+// spelling. The unmarked default class is value/own. This is the
+// POSITIVE matrix: lvalue borrows via `xx`, the target-explicit postfix
+// `x.(P)`, decl targets, call args, and struct-field targets all alias
+// the original (mutations visible both ways); `is_identity` reflects the
+// class at compile time; Allocator (std) is adopted — `Context.{
+// allocator = xx gpa }` stays a legal value-borrow. The refusals
+// (rvalue erasure, free) are pinned in diagnostics/1255.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Counter :: protocol #identity {
+    bump :: (self: *Self) -> i64;
+    read :: (self: *Self) -> i64;
+}
+
+Tally :: struct { n: i64; }
+impl Counter for Tally {
+    bump :: (self: *Tally) -> i64 { self.n += 1; self.n }
+    read :: (self: *Tally) -> i64 { self.n }
+}
+
+Holder :: struct { c: Counter; }
+
+use_counter :: (c: Counter) -> i64 { c.bump() }
+
+main :: () {
+    // Reflection: the class is a compile-time fact.
+    print("classes: {} {} {}\n", is_identity(Counter), is_identity(Allocator), is_identity(Tally));
+
+    t := Tally.{ n = 0 };
+
+    // Every spelling borrows the SAME storage:
+    a : Counter = xx t;            // xx at a decl target
+    b := t.(Counter);              // target-explicit postfix
+    _ = use_counter(xx t);         // call-arg erasure (bumps t)
+    h := Holder.{ c = xx t };      // struct-field target
+
+    _ = a.bump();
+    _ = b.bump();
+    _ = h.c.bump();
+    // 1 (call arg) + 3 bumps — all landed in the one `t`.
+    print("aliased: {} {}\n", t.n, a.read());
+
+    // Mutating the original is visible through every borrow.
+    t.n = 100;
+    print("back:    {} {} {}\n", a.read(), b.read(), h.c.read());
+
+    // Allocator adoption: identity borrows thread through Context exactly
+    // as before (the field target erases `gpa` as a value-borrow), and
+    // allocator-typed PARAMS keep working (borrows of the caller's value).
+    gpa := GPA.init();
+    got : i64 = 0;
+    push .{ allocator = gpa } {
+        xs := context.allocator.alloc(i64, 4);
+        xs[0] = 42;
+        got = xs[0];
+        free(xs);                  // context form — routes back to gpa
+    }
+    // The pushed borrow aliased gpa: alloc +1, free -1 → 0 outstanding.
+    // (Printing happens OUTSIDE the push — print's own format allocations
+    // would otherwise land in gpa's counter.)
+    print("alloc:   {}\n", got);
+    print("gpa outstanding: {}\n", gpa.alloc_count);
+}

@@ -1,0 +1,5 @@
+error: Vector lane count must be a positive compile-time integer constant
+  --> examples/vectors/1505-vectors-zero-lane-rejected.sx:13:16
+   |
+13 |     v : Vector(0, f32) = ---;
+   |                ^

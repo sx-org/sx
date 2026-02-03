@@ -1,0 +1,307 @@
+// std.http S1 (PLAN-HTTPZ): streaming / chunked OUTPUT.
+//
+// A handler streams a LARGE body via Transfer-Encoding: chunked without
+// the server ever buffering the whole body. It opts in with
+// resp.stream(producer, ctx); the server pulls bounded pieces from the
+// producer and frames each as a chunk through the existing
+// out_buf/write_more backpressure path — so peak memory stays one
+// bounded scratch (STREAM_BUF_CAP), never the full body.
+//
+// This drives one server + its clients in ONE thread via Server.tick:
+//   1. a 200 KB chunked response — the client de-chunks it and asserts
+//      the reassembled body is byte-exact, with `Transfer-Encoding:
+//      chunked` and a terminating `0\r\n\r\n`.
+//   2. a normal fixed-body request still works (Content-Length, 200) —
+//      the fast path is unchanged.
+//   3. keep-alive: a chunked response followed by another request on the
+//      SAME connection both succeed.
+// The whole run is under a GPA; net-zero alloc_count after close proves
+// no per-chunk / stream-buffer leak.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 18974;
+
+BODY_LEN :: 200000;   // 200 KB — far larger than any single server buffer
+
+// The streamed body is the deterministic byte pattern b[i] = (i*31+7) & 0xFF.
+// The producer fills `dst` with up to `dst_cap` bytes starting at logical
+// `offset`, returning the count (0 = end of body). Fully resumable: it
+// derives every byte from `offset`, holding no state of its own.
+body_byte :: (i: i64) -> u8 {
+    v := (i * 31 + 7) % 256;
+    return v.(u8);
+}
+
+stream_producer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64 {
+    if offset >= BODY_LEN { return 0; }
+    n := dst_cap;
+    if offset + n > BODY_LEN { n = BODY_LEN - offset; }
+    i : i64 = 0;
+    while i < n {
+        dst[i] = body_byte(offset + i);
+        i += 1;
+    }
+    return n;
+}
+
+handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/big" {
+        resp.set_content_type("application/octet-stream");
+        resp.stream(stream_producer, 0);
+        return;
+    }
+    if req.path == "/small" {
+        resp.body = "hello fixed body";
+        return;
+    }
+    resp.status = 404;
+    resp.body = "nope";
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+// Find the end of the header block ("\r\n\r\n") in buf[0..len]; -1 if not
+// yet present. Returns the index of the first \r of the terminator.
+header_end :: (buf: [*]u8, len: i64) -> i64 {
+    i : i64 = 0;
+    while i + 3 < len {
+        if buf[i] == 13 and buf[i+1] == 10 and buf[i+2] == 13 and buf[i+3] == 10 { return i; }
+        i += 1;
+    }
+    return -1;
+}
+
+// True when buf[0..len] holds a complete chunked response: headers, then
+// chunks up to and including the terminating "0\r\n\r\n". We don't parse
+// the chunk sizes for completeness here — we just look for the zero chunk
+// terminator after the header block.
+chunked_complete :: (buf: [*]u8, len: i64) -> bool {
+    he := header_end(buf, len);
+    if he < 0 { return false; }
+    // search for "0\r\n\r\n" at a line boundary after the headers. A simple
+    // scan for the 5-byte terminator suffices for this test's data (the
+    // body bytes can contain '0' but not the full \r\n0\r\n\r\n framing of
+    // the final empty chunk reliably; to be safe require it at the very end).
+    if len < 5 { return false; }
+    e := len - 5;
+    return buf[e] == 48 and buf[e+1] == 13 and buf[e+2] == 10 and buf[e+3] == 13 and buf[e+4] == 10;
+}
+
+// De-chunk the body of a chunked response sitting in buf[0..len] into
+// `out` (cap OUT_CAP). Returns the decoded length, or -1 on malformed
+// framing. Reads chunk-size lines (hex) and copies each chunk's data.
+dechunk :: (buf: [*]u8, len: i64, out: [*]u8, out_cap: i64) -> i64 {
+    he := header_end(buf, len);
+    if he < 0 { return -1; }
+    p := he + 4;          // first byte after the header block
+    outlen : i64 = 0;
+    while p < len {
+        // parse hex chunk size up to CRLF
+        sz : i64 = 0;
+        saw := false;
+        while p < len and buf[p] != 13 {
+            c := buf[p];
+            d : i64 = -1;
+            if c >= 48 and c <= 57 { d = c - 48; }
+            else if c >= 97 and c <= 102 { d = c - 97 + 10; }
+            else if c >= 65 and c <= 70 { d = c - 65 + 10; }
+            else { return -1; }       // junk in the size line
+            sz = sz * 16 + d;
+            saw = true;
+            p += 1;
+        }
+        if !saw { return -1; }
+        if p + 1 >= len or buf[p] != 13 or buf[p+1] != 10 { return -1; }
+        p += 2;            // skip CRLF after the size
+        if sz == 0 {
+            // final chunk; expect a trailing CRLF
+            return outlen;
+        }
+        if p + sz > len { return -1; }            // truncated chunk data
+        if outlen + sz > out_cap { return -1; }   // overflow guard
+        m : i64 = 0;
+        while m < sz { out[outlen + m] = buf[p + m]; m += 1; }
+        outlen += sz;
+        p += sz;
+        if p + 1 >= len or buf[p] != 13 or buf[p+1] != 10 { return -1; }
+        p += 2;            // skip CRLF after the chunk data
+    }
+    return -1;             // ran out before the zero chunk
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    leaked : i64 = 0;
+    rc : i32 = 0;
+
+    push .{ allocator = gpa } {
+        cfg : http.Config = .{
+            port = PORT,
+            timeout_request_ms = 4000,
+            timeout_keepalive_ms = 4000,
+            request_count = 50,
+            max_conn = 8,
+        };
+        srv, se := http.Server.init(cfg, handler, 0);
+        if se { print("server init failed\n"); rc = 1; }
+
+        if rc == 0 {
+            // Response buffer big enough for the framed 200 KB response.
+            cap : i64 = BODY_LEN + 65536;
+            rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+            dbuf : [*]u8 = xx context.allocator.alloc_bytes(BODY_LEN + 16);
+
+            // ── 1. large chunked body, byte-exact reassembly ──────────
+            c1 := dial_port(PORT);
+            if c1 < 0 { print("dial failed\n"); rc = 1; }
+            if rc == 0 {
+                req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";
+                socket.write(c1, req.ptr, xx req.len);
+                total : i64 = 0;
+                tries := 0;
+                done := false;
+                while tries < 200000 and !done {
+                    srv.tick(2) catch {};
+                    n, re := socket.read_nb(c1, @rbuf[total], xx (cap - total));
+                    if !re { total += n; }
+                    else if re == error.Closed { break; }
+                    if chunked_complete(rbuf, total) { done = true; }
+                    tries += 1;
+                }
+                resp := string.{ ptr = rbuf, len = xx total };
+                if !done { print("chunked response never completed (got {} bytes)\n", total); rc = 1; }
+                else if !contains(resp, "Transfer-Encoding: chunked") { print("missing chunked TE header\n"); rc = 1; }
+                else if !contains(resp, "HTTP/1.1 200 OK") { print("chunked: bad status\n"); rc = 1; }
+                else {
+                    dl := dechunk(rbuf, total, dbuf, BODY_LEN + 16);
+                    if dl != BODY_LEN { print("dechunk length wrong: {} (want {})\n", dl, BODY_LEN); rc = 1; }
+                    else {
+                        // byte-exact check
+                        i : i64 = 0;
+                        bad := false;
+                        while i < BODY_LEN {
+                            if dbuf[i] != body_byte(i) { bad = true; break; }
+                            i += 1;
+                        }
+                        if bad { print("dechunked body mismatch at byte {}\n", i); rc = 1; }
+                    }
+                }
+            }
+            if c1 >= 0 { socket.close(c1); }
+
+            // ── 2. fixed-body fast path still works ───────────────────
+            if rc == 0 {
+                c2 := dial_port(PORT);
+                if c2 < 0 { print("dial2 failed\n"); rc = 1; }
+                if rc == 0 {
+                    req := "GET /small HTTP/1.1\r\nHost: t\r\n\r\n";
+                    socket.write(c2, req.ptr, xx req.len);
+                    total : i64 = 0;
+                    tries := 0;
+                    got := false;
+                    while tries < 4000 and !got {
+                        srv.tick(2) catch {};
+                        n, re := socket.read_nb(c2, @rbuf[total], xx (cap - total));
+                        if !re { total += n; }
+                        else if re == error.Closed { break; }
+                        s := string.{ ptr = rbuf, len = xx total };
+                        if contains(s, "hello fixed body") { got = true; }
+                        tries += 1;
+                    }
+                    s := string.{ ptr = rbuf, len = xx total };
+                    if !got { print("fixed body never arrived\n"); rc = 1; }
+                    else if !contains(s, "HTTP/1.1 200 OK") { print("fixed: bad status\n"); rc = 1; }
+                    else if !contains(s, "Content-Length: 16") { print("fixed: wrong content-length\n"); rc = 1; }
+                    else if contains(s, "Transfer-Encoding") { print("fixed: should not be chunked\n"); rc = 1; }
+                }
+                if c2 >= 0 { socket.close(c2); }
+            }
+
+            // ── 3. keep-alive: chunked then a second request, same conn ──
+            if rc == 0 {
+                c3 := dial_port(PORT);
+                if c3 < 0 { print("dial3 failed\n"); rc = 1; }
+                if rc == 0 {
+                    // first: chunked /big
+                    req := "GET /big HTTP/1.1\r\nHost: t\r\n\r\n";
+                    socket.write(c3, req.ptr, xx req.len);
+                    total : i64 = 0;
+                    tries := 0;
+                    done := false;
+                    while tries < 200000 and !done {
+                        srv.tick(2) catch {};
+                        n, re := socket.read_nb(c3, @rbuf[total], xx (cap - total));
+                        if !re { total += n; }
+                        else if re == error.Closed { break; }
+                        if chunked_complete(rbuf, total) { done = true; }
+                        tries += 1;
+                    }
+                    r1 := string.{ ptr = rbuf, len = xx total };
+                    if !done or !contains(r1, "Connection: keep-alive") { print("keep-alive: first chunked response failed\n"); rc = 1; }
+                    else {
+                        dl := dechunk(rbuf, total, dbuf, BODY_LEN + 16);
+                        if dl != BODY_LEN { print("keep-alive: first body wrong len {}\n", dl); rc = 1; }
+                    }
+                    // second: fixed /small on the SAME connection
+                    if rc == 0 {
+                        req2 := "GET /small HTTP/1.1\r\nHost: t\r\n\r\n";
+                        socket.write(c3, req2.ptr, xx req2.len);
+                        total = 0;
+                        tries = 0;
+                        got := false;
+                        while tries < 4000 and !got {
+                            srv.tick(2) catch {};
+                            n, re := socket.read_nb(c3, @rbuf[total], xx (cap - total));
+                            if !re { total += n; }
+                            else if re == error.Closed { break; }
+                            s := string.{ ptr = rbuf, len = xx total };
+                            if contains(s, "hello fixed body") { got = true; }
+                            tries += 1;
+                        }
+                        if !got { print("keep-alive: second request failed\n"); rc = 1; }
+                    }
+                }
+                if c3 >= 0 { socket.close(c3); }
+            }
+
+            context.allocator.dealloc_bytes(xx rbuf);
+            context.allocator.dealloc_bytes(xx dbuf);
+            srv.close();
+        }
+
+        leaked = gpa.alloc_count;
+    }
+
+    if rc != 0 { return rc; }
+    print("chunked 200 KB body reassembled byte-exact\n");
+    print("fixed-body fast path ok\n");
+    print("keep-alive: chunked then fixed on one connection ok\n");
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations after streaming lifetimes\n", leaked);
+        return 1;
+    }
+    print("no leak: net-zero allocations after streamed + fixed + keep-alive\n");
+    print("ok\n");
+    return 0;
+}

@@ -1,0 +1,11 @@
+// An extensionless #import that matches BOTH a `.sx` file and a sibling
+// directory of the same name is ambiguous — the compiler refuses to pick
+// silently and asks for the explicit `.sx` spelling. `modules/std` is the
+// canonical collision: `modules/std.sx` (the prelude) sits next to
+// `modules/std/` (mem/fs/process/...).
+
+#import "modules/std";
+
+main :: () -> i32 {
+    0
+}

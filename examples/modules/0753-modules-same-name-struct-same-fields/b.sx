@@ -1,0 +1,5 @@
+// Module B authors `Pair { x, y }` with the SAME field shape as A's. The two
+// still get distinct nominal identities (not collapsed): each keeps its own
+// TypeId / per-source author, so both register and format independently.
+Pair :: struct { x: i64; y: i64; }
+b_pair :: () -> Pair { return Pair.{ x = 5, y = 6 }; }

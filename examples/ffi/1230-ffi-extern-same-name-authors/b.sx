@@ -1,0 +1,2 @@
+// The second flat author of `absval` — the identical `extern` binding.
+absval :: (n: i32) -> i32 extern libc "abs";

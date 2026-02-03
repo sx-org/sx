@@ -1,0 +1,4 @@
+// Companion for 1226's ambiguous leg — flat-imports two modules that BOTH
+// declare `shared`, so `amb.shared` is ambiguous from this module's context.
+#import "dup_a.sx";
+#import "dup_b.sx";

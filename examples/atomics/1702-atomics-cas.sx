@@ -1,0 +1,34 @@
+// Atomic($T) compare-exchange: compare_exchange / compare_exchange_weak → LLVM
+// cmpxchg. Result is `?T` — null = SUCCESS; a present value is the ACTUAL current
+// value on failure (for a retry loop). Stream A (atomics) A.2. Single-thread.
+#import "modules/std.sx";
+#import "modules/std/atomic.sx";
+
+main :: () {
+    // Successful CAS: 10 == 10 → store 20, returns null.
+    a := Atomic(i64).init(10);
+    got := a.compare_exchange(10, 20, .acq_rel, .acquire);
+    if got == null {
+        print("cas ok, now: {}\n", a.load(.acquire));   // 20
+    } else {
+        print("cas unexpected fail: {}\n", got!);
+    }
+
+    // Failing CAS: 99 != 20 → no store, returns the actual value (20), unchanged.
+    got2 := a.compare_exchange(99, 0, .seq_cst, .seq_cst);
+    if got2 == null {
+        print("cas unexpected ok\n");
+    } else {
+        print("cas failed, actual: {}, still: {}\n", got2!, a.load(.seq_cst)); // 20, 20
+    }
+
+    // Retry loop with the weak variant: increment a counter by 5.
+    counter := Atomic(i64).init(100);
+    cur := counter.load(.relaxed);
+    while true {
+        r := counter.compare_exchange_weak(cur, cur + 5, .acq_rel, .acquire);
+        if r == null { break; }
+        cur = r!;   // retry with the observed value
+    }
+    print("after loop: {}\n", counter.load(.seq_cst)); // 105
+}

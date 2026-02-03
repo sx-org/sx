@@ -1,0 +1,19 @@
+// Erasing a concrete value to an IMPORTED protocol (`xx @im` → `inner.P`) runs
+// the impl-conformance check, which resolves the impl method's declared types
+// (here the return `?Q`) in the IMPL's OWN defining module — so a type like `Q`,
+// bare-visible only inside `inner` (namespaced-only from here), resolves where
+// it's visible and the erasure succeeds.
+//
+// Regression (issue 0208): the impl side was resolved at the ERASURE SITE's
+// source instead, tripping `resolveNominalLeaf`'s `.not_visible` hard diagnostic
+// ("type 'Q' is not visible") on a perfectly correct impl. Same family as
+// 0207/0206/0204. Fix pins the impl side to `fd.body.source_file`
+// (`signatureMismatch`), and stamps impl-method bodies with their module
+// (`stampImplMethodSources`) so that pin is populated.
+inner :: #import "0421-protocols-impl-type-resolved-in-impl-module/inner.sx";
+main :: () -> i32 {
+    im : inner.Impl = .{};
+    p := im.(inner.P);
+    if g := p.get() { return xx g.v; }   // expect 42
+    return 1;
+}

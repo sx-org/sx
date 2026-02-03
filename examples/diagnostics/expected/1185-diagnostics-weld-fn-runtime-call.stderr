@@ -1,0 +1,4 @@
+error: 'raw_intern' runs only at compile time — it cannot be called from the runtime call graph (use it inside #run or a comptime '::')
+  reached from the runtime graph:
+    main
+    -> raw_intern   (compile-time only)

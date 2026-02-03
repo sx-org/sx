@@ -1,0 +1,10 @@
+error: 'bump' is not a ufcs function — a plain function does not dispatch via dot-call
+  --> examples/diagnostics/1166-diagnostics-ufcs-not-opted-in.sx:10:19
+   |
+10 |     print("{}\n", f.bump());
+   |                   ^^^^^^
+
+help: call it directly (`bump(receiver, ...)`), pipe it (`receiver |> bump(...)`), or declare it `bump :: ufcs (...) { ... }`
+   |
+10 |     print("{}\n", f.bump());
+   |                   ^^^^^^

@@ -1,0 +1,26 @@
+// `extern` C-variadic tail: a trailing `..args: []T` on an `extern` fn
+// maps to the C calling convention's `...`. Extras at the call site pass through the variadic
+// slot with standard default argument promotion (i8/i16/bool → i32,
+// f32 → f64), NOT packed into an sx slice.
+//
+// Regression (FFI-linkage Part B): the `is_variadic` drop in
+// `declareFunction` + the call-site early-out in `packVariadicCallArgs`
+// were gated on `extern` only, so a migrated variadic `extern` lost
+// its `...` tail and slice-packed the extras (garbage at the C ABI).
+
+#import "modules/std.sx";
+
+#import c {
+    #source "1229-ffi-extern-cvariadic.c";
+};
+
+sx_ext_sum_ints    :: (n: i32, ..args: []i32) -> i64 extern;
+sx_ext_avg_doubles :: (n: i32, ..args: []f64) -> f64 extern;
+
+main :: () -> i32 {
+    print("sum_ints(3, 10, 20, 30) = {}\n", sx_ext_sum_ints(3, 10, 20, 30));
+    print("sum_ints(0)             = {}\n", sx_ext_sum_ints(0));
+    print("avg_doubles(2)          = {}\n", sx_ext_avg_doubles(2, 1.5, 2.5));
+    print("avg_doubles(3)          = {}\n", sx_ext_avg_doubles(3, 1.0, 2.0, 3.0));
+    0
+}

@@ -1,0 +1,5 @@
+error: global 'g' must be initialized by a compile-time constant
+  --> examples/diagnostics/1118-diagnostics-global-non-const-initializer-rejected.sx:14:11
+   |
+14 | g : i32 = K.x;
+   |           ^^^

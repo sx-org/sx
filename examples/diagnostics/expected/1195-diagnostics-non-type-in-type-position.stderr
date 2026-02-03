@@ -1,0 +1,29 @@
+error: unknown error set 'Nonexistent'
+  --> examples/diagnostics/1195-diagnostics-non-type-in-type-position.sx:31:9
+   |
+31 |     z : !Nonexistent = ---;        // `!` of an undeclared name
+   |         ^^^^^^^^^^^^
+
+error: unknown error set 'Nonexistent'
+  --> examples/diagnostics/1195-diagnostics-non-type-in-type-position.sx:32:20
+   |
+32 |     w : Tuple(i32, !Nonexistent) = ---;       // nested in a tuple
+   |                    ^^^^^^^^^^^^
+
+error: unknown error set 'Nonexistent'
+  --> examples/diagnostics/1195-diagnostics-non-type-in-type-position.sx:33:17
+   |
+33 |     v : Closure(!Nonexistent) -> i32 = ---;   // nested in a closure param
+   |                 ^^^^^^^^^^^^
+
+error: expected a type, found a value 'g.a' in type position
+  --> examples/diagnostics/1195-diagnostics-non-type-in-type-position.sx:29:9
+   |
+29 |     x : g.a = ---;                 // field-access value in type position
+   |         ^^^
+
+error: expected a type, found a value 'g.a' in type position
+  --> examples/diagnostics/1195-diagnostics-non-type-in-type-position.sx:30:20
+   |
+30 |     y : Tuple(i32, g.a) = ---;     // same, as a tuple element
+   |                    ^^^

@@ -1,0 +1,5 @@
+error: array dimension must be a compile-time integer constant
+  --> examples/diagnostics/1136-diagnostics-array-dim-nonconst-direct-no-crash.sx:19:10
+   |
+19 |     a : [get()]i64 = ---;
+   |          ^^^^^

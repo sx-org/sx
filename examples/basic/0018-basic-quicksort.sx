@@ -1,0 +1,35 @@
+#import "modules/std.sx";
+
+quick_sort :: (items: []$T) {
+    partition :: (items: []T, lo: i64, hi: i64) -> i64 {
+        pivot := items[hi];
+        i := lo - 1;
+        j := lo;
+        while j < hi {
+            if items[j] < pivot {
+                i += 1;
+                items[i], items[j] = items[j], items[i];
+            }
+            j += 1;
+        }
+        i += 1;
+        items[i], items[hi] = items[hi], items[i];
+        i
+    }
+
+    sort :: (items: []T, lo: i64, hi: i64) {
+        if lo < hi {
+            pi := partition(items, lo, hi);
+            sort(items, lo, pi - 1);
+            sort(items, pi + 1, hi);
+        }
+    }
+
+    sort(items, 0, items.len - 1);
+}
+
+main :: () {
+    arr : []i64 = .[333, 2, 3, 5, 2, 2, 3, 4, 5, 6, 6, 1];
+    quick_sort(arr);
+    print("{}\n", arr);
+}

@@ -1,0 +1,33 @@
+// A nested `::` static function is NOT a closure — it has no environment, so a
+// reference to an ENCLOSING function's local / param / local-const cannot be
+// resolved and previously miscompiled to a dead Ref: bare reads returned undef
+// (exit 0, no diagnostic), indexed reads segfaulted, indexed / member stores
+// Bus-errored, and calling an enclosing closure value dispatched through a dead
+// env pointer. Every consumer shape is now a located compile error naming the
+// closure alternative: bare read, indexed read, indexed write, field write,
+// closure-value call, and multi-assign write. Regression (issue 0250 + review
+// fold).
+#import "modules/std.sx";
+Pt :: struct { v: i64; }
+main :: () -> i32 {
+    x := 41;
+    arr : [3]i64 = .[10, 20, 30];
+    pt := Pt.{ v = 1 };
+    g := () => x + 5;
+    a := 0; b := 0;
+
+    f1 :: () -> i64 { return x + 1; }     // bare read of enclosing local
+    f2 :: () -> i64 { return arr[0]; }    // indexed read (segfaulted pre-fold)
+    f3 :: () { arr[1] = 99; }             // indexed write (Bus error pre-fold)
+    f4 :: () { pt.v = 77; }               // field write (Bus error pre-fold)
+    f5 :: () -> i64 { return g(); }       // enclosing closure-value call (dead env pre-fold)
+    f6 :: () { a, b = 7, 8; }             // multi-assign write (silent no-op pre-fold)
+
+    print("{}\n", f1());
+    print("{}\n", f2());
+    f3();
+    f4();
+    print("{}\n", f5());
+    f6();
+    0
+}

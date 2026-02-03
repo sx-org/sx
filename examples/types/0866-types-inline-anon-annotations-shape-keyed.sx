@@ -1,0 +1,43 @@
+// Inline anonymous type ANNOTATIONS (`x : struct { … }`, `: union { … }`,
+// `: enum { … }`) are SHAPE-keyed, like untyped `.{ }` literals: identical
+// shapes unify to one TypeId, distinct shapes are distinct types — including
+// across annotation/literal sites and inside anon-enum payload structs.
+// Regression (issue 0294): every inline decl displays as `__anon`, and the
+// name-keyed intern path let the FIRST inline shape in a program claim the
+// name — every later, differently-shaped inline annotation resolved to it
+// ("field 'y' not found on type '__anon'").
+#import "modules/std.sx";
+
+g :: (v: struct { x: i64; }) -> i64 { return v.x; }
+
+main :: () -> i64 {
+    // The 0294 repro: two differently-shaped inline struct annotations.
+    a : struct { x: i64; } = .{ x = 1 };
+    b : struct { y: f64; } = .{ y = 2.5 };
+    print("{} {}\n", a.x, b.y);
+
+    // Identical shapes unify — with each other and with the untyped
+    // literal's synthesized type; an anon-annotated local flows into an
+    // anon-param signature of the same shape.
+    c : struct { x: i64; } = .{ x = 2 };
+    print("same={} lit={} g={}\n",
+        type_eq(type_of(a), type_of(c)),
+        type_eq(type_of(a), type_of(.{ x = 3 })),
+        g(a));
+
+    // Inline unions: distinct shapes are distinct types.
+    u : union { a: i64; b: f64; } = ---;
+    u.a = 42;
+    v : union { s: string; t: i64; } = ---;
+    v.t = 7;
+    print("{} {}\n", u.a, v.t);
+
+    // Inline payload enums: distinct shapes separate, and two anon enums
+    // sharing a variant NAME keep their differently-shaped payload structs
+    // apart (the `__anon.<variant>` qualification hazard).
+    e : enum { S: struct { a: i64; }; } = .S.{ a = 4 };
+    f : enum { S: struct { b: f64; }; U: void; } = .U;
+    if e == { case .S: print("S\n"); }
+    if f == { case .U: print("U\n"); case .S: print("S\n"); }
+    return 0;
+}

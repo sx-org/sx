@@ -1,0 +1,17 @@
+raylib :: #library "raylib";
+
+Color :: struct {
+    r, g, b, a: u8;
+}
+
+Vector2 :: struct {
+    x, y: f32;
+}
+
+InitWindow :: (width: i32, height: i32, title: [:0]u8) -> void extern raylib;
+CloseWindow :: () -> void extern raylib;
+WindowShouldClose :: () -> bool extern raylib;
+BeginDrawing :: () -> void extern raylib;
+EndDrawing :: () -> void extern raylib;
+ClearBackground :: (color: Color) -> void extern raylib;
+DrawTriangle :: (v1: Vector2, v2: Vector2, v3: Vector2, color: Color) -> void extern raylib;

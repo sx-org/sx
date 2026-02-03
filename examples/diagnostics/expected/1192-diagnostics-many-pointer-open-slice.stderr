@@ -1,0 +1,5 @@
+error: slicing a many-pointer `[*]T` requires an explicit upper bound (`mp[lo..hi]`) — it has no length
+  --> examples/diagnostics/1192-diagnostics-many-pointer-open-slice.sx:10:10
+   |
+10 |     s := mp[1..];          // ERROR: many-pointer slice needs an explicit hi
+   |          ^^

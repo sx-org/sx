@@ -1,0 +1,27 @@
+#import "modules/std/core.sx";   // string
+#import "modules/std/fmt.sx";    // concat, build_format
+c :: #import "modules/std/c.sx"; // libc write
+
+// =====================================================================
+// log.sx — plain leveled logging (ERR step E4.1), orthogonal to the
+// error channel. Each entry is written to stderr as `LEVEL: <msg>\n`,
+// where <msg> is the formatted `fmt` + args (same `{}` interpolation as
+// `print`). Sink is stderr (fd 2) so log output stays out of a program's
+// stdout data stream.
+//
+// Note: PLAN-ERR §log sketches a `LEVEL ts msg` line with an ISO-8601
+// UTC timestamp. The timestamp is deferred — it needs a clock binding
+// and would make golden tests time-dependent; the level + message are
+// the load-bearing parts. Add `ts` once a pinnable clock lands.
+// =====================================================================
+
+// Prefix the level, append a newline, write the whole line to stderr.
+log_emit :: (level: string, msg: string) {
+    line := concat(concat(level, msg), "\n");
+    c.write(2, line.ptr, xx line.len);
+}
+
+warn  :: ($fmt: string, ..$args) { #insert build_format(fmt); #insert "log_emit(\"WARN:  \", result);"; }
+info  :: ($fmt: string, ..$args) { #insert build_format(fmt); #insert "log_emit(\"INFO:  \", result);"; }
+debug :: ($fmt: string, ..$args) { #insert build_format(fmt); #insert "log_emit(\"DEBUG: \", result);"; }
+err   :: ($fmt: string, ..$args) { #insert build_format(fmt); #insert "log_emit(\"ERROR: \", result);"; }

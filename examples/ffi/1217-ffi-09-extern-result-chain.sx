@@ -1,0 +1,79 @@
+// Phase 0 baseline (PLAN-FFI.md step 0.9): FFI result chains. The
+// shapes that real sx code uses for opaque C handles (MTLBuffer*,
+// AAssetManager*, file pointers, ...) — passing a C-returned
+// pointer into another C call, stashing it in a struct field,
+// pushing into a `List(*void)`, and iterating that list to feed each
+// handle back through C.
+//
+// No new ABI shape — pointer-in, pointer-out. The lemma locked in:
+// handle-shaped flows survive sx's struct-field assignment, List
+// storage, and iteration-then-call cycles.
+
+#import "modules/std.sx";
+
+#import c {
+    #include "1217-ffi-09-extern-result-chain.h";
+    #source "1217-ffi-09-extern-result-chain.c";
+};
+
+// Struct field hosts an FFI-returned handle.
+Counter :: struct {
+    handle: *void = null;
+    label: string;
+}
+
+main :: () -> i32 {
+    // ── 1. Chain: make → bump → peek ───────────────────────────────
+    a := ffi_chain_make(100);
+    print("peek after make    = {}\n", ffi_chain_peek(a));
+    print("bump(+5)           = {}\n", ffi_chain_bump(a, 5));
+    print("bump(+3)           = {}\n", ffi_chain_bump(a, 3));
+    print("peek after bumps   = {}\n", ffi_chain_peek(a));
+
+    // ── 2. Stash handle in a struct field, use through `.handle` ──
+    c : Counter = .{ handle = ffi_chain_make(50), label = "ctr-a" };
+    print("ctr label          = {}\n", c.label);
+    print("ctr peek           = {}\n", ffi_chain_peek(c.handle));
+    ffi_chain_bump(c.handle, 7);
+    print("ctr after bump     = {}\n", ffi_chain_peek(c.handle));
+
+    // ── 3. Push handles into a List, iterate, feed back to C ──────
+    handles : List(*void) = .{};
+    i : i32 = 0;
+    while i < 3 {
+        h := ffi_chain_make(i * 10);
+        handles.append(h);
+        i += 1;
+    }
+
+    j : i64 = 0;
+    while j < handles.len {
+        h := handles.items[j];
+        v := ffi_chain_peek(h);
+        print("list[{}] peek      = {}\n", j, v);
+        j += 1;
+    }
+
+    // Iterate again, bump each, observe the cumulative effect.
+    j = 0;
+    while j < handles.len {
+        ffi_chain_bump(handles.items[j], 1);
+        j += 1;
+    }
+    j = 0;
+    while j < handles.len {
+        print("list[{}] after bump= {}\n", j, ffi_chain_peek(handles.items[j]));
+        j += 1;
+    }
+
+    // ── Cleanup ─────────────────────────────────────────────────────
+    ffi_chain_dispose(a);
+    ffi_chain_dispose(c.handle);
+    j = 0;
+    while j < handles.len {
+        ffi_chain_dispose(handles.items[j]);
+        j += 1;
+    }
+
+    0
+}

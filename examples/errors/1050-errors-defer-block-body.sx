@@ -1,0 +1,27 @@
+// A braced `defer { … }` body parses as a full statement block (like `onfail`),
+// so it supports every statement form — a destructure decl, a `catch`-statement,
+// nested var decls — not just a single bare expression. Previously `defer { … }`
+// routed through the expression parser and rejected those with "expected ';'".
+//
+// Regression (issue 0065).
+
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+probe   :: () -> (i32, !E) { return 21; }
+failing :: () -> !E { raise error.Bad; }
+
+run :: () {
+    defer {
+        v, e := probe();                              // destructure decl
+        if !e { print("defer: v={}\n", v); }          // value live under the guard
+        failing() catch (x) print("defer: caught\n");   // catch-statement absorbs
+    }
+    print("body\n");
+}
+
+main :: () -> i32 {
+    run();
+    return 0;
+}

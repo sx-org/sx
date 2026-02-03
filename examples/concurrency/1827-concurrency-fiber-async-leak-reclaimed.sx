@@ -1,0 +1,46 @@
+// The unified `context.io.async` layer reclaims its per-task heap once a future is
+// AWAITED (PLAN-IO-UNIFY follow-up — closing the documented leaks). Each `async`
+// allocates: the `Future`, the `ThunkBox`, the completion-closure env, the worker's
+// env, and the spawn_raw fiber-body env. With ownership wired through, ALL of it is
+// freed: the box + envs by `sx_run_boxed_closure` the instant the worker completes,
+// the fiber-body env at fiber reap, and the `Future` by the last of {worker,
+// `await`} (the two-flag handshake). Verified by a tracking `GPA`: after running +
+// awaiting three workers and `deinit`, the live-allocation count returns to the
+// pre-spawn baseline — zero residual.
+//
+// (A future that is never awaited — fire-and-forget, or a `race` loser — keeps only
+// its `Future` struct, since nothing consumes it; that remainder needs a
+// structured-concurrency scope and is out of scope here.)
+//
+// aarch64-pinned (the scheduler's per-arch asm): runs end-to-end on a matching
+// host (macOS + linux), ir-only on a mismatch.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+main :: () -> i64 {
+    sum   : i64 = 0; psum  := @sum;
+    base  : i64 = 0; pbase := @base;
+    after : i64 = 0; pafter := @after;
+
+    gpa := mem.GPA.init();
+    push .{ allocator = gpa } {
+        s := sched.Scheduler.init();
+        ps := @s;
+        pbase.* = gpa.alloc_count;            // baseline: scheduler is live, no tasks yet
+        push .{ io = xx s, allocator = xx gpa } {
+            ps.spawn(() {
+                a := context.io.async(() -> (i64, !) { try context.io.sleep(10); 100 });
+                b := context.io.async(() -> (i64, !) { try context.io.sleep(20); 20  });
+                c := context.io.async(() -> (i64, !) { try context.io.sleep(30); 3   });
+                psum.* = (a.await() or 0) + (b.await() or 0) + (c.await() or 0);
+            });
+            ps.run();
+        }
+        s.deinit();
+        pafter.* = gpa.alloc_count;           // after run + await-all + deinit
+    }
+
+    print("sum: {}\n", sum);
+    print("residual above baseline: {}\n", after - base);   // 0 — every async heap reclaimed
+    return 0;
+}

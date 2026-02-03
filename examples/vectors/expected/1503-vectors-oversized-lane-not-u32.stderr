@@ -1,0 +1,5 @@
+error: Vector lane count 5000000000 does not fit in u32
+  --> examples/vectors/1503-vectors-oversized-lane-not-u32.sx:13:16
+   |
+13 |     v : Vector(5000000000, f32) = ---;
+   |                ^^^^^^^^^^

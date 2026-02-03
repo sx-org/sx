@@ -1,0 +1,29 @@
+error: cannot apply '+' to operands of type 'i64' and 'string'
+  --> examples/diagnostics/1106-diagnostics-binop-operand-type-check.sx:19:10
+   |
+19 |     a := n + s;      // arithmetic: i64 + string
+   |          ^
+
+error: cannot apply '*' to operands of type 'string' and 'i64'
+  --> examples/diagnostics/1106-diagnostics-binop-operand-type-check.sx:20:10
+   |
+20 |     b := s * n;      // arithmetic: non-numeric LHS (string * i64)
+   |          ^
+
+error: cannot apply '<' to operands of type 'i64' and 'string'
+  --> examples/diagnostics/1106-diagnostics-binop-operand-type-check.sx:21:10
+   |
+21 |     c := n < s;      // ordering:   i64 < string
+   |          ^
+
+error: cannot apply '&' to operands of type 'i64' and 'string'
+  --> examples/diagnostics/1106-diagnostics-binop-operand-type-check.sx:22:10
+   |
+22 |     d := n & s;      // bitwise:    i64 & string
+   |          ^
+
+error: cannot apply '<<' to operands of type 'i64' and 'string'
+  --> examples/diagnostics/1106-diagnostics-binop-operand-type-check.sx:23:10
+   |
+23 |     e := n << s;     // shift:      i64 << string
+   |          ^

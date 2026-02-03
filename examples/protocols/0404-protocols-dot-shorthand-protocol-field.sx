@@ -1,0 +1,79 @@
+// Dot-shorthand `.{ child = d }` for a struct whose first field is a protocol
+// value, used as the argument to `List(Container).append` from two distinct
+// container types. Exercises the cross-callsite path of dot-shorthand inference.
+
+#import "modules/std.sx";
+
+Drawable :: protocol {
+    draw :: (self: *Self) -> i32;
+    name :: (self: *Self) -> string;
+    layout :: (self: *Self, x: i32) -> i32;
+    handle :: (self: *Self, event: i32) -> bool;
+}
+
+Circle :: struct { radius: i32; }
+impl Drawable for Circle {
+    draw :: (self: *Circle) -> i32 { self.radius }
+    name :: (self: *Circle) -> string { "circle" }
+    layout :: (self: *Circle, x: i32) -> i32 { x + self.radius }
+    handle :: (self: *Circle, event: i32) -> bool { event > 0 }
+}
+
+Square :: struct { side: i32; }
+impl Drawable for Square {
+    draw :: (self: *Square) -> i32 { self.side * self.side }
+    name :: (self: *Square) -> string { "square" }
+    layout :: (self: *Square, x: i32) -> i32 { x + self.side }
+    handle :: (self: *Square, event: i32) -> bool { event > 1 }
+}
+
+Rect :: struct {
+    x: f32;
+    y: f32;
+    w: f32;
+    h: f32;
+    zero :: () -> Rect { Rect.{ x = 0.0, y = 0.0, w = 0.0, h = 0.0 } }
+}
+
+Container :: struct {
+    child: Drawable;
+    computed_frame: Rect = .zero();
+}
+
+// Two different structs, each with List(Container), both calling .append(.{...})
+// This mirrors VStack/HStack in the game.
+
+StackA :: struct {
+    children: List(Container);
+
+    add :: (self: *StackA, d: Drawable) {
+        // BUG: `.{ child = d }` causes LLVM error when 2+ structs do this
+        self.children.append(.{ child = d });
+    }
+}
+
+StackB :: struct {
+    children: List(Container);
+
+    add :: (self: *StackB, d: Drawable) {
+        // BUG: second struct doing `.{ child = d }` triggers the error
+        self.children.append(.{ child = d });
+        // FIX: explicit `Container.{ child = d }` works
+        // self.children.append(Container.{ child = d });
+    }
+}
+
+main :: () -> void {
+    c := Circle.{ radius = 42 };
+    s := Square.{ side = 5 };
+
+    a : StackA = .{};
+    a.add(c.(Drawable));
+    print("StackA: draw={}\n", a.children.items[0].child.draw());
+
+    b : StackB = .{};
+    b.add(s.(Drawable));
+    print("StackB: draw={}\n", b.children.items[0].child.draw());
+
+    print("OK\n");
+}

@@ -1,0 +1,10 @@
+--- Test 1: += (broken) ---
+Expected: 1, 2, 3
+counter=1
+counter=2
+counter=3
+--- Test 2: = x + 1 (works) ---
+Expected: 2, 3, 4
+counter=4
+counter=5
+counter=6

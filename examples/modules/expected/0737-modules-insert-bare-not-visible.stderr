@@ -1,0 +1,5 @@
+error: 'secret' is not visible; #import the module that declares it
+  --> examples/modules/0737-modules-insert-bare-not-visible.sx:13:13
+   |
+13 |     #insert secret();
+   |             ^^^^^^

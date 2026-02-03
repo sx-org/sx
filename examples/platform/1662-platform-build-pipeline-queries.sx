@@ -1,0 +1,32 @@
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/compiler.sx";
+
+// P5.4 — the build-pipeline query primitives on the comptime VM. A custom
+// `on_build` override inspects the build metadata (`c_object_paths` returns the
+// VM-built `List(string)` of C companion objects), then DELEGATES to the stdlib
+// `default_pipeline` for the real emit + link. The `#import c` source compiles to
+// one object, so `c_object_paths()` must be a one-element list of a non-empty
+// path. AOT runs the produced binary → "runtime main: 42".
+
+#import c {
+    #source "1662-platform-build-pipeline-queries.c";
+};
+
+c_marker :: () -> i64 extern;
+
+build :: (opt: BuildOptions) -> bool {
+    objs := c_object_paths();
+    if objs.len != 1 { return false; }
+    if objs.items[0].len == 0 { return false; }
+    // link_libraries must be a well-formed (possibly empty) list — touch each.
+    libs := link_libraries();
+    sum : i64 = 0;
+    i : i64 = 0;
+    while i < libs.len { sum += libs.items[i].len; i += 1; }
+    if sum < 0 { return false; }
+    return default_pipeline(opt);   // the real emit + link
+}
+#run on_build(build);
+
+main :: () { print("runtime main: {}\n", c_marker()); }

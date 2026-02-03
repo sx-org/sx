@@ -1,0 +1,21 @@
+=== Init Blocks ===
+IB1: 60 3
+IB2: 142 2
+IB3: 5 1
+IB4: 100
+IB5: 52
+--- struct static method shorthand ---
+SM1: 16.000000 8.000000
+SM1: 5.000000 5.000000
+SM2: 10 20
+--- optional if-else coercion ---
+opt-if1: 99.000000
+opt-if2: 10.000000
+opt-if3: 10.000000
+opt-if4: 0.000000
+opt-if5: 42.000000
+usize: 42
+isize: -7
+usize+8: 50
+i32->usize: 10
+usize->i64: 42

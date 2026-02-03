@@ -1,0 +1,12 @@
+// A protocol method that omits the explicit receiver (the old implicit form)
+// is now a parse error — the receiver `self: *Self`/`self: Self` is required as
+// the first parameter. This guards the diagnostic.
+#import "modules/std.sx";
+
+Show :: protocol {
+    show :: () -> string;        // ERROR: missing `self` receiver
+}
+
+main :: () -> i32 {
+    return 0;
+}

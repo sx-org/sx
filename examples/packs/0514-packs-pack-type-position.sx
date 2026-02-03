@@ -1,0 +1,39 @@
+// Variadic heterogeneous type packs — step 3: `$args[$i]` in
+// type positions.
+//
+// `$args[$i]` resolves to the i-th element type of the active
+// pack binding wherever a type expression is expected:
+// - return type: `-> $args[0]`
+// - local var annotation: `x : $args[1] = ...`
+// - (later: param types, fn-pointer types, struct field types)
+//
+// Today's parser hits "expected '{'" at the `$args[0]` token in
+// the return type position because the `$<ident>` arm only
+// accepts plain generic names; `[<int>]` after the name isn't
+// recognised. This file pins that rejection. Next commit teaches
+// the parser to accept `$<pack>[<int>]` and adds a new
+// `PackIndexTypeExpr` AST node; `resolveTypeWithBindings`
+// consults the active `pack_arg_types` map.
+//
+// The body intentionally exercises TWO positions per mono — the
+// return type AND a local annotation — so the parser change has
+// to cover more than just the trailing return arrow.
+
+#import "modules/std.sx";
+
+swap_take :: (..$args) -> $args[0] {
+    second : $args[1] = args[1];
+    // `second` is bound and typed — confirms the local-annotation
+    // path also resolves. The body returns args[0] (statically
+    // typed as $args[0]).
+    return args[0];
+}
+
+main :: () -> i32 {
+    // Heterogeneous call shapes — each picks a different concrete
+    // pair, gets its own mono.
+    a : i64 = swap_take(42, "ignored");      // $args[0] = i64, $args[1] = string
+    b : string = swap_take("first", 99);      // $args[0] = string, $args[1] = i64
+    print("{} {}\n", a, b);
+    return 0;
+}

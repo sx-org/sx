@@ -1,0 +1,32 @@
+// E6BR-4 (param-impl SOURCE, own-wins) — a parameterised-impl SOURCE type under a
+// wrapper (`impl Into(Marker) for *Box`) registers SOURCE-AWARE, pinned to the
+// impl's defining module (main), and the `xx` lookup at the use site mangles to the
+// SAME author, so the conversion is found and runs. `main` authors its OWN
+// `Box { m }` and flat-imports `dep.sx` (`Box { a }`); the `*Box` source binds
+// main's `Box`, so `convert`'s `self.m` resolves and `xx @b` selects this impl.
+//
+// This locks the route-all registration path for the param-impl-source surface:
+// the source `*Box` flows through `resolveRegistrationSigTypeInSource` →
+// `resolveCompound` → `resolveNominalLeaf` (own-wins), never the no-author leaf.
+// The param_impl_map key is name-based (`Into\0Marker\0*Box`), so registration and
+// `tryUserConversion` agree by construction.
+
+#import "modules/std.sx";
+#import "0826-protocols-param-impl-source-wrapped-own-wins/dep.sx";
+
+Box :: struct { m: i32; }
+Marker :: struct { v: i32; }
+
+impl Into(Marker) for *Box {
+    convert :: (self: *Box) -> Marker {
+        .{ v = self.m }
+    }
+}
+
+main :: () -> i32 {
+    b : Box = ---;
+    b.m = 7;
+    mk : Marker = xx @b;
+    print("v={} dep={}\n", mk.v, dep_box());
+    0
+}

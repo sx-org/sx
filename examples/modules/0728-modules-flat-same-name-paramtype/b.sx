@@ -1,0 +1,7 @@
+// b.sx authors its OWN `apply` taking a POINTER. `from_b` passes a value local
+// `v` bare; the pointer param must drive implicit address-of so the callee
+// mutates `v` in place (×2 → 42). Before the fix, `v` was typed against a.sx's
+// value-param winner, lowered as a value, then the resolved pointer-param
+// author was called with that value forced to a pointer (segfault).
+apply  :: (x: *i64) { x.* = x.* * 2; }
+from_b :: () -> i64 { v : i64 = 21; apply(v); return v; }

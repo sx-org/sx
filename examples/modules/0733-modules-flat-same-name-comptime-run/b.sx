@@ -1,0 +1,6 @@
+// b.sx authors its OWN `compute` returning 70. Its `#run compute()` must bind
+// b.sx's author (70) — own-author wins in b.sx's source context — not the
+// first-wins winner from a.sx (7).
+compute :: () -> i64 { return 70; }
+B_VAL :: #run compute();
+get_b :: () -> i64 { return B_VAL; }

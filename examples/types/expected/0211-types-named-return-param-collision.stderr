@@ -1,0 +1,5 @@
+error: named return 'sum' collides with a parameter of the same name — rename one
+  --> examples/types/0211-types-named-return-param-collision.sx:4:22
+   |
+ 4 | inc :: (sum: i32) -> (sum: i32, ok: bool) {
+   |                      ^^^^^^^^^^^^^^^^^^^^

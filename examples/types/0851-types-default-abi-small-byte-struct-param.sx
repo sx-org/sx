@@ -1,0 +1,67 @@
+// Default-ABI small byte-struct params (issue 0286).
+//
+// A free function that takes (pointer, string, Color, Color) under the default
+// sx calling convention used to receive a corrupted second Color on AArch64:
+// only `r` survived; g/b/a became 0 (fully transparent UI text). Root cause:
+// `{i8×4}` was left as a raw LLVM struct and expanded into four i8 args; when
+// the second Color spilled, the caller stored word-per-byte and the callee
+// reloaded packed bytes.
+//
+// Fix: default ABI packs ≤8-byte non-HFA structs into i64 (same bucket as C ABI).
+
+#import "modules/std.sx";
+
+Color :: struct { r, g, b, a: u8; }
+
+Point :: struct { x, y: f32; }
+Size :: struct { width, height: f32; }
+Frame :: struct {
+    origin: Point;
+    size: Size;
+    make :: (x: f32, y: f32, w: f32, h: f32) -> Frame {
+        Frame.{ origin = Point.{ x = x, y = y }, size = Size.{ width = w, height = h } }
+    }
+}
+
+// Shape that triggered the UI bug: ctx pointer + string + two Colors.
+probe_string_two_colors :: (ctx: *i32, label: string, bg: Color, fg: Color) {
+    print("A fg=({},{},{},{}) bg=({},{},{},{}) label={}\n",
+        fg.r, fg.g, fg.b, fg.a, bg.r, bg.g, bg.b, bg.a, label);
+}
+
+// Full draw_btn-like shape: Frame + string + f32 + two Colors + f32.
+probe_frame_draw :: (
+    ctx: *i32,
+    frame: Frame,
+    label: string,
+    font_sz: f32,
+    bg: Color,
+    fg: Color,
+    radius: f32
+) {
+    fi : i64 = xx font_sz;
+    ri : i64 = xx radius;
+    fx : i64 = xx frame.origin.x;
+    fy : i64 = xx frame.origin.y;
+    fw : i64 = xx frame.size.width;
+    fh : i64 = xx frame.size.height;
+    print("B fg=({},{},{},{}) font={} rad={} frame=({},{},{},{}) label={}\n",
+        fg.r, fg.g, fg.b, fg.a, fi, ri, fx, fy, fw, fh, label);
+}
+
+// One Color after string — always worked; keep as a control.
+probe_one_color :: (ctx: *i32, label: string, fg: Color) {
+    print("C fg=({},{},{},{}) label={}\n", fg.r, fg.g, fg.b, fg.a, label);
+}
+
+main :: () -> i64 {
+    n : i32 = 1;
+    bg := Color.{ r = 55, g = 55, b = 70, a = 255 };
+    fg := Color.{ r = 230, g = 230, b = 240, a = 255 };
+    f := Frame.make(10.0, 20.0, 100.0, 40.0);
+
+    probe_string_two_colors(@n, "New Game", bg, fg);
+    probe_frame_draw(@n, f, "Notes", 14.0, bg, fg, 8.0);
+    probe_one_color(@n, "Hint", fg);
+    0
+}

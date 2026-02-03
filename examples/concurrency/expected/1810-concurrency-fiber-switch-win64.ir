@@ -1,0 +1,326 @@
+
+module asm ".global fib_tramp"
+module asm "fib_tramp:"
+module asm "    movq %rbx, %rcx"
+module asm "    subq $32, %rsp"
+module asm "    call fib_body"
+module asm "    ud2"
+
+@g_out = internal global ptr null
+
+; Function Attrs: nounwind
+declare ptr @GetStdHandle(i32) #0
+
+; Function Attrs: nounwind
+declare i32 @WriteFile(ptr, ptr, i32, ptr, ptr) #0
+
+; Function Attrs: nounwind
+declare void @ExitProcess(i32) #0
+
+; Function Attrs: naked noinline nounwind
+define void @swap_good(ptr %0, ptr %1) #1 {
+entry:
+  call void asm sideeffect "        movq %rbx, 0(%rcx)\0A        movq %rbp, 8(%rcx)\0A        movq %rdi, 16(%rcx)\0A        movq %rsi, 24(%rcx)\0A        movq %rN, 32(%rcx)\0A        movq %rN, 40(%rcx)\0A        movq %rN, 48(%rcx)\0A        movq %rN, 56(%rcx)\0A        movq %rsp, 64(%rcx)\0A        movups %xmmN, 80(%rcx)\0A        movups %xmmN, 96(%rcx)\0A        movups %xmmN, 112(%rcx)\0A        movups %xmmN, 128(%rcx)\0A        movups %xmmN, 144(%rcx)\0A        movups %xmmN, 160(%rcx)\0A        movups %xmmN, 176(%rcx)\0A        movups %xmmN, 192(%rcx)\0A        movups %xmmN, 208(%rcx)\0A        movups %xmmN, 224(%rcx)\0A        movq 0(%rdx), %rbx\0A        movq 8(%rdx), %rbp\0A        movq 16(%rdx), %rdi\0A        movq 24(%rdx), %rsi\0A        movq 32(%rdx), %rN\0A        movq 40(%rdx), %rN\0A        movq 48(%rdx), %rN\0A        movq 56(%rdx), %rN\0A        movups 80(%rdx), %xmmN\0A        movups 96(%rdx), %xmmN\0A        movups 112(%rdx), %xmmN\0A        movups 128(%rdx), %xmmN\0A        movups 144(%rdx), %xmmN\0A        movups 160(%rdx), %xmmN\0A        movups 176(%rdx), %xmmN\0A        movups 192(%rdx), %xmmN\0A        movups 208(%rdx), %xmmN\0A        movups 224(%rdx), %xmmN\0A        movq 64(%rdx), %rsp\0A        ret\0A", ""()
+  unreachable
+}
+
+; Function Attrs: naked noinline nounwind
+define i64 @scribble_verify(ptr %0, ptr %1, i64 %2) #1 {
+entry:
+  call void asm sideeffect "        subq $$264, %rsp\0A        movq %rN, 32(%rsp)\0A        movq %rbx, 40(%rsp)\0A        movq %rbp, 48(%rsp)\0A        movq %rdi, 56(%rsp)\0A        movq %rsi, 64(%rsp)\0A        movq %rN, 72(%rsp)\0A        movq %rN, 80(%rsp)\0A        movq %rN, 88(%rsp)\0A        movq %rN, 96(%rsp)\0A        movups %xmmN, 104(%rsp)\0A        movups %xmmN, 120(%rsp)\0A        movups %xmmN, 136(%rsp)\0A        movups %xmmN, 152(%rsp)\0A        movups %xmmN, 168(%rsp)\0A        movups %xmmN, 184(%rsp)\0A        movups %xmmN, 200(%rsp)\0A        movups %xmmN, 216(%rsp)\0A        movups %xmmN, 232(%rsp)\0A        movups %xmmN, 248(%rsp)\0A        leaq 1(%rN), %rbx\0A        leaq 2(%rN), %rbp\0A        leaq 3(%rN), %rdi\0A        leaq 4(%rN), %rsi\0A        leaq 5(%rN), %rN\0A        leaq 6(%rN), %rN\0A        leaq 7(%rN), %rN\0A        leaq 8(%rN), %rN\0A        leaq 9(%rN), %rax\0A        movq %rax, %xmmN\0A        leaq 10(%rN), %rax\0A        movq %rax, %xmmN\0A        leaq 11(%rN), %rax\0A        movq %rax, %xmmN\0A        leaq 12(%rN), %rax\0A        movq %rax, %xmmN\0A        leaq 13(%rN), %rax\0A        movq %rax, %xmmN\0A        leaq 14(%rN), %rax\0A        movq %rax, %xmmN\0A        leaq 15(%rN), %rax\0A        movq %rax, %xmmN\0A        leaq 16(%rN), %rax\0A        movq %rax, %xmmN\0A        leaq 17(%rN), %rax\0A        movq %rax, %xmmN\0A        leaq 18(%rN), %rax\0A        movq %rax, %xmmN\0A        call swap_good\0A        movq 32(%rsp), %rN\0A        xorq %rN, %rN\0A        xorq %rN, %rN\0A        leaq 1(%rN), %rax\0A        cmpq %rax, %rbx\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 2(%rN), %rax\0A        cmpq %rax, %rbp\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 3(%rN), %rax\0A        cmpq %rax, %rdi\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 4(%rN), %rax\0A        cmpq %rax, %rsi\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 5(%rN), %rax\0A        cmpq %rax, %rN\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 6(%rN), %rax\0A        cmpq %rax, %rN\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 7(%rN), %rax\0A        cmpq %rax, %rN\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 8(%rN), %rax\0A        cmpq %rax, %rN\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 9(%rN), %rax\0A        movq %xmmN, %rcx\0A        cmpq %rax, %rcx\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 10(%rN), %rax\0A        movq %xmmN, %rcx\0A        cmpq %rax, %rcx\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 11(%rN), %rax\0A        movq %xmmN, %rcx\0A        cmpq %rax, %rcx\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 12(%rN), %rax\0A        movq %xmmN, %rcx\0A        cmpq %rax, %rcx\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 13(%rN), %rax\0A        movq %xmmN, %rcx\0A        cmpq %rax, %rcx\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 14(%rN), %rax\0A        movq %xmmN, %rcx\0A        cmpq %rax, %rcx\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 15(%rN), %rax\0A        movq %xmmN, %rcx\0A        cmpq %rax, %rcx\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 16(%rN), %rax\0A        movq %xmmN, %rcx\0A        cmpq %rax, %rcx\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 17(%rN), %rax\0A        movq %xmmN, %rcx\0A        cmpq %rax, %rcx\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        leaq 18(%rN), %rax\0A        movq %xmmN, %rcx\0A        cmpq %rax, %rcx\0A        setne %dl\0A        movzbq %dl, %rdx\0A        addq %rdx, %rN\0A        movq %rN, %rax\0A        shlq $$16, %rax\0A        orq %rN, %rax\0A        movq 40(%rsp), %rbx\0A        movq 48(%rsp), %rbp\0A        movq 56(%rsp), %rdi\0A        movq 64(%rsp), %rsi\0A        movq 72(%rsp), %rN\0A        movq 80(%rsp), %rN\0A        movq 88(%rsp), %rN\0A        movq 96(%rsp), %rN\0A        movups 104(%rsp), %xmmN\0A        movups 120(%rsp), %xmmN\0A        movups 136(%rsp), %xmmN\0A        movups 152(%rsp), %xmmN\0A        movups 168(%rsp), %xmmN\0A        movups 184(%rsp), %xmmN\0A        movups 200(%rsp), %xmmN\0A        movups 216(%rsp), %xmmN\0A        movups 232(%rsp), %xmmN\0A        movups 248(%rsp), %xmmN\0A        addq $$264, %rsp\0A        ret\0A", ""()
+  unreachable
+}
+
+; Function Attrs: nounwind
+declare void @fib_tramp() #0
+
+; Function Attrs: nounwind
+define void @fib_body(ptr %0) #0 {
+entry:
+  %alloca = alloca ptr, align 8
+  store ptr %0, ptr %alloca, align 8
+  %load = load ptr, ptr %alloca, align 8
+  %gep = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %load, i32 0, i32 0
+  %loadN = load ptr, ptr %alloca, align 8
+  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, align 8
+  %sg = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 1
+  %loadN = load ptr, ptr %alloca, align 8
+  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, align 8
+  %sgN = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 3
+  %call = call i64 @scribble_verify(ptr %gep, ptr %sg, i64 %sgN)
+  %allocaN = alloca i64, align 8
+  store i64 %call, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %and = and i64 %loadN, 65535
+  %loadN = load ptr, ptr %alloca, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 4
+  store i64 %and, ptr %gepN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %lshr = lshr i64 %loadN, 16
+  %andN = and i64 %lshr, 65535
+  %loadN = load ptr, ptr %alloca, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 5
+  store i64 %andN, ptr %gepN, align 8
+  %loadN = load ptr, ptr %alloca, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 0
+  %loadN = load ptr, ptr %alloca, align 8
+  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, align 8
+  %sgN = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 2
+  call void @swap_good(ptr %gepN, ptr %sgN)
+  ret void
+}
+
+; Function Attrs: nounwind
+define internal void @boot(ptr %0) #0 {
+entry:
+  %alloca = alloca ptr, align 8
+  store ptr %0, ptr %alloca, align 8
+  %allocaN = alloca ptr, align 8
+  %call = call ptr @VirtualAlloc(ptr null, i64 131072, i32 12288, i32 4)
+  store ptr %call, ptr %allocaN, align 8
+  %allocaN = alloca i64, align 8
+  %load = load ptr, ptr %allocaN, align 8
+  %pti = ptrtoint ptr %load to i64
+  %add = add i64 %pti, 131072
+  store i64 %add, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %urem = urem i64 %loadN, 16
+  %sub = sub i64 %loadN, %urem
+  store i64 %sub, ptr %allocaN, align 8
+  %allocaN = alloca ptr, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %subN = sub i64 %loadN, 8
+  %itp = inttoptr i64 %subN to ptr
+  store ptr %itp, ptr %allocaN, align 8
+  %loadN = load ptr, ptr %allocaN, align 8
+  store ptr @fib_tramp, ptr %loadN, align 8
+  %allocaN = alloca i64, align 8
+  store i64 0, ptr %allocaN, align 8
+  br label %while.hdr.0
+
+while.hdr.0:                                      ; preds = %while.body.1, %entry
+  %loadN = load i64, ptr %allocaN, align 8
+  %icmp = icmp slt i64 %loadN, 30
+  br i1 %icmp, label %while.body.1, label %while.exit.2
+
+while.body.1:                                     ; preds = %while.hdr.0
+  %loadN = load i64, ptr %allocaN, align 8
+  %loadN = load ptr, ptr %alloca, align 8
+  %gep = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 0
+  %gepN = getelementptr inbounds nuw { [30 x i64] }, ptr %gep, i32 0, i32 0
+  %igp.ptr = getelementptr i64, ptr %gepN, i64 %loadN
+  store i64 0, ptr %igp.ptr, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %addN = add i64 %loadN, 1
+  store i64 %addN, ptr %allocaN, align 8
+  br label %while.hdr.0
+
+while.exit.2:                                     ; preds = %while.hdr.0
+  %loadN = load ptr, ptr %alloca, align 8
+  %ptiN = ptrtoint ptr %loadN to i64
+  %loadN = load ptr, ptr %alloca, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 0
+  %gepN = getelementptr inbounds nuw { [30 x i64] }, ptr %gepN, i32 0, i32 0
+  %igp.ptr21 = getelementptr i64, ptr %gepN, i64 0
+  store i64 %ptiN, ptr %igp.ptr21, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %subN = sub i64 %loadN, 8
+  %loadN = load ptr, ptr %alloca, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 0
+  %gepN = getelementptr inbounds nuw { [30 x i64] }, ptr %gepN, i32 0, i32 0
+  %igp.ptr27 = getelementptr i64, ptr %gepN, i64 8
+  store i64 %subN, ptr %igp.ptr27, align 8
+  %loadN = load ptr, ptr %alloca, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 4
+  store i64 0, ptr %gepN, align 8
+  %loadN = load ptr, ptr %alloca, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %loadN, i32 0, i32 5
+  store i64 0, ptr %gepN, align 8
+  ret void
+}
+
+; Function Attrs: nounwind
+declare ptr @VirtualAlloc(ptr, i64, i32, i32) #0
+
+; Function Attrs: nounwind
+define internal i64 @run() #0 {
+entry:
+  %alloca = alloca { [30 x i64] }, align 8
+  store { [30 x i64] } undef, ptr %alloca, align 8
+  %allocaN = alloca { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, align 8
+  store { { [30 x i64] }, ptr, ptr, i64, i64, i64 } undef, ptr %allocaN, align 8
+  %gep = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 3
+  store i64 20480, ptr %gep, align 8
+  %allocaN = alloca { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, align 8
+  store { { [30 x i64] }, ptr, ptr, i64, i64, i64 } undef, ptr %allocaN, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 3
+  store i64 24576, ptr %gepN, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 0
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 1
+  store ptr %gepN, ptr %gepN, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 0
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 2
+  store ptr %gepN, ptr %gepN, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 0
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 1
+  store ptr %gepN, ptr %gepN, align 8
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 2
+  store ptr %alloca, ptr %gepN, align 8
+  call void @boot(ptr %allocaN)
+  call void @boot(ptr %allocaN)
+  %gepN = getelementptr inbounds nuw { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, i32 0, i32 0
+  call void @swap_good(ptr %alloca, ptr %gepN)
+  %load = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, align 8
+  %sg = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %load, 5
+  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, align 8
+  %sgN = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 5
+  %add = add i64 %sg, %sgN
+  %shl = shl i64 %add, 16
+  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, align 8
+  %sgN = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 4
+  %loadN = load { { [30 x i64] }, ptr, ptr, i64, i64, i64 }, ptr %allocaN, align 8
+  %sgN = extractvalue { { [30 x i64] }, ptr, ptr, i64, i64, i64 } %loadN, 4
+  %addN = add i64 %sgN, %sgN
+  %or = or i64 %shl, %addN
+  ret i64 %or
+}
+
+; Function Attrs: nounwind
+define internal void @emit_num(i64 %0) #0 {
+entry:
+  %alloca = alloca i64, align 8
+  %allocaN = alloca [1 x i8], align 1
+  %allocaN = alloca i32, align 4
+  %allocaN = alloca [20 x i8], align 1
+  %allocaN = alloca i64, align 8
+  %allocaN = alloca i64, align 8
+  %allocaN = alloca i32, align 4
+  store i64 %0, ptr %alloca, align 8
+  %load = load i64, ptr %alloca, align 8
+  %icmp = icmp eq i64 %load, 0
+  br i1 %icmp, label %if.then.3, label %if.merge.4
+
+if.then.3:                                        ; preds = %entry
+  store [1 x i8] c"0", ptr %allocaN, align 1
+  store i32 0, ptr %allocaN, align 4
+  %gload = load ptr, ptr @g_out, align 8
+  %igp.ptr = getelementptr i8, ptr %allocaN, i64 0
+  %call = call i32 @WriteFile(ptr %gload, ptr %igp.ptr, i32 1, ptr %allocaN, ptr null)
+  ret void
+
+if.merge.4:                                       ; preds = %entry
+  store i64 20, ptr %allocaN, align 8
+  %loadN = load i64, ptr %alloca, align 8
+  store i64 %loadN, ptr %allocaN, align 8
+  br label %while.hdr.5
+
+while.hdr.5:                                      ; preds = %while.body.6, %if.merge.4
+  %loadN = load i64, ptr %allocaN, align 8
+  %icmpN = icmp ugt i64 %loadN, 0
+  br i1 %icmpN, label %while.body.6, label %while.exit.7
+
+while.body.6:                                     ; preds = %while.hdr.5
+  %loadN = load i64, ptr %allocaN, align 8
+  %sub = sub i64 %loadN, 1
+  store i64 %sub, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %urem = urem i64 %loadN, 10
+  %add = add i64 48, %urem
+  %trunc = trunc i64 %add to i8
+  %loadN = load i64, ptr %allocaN, align 8
+  %igp.ptr12 = getelementptr i8, ptr %allocaN, i64 %loadN
+  store i8 %trunc, ptr %igp.ptr12, align 1
+  %loadN = load i64, ptr %allocaN, align 8
+  %udiv = udiv i64 %loadN, 10
+  store i64 %udiv, ptr %allocaN, align 8
+  br label %while.hdr.5
+
+while.exit.7:                                     ; preds = %while.hdr.5
+  store i32 0, ptr %allocaN, align 4
+  %gloadN = load ptr, ptr @g_out, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %igp.ptr17 = getelementptr i8, ptr %allocaN, i64 %loadN
+  %loadN = load i64, ptr %allocaN, align 8
+  %subN = sub i64 20, %loadN
+  %truncN = trunc i64 %subN to i32
+  %callN = call i32 @WriteFile(ptr %gloadN, ptr %igp.ptr17, i32 %truncN, ptr %allocaN, ptr null)
+  ret void
+}
+
+; Function Attrs: nounwind
+define internal void @emit_b(i8 %0) #0 {
+entry:
+  %alloca = alloca i8, align 1
+  store i8 %0, ptr %alloca, align 1
+  %allocaN = alloca [1 x i8], align 1
+  %load = load i8, ptr %alloca, align 1
+  %igp.ptr = getelementptr i8, ptr %allocaN, i64 0
+  store i8 %load, ptr %igp.ptr, align 1
+  %allocaN = alloca i32, align 4
+  store i32 0, ptr %allocaN, align 4
+  %gload = load ptr, ptr @g_out, align 8
+  %igp.ptr3 = getelementptr i8, ptr %allocaN, i64 0
+  %call = call i32 @WriteFile(ptr %gload, ptr %igp.ptr3, i32 1, ptr %allocaN, ptr null)
+  ret void
+}
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %call = call ptr @GetStdHandle(i32 -11)
+  store ptr %call, ptr @g_out, align 8
+  %callN = call i64 @run()
+  %alloca = alloca i64, align 8
+  store i64 %callN, ptr %alloca, align 8
+  %load = load i64, ptr %alloca, align 8
+  %and = and i64 %load, 65535
+  %allocaN = alloca i64, align 8
+  store i64 %and, ptr %allocaN, align 8
+  %loadN = load i64, ptr %alloca, align 8
+  %lshr = lshr i64 %loadN, 16
+  %andN = and i64 %lshr, 65535
+  %allocaN = alloca i64, align 8
+  store i64 %andN, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  call void @emit_num(i64 %loadN)
+  call void @emit_b(i8 32)
+  %loadN = load i64, ptr %allocaN, align 8
+  call void @emit_num(i64 %loadN)
+  call void @emit_b(i8 32)
+  %allocaN = alloca i64, align 8
+  store i64 0, ptr %allocaN, align 8
+  %loadN = load i64, ptr %allocaN, align 8
+  %icmp = icmp eq i64 %loadN, 0
+  br i1 %icmp, label %if.then.8, label %if.merge.9
+
+if.then.8:                                        ; preds = %entry
+  %loadN = load i64, ptr %allocaN, align 8
+  %icmpN = icmp eq i64 %loadN, 0
+  br i1 %icmpN, label %if.then.10, label %if.merge.11
+
+if.merge.9:                                       ; preds = %if.merge.11, %entry
+  %loadN = load i64, ptr %allocaN, align 8
+  %icmpN = icmp eq i64 %loadN, 1
+  br i1 %icmpN, label %if.then.12, label %if.else.13
+
+if.then.10:                                       ; preds = %if.then.8
+  store i64 1, ptr %allocaN, align 8
+  br label %if.merge.11
+
+if.merge.11:                                      ; preds = %if.then.10, %if.then.8
+  br label %if.merge.9
+
+if.then.12:                                       ; preds = %if.merge.9
+  call void @emit_b(i8 80)
+  br label %if.merge.14
+
+if.else.13:                                       ; preds = %if.merge.9
+  call void @emit_b(i8 70)
+  br label %if.merge.14
+
+if.merge.14:                                      ; preds = %if.else.13, %if.then.12
+  call void @emit_b(i8 10)
+  call void @ExitProcess(i32 0)
+  ret i32 0
+}

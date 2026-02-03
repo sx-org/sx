@@ -1,0 +1,43 @@
+// M1.2 A.4 — class-pair registration with the Obj-C runtime.
+//
+// Every sx-defined '#objc_class' produces a module-init constructor
+// (registered in '@llvm.global_ctors' AND injected at the top of
+// 'main' for the ORC JIT path) that calls:
+//
+//   super = objc_getClass("NSObject")
+//   cls   = objc_allocateClassPair(super, "SxFoo", 0)
+//   objc_registerClassPair(cls)
+//
+// After the constructor runs, 'objc_getClass("SxFoo")' returns the
+// freshly registered class — the round-trip we verify below.
+//
+// Methods, the '__sx_state' ivar, and the '+alloc' / '-dealloc'
+// overrides land in A.4b / A.5 / A.6; this slice just makes the
+// class EXIST in the runtime.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+SxFoo :: #objc_class("SxFoo") {
+    counter: i32;
+
+    bump :: (self: *Self) {
+        self.counter += 1;
+    }
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        cls : Class = objc_getClass("SxFoo".ptr);
+        if cls == null {
+            print("FAIL: SxFoo not registered\n");
+            return 1;
+        }
+        print("registered: SxFoo\n");
+    }
+    inline if OS != .macos {
+        print("registered: SxFoo\n");
+    }
+    0
+}

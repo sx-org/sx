@@ -1,0 +1,14 @@
+// A comptime-minted type (built via the compiler API in 0633's `shapes.sx`)
+// reached through a BARE import: the minted `Suit` is in scope flat, with
+// qualified variant construction `Suit.spades`. Namespaced form is 0633.
+
+#import "modules/std.sx";
+#import "0633-comptime-compiler-namespaced-type/shapes.sx";
+
+main :: () {
+    x := Suit.spades;
+    if x == {
+        case .hearts: { print("hearts\n"); }
+        case .spades: { print("spades\n"); }
+    }
+}

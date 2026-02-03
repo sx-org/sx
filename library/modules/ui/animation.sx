@@ -1,0 +1,167 @@
+#import "modules/std.sx";
+#import "modules/math";
+
+// --- Lerpable protocol (inline — static dispatch, no vtable) ---
+
+Lerpable :: protocol #inline {
+    lerp :: (self: *Self, b: Self, t: f32) -> Self;
+}
+
+// --- Easing Functions ---
+
+ease_linear :: (t: f32) -> f32 { t }
+ease_in_quad :: (t: f32) -> f32 { t * t }
+ease_out_quad :: (t: f32) -> f32 { t * (2.0 - t) }
+ease_in_out_quad :: (t: f32) -> f32 {
+    if t < 0.5 then 2.0 * t * t
+    else -1.0 + (4.0 - 2.0 * t) * t
+}
+ease_out_cubic :: (t: f32) -> f32 { u := t - 1.0; u * u * u + 1.0 }
+
+// --- AnimatedFloat — duration-based ---
+
+AnimatedFloat :: struct {
+    current: f32;
+    from: f32;
+    to: f32;
+    elapsed: f32;
+    duration: f32;
+    easing: ?Closure(f32) -> f32;
+    active: bool;
+
+    make :: (value: f32) -> AnimatedFloat {
+        AnimatedFloat.{
+            current = value,
+            from = value,
+            to = value,
+            elapsed = 0.0,
+            duration = 0.0,
+            easing = null,
+            active = false
+        }
+    }
+
+    animate_to :: (self: *AnimatedFloat, target: f32, dur: f32, ease: Closure(f32) -> f32) {
+        self.from = self.current;
+        self.to = target;
+        self.elapsed = 0.0;
+        self.duration = dur;
+        self.easing = ease;
+        self.active = true;
+    }
+
+    tick :: (self: *AnimatedFloat, dt: f32) {
+        if !self.active { return; }
+        self.elapsed += dt;
+        t := clamp(self.elapsed / self.duration, 0.0, 1.0);
+        eased := if ease := self.easing { ease(t) } else { t };
+        self.current = self.from + (self.to - self.from) * eased;
+        if t >= 1.0 {
+            self.current = self.to;
+            self.active = false;
+        }
+    }
+}
+
+// --- SpringFloat — physics-based ---
+
+SpringFloat :: struct {
+    current: f32;
+    velocity: f32;
+    target: f32;
+    stiffness: f32;
+    damping: f32;
+    mass: f32;
+    threshold: f32;
+
+    make :: (value: f32) -> SpringFloat {
+        SpringFloat.{
+            current = value,
+            velocity = 0.0,
+            target = value,
+            stiffness = 200.0,
+            damping = 20.0,
+            mass = 1.0,
+            threshold = 0.01
+        }
+    }
+
+    snappy :: (value: f32) -> SpringFloat {
+        SpringFloat.{
+            current = value,
+            velocity = 0.0,
+            target = value,
+            stiffness = 300.0,
+            damping = 25.0,
+            mass = 1.0,
+            threshold = 0.01
+        }
+    }
+
+    tick :: (self: *SpringFloat, dt: f32) {
+        if self.is_settled() { return; }
+        force := 0.0 - self.stiffness * (self.current - self.target);
+        damping_force := 0.0 - self.damping * self.velocity;
+        accel := (force + damping_force) / self.mass;
+        self.velocity += accel * dt;
+        self.current += self.velocity * dt;
+    }
+
+    is_settled :: (self: *SpringFloat) -> bool {
+        abs(self.current - self.target) < self.threshold
+        and abs(self.velocity) < self.threshold
+    }
+}
+
+// --- Animated(T) — generic duration-based animation for any Lerpable type ---
+
+Animated :: struct ($T: Lerpable) {
+    current: T;
+    from: T;
+    to: T;
+    elapsed: f32;
+    duration: f32;
+    active: bool;
+
+    make :: (value: T) -> Animated(T) {
+        Animated(T).{
+            current = value,
+            from = value,
+            to = value,
+            elapsed = 0.0,
+            duration = 0.0,
+            active = false
+        }
+    }
+
+    // Jump immediately to value (no animation). Used to avoid animating from zero on first layout.
+    set_immediate :: (self: *Animated(T), value: T) {
+        self.current = value;
+        self.from = value;
+        self.to = value;
+        self.elapsed = 0.0;
+        self.active = false;
+    }
+
+    // Start animating towards target.
+    animate_to :: (self: *Animated(T), target: T, dur: f32) {
+        self.from = self.current;
+        self.to = target;
+        self.elapsed = 0.0;
+        self.duration = dur;
+        self.active = true;
+    }
+
+    tick :: (self: *Animated(T), dt: f32) {
+        if !self.active { return; }
+        self.elapsed += dt;
+        t := clamp(self.elapsed / self.duration, 0.0, 1.0);
+        self.current = self.from.lerp(self.to, t);
+        if t >= 1.0 {
+            self.current = self.to;
+            self.active = false;
+        }
+    }
+
+    is_animating :: (self: *Animated(T)) -> bool { self.active }
+}

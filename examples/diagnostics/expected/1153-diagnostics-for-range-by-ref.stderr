@@ -1,0 +1,5 @@
+error: a range element cannot be captured by reference
+  --> examples/diagnostics/1153-diagnostics-for-range-by-ref.sx:7:19
+   |
+ 7 |     for 0..3 (*i) { }
+   |                   ^

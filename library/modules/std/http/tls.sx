@@ -1,0 +1,62 @@
+// std.http — TLS transport seam (Phase T).
+//
+// http.sx never imports a TLS library — that would force every program that
+// merely touches std/http to compile the (large) crypto C even when it serves
+// only plaintext. Instead a *provider* module (e.g. one over vendors/mbedtls)
+// IMPLEMENTS the two protocols below for its concrete types; ONLY a program
+// that imports the provider and sets `Config.tls` compiles + links the TLS
+// stack. The protocols keep http.sx fully TLS-library-agnostic — the same role
+// Allocator/Io play for memory/IO — and the result is an ABSTRACT sx step
+// enum, NOT a C-style int-return contract. The provider maps its library's
+// codes (e.g. mbedTLS `MBEDTLS_ERR_SSL_WANT_*`) onto TlsStep; http.sx never
+// sees a C error code. The provider also owns any abi(.c) BIO thunks the TLS
+// library itself needs.
+
+// The outcome of one non-blocking TLS operation. Every handshake / read /
+// write maps onto this — http.sx branches on the step, never on a sentinel int.
+TlsStep :: enum {
+    Done;       // operation completed — handshake finished, or read/write made
+                // progress (the accompanying byte count says how much).
+    WantRead;   // would block: needs the fd readable. Caller arms add_read, retries.
+    WantWrite;  // would block: needs the fd writable. Caller arms add_write, retries.
+    Closed;     // peer sent a clean close_notify (an orderly end-of-stream).
+    Fatal;      // unrecoverable protocol/transport error — drop the connection.
+}
+
+// A per-connection TLS session. A provider impls this for a concrete type
+// (which holds the TLS-library session state + the fd); http.sx stores the
+// erased value on the Conn and drives it through the transport seam. The
+// concrete value owns its own heap state and frees it in `close`.
+TlsConn :: protocol #identity {
+    // Drive the handshake one step: Done (complete), WantRead/WantWrite (retry
+    // on readiness), or Fatal/Closed (drop).
+    handshake :: (self: *Self) -> TlsStep;
+    // Read decrypted app-data. Returns (bytes, step): on Done, `bytes` were
+    // read; WantRead/WantWrite retry; Closed = clean EOF; Fatal = drop.
+    read  :: (self: *Self, buf: [*]u8, cap: usize) -> (i64, TlsStep);
+    // Write app-data, encrypting. Returns (bytes, step): on Done, `bytes` were
+    // written; WantRead/WantWrite retry; Fatal = drop.
+    write :: (self: *Self, buf: [*]u8, len: usize) -> (i64, TlsStep);
+    // Best-effort close_notify, then free this session's own resources.
+    close :: (self: *Self);
+}
+
+// Server-side TLS provider: mints a per-connection session for each accepted
+// fd. The concrete value holds the shared cert/key/config/DRBG and MUST
+// outlive the Server (Config.tls borrows it).
+TlsAcceptor :: protocol #identity {
+    // Create a TLS session bound to `fd`; null = per-connection setup failure
+    // → the connection is dropped, never served in the clear.
+    accept :: (self: *Self, fd: i32) -> ?TlsConn;
+}
+
+// Client-side TLS provider (Q3.6a): mints a session for an already-CONNECTED
+// fd and drives the handshake TO COMPLETION (the client is blocking, so the
+// Want steps never surface to the caller — over a blocking fd the provider
+// just retries them). `host` drives SNI + certificate verification. null =
+// setup failure OR a failed handshake — a verification refusal included —
+// and the caller closes the fd, never speaking in the clear. The concrete
+// value MUST outlive every connection it minted (ClientOpts.tls borrows it).
+TlsDialer :: protocol #identity {
+    connect :: (self: *Self, fd: i32, host: string) -> ?TlsConn;
+}

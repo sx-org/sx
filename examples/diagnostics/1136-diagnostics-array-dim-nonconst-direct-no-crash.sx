@@ -1,0 +1,22 @@
+// A DIRECT array dimension that is genuinely not a compile-time integer (a
+// runtime call) is a hard error — ONE clean diagnostic + non-zero exit. Crucially
+// it must NOT fabricate a length and must NOT crash later in lowering: the bad
+// var is used downstream (element store + read, `.len`), and lowering has to bail
+// gracefully on the `.unresolved` type rather than `@panic` in `sizeOf` or pile
+// on cascade errors.
+//
+// Regression (issue 0083): the stateful `resolveArrayLen` emitted the diagnostic
+// then `return 0` — fabricating a 0-length array (0-byte alloca, OOB access) to
+// dodge the `sizeOf` panic. It now returns null → the `.unresolved` sentinel; the
+// binding's lowering bails on it (a field access on an already-diagnosed
+// `.unresolved` value stays silent), so the single real diagnostic aborts the
+// build with no fabrication and no panic.
+#import "modules/std.sx";
+
+get :: () -> i64 { return 5; }
+
+main :: () {
+    a : [get()]i64 = ---;
+    a[0] = 7;
+    print("unreachable: {} {}\n", a.len, a[0]);
+}

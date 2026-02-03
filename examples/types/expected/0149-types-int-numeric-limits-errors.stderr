@@ -1,0 +1,17 @@
+error: type 'bool' has no '.max' — numeric limits apply only to integer and float types
+  --> examples/types/0149-types-int-numeric-limits-errors.sx:14:10
+   |
+14 |     b := bool.max;
+   |          ^^^^^^^^
+
+error: field 'min' not found on type 'Type'
+  --> examples/types/0149-types-int-numeric-limits-errors.sx:15:10
+   |
+15 |     s := MyStruct.min;
+   |          ^^^^^^^^^^^^
+
+error: type 'void' has no '.max' — numeric limits apply only to integer and float types
+  --> examples/types/0149-types-int-numeric-limits-errors.sx:16:10
+   |
+16 |     v := void.max;
+   |          ^^^^^^^^

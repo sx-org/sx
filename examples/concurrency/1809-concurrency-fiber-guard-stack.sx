@@ -1,0 +1,104 @@
+// Stream B1 (fibers) B1.3b — fiber stacks are `mmap`'d with a PROT_NONE GUARD
+// PAGE at their low end (§8.1.1: a fixed stack without a guard silently
+// corrupts neighbors on overflow — the guard turns overflow into an immediate,
+// loud fault instead). The stack grows DOWN, so the guard sits at the lowest
+// address; when a fiber's SP descends past the usable region it hits the
+// unwritable guard and faults at the boundary.
+//
+// This is the positive integration: a fiber bootstrapped on a guarded `mmap`
+// stack runs real recursion + yields correctly, and the guard syscall is
+// asserted to have succeeded (`mprotect` → 0). The guard FIRING on overflow is
+// validated separately (a fiber recursing past its 128KB stack faults with
+// "Bus error" at the guard page, address = region+GUARD) — a deterministic
+// corpus assertion for it is omitted because a deliberate stack-overflow crash
+// is host/runtime-fragile (the sx crash handler turns the fault into SIGABRT,
+// and the fault address varies run-to-run).
+//
+// aarch64-macos-pinned: the `mmap` flag constants (MAP_ANON = 0x1000) and the
+// 16 KB page size are Apple-specific; the asm switch is per-arch. Runs
+// end-to-end here, ir-only on a mismatch.
+#import "modules/std.sx";
+
+mmap     :: (addr: *void, len: i64, prot: i32, flags: i32, fd: i32, off: i64) -> *void extern libc "mmap";
+mprotect :: (addr: *void, len: i64, prot: i32) -> i32 extern libc "mprotect";
+
+PROT_NONE :: 0;
+PROT_RW   :: 3;          // PROT_READ | PROT_WRITE
+MAP_AP    :: 0x1002;     // macOS MAP_PRIVATE (0x2) | MAP_ANON (0x1000)
+GUARD     :: 16384;      // one 16 KB page (aarch64-macOS)
+STACK     :: 131072;     // 128 KB usable
+
+FiberCtx :: struct { regs: [13]u64; }
+Fiber :: struct { ctx: FiberCtx; finish: *FiberCtx; out: i64; guard_ok: i64; }
+
+swap_context :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) {
+    asm volatile {
+        #string ASM
+        stp x19, x20, [x0, #0]
+        stp x21, x22, [x0, #16]
+        stp x23, x24, [x0, #32]
+        stp x25, x26, [x0, #48]
+        stp x27, x28, [x0, #64]
+        stp x29, x30, [x0, #80]
+        mov x9, sp
+        str x9, [x0, #96]
+        ldp x19, x20, [x1, #0]
+        ldp x21, x22, [x1, #16]
+        ldp x23, x24, [x1, #32]
+        ldp x25, x26, [x1, #48]
+        ldp x27, x28, [x1, #64]
+        ldp x29, x30, [x1, #80]
+        ldr x9, [x1, #96]
+        mov sp, x9
+        ret
+ASM
+    };
+}
+
+asm {
+    #string T
+.global _fib_tramp
+_fib_tramp:
+    mov x0, x19
+    bl _fib_body
+    brk #0
+T,
+};
+fib_tramp :: () extern;
+
+// Real recursion → genuine stack usage on the guarded stack (well within 128KB).
+sum_to :: (n: i64) -> i64 {
+    if n == 0 { return 0; }
+    return n + sum_to(n - 1);
+}
+
+fib_body :: (self: *Fiber) export "fib_body" {
+    self.out = sum_to(200);     // 200*201/2 = 20100
+    swap_context(@self.ctx, self.finish);
+}
+
+// mmap a [guard | usable-stack] region and mprotect the low guard page
+// PROT_NONE. Returns the 16-aligned stack top; reports guard-syscall success.
+guarded_stack :: (f: *Fiber, size: i64) -> u64 {
+    region : *void = mmap(null, GUARD + size, PROT_RW, MAP_AP, -1, 0);
+    if (xx region) == (xx (0 - 1)) { f.guard_ok = 0; return 0; }
+    f.guard_ok = 0;
+    if mprotect(region, GUARD, PROT_NONE) == 0 { f.guard_ok = 1; }
+    usable : u64 = (xx region) + GUARD;
+    top : u64 = usable + size;
+    return top - (top % 16);
+}
+
+main :: () -> i64 {
+    main_ctx : FiberCtx = ---;
+    f : Fiber = ---;  f.finish = @main_ctx;  f.out = -1;  f.guard_ok = 0;
+    top := guarded_stack(@f, STACK);
+    f.ctx.regs[0]  = xx @f;
+    f.ctx.regs[10] = 0;
+    f.ctx.regs[11] = xx fib_tramp;
+    f.ctx.regs[12] = top;
+    swap_context(@main_ctx, @f.ctx);
+    print("guard armed: {}\n", f.guard_ok);   // 1 — mprotect(PROT_NONE) succeeded
+    print("sum: {}\n", f.out);                // 20100 — fiber ran on the guarded stack
+    return 0;
+}

@@ -1,0 +1,190 @@
+// Lock down the interp's raw-pointer store width per primitive type.
+//
+// Each helper allocates a 32-byte buffer through `context.allocator`,
+// fills it with a sentinel byte (0xAA), writes ONE typed value at
+// offset 8, then sums every byte back. A correctly-sized store touches
+// exactly `sizeof(T)` bytes, so the sum equals
+//   31 * 0xAA + sum-of-bytes-in-the-written-value.
+// A wrong width (e.g. an 8-byte store at a 1-byte slot) clobbers
+// neighbors with zeros and the sum drops.
+//
+// Each test computes its expected sum at COMPTIME (the value is baked
+// into a `#run` constant — the interp's `storeAtRawPtr` runs). The
+// runtime program prints the same checksum computed by codegen
+// (LLVM-emitted typed stores). The two MUST match — that's the
+// regression assertion.
+//
+// To pin the test: every helper returns its checksum; main prints
+// "ok" iff every comptime-baked checksum equals the runtime-recomputed
+// one. Failure prints which width diverged.
+
+#import "modules/std.sx";
+
+SENTINEL :u8: 0xAA;       // 170 — neighbor pattern
+BUF_SIZE :i64: 32;
+TARGET   :i64: 8;          // offset where the typed store lands
+
+// ── per-width helpers ───────────────────────────────────────────────
+
+fill :: (buf: [*]u8) {
+    i : i64 = 0;
+    while i < BUF_SIZE { buf[i] = SENTINEL; i += 1; }
+}
+
+sum_bytes :: (buf: [*]u8) -> i64 {
+    s : i64 = 0;
+    i : i64 = 0;
+    while i < BUF_SIZE { s += xx buf[i]; i += 1; }
+    s
+}
+
+run_u8 :: () -> i64 {
+    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+    fill(buf);
+    p : *u8 = xx @buf[TARGET];
+    p.* = 0x42;
+    s := sum_bytes(buf);
+    c.libc_free(xx buf);
+    s
+}
+
+run_u16 :: () -> i64 {
+    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+    fill(buf);
+    p : *u16 = xx @buf[TARGET];
+    p.* = 0x0102;
+    s := sum_bytes(buf);
+    c.libc_free(xx buf);
+    s
+}
+
+run_u32 :: () -> i64 {
+    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+    fill(buf);
+    p : *u32 = xx @buf[TARGET];
+    p.* = 0x01020304;
+    s := sum_bytes(buf);
+    c.libc_free(xx buf);
+    s
+}
+
+run_u64 :: () -> i64 {
+    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+    fill(buf);
+    p : *u64 = xx @buf[TARGET];
+    p.* = 0x0102030405060708;
+    s := sum_bytes(buf);
+    c.libc_free(xx buf);
+    s
+}
+
+run_i8 :: () -> i64 {
+    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+    fill(buf);
+    p : *i8 = xx @buf[TARGET];
+    p.* = 0x42;
+    s := sum_bytes(buf);
+    c.libc_free(xx buf);
+    s
+}
+
+run_i16 :: () -> i64 {
+    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+    fill(buf);
+    p : *i16 = xx @buf[TARGET];
+    p.* = 0x0102;
+    s := sum_bytes(buf);
+    c.libc_free(xx buf);
+    s
+}
+
+run_i32 :: () -> i64 {
+    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+    fill(buf);
+    p : *i32 = xx @buf[TARGET];
+    p.* = 0x01020304;
+    s := sum_bytes(buf);
+    c.libc_free(xx buf);
+    s
+}
+
+run_i64 :: () -> i64 {
+    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+    fill(buf);
+    p : *i64 = xx @buf[TARGET];
+    p.* = 0x0102030405060708;
+    s := sum_bytes(buf);
+    c.libc_free(xx buf);
+    s
+}
+
+run_bool :: () -> i64 {
+    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+    fill(buf);
+    p : *bool = xx @buf[TARGET];
+    p.* = true;
+    s := sum_bytes(buf);
+    c.libc_free(xx buf);
+    s
+}
+
+run_f32 :: () -> i64 {
+    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+    fill(buf);
+    p : *f32 = xx @buf[TARGET];
+    p.* = 1.0;
+    s := sum_bytes(buf);
+    c.libc_free(xx buf);
+    s
+}
+
+run_f64 :: () -> i64 {
+    buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
+    fill(buf);
+    p : *f64 = xx @buf[TARGET];
+    p.* = 1.0;
+    s := sum_bytes(buf);
+    c.libc_free(xx buf);
+    s
+}
+
+// ── comptime-baked expected checksums ───────────────────────────────
+// `#run` evaluates each helper via the interp, so its
+// `storeAtRawPtr(addr, val, val_ty)` honors the declared width.
+
+EXP_U8   :: #run run_u8();
+EXP_U16  :: #run run_u16();
+EXP_U32  :: #run run_u32();
+EXP_U64  :: #run run_u64();
+EXP_S8   :: #run run_i8();
+EXP_S16  :: #run run_i16();
+EXP_S32  :: #run run_i32();
+EXP_S64  :: #run run_i64();
+EXP_BOOL :: #run run_bool();
+EXP_F32  :: #run run_f32();
+EXP_F64  :: #run run_f64();
+
+// ── runtime comparison ──────────────────────────────────────────────
+
+check :: (label: string, got: i64, want: i64) -> bool {
+    if got == want { return true; }
+    print("FAIL {}: comptime={} runtime={}\n", label, want, got);
+    false
+}
+
+main :: () -> i32 {
+    ok := true;
+    if !check("u8",   run_u8(),   EXP_U8)   { ok = false; }
+    if !check("u16",  run_u16(),  EXP_U16)  { ok = false; }
+    if !check("u32",  run_u32(),  EXP_U32)  { ok = false; }
+    if !check("u64",  run_u64(),  EXP_U64)  { ok = false; }
+    if !check("i8",   run_i8(),   EXP_S8)   { ok = false; }
+    if !check("i16",  run_i16(),  EXP_S16)  { ok = false; }
+    if !check("i32",  run_i32(),  EXP_S32)  { ok = false; }
+    if !check("i64",  run_i64(),  EXP_S64)  { ok = false; }
+    if !check("bool", run_bool(), EXP_BOOL) { ok = false; }
+    if !check("f32",  run_f32(),  EXP_F32)  { ok = false; }
+    if !check("f64",  run_f64(),  EXP_F64)  { ok = false; }
+    if ok { print("ok\n"); return 0; }
+    return 1;
+}

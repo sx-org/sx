@@ -1,0 +1,26 @@
+// A postfix ASSERTION with a PROTOCOL target on an `any` receiver is a
+// compile refusal (Era-2 rider): an any's type tag is always the CONCRETE
+// type of the boxed value, never an erased protocol, so the assertion
+// could only ever panic at runtime. All three temperaments refuse —
+// checked (unconsumed), soft (`.(?P)`), and the optional chain. The
+// honest spellings: assert the concrete type, or switch on the tag.
+#import "modules/std.sx";
+
+Sizable :: protocol { size :: (self: *Self) -> i64; }
+Widget :: struct { value: i64; }
+impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
+
+main :: () {
+    w := Widget.{ value = 3 };
+    av : any = w;
+
+    s := av.(Sizable);          // checked form → refusal
+    _ = s;
+
+    soft := av.(?Sizable);      // soft form → refusal
+    _ = soft;
+
+    oav : ?any = w;
+    ch := oav?.(Sizable);       // chained form → refusal
+    _ = ch;
+}

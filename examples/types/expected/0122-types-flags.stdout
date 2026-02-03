@@ -1,0 +1,18 @@
+=== 9. Flags ===
+flags: .read | .write
+has-read: yes
+flags-neg: no-read
+flags-single: .execute
+flags-all: .read | .write | .execute
+flags-raw: 3
+flags-explicit: .vsync | .resizable
+flags-explicit-raw: 68
+--- swap ---
+var swap: 20 10
+arr swap: 3 1
+3-way: 3 1 2
+--- destructure ---
+basic: 10 20
+fn: 2 1
+discard: 200
+triple: 1 2 3

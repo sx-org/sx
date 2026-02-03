@@ -1,0 +1,14 @@
+// Flat-imported helper. `Coordnate` is a typo — no such type is declared
+// anywhere. Because this module is imported (not the main file), the
+// `UnknownTypeChecker` trusts it and never walks it, so the type leaf is the
+// sole guard against the silently-fabricated empty-struct stub.
+Thing :: struct {
+    x: i32;
+    y: Coordnate;
+}
+
+make_thing :: () -> i32 {
+    t : Thing = ---;
+    t.x = 42;
+    return t.x;
+}

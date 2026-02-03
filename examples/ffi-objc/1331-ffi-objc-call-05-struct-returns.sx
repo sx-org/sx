@@ -1,0 +1,51 @@
+// Phase 1 step 1.7 (PLAN-FFI.md): struct returns through
+// `#objc_call`. emit_llvm's `objc_msg_send` arm hands the IR
+// struct type straight to LLVMBuildCall2; the AArch64 / SysV
+// AMD64 backend handles the register-pair / HFA / byval+sret
+// lowering as long as the function type at the call site is
+// the precise IR struct type.
+//
+// Obj-C runtime contract: `[nil structMethod]` returns a
+// zero-initialized struct of the return type. Lets us pin the
+// ABI without constructing a real object graph.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+// 16 B HFA (Apple ARM64 — 2×f64 stays in v0/v1, SysV AMD64 — in xmm0/xmm1).
+NSPoint :: struct { x: f64; y: f64; }
+
+// 16 B integer aggregate (Apple ARM64 — x0/x1 register pair, coerced
+// via `[2 x i64]` in our extern-decl path; same trip-up that
+// issue-0036 surfaced).
+NSRange :: struct { location: u64; length: u64; }
+
+// 32 B HFA (Apple ARM64 — 4×f64 stays in v0..v3). NSRect / CGRect
+// shape. The plan singles this out because >16 B is the sret cliff
+// for *integer* aggregates, but HFAs of any size up to v0..v3 stay
+// register-resident; that distinction is what we want to lock in.
+NSRect :: struct {
+    x: f64; y: f64; width: f64; height: f64;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        // 16 B HFA — both fields zero.
+        p := #objc_call(NSPoint)(null, "pointValue");
+        print("point = ({}, {})\n", p.x, p.y);
+
+        // 16 B integer — both fields zero.
+        r := #objc_call(NSRange)(null, "rangeValue");
+        print("range = ({}, {})\n", r.location, r.length);
+
+        // 32 B HFA — all four fields zero.
+        rect := #objc_call(NSRect)(null, "rectValue");
+        print("rect  = ({}, {}, {}, {})\n", rect.x, rect.y, rect.width, rect.height);
+
+        // >16 B non-HFA struct returns (sret path) land in Phase 1.8.
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

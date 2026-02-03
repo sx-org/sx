@@ -1,0 +1,97 @@
+#import "modules/std.sx";
+
+// --- Type declarations ---
+OptNode :: struct { value: i32; next: ?i32; }
+OptInner :: struct { val: i32; }
+OptOuter :: struct { inner: ?OptInner; }
+
+// --- Comptime optionals ---
+ct_sum :: () -> i32 {
+    x: ?i32 = 42;
+    y: ?i32 = null;
+    return (x ?? 0) + (y ?? 99);
+}
+CT_RESULT :: #run ct_sum();
+
+main :: () -> i32 {
+    // Basic optional creation
+    x: ?i32 = 42;
+    y: ?i32 = null;
+    print("x = {}\n", x);
+    print("y = {}\n", y);
+
+    // Force unwrap
+    print("x! = {}\n", x!);
+
+    // Null coalescing
+    print("x ?? 0 = {}\n", x ?? 0);
+    print("y ?? 99 = {}\n", y ?? 99);
+
+    // If-binding (safe unwrap)
+    if val := x {
+        print("if-bind x: {}\n", val);
+    }
+    if val := y {
+        print("should not print\n");
+    } else {
+        print("if-bind y: none\n");
+    }
+
+    // Pattern matching
+    check :: (v: ?i32) -> i32 {
+        return if v == {
+            case .some: (val) { val }
+            case .none: { 0 }
+        };
+    }
+    print("match some: {}\n", check(42));
+    print("match none: {}\n", check(null));
+
+    // Optional chaining
+    p: ?OptNode = OptNode.{ value = 10, next = 20 };
+    q: ?OptNode = null;
+    print("p?.value = {}\n", p?.value ?? 0);
+    print("q?.value = {}\n", q?.value ?? 0);
+
+    // Deep chaining
+    o1 := OptOuter.{ inner = OptInner.{ val = 99 } };
+    o2 := OptOuter.{ inner = null };
+    print("o1.inner?.val = {}\n", o1.inner?.val ?? 0);
+    print("o2.inner?.val = {}\n", o2.inner?.val ?? 0);
+
+    // Flow-sensitive narrowing
+    a: ?i32 = 10;
+    b: ?i32 = 20;
+    if a != null {
+        print("narrowed a: {}\n", a);
+    }
+
+    // Guard narrowing
+    guard :: (v: ?i32) -> i32 {
+        if v == null { return 0; }
+        return v;
+    }
+    print("guard 42: {}\n", guard(42));
+    print("guard null: {}\n", guard(null));
+
+    // Compound narrowing
+    if a != null and b != null {
+        print("both: {} {}\n", a, b);
+    }
+
+    // Compound guard
+    guard2 :: (a: ?i32, b: ?i32) -> i32 {
+        if a == null or b == null { return 0; }
+        return a + b;
+    }
+    print("guard2: {}\n", guard2(3, 4));
+
+    // Struct field defaults
+    n := OptNode.{ value = 10 };
+    print("default next: {}\n", n.next);
+
+    // Comptime result
+    print("comptime: {}\n", CT_RESULT);
+
+    return 0;
+}

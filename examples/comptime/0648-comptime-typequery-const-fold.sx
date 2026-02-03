@@ -1,0 +1,39 @@
+// Int-returning type-query builtins (`struct_field_count` / `size_of` / `align_of`)
+// fold as comptime CONSTANTS — usable as an `inline for` bound and an array
+// dimension, exactly like a plain `K :: 3` const. Previously
+// they evaluated only as runtime values, so `[struct_field_count(S)]T` and
+// `inline for 0..struct_field_count(S)` were rejected as "not a compile-time integer".
+// (This is what lets a `($T) -> Type` builder loop `inline for 0..struct_field_count(T)`
+// to assemble a variant list from a type's members — the `race` result synthesis.)
+#import "modules/std.sx";
+
+S :: struct { a: i64; b: bool; c: f64; }
+E :: enum { X; Y; Z; W; }
+
+main :: () -> i32 {
+    // struct_field_count as an inline-for bound
+    s := 0;
+    inline for 0..struct_field_count(S) (i) { s = s + i; }   // 0+1+2 = 3
+    print("struct_field_count(S) loop sum = {}\n", s);
+
+    // struct_field_count as an array dimension; fill it in a folded loop
+    xs : [struct_field_count(S)]i64 = ---;
+    inline for 0..struct_field_count(S) (i) { xs[i] = i * 10; }
+    print("array[struct_field_count(S)] len = {}  xs[2] = {}\n", xs.len, xs[2]);
+
+    // struct_field_count of an enum (4 variants) driving a loop
+    e := 0;
+    inline for 0..variant_count(E) (i) { e = e + 1; }
+    print("variant_count(E) = {}\n", e);
+
+    // size_of / align_of fold too
+    bytes : [size_of(i64)]u8 = ---;
+    print("size_of(i64) array len = {}\n", bytes.len);
+    print("align_of(f64) = {}\n", align_of(f64));
+
+    // composed const expression as a dim
+    ys : [struct_field_count(S) + 1]i64 = ---;
+    print("[struct_field_count(S) + 1] len = {}\n", ys.len);
+
+    return 0;
+}

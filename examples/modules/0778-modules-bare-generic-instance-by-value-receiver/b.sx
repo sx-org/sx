@@ -1,0 +1,16 @@
+// The bare-VISIBLE author: a one-field generic `Box` (size 8) with a BY-VALUE
+// receiver method `dbl` (`self: Box`). `b.sx` flat-imports `c.sx`, so a file
+// importing only b.sx reaches `c.Box` at two hops and must NOT dispatch to it.
+Box :: struct($T: Type) {
+    x: T;
+
+    make :: (value: T) -> Box(T) {
+        .{ x = value }
+    }
+
+    dbl :: (self: Box) -> T {
+        self.x * 2
+    }
+}
+
+#import "c.sx";

@@ -1,0 +1,14 @@
+// `compile_error(msg)` raises a build-time diagnostic at the call
+// site. Used by builder fns (e.g. `#insert build_block_convert(...)`)
+// to reject malformed pack shapes with a clear message rather than
+// silently producing wrong code.
+//
+// The diagnostic appears at the source position of the
+// `compile_error` call. Argument must be a string literal — runtime
+// expressions can't be reported as compile errors.
+
+#import "modules/std.sx";
+
+#run compile_error("intentional compile error from #run");
+
+main :: () { }

@@ -1,0 +1,3 @@
+A fg=(230,230,240,255) bg=(55,55,70,255) label=New Game
+B fg=(230,230,240,255) font=14 rad=8 frame=(10,20,100,40) label=Notes
+C fg=(230,230,240,255) label=Hint

@@ -1,0 +1,27 @@
+// A closure VALUE (a pre-bound variable) cannot be passed into a bare
+// function-pointer slot `(...) -> ...` (ERR E5.1). The bare ABI calls
+// `fn_ptr(ctx, args)` with no env channel, so a closure's environment can't be
+// carried — passing one is unsound (drops env / shifts args / segfaults on a
+// capturing closure). Only a closure LITERAL crosses this boundary (lowerLambda
+// emits a static adapter); a variable is rejected with a pointer to the idiom.
+//
+// The fix for these is either to pass the literal directly, or to type the
+// parameter `Closure(...)` so the environment is carried (the idiomatic form).
+
+#import "modules/std.sx";
+
+E :: error { Z }
+
+bare  :: (cb: (i64) -> i64, n: i64) -> i64 { return cb(n); }
+baref :: (cb: (i64) -> (i64, !E), n: i64) -> i64 { return cb(n) catch (e) -1; }
+
+main :: () -> i32 {
+    inc := closure((x: i64) -> i64 => x + 1);          // capture-free closure var
+    base := 100;
+    add := closure((x: i64) -> i64 => x + base);       // CAPTURING closure var
+
+    _ := bare(inc, 9);          // reject: closure value → bare slot
+    _ := baref(inc, 9);         // reject: also the ∅-widening crossing
+    _ := bare(add, 9);          // reject: capturing closure → bare slot
+    return 0;
+}

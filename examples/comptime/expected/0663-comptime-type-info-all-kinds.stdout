@@ -1,0 +1,12 @@
+struct fields=3 f1.name=b f1.off=8
+union arms=2 a1.off=0
+int bits=16 signed=true
+int bits=32 signed=false
+float bits=32
+array len=4 elem=i64
+vector lanes=3 elem=f32
+slice elem=u8
+pointer pointee=Padded
+optional inner=i32
+string
+bool

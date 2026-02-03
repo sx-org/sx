@@ -1,0 +1,41 @@
+error: a nested function cannot reference the enclosing local 'x' — use a closure ('x := () => ...') to capture it
+  --> examples/diagnostics/1228-diagnostics-nested-fn-enclosing-local.sx:19:30
+   |
+19 |     f1 :: () -> i64 { return x + 1; }     // bare read of enclosing local
+   |                              ^
+
+error: a nested function cannot reference the enclosing local 'arr' — use a closure ('arr := () => ...') to capture it
+  --> examples/diagnostics/1228-diagnostics-nested-fn-enclosing-local.sx:20:30
+   |
+20 |     f2 :: () -> i64 { return arr[0]; }    // indexed read (segfaulted pre-fold)
+   |                              ^^^
+
+error: a nested function cannot reference the enclosing local 'arr' — use a closure ('arr := () => ...') to capture it
+  --> examples/diagnostics/1228-diagnostics-nested-fn-enclosing-local.sx:21:16
+   |
+21 |     f3 :: () { arr[1] = 99; }             // indexed write (Bus error pre-fold)
+   |                ^^^^^^
+
+error: a nested function cannot reference the enclosing local 'pt' — use a closure ('pt := () => ...') to capture it
+  --> examples/diagnostics/1228-diagnostics-nested-fn-enclosing-local.sx:22:16
+   |
+22 |     f4 :: () { pt.v = 77; }               // field write (Bus error pre-fold)
+   |                ^^^^
+
+error: a nested function cannot reference the enclosing local 'g' — use a closure ('g := () => ...') to capture it
+  --> examples/diagnostics/1228-diagnostics-nested-fn-enclosing-local.sx:23:30
+   |
+23 |     f5 :: () -> i64 { return g(); }       // enclosing closure-value call (dead env pre-fold)
+   |                              ^
+
+error: a nested function cannot reference the enclosing local 'a' — use a closure ('a := () => ...') to capture it
+  --> examples/diagnostics/1228-diagnostics-nested-fn-enclosing-local.sx:24:16
+   |
+24 |     f6 :: () { a, b = 7, 8; }             // multi-assign write (silent no-op pre-fold)
+   |                ^
+
+error: a nested function cannot reference the enclosing local 'b' — use a closure ('b := () => ...') to capture it
+  --> examples/diagnostics/1228-diagnostics-nested-fn-enclosing-local.sx:24:19
+   |
+24 |     f6 :: () { a, b = 7, 8; }             // multi-assign write (silent no-op pre-fold)
+   |                   ^

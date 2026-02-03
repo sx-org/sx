@@ -1,0 +1,9 @@
+// A for capture group is positional: one capture per iterable (or none).
+
+#import "modules/std.sx";
+
+main :: () {
+    xs : [2]i64 = .[1, 2];
+    ys : [2]i64 = .[3, 4];
+    for xs, ys (x) { }
+}

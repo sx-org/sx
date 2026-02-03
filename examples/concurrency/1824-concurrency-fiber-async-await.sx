@@ -1,0 +1,42 @@
+// Stream B2 — `async`/`await` (the io.sx ergonomic layer) running COLORBLIND over
+// the fiber `Io` scheduler. The SAME `context.io.async(worker)` that runs inline
+// under the blocking `CBlockingIo` (1805) here spawns the worker as a real fiber
+// and returns a PENDING `*Future`; `await` suspends the calling fiber until the
+// worker completes. No bespoke `go`/`wait` — this is the unified async stack
+// (io.sx async over the `Io` protocol), reaching the fiber scheduler purely
+// through `context.io`.
+//
+// The completion log makes the deferral visible: the coordinator records 1,2
+// BEFORE either worker runs (async only SPAWNS them), then `await` parks it while
+// the workers run (10,20), then it resumes and sums (123). Deterministic.
+//
+// aarch64-pinned (the scheduler's per-arch asm): runs end-to-end on a matching
+// host (macOS + linux), ir-only on a mismatch.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+Log :: struct { seq: [8]i64; n: i64; }
+rec :: (l: *Log, v: i64) { l.seq[l.n] = v; l.n = l.n + 1; }
+
+main :: () -> i64 {
+    lg : Log = ---; lg.n = 0;
+    s := sched.Scheduler.init();
+    ps := @s; pl := @lg;
+    push .{ io = xx s } {
+        ps.spawn(() {
+            rec(pl, 1);                                              // coordinator starts
+            a := context.io.async(() -> (i64, !) { rec(pl, 10); 100 }); // worker A — deferred
+            b := context.io.async(() -> (i64, !) { rec(pl, 20); 23 });  // worker B — deferred
+            rec(pl, 2);                                              // both spawned, neither has run
+            va := a.await() or { -1 };                              // park; A runs, wakes us
+            vb := b.await() or { -1 };
+            rec(pl, va + vb);                                       // 123
+        });
+        ps.run();
+    }
+    print("sequence:");
+    i := 0;
+    while i < lg.n { print(" {}", lg.seq[i]); i = i + 1; }
+    print("\n");
+    return 0;
+}

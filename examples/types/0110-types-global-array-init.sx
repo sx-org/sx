@@ -1,0 +1,23 @@
+// Global array declared with `: [N]T = .[...]` keeps its initializer values
+// (signed-int element type covers negative-literal handling too).
+
+#import "modules/std.sx";
+
+VALS : [4]i32 = .[-2, -1, 42, 99];
+
+main :: () {
+    out("VALS: ");
+    i := 0;
+    while i < 4 {
+        out(int_to_string(xx VALS[i]));
+        out(" ");
+        i = i + 1;
+    }
+    out("\n");
+
+    if VALS[0] == -2 and VALS[1] == -1 and VALS[2] == 42 and VALS[3] == 99 {
+        out("PASS\n");
+    } else {
+        out("FAIL: global array not initialized\n");
+    }
+}

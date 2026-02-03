@@ -1,0 +1,23 @@
+// Flow narrowing (issue 0179) does NOT cross into a nested function body. A
+// closure capturing a local that is narrowed in the ENCLOSING scope still sees
+// it as `?T` inside the closure — using it unguarded is a compile error.
+//
+// This guards the soundness fix from the adversarial review of 0179/0185: the
+// narrowing gate is keyed by per-function SSA `Ref`, and a closure body's `Ref`
+// space overlaps the enclosing function's, so without isolation an outer
+// narrowed `Ref` would falsely permit unwrapping a not-proven-present optional
+// inside the closure (`Lowering.NarrowGuard`). The closure could run later when
+// the captured value is null, so the reject is mandatory — write `n!` to assert.
+#import "modules/std.sx";
+
+takes_i64 :: (x: i64) { print("{}\n", x); }
+
+main :: () {
+    n : ?i64 = 7;
+    if n != null {
+        // `n` is narrowed HERE, but the closure body is a separate function:
+        // `n` is `?i64` inside it, so this implicit unwrap must be rejected.
+        g := () { takes_i64(n); };
+        g();
+    }
+}

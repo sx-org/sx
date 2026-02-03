@@ -1,0 +1,26 @@
+=== 4. Control Flow ===
+ite: 1
+ite-both: 10 20
+if-block: yes
+if-no-else: after
+nested-if: deep
+if-else-if: second
+if-block-expr: 15
+while: 5
+while-false: skipped
+while-break: 7
+while-continue: 25
+while-sum: 55
+nested-while: 9
+nested-break: 2 2
+for: 10 20 30 40
+for-print: 10 20 30 40
+for-idx: 0 1 2 3
+for-2arg: 10@0 20@1 30@2 40@3
+for-break: 10 20
+for-continue: 10 30 40
+for-slice: 10 20 30
+for-slice-idx: 0:10 1:20 2:30
+for-nested: (0,0) (0,1) (1,0) (1,1)
+for-break-idx: 2
+multi: 1 2 3

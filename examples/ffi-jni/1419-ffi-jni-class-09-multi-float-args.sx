@@ -1,0 +1,49 @@
+// Regression: `obj.method()` runtime-class dispatch with a `float`
+// return type used to silently emit `LLVMGetUndef` because the
+// `Call<T>Method` switch in `emit_llvm.zig` didn't cover `.f32`.
+// Combined with multiple such calls inlined as args to a single
+// outer call (`f(o.a(), o.b(), o.c())`), every arg after the first
+// went out as `undef` — exactly the chess Android touch failure
+// (`MotionEvent.getX()` + `getY()` came through as `undef`s into
+// `sx_android_push_touch`).
+//
+// This test exercises BOTH the `.f32` jdispatch slot AND the
+// "multiple runtime-class method calls as args to one outer call"
+// pattern. The bodies are gated behind a runtime-false flag so the
+// JNI lookups never execute (no JVM in the test runtime), but the
+// codegen path still has to emit the calls correctly.
+
+#import "modules/std.sx";
+
+MotionEvent :: #jni_class("android/view/MotionEvent") extern {
+    getAction :: (self: *Self) -> i32;
+    getX      :: (self: *Self) -> f32;
+    getY      :: (self: *Self) -> f32;
+}
+
+sx_consume_touch :: (action: i32, x: f32, y: f32) {
+    // Black-hole call so the args aren't dead-stripped before LLVM
+    // verification gets a chance to look at the call site.
+    if action == 0 and x == 0.0 and y == 0.0 {
+        print("zero\n");
+    }
+}
+
+g_should_call : bool = false;
+
+drive_touch :: (env: *void, ev: *MotionEvent) {
+    #jni_env(env) {
+        // The bug: getX() / getY() lowered to `undef` floats and the
+        // call to sx_consume_touch passed garbage. Post-fix, all three
+        // JNI calls emit proper Call<T>Method dispatches.
+        sx_consume_touch(ev.getAction(), ev.getX(), ev.getY());
+    }
+}
+
+main :: () -> i32 {
+    if g_should_call {
+        drive_touch(null, null);
+    }
+    print("ok\n");
+    0
+}

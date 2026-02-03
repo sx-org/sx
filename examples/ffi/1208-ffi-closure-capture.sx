@@ -1,0 +1,38 @@
+// Closure free-variable capture works through `FfiIntrinsicCall`
+// nodes — names referenced inside `#objc_call` / `#jni_call` /
+// `#jni_static_call` argument lists from inside a closure body are
+// recognized as captured variables and bound from the closure's env
+// struct at call time. `passthrough_works` is the baseline (normal
+// expression capture); `passthrough_via_objc_call` exercises the same
+// capture through an FFI intrinsic call's arg list.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+passthrough_works :: (recv: *void) -> Closure(i32) -> *void {
+    closure((d: i32) -> *void => recv)  // captures `recv` — fine
+}
+
+passthrough_via_objc_call :: (recv: *void) -> Closure(i32) -> i64 {
+    // Same `recv` capture, but inside `#objc_call(...)`'s arg list.
+    closure((d: i32) -> i64 => #objc_call(i64)(recv, "hash"))
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        f := passthrough_works(null);
+        p := f(0);
+        print("ok (passthrough works) = {}\n", p == null);
+
+        // Capture inside the `#objc_call` arg list.
+        ns_object := objc_getClass("NSObject".ptr);
+        g := passthrough_via_objc_call(ns_object);
+        h := g(0);
+        print("ok (passthrough via #objc_call) = {}\n", h != 0);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

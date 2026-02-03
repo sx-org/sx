@@ -1,0 +1,5 @@
+// The real type-returning function `Make`, two flat hops from a file that
+// imports b.sx. A file importing only b.sx must NOT see this head.
+Make :: ($T: Type) -> Type {
+    return struct { x: T; };
+}

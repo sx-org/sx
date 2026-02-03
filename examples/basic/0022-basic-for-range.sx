@@ -1,0 +1,39 @@
+// Range-based for loops: `for start..end (i) { }` (cursor optional, `end`
+// exclusive) is a runtime counting loop; `inline for start..end (i) { }`
+// is comptime-unrolled — the cursor is a compile-time constant each
+// iteration, so `xs[i]` over a heterogeneous pack substitutes the concrete
+// per-position element (this is what drives pack iteration).
+
+#import "modules/std.sx";
+
+Show :: protocol {
+    show :: (self: *Self) -> string;
+}
+A :: struct { x: i64; }
+B :: struct { s: string; }
+impl Show for A { show :: (self: *A) -> string => "A"; }
+impl Show for B { show :: (self: *B) -> string => "B"; }
+
+// Comptime-unrolled iteration over a pack; cursor `i` indexes the pack.
+each :: (..xs: Show) -> void {
+    inline for 0..xs.len (i) {
+        print("[{}]={}\n", i, xs[i].show());
+    }
+}
+
+main :: () -> i32 {
+    // Runtime range, cursor used.
+    for 0..3 (i) { print("i={}\n", i); }
+
+    // Runtime range, no cursor — body runs `end - start` times.
+    n := 0;
+    for 0..5 { n = n + 1; }
+    print("n={}\n", n);
+
+    // Non-zero start.
+    for 2..5 (j) { print("j={}\n", j); }
+
+    // Inline unroll over a heterogeneous pack.
+    each(A.{ x = 1 }, B.{ s = "hi" }, A.{ x = 3 });
+    0
+}

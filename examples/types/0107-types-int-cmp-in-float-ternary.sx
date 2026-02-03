@@ -1,0 +1,16 @@
+// Integer literal `0` on the RHS of an integer comparison stays integer-typed
+// even when the comparison is the condition of an `if-then-else` whose result
+// type is `f32`. The comparison must not pick up the outer ternary's type.
+
+#import "modules/std.sx";
+
+main :: () -> void {
+    x : i64 = 42;
+
+    // OK: comparison in statement context
+    if x != 0 { out("ok\n"); }
+
+    // BUG: comparison as condition of f32 ternary — `0` inferred as f32
+    result : f32 = if x != 0 then 1.0 else 2.0;
+    print("result = {}\n", result);
+}

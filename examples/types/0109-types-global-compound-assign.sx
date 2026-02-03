@@ -1,0 +1,32 @@
+// `+=` on a global variable loads the current value (not the initializer)
+// before storing — same semantics as the explicit `g = g + 1` form.
+
+#import "modules/std.sx";
+
+g_counter : i64 = 0;
+
+tick :: () {
+    g_counter += 1;
+    print("counter={}\n", g_counter);
+}
+
+main :: () -> void {
+    // Test 1: += always produces 1 (BUG)
+    out("--- Test 1: += (broken) ---\n");
+    out("Expected: 1, 2, 3\n");
+    i : i64 = 0;
+    while i < 3 {
+        tick();
+        i += 1;
+    }
+
+    // Test 2: manual read-modify-write works correctly
+    out("--- Test 2: = x + 1 (works) ---\n");
+    out("Expected: 2, 3, 4\n");
+    g_counter = g_counter + 1;
+    print("counter={}\n", g_counter);
+    g_counter = g_counter + 1;
+    print("counter={}\n", g_counter);
+    g_counter = g_counter + 1;
+    print("counter={}\n", g_counter);
+}

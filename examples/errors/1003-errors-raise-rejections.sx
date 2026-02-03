@@ -1,0 +1,32 @@
+// `raise` rejections (ERR step E1.3):
+//   - `raise` is only valid inside a failable function,
+//   - a literal `raise error.X` must name a tag in the function's set,
+//   - a variable `raise e` must carry a set that is a subset of the
+//     function's set.
+// The positive case lives in `examples/219-raise.sx`. Parse-time rejections
+// (`raise` in expression position / inside `defer` / `onfail`) are covered by
+// the inline parser tests.
+
+#import "modules/std.sx";
+
+ParseErr :: error { BadDigit, Overflow }
+OtherErr :: error { Weird }
+
+// Literal tag not in the declared set.
+bad_tag :: () -> !ParseErr {
+    raise error.NotInSet;            // error: NotInSet not in ParseErr
+}
+
+// Variable whose error set is not a subset of the function's set.
+makes_other :: () -> !OtherErr { return; }
+relay :: () -> !ParseErr {
+    e := makes_other();              // e : OtherErr
+    raise e;                         // error: OtherErr not subset of ParseErr
+}
+
+main :: () -> i32 {
+    x := bad_tag();                  // force bad_tag to lower
+    y := relay();                    // force relay to lower
+    raise error.BadDigit;            // error: main (-> i32) is not failable
+    return 0;
+}

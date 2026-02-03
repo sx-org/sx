@@ -1,0 +1,280 @@
+#import "modules/std.sx";
+#import "modules/ffi/sdl3.sx";
+#import "modules/ffi/opengl.sx";
+#import "modules/math";
+
+
+WIDTH  :f32: 800;
+HEIGHT :f32: 600;
+
+vec4 :: (x: f32, y: f32, z: f32, w: f32) -> Vector(4, f32) {
+    .[x, y, z, w]
+}
+
+// ---- Matrix44: column-major 4×4 matrix ----
+
+Matrix44 :: union {
+    data: [16]f32;
+    struct { c0, c1, c2, c3: Vector(4, f32); };
+}
+
+mat4_multiply :: (a: *Matrix44, b: *Matrix44) -> Matrix44 {
+    out : Matrix44 = ---;
+    out.c0 = a.c0 * b.c0.x + a.c1 * b.c0.y + a.c2 * b.c0.z + a.c3 * b.c0.w;
+    out.c1 = a.c0 * b.c1.x + a.c1 * b.c1.y + a.c2 * b.c1.z + a.c3 * b.c1.w;
+    out.c2 = a.c0 * b.c2.x + a.c1 * b.c2.y + a.c2 * b.c2.z + a.c3 * b.c2.w;
+    out.c3 = a.c0 * b.c3.x + a.c1 * b.c3.y + a.c2 * b.c3.z + a.c3 * b.c3.w;
+    out
+}
+multiply :: ufcs mat4_multiply;
+
+mat4_perspective :: (fov: f32, aspect: f32, near: f32, far: f32) -> Matrix44 {
+    half := fov / 2.0;
+    f := cos(half) / sin(half);
+    m : Matrix44 = ---;
+    m.c0 = vec4(f / aspect, 0.0, 0.0, 0.0);
+    m.c1 = vec4(0.0, f, 0.0, 0.0);
+    m.c2 = vec4(0.0, 0.0, (far + near) / (near - far), -1.0);
+    m.c3 = vec4(0.0, 0.0, (2.0 * far * near) / (near - far), 0.0);
+    m
+}
+
+mat4_rotate_y :: (angle: f32) -> Matrix44 {
+    c := cos(angle);
+    s := sin(angle);
+    m : Matrix44 = ---;
+    m.c0 = vec4(c, 0.0, 0.0 - s, 0.0);
+    m.c1 = vec4(0.0, 1.0, 0.0, 0.0);
+    m.c2 = vec4(s, 0.0, c, 0.0);
+    m.c3 = vec4(0.0, 0.0, 0.0, 1.0);
+    m
+}
+
+mat4_rotate_x :: (angle: f32) -> Matrix44 {
+    c := cos(angle);
+    s := sin(angle);
+    m : Matrix44 = ---;
+    m.c0 = vec4(1.0, 0.0, 0.0, 0.0);
+    m.c1 = vec4(0.0, c, s, 0.0);
+    m.c2 = vec4(0.0, 0.0 - s, c, 0.0);
+    m.c3 = vec4(0.0, 0.0, 0.0, 1.0);
+    m
+}
+
+mat4_translate :: (tx: f32, ty: f32, tz: f32) -> Matrix44 {
+    m : Matrix44 = ---;
+    m.c0 = vec4(1.0, 0.0, 0.0, 0.0);
+    m.c1 = vec4(0.0, 1.0, 0.0, 0.0);
+    m.c2 = vec4(0.0, 0.0, 1.0, 0.0);
+    m.c3 = vec4(tx, ty, tz, 1.0);
+    m
+}
+
+// ---- Main ----
+
+main :: () {
+    SDL_Init(SDL_INIT_VIDEO);
+
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+
+    window := SDL_CreateWindow("sx GL cube", xx WIDTH, xx HEIGHT, SDL_WINDOW_OPENGL);
+    gl_ctx := SDL_GL_CreateContext(window);
+    SDL_GL_MakeCurrent(window, gl_ctx);
+    SDL_GL_SetSwapInterval(1);
+
+    load_gl(SDL_GL_GetProcAddress);
+
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
+
+    print("create program: {}\n{}\n", VERT_SHADER_SRC, FRAG_SHADER_SRC);
+    program := create_program(VERT_SHADER_SRC, FRAG_SHADER_SRC);
+    glUseProgram(program);
+
+    mvp_loc : i32 = glGetUniformLocation(program, "uMVP");
+    light_loc : i32 = glGetUniformLocation(program, "uLightDir");
+    wire_loc : i32 = glGetUniformLocation(program, "uWire");
+
+    // Cube vertices: pos(vec4 w=1) + normal(vec4 w=0), 36 vertices × 2 vec4s = 72
+    vertices : []Vector(4, f32) = .[
+        // Front face (z = +0.5)
+        .[-0.5, -0.5,  0.5, 1.0], vec4( 0.0,  0.0,  1.0, 0.0),
+        vec4( 0.5, -0.5,  0.5, 1.0), vec4( 0.0,  0.0,  1.0, 0.0),
+        vec4( 0.5,  0.5,  0.5, 1.0), vec4( 0.0,  0.0,  1.0, 0.0),
+        vec4(-0.5, -0.5,  0.5, 1.0), vec4( 0.0,  0.0,  1.0, 0.0),
+        vec4( 0.5,  0.5,  0.5, 1.0), vec4( 0.0,  0.0,  1.0, 0.0),
+        vec4(-0.5,  0.5,  0.5, 1.0), vec4( 0.0,  0.0,  1.0, 0.0),
+        // Back face (z = -0.5)
+        vec4( 0.5, -0.5, -0.5, 1.0), vec4( 0.0,  0.0, -1.0, 0.0),
+        vec4(-0.5, -0.5, -0.5, 1.0), vec4( 0.0,  0.0, -1.0, 0.0),
+        vec4(-0.5,  0.5, -0.5, 1.0), vec4( 0.0,  0.0, -1.0, 0.0),
+        vec4( 0.5, -0.5, -0.5, 1.0), vec4( 0.0,  0.0, -1.0, 0.0),
+        vec4(-0.5,  0.5, -0.5, 1.0), vec4( 0.0,  0.0, -1.0, 0.0),
+        vec4( 0.5,  0.5, -0.5, 1.0), vec4( 0.0,  0.0, -1.0, 0.0),
+        // Top face (y = +0.5)
+        vec4(-0.5,  0.5,  0.5, 1.0), vec4( 0.0,  1.0,  0.0, 0.0),
+        vec4( 0.5,  0.5,  0.5, 1.0), vec4( 0.0,  1.0,  0.0, 0.0),
+        vec4( 0.5,  0.5, -0.5, 1.0), vec4( 0.0,  1.0,  0.0, 0.0),
+        vec4(-0.5,  0.5,  0.5, 1.0), vec4( 0.0,  1.0,  0.0, 0.0),
+        vec4( 0.5,  0.5, -0.5, 1.0), vec4( 0.0,  1.0,  0.0, 0.0),
+        vec4(-0.5,  0.5, -0.5, 1.0), vec4( 0.0,  1.0,  0.0, 0.0),
+        // Bottom face (y = -0.5)
+        vec4(-0.5, -0.5, -0.5, 1.0), vec4( 0.0, -1.0,  0.0, 0.0),
+        vec4( 0.5, -0.5, -0.5, 1.0), vec4( 0.0, -1.0,  0.0, 0.0),
+        vec4( 0.5, -0.5,  0.5, 1.0), vec4( 0.0, -1.0,  0.0, 0.0),
+        vec4(-0.5, -0.5, -0.5, 1.0), vec4( 0.0, -1.0,  0.0, 0.0),
+        vec4( 0.5, -0.5,  0.5, 1.0), vec4( 0.0, -1.0,  0.0, 0.0),
+        vec4(-0.5, -0.5,  0.5, 1.0), vec4( 0.0, -1.0,  0.0, 0.0),
+        // Right face (x = +0.5)
+        vec4( 0.5, -0.5,  0.5, 1.0), vec4( 1.0,  0.0,  0.0, 0.0),
+        vec4( 0.5, -0.5, -0.5, 1.0), vec4( 1.0,  0.0,  0.0, 0.0),
+        vec4( 0.5,  0.5, -0.5, 1.0), vec4( 1.0,  0.0,  0.0, 0.0),
+        vec4( 0.5, -0.5,  0.5, 1.0), vec4( 1.0,  0.0,  0.0, 0.0),
+        vec4( 0.5,  0.5, -0.5, 1.0), vec4( 1.0,  0.0,  0.0, 0.0),
+        vec4( 0.5,  0.5,  0.5, 1.0), vec4( 1.0,  0.0,  0.0, 0.0),
+        // Left face (x = -0.5)
+        vec4(-0.5, -0.5, -0.5, 1.0), vec4(-1.0,  0.0,  0.0, 0.0),
+        vec4(-0.5, -0.5,  0.5, 1.0), vec4(-1.0,  0.0,  0.0, 0.0),
+        vec4(-0.5,  0.5,  0.5, 1.0), vec4(-1.0,  0.0,  0.0, 0.0),
+        vec4(-0.5, -0.5, -0.5, 1.0), vec4(-1.0,  0.0,  0.0, 0.0),
+        vec4(-0.5,  0.5,  0.5, 1.0), vec4(-1.0,  0.0,  0.0, 0.0),
+        vec4(-0.5,  0.5, -0.5, 1.0), vec4(-1.0,  0.0,  0.0, 0.0)
+    ];
+
+    // Create VAO and VBO
+    vao : u32 = 0;
+    vbo : u32 = 0;
+    
+    glGenVertexArrays(1, vao);
+    glGenBuffers(1, vbo);
+
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, 1152, vertices.ptr, GL_STATIC_DRAW);
+
+    // Position attribute (location 0): 3 floats, stride 32 bytes, offset 0
+    glVertexAttribPointer(0, 3, GL_FLOAT, 0, 32, xx 0);
+    glEnableVertexAttribArray(0);
+
+    // Normal attribute (location 1): 3 floats, stride 32 bytes, offset 16
+    glVertexAttribPointer(1, 3, GL_FLOAT, 0, 32, xx 16);
+    glEnableVertexAttribArray(1);
+
+    // Set light direction
+    glUniform3f(light_loc, 0.5, 0.7, 1.0);
+    glUniform1f(wire_loc, 0.0);
+
+    // Render loop
+    running := true;
+    event : SDL_Event = .none;
+
+    while running {
+        while SDL_PollEvent(event) {
+            if event == {
+                case .quit: running = false;
+                case .key_up: (e) {
+                    if e.key == {
+                        case .escape: running = false;
+                        //case .
+                    }
+                }
+                case .window_exposed: (e) {
+                    
+                }
+                case .key_down: (e) {
+                    k : u32 = xx e.key;
+                    print("ts={} wid={} sc={} key={}\n",
+                        e.timestamp, e.window_id, e.scancode, k);
+                }                
+            }
+        }
+
+        // Compute rotation angle from time
+        ticks := SDL_GetTicks();
+        ms : f32 = xx ticks;
+        angle := ms * 0.001;
+        
+        // Build matrices
+        proj  := mat4_perspective(PI / 4.0, WIDTH / HEIGHT, 0.1, 100.0);
+        view  := mat4_translate(0.0, 0.0, -3.0);
+        rot_y := mat4_rotate_y(angle);
+        rot_x := mat4_rotate_x(angle * 0.7);
+        model := mat4_multiply(rot_y, rot_x);
+        vm    := mat4_multiply(view, model);
+        mvp   := mat4_multiply(proj, vm);
+
+        glUniformMatrix4fv(mvp_loc, 1, 0, mvp.data);
+
+        glClearColor(0.1, 0.1, 0.15, 1.0);
+        glClear(GL_COLOR_BUFFER_BIT + GL_DEPTH_BUFFER_BIT);
+
+        // Solid pass
+        glUniform1f(wire_loc, 0.0);
+        glBindVertexArray(vao);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // Wireframe overlay
+        glDepthFunc(GL_LEQUAL);
+        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        glLineWidth(2.0);
+        glUniform1f(wire_loc, 1.0);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // Restore
+        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glDepthFunc(GL_LESS);
+        glUniform1f(wire_loc, 0.0);
+
+        SDL_GL_SwapWindow(window);
+    }
+
+    SDL_GL_DestroyContext(gl_ctx);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
+VERT_SHADER_SRC : string = #string GLSL
+#version 330 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec3 aNormal;
+uniform mat4 uMVP;  
+out vec3 vNormal;
+out vec3 vPos;
+
+void main() {
+    gl_Position = uMVP * vec4(aPos, 1.0);
+    vNormal = aNormal;
+    vPos = aPos;
+}
+GLSL;
+
+FRAG_SHADER_SRC : string = #string GLSL
+#version 330 core
+in vec3 vNormal;
+in vec3 vPos;
+out vec4 FragColor;
+uniform vec3 uLightDir;
+uniform float uWire;
+void main() {
+    if (uWire > 0.5) {
+        FragColor = vec4(0.05, 0.05, 0.05, 1.0);
+        return;
+    }
+    vec3 n = normalize(vNormal);
+    vec3 l = normalize(uLightDir);
+    float diff = max(dot(n, l), 0.15);
+    float cx = floor(vPos.x * 2.0 + 0.001);
+    float cy = floor(vPos.y * 2.0 + 0.001);
+    float cz = floor(vPos.z * 2.0 + 0.001);
+    float check = mod(cx + cy + cz, 2.0);
+    vec3 col1 = vec3(0.9, 0.5, 0.2);
+    vec3 col2 = vec3(0.2, 0.6, 0.9);
+    vec3 base = mix(col1, col2, check);
+    FragColor = vec4(base * diff, 1.0);
+}
+GLSL;

@@ -1,0 +1,134 @@
+// End-to-end error handling: failable functions (named + inferred sets) consumed
+// through every absorbing form — destructure, `try` (in helpers), `catch` (bare-
+// expr / match-body / diverging block / no-binding), `or` value-terminator,
+// `onfail` cleanup interleaved with `defer`, plus `error.X` as a value and `{}`
+// tag-name interpolation.
+
+#import "modules/std.sx";
+
+SmokeErr :: error { Empty, BadDigit, Overflow }
+
+// value-carrying, named set
+sm_parse :: (n: i32) -> (i32, !SmokeErr) {
+    if n < 0  { raise error.BadDigit; }
+    if n == 0 { raise error.Empty; }
+    if n > 99 { raise error.Overflow; }
+    return n * 2;
+}
+
+// pure failable, inferred set (ad-hoc tag)
+sm_check :: (ok: bool) -> ! {
+    if !ok { raise error.NotReady; }
+    return;
+}
+
+// multi-value, inferred set: `try` propagates; SCC absorbs SmokeErr
+sm_pair :: (a: i32, b: i32) -> (i32, i32, !) {
+    x := try sm_parse(a);
+    y := try sm_parse(b);
+    return .{x, y};
+}
+
+// catch with a diverging block body
+sm_or_default :: (n: i32) -> i32 {
+    return sm_parse(n) catch (e) {
+        print("  logged {}\n", e);
+        return -1;
+    };
+}
+
+// onfail + defer interleave: cleanup runs only on the error path
+sm_acquire :: (fail: bool) -> (i32, !) {
+    defer  print("  defer A\n");
+    onfail print("  onfail B\n");
+    if fail { raise error.Acquire; }
+    return 7;
+}
+
+// or-chain: try a, fall to try b; propagate if both fail
+sm_first :: (a: i32, b: i32) -> (i32, !) {
+    v := try sm_parse(a) or try sm_parse(b);
+    return v;
+}
+
+// --- Composition (ERR E5.1): failable closures, widening, generics ---
+
+// Closure(...) param, try-propagated (the env is carried)
+sm_run :: (cb: Closure(i32) -> (i32, !SmokeErr), n: i32) -> (i32, !SmokeErr) {
+    return try cb(n);
+}
+
+// bare fn-type param: a NON-failable closure literal widens into the failable
+// slot (the ∅-widening adapter wraps `{value, 0}`)
+sm_widen :: (cb: (i32) -> (i32, !SmokeErr), n: i32) -> i32 {
+    return cb(n) catch (e) -1;
+}
+
+// generic ($T) value-carrying failable composition, monomorphized per call
+sm_wrap :: ($T: Type, f: Closure() -> (T, !SmokeErr)) -> (T, !SmokeErr) {
+    return try f();
+}
+
+main :: () {
+    // error.X as a typed value + {} interpolation renders the tag name
+    e0 : SmokeErr = error.BadDigit;
+    print("tag: {}\n", e0);
+
+    // success destructure + error inspect
+    v1, err1 := sm_parse(5);
+    if !err1 { print("parsed: {}\n", v1); }
+    v2, err2 := sm_parse(-1);
+    if err2 == error.BadDigit { print("got: {}\n", err2); }
+
+    // catch — bare-expr body
+    ce := sm_parse(0) catch (e) 100;
+    print("catch-expr: {}\n", ce);
+
+    // catch — match-body per-tag dispatch
+    cm := sm_parse(200) catch (e) == {
+        case .Overflow: 1;
+        case .Empty:    2;
+        else:           3;
+    };
+    print("catch-match: {}\n", cm);
+
+    // catch — diverging block (in helper)
+    print("or-default ok: {}\n", sm_or_default(5));
+    print("or-default err: {}\n", sm_or_default(-5));
+
+    // or — value terminator (bare LHS; non-failable result)
+    ov := sm_parse(0) or 55;
+    print("or-value: {}\n", ov);
+
+    // or-chain via helper (first ok wins; propagation absorbed by destructure)
+    g, gerr := sm_first(0, 8);
+    if !gerr { print("or-chain: {}\n", g); }
+
+    // multi-value failable consumed by catch (tuple body)
+    p, q := sm_pair(0, 3) catch (e) .{0, 0};
+    print("pair-catch: {} {}\n", p, q);
+    p2, q2 := sm_pair(4, 5) catch (e) .{0, 0};
+    print("pair-ok: {} {}\n", p2, q2);
+
+    // pure failable: absorb with no-binding catch
+    sm_check(false) catch { print("check absorbed\n"); };
+
+    // onfail/defer interleave on error vs success
+    print("acquire fail:\n");
+    hv, herr := sm_acquire(true);
+    print("acquire ok:\n");
+    iv, ierr := sm_acquire(false);
+
+    // composition: inline failable closure literal through a Closure(...) param
+    cl := sm_run(closure((x: i32) -> (i32, !SmokeErr) { if x < 0 { raise error.BadDigit; } return x * 2; }), 6) catch (e) -1;
+    print("closure-run: {}\n", cl);                                                     // 12
+    print("closure-run-err: {}\n", sm_run(closure((x: i32) -> (i32, !SmokeErr) { raise error.Empty; }), 1) catch (e) -9); // -9
+
+    // non-failable closure literal widened into the failable bare slot
+    print("widen: {}\n", sm_widen(closure((x: i32) -> i32 => x + 1), 9));               // 10
+
+    // generic failable composition (monomorphized at i32)
+    print("wrap: {}\n", sm_wrap(i32, closure(() -> (i32, !SmokeErr) { return 42; })) catch (e) 0); // 42
+
+    print("errors ok\n");
+}

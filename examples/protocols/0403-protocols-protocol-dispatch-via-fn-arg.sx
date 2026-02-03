@@ -1,0 +1,44 @@
+// Protocol dispatch on `List(Protocol)` items where the list pointer is
+// passed into another function — verifies the boxed payload survives an
+// extra call frame between erasure and dispatch.
+
+#import "modules/std.sx";
+
+Sizable :: protocol {
+    size :: (self: *Self) -> i64;
+}
+
+Leaf :: struct { value: i64; }
+impl Sizable for Leaf {
+    size :: (self: *Leaf) -> i64 { self.value }
+}
+
+add :: (items: *List(Sizable), w: Leaf) {
+    p := w;
+    items.append(p.(Sizable));  // explicit owning copy
+}
+
+dispatch_fn :: (items: *List(Sizable)) {
+    out("dispatch_fn: about to dispatch\n");
+    s := items.items[0].size();
+    print("dispatch_fn: result = {}\n", s);
+}
+
+main :: () -> void {
+    items : List(Sizable) = .{};
+    add(@items, Leaf.{ value = 42 });
+
+    // Direct dispatch twice
+    out("=== Direct 1 ===\n");
+    r1 := items.items[0].size();
+    print("r1 = {}\n", r1);
+
+    out("=== Direct 2 ===\n");
+    r2 := items.items[0].size();
+    print("r2 = {}\n", r2);
+
+    // Then from function
+    out("=== From function ===\n");
+    dispatch_fn(@items);
+    out("=== OK ===\n");
+}

@@ -1,0 +1,89 @@
+// POSITIVE coverage for validated callable-value calls (issue 0188):
+// correct-arity calls across the surface keep working, coerced args
+// (issue 0186) keep working, and a runtime TUPLE spread `f(..pair)`
+// expands into positional args (specs "Tuple parallels") for every
+// callee shape — closure value, struct-field closure, fn-pointer
+// value, top-level fn, and slice-variadic fn. (Value-spread expansion
+// itself is locked in packs/0830; this file owns the VALIDATION side.)
+// Args AFTER a spread are target-typed against their true (expanded)
+// parameter position — a `null` into `?T`, a struct literal, and a
+// coercible i32 all land on the right param (issue 0239 part 2) — and
+// default-arg fill counts a spread by its tuple WIDTH, not as one arg
+// (issue 0188 review F2).
+#import "modules/std.sx";
+
+S :: struct { cb: Closure(i64, i64) -> i64; }
+P :: struct { x: i64; y: i64; }
+addfn :: (a: i64, b: i64) -> i64 => a + b;
+takes_cb :: (cb: Closure(i64) -> i64) -> i64 => cb(5);
+opt3 :: (a: i64, b: i64, c: ?i64) -> i64 { return c ?? -1; }
+mk :: (a: i64, b: i64, p: P, w: i32) -> i64 { return a + b + p.x * 10 + p.y + w; }
+withdef :: (a: i64, b: i64 = 99) -> i64 { return a + b; }
+sum :: (..xs: []i64) -> i64 {
+    t := 0;
+    for xs (x) { t = t + x; }
+    return t;
+}
+
+main :: () {
+    pair := .{10, 20};
+
+    // := -bound lambda, exact arity + tuple spread
+    add := (a: i64, b: i64) -> i64 => a + b;
+    print("closure direct: {}\n", add(1, 2));
+    print("closure spread: {}\n", add(..pair));
+
+    // closure with a capture
+    base := 100;
+    addc := (a: i64, b: i64) -> i64 => a + b + base;
+    print("capture direct: {}\n", addc(1, 2));
+    print("capture spread: {}\n", addc(..pair));
+
+    // struct-field closure
+    s := S.{ cb = (a: i64, b: i64) -> i64 => a * b };
+    print("field direct: {}\n", s.cb(3, 4));
+    print("field spread: {}\n", s.cb(..pair));
+
+    // fn-pointer value
+    f : (i64, i64) -> i64 = addfn;
+    print("fnptr direct: {}\n", f(7, 8));
+    print("fnptr spread: {}\n", f(..pair));
+
+    // closure param called inside the callee (exact arity)
+    print("param: {}\n", takes_cb((x: i64) -> i64 => x * 2));
+
+    // top-level fn: tuple spread expands positionally
+    print("top spread: {}\n", addfn(..pair));
+
+    // spread mixed with a leading positional arg
+    mix := (a: i64, b: i64, c: i64) -> i64 => a * 100 + b + c;
+    print("mix spread: {}\n", mix(1, ..pair));
+
+    // slice-variadic fn: tuple spread boxes per element; array spread
+    // still passes the slice whole
+    print("vartup: {}\n", sum(..pair));
+    arr := .[4, 5, 6];
+    print("varslice: {}\n", sum(..arr));
+
+    // coerced arg (issue 0186): concrete int into a `?i64` closure param
+    opt := (x: ?i64) -> i64 => x ?? -1;
+    print("coerce some: {}\n", opt(7));
+    print("coerce null: {}\n", opt(null));
+
+    // post-spread target-typing (issue 0239 part 2): args AFTER a spread
+    // land on their true parameter — `null` into the ?i64 (not a
+    // present-zero at the wrong slot), through both callee shapes
+    optc := (a: i64, b: i64, c: ?i64) -> i64 => c ?? -1;
+    print("post-spread null closure: {}\n", optc(..pair, null));
+    print("post-spread null topfn: {}\n", opt3(..pair, null));
+    print("post-spread some topfn: {}\n", opt3(..pair, 9));
+
+    // …a struct literal and a coercible i32 after the spread
+    print("post-spread struct: {}\n", mk(..pair, .{ x = 3, y = 4 }, 5));
+
+    // default-arg fill counts the spread's WIDTH (issue 0188 review F2):
+    // a 2-tuple supplies both params (no default), a 1-tuple fills `b = 99`
+    print("defaults full spread: {}\n", withdef(..pair));
+    one_t := .{7,};
+    print("defaults 1-tuple spread: {}\n", withdef(..one_t));
+}

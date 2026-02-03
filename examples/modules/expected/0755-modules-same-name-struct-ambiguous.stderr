@@ -1,0 +1,5 @@
+error: type 'Thing' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0755-modules-same-name-struct-ambiguous.sx:11:9
+   |
+11 |     t : Thing = .{ a = 1 };
+   |         ^^^^^

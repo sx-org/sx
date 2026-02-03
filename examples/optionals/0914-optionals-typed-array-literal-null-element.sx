@@ -1,0 +1,32 @@
+// Typed `.[ ... ]` array literal whose element type is an optional and whose
+// elements include a bare `null` resolve the element type from the literal's
+// type head, so `null` lowers as `const_null(?T)` (not `.unresolved`).
+//
+// Regression (issue 0173): `([N]?T).[ ... ]` reached LLVM with an
+// `.unresolved`-typed `const_null` and panicked, because the array-literal
+// type-head resolver had no arm for an `array_type_expr`/`slice_type_expr`
+// head — the `?T` element type was lost.
+#import "modules/std.sx";
+
+Pt :: struct { x: i64 = 0; y: i64 = 0; }
+
+main :: () {
+    a := ([2]?i64).[ null, 7 ];
+    print("{}\n", a[1] ?? -1);                 // 7
+
+    b := ([3]?i64).[ null, null, 5 ];
+    print("{} {} {}\n", b[0] ?? -1, b[1] ?? -1, b[2] ?? -1);  // -1 -1 5
+
+    // Optional struct payload element + a bare null sibling.
+    c := ([2]?Pt).[ null, .{ x = 1, y = 2 } ];
+    p := c[1] ?? Pt.{};
+    print("{} {}\n", p.x, p.y);                // 1 2
+
+    // A typed slice head `[]?T` with a null element resolves too.
+    s : []?i64 = .[ null, 3 ];
+    print("{}\n", s[1] ?? -1);                 // 3
+
+    // A non-optional typed `.[...]` array still works (no regression).
+    d := ([3]i64).[ 1, 2, 3 ];
+    print("{} {} {}\n", d[0], d[1], d[2]);     // 1 2 3
+}

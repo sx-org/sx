@@ -1,0 +1,11 @@
+error: cannot compare 'Shape' values with '=='
+  --> examples/diagnostics/1225-diagnostics-union-equality.sx:18:8
+   |
+18 |     if a == b { print("eq\n"); }   // rejected: cannot compare 'Shape' with '=='
+   |        ^
+
+note: compare a specific variant field (e.g. `a.field == b.field`)
+  --> examples/diagnostics/1225-diagnostics-union-equality.sx:18:8
+   |
+18 |     if a == b { print("eq\n"); }   // rejected: cannot compare 'Shape' with '=='
+   |        ^

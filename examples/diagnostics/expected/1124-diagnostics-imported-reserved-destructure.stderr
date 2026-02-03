@@ -1,0 +1,5 @@
+error: 'i2' is a reserved type name and cannot be used as an identifier
+  --> examples/diagnostics/1124-diagnostics-imported-reserved-destructure/mod.sx:6:5
+   |
+ 6 |     i2, rest := pair();   // destructure name in an IMPORTED module
+   |     ^^

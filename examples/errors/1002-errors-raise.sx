@@ -1,0 +1,26 @@
+// First runnable `raise` (ERR step E1.3). A `-> !Named` (pure failable)
+// function terminates via the error channel with `raise error.X`; a plain
+// `return;` is the success exit (error slot 0). The caller binds the result
+// and inspects it with the enum-like `==`. The value-carrying `-> (T, !)`
+// shape lands with the error-channel tuple ABI in ERR phase E2.
+
+#import "modules/std.sx";
+
+ParseErr :: error { BadDigit, Overflow, Empty }
+
+// Pure failable: raises on bad input, otherwise succeeds (error slot 0).
+check :: (n: i32) -> !ParseErr {
+    if n < 0 { raise error.BadDigit; }
+    return;                                 // success — no error
+}
+
+main :: () -> i32 {
+    good := check(7);                       // success path  -> no error
+    bad  := check(-1);                      // raise path    -> BadDigit
+    r : i32 = 0;
+    if bad  == error.BadDigit { r = r + 8; }    // true  -> +8
+    if good == error.BadDigit { r = r + 1; }     // false (success = no error)
+    if bad  == error.Overflow { r = r + 2; }     // false (raised BadDigit)
+    print("raise result: {}\n", r);              // -> 8
+    return r;
+}

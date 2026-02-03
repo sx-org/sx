@@ -1,0 +1,44 @@
+// A nested array/slice literal (`.[.[1, 2], .[3, 4]]`) at an expected slice-of-
+// slices type (`[][]i64`) materializes each inner `[N]T` literal as a real `[]T`
+// slice, so indexing the inner slice in the callee reads element contents
+// correctly — for both the local-bound form and the direct-call-argument form.
+// Regression (issue 0085): inner literals were appended as raw `[N]T` arrays
+// under an element type of `[]T`, so the outer aggregate's elements were arrays
+// where slice {ptr,len} headers were expected; indexing the inner slice read a
+// garbage pointer and segfaulted. The per-element array->slice materialization
+// recurses with the nesting, so every level coerces.
+#import "modules/std.sx";
+
+sum_nested :: (xss: [][]i64) -> i64 {
+    total := 0;
+    i := 0;
+    while i < xss.len {
+        j := 0;
+        while j < xss[i].len { total += xss[i][j]; j += 1; }
+        i += 1;
+    }
+    return total;
+}
+
+count_x :: (xss: [][]string) -> i64 {
+    n := 0;
+    i := 0;
+    while i < xss.len {
+        j := 0;
+        while j < xss[i].len { if xss[i][j] == "x" { n += 1; } j += 1; }
+        i += 1;
+    }
+    return n;
+}
+
+main :: () {
+    // numeric [][]i64 — local-bound vs direct-arg both sum to 10.
+    local : [][]i64 = .[.[1, 2], .[3, 4]];
+    print("num local={}\n", sum_nested(local));
+    print("num direct={}\n", sum_nested(.[.[1, 2], .[3, 4]]));
+
+    // string [][]string — local-bound vs direct-arg both count 4 "x"s.
+    slocal : [][]string = .[.["x", "a"], .["b", "x"], .["x", "x"]];
+    print("str local={}\n", count_x(slocal));
+    print("str direct={}\n", count_x(.[.["x", "a"], .["b", "x"], .["x", "x"]]));
+}

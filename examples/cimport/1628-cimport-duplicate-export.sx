@@ -1,0 +1,20 @@
+// Two `#import c` units defining the same exported symbol is a
+// compile-time diagnostic naming both sources — previously it died
+// inside the JIT dylib link (or the AOT link) with raw linker spew.
+// All units share one link namespace; per-unit symbol isolation is
+// PLAN-C C3.2 (deferred).
+#import "modules/std.sx";
+
+ua :: #import c {
+    #source "1628-cimport-duplicate-export/a.c";
+};
+ub :: #import c {
+    #source "1628-cimport-duplicate-export/b.c";
+};
+
+clash :: () -> i32 extern ua "clash";
+
+main :: () -> i32 {
+    print("{}\n", clash());
+    0
+}

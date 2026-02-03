@@ -1,0 +1,28 @@
+// Phase 3.0 (FFI-linkage) — postfix `extern` on an aggregate (`#objc_class`)
+// is the new spelling of the legacy prefix `#objc_class(…) extern` import.
+// Mirrors 1306's runtime-class chained dispatch with the new syntax:
+//   Name :: #objc_class("X") extern { … }   ==   Name :: #objc_class(…) extern("X") { … }
+//
+// Red until 3.1 wires the postfix-extern aggregate path through the parser
+// + lowering (maps `extern` → reference, same as `extern`).
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+NSObject :: #objc_class("NSObject") extern {
+    alloc :: () -> *NSObject;
+    init :: (self: *Self) -> *Self;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        a := NSObject.alloc().init();
+        if a != null {
+            print("extern-class dispatch ok\n");
+        }
+    }
+    inline if OS != .macos {
+        print("extern-class dispatch ok\n");
+    }
+    0
+}

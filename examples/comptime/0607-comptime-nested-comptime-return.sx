@@ -1,0 +1,31 @@
+// Nested comptime call + return — a comptime fn (`$x: i32`) whose
+// body contains BOTH a nested comptime call (`print`) AND a
+// `return X;` statement must lower cleanly. The wrapper fn built
+// by `createComptimeFunction` saves/restores `inline_return_target`
+// so it doesn't inherit a slot belonging to the OUTER caller's
+// basic block. Pre-fix: interp executed the wrapper with a
+// stale-frame inline-return slot and tripped a null-pointer store
+// at `storeAtRawPtr`.
+//
+// Repro: comptime fn (`$x: i32`) whose body has BOTH a nested
+// comptime call (`print`) AND a `return X;` statement. Pre-fix:
+// interp panics. Post-fix: prints "inside" then "n=42".
+//
+// The pack-fn variant of the same bug (filed in the original
+// issue as face 2) was fixed earlier when step-2b moved pack-fn
+// calls off the inline path into the mono path. Plain comptime
+// fns stay on the inline path; their fix is the
+// `createComptimeFunction` state save/restore.
+
+#import "modules/std.sx";
+
+helper :: ($x: i32) -> i64 {
+    print("inside\n");
+    return 42;
+}
+
+main :: () -> i32 {
+    n := helper(7);
+    print("n={}\n", n);
+    return 0;
+}

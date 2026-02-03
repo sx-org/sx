@@ -1,0 +1,9 @@
+// ASM stream Phase D — a bare `x := asm { … -> T }` binding (not a direct
+// `return asm`) types correctly: the value output flows through the local and
+// out as the exit code. Regression for the `inferType` `.asm_expr` arm (without
+// it the binding inferred `.unresolved` and silently produced 0). aarch64-pinned
+// via `.build` → runs on a matching host, ir-only elsewhere.
+main :: () -> i64 {
+    x := asm { "mov %[out], #99", [out] "=r" -> i64 };
+    return x;
+}

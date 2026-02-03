@@ -1,0 +1,384 @@
+// HashMap($K,$V) extended API — companion to 0721. Ports Zig's std hash_map
+// tests for the getOrPut / fetchPut / fetchRemove / ensureTotalCapacity /
+// ensureUnusedCapacity / putAssumeCapacity / clone / capacity / iterator
+// surface. (Basic put/get/remove/grow/clear/string-keys are in 0721.)
+//
+// Zig tests ported: "basic hash map usage", "ensureTotalCapacity",
+// "ensureTotalCapacity with existing elements", "ensureTotalCapacity satisfies
+// max load factor", "ensureUnusedCapacity with tombstones",
+// "clearRetainingCapacity", "clone", "remove", "reverse removes",
+// "multiple removes on same metadata", "put", "putAssumeCapacity", "getOrPut",
+// "rehash", plus iterator. Skipped Zig-only: Adapted/AutoContext variants,
+// allocation-failure injection, removeByPtr pointer arithmetic, 0-sized keys.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () {
+    gpa := GPA.init();
+
+    // ── basic usage: fetchPut / getOrPut / getOrPutValue / fetchRemove ────
+    m : HashMap(i64, i64) = .{};
+    fp1 := if x := m.fetch_put(1, 11, gpa) { false } else { true };
+    fp2 := if x := m.fetch_put(2, 22, gpa) { false } else { true };
+    report("fp-fresh-null", fp1 and fp2);
+    report("fp-old", m.fetch_put(1, 111, gpa)! == 11);   // overwrite returns old
+
+    gop := m.get_or_put(1, gpa);
+    report("gop-found", gop.found_existing and gop.value_ptr.* == 111);
+    gop.value_ptr.* = 1000;
+    report("gop-mut", m.get(1)! == 1000);
+
+    gop2 := m.get_or_put(99, gpa);
+    report("gop-new", !gop2.found_existing);
+    gop2.value_ptr.* = 42;
+    report("gop-new-set", m.get(99)! == 42);
+
+    gv := m.get_or_put_value(1, 5, gpa);
+    report("gopv-exist", gv.value_ptr.* == 1000);           // not overwritten
+    gv2 := m.get_or_put_value(7, 77, gpa);
+    report("gopv-new", gv2.value_ptr.* == 77);
+
+    report("fr-hit", m.fetch_remove(2, gpa)! == 22);
+    frmiss := if x := m.fetch_remove(2, gpa) { false } else { true };
+    report("fr-miss", frmiss and !m.contains(2));
+    m.deinit(gpa);
+
+    // ── ensureTotalCapacity: capacity stable under putAssumeCapacity ──────
+    e : HashMap(i64, i64) = .{};
+    e.ensure_total_capacity(20, gpa);
+    cap0 := e.capacity();
+    report("etc-cap>=20", cap0 >= 20);
+    i := 0;
+    while i < 20 { e.fetch_put_assume_capacity(i, i + 10); i += 1; }
+    report("etc-noresize", e.capacity() == cap0 and e.len == 20);
+    e.deinit(gpa);
+
+    // ── ensureTotalCapacity with existing elements / max load factor ──────
+    x2 : HashMap(i64, i64) = .{};
+    x2.put(0, 0, gpa);
+    report("etc-min-cap", x2.capacity() == 8);
+    x2.ensure_total_capacity(65, gpa);
+    report("etc-grow", x2.len == 1 and x2.capacity() == 128);
+    x2.deinit(gpa);
+
+    x3 : HashMap(i64, i64) = .{};
+    x3.ensure_total_capacity(127, gpa);
+    report("etc-maxload", x3.capacity() == 256);
+    x3.deinit(gpa);
+
+    // ── ensureUnusedCapacity with tombstones (100-iter churn) ────────────
+    u : HashMap(i64, i64) = .{};
+    i = 0;
+    while i < 100 {
+        u.ensure_unused_capacity(1, gpa);
+        u.put_assume_capacity(i, i);
+        u.remove(i, gpa);
+        i += 1;
+    }
+    report("euc-tombstones", u.len == 0);
+    u.deinit(gpa);
+
+    // ── clearRetainingCapacity ───────────────────────────────────────────
+    c : HashMap(i64, i64) = .{};
+    c.put(1, 1, gpa);
+    cap_c := c.capacity();
+    c.clear();
+    c.clear();
+    report("clr-len", c.len == 0 and c.capacity() == cap_c);
+    c.put_assume_capacity(1, 1);
+    report("clr-reuse", c.get(1)! == 1 and c.len == 1);
+    c.deinit(gpa);
+
+    // ── clone: empty, populated, independent ─────────────────────────────
+    o : HashMap(i64, i64) = .{};
+    ec := o.clone(xx gpa);
+    report("clone-empty", ec.len == 0);
+    ec.deinit(gpa);
+    i = 0;
+    while i < 10 { o.put(i, i * 10, gpa); i += 1; }
+    cp := o.clone(xx gpa);
+    all_c := true;
+    i = 0;
+    while i < 10 { if cp.get(i)! != i * 10 { all_c = false; } i += 1; }
+    report("clone-vals", all_c and cp.len == 10);
+    cp.put(0, 999, gpa);                                  // mutate clone only
+    report("clone-indep", o.get(0)! == 0 and cp.get(0)! == 999);
+    o.deinit(gpa);
+    cp.deinit(gpa);
+
+    // ── remove: fill 0..16, drop i%3==0, verify ──────────────────────────
+    r16 : HashMap(i64, i64) = .{};
+    i = 0;
+    while i < 16 { r16.put(i, i, gpa); i += 1; }
+    i = 0;
+    while i < 16 { if i % 3 == 0 { r16.remove(i, gpa); } i += 1; }
+    rm_ok := r16.len == 10;
+    i = 0;
+    while i < 16 {
+        if i % 3 == 0 { if r16.contains(i) { rm_ok = false; } }
+        else { if r16.get(i)! != i { rm_ok = false; } }
+        i += 1;
+    }
+    report("remove", rm_ok);
+    r16.deinit(gpa);
+
+    // ── reverse removes ──────────────────────────────────────────────────
+    rr : HashMap(i64, i64) = .{};
+    i = 0;
+    while i < 16 { rr.put(i, i, gpa); i += 1; }
+    i = 16;
+    rev_ok := true;
+    while i > 0 {
+        rr.remove(i - 1, gpa);
+        if rr.contains(i - 1) { rev_ok = false; }
+        j := 0;
+        while j < i - 1 { if rr.get(j)! != j { rev_ok = false; } j += 1; }
+        i -= 1;
+    }
+    report("reverse-removes", rev_ok and rr.len == 0);
+    rr.deinit(gpa);
+
+    // ── multiple removes on same metadata, then re-insert ────────────────
+    mm : HashMap(i64, i64) = .{};
+    i = 0;
+    while i < 16 { mm.put(i, i, gpa); i += 1; }
+    mm.remove(7, gpa);
+    mm.remove(15, gpa);
+    mm.remove(14, gpa);
+    mm.remove(13, gpa);
+    gone := !mm.contains(7) and !mm.contains(15) and !mm.contains(14) and !mm.contains(13);
+    report("multi-rm-gone", gone);
+    mm.put(15, 15, gpa);
+    mm.put(13, 13, gpa);
+    mm.put(14, 14, gpa);
+    mm.put(7, 7, gpa);
+    all_mm := true;
+    i = 0;
+    while i < 16 { if mm.get(i)! != i { all_mm = false; } i += 1; }
+    report("multi-rm-reinsert", all_mm);
+    mm.deinit(gpa);
+
+    // ── put then overwrite every key ─────────────────────────────────────
+    p : HashMap(i64, i64) = .{};
+    i = 0;
+    while i < 16 { p.put(i, i, gpa); i += 1; }
+    i = 0;
+    while i < 16 { p.put(i, i * 16 + 1, gpa); i += 1; }
+    all_p := true;
+    i = 0;
+    while i < 16 { if p.get(i)! != i * 16 + 1 { all_p = false; } i += 1; }
+    report("put-overwrite", all_p);
+    p.deinit(gpa);
+
+    // ── putAssumeCapacity: sum, then overwrite-all ───────────────────────
+    pac : HashMap(i64, i64) = .{};
+    pac.ensure_total_capacity(20, gpa);
+    i = 0;
+    while i < 20 { pac.put_assume_capacity(i, i); i += 1; }
+    sum_pac := 0;
+    i = 0;
+    while i < 20 { sum_pac += pac.get_ptr(i)!.*; i += 1; }
+    report("pac-sum", sum_pac == 190);
+    i = 0;
+    while i < 20 { pac.put_assume_capacity(i, 1); i += 1; }
+    sum_pac2 := 0;
+    i = 0;
+    while i < 20 { sum_pac2 += pac.get(i)!; i += 1; }
+    report("pac-overwrite", sum_pac2 == 20);
+    pac.deinit(gpa);
+
+    // ── getOrPut accumulation: 10 evens preset to 2, getOrPutValue 0..20 ──
+    g : HashMap(i64, i64) = .{};
+    i = 0;
+    while i < 10 { g.put(i * 2, 2, gpa); i += 1; }
+    i = 0;
+    while i < 20 { g.get_or_put_value(i, 1, gpa); i += 1; }
+    sum_g := 0;
+    i = 0;
+    while i < 20 { sum_g += g.get(i)!; i += 1; }
+    report("gop-accum", sum_g == 30);                        // 10*2 + 10*1
+    g.deinit(gpa);
+
+    // ── rehash: drop tombstones, live entries survive ────────────────────
+    rh : HashMap(i64, i64) = .{};
+    i = 0;
+    while i < 100 { rh.put(i, i, gpa); if i % 3 == 0 { rh.remove(i, gpa); } i += 1; }
+    rh.rehash(xx gpa);
+    rehash_ok := rh.tombstones == 0;
+    i = 0;
+    while i < 100 {
+        if i % 3 == 0 { if rh.contains(i) { rehash_ok = false; } }
+        else { if rh.get(i)! != i { rehash_ok = false; } }
+        i += 1;
+    }
+    report("rehash", rehash_ok);
+    rh.deinit(gpa);
+
+    // ── iterator (while-let): count + sum keys/values ────────────────────
+    it_m : HashMap(i64, i64) = .{};
+    i = 0;
+    while i < 5 { it_m.put(i, i * 10, gpa); i += 1; }
+    sum_k := 0;
+    sum_v := 0;
+    cnt := 0;
+    it := it_m.iterator();
+    while kv := it.next() { sum_k += kv.key_ptr.*; sum_v += kv.value_ptr.*; cnt += 1; }
+    report("iter", cnt == 5 and sum_k == 10 and sum_v == 100);
+    it_m.deinit(gpa);
+
+    // ═════════════════════════════════════════════════════════════════════
+    // Coverage backfill (G1,G3,G4,G5,G6,G8,G9,G11,G14,G15,G16).
+    // ═════════════════════════════════════════════════════════════════════
+
+    // ── G1: find_index skips tombstones ACROSS a collision chain ─────────
+    // Keys 1,9,17,25 all hash to bucket 4 at cap 8 → linear-probe chain in
+    // buckets 4,5,6,7. Removing the head (1) and a middle (9) leaves live
+    // tombstones the TAIL keys' probe must cross. A find_index that stopped
+    // at a tombstone (instead of only at META_FREE) would miss 17 and 25.
+    t1 : HashMap(i64, i64) = .{};
+    t1.ensure_total_capacity(5, gpa);                 // cap 8, mask 7
+    report("g1-cap8", t1.capacity() == 8);
+    t1.put(1, 10, gpa);  t1.put(9, 90, gpa);
+    t1.put(17, 170, gpa); t1.put(25, 250, gpa);
+    report("g1-chain-built", t1.capacity() == 8 and t1.len == 4);
+    t1.remove(1, gpa);                                // head  → tombstone @bucket 4
+    t1.remove(9, gpa);                                // middle→ tombstone @bucket 5
+    report("g1-tail-after-tomb",
+           t1.get(17)! == 170 and t1.get(25)! == 250 and t1.contains(17) and t1.contains(25));
+    report("g1-head-mid-gone", !t1.contains(1) and !t1.contains(9) and t1.len == 2);
+    t1.put(1, 111, gpa);                              // recycles a tombstone, no dup
+    report("g1-reinsert-no-dup", t1.get(1)! == 111 and t1.len == 3);
+    t1.put(9, 999, gpa);
+    report("g1-reinsert2", t1.get(9)! == 999 and t1.len == 4 and t1.capacity() == 8);
+    t1.deinit(gpa);
+
+    // ── G3: iterate a map holding LIVE tombstones — only live entries seen ─
+    // Fill 0..15, remove the 8 evens (tombstones, no realloc). The iterator
+    // must visit exactly the 8 odds; a next_used that failed to skip
+    // tombstoned buckets would re-yield the removed evens (stale data lives
+    // in the bucket) → count 16, sum 120.
+    tb : HashMap(i64, i64) = .{};
+    i = 0; while i < 16 { tb.put(i, i, gpa); i += 1; }
+    i = 0; while i < 16 { if i % 2 == 0 { tb.remove(i, gpa); } i += 1; }
+    tb_cnt := 0; tb_sum := 0; tb_all_odd := true;
+    tbit := tb.iterator();
+    while kv := tbit.next() {
+        if kv.key_ptr.* % 2 == 0 { tb_all_odd = false; }
+        tb_cnt += 1; tb_sum += kv.key_ptr.*;
+    }
+    report("g3-iter-skips-tombstones", tb_cnt == 8 and tb_sum == 64 and tb_all_odd);
+    tb.deinit(gpa);
+
+    // ── G4: ensure_unused_capacity(n>1) GROW branch, then n put_assume_cap ─
+    uc : HashMap(i64, i64) = .{};
+    uc.ensure_unused_capacity(200, gpa);              // cap==0 → grow(map_capacity_for(200))
+    uc_cap := uc.capacity();
+    report("g4-reserved", uc_cap >= 200);
+    i = 0; while i < 200 { uc.put_assume_capacity(i, i * 3); i += 1; }
+    uc_all := true;
+    i = 0; while i < 200 { if uc.get(i)! != i * 3 { uc_all = false; } i += 1; }
+    report("g4-all-retrievable", uc_all and uc.len == 200 and uc.capacity() == uc_cap);
+    uc.deinit(gpa);
+
+    // ── G5: clone with LIVE tombstones sitting mid probe-chain ───────────
+    // Same 1,9,17,25 chain; remove 1 & 9 → tombstones @buckets 4,5. The clone
+    // c.memcpy's metadata verbatim, so the tail keys' probe must cross the
+    // carried tombstones in the CLONE too. A clone that freed tombstones
+    // would strand 17/25 behind a META_FREE.
+    c5 : HashMap(i64, i64) = .{};
+    c5.ensure_total_capacity(5, gpa);                 // cap 8
+    c5.put(1, 10, gpa); c5.put(9, 90, gpa);
+    c5.put(17, 170, gpa); c5.put(25, 250, gpa);
+    c5.remove(1, gpa); c5.remove(9, gpa);
+    report("g5-src", c5.tombstones == 2 and c5.len == 2);
+    c5g := c5.clone(xx gpa);
+    report("g5-clone-live-across-tomb", c5g.get(17)! == 170 and c5g.get(25)! == 250);
+    report("g5-clone-removed-rejected", !c5g.contains(1) and !c5g.contains(9) and c5g.len == 2);
+    c5g.put(17, 1717, gpa);                           // independence
+    report("g5-clone-indep", c5.get(17)! == 170 and c5g.get(17)! == 1717);
+    c5.deinit(gpa);
+    c5g.deinit(gpa);
+
+    // ── G6: clone independence vs GROWTH (either side) ───────────────────
+    c6 : HashMap(i64, i64) = .{};
+    c6.put(1, 1, gpa); c6.put(2, 2, gpa); c6.put(3, 3, gpa);
+    c6cap := c6.capacity();
+    g6c := c6.clone(xx gpa);
+    i = 100; while i < 200 { g6c.put(i, i, gpa); i += 1; }   // force the CLONE to grow/rehash
+    report("g6-grow-clone-orig-unchanged",
+           c6.len == 3 and c6.capacity() == c6cap and c6.get(1)! == 1 and !c6.contains(150));
+    report("g6-grow-clone-has-new", g6c.get(150)! == 150 and g6c.get(1)! == 1 and g6c.len == 103);
+    g6b := c6.clone(xx gpa);
+    i = 300; while i < 400 { c6.put(i, i, gpa); i += 1; }    // now grow the ORIGINAL
+    report("g6-grow-orig-clone-unchanged",
+           g6b.len == 3 and !g6b.contains(300) and g6b.get(2)! == 2);
+    c6.deinit(gpa);
+    g6c.deinit(gpa);
+    g6b.deinit(gpa);
+
+    // ── G8: HashIter.reset re-iterates all entries ───────────────────────
+    r8 : HashMap(i64, i64) = .{};
+    i = 0; while i < 6 { r8.put(i, i * 10, gpa); i += 1; }
+    it8 := r8.iterator();
+    c8a := 0; s8a := 0;
+    while kv := it8.next() { c8a += 1; s8a += kv.value_ptr.*; }
+    it8.reset();
+    c8b := 0; s8b := 0;
+    while kv := it8.next() { c8b += 1; s8b += kv.value_ptr.*; }
+    report("g8-reset", c8a == 6 and c8b == 6 and s8a == 150 and s8b == 150);
+    r8.deinit(gpa);
+
+    // ── G9: remove during iteration is SAFE (tombstone, no realloc) ──────
+    // Grow-during-iteration is UB by contract (see the map.sx `iterator`
+    // doc WARNING) and is deliberately NOT exercised. Removing mid-iteration
+    // only tombstones a bucket: no realloc, live pointers stay valid, and a
+    // not-yet-visited removed key is simply skipped.
+    di : HashMap(i64, i64) = .{};
+    i = 0; while i < 8 { di.put(i, i * 10, gpa); i += 1; }
+    di_cap := di.capacity();
+    di_removed := false;
+    di_cnt := 0; di_sum := 0;
+    dit := di.iterator();
+    while kv := dit.next() {
+        di_cnt += 1;
+        di_sum += kv.value_ptr.*;                        // deref stays valid — no realloc
+        if !di_removed and kv.key_ptr.* != 3 { di.remove(3, gpa); di_removed = true; }
+    }
+    report("g9-remove-during-iter-safe",
+           di.capacity() == di_cap and !di.contains(3) and di.len == 7 and (di_cnt == 7 or di_cnt == 8));
+    di.deinit(gpa);
+
+    // ── G11: fetch_put_assume_capacity OVERWRITE arm returns old value ───
+    f11 : HashMap(i64, i64) = .{};
+    f11.ensure_total_capacity(10, gpa);
+    f11.put_assume_capacity(5, 50);
+    old11 := f11.fetch_put_assume_capacity(5, 500);      // existing key → returns 50
+    report("g11-old-returned", old11! == 50 and f11.get(5)! == 500 and f11.len == 1);
+    f11.deinit(gpa);
+
+    // ── G14: iterate a never-allocated (cap 0) map — no crash, zero ──────
+    z14 : HashMap(i64, i64) = .{};
+    z14c := 0;
+    z14it := z14.iterator();
+    while kv := z14it.next() { z14c += 1; }
+    report("g14-empty-iter", z14c == 0 and z14.len == 0 and z14.capacity() == 0);
+
+    // ── G15: clear() and first deinit() on a PRISTINE (cap 0) map ────────
+    p15 : HashMap(i64, i64) = .{};
+    p15.clear();                                         // no-op, must not crash
+    report("g15-clear-pristine", p15.len == 0 and p15.capacity() == 0);
+    p15.deinit(gpa);                                  // idempotent no-op
+    report("g15-deinit-pristine", p15.len == 0 and p15.capacity() == 0);
+
+    // ── G16: get_ptr returns null on a miss ──────────────────────────────
+    gp16 : HashMap(i64, i64) = .{};
+    gp16.put(1, 100, gpa);
+    hit16  := if p := gp16.get_ptr(1)   { p.* == 100 } else { false };
+    miss16 := if p := gp16.get_ptr(999) { false } else { true };
+    report("g16-get_ptr-null-miss", hit16 and miss16);
+    gp16.deinit(gpa);
+}

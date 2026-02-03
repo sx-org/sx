@@ -1,0 +1,3 @@
+// The second flat-imported same-name `Box` author. Two distinct flat authors and
+// no own author → the protocol return `Box` is ambiguous.
+Box :: struct { b: i32; }

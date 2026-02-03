@@ -1,0 +1,4 @@
+sum_ints(3, 10, 20, 30) = 60
+sum_ints(0)             = 0
+avg_doubles(2)          = 2.000000
+avg_doubles(3)          = 2.000000

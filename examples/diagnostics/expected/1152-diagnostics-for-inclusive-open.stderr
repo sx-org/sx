@@ -1,0 +1,5 @@
+error: a range with an explicit end marker ('..=' / '..<') requires an end expression — the open form is 'a..'
+  --> examples/diagnostics/1152-diagnostics-for-inclusive-open.sx:7:14
+   |
+ 7 |     for 0..= (i) { }
+   |              ^

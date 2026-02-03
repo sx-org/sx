@@ -1,0 +1,11 @@
+error: value 5000000000 does not fit in u32 parameter K
+  --> examples/diagnostics/1135-diagnostics-value-param-alias-constraint-overflow.sx:20:13
+   |
+20 |     b : Box(5000000000) = ---;
+   |             ^^^^^^^^^^
+
+error: value 300 does not fit in i8 parameter K
+  --> examples/diagnostics/1135-diagnostics-value-param-alias-constraint-overflow.sx:21:14
+   |
+21 |     t : Tiny(300) = ---;
+   |              ^^^

@@ -1,0 +1,72 @@
+// The `union` category in the runtime type-category match: `case union:`
+// matches C-style untagged unions AND tagged unions (payload enums);
+// `case enum:` matches payload-less enums AND tagged unions. The overlap
+// resolves FIRST-WINS — a tag belongs to the first arm that names it —
+// and a specific user type name claims its tag ahead of the category
+// that contains it (before the claim set, any overlap was an LLVM
+// duplicate-switch-case crash). Untagged unions box into `any` and
+// their tags classify like every other registered type.
+// Regression (issue 0314): runtime "union" aliased the enum category —
+// it matched plain enums and missed untagged unions, disagreeing with
+// the static `inline if T ==` classifier in both directions.
+#import "modules/std.sx";
+
+TU :: union { i: i64; f: f64; }
+E  :: enum { a; b; }
+Shape :: enum { circle: f32; rect: i32; none; }
+Point :: struct { x, y: i64; }
+Size2 :: struct { w, h: i64; }
+
+only_union :: (t: Type) -> string {
+    if t == {
+        case union: return "union";
+        else:       return "other";
+    }
+    "unreached"
+}
+
+both :: (t: Type) -> string {
+    if t == {
+        case union: return "union-first";
+        case enum:  return "enum";
+        else:       return "other";
+    }
+    "unreached"
+}
+
+pick :: (t: Type) -> string {
+    if t == {
+        case Point:  return "Point";
+        case struct: return "struct";
+        else:        return "other";
+    }
+    "unreached"
+}
+
+// the static classifier agrees arm for arm
+kind :: (x: $T) -> string {
+    inline if T == {
+        case union: return "union";
+        else:       return "other";
+    }
+}
+
+main :: () {
+    tu := TU.{ i = 5 };
+    print("untagged: {}\n", only_union(type_of(tu)));
+    print("enum: {}\n", only_union(type_of(E.a)));
+    print("tagged: {}\n", only_union(type_of(Shape.none)));
+
+    print("both untagged: {}\n", both(type_of(tu)));
+    print("both tagged: {}\n", both(type_of(Shape.none)));
+    print("both enum: {}\n", both(type_of(E.a)));
+
+    print("concrete first: {}\n", pick(type_of(Point.{ x = 1, y = 2 })));
+    print("category rest: {}\n", pick(type_of(Size2.{ w = 3, h = 4 })));
+
+    print("static untagged: {}\n", kind(tu));
+    print("static enum: {}\n", kind(E.a));
+
+    av : any = tu;
+    print("boxed: {}\n", type_of(av) == TU);
+}

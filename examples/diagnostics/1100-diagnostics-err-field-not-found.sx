@@ -1,0 +1,9 @@
+// Accessing an unknown field on a struct produces a clear
+// `error: field 'X' not found on type 'Y'` diagnostic and exit 1.
+
+Vec :: struct { x: f32; y: f32; }
+
+main :: () -> i32 {
+    v := Vec.{ x = 1.0, y = 2.0 };
+    return xx v.bogus;
+}

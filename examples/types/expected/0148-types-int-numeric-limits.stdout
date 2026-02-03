@@ -1,0 +1,18 @@
+i1.min=-1 i1.max=0
+i2.min=-2 i2.max=1
+i3.max=3
+u1.min=0 u1.max=1
+u2.max=3
+i8.min=-128 i8.max=127
+u8.max=255
+i32.min=-2147483648 i32.max=2147483647
+i64.max=9223372036854775807
+i64.min+1 == -(i64.max): true
+i64.min + i64.max == -1: true
+u64.max as i64 == -1: true
+usize.max as i64 == -1: true
+usize.max == u64.max: true
+isize.min == i64.min: true
+typed: m3=3 mu=255 ms=-128
+[u8.max]u8 len=255 a[254]=7
+[i16.max]u8 len=32767 b[32766]=9

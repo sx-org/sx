@@ -1,0 +1,5 @@
+doc: {"name":"a\"b\n","tab":"x\ty","bs":"c\\d","ctrl":"\u0001","n":-7,"zero":0,"pos":7,"min":-9223372036854775808,"max":9223372036854775807,"ok":true,"nil":null,"xs":[1,-2,3],"nested":{"k":"v"}}
+buffer-exact: ok
+buffer-len: ok
+overflow-raised: ok
+file-exact: ok

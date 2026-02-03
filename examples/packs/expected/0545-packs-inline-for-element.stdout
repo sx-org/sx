@@ -1,0 +1,11 @@
+bare: 7
+bare: hi
+0: 7
+1: hi
+r0: 1
+r1: two
+10 -> x
+11 -> y
+ran 3
+val: {v: 42}
+empty ok

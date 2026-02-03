@@ -1,0 +1,32 @@
+// IR interpreter — variadic `..any` indexing inside post-link callback.
+//
+// `format(fmt, ..args: []any)` lowers to `any_to_string(args[i])` calls.
+// The interpreter must be able to read every element of the packed
+// `[N x any]` slice from within a `#run`/post-link callback, not just
+// the first two — and not just via JIT.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+puts :: (s: [:0]u8) -> i32 extern libc;
+
+cb :: (opt: BuildOptions) -> bool {
+    a := format("{}", "x");
+    puts("1-arg ok");
+    b := format("{} {}", "x", "y");
+    puts("2-arg ok");
+    c := format("{} {} {}", "x", "y", "z");
+    puts("3-arg ok");
+    true
+}
+
+// The registrar runs only at compile time (nothing runtime-reachable calls it):
+// comptime evaluator (never the binary), so its `build_options()` /
+// `set_post_link_callback()` compiler-API calls are permitted.
+configure :: () {
+    opts := build_options();
+    on_build(cb);
+}
+#run configure();
+
+main :: () { print("rt\n"); }

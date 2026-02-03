@@ -1,0 +1,11 @@
+// A flat-imported module authors its OWN `Box { a }`, a DISTINCT nominal from
+// main's same-name `Box { m }`. The param-impl SOURCE `*Box` must register against
+// main's `Box`, and the `xx` lookup at the use site must mangle to the SAME author,
+// so the conversion is found and `self.m` resolves.
+Box :: struct { a: i32; }
+
+dep_box :: () -> i32 {
+    b : Box = ---;
+    b.a = 9;
+    return b.a;
+}

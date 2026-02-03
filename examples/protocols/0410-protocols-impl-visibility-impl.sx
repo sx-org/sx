@@ -1,0 +1,10 @@
+// Helper that defines the impl. 179-impl-visibility's user file does NOT
+// directly import this — that's the whole point of the test.
+#import "modules/std.sx";
+#import "./0410-protocols-impl-visibility-types.sx";
+
+impl Into(Wrap) for i64 {
+  convert :: (self: i64) -> Wrap {
+    .{ v = self * 10 }
+  }
+}

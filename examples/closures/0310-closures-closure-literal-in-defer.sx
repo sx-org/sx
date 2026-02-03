@@ -1,0 +1,22 @@
+// Closure literal declared (and used) inside a `defer` body.
+//
+// Regression (issue 0073): this used to segfault lowering. A lambda inherited
+// the enclosing function's `func_defer_base`, so the lambda's `return` re-drained
+// the enclosing function's defers — and when the defer body itself declared the
+// lambda, that re-lowered the lambda forever (infinite recursion). A lambda now
+// opens its own defer window (like every other function-lowering entry).
+
+#import "modules/std.sx";
+
+run :: () {
+    defer {
+        cb := (n: i32) -> i32 { return n * 2; };
+        print("defer closure: {}\n", cb(21));   // 42, at scope exit
+    }
+    print("body\n");
+}
+
+main :: () -> i32 {
+    run();
+    return 0;
+}

@@ -1,0 +1,150 @@
+// Stream B1 (fibers) B1.3a — the stackful context switch, in pure sx over the
+// `abi(.naked)` primitive. `swap_context(from, to)` saves the callee-saved
+// registers + SP/LR into `*from` and loads them from `*to`, then `ret`s onto
+// `to`'s stack (SP-in ≠ SP-out by design — why it must be `.naked`, not `.c`).
+// A fiber is bootstrapped by hand: its saved context starts with SP = the top
+// of a fresh `alloc_bytes` stack, LR = a global-asm trampoline, and x19 = the
+// `*Fiber` (the trampoline moves it to x0 and `bl`s the exported entry).
+//
+// This is the foundational switch + an indirect survival harness:
+//   - a 2-fiber ping-pong (A ⇄ B, 3 rounds each) — resume-mid-stack across
+//     switches; a per-fiber stack canary held live across every suspend must
+//     survive (the compiler allocates it to a callee-saved reg / stack slot,
+//     so a clobbered switch would corrupt it);
+//   - a deep recursive chain (64 frames) suspended at the bottom and resumed —
+//     every frame's stack-local is verified on the unwind.
+//
+// What it does NOT yet do (B1.3a-2): EXPLICITLY scribble every callee-saved GP
+// (x19-x28) + FP (d8-d15) register with sentinels and check them in asm — the
+// full §10.7 gate. This harness exercises preservation indirectly (via
+// compiler-allocated live values), which catches a broken SP/LR or a dropped
+// callee-saved, but not a single specific register the allocator didn't use.
+//
+// aarch64-pinned (the asm + the 13-slot save area are per-arch); runs
+// end-to-end here, ir-only on a mismatch. The x86_64 sibling + `mmap` guard-
+// page stacks are B1.3b.
+#import "modules/std.sx";
+
+// Saved context: x19..x28 (10), x29/fp, x30/lr, sp — 13 u64 slots.
+FiberCtx :: struct { regs: [13]u64; }
+
+Fiber :: struct {
+    ctx: FiberCtx;
+    peer: *FiberCtx;      // ping-pong hand-off target
+    finish: *FiberCtx;    // where to switch when the body ends (the spawner)
+    count: *i64;          // shared round counter
+    verified: *i64;       // shared count of verified recursion frames
+    rounds: i64;
+    id: i64;
+    mode: i64;            // 0 = ping-pong, 1 = deep recursion
+    canary_fail: i64;
+    depth_fail: i64;
+}
+
+// The switch: x0 = from, x1 = to (read straight from the ABI registers — a
+// naked fn has no frame, so its params are never spilled).
+swap_context :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) {
+    asm volatile {
+        #string ASM
+        stp x19, x20, [x0, #0]
+        stp x21, x22, [x0, #16]
+        stp x23, x24, [x0, #32]
+        stp x25, x26, [x0, #48]
+        stp x27, x28, [x0, #64]
+        stp x29, x30, [x0, #80]
+        mov x9, sp
+        str x9, [x0, #96]
+        ldp x19, x20, [x1, #0]
+        ldp x21, x22, [x1, #16]
+        ldp x23, x24, [x1, #32]
+        ldp x25, x26, [x1, #48]
+        ldp x27, x28, [x1, #64]
+        ldp x29, x30, [x1, #80]
+        ldr x9, [x1, #96]
+        mov sp, x9
+        ret
+ASM
+    };
+}
+
+// First-entry trampoline: a fiber's bootstrapped LR points here. x19 holds the
+// `*Fiber` (preset in the saved context); move it to x0 and call the body.
+asm {
+    #string T
+.global _fib_tramp
+_fib_tramp:
+    mov x0, x19
+    bl _fib_body
+    brk #0
+T,
+};
+
+fib_tramp :: () extern;
+
+// Descend `depth` frames, yield to the spawner at the bottom, then on resume
+// verify every frame's stack-local survived the switch.
+descend :: (self: *Fiber, depth: i64) -> i64 {
+    if depth == 0 {
+        swap_context(@self.ctx, self.finish);
+        return 0;
+    }
+    marker : i64 = depth * 7 + 3;
+    bad := descend(self, depth - 1);
+    if marker == depth * 7 + 3 { self.verified.* = self.verified.* + 1; } else { bad = bad + 1; }
+    return bad;
+}
+
+fib_body :: (self: *Fiber) export "fib_body" {
+    if self.mode == 1 {
+        self.depth_fail = descend(self, 64);
+        swap_context(@self.ctx, self.finish);
+        return;
+    }
+    canary : u64 = 0xCA11AB1E0000 + (xx self.id);
+    i := 0;
+    while i < self.rounds {
+        self.count.* = self.count.* + 1;
+        swap_context(@self.ctx, self.peer);
+        if canary != 0xCA11AB1E0000 + (xx self.id) { self.canary_fail = self.canary_fail + 1; }
+        i = i + 1;
+    }
+    swap_context(@self.ctx, self.finish);
+}
+
+STACK :: 131072;
+
+boot :: (f: *Fiber) {
+    base : *void = context.allocator.alloc_bytes(STACK);
+    top : u64 = (xx base) + STACK;
+    top = top - (top % 16);          // 16-byte aligned stack top (AAPCS)
+    f.ctx.regs[0]  = xx f;           // x19 = self
+    f.ctx.regs[10] = 0;              // fp
+    f.ctx.regs[11] = xx fib_tramp;   // lr → trampoline
+    f.ctx.regs[12] = top;            // sp
+    f.canary_fail = 0;
+    f.depth_fail = 0;
+}
+
+main :: () -> i64 {
+    main_ctx : FiberCtx = ---;
+    count : i64 = 0;
+    verified : i64 = 0;
+
+    // Scenario 1: 2-fiber ping-pong with a per-fiber stack canary.
+    a : Fiber = ---;  a.id = 1; a.mode = 0; a.rounds = 3; a.count = @count; a.verified = @verified; a.finish = @main_ctx;
+    b : Fiber = ---;  b.id = 2; b.mode = 0; b.rounds = 3; b.count = @count; b.verified = @verified; b.finish = @main_ctx;
+    a.peer = @b.ctx;  b.peer = @a.ctx;
+    boot(@a);  boot(@b);
+    swap_context(@main_ctx, @a.ctx);
+    print("rounds: {}\n", count);
+    print("canary fails: {}\n", a.canary_fail + b.canary_fail);
+
+    // Scenario 2: a deep recursive chain suspended at the bottom, then resumed.
+    c : Fiber = ---;  c.id = 3; c.mode = 1; c.count = @count; c.verified = @verified; c.peer = @main_ctx; c.finish = @main_ctx;
+    boot(@c);
+    swap_context(@main_ctx, @c.ctx);   // descend to the bottom, yields back
+    swap_context(@main_ctx, @c.ctx);   // resume → unwind + verify, then finish
+    print("frames verified: {}\n", verified);
+    print("depth fails: {}\n", c.depth_fail);
+    return 0;
+}

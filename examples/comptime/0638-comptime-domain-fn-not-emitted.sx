@@ -1,0 +1,17 @@
+// A function reached ONLY from compile time is not emitted into the binary.
+// Nothing marks `double` as compile-time — it is an ordinary function. It stays
+// out of the binary purely because no runtime root reaches it: `main` sees the
+// folded constant, so nothing in the runtime call graph names `double`.
+//
+// The `absent_symbols` directive holds that to account against the real symbol
+// table, since the printed output would be identical either way.
+
+#import "modules/std.sx";
+
+double :: (x: i64) -> i64 { x * 2 }
+
+answer :: #run double(42);
+
+main :: () {
+    print("answer = {}\n", answer);
+}

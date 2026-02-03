@@ -1,0 +1,49 @@
+// Phase 0 baseline (PLAN-FFI.md step 0.4): focused FP-aggregate (HFA)
+// FFI test. All-float / all-double aggregates of ≤4 fields stay as
+// struct values in LLVM and pass through the float register file
+// (AAPCS64 v0..v3, SysV AMD64 xmm0..xmm7). Distinct from the int
+// register-coercion paths (i64 / [2 x i64]).
+//
+//   FQuad — 16 B, four f32     (same slot as ffi-02's Vec4f)
+//   DQuad — 32 B, four f64     (UIEdgeInsets-shape HFA — the
+//                               f32-vs-f64 landmine from this session)
+//
+// Already nominally covered by ffi-02's Vec4f, but pinning it as a
+// focused single-file test means a future ABI rule change that
+// breaks the FP path fails *this* test directly without a noisy
+// drag-in from the multi-shape baseline.
+
+#import "modules/std.sx";
+
+#import c {
+    #source "1212-ffi-04-fp-struct.c";
+};
+
+FQuad :: struct { a: f32; b: f32; c: f32; d: f32; }
+DQuad :: struct { a: f64; b: f64; c: f64; d: f64; }
+
+ffi_fquad_make    :: (a: f32, b: f32, c: f32, d: f32) -> FQuad extern;
+ffi_fquad_reverse :: (v: FQuad)                       -> FQuad extern;
+ffi_fquad_sum     :: (v: FQuad)                       -> f32   extern;
+
+ffi_dquad_make    :: (a: f64, b: f64, c: f64, d: f64) -> DQuad extern;
+ffi_dquad_reverse :: (v: DQuad)                       -> DQuad extern;
+ffi_dquad_sum     :: (v: DQuad)                       -> f64   extern;
+
+main :: () -> i32 {
+    // ── FQuad (16 B, 4×f32 HFA) ────────────────────────────────────
+    f := ffi_fquad_make(1.0, 2.0, 3.0, 4.0);
+    print("fquad make = ({}, {}, {}, {})\n", f.a, f.b, f.c, f.d);
+    g := ffi_fquad_reverse(f);
+    print("fquad rev  = ({}, {}, {}, {})\n", g.a, g.b, g.c, g.d);
+    print("fquad sum  = {}\n", ffi_fquad_sum(f));
+
+    // ── DQuad (32 B, 4×f64 HFA — UIEdgeInsets-shape) ──────────────
+    d := ffi_dquad_make(1.5, 2.5, 3.5, 4.5);
+    print("dquad make = ({}, {}, {}, {})\n", d.a, d.b, d.c, d.d);
+    e := ffi_dquad_reverse(d);
+    print("dquad rev  = ({}, {}, {}, {})\n", e.a, e.b, e.c, e.d);
+    print("dquad sum  = {}\n", ffi_dquad_sum(d));
+
+    0
+}

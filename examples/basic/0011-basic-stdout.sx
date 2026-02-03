@@ -1,0 +1,4 @@
+#import "modules/std.sx";
+main :: () {
+    print("Hello\n");
+}

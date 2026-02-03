@@ -1,0 +1,3 @@
+// Module A authors its OWN `Box` (one field `x`) — the FIRST same-name author.
+Box :: struct { x: i64; }
+a_box :: () -> Box { return Box.{ x = 7 }; }

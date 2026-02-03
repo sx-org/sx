@@ -1,0 +1,40 @@
+// Streaming SHA-256 (FIPS 180-4) from `modules/std/hash.sx`.
+//
+// Known-answer vectors (empty, "abc", the 112-byte NIST multi-block
+// vector) plus the streaming invariant: feeding the same bytes in
+// several `update` chunks yields the same digest as the one-shot call.
+//
+// The digest is a zero-heap `[64]u8` returned by value; tests build a
+// `string` view over it (no copy) to compare against the pinned hex.
+
+#import "modules/std.sx";
+#import "modules/std/hash.sx";
+
+check :: (label: string, got: [64]u8, want: string) {
+    view := string.{ ptr = @got[0], len = 64 };
+    if view == want {
+        print("{}: ok\n", label);
+    } else {
+        print("{}: FAIL got {} want {}\n", label, view, want);
+    }
+}
+
+main :: () {
+    check("empty", sha256_hex(""),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    check("abc", sha256_hex("abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+
+    // 112-byte input — spans more than one 64-byte block.
+    multi := "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+    check("multi", sha256_hex(multi),
+        "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1");
+
+    // Streaming must equal one-shot regardless of chunk boundaries.
+    h := init();
+    h.update("abcdefghbcdefghicdefghijdefghijke");   // 33 bytes
+    h.update("fghijklfghijklmghijklmnhijklmno");      // crosses block edge
+    h.update("ijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu");
+    check("stream-eq-oneshot", h.final(),
+        "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1");
+}

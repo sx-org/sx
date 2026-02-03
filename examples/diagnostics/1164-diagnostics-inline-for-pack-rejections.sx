@@ -1,0 +1,31 @@
+// `inline for` pack rejections: (1) a pack-element capture exposes only the
+// constraint protocol's interface (same rule as `xs[i]`, example 0530);
+// (2) a pack element cannot be captured by reference (`(*x)` — an element is
+// an AST-substituted call arg, no storage); (3) a trailing pack shorter than
+// the driving iterable; (4) a non-pack, non-range iterable.
+
+#import "modules/std.sx";
+
+Show :: protocol { show :: (self: *Self) -> string; }
+IntBox :: struct { v: i64; }
+impl Show for IntBox { show :: (self: *IntBox) -> string { int_to_string(self.v) } }
+
+leak :: (..xs: Show) {
+    inline for xs (x) {
+        print("{}\n", x.v);
+    }
+}
+borrow :: (..xs: Show) {
+    inline for xs (*x) { }
+}
+short :: (..xs: Show) {
+    inline for 0..5, xs (i, x) { }
+}
+
+main :: () {
+    leak(IntBox.{ v = 5 });
+    borrow(IntBox.{ v = 5 });
+    short(IntBox.{ v = 1 }, IntBox.{ v = 2 });
+    arr := .[1, 2, 3];
+    inline for arr (x) { }
+}

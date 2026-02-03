@@ -1,0 +1,15 @@
+// Phase 3 (FFI-linkage) — postfix `extern` on a `#jni_class` aggregate, the
+// new spelling of the legacy prefix `#jni_class(…) extern` import. Parse-only
+// on macOS (no JVM at runtime), mirroring 1412's runtime-class reference.
+//   View :: #jni_class("…") extern { … }   ==   View :: #jni_class(…) extern("…") { … }
+
+#import "modules/std.sx";
+
+View :: #jni_class("android/view/View") extern {
+    getId :: (self: *Self) -> i32;
+}
+
+main :: () -> i32 {
+    print("parse-only ok\n");
+    0
+}

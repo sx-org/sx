@@ -1,0 +1,11 @@
+error: cannot initialize 'pv' of type '*Sizable' from a 'Widget' rvalue — an rvalue has no durable storage to borrow; bind it to a local first, or erase to an owned 'Sizable' value
+  --> examples/diagnostics/1251-diagnostics-protocol-view-refusals.sx:15:21
+   |
+15 |     pv : *Sizable = Widget.{ value = 1 };   // rvalue literal → refusal (0304)
+   |                     ^^^^^^^^^^^^^^^^^^^^
+
+error: cannot pass a 'Widget' value where '*Sizable' is expected — a value has no durable storage to borrow; pass an addressable lvalue (or a pointer to one)
+  --> examples/diagnostics/1251-diagnostics-protocol-view-refusals.sx:16:19
+   |
+16 |     print("{}\n", take_view(make()));       // rvalue call result → refusal (0303's cell)
+   |                   ^^^^^^^^^^^^^^^^^

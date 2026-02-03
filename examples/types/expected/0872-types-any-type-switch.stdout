@@ -1,0 +1,11 @@
+int 43
+point (3,4)
+3 bytes
+maybe 7
+maybe 0
+str 'hey'
+some enum
+float 2.500000
+other: u32
+value: 42
+some: point (3,4)

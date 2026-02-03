@@ -1,0 +1,40 @@
+// Backtick raw identifier as the error-tag binding of `catch` and `onfail`. A
+// reserved type-name spelling (`i2`, `u8`) is a value name when backticked, so
+// it is accepted as the tag binding and a later reference resolves to it. A
+// *bare* reserved spelling in the same position is still rejected (see
+// examples/1123), so the backtick escape is the only way to spell these tags.
+// Regression (issue 0089 — attempt-2 catch/onfail coverage).
+#import "modules/std.sx";
+
+E :: error { Bad, Empty }
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0  { raise error.Bad; }
+    if n == 0 { raise error.Empty; }
+    return n * 2;
+}
+
+// `catch` tag binding spelled `i2`, referenced in the match body.
+classify :: (n: i32) -> i32 {
+    return parse(n) catch (`i2) == {
+        case .Bad:   1;
+        case .Empty: 2;
+        else:        3
+    };
+}
+
+// `onfail` tag binding spelled `u8`, referenced in the cleanup body.
+cleanup :: (n: i32) -> !E {
+    onfail (`u8) { if `u8 == error.Bad { print("cleanup: bad\n"); } }
+    if n < 0 { raise error.Bad; }
+    return;
+}
+
+main :: () -> i32 {
+    print("classify(-1) = {}\n", classify(-1));
+    print("classify(0)  = {}\n", classify(0));
+    print("classify(5)  = {}\n", classify(5));
+    c := cleanup(-1);
+    print("done\n");
+    return 0;
+}

@@ -1,0 +1,10 @@
+// Author Q's generic `Box` — two i64 fields. Flat-imported alongside p.sx's
+// same-name `Box`, so a bare `Box` reference is ambiguous.
+Box :: struct($T: Type) {
+    x: T;
+    y: T;
+
+    make :: (value: T) -> Box(T) {
+        .{ x = value, y = value }
+    }
+}

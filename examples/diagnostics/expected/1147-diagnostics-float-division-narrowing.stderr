@@ -1,0 +1,41 @@
+error: cannot implicitly narrow non-integral float '2.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1147-diagnostics-float-division-narrowing.sx:31:11
+   |
+31 | K : i64 : 5.0 / 2.0;   // 2.5 non-integral float-DIVISION const → error
+   |           ^^^^^^^^^
+
+error: cannot implicitly narrow non-integral float '2.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1147-diagnostics-float-division-narrowing.sx:40:19
+   |
+40 |     local : i64 = 5.0 / 2.0;     // non-integral float-DIVISION local → error
+   |                   ^^^^^^^^^
+
+error: array dimension must be an integer, but '2.5' is a non-integral float
+  --> examples/diagnostics/1147-diagnostics-float-division-narrowing.sx:41:12
+   |
+41 |     dim : [5.0 / 2.0]i64 = ---;  // non-integral float-DIVISION array dimension → error
+   |            ^^^^^^^^^
+
+error: cannot implicitly narrow non-integral float '2.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1147-diagnostics-float-division-narrowing.sx:42:18
+   |
+42 |     cdiv : i64 = ME / 2;         // untyped float-EXPR const division (5.0/2 = 2.5) → error
+   |                  ^^^^^^
+
+error: array dimension must be an integer, but '2.5' is a non-integral float
+  --> examples/diagnostics/1147-diagnostics-float-division-narrowing.sx:43:13
+   |
+43 |     cdim : [ME / 2]i64 = ---;    // same, at the count path → error
+   |             ^^^^^^
+
+error: cannot implicitly narrow non-integral float '2.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1147-diagnostics-float-division-narrowing.sx:34:15
+   |
+34 |     f : i64 = 5.0 / 2.0;   // non-integral float-DIVISION field default → error
+   |               ^^^^^^^^^
+
+error: cannot implicitly narrow non-integral float '2.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1147-diagnostics-float-division-narrowing.sx:37:24
+   |
+37 | badParam :: (x : i64 = 5.0 / 2.0) -> i64 { return x; }  // float-DIVISION param default → error
+   |                        ^^^^^^^^^

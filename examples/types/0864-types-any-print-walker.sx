@@ -1,0 +1,89 @@
+// The 1b acceptance walker (current/sketch-reflect-print.sx): ONE
+// compiled function walks ANY value — kind dispatch is a runtime
+// type_info match, struct fields are interior views
+// (struct_field_value), array/vector elements are stride views
+// (any_element), and the leaves feed the tag-driven formatter. One
+// erasure at the root; every inner step is view math, zero copies.
+
+#import "modules/std.sx";
+meta :: #import "modules/std/meta.sx";
+
+print_any :: (av: any) {
+    ti := type_info(type_of(av));
+    if ti == {
+        case .struct: (si) {
+            print("{");
+            i := 0;
+            while i < si.fields.len {
+                if i > 0 { print(", "); }
+                print("{}: ", si.fields[i].name);
+                print_any(struct_field_value(av, i));
+                i += 1;
+            }
+            print("}");
+        }
+        case .union: (ui) {
+            // Untagged: arms overlay at offset 0 and nothing records which
+            // is live — printing an arm would be a lie.
+            print("<union>");
+        }
+        case .array: (ai) {
+            print("[");
+            i := 0;
+            while i < ai.len {
+                if i > 0 { print(", "); }
+                print_any(any_element(av, ai.elem, i));
+                i += 1;
+            }
+            print("]");
+        }
+        case .vector: (vi) {
+            print("[");
+            i := 0;
+            while i < vi.lanes {
+                if i > 0 { print(", "); }
+                print_any(any_element(av, vi.elem, i));
+                i += 1;
+            }
+            print("]");
+        }
+        // Leaves: the tag-driven formatter handles exact widths (sized
+        // ints load size_of bytes and extend per signedness).
+        case .int:    { print("{}", av); }
+        case .float:  { print("{}", av); }
+        case .string: { print("{}", av); }
+        case .bool:   { print("{}", av); }
+        else:         { print("<?>"); }
+    }
+}
+
+Header :: struct { magic: u16; flags: u8; }
+
+Payload :: union {                                // C-style UNTAGGED union
+    as_int:   i64;
+    as_bytes: [8]u8;
+}
+
+Packet :: struct {
+    header:  Header;                              // nested struct
+    name:    string;                              // string leaf
+    kind:    i16;                                 // signed sized int  → -2
+    count:   u16;                                 // unsigned sized int → 65535
+    vel:     Vector(3, f32);                      // SIMD vector → lane walk
+    samples: [4]i16;                              // array → element walk
+    payload: Payload;                             // untagged union → <union>
+}
+
+main :: () {
+    pkt := Packet.{
+        header  = .{ magic = 0x1234, flags = 255 },
+        name    = "hello",
+        kind    = -2,
+        count   = 65535,
+        vel     = .[1.0, 3.0, 2.0],
+        samples = .[10, -20, 30, -40],
+        payload = .{ as_int = 7 },
+    };
+    print_any(xx pkt);                            // one erasure at the root
+    print("\n");
+}

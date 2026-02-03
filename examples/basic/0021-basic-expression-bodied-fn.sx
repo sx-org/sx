@@ -1,0 +1,36 @@
+// M1.0 — expression-bodied function declarations.
+//
+// sx's `=>` body form (already used for lambdas) extends to
+// top-level and struct-member function declarations:
+//
+//     name :: (params) -> RetType => expr;
+//
+// Pins three positions: module-top, struct method, niladic.
+
+#import "modules/std.sx";
+
+double :: (x: i32) -> i32 => x * 2;
+
+sum :: (a: i32, b: i32) -> i32 => a + b;
+
+answer :: () -> i32 => 42;
+
+Point :: struct {
+    x: i32;
+    y: i32;
+
+    total :: (self: *Point) -> i32 => self.x + self.y;
+    scaled :: (self: *Point, by: i32) -> i32 => (self.x + self.y) * by;
+}
+
+main :: () -> i32 {
+    print("double: {}\n", double(7));
+    print("sum: {}\n", sum(3, 4));
+    print("answer: {}\n", answer());
+
+    p := Point.{ x = 10, y = 20 };
+    print("total: {}\n", p.total());
+    print("scaled: {}\n", p.scaled(3));
+
+    0
+}

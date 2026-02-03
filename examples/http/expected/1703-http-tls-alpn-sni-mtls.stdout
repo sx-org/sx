@@ -1,0 +1,1 @@
+TLS features ok: ALPN negotiated + bogus offer rejected, SNI served the alt cert, default fallback held, cert-less client refused; net-zero GPA

@@ -1,0 +1,22 @@
+// A reserved/builtin type-name spelling is rejected as the NAME of EVERY
+// type-introducing `::` declaration too — struct, enum, union, error-set, and
+// a typed constant — not just `:=` / value-const / function names (those are
+// examples/1140). Each is a declaration-name binding site: a bare reserved
+// spelling there mis-classifies and is rejected, exactly like `i2 := …`. The
+// backtick escape (`` `i2 :: struct{…} ``, examples/0154) is the only way to
+// spell these names in handwritten sx; `#import c` extern decls stay exempt
+// (examples/1220).
+//
+// Regression (issue 0089 — attempt-4: 0076 holds across every decl kind).
+// Expected: one error per declaration, each caret ON the declared name; exit 1.
+#import "modules/std.sx";
+
+i8 :: struct { v: i64; }
+i16 :: enum { A; B; }
+u16 :: union { a: i32; b: f32; }
+u32 :: error { Bad, Empty }
+i2 : i64 : 5;
+
+main :: () -> i32 {
+    return 0;
+}

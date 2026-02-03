@@ -1,0 +1,5 @@
+error: 'T' is a value parameter, not a type; introduce a generic type parameter with `$T: Type`
+  --> examples/diagnostics/1115-diagnostics-cast-value-param-rejected.sx:7:15
+   |
+ 7 |     return x.(T);
+   |               ^

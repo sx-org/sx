@@ -1,0 +1,48 @@
+// M1.3 — `obj.class` accessor on Obj-C pointers.
+//
+// Any Obj-C-class pointer (runtime or sx-defined) can be probed
+// for its runtime class object via `obj.class`. Lowers to
+// `object_getClass(obj)`. Returns `Class` (alias for *void —
+// parameterized `Class(T)` covariance is M1.1.b).
+//
+// Verifies both shapes:
+//   1. (*SxFoo).class — sx-defined class. Returns the SxFoo Class.
+//   2. (*NSObject).class — runtime class via stdlib. Returns NSObject's
+//      Class.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+NSObjectFwd :: #objc_class("NSObject") extern {
+    alloc :: () -> *NSObjectFwd;
+    init  :: (self: *NSObjectFwd) -> *NSObjectFwd;
+}
+
+SxFoo :: #objc_class("SxFoo") {
+    counter: i32;
+    alloc :: () -> *SxFoo;
+    bump :: (self: *Self) { self.counter += 1; }
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        // sx-defined class round-trip.
+        f := SxFoo.alloc();
+        cls_f : Class = f.class;
+        expected_f : Class = objc_getClass("SxFoo".ptr);
+        if cls_f != expected_f { print("FAIL: SxFoo.class mismatch\n"); return 1; }
+
+        // runtime class round-trip.
+        nso := NSObjectFwd.alloc().init();
+        cls_n : Class = nso.class;
+        expected_n : Class = objc_getClass("NSObject".ptr);
+        if cls_n != expected_n { print("FAIL: NSObject.class mismatch\n"); return 1; }
+
+        print("class accessor: ok\n");
+    }
+    inline if OS != .macos {
+        print("class accessor: ok\n");
+    }
+    0
+}

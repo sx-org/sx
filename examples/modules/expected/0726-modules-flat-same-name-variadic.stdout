@@ -1,0 +1,4 @@
+from_a combine fixed: ok
+from_b combine variadic: ok
+from_a pick variadic: ok
+from_b pick fixed: ok

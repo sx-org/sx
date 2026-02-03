@@ -1,0 +1,10 @@
+S :: struct { p: *void; }
+
+read :: (s: *S) -> *void {
+    s.p
+}
+
+main :: () -> i32 abi(.c) {
+    s := S.{ p = null };
+    if read(@s) == null then 0 else 1
+}

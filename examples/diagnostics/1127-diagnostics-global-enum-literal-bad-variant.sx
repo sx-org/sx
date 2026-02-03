@@ -1,0 +1,16 @@
+// A module-global enum-literal initializer naming a variant that does not exist
+// must be rejected loudly — never silently zero-initialized to the first tag.
+// Regression (issue 0082): the enum-literal global serializer resolves the tag
+// against the destination enum type; an unknown variant emits a diagnostic and
+// fails the build instead of falling back to a null (zero-tag) initializer.
+// Expected: "'.purple' is not a variant of enum 'Color'"; exit 1.
+
+#import "modules/std.sx";
+
+Color :: enum u8 { red; green; blue; }
+bad : Color = .purple;
+
+main :: () -> i32 {
+    print("{}\n", bad);
+    return 0;
+}

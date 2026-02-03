@@ -1,0 +1,33 @@
+// `and` / `or` over bare optional operands reduce each operand to its
+// has_value flag (presence-as-truth), exactly like `if <optional>`. A bare
+// optional reaching the short-circuit merge as a `{T,i1}` aggregate used to
+// fold truthy (issue 0164); it must instead test presence.
+//
+// Truth table below: present `?i64` is "true", absent (null) is "false".
+#import "modules/std.sx";
+
+yn :: (b: bool) -> string => if b then "T" else "F";
+
+main :: () {
+    p : ?i64 = 7;      // present  → truthy
+    q : ?i64 = null;   // absent   → falsy
+
+    // and: true only when BOTH present.
+    print("PP and = {}\n", yn(p and p));   // T
+    print("PQ and = {}\n", yn(p and q));   // F (rhs absent)
+    print("QP and = {}\n", yn(q and p));   // F (lhs absent, short-circuits)
+    print("QQ and = {}\n", yn(q and q));   // F
+
+    // or: false only when BOTH absent.
+    print("PP or  = {}\n", yn(p or p));    // T
+    print("PQ or  = {}\n", yn(p or q));    // T (lhs present, short-circuits)
+    print("QP or  = {}\n", yn(q or p));    // T (rhs present)
+    print("QQ or  = {}\n", yn(q or q));    // F
+
+    // Mixed optional-and-bool: optional operand reduced to has_value,
+    // bool operand used as-is.
+    flag := true;
+    print("Pb and = {}\n", yn(p and flag));   // T
+    print("Qb and = {}\n", yn(q and flag));   // F (lhs absent)
+    print("bQ or  = {}\n", yn(flag or q));    // T (lhs true, short-circuits)
+}

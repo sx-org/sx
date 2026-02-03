@@ -1,0 +1,12 @@
+// ASM stream — read-write (`+`) place output on x86_64 (cross-arch sibling of
+// the aarch64 1650). `incq %[v]` reads the operand register, increments it, and
+// the result is stored back through the place. Locks the x86 lowering of `+`:
+// an output `=r` plus a tied input (`=r,0`) seeded with the place's value.
+// x86-pinned via `.build`: ir-only here (the `.ir` is the assertion), runs
+// natively on x86_64-linux (main returns 0 on success, 1 if the asm misbehaved).
+bump :: () -> i64 {
+    x : i64 = 41;
+    asm volatile { "incq %[v]", [v] "+r" -> @x };
+    return x;   // 42
+}
+main :: () -> i64 { if bump() != 42 { return 1; } return 0; }

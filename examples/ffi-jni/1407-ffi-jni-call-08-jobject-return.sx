@@ -1,0 +1,28 @@
+// Phase 1 step 1.22 (PLAN-FFI.md): `#jni_call(*void)` (jobject
+// return). Last return-type variant in the matrix. The returned
+// jobject is a JNI LocalRef — its lifetime is bounded by the native
+// frame, so chains of calls within one frame don't need explicit
+// cleanup, but calls that escape (cached cross-frame) should be
+// promoted via `NewGlobalRef`. For chess Android use the returned
+// jobject is consumed inline by the next `#jni_call`, so no cleanup
+// is needed here.
+//
+// CallObjectMethod lives at vtable slot 34.
+
+#import "modules/std.sx";
+
+g_should_call : bool = false;
+
+get_window :: (env: *void, activity: *void) -> *void {
+    #jni_env(env) {
+        #jni_call(*void)(activity, "getWindow", "()Landroid/view/Window;")
+    }
+}
+
+main :: () -> i32 {
+    if g_should_call {
+        _ := get_window(null, null);
+    }
+    print("ok\n");
+    0
+}

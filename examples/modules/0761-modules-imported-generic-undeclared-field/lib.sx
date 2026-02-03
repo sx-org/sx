@@ -1,0 +1,12 @@
+// Flat-imported generic struct with a genuinely-undeclared field type
+// (`y: Missing`). 0759 covers a NON-generic imported struct; a generic one is
+// instantiated cross-module, so before the fix its field nodes were resolved in
+// the (main-file) instantiation context — the source-aware leaf saw "main",
+// trusted it to the `UnknownTypeChecker` (which never walks imports), and
+// silently fabricated a 0-field stub. `instantiateGenericStruct` now resolves
+// the template's fields in THIS module's source context, so the undeclared name
+// surfaces at the reference.
+Bad :: struct($T: Type) {
+    x: T;
+    y: Missing;
+}

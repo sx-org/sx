@@ -1,0 +1,10 @@
+error: argument 'm' has type '*Move', but 'Move' is expected here
+  --> examples/diagnostics/1108-diagnostics-pointer-param-value-arg-diagnostic.sx:13:44
+   |
+13 | forward :: (m: *Move) -> i64 { return take(m); }
+   |                                            ^
+
+help: dereference it to pass the value: `m.*`
+   |
+13 | m.*
+   |                                            ^

@@ -1,0 +1,40 @@
+// Runtime `struct_field_type(t, 0)` answers an ELEMENT/CHILD row for every
+// element-carrying kind: struct fields, array/vector elements, and — the
+// kinds with no static member count — a slice's element and an optional's
+// child (one table row each, index 0). The master member-type tables and
+// the static type-position fold answer from the same TypeTable query, so
+// the two can never diverge (pinned by the parity lines).
+// Regression (issue 0300): a runtime SLICE tag had a null master-table row
+// and struct_field_type segfaulted; optionals had the same gap.
+#import "modules/std.sx";
+
+Pair :: struct { a: i32; b: f64; }
+
+main :: () {
+    p := Pair.{ a = 1, b = 2.5 };
+    pv : any = p;
+    print("struct: {} -> {}\n", type_name(type_of(pv)), type_name(struct_field_type(type_of(pv), 0)));
+
+    ar : [4]i16 = .[1, 2, 3, 4];
+    arv : any = ar;
+    print("array: {} -> {}\n", type_name(type_of(arv)), type_name(struct_field_type(type_of(arv), 0)));
+
+    v : Vector(3, f32) = .[1.0, 2.0, 3.0];
+    vv : any = v;
+    print("vector: {} -> {}\n", type_name(type_of(vv)), type_name(struct_field_type(type_of(vv), 0)));
+
+    s : []i64 = .[10, 20, 30];
+    sv : any = s;
+    print("slice: {} -> {}\n", type_name(type_of(sv)), type_name(struct_field_type(type_of(sv), 0)));
+
+    o : ?u8 = 7;
+    ov : any = o;
+    print("optional: {} -> {}\n", type_name(type_of(ov)), type_name(struct_field_type(type_of(ov), 0)));
+
+    // parity: the runtime table rows == the static type-position folds
+    st : Type = type_of(sv);
+    ot : Type = type_of(ov);
+    print("parity: {} {}\n",
+        type_eq(struct_field_type(st, 0), struct_field_type([]i64, 0)),
+        type_eq(struct_field_type(ot, 0), struct_field_type(?u8, 0)));
+}

@@ -1,0 +1,54 @@
+#import "modules/std.sx";
+
+pair_sum :: (xs: []i64, ys: []i64) -> i64 {
+    total := 0;
+    for xs, ys (x, y) { total += x * y; }
+    total
+}
+
+make :: () -> [3]i64 {
+    r : [3]i64 = .[7, 8, 9];
+    r
+}
+
+main :: () -> i32 {
+    // Agra's example: a 1..5 inclusive, b open-ended following along.
+    for 1..=5, 0.. (a, b) { print("{}:{} ", a, b); }
+    print("\n");
+
+    // Index idiom replacing the old (x, i) form.
+    xs : [3]i64 = .[10, 20, 30];
+    for xs, 0.. (x, i) { print("[{}]={} ", i, x); }
+    print("\n");
+
+    // Parallel slices.
+    a4 : [4]i64 = .[1, 2, 3, 4];
+    b4 : [4]i64 = .[10, 20, 30, 40];
+    print("dot={}\n", pair_sum(a4, b4));
+
+    // Arrow bodies.
+    s := 0;
+    for 0..4 (i) => s += i;
+    print("arrow-range s={}\n", s);
+    t := 0;
+    for xs (x) => t += x;
+    print("arrow-coll t={}\n", t);
+
+    // Call iterable + capture (first group = args, last group = capture).
+    for make() (v) { print("v{} ", v); }
+    print("\n");
+
+    // No-capture call iterable via leading-group escape.
+    n := 0;
+    for (make()) { n += 1; }
+    print("escape n={}\n", n);
+
+    // Three-way zip: two collections + cursor.
+    for a4, b4, 100.. (p, q, k) { print("{}/{}/{} ", p, q, k); }
+    print("\n");
+
+    // By-ref capture in a multi-iterable header.
+    for a4, 0.. (*p, i) { p.* += i; }
+    print("after ref: {} {} {} {}\n", a4[0], a4[1], a4[2], a4[3]);
+    0
+}

@@ -1,0 +1,20 @@
+// Erasing a concrete type to a protocol it does NOT `impl`-ement is a hard
+// error, not a silent SIGABRT. Regression (issue 0176): a plain free function
+// `speak :: (self: *Dog)` with a matching receiver does NOT satisfy the
+// protocol — protocol erasure is impl-driven, not structural (specs.md
+// §"Storage and protocol conformance"). Before the fix, erasure built a vtable
+// of unreachable thunks and `h.s.speak()` aborted with exit 133 and no output;
+// now it reports a clear diagnostic at the erasure site and exits 1.
+
+#import "modules/std.sx";
+
+Speaker :: protocol { speak :: (self: *Self) -> i64; }
+Dog :: struct { n: i64 = 0; }
+speak :: (self: *Dog) -> i64 { return self.n; }   // free fn — NOT an impl
+Holder :: struct { s: Speaker; b: i64 = 0; }
+
+main :: () {
+  d := Dog.{ n = 42 };
+  h : Holder = .{ s = d.(Speaker), b = 5 };   // <- 'Dog' does not implement 'Speaker'
+  print("{}\n", h.s.speak());
+}

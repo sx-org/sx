@@ -1,0 +1,27 @@
+// Phase 6 — pack-spread in a parameterized-type's arg list:
+// `Combined($R, ..sources.T)`. Inside a pack-fn, `..sources.T` projects each
+// source's protocol type-arg and spreads them into the generic struct's pack
+// type-param `..$Ts`, so `Combined(i64, ..sources.T)` for a single `VL(i64)`
+// source instantiates `Combined(i64, i64)` (field `sources: (VL(i64))`).
+
+#import "modules/std.sx";
+
+VL :: protocol(T: Type) { get :: (self: *Self) -> T; }
+IntCell :: struct { v: i64; }
+impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
+
+Combined :: struct($R: Type, ..$Ts: []Type) {
+    sources: Tuple(..VL(Ts));
+    value:   $R;
+}
+
+make :: (..sources: VL) -> i64 {
+    c : Combined(i64, ..sources.T) = ---;   // instantiate with the spread type-arg
+    c.sources.0 = xx sources[0];            // erase the concrete source to VL(i64)
+    return c.sources.0.get();
+}
+
+main :: () -> i32 {
+    print("{}\n", make(IntCell.{ v = 7 }));   // 7
+    0
+}

@@ -1,0 +1,5 @@
+error: value `v` from a failable can be used only where its error `err` is proven absent — guard the use with `if !err { … }`, or return early with `if err { return; }` before reading `v`
+  --> examples/errors/1053-errors-nested-lambda-liveness-reject.sx:23:16
+   |
+23 |         return v;               // REJECTED: err not proven absent (inside lambda)
+   |                ^

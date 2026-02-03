@@ -1,0 +1,11 @@
+error: 'nonexistent' is not a variant of 'Platform' (variants are: ios, android_apk)
+  --> examples/diagnostics/1169-diagnostics-enum-literal-bad-target.sx:10:20
+   |
+10 |     a : Platform = .nonexistent;   // unknown variant: lists the real ones
+   |                    ^^^^^^^^^^^^
+
+error: enum literal '.foo' cannot type itself from non-enum destination 'i64'
+  --> examples/diagnostics/1169-diagnostics-enum-literal-bad-target.sx:11:15
+   |
+11 |     b : i64 = .foo;                // non-enum destination
+   |               ^^^^

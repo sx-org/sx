@@ -1,0 +1,5 @@
+i64: 42
+string: hello
+struct: (3,4)
+or: 7
+raise caught

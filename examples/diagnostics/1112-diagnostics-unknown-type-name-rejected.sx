@@ -1,0 +1,13 @@
+// An identifier used in a type position that names no declared type, builtin,
+// or in-scope generic parameter is rejected. Previously the type resolver's
+// empty-struct-stub fallback silently interned a 0-field struct under the typo,
+// so the program compiled and ran. Regression (issue 0064, broader fix).
+// Expected: a clean "unknown type" error at the field; exit 1.
+Point :: struct {
+    x: i32;
+    y: Coordnate;   // typo for a non-existent type
+}
+
+main :: () -> i32 {
+    return 0;
+}

@@ -1,0 +1,43 @@
+// Phase 3 step 3.1 (PLAN-FFI.md): static call `Cls.class_method(args)`
+// on an `#objc_class` alias lowers to `objc_msg_send` against the class
+// object (loaded once per module via `objc_getClass` and cached). The
+// selector is derived by the same default mangling as Phase 3.0
+// (`stringWithUTF8String_(s)` → "stringWithUTF8String:").
+//
+// Mirrors JNI's static-dispatch surface (`Alias.new(...)` etc.); the
+// lowering disambiguates static vs instance by looking at
+// `method.is_static` on the runtime-class member.
+//
+// Uses NSObject because the cached class slot is populated by a
+// constructor at module-load — runtime-created test classes wouldn't
+// exist yet when `objc_getClass` runs. NSObject is always available
+// on macOS via libobjc.
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+NSObject :: #objc_class("NSObject") extern {
+    // `+(Class)class` — niladic, name verbatim, selector = "class".
+    // Returns the class object itself. No `self: *Self` first param ⇒
+    // class method (sx parser keys on the param TYPE).
+    class :: () -> *void;
+    // `+(NSString *)description` on the class returns a description
+    // string. Niladic, selector = "description".
+    description :: () -> *void;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        c := NSObject.class();
+        if c != null {
+            print("class non-null\n");
+        }
+        d := NSObject.description();
+        if d != null {
+            print("description non-null\n");
+        }
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

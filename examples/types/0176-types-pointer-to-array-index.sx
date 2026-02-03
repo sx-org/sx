@@ -1,0 +1,21 @@
+// Indexing through a pointer-to-array auto-derefs: `p : *[N]T` makes
+// `p[i]` GEP the pointee array and load the element, and `p[i] = v` /
+// `p[i] += v` store through it — mirroring the struct-pointer auto-deref
+// on field access. Writes through the pointer are visible in the
+// original array and vice versa.
+//
+// Regression (issue 0117): this shape used to reach LLVM emission with
+// an unresolved element type and panic.
+
+#import "modules/std.sx";
+
+main :: () {
+    k : [4]i64 = .[11, 22, 33, 44];
+    p := @k;
+    print("read={}\n", p[2]);
+    p[1] = 99;
+    p[3] += 1;
+    print("write={} {} {}\n", k[1], p[1], k[3]);
+    e := @p[2];
+    print("elem-ptr={}\n", e.*);
+}

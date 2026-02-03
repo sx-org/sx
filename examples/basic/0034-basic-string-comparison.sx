@@ -1,0 +1,23 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+main :: () {
+
+    // ========================================================
+    // 24. STRING COMPARISON
+    // ========================================================
+    print("=== 24. String Comparison ===\n");
+    {
+        a := "hello";
+        b := "hello";
+        c := "world";
+        print("str-eq: {}\n", a == b);
+        print("str-neq: {}\n", a != c);
+        print("str-diff: {}\n", a == c);
+        empty := "";
+        print("empty-eq: {}\n", empty == "");
+    }
+}

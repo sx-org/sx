@@ -1,0 +1,6 @@
+// One of two flat-imported authors of same-name types `Thing` / `Box` / `Nums`.
+// With both modules flat-visible from a file that authors none itself, every
+// bare reference to these names is genuinely ambiguous.
+Thing :: struct { a: i64; }
+Box :: struct($T: Type) { v: T; }
+Nums :: [2]i64;

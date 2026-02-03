@@ -1,0 +1,11 @@
+error: an 'any' does not implicitly unbox to 'i64': the boxed type is not checked, so a wrong target reinterprets the payload (a wrong scalar silently yields garbage; an aggregate dereferences it and crashes). Dispatch on the value's type with `match`, or force it with `xx` if you know the boxed type.
+  --> examples/diagnostics/1207-diagnostics-any-implicit-unbox-rejected.sx:19:5
+   |
+19 |     n : i64 = x;            // error: 'any' does not implicitly unbox to 'i64'
+   |     ^^^^^^^^^^^^
+
+error: an 'any' does not implicitly unbox to 'S': the boxed type is not checked, so a wrong target reinterprets the payload (a wrong scalar silently yields garbage; an aggregate dereferences it and crashes). Dispatch on the value's type with `match`, or force it with `xx` if you know the boxed type.
+  --> examples/diagnostics/1207-diagnostics-any-implicit-unbox-rejected.sx:20:5
+   |
+20 |     s : S = x;              // error: 'any' does not implicitly unbox to 'S'
+   |     ^^^^^^^^^^

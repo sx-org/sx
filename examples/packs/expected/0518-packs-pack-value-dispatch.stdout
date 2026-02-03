@@ -1,0 +1,7 @@
+i64
+string
+f64
+got i64
+got string
+got bool
+got other

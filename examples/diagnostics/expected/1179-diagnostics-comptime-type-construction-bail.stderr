@@ -1,0 +1,5 @@
+error: type 'Undefined' is declared but never defined — complete it with define(handle, info)
+  --> examples/diagnostics/1179-diagnostics-comptime-type-construction-bail.sx:25:14
+   |
+25 | Undefined :: mk_undefined();
+   |              ^^^^^^^^^^^^^^

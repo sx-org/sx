@@ -1,0 +1,5 @@
+error: for-loop syntax: the ':' before the capture was removed — write `for xs (x) { }` (index via `for xs, 0.. (x, i)`)
+  --> examples/diagnostics/1149-diagnostics-for-colon-removed.sx:8:11
+   |
+ 8 |     for xs: (x) { }
+   |           ^

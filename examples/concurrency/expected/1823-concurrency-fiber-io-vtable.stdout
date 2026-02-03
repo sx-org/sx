@@ -1,0 +1,3 @@
+worker(sleep 10) resumed at now_ms = 10
+worker(sleep 20) resumed at now_ms = 20
+final clock: 20ms

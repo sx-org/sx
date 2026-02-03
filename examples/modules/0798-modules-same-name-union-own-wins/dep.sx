@@ -1,0 +1,10 @@
+// A flat-imported module authors its OWN `Pair { a }`. The importing file (`main`)
+// ALSO authors a `Pair` — its own author must win there (own-wins), while this
+// module's `Pair` stays a DISTINCT nominal type used by `dep_pair`. The field sets
+// are disjoint, so a cross-binding to the wrong `Pair` is a hard compile error.
+Pair :: union { a: i32; }
+dep_pair :: () -> i32 {
+    p : Pair = ---;
+    p.a = 9;
+    return p.a;
+}

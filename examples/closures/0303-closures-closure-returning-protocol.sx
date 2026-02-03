@@ -1,0 +1,28 @@
+// Closure whose return type is a (non-`#inline`) protocol value — exercises
+// the indirect-call path where the result is a boxed protocol.
+
+#import "modules/std.sx";
+
+MyProtocol :: protocol {
+    get_value :: (self: *Self) -> i64;
+}
+
+MyImpl :: struct { value: i64; }
+impl MyProtocol for MyImpl {
+    get_value :: (self: *MyImpl) -> i64 { self.value }
+}
+
+make_thing :: () -> MyProtocol {
+    MyImpl.{ value = 42 }
+}
+
+main :: () -> void {
+    // Direct call works:
+    v := make_thing();
+    out("direct call works\n");
+
+    // Closure call crashes:
+    c := closure(make_thing);
+    result := c();
+    out("closure call works\n");
+}

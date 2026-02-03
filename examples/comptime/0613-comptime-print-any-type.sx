@@ -1,0 +1,32 @@
+// Comptime `#run` formatting of an `any` that holds a `Type`.
+//
+// `print("{}", at)` where `at: any` holds a `Type` value routes through
+// `format` → `any_to_string`, whose `type := type_of(val)` lowers (for an
+// `.any` operand) to `struct_get(val, 0)` — reading the any-Type's tag.
+// At runtime a `Type` value is the aggregate `{ tag=.any, value=tid }`,
+// so the read works and the type's name prints. The comptime interpreter
+// stores a first-class `Type` as a bare `.type_tag`, so the struct_get
+// must mirror that same `{ .any, tid }` layout — otherwise it bails and
+// the `#run` truncates. Reflection over the same `any` (`type_name`,
+// `is_unsigned`) already works; the value-print must match.
+//
+// Regression (issue 0096): a comptime `#run` print of an `any`-held
+// `Type` silently stopped (omitted `value=` + every later line) yet still
+// built with exit 0.
+
+#import "modules/std.sx";
+
+ct_probe :: () {
+    print("before\n");
+    x : u64 = 1;
+    t : Type = type_of(x);
+    at : any = t;
+    print("name={}\n", type_name(at));
+    print("unsigned={}\n", is_unsigned(at));
+    print("value={}\n", at);
+    print("after\n");
+}
+
+#run ct_probe();
+
+main :: () {}

@@ -1,0 +1,13 @@
+// The NON-visible 2-flat-hop author: a two-field generic `Box` (size 16) with its
+// own `make` (sets a second field). Same template NAME as b's, different layout.
+// It wins the global last-wins `struct_template_map` (and the name-keyed
+// `Box.make`), so the static-method head in a file importing only b.sx must NOT
+// pick it.
+Box :: struct($T: Type) {
+    x: T;
+    y: T;
+
+    make :: (value: T) -> Box(T) {
+        .{ x = value, y = value + 100 }
+    }
+}

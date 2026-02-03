@@ -1,0 +1,36 @@
+// Union struct-literal initialization — a union may be built with a struct
+// literal that sets a SINGLE arm: one direct member, or several promoted
+// members of the same anonymous-struct arm. Equivalent to the `--- `+per-field
+// form, and the two views stay consistent (type-punning still works).
+//
+// Regression (issue 0158): a union literal previously fell through the generic
+// struct-literal path (getStructFields returns empty for a union), building a
+// malformed structInit whose overlapping zero-fill clobbered the named member —
+// `b : Overlay = .{ f = 3.14 }` silently read back 0.0. Now it lowers like the
+// `--- `+member-write form: each named member is written into a union-sized slot.
+#import "modules/std.sx";
+
+Overlay :: union { f: f32; i: i32; }
+Vec2 :: union { data: [2]f32; struct { x, y: f32; }; }
+
+main :: () {
+    // Single-member literal — the bug case. Reads back the value, and a
+    // type-punning read of the other member sees the same bytes.
+    b : Overlay = .{ f = 3.14 };
+    print("b.f={} b.i={}\n", b.f, b.i);
+
+    // Equivalence: the `--- `+member-write form produces identical bytes.
+    a : Overlay = ---;
+    a.f = 3.14;
+    print("a.f={} a.i={}\n", a.f, a.i);
+
+    // Promoted members of the anonymous-struct arm: both belong to the same
+    // arm (offsets 0 and 4), so naming both is valid; the `data` view overlays.
+    v : Vec2 = .{ x = 1.0, y = 2.0 };
+    print("v.x={} v.y={} d0={} d1={}\n", v.x, v.y, v.data[0], v.data[1]);
+
+    // Empty literal → undefined union (same as `---`); set a member after.
+    e : Overlay = .{};
+    e.i = 9;
+    print("e.i={}\n", e.i);
+}

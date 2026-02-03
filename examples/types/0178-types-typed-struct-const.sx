@@ -1,0 +1,16 @@
+// A TYPED struct constant ('W : Color : Color.{...}') registers like the
+// untyped form ('WHITE :: Color.{...}') — value reads, field reads, and
+// independent copies. (Both shapes keep inline re-lowering semantics
+// until PLAN-CONST-AGG step 4 migrates them to const globals.)
+
+#import "modules/std.sx";
+
+Color :: struct { r, g, b: i64; }
+W : Color : Color.{ r = 1, g = 2, b = 3 };
+
+main :: () {
+    print("{} {} {}\n", W.r, W.g, W.b);
+    c := W;
+    c.g = 99;
+    print("copy={} const={}\n", c.g, W.g);
+}

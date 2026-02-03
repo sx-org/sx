@@ -1,0 +1,37 @@
+// Regression test for issue-0025 path B.
+//
+// When a fn-pointer's type is spelled with `abi(.c)`, the indirect
+// call must apply the same C-ABI byval coercion that direct C-ABI calls
+// do at the call site (path A): >16-byte non-HFA aggregates are passed
+// as `ptr byval(<T>)`. Without the fix, the indirect call site builds
+// an LLVM function type whose param slot is the raw struct, which the
+// AArch64/x86_64 backend tries to lay out across registers + stack in
+// ways that don't match the byval-attributed callee signature — the
+// callee then reads garbage out of the wrong machine-state slots.
+//
+// The opt-in is the `abi(.c)` on the fn-pointer type spelling.
+// Pure-sx fn-pointer casts (no abi suffix) keep their default
+// calling convention — verified by examples/87-fnptr-cast-large-aggregate.sx.
+
+#import "modules/std.sx";
+
+Wide :: struct {
+    a: i64;
+    b: i64;
+    c: i64;
+    d: i64;
+}
+
+accept_c :: (w: Wide) -> i64 abi(.c) {
+    w.a + w.b + w.c + w.d
+}
+
+main :: () -> i32 {
+    w := Wide.{ a = 1, b = 10, c = 100, d = 1000 };
+    if accept_c(w) != 1111 { return 1; }
+
+    fn_ptr : (Wide) -> i64 abi(.c) = xx accept_c;
+    if fn_ptr(w) != 1111 { return 2; }
+
+    0
+}

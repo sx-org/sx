@@ -1,0 +1,14 @@
+// Enum literals against unusable destinations are DIAGNOSED, never a
+// silent variant 0 (issue 0098's sibling holes): an unknown variant of a
+// real enum, a non-enum destination type, and a destination-less literal
+// each get their own error.
+#import "modules/std.sx";
+
+Platform :: enum u8 { ios; android_apk; }
+
+main :: () -> i32 {
+    a : Platform = .nonexistent;   // unknown variant: lists the real ones
+    b : i64 = .foo;                // non-enum destination
+    print("{}{}\n", a, b);
+    return 0;
+}

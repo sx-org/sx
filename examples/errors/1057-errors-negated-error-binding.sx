@@ -1,0 +1,36 @@
+// `!` on an error binding is the truthiness complement of `if e` (issue
+// 0129). Pre-fix, `!` lowered as a bitwise not, so a nonzero error tag
+// stayed nonzero and `if !e` held even on a SET error — with the success
+// value read as garbage. Integer operands get the same `!x ≡ x == 0`
+// semantics.
+#import "modules/std.sx";
+
+E :: error { Boom }
+
+f :: (fail: bool) -> (i64, !E) {
+    if fail { raise error.Boom; }
+    return 42;
+}
+
+main :: () -> i32 {
+    // set error: `if e` holds, `if !e` must NOT
+    v, e := f(true);
+    took_e := false;
+    if e { took_e = true; }
+    if !e { print("BUG: !e held on a set error (v={})\n", v); return 1; }
+    if !took_e { print("BUG: if e did not hold on a set error\n"); return 2; }
+
+    // success: `if !e` holds and the value is real
+    v2, e2 := f(false);
+    if e2 { print("BUG: e2 set on success\n"); return 3; }
+    if !e2 { print("ok: !e2 on success, v2={}\n", v2); }
+
+    // integers: `!n` is `n == 0`, not a bit flip
+    n := 7;
+    if !n { print("BUG: !7 held\n"); return 4; }
+    z := 0;
+    if !z { print("ok: !0 holds\n"); }
+
+    print("done\n");
+    return 0;
+}

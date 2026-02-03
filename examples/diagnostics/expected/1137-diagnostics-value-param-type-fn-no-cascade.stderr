@@ -1,0 +1,17 @@
+error: unknown type 'NoSuchType'
+  --> examples/diagnostics/1137-diagnostics-value-param-type-fn-no-cascade.sx:25:18
+   |
+25 |     c : MakeC(3, NoSuchType) = ---;
+   |                  ^^^^^^^^^^
+
+error: value 5000000000 does not fit in u32 parameter K
+  --> examples/diagnostics/1137-diagnostics-value-param-type-fn-no-cascade.sx:23:15
+   |
+23 |     a : MakeC(5000000000, i64) = ---;
+   |               ^^^^^^^^^^
+
+error: generic value parameter 'K' must be a compile-time integer constant
+  --> examples/diagnostics/1137-diagnostics-value-param-type-fn-no-cascade.sx:24:15
+   |
+24 |     b : MakeC(get(), i64) = ---;
+   |               ^^^^^

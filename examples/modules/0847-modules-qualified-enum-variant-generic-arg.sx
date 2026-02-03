@@ -1,0 +1,29 @@
+// A MODULE-QUALIFIED payloadless enum variant (`lib.Mode.on`) passed to a
+// generic function infers the type parameter to the enum type — the object of
+// the variant read (`lib.Mode`) is a namespace-rooted member resolving to an
+// enum in the aliased module.
+//
+// Regression (issue 0276): inferExprType's field_access arm only handled a
+// BARE-identifier enum object (`E.on`, issue 0274); a module-qualified object
+// returned .unresolved, so `id(lib.Mode.on)` bound T = .unresolved and minted a
+// __unresolved monomorph that panicked at LLVM emission. The arm now resolves a
+// namespace-rooted object through the aliased module (diagnostic-free) and
+// infers a payloadless variant to that enum — including a payloadless variant of
+// a module-qualified tagged union (`lib.Event.none`).
+#import "modules/std.sx";
+lib :: #import "0847-modules-qualified-enum-variant-generic-arg/lib.sx";
+
+id :: (v: $T) -> T { v }
+eq :: (a: $T, b: T) -> bool { a == b }
+
+// Return position: the generic result flows to a declared enum return type.
+first_off :: () -> lib.Mode { id(lib.Mode.off) }
+
+main :: () {
+    m := id(lib.Mode.on);          // module-qualified enum, decl position
+    e := id(lib.Event.none);       // payloadless variant of a tagged union
+    print("m on?  {}\n", m == lib.Mode.on);
+    print("e none? {}\n", e == lib.Event.none);
+    print("eq {}\n", eq(lib.Mode.on, lib.Mode.on));   // comparison position
+    print("ret off? {}\n", first_off() == lib.Mode.off);
+}

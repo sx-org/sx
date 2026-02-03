@@ -1,0 +1,17 @@
+// Ctx-recovery refusal (issue 0306): the postfix recovery on a protocol
+// value refuses a pointer-to-PROTOCOL target — ctx addresses the CONCRETE
+// value, so `s.(*Sizable)` would be a type lie that `*P` dispatch (0829)
+// would garbage-load. The concrete recovery (`s.(*Widget)`, `s.(*void)`)
+// and the view spelling (`@s`) are the honest forms.
+#import "modules/std.sx";
+
+Sizable :: protocol { size :: (self: *Self) -> i64; }
+Widget :: struct { value: i64; }
+impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
+
+main :: () {
+    w := Widget.{ value = 4 };
+    s := w.(Sizable);
+    pq := s.(*Sizable);          // 0306: ctx recovery must target the CONCRETE type
+    print("{}\n", pq != null);
+}

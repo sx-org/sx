@@ -1,0 +1,30 @@
+// A `*self`-mutating streaming pattern with NON-reserved binding names
+// (`hasher`, `ctx`) compiles and accumulates state correctly through BOTH
+// call styles — explicit address-of `update(@h, ...)` and autoref
+// `h.update(...)` — across multiple mutating calls. Proves the
+// `.identifier`-only address-of paths in lowering are correct as-is, with no
+// type-shaped-name special-case (companion to the issue-0076 rejection of
+// type-named identifiers).
+#import "modules/std.sx";
+
+Hasher :: struct { total: i64 = 0; count: i64 = 0; }
+
+update :: ufcs (self: *Hasher, n: i64) {
+    self.total += n;
+    self.count += 1;
+}
+
+main :: () -> i32 {
+    hasher := Hasher.{ total = 0, count = 0 };
+    update(@hasher, 10);   // explicit address-of receiver
+    hasher.update(20);     // autoref receiver
+    update(@hasher, 30);
+    hasher.update(40);
+    print("hasher total={} count={}\n", hasher.total, hasher.count);
+
+    ctx := Hasher.{ total = 100, count = 0 };
+    ctx.update(5);
+    update(@ctx, 7);
+    print("ctx total={} count={}\n", ctx.total, ctx.count);
+    return 0;
+}

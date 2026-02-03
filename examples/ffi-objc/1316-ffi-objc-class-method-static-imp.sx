@@ -1,0 +1,48 @@
+// M2.1(b) — class methods (no `*Self` first param) on a
+// sx-defined `#objc_class`.
+//
+// The user declares a method without `self: *Self`. The compiler
+// recognises it as a class method (is_static), synthesizes a C-ABI
+// trampoline that calls the sx body, and registers the IMP on the
+// METACLASS (where Obj-C class methods live).
+//
+// Verifies the runtime side:
+//   1. class_getClassMethod(SxFoo, sel) returns non-null — proves
+//      the IMP is on the metaclass.
+//   2. objc_msgSend(SxFoo, sel) invokes the IMP and returns the
+//      sx body's result.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+class_getClassMethod :: (cls: *void, sel: *void) -> *void extern objc;
+
+SxFoo :: #objc_class("SxFoo") {
+    counter: i32;
+
+    // Class method — no `self`. Returns 42.
+    answer :: () -> i32 { return 42; }
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        cls : Class = objc_getClass("SxFoo".ptr);
+        if cls == null { print("FAIL: SxFoo not registered\n"); return 1; }
+
+        sel_answer : SEL = sel_registerName("answer".ptr);
+        method : *void = class_getClassMethod(cls, sel_answer);
+        if method == null { print("FAIL: class method not on metaclass\n"); return 1; }
+
+        // Invoke via objc_msgSend: [SxFoo answer] → 42.
+        msg_fn : (cls: *void, sel: *void) -> i32 abi(.c) = xx objc_msgSend;
+        result : i32 = msg_fn(cls, sel_answer);
+        if result != 42 { print("FAIL: expected 42, got {}\n", result); return 1; }
+
+        print("class method: {}\n", result);
+    }
+    inline if OS != .macos {
+        print("class method: 42\n");
+    }
+    0
+}

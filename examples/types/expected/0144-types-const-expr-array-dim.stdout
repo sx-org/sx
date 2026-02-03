@@ -1,0 +1,7 @@
+add direct.len=5 alias.len=5 d4=7 a4=7
+mul direct.len=24 alias.len=24 d23=230 a23=230
+sub direct.len=2 alias.len=2 d1=9 a1=9
+nest direct.len=9 alias.len=9 paren direct.len=10 alias.len=10
+typed direct.len=6 alias.len=6
+str alias.len=5 i0=hi i4=yo
+struct alias.len=5 p0x=1 p4y=6

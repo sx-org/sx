@@ -1,0 +1,34 @@
+
+; Function Attrs: nounwind
+define i64 @cb(i64 %0) #0 {
+entry:
+  %alloca = alloca i64, align 8
+  store i64 %0, ptr %alloca, align 8
+  %load = load i64, ptr %alloca, align 8
+  %add = add i64 %load, 1
+  ret i64 %add
+}
+
+; Function Attrs: nounwind
+define internal i64 @tramp(i64 %0) #0 {
+entry:
+  %alloca = alloca i64, align 8
+  store i64 %0, ptr %alloca, align 8
+  %load = load i64, ptr %alloca, align 8
+  %asm = call i64 asm sideeffect "call ${2:c}", "={rax},{rdi},s,~{rcx},~{rdx},~{rsi},~{r8},~{r9},~{r10},~{r11},~{memory}"(i64 %load, ptr @cb)
+  ret i64 %asm
+}
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %call = call i64 @tramp(i64 41)
+  %icmp = icmp ne i64 %call, 42
+  br i1 %icmp, label %if.then.0, label %if.merge.1
+
+if.then.0:                                        ; preds = %entry
+  ret i32 1
+
+if.merge.1:                                       ; preds = %entry
+  ret i32 0
+}

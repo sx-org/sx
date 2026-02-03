@@ -1,0 +1,79 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+main :: () {
+
+    // ========================================================
+    // 6. SCOPING & DEFER
+    // ========================================================
+    print("=== 6. Scoping ===\n");
+
+    // Scope block with shadowing
+    sv := 100;
+    {
+        sv := 200;
+        print("inner: {}\n", sv);
+    }
+    print("outer: {}\n", sv);
+
+    // Shadow with different type
+    st_v := 42;
+    print("shadow-type: {}\n", st_v);
+    {
+        st_v := 3.14;
+        print("shadow-type: {}\n", st_v);
+    }
+
+    // Nested scopes (3 levels)
+    nv := 1;
+    {
+        nv := 2;
+        {
+            nv := 3;
+            print("nest3: {}\n", nv);
+        }
+        print("nest2: {}\n", nv);
+    }
+    print("nest1: {}\n", nv);
+
+    // Scope isolation
+    { iso := 100; print("scope-isolate: {}\n", iso); }
+
+    // Reuse name after scope exit
+    sr := 1;
+    print("scope-reuse: {}\n", sr);
+    { sr := 2; print("scope-reuse: {}\n", sr); }
+    print("scope-reuse: {}\n", sr);
+
+    // Multiple defers (LIFO order)
+    {
+        defer print("defer-c\n");
+        defer print("defer-b\n");
+        defer print("defer-a\n");
+    }
+
+    // Four defers
+    {
+        defer print("d1\n");
+        defer print("d2\n");
+        defer print("d3\n");
+        defer print("d4\n");
+    }
+
+    // Defer in nested scopes
+    {
+        defer print("outer-defer\n");
+        {
+            defer print("inner-defer\n");
+        }
+    }
+
+    // Defer in if block
+    if true {
+        defer print("defer-in-if: deferred\n");
+        print("defer-in-if: body\n");
+    }
+}

@@ -1,0 +1,22 @@
+// A genuinely-undeclared type name used in an IMPORTED (non-main) module must
+// emit a clean "unknown type" diagnostic, not silently compile.
+//
+// The `UnknownTypeChecker` only walks MAIN-file decls — imported / library
+// modules are trusted and never checked. So an undeclared type name in an
+// imported module used to fall through the type leaf's empty-struct stub and
+// silently fabricate a 0-field struct: `make_thing()` below compiled and ran
+// (printing `thing.x = 42`) even though `lib.sx` references the non-existent
+// type `Coordnate`. The source-aware nominal leaf now poisons a genuinely-
+// undeclared name with the `.unresolved` sentinel and emits the diagnostic at
+// the reference, so the typo surfaces instead of mis-sizing `Thing` downstream.
+//
+// Expected: `error: unknown type 'Coordnate'` pointing into lib.sx; exit 1.
+// Regression (stdlib E3).
+#import "modules/std.sx";
+
+#import "0759-modules-undeclared-type-in-import/lib.sx";
+
+main :: () -> i32 {
+    print("thing.x = {}\n", make_thing());
+    return 0;
+}

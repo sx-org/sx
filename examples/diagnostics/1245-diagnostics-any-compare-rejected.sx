@@ -1,0 +1,26 @@
+// `==`/`!=` with an `any` operand is a COMPILE ERROR (Odin parity: no
+// binary operators are defined on `any`). An `any` is a type-erased
+// borrow `{type tag, pointer to value}` — the only directly comparable
+// word is the view's address, which is never a meaningful equality.
+// Unbox to a typed value first (`xx av` / `av.(T)`), or compare
+// `type_of(av)` against a type for tag questions.
+//
+// Supersedes the old value-word comparison (and its issue-0199
+// regression pin, example 0654): under the borrow representation the
+// payload words are temp addresses, so the old semantics could only
+// have meant accidental pointer identity.
+
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    x : any = 5;
+    ok1 := x == 5;         // error: mixed any == concrete
+    y : any = 5;
+    ok2 := x == y;         // error: any == any
+    ok3 := x != 6;         // error: != too
+    // Type comparison stays legal (a Type is a plain tag word, not an any):
+    t := type_of(x);
+    print("{}\n", t == i64);   // true
+    if ok1 or ok2 or ok3 { print("unreachable\n"); }
+    return 0;
+}

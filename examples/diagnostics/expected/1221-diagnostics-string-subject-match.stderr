@@ -1,0 +1,29 @@
+error: cannot match on 'string' — match subjects must be enums, tagged unions, error sets, optionals, integers, bools, or Type values
+  --> examples/diagnostics/1221-diagnostics-string-subject-match.sx:15:13
+   |
+15 |     r := if s == { case "hi": { 1 } case "bye": { 2 } else: { 0 } };
+   |             ^
+
+error: cannot match on 'f64' — match subjects must be enums, tagged unions, error sets, optionals, integers, bools, or Type values
+  --> examples/diagnostics/1221-diagnostics-string-subject-match.sx:19:13
+   |
+19 |     y := if x == { case 1: { 10 } case 2: { 20 } else: { 0 } };
+   |             ^
+
+error: cannot match on 'string' — match subjects must be enums, tagged unions, error sets, optionals, integers, bools, or Type values
+  --> examples/diagnostics/1221-diagnostics-string-subject-match.sx:25:13
+   |
+25 |     u := if s == { case string: { 1 } else: { 0 } };
+   |             ^
+
+error: a type switch arm names a type or a category — value patterns don't apply to an `any` subject
+  --> examples/diagnostics/1221-diagnostics-string-subject-match.sx:35:25
+   |
+35 |     v := if a == { case 5: { 1 } case 6: { 2 } else: { 0 } };
+   |                         ^
+
+error: a type switch arm names a type or a category — value patterns don't apply to an `any` subject
+  --> examples/diagnostics/1221-diagnostics-string-subject-match.sx:35:39
+   |
+35 |     v := if a == { case 5: { 1 } case 6: { 2 } else: { 0 } };
+   |                                       ^

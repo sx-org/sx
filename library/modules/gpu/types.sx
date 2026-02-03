@@ -1,0 +1,24 @@
+#import "modules/std.sx";
+
+// Opaque GPU resource handles. Backends decide what the integer means
+// (GL: object name; Metal: 1-based index into a backend-owned table of
+// retained MTL* objects). Zero is reserved for "no handle".
+ShaderHandle  :: u32;
+BufferHandle  :: u32;
+TextureHandle :: u32;
+
+ClearColor :: struct {
+    r: f32;
+    g: f32;
+    b: f32;
+    a: f32;
+
+    black :: () -> ClearColor => .{ r = 0.0, g = 0.0, b = 0.0, a = 1.0 };
+}
+
+// Texture pixel format. The UI renderer only needs rgba8 (images, the
+// 1×1 white solid-rect texture) and r8 (font glyph atlas alpha).
+TextureFormat :: enum {
+    rgba8;
+    r8;
+}

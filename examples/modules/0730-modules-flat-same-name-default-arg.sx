@@ -1,0 +1,20 @@
+// fix-0102d site 1 (issue 0102): two flat FILE imports each author a same-name
+// free function `cfg` with a DIFFERENT default value for its trailing param —
+// a.sx defaults to 10, b.sx to 20. Each module calls `cfg()` bare with the arg
+// OMITTED. The omitted trailing arg must be filled from the RESOLVED author's
+// default (own-author wins), not the first-wins winner's. Before the fix,
+// `from_b`'s `cfg()` expanded to the winner a.sx's default (10) and returned 10.
+// Regression: per-source default-argument expansion.
+#import "modules/std.sx";
+#import "0730-modules-flat-same-name-default-arg/a.sx";
+#import "0730-modules-flat-same-name-default-arg/b.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("from_a binds a.cfg default (10)", from_a() == 10);
+    report("from_b binds b.cfg default (20)", from_b() == 20);
+    0
+}

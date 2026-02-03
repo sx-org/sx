@@ -1,0 +1,5 @@
+error: '.purple' is not a variant of enum 'Color'
+  --> examples/diagnostics/1127-diagnostics-global-enum-literal-bad-variant.sx:11:15
+   |
+11 | bad : Color = .purple;
+   |               ^^^^^^^

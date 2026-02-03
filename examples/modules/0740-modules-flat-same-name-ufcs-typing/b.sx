@@ -1,0 +1,7 @@
+#import "modules/std.sx";
+// b.sx authors its OWN `tag` returning i64. `show_b`'s `v.tag()` must be both
+// dispatched AND typed as b.tag (i64 = 110), not the first-wins winner from a.sx
+// (string). `print` types each arg from the call plan, so a mistype here boxes
+// the i64 as a string pointer → segfault before the fix.
+tag :: ufcs (x: i64) -> i64 { return x + 100; }
+show_b :: () { v : i64 = 10; print("b: v.tag() = {}\n", v.tag()); }

@@ -1,0 +1,13 @@
+// A local declared with a reserved/builtin type-name spelling (`i2` is the
+// arbitrary-width `sN` integer type) is rejected at the declaration site.
+// Previously such a name parsed as a `.type_expr`, so address-of sites
+// mis-lowered it (load-by-value to a `ptr` param → LLVM verifier abort, or a
+// silent `*self`-mutation-losing copy). Regression (issue 0076). Expected:
+// error at the declaration; exit 1.
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    i2 := 42;
+    print("i2: {}\n", i2);
+    return 0;
+}

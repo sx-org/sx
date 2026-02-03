@@ -1,0 +1,1 @@
+{header: {magic: 4660, flags: 255}, name: hello, kind: -2, count: 65535, vel: [1.000000, 3.000000, 2.000000], samples: [10, -20, 30, -40], payload: <union>}

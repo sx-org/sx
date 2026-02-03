@@ -1,0 +1,5 @@
+error: `catch` body must produce a value of type 'i32' (or diverge with `return` / `raise`)
+  --> examples/errors/1013-errors-value-failable-reject.sx:17:10
+   |
+17 |     x := parse(-1) catch (e) { print("oops\n") };   // error: body yields no value
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

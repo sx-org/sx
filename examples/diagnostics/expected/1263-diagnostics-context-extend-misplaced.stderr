@@ -1,0 +1,5 @@
+error: '#context_extend' is only allowed at top level (module scope)
+  --> examples/diagnostics/1263-diagnostics-context-extend-misplaced.sx:7:5
+   |
+ 7 |     #context_extend x: i64 = 0;
+   |     ^^^^^^^^^^^^^^^

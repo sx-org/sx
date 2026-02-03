@@ -1,0 +1,77 @@
+// SHA-256 streaming-equivalence + file hashing for `modules/std/hash.sx`.
+//
+// The chunk boundary must not affect the result: feeding the same bytes
+// one-shot, one byte at a time, split mid-block, and split exactly on a
+// 64-byte block boundary all yield the same digest, anchored to a pinned
+// value. Then `sha256_file` of a written temp file must equal the
+// in-memory digest of the same bytes — the streaming file path agrees
+// with the buffered path.
+//
+// All comparisons go through `string` views over the zero-heap `[64]u8`
+// digests; the byte/split updates view directly into the input buffer
+// (no `substr`, no copies).
+
+#import "modules/std.sx";
+#import "modules/std/hash.sx";
+#import "modules/std/fs.sx";
+
+// 112-byte NIST multi-block vector — long enough that a 64-byte split is
+// a genuine block boundary and a 30-byte split lands mid-block.
+MSG :: "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu";
+PIN :: "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1";
+
+check :: (label: string, got: [64]u8, want: string) {
+    view := string.{ ptr = @got[0], len = 64 };
+    if view == want {
+        print("{}: ok\n", label);
+    } else {
+        print("{}: FAIL got {} want {}\n", label, view, want);
+    }
+}
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+// Absorb `data` one byte at a time (views of length 1 into the buffer).
+stream_by_byte :: (data: string) -> [64]u8 {
+    h := init();
+    i := 0;
+    while i < data.len {
+        h.update(string.{ ptr = @data[i], len = 1 });
+        i += 1;
+    }
+    h.final()
+}
+
+// Absorb `data` as two updates split at `at` (views into the buffer).
+stream_split :: (data: string, at: i64) -> [64]u8 {
+    h := init();
+    h.update(string.{ ptr = @data[0],  len = at });
+    h.update(string.{ ptr = @data[at], len = data.len - at });
+    h.final()
+}
+
+main :: () {
+    check("oneshot-pinned",    sha256_hex(MSG), PIN);
+    check("byte-at-a-time",    stream_by_byte(MSG), PIN);
+    check("split-mid-block",   stream_split(MSG, 30), PIN);   // 30: mid first block
+    check("split-on-boundary", stream_split(MSG, 64), PIN);   // 64: exact block edge
+
+    // sha256_file (streaming) must equal the in-memory digest.
+    if !create_dir_all(".sx-tmp") { print("mkdir: FAIL\n"); return; }
+    path := ".sx-tmp/sx_0712_stream.bin";
+    if !write_file(path, MSG) { print("file-write: FAIL\n"); return; }
+
+    maybe := sha256_file(path);
+    if maybe == null { print("file-eq-memory: FAIL (open)\n"); return; }
+    file_digest := maybe!;
+    mem_digest := sha256_hex(MSG);
+
+    fv := string.{ ptr = @file_digest[0], len = 64 };
+    mv := string.{ ptr = @mem_digest[0],  len = 64 };
+    report("file-eq-memory", fv == mv);
+    check("file-pinned", file_digest, PIN);
+
+    delete_file(path);
+}

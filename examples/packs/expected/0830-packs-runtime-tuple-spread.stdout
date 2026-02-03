@@ -1,0 +1,9 @@
+tuple: 42
+array: 42
+respread: 42
+packfn: 1 two 3
+variadic: 42
+resplice: 1 two
+thunk: 42
+captured: id-7
+indexed: 42

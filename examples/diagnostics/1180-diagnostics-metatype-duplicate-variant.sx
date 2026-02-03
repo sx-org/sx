@@ -1,0 +1,17 @@
+// A comptime-constructed enum (declare/define) with two same-named variants is
+// rejected loudly. Two `value` variants would make construction (`.value`) and
+// matching ambiguous — `define` bails naming the duplicate, instead of silently
+// minting a malformed enum that picks one arbitrarily.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+Bad :: define(declare("Bad"), .enum(.{ variants = .[
+    EnumVariant.{ name = "value",  payload = i64 },
+    EnumVariant.{ name = "closed", payload = void },
+    EnumVariant.{ name = "value",  payload = f64 },   // duplicate name
+] }));
+
+main :: () -> i32 {
+    b : Bad = ---;
+    return 0;
+}

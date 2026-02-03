@@ -1,0 +1,26 @@
+// PLAN-HTTPZ C2: an sx `abi(.c)` function passes by name as a
+// typed C function pointer — libc qsort drives an sx comparator.
+#import "modules/std.sx";
+
+clib :: #library "c";
+qsort :: (base: [*]u8, nel: usize, width: usize, compar: (*void, *void) -> i32 abi(.c)) extern clib;
+
+cmp_i32 :: (a: *void, b: *void) -> i32 abi(.c) {
+    pa : *i32 = xx a;
+    pb : *i32 = xx b;
+    if pa.* < pb.* { return -1; }
+    if pa.* > pb.* { return 1; }
+    return 0;
+}
+
+main :: () -> i32 {
+    arr : [5]i32 = .[ 4, 1, 5, 2, 3 ];
+    qsort(xx @arr[0], 5, 4, cmp_i32);
+    i := 0;
+    while i < 5 {
+        if arr[i] != (i + 1).(i32) { print("not sorted at {}\n", i); return 1; }
+        i += 1;
+    }
+    print("qsort via sx comparator ok\n");
+    return 0;
+}

@@ -1,0 +1,3 @@
+comptime cleanup
+--- build done ---
+ok=10 caught=99 ored=55

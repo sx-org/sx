@@ -1,0 +1,36 @@
+// `vector_lanes(T)` — a vector's lane COUNT, the one vector length the flat
+// size tables cannot answer (ABI size is pow2-rounded: 3 lanes occupy 4).
+// Static arg folds at lower time; a runtime Type (e.g. an any's tag) reads
+// the `__sx_vector_lanes` table; a non-vector RUNTIME tag answers 0 (kind
+// discrimination is type_info's job, like the count tables); a static
+// non-vector is a compile error. Comptime VM answers from the same
+// TypeTable query, so static/dynamic/VM can never diverge.
+#import "modules/std.sx";
+
+main :: () {
+    // static fold
+    print("static: {}\n", vector_lanes(Vector(3, f32)));
+
+    // runtime tag: 3 lanes but ABI size 16 — size/elem_size would say 4
+    v : Vector(3, f32) = .[1.0, 2.0, 3.0];
+    av : any = v;
+    t := type_of(av);
+    print("runtime: {} (size {})\n", vector_lanes(t), size_of(t));
+
+    // parity: runtime table == static fold
+    print("parity: {}\n", vector_lanes(t) == vector_lanes(Vector(3, f32)));
+
+    // exact-fit and wide vectors
+    w : Vector(8, u8) = .[1, 2, 3, 4, 5, 6, 7, 8];
+    aw : any = w;
+    print("w8: {}\n", vector_lanes(type_of(aw)));
+
+    // a non-vector runtime tag answers 0
+    x := 5;
+    ax : any = x;
+    print("nonvec: {}\n", vector_lanes(type_of(ax)));
+
+    // comptime VM parity
+    K :: #run vector_lanes(Vector(4, i32));
+    print("comptime: {}\n", K);
+}

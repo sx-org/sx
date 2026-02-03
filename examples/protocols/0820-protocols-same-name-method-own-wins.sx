@@ -1,0 +1,37 @@
+// E6BR-2 / G8 (own-wins) — a protocol method-signature CONCRETE named return type
+// resolves SOURCE-AWARE, pinned to the protocol's defining module. `main`
+// flat-imports `dep.sx` (`Box { a }`) AND authors its OWN `Box { m }`; the
+// protocol `Provider` returns `Box` and the impl builds main's `Box`. Dispatching
+// `p.get()` must type the result as MAIN's `Box`, so `b.m` resolves.
+//
+// Fail-before (pre-E6BR-2): the method signature went through the no-author
+// `type_bridge.resolveTemplateSignatureType` wrapper (global last-wins), so the
+// return typed as dep's `Box { a }` and `b.m` was `field 'm' not found on type
+// 'Box'`. Pass-after: source-aware → main's `Box`, exit 0.
+
+#import "modules/std.sx";
+#import "0820-protocols-same-name-method-own-wins/dep.sx";
+
+Box :: struct { m: i32; }
+
+Provider :: protocol {
+    get :: (self: *Self) -> Box;
+}
+
+Holder :: struct { val: i32 = 7; }
+
+impl Provider for Holder {
+    get :: (self: *Holder) -> Box {
+        b : Box = ---;
+        b.m = self.val;
+        b
+    }
+}
+
+main :: () -> i32 {
+    h : Holder = .{};
+    p := h.(Provider);
+    b := p.get();
+    print("m={} dep={}\n", b.m, dep_box());
+    0
+}

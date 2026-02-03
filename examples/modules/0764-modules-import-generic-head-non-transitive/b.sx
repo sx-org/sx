@@ -1,0 +1,8 @@
+#import "c.sx";
+
+// b.sx directly imports c.sx, so it CAN instantiate `Box(i64)` — proving the
+// generic head is only one flat hop away here, two hops from a file that
+// imports b.sx.
+b_make :: () -> Box(i64) {
+    .{ v = 99 }
+}

@@ -1,0 +1,2 @@
+// Companion for 1226's ambiguous leg — first of two flat-imported authors of `shared`.
+shared : i64 = 1;

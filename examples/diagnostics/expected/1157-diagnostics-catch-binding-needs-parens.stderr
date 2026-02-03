@@ -1,0 +1,5 @@
+error: the catch error binding needs parens: `catch (e) { ... }`
+  --> examples/diagnostics/1157-diagnostics-catch-binding-needs-parens.sx:12:20
+   |
+12 |     v := f() catch e { 0 };
+   |                    ^

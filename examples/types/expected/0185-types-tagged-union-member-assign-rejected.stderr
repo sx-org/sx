@@ -1,0 +1,5 @@
+error: cannot assign to tagged-union variant 'rect' directly — a member write sets the payload but leaves the tag stale; construct the variant instead (e.g. `x = .rect(...)`)
+  --> examples/types/0185-types-tagged-union-member-assign-rejected.sx:18:5
+   |
+18 |     s.rect = .{ w = 4.0, h = 2.0 };   // rejected — use `s = .rect(.{...})` instead
+   |     ^^^^^^

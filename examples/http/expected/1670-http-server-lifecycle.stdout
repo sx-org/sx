@@ -1,0 +1,2 @@
+no leak: net-zero allocations across 4 inline + 4 pooled + 4 in-flight-close server lifetimes
+ok

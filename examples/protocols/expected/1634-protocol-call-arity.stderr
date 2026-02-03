@@ -1,0 +1,5 @@
+error: 'dealloc_bytes' expects 1 argument, but 2 were given
+  --> examples/protocols/1634-protocol-call-arity.sx:10:5
+   |
+10 |     a.dealloc_bytes(p, 12345);
+   |     ^^^^^^^^^^^^^^^

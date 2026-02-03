@@ -1,0 +1,29 @@
+#import "modules/std.sx";
+#import "modules/math";
+
+test :: () -> i32 {
+    0
+}
+
+Vec4 :: Vector(4,f32);
+
+main :: () {
+    x : Type = f64;
+    print("{}\n", x);
+
+    v:f64 = 3.2;
+    print("{}\n", v);
+
+    x = Vec4;
+    print("{}\n", x);
+
+    x = test;
+    print("{}\n", x);
+
+}
+
+// ** stdout **
+// f64
+// 3.200000
+// Vector(4,f32)
+// () -> i32

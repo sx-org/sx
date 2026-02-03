@@ -1,0 +1,23 @@
+// Call-site default-argument expansion (`appendDefaultArgs` / `expandCallDefaults`
+// in lowerCall). A call that omits a trailing parameter with a default value
+// has the default expression spliced in at the call site; an explicit argument
+// overrides it. Two trailing defaults cover the "fill all remaining" path.
+// Path-free IR (literal defaults) so the `.ir` snapshot is location-stable.
+
+#import "modules/std.sx";
+
+scale :: (n: i32, factor: i32 = 2) -> i32 { n * factor }
+
+label :: (n: i32, prefix: string = "v", suffix: string = "!") -> i32 {
+    print("{}{}{}\n", prefix, n, suffix);
+    n
+}
+
+main :: () {
+    print("default: {}\n", scale(5));
+    print("explicit: {}\n", scale(5, 3));
+
+    _ = label(1);                 // both defaults filled
+    _ = label(2, "x");            // suffix default filled
+    _ = label(3, "y", "?");       // no defaults
+}

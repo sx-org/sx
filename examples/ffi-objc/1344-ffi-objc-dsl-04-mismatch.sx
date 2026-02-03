@@ -1,0 +1,25 @@
+// Phase 3 step 3.0: keyword count must equal call-site arity (excluding
+// self). `something_extra(x)` — name split gives ["something", "extra"]
+// = 2 keywords; arity = 1. Compiler must diagnose at the call site.
+//
+// Pre-3.0: bails at lower.zig with the generic Phase 3/4 diagnostic
+// (which subsumes this case). Once 3.0 lands, the diagnostic becomes a
+// specific "keyword count mismatch" message.
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+SxProbeMismatch :: #objc_class("SxProbeMismatch") extern {
+    something_extra :: (self: *Self, x: i32) -> i32;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        inst : *SxProbeMismatch = null;
+        n := inst.something_extra(7);
+        print("n = {}\n", n);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

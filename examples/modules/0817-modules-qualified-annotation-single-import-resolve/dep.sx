@@ -1,0 +1,3 @@
+// The namespace target module authors its OWN `Box { a }`. A qualified `a.Box`
+// type annotation in the importer must bind THIS type, not a stub named "a.Box".
+Box :: struct { a: i32; }

@@ -1,0 +1,28 @@
+#import "modules/std.sx";
+
+Overlay :: union {
+    f: f32;
+    i: i32;
+}
+
+Vec2 :: union {
+    data: [2]f32;
+    struct { x, y: f32; };
+}
+
+main :: () {
+    // Basic union: type punning
+    o :Overlay = ---;
+    o.f = 3.14;
+    print("f={}\n", o.f);
+    print("i={}\n", o.i);
+
+    // Union with anonymous struct: member promotion
+    v :Vec2 = ---;
+    v.x = 1.0;
+    v.y = 2.0;
+    print("x={}\n", v.x);
+    print("y={}\n", v.y);
+    print("data[0]={}\n", v.data[0]);
+    print("data[1]={}\n", v.data[1]);
+}

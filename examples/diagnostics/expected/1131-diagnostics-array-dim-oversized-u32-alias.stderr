@@ -1,0 +1,5 @@
+error: array dimension 5000000000 does not fit in u32
+  --> examples/diagnostics/1131-diagnostics-array-dim-oversized-u32-alias.sx:18:9
+   |
+18 | Big :: [5000000000]i64;
+   |         ^^^^^^^^^^

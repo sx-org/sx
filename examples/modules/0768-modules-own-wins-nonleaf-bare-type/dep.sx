@@ -1,0 +1,8 @@
+// A flat-imported module authors its OWN `Widget { a, b }` (16 bytes) and
+// `Nums :: [2]i32` (8 bytes). The importing file (`main`) ALSO authors a
+// same-name `Widget { a }` (8 bytes) and `Nums :: [2]i64` (16 bytes) — its own
+// authors must win at EVERY bare-type site there (own-wins, 0754), while this
+// module's distinct types stay live via `dep_sizes`.
+Widget :: struct { a: i64; b: i64; }
+Nums :: [2]i32;
+dep_sizes :: () -> i64 { return size_of(Widget) + size_of(Nums); }

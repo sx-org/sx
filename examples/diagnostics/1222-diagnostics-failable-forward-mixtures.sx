@@ -1,0 +1,54 @@
+// Rejected failable-forward mixtures (`return callee(...)`), pinned per
+// specs.md "Forwarding a failable result":
+//   1. PURE callee → VALUE-CARRYING caller: 0 value slots where 1 required
+//      (the raw tag must not land in the value slot);
+//   2. VALUE-CARRYING callee → PURE caller: 1 value slot where 0 required
+//      (the old coerce path silently truncated the tuple — the VALUE bits
+//      became the error tag);
+//   3. pure bare-`!` callee → NAMED-set caller: the callee's inferred error
+//      set is not statically known at the forward site, so it cannot be
+//      proven ⊆ the named set — destructure and re-raise instead.
+// Regression (issue 0205 fold-in + issue 0227).
+
+#import "modules/std.sx";
+
+MyErr :: error { Boom }
+
+pure_cal :: (x: i64) -> !MyErr {
+    if x < 0 { raise error.Boom; }
+}
+
+val_cal :: (x: i64) -> (i64, !MyErr) {
+    if x < 0 { raise error.Boom; }
+    return x;
+}
+
+bare_cal :: (x: i64) -> ! {
+    if x < 0 { raise error.Odd; }
+}
+
+// (1) pure → value-carrying: rejected (0 value slots vs 1)
+f1 :: (x: i64) -> (i64, !) {
+    return pure_cal(x);
+}
+
+// (2) value-carrying → pure: rejected (1 value slot vs 0)
+f2 :: (x: i64) -> ! {
+    if x > 100 { raise error.Big; }
+    return val_cal(x);
+}
+
+// (3) bare `!` → named set: rejected (inferred set unknown here)
+f3 :: (x: i64) -> !MyErr {
+    return bare_cal(x);
+}
+
+main :: () -> i32 {
+    v, e := f1(1);
+    if e { return 1; }
+    e2 := f2(1);
+    if e2 { return 2; }
+    e3 := f3(1);
+    if e3 { return 3; }
+    return xx v;
+}

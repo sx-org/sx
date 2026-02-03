@@ -1,0 +1,6 @@
+struct n=3 f1=b@8
+enum n=3 v2=blue
+union n=2
+int 16sig=true
+array [4]f32
+string

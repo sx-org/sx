@@ -1,0 +1,8 @@
+// Companion module for 0847: an enum + a payloadless-variant tagged union,
+// both read module-qualified (`lib.Mode.on`) as a generic-fn argument.
+Mode :: enum { on; off; }
+
+Event :: enum {
+    none;
+    click: struct { x: i64; y: i64; };
+}

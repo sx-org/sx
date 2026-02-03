@@ -1,0 +1,7 @@
+scalar a0=7 a3=42
+string i0=hi i1=yo
+struct p0x=1 p0y=2 p2x=5
+alias a0=11 a3=99
+alias i0=al i2=ok
+nested g00=1 g32=8
+union u0=70 u3=7

@@ -1,0 +1,47 @@
+#import "modules/std.sx";
+#import "modules/std/process.sx";
+
+// process.sx smoke test: run + env + find_executable, with
+// success-path and failure-path coverage.
+//
+// The PATH-startswith check is stable across machines (PATH always
+// begins with an absolute path); `ls` is guaranteed in /bin on every
+// POSIX host this targets.
+
+main :: () {
+    if r := run("echo hello world") {
+        print("exit={}, stdout={}", r.exit_code, r.stdout);
+    } else {
+        print("FAIL run echo\n");
+        return;
+    }
+
+    if r := run("false") {
+        if r.exit_code == 0 { print("FAIL: false should not exit 0\n"); return; }
+        print("false exit={}\n", r.exit_code);
+    }
+
+    if n := env("SX_DEFINITELY_UNSET_VAR") {
+        print("FAIL: unset var returned: {}\n", n);
+        return;
+    }
+    print("unset var: null (ok)\n");
+
+    if w := find_executable("ls") {
+        // /bin/ls on macOS, /usr/bin/ls on Linux. Either is fine —
+        // we only assert the result is non-empty and absolute.
+        if w.len < 2 { print("FAIL: ls path too short\n"); return; }
+        if w[0] != 47 { print("FAIL: ls path not absolute\n"); return; }
+        print("ls is absolute (ok)\n");
+    } else {
+        print("FAIL find ls\n"); return;
+    }
+
+    if w := find_executable("sx_definitely_no_such_command_12345") {
+        print("FAIL: bogus exec returned: {}\n", w);
+        return;
+    }
+    print("missing exec: null (ok)\n");
+
+    print("ok\n");
+}

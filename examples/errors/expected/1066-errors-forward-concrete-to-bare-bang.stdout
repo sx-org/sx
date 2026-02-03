@@ -1,0 +1,11 @@
+fwd(5) = 5
+fwd(-1) raises Boom
+caught Boom
+catch fallback = -7
+fwd_same(6) = 6
+fwd_wide(7) = 7, fwd_wide(-1) raises Boom
+fwd2(10) = 10, 11
+fwd_pure ok
+pure same/wide ok
+pair = 0, Boom-as-value
+try = 5, or = 90

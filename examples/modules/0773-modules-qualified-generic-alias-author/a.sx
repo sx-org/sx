@@ -1,0 +1,2 @@
+// Author A's generic `Box` — one i64 field (size 8).
+Box :: struct($T: Type) { x: T; }

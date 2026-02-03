@@ -1,0 +1,22 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+Point :: struct { x, y: i32; }
+
+main :: () {
+
+    // ========================================================
+    // 22. IF-EXPRESSION RETURNING STRUCT
+    // ========================================================
+    print("=== 22. If-Struct ===\n");
+    {
+        flag := true;
+        p := if flag { Point.{10, 20} } else { Point.{30, 40} };
+        print("if-struct: {} {}\n", p.x, p.y);
+        q := if !flag { Point.{10, 20} } else { Point.{30, 40} };
+        print("else-struct: {} {}\n", q.x, q.y);
+    }
+}

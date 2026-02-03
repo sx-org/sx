@@ -1,0 +1,50 @@
+// Protocol value as a field of a wrapper struct, constructed from a stack
+// local inside a function and appended to a `List`. The payload must be
+// heap-copied so dispatch survives the constructing function returning —
+// under the ownership model the copy is EXPLICIT: `p.(Sizable)` owns
+// (an implicit `view = p` is the demand error, pinned in 1256).
+
+#import "modules/std.sx";
+
+Sizable :: protocol {
+    size :: (self: *Self) -> i64;
+}
+
+Widget :: struct { value: i64; }
+impl Sizable for Widget {
+    size :: (self: *Widget) -> i64 { self.value }
+}
+
+// Wrapper struct with a protocol field (like ViewChild)
+Item :: struct {
+    view: Sizable;
+}
+
+Container :: struct {
+    items: List(Item);
+
+    add :: (self: *Container, w: Widget) {
+        p := w;  // local copy
+        self.items.append(Item.{ view = p.(Sizable) });  // explicit owning copy
+
+        // Works here: stack local `p` is still alive
+        out("inside add: ");
+        print("{}\n", self.items.items[self.items.len - 1].view.size());
+    }
+}
+
+main :: () -> void {
+    c : Container = .{};
+    c.add(Widget.{ value = 42 });
+    c.add(Widget.{ value = 99 });
+
+    // BUG: items[0] should return 42, but returns 99 (reads items[1]'s stack slot)
+    // Both protocol values point to the same stack address (the `p` local in add())
+    r0 := c.items.items[0].view.size();
+    r1 := c.items.items[1].view.size();
+    print("items[0] = {} (expected 42)\n", r0);
+    print("items[1] = {} (expected 99)\n", r1);
+
+    // With more stack activity between add() and the reads, this crashes
+    // (stack memory overwritten by other function calls)
+}

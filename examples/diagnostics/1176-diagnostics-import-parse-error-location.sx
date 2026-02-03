@@ -1,0 +1,13 @@
+// A parse error in an IMPORTED file must be located in THAT file, not the
+// importer. Regression: `import_sources` was wired to the diagnostics only
+// AFTER import resolution finished, so a parse error raised MID-resolution
+// (which aborts before that wiring) could not resolve the imported file's
+// source — the caret fell back to the root file and landed on an unrelated
+// line. The fix wires `import_sources` before resolving and pins the
+// diagnostic's `source_file` + offset to the imported file.
+//
+// The companion's error sits several lines down (after comments) so a caret
+// mislocated against THIS importer would be unmistakable.
+#import "1176-diagnostics-import-parse-error-location/broken.sx";
+
+main :: () {}

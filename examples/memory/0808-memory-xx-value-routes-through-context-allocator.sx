@@ -1,0 +1,53 @@
+// Phase 1.1 — the compiler-internal heap-copy that backs `xx <rvalue>`
+// protocol erasure must dispatch through `context.allocator`, not call
+// libc malloc directly. So when a `push .{ allocator = tracer }`
+// block is active, a `xx StructLiteral.{}` inside it MUST be allocated
+// by the tracker.
+//
+// Note: `xx` only heap-copies for RVALUES (struct literals, call results).
+// `xx <lvalue>` (an identifier, field access, index, or deref) borrows
+// the operand's storage, so it never allocates and never reaches this
+// path. See specs.md §3 — Protocol value ownership and lifetime.
+#import "modules/std.sx";
+#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+
+Tracer :: struct {
+    count: i64;
+
+    init :: () -> *Tracer {
+        t : *Tracer = xx c.libc_malloc(size_of(Tracer));
+        t.count = 0;
+        t
+    }
+}
+
+impl Allocator for Tracer {
+    alloc_bytes :: (self: *Tracer, size: i64) -> *void {
+        self.count += 1;
+        return c.libc_malloc(size);
+    }
+    dealloc_bytes :: (self: *Tracer, ptr: *void) {
+        c.libc_free(ptr);
+    }
+}
+
+// The rvalue erasure target must be a VALUE/OWN protocol — `Allocator`
+// itself is `#identity` (borrow-only; rvalue erasure to it refuses,
+// pinned in diagnostics/1255), and erasure is impl-driven (issue 0176),
+// so a small owning protocol impl'd by Tracer stands in.
+Boxed :: protocol { count_of :: (self: *Self) -> i64; }
+impl Boxed for Tracer {
+    count_of :: (self: *Tracer) -> i64 { self.count }
+}
+
+main :: () -> i32 {
+    tracer := Tracer.init();
+    push .{ allocator = tracer } {
+        // Struct-literal operand: rvalue → heap-copy through
+        // context.allocator — i.e. through the pushed tracer.
+        ignore : Boxed = xx Tracer.{ count = 0 };
+        _ = ignore;
+    }
+    print("Tracer.count = {}\n", tracer.count);
+    0
+}

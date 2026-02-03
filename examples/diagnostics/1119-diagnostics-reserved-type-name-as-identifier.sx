@@ -1,0 +1,16 @@
+// A value binding (parameter or local `var`) spelled as a reserved/builtin
+// type name is rejected at the declaration site, across every declaration
+// form: a parameter name (`u8`), a typed local (`i64`, `bool`), and a `:=`
+// local (`string`). Such a spelling parses as a `.type_expr` rather than an
+// `.identifier`, so the address-of family in lowering mis-lowers it (issue
+// 0076). Expected: one error per offending name; exit 1.
+#import "modules/std.sx";
+
+takes_u8 :: (u8: i32) -> i32 { return u8; }
+
+main :: () -> i32 {
+    i64 : i32 = 3;
+    bool : bool = true;
+    string := "x";
+    return 0;
+}

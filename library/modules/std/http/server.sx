@@ -1,0 +1,3981 @@
+// std.http — the event-loop HTTP server.
+//
+// Config/Server + the connection state machine, pool dispatch, response
+// serialization, streaming, timeouts, observability. Drives the transport
+// seam (tls.sx) and reuses the shared types (types.sx), both flat-imported
+// so the server bodies read unqualified. Facade re-exports Server/Config/
+// Stats/EventKind under `http`.
+#import "modules/std/core.sx";         // out, size_of, Allocator, Context
+#import "modules/std/mem.sx";          // Arena
+clib   :: #import "modules/std/c.sx";  // namespace `clib` (not `c` — `c` is a local conn var throughout)
+socket :: #import "modules/std/socket.sx";
+thread :: #import "modules/std/thread.sx";
+event  :: #import "modules/std/event.sx";
+time   :: #import "modules/std/time.sx";
+#import "modules/std/http/types.sx";   // Request, Response, find_header, decode_chunked, reason_for, …
+#import "modules/std/http/tls.sx";     // TlsConn, TlsAcceptor, TlsStep
+#import "modules/std/http/fiber.sx";   // FiberRunner (Q3.3 fiber-handler seam)
+fs :: #import "modules/std/fs.sx";     // Q3.5: unlink for the AF_UNIX listener's socket file
+
+libc :: clib.libc;
+// Q0.6: run()'s backoff between consecutive loop failures (never on the
+// serving fast path — only after tick() itself has already failed).
+usleep :: (usec: i64) -> i32 extern libc;
+// (Q2.4's overlap-safe memmove is clib.memmove — the shared libc surface.)
+
+HttpErr :: error {
+    Bind,    // socket/bind/listen failed for the configured address, or
+             // bind_addr / unix_path was unusable (Q3.5)
+    Loop,    // the readiness loop could not be created or waited on
+    Config,  // invalid Config combination (Q3.1: stream_request_body
+             // requires pool mode; Q3.5: unix_path with bind_addr or
+             // reuse_port — see each field's doc)
+}
+
+// Q3.5: unlink an AF_UNIX listener's socket file (init's stale-file removal
+// and the close()/stop() teardown). Stack-NUL-copies the path for the
+// syscall; sun_path bounds the length, so an over-long path is a no-op
+// (init already rejected it).
+unlink_path :: (path: string) {
+    if path.len == 0 or path.len > 110 { return; }
+    pb : [112]u8 = ---;
+    clib.memcpy(@pb[0], path.ptr, xx path.len);
+    pb[path.len] = 0;
+    p : string = .{ ptr = @pb[0], len = path.len };
+    fs.delete_file(xx p);
+}
+
+// Q3.5-review LOW-4: tear down a bound-but-unusable listener on an init
+// error path — a failed construction never reaches close()/stop(), so the
+// AF_UNIX socket file the bind just created must be removed HERE.
+close_listener :: (lfd: i32, unix_path: string) {
+    socket.close(lfd);
+    if unix_path.len > 0 { unlink_path(unix_path); }
+}
+
+// H4 observability: the kind of event handed to Config.on_event. The hook
+// is the user's escape hatch to LOG/COUNT faults that otherwise close a
+// connection silently — the server forces no format. `detail` carries the
+// HTTP status (PARSE_ERROR), an errno-ish code, or 0 (see each call site).
+EventKind :: enum {
+    ACCEPT;         // a connection was accepted (slot = the new slot)
+    CLOSE;          // a connection slot was closed/recycled
+    ACCEPT_FAULT;   // accept() faulted, or a slot/nonblock setup failed → fd dropped
+    READ_FAULT;     // a read faulted (peer reset / closed mid-request) → silent close
+    WRITE_FAULT;    // a write faulted, or arming the write watch failed → silent close
+    PARSE_ERROR;    // a request was rejected; detail = the HTTP status (400/413/431/501)
+    TIMEOUT;        // a connection was evicted at its delivery/keepalive deadline
+    REJECTED_503;   // backpressure: the pool backlog was full → 503 shed
+    LISTEN_ERROR;   // the readiness loop itself failed (tick/wait error);
+                    // detail = the CONSECUTIVE failure count. At
+                    // LOOP_FAULT_LIMIT consecutive failures run() gives up
+                    // and returns (see run).
+    HANDLER_TIMEOUT;// (H5, pool mode) a CONN_HANDLING request overran
+                    // handler_timeout_ms: the loop sent 504 + closed the
+                    // slot; the worker's late completion will be discarded.
+    TLS_HANDSHAKE_FAULT;// (T3) a TLS handshake failed or the peer dropped
+                    // mid-handshake → the slot is closed; never served plaintext.
+}
+
+// H4 metrics snapshot. All fields are plain i64 counters that ONLY the
+// loop thread mutates (see the note on Server's stat fields) — Server.stats
+// copies them out, no lock needed. Cumulative totals except active_conns
+// and pool_queue_depth, which are live gauges.
+Stats :: struct {
+    active_conns: i64 = 0;     // connections currently occupying a slot (gauge)
+    accepted_total: i64 = 0;   // connections accepted since init
+    closed_total: i64 = 0;     // connection slots closed since init
+    requests_served: i64 = 0;  // requests whose response began sending
+    errors_4xx: i64 = 0;       // parser/client errors (400/413/431)
+    errors_5xx: i64 = 0;       // server errors (500/501/503)
+    timeouts: i64 = 0;         // deadline evictions
+    rejected_503: i64 = 0;     // 503 backpressure sheds (subset of errors_5xx)
+    pool_queue_depth: i64 = 0; // pending pool completions awaiting drain (gauge)
+    bytes_in: i64 = 0;         // request bytes consumed off the wire
+    bytes_out: i64 = 0;        // response bytes written to the wire
+}
+
+
+// httpz-mirroring knobs (single-worker subset).
+Config :: struct {
+    port: i64 = 8080;
+    backlog: i32 = 128;
+    max_conn: i64 = 256;             // workers.max_conn
+    // MAXIMUM bytes one request (headers + body) may occupy. The
+    // per-connection buffer starts at READ_BUF_INITIAL and grows on
+    // demand toward this limit (a declared Content-Length sizes it in
+    // one step); a grown buffer is retained for slot reuse.
+    read_buf_cap: i64 = 1048576;
+    // S2 — MAXIMUM decoded request-body size (bytes). Enforced EARLY: a
+    // declared Content-Length over this → 413 before any body is buffered;
+    // a chunked body whose accumulated decoded length crosses this → 413 as
+    // soon as a chunk-size header pushes the running total over (the data
+    // bytes for that chunk are never read into the slot). Defaults to
+    // read_buf_cap so it is always ≤ the buffer the raw request must fit in;
+    // set it smaller to reject big bodies without growing the read buffer.
+    // 0 means "use read_buf_cap" (the buffer cap is the hard ceiling either
+    // way — the raw request, framing included, can never exceed read_buf_cap).
+    max_body: i64 = 0;
+    timeout_request_ms: i64 = 5000;  // deliver a full request, or evicted
+    timeout_keepalive_ms: i64 = 5000;// idle between requests, or evicted
+    request_count: i64 = 100;        // requests per connection, then close
+    // Handler dispatch. 0 (default) runs handlers INLINE on the loop
+    // thread — measured ~1.7x faster than pool(4) for a trivial handler
+    // (bench/BENCH-HTTPZ.md, 2026-07-02: one hand-off + completion
+    // drain saved per request).
+    // N > 0 dispatches each parsed request to a thread pool of N
+    // workers (slow handlers stop stalling the loop, httpz's shape);
+    // requires the Server's constructing allocator to be THREAD-SAFE
+    // (GPA/malloc — never an Arena).
+    thread_pool_count: i64 = 0;
+    thread_pool_backlog: i64 = 500;  // queued jobs beyond running ones; full = 503 shed
+    // H5 per-request handler deadline (ms; 0 = disabled). Bounds the time a
+    // request may spend in CONN_HANDLING so one slow/hung handler can't
+    // permanently consume capacity. ENFORCEMENT DIFFERS BY MODE:
+    //   • POOL MODE (thread_pool_count > 0): the handler runs on a WORKER, so
+    //     the LOOP thread enforces a HARD timeout — a connection past its
+    //     handler-deadline gets a 504, is closed/freed, and its slot gen is
+    //     bumped so the worker's eventual (late) completion is discarded. The
+    //     server stays responsive; the one stuck worker is lost capacity
+    //     (there is NO pthread_cancel — cancelling a thread mid-sx-allocation
+    //     is unsafe — so the worker runs to completion, then its result is
+    //     dropped). This is the real, testable guarantee.
+    //   • INLINE MODE (thread_pool_count == 0): the handler runs ON the loop
+    //     thread and CANNOT be preempted without signals. A hung inline
+    //     handler hangs the WHOLE server — there is NO hard timeout. The
+    //     deadline is exposed to the handler (Request.deadline_ms) so a
+    //     COOPERATIVE handler can self-limit; that is the only enforcement.
+    //     Untrusted or slow handlers MUST use pool mode.
+    handler_timeout_ms: i64 = 30000;
+    // Header-block bounds (request-smuggling / resource-exhaustion guard):
+    // too many header lines, or any single line too long, → 431.
+    max_headers: i64 = 100;          // max header lines in one request
+    max_header_line: i64 = 8192;     // max bytes in a single header line
+    // Q0.4 lingering close: when an ERROR response (400/413/431/501/503/504)
+    // finishes sending on a connection that is being closed, the client's
+    // remaining request bytes are often still unread in our receive queue —
+    // an immediate close() would make the kernel RST and DISCARD any unsent
+    // response bytes, so the client sees a reset instead of the error it is
+    // owed. Instead the server shutdown(SHUT_WR)s (FIN after the response),
+    // then reads and DISCARDS inbound bytes until EOF or this deadline, and
+    // only then closes. 0 restores the old abrupt close. Normal keep-alive
+    // closes don't linger (nothing is pending by protocol contract).
+    linger_timeout_ms: i64 = 1000;
+    // Graceful shutdown (Server.stop): after stop is requested the loop
+    // stops accepting, closes idle keep-alives, and drains in-flight
+    // requests until none remain OR this many ms elapse — then run()
+    // returns. A drain that overruns the deadline force-closes whatever
+    // is still in flight.
+    shutdown_timeout_ms: i64 = 5000;
+    // H4 observability hook (OPTIONAL — default null = silent, today's
+    // behavior, zero overhead beyond a null check). When non-null it is
+    // called from the LOOP thread at every fault / key lifecycle site that
+    // otherwise closes silently: (ctx, kind, slot, detail). `detail` is the
+    // HTTP status for PARSE_ERROR, otherwise an errno-ish code or 0. The
+    // signature mirrors the handler convention (fn-ptr + an opaque ctx word
+    // the user gives init via on_event_ctx). The user formats however they
+    // want; the server never allocates for this.
+    on_event: (ctx: usize, ev: EventKind, slot: i64, detail: i64) -> void = null;
+    on_event_ctx: usize = 0;
+    // TLS (Phase T): when set, every accepted connection is served over
+    // TLS via this acceptor (see TlsAcceptor). null = plaintext HTTP.
+    // Supplied by an opt-in provider module so non-TLS programs never
+    // compile the crypto. The acceptor's state must outlive the Server.
+    tls: ?TlsAcceptor = null;
+    // Q2.5: bind the listener with SO_REUSEPORT so SEVERAL Servers (each
+    // its own thread + event loop + slots + stats) can share one port —
+    // the kernel distributes incoming connections across the listeners
+    // (linux hashes the 4-tuple; darwin favors recent binders). This is
+    // the multi-loop scaling pattern: run N instances instead of making
+    // one loop multi-threaded. Opt-in: every sharing listener must set
+    // it, and a plain bind on a shared port still fails loudly.
+    // See docs/http-server.md "Scaling across cores".
+    reuse_port: bool = false;
+    // Q3.5: the listener's bind address — a NUMERIC literal ("127.0.0.1",
+    // "::", "::1"); "" (default) binds v4 INADDR_ANY. The family follows
+    // the literal (a v6 literal makes an AF_INET6 listener). A value that
+    // parses as neither family is error.Bind — never a fallback bind.
+    bind_addr: string = "";
+    // Q3.5: non-empty = an AF_UNIX listener on this path (`port`,
+    // `bind_addr` and `reuse_port` do not apply; combining with bind_addr
+    // or reuse_port is error.Config). THE PATH BELONGS TO THE SERVER —
+    // exclusively: whatever file is there is unlinked before bind (a
+    // regular file included — point this at nothing you value), and
+    // close()/stop() remove it. Corollary: two servers configured with
+    // the SAME path sabotage each other (the second init unlinks the
+    // first's live socket; either teardown unlinks the other's) — give
+    // each server its own path. The string's bytes must outlive the
+    // Server (teardown reads it).
+    unix_path: string = "";
+    // Q3.5: every AF_INET6 listener sets IPV6_V6ONLY explicitly from this
+    // — false (default) makes "::" deterministic dual-stack (v4 arrives
+    // as mapped addresses), true binds v6 only. Never the OS default.
+    ipv6_only: bool = false;
+    // Q1.5: value of the `Server:` response header; "" (default) sends
+    // none. The string's bytes must outlive the Server (a literal, or
+    // caller-owned storage) — pool workers read it while serializing.
+    // Emitted VERBATIM, like content_type/extra_headers: developer-owned
+    // config, so it must not contain CR/LF (that would inject headers).
+    server_name: string = "";
+    // Q3.1: dispatch every body-carrying request (Transfer-Encoding, or a
+    // Content-Length > 0) at HEADERS-COMPLETE and hand the handler an
+    // incremental reader (req.read_body: > 0 bytes / 0 end / -1 fault;
+    // req.body is "" then) instead of accumulating the decoded body first.
+    // POOL MODE ONLY — the reader BLOCKS the worker until the loop thread
+    // feeds more bytes; an inline handler runs ON the loop thread, which
+    // must stay free to do that feeding, so init raises error.Config when
+    // this is set with thread_pool_count == 0 (Q3.3's fiber mode will lift
+    // the restriction by yielding instead of blocking).
+    // STREAMED REQUESTS ARE EXEMPT FROM max_body — bodies larger than any
+    // buffer are the point; the reading handler is the bound (respond and
+    // return without draining to refuse one — the server then closes the
+    // connection). The delivery deadline (timeout_request_ms) becomes a
+    // STALL bound, refreshed on every piece of body progress; the handler
+    // deadline is armed once the body completes.
+    // Q3.3: fibers lift the pool-only restriction — a fiber's read_body
+    // SUSPENDS the fiber instead of blocking a worker.
+    stream_request_body: bool = false;
+    // Q3.3: run every handler as an M:1 FIBER on the loop thread (see the
+    // FiberRunner seam — the provider module fiber_sched.sx is an opt-in
+    // import, so non-fiber programs never compile the fiber runtime). A
+    // fiber handler may block-style req.read_body (the fiber suspends;
+    // the body pump wakes it) while everything stays single-threaded.
+    // COOPERATIVE: a compute-bound handler still stalls the whole server
+    // exactly like inline mode — there is NO preemption and NO hard
+    // handler timeout (H5 stays advisory); the win is I/O-shaped waiting.
+    // Mutually exclusive with thread_pool_count > 0 (error.Config). The
+    // runner's state must outlive the Server; its deinit is the caller's,
+    // after Server.close. Handlers must not call the scheduler's own
+    // sleep/fd-wait (the server drives fibers with a non-blocking poll).
+    // STACK: a fiber handler runs on the provider's bounded fiber stack
+    // (sched.sx: 128 KB, guard-paged — an overflow faults immediately,
+    // never corrupts a neighbor); keep large buffers on the heap or the
+    // per-request arena, not in handler locals. BACKPRESSURE: fiber mode
+    // has no 503 shed (there is no queue to fill — at most one fiber per
+    // occupied slot, bounded by max_conn; spawn failure is a loud abort).
+    // resp.stream producers keep the INLINE contract in fiber mode (the
+    // loop pulls them after the fiber is reaped — ctx must be
+    // caller-owned; the fiber's stack is gone by then).
+    fibers: ?FiberRunner = null;
+}
+
+READ_BUF_INITIAL :: 16384;
+
+// Q2.3-review: how large a persistent per-conn write buffer (Conn.wbuf)
+// may stay RETAINED once its connection closes. Unlike read_buf (bounded
+// by config.read_buf_cap), wbuf grows to the largest inline response the
+// slot ever served — one huge response must not pin that memory for the
+// server's lifetime. An over-cap wbuf is freed at conn_close; live
+// connections keep whatever they grew (a retention policy, not a size
+// limit).
+WBUF_RETAIN_CAP :: 65536;
+
+// Q0.6: consecutive tick()/wait() failures run() tolerates (with backoff +
+// LISTEN_ERROR emissions) before concluding the loop is dead and returning.
+LOOP_FAULT_LIMIT :: 5;
+
+// Q3.1: capacity of one streamed request's loop→worker body channel. The
+// loop parks the conn's read watch when it fills (backpressure); a bigger
+// buffer only smooths hand-offs, it never changes semantics.
+BODY_CHAN_CAP :: 65536;
+
+// S1: the bounded scratch a streamed/chunked response drains through.
+// Each refill pulls at most STREAM_PIECE bytes from the producer, frames
+// them as one chunk, and stages the framing in this buffer — so the
+// server NEVER holds the whole body, only one bounded piece + its framing.
+// STREAM_BUF_CAP leaves room for the largest chunk header (16 hex digits
+// + CRLF) + the piece + trailing CRLF.
+STREAM_PIECE :: 16384;
+STREAM_BUF_CAP :: STREAM_PIECE + 32;
+
+// Connection slot states.
+CONN_FREE      :u8: 0;
+CONN_READING   :u8: 1;   // awaiting a complete request (deadline: request)
+CONN_WRITING   :u8: 2;   // response partially sent (deadline: request)
+CONN_KEEPALIVE :u8: 3;   // between requests (deadline: keepalive)
+CONN_HANDLING  :u8: 4;   // request dispatched to the pool: the loop must
+                         // not read or serve the slot until the completion
+                         // lands (response ordering; the worker itself owns
+                         // a COPY of the request bytes — see HandlerJob)
+CONN_TLS_HANDSHAKE :u8: 5;// (T3) negotiating TLS before the first request:
+                         // readiness drives c.tls.handshake() incrementally
+                         // (deadline: request) until Done → CONN_READING
+CONN_LINGER    :u8: 6;   // (Q0.4) error response fully sent + SHUT_WR done:
+                         // reading + discarding inbound until EOF or the
+                         // linger deadline, then close. Owes nothing.
+CONN_BODY      :u8: 7;   // (Q3.1) headers dispatched to a pool worker, body
+                         // still STREAMING: the loop keeps reading, decodes
+                         // the framing incrementally and pushes the decoded
+                         // bytes into the conn's BodyChan. At end-of-body
+                         // the slot becomes CONN_HANDLING.
+
+// Q2.2: one deadline-heap entry (see Server.dheap). Entries are WAKE-UP
+// HINTS, not the source of truth: the sweep re-checks the conn's CURRENT
+// relevant deadline before evicting, so a stale entry (slot recycled,
+// deadline extended) costs one spurious pop — never a wrong eviction.
+DlEntry :: struct {
+    deadline: i64 = 0;
+    slot: i64 = 0;
+    gen: i64 = 0;
+}
+
+Conn :: struct {
+    fd: i32 = -1;
+    state: u8 = 0;
+    // Q2.2 O(1) slot recycling: singly-linked free list threaded through
+    // the slots (Server.free_head → next_free → … → -1). A slot is ON the
+    // list iff state == CONN_FREE.
+    next_free: i64 = -1;
+    // Q2.2: deadline value of this conn's live heap entry (0 = none).
+    // Kept so a deadline EXTENSION doesn't push a second entry — the live
+    // (earlier) entry re-arms itself from the current deadline when it
+    // pops. Bounds the heap at ~one entry per active conn.
+    hq_deadline: i64 = 0;
+    read_buf: [*]u8 = null;   // grows toward config.read_buf_cap, reused across connections
+    read_cap: i64 = 0;
+    read_len: i64 = 0;
+    out_buf: [*]u8 = null;    // the response bytes currently draining
+    out_len: i64 = 0;
+    out_sent: i64 = 0;
+    // Q2.3 out_buf ownership: true = out_buf is a per-response allocation
+    // (pool completion attach, stream scratch) freed when fully sent /
+    // on close; false = out_buf aliases this conn's persistent wbuf
+    // (inline serialization) and must NOT be freed per response.
+    out_owned: bool = true;
+    // Q2.3: persistent per-conn write buffer for inline serialization —
+    // grown on demand via own_alloc, reused across requests AND across
+    // connections on this slot (like read_buf), freed only by
+    // Server.close. Kills the alloc/free pair per inline response.
+    wbuf: [*]u8 = null;
+    wbuf_cap: i64 = 0;
+    // S1 streamed/chunked output. When `streaming` is set, out_buf is a
+    // BOUNDED scratch (STREAM_BUF_CAP) that holds the current chunk-framed
+    // piece; write_more drains it then refills by pulling the next piece
+    // from `producer` (resumable via stream_off). Memory stays bounded
+    // regardless of total body size.
+    streaming: bool = false;
+    producer: StreamProducer = null;
+    producer_ctx: usize = 0;
+    stream_off: i64 = 0;      // running bytes pulled from the producer
+    stream_done: bool = false;// the producer returned 0 (zero chunk queued)
+    // Q3.2 worker-fed stream (pool mode): non-null = stream_refill takes
+    // from this channel instead of calling `producer` (which stays the
+    // INLINE path). stream_waiting: the channel was empty mid-drain — the
+    // write watch is dropped and the worker's next feed wakes the loop.
+    ochan: *OutChan = null;
+    stream_waiting: bool = false;
+    deadline: i64 = 0;
+    // Q0.5 incremental parse progress for the request currently at the
+    // FRONT of read_buf. Reset whenever the front request is consumed
+    // (compaction) or the buffer is discarded — see reset_parse.
+    //   hdr_end  — cached index of the \r\n\r\n terminator (-1 = not seen);
+    //   scan_pos — bytes known to contain no terminator (scan resumes at
+    //              scan_pos - 3 so a straddling terminator is caught);
+    //   chunk_*  — resumable chunked-validation checkpoint (types.ChunkScan
+    //              shape) for the body after hdr_end. Valid iff chunk_active.
+    hdr_end: i64 = -1;
+    scan_pos: i64 = 0;
+    chunk_active: bool = false;
+    chunk_rp: i64 = 0;
+    chunk_decoded: i64 = 0;
+    // Q1.3: the interim "100 Continue" for the request at the FRONT of
+    // read_buf has been sent — at most one per request, however many
+    // need-more read cycles its body takes. Reset with the parse state.
+    cont_sent: bool = false;
+    // Q1.4: the request dispatched to the pool was a HEAD. The handler
+    // timeout sweep needs it — its 504 must suppress the body like any
+    // other HEAD response (the worker's own serialization is discarded).
+    head_req: bool = false;
+    // Q0.4: this close is an ERROR close — once the response drains, linger
+    // (shutdown write side + drain-and-discard) instead of an abrupt close,
+    // so the error bytes survive the kernel's close-with-unread-data RST.
+    linger_close: bool = false;
+    // H5: monotonic deadline for a handler running in the pool. Set when the
+    // slot enters CONN_HANDLING (job submitted); checked by the tick sweep
+    // (which otherwise skips CONN_HANDLING for the delivery deadline). 0 =
+    // no handler timeout (handler_timeout_ms disabled or inline mode).
+    handler_deadline: i64 = 0;
+    // Q3.1 streaming request body (CONN_BODY): the loop→worker channel plus
+    // the incremental framing decoder's state. body_mode: 0 = none, 1 =
+    // Content-Length countdown (body_remaining = bytes still owed), 2 =
+    // chunked (bch_state: 0 = size line, 1 = chunk data with body_remaining
+    // counting the chunk's bytes left, 2 = the CRLF after a chunk's data,
+    // 3 = trailer block with body_remaining counting trailer LINES).
+    // body_parked: the read watch is parked on a full channel, awaiting the
+    // draining worker's wake (resume_body_pumps).
+    bchan: *BodyChan = null;
+    body_mode: u8 = 0;
+    body_remaining: i64 = 0;
+    bch_state: u8 = 0;
+    body_parked: bool = false;
+    // Q3.3 fiber mode: the live fiber's opaque handle (0 = none). The body
+    // pump / eof / abort / conn_close WAKE it; the fiber tail marks
+    // fiber_done (+ fiber_early when it responded over an unfinished body)
+    // and finalize_fibers attaches the response after the drive.
+    fiber_h: usize = 0;
+    fiber_done: bool = false;
+    fiber_early: bool = false;
+    served: i64 = 0;
+    close_after: bool = false;
+    write_armed: bool = false;
+    gen: i64 = 0;   // bumped on close; a stale pool completion is dropped
+    // TLS (Phase T): per-connection TLS session from cfg.tls.accept
+    // (null = plaintext). Drives the transport seam (conn_read/conn_write);
+    // closed + freed via its own TlsConn.close in conn_close.
+    tls: ?TlsConn = null;
+    // Q3.4 DATA-phase cross-direction TLS wants — which OPPOSITE readiness
+    // the last would-blocked TLS op needs (renegotiation / ticket-flush
+    // shaped flows; always false for plaintext):
+    //   tls_rd_want_write — the pending READ needs WRITABILITY: conn_read
+    //     armed the write watch; the ready loop routes the writable back
+    //     into the read path (read_more / body_ready).
+    //   tls_wr_want_read  — the pending WRITE needs READABILITY: the write
+    //     watch is NOT armed (a level-triggered writable would spin futile
+    //     retries); the always-armed read watch delivers the retry, routed
+    //     to write_more.
+    tls_rd_want_write: bool = false;
+    tls_wr_want_read: bool = false;
+
+    // Q0.5: forget the incremental parse progress. Call whenever the
+    // request at the front of read_buf is consumed (compaction slides the
+    // next pipelined request to offset 0) or the buffered bytes are
+    // discarded — stale offsets against new front bytes would corrupt the
+    // parse.
+    reset_parse :: (self: *Conn) {
+        self.hdr_end = -1;
+        self.scan_pos = 0;
+        self.chunk_active = false;
+        self.chunk_rp = 0;
+        self.chunk_decoded = 0;
+        self.cont_sent = false;
+    }
+}
+
+// ── Q3.1: the loop→worker body channel ───────────────────────────────
+// One per STREAMED request (Config.stream_request_body): the loop thread
+// decodes body framing as it arrives and pushes the decoded bytes here;
+// the worker's req.read_body pulls, BLOCKING on the cond until bytes are
+// buffered, the body ends (eof) or the connection faults. Bounded: when
+// the buffer fills, feed() reports the shortfall AND marks `stalled` in
+// the same critical section — the loop then PARKS the conn's read watch
+// (Conn.body_parked) and the next worker read that finds `stalled` set
+// wakes the loop to resume. Heap-resident (own_alloc): the conn and the
+// job each hold a reference; the LAST release destroys the primitives and
+// frees the buffer + the struct.
+BodyChan :: struct {
+    mu: thread.Mutex = .{};
+    cv: thread.Cond = .{};
+    buf: [*]u8 = null;
+    cap: i64 = 0;
+    len: i64 = 0;
+    eof: bool = false;      // all body bytes pushed (loop side)
+    fault: bool = false;    // conn faulted / evicted / bad framing (loop side)
+    stalled: bool = false;  // a push fell short — the loop parked the watch
+    drained: bool = false;  // the READER saw end-of-body (read returned 0)
+    refs: i64 = 2;          // conn + job
+    alloc: Allocator;       // own_alloc: frees buf + self on the last release
+    // Loop copy for the worker→loop wake. Captured at dispatch, which runs
+    // strictly after init's unconditional add_wake — so wake_fd is live in
+    // the copy (the PoolState.loop_copy timing rule).
+    lp: event.Loop = .{};
+
+    // Worker side (the BodyReadFn): block until ≥ 1 byte, end, or fault.
+    // Bytes buffered BEFORE a fault are still delivered — the fault only
+    // surfaces once the buffer is dry. Wakes the loop when it drains a
+    // stalled channel.
+    read :: (self: *BodyChan, dst: [*]u8, want: i64) -> i64 {
+        if want <= 0 { return 0; }
+        self.mu.lock();
+        while self.len == 0 and !self.eof and !self.fault {
+            self.cv.wait(@self.mu);
+        }
+        if self.len == 0 {
+            fa := self.fault;
+            if !fa { self.drained = true; }
+            self.mu.unlock();
+            if fa { return -1; }
+            return 0;
+        }
+        n := if want < self.len then want else self.len;
+        clib.memcpy(dst, self.buf, xx n);
+        rest := self.len - n;
+        if rest > 0 { clib.memmove(xx self.buf, xx @self.buf[n], rest); }
+        self.len = rest;
+        wake := self.stalled;
+        if wake { self.stalled = false; }
+        self.mu.unlock();
+        if wake { self.lp.wake(); }
+        return n;
+    }
+
+    // Loop side: push up to `n` decoded bytes; returns how many fit. A
+    // shortfall marks `stalled` in the SAME critical section (marking it
+    // after unlock would race a worker that drains and checks between the
+    // two — the wake would be lost and the parked conn would stall until
+    // its deadline).
+    feed :: (self: *BodyChan, src: [*]u8, n: i64) -> i64 {
+        self.mu.lock();
+        space := self.cap - self.len;
+        take := if n < space then n else space;
+        if take > 0 {
+            clib.memcpy(@self.buf[self.len], src, xx take);
+            self.len += take;
+            self.cv.signal();
+        }
+        if take < n { self.stalled = true; }
+        self.mu.unlock();
+        return take;
+    }
+
+    // Loop side: mark end-of-body (fault = false) or a connection fault
+    // (fault = true) and wake a blocked reader. Idempotent.
+    finish :: (self: *BodyChan, fault: bool) {
+        self.mu.lock();
+        if fault { self.fault = true; }
+        else { self.eof = true; }
+        self.cv.broadcast();
+        self.mu.unlock();
+    }
+
+    // Worker side, post-handler: did the reader consume to end-of-body?
+    // A response over an UNDRAINED body can never keep the connection
+    // (the wire still carries request bytes) — the worker serializes
+    // Connection: close then.
+    was_drained :: (self: *BodyChan) -> bool {
+        self.mu.lock();
+        d := self.drained;
+        self.mu.unlock();
+        return d;
+    }
+
+    // Drop one reference (conn or job side); the last one destroys the
+    // primitives and frees the buffer + the struct itself.
+    release :: (self: *BodyChan) {
+        self.mu.lock();
+        self.refs -= 1;
+        last := self.refs == 0;
+        self.mu.unlock();
+        if last {
+            self.mu.destroy();
+            self.cv.destroy();
+            a := self.alloc;
+            if self.buf != null { a.dealloc_bytes(xx self.buf); }
+            a.dealloc_bytes(xx self);
+        }
+    }
+}
+
+// The BodyReadFn the server wires into a streamed request's Request
+// (body_read_ctx = the *BodyChan).
+body_chan_read :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
+    ch : *BodyChan = xx ctx;
+    return ch.read(dst, cap);
+}
+
+// ── Q3.2: the worker→loop response-stream channel ────────────────────
+// BodyChan's reverse twin, one per pool-mode STREAMED response: the WORKER
+// that ran the handler keeps pulling the producer (inside the job's push
+// scope — request views and the per-request arena stay alive, which
+// retires the Q0.1-era caller-owned-ctx UAF class) and feeds the bytes
+// here; the loop takes them nonblocking into the chunk-framing scratch.
+// Backpressure both ways: a full buffer BLOCKS the feeder on the cond; an
+// empty one marks `hungry` so the next feed wakes the loop
+// (resume_stream_pumps). Refcount 2 = conn (from completion attach) +
+// worker; the last release frees. While a worker is pumping, the chan is
+// registered in PoolState.ochans so Server.close can abort every feeder
+// BEFORE joining the pool (a blocked feeder would deadlock the join).
+OUT_CHAN_CAP :: 65536;
+
+OutChan :: struct {
+    mu: thread.Mutex = .{};
+    cv: thread.Cond = .{};
+    buf: [*]u8 = null;
+    cap: i64 = 0;
+    len: i64 = 0;
+    eof: bool = false;      // producer finished (worker side)
+    fault: bool = false;    // conn died / server closing — feeder aborts
+    hungry: bool = false;   // loop found it empty; the next feed wakes lp
+    refs: i64 = 2;          // conn + worker
+    alloc: Allocator;       // own_alloc: frees buf + self on the last release
+    lp: event.Loop = .{};   // loop copy for the worker→loop wake
+
+    // Worker side: block until ALL n bytes are accepted or the conn
+    // faults. False = aborted (stop producing; the loop already closed).
+    feed_all :: (self: *OutChan, src: [*]u8, n: i64) -> bool {
+        off : i64 = 0;
+        while off < n {
+            self.mu.lock();
+            while self.cap - self.len == 0 and !self.fault {
+                self.cv.wait(@self.mu);
+            }
+            if self.fault { self.mu.unlock(); return false; }
+            space := self.cap - self.len;
+            rem := n - off;
+            take := if rem < space then rem else space;
+            clib.memcpy(@self.buf[self.len], @src[off], xx take);
+            self.len += take;
+            off += take;
+            w := self.hungry;
+            if w { self.hungry = false; }
+            self.mu.unlock();
+            if w { self.lp.wake(); }
+        }
+        return true;
+    }
+
+    // Worker side: the producer returned 0 (or the feed aborted) — no more
+    // bytes are coming. The loop's next take stages the terminator chunk.
+    finish_eof :: (self: *OutChan) {
+        self.mu.lock();
+        self.eof = true;
+        w := self.hungry;
+        if w { self.hungry = false; }
+        self.mu.unlock();
+        if w { self.lp.wake(); }
+    }
+
+    // Loop side, NONBLOCKING: (bytes, end). (0, false) = empty but the
+    // producer is still running — `hungry` is marked in the same critical
+    // section, so the worker's next feed wakes the loop (no lost wake).
+    // (0, true) = drained to end-of-stream (stage the terminator).
+    take :: (self: *OutChan, dst: [*]u8, want: i64) -> (i64, bool) {
+        self.mu.lock();
+        n := if want < self.len then want else self.len;
+        if n > 0 {
+            clib.memcpy(dst, self.buf, xx n);
+            rest := self.len - n;
+            if rest > 0 { clib.memmove(xx self.buf, xx @self.buf[n], rest); }
+            self.len = rest;
+            self.cv.signal();   // space freed — unblock the feeder
+        }
+        e := self.eof and self.len == 0 and n == 0;
+        if n == 0 and !e { self.hungry = true; }
+        self.mu.unlock();
+        return .{n, e};
+    }
+
+    // Loop side (or Server.close): the connection is gone — wake and stop
+    // a blocked feeder. Idempotent.
+    abort :: (self: *OutChan) {
+        self.mu.lock();
+        self.fault = true;
+        self.cv.broadcast();
+        self.mu.unlock();
+    }
+
+    // Drop one reference (conn or worker side); the last one destroys the
+    // primitives and frees the buffer + the struct itself.
+    release :: (self: *OutChan) {
+        self.mu.lock();
+        self.refs -= 1;
+        last := self.refs == 0;
+        self.mu.unlock();
+        if last {
+            self.mu.destroy();
+            self.cv.destroy();
+            a := self.alloc;
+            if self.buf != null { a.dealloc_bytes(xx self.buf); }
+            a.dealloc_bytes(xx self);
+        }
+    }
+}
+
+// The listener's udata; connection udata is the slot index.
+LISTENER_UDATA :usize: 0xFFFFFFFF;
+// The pool wake channel's udata.
+WAKE_UDATA :usize: 0xFFFFFFFE;
+
+// Serialized response bytes (shared by the inline and pooled paths).
+OutBytes :: struct {
+    buf: [*]u8 = null;
+    len: i64 = 0;
+}
+
+// Q1.5: storage for one cached IMF-fixdate (29 bytes used; struct-wrapped
+// so it can carry a `.{}` field default, like thread.MutexBuf).
+DateBuf :: struct {
+    bytes: [32]u8;
+}
+
+// One finished pool job, queued for the loop thread to attach.
+Completion :: struct {
+    slot: i64 = 0;
+    gen: i64 = 0;
+    out: OutBytes = .{};
+    close_after: bool = false;
+    consumed: i64 = 0;   // request bytes to drop from the read buffer
+    // S1/Q3.2: a streamed/chunked response. The worker serializes only the
+    // head into `out` and then PUMPS the producer itself (inside the job's
+    // push scope), feeding the body through `ochan` — the loop thread only
+    // takes framed pieces from the channel; it never runs producer code.
+    // streamed=false → out carries the whole fixed-body response (the fast
+    // path) and ochan is null.
+    streamed: bool = false;
+    ochan: *OutChan = null;
+}
+
+// Heap-resident pool machinery: embeds a Mutex and is shared with
+// worker threads, so it must never move (the Server struct itself is
+// returned by value from init and may be copied).
+PoolState :: struct {
+    pool: *thread.Pool = null;
+    mu: thread.Mutex = .{};
+    done: [*]Completion = null;
+    done_cap: i64 = 0;
+    done_len: i64 = 0;
+    loop_copy: event.Loop = .{};   // Loop is an fd wrapper; copy-safe
+    // Q3.2: every OutChan a worker is CURRENTLY pumping (registered before
+    // the pump, removed before the worker's release; mu-guarded). Bounded
+    // by the worker count — one pump per worker at a time. Server.close
+    // aborts each so no feeder blocks the pool join. The registry sweep
+    // alone is NOT window-free — a worker still before its register (e.g.
+    // mid-handler) would escape a one-shot abort and block the join
+    // (Q3.2-review HIGH) — so close() also sets `closing` in the same
+    // critical section, and ochan_register aborts any chan registered
+    // after that: the worker's first feed then fails immediately.
+    ochans: [*]*OutChan = null;
+    ochans_len: i64 = 0;
+    closing: bool = false;
+}
+
+// Append one finished job to the completion queue and wake the loop.
+// (Q3.2: also called MID-job for a streamed response — the completion must
+// be attached and draining while the same worker feeds the channel, or a
+// stream larger than the channel would deadlock the worker.)
+// A full queue can only mean the sizing invariant broke (done_cap covers
+// max_conn + backlog + workers — see init); the drop is still handled
+// LOUDLY per CLAUDE.md: the response bytes are freed and a streamed chan
+// is aborted + released (never a silently pinned worker or leaked chan) —
+// the conn is evicted at its deadline (Q3.2-review MED).
+queue_completion :: (ps: *PoolState, alloc: Allocator, done: Completion) {
+    dropped := false;
+    ps.mu.lock();
+    if ps.done_len < ps.done_cap {
+        ps.done[ps.done_len] = done;
+        ps.done_len += 1;
+    } else {
+        dropped = true;
+    }
+    ps.mu.unlock();
+    if dropped {
+        if done.out.buf != null { alloc.dealloc_bytes(xx done.out.buf); }
+        if done.ochan != null {
+            done.ochan.abort();
+            done.ochan.release();
+        }
+    }
+    ps.loop_copy.wake();
+}
+
+// Q3.2: registry of channels being pumped (see PoolState.ochans). A chan
+// registered after close() flipped `closing` is aborted on the spot — the
+// pump's first feed fails and the worker proceeds straight to the join.
+ochan_register :: (ps: *PoolState, ch: *OutChan) {
+    ps.mu.lock();
+    ps.ochans[ps.ochans_len] = ch;
+    ps.ochans_len += 1;
+    late := ps.closing;
+    ps.mu.unlock();
+    if late { ch.abort(); }
+}
+
+ochan_unregister :: (ps: *PoolState, ch: *OutChan) {
+    ps.mu.lock();
+    i : i64 = 0;
+    while i < ps.ochans_len {
+        if ps.ochans[i] == ch {
+            ps.ochans[i] = ps.ochans[ps.ochans_len - 1];
+            ps.ochans_len -= 1;
+            break;
+        }
+        i += 1;
+    }
+    ps.mu.unlock();
+}
+
+// What a worker needs to run one handler. Allocated per dispatch from the
+// server's thread-safe allocator as ONE block: the job header followed by a
+// COPY of the raw request bytes (`req`'s views point into that tail, never
+// into the connection's read buffer — a handler-timeout can free/reuse the
+// slot and its buffer while the worker still runs). Freed as one block in
+// run_handler_job.
+HandlerJob :: struct {
+    handler: (*Request, *Response, usize) -> void;
+    app_ctx: usize = 0;
+    ps: *PoolState = null;
+    alloc: Allocator;
+    req: Request = .{};
+    slot: i64 = 0;
+    gen: i64 = 0;
+    keep: bool = false;
+    consumed: i64 = 0;
+    // Q1.5: Config.server_name, forwarded so the worker's serialization
+    // can stamp the Server: header (the bytes outlive the Server per the
+    // Config field's contract).
+    server_name: string = "";
+    // Q3.1: the body channel of a STREAMED request (null = accumulated).
+    // The job holds one of the two references; run_handler_job wires it
+    // into req.body_read_fn/_ctx and releases it after the handler returns.
+    chan: *BodyChan = null;
+    // Q3.3 fiber mode: the owning Server — the fiber tail completes the
+    // request same-thread (serialize into the conn's wbuf, gen-checked)
+    // and body_fiber_read reaches the runner through it. Null in pool mode.
+    srv: *Server = null;
+}
+
+// Q3.3: the fiber-mode BodyReadFn — the same-thread twin of BodyChan.read.
+// Instead of blocking on the cond (nobody else would feed it — the loop IS
+// this thread), an empty channel SUSPENDS the fiber; the body pump wakes it
+// when bytes / eof / a fault arrive. ctx = the *HandlerJob (carries both
+// the channel and the server, whose cfg.fibers parks the fiber). The
+// mutex is uncontended here (single thread) — kept for field-protocol
+// uniformity with the pool path, not for exclusion.
+body_fiber_read :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
+    job : *HandlerJob = xx ctx;
+    ch := job.chan;
+    if cap <= 0 { return 0; }
+    while true {
+        ch.mu.lock();
+        if ch.len > 0 {
+            n := if cap < ch.len then cap else ch.len;
+            clib.memcpy(dst, ch.buf, xx n);
+            rest := ch.len - n;
+            if rest > 0 { clib.memmove(xx ch.buf, xx @ch.buf[n], rest); }
+            ch.len = rest;
+            wake := ch.stalled;
+            if wake { ch.stalled = false; }
+            ch.mu.unlock();
+            // A stalled pump parked the read watch; the sticky self-wake
+            // fires resume_body_pumps on the next tick, exactly like the
+            // pool path's worker wake.
+            if wake { ch.lp.wake(); }
+            return n;
+        }
+        fa := ch.fault;
+        eo := ch.eof;
+        if eo and !fa { ch.drained = true; }
+        ch.mu.unlock();
+        if fa { return -1; }
+        if eo { return 0; }
+        job.srv.cfg.fibers.suspend_current();   // the pump / eof / abort wakes us
+    }
+    return -1;
+}
+
+// The pool task: fabricated per-job arena over the (thread-safe) server
+// allocator; serialize into job-owned bytes; queue the completion; wake
+// the loop.
+run_handler_job :: (arg: usize) {
+    job : *HandlerJob = xx arg;
+    resp : Response = .{};
+    arena := Arena.init(job.alloc, 65536);
+    ob : OutBytes = .{};
+    streamed := false;
+    completed := false;   // Q3.2: a streamed response queues its completion mid-job
+    // Q1.5: the worker stamps its OWN Date — the Server's per-second cache
+    // is loop-thread-only. One clock read + 29-byte format per response;
+    // the serialize concats copy the bytes, so a stack buffer suffices.
+    // Stamped AFTER the handler runs (below) so a slow handler's Date is
+    // the response's generation time, not its start time (RFC 9110: "as
+    // close as practical to generating the message").
+    db : [32]u8 = ---;
+    date : string = "";
+    // Q3.1: keep may be DOWNGRADED post-handler — a response over a body
+    // the reader never drained cannot keep the connection (the wire still
+    // carries request bytes), so the serialized header must say close.
+    keep := job.keep;
+    push .{ allocator = arena } {
+        h := job.handler;
+        // Q3.1: wire the streaming reader into the request the handler sees.
+        if job.chan != null {
+            job.req.body_read_fn = body_chan_read;
+            job.req.body_read_ctx = xx job.chan;
+        }
+        // Q1.4: a HEAD response never carries body bytes; a 204/304 never
+        // carries a body regardless of method — and a no-body status wins
+        // over a handler that (contradictorily) also called stream().
+        // is_head is read from the PARSED method BEFORE the handler runs —
+        // a handler mutating req.method must not flip body suppression.
+        is_head := ascii_ieq(job.req.method, "head");
+        h(@job.req, @resp, job.app_ctx);
+        if job.chan != null and !job.chan.was_drained() { keep = false; }
+        format_imf_date(time.now_secs(), @db[0]);
+        date = string.{ ptr = @db[0], len = IMF_DATE_LEN };
+        no_body := resp.status == 204 or resp.status == 304;
+        if resp.streamed and resp.producer != null and !is_head and !no_body {
+            // Q3.2: chunked — serialize ONLY the head (job.alloc-owned),
+            // then pump the producer ON THIS WORKER, inside the push scope:
+            // the request views and the per-request arena stay alive for
+            // every pull, so producer_ctx may reference them (the Q0.1-era
+            // caller-owned-ctx UAF class is gone in pool mode). The bytes
+            // flow to the loop through a bounded OutChan; the completion is
+            // queued BEFORE the pump so the loop drains while we feed (a
+            // stream larger than the channel would deadlock otherwise).
+            // COST: this worker is pinned for the stream's lifetime — size
+            // the pool for the number of concurrent streamed responses.
+            och : *OutChan = xx job.alloc.alloc_bytes(size_of(OutChan));
+            och.* = OutChan.{ alloc = job.alloc, lp = job.ps.loop_copy };
+            ok := och.mu.setup();
+            if ok {
+                if !och.cv.setup() {
+                    och.mu.destroy();
+                    ok = false;
+                }
+            }
+            if !ok {
+                // Channel setup failed (pthread init) — degrade LOUDLY to a
+                // plain 500, never a half-streamed response.
+                job.alloc.dealloc_bytes(xx och);
+                resp = Response.{ status = 500, body = reason_for(500) };
+                keep = false;
+                ob = serialize_bytes(@resp, keep, job.alloc, is_head, date, job.server_name);   // is_head: a HEAD 500 ships no body (Q3.2-review LOW)
+            } else {
+                och.buf = xx job.alloc.alloc_bytes(OUT_CHAN_CAP);
+                och.cap = OUT_CHAN_CAP;
+                ob = serialize_chunked_head(@resp, keep, job.alloc, date, job.server_name);
+                streamed = true;
+                queue_completion(job.ps, job.alloc, Completion.{
+                    slot = job.slot, gen = job.gen, out = ob,
+                    close_after = !keep, consumed = job.consumed,
+                    streamed = true, ochan = och,
+                });
+                completed = true;
+                // The pump: pull one bounded piece at a time, feed it into
+                // the channel (blocking on backpressure), until the
+                // producer ends or the connection dies.
+                ochan_register(job.ps, och);
+                piece : [STREAM_PIECE]u8 = ---;
+                off : i64 = 0;
+                prod := resp.producer;
+                pctx := resp.producer_ctx;
+                while true {
+                    n := prod(pctx, off, @piece[0], STREAM_PIECE);
+                    if n <= 0 { break; }
+                    off += n;
+                    if !och.feed_all(@piece[0], n) { break; }   // aborted
+                }
+                och.finish_eof();
+                ochan_unregister(job.ps, och);
+                och.release();   // the worker's ref; the conn side holds the other
+            }
+        } else if resp.streamed and resp.producer != null and is_head and !no_body {
+            // HEAD of a streamed response: the chunked head ALONE is the
+            // whole response — the producer is never pulled (streamed stays
+            // false, so the loop thread just drains these bytes).
+            ob = serialize_chunked_head(@resp, keep, job.alloc, date, job.server_name);
+        } else {
+            ob = serialize_bytes(@resp, keep, job.alloc, is_head, date, job.server_name);
+        }
+    }
+    arena.deinit();
+    // Q3.1: the handler is done reading — drop the job's channel reference
+    // (the conn side still holds one until completion/close).
+    if job.chan != null { job.chan.release(); }
+
+    // Q3.2: a streamed response queued its completion before the pump;
+    // everything else queues here. (`streamed` is true iff `completed`.)
+    if !completed {
+        queue_completion(job.ps, job.alloc, Completion.{
+            slot = job.slot, gen = job.gen, out = ob,
+            close_after = !keep, consumed = job.consumed,
+            streamed = streamed,
+        });
+    }
+    a := job.alloc;
+    a.dealloc_bytes(xx job);
+}
+
+// Q3.3: the fiber task — one per dispatched request in fiber mode. Runs
+// ON the loop thread, cooperatively: wires the SUSPENDING reader, runs the
+// handler, then completes the request same-thread — gen-checked
+// serialization straight into the conn's persistent wbuf (the inline-path
+// shape; shallow clib.memcpy work only — write_more runs later on the LOOP
+// stack in finalize_fibers, never on this bounded fiber stack). The job is
+// freed here; the runner reaps the fiber (env + stack) after this returns.
+run_fiber_job :: (arg: usize) {
+    job : *HandlerJob = xx arg;
+    srv := job.srv;
+    resp : Response = .{};
+    arena := Arena.init(job.alloc, 65536);
+    keep := job.keep;
+    push .{ allocator = arena } {
+        h := job.handler;
+        if job.chan != null {
+            job.req.body_read_fn = body_fiber_read;
+            job.req.body_read_ctx = xx job;
+        }
+        is_head := ascii_ieq(job.req.method, "head");
+        h(@job.req, @resp, job.app_ctx);
+        if job.chan != null and !job.chan.was_drained() { keep = false; }
+        c := @srv.conns[job.slot];
+        // Same-thread completion, gen-checked exactly like a pool
+        // completion: a closed/recycled slot (eviction, disconnect,
+        // Server.close) makes this response moot — skip it entirely.
+        if c.gen == job.gen and (c.state == CONN_HANDLING or c.state == CONN_BODY) {
+            early := c.state == CONN_BODY;
+            if early {
+                // The handler answered over an UNFINISHED inbound body —
+                // Q3.1's early semantics, applied same-thread: stop
+                // reading, discard the buffered framing, fault the channel
+                // (idempotent — read_body already saw whatever it saw),
+                // close + linger after the response drains.
+                if c.body_parked {
+                    c.body_parked = false;
+                    srv.body_parked_n -= 1;
+                } else {
+                    srv.loop.del_read(c.fd);
+                }
+                c.read_len = 0;
+                c.body_mode = 0;
+                if c.bchan != null { c.bchan.finish(true); }
+                c.linger_close = true;
+            }
+            srv.serialize_response(job.slot, @resp, keep, is_head);
+            // Drop the consumed request bytes (accumulate dispatch; the
+            // streamed dispatch consumed its headers up front → 0).
+            rest := c.read_len - job.consumed;
+            if rest > 0 { clib.memmove(xx c.read_buf, xx @c.read_buf[job.consumed], rest); }
+            c.read_len = rest;
+            c.reset_parse();
+            c.fiber_early = early;
+            c.fiber_done = true;
+            srv.fiber_done_n += 1;
+        }
+    }
+    arena.deinit();
+    if job.chan != null { job.chan.release(); }   // the job's ref; the conn's is released at finalize/close
+    a := job.alloc;
+    a.dealloc_bytes(xx job);
+}
+
+// ── Q2.3: single-pass response-head serialization ────────────────────
+// The head is built in ONE pass over shared literal pieces — no concat
+// chains, no context-allocator churn: resp_head_len computes the exact
+// byte count from the SAME literals resp_head_write copies, so the two
+// cannot drift. dec_into/status_line_for (types.sx) keep the status and
+// Content-Length digits alloc-free.
+
+HDR_CL    :: "\r\nContent-Length: ";
+HDR_TE    :: "\r\nTransfer-Encoding: chunked";
+HDR_CT    :: "\r\nContent-Type: ";
+HDR_DATE  :: "\r\nDate: ";
+HDR_SRV   :: "\r\nServer: ";
+HDR_KA    :: "\r\nConnection: keep-alive\r\n";
+HDR_CLOSE :: "\r\nConnection: close\r\n";
+HTTP_PFX  :: "HTTP/1.1 ";
+
+// Append `s` at dst[off]; returns the new offset.
+put_str :: (dst: [*]u8, off: i64, s: string) -> i64 {
+    clib.memcpy(@dst[off], s.ptr, s.len);
+    return off + xx s.len;
+}
+
+// Exact byte length of the head resp_head_write emits for the same
+// arguments. `chunked` selects Transfer-Encoding over Content-Length;
+// `no_body_status` (204/304, fixed-body only) omits Content-Length.
+// A NEGATIVE resp.status (buggy handler) yields zero digits from
+// dec_len/dec_into — len and write stay consistent (no overrun), the
+// line is just invalid ("HTTP/1.1  Status"), as any negative status is.
+resp_head_len :: (resp: *Response, keep: bool, date: string, server_name: string, no_body_status: bool, chunked: bool) -> i64 {
+    sl := status_line_for(resp.status);
+    n : i64 = if sl.len > 0 then xx sl.len
+              else xx HTTP_PFX.len + dec_len(resp.status) + 1 + xx reason_for(resp.status).len;
+    if chunked { n += xx HDR_TE.len; }
+    else if !no_body_status { n += xx HDR_CL.len + dec_len(xx resp.body.len); }
+    n += xx HDR_CT.len + xx resp.content_type.len;
+    n += xx HDR_DATE.len + xx date.len;
+    if server_name.len > 0 { n += xx HDR_SRV.len + xx server_name.len; }
+    n += if keep then xx HDR_KA.len else xx HDR_CLOSE.len;
+    n += xx resp.extra_headers.len;
+    return n + 2;   // final "\r\n"
+}
+
+// Write the head into dst (caller sized it via resp_head_len); returns
+// the bytes written. Byte-identical to the old concat-chain layout.
+resp_head_write :: (resp: *Response, keep: bool, date: string, server_name: string, no_body_status: bool, chunked: bool, dst: [*]u8) -> i64 {
+    off : i64 = 0;
+    sl := status_line_for(resp.status);
+    if sl.len > 0 { off = put_str(dst, off, sl); }
+    else {
+        off = put_str(dst, off, HTTP_PFX);
+        off += dec_into(resp.status, @dst[off]);
+        dst[off] = ' ';
+        off += 1;
+        off = put_str(dst, off, reason_for(resp.status));
+    }
+    if chunked { off = put_str(dst, off, HDR_TE); }
+    else if !no_body_status {
+        off = put_str(dst, off, HDR_CL);
+        off += dec_into(xx resp.body.len, @dst[off]);
+    }
+    off = put_str(dst, off, HDR_CT);
+    off = put_str(dst, off, resp.content_type);
+    off = put_str(dst, off, HDR_DATE);
+    off = put_str(dst, off, date);
+    if server_name.len > 0 {
+        off = put_str(dst, off, HDR_SRV);
+        off = put_str(dst, off, server_name);
+    }
+    off = put_str(dst, off, if keep then HDR_KA else HDR_CLOSE);
+    if resp.extra_headers.len > 0 { off = put_str(dst, off, resp.extra_headers); }
+    dst[off] = '\r';
+    dst[off + 1] = '\n';
+    return off + 2;
+}
+
+// Build the response bytes: head + body — one allocation from `alloc`,
+// one pass. Used by POOL WORKERS (the completion owns the buffer); the
+// inline path serializes into the conn's persistent wbuf instead
+// (serialize_response) and allocates nothing per response.
+//
+// Q1.4 (RFC 9110 §9.3.2, §6.4.1): `head_only` is the HEAD-request flag —
+// the response keeps every header of the equivalent GET, INCLUDING the
+// Content-Length of the body the handler produced (that is the point of
+// HEAD), but the body bytes never go on the wire. Independently, a 204 or
+// 304 status suppresses the body no matter what the handler set, and
+// omits Content-Length entirely (a 204 MUST NOT carry one; for 304
+// omitting is the safe MAY — the peer frames both by status alone).
+// Q1.5: `date` is the IMF-fixdate for the response's Date header (from the
+// Server's per-second cache on the loop thread; stamped fresh by a pool
+// worker) and `server_name` the optional Server: header value ("" = none).
+serialize_bytes :: (resp: *Response, keep: bool, alloc: Allocator, head_only: bool, date: string, server_name: string) -> OutBytes {
+    no_body_status := resp.status == 204 or resp.status == 304;
+    hl := resp_head_len(resp, keep, date, server_name, no_body_status, false);
+    body_len : i64 = if head_only or no_body_status then 0 else xx resp.body.len;
+    buf : [*]u8 = xx alloc.alloc_bytes(hl + body_len);
+    w := resp_head_write(resp, keep, date, server_name, no_body_status, false, buf);
+    if body_len > 0 { clib.memcpy(@buf[w], resp.body.ptr, xx body_len); }
+    return OutBytes.{ buf = buf, len = w + body_len };
+}
+
+// S1: build the HEAD of a chunked (streamed) response — status line,
+// Transfer-Encoding: chunked, connection mode, extra headers — and NOTHING
+// of the body. The body follows as chunks emitted incrementally by
+// write_more pulling the producer. One allocation from `alloc` (pool
+// workers; the inline stream path writes into its scratch directly).
+serialize_chunked_head :: (resp: *Response, keep: bool, alloc: Allocator, date: string, server_name: string) -> OutBytes {
+    hl := resp_head_len(resp, keep, date, server_name, false, true);
+    buf : [*]u8 = xx alloc.alloc_bytes(hl);
+    w := resp_head_write(resp, keep, date, server_name, false, true, buf);
+    return OutBytes.{ buf = buf, len = w };
+}
+
+// S1: lowercase-hex of a non-negative chunk length, no "0x", no leading
+// zeros (RFC 7230 chunk-size). Returns the digit count written into `dst`.
+hex_len_into :: (n: i64, dst: [*]u8) -> i64 {
+    if n == 0 { dst[0] = '0'; return 1; }
+    // collect digits low-to-high into a small temp, then reverse.
+    tmp : [16]u8 = ---;
+    cnt : i64 = 0;
+    v := n;
+    while v > 0 {
+        d := v % 16;
+        if d < 10 { tmp[cnt] = xx ('0' + d); }       // '0'..'9'
+        else { tmp[cnt] = xx ('a' + (d - 10)); }     // 'a'..'f'
+        v = v / 16;
+        cnt += 1;
+    }
+    i : i64 = 0;
+    while i < cnt {
+        dst[i] = tmp[cnt - 1 - i];
+        i += 1;
+    }
+    return cnt;
+}
+
+Server :: struct {
+    cfg: Config;
+    loop: event.Loop;
+    lfd: i32 = -1;
+    conns: [*]Conn = null;
+    own_alloc: Allocator;
+    // The handler's third argument is `ctx`, an opaque word the app
+    // gave init — typically a pointer to its own state (store handle,
+    // config), since the server owns the call site.
+    handler: (*Request, *Response, usize) -> void;
+    ctx: usize = 0;
+    ps: *PoolState = null;   // non-null iff cfg.thread_pool_count > 0
+    // Graceful-shutdown flags. `stopping` is set by stop() (possibly from
+    // another thread) and observed by run() between ticks; `stop_begun`
+    // guards the one-time quiesce (listener removed, idles closed).
+    stopping: bool = false;
+    stop_begun: bool = false;
+    lfd_removed: bool = false;   // listener pulled from the loop / closed
+
+    // H4 counters. ALL of these are mutated ONLY from loop-thread code
+    // paths (accept_ready, read_more, respond_error_close, conn_close, the
+    // tick timeout-eviction sweep, drain_completions, the 503 backpressure
+    // path). No worker thread ever touches them — in pooled mode a request
+    // is counted "served" when its completion is DRAINED on the loop thread
+    // (drain_completions), never inside the worker — so no cross-thread
+    // atomics are needed. stats() just snapshots them.
+    st_accepted: i64 = 0;
+    st_closed: i64 = 0;
+    st_requests: i64 = 0;
+    st_4xx: i64 = 0;
+    st_5xx: i64 = 0;
+    st_timeouts: i64 = 0;
+    st_rejected: i64 = 0;
+    st_bytes_in: i64 = 0;
+    st_bytes_out: i64 = 0;
+
+    // Q2.2: head of the free-slot list (-1 = all slots in use). Threaded
+    // through Conn.next_free; free_slot pops, conn_close pushes — O(1)
+    // both ways, no per-accept scan.
+    free_head: i64 = -1;
+    // Q3.1: how many CONN_BODY slots have their read watch parked on a full
+    // body channel. Gates resume_body_pumps' slot scan so the wake path
+    // stays O(1) when nothing is parked (the common case).
+    body_parked_n: i64 = 0;
+    // Q3.2: how many CONN_WRITING streams are paused on an empty worker-fed
+    // channel (Conn.stream_waiting). Gates resume_stream_pumps' scan.
+    stream_waiting_n: i64 = 0;
+    // Q3.3: how many fibers have completed (serialized, awaiting attach).
+    // Gates finalize_fibers' scan after each drive.
+    fiber_done_n: i64 = 0;
+    // Q3.3-review MED: set by both fiber spawn sites. finalize_fibers can
+    // DISPATCH a new fiber (write_more → serve_buffered → try_serve_one on
+    // pipelined bytes) after this tick's drive already ran — without the
+    // re-drive loop in tick, that fiber would sleep out the next tick's
+    // whole wait (no fd event exists for already-buffered bytes and no
+    // completion wake exists in fiber mode; reviewer reproduced a 1.5 s
+    // pipelined-response stall).
+    fiber_spawned: bool = false;
+    // Q2.2: min-heap of deadline wake-up hints (DlEntry), loop-thread
+    // only. Replaces the three per-tick full-array scans (nearest-
+    // deadline, eviction, handler-timeout). Grown through own_alloc
+    // (long-lived, must not bind a transient context.allocator).
+    dheap: [*]DlEntry = null;
+    dheap_len: i64 = 0;
+    dheap_cap: i64 = 0;
+
+    // ── Q2.2 deadline heap (loop-thread only) ───────────────────────
+
+    heap_push :: (self: *Server, dl: i64, slot: i64, gen: i64) {
+        if self.dheap_len == self.dheap_cap {
+            ncap := self.dheap_cap * 2;
+            nb : [*]DlEntry = xx self.own_alloc.alloc_bytes(ncap * size_of(DlEntry));
+            i : i64 = 0;
+            while i < self.dheap_len { nb[i] = self.dheap[i]; i += 1; }
+            self.own_alloc.dealloc_bytes(xx self.dheap);
+            self.dheap = nb;
+            self.dheap_cap = ncap;
+        }
+        i := self.dheap_len;
+        self.dheap_len += 1;
+        self.dheap[i] = DlEntry.{ deadline = dl, slot = slot, gen = gen };
+        while i > 0 {
+            p := (i - 1) / 2;
+            if self.dheap[p].deadline <= self.dheap[i].deadline { break; }
+            tmp := self.dheap[p];
+            self.dheap[p] = self.dheap[i];
+            self.dheap[i] = tmp;
+            i = p;
+        }
+    }
+
+    heap_pop :: (self: *Server) -> DlEntry {
+        top := self.dheap[0];
+        self.dheap_len -= 1;
+        if self.dheap_len > 0 {
+            self.dheap[0] = self.dheap[self.dheap_len];
+            i : i64 = 0;
+            while true {
+                l := 2 * i + 1;
+                if l >= self.dheap_len { break; }
+                m := l;
+                r := l + 1;
+                if r < self.dheap_len and self.dheap[r].deadline < self.dheap[l].deadline { m = r; }
+                if self.dheap[i].deadline <= self.dheap[m].deadline { break; }
+                tmp := self.dheap[i];
+                self.dheap[i] = self.dheap[m];
+                self.dheap[m] = tmp;
+                i = m;
+            }
+        }
+        return top;
+    }
+
+    // Push a wake-up hint for `dl` unless the slot already has a live
+    // entry at-or-before it (an EXTENSION never pushes — the earlier
+    // entry re-arms itself from the current deadline when it pops).
+    arm_slot :: (self: *Server, slot: i64, dl: i64) {
+        c := @self.conns[slot];
+        if c.hq_deadline == 0 or dl < c.hq_deadline {
+            self.heap_push(dl, slot, c.gen);
+            c.hq_deadline = dl;
+        }
+    }
+
+    // Set the conn's delivery/keepalive/linger deadline `ms` from now and
+    // arm the heap. EVERY c.deadline write goes through here — a deadline
+    // the heap never hears about would make its eviction unbounded-late.
+    set_deadline :: (self: *Server, slot: i64, ms: i64) {
+        c := @self.conns[slot];
+        c.deadline = event.deadline_in(ms);
+        self.arm_slot(slot, c.deadline);
+    }
+
+    // The deadline the sweep must enforce for the conn's CURRENT state
+    // (0 = none): a pool-handled conn is bounded by its handler deadline
+    // only (the delivery deadline is suspended while the worker owns the
+    // request); every other active state is bounded by c.deadline.
+    relevant_deadline :: (self: *Server, slot: i64) -> i64 {
+        c := @self.conns[slot];
+        if c.state == CONN_FREE { return 0; }
+        if c.state == CONN_HANDLING { return c.handler_deadline; }
+        return c.deadline;
+    }
+
+    // Q1.5: the cached response-Date value (IMF-fixdate), rebuilt at most
+    // once per wall-clock second. LOOP-THREAD ONLY, like the counters —
+    // pool workers never read it (run_handler_job stamps its own date).
+    // Sentinel is far outside any clock value: -1 would collide with a
+    // wall clock set to 1969-12-31 23:59:59 and serve the zeroed buffer.
+    date_secs: i64 = -(1 << 62);
+    date_cache: DateBuf = .{};
+
+    // The current Date header value for a response serialized on the loop
+    // thread. Rebuild-on-second-change gives the RFC's "generated as close
+    // to the response as practical" with one clock read per response.
+    date_now :: (self: *Server) -> string {
+        now := time.now_secs();
+        if now != self.date_secs {
+            self.date_secs = now;
+            format_imf_date(now, @self.date_cache.bytes[0]);
+        }
+        return string.{ ptr = @self.date_cache.bytes[0], len = IMF_DATE_LEN };
+    }
+
+    // Fire the optional event hook (no-op when unset — a single null check,
+    // zero allocation). Loop-thread only, like the counters.
+    emit :: (self: *Server, ev: EventKind, slot: i64, detail: i64) {
+        h := self.cfg.on_event;
+        if h != null { h(self.cfg.on_event_ctx, ev, slot, detail); }
+    }
+
+    // Snapshot the live counters. active_conns and pool_queue_depth are
+    // derived gauges (accepted - closed; pending pool completions). Safe to
+    // call from the loop thread (between ticks); the pool-depth read takes
+    // ps.mu since a worker may be appending to ps.done concurrently.
+    stats :: (self: *Server) -> Stats {
+        depth : i64 = 0;
+        if self.ps != null {
+            self.ps.mu.lock();
+            depth = self.ps.done_len;
+            self.ps.mu.unlock();
+        }
+        return Stats.{
+            active_conns = self.st_accepted - self.st_closed,
+            accepted_total = self.st_accepted,
+            closed_total = self.st_closed,
+            requests_served = self.st_requests,
+            errors_4xx = self.st_4xx,
+            errors_5xx = self.st_5xx,
+            timeouts = self.st_timeouts,
+            rejected_503 = self.st_rejected,
+            pool_queue_depth = depth,
+            bytes_in = self.st_bytes_in,
+            bytes_out = self.st_bytes_out,
+        };
+    }
+
+    init :: (cfg: Config, handler: (*Request, *Response, usize) -> void, ctx: usize) -> (Server, !HttpErr) {
+        // Q3.3: fibers and a worker pool are mutually exclusive dispatch
+        // models — configuring both is ambiguous, never silently resolved.
+        if cfg.fibers != null and cfg.thread_pool_count > 0 {
+            raise error.Config;
+        }
+        // Q3.1: the streaming body reader WAITS for the loop to feed it —
+        // a pool worker blocks on a cond, a fiber suspends (Q3.3). Plain
+        // inline mode has neither (the handler runs ON the feeding
+        // thread); fail loudly, never silently accumulate.
+        if cfg.stream_request_body and cfg.thread_pool_count <= 0 and cfg.fibers == null {
+            raise error.Config;
+        }
+        // Q3.5: the listener address — AF_UNIX on a path, or TCP on the
+        // family bind_addr picks ("" keeps today's v4 INADDR_ANY).
+        lfd : i32 = -1;
+        if cfg.unix_path.len > 0 {
+            // Port sharing and bind addresses are meaningless on a path —
+            // configuring them together is ambiguous, never resolved.
+            if cfg.reuse_port or cfg.bind_addr.len > 0 { raise error.Config; }
+            ua, uok := socket.addr_unix(cfg.unix_path);
+            if !uok { raise error.Bind; }   // empty / overflows sun_path
+            lfd = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, 0);
+            if lfd < 0 { raise error.Bind; }
+            if !socket.set_cloexec(lfd) { socket.close(lfd); raise error.Bind; }
+            // The path belongs to the server (documented contract): a
+            // stale socket file from a previous run would fail the bind —
+            // remove it. A path we cannot unlink fails at bind, loud.
+            unlink_path(cfg.unix_path);
+            if socket.bind_to(lfd, @ua) != 0 { socket.close(lfd); raise error.Bind; }
+            if socket.listen(lfd, cfg.backlog) != 0 { socket.close(lfd); raise error.Bind; }
+            if !socket.set_nonblocking(lfd) { socket.close(lfd); raise error.Bind; }
+        } else {
+            btext := if cfg.bind_addr.len > 0 then cfg.bind_addr else "0.0.0.0";
+            ba, bok := socket.parse_addr(btext, cfg.port);
+            if !bok { raise error.Bind; }   // not a numeric address literal
+            fam := socket.addr_family(@ba);
+            lfd = socket.socket(fam, socket.SOCK_STREAM, 0);
+            if lfd < 0 { raise error.Bind; }
+            // Q2.1: the listener must not leak into fork/exec'd children (an
+            // inherited listener keeps the port bound after Server.close).
+            // Conn fds get CLOEXEC at accept (accept_conn_nb).
+            if !socket.set_cloexec(lfd) { socket.close(lfd); raise error.Bind; }
+            one : i32 = 1;
+            socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEADDR, @one, 4);
+            // Q2.5: opt-in port sharing. A refused setsockopt is a hard Bind
+            // fault — silently continuing would bind WITHOUT sharing and the
+            // next instance's bind would fail mysteriously.
+            if cfg.reuse_port {
+                if socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEPORT, @one, 4) != 0 {
+                    socket.close(lfd);
+                    raise error.Bind;
+                }
+            }
+            // Q3.5: a v6 listener gets IPV6_V6ONLY set EXPLICITLY from the
+            // config — "::" is deterministic dual-stack by default, never
+            // the OS's sysctl-dependent choice. Refusal is a hard Bind
+            // fault (same rationale as reuse_port).
+            if fam == socket.AF_INET6 {
+                v6only : i32 = if cfg.ipv6_only then 1 else 0;
+                if socket.setsockopt(lfd, socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, @v6only, 4) != 0 {
+                    socket.close(lfd);
+                    raise error.Bind;
+                }
+            }
+            if socket.bind_to(lfd, @ba) != 0 { socket.close(lfd); raise error.Bind; }
+            if socket.listen(lfd, cfg.backlog) != 0 { socket.close(lfd); raise error.Bind; }
+            if !socket.set_nonblocking(lfd) { socket.close(lfd); raise error.Bind; }
+        }
+
+        lp, le := event.Loop.init();
+        if le { close_listener(lfd, cfg.unix_path); raise error.Loop; }
+        are := false;
+        lp.add_read(lfd, LISTENER_UDATA) catch { are = true; };
+        if are { close_listener(lfd, cfg.unix_path); raise error.Loop; }
+        // Register the wake channel unconditionally: stop() wakes the loop
+        // through it (eventfd/EVFILT_USER write is atomic, so stop() is
+        // safe from another thread or a signal-ish context), and run()'s
+        // wait() returns promptly instead of sleeping out the full tick.
+        // The pooled path reuses the same channel for completions.
+        swe := false;
+        lp.add_wake(WAKE_UDATA) catch { swe = true; };
+        if swe { close_listener(lfd, cfg.unix_path); raise error.Loop; }
+
+        oa := context.allocator;
+        slots : [*]Conn = xx oa.alloc_bytes(cfg.max_conn * size_of(Conn));
+        i : i64 = 0;
+        while i < cfg.max_conn {
+            slots[i] = Conn.{};
+            // Q2.2: thread the initial free list in index order (head = 0,
+            // so the first accept lands in slot 0 — tests rely on it).
+            slots[i].next_free = if i + 1 < cfg.max_conn then i + 1 else -1;
+            i += 1;
+        }
+        dcap : i64 = 64;
+        dh : [*]DlEntry = xx oa.alloc_bytes(dcap * size_of(DlEntry));
+
+        ps : *PoolState = null;
+        if cfg.thread_pool_count > 0 {
+            ps = xx oa.alloc_bytes(size_of(PoolState));
+            ps.* = PoolState.{};
+            // Failure below this point must release what init already
+            // allocated (slots, dheap, ps, ps.done) — these late paths used
+            // to close only the fd and leak the rest (Q2.5-review INFO).
+            if !ps.mu.setup() {
+                oa.dealloc_bytes(xx ps);
+                oa.dealloc_bytes(xx slots);
+                oa.dealloc_bytes(xx dh);
+                close_listener(lfd, cfg.unix_path);
+                raise error.Loop;
+            }
+            // Max completions pending between two drains: every conn has at
+            // most ONE job in flight, and within one tick's serve storm the
+            // loop can submit up to max_conn replacements while backlog +
+            // workers earlier jobs finish into the queue (Q3.2-review MED -
+            // the old backlog + workers sizing under-counted the same-tick
+            // refill; queue_completion still handles a drop loudly as belt).
+            ps.done_cap = cfg.max_conn + cfg.thread_pool_backlog + cfg.thread_pool_count;
+            ps.done = xx oa.alloc_bytes(ps.done_cap * size_of(Completion));
+            ps.done_len = 0;
+            // Q3.2: one pumping stream channel per worker, at most.
+            ps.ochans = xx oa.alloc_bytes(cfg.thread_pool_count * size_of(usize));
+            ps.ochans_len = 0;
+            // Capture the loop AFTER add_wake (registered above): on epoll,
+            // add_wake lazily creates wake_fd, so a copy taken earlier would
+            // freeze wake_fd == -1 and ps.loop_copy.wake() would silently
+            // no-op. The unconditional add_wake in init runs before here.
+            ps.loop_copy = lp;
+            pool, pce := thread.Pool.create(cfg.thread_pool_count, cfg.thread_pool_backlog);
+            if pce {
+                ps.mu.destroy();
+                oa.dealloc_bytes(xx ps.done);
+                oa.dealloc_bytes(xx ps.ochans);
+                oa.dealloc_bytes(xx ps);
+                oa.dealloc_bytes(xx slots);
+                oa.dealloc_bytes(xx dh);
+                close_listener(lfd, cfg.unix_path);
+                raise error.Loop;
+            }
+            ps.pool = pool;
+        }
+
+        return Server.{
+            cfg = cfg, loop = lp, lfd = lfd, conns = slots,
+            own_alloc = oa, handler = handler, ctx = ctx, ps = ps,
+            free_head = 0, dheap = dh, dheap_cap = dcap,
+        };
+    }
+
+    // Tear down everything init (and runtime) allocated, in an order
+    // that never touches freed memory:
+    //   1. shutdown the pool FIRST — joins every worker, so no worker can
+    //      still write into ps.done / ps.loop_copy after we free ps.
+    //      (Pool.shutdown frees the Pool struct + its tasks/threads from
+    //      the allocator it was created with — own_alloc here — so we do
+    //      NOT free ps.pool ourselves.)
+    //   2. close every connection still active (frees its out_buf, removes
+    //      it from the loop, closes the fd).
+    //   3. free every slot's read_buf — these survive conn_close (reused
+    //      across connections) so they leak unless freed here; a slot may
+    //      hold a grown buffer even while CONN_FREE.
+    //   4. free the conns array.
+    //   5. free ps.done, then ps (the PoolState struct).
+    //   6. close the listener and the loop (ps.loop_copy is a value copy
+    //      of self.loop — sharing the same fds — and must NOT be closed).
+    close :: (self: *Server) {
+        if self.ps != null {
+            // Q3.1: a worker can be BLOCKED in a body-channel read; fault
+            // every live channel BEFORE joining, or shutdown would deadlock
+            // on that worker. (conn_close below releases the conn refs.)
+            i0 : i64 = 0;
+            while i0 < self.cfg.max_conn {
+                if self.conns[i0].bchan != null { self.conns[i0].bchan.finish(true); }
+                i0 += 1;
+            }
+            // Q3.2: same for feeders BLOCKED in a stream-channel feed. The
+            // registry covers every chan a worker is pumping — including
+            // ones whose completion was never attached to a conn (queued
+            // after the conn died), which the conns sweep cannot see.
+            // `closing` is flipped in the SAME critical section so a worker
+            // that has not registered YET (still mid-handler) aborts at its
+            // own register instead of escaping this one-shot sweep and
+            // blocking the join (Q3.2-review HIGH — reproduced deadlock).
+            self.ps.mu.lock();
+            self.ps.closing = true;
+            oi : i64 = 0;
+            while oi < self.ps.ochans_len {
+                self.ps.ochans[oi].abort();
+                oi += 1;
+            }
+            self.ps.mu.unlock();
+            self.ps.pool.shutdown();
+        }
+        i : i64 = 0;
+        while i < self.cfg.max_conn {
+            if self.conns[i].state != CONN_FREE { self.conn_close(i); }
+            i += 1;
+        }
+        // Q3.3: the closes above faulted every live body channel and woke
+        // every parked fiber; drive them to completion NOW (a woken read
+        // returns -1, the handler unwinds, the gen check skips the moot
+        // response, the job is freed, the fiber + its env are reaped). One
+        // drive suffices — a faulted fiber has no further suspend point.
+        // Any completion marked before its conn closed was already
+        // un-marked by conn_close; belt-reset the counter regardless.
+        if self.cfg.fibers != null {
+            self.cfg.fibers.drive();
+            self.fiber_done_n = 0;
+        }
+        i = 0;
+        while i < self.cfg.max_conn {
+            c := @self.conns[i];
+            if c.read_buf != null {
+                self.own_alloc.dealloc_bytes(xx c.read_buf);
+                c.read_buf = null;
+                c.read_cap = 0;
+            }
+            if c.wbuf != null {   // Q2.3: the persistent write buffer
+                self.own_alloc.dealloc_bytes(xx c.wbuf);
+                c.wbuf = null;
+                c.wbuf_cap = 0;
+            }
+            i += 1;
+        }
+        self.own_alloc.dealloc_bytes(xx self.conns);
+        self.conns = null;
+        if self.dheap != null {
+            self.own_alloc.dealloc_bytes(xx self.dheap);
+            self.dheap = null;
+            self.dheap_len = 0;
+            self.dheap_cap = 0;
+        }
+
+        if self.ps != null {
+            // Pool.shutdown() (step 1) has joined every worker, so
+            // ps.done_len / ps.done are stable — no lock needed. Workers
+            // that finished an in-flight handler queued their serialized
+            // response bytes (out.buf, from serialize_bytes) here and they
+            // were never drained: free each before the ps.done array.
+            // Only 0..done_len are pending: drain_completions resets
+            // done_len to 0 as it takes a batch, so anything already
+            // drained is outside this range — no double-free.
+            d : i64 = 0;
+            while d < self.ps.done_len {
+                if self.ps.done[d].out.buf != null {
+                    self.own_alloc.dealloc_bytes(xx self.ps.done[d].out.buf);
+                }
+                // Q3.2: an undrained streamed completion still holds the
+                // conn-side channel reference (it was never attached).
+                if self.ps.done[d].ochan != null {
+                    self.ps.done[d].ochan.release();
+                }
+                d += 1;
+            }
+            if self.ps.done != null { self.own_alloc.dealloc_bytes(xx self.ps.done); }
+            if self.ps.ochans != null { self.own_alloc.dealloc_bytes(xx self.ps.ochans); }
+            self.ps.mu.destroy();
+            self.own_alloc.dealloc_bytes(xx self.ps);
+            self.ps = null;
+        }
+
+        if self.lfd >= 0 { socket.close(self.lfd); }
+        self.lfd = -1;
+        // Q3.5: an AF_UNIX listener's socket file is removed at teardown
+        // (idempotent — stop() may have unlinked it already).
+        if self.cfg.unix_path.len > 0 { unlink_path(self.cfg.unix_path); }
+        self.loop.close();
+    }
+
+    // ── slot management ──────────────────────────────────────────────
+
+    // Q2.2: pop the free-list head — O(1), no scan. -1 = at max_conn.
+    free_slot :: (self: *Server) -> i64 {
+        s := self.free_head;
+        if s >= 0 {
+            self.free_head = self.conns[s].next_free;
+            self.conns[s].next_free = -1;
+        }
+        return s;
+    }
+
+    conn_close :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        // Q2.2: push onto the free list exactly once per FREE transition
+        // (a re-close of an already-free slot — close()'s teardown sweep
+        // tolerates them — must not corrupt the list with a cycle).
+        was_active := c.state != CONN_FREE;
+        // TLS (Phase T): tear down the per-connection TLS session first,
+        // while the fd is still open so close() can attempt a best-effort
+        // close_notify. close() frees the session's own state; idempotent
+        // (null = plaintext).
+        if c.tls != null {
+            c.tls.close();
+            c.tls = null;
+        }
+        // Q3.1: a live body channel must never strand a blocked reader —
+        // fault it (the worker's read_body returns -1; its completion will
+        // fail the gen check and be discarded) and drop the conn's ref.
+        if c.bchan != null {
+            c.bchan.finish(true);
+            c.bchan.release();
+            c.bchan = null;
+        }
+        // Q3.3: wake the conn's fiber so it observes the fault and unwinds
+        // (its completion then fails the gen check and is skipped; the
+        // runner reaps it at the next drive). A pending fiber completion
+        // for THIS conn is moot — drop the mark.
+        if c.fiber_h != 0 {
+            if self.cfg.fibers != null { self.cfg.fibers.wake(c.fiber_h); }
+            c.fiber_h = 0;
+        }
+        if c.fiber_done {
+            c.fiber_done = false;
+            self.fiber_done_n -= 1;
+        }
+        c.fiber_early = false;
+        if c.body_parked {
+            c.body_parked = false;
+            self.body_parked_n -= 1;
+        }
+        c.body_mode = 0;
+        c.body_remaining = 0;
+        c.bch_state = 0;
+        // Q3.2: same for a worker-fed response stream — abort unblocks a
+        // feeder mid-feed_all; drop the conn's ref.
+        if c.ochan != null {
+            c.ochan.abort();
+            c.ochan.release();
+            c.ochan = null;
+        }
+        if c.stream_waiting {
+            c.stream_waiting = false;
+            self.stream_waiting_n -= 1;
+        }
+        if c.fd >= 0 {
+            self.loop.del_read(c.fd);
+            if c.write_armed { self.loop.del_write(c.fd); }
+            socket.close(c.fd);
+            // A real connection occupied this slot — count the close and
+            // surface it. Slots swept while already CONN_FREE (close()'s
+            // teardown) carry fd < 0 and are not double-counted.
+            self.st_closed += 1;
+            self.emit(EventKind.CLOSE, slot, 0);
+        }
+        if c.out_buf != null {
+            // Q2.3: only per-response allocations are freed here — an
+            // out_buf aliasing the persistent wbuf is retained for reuse.
+            if c.out_owned { self.own_alloc.dealloc_bytes(xx c.out_buf); }
+            c.out_buf = null;
+        }
+        c.out_owned = true;
+        // read_buf (and Q2.3 wbuf) stay allocated — reused by the next
+        // connection here. Exception: an over-cap wbuf (grown by one huge
+        // response) is released now instead of pinning the high-water mark
+        // for the server's lifetime (Q2.3-review MED).
+        if c.wbuf_cap > WBUF_RETAIN_CAP {
+            self.own_alloc.dealloc_bytes(xx c.wbuf);
+            c.wbuf = null;
+            c.wbuf_cap = 0;
+        }
+        c.fd = -1;
+        c.state = CONN_FREE;
+        c.gen += 1;   // Q2.2: also invalidates every heap entry for this slot
+        c.hq_deadline = 0;
+        if was_active {
+            c.next_free = self.free_head;
+            self.free_head = slot;
+        }
+        c.handler_deadline = 0;
+        c.head_req = false;
+        c.read_len = 0;
+        c.reset_parse();
+        c.out_len = 0;
+        c.out_sent = 0;
+        c.served = 0;
+        c.close_after = false;
+        c.linger_close = false;
+        c.write_armed = false;
+        c.tls_rd_want_write = false;
+        c.tls_wr_want_read = false;
+        c.streaming = false;
+        c.producer = null;
+        c.producer_ctx = 0;
+        c.stream_off = 0;
+        c.stream_done = false;
+    }
+
+    // ── the tick: one bounded loop iteration ─────────────────────────
+    //
+    // Waits at most `max_wait_ms` (sooner when a connection deadline is
+    // nearer), services every ready fd, then evicts expired connections.
+    tick :: (self: *Server, max_wait_ms: i64) -> !HttpErr {
+        // Q2.2: the nearest wake-up hint is the heap min — O(1) instead of
+        // the old full-slot scan. A stale top (recycled slot, extended
+        // deadline) only wakes the loop early; the sweep discards it.
+        wait_ms := max_wait_ms;
+        if self.dheap_len > 0 {
+            left := event.remaining_ms(self.dheap[0].deadline);
+            if left < wait_ms { wait_ms = left; }
+        }
+
+        evs : [64]event.Event = ---;
+        n, werr := self.loop.wait(.{ ptr = @evs[0], len = 64 }, wait_ms);
+        if werr { raise error.Loop; }
+
+        k : i64 = 0;
+        while k < n {
+            ev := evs[k];
+            k += 1;
+            if ev.udata == LISTENER_UDATA {
+                self.accept_ready();
+                continue;
+            }
+            if ev.user or ev.udata == WAKE_UDATA {
+                self.drain_completions();
+                self.resume_body_pumps();     // Q3.1: a worker drained a stalled channel
+                self.resume_stream_pumps();   // Q3.2: a worker fed a hungry channel
+                continue;
+            }
+            slot : i64 = xx ev.udata;
+            c := @self.conns[slot];
+            if c.state == CONN_FREE or c.fd != ev.fd { continue; }   // stale event for a recycled slot
+            if c.state == CONN_HANDLING { continue; }   // buffer frozen until the worker finishes
+            if c.state == CONN_BODY {                   // Q3.1: streaming body inbound
+                // Q3.4: a writable can also mean "retry the blocked TLS
+                // read" — the pump's read cross-armed the write watch.
+                if ev.readable or ev.eof or (ev.writable and c.tls_rd_want_write) { self.body_ready(slot); }
+                continue;
+            }
+            if c.state == CONN_TLS_HANDSHAKE {          // T3: drive the handshake on either readiness
+                if ev.readable or ev.writable or ev.eof { self.drive_handshake(slot); }
+                continue;
+            }
+            if c.state == CONN_LINGER {                 // Q0.4: discard until EOF
+                if ev.readable or ev.eof { self.linger_drain(slot); }
+                continue;
+            }
+            if ev.writable and c.tls_rd_want_write {
+                // Q3.4: the writable IS the blocked TLS read's retry signal.
+                // read_more consumes the event's readable too (its loop
+                // drains the fd) and may leave the slot in ANY state (close,
+                // recycle, dispatch → CONN_BODY/CONN_HANDLING, linger) —
+                // re-routing the remaining bits against the ORIGINAL state
+                // ladder would misdeliver them (review F3). Stop here: both
+                // backends are level-triggered, so anything unconsumed
+                // (e.g. a writable for a response drain) re-surfaces at the
+                // next wait.
+                self.read_more(slot);
+                continue;
+            }
+            if ev.writable and c.state == CONN_WRITING {
+                self.write_more(slot);
+                continue;
+            }
+            if ev.readable or ev.eof {
+                // Q3.4: readability resumes a write blocked on a
+                // read-direction TLS want; otherwise it is inbound data.
+                if c.state == CONN_WRITING and c.tls_wr_want_read { self.write_more(slot); }
+                else { self.read_more(slot); }
+            }
+        }
+
+        // Deadline eviction — after I/O, so a request that just arrived
+        // under the wire is served, not evicted. Q2.2: pop expired wake-up
+        // hints off the heap instead of scanning every slot; the conn's
+        // CURRENT relevant deadline decides, never the entry.
+        self.sweep_deadlines();
+        // Q3.3: run every fiber made ready this tick (dispatch spawns,
+        // body-pump wakes, eviction faults), then attach the responses
+        // the fibers completed — on THIS stack, never a fiber's. LOOP
+        // until quiescent: finalize's write→serve path dispatches the
+        // NEXT pipelined request's fiber, which must run THIS tick, not
+        // after the next wait() (Q3.3-review MED). Bounded: each pass
+        // consumes already-buffered requests; no new bytes arrive here.
+        if self.cfg.fibers != null {
+            while true {
+                self.fiber_spawned = false;
+                self.cfg.fibers.drive();
+                self.finalize_fibers();
+                if !self.fiber_spawned { break; }
+            }
+        }
+        return;
+    }
+
+    // Q3.3: attach every fiber-completed response — the bookkeeping
+    // drain_completions does for pool completions, minus the queue (the
+    // fiber tail already serialized into the conn's wbuf same-thread).
+    // Gated on the counter; runs right after each drive.
+    finalize_fibers :: (self: *Server) {
+        if self.fiber_done_n == 0 { return; }
+        i : i64 = 0;
+        while i < self.cfg.max_conn {
+            c := @self.conns[i];
+            if c.fiber_done {
+                c.fiber_done = false;
+                self.fiber_done_n -= 1;
+                c.fiber_h = 0;
+                if c.bchan != null {   // the conn's channel ref (streamed dispatch)
+                    c.bchan.release();
+                    c.bchan = null;
+                }
+                early := c.fiber_early;
+                c.fiber_early = false;
+                if !early {
+                    // Re-arm the read watch parked at dispatch / body-eof
+                    // (pipelined bytes may be waiting). An early-response
+                    // conn stays read-parked: inbound is discard-only
+                    // until the linger close.
+                    rae := false;
+                    self.loop.add_read(c.fd, xx i) catch { rae = true; };
+                    if rae {
+                        self.emit(EventKind.READ_FAULT, i, 0);
+                        self.conn_close(i);
+                        i += 1;
+                        continue;
+                    }
+                }
+                self.st_requests += 1;
+                c.state = CONN_READING;
+                self.set_deadline(i, self.cfg.timeout_request_ms);
+                self.write_more(i);
+            }
+            i += 1;
+        }
+    }
+
+    // Q2.2: enforce every deadline whose wake-up hint has expired. Pops the
+    // heap while its min is past; each pop re-checks the conn's CURRENT
+    // relevant deadline (relevant_deadline), so recycled slots (gen bump)
+    // and extended deadlines are discarded/re-armed — never mis-evicted.
+    // Carries both the delivery/keepalive/linger eviction semantics (Q0.4/
+    // Q0.7) and the H5 pool handler-timeout 504, exactly as the two old
+    // full-array sweeps did.
+    sweep_deadlines :: (self: *Server) {
+        while self.dheap_len > 0 and event.expired(self.dheap[0].deadline) {
+            e := self.heap_pop();
+            c := @self.conns[e.slot];
+            if c.gen != e.gen or c.state == CONN_FREE { continue; }   // recycled
+            if e.deadline == c.hq_deadline { c.hq_deadline = 0; }     // its live entry
+            rel := self.relevant_deadline(e.slot);
+            if rel == 0 { continue; }   // e.g. CONN_HANDLING with H5 disabled
+            if !event.expired(rel) {
+                // The deadline moved on (keep-alive refresh, 504 window,
+                // state change) — re-arm the hint at the current value.
+                self.arm_slot(e.slot, rel);
+                continue;
+            }
+            slot := e.slot;
+            st := c.state;
+            // H5 handler-deadline enforcement (pool mode — inline handlers
+            // run on THIS thread and can't be preempted). The worker is
+            // still running (no safe pthread_cancel), so reply 504 and free
+            // the slot. conn_close bumps c.gen, so the worker's eventual
+            // completion fails the gen check in drain_completions and is
+            // discarded + freed — never a double-response or double-free.
+            if st == CONN_HANDLING {
+                self.st_timeouts += 1;
+                self.st_5xx += 1;
+                self.emit(EventKind.HANDLER_TIMEOUT, slot, 504);
+                c.handler_deadline = 0;
+                // The worker owns its own COPY of the request bytes (see
+                // HandlerJob), so freeing/reusing this slot and its read
+                // buffer is safe even while the worker still runs: it writes
+                // only into its job-arena + serialized completion, never the
+                // conn slot. Discard any pipelined bytes; serialize the 504.
+                resp : Response = .{ status = 504, body = reason_for(504) };
+                c.read_len = 0;
+                c.reset_parse();
+                to_arena := Arena.init(self.own_alloc, 4096);
+                push .{ allocator = to_arena } {
+                    // keep=false → close_after. head_only = the dispatched
+                    // request's method, stamped on the slot at dispatch — a
+                    // timed-out HEAD is owed a body-less 504 like any other
+                    // HEAD response (RFC 9110 §9.3.2).
+                    self.serialize_response(slot, @resp, false, c.head_req);
+                }
+                to_arena.deinit();
+                // Leave CONN_HANDLING: any completion the worker queues after
+                // this point sees state != CONN_HANDLING (CONN_WRITING here)
+                // OR, once write_more closes the slot, a bumped gen — either
+                // way drain_completions discards + frees it. The read watch
+                // stays PARKED (0.2): this 504 always closes after the write
+                // (keep=false), and re-arming would resume the level-
+                // triggered spin on whatever the client is still flooding.
+                // Refresh the delivery deadline for the 504 itself — the
+                // request deadline is typically long expired by now and the
+                // next sweep would kill the 504 before it drains.
+                c.state = CONN_WRITING;
+                self.set_deadline(slot, self.cfg.timeout_request_ms);
+                self.write_more(slot);
+            }
+            // Q0.4: a lingering conn expiring is NORMAL linger completion
+            // (the client never sent EOF within the window) — close it
+            // silently, not as a timeout fault.
+            else if st == CONN_LINGER {
+                self.conn_close(slot);
+            }
+            // Q0.7: a PARTIAL REQUEST evicted at the delivery deadline is
+            // owed an answer — 408 (Connection: close, via the linger
+            // path so it actually lands). Idle evictions (keepalive
+            // between requests, or a conn that never sent a byte) and a
+            // mid-response CONN_WRITING stall stay wire-silent: nothing
+            // is owed / a second response can't be spliced in.
+            else if st == CONN_READING and c.read_len > 0 {
+                self.st_timeouts += 1;
+                self.emit(EventKind.TIMEOUT, slot, 408);
+                self.send_error_close(slot, 408);
+            } else {
+                self.st_timeouts += 1;
+                self.emit(EventKind.TIMEOUT, slot, 0);
+                self.conn_close(slot);
+            }
+        }
+    }
+
+    // ── graceful shutdown ────────────────────────────────────────────
+    //
+    // stop() requests a clean quiesce: stop accepting, close idle
+    // keep-alives, drain in-flight requests within shutdown_timeout_ms,
+    // then make run() return. It only flips a flag and wakes the loop, so
+    // it is safe to call from ANOTHER thread (the wake write is atomic) or
+    // between ticks (e.g. from a handler or a signal-relay). It does NOT
+    // tear down — close() does that, and the caller of run() owns it.
+    stop :: (self: *Server) {
+        self.stopping = true;
+        self.loop.wake();   // break run()'s wait() so it observes the flag
+    }
+
+    // The one-time quiesce, run when the loop first observes `stopping`:
+    // pull the listener out of the loop and close its fd so no new
+    // connection arrives, then close every IDLE connection immediately
+    // (CONN_KEEPALIVE between requests, or CONN_READING that hasn't
+    // buffered a single byte). In-flight work (a partial request, a
+    // pending write, a pooled handler) is left to drain.
+    begin_stop :: (self: *Server) {
+        if self.stop_begun { return; }
+        self.stop_begun = true;
+        if !self.lfd_removed and self.lfd >= 0 {
+            self.loop.del_read(self.lfd);
+            socket.close(self.lfd);
+            self.lfd = -1;
+            self.lfd_removed = true;
+            // Q3.5: stop() means "accept no more" — remove the AF_UNIX
+            // socket file with the listener so new dials fail fast.
+            if self.cfg.unix_path.len > 0 { unlink_path(self.cfg.unix_path); }
+        }
+        i : i64 = 0;
+        while i < self.cfg.max_conn {
+            c := self.conns[i];
+            if c.state == CONN_KEEPALIVE or c.state == CONN_TLS_HANDSHAKE or c.state == CONN_LINGER or (c.state == CONN_READING and c.read_len == 0) {
+                self.conn_close(i);
+            }
+            i += 1;
+        }
+    }
+
+    // Count connections still doing work the drain must wait on: a
+    // partially-read request, an in-progress write, or a pooled handler.
+    // Pending pool completions also count (they still owe a response).
+    in_flight :: (self: *Server) -> i64 {
+        n : i64 = 0;
+        i : i64 = 0;
+        while i < self.cfg.max_conn {
+            c := self.conns[i];
+            st := c.state;
+            if st == CONN_WRITING or st == CONN_HANDLING or st == CONN_BODY { n += 1; }
+            else if st == CONN_READING and c.read_len > 0 { n += 1; }
+            i += 1;
+        }
+        if self.ps != null {
+            self.ps.mu.lock();
+            n += self.ps.done_len;
+            self.ps.mu.unlock();
+        }
+        return n;
+    }
+
+    // The forever loop, now stoppable. Serves until stop() is requested,
+    // then quiesces (stop accepting, close idles) and drains in-flight
+    // requests until none remain OR shutdown_timeout_ms elapses — any
+    // stragglers past the deadline are force-closed. run() returns
+    // cleanly; it does NOT call close() (the caller owns teardown, so a
+    // fresh Server can be init'd and run() again in the same process).
+    run :: (self: *Server) {
+        // Q0.6: a persistent tick()/wait() failure must not become a silent
+        // hot spin. Count CONSECUTIVE failures, surface each through the
+        // observability hook (LISTEN_ERROR, detail = the count), back off
+        // between retries, and give up cleanly at the limit. One successful
+        // tick resets the count (a transient EINTR-ish blip is forgiven).
+        consec : i64 = 0;
+        while !self.stopping and consec < LOOP_FAULT_LIMIT {
+            te := false;
+            self.tick(1000) catch { te = true; };
+            if !te { consec = 0; continue; }
+            consec += 1;
+            self.emit(EventKind.LISTEN_ERROR, -1, consec);
+            if consec < LOOP_FAULT_LIMIT {
+                usleep(consec * 10000);   // 10/20/30/40 ms — no hot spin
+            }
+        }
+        loop_dead := consec >= LOOP_FAULT_LIMIT;
+        // Quiesce + bounded drain. With a dead loop the drain's ticks would
+        // fail identically — skip straight to the force-close.
+        self.begin_stop();
+        if !loop_dead {
+            drain_deadline := event.deadline_in(self.cfg.shutdown_timeout_ms);
+            while self.in_flight() > 0 and !event.expired(drain_deadline) {
+                self.tick(50) catch {};
+            }
+        }
+        // Force-close anything still in flight at the deadline.
+        i : i64 = 0;
+        while i < self.cfg.max_conn {
+            if self.conns[i].state != CONN_FREE { self.conn_close(i); }
+            i += 1;
+        }
+        return;
+    }
+
+    // ── accept ───────────────────────────────────────────────────────
+
+    accept_ready :: (self: *Server) {
+        while true {
+            // Q2.1: accept_conn_nb hands back the fd with O_NONBLOCK +
+            // FD_CLOEXEC already applied (atomically via accept4 on linux;
+            // accept + fcntls on darwin — see socket.sx).
+            fd, ae := socket.accept_conn_nb(self.lfd);
+            if ae { return; }   // WouldBlock = drained; Fault = nothing to do here
+            // Q2.1: disable Nagle. Without it a keep-alive response sits in
+            // the kernel until the peer's delayed ACK (~40 ms latency cliffs
+            // on request/response traffic). A failure (the peer can already
+            // have RST the conn before accept dequeued it) is an accept
+            // fault — never a silently slow connection. Runs BEFORE the
+            // free-list pop: Q2.2 made free_slot destructive, so an early
+            // return between the pop and c.state = CONN_READING would leak
+            // the slot forever (state still CONN_FREE → neither conn_close
+            // nor anything else would re-push it; Q2.2-review HIGH). The fd
+            // is validated first; only then is a slot committed.
+            // Q3.5: TCP_NODELAY is a TCP option — an AF_UNIX conn refuses
+            // it (EOPNOTSUPP) and has no Nagle to disable; skip, don't die.
+            if self.cfg.unix_path.len == 0 {
+                one : i32 = 1;
+                if socket.setsockopt(fd, socket.IPPROTO_TCP, socket.TCP_NODELAY, @one, 4) != 0 {
+                    socket.close(fd);
+                    self.emit(EventKind.ACCEPT_FAULT, -1, 0);
+                    return;
+                }
+            }
+            slot := self.free_slot();
+            if slot < 0 {                                // at max_conn: shed
+                socket.close(fd);
+                self.emit(EventKind.ACCEPT_FAULT, -1, 0);
+                return;
+            }
+            c := @self.conns[slot];
+            if c.read_buf == null {
+                init_cap : i64 = READ_BUF_INITIAL;
+                if init_cap > self.cfg.read_buf_cap { init_cap = self.cfg.read_buf_cap; }
+                c.read_buf = xx self.own_alloc.alloc_bytes(init_cap);
+                c.read_cap = init_cap;
+            }
+            c.fd = fd;
+            c.state = CONN_READING;
+            c.read_len = 0;
+            c.served = 0;
+            c.close_after = false;
+            self.set_deadline(slot, self.cfg.timeout_request_ms);
+            // The connection now owns an fd — count the accept and surface it
+            // BEFORE add_read, so if registration faults the matching conn_close
+            // (which counts/emits the close) is balanced by this accept (no
+            // orphan CLOSE; closed_total stays ≤ accepted_total).
+            self.st_accepted += 1;
+            self.emit(EventKind.ACCEPT, slot, 0);
+            are := false;
+            self.loop.add_read(fd, xx slot) catch { are = true; };
+            if are {
+                self.emit(EventKind.ACCEPT_FAULT, slot, 0);
+                self.conn_close(slot);
+                continue;
+            }
+            // TLS (T3): mint a per-connection session and negotiate before the
+            // first request. accept() returns null on a per-session setup
+            // failure → drop the connection (never serve it in the clear). On
+            // success the slot enters CONN_TLS_HANDSHAKE and we kick the
+            // handshake once (it typically wants the ClientHello → WantRead,
+            // for which read interest is already armed).
+            if self.cfg.tls != null {
+                tc := self.cfg.tls.accept(fd);
+                if tc == null {
+                    self.emit(EventKind.TLS_HANDSHAKE_FAULT, slot, 0);
+                    self.conn_close(slot);
+                    continue;
+                }
+                c.tls = tc;
+                c.state = CONN_TLS_HANDSHAKE;
+                self.drive_handshake(slot);
+            }
+        }
+    }
+
+    // T3: advance a CONN_TLS_HANDSHAKE slot one step. WantRead leaves the slot
+    // on the (always-armed) read watch; WantWrite arms the write watch; Done
+    // transitions to CONN_READING and drains any app-data mbedTLS already
+    // buffered; Closed/Fatal drops the connection. The request deadline (set at
+    // accept) bounds a stalled handshake — the tick eviction loop closes it.
+    drive_handshake :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        step := c.tls.handshake();
+        if step == TlsStep.WantWrite {
+            if !c.write_armed {
+                awe := false;
+                self.loop.add_write(c.fd, xx slot) catch { awe = true; };
+                if awe {
+                    self.emit(EventKind.TLS_HANDSHAKE_FAULT, slot, 0);
+                    self.conn_close(slot);
+                    return;
+                }
+                c.write_armed = true;
+            }
+            return;
+        }
+        // No longer waiting on writability — drop the write watch if held.
+        if c.write_armed {
+            self.loop.del_write(c.fd);
+            c.write_armed = false;
+        }
+        if step == TlsStep.WantRead { return; }   // read watch stays armed
+        if step == TlsStep.Done {
+            c.state = CONN_READING;
+            c.read_len = 0;
+            self.set_deadline(slot, self.cfg.timeout_request_ms);
+            self.read_more(slot);   // serve any request bytes already decrypted
+            return;
+        }
+        // Closed (peer aborted handshake) / Fatal (protocol error).
+        self.emit(EventKind.TLS_HANDSHAKE_FAULT, slot, 0);
+        self.conn_close(slot);
+    }
+
+    // ── Q3.1: streaming request-body pump (CONN_BODY) ────────────────
+
+    // Park the conn's read watch: the body channel is full and the worker
+    // hasn't drained it yet. feed() already marked the channel `stalled`
+    // in the same critical section as the shortfall, so the worker's next
+    // draining read wakes the loop → resume_body_pumps.
+    body_park :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        if c.body_parked { return; }
+        self.loop.del_read(c.fd);
+        c.body_parked = true;
+        self.body_parked_n += 1;
+    }
+
+    // End-of-body: signal the channel, park the read watch for the
+    // CONN_HANDLING stretch (0.2 — pipelined bytes would level-trigger-spin
+    // the loop while the worker runs), and arm the handler deadline — the
+    // handler's budget starts at BODY-COMPLETE (the upload itself was
+    // bounded by the stall-refreshed delivery deadline, never in total).
+    body_eof :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        c.bchan.finish(false);
+        // Q3.3: a fiber parked in read_body is woken by state changes too
+        // (this eof may arrive with no byte progress this pump — e.g. the
+        // trailer's final CRLF alone).
+        if c.fiber_h != 0 { self.cfg.fibers.wake(c.fiber_h); }
+        c.body_mode = 0;
+        if c.body_parked {
+            c.body_parked = false;
+            self.body_parked_n -= 1;
+        } else {
+            self.loop.del_read(c.fd);
+        }
+        c.state = CONN_HANDLING;
+        // Q3.4 (review F1): reading just parked for the handler stretch —
+        // drop any unresolved cross-direction want + cross-armed watch.
+        self.tls_want_drop(slot);
+        // Q3.3 hygiene: fiber mode keeps handler_deadline 0 (cooperative —
+        // the sweep can never preempt a fiber, and arming here would only
+        // push a spurious heap hint; review INFO).
+        if self.cfg.handler_timeout_ms > 0 and self.cfg.fibers == null {
+            c.handler_deadline = event.deadline_in(self.cfg.handler_timeout_ms);
+            self.arm_slot(slot, c.handler_deadline);
+        } else {
+            c.handler_deadline = 0;
+        }
+    }
+
+    // Abort a streaming body mid-flight (bad framing / oversized framing
+    // element / trailer flood). The worker still owes its completion, so
+    // the slot STAYS CONN_BODY: reading stops, the buffered framing is
+    // discarded, the channel faults (a blocked reader wakes with -1) and
+    // the eventual response closes the connection (drain_completions'
+    // early-response path). Surfaced as a 400-class parse error — note the
+    // wire status is whatever the handler responds (a second response
+    // cannot be spliced into an owed completion).
+    body_abort :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        if c.body_parked {
+            c.body_parked = false;
+            self.body_parked_n -= 1;
+        } else {
+            self.loop.del_read(c.fd);
+        }
+        // Q3.4 (review F1): reading stops for good on this slot (it idles
+        // for the owed completion) — a live cross-armed write watch would
+        // spin the loop until it lands. Drop the wants.
+        self.tls_want_drop(slot);
+        c.read_len = 0;
+        c.body_mode = 0;
+        c.close_after = true;
+        c.linger_close = true;   // the client is mid-upload: linger so the response lands
+        c.bchan.finish(true);
+        if c.fiber_h != 0 { self.cfg.fibers.wake(c.fiber_h); }   // Q3.3: -1 to a parked reader
+        self.st_4xx += 1;
+        self.emit(EventKind.PARSE_ERROR, slot, 400);
+        // Give the worker's response time to materialize — the delivery
+        // deadline may be mid-refresh-cycle from the aborted upload.
+        self.set_deadline(slot, self.cfg.timeout_request_ms);
+    }
+
+    // Decode the body framing buffered at the front of read_buf and push
+    // the decoded bytes into the slot's channel, consuming what it decodes
+    // (memmove compaction — the front of read_buf is ALWAYS body framing
+    // while CONN_BODY). Refreshes the delivery deadline on any progress
+    // (stall-based timeout). Parks the read watch when the channel is full
+    // with bytes still pending. On end-of-body: body_eof (leftover bytes —
+    // the next pipelined request — stay buffered for the completion drain).
+    pump_body :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        progressed := false;
+        while c.body_mode != 0 {
+            if c.body_mode == 1 {
+                // Content-Length countdown.
+                if c.read_len == 0 { break; }
+                n := if c.body_remaining < c.read_len then c.body_remaining else c.read_len;
+                took := c.bchan.feed(c.read_buf, n);
+                if took > 0 {
+                    progressed = true;
+                    rest := c.read_len - took;
+                    if rest > 0 { clib.memmove(xx c.read_buf, xx @c.read_buf[took], rest); }
+                    c.read_len = rest;
+                    c.body_remaining -= took;
+                }
+                if c.body_remaining == 0 {
+                    self.body_eof(slot);
+                    break;
+                }
+                if took < n { self.body_park(slot); }
+                break;   // pushed all buffered bytes; need more from the wire
+            }
+            // Chunked framing, one element per iteration.
+            if c.bch_state == 0 {
+                // Size line: hex size [;ext] CRLF. Same validation rules as
+                // decode_chunked_pass (first non-hex byte must be ';' or CR;
+                // i64-wrap guard on the shift; the line ends at its FIRST
+                // CR, which must be part of a CRLF — a bare CR inside the
+                // extension is malformed there too; Q3.1-review LOW parity).
+                e : i64 = -1;   // offset of the line's first CR
+                k : i64 = 0;
+                while k < c.read_len {
+                    if c.read_buf[k] == '\r' { e = k; break; }
+                    k += 1;
+                }
+                if e < 0 { break; }                 // no CR yet — need more (body_ready grows/aborts at the cap)
+                if e + 1 >= c.read_len { break; }   // CR at the buffer edge — need the LF
+                if c.read_buf[e + 1] != '\n' {
+                    self.body_abort(slot);          // bare CR in the size line
+                    return;
+                }
+                size : i64 = 0;
+                digits : i64 = 0;
+                p : i64 = 0;
+                bad := false;
+                while p < e {
+                    ch := c.read_buf[p];
+                    hv : i64 = -1;
+                    if ch >= '0' and ch <= '9' { hv = xx (ch - '0'); }
+                    else if ch >= 'a' and ch <= 'f' { hv = xx (ch - 'a' + 10); }
+                    else if ch >= 'A' and ch <= 'F' { hv = xx (ch - 'A' + 10); }
+                    if hv < 0 { break; }
+                    if size > 0x07FFFFFFFFFFFFFF { bad = true; break; }   // would wrap i64
+                    size = size * 16 + hv;
+                    digits += 1;
+                    p += 1;
+                }
+                if !bad and (digits == 0 or (p < e and c.read_buf[p] != ';')) { bad = true; }   // not ';' before CR
+                if bad {
+                    self.body_abort(slot);
+                    return;
+                }
+                consumed := e + 2;
+                rest := c.read_len - consumed;
+                if rest > 0 { clib.memmove(xx c.read_buf, xx @c.read_buf[consumed], rest); }
+                c.read_len = rest;
+                progressed = true;
+                if size == 0 {
+                    c.bch_state = 3;        // trailer block
+                    c.body_remaining = 0;   // trailer LINE counter (bounded by max_headers)
+                } else {
+                    c.bch_state = 1;
+                    c.body_remaining = size;
+                }
+                continue;
+            }
+            if c.bch_state == 1 {
+                // Chunk data: stream it as it arrives — a chunk larger than
+                // the read buffer (or the channel) never needs to fit whole.
+                if c.read_len == 0 { break; }
+                n := if c.body_remaining < c.read_len then c.body_remaining else c.read_len;
+                took := c.bchan.feed(c.read_buf, n);
+                if took > 0 {
+                    progressed = true;
+                    rest := c.read_len - took;
+                    if rest > 0 { clib.memmove(xx c.read_buf, xx @c.read_buf[took], rest); }
+                    c.read_len = rest;
+                    c.body_remaining -= took;
+                }
+                if c.body_remaining == 0 {
+                    c.bch_state = 2;   // the CRLF after the data
+                    continue;
+                }
+                if took < n { self.body_park(slot); }
+                break;
+            }
+            if c.bch_state == 2 {
+                if c.read_len < 2 { break; }
+                if c.read_buf[0] != '\r' or c.read_buf[1] != '\n' {
+                    self.body_abort(slot);
+                    return;
+                }
+                rest := c.read_len - 2;
+                if rest > 0 { clib.memmove(xx c.read_buf, xx @c.read_buf[2], rest); }
+                c.read_len = rest;
+                progressed = true;
+                c.bch_state = 0;
+                continue;
+            }
+            // bch_state == 3: trailer block — consume lines until the empty
+            // one; contents ignored, never merged (no smuggle). The line
+            // COUNT is bounded by max_headers (an attacker must not keep a
+            // request alive with an infinite trailer drip).
+            if c.read_len < 2 { break; }
+            if c.read_buf[0] == '\r' and c.read_buf[1] == '\n' {
+                rest := c.read_len - 2;
+                if rest > 0 { clib.memmove(xx c.read_buf, xx @c.read_buf[2], rest); }
+                c.read_len = rest;
+                self.body_eof(slot);
+                break;
+            }
+            // A trailer line also ends at its FIRST CR, which must be part
+            // of a CRLF — a bare CR inside the line is malformed (parity
+            // with decode_chunked_pass's trailer scan; Q3.1-review LOW).
+            te : i64 = -1;
+            tk : i64 = 0;
+            while tk < c.read_len {
+                if c.read_buf[tk] == '\r' { te = tk; break; }
+                tk += 1;
+            }
+            if te < 0 { break; }                 // trailer line incomplete
+            if te + 1 >= c.read_len { break; }   // CR at the buffer edge — need the LF
+            if c.read_buf[te + 1] != '\n' {
+                self.body_abort(slot);           // bare CR in a trailer line
+                return;
+            }
+            c.body_remaining += 1;
+            if c.body_remaining > self.cfg.max_headers {
+                self.body_abort(slot);
+                return;
+            }
+            rest := c.read_len - (te + 2);
+            if rest > 0 { clib.memmove(xx c.read_buf, xx @c.read_buf[te + 2], rest); }
+            c.read_len = rest;
+            progressed = true;
+        }
+        if progressed and self.conns[slot].state == CONN_BODY {
+            self.set_deadline(slot, self.cfg.timeout_request_ms);
+            // Q3.3: byte progress wakes the conn's fiber (a parked reader);
+            // the tick-end drive runs it. (The eof transition wakes inside
+            // body_eof — it can arrive with no byte progress.)
+            if self.conns[slot].fiber_h != 0 {
+                self.cfg.fibers.wake(self.conns[slot].fiber_h);
+            }
+        }
+    }
+
+    // Readiness on a CONN_BODY slot: pump what is buffered, then read more.
+    // Mirrors read_more's error contract (WouldBlock pauses; Closed/Fault
+    // drops the conn — conn_close faults the channel so the blocked reader
+    // wakes) but never parses requests: the front of read_buf is body
+    // framing until end-of-body.
+    body_ready :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        while true {
+            self.pump_body(slot);
+            if c.state != CONN_BODY { return; }   // end-of-body → CONN_HANDLING
+            if c.body_parked { return; }          // channel full — parked
+            if c.body_mode == 0 { return; }       // aborted (bad framing)
+            if c.read_len == c.read_cap {
+                // A framing ELEMENT (size line / trailer line) larger than
+                // the buffer: grow toward the cap, else the framing is
+                // abusive — abort. (Chunk DATA never requires growth — it
+                // streams out through the channel.)
+                if !self.grow_read_buf(slot, 0) {
+                    self.body_abort(slot);
+                    return;
+                }
+            }
+            nq, re := self.conn_read(slot, @c.read_buf[c.read_len], xx (c.read_cap - c.read_len));
+            if re == error.WouldBlock { return; }
+            if re {
+                self.emit(EventKind.READ_FAULT, slot, 0);
+                self.conn_close(slot);   // faults + releases the channel
+                return;
+            }
+            self.st_bytes_in += nq;
+            c.read_len += nq;
+        }
+    }
+
+    // A worker drained a STALLED channel and woke the loop: resume every
+    // parked CONN_BODY slot — pump the framing still buffered, and re-arm
+    // the read watch if the pump wants more wire bytes. Gated on the
+    // parked counter so the slot scan costs nothing when nothing is parked.
+    resume_body_pumps :: (self: *Server) {
+        if self.body_parked_n == 0 { return; }
+        i : i64 = 0;
+        while i < self.cfg.max_conn {
+            c := @self.conns[i];
+            if c.state == CONN_BODY and c.body_parked {
+                c.body_parked = false;
+                self.body_parked_n -= 1;
+                self.pump_body(i);
+                // Still streaming and not re-parked → hungry for wire bytes.
+                if c.state == CONN_BODY and !c.body_parked and c.body_mode != 0 {
+                    are := false;
+                    self.loop.add_read(c.fd, xx i) catch { are = true; };
+                    if are {
+                        self.emit(EventKind.READ_FAULT, i, 0);
+                        self.conn_close(i);
+                    } else {
+                        self.body_ready(i);   // level-triggered: catch bytes queued while parked
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+
+    // Q3.2: a worker fed a HUNGRY stream channel and woke the loop — resume
+    // every paused stream drain. write_more re-arms the write watch on the
+    // first WouldBlock and re-flags stream_waiting if the channel runs dry
+    // again. Gated on the counter so the scan costs nothing normally.
+    resume_stream_pumps :: (self: *Server) {
+        if self.stream_waiting_n == 0 { return; }
+        i : i64 = 0;
+        while i < self.cfg.max_conn {
+            c := @self.conns[i];
+            if c.state == CONN_WRITING and c.stream_waiting {
+                c.stream_waiting = false;
+                self.stream_waiting_n -= 1;
+                self.write_more(i);
+            }
+            i += 1;
+        }
+    }
+
+    // ── read → parse → dispatch ──────────────────────────────────────
+
+    // Grow the slot's read buffer to at least `target` (0 = double),
+    // never past cfg.read_buf_cap. False when already at the limit.
+    grow_read_buf :: (self: *Server, slot: i64, target: i64) -> bool {
+        c := @self.conns[slot];
+        want := if target > 0 then target else c.read_cap * 2;
+        if want <= c.read_cap { return true; }
+        if want > self.cfg.read_buf_cap { want = self.cfg.read_buf_cap; }
+        if want <= c.read_cap { return false; }   // already at the limit
+        nb : [*]u8 = xx self.own_alloc.alloc_bytes(want);
+        if c.read_len > 0 { clib.memcpy(nb, c.read_buf, xx c.read_len); }
+        self.own_alloc.dealloc_bytes(xx c.read_buf);
+        c.read_buf = nb;
+        c.read_cap = want;
+        return true;
+    }
+
+    // ── Transport seam (Phase T) ────────────────────────────────────
+    // read_more / write_more go through these instead of calling
+    // socket.*_nb directly, so a connection is transport-agnostic:
+    // plaintext today, TLS app-data once cfg.tls negotiated the session.
+    // The (i64, !) contract is IDENTICAL to socket.read_nb/write_nb
+    // — error.WouldBlock to pause (re-arm), error.Closed/Fault to drop —
+    // so the callers stay unchanged. The TLS branch maps the abstract
+    // TlsStep onto the same channel; a TlsStep.Closed (clean close_notify)
+    // is error.Closed exactly like a plaintext EOF.
+    //
+    // CROSS-DIRECTION WANTS (Q3.4, was the T3 limitation): a DATA-phase TLS
+    // read may return WantWrite (the session must flush a pending record
+    // before it can deliver plaintext) and a write may return WantRead (the
+    // session needs a peer message first) — renegotiation / ticket-flush
+    // shaped flows. Both still surface to the callers as error.WouldBlock
+    // (the pause/re-arm contract is unchanged), but the wanted DIRECTION is
+    // tracked on the Conn so the ready loop drives the OPPOSITE readiness:
+    //   read-want-write  → conn_read arms the write watch here (readability
+    //     alone can never unstick it); a writable event re-enters the READ
+    //     path. The cross-arm is torn down the moment the read resolves the
+    //     other way (WantRead / progress / EOF) — unless a response drain
+    //     owns the watch (CONN_WRITING: write_more manages it, with its del
+    //     sites guarded on the flag).
+    //   write-want-read  → conn_write records the flag and DROPS the write
+    //     watch if armed: a level-triggered writable with a read-direction
+    //     want would spin one futile retry per tick. The always-armed read
+    //     watch delivers the retry; the ready loop routes it to write_more.
+    tls_rd_want_clear :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        if !c.tls_rd_want_write { return; }
+        c.tls_rd_want_write = false;
+        if c.write_armed and c.state != CONN_WRITING {
+            self.loop.del_write(c.fd);
+            c.write_armed = false;
+        }
+    }
+
+    // Q3.4 (review F1/F2): drop BOTH pending cross-direction wants and the
+    // cross-armed write watch. Called wherever the conn LEAVES the reading
+    // paths with the want unresolved — dispatch into CONN_HANDLING (reading
+    // parks: a level-triggered writable would be swallowed by the ready
+    // loop's CONN_HANDLING skip, spinning the loop for the whole handler
+    // run while the retry it carries could never fire), body_abort (reading
+    // stops; the slot idles for the owed completion), and begin_linger (raw
+    // discard — the TLS want is moot). Dropping is safe: the TLS session
+    // still holds the pending record, so the want re-establishes itself on
+    // the first conn_read/conn_write after the slot returns to an I/O state.
+    tls_want_drop :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        c.tls_wr_want_read = false;
+        if !c.tls_rd_want_write { return; }
+        c.tls_rd_want_write = false;
+        if c.write_armed {
+            self.loop.del_write(c.fd);
+            c.write_armed = false;
+        }
+    }
+
+    conn_read :: (self: *Server, slot: i64, buf: [*]u8, cap: usize) -> (i64, !) {
+        c := @self.conns[slot];
+        if c.tls != null {
+            n, step := c.tls.read(buf, cap);
+            if step == TlsStep.Done {
+                self.tls_rd_want_clear(slot);
+                if n > 0 { return n; }
+                raise error.Closed;                                        // 0 bytes done == EOF
+            }
+            if step == TlsStep.WantWrite {
+                // Q3.4: cross-arm the write watch — only writability can
+                // deliver the retry. An arm failure means the fd is
+                // unusable: surface as a read fault (the caller closes).
+                c.tls_rd_want_write = true;
+                if !c.write_armed {
+                    awe := false;
+                    self.loop.add_write(c.fd, xx slot) catch { awe = true; };
+                    if awe { raise error.Closed; }
+                    c.write_armed = true;
+                }
+                raise error.WouldBlock;
+            }
+            if step == TlsStep.WantRead {
+                self.tls_rd_want_clear(slot);
+                raise error.WouldBlock;
+            }
+            self.tls_rd_want_clear(slot);
+            raise error.Closed;                                            // Closed (close_notify) / Fatal → drop
+        }
+        nq, re := socket.read_nb(c.fd, buf, cap);
+        if re == error.WouldBlock { raise error.WouldBlock; }
+        if re { raise error.Closed; }                                      // Closed / Fault → drop
+        return nq;
+    }
+
+    conn_write :: (self: *Server, slot: i64, buf: [*]u8, len: usize) -> (i64, !) {
+        c := @self.conns[slot];
+        if c.tls != null {
+            n, step := c.tls.write(buf, len);
+            if step == TlsStep.Done {
+                c.tls_wr_want_read = false;
+                if n > 0 { return n; }
+                raise error.WouldBlock;                                    // 0 written → retry on writable
+            }
+            if step == TlsStep.WantRead {
+                // Q3.4: the write needs READABILITY. Drop the write watch —
+                // a level-triggered writable with nothing to act on would
+                // spin the loop; the read watch delivers the retry. (Unless
+                // a blocked TLS READ cross-armed it — that retry still
+                // needs writability, and its routing does real work;
+                // review F4.)
+                c.tls_wr_want_read = true;
+                if c.write_armed and !c.tls_rd_want_write {
+                    self.loop.del_write(c.fd);
+                    c.write_armed = false;
+                }
+                raise error.WouldBlock;
+            }
+            if step == TlsStep.WantWrite {
+                c.tls_wr_want_read = false;
+                raise error.WouldBlock;
+            }
+            c.tls_wr_want_read = false;
+            raise error.Closed;                                            // Closed / Fatal → drop
+        }
+        nq, we := socket.write_nb(c.fd, buf, len);
+        if we == error.WouldBlock { raise error.WouldBlock; }
+        if we { raise error.Closed; }                                      // Closed / Fault → drop
+        return nq;
+    }
+
+    // Q1.3: the one-off interim "HTTP/1.1 100 Continue" — written DIRECTLY
+    // through the transport seam, not via the out_buf machinery (out_buf
+    // carries exactly one FINAL response per request and its completion
+    // drives the keep-alive state machine; an interim must not). 25 bytes
+    // into a send queue that is empty in practice (the server has written
+    // nothing for this request yet); a peer on which even that blocks or
+    // faults mid-interim would leave half a status line on the wire — the
+    // stream is unrecoverable, so treat it as a write fault and close.
+    // Returns false when the connection was closed.
+    send_continue :: (self: *Server, slot: i64) -> bool {
+        c := @self.conns[slot];
+        if c.cont_sent { return true; }
+        c.cont_sent = true;
+        msg := "HTTP/1.1 100 Continue\r\n\r\n";
+        mp : [*]u8 = msg.ptr;
+        off : i64 = 0;
+        while off < msg.len {
+            nq, we := self.conn_write(slot, @mp[off], xx (msg.len - off));
+            if we {   // WouldBlock or fault — see above: both close
+                self.emit(EventKind.WRITE_FAULT, slot, 0);
+                self.conn_close(slot);
+                return false;
+            }
+            self.st_bytes_out += nq;
+            off += nq;
+        }
+        return true;
+    }
+
+    read_more :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        if c.state == CONN_KEEPALIVE {
+            c.state = CONN_READING;
+            self.set_deadline(slot, self.cfg.timeout_request_ms);
+        }
+        while true {
+            if c.read_len == c.read_cap {
+                if !self.grow_read_buf(slot, 0) {
+                    // 0.3: a response is in flight (CONN_WRITING) — NEVER
+                    // serialize a second response over a draining out_buf
+                    // (that leaks the old buffer and splices error bytes
+                    // into the wire mid-body). Stop reading instead: drop
+                    // the read watch (level-triggered — the flood would
+                    // otherwise spin the loop), discard the over-cap bytes,
+                    // and close once the in-flight response finishes.
+                    if c.state == CONN_WRITING {
+                        self.loop.del_read(c.fd);
+                        c.read_len = 0;
+                        c.reset_parse();
+                        c.close_after = true;
+                        // Q0.4: this is an error close (the flood is being
+                        // rejected without a response) — linger so the
+                        // in-flight response's tail isn't RST-killed by the
+                        // unread flood at close. Surface the rejection to
+                        // observability as a 431-class parse fault (no
+                        // second response is serialized — see above).
+                        c.linger_close = true;
+                        self.st_4xx += 1;
+                        self.emit(EventKind.PARSE_ERROR, slot, 431);
+                        return;
+                    }
+                    // over the limit: oversized headers (431) or body (413)
+                    hdr_done := false;
+                    i : i64 = 0;
+                    while i + 3 < c.read_len {
+                        if c.read_buf[i] == '\r' and c.read_buf[i+1] == '\n' and c.read_buf[i+2] == '\r' and c.read_buf[i+3] == '\n' { hdr_done = true; break; }
+                        i += 1;
+                    }
+                    self.respond_error_close(slot, if hdr_done then 413 else 431);
+                    return;
+                }
+            }
+            nq, re := self.conn_read(slot, @c.read_buf[c.read_len], xx (c.read_cap - c.read_len));
+            if re == error.WouldBlock { break; }
+            if re {   // Closed or Fault — peer reset / EOF mid-request
+                self.emit(EventKind.READ_FAULT, slot, 0);
+                self.conn_close(slot);
+                return;
+            }
+            self.st_bytes_in += nq;
+            c.read_len += nq;
+        }
+        self.serve_buffered(slot);
+    }
+
+    // Serve every complete request sitting in the buffer (a keep-alive
+    // client may pipeline; each response must finish sending before the
+    // next parse — a pending partial write pauses the drain and
+    // write_more resumes it).
+    serve_buffered :: (self: *Server, slot: i64) {
+        while self.conns[slot].state == CONN_READING {
+            if !self.try_serve_one(slot) { return; }
+        }
+    }
+
+    // Q1.8 (RFC 3986 §2.1, §5.2.4): canonicalize the routable path —
+    // percent-decode + dot-segment removal, IN PLACE in read_buf, with the
+    // query (if any) slid left against the new path end so the combined
+    // req.path view stays contiguous. Shared by the accumulate and Q3.1
+    // streamed dispatch paths; MUST run exactly once per request, only when
+    // the request is guaranteed to be CONSUMED this cycle (the canonical
+    // path may contain a literal '%' from %25 — a re-parse would double-
+    // decode). The query itself is NEVER decoded (the router's permissive
+    // query/form decode is a separate, later layer). Skipped for the
+    // synthetic "/" and asterisk-form targets, and for any path with
+    // neither a '%' nor a dot segment (the common case — one scan).
+    // False = the path was rejected (400 sent, connection closing).
+    canon_path :: (self: *Server, slot: i64, req: *Request, path_off: i64, path_static_root: bool) -> bool {
+        c := @self.conns[slot];
+        if path_static_root or (req.path.len == 1 and req.path[0] == '*') { return true; }
+        qoff := 0;   // offset of '?' (or path end) within the target view
+        while qoff < req.path.len and req.path[qoff] != '?' { qoff += 1; }
+        // Dirty = any '%', or a DOT SEGMENT — "/." only counts when
+        // the dot ends the path or is followed by '/' or another dot,
+        // so dotfile paths ("/.well-known/…") stay on the fast path.
+        dirty := false;
+        sc := 0;
+        while sc < qoff {
+            ch := req.path[sc];
+            if ch == '%' { dirty = true; break; }
+            if ch == '.' and sc > 0 and req.path[sc - 1] == '/' {         // "/."
+                nx : u8 = 0;
+                if sc + 1 < qoff { nx = req.path[sc + 1]; }
+                if sc + 1 >= qoff or nx == '/' or nx == '.' { dirty = true; break; }
+            }
+            sc += 1;
+        }
+        if !dirty { return true; }
+        np := normalize_path(@c.read_buf[path_off], qoff);
+        if np < 0 {
+            self.respond_error_close(slot, 400);
+            return false;
+        }
+        if qoff < req.path.len {
+            // slide "?query" left against the canonical path end
+            qlen := req.path.len - qoff;
+            mv : i64 = 0;
+            while mv < qlen {
+                c.read_buf[path_off + np + mv] = c.read_buf[path_off + qoff + mv];
+                mv += 1;
+            }
+            np += qlen;
+        }
+        req.path = string.{ ptr = @c.read_buf[path_off], len = np };
+        return true;
+    }
+
+    // Parse one request off the front of the buffer; false = incomplete
+    // (need more bytes) or the connection left the READING state.
+    try_serve_one :: (self: *Server, slot: i64) -> bool {
+        c := @self.conns[slot];
+        buf := string.{ ptr = c.read_buf, len = xx c.read_len };
+
+        // headers complete? Q0.5: resume the terminator scan where the last
+        // cycle left off (scan_pos bytes are known clean; back up 3 so a
+        // terminator straddling the old boundary is caught) and cache the
+        // hit — a slow-dripped request no longer rescans from byte 0 every
+        // read cycle.
+        he := c.hdr_end;
+        if he < 0 {
+            i := c.scan_pos - 3;
+            if i < 0 { i = 0; }
+            while i + 3 < buf.len {
+                if buf[i] == '\r' and buf[i+1] == '\n' and buf[i+2] == '\r' and buf[i+3] == '\n' { he = i; break; }
+                i += 1;
+            }
+            if he < 0 {
+                c.scan_pos = xx buf.len;
+                return false;
+            }
+            c.hdr_end = he;
+        }
+
+        // request line: METHOD SP PATH SP VERSION CRLF
+        req : Request = .{};
+        p := 0;
+        while p < he and buf[p] != ' ' { p += 1; }
+        req.method = string.{ ptr = c.read_buf, len = p };
+        p += 1;
+        ps := p;
+        while p < he and buf[p] != ' ' { p += 1; }
+        req.path = string.{ ptr = @c.read_buf[ps], len = p - ps };
+        p += 1;
+        vs := p;
+        while p < he and buf[p] != '\r' { p += 1; }
+        req.version = string.{ ptr = @c.read_buf[vs], len = p - vs };
+        hdr_start := p + 2;
+        // hdr_start == he + 2 is the LEGAL zero-header shape (the request
+        // line's own CRLF is the first half of the terminator); anything
+        // beyond is malformed. (Q1.1: this used to reject every header-less
+        // request — a legal HTTP/1.0 form.)
+        if req.method.len == 0 or req.path.len == 0 or hdr_start > he + 2 {
+            self.respond_error_close(slot, 400);
+            return false;
+        }
+        // Version must be exactly HTTP/1.0 or HTTP/1.1. Q0.7: a WELL-FORMED
+        // but unsupported version token ("HTTP/2.0", "HTTP/1.7") is a
+        // version-negotiation failure → 505; only a token that isn't even
+        // an HTTP-version shape ("FOO/1.1", junk) is a malformed request
+        // line → 400. Method/path must be free of control chars (a CR/LF
+        // or NUL smuggled into either is a request-splitting vector).
+        if !ascii_ieq(req.version, "http/1.0") and !ascii_ieq(req.version, "http/1.1") {
+            http_shape := req.version.len >= 6
+                and ascii_ieq(string.{ ptr = req.version.ptr, len = 5 }, "http/");
+            self.respond_error_close(slot, if http_shape then 505 else 400);
+            return false;
+        }
+        if has_ctrl(req.method) or has_ctrl(req.path) {
+            self.respond_error_close(slot, 400);
+            return false;
+        }
+
+        // Q1.2 (RFC 9112 §3.2): classify the request-target form. The
+        // routable path (req.path) and, for absolute-form, the embedded
+        // authority (req.authority) are derived HERE, so downstream code —
+        // the router, the pool-job view rebuild — never sees a raw
+        // absolute-form target.
+        //   origin-form    "/path?query"      — the common case, as-is.
+        //   absolute-form  "http://auth/path" — an origin server MUST
+        //     accept it (§3.2.2): authority → req.authority, req.path →
+        //     the embedded path (query rides along; no path at all → "/").
+        //     Only the http/https schemes are meaningful here → 400 else.
+        //   asterisk-form  "*"                — OPTIONS only → 400 else.
+        //   authority-form "host:port"        — CONNECT only, and CONNECT
+        //     is unimplemented → 501; any other method whose target is
+        //     none of the forms above is malformed → 400.
+        // CONNECT is not implemented AT ALL — reject it for EVERY target
+        // form, before classification (its target must be authority-form
+        // per §3.2.3 anyway; an origin/absolute-form CONNECT falling
+        // through to the handler would "serve" a tunnel request as if it
+        // were a GET). Method tokens here and below are matched
+        // case-insensitively — a DELIBERATE leniency, consistent with the
+        // router's method matching (ci_eq); RFC methods are case-sensitive,
+        // but the lenient match only changes what happens to bogus tokens
+        // ("connect", "options"), never the handling of a legal request.
+        if ascii_ieq(req.method, "connect") {
+            self.respond_error_close(slot, 501);
+            return false;
+        }
+        path_off := ps;              // read_buf offset of the routable path
+        auth_off := 0;               // read_buf offset of the authority
+        auth_len : i64 = 0;          //   (absolute-form only; 0 = none)
+        path_static_root := false;   // req.path is the static "/" literal
+        if req.path[0] != '/' {       // not origin-form
+            if req.path.len == 1 and req.path[0] == '*' {
+                if !ascii_ieq(req.method, "options") {
+                    self.respond_error_close(slot, 400);
+                    return false;
+                }
+            } else {
+                t := req.path;
+                // absolute-form iff the target has a "://" after its scheme
+                scheme_end := -1;
+                k := 0;
+                while k + 2 < t.len {
+                    if t[k] == ':' and t[k + 1] == '/' and t[k + 2] == '/' { scheme_end = k; break; }   // "://"
+                    k += 1;
+                }
+                if scheme_end < 0 {
+                    // authority-form ("host:port") or junk. Authority-form
+                    // is legal ONLY for CONNECT — rejected 501 above — so
+                    // whatever reaches here is malformed → 400.
+                    self.respond_error_close(slot, 400);
+                    return false;
+                }
+                sch := string.{ ptr = t.ptr, len = scheme_end };
+                if !ascii_ieq(sch, "http") and !ascii_ieq(sch, "https") {
+                    self.respond_error_close(slot, 400);
+                    return false;
+                }
+                astart := scheme_end + 3;
+                aend := astart;
+                while aend < t.len and t[aend] != '/' and t[aend] != '?' { aend += 1; }   // '/' or '?'
+                if aend == astart {   // "http:///path" — empty authority
+                    self.respond_error_close(slot, 400);
+                    return false;
+                }
+                auth_off = ps + astart;
+                auth_len = aend - astart;
+                req.authority = string.{ ptr = @c.read_buf[auth_off], len = auth_len };
+                if aend < t.len and t[aend] == '/' {
+                    // embedded path; its query, if any, rides along — the
+                    // router splits on '?' itself
+                    path_off = ps + aend;
+                    req.path = string.{ ptr = @c.read_buf[path_off], len = t.len - aend };
+                } else if aend < t.len {
+                    // '?' straight after the authority ("http://host?q"):
+                    // an empty path with a query. Splicing the implied "/"
+                    // in front of the query would need an allocation the
+                    // request views can't own; real clients normalize this
+                    // shape away — reject loudly instead of routing wrong.
+                    self.respond_error_close(slot, 400);
+                    return false;
+                } else {
+                    // no path at all ("http://host") — the path is "/"
+                    req.path = "/";
+                    path_static_root = true;
+                }
+            }
+        }
+
+        req.headers_raw = string.{ ptr = @c.read_buf[hdr_start], len = he - hdr_start + 2 };
+
+        // Header-block bounds: cap the line count and each line's length
+        // (resource exhaustion / smuggling) → 431. One pass over the raw
+        // block, counting CRLF-delimited lines.
+        {
+            hb := req.headers_raw;
+            lines := 0;
+            ls := 0;
+            k := 0;
+            while k < hb.len {
+                if hb[k] == '\n' {           // ends a line
+                    // line length excludes the trailing CR (and the LF)
+                    ll := k - ls;
+                    if ll > 0 and hb[k - 1] == '\r' { ll -= 1; }
+                    if ll > 0 {
+                        lines += 1;
+                        if ll > self.cfg.max_header_line { self.respond_error_close(slot, 431); return false; }
+                    }
+                    ls = k + 1;
+                }
+                k += 1;
+            }
+            if lines > self.cfg.max_headers { self.respond_error_close(slot, 431); return false; }
+        }
+
+        // Whitespace before the field-name's colon is malformed (RFC 7230
+        // §3.2.4) and a known smuggling vector: a peer that strips the space
+        // and a peer that doesn't disagree on whether the header exists
+        // (e.g. "Transfer-Encoding : chunked" is seen as TE by one and as a
+        // junk name by the other). Reject the whole message → 400. One pass
+        // over the raw block: for each non-empty line, scan to the first ':'
+        // and fail if any space/tab precedes it; a line with no ':' before
+        // its terminator is also malformed.
+        {
+            hb := req.headers_raw;
+            ls := 0;
+            k := 0;
+            while k < hb.len {
+                if hb[k] == '\n' {           // ends a line
+                    le := k;
+                    if le > ls and hb[le - 1] == '\r' { le -= 1; }   // drop CR
+                    if le > ls {           // non-empty line (skip the terminator)
+                        colon := -1;
+                        bad_ws := false;
+                        m := ls;
+                        while m < le {
+                            ch := hb[m];
+                            if ch == ':' { colon = m; break; }
+                            if ch == ' ' or ch == '\t' { bad_ws = true; break; }
+                            m += 1;
+                        }
+                        if bad_ws or colon < 0 {
+                            self.respond_error_close(slot, 400);
+                            return false;
+                        }
+                    }
+                    ls = k + 1;
+                }
+                k += 1;
+            }
+        }
+
+        // Q1.1 (RFC 9112 §3.2): an HTTP/1.1 request MUST carry exactly one
+        // Host header — missing or duplicated is malformed (two peers
+        // disagreeing on which Host applies is a routing/cache-poisoning
+        // vector) → 400. HTTP/1.0 predates Host and stays exempt.
+        if ascii_ieq(req.version, "http/1.1") {
+            if count_header(@req, "host") != 1 {
+                self.respond_error_close(slot, 400);
+                return false;
+            }
+        }
+
+        // Q1.3 (RFC 9110 §10.1.1): Expect. The only expectation defined is
+        // 100-continue: when this 1.1 request declares a body that has NOT
+        // fully arrived, the client is told to go ahead with a one-off
+        // interim "100 Continue" — sent at the two need-more-body sites
+        // below (send_continue), so an up-front reject (413/400/501) sends
+        // the FINAL status instead and a body that already arrived in full
+        // needs no interim at all. Any other expectation is unsupported →
+        // 417. On HTTP/1.0 the expectation is ignored per the RFC.
+        expect_continue := false;
+        if ascii_ieq(req.version, "http/1.1") {
+            exv := find_header(@req, "expect");
+            if ascii_ieq(exv, "100-continue") { expect_continue = true; }
+            else if exv.len > 0 { self.respond_error_close(slot, 417); return false; }
+        }
+
+        // Transfer-Encoding is unimplemented (chunked decode is Phase S).
+        // Treating a TE request as bodyless is a smuggling vector, so we
+        // refuse it outright → 501. Detection is by header PRESENCE, not
+        // value length: an empty or whitespace-only TE value ("TE:\r\n",
+        // "TE:   \r\n") still smuggles, so a single present TE line is enough.
+        te_count := count_header(@req, "transfer-encoding");
+
+        // Duplicate / conflicting Transfer-Encoding is a smuggling vector. Two
+        // TE lines (e.g. `chunked` then `gzip`) are equivalent to the coding
+        // list `chunked, gzip` per RFC 7230 §3.3.1 — chunked is no longer the
+        // final coding, which is unacceptable. find_header sees only the first
+        // value, so a downstream that honors the second would frame the body
+        // differently → 400.
+        if te_count > 1 {
+            self.respond_error_close(slot, 400);
+            return false;
+        }
+
+        // Duplicate / conflicting Content-Length is a smuggling vector
+        // (find_header sees only the first) → 400.
+        cl_count := count_header(@req, "content-length");
+        if cl_count > 1 {
+            self.respond_error_close(slot, 400);
+            return false;
+        }
+
+        // Content-Length AND Transfer-Encoding together is the classic
+        // CL.TE / TE.CL request-smuggling pair (the two ends disagree on
+        // the body framing) → reject outright, never parse ambiguously.
+        // (Hoisted above the dispatch-model split — it guards BOTH.)
+        if te_count > 0 and cl_count > 0 { self.respond_error_close(slot, 400); return false; }
+
+        // Only `chunked` is implemented. A TE that is not exactly the
+        // single token `chunked` (e.g. `gzip`, `identity`, or a multi-
+        // coding list `gzip, chunked`) is unimplemented → 501. Treating it
+        // as bodyless would smuggle, so we never fall through silently.
+        if te_count > 0 {
+            tev := find_header(@req, "transfer-encoding");
+            if !ascii_ieq(tev, "chunked") { self.respond_error_close(slot, 501); return false; }
+        }
+
+        // Q3.1: does this request stream its body to the handler? (init
+        // guarantees the pool exists when the knob is set; the ps check is
+        // a belt against an inconsistent Server.)
+        streaming := self.cfg.stream_request_body and (self.ps != null or self.cfg.fibers != null);
+
+        // Parse a PRESENT Content-Length once, up front — shared by the
+        // accumulate and streamed paths. A PRESENT Content-Length must be
+        // 1*DIGIT (RFC 9112 §6.3) — a present-but-empty value
+        // ("Content-Length:\t") must not parse as 0 and leave the real
+        // payload unconsumed in the buffer (a framing disagreement with any
+        // peer that rejects it). "" from an ABSENT header stays a legal
+        // bodyless request, so gate on the count.
+        clen : i64 = 0;
+        if te_count == 0 and cl_count == 1 {
+            clv := find_header(@req, "content-length");
+            if clv.len == 0 { self.respond_error_close(slot, 400); return false; }
+            j := 0;
+            while j < clv.len {
+                d := clv[j];
+                if d < '0' or d > '9' { self.respond_error_close(slot, 400); return false; }
+                if streaming {
+                    // A streamed body may be ANY size — guard only the i64
+                    // wrap of the `clen*10 + digit` shift below.
+                    if clen > (1 << 59) { self.respond_error_close(slot, 400); return false; }
+                } else {
+                    // Overflow guard: a magnitude this large can't be a real
+                    // body and would wrap i64 — an unparseable/malformed
+                    // length, not a merely-too-big one → 400. (read_buf_cap
+                    // is ~1 MB / 7 digits, so any value past read_buf_cap*10
+                    // is wildly out of range.)
+                    if clen > self.cfg.read_buf_cap { self.respond_error_close(slot, 400); return false; }
+                }
+                clen = clen * 10 + (d - '0');
+                if clen < 0 { self.respond_error_close(slot, 400); return false; }
+                j += 1;
+            }
+        }
+
+        // ── Q3.1 STREAMED dispatch (pool mode, stream_request_body) ──────
+        // A body-carrying request is handed to a worker at HEADERS-COMPLETE:
+        // the job copies ONLY the header region; req.body stays "" and the
+        // body flows through a bounded BodyChan as the loop decodes the
+        // framing (CONN_BODY). max_body is NOT enforced — the reading
+        // handler is the bound (see Config.stream_request_body).
+        if streaming and (te_count > 0 or clen > 0) {
+            // The request is CONSUMED this cycle (dispatch is unconditional
+            // from here; every failure path below closes the conn), so the
+            // once-only path canonicalization is safe now.
+            if !self.canon_path(slot, @req, path_off, path_static_root) { return false; }
+            // An Expect: 100-continue client is told to proceed — the body
+            // WILL be read. (Harmless if some body bytes already arrived.)
+            if expect_continue and !self.send_continue(slot) { return false; }
+
+            // keep-alive: same rules as the accumulate path, decided at
+            // dispatch. (c.served counts DISPATCHED requests; the accumulate
+            // path counts at completion — equivalent, one per request.)
+            req.keep_alive = !ascii_ieq(req.version, "http/1.0");
+            cnv := find_header(@req, "connection");
+            if token_list_has(cnv, "close") { req.keep_alive = false; }
+            else if token_list_has(cnv, "keep-alive") { req.keep_alive = true; }
+            c.served += 1;
+            keep := req.keep_alive and c.served < self.cfg.request_count;
+            is_head := ascii_ieq(req.method, "head");
+            req.deadline_ms = self.cfg.handler_timeout_ms;
+
+            ch : *BodyChan = xx self.own_alloc.alloc_bytes(size_of(BodyChan));
+            ch.* = BodyChan.{ alloc = self.own_alloc };
+            if !ch.mu.setup() {
+                self.own_alloc.dealloc_bytes(xx ch);
+                self.respond_error_close(slot, 500);
+                return false;
+            }
+            if !ch.cv.setup() {
+                ch.mu.destroy();
+                self.own_alloc.dealloc_bytes(xx ch);
+                self.respond_error_close(slot, 500);
+                return false;
+            }
+            ch.buf = xx self.own_alloc.alloc_bytes(BODY_CHAN_CAP);
+            ch.cap = BODY_CHAN_CAP;
+            // Copy AFTER init's unconditional add_wake — wake_fd is live.
+            ch.lp = self.loop;
+
+            // The job owns a copy of the HEADER region only (0.1 rules; the
+            // views are rebuilt over the copy exactly like the accumulate
+            // pool path, minus the body — the channel IS the body).
+            hdr_total := he + 4;
+            job : *HandlerJob = xx self.own_alloc.alloc_bytes(size_of(HandlerJob) + hdr_total);
+            jb : [*]u8 = xx job;
+            raw : [*]u8 = @jb[size_of(HandlerJob)];
+            clib.memcpy(raw, c.read_buf, xx hdr_total);
+            jreq := req;
+            jreq.body = "";
+            jreq.method = string.{ ptr = raw, len = req.method.len };
+            if !path_static_root { jreq.path = string.{ ptr = @raw[path_off], len = req.path.len }; }
+            if auth_len > 0 { jreq.authority = string.{ ptr = @raw[auth_off], len = auth_len }; }
+            jreq.version = string.{ ptr = @raw[vs], len = req.version.len };
+            jreq.headers_raw = string.{ ptr = @raw[hdr_start], len = req.headers_raw.len };
+            job.* = HandlerJob.{
+                handler = self.handler, app_ctx = self.ctx, ps = self.ps,
+                alloc = self.own_alloc, req = jreq,
+                slot = slot, gen = c.gen, keep = keep, consumed = 0,
+                server_name = self.cfg.server_name,
+                chan = ch, srv = self,
+            };
+
+            c.head_req = is_head;
+            c.bchan = ch;
+            if te_count > 0 {
+                c.body_mode = 2;
+                c.bch_state = 0;
+                c.body_remaining = 0;
+            } else {
+                c.body_mode = 1;
+                c.body_remaining = clen;
+            }
+            c.state = CONN_BODY;
+            // The DELIVERY deadline bounds body progress (stall-based —
+            // pump_body refreshes it on every piece); the handler deadline
+            // is armed once the body completes (body_eof).
+            c.handler_deadline = 0;
+
+            if self.cfg.fibers != null {
+                // Q3.3: spawn the handler FIBER (enqueued ready — it first
+                // runs at this tick's drive). Its read_body suspends on an
+                // empty channel; the pump wakes it. Completion is the
+                // fiber tail + finalize_fibers.
+                c.fiber_h = self.cfg.fibers.spawn(xx run_fiber_job, xx job);
+                self.fiber_spawned = true;   // tick re-drives until quiescent (review MED)
+            } else if !self.ps.pool.submit(run_handler_job, xx job) {
+                // Backlog full: shed 503 — undo the dispatch (the worker
+                // never saw the job; both channel refs die here).
+                self.own_alloc.dealloc_bytes(xx job);
+                c.bchan = null;
+                c.body_mode = 0;
+                c.state = CONN_READING;
+                ch.release();
+                ch.release();
+                self.respond_error_close(slot, 503);
+                return false;
+            }
+
+            // Drop the consumed header region NOW — from here the front of
+            // read_buf is body framing (the job owns its own header copy).
+            rest := c.read_len - hdr_total;
+            if rest > 0 { clib.memmove(xx c.read_buf, xx @c.read_buf[hdr_total], rest); }
+            c.read_len = rest;
+            c.reset_parse();
+            self.set_deadline(slot, self.cfg.timeout_request_ms);
+            // Pump whatever body framing already arrived with the headers
+            // (may complete the body immediately → CONN_HANDLING).
+            self.pump_body(slot);
+            return false;
+        }
+
+        // S2: the effective body-size ceiling. max_body == 0 means "use the
+        // read-buffer cap" (the raw request, framing included, can never
+        // exceed read_buf_cap anyway). Otherwise clamp to read_buf_cap — a
+        // configured max_body larger than the buffer is meaningless since the
+        // request can't be buffered past the cap.
+        max_body := self.cfg.max_body;
+        if max_body <= 0 or max_body > self.cfg.read_buf_cap { max_body = self.cfg.read_buf_cap; }
+
+        // total = raw request bytes (request line + headers + CRLFCRLF + body
+        // framing) to consume from the read buffer once dispatched.
+        total : i64 = 0;
+
+        if te_count > 0 {
+            // Decode the chunked body in place. Q0.5: validation RESUMES at
+            // the checkpoint from the previous NEED_MORE (a chunk boundary),
+            // so each raw byte is scanned once regardless of how many partial
+            // reads deliver the body. The compaction still runs exactly once,
+            // over the whole framing, only after validation proves it
+            // complete — semantics (early 413, BAD/OVERFLOW, commit-only-
+            // when-complete) unchanged.
+            body_start := he + 4;
+            resume : ChunkScan = .{};
+            if c.chunk_active { resume = ChunkScan.{ rp = c.chunk_rp, decoded = c.chunk_decoded }; }
+            cr := decode_chunked(@c.read_buf[body_start], c.read_len - body_start, max_body, resume);
+            if cr.status == ChunkStatus.NEED_MORE {
+                c.chunk_active = true;
+                c.chunk_rp = cr.resume_rp;
+                c.chunk_decoded = cr.resume_decoded;
+                // Not all framing has arrived. Make sure the buffer can grow
+                // to admit more bytes; if it's already at the cap with no
+                // complete body, that's an over-cap body → 413.
+                if c.read_len == c.read_cap and !self.grow_read_buf(slot, 0) {
+                    self.respond_error_close(slot, 413);
+                    return false;
+                }
+                // Q1.3: headers complete, chunked body still incoming —
+                // tell an Expect: 100-continue client to proceed (once).
+                if expect_continue and !self.send_continue(slot) { return false; }
+                return false;
+            }
+            if cr.status == ChunkStatus.TOO_BIG { self.respond_error_close(slot, 413); return false; }
+            if cr.status == ChunkStatus.BAD or cr.status == ChunkStatus.OVERFLOW {
+                self.respond_error_close(slot, 400);
+                return false;
+            }
+            // OK: decoded body is compacted at body_start, raw_len bytes used.
+            total = body_start + cr.raw_len;
+            req.body = string.{ ptr = @c.read_buf[body_start], len = cr.decoded_len };
+        } else {
+            // body per Content-Length (`clen` parsed up front, above).
+            // Early 413: a cleanly-parsed Content-Length over max_body is
+            // rejected NOW — before the body is buffered (the body bytes are
+            // never admitted into the slot's read buffer).
+            if clen > max_body { self.respond_error_close(slot, 413); return false; }
+            total = xx he + 4 + clen;
+            if total > self.cfg.read_buf_cap { self.respond_error_close(slot, 413); return false; }
+            if c.read_len < total {
+                // size the buffer for the declared body in one step
+                self.grow_read_buf(slot, total);
+                // Q1.3: headers complete, a non-empty declared body still
+                // incoming — tell an Expect: 100-continue client to
+                // proceed (once).
+                if expect_continue and clen > 0 and !self.send_continue(slot) { return false; }
+                return false;
+            }
+            req.body = string.{ ptr = @c.read_buf[he + 4], len = xx clen };
+        }
+
+        // Q1.8: canonicalize the routable path (percent-decode + dot-segment
+        // removal, in place — see canon_path). Runs HERE — only once the
+        // request is COMPLETE — because a partial-body retry re-parses the
+        // raw bytes; an earlier rewrite would corrupt the re-parse.
+        if !self.canon_path(slot, @req, path_off, path_static_root) { return false; }
+
+        // keep-alive: 1.1 default on, 1.0 default off, header overrides.
+        // Q1.6 (RFC 9110 §7.6.1): Connection is a comma-separated token
+        // list ("close, TE" reads as close) — token match, never substring.
+        // If both tokens appear (pathological), close wins. KNOWN LIMIT:
+        // find_header returns the FIRST Connection line only, so a second
+        // `Connection: close` line is missed — benign (the client FINs and
+        // the close is reaped), unlike TE/CL where duplicates are 400'd.
+        req.keep_alive = !ascii_ieq(req.version, "http/1.0");
+        cnv := find_header(@req, "connection");
+        if token_list_has(cnv, "close") { req.keep_alive = false; }
+        else if token_list_has(cnv, "keep-alive") { req.keep_alive = true; }
+
+        c.served += 1;
+        keep := req.keep_alive and c.served < self.cfg.request_count;
+
+        // Q1.4: HEAD is decided by the PARSED method, before the handler
+        // runs — a handler mutating req.method must not flip body
+        // suppression. The pool path stamps it on the slot too, so the
+        // handler-timeout sweep's 504 suppresses its body for a HEAD.
+        is_head := ascii_ieq(req.method, "head");
+
+        // H5: expose the per-request budget to the handler (advisory in
+        // inline mode, also loop-enforced in pool mode below).
+        req.deadline_ms = self.cfg.handler_timeout_ms;
+
+        // Pooled dispatch: freeze this connection (CONN_HANDLING — no
+        // reads, no eviction, no recycling, so the job's request views
+        // into the read buffer stay valid), hand the job to a worker,
+        // and return; the completion re-enters via drain_completions.
+        // A full backlog sheds with 503 (httpz backpressure).
+        // Q3.3: fiber mode takes the SAME job-copy shape — the fiber's
+        // suspension points make the conn's read_buf just as unsafe to
+        // view as a worker's (the buffer stays frozen, but the copy keeps
+        // one ownership rule for all non-inline dispatch).
+        if self.ps != null or self.cfg.fibers != null {
+            // 0.1: the job OWNS a copy of the raw request bytes. The worker
+            // must never read the conn's read_buf after dispatch — a handler
+            // timeout (handler_timeout_sweep) frees the slot mid-run, and a
+            // reusing connection rewrites or reallocs the buffer under the
+            // worker's views. One allocation carries the job header + the
+            // bytes tail; run_handler_job frees them together. The request
+            // views are rebuilt over the copy from the parse offsets above
+            // (method at 0, path at path_off — inside the target, which for
+            // absolute-form is PAST ps — authority at auth_off, version at
+            // vs, headers at hdr_start, body — Content-Length or compacted
+            // chunked — at he + 4). A synthetic "/" path (empty-path
+            // absolute-form) is a static literal, valid on any thread — no
+            // rebuild.
+            job : *HandlerJob = xx self.own_alloc.alloc_bytes(size_of(HandlerJob) + total);
+            jb : [*]u8 = xx job;
+            raw : [*]u8 = @jb[size_of(HandlerJob)];
+            clib.memcpy(raw, c.read_buf, xx total);
+            jreq := req;
+            jreq.method      = string.{ ptr = raw, len = req.method.len };
+            if !path_static_root { jreq.path = string.{ ptr = @raw[path_off], len = req.path.len }; }
+            if auth_len > 0 { jreq.authority = string.{ ptr = @raw[auth_off], len = auth_len }; }
+            jreq.version     = string.{ ptr = @raw[vs], len = req.version.len };
+            jreq.headers_raw = string.{ ptr = @raw[hdr_start], len = req.headers_raw.len };
+            jreq.body        = string.{ ptr = @raw[he + 4], len = req.body.len };
+            job.* = HandlerJob.{
+                handler = self.handler, app_ctx = self.ctx, ps = self.ps,
+                alloc = self.own_alloc, req = jreq,
+                slot = slot, gen = c.gen, keep = keep, consumed = total,
+                server_name = self.cfg.server_name,
+                srv = self,
+            };
+            c.state = CONN_HANDLING;
+            // Q3.4 (review F1): reading parks below — drop any unresolved
+            // cross-direction want with its cross-armed watch.
+            self.tls_want_drop(slot);
+            c.head_req = is_head;
+            if self.cfg.fibers != null {
+                // Q3.3 (cooperative): no hard handler deadline — the loop
+                // cannot preempt a fiber it is hosting (inline semantics;
+                // Request.deadline_ms stays the advisory budget).
+                c.handler_deadline = 0;
+                c.fiber_h = self.cfg.fibers.spawn(xx run_fiber_job, xx job);
+                self.fiber_spawned = true;   // tick re-drives until quiescent (review MED)
+            } else {
+                // H5: arm the handler deadline as the slot enters
+                // CONN_HANDLING. The tick sweep enforces it (504 + close)
+                // if the worker overruns. 0 disables (no timeout). Distinct
+                // from c.deadline (delivery), which the sweep skips while
+                // CONN_HANDLING.
+                if self.cfg.handler_timeout_ms > 0 {
+                    c.handler_deadline = event.deadline_in(self.cfg.handler_timeout_ms);
+                    self.arm_slot(slot, c.handler_deadline);
+                } else {
+                    c.handler_deadline = 0;
+                }
+                if !self.ps.pool.submit(run_handler_job, xx job) {
+                    self.own_alloc.dealloc_bytes(xx job);
+                    c.state = CONN_READING;
+                    c.handler_deadline = 0;
+                    self.respond_error_close(slot, 503);
+                    return false;
+                }
+            }
+            // 0.2: PARK the read watch while the worker holds the request.
+            // The loop ignores readiness on a CONN_HANDLING slot anyway, and
+            // both backends are level-triggered — pipelined bytes arriving
+            // mid-handler would otherwise make wait() return the same
+            // readable event instantly every tick (100% CPU for the whole
+            // handler runtime). drain_completions re-arms on attach; the
+            // 504 sweep path deliberately does NOT (it always closes).
+            self.loop.del_read(c.fd);
+            return false;
+        }
+
+        // Dispatch under a per-request arena: everything the handler
+        // (and serialization) allocates through the implicit context
+        // dies with the request — response bytes survive because
+        // serialize copies them into own_alloc inside the push scope.
+        // Serialize while the request views are still valid (the body
+        // may reference the read buffer), THEN drop the served bytes —
+        // write_more's pipelining check must see only the remainder —
+        // and only then start sending (Q2.4: memmove, overlap-safe).
+        // (The handler field must be loaded — `self.handler(...)` would
+        // be parsed as a dot-call on a function named `handler`.)
+        h := self.handler;
+        resp : Response = .{};
+        req_arena := Arena.init(self.own_alloc, 65536);
+        push .{ allocator = req_arena } {
+            h(@req, @resp, self.ctx);
+            // Q1.4: HEAD runs the handler like GET; serialization suppresses
+            // the body bytes (and never drives a stream producer).
+            self.serialize_response(slot, @resp, keep, is_head);
+        }
+        req_arena.deinit();
+        // A real request produced a response and begins sending: count it
+        // served (inline path, loop thread). The pooled path counts in
+        // drain_completions instead — never inside the worker.
+        self.st_requests += 1;
+        rest := c.read_len - total;
+        if rest > 0 { clib.memmove(xx c.read_buf, xx @c.read_buf[total], rest); }
+        c.read_len = rest;
+        c.reset_parse();   // the next pipelined request now starts at 0
+        self.write_more(slot);
+        return true;
+    }
+
+    // ── response serialization + write continuation ──────────────────
+
+    // Build the response bytes into the slot's out buffer. Does NOT
+    // start sending — try_serve_one compacts the read buffer between
+    // serialization and the first write (see the ordering note there).
+    // S1: set up a chunked stream on the slot. out_buf becomes ONE bounded
+    // scratch (≥ STREAM_BUF_CAP) that first carries the response head, then
+    // is refilled one chunk-framed piece at a time by write_more pulling the
+    // producer. Memory stays bounded regardless of total body size.
+    // Q2.3: make the slot's persistent write buffer hold at least `need`
+    // bytes (rounded up to a 4 KB multiple; grown via own_alloc, retained
+    // across requests and connections, freed only by Server.close).
+    ensure_wbuf :: (self: *Server, slot: i64, need: i64) {
+        c := @self.conns[slot];
+        if c.wbuf_cap >= need { return; }
+        want := ((need + 4095) / 4096) * 4096;
+        if c.wbuf != null { self.own_alloc.dealloc_bytes(xx c.wbuf); }
+        c.wbuf = xx self.own_alloc.alloc_bytes(want);
+        c.wbuf_cap = want;
+    }
+
+    start_stream :: (self: *Server, slot: i64, resp: *Response, keep: bool) {
+        c := @self.conns[slot];
+        // The scratch must hold the head's first staging AND every later
+        // chunk-framed piece (≤ STREAM_BUF_CAP). Size it to the larger so a
+        // pathologically large header block still fits its one-time staging.
+        // Q2.3: the head is written straight into the scratch (one pass, no
+        // intermediate allocation). The scratch stays a per-stream owned
+        // allocation — freed at stream end — NOT the persistent wbuf, whose
+        // cap would otherwise be held hostage by stream_refill's layout.
+        date := self.date_now();
+        hl := resp_head_len(resp, keep, date, self.cfg.server_name, false, true);
+        cap := STREAM_BUF_CAP;
+        if hl > cap { cap = hl; }
+        sb : [*]u8 = xx self.own_alloc.alloc_bytes(cap);
+        w := resp_head_write(resp, keep, date, self.cfg.server_name, false, true, sb);
+        c.out_buf = sb;
+        c.out_len = w;
+        c.out_sent = 0;
+        c.out_owned = true;
+        c.close_after = !keep;
+        c.streaming = true;
+        c.producer = resp.producer;
+        c.producer_ctx = resp.producer_ctx;
+        c.stream_off = 0;
+        c.stream_done = false;
+    }
+
+    // Q1.4: `head_only` = the request was HEAD — suppress body bytes (and
+    // never drive a stream producer) while keeping the GET-equivalent
+    // headers. A 204/304 status suppresses the body independently of the
+    // method and wins over a contradictory stream() call.
+    // Q2.3: the inline paths serialize into the slot's persistent wbuf
+    // (out_owned = false) — zero per-response allocations on the fast path.
+    serialize_response :: (self: *Server, slot: i64, resp: *Response, keep: bool, head_only: bool) {
+        c := @self.conns[slot];
+        no_body := resp.status == 204 or resp.status == 304;
+        if resp.streamed and resp.producer != null and !head_only and !no_body {
+            self.start_stream(slot, resp, keep);
+            return;
+        }
+        date := self.date_now();
+        if resp.streamed and resp.producer != null and head_only and !no_body {
+            // HEAD of a streamed response: the chunked head ALONE is the
+            // whole response — the producer is never pulled, no chunk and
+            // no terminator is emitted (c.streaming stays false).
+            hl := resp_head_len(resp, keep, date, self.cfg.server_name, false, true);
+            self.ensure_wbuf(slot, hl);
+            c.out_len = resp_head_write(resp, keep, date, self.cfg.server_name, false, true, c.wbuf);
+            c.out_buf = c.wbuf;
+            c.out_sent = 0;
+            c.out_owned = false;
+            c.close_after = !keep;
+            c.streaming = false;
+            return;
+        }
+        hl := resp_head_len(resp, keep, date, self.cfg.server_name, no_body, false);
+        body_len : i64 = if head_only or no_body then 0 else xx resp.body.len;
+        self.ensure_wbuf(slot, hl + body_len);
+        w := resp_head_write(resp, keep, date, self.cfg.server_name, no_body, false, c.wbuf);
+        if body_len > 0 { clib.memcpy(@c.wbuf[w], resp.body.ptr, xx body_len); }
+        c.out_buf = c.wbuf;
+        c.out_len = w + body_len;
+        c.out_sent = 0;
+        c.out_owned = false;
+        c.close_after = !keep;
+        c.streaming = false;
+    }
+
+    // Attach every queued pool completion to its connection: drop the
+    // served request bytes, take the response, start writing. A
+    // completion whose generation no longer matches (the conn was
+    // closed by Server.close) just frees its bytes.
+    drain_completions :: (self: *Server) {
+        if self.ps == null { return; }
+        ps := self.ps;
+        ps.mu.lock();
+        n := ps.done_len;
+        ps.done_len = 0;
+        // copy out under the lock; the list is small (<= backlog + workers).
+        // Scratch buffer from own_alloc (thread-safe, and freed below) —
+        // not context.allocator, which would both depend on a transient
+        // scope and leak (this buffer must be reclaimed every drain).
+        batch : [*]Completion = xx self.own_alloc.alloc_bytes(if n > 0 then n * size_of(Completion) else 8);
+        i : i64 = 0;
+        while i < n {
+            batch[i] = ps.done[i];
+            i += 1;
+        }
+        ps.mu.unlock();
+
+        i = 0;
+        while i < n {
+            done := batch[i];
+            i += 1;
+            c := @self.conns[done.slot];
+            if (c.state != CONN_HANDLING and c.state != CONN_BODY) or c.gen != done.gen {
+                self.own_alloc.dealloc_bytes(xx done.out.buf);
+                // Q3.2: the conn died before attach — abort the feeder (the
+                // worker may still be pumping) and drop the conn-side ref.
+                if done.ochan != null {
+                    done.ochan.abort();
+                    done.ochan.release();
+                }
+                continue;
+            }
+            // Q3.1 EARLY RESPONSE: the handler answered while the body was
+            // still streaming (CONN_BODY). The inbound stream is unfinished
+            // — it can never pipeline: stop reading, discard the buffered
+            // framing, fault the channel (harmless — the worker already
+            // returned) and force close-after-response (linger: the client
+            // is likely still uploading). The worker already serialized
+            // Connection: close (the reader never drained — see
+            // run_handler_job's keep downgrade).
+            early := c.state == CONN_BODY;
+            if early {
+                if c.body_parked {
+                    c.body_parked = false;
+                    self.body_parked_n -= 1;
+                } else {
+                    self.loop.del_read(c.fd);
+                }
+                c.read_len = 0;
+                c.reset_parse();
+                c.body_mode = 0;
+                c.linger_close = true;
+            }
+            // Q3.1: the conn's channel reference is done either way — a
+            // normal completion follows body_eof (channel already finished);
+            // the early path faults it first.
+            if c.bchan != null {
+                if early { c.bchan.finish(true); }
+                c.bchan.release();
+                c.bchan = null;
+            }
+            // 0.2: re-arm the read watch parked at dispatch (pipelined bytes
+            // may be waiting in the kernel buffer; without this the conn
+            // would sit deaf until the keepalive deadline evicted it). A
+            // re-arm failure means the fd is unusable — drop the connection
+            // and this completion's bytes. (Early-response conns must NOT
+            // re-arm: inbound is discard-only until the linger close.)
+            if !early {
+                rae := false;
+                self.loop.add_read(c.fd, xx done.slot) catch { rae = true; };
+                if rae {
+                    self.own_alloc.dealloc_bytes(xx done.out.buf);
+                    // Q3.2-review MED: the chan is NOT attached yet, so the
+                    // conn_close below cannot see it — abort + release here
+                    // or the pumping worker blocks until Server.close and
+                    // the chan (struct + 64 KB) leaks.
+                    if done.ochan != null {
+                        done.ochan.abort();
+                        done.ochan.release();
+                    }
+                    self.emit(EventKind.READ_FAULT, done.slot, 0);
+                    self.conn_close(done.slot);
+                    continue;
+                }
+            }
+            if done.streamed {
+                // Chunked: stage the worker-built head into a bounded scratch
+                // and wire up the worker-fed channel (Q3.2 — the loop never
+                // runs producer code); write_more pulls the body from there.
+                // Free the worker's head buffer once copied.
+                cap := STREAM_BUF_CAP;
+                if done.out.len > cap { cap = done.out.len; }
+                sb : [*]u8 = xx self.own_alloc.alloc_bytes(cap);
+                clib.memcpy(sb, done.out.buf, done.out.len);
+                self.own_alloc.dealloc_bytes(xx done.out.buf);
+                c.out_buf = sb;
+                c.out_len = done.out.len;
+                c.out_sent = 0;
+                c.out_owned = true;   // per-stream scratch, freed at stream end
+                c.close_after = done.close_after;
+                c.streaming = true;
+                c.ochan = done.ochan;
+                c.producer = null;
+                c.producer_ctx = 0;
+                c.stream_off = 0;
+                c.stream_done = false;
+            } else {
+                c.out_buf = done.out.buf;
+                c.out_len = done.out.len;
+                c.out_sent = 0;
+                c.out_owned = true;   // worker-allocated, freed when sent
+                c.close_after = done.close_after;
+                c.streaming = false;
+            }
+            // Count the request served HERE — on the loop thread, as its
+            // completion is drained — not inside the worker (avoids a
+            // cross-thread counter bump). A stale completion (slot recycled)
+            // was already skipped above and is not counted.
+            self.st_requests += 1;
+            // drop the served bytes (Q2.4: memmove — overlap-safe, and the
+            // kernel-grade copy beats a byte loop on multi-KB pipelines)
+            rest := c.read_len - done.consumed;
+            if rest > 0 { clib.memmove(xx c.read_buf, xx @c.read_buf[done.consumed], rest); }
+            c.read_len = rest;
+            c.reset_parse();   // the next pipelined request now starts at 0
+            c.state = CONN_READING;
+            self.set_deadline(done.slot, self.cfg.timeout_request_ms);
+            self.write_more(done.slot);
+        }
+        self.own_alloc.dealloc_bytes(xx batch);
+    }
+
+    // S1: refill the streaming scratch (out_buf) with the next chunk —
+    // up to STREAM_PIECE body bytes, framed as `<hexlen>\r\n<data>\r\n`.
+    // Q3.2: a pool-mode stream (c.ochan != null) TAKES the bytes from the
+    // worker-fed channel — nonblocking; an empty-but-running channel
+    // returns false with NOTHING staged (the caller pauses the drain; the
+    // worker's next feed wakes the loop). The inline path still pulls the
+    // producer directly (the loop IS the handler thread there). End of
+    // body stages the terminating `0\r\n\r\n` and marks stream_done.
+    // Returns true iff something was staged. Memory is bounded: out_buf is
+    // one STREAM_BUF_CAP scratch reused every refill.
+    stream_refill :: (self: *Server, slot: i64) -> bool {
+        c := @self.conns[slot];
+        if c.stream_done { return false; }
+        // Stage the chunk header room at the front, data after it, then the
+        // trailing CRLF — but the header length is variable (hex digits), so
+        // produce data into a known offset and assemble. Layout in out_buf:
+        //   [hexlen]\r\n[data...]\r\n
+        // Reserve up to 16 hex digits; we know the count after producing.
+        // Produce into a temp region past the max header to avoid a second
+        // copy: data goes at offset 18 (16 hex + CRLF), then we shift the
+        // header to butt against it. Simpler: produce data at a fixed data
+        // offset, write the exact header before it (right-aligned), and set
+        // out_buf/out_len to the contiguous framed span.
+        DATA_OFF :: 18;   // 16 hex digits + "\r\n"
+        produced : i64 = 0;
+        if c.ochan != null {
+            n, fin := c.ochan.take(@c.out_buf[DATA_OFF], STREAM_PIECE);
+            if n == 0 and !fin { return false; }   // hungry — the worker's feed wakes us
+            produced = n;
+            // Q3.2: channel progress refreshes the delivery deadline — a
+            // PROGRESSING worker-paced stream must outlive one fixed
+            // window; a stalled one still dies at the stall bound.
+            self.set_deadline(slot, self.cfg.timeout_request_ms);
+        } else {
+            produced = c.producer(c.producer_ctx, c.stream_off, @c.out_buf[DATA_OFF], STREAM_PIECE);
+            if produced < 0 { produced = 0; }
+        }
+        if produced == 0 {
+            // terminating zero chunk: "0\r\n\r\n"
+            c.out_buf[0] = '0';
+            c.out_buf[1] = '\r'; c.out_buf[2] = '\n';
+            c.out_buf[3] = '\r'; c.out_buf[4] = '\n';
+            c.out_len = 5;
+            c.out_sent = 0;
+            c.stream_done = true;
+            return true;
+        }
+        c.stream_off += produced;
+        // header: hex(produced) + CRLF, right-aligned so it butts against
+        // DATA_OFF. hdr_digits in [1..16].
+        hbuf : [16]u8 = ---;
+        hdig := hex_len_into(produced, @hbuf[0]);
+        hstart := DATA_OFF - 2 - hdig;   // header begins here
+        m : i64 = 0;
+        while m < hdig { c.out_buf[hstart + m] = hbuf[m]; m += 1; }
+        c.out_buf[hstart + hdig] = '\r';
+        c.out_buf[hstart + hdig + 1] = '\n';
+        // trailing CRLF after the data
+        c.out_buf[DATA_OFF + produced] = '\r';
+        c.out_buf[DATA_OFF + produced + 1] = '\n';
+        // the framed span starts at hstart and runs to data end + CRLF; we
+        // drain it relative to out_buf, so shift out_buf's logical base by
+        // tracking out_sent from hstart. Use out_sent as an absolute index
+        // into out_buf and out_len as the absolute end.
+        c.out_sent = hstart;
+        c.out_len = DATA_OFF + produced + 2;
+        return true;
+    }
+
+    write_more :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        while true {
+            while c.out_sent < c.out_len {
+                nq, we := self.conn_write(slot, @c.out_buf[c.out_sent], xx (c.out_len - c.out_sent));
+                if we == error.WouldBlock {
+                    // Q3.4: a TLS write that wants READABILITY must not arm
+                    // the write watch (conn_write already dropped it) — the
+                    // read watch delivers the retry.
+                    if !c.write_armed and !c.tls_wr_want_read {
+                        awe := false;
+                        self.loop.add_write(c.fd, xx slot) catch { awe = true; };
+                        if awe {                             // arming the write watch failed
+                            self.emit(EventKind.WRITE_FAULT, slot, 0);
+                            self.conn_close(slot);
+                            return;
+                        }
+                        c.write_armed = true;
+                    }
+                    c.state = CONN_WRITING;
+                    return;
+                }
+                if we {                                       // write faulted
+                    self.emit(EventKind.WRITE_FAULT, slot, 0);
+                    self.conn_close(slot);
+                    return;
+                }
+                self.st_bytes_out += nq;
+                c.out_sent += nq;
+            }
+            // current buffer fully sent. If streaming and not yet terminated,
+            // refill with the next chunk and keep draining (bounded memory).
+            if c.streaming and !c.stream_done {
+                if self.stream_refill(slot) { continue; }
+                // Q3.2: the worker-fed channel is empty but still running —
+                // pause the drain until the feed wakes the loop. Drop the
+                // write watch: a level-triggered writable with nothing
+                // staged would spin the loop. (Q3.4: unless a blocked TLS
+                // READ owns the cross-armed watch — its retry needs it.)
+                if c.write_armed and !c.tls_rd_want_write {
+                    self.loop.del_write(c.fd);
+                    c.write_armed = false;
+                }
+                c.state = CONN_WRITING;
+                if !c.stream_waiting {
+                    c.stream_waiting = true;
+                    self.stream_waiting_n += 1;
+                }
+                return;
+            }
+            break;
+        }
+        // fully sent (and, if streamed, the zero chunk is out)
+        c.streaming = false;
+        c.producer = null;
+        c.stream_off = 0;
+        c.stream_done = false;
+        // Q3.2: the stream is over — drop the conn's channel reference (the
+        // worker released its side when the pump ended).
+        if c.ochan != null {
+            c.ochan.release();
+            c.ochan = null;
+        }
+        // Q3.4: keep the watch when a blocked TLS read cross-armed it.
+        if c.write_armed and !c.tls_rd_want_write {
+            self.loop.del_write(c.fd);
+            c.write_armed = false;
+        }
+        // Q2.3: free only per-response buffers (pool attach, stream
+        // scratch); the persistent wbuf is reused by the next response.
+        if c.out_owned { self.own_alloc.dealloc_bytes(xx c.out_buf); }
+        c.out_buf = null;
+        c.out_owned = true;
+        c.out_len = 0;
+        c.out_sent = 0;
+        if c.close_after {
+            // Q0.4: an error close lingers (SHUT_WR + drain-and-discard) so
+            // the just-sent error response survives instead of being RST-
+            // killed by close-with-unread-data. Normal closes stay abrupt.
+            if c.linger_close and self.cfg.linger_timeout_ms > 0 {
+                self.begin_linger(slot);
+                return;
+            }
+            self.conn_close(slot);
+            return;
+        }
+        if c.read_len > 0 {
+            // pipelined bytes already buffered: keep serving
+            c.state = CONN_READING;
+            self.set_deadline(slot, self.cfg.timeout_request_ms);
+            self.serve_buffered(slot);
+            return;
+        }
+        c.state = CONN_KEEPALIVE;
+        self.set_deadline(slot, self.cfg.timeout_keepalive_ms);
+    }
+
+    // ── Q0.4 lingering close ─────────────────────────────────────────
+
+    // Enter CONN_LINGER once an error response has fully drained: FIN our
+    // side (shutdown SHUT_WR — the kernel delivers the response, then the
+    // FIN, never an RST), re-arm the read watch (the 0.3 flood guard may
+    // have parked it), and discard whatever the client still sends until
+    // EOF or the linger deadline. The slot owes nothing — begin_stop and
+    // the force-close path may drop it at any time.
+    begin_linger :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        // Q3.4 (review F2): linger discards RAW bytes — any pending TLS
+        // want is moot, and a surviving cross-armed write watch would spin
+        // against the CONN_LINGER arm (which ignores writable) until the
+        // linger deadline.
+        self.tls_want_drop(slot);
+        socket.shutdown(c.fd, socket.SHUT_WR);
+        are := false;
+        self.loop.add_read(c.fd, xx slot) catch { are = true; };
+        if are {   // can't watch the fd: fall back to the abrupt close
+            self.conn_close(slot);
+            return;
+        }
+        c.state = CONN_LINGER;
+        c.read_len = 0;
+        c.reset_parse();
+        self.set_deadline(slot, self.cfg.linger_timeout_ms);
+        // Level-triggered: bytes that arrived before the re-arm are
+        // reported on the next wait; drain what is already queued now.
+        self.linger_drain(slot);
+    }
+
+    // Discard inbound bytes on a lingering conn. EOF (or any read fault)
+    // ends the linger — the client has seen our FIN + response by then.
+    linger_drain :: (self: *Server, slot: i64) {
+        c := @self.conns[slot];
+        scratch : [4096]u8 = ---;
+        while true {
+            nq, re := socket.read_nb(c.fd, @scratch[0], 4096);
+            if re == error.WouldBlock { return; }   // drained for now
+            if re {                                 // EOF / reset: done
+                self.conn_close(slot);
+                return;
+            }
+            // nq bytes discarded; keep draining
+            if nq == 0 { return; }
+        }
+    }
+
+    // A terminal error response: serialize, send, close when done.
+    // Same arena discipline as dispatch — serialization concats must
+    // not accumulate in the long-lived loop context.
+    respond_error_close :: (self: *Server, slot: i64, status: i64) {
+        // Classify + surface before sending. 503 is backpressure (its own
+        // event + counter); every other 4xx/5xx here is a parser/client or
+        // server rejection (PARSE_ERROR, status in detail). All on the loop
+        // thread — this is only ever called from the parse/read paths.
+        if status == 503 {
+            self.st_rejected += 1;
+            self.st_5xx += 1;
+            self.emit(EventKind.REJECTED_503, slot, status);
+        } else {
+            if status >= 400 and status < 500 { self.st_4xx += 1; }
+            else if status >= 500 { self.st_5xx += 1; }
+            self.emit(EventKind.PARSE_ERROR, slot, status);
+        }
+        self.send_error_close(slot, status);
+    }
+
+    // The un-classified tail of respond_error_close (Q0.7: also used by the
+    // 408 eviction path, which classifies as a TIMEOUT, not a PARSE_ERROR):
+    // serialize the status + reason, discard buffered request bytes, mark
+    // the close as an error close (lingers), refresh the delivery window so
+    // the error itself has time to drain (the 408 path arrives here with an
+    // already-expired deadline), send.
+    send_error_close :: (self: *Server, slot: i64, status: i64) {
+        resp : Response = .{ status = status, body = reason_for(status) };
+        self.conns[slot].read_len = 0;
+        self.conns[slot].reset_parse();
+        // Q0.4: error closes linger so the response above actually lands.
+        self.conns[slot].linger_close = true;
+        self.set_deadline(slot, self.cfg.timeout_request_ms);
+        err_arena := Arena.init(self.own_alloc, 4096);
+        push .{ allocator = err_arena } {
+            // head_only=false: an error reply may not know the method (the
+            // request line can be the malformed part) — the tiny reason body
+            // ships even to a HEAD; safe, since error closes never pipeline.
+            self.serialize_response(slot, @resp, false, false);
+        }
+        err_arena.deinit();
+        self.write_more(slot);
+    }
+}

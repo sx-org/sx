@@ -1,0 +1,33 @@
+// Regression: when a `#jni_call` method returns a type the
+// `Call<T>Method` switch in `emit_llvm.zig` can't dispatch
+// (anything outside void/bool/i32/i64/f32/f64/pointer), the
+// compiler must emit a DIAGNOSTIC at lower time rather than
+// silently producing `LLVMGetUndef` at codegen time. Without
+// this guard, the chess Android touch bug shipped: an
+// unsupported return type silently became `undef` and showed
+// up as garbage arguments downstream.
+//
+// Here we declare a JNI method returning `i8` (jbyte, not yet
+// wired into the call-method switch). The compile must fail
+// with a clear message naming the method + return type.
+
+#import "modules/std.sx";
+
+Buf :: #jni_class("java/nio/ByteBuffer") extern {
+    get :: (self: *Self) -> i8;
+}
+
+g_should_call : bool = false;
+
+unused :: (env: *void, b: *Buf) {
+    #jni_env(env) {
+        _ := b.get();
+    }
+}
+
+main :: () -> i32 {
+    if g_should_call {
+        unused(null, null);
+    }
+    0
+}

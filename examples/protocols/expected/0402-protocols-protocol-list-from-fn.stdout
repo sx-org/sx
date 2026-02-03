@@ -1,0 +1,7 @@
+=== Created in main ===
+first:  42 (expected 42)
+second: 42 (expected 42)
+=== Created in add() ===
+first:  99 (expected 99)
+second: 99 (expected 99)
+=== OK ===

@@ -1,0 +1,5 @@
+error: enum literal '.ios' has no destination type to resolve against
+  --> examples/diagnostics/1170-diagnostics-enum-literal-no-target.sx:8:10
+   |
+ 8 |     c := .ios;
+   |          ^^^^

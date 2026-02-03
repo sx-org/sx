@@ -1,0 +1,44 @@
+// A captured FAILABLE closure stays failable when CALLED inside a nested
+// closure body. The free-variable capture analysis must descend into the
+// error-handling expressions (`catch`, `try`) that the nested closure uses to
+// consume the captured worker's error channel — otherwise the worker is never
+// captured into the env, resolves against an empty scope inside the lambda, and
+// the call types as `unresolved` (so `catch`/`try` reject it).
+//
+// Regression (PLAN-IO-UNIFY Phase 3 blocker): the async completion closure
+// `() { f.value = worker() catch {…} }` captures a `Closure() -> ($R, !)`
+// worker and consumes its error channel — exactly this shape.
+#import "modules/std.sx";
+
+Box :: struct { run: Closure() -> void; }
+
+// `catch` path: the nested closure absorbs the worker's error.
+run_catch :: (worker: Closure() -> (i64, !)) {
+    b : Box = ---;
+    b.run = () {
+        v := worker() catch {
+            print("caught\n");
+            return;
+        };
+        print("ok {}\n", v);
+    };
+    b.run();
+}
+
+// `try` path: the nested closure is itself failable and propagates.
+mk_trier :: (worker: Closure() -> (i64, !)) -> Closure() -> (i64, !) {
+    return () -> (i64, !) {
+        v := try worker();
+        v + 100
+    };
+}
+
+main :: () -> i64 {
+    run_catch(() -> (i64, !) { 7 });            // ok 7
+    run_catch(() -> (i64, !) { raise error.Bad; }); // caught
+
+    t := mk_trier(() -> (i64, !) { 5 });
+    r := t() catch { return 1; };
+    print("try {}\n", r);                          // try 105
+    return 0;
+}

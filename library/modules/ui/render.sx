@@ -1,0 +1,179 @@
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+
+RenderNodeType :: enum {
+    rect;
+    rounded_rect;
+    text;
+    image;
+    clip_push;
+    clip_pop;
+    opacity_push;
+    opacity_pop;
+}
+
+RenderNode :: struct {
+    type: RenderNodeType;
+    frame: Frame;
+
+    // Rect / rounded_rect
+    fill_color: Color;
+    stroke_color: Color;
+    stroke_width: f32;
+    corner_radius: f32;
+
+    // Text
+    text: string;
+    font_size: f32;
+    text_color: Color;
+
+    // Image
+    texture_id: u32;
+    uv_min: Point;
+    uv_max: Point;
+
+    // Opacity
+    opacity: f32;
+
+    depth: i64;
+}
+
+RenderTree :: struct {
+    nodes: List(RenderNode);
+    generation: i64;
+
+    init :: () -> RenderTree {
+        RenderTree.{ generation = 0 }
+    }
+
+    clear :: (self: *RenderTree) {
+        self.nodes.len = 0;
+        self.generation += 1;
+    }
+
+    add :: (self: *RenderTree, node: RenderNode) -> i64 {
+        idx := self.nodes.len;
+        self.nodes.append(node);
+        idx
+    }
+}
+
+// Stateful builder — views use this to emit render nodes
+
+RenderContext :: struct {
+    tree: *RenderTree;
+    clip_depth: i64;
+    opacity: f32;
+    depth: i64;
+
+    init :: (tree: *RenderTree) -> RenderContext {
+        RenderContext.{
+            tree = tree,
+            clip_depth = 0,
+            opacity = 1.0,
+            depth = 0
+        }
+    }
+
+    add_rect :: (self: *RenderContext, frame: Frame, fill: Color) {
+        self.tree.add(.{
+            type = .rect,
+            frame = frame,
+            fill_color = fill,
+            opacity = self.opacity,
+            depth = self.depth,
+        });
+        self.depth += 1;
+    }
+
+    add_rounded_rect :: (self: *RenderContext, frame: Frame, fill: Color, radius: f32) {
+        self.tree.add(.{
+            type = .rounded_rect,
+            frame = frame,
+            fill_color = fill,
+            corner_radius = radius,
+            opacity = self.opacity,
+            depth = self.depth,
+        });
+        self.depth += 1;
+    }
+
+    add_stroked_rect :: (self: *RenderContext, frame: Frame, fill: Color, stroke: Color, stroke_w: f32, radius: f32) {
+        self.tree.add(.{
+            type = .rounded_rect,
+            frame = frame,
+            fill_color = fill,
+            stroke_color = stroke,
+            stroke_width = stroke_w,
+            corner_radius = radius,
+            opacity = self.opacity,
+            depth = self.depth,
+        });
+        self.depth += 1;
+    }
+
+    add_text :: (self: *RenderContext, frame: Frame, text: string, font_size: f32, color: Color) {
+        self.tree.add(.{
+            type = .text,
+            frame = frame,
+            text = text,
+            font_size = font_size,
+            text_color = color,
+            opacity = self.opacity,
+            depth = self.depth,
+        });
+        self.depth += 1;
+    }
+
+    add_image :: (self: *RenderContext, frame: Frame, texture_id: u32) {
+        self.add_image_uv(frame, texture_id, Point.zero(), Point.{ x = 1.0, y = 1.0 });
+    }
+
+    add_image_uv :: (self: *RenderContext, frame: Frame, texture_id: u32, uv_min: Point, uv_max: Point) {
+        self.tree.add(.{
+            type = .image,
+            frame = frame,
+            texture_id = texture_id,
+            uv_min = uv_min,
+            uv_max = uv_max,
+            opacity = self.opacity,
+            depth = self.depth,
+        });
+        self.depth += 1;
+    }
+
+    push_clip :: (self: *RenderContext, frame: Frame) {
+        self.tree.add(.{
+            type = .clip_push,
+            frame = frame,
+            depth = self.depth,
+        });
+        self.clip_depth += 1;
+    }
+
+    pop_clip :: (self: *RenderContext) {
+        self.tree.add(.{
+            type = .clip_pop,
+            depth = self.depth,
+        });
+        self.clip_depth -= 1;
+    }
+
+    push_opacity :: (self: *RenderContext, alpha: f32) {
+        prev := self.opacity;
+        self.opacity = prev * alpha;
+        self.tree.add(.{
+            type = .opacity_push,
+            opacity = self.opacity,
+            depth = self.depth,
+        });
+    }
+
+    pop_opacity :: (self: *RenderContext, prev_opacity: f32) {
+        self.tree.add(.{
+            type = .opacity_pop,
+            depth = self.depth,
+        });
+        self.opacity = prev_opacity;
+    }
+}

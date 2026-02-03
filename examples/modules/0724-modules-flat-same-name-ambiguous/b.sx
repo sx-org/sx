@@ -1,0 +1,2 @@
+// The second flat author of `dup`.
+dup :: () -> i64 { return 2; }

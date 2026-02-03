@@ -1,0 +1,51 @@
+// A module-global initialized with an enum literal (`.Variant`) reads back the
+// declared tag — scalar, inside a global array, and as a struct field, for both
+// a plain enum (tag == declaration index) and an explicit-value enum (`enum u16
+// { ok :: 200; ... }`, larger backing for element-stride coverage).
+// Regression (issue 0082): `globalInitValue` had an `.enum_literal => null`
+// carve-out (kept for the compiler-injected `OS`/`ARCH` globals) that silently
+// zero-initialized EVERY enum global to the first tag — so `chosen : Color =
+// .green` read back as `.red` — while a global array/struct of enums was
+// rejected outright as non-constant. The fix serializes the enum literal to its
+// tag value (respecting explicit variant values) against the destination enum
+// type, for the scalar global, the array element, and the nested aggregate
+// field. (Explicit-value enums print as `.` because the `{}` formatter indexes
+// variants by position — a separate, pre-existing limitation — so those are
+// asserted by equality, not by their printed name.)
+
+#import "modules/std.sx";
+
+Color :: enum u8 { red; green; blue; }
+Code :: enum u16 { ok :: 200; not_found :: 404; teapot :: 418; }
+
+Pair :: struct { a: Color; b: Color; }
+Row :: struct { status: Code; pad: i64; }
+
+// scalar enum global
+chosen : Color = .green;
+// global array of enum
+palette : [3]Color = .[ .blue, .green, .red ];
+// enum field(s) inside a global struct
+pair : Pair = .{ a = .blue, b = .green };
+// explicit-value enum: scalar, array (2-byte stride), and inside a struct array
+status : Code = .teapot;
+codes : [3]Code = .[ .ok, .not_found, .teapot ];
+rows : [2]Row = .[ .{ status = .not_found, pad = 11 }, .{ status = .teapot, pad = 22 } ];
+
+main :: () {
+    print("chosen={}\n", chosen);
+    print("palette={},{},{}\n", palette[0], palette[1], palette[2]);
+    print("pair.a={} pair.b={}\n", pair.a, pair.b);
+
+    if chosen == .green
+        and palette[0] == .blue and palette[1] == .green and palette[2] == .red
+        and pair.a == .blue and pair.b == .green
+        and status == .teapot
+        and codes[0] == .ok and codes[1] == .not_found and codes[2] == .teapot
+        and rows[0].status == .not_found and rows[0].pad == 11
+        and rows[1].status == .teapot and rows[1].pad == 22 {
+        print("PASS\n");
+    } else {
+        print("FAIL: global enum-literal initializer mis-serialized\n");
+    }
+}

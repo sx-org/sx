@@ -1,0 +1,54 @@
+// A subscript's index is an integer position, independent of the type of the
+// element it selects — including when the surrounding slot is a float.
+//
+// Regression: `target_type` steers integer-literal lowering (a literal in an
+// `f32` slot lowers as an `f32` constant — correct for a VALUE). The index
+// operand of a subscript is not a value in that type, but it was lowered with
+// the ambient target still installed, so `s[0]` under an `f32` target folded
+// the `0` to `0.0` and reached the backend as
+// `getelementptr float, ptr %d, float 0.0` — "GEP indexes must be integers"
+// from the LLVM verifier, naming no source location. Indexing via an i64 local
+// was unaffected, which is what made it look generic-specific at first.
+
+#import "modules/std.sx";
+
+first :: (xs: []f32) -> f32 { xs[0] }
+
+// The float target through a generic monomorphization.
+gfirst :: (xs: []$T) -> T { xs[0] }
+
+Vertex :: struct {
+    pos: [2]f32;
+}
+
+main :: () -> i64 {
+    f : [3]f32 = .[1.5, 2.5, 3.5];
+    s : []f32 = f;
+
+    // Float-typed binding as the target.
+    v : f32 = s[0];
+    print("{}\n", v);           // 1.5
+
+    // Float return type as the target.
+    print("{}\n", first(f));    // 1.5
+
+    // Float element through a generic.
+    print("{}\n", gfirst(f));   // 1.5
+
+    // An i64 element still binds as an integer — the control.
+    a : [2]i64 = .[10, 20];
+    print("{}\n", gfirst(a));   // 10
+
+    // Float field as the target, and a literal index on the store side.
+    vx : Vertex = ---;
+    vx.pos[0] = s[1];
+    vx.pos[1] = 9.5;
+    print("{} {}\n", vx.pos[0], vx.pos[1]);   // 2.5 9.5
+
+    // A non-literal index under the same float target.
+    i := 2;
+    w : f32 = s[i];
+    print("{}\n", w);           // 3.5
+
+    return 0;
+}

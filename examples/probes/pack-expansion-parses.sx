@@ -1,0 +1,24 @@
+// Feature 1 / Step 1.2 — pack-expansion forms PARSE in all four positions.
+//
+// Parse-only probe. Spread reuses the existing `spread_expr` node (its operand
+// carries projection `xs.field` / type-application `F(Ts)`); closure-sig packs
+// use `ClosureTypeExpr.pack_name` + the new `pack_projection`. Sema/lowering
+// arrive in Phase 2 — do NOT expect this to compile/run yet. The authoritative
+// checks are the parser unit tests in src/parser.zig ("parse pack expansion: …").
+
+// 1. Tuple value position — `.(..pack)` / `.(..pack.field)`:
+tv1 :: () => .{..xs};
+tv2 :: () => .{..xs.value};
+tv3 :: () => .{a, ..xs, b};            // mixed positional + spread
+
+// 2. Tuple type position — `Tuple(..F(Ts))` / `Tuple(..F(Ts.Arg))`:
+tt1 :: (x: Tuple(..ValueListenable(Ts)))       => x;
+tt2 :: (x: Tuple(..ValueListenable(Ts.Arg)))   => x;
+
+// 3. Call-arg position — `..pack` / `..pack.field` (reuses spread_expr):
+ca1 :: () => f(..xs);
+ca2 :: () => f(..xs.value);
+
+// 4. Closure-sig position — `Closure(..Ts)` / `Closure(..Ts.Arg)`:
+cs1 :: (cb: Closure(..Ts) -> i32)         => cb;
+cs2 :: (cb: Closure(..sources.T) -> i32)  => cb;

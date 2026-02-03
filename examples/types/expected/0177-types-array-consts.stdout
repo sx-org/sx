@@ -1,0 +1,6 @@
+typed=33 untyped=2 len=4
+mixed=1.000000 2.200000 3.000000 intfloat=1.000000
+str=beta bool=true pt=4 grid=3
+copy=99 const=11
+sum=110
+via-ptr=33

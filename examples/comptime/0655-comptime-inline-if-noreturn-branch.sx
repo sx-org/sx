@@ -1,0 +1,26 @@
+// `inline if` (comptime match) whose comptime-LIVE branch diverges via a
+// `-> noreturn` call compiles and runs. Both arms diverge so the result is
+// host-agnostic: the live branch (`.macos` on macOS, `else` on Linux) prints
+// "reached" then exits 0; the trailing `print` is never reached.
+//
+// Regression (issue 0209): previously rejected at lowering with
+// "function returns 'i64' but its body produces no value" because a
+// statement-position `-> noreturn` call emits only a `.call` (not a block
+// terminator), so the diverging live branch left the function looking
+// value-less. Fix: a statement whose value type is `noreturn` emits
+// `unreachable`. This is exactly what blocked std/cli.sx (os_args/os_argc)
+// on Linux.
+#import "modules/std.sx";
+proc :: #import "modules/std/process.sx";
+
+pick :: () -> i64 {
+    inline if OS == {
+        case .macos: { print("reached\n"); proc.exit(0); }
+        else:        { print("reached\n"); proc.exit(0); }
+    }
+}
+
+main :: () {
+    x := pick();
+    print("unreachable {}\n", x);
+}

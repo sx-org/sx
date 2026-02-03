@@ -1,0 +1,19 @@
+// Phase 2 step 2.5 (PLAN-FFI.md): xfail then green for the field body
+// item inside a `#jni_class` declaration.
+//
+// `name: Type;` declares an instance field backed by JNI's
+// `Get<Type>Field` / `Set<Type>Field` family at lowering time (2.13).
+// Step 2.5 extends `parseJniClassDecl` to recognise the colon between
+// name and type as the field-decl indicator (vs the `::` of a method).
+
+#import "modules/std.sx";
+
+Point :: #jni_class("android/graphics/Point") extern {
+    x: i32;
+    y: i32;
+}
+
+main :: () -> i32 {
+    print("parse-only ok\n");
+    0
+}

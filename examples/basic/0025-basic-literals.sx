@@ -1,0 +1,67 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+Color :: enum { red; green; blue; }
+
+main :: () {
+
+    // ========================================================
+    // 1. LITERALS
+    // ========================================================
+    print("=== 1. Literals ===\n");
+
+    // Integer literals
+    print("decimal: {}\n", 42);
+    print("hex: {}\n", 0xFF);
+    print("binary: {}\n", 0b1010);
+
+    // Float literal
+    pi := 3.14;
+    print("float: {}\n", pi);
+
+    // Explicit f64
+    big : f64 = 2.718281828;
+    print("f64: {}\n", big);
+
+    // Boolean literals
+    print("true: {}\n", true);
+    print("false: {}\n", false);
+
+    // String with escapes
+    print("escapes: hello\tworld\n");
+
+    // Multi-line string
+    ml := "line1
+line2";
+    print("multiline: {}\n", ml);
+
+    // Heredoc string
+    hd := #string END
+raw heredoc
+END;
+    print("heredoc: {}\n", hd);
+
+    // Undefined with type
+    undef_val : i32 = ---;
+    undef_val = 77;
+    print("undef-then-set: {}\n", undef_val);
+
+    // Enum literal (context-inferred)
+    c : Color = .green;
+    print("enum-lit: {}\n", c);
+
+    // Null pointer
+    np : *i32 = null;
+    print("null-ptr: {}\n", np);
+
+    // String .len
+    slen := "hello";
+    print("string-len: {}\n", slen.len);
+
+    // Empty string .len
+    es := "";
+    print("empty-string: {}\n", es.len);
+}

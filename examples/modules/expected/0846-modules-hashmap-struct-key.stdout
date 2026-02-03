@@ -1,0 +1,15 @@
+hashmap struct found: ok
+hashmap len 1: ok
+hashmap distinct miss: ok
+indexmap struct found: ok
+indexmap len 1: ok
+string-field found: ok
+enum-field found: ok
+enum-field distinct: ok
+nested found: ok
+g2-hashmap-struct-val: ok
+g2-hashmap-overwrite-val: ok
+g2-hashmap-remove-val: ok
+g2-indexmap-struct-val: ok
+g2-struct-key-struct-val: ok
+g2-struct-key-overwrite-big: ok

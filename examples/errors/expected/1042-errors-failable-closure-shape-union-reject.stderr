@@ -1,0 +1,11 @@
+error: error tag 'error.Negative' is not in caller's error set 'Small'
+  --> examples/errors/1042-errors-failable-closure-shape-union-reject.sx:13:12
+   |
+13 |     return try h(x);   // Negative, Other ∉ Small → two diagnostics
+   |            ^^^^^^^^
+
+error: error tag 'error.Other' is not in caller's error set 'Small'
+  --> examples/errors/1042-errors-failable-closure-shape-union-reject.sx:13:12
+   |
+13 |     return try h(x);   // Negative, Other ∉ Small → two diagnostics
+   |            ^^^^^^^^

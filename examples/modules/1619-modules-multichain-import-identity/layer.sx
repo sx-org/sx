@@ -1,0 +1,8 @@
+// The deep type: reached through several distinct import chains from main.
+Layer :: struct {
+    id: i64;
+}
+
+make_layer :: (id: i64) -> Layer {
+    Layer.{ id = id }
+}

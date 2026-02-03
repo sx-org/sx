@@ -1,0 +1,17 @@
+error: cannot compare an 'any' value with '==': an 'any' is a type-erased borrow, so only its view address could be compared — unbox it first (checked 'av.(T)' or unchecked 'xx av' with the concrete type), or compare 'type_of(av)' against a type
+  --> examples/diagnostics/1245-diagnostics-any-compare-rejected.sx:17:12
+   |
+17 |     ok1 := x == 5;         // error: mixed any == concrete
+   |            ^^^^^^
+
+error: cannot compare an 'any' value with '==': an 'any' is a type-erased borrow, so only its view address could be compared — unbox it first (checked 'av.(T)' or unchecked 'xx av' with the concrete type), or compare 'type_of(av)' against a type
+  --> examples/diagnostics/1245-diagnostics-any-compare-rejected.sx:19:12
+   |
+19 |     ok2 := x == y;         // error: any == any
+   |            ^^^^^^
+
+error: cannot compare an 'any' value with '!=': an 'any' is a type-erased borrow, so only its view address could be compared — unbox it first (checked 'av.(T)' or unchecked 'xx av' with the concrete type), or compare 'type_of(av)' against a type
+  --> examples/diagnostics/1245-diagnostics-any-compare-rejected.sx:20:12
+   |
+20 |     ok3 := x != 6;         // error: != too
+   |            ^^^^^^

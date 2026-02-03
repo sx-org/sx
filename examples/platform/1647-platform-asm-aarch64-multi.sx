@@ -1,0 +1,20 @@
+// ASM stream Phase E — multi-output asm that RUNS end-to-end on aarch64. Splits
+// a value into low/high bytes via two value outputs, returned + destructured as
+// a `(lo, hi)` tuple. The two outputs become an LLVM `{ i64, i64 }` struct =
+// sx's tuple. aarch64-pinned via `.build`: executes on a matching host (exit
+// reflects lo+hi), ir-only elsewhere.
+split :: (x: u64) -> Tuple(lo: u64, hi: u64) {
+    return asm {
+        #string ASM
+        and %[l], %[x], #0xff
+        lsr %[h], %[x], #8
+ASM,
+        [l] "=r" -> u64,
+        [h] "=r" -> u64,
+        [x] "r" = x,
+    };
+}
+main :: () -> i64 {
+    lo, hi := split(0x1234);
+    return xx (lo + hi);   // 0x34 + 0x12 = 52 + 18 = 70
+}

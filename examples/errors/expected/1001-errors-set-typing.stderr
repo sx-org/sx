@@ -1,0 +1,11 @@
+error: error tag 'error.NotInSet' is not in error set 'ParseErr'
+  --> examples/errors/1001-errors-set-typing.sx:13:20
+   |
+13 |     c : ParseErr = error.NotInSet;   // error: NotInSet not in ParseErr
+   |                    ^^^^^^^^^^^^^^
+
+error: an error-set value compares only with an `error.X` tag or another error-set value; coerce with `xx` to compare the raw id
+  --> examples/errors/1001-errors-set-typing.sx:14:8
+   |
+14 |     if c == 42 { return 1; }         // error: error-set value vs raw integer
+   |        ^

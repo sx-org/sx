@@ -1,0 +1,15 @@
+// Type-author-aware bare-TYPE visibility gate (Phase E1, R1). `flatval.sx` is
+// flat-imported and authors a VALUE/FUNCTION `Secret`; `nstype.sx` is namespaced
+// (`nst :: #import`) and authors a TYPE `Secret`. A bare `Secret` in a type
+// position must NOT resolve: the only flat-visible `Secret` author is a FUNCTION,
+// and a same-name flat value does NOT make the namespaced-only TYPE bare-visible.
+// The leak this closes: a name-only gate would see the flat function and let the
+// global `findByName` first-match return the namespaced-only struct. The type is
+// reachable only as `nst.Secret`.
+#import "0745-modules-flat-value-shadows-ns-only-type/flatval.sx";
+nst :: #import "0745-modules-flat-value-shadows-ns-only-type/nstype.sx";
+
+main :: () -> i32 {
+    s : Secret = .{ x = 5, y = 6 };
+    s.x
+}

@@ -1,0 +1,29 @@
+error: cannot erase an rvalue to '#identity' protocol 'IdP' — identity objects need a name; bind it first (`x := …;` then `xx x` / `x.(IdP)` borrows the local)
+  --> examples/diagnostics/1255-diagnostics-identity-refusals.sx:21:18
+   |
+21 |     a : IdP = xx W.{ v = 1 };       // rvalue literal → refusal
+   |                  ^^^^^^^^^^^
+
+error: cannot erase an rvalue to '#identity' protocol 'IdP' — identity objects need a name; bind it first (`x := …;` then `xx x` / `x.(IdP)` borrows the local)
+  --> examples/diagnostics/1255-diagnostics-identity-refusals.sx:23:18
+   |
+23 |     b : IdP = xx make();            // rvalue call result → refusal
+   |                  ^^^^^^
+
+error: cannot erase an rvalue to '#identity' protocol 'IdP' — identity objects need a name; bind it first (`x := …;` then `xx x` / `x.(IdP)` borrows the local)
+  --> examples/diagnostics/1255-diagnostics-identity-refusals.sx:25:14
+   |
+25 |     cpost := W.{ v = 2 }.(IdP);     // rvalue postfix → refusal
+   |              ^^^^^^^^^^^
+
+error: cannot erase an rvalue to '#identity' protocol 'Allocator' — identity objects need a name; bind it first (`x := …;` then `xx x` / `x.(Allocator)` borrows the local)
+  --> examples/diagnostics/1255-diagnostics-identity-refusals.sx:28:25
+   |
+28 |     ca : Allocator = xx CAllocator.{};  // adopted std protocol → refusal
+   |                         ^^^^^^^^^^^^^
+
+error: free on an '#identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free
+  --> library/modules/std/mem.sx:64:17
+   |
+64 |                 compile_error("free on an '#identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free");
+   |                 ^^^^^^^^^^^^^

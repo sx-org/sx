@@ -1,0 +1,26 @@
+// Regression (issue 0100 F1): a QUALIFIED imported function that calls a
+// function from its OWN flat import.
+//
+// `calc :: #import …` registers `calc.compute` as a module-qualified alias
+// with a unique FuncId (the identity fix that resolves the cross-module
+// same-name `parse` collision, issue 0100 / example 0719). That alias is
+// lowered through `lazyLowerFunction`'s null-FuncId `lowerFunction` path,
+// which has no declared `Function.source_file` to restore. Before the fix it
+// lowered `calc.compute`'s body in the CALLER's (this file's) visibility
+// context, so `compute`'s calls to `triple` / `base` — visible only from
+// calc.sx's own `#import "util.sx"` — were rejected "not visible". The fix
+// carries the alias's declaring source so it lowers in calc.sx's context.
+
+#import "modules/std.sx";
+calc :: #import "0720-modules-qualified-own-import/calc.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    // 14 * 3 = 42, computed by calc.compute -> triple(base()), both of which
+    // live in calc.sx's own flat import.
+    report("qualified-own-import", calc.compute() == 42);
+    0
+}

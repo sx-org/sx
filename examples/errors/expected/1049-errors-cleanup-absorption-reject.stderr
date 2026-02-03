@@ -1,0 +1,11 @@
+error: a bare failable call in a `defer` body has nowhere to send its error — the block is already exiting; absorb it locally with `catch` or `or <value>`
+  --> examples/errors/1049-errors-cleanup-absorption-reject.sx:14:12
+   |
+14 |     defer  failing();          // REJECTED: bare failable in a defer body
+   |            ^^^^^^^^^
+
+error: a bare failable call in a `onfail` body has nowhere to send its error — the block is already exiting; absorb it locally with `catch` or `or <value>`
+  --> examples/errors/1049-errors-cleanup-absorption-reject.sx:15:14
+   |
+15 |     onfail { failing(); }      // REJECTED: bare failable in an onfail body
+   |              ^^^^^^^^^

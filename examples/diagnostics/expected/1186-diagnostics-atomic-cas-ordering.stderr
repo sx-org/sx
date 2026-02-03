@@ -1,0 +1,5 @@
+error: atomic compare-exchange failure ordering ('.seq_cst') cannot be stronger than the success ordering ('.relaxed')
+  --> examples/diagnostics/1186-diagnostics-atomic-cas-ordering.sx:11:50
+   |
+11 |     _ := atomic_cmpxchg(i64, @n, 0, 1, .relaxed, .seq_cst);
+   |                                                  ^^^^^^^^

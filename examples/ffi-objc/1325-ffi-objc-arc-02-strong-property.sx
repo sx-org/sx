@@ -1,0 +1,78 @@
+// ffi-objc-arc-02 — #property(strong) on sx-defined class.
+//
+// Strong contract:
+//   - setter retains the new value, releases the old.
+//   - -dealloc releases each strong property ivar before freeing state.
+//
+// Observation: a child instance assigned to a parent's strong property
+// stays alive after we drop our own reference. Without the strong
+// setter, the child's refcount drops to 0 immediately when we release,
+// and the parent ends up with a dangling pointer.
+//
+// We observe via TrackingAllocator. The KEY check is the dealloc count
+// AT THE MIDPOINT — between dropping our child reference and releasing
+// the parent. With strong+dealloc-cleanup: child stays alive across
+// midpoint (no extra dealloc). Without: child is dead at midpoint.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/ffi/objc.sx";
+#import "modules/build.sx";
+
+SxStrongChild :: #objc_class("SxStrongChild") {
+    #extends NSObject;
+    tag: i32;
+    alloc :: () -> *SxStrongChild;
+}
+
+SxStrongParent :: #objc_class("SxStrongParent") {
+    #extends NSObject;
+    child: *SxStrongChild #property(strong);
+    alloc :: () -> *SxStrongParent;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        gpa := GPA.init();
+        tracker := TrackingAllocator.init(gpa);
+
+        push .{ allocator = tracker } {
+            d0 := tracker.dealloc_count;
+            a0 := tracker.alloc_count;
+
+            parent := SxStrongParent.alloc();
+            child  := SxStrongChild.alloc();
+            parent.child = child;   // dispatches setChild: via M2.2 property machinery
+            child.release();
+
+            // Midpoint: with strong setter, child is retained by parent;
+            // tracker.dealloc_count should NOT have advanced beyond d0.
+            // Without strong setter, child auto-dealloc'd on release.
+            d_mid := tracker.dealloc_count;
+            if d_mid != d0 {
+                print("FAIL: child dealloc'd at midpoint (strong setter not retaining); delta={}\n",
+                      d_mid - d0);
+                return 1;
+            }
+
+            parent.release();
+
+            // After parent.release: parent.dealloc fires, releases the
+            // strong child ivar, child deallocs, state freed.
+            d_end := tracker.dealloc_count;
+            // Net: 2 allocs (parent + child state), 2 deallocs (both freed).
+            // Balance check: dealloc delta == alloc delta.
+            if d_end - d0 != tracker.alloc_count - a0 {
+                print("FAIL: unbalanced; alloc={} dealloc={}\n",
+                      tracker.alloc_count - a0, d_end - d0);
+                return 1;
+            }
+        }
+
+        print("strong property: ok\n");
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

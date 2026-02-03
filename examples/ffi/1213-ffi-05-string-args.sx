@@ -1,0 +1,49 @@
+// Phase 0 baseline (PLAN-FFI.md step 0.5): the three shapes that
+// actually appear at the sx ↔ C boundary today:
+//
+//   1. Null-terminated `[:0]u8`  — passed by `.ptr` to a `const char *`.
+//   2. Raw byte buffer `[*]u8`   — pointer + explicit length.
+//   3. sx `string` value         — coerceArg's "fat-pointer decay" branch
+//                                  pulls `.ptr` automatically for `*u8`/
+//                                  `[:0]u8` params (string is `{ptr, len}`).
+//   4. Pointer return from C     — round-trips back as `[*]u8` / `*u8`.
+
+#import "modules/std.sx";
+
+#import c {
+    #source "1213-ffi-05-string-args.c";
+};
+
+ffi_strlen          :: (s: [:0]u8)                    -> i32 extern;
+ffi_first_byte      :: (s: [:0]u8)                    -> i32 extern;
+ffi_sum_bytes       :: (buf: [*]u8, len: i32)         -> i32 extern;
+ffi_write_byte      :: (buf: [*]u8, idx: i32, v: u8)  -> void extern;
+ffi_static_greeting :: ()                             -> [*]u8 extern;
+
+main :: () -> i32 {
+    // ── [:0]u8 null-terminated literal ─────────────────────────────
+    msg : [:0]u8 = "hello";
+    print("strlen(\"hello\")     = {}\n", ffi_strlen(msg));
+    print("first_byte           = {}\n", ffi_first_byte(msg));
+
+    // ── sx `string` → C `const char *` (slice-decay through coerceArg) ─
+    s : string = "sx string here";
+    print("strlen(sx string)    = {}\n", ffi_strlen(xx s.ptr));
+
+    // ── [*]u8 raw buffer + length ──────────────────────────────────
+    bytes : [4]u8 = .[10, 20, 30, 40];
+    bp : [*]u8 = xx @bytes[0];
+    print("sum_bytes([10,20,30,40]) = {}\n", ffi_sum_bytes(bp, 4));
+
+    // ── Mutate buffer via C, read back from sx ─────────────────────
+    ffi_write_byte(bp, 1, 99);
+    print("bytes[1] after write = {}\n", bytes[1]);
+
+    // ── C returns a static string pointer; read it byte-by-byte ────
+    g := ffi_static_greeting();
+    n := ffi_strlen(xx g);
+    print("static greeting len  = {}\n", n);
+    print("static greeting [0]  = {}\n", g[0]);
+
+    0
+}

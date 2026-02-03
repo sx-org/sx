@@ -1,0 +1,4 @@
+combine: sum=42 good=true
+bounds: lo=5 hi=15
+roots: val=7 sq=49
+roots(-1): caught Negative

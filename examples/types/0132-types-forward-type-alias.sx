@@ -1,0 +1,24 @@
+// Forward identifier type alias — an alias whose target is declared LATER
+// in the file resolves the same as an ordered one. `MyChain :: MyInt;`
+// appears before `MyInt :: i32;`, yet `MyChain` resolves to `i32` and a
+// forward chain (`A :: B; B :: C; C :: u8;`) converges too.
+// Regression (issue 0069): the scan only registered identifier aliases whose
+// target was already known, so a forward alias was falsely flagged
+// `unknown type`. Now a fixpoint pass over the scanned decls resolves them.
+#import "modules/std.sx";
+
+MyChain :: MyInt;
+MyInt   :: i32;
+
+A :: B;
+B :: C;
+C :: u8;
+
+main :: () -> i32 {
+    v: MyChain = 7;
+    n: A = 3;
+    print("chain i32:   {}\n", size_of(MyChain));
+    print("forward u8:  {}\n", size_of(A));
+    print("v + n:       {}\n", v + n.(i32));
+    return v;
+}

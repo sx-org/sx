@@ -1,0 +1,10 @@
+// Module B authors a DIFFERENT same-name chain: `M :: 10`, `K :: M + 1` (= 11).
+// A shadow of A's `M`/`K`. Each `K`'s RHS leaf resolves to its own source's `M`,
+// so the dimension fold gives B's length 11 — never A's via the global map.
+M :: 10;
+K :: M + 1;
+b_val :: () -> i64 { return K; }
+b_len :: () -> i64 {
+    arr : [K]u8 = ---;
+    return arr.len;
+}

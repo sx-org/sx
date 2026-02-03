@@ -1,0 +1,26 @@
+// Regression (issue 0143): a variadic `..$args` pack forwarded as a `[]Type`
+// ARGUMENT across a call must read the right element types. The pack-slice
+// materialization (`buildPackSliceValue`) built a `[]any` (16-byte) array while
+// `Type` is now `.type_value` (8 bytes) — so a `[]Type` reader (8-byte stride)
+// read `[t0, pad, t1, …]` instead of `[t0, t1, …]`. The legacy interp's
+// tagged-Value model hid it; the byte-accurate comptime VM exposed it.
+#import "modules/std.sx";
+
+inner :: (args: []Type) -> string {
+    s := "";
+    i : i64 = 0;
+    while i < args.len {
+        s = concat(s, type_name(args[i]));
+        s = concat(s, " ");
+        i = i + 1;
+    }
+    return s;
+}
+
+outer :: (..$args) -> string { return inner($args); }
+
+R :: #run outer(42, "hi", true);
+
+main :: () {
+    print("[{}]\n", R);
+}

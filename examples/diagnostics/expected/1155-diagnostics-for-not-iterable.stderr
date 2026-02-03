@@ -1,0 +1,5 @@
+error: cannot iterate this expression — if the parens were call arguments, a call iterable also needs a capture (`for f(n) (x) { }`) or parentheses (`for (f(n)) { }`)
+  --> examples/diagnostics/1155-diagnostics-for-not-iterable.sx:11:9
+   |
+11 |     for f(n) { }
+   |         ^

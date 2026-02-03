@@ -1,0 +1,6 @@
+[error]
+onfail: x=7 (or)
+onfail: caught (catch)
+defer: always
+[ok]
+defer: always

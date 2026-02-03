@@ -1,0 +1,16 @@
+// Slicing an inline ARRAY LITERAL is rejected — the literal is a temporary
+// with no backing storage, exactly like a call-result rvalue (see 1229).
+// specs.md §Subslicing names an array literal as a compile error.
+//
+// Regression (issue 0225 review MED-1): the literal base types as
+// `.unresolved` here, so it slipped past the `== .array` rvalue guard and
+// carried an unresolved slice-element type into codegen — a hard compiler
+// panic ("unresolved type reached LLVM emission"). It must be the same
+// clean diagnostic the call-result rvalue gets, not a crash.
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    sl : []i64 = .[ 1, 2, 3 ][0..2];   // error: cannot slice a temporary array
+    print("{}\n", sl[0]);
+    0
+}

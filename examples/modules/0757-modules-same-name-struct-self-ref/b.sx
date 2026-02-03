@@ -1,0 +1,12 @@
+// Module B authors a same-name `Box` shadow whose field SELF-REFERENCES its own
+// name (`next: *Box`). Pre-fix the self-ref resolved to A's `Box` (registered
+// first under the bare name), so `next.*.y` failed with "field 'y' not found on
+// type 'Box'". The shadow's slot is now reserved BEFORE its fields resolve, so
+// `*Box` binds to B's OWN nominal TypeId and the deref sees B's `y`.
+Box :: struct { y: i64; next: *Box; }
+b_chain :: () -> i64 {
+    tail := Box.{ y = 42, next = null };
+    head := Box.{ y = 1, next = @tail };
+    // Walk the self-referential link; reads B's own `y`, not A's `x`.
+    return head.next.*.y;
+}

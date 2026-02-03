@@ -1,0 +1,621 @@
+// std.http — mbedTLS-backed TLS provider (Phase T3).
+//
+// Implements http's transport-seam protocols (TlsConn / TlsAcceptor, from
+// http/tls.sx) over the VENDORED mbedTLS (vendors/mbedtls). This is the ONLY
+// place that pulls in the crypto C: importing http alone stays plaintext; a
+// program opts into TLS by importing THIS module, constructing a `TlsServer`
+// from a cert+key, and handing `xx @server` to `Config.tls`. http.sx never
+// sees an mbedTLS type or error code — the impls below map every
+// `MBEDTLS_ERR_SSL_WANT_*` / `PEER_CLOSE_NOTIFY` onto the abstract `TlsStep`.
+//
+//   tlsp :: #import "modules/std/http/tls_mbedtls.sx";
+//   ts : tlsp.TlsServer = .{};
+//   ts.setup(cert_pem, key_pem, alloc);   // cert+key as PEM bytes
+//   cfg.tls = xx @ts;                       // erased ?TlsAcceptor
+//
+// The BIO thunks (tls_bio_send / tls_bio_recv) are the abi(.c) callbacks
+// mbedTLS calls to move ciphertext; they bridge the non-blocking fd's EAGAIN
+// onto MBEDTLS_ERR_SSL_WANT_READ/WANT_WRITE, which the handshake/read/write
+// surface back to the server loop as TlsStep.WantRead/WantWrite.
+
+#import "modules/std/core.sx";          // Allocator
+#import "modules/std/list.sx";          // List
+#import "modules/std/http/tls.sx";      // TlsConn, TlsAcceptor, TlsStep (flat)
+clib    :: #import "modules/std/c.sx";
+socket  :: #import "modules/std/socket.sx";
+posix   :: #import "modules/std/posix.sx";
+fs      :: #import "modules/std/fs.sx";
+mbedtls :: #import "vendors/mbedtls/mbedtls.sx";
+
+// ── BIO bridge (abi(.c) callbacks) ──────────────────────────────────
+// mbedTLS hands each its p_bio ctx = the *TlsSession (set via set_bio); the
+// thunk reads its fd and issues one raw nonblocking read/write, translating
+// the result into the byte count OR an mbedTLS WANT_* sentinel. EINTR is
+// retried in-thunk (a readiness loop has nothing else to do with it).
+
+tls_bio_send :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
+    s : *TlsSession = xx ctx;
+    while true {
+        n := socket.write(s.fd, buf, len);
+        if n >= 0 { return xx n; }
+        e := socket.errno();
+        if e == posix.EINTR { continue; }
+        if socket.is_wouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE; }
+        return -1;   // any other errno → fatal transport error (handshake fails)
+    }
+    return -1;
+}
+
+tls_bio_recv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
+    s : *TlsSession = xx ctx;
+    while true {
+        n := socket.read(s.fd, buf, len);
+        if n > 0 { return xx n; }
+        if n == 0 { return 0; }   // orderly EOF — mbedTLS treats as conn closed
+        e := socket.errno();
+        if e == posix.EINTR { continue; }
+        if socket.is_wouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_READ; }
+        return -1;
+    }
+    return -1;
+}
+
+// ── per-connection session (impls TlsConn) ──────────────────────────
+// Heap-allocated by TlsServer.accept so its address is stable for set_bio's
+// p_bio and for mbedTLS's own pointer into ssl. Owns the SslContext by value
+// + the fd + the allocator that minted it (to free itself in close).
+TlsSession :: struct {
+    ssl: mbedtls.SslContext;
+    fd:  i32 = -1;
+    a:   Allocator;
+}
+
+impl TlsConn for TlsSession {
+    handshake :: (self: *TlsSession) -> TlsStep {
+        r := mbedtls.mbedtls_ssl_handshake(@self.ssl);
+        if r == 0 { return TlsStep.Done; }
+        if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return TlsStep.WantRead; }
+        if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return TlsStep.WantWrite; }
+        return TlsStep.Fatal;
+    }
+
+    read :: (self: *TlsSession, buf: [*]u8, cap: usize) -> (i64, TlsStep) {
+        while true {
+            r := mbedtls.mbedtls_ssl_read(@self.ssl, buf, cap);
+            if r > 0 { return xx r, TlsStep.Done; }
+            if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, TlsStep.WantRead; }
+            if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, TlsStep.WantWrite; }
+            if r == mbedtls.MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY { return 0, TlsStep.Closed; }
+            // Q3.6a-review H2: a TLS 1.3 server (nginx/Go-class) sends 1-2
+            // NewSessionTickets right after the handshake; mbedTLS surfaces
+            // each as this NON-FATAL signal from ssl_read. Without the retry
+            // the very first read against a mainstream server died Fatal.
+            if r == mbedtls.MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET { continue; }
+            if r == 0 { return 0, TlsStep.Closed; }
+            return 0, TlsStep.Fatal;
+        }
+        return 0, TlsStep.Fatal;
+    }
+
+    write :: (self: *TlsSession, buf: [*]u8, len: usize) -> (i64, TlsStep) {
+        r := mbedtls.mbedtls_ssl_write(@self.ssl, buf, len);
+        if r > 0 { return xx r, TlsStep.Done; }
+        if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, TlsStep.WantRead; }
+        if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, TlsStep.WantWrite; }
+        return 0, TlsStep.Fatal;
+    }
+
+    close :: (self: *TlsSession) {
+        // Best-effort close_notify (ignore WANT_*/error — the fd is going away),
+        // free the mbedTLS session, then free our own heap storage.
+        _ := mbedtls.mbedtls_ssl_close_notify(@self.ssl);
+        mbedtls.mbedtls_ssl_free(@self.ssl);
+        a := self.a;
+        a.destroy(self);
+    }
+}
+
+// ── shared server config (impls TlsAcceptor) ────────────────────────
+// Holds the parsed cert chain, private key, RNG, and the SslConfig all
+// sessions share. MUST outlive the Server (Config.tls borrows `xx @this`).
+// `ok` gates accept: a failed setup never mints a session, so a misconfigured
+// server drops every connection rather than serving it in the clear.
+
+// Q3.4: one SNI table entry — an extra identity served when the client's
+// server_name matches. Heap-created via the TlsServer's allocator (stable
+// address: the handshake callback dereferences it); freed by deinit.
+SniEntry :: struct {
+    name: [*]u8 = null;   // lowercased at add; DNS names match case-insensitively
+    name_len: i64 = 0;
+    cert: mbedtls.X509Crt;
+    pkey: mbedtls.PkContext;
+}
+
+// One retired ALPN list (see TlsServer.alpn_old).
+AlpnVec :: struct {
+    vec: [*][*]u8 = null;
+    n: i64 = 0;
+}
+
+TlsServer :: struct {
+    conf:    mbedtls.SslConfig;
+    cert:    mbedtls.X509Crt;
+    pkey:    mbedtls.PkContext;
+    drbg:    mbedtls.CtrDrbg;
+    entropy: mbedtls.Entropy;
+    a:       Allocator;
+    ok:      bool = false;
+    // Q3.4 — ALPN / SNI / client-cert state. All owned via `a` (captured at
+    // setup — the SNI table grows through it explicitly, never through
+    // whatever context.allocator is current at the add call) and freed by
+    // deinit. alpn_vec is the NULL-terminated pointer array mbedTLS keeps a
+    // reference to; it and its strings must live until deinit.
+    alpn_vec: [*][*]u8 = null;
+    alpn_n:   i64 = 0;
+    // Retired ALPN lists (the set_alpn replace path). Established sessions
+    // may still hold pointers INTO a replaced list (mbedTLS keeps the
+    // negotiated protocol as a pointer to the config's string), so a
+    // replaced list is never freed mid-flight — it parks here until deinit.
+    alpn_old: List(AlpnVec);
+    sni:      List(*SniEntry);
+    sni_registered: bool = false;
+    ca:       mbedtls.X509Crt;   // client-cert trust anchor (mTLS)
+    ca_set:   bool = false;      // a trust anchor was parsed into `ca`
+
+    // Build the shared server TLS state from a PEM cert chain + private key.
+    // Returns false (and leaves `ok = false`) on ANY mbedTLS setup error — RNG
+    // seed, cert/key parse, config defaults, own-cert bind — so a bad cert/key
+    // is a loud "server won't accept TLS", never a silent plaintext
+    // fallthrough. `a` must outlive the TlsServer (it owns no copy of cert/key
+    // bytes after this returns; the parsed forms live in the mbedTLS contexts).
+    setup :: (self: *TlsServer, cert_pem: []u8, key_pem: []u8, a: Allocator) -> bool {
+        self.a  = a;
+        self.ok = false;
+        mbedtls.mbedtls_ssl_config_init(@self.conf);
+        mbedtls.mbedtls_x509_crt_init(@self.cert);
+        mbedtls.mbedtls_pk_init(@self.pkey);
+        mbedtls.mbedtls_ctr_drbg_init(@self.drbg);
+        mbedtls.mbedtls_entropy_init(@self.entropy);
+        mbedtls.mbedtls_x509_crt_init(@self.ca);   // parsed by require_client_cert; freed by deinit either way
+
+        // Seed the DRBG from the platform entropy source.
+        if mbedtls.mbedtls_ctr_drbg_seed(@self.drbg, mbedtls.mbedtls_entropy_func, xx @self.entropy, null, 0) != 0 {
+            return false;
+        }
+
+        // Parse the cert chain (PEM: buflen must include the trailing NUL).
+        cbuf, cn := nul_dup(a, cert_pem);
+        rc := mbedtls.mbedtls_x509_crt_parse(@self.cert, cbuf, cn);
+        a.dealloc_bytes(xx cbuf);
+        if rc != 0 {
+            // Partial-parse hygiene, same as require_client_cert: a retried
+            // setup must not append onto leftovers from the failed call.
+            mbedtls.mbedtls_x509_crt_free(@self.cert);
+            mbedtls.mbedtls_x509_crt_init(@self.cert);
+            return false;
+        }
+
+        // Parse the private key (the DRBG seeds any PEM-decryption RNG).
+        kbuf, kn := nul_dup(a, key_pem);
+        rk := mbedtls.mbedtls_pk_parse_key(@self.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, xx @self.drbg);
+        a.dealloc_bytes(xx kbuf);
+        if rk != 0 { return false; }
+
+        // Server-side stream config; wire the RNG + own cert/key.
+        if mbedtls.mbedtls_ssl_config_defaults(@self.conf, mbedtls.MBEDTLS_SSL_IS_SERVER, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 {
+            return false;
+        }
+        mbedtls.mbedtls_ssl_conf_rng(@self.conf, mbedtls.mbedtls_ctr_drbg_random, xx @self.drbg);
+        if mbedtls.mbedtls_ssl_conf_own_cert(@self.conf, @self.cert, @self.pkey) != 0 {
+            return false;
+        }
+
+        self.ok = true;
+        return true;
+    }
+
+    // Convenience: load the PEM cert chain + private key from FILE PATHS, then
+    // `setup`. Reads each file (via `context.allocator`), hands the bytes to
+    // `setup` (which copies them into the mbedTLS contexts), then frees the
+    // read buffers — so nothing is retained beyond the parsed forms. Returns
+    // false if EITHER file can't be read or `setup` fails (loud: leaves
+    // `ok = false`, so the server accepts no TLS). `a` is the allocator the
+    // parsed state + every minted session uses; it must outlive the TlsServer.
+    setup_files :: (self: *TlsServer, cert_path: [:0]u8, key_path: [:0]u8, a: Allocator) -> bool {
+        ok := false;
+        if cert := fs.read_file(cert_path) {
+            if key := fs.read_file(key_path) {
+                cb : []u8 = .{ ptr = cert.ptr, len = cert.len };
+                kb : []u8 = .{ ptr = key.ptr,  len = key.len };
+                ok = self.setup(cb, kb, a);
+                context.allocator.dealloc_bytes(xx key.ptr);
+            }
+            context.allocator.dealloc_bytes(xx cert.ptr);
+        }
+        return ok;
+    }
+
+    // (Minimum TLS version: the config default already floors at TLS 1.2 and
+    // prefers 1.3, which satisfies the plan's policy. An explicit version pin
+    // would need a tiny C shim — mbedTLS's `mbedtls_ssl_conf_min_tls_version`
+    // is a `static inline` over an opaque field, so it exposes no linkable
+    // symbol to bind. Deferred until a consumer needs to REQUIRE 1.3.)
+
+    // ── Q3.4: ALPN ───────────────────────────────────────────────────
+    // Advertise the given protocols (preference order; e.g. .["http/1.1"]).
+    // Call after `setup`, before serving. mbedTLS keeps a POINTER to the
+    // list, so the entries are copied into provider-owned NUL-terminated
+    // strings that live until deinit. Calling again replaces the list.
+    // A client that sends an ALPN extension with no overlap is refused at
+    // the handshake (no_application_protocol); a client that sends no ALPN
+    // extension still connects, with no protocol negotiated.
+    set_alpn :: (self: *TlsServer, protos: []string) -> bool {
+        if !self.ok { return false; }
+        if protos.len == 0 { return false; }
+        n := protos.len;
+        vec : [*][*]u8 = xx self.a.alloc_bytes((n + 1) * 8);
+        i : i64 = 0;
+        while i < n {
+            s := protos[i];
+            b : []u8 = .{ ptr = s.ptr, len = s.len };
+            p, _ := nul_dup(self.a, b);
+            vec[i] = p;
+            i += 1;
+        }
+        vec[n] = null;
+        if mbedtls.mbedtls_ssl_conf_alpn_protocols(@self.conf, vec) != 0 {
+            free_alpn(self.a, vec, n);
+            return false;
+        }
+        // Replace-on-repeat: the config now points at the NEW list. The old
+        // one is RETIRED, not freed — a live session that negotiated against
+        // it still points into its strings (review P2); deinit reclaims all.
+        if self.alpn_vec != null {
+            self.alpn_old.append(.{ vec = self.alpn_vec, n = self.alpn_n }, self.a);
+        }
+        self.alpn_vec = vec;
+        self.alpn_n = n;
+        return true;
+    }
+
+    // ── Q3.4: SNI multi-cert ─────────────────────────────────────────
+    // Serve an extra cert/key when the client's SNI names `name` (exact,
+    // ASCII-case-insensitive). No match → the `setup` cert stands. The first
+    // add registers the handshake callback; entries live until deinit.
+    add_sni_cert :: (self: *TlsServer, name: string, cert_pem: []u8, key_pem: []u8) -> bool {
+        if !self.ok { return false; }
+        if name.len == 0 { return false; }
+        e := self.a.create(SniEntry);
+        // create() memory is uninitialised — set every field before use.
+        mbedtls.mbedtls_x509_crt_init(@e.cert);
+        mbedtls.mbedtls_pk_init(@e.pkey);
+        e.name = null;
+        e.name_len = 0;
+
+        ok := false;
+        cbuf, cn := nul_dup(self.a, cert_pem);
+        if mbedtls.mbedtls_x509_crt_parse(@e.cert, cbuf, cn) == 0 {
+            kbuf, kn := nul_dup(self.a, key_pem);
+            if mbedtls.mbedtls_pk_parse_key(@e.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, xx @self.drbg) == 0 {
+                ok = true;
+            }
+            self.a.dealloc_bytes(xx kbuf);
+        }
+        self.a.dealloc_bytes(xx cbuf);
+        if !ok {
+            mbedtls.mbedtls_x509_crt_free(@e.cert);
+            mbedtls.mbedtls_pk_free(@e.pkey);
+            self.a.destroy(e);
+            return false;
+        }
+
+        // Store the name lowercased — the lookup lowercases the wire bytes.
+        nm : [*]u8 = xx self.a.alloc_bytes(name.len);
+        i : i64 = 0;
+        while i < name.len {
+            ch := name[i];
+            if ch >= 'A' and ch <= 'Z' { ch = ch + ' '; }
+            nm[i] = ch;
+            i += 1;
+        }
+        e.name = nm;
+        e.name_len = name.len;
+
+        if !self.sni_registered {
+            mbedtls.mbedtls_ssl_conf_sni(@self.conf, tls_sni_select, xx self);
+            self.sni_registered = true;
+        }
+        self.sni.append(e, self.a);
+        return true;
+    }
+
+    // File-path convenience over add_sni_cert (reads via context.allocator,
+    // frees the read buffers — mirrors setup_files).
+    add_sni_cert_files :: (self: *TlsServer, name: string, cert_path: [:0]u8, key_path: [:0]u8) -> bool {
+        ok := false;
+        if cert := fs.read_file(cert_path) {
+            if key := fs.read_file(key_path) {
+                cb : []u8 = .{ ptr = cert.ptr, len = cert.len };
+                kb : []u8 = .{ ptr = key.ptr,  len = key.len };
+                ok = self.add_sni_cert(name, cb, kb);
+                context.allocator.dealloc_bytes(xx key.ptr);
+            }
+            context.allocator.dealloc_bytes(xx cert.ptr);
+        }
+        return ok;
+    }
+
+    // ── Q3.4: client-cert auth (mTLS) ────────────────────────────────
+    // Require every client to present a certificate that verifies against
+    // `ca_pem` (a CA chain, or the client cert itself when self-signed —
+    // mbedTLS trusts an exact match in the CA list). A client that presents
+    // none, or an untrusted one, fails the handshake and is dropped by the
+    // server (never served). One-shot: a second call is rejected.
+    require_client_cert :: (self: *TlsServer, ca_pem: []u8) -> bool {
+        if !self.ok { return false; }
+        if self.ca_set { return false; }
+        buf, n := nul_dup(self.a, ca_pem);
+        rc := mbedtls.mbedtls_x509_crt_parse(@self.ca, buf, n);
+        self.a.dealloc_bytes(xx buf);
+        if rc != 0 {
+            // x509_crt_parse APPENDS and can partially succeed (positive rc
+            // = some certs parsed). Reset the chain so a retried call can't
+            // silently trust anchors from a call that reported failure
+            // (review P1).
+            mbedtls.mbedtls_x509_crt_free(@self.ca);
+            mbedtls.mbedtls_x509_crt_init(@self.ca);
+            return false;
+        }
+        mbedtls.mbedtls_ssl_conf_ca_chain(@self.conf, @self.ca, null);
+        mbedtls.mbedtls_ssl_conf_authmode(@self.conf, mbedtls.MBEDTLS_SSL_VERIFY_REQUIRED);
+        self.ca_set = true;
+        return true;
+    }
+
+    require_client_cert_files :: (self: *TlsServer, ca_path: [:0]u8) -> bool {
+        ok := false;
+        if data := fs.read_file(ca_path) {
+            b : []u8 = .{ ptr = data.ptr, len = data.len };
+            ok = self.require_client_cert(b);
+            context.allocator.dealloc_bytes(xx data.ptr);
+        }
+        return ok;
+    }
+
+    // Free the shared mbedTLS state. Call after the Server is fully torn down
+    // (no session may still reference `conf`). Per-session state is freed by
+    // each TlsConn.close; this releases the shared config/cert/key/RNG plus
+    // the Q3.4 ALPN list, SNI table, and client-cert trust anchor.
+    deinit :: (self: *TlsServer) {
+        mbedtls.mbedtls_ssl_config_free(@self.conf);
+        mbedtls.mbedtls_x509_crt_free(@self.cert);
+        mbedtls.mbedtls_pk_free(@self.pkey);
+        mbedtls.mbedtls_ctr_drbg_free(@self.drbg);
+        mbedtls.mbedtls_entropy_free(@self.entropy);
+        if self.alpn_vec != null {
+            free_alpn(self.a, self.alpn_vec, self.alpn_n);
+            self.alpn_vec = null;
+            self.alpn_n = 0;
+        }
+        j : i64 = 0;
+        while j < self.alpn_old.len {
+            old := self.alpn_old.items[j];
+            free_alpn(self.a, old.vec, old.n);
+            j += 1;
+        }
+        self.alpn_old.deinit(self.a);
+        i : i64 = 0;
+        while i < self.sni.len {
+            e := self.sni.items[i];
+            mbedtls.mbedtls_x509_crt_free(@e.cert);
+            mbedtls.mbedtls_pk_free(@e.pkey);
+            self.a.dealloc_bytes(xx e.name);
+            self.a.destroy(e);
+            i += 1;
+        }
+        self.sni.deinit(self.a);
+        self.sni_registered = false;
+        mbedtls.mbedtls_x509_crt_free(@self.ca);
+        self.ca_set = false;
+        self.ok = false;
+    }
+}
+
+// Free an ALPN pointer array + its owned strings (n live entries + the NULL
+// terminator slot).
+free_alpn :: (a: Allocator, vec: [*][*]u8, n: i64) {
+    i : i64 = 0;
+    while i < n {
+        a.dealloc_bytes(xx vec[i]);
+        i += 1;
+    }
+    a.dealloc_bytes(xx vec);
+}
+
+// Q3.4: the SNI handshake callback (abi(.c) — mbedTLS calls it mid-handshake
+// with p_sni = the *TlsServer). Exact ASCII-case-insensitive match against
+// the table selects that entry's cert/key for THIS handshake; no match keeps
+// the default own_cert (return 0 either way — never abort on unknown names,
+// clients legitimately connect by IP/other names and get the default
+// identity). A set_hs_own_cert failure aborts rather than serving the wrong
+// identity.
+tls_sni_select :: (ctx: *void, ssl: *mbedtls.SslContext, name: [*]u8, name_len: usize) -> i32 abi(.c) {
+    ts : *TlsServer = xx ctx;
+    nlen : i64 = xx name_len;
+    i : i64 = 0;
+    while i < ts.sni.len {
+        e := ts.sni.items[i];
+        if e.name_len == nlen {
+            m : i64 = 0;
+            eq := true;
+            while m < nlen {
+                ch := name[m];
+                if ch >= 'A' and ch <= 'Z' { ch = ch + ' '; }
+                if ch != e.name[m] { eq = false; break; }
+                m += 1;
+            }
+            if eq {
+                if mbedtls.mbedtls_ssl_set_hs_own_cert(ssl, @e.cert, @e.pkey) != 0 { return -1; }
+                return 0;
+            }
+        }
+        i += 1;
+    }
+    return 0;
+}
+
+// Copy `src` into a fresh allocator-owned buffer with a trailing NUL, returning
+// (ptr, len_including_nul). mbedTLS's PEM parsers (x509_crt_parse / pk_parse_key)
+// REQUIRE the terminating NUL to be counted in buflen — a slice read from a file
+// won't have it, so we always re-buffer.
+nul_dup :: (a: Allocator, src: []u8) -> ([*]u8, usize) {
+    n := src.len;
+    p : [*]u8 = xx a.alloc_bytes(n + 1);
+    if n > 0 { clib.memcpy(p, src.ptr, xx n); }
+    p[n] = 0;
+    return p, xx (n + 1);
+}
+
+impl TlsAcceptor for TlsServer {
+    // Mint a per-connection TLS session bound to `fd`. null = setup not done or
+    // a per-session ssl_setup failure → the caller drops the connection.
+    accept :: (self: *TlsServer, fd: i32) -> ?TlsConn {
+        if !self.ok { return null; }
+        s := self.a.create(TlsSession);
+        mbedtls.mbedtls_ssl_init(@s.ssl);
+        if mbedtls.mbedtls_ssl_setup(@s.ssl, @self.conf) != 0 {
+            mbedtls.mbedtls_ssl_free(@s.ssl);
+            self.a.destroy(s);
+            return null;
+        }
+        s.fd = fd;
+        s.a  = self.a;
+        mbedtls.mbedtls_ssl_set_bio(@s.ssl, xx s, tls_bio_send, tls_bio_recv, null);
+        return xx s;
+    }
+}
+
+// ── client-side config (impls TlsDialer, Q3.6a) ─────────────────────
+// The shared client TLS state: trust anchor + RNG + SslConfig. MUST outlive
+// every connection it minted (ClientOpts.tls borrows `xx @this`). Two
+// setups, both loud:
+//   setup(ca_pem)  — REQUIRED verification against the explicit trust
+//                    anchor + the connect-time hostname (a self-signed
+//                    server cert can BE the anchor — mbedTLS trusts an
+//                    exact match in the CA list).
+//   insecure()     — VERIFY_NONE: accepts ANY certificate. The name is the
+//                    warning; for tests and localhost tooling only.
+TlsClientConfig :: struct {
+    conf:    mbedtls.SslConfig;
+    ca:      mbedtls.X509Crt;
+    drbg:    mbedtls.CtrDrbg;
+    entropy: mbedtls.Entropy;
+    a:       Allocator;
+    ok:      bool = false;
+
+    // Shared init tail: config defaults (CLIENT) + RNG. Returns false on
+    // any mbedTLS error, leaving ok = false (connect mints nothing).
+    setup_base :: (self: *TlsClientConfig, a: Allocator) -> bool {
+        self.a  = a;
+        self.ok = false;
+        mbedtls.mbedtls_ssl_config_init(@self.conf);
+        mbedtls.mbedtls_x509_crt_init(@self.ca);
+        mbedtls.mbedtls_ctr_drbg_init(@self.drbg);
+        mbedtls.mbedtls_entropy_init(@self.entropy);
+        if mbedtls.mbedtls_ctr_drbg_seed(@self.drbg, mbedtls.mbedtls_entropy_func, xx @self.entropy, null, 0) != 0 {
+            return false;
+        }
+        if mbedtls.mbedtls_ssl_config_defaults(@self.conf, mbedtls.MBEDTLS_SSL_IS_CLIENT, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 {
+            return false;
+        }
+        mbedtls.mbedtls_ssl_conf_rng(@self.conf, mbedtls.mbedtls_ctr_drbg_random, xx @self.drbg);
+        return true;
+    }
+
+    setup :: (self: *TlsClientConfig, ca_pem: []u8, a: Allocator) -> bool {
+        if !self.setup_base(a) { return false; }
+        buf, n := nul_dup(a, ca_pem);
+        rc := mbedtls.mbedtls_x509_crt_parse(@self.ca, buf, n);
+        a.dealloc_bytes(xx buf);
+        if rc != 0 {
+            // partial-parse hygiene (same as the server's trust paths)
+            mbedtls.mbedtls_x509_crt_free(@self.ca);
+            mbedtls.mbedtls_x509_crt_init(@self.ca);
+            return false;
+        }
+        mbedtls.mbedtls_ssl_conf_ca_chain(@self.conf, @self.ca, null);
+        mbedtls.mbedtls_ssl_conf_authmode(@self.conf, mbedtls.MBEDTLS_SSL_VERIFY_REQUIRED);
+        self.ok = true;
+        return true;
+    }
+
+    setup_files :: (self: *TlsClientConfig, ca_path: [:0]u8, a: Allocator) -> bool {
+        ok := false;
+        if data := fs.read_file(ca_path) {
+            b : []u8 = .{ ptr = data.ptr, len = data.len };
+            ok = self.setup(b, a);
+            context.allocator.dealloc_bytes(xx data.ptr);
+        }
+        return ok;
+    }
+
+    insecure :: (self: *TlsClientConfig, a: Allocator = context.allocator) -> bool {
+        if !self.setup_base(a) { return false; }
+        mbedtls.mbedtls_ssl_conf_authmode(@self.conf, mbedtls.MBEDTLS_SSL_VERIFY_NONE);
+        self.ok = true;
+        return true;
+    }
+
+    deinit :: (self: *TlsClientConfig) {
+        mbedtls.mbedtls_ssl_config_free(@self.conf);
+        mbedtls.mbedtls_x509_crt_free(@self.ca);
+        mbedtls.mbedtls_ctr_drbg_free(@self.drbg);
+        mbedtls.mbedtls_entropy_free(@self.entropy);
+        self.ok = false;
+    }
+}
+
+impl TlsDialer for TlsClientConfig {
+    // Mint a session over the CONNECTED (blocking) fd and run the handshake
+    // to completion. null = not set up, session setup failure, or a failed
+    // handshake — verification refusals surface here. `host` drives BOTH
+    // the SNI extension and certificate verification (mbedTLS 3.6 requires
+    // it whenever the peer cert is verified).
+    connect :: (self: *TlsClientConfig, fd: i32, host: string) -> ?TlsConn {
+        if !self.ok { return null; }
+        if host.len == 0 or host.len > 254 { return null; }
+        hb : [256]u8 = ---;
+        i : i64 = 0;
+        while i < host.len {
+            if host[i] == 0 { return null; }
+            hb[i] = host[i];
+            i += 1;
+        }
+        hb[host.len] = 0;
+        s := self.a.create(TlsSession);
+        mbedtls.mbedtls_ssl_init(@s.ssl);
+        if mbedtls.mbedtls_ssl_setup(@s.ssl, @self.conf) != 0 {
+            mbedtls.mbedtls_ssl_free(@s.ssl);
+            self.a.destroy(s);
+            return null;
+        }
+        if mbedtls.mbedtls_ssl_set_hostname(@s.ssl, @hb[0]) != 0 {
+            mbedtls.mbedtls_ssl_free(@s.ssl);
+            self.a.destroy(s);
+            return null;
+        }
+        s.fd = fd;
+        s.a  = self.a;
+        mbedtls.mbedtls_ssl_set_bio(@s.ssl, xx s, tls_bio_send, tls_bio_recv, null);
+        // Blocking fd: the BIO parks until bytes move, so a WANT_* can only
+        // mean an SO_RCVTIMEO/SNDTIMEO expiry surfaced as EAGAIN — retrying
+        // would wait the timeout again forever. Any non-zero result fails
+        // the dial (timeout, refusal, verification).
+        if mbedtls.mbedtls_ssl_handshake(@s.ssl) != 0 {
+            mbedtls.mbedtls_ssl_free(@s.ssl);
+            self.a.destroy(s);
+            return null;
+        }
+        return xx s;
+    }
+}

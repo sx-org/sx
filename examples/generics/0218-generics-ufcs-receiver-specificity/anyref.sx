@@ -1,0 +1,5 @@
+// A fully-generic-receiver overload of `pick` (matches ANY pointer receiver),
+// returning a DIFFERENT type than the specific one — so a plan/lowering
+// disagreement would misbox the result.
+#import "0218-shared.sx";
+pick :: ufcs (x: *$T) -> string { return "generic"; }

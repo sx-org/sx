@@ -1,0 +1,11 @@
+error: named return element 'c' does not name any return slot
+  --> examples/types/0214-types-multi-return-name-invalid.sx:7:5
+   |
+ 7 |     return a = n, c = n + 1;   // error: 'c' names no return slot
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: named return element 'a' is given more than once
+  --> examples/types/0214-types-multi-return-name-invalid.sx:10:5
+   |
+10 |     return a = n, a = n + 1;   // error: 'a' given more than once
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^

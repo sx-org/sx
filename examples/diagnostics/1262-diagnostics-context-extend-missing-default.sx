@@ -1,0 +1,10 @@
+// L5: a `#context_extend` declaration without a default value is a compile
+// error — the default context must be constructible before `main` runs. The
+// parser accepts the clause-less spelling so the rejection carries this
+// wording instead of a bare parse error; `?T = null` is the idiom for handle
+// fields that have no meaningful pre-main value.
+#import "modules/std.sx";
+
+#context_extend logger: ?*i64;
+
+main :: () {}

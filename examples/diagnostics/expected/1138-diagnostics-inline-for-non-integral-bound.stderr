@@ -1,0 +1,5 @@
+error: inline for: range end is not a compile-time integer
+  --> examples/diagnostics/1138-diagnostics-inline-for-non-integral-bound.sx:12:19
+   |
+12 |     inline for 0..4.5 (i) { s += i; }
+   |                   ^^^

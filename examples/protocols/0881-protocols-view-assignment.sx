@@ -1,0 +1,46 @@
+// `*P` view construction in ASSIGNMENT position: storing a
+// pointer-to-concrete (or a concrete lvalue) into an existing `*P` slot
+// — local or module-global — materializes the same {ctx, __type_id,
+// vtable} view the decl-position form builds. The view aliases the
+// pointee; dispatch and mutation work through every shape.
+// Regression (issue 0311): the assignment path classified `*C → *P` as
+// a plain pointer store — only the ctx word was written, and the first
+// dispatch read a "vtable" out of the concrete struct's bytes
+// (EXC_BAD_ACCESS on ARM64; the m3te `g_plat = s` shape).
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+P :: protocol {
+    n :: (self: *Self) -> i32;
+    bump :: (self: *Self);
+}
+
+C :: struct { v: i32 = 42; }
+impl P for C {
+    n :: (self: *C) -> i32 { self.v }
+    bump :: (self: *C) { self.v += 1; }
+}
+
+g : *P = null;
+
+main :: () {
+    c := C.{};
+    v1 : *P = c;                       // lvalue decl view
+    print("lvalue view   = {}\n", v1.n());
+
+    p : *C = xx context.allocator.alloc_bytes(size_of(C));
+    p.v = 7;
+    v2 : *P = p;                       // pointer decl view
+    print("ptr view      = {}\n", v2.n());
+
+    g = p;                             // pointer ASSIGNMENT into a global *P
+    print("global assign = {}\n", g.n());
+    g.bump();                          // dispatch + mutation through the global
+    print("aliased       = {}\n", p.v);
+
+    lv : *P = null;
+    lv = @c;                           // address-of a local — view assignment
+    print("lvalue assign = {}\n", lv.n());
+
+    context.allocator.dealloc_bytes(xx p);
+}

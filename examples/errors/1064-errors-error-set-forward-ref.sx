@@ -1,0 +1,47 @@
+// Forward-referenced error set: a fn signature may reference an error set
+// declared LATER in the file — param position (`e: E`), pure-failable return
+// (`-> !E`), and value-failable tuple return (`-> (i32, !E)`) all resolve
+// through the forward struct stub, which the real `E :: error { ... }` decl
+// then adopts (re-keys) with full member identity intact.
+// Regression (issue 0211): the error_set kind was missing from
+// `adoptsForwardStructStub`, so the stub adoption fell into
+// `updatePreservingKey` and tripped its kind-stability assert.
+
+#import "modules/std.sx";
+
+// Param position: E is not declared yet.
+describe :: (e: E) -> i32 {
+    if e == error.Fault { return 1; }
+    if e == error.Other { return 2; }
+    return 0;
+}
+
+// Pure-failable return position.
+check :: (n: i32) -> !E {
+    if n < 0 { raise error.Fault; }
+    return;
+}
+
+// Value-failable tuple return position.
+parse :: (n: i32) -> (i32, !E) {
+    if n == 0 { raise error.Other; }
+    return n * 2;
+}
+
+E :: error { Fault, Other }
+
+main :: () -> i32 {
+    bad := check(-1);
+    good := check(1);
+    r : i32 = 0;
+    if bad == error.Fault  { r = r + 1; }   // true  -> +1
+    if bad == error.Other  { r = r + 2; }   // false
+    if good == error.Fault { r = r + 4; }   // false (success = no error)
+    print("check r={}\n", r);               // -> 1
+
+    a := parse(21) catch (e) -1;            // success -> 42
+    which : i32 = 0;
+    b := parse(0) catch (e) { which = describe(e); -1 };
+    print("parse a={} b={} which={}\n", a, b, which);  // -> 42 -1 2
+    return 0;
+}

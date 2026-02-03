@@ -1,0 +1,108 @@
+// `xx self` inside a BOOL-returning `#objc_class` method must
+// resolve to the full receiver pointer at a runtime-class method
+// call site, not get truncated to i8 by the enclosing function's
+// BOOL return type. Regression locks in the
+// `resolveCallParamTypes` fix that threads runtime-class method
+// param types correctly even when the receiver is a `extern
+// #objc_class` alias. Every probe round-trips the receiver pointer
+// — a regression would read only the low byte and the observer
+// pointer would appear as e.g. 0xC0 / 0x20 instead of its real
+// 64-bit value.
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+#import "modules/build.sx";
+
+g_observer : *void = null;
+
+// Stand-in for NSNotificationCenter — we just need a runtime-class
+// method with several *void args so the call site's arg-target-type
+// resolution exercises the same path as uikit.sx's keyboard observer.
+SxIssue44Bus :: #objc_class("NSNotificationCenter") extern {
+    defaultCenter :: () -> *SxIssue44Bus;
+    addObserver_selector_name_object :: (self: *Self, observer: *void, sel: *void, name: *void, obj: *void);
+}
+
+SxIssue44Foo :: #objc_class("SxIssue44Foo") {
+    counter: i32;
+    sentinel: *void;
+
+    alloc :: () -> *SxIssue44Foo;
+
+    bump :: (this: *Self) {
+        this.counter += 1;
+    }
+
+    get :: (this: *Self) -> i32 {
+        return this.counter;
+    }
+
+    // Return the receiver — direct `xx this` round-trip.
+    me :: (this: *Self) -> *void {
+        return xx this;
+    }
+
+    // SxAppDelegate-shape: BOOL return + 2 extra *void args. Pre-fix,
+    // the call to addObserver:... would receive `xx this` truncated to
+    // its low byte (because resolveCallParamTypes returned `&.{}` for
+    // runtime-class receivers and `self.target_type` leaked the BOOL
+    // return type into the call's args).
+    appDelegate_options :: (this: *Self, app: *void, opts: *void) -> BOOL {
+        bus := SxIssue44Bus.defaultCenter();
+        bus.addObserver_selector_name_object(
+            xx this,
+            xx 0,
+            xx 0,
+            null);
+        return 1;
+    }
+
+    // Same shape but captures the observer-equivalent value to a global
+    // so we can read it back without going through NSNotificationCenter
+    // (which would crash with a real observer != NSObject subclass).
+    captureSelf_options :: (this: *Self, app: *void, opts: *void) -> BOOL {
+        capture_observer(xx this);
+        return 1;
+    }
+}
+
+capture_observer :: (p: *void) {
+    g_observer = p;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        f := SxIssue44Foo.alloc();
+        if f == null { print("FAIL: alloc returned null\n"); return 1; }
+
+        f.bump();
+        f.bump();
+        f.bump();
+        print("counter: {}\n", f.get());
+
+        // Direct `xx this` round-trip (worked pre-fix).
+        f_void : *void = xx f;
+        if f.me() == f_void {
+            print("me: ok\n");
+        } else {
+            print("me: WRONG\n");
+        }
+
+        // The actual repro: BOOL return + runtime-class method call.
+        // Pre-fix: `xx this` truncated to i8, capture_observer receives
+        // (low_byte_of_f) cast back to *void, which won't equal f_void.
+        g_observer = null;
+        _ = f.captureSelf_options(xx 0, xx 0);
+        if g_observer == f_void {
+            print("captureSelf-from-BOOL: ok\n");
+        } else {
+            print("captureSelf-from-BOOL: WRONG\n");
+        }
+
+        // Also exercise the compile-only path — appDelegate_options' IR
+        // must pass `ptr` args to objc_msgSend (not `i8`). We don't
+        // dispatch this for real (would crash inside NSNotificationCenter),
+        // but the build pulling cleanly through is half the point.
+    }
+    inline if OS != .macos { print("skipped (not macos)\n"); }
+    0
+}

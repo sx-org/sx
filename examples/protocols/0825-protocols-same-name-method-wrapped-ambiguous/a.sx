@@ -1,0 +1,9 @@
+// One of two flat-imported `Box` authors. With no own author in main, the
+// protocol method-signature `() -> *Box` is a genuine collision.
+Box :: struct { a: i32; }
+
+a_box :: () -> i32 {
+    b : Box = ---;
+    b.a = 1;
+    return b.a;
+}

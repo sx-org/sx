@@ -1,0 +1,20 @@
+// Phase 3 (xx-via-Into): a user-defined `impl Into(Target) for Source`
+// reaches the xx operator through compile-time dispatch. The compiler
+// monomorphises `convert` for the (Source, Target) pair and emits a
+// direct call — no vtable, identical to a hand-written call.
+
+#import "modules/std.sx";
+
+MyString :: struct { tag: i64 = 0; }
+
+impl Into(MyString) for i64 {
+  convert :: (self: i64) -> MyString {
+    .{ tag = self }
+  }
+}
+
+main :: () -> i32 {
+  x : MyString = xx 42;
+  print("tag = {}\n", x.tag);
+  0
+}

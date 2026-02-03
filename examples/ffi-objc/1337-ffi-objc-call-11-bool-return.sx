@@ -1,0 +1,48 @@
+// Backfill for Phase 1D cluster 1.28 (PLAN-FFI.md): `#objc_call(bool)`
+// against `BOOL`-returning selectors. Obj-C `BOOL` is single-byte on
+// every Apple ABI we ship to (signed char on i386, native `bool` on
+// arm64), so the slot shape is identical to `#objc_call(u8)` — this
+// test is about the source-level type being meaningful, not a
+// distinct ABI path.
+//
+// Two IMPs are installed: `yes_imp` returns true, `no_imp` returns
+// false. Both are dispatched through `#objc_call(bool)` and the
+// results are checked.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+yes_imp :: (self: *void, _cmd: *void) -> bool abi(.c) { true }
+no_imp  :: (self: *void, _cmd: *void) -> bool abi(.c) { false }
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        // Nil-recv: libobjc returns a zeroed slot, which decodes as false.
+        nil_b := #objc_call(bool)(null, "isEqual:");
+        print("nil bool     = {}\n", nil_b);
+
+        ns_object := objc_getClass("NSObject".ptr);
+        my_cls := objc_allocateClassPair(ns_object, "SxBoolProbe".ptr, 0);
+
+        // BOOL type-encoded as `B` (C99 _Bool) in `B@:` — implicit
+        // (self: id, _cmd: SEL) return BOOL. Some toolchains prefer
+        // `c` (signed char) for BOOL on i386, but `B` is unambiguous
+        // on arm64 and works for runtime-registered IMPs.
+        sel_yes := sel_registerName("yes".ptr);
+        sel_no  := sel_registerName("no".ptr);
+        class_addMethod(my_cls, sel_yes, xx yes_imp, "B@:".ptr);
+        class_addMethod(my_cls, sel_no,  xx no_imp,  "B@:".ptr);
+        objc_registerClassPair(my_cls);
+
+        instance := class_createInstance(my_cls, 0);
+        y := #objc_call(bool)(instance, "yes");
+        n := #objc_call(bool)(instance, "no");
+        print("yes = {}\n", y);
+        print("no  = {}\n", n);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

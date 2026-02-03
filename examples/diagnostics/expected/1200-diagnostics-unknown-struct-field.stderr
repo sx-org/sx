@@ -1,0 +1,5 @@
+error: field 'zz' not found on type 'Point'
+  --> examples/diagnostics/1200-diagnostics-unknown-struct-field.sx:14:32
+   |
+14 |     p : Point = .{ x = 1, zz = 9 };   // 'zz' is not a field of Point
+   |                                ^

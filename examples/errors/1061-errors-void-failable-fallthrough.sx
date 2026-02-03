@@ -1,0 +1,21 @@
+// A pure-failable function (`-> !`) that succeeds by IMPLICIT fall-through —
+// no explicit `return;` — must initialize its error-channel slot to 0 ("no
+// error"), exactly like an explicit `return;` would. Otherwise the slot is
+// left undefined and a caller's `catch` (or `main`) reads a garbage tag and
+// reports a phantom unhandled error.
+//
+// This exercises:
+//   - a `-> !` callee that falls off the end (no `return;`) — its `catch`
+//     handler must NOT fire;
+//   - a `main :: () -> !` that falls off the end — must exit 0.
+//
+// Regression (issue 0190).
+
+#import "modules/std.sx";
+
+noop :: () -> ! { }                 // success by fall-through, no `return;`
+
+main :: () -> ! {
+    noop() catch (e) { print("phantom: {}\n", e); };   // must NOT fire
+    print("ok\n");                                     // main falls through → exit 0
+}

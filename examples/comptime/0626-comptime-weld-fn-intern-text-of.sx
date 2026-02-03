@@ -1,0 +1,21 @@
+// Comptime compiler API — welded compiler FUNCTIONS over the host-call bridge.
+//
+// `raw_intern` / `raw_text_of` are bound to the `compiler` library via
+// `intrinsic` (mode `evaluate`). They have no real symbol — under the comptime
+// interpreter the call dispatches to the compiler's registered Zig handler
+// (the string pool), never dlsym. Comptime-only: here they run inside `#run`,
+// folding to a plain string constant the runtime `main` prints.
+//
+// Round-trip: `raw_text_of(raw_intern(s)) == s` — interning a string yields a handle,
+// and resolving the handle gives the text back.
+
+#import "modules/std.sx";
+
+
+StringId :: u32;
+
+greeting :: #run raw_text_of(raw_intern("hello, compiler"));
+
+main :: () {
+    print("{}\n", greeting);
+}

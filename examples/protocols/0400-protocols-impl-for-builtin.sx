@@ -1,0 +1,31 @@
+// impl Protocol for built-in scalar types (f32, i64, bool, u32, ...) —
+// static dispatch (`f32.lerp(...)`) and the generic-bound path. `lerp`
+// mentions `Self` beyond the receiver, so it is NOT dispatchable through
+// an erased `Lerpable` value (Era-2 per-method erasability; the refusal
+// is pinned in diagnostics/1253) — the bound keeps Self known.
+
+Lerpable :: protocol #inline {
+    lerp :: (self: *Self, b: Self, t: f32) -> Self;
+}
+
+impl Lerpable for f32 {
+    lerp :: (self: f32, b: f32, t: f32) -> f32 { self + (b - self) * t }
+}
+
+do_lerp :: (a: $T/Lerpable, b: T, t: f32) -> T {
+    a.lerp(b, t)
+}
+
+main :: () -> void {
+    // Static call through impl
+    result := f32.lerp(0.0, 10.0, 0.5);
+    print("lerp(0, 10, 0.5) = {}\n", result);
+
+    // Generic bound over the same impl
+    val : f32 = 0.0;
+    hi : f32 = 10.0;
+    result2 := do_lerp(val, hi, 0.25);
+    print("lerp(0, 10, 0.25) = {}\n", result2);
+}
+
+#import "modules/std.sx";

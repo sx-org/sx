@@ -1,0 +1,18 @@
+// Pins the NAMED `#import c` block (PLAN-C C0.1): the block's name
+// namespaces the decls synthesized from `#include`, and `#define` /
+// `#flags` entries reach the unit's clang invocation — the macro decides
+// what cdef_value answers.
+#import "modules/std.sx";
+
+cu :: #import c {
+    #include "1618-cimport-named-defines/cdef.h";
+    #source  "1618-cimport-named-defines/cdef.c";
+    #define  "CDEF_BASE=42";
+    #flags   "-O2";
+};
+
+main :: () -> i32 {
+    print("value = {}\n", cu.cdef_value());
+    print("doubled = {}\n", cu.cdef_doubled(21));
+    0
+}

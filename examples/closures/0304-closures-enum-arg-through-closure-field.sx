@@ -1,0 +1,20 @@
+// A closure stored in a struct field receives sub-32-bit enum args
+// with the right tag, same as direct or protocol-dispatched calls.
+
+#import "modules/std.sx";
+
+Fmt :: enum { a; b; }
+
+Ctx :: struct {
+  on: Closure(Fmt) -> void;
+}
+
+main :: () -> i32 {
+  c : Ctx = .{ on = (f: Fmt) {
+    n : i64 = xx f;
+    print("cl f = {}\n", n);
+  }};
+  c.on(.b);
+  c.on(.a);
+  0
+}

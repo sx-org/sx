@@ -1,0 +1,10 @@
+// `!` on an operand that has no truthiness (neither bool, integer, nor
+// an error binding) is diagnosed instead of silently bit-flipped
+// (issue 0129's diagnostic half).
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    s := "text";
+    if !s { print("unreachable\n"); }
+    return 0;
+}

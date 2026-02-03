@@ -1,0 +1,7 @@
+// Negative: a SINGLE-value function may not be given a comma list — the extra
+// values would be silently dropped. (Did you mean to declare `-> (i64, i64)`?)
+#import "modules/std.sx";
+one :: () -> i64 {
+    return 1, 2;   // single-value return, two given
+}
+main :: () -> i64 { print("{}\n", one()); return 0; }

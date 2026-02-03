@@ -1,0 +1,70 @@
+// Value-position `if`/`match` with a bare `null` arm produces a proper optional.
+// The `null` arm lowers to `none` and the concrete arm to `some T`, so the
+// result type unifies to `?T` — driven either by an optional target (`: ?T`)
+// or, with no annotation, synthesized from the concrete arm's type.
+// Regression (issue 0272 + match-path extension): the `null` arm used to be
+// coerced in a concrete `T` context (a bogus present optional), so the result
+// read as PRESENT. The match path additionally fabricated a present `{0,true}`
+// when EVERY value arm was `null` (all-null, or null + diverging arms).
+
+#import "modules/std.sx";
+
+E :: enum { A; B; }
+
+// return position, declared `-> ?i64`
+ro :: (c: bool) -> ?i64 { return if c { 5 } else { null }; }
+
+// match: null arm + diverging arm must still yield `?i64` (none for `.A`).
+mf :: (e: E) -> i64 {
+    y : ?i64 = if e == { case .A: null; case .B: { return -5; } };
+    return if v := y { v } else { 100 };
+}
+
+main :: () {
+    f := false;
+    t := true;
+
+    // then-value / else-null, annotated
+    a : ?i64 = if f { 5 } else { null };
+    print("a null={}\n", if x := a { false } else { true });   // true
+
+    // then-null / else-value (mirror order)
+    b : ?i64 = if f { null } else { 5 };
+    print("b val={}\n", if x := b { x } else { -1 });          // 5
+
+    // present branch taken
+    c : ?i64 = if t { 5 } else { null };
+    print("c val={}\n", if x := c { x } else { -1 });          // 5
+
+    // return position
+    print("d null={}\n", if x := ro(false) { false } else { true }); // true
+
+    // no annotation — inferred `?i64`
+    e := if f { 5 } else { null };
+    print("e null={}\n", if x := e { false } else { true });   // true
+
+    // ternary form
+    g : ?i64 = if f then 5 else null;
+    print("g null={}\n", if x := g { false } else { true });   // true
+
+    // non-i64 optional payload (?string)
+    h : ?string = if f { "hi" } else { null };
+    print("h null={}\n", if x := h { false } else { true });   // true
+
+    // ── match path (issue 0272 extension) ──────────────────────────────
+    ea := E.A;
+
+    // all-null match arms under a `?i64` target → `none`, not a present `{0,true}`
+    i : ?i64 = if ea == { case .A: null; case .B: null; };
+    print("i null={}\n", if v := i { false } else { true });   // true
+
+    // null arm + concrete arm (control — already lifted): present / none
+    j : ?i64 = if ea == { case .A: 5; case .B: null; };
+    print("j val={}\n", if v := j { v } else { -1 });          // 5
+    eb := E.B;
+    k : ?i64 = if eb == { case .A: 5; case .B: null; };
+    print("k null={}\n", if v := k { false } else { true });   // true
+
+    // null arm + diverging arm composes (none for `.A`, so the 100 fallback)
+    print("l val={}\n", mf(E.A));                              // 100
+}

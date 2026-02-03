@@ -1,0 +1,33 @@
+// 16-byte integer-only struct passed by value through `extern`.
+//
+// emit_llvm.zig's `abiCoerceParamType` routes 9..16-byte non-HFA
+// structs through `[2 x i64]` for register-pair passing on AAPCS64 /
+// SysV AMD64. The call-site side loads the sx struct as `{ i64, i64 }`,
+// so the verifier needs a memory-bitcast bridge in both directions
+// (`abi.struct2arr` on the way in, `abi.arr2struct` on the way back).
+//
+// Different ABI path from 8-byte register-pair structs (coerce to
+// i64), HFAs at the same total size (Vec4f stays a struct), and
+// >16-byte aggregates (passed via pointer + byval).
+//
+// This file was originally filed as issue-0036 (LLVM verifier
+// failure repro). Promoted to a focused feature example once the
+// emit_llvm.zig coerceArg branches landed.
+
+#import "modules/std.sx";
+
+#import c {
+    #source "1206-ffi-medium-struct.c";
+};
+
+Pair64 :: struct { a: i64; b: i64; }
+
+ffi_pair64_swap :: (p: Pair64) -> Pair64 extern;
+
+main :: () -> i32 {
+    p : Pair64 = .{ a = 1, b = 2 };
+    q := ffi_pair64_swap(p);
+    print("swap = ({}, {})\n", q.a, q.b);
+    print("ok = {}\n", q.a == 2 and q.b == 1);
+    0
+}

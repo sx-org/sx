@@ -1,0 +1,35 @@
+// Regression (issue 0189): a non-type expression used in TYPE position must be
+// rejected with a clear diagnostic — never silently resolved to a fabricated
+// zero-field empty struct `{}` that ships to codegen as a real type.
+//
+// Two fabrication paths are covered:
+//
+//   1. A dotted `type_expr` / field-access (`g.a`, `g` a runtime VALUE, `a` a
+//      field) in type position — both the bare annotation `x : g.a = ---;` and
+//      the `Tuple(i32, g.a)` element form hit the same `resolveTypeWithBindings`
+//      dotted-name guard. A dotted name whose prefix is not a namespace alias is
+//      a value field access, not a qualified `pkg.Type` path → "expected a type,
+//      found a value".
+//
+//   2. A named `!E` (error-set type) whose `E` is not a declared error set —
+//      an undeclared name or a value name after `!` silently fabricated a `{}`
+//      stub via `resolveErrorType` -> `resolveNominalLeaf`. The
+//      `error_type_expr` arm of `checkTypeNodeForUnknown` now validates it →
+//      "unknown error set" (undeclared / value) or "expected an error set"
+//      (a declared non-error-set type).
+//
+// A bare `!` (the void failable channel) and a DECLARED `!E` in return position
+// stay valid — exercised in examples/errors and not flagged here.
+#import "modules/std.sx";
+
+S :: struct { a: i32; }
+g : S = .{ a = 1 };
+
+main :: () -> i32 {
+    x : g.a = ---;                 // field-access value in type position
+    y : Tuple(i32, g.a) = ---;     // same, as a tuple element
+    z : !Nonexistent = ---;        // `!` of an undeclared name
+    w : Tuple(i32, !Nonexistent) = ---;       // nested in a tuple
+    v : Closure(!Nonexistent) -> i32 = ---;   // nested in a closure param
+    0
+}

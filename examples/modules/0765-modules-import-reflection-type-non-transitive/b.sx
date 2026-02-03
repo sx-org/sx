@@ -1,0 +1,13 @@
+#import "c.sx";
+
+// b.sx directly imports c.sx, so it CAN name these types in reflection /
+// type-arg / array-literal positions — the type is one flat hop away here,
+// two from a file that imports b.sx.
+b_sizes :: () -> i64 {
+    size_of(Nums) + size_of(*COnly)
+}
+
+b_arr :: () -> i64 {
+    xs := Nums.[1, 2];
+    xs[0] + xs[1]
+}

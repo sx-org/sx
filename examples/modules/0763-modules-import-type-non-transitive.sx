@@ -1,0 +1,20 @@
+// `#import` is non-transitive for TYPES, exactly like values/functions (0706):
+// when A imports B and B imports C, A must NOT see C's top-level TYPE names.
+// This file imports `b.sx` (which in turn imports `c.sx`) and then references
+// C's type `COnly` directly — the compiler rejects it with a
+// "type ... is not visible; #import the module that declares it" diagnostic.
+//
+// `b.sx` ↔ `c.sx` together still compile: `b_make`'s return type `COnly`
+// resolves because b.sx directly imports c.sx.
+//
+// Regression (Phase E4): before the bare-TYPE gate went single-hop this
+// 2-flat-hop type was wrongly visible (the interim transitive closure).
+
+#import "modules/std.sx";
+#import "0763-modules-import-type-non-transitive/b.sx";
+
+main :: () -> i32 {
+    x : COnly = .{ v = 5 };
+    print("{}\n", x.v);
+    0
+}

@@ -1,0 +1,8 @@
+// A fence with .relaxed ordering is rejected (LLVM has no monotonic/unordered
+// fence). Stream A (atomics) guard.
+#import "modules/std.sx";
+#import "modules/std/atomic.sx";
+
+main :: () {
+    atomic_fence(.relaxed);
+}

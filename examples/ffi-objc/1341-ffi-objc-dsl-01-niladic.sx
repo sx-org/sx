@@ -1,0 +1,43 @@
+// Phase 3 step 3.0 (PLAN-FFI.md): `inst.method(args)` on an
+// `#objc_class`-typed receiver lowers to `objc_msg_send` with a derived
+// selector. This test covers the niladic shape: the sx-side method name
+// is used verbatim as the selector (`length` → `length`).
+//
+// Test pattern mirrors `ffi-objc-call-08-multi-keyword.sx`: synthesize a
+// fresh class at runtime via `objc_allocateClassPair` + `class_addMethod`,
+// declare the sx-side `#objc_class` against the same name, then invoke
+// the DSL form. On macOS this exercises the real Obj-C runtime; on
+// other platforms the test skips.
+//
+// Pre-3.0: the dispatch bails at lower.zig with "method calls on
+// 'objc_class' runtime not yet supported (Phase 3/4)". Snapshot captures
+// that diagnostic.
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+SxProbeNiladic :: #objc_class("SxProbeNiladic") extern {
+    length :: (self: *Self) -> i32;
+}
+
+length_imp :: (self: *void, _cmd: *void) -> i32 abi(.c) {
+    42
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        ns_object := objc_getClass("NSObject".ptr);
+        cls := objc_allocateClassPair(ns_object, "SxProbeNiladic".ptr, 0);
+        sel := sel_registerName("length".ptr);
+        class_addMethod(cls, sel, xx length_imp, "i@:".ptr);
+        objc_registerClassPair(cls);
+
+        inst : *SxProbeNiladic = xx class_createInstance(cls, 0);
+        n := inst.length();
+        print("length = {}\n", n);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

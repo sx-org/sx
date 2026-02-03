@@ -1,0 +1,17 @@
+// A comptime-minting module (0633's `shapes.sx`) reached via TWO import edges in
+// one build: directly (bare) here, and indirectly through `indirect.sx` (which
+// imports it namespaced as `s`). The minted `Suit` must be ONE type across both
+// edges — `name_of` (typed `s.Suit` in indirect.sx) accepts the bare `Suit`
+// constructed here. Exercises that re-evaluating the type-fn across import paths
+// is idempotent (same TypeId), not a re-mint conflict.
+
+#import "modules/std.sx";
+#import "0633-comptime-compiler-namespaced-type/shapes.sx";    // bare edge → `Suit`
+#import "0633-comptime-compiler-namespaced-type/indirect.sx";  // edge via `s :: shapes`
+
+main :: () {
+    a := Suit.spades;            // bare Suit
+    print("{}\n", name_of(a));   // passed where indirect expects s.Suit (same type)
+    b := Suit.hearts;
+    print("{}\n", name_of(b));
+}

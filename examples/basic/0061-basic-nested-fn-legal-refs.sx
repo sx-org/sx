@@ -1,0 +1,29 @@
+// A nested `::` static function may reference things that DON'T live in an
+// enclosing function's frame: SIBLING nested fns, itself (recursion), the
+// nested fn's OWN locals, module-level consts, and enclosing local TYPES. Only
+// enclosing local *value* bindings are rejected (see the 1228 diagnostic).
+// Guards the legal side of issue 0250.
+#import "modules/std.sx";
+
+K :: 5;   // module-level const — legal to read from a nested fn
+
+main :: () -> i32 {
+    // sibling nested-fn call
+    a :: () -> i64 { return 10; }
+    b :: () -> i64 { return a() + 1; }
+    print("{}\n", b());              // 11
+
+    // recursion
+    fac :: (n: i64) -> i64 { if n <= 1 { return 1; } return n * fac(n - 1); }
+    print("{}\n", fac(5));           // 120
+
+    // own local + module const
+    g :: () -> i64 { z := 41; return z + K; }
+    print("{}\n", g());              // 46
+
+    // enclosing local TYPE (not a value binding) — legal
+    P :: struct { v: i64; }
+    make :: () -> i64 { p := P.{ v = 9 }; return p.v; }
+    print("{}\n", make());           // 9
+    0
+}

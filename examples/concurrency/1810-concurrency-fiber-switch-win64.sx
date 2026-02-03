@@ -1,0 +1,341 @@
+// Win64 fiber context-switch STRESS GATE (x86_64-windows-gnu).
+// Mirrors the aarch64 §10.7 gate (examples/1808) for the Win64 ABI:
+//   - callee-saved: rbx,rbp,rdi,rsi,r12-r15 (8 GP) + rsp + xmm6-xmm15 (10 XMM,
+//     128-bit — Win64 HAS callee-saved XMM, unlike SysV/aarch64).
+//   - args rcx,rdx,r8,r9; result rax; 32-byte shadow + 16-align at each call;
+//     COFF symbols (no leading underscore); return address rides the stack.
+// 2-fiber MUTUAL scribble: A (base 0x5000) and B (base 0x6000) each load
+// distinct sentinels into EVERY callee-saved reg and yield to each other, so a
+// sentinel survives only if swap_good saved+restored it (each fiber physically
+// clobbers the other's registers while it is suspended). Self-validating by
+// construction; the corruption-DETECTION of this exact scribble/verify logic
+// was negative-controlled on aarch64 (examples/1808). Prints three fields:
+// "<gp_mismatch> <xmm_mismatch> <P|F>"  — expected "0 0 P".
+//
+// VALIDATED: built with `--target x86_64-windows-gnu --self-contained` and run
+// on a Windows 7 x64 VM (UTM) -> printed "0 0 P" (every GP + XMM callee-saved
+// survived). Pinned x86_64-windows-gnu: ir-only on a non-Windows host (the .ir
+// locks the Win64-ABI lowering); runs end-to-end on a Windows x86_64 runner.
+// Adversarially reviewed (no critical/minor bugs) before the VM run.
+
+kernel32 :: #library "kernel32";
+GetStdHandle :: (n: u32) -> *void extern;
+WriteFile    :: (file: *void, buf: *u8, n: u32, written: *u32, overlapped: *void) -> i32 extern;
+ExitProcess  :: (code: u32) -> void extern;
+
+// 30 u64: GP rbx@0 rbp@8 rdi@16 rsi@24 r12@32 r13@40 r14@48 r15@56, rsp@64,
+// pad@72, xmm6@80 xmm7@96 ... xmm15@224 (movups, 16 bytes each).
+FiberCtx :: struct { regs: [30]u64; }
+
+Fiber :: struct {
+    ctx: FiberCtx;
+    peer: *FiberCtx;
+    next: *FiberCtx;
+    base: u64;
+    gp: u64;
+    xmm: u64;
+}
+
+swap_good :: (from: *FiberCtx, to: *FiberCtx) abi(.naked) export "swap_good" {
+    asm volatile {
+        #string A
+        movq %rbx, 0(%rcx)
+        movq %rbp, 8(%rcx)
+        movq %rdi, 16(%rcx)
+        movq %rsi, 24(%rcx)
+        movq %r12, 32(%rcx)
+        movq %r13, 40(%rcx)
+        movq %r14, 48(%rcx)
+        movq %r15, 56(%rcx)
+        movq %rsp, 64(%rcx)
+        movups %xmm6, 80(%rcx)
+        movups %xmm7, 96(%rcx)
+        movups %xmm8, 112(%rcx)
+        movups %xmm9, 128(%rcx)
+        movups %xmm10, 144(%rcx)
+        movups %xmm11, 160(%rcx)
+        movups %xmm12, 176(%rcx)
+        movups %xmm13, 192(%rcx)
+        movups %xmm14, 208(%rcx)
+        movups %xmm15, 224(%rcx)
+        movq 0(%rdx), %rbx
+        movq 8(%rdx), %rbp
+        movq 16(%rdx), %rdi
+        movq 24(%rdx), %rsi
+        movq 32(%rdx), %r12
+        movq 40(%rdx), %r13
+        movq 48(%rdx), %r14
+        movq 56(%rdx), %r15
+        movups 80(%rdx), %xmm6
+        movups 96(%rdx), %xmm7
+        movups 112(%rdx), %xmm8
+        movups 128(%rdx), %xmm9
+        movups 144(%rdx), %xmm10
+        movups 160(%rdx), %xmm11
+        movups 176(%rdx), %xmm12
+        movups 192(%rdx), %xmm13
+        movups 208(%rdx), %xmm14
+        movups 224(%rdx), %xmm15
+        movq 64(%rdx), %rsp
+        ret
+A
+    };
+}
+
+// scribble_verify(self_ctx=rcx, peer=rdx, base=r8, swapfn=r9) -> rax packed
+// (xmm_mismatch << 16) | gp_mismatch. Naked: 264-byte frame saves the caller's
+// callee-saved (it scribbles them) + base; yields via `call *%r9`; verifies on
+// resume; restores the caller regs; returns.
+scribble_verify :: (self_ctx: *FiberCtx, peer: *FiberCtx, base: u64) -> u64 abi(.naked) export "scribble_verify" {
+    asm volatile {
+        #string SV
+        subq $264, %rsp
+        movq %r8, 32(%rsp)
+        movq %rbx, 40(%rsp)
+        movq %rbp, 48(%rsp)
+        movq %rdi, 56(%rsp)
+        movq %rsi, 64(%rsp)
+        movq %r12, 72(%rsp)
+        movq %r13, 80(%rsp)
+        movq %r14, 88(%rsp)
+        movq %r15, 96(%rsp)
+        movups %xmm6, 104(%rsp)
+        movups %xmm7, 120(%rsp)
+        movups %xmm8, 136(%rsp)
+        movups %xmm9, 152(%rsp)
+        movups %xmm10, 168(%rsp)
+        movups %xmm11, 184(%rsp)
+        movups %xmm12, 200(%rsp)
+        movups %xmm13, 216(%rsp)
+        movups %xmm14, 232(%rsp)
+        movups %xmm15, 248(%rsp)
+        leaq 1(%r8), %rbx
+        leaq 2(%r8), %rbp
+        leaq 3(%r8), %rdi
+        leaq 4(%r8), %rsi
+        leaq 5(%r8), %r12
+        leaq 6(%r8), %r13
+        leaq 7(%r8), %r14
+        leaq 8(%r8), %r15
+        leaq 9(%r8), %rax
+        movq %rax, %xmm6
+        leaq 10(%r8), %rax
+        movq %rax, %xmm7
+        leaq 11(%r8), %rax
+        movq %rax, %xmm8
+        leaq 12(%r8), %rax
+        movq %rax, %xmm9
+        leaq 13(%r8), %rax
+        movq %rax, %xmm10
+        leaq 14(%r8), %rax
+        movq %rax, %xmm11
+        leaq 15(%r8), %rax
+        movq %rax, %xmm12
+        leaq 16(%r8), %rax
+        movq %rax, %xmm13
+        leaq 17(%r8), %rax
+        movq %rax, %xmm14
+        leaq 18(%r8), %rax
+        movq %rax, %xmm15
+        call swap_good
+        movq 32(%rsp), %r8
+        xorq %r10, %r10
+        xorq %r11, %r11
+        leaq 1(%r8), %rax
+        cmpq %rax, %rbx
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r10
+        leaq 2(%r8), %rax
+        cmpq %rax, %rbp
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r10
+        leaq 3(%r8), %rax
+        cmpq %rax, %rdi
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r10
+        leaq 4(%r8), %rax
+        cmpq %rax, %rsi
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r10
+        leaq 5(%r8), %rax
+        cmpq %rax, %r12
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r10
+        leaq 6(%r8), %rax
+        cmpq %rax, %r13
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r10
+        leaq 7(%r8), %rax
+        cmpq %rax, %r14
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r10
+        leaq 8(%r8), %rax
+        cmpq %rax, %r15
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r10
+        leaq 9(%r8), %rax
+        movq %xmm6, %rcx
+        cmpq %rax, %rcx
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r11
+        leaq 10(%r8), %rax
+        movq %xmm7, %rcx
+        cmpq %rax, %rcx
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r11
+        leaq 11(%r8), %rax
+        movq %xmm8, %rcx
+        cmpq %rax, %rcx
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r11
+        leaq 12(%r8), %rax
+        movq %xmm9, %rcx
+        cmpq %rax, %rcx
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r11
+        leaq 13(%r8), %rax
+        movq %xmm10, %rcx
+        cmpq %rax, %rcx
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r11
+        leaq 14(%r8), %rax
+        movq %xmm11, %rcx
+        cmpq %rax, %rcx
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r11
+        leaq 15(%r8), %rax
+        movq %xmm12, %rcx
+        cmpq %rax, %rcx
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r11
+        leaq 16(%r8), %rax
+        movq %xmm13, %rcx
+        cmpq %rax, %rcx
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r11
+        leaq 17(%r8), %rax
+        movq %xmm14, %rcx
+        cmpq %rax, %rcx
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r11
+        leaq 18(%r8), %rax
+        movq %xmm15, %rcx
+        cmpq %rax, %rcx
+        setne %dl
+        movzbq %dl, %rdx
+        addq %rdx, %r11
+        movq %r11, %rax
+        shlq $16, %rax
+        orq %r10, %rax
+        movq 40(%rsp), %rbx
+        movq 48(%rsp), %rbp
+        movq 56(%rsp), %rdi
+        movq 64(%rsp), %rsi
+        movq 72(%rsp), %r12
+        movq 80(%rsp), %r13
+        movq 88(%rsp), %r14
+        movq 96(%rsp), %r15
+        movups 104(%rsp), %xmm6
+        movups 120(%rsp), %xmm7
+        movups 136(%rsp), %xmm8
+        movups 152(%rsp), %xmm9
+        movups 168(%rsp), %xmm10
+        movups 184(%rsp), %xmm11
+        movups 200(%rsp), %xmm12
+        movups 216(%rsp), %xmm13
+        movups 232(%rsp), %xmm14
+        movups 248(%rsp), %xmm15
+        addq $264, %rsp
+        ret
+SV
+    };
+}
+
+asm {
+    #string T
+.global fib_tramp
+fib_tramp:
+    movq %rbx, %rcx
+    subq $32, %rsp
+    call fib_body
+    ud2
+T,
+};
+fib_tramp :: () extern;
+
+fib_body :: (self: *Fiber) export "fib_body" {
+    packed := scribble_verify(@self.ctx, self.peer, self.base);
+    self.gp  = packed & 0xffff;
+    self.xmm = (packed >> 16) & 0xffff;
+    swap_good(@self.ctx, self.next);
+}
+
+STACK :: 131072;
+g_out : *void = null;
+
+boot :: (f: *Fiber) {
+    raw : *void = VirtualAlloc(null, STACK, 0x3000, 0x4);   // MEM_COMMIT|RESERVE, PAGE_READWRITE
+    top : u64 = (xx raw) + STACK;
+    top = top - (top % 16);
+    slot : *u64 = xx (top - 8);
+    slot.* = xx fib_tramp;
+    i := 0;
+    while i < 30 { f.ctx.regs[i] = 0; i = i + 1; }
+    f.ctx.regs[0] = xx f;       // rbx = self
+    f.ctx.regs[8] = top - 8;    // rsp
+    f.gp = 0;  f.xmm = 0;
+}
+
+VirtualAlloc :: (addr: *void, size: i64, typ: u32, protect: u32) -> *void extern;
+
+run :: () -> u64 {
+    main_ctx : FiberCtx = ---;
+    a : Fiber = ---;  a.base = 0x5000;
+    b : Fiber = ---;  b.base = 0x6000;
+    a.peer = @b.ctx;  a.next = @b.ctx;
+    b.peer = @a.ctx;  b.next = @main_ctx;
+    boot(@a);  boot(@b);
+    swap_good(@main_ctx, @a.ctx);
+    // pack both fibers' counts: ((a.xmm+b.xmm) << 16) | (a.gp+b.gp)
+    return (((a.xmm + b.xmm) << 16) | (a.gp + b.gp));
+}
+
+emit_num :: (v: u64) {
+    if v == 0 { z : [1]u8 = .[48]; w : u32 = 0; WriteFile(g_out, @z[0], 1, @w, null); return; }
+    buf : [20]u8 = ---;
+    i : i64 = 20;
+    vv := v;
+    while vv > 0 { i = i - 1; buf[i] = xx (48 + (vv % 10)); vv = vv / 10; }
+    w : u32 = 0;
+    WriteFile(g_out, @buf[i], xx (20 - i), @w, null);
+}
+emit_b :: (c: u8) { b : [1]u8 = ---; b[0] = c; w : u32 = 0; WriteFile(g_out, @b[0], 1, @w, null); }
+
+main :: () {
+    g_out = GetStdHandle(0xFFFFFFF5);
+    good := run();
+    gg := good & 0xffff;  gx := (good >> 16) & 0xffff;
+    emit_num(gg);  emit_b(32);  emit_num(gx);  emit_b(32);
+    pass := 0;
+    if gg == 0 { if gx == 0 { pass = 1; } }
+    if pass == 1 { emit_b(80); } else { emit_b(70); }   // 'P' / 'F'
+    emit_b(10);
+    ExitProcess(0);
+}

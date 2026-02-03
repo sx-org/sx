@@ -1,0 +1,13 @@
+// `#error "msg"` — a compile-time diagnostic. When the directive is reached in
+// live code (a bare top-level one here; in practice the taken `else` arm of an
+// `inline if OS == { ... }` on an unsupported target), the compiler emits `msg`
+// as an error and stops. In a NON-taken comptime arm it is pruned before it can
+// fire (that is how std/c.sx + std/posix.sx guard their per-OS tables).
+//
+// This example is EXPECTED TO FAIL compilation — the snapshot pins the message.
+
+#error "compilation intentionally halted: the #error directive was reached.";
+
+main :: () {
+    // Never reached — the #error above stops compilation first.
+}

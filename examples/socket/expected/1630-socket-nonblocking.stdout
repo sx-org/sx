@@ -1,0 +1,6 @@
+empty read: WouldBlock
+pair round trip: 4 bytes
+peer close: Closed
+empty backlog: WouldBlock
+accept after connect: ok
+socket nonblocking ok

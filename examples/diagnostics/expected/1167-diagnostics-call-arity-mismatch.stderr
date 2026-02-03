@@ -1,0 +1,29 @@
+error: 'add2' expects 2 arguments, but 3 were given
+  --> examples/diagnostics/1167-diagnostics-call-arity-mismatch.sx:19:9
+   |
+19 |     _ = add2(1, 2, 3);           // plain bare call, too many
+   |         ^^^^
+
+error: 'add2' expects 2 arguments, but 1 was given
+  --> examples/diagnostics/1167-diagnostics-call-arity-mismatch.sx:20:9
+   |
+20 |     _ = add2(1);                 // plain bare call, too few
+   |         ^^^^
+
+error: 'concat' expects 2 arguments, but 3 were given
+  --> examples/diagnostics/1167-diagnostics-call-arity-mismatch.sx:21:9
+   |
+21 |     _ = concat("a", "b", "c");   // flat-imported stdlib fn, too many
+   |         ^^^^^^
+
+error: 'Point.scaled' expects 1 argument, but 2 were given
+  --> examples/diagnostics/1167-diagnostics-call-arity-mismatch.sx:23:9
+   |
+23 |     _ = p.scaled(2, 9);          // method dot-call, too many
+   |         ^^^^^^^^
+
+error: 'bump' expects 1 argument, but 2 were given
+  --> examples/diagnostics/1167-diagnostics-call-arity-mismatch.sx:24:9
+   |
+24 |     _ = p.bump(1, 2);            // ufcs dot-call, too many
+   |         ^^^^^^

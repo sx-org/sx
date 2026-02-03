@@ -1,0 +1,19 @@
+// A QUALIFIED generic static-method head `a.Box(i64).make(7)` where namespace `a`
+// exists but authors NO member named `Box` must DIAGNOSE the missing member —
+// never silently fall back to the bare last-wins `struct_template_map` and
+// instantiate an unrelated module's same-name `Box` (parallels 0775 for the
+// static-method head).
+//
+// `a.sx` authors only `Other` (no `Box`); `b.sx` authors a generic `Box($T)`.
+// The qualified static head `a.Box(i64).make(7)` must report that `a` has no
+// member `Box`, NOT resolve to `b.Box.make`.
+
+#import "modules/std.sx";
+a :: #import "0785-modules-qualified-generic-static-missing-member/a.sx";
+b :: #import "0785-modules-qualified-generic-static-missing-member/b.sx";
+
+main :: () -> i32 {
+    x := a.Box(i64).make(7);
+    print("{}\n", x.x);
+    0
+}

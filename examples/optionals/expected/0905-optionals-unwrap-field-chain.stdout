@@ -1,0 +1,10 @@
+chain id:  hello
+chain n:   42
+bind id:   hello
+bind n:    42
+meth ptr:  hello
+meth val:  50
+nest tag:  deep
+nest k:    7
+index 0:   10
+index 2:   30

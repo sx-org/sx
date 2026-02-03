@@ -1,0 +1,3 @@
+// Flat author of `ping`; `call_a` binds a.sx's own `ping` (1).
+ping   :: () -> i64 { return 1; }
+call_a :: () -> i64 { return ping(); }

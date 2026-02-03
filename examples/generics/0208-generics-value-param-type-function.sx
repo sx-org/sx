@@ -1,0 +1,32 @@
+// A type-RETURNING function with a value parameter (`$K: u32`) used as a TYPE
+// annotation: `b : Make(N, i64)` where `Make :: ($K, $T) -> Type { return [K]T; }`.
+// A named-const value arg (`Make(N, i64)`), a const-expression value arg
+// (`Make(M + 1, i64)`), and the literal form (`Make(3, i64)`) all instantiate to
+// the SAME type — the array copy `b : Make(3, i64) = a` type-checks only because
+// the three spellings name one `[3]i64`.
+//
+// Regression (issue 0083 / F0.4 attempt 6): the unknown-type checker walked the
+// value-param position as a type name ("unknown type 'N'"), and the
+// parameterized-type-annotation path never routed to `instantiateTypeFunction`,
+// nor did that binder resolve a non-struct/union return shape (`return [K]T`).
+// The value arg now folds through the shared const-int evaluator and the type
+// function resolves its general return-type expression with bindings active.
+#import "modules/std.sx";
+
+N :: 3;
+M :: 2;
+
+Make :: ($K: u32, $T: Type) -> Type { return [K]T; }
+
+main :: () {
+    a : Make(N, i64) = ---;          // named-const value param
+    a[0] = 10; a[1] = 20; a[2] = 30;
+    print("named: len={} a0={} a2={}\n", a.len, a[0], a[2]);
+
+    e : Make(M + 1, i64) = ---;      // const-expr value param (M + 1 == 3)
+    e[0] = 1; e[2] = 9;
+    print("expr: len={} e2={}\n", e.len, e[2]);
+
+    b : Make(3, i64) = a;            // same instantiation → array copy type-checks
+    print("copy: len={} b2={}\n", b.len, b[2]);
+}

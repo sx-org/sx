@@ -1,0 +1,43 @@
+// Assignment through a deref lvalue (`p.* = .{...}`) types the anonymous
+// struct literal from the POINTEE of the assignment target — never from the
+// enclosing function's return type — and fills omitted fields from the
+// struct's field defaults, exactly like `t : T = .{ x = 5 }`.
+// Regression (issue 0215): the deref-LHS assign arm did not seed target_type,
+// so the literal leaked the ambient fn-return-type context — .unresolved
+// LLVM-emission panic (void fn), bogus "cannot assign"/"field not found"
+// (i64 / struct returns), invalid insertvalue (?i64 return).
+#import "modules/std.sx";
+
+T :: struct { x: i64 = 1; y: i64 = 2; }
+U :: struct { a: i64 = 9; }
+
+// fn returns nothing — panicked at LLVM emission before the fix.
+mk_void :: (p: *T) {
+    p.* = .{ x = 5 };
+}
+
+// fn returns i64 — bogus "cannot assign 'target' of type 'T' with i64".
+mk_i64 :: (p: *T) -> i64 {
+    p.* = .{ x = 5 };
+    return 7;
+}
+
+// fn returns another struct — bogus "field 'x' not found on type 'U'".
+mk_u :: (p: *T) -> U {
+    p.* = .{ x = 5 };
+    return .{};
+}
+
+// fn returns ?i64 — invalid insertvalue at LLVM verification.
+mk_opt :: (p: *T) -> ?i64 {
+    p.* = .{ x = 5 };
+    return null;
+}
+
+main :: () -> i32 {
+    t1 : T = .{}; mk_void(@t1);       print("{} {}\n", t1.x, t1.y);
+    t2 : T = .{}; _ := mk_i64(@t2);   print("{} {}\n", t2.x, t2.y);
+    t3 : T = .{}; _ := mk_u(@t3);     print("{} {}\n", t3.x, t3.y);
+    t4 : T = .{}; _ := mk_opt(@t4);   print("{} {}\n", t4.x, t4.y);
+    0
+}

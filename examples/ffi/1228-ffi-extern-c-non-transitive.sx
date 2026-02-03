@@ -1,0 +1,14 @@
+// `#import` is non-transitive for C-import functions: main imports b,
+// b imports c, so main must NOT see c's lib-less `extern` C functions
+// directly. Referencing either is rejected by the C-import visibility
+// gate (lower/decl.zig `c_import_bare`) with a C-specific "not visible"
+// diagnostic — not the generic top-level-name wording. Two distinct
+// extern symbols pin that the gate fires per-symbol.
+#import "modules/std.sx";
+#import "1228-ffi-extern-c-non-transitive/b.sx";
+
+main :: () -> i32 {
+    print("{}\n", c_abs_one(-3));
+    print("{}\n", c_abs_two(-4));
+    return 0;
+}

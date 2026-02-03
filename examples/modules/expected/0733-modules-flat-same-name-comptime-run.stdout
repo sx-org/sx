@@ -1,0 +1,2 @@
+a.sx #run binds a.compute (7): ok
+b.sx #run binds b.compute (70): ok

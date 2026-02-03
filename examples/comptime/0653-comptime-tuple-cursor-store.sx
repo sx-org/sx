@@ -1,0 +1,35 @@
+// Comptime-cursor tuple-element L-VALUES: writing a named-tuple element by a
+// comptime-constant index — the store/address-of siblings of 0652's read path.
+// A tuple is heterogeneous, so each element L-value is a typed `structGep` of the
+// i-th field (not a uniform `index_gep`): `tup[i] = v` (direct store), a field
+// store through an element pointer (`tup[i].f = v`), and `@tup[i]` (address-of).
+// These are what the `race` runtime needs to register a waiter on the i-th task
+// handle (`tasks[i].waiter = …`). An out-of-range comptime index is a loud
+// compile error on every one of these paths (no silent `ptrTo(unresolved)` panic).
+#import "modules/std.sx";
+
+Box :: struct ($R: Type) { value: R; }
+
+main :: () -> i32 {
+    // Direct element store by literal index.
+    t := .{a = 1, b = 2, c = 3};
+    t[0] = 100;
+    t[2] = 300;
+    print("t = ({}, {}, {})\n", t.a, t.b, t.c);
+
+    // Address-of an element, write through the pointer.
+    p := @t[1];
+    p.* = 200;
+    print("t.b via @t[1] = {}\n", t.b);
+
+    // Field store THROUGH an element pointer — `tup[i].field = v` — the exact
+    // L-value shape `race` uses to register a waiter (`tasks[i].waiter = …`): the
+    // i-th element is a `*Box`, and `.value` writes through it to the pointee.
+    ba : Box(i64)  = .{ value = 0 };
+    bb : Box(bool) = .{ value = false };
+    handles := .{x = @ba, y = @bb};
+    handles[0].value = 7;
+    handles[1].value = true;
+    print("ba.value = {}, bb.value = {}\n", ba.value, bb.value);
+    return 0;
+}

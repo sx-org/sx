@@ -1,0 +1,42 @@
+// Stream B2/A1 — the M:1 fiber scheduler installed AS an `Io` capability vtable,
+// driven entirely through `context.io`. `impl Io for Scheduler` (sched.sx) folds
+// the scheduler behind the same `Io` protocol the blocking `CBlockingIo`
+// implements, so the worker below reaches real suspension/timers through the
+// PROTOCOL (`context.io.spawn_raw`/`arm_timer`/`suspend_raw`/`now_ms`) rather
+// than bespoke scheduler methods — the foundation for a colorblind
+// `async`/`await`/`race` that runs over whichever `Io` is installed.
+//
+// Two workers are spawned via `context.io.spawn_raw`; each arms a virtual-time
+// timer and `suspend_raw`s until it fires. They resume in DEADLINE order (10 then
+// 20), deterministic on the virtual clock — proving the protocol round-trips
+// spawn → arm → suspend → ready → resume against the fiber engine. Phase 0 (fibers
+// inherit the spawn-time context) is what lets the worker's own `context.io`
+// resolve back to this scheduler.
+//
+// aarch64-pinned (the scheduler's per-arch asm): runs end-to-end on a matching
+// host (macOS + linux), ir-only on a mismatch.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+// Worker entry: an sx (*void)->void fn, erased to *void by spawn_raw.
+sleeper :: (arg: *void) {
+    n : *i64 = xx arg;
+    tok : ParkToken = .{ handle = null };
+    context.io.arm_timer(context.io.now_ms() + n.*, tok);
+    context.io.suspend_raw(@tok) catch {};
+    print("worker(sleep {}) resumed at now_ms = {}\n", n.*, context.io.now_ms());
+}
+
+main :: () -> i64 {
+    s := sched.Scheduler.init();
+    ps := @s;
+    d1 : i64 = 20;
+    d2 : i64 = 10;
+    push .{ io = xx s } {
+        context.io.spawn_raw(xx sleeper, xx @d1, .{});
+        context.io.spawn_raw(xx sleeper, xx @d2, .{});
+        ps.run();
+    }
+    print("final clock: {}ms\n", ps.now_ms());
+    return 0;
+}

@@ -1,0 +1,39 @@
+// Phase 1 step 1.14 (PLAN-FFI.md): `#objc_call` inside an
+// `inline if OS == .ios { ... }` arm cross-compiles cleanly to
+// Android. The comptime gate must strip the arm BEFORE the
+// `objc_msg_send` lowering runs, otherwise emit_llvm would
+// produce calls to `@objc_msgSend` / `@sel_registerName` that
+// don't exist in Bionic + libGLESv3 / linker would fail.
+//
+// On macOS the iOS arm is also stripped (we're not iOS) so the
+// runtime test just prints "host stripped both", proving the
+// `inline if OS == { case }` form works around `#objc_call`
+// sites the same way it does elsewhere.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+// Empty stub class — Android cross-compile requires a `#jni_main`
+// declaration to satisfy the entry-point check. This file is testing
+// `inline if OS` gating around `#objc_call`, not Activity wiring.
+SxObjcOsGateStub :: #jni_main #jni_class("co/swipelab/sxobjcosgate/SxObjcOsGateStub") { }
+
+main :: () -> i32 {
+    inline if OS == {
+        case .ios: {
+            // Stripped on macOS + Android. Compiled on iOS / ios-sim.
+            #objc_call(void)(null, "init");
+            print("ios path\n");
+        }
+        case .android: {
+            // Stripped on macOS + iOS. Compiled on Android.
+            // Nothing #objc_call-shaped here — just text — so we
+            // exercise the gate symmetrically across targets.
+            print("android path\n");
+        }
+        else: {
+            print("host stripped both\n");
+        }
+    }
+    0
+}

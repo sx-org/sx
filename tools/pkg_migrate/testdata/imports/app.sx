@@ -1,0 +1,11 @@
+// import-rewrite fixture. The occurrences below in comments and strings
+// must never be rewritten: #import "modules/old/thing.sx"
+#import "modules/old/thing.sx";
+#import "modules/keep/asis.sx";
+name_bound :: #import "modules/old/other.sx";
+
+main :: () {
+    // a string mentioning an import path must survive untouched:
+    s := "#import \"modules/old/thing.sx\";";
+    print("{}\n", s);
+}

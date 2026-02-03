@@ -1,0 +1,29 @@
+// Variadic heterogeneous type packs — Step 2.6: indexing a pack with a
+// RUNTIME index is a compile error.
+//
+// Per locked Decision 1, a pack is comptime-only and has NO runtime
+// representation — so `args[i]` is valid only when `i` is a compile-time
+// constant (a literal, or an `inline for` cursor). A runtime index (here a
+// `while`-loop counter) must produce a clear diagnostic, not the confusing
+// "unresolved 'args'" the slice-index fall-through used to give. To walk a
+// pack, use `inline for 0..args.len (i) { ... }`, which unrolls so each
+// `args[i]` is a comptime index.
+
+#import "modules/std.sx";
+
+count_anys :: (..$args) -> i64 {
+    total : i64 = 0;
+    i : i64 = 0;
+    while i < args.len {
+        x : any = args[i];   // ERROR: runtime index into a comptime-only pack
+        _ = x;
+        total = total + 1;
+        i = i + 1;
+    }
+    return total;
+}
+
+main :: () -> i32 {
+    print("{}\n", count_anys(10, "hi", 2.5, true));
+    return 0;
+}

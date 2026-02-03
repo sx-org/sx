@@ -1,0 +1,5 @@
+error: global 'started_at' must be initialized by a compile-time constant
+  --> examples/diagnostics/1259-diagnostics-context-extend-nonconst-default.sx:9:35
+   |
+ 9 | #context_extend started_at: i64 = now_ms();
+   |                                   ^^^^^^^^

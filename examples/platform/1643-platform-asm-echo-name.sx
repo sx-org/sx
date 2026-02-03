@@ -1,0 +1,6 @@
+// ASM stream Phase B — operand naming rule (§II.5): an explicit `[name]` that
+// just echoes the register its own constraint pins (`[eax] "={eax}"`) carries
+// no information — the operand is already auto-named after the register. Reject
+// it. The useful form is a label that DIFFERS (e.g. `[quot] "={rax}"`).
+f :: () -> u32 { return asm volatile { "cpuid", [eax] "={eax}" -> u32, "{eax}" = 1 }; }
+main :: () { x := f(); }

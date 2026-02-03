@@ -1,0 +1,57 @@
+// M2.1(a) — class-level constants on a sx-defined `#objc_class`.
+//
+// `name :: Type = expr;` inside the class block is sugar for
+// `name :: () -> Type => expr;` — a niladic class method with an
+// expression body. The compiler emits a C-ABI IMP that returns the
+// captured expression and registers it on the metaclass.
+//
+// Apple's runtime sees no distinction — '[Cls foo]' dispatches to
+// our IMP whether the user wrote it as a constant or as a method.
+// The constant form just reads better for static metadata returns
+// (canonical example: '+layerClass' on UIView subclasses).
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+NSObject :: #objc_class("NSObject") extern {
+    alloc :: () -> *NSObject;
+    init  :: (self: *NSObject) -> *NSObject;
+}
+
+// Reframed as a class method internally; user writes the constant form.
+SxThing :: #objc_class("SxThing") {
+    counter: i32;
+
+    // Class-level constant.
+    answer :: i32 = 42;
+
+    // Canonical pattern: returning a *NSObject (stand-in for Apple's
+    // '+layerClass' returning *CALayer).
+    seedClass :: *NSObject = NSObject.alloc().init();
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        cls : Class = objc_getClass("SxThing".ptr);
+        if cls == null { print("FAIL: SxThing not registered\n"); return 1; }
+
+        // [SxThing answer] → 42
+        sel_answer : SEL = sel_registerName("answer".ptr);
+        msg_int : (cls: *void, sel: *void) -> i32 abi(.c) = xx objc_msgSend;
+        r := msg_int(cls, sel_answer);
+        if r != 42 { print("FAIL: answer expected 42, got {}\n", r); return 1; }
+
+        // [SxThing seedClass] returns a non-null NSObject.
+        sel_seed : SEL = sel_registerName("seedClass".ptr);
+        msg_ptr : (cls: *void, sel: *void) -> *void abi(.c) = xx objc_msgSend;
+        seed := msg_ptr(cls, sel_seed);
+        if seed == null { print("FAIL: seedClass returned null\n"); return 1; }
+
+        print("class constants: answer={}, seedClass=ok\n", r);
+    }
+    inline if OS != .macos {
+        print("class constants: answer=42, seedClass=ok\n");
+    }
+    0
+}

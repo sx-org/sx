@@ -1,0 +1,23 @@
+error: type 'Dir' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0795-modules-same-name-enum-ambiguous.sx:32:19
+   |
+32 |     sz := size_of(Dir);
+   |                   ^^^
+
+error: type 'Dir' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0795-modules-same-name-enum-ambiguous.sx:33:9
+   |
+33 |     d : Dir = .north;
+   |         ^^^
+
+error: type 'Dir' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0795-modules-same-name-enum-ambiguous.sx:34:16
+   |
+34 |     t : Type = Dir;
+   |                ^^^
+
+error: type 'Dir' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0795-modules-same-name-enum-ambiguous.sx:25:14
+   |
+25 |         case Dir: 1;
+   |              ^^^

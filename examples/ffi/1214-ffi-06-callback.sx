@@ -1,0 +1,59 @@
+// Phase 0 baseline (PLAN-FFI.md step 0.6): sx function passed to C
+// as a function pointer; C invokes it; sx-side observable effect.
+// Mirrors the `app->onInputEvent` install pattern in
+// library/modules/platform/android.sx.
+//
+// Two arities covered:
+//   1. (i32) -> i32                — single-arg callback
+//   2. (*void, i32) -> i32         — pointer + value (onInputEvent shape)
+//
+// Plus a side-effect via a global so we can confirm the callback
+// actually fired (return value + state mutation both observable).
+
+#import "modules/std.sx";
+
+#import c {
+    #source "1214-ffi-06-callback.c";
+};
+
+ffi_apply_callback  :: (cb: (i32) -> i32 abi(.c), value: i32) -> i32 extern;
+ffi_apply_callback2 :: (cb: (*void, i32) -> i32 abi(.c), ctx: *void, v: i32) -> i32 extern;
+
+g_callback_hits : i32 = 0;
+g_callback_sum  : i32 = 0;
+
+double_it :: (x: i32) -> i32 abi(.c) {
+    g_callback_hits += 1;
+    g_callback_sum += x;
+    x * 2
+}
+
+add_with_ctx :: (ctx: *void, v: i32) -> i32 abi(.c) {
+    g_callback_hits += 1;
+    // Pass a sentinel via ctx to prove the pointer arg also survives the
+    // round-trip — read it back as an i32 through *i32.
+    p : *i32 = xx ctx;
+    p.* + v
+}
+
+main :: () -> i32 {
+    // ── Single-arg callback ────────────────────────────────────────
+    r1 := ffi_apply_callback(double_it, 21);
+    print("callback returned        = {}\n", r1);
+    print("hits after first call    = {}\n", g_callback_hits);
+    print("sum after first call     = {}\n", g_callback_sum);
+
+    // Two more calls confirm the same fn pointer keeps working.
+    ffi_apply_callback(double_it, 7);
+    ffi_apply_callback(double_it, 11);
+    print("hits after three calls   = {}\n", g_callback_hits);
+    print("sum after three calls    = {}\n", g_callback_sum);
+
+    // ── Two-arg callback with opaque ctx pointer ───────────────────
+    ctx_val : i32 = 100;
+    r2 := ffi_apply_callback2(add_with_ctx, xx @ctx_val, 42);
+    print("ctx + value              = {}\n", r2);
+    print("hits after ctx callback  = {}\n", g_callback_hits);
+
+    0
+}

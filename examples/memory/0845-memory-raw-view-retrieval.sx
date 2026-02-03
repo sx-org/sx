@@ -1,0 +1,57 @@
+// Raw-view retrieval through the shared xx/.(T) conversion engine: the
+// fat-value views ClosureRaw {fn_ptr, env}, SliceRaw {ptr, len} (slices AND
+// strings), and ProtocolRaw {ctx, type_id} come back via `v.(XxxRaw)` or
+// `xx v`. The protocol pair is a MODELED conversion built field-wise —
+// {ctx, __type_id} is the prefix BOTH protocol layouts share (default
+// {ctx, __type_id, vtable} and #inline {ctx, __type_id, fn_ptrs…}),
+// byte-identical to an any {data, type_id} — never a bit reinterpret, so
+// an #inline value can't leak a wrong word and the result is a real value
+// that works in ARG POSITION (a reinterpret width-mismatched there).
+// Recovery targets are exempt from the phase-2 downcast refusal; other
+// concrete targets on a protocol receiver go through the downcast.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Sizable :: protocol { size :: (self: *Self) -> i64; }
+Widget :: struct { value: i64; }
+impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
+
+take_raw :: (r: ProtocolRaw) -> *void { r.ctx }
+
+main :: () {
+    // closure -> ClosureRaw, both spellings
+    n := 10;
+    cl := (x: i64) -> i64 { x + n };
+    r1 : ClosureRaw = xx cl;
+    r2 := cl.(ClosureRaw);
+    print("closure: {} {}\n", r1.fn_ptr == r2.fn_ptr, r1.env == r2.env);
+
+    // slice and string -> SliceRaw
+    s : []i64 = .[1, 2, 3];
+    print("slice: {} {}\n", s.(SliceRaw).ptr == xx s.ptr, s.(SliceRaw).len);
+    t := "hey";
+    print("string: {}\n", t.(SliceRaw).len);
+
+    // protocol (default layout) -> ProtocolRaw, both spellings. The value
+    // OWNS its ctx (E4): the recovered pointer is the heap copy — a
+    // faithful Widget that is NOT w's address.
+    w := Widget.{ value = 7 };
+    sz := w.(Sizable);
+    pr : ProtocolRaw = xx sz;
+    wc : *Widget = xx sz.(ProtocolRaw).ctx;
+    print("default: {} {}\n", wc.value == 7 and sz.(ProtocolRaw).ctx != xx @w, pr.ctx == sz.(ProtocolRaw).ctx);
+    print("default type_id: {}\n", sz.(ProtocolRaw).type_id == type_of(sz));
+
+    // protocol (#inline layout, Allocator) — correct ctx, no layout lie
+    ga := GPA.init();
+    a : Allocator = xx ga;
+    print("inline: {}\n", a.(ProtocolRaw).ctx == xx @ga);
+    print("inline type_id: {}\n", a.(ProtocolRaw).type_id == type_of(a));
+
+    // a real constructed value: passes through call args
+    print("arg: {}\n", take_raw(a.(ProtocolRaw)) == xx @ga);
+
+    // parity with the typed ctx-pointer recovery
+    p : *void = xx a;
+    print("parity: {}\n", a.(ProtocolRaw).ctx == p);
+}

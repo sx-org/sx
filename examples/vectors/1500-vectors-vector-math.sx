@@ -1,0 +1,44 @@
+#import "modules/std.sx";
+math :: #import "modules/math";
+
+dot :: (a: Vector(3,f32), b: Vector(3,f32)) -> f32 {
+    a.x*b.x + a.y*b.y + a.z*b.z
+}
+
+cross :: (a: Vector(3,f32), b: Vector(3,f32)) -> Vector(3,f32) {
+    .[a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x]
+}
+
+length :: (v: Vector(3,f32)) -> f32 {
+    math.sqrt(dot(v, v))
+}
+
+normalize :: (v: Vector(3,f32)) -> Vector(3,f32) {
+    v / length(v)
+}
+
+vec3 :: (x:f32, y:f32, z:f32) -> Vector(3,f32) {
+    .[x, y, z]
+}
+
+main :: () {
+    a := vec3(1, 0, 0);
+    b := vec3(0, 1, 0);
+
+    // dot product
+    d := dot(a, b);
+    print("dot: {}\n", d);
+
+    // cross product
+    cr := cross(a, b);
+    print("cross: {}\n", cr);
+
+    // length
+    v := vec3(3, 4, 0);
+    len := length(v);
+    print("length: {}\n", len);
+
+    // normalize
+    n := normalize(v);
+    print("norm: {}\n", n);
+}

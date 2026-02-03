@@ -1,0 +1,66 @@
+// The C2 raw layer over the `any` view: raw_any_data(av) reads the data
+// pointer; raw_make_any(tp, data) assembles a view (UNCHECKED — the
+// caller asserts `data` points at a live, aligned value of `tp`).
+// Contract edges pinned here: byte copies through the data pointer are
+// SHALLOW and cover exactly size_of(tag) bytes; a reassembled view is a
+// view (no ownership). Tags are per-build values — this "serializer"
+// round-trips within ONE build on purpose.
+
+#import "modules/std.sx";
+c :: #import "modules/std/c.sx";
+
+Point :: struct { x: i64; y: i64; }
+
+// A heterogeneous store: one byte buffer, per-slot {tag, offset}.
+Store :: struct {
+    buf:  [128]u8;
+    tags: [8]Type;
+    offs: [8]i64;
+    lens: [8]i64;
+    used: i64;
+    count: i64;
+
+    put :: (self: *Store, v: any) {
+        n := size_of(type_of(v));
+        c.memcpy(xx @self.buf[self.used], raw_any_data(v), n);
+        self.tags[self.count] = type_of(v);
+        self.offs[self.count] = self.used;
+        self.lens[self.count] = n;
+        self.used += n;
+        self.count += 1;
+    }
+
+    get :: (self: *Store, i: i64) -> any {
+        raw_make_any(self.tags[i], xx @self.buf[self.offs[i]])
+    }
+}
+
+main :: () -> i64 {
+    s := Store.{ used = 0, count = 0 };
+    a : i64 = 42;
+    b : f64 = 2.5;
+    p := Point.{ x = 7, y = 9 };
+    s.put(xx a);
+    s.put(xx b);
+    s.put(xx p);
+
+    print("{} {}\n", s.get(0), s.get(1));            // 42 2.500000
+    print("{}\n", s.get(2));                          // Point{x: 7, y: 9}
+    print("{}\n", type_name(type_of(s.get(2))));      // Point
+
+    // The store COPIED the bytes: mutating the source does not reach it.
+    a = 0;
+    print("{}\n", s.get(0));                          // 42
+
+    // "Serialize" within the same build: move the raw bytes to a fresh
+    // buffer and re-view them under the same tag.
+    wire : [16]u8 = .[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    pv := s.get(2);
+    c.memcpy(xx @wire[0], raw_any_data(pv), size_of(type_of(pv)));
+    restored := raw_make_any(type_of(pv), xx @wire[0]);
+    print("{}\n", restored.(Point).y);           // 9
+
+    // Field views compose over the reassembled view too.
+    print("{}\n", struct_field_value(restored, 0));   // 7
+    return 0;
+}

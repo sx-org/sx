@@ -1,0 +1,59 @@
+=== 1. literal == ===
+i64 == i64:    true
+i64 == string: false
+*u8 == *u8:    true
+?i64 == ?i64:  true
+?i64 == ?i32:  false
+=== 2. type_of(value) == T ===
+type_of(a) == i64:    true
+type_of(b) == f64:    true
+type_of(s) == string: true
+type_of(a) == f64:    false
+=== 3. Type variable storage ===
+t == f64:    true
+t == string: false
+after reassign t == string: true
+t == bool:   true
+=== 4. type_name ===
+type_name(i64):    i64
+type_name(*u8):    *u8
+type_name(Point):  Point
+type_name(Color):  Color
+type_name(t):      f64
+=== 5. print Type values ===
+literal: i64
+var:     string
+type_of(b): f64
+=== 6. generic dispatch ===
+describe(i64):    int64
+describe(string): text
+describe(bool):   boolean
+describe(f64):    other
+=== 7. identity($T, val) ===
+identity(i64, 7):     7
+identity(string, hi): hi
+identity(bool, true): true
+=== 8. Wrap($T) ===
+Wrap(i64).v:    42
+Wrap(string).v: wrapped
+=== 9. reflection on Type ===
+size_of(i64):      8
+size_of(*u8):      8
+align_of(f64):     8
+struct_field_count(Point): 2
+type_eq(i64, i64):    true
+type_eq(i64, string): false
+=== 10. ..$args walking ===
+type_list():            []
+type_list(1):           [i64]
+type_list(1, "x"):    [i64, string]
+type_list(true, 3.14):  [bool, f64]
+=== 11. Type in struct field ===
+h.t == i64:    true
+h.t == string: false
+type_name(h.t): i64
+=== 12. compound literals ===
+type_name(*Point):    *Point
+type_name([4]i32):    [4]i32
+type_name([]bool):    []bool
+type_name(?f64):      ?f64

@@ -1,0 +1,15 @@
+// A reserved type name used as a DESTRUCTURE binding name (`i2`) is rejected
+// even when it lives in an IMPORTED module — the exhaustive binding-name walk
+// descends the `namespace_decl` an `mod :: #import` wraps and renders the
+// diagnostic against that module's source (issue 0077's universal-coverage
+// rule applied to the destructure form). Without it the binding reaches
+// lowering and aborts LLVM verification.
+//
+// Regression (issues 0076 + 0077, attempt-4 coverage). Expected: one clean
+// diagnostic pointing at the imported module's `i2, rest := ...`, exit 1.
+#import "modules/std.sx";
+mod :: #import "1124-diagnostics-imported-reserved-destructure/mod.sx";
+
+main :: () -> i32 {
+    return mod.run();
+}

@@ -1,0 +1,27 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+main :: () {
+
+    // --- Tuples ---
+    {
+        print("=== Tuples ===\n");
+        pair := .{40, 2};
+        print("{}\n", pair.0);
+        print("{}\n", pair.1);
+
+        named : Tuple(x: i64, y: i64) = .{x = 10, y = 20};
+        print("{}\n", named.x);
+        print("{}\n", named.0);
+
+        single := .{42};
+        print("{}\n", single.0);
+
+        zeroed : Tuple(i32, i32) = ---;
+        print("{}\n", zeroed.0);
+        print("{}\n", zeroed.1);
+    }
+}

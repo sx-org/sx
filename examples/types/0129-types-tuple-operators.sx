@@ -1,0 +1,1214 @@
+#import "modules/std.sx";
+#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+Point :: struct { x, y: i32; }
+
+OptNode :: struct {
+    value: i32;
+    next: ?i32;
+}
+
+OptInner :: struct { val: i32; }
+
+OptOuter :: struct { inner: ?OptInner; }
+
+add :: (a: i32, b: i32) -> i32 { a + b }
+
+mul :: (a: i32, b: i32) -> i32 { a * b }
+
+identity :: (x: $T) -> T { x }
+
+apply :: (f: (i32, i32) -> i32, x: i32, y: i32) -> i32 {
+    f(x, y)
+}
+
+// P4 edge: Chained default→default calls
+Chained :: protocol {
+    base :: (self: *Self, msg: string) -> i32;
+    wrap :: (self: *Self, msg: string) -> i32 {
+        self.base(msg) + 1
+    }
+    double_wrap :: (self: *Self, msg: string) -> i32 {
+        self.wrap(msg) + self.wrap(msg)
+    }
+}
+
+main :: () {
+
+    // --- Tuple Operators ---
+    {
+        print("=== Tuple Operators ===\n");
+
+        // Tuple operands must be TUPLE-typed: an untyped `.{ }` literal is
+        // an anonymous struct (aggregate ladder Step 1), and the exotic
+        // tuple operators (`+`/`*`/`<`/`in`) exist on tuples only.
+        t12 : Tuple(i64, i64) = .{1, 2};
+        t13 : Tuple(i64, i64) = .{1, 3};
+        t34 : Tuple(i64, i64) = .{3, 4};
+        t20 : Tuple(i64, i64) = .{2, 0};
+        t19 : Tuple(i64, i64) = .{1, 9};
+        t123 : Tuple(i64, i64, i64) = .{1, 2, 3};
+
+        // Equality
+        print("{}\n", t12 == t12);     // true
+        print("{}\n", t12 == t13);     // false
+        print("{}\n", t12 != t13);     // true
+        print("{}\n", t12 != t12);     // false
+
+        // Concatenation
+        c := t12 + t34;
+        print("{}\n", c.0);    // 1
+        print("{}\n", c.1);    // 2
+        print("{}\n", c.2);    // 3
+        print("{}\n", c.3);    // 4
+
+        // Repetition
+        r := t12 * 3;
+        print("{}\n", r.0);    // 1
+        print("{}\n", r.1);    // 2
+        print("{}\n", r.2);    // 1
+        print("{}\n", r.3);    // 2
+        print("{}\n", r.4);    // 1
+        print("{}\n", r.5);    // 2
+
+        // Lexicographic comparison
+        print("{}\n", t12 < t13);      // true
+        print("{}\n", t13 < t12);      // false
+        print("{}\n", t12 < t12);      // false
+        print("{}\n", t12 <= t12);     // true
+        print("{}\n", t20 > t19);      // true
+        print("{}\n", t12 >= t12);     // true
+
+        // Membership
+        print("{}\n", 2 in t123);      // true
+        print("{}\n", 5 in t123);      // false
+    }
+
+    // --- Directory imports ---
+    {
+        print("--- directory imports ---\n");
+        print("{}\n", pkg.add(3, 4));         // 7
+        print("{}\n", pkg.mul(5, 6));         // 30
+        print("{}\n", pkg.hello());           // hello from testpkg
+        print("{}\n", pkg.cwd_greet());       // cwd-import-ok
+    }
+
+    // --- Pipe operator ---
+    {
+        print("--- pipe operator ---\n");
+        // Basic: a |> f(b) → f(a, b)
+        print("{}\n", 3 |> pkg.add(4));           // 7
+        print("{}\n", 5 |> pkg.mul(6));           // 30
+
+        // Chaining: a |> f(b) |> g(c) → g(f(a, b), c)
+        print("{}\n", 3 |> pkg.add(4) |> pkg.mul(2));  // 14
+
+        // With non-namespaced functions
+        print("{}\n", "hello" |> concat(" world"));     // hello world
+
+        // Chained string ops
+        print("{}\n", "piped" |> concat(" ok") |> concat("!"));  // piped ok!
+    }
+
+    // ── alloc_slice ──────────────────────────────────────────
+    {
+        items := alloc_slice(i64, 5);
+        items[0] = 10;
+        items[1] = 20;
+        items[2] = 30;
+        items[3] = 40;
+        items[4] = 50;
+        print("alloc len: {}\n", items.len);         // alloc len: 5
+        print("alloc[0]: {}\n", items[0]);            // alloc[0]: 10
+        print("alloc[4]: {}\n", items[4]);            // alloc[4]: 50
+
+        // alloc_slice with u8
+        bytes := alloc_slice(u8, 3);
+        bytes[0] = 65;
+        bytes[1] = 66;
+        bytes[2] = 67;
+        print("bytes len: {}\n", bytes.len);          // bytes len: 3
+    }
+
+    // ========================================================
+    // ALLOCATORS
+    // ========================================================
+    print("--- allocators ---\n");
+
+    // ── GPA ─────────────────────────────────────────────────
+    {
+        gpa := GPA.init();
+        a : Allocator = xx gpa;
+        p1 := a.alloc_bytes(64);
+        p2 := a.alloc_bytes(128);
+        print("gpa allocs: {}\n", gpa.alloc_count);         // gpa allocs: 2
+        a.dealloc_bytes(p1);
+        a.dealloc_bytes(p2);
+        print("gpa final: {}\n", gpa.alloc_count);          // gpa final: 0
+    }
+
+    // ── Arena backed by GPA (multi-chunk) ───────────────────
+    {
+        gpa3 := GPA.init();
+        arena := Arena.init(gpa3, 32);
+        a : Allocator = xx arena;
+        // First chunk fits 80 usable bytes
+        a1 := a.alloc_bytes(40);
+        a2 := a.alloc_bytes(40);
+        // Counts: just the first chunk = 1. Arena.init returns the
+        // state by value; the local IS the Arena struct, no parent
+        // allocation for the state itself.
+        print("arena chunks: {}\n", gpa3.alloc_count);        // arena chunks: 1
+        // Overflow → new chunk
+        a3 := a.alloc_bytes(16);
+        print("arena overflow: {}\n", gpa3.alloc_count);      // arena overflow: 2
+        // Verify memory works across chunks
+        p1 : [*]u8 = xx a1;
+        p3 : [*]u8 = xx a3;
+        p1[0] = 42;
+        p3[0] = 99;
+        print("arena a1: {}\n", p1[0]);                       // arena a1: 42
+        print("arena a3: {}\n", p3[0]);                       // arena a3: 99
+        // Reset retains the first chunk
+        arena.reset();
+        print("arena reset idx: {}\n", arena.end_index);      // arena reset idx: 0
+        print("arena reset gpa: {}\n", gpa3.alloc_count);     // arena reset gpa: 1
+        // Deinit frees all chunks (caller's local is the state — no
+        // dealloc of the struct itself).
+        arena.deinit();
+        print("arena deinit: {}\n", gpa3.alloc_count);        // arena deinit: 0
+    }
+
+    // ── BufAlloc from stack array ───────────────────────────
+    {
+        stack_buf : [128]u8 = ---;
+        buf := BufAlloc.init(@stack_buf[0], 128);
+        a : Allocator = xx buf;
+        b1 := a.alloc_bytes(24);
+        b2 := a.alloc_bytes(24);
+        print("buf pos: {}\n", buf.pos);                    // buf pos: 48
+        b3 := a.alloc_bytes(200);
+        b3_i : i64 = xx b3;
+        print("buf overflow: {}\n", b3_i);                  // buf overflow: 0
+        buf.reset();
+        print("buf reset: {}\n", buf.pos);                  // buf reset: 0
+    }
+
+    {
+        // Scalar ↔ 1-tuple equivalence needs the TUPLE type spelled out
+        // (an untyped `.{1}` is an anonymous struct).
+        t1 : Tuple(i64) = .{1};
+        if 1 == t1 {
+            print("1 == (1)\n");
+        }
+
+        if t1 == (1) {
+            print("(1) == 1\n");
+        }
+
+        if t1 == 1 {
+            print("1 == 1\n");
+        }
+    }
+
+    // ========================================================
+    // OPTIONALS
+    // ========================================================
+    print("--- optionals ---\n");
+
+    // Basic optional creation and null
+    {
+        x: ?i32 = 42;
+        y: ?i32 = null;
+        print("opt x: {}\n", x);                           // opt x: 42
+        print("opt y: {}\n", y);                            // opt y: null
+    }
+
+    // Force unwrap
+    {
+        x: ?i32 = 10;
+        val := x!;
+        print("unwrap: {}\n", val);                         // unwrap: 10
+    }
+
+    // Null coalescing
+    {
+        x: ?i32 = 42;
+        y: ?i32 = null;
+        a := x ?? 0;
+        b := y ?? 99;
+        print("coalesce a: {}\n", a);                       // coalesce a: 42
+        print("coalesce b: {}\n", b);                       // coalesce b: 99
+
+        // Chained ?? (right-associative): a ?? b ?? c
+        z: ?i32 = null;
+        c := x ?? y ?? 0;
+        d := z ?? y ?? 99;
+        e := z ?? z ?? 0;
+        print("chained ?? c: {}\n", c);                     // chained ?? c: 42
+        print("chained ?? d: {}\n", d);                     // chained ?? d: 99
+        print("chained ?? e: {}\n", e);                     // chained ?? e: 0
+    }
+
+    // If-binding (safe unwrap)
+    {
+        x: ?i32 = 7;
+        y: ?i32 = null;
+        if val := x {
+            print("if-bind x: {}\n", val);                  // if-bind x: 7
+        }
+        if val := y {
+            print("if-bind y: should not print\n");
+        } else {
+            print("if-bind y: none\n");                     // if-bind y: none
+        }
+    }
+
+    // Pattern matching on optionals
+    {
+        check :: (v: ?i32) -> i32 {
+            return if v == {
+                case .some: (val) { val }
+                case .none: { 0 }
+            };
+        }
+        a: ?i32 = 55;
+        b: ?i32 = null;
+        print("match some: {}\n", check(a));                // match some: 55
+        print("match none: {}\n", check(b));                // match none: 0
+    }
+
+    // Optional with implicit wrapping
+    {
+        opt_wrap :: (n: i32) -> ?i32 {
+            if n > 0 {
+                return n;
+            }
+            return null;
+        }
+        r1 := opt_wrap(5);
+        r2 := opt_wrap(0);
+        print("wrap pos: {}\n", r1);                        // wrap pos: 5
+        print("wrap neg: {}\n", r2);                        // wrap neg: null
+    }
+
+    // Struct field defaults for ?T
+    {
+        n := OptNode.{ value = 10 };
+        print("opt field default: {}\n", n.next);           // opt field default: null
+        m := OptNode.{ value = 20, next = 42 };
+        print("opt field set: {}\n", m.next);               // opt field set: 42
+    }
+
+    // ?T as function parameter
+    {
+        opt_process :: (val: ?i32) -> i32 {
+            return val ?? 0;
+        }
+        a: ?i32 = 42;
+        b: ?i32 = null;
+        print("opt param a: {}\n", opt_process(a));         // opt param a: 42
+        print("opt param b: {}\n", opt_process(b));         // opt param b: 0
+        print("opt param 7: {}\n", opt_process(7));         // opt param 7: 7
+    }
+
+    // Assignment to optional variable (f32 → ?f32)
+    {
+        iw: ?f32 = null;
+        w: f32 = 42.5;
+        iw = w;
+        print("opt reassign: {}\n", iw ?? 0.0);                // opt reassign: 42.5
+
+        // Assignment of computed value to optional
+        iw2: ?f32 = null;
+        a: ?f32 = 10.0;
+        if v := a { iw2 = v + 5.0; }
+        print("opt compute assign: {}\n", iw2 ?? 0.0);         // opt compute assign: 15.0
+
+        // Re-assign optional back to null
+        iw2 = null;
+        print("opt re-null: {}\n", iw2 ?? 99.0);               // opt re-null: 99.0
+    }
+
+    // Generic function with ?T return
+    {
+        first_pos :: ($T: Type, a: T, b: T) -> ?T {
+            if a > 0 { return a; }
+            if b > 0 { return b; }
+            return null;
+        }
+        print("generic opt 1: {}\n", first_pos(i32, 5, 10));  // generic opt 1: 5
+        print("generic opt 2: {}\n", first_pos(i32, 0, 7));   // generic opt 2: 7
+        print("generic opt 3: {}\n", first_pos(i32, 0, 0));   // generic opt 3: null
+    }
+
+    // Optional chaining (?.)
+    {
+        p: ?OptNode = OptNode.{ value = 10, next = 20 };
+        q: ?OptNode = null;
+        print("chain some: {}\n", p?.value ?? 0);           // chain some: 10
+        print("chain none: {}\n", q?.value ?? 0);           // chain none: 0
+        print("chain print: {}\n", p?.next);                 // chain print: 20
+        print("chain null: {}\n", q?.next);                  // chain null: null
+
+        // Chained: obj.field?.field
+        o1 := OptOuter.{ inner = OptInner.{ val = 99 } };
+        o2 := OptOuter.{ inner = null };
+        print("deep chain 1: {}\n", o1.inner?.val ?? 0);    // deep chain 1: 99
+        print("deep chain 2: {}\n", o2.inner?.val ?? 0);    // deep chain 2: 0
+    }
+
+    // Flow-sensitive narrowing
+    {
+        x: ?i32 = 42;
+        y: ?i32 = null;
+
+        // if x != null → x is narrowed to i32
+        if x != null {
+            print("narrow x: {}\n", x);                        // narrow x: 42
+        }
+
+        // if y != null → not entered
+        if y != null {
+            print("should not print\n");
+        } else {
+            print("narrow y else: null\n");                    // narrow y else: null
+        }
+
+        // if x == null ... else → else-branch narrowed
+        if x == null {
+            print("should not print\n");
+        } else {
+            print("narrow else x: {}\n", x);                  // narrow else x: 42
+        }
+    }
+
+    // Guard narrowing
+    {
+        guard_fn :: (v: ?i32) -> i32 {
+            if v == null { return 0; }
+            return v;
+        }
+        print("guard some: {}\n", guard_fn(42));               // guard some: 42
+        print("guard none: {}\n", guard_fn(null));             // guard none: 0
+    }
+
+    // Compound narrowing: && chains
+    {
+        a: ?i32 = 10;
+        b: ?i32 = 20;
+        c: ?i32 = null;
+        if a != null and b != null {
+            print("and both: {} {}\n", a, b);                  // and both: 10 20
+        }
+        if a != null and c != null {
+            print("should not print\n");
+        } else {
+            print("and one null\n");                           // and one null
+        }
+    }
+
+    // Compound guard narrowing: || chains
+    {
+        guard2 :: (a: ?i32, b: ?i32) -> i32 {
+            if a == null or b == null { return 0; }
+            return a + b;
+        }
+        print("or guard: {}\n", guard2(3, 4));                 // or guard: 7
+        print("or guard null: {}\n", guard2(3, null));         // or guard null: 0
+    }
+
+    // Nested if narrowing
+    {
+        a: ?i32 = 10;
+        b: ?i32 = 20;
+        if a != null {
+            if b != null {
+                print("nested narrow: {} {}\n", a, b);         // nested narrow: 10 20
+            }
+        }
+    }
+
+    // Guard narrowing used in loop
+    {
+        guard_loop :: (v: ?i32) -> i32 {
+            if v == null { return 0; }
+            sum := 0;
+            i := 0;
+            while i < v {
+                sum = sum + 1;
+                i = i + 1;
+            }
+            return sum;
+        }
+        print("guard loop: {}\n", guard_loop(3));              // guard loop: 3
+    }
+
+    // --- block-body lambdas ---
+    {
+        // block-body lambda with return type
+        clamp := (x: i64, lo: i64, hi: i64) -> i64 {
+            if x < lo { return lo; }
+            if x > hi { return hi; }
+            return x;
+        };
+        print("block-lambda: {}\n", clamp(50, 0, 100));   // block-lambda: 50
+        print("block-lambda: {}\n", clamp(-10, 0, 100));  // block-lambda: 0
+        print("block-lambda: {}\n", clamp(999, 0, 100));  // block-lambda: 100
+
+        // block-body lambda without return type annotation
+        greet := (name: string) {
+            print("hello {}\n", name);
+        };
+        greet("block");  // hello block
+    }
+
+    // --- named params in function types ---
+    {
+        // Named params are documentation only — ignored for type identity
+        apply_named :: (f: (x: i32, y: i32) -> i32, a: i32, b: i32) -> i32 {
+            return f(a, b);
+        }
+        add :: (a: i32, b: i32) -> i32 { return a + b; }
+        print("named-fn-type: {}\n", apply_named(add, 3, 4));  // named-fn-type: 7
+    }
+
+    // --- xx on function pointers ---
+    {
+        MyEnv :: struct { n: i32; }
+        typed_fn :: (e: *MyEnv, x: i32) -> i32 {
+            return x + e.n;
+        }
+        // xx cast: (*MyEnv, i32) -> i32  →  (*void, i32) -> i32
+        f : (*void, i32) -> i32 = xx typed_fn;
+        env := MyEnv.{ n = 100 };
+        print("xx-fnptr: {}\n", f(xx @env, 42));  // xx-fnptr: 142
+    }
+
+    // --- closure type: construct and access fields ---
+    {
+        dummy_fn :: (env: *void, x: i32) -> i32 {
+            return x * 2;
+        }
+        fn_ptr : *void = xx dummy_fn;
+        null_env : *void = xx 0;
+        c : Closure(i32) -> i32 = .{ fn_ptr = fn_ptr, env = null_env };
+        print("closure-type: fn_ptr-nonnull={}\n", c.fn_ptr != null_env);
+        print("closure-type: env-null={}\n", c.env == null_env);
+    }
+
+    // --- closure calling convention ---
+    {
+        Env :: struct { n: i32; }
+        impl_fn :: (env: *void, x: i32) -> i32 {
+            e : *Env = xx env;
+            return x + e.n;
+        }
+        env := Env.{ n = 5 };
+        fn_ptr : *void = xx impl_fn;
+        env_ptr : *void = xx @env;
+        c : Closure(i32) -> i32 = .{ fn_ptr = fn_ptr, env = env_ptr };
+        print("closure-call: {}\n", c(10));
+    }
+
+    // --- auto-promotion: bare fn → Closure ---
+    {
+        double :: (x: i32) -> i32 { return x * 2; }
+        apply :: (f: Closure(i32) -> i32, x: i32) -> i32 { return f(x); }
+        print("auto-promote: {}\n", apply(double, 10));
+
+        // Named function to Closure variable
+        f : Closure(i32) -> i32 = double;
+        print("auto-promote-var: {}\n", f(5));
+    }
+
+    // --- closure() intrinsic ---
+    {
+        // capture scalar
+        n := 42;
+        f := closure((x: i32) => x + n);
+        print("closure-capture: {}\n", f(10));
+
+        // capture by value is a snapshot
+        m := 5;
+        g := closure((x: i32) => x + m);
+        m = 100;
+        print("closure-snapshot: {}\n", g(10));
+
+        // no captures (null env)
+        h := closure((x: i32) => x * 2);
+        print("closure-nocap: {}\n", h(7));
+
+        // multiple captures
+        a := 10;
+        b := 20;
+        multi := closure((x: i32) => x + a + b);
+        print("closure-multi: {}\n", multi(3));
+
+        // block-body closure with return
+        offset := 50;
+        clamp := closure((x: i64) -> i64 {
+            if x < 0 { return 0; }
+            if x > 100 { return 100; }
+            return x + offset;
+        });
+        r1 : i64 = clamp(10);
+        r2 : i64 = clamp(0 - 5);
+        r3 : i64 = clamp(999);
+        print("closure-block: {}\n", r1);
+        print("closure-block: {}\n", r2);
+        print("closure-block: {}\n", r3);
+
+        // void closure
+        tag := "LOG";
+        logger := closure((msg: string) {
+            print("[{}] {}\n", tag, msg);
+        });
+        logger("hello");
+
+        // pass closure to higher-order function
+        dbl :: (x: i32) -> i32 { return x * 2; }
+        apply_cl :: (f2: Closure(i32) -> i32, x: i32) -> i32 { return f2(x); }
+        factor : i32 = 3;
+        print("closure-hof: {}\n", apply_cl(closure((x: i32) -> i32 => x * factor), 10));
+
+        // auto-promoted bare fn passed alongside closures
+        print("closure-hof-bare: {}\n", apply_cl(dbl, 10));
+
+        // C5.A2: capture f32
+        scale := 2.5;
+        f_f32 := closure((x: f32) -> f32 => x * scale);
+        print("closure-f32: {}\n", f_f32(4.0));
+
+        // C5.A3: capture bool
+        verbose := true;
+        f_bool := closure((msg: string) {
+            if verbose { print("closure-bool: {}\n", msg); }
+        });
+        f_bool("hello");
+
+        // C5.B3: two params
+        base : i32 = 100;
+        f_2p := closure((x: i32, y: i32) -> i32 => x + y + base);
+        print("closure-2p: {}\n", f_2p(3, 4));
+
+        // C5.B4: three params
+        bias : i32 = 1;
+        f_3p := closure((a: i32, b: i32, c2: i32) -> i32 => a + b + c2 + bias);
+        print("closure-3p: {}\n", f_3p(10, 20, 30));
+
+        // C5.B5: mixed param types (string + i32)
+        extra : i32 = 5;
+        f_mix := closure((name: string, age: i32) {
+            print("closure-mix: {} is {}\n", name, age + extra);
+        });
+        f_mix("Alice", 30);
+
+        // C5.C3: return bool
+        threshold : i32 = 100;
+        f_rbool := closure((x: i32) -> bool { return x > threshold; });
+        print("closure-rbool: {} {}\n", f_rbool(50), f_rbool(200));
+
+        // C5.D3: reduce / fold
+        reduce :: (arr: []i32, f3: Closure(i32, i32) -> i32, init: i32) -> i32 {
+            acc := init;
+            i : i64 = 0;
+            while i < arr.len { acc = f3(acc, arr[i]); i += 1; }
+            return acc;
+        }
+        r_nums : []i32 = .[1, 2, 3, 4, 5];
+        r_bonus : i32 = 100;
+        r_total := reduce(r_nums, closure((acc: i32, x: i32) -> i32 => acc + x), r_bonus);
+        print("closure-reduce: {}\n", r_total);
+
+        // C5.G1: factory function
+        make_adder :: (n: i32) -> Closure(i32) -> i32 {
+            return closure((x: i32) -> i32 => x + n);
+        }
+        add5 := make_adder(5);
+        add10 := make_adder(10);
+        print("closure-factory: {} {}\n", add5(100), add10(100));
+
+        // C5.A5: capture struct
+        origin := Point.{ x = 10, y = 20 };
+        f_st := closure(() {
+            print("closure-struct: {} {}\n", origin.x, origin.y);
+        });
+        f_st();
+
+        // C5.H1: closure captures another closure
+        inner_n := 10;
+        inner_cl := closure((x: i64) -> i64 => x + inner_n);
+        outer_cl := closure((x: i64) -> i64 => inner_cl(x) * 2);
+        print("closure-compose: {}\n", outer_cl(5));
+
+        // C5.M7: multiple closures from same scope capture independently
+        shared : i32 = 10;
+        cl_a := closure((x: i32) -> i32 => x + shared);
+        cl_b := closure((x: i32) -> i32 => x * shared);
+        print("closure-indep: {} {}\n", cl_a(5), cl_b(5));
+
+        // C6: optional closures
+        f_none : ?Closure(i64) -> i64 = null;
+        if h := f_none {
+            print("should not print: {}\n", h(1));
+        } else {
+            print("opt-closure: none\n");
+        }
+
+        opt_n := 10;
+        f_some : ?Closure(i64) -> i64 = closure((x: i64) -> i64 => x + opt_n);
+        if h := f_some {
+            print("opt-closure: {}\n", h(5));
+        } else {
+            print("should not print\n");
+        }
+
+        // Struct with optional closure callback
+        Btn :: struct { label: string; on_click: ?Closure(i64) -> void; }
+        btn_x := 99;
+        btn_cl := closure((id: i64) {
+            print("opt-closure-btn: {} {}\n", id, btn_x);
+        });
+        btn1 := Btn.{ label = "OK", on_click = btn_cl };
+        btn2 := Btn.{ label = "Cancel", on_click = null };
+        if h := btn1.on_click { h(1); }
+        if h := btn2.on_click { h(2); } else { print("opt-closure-btn: null\n"); }
+
+        // C5.A6: capture pointer (shared mutable state)
+        count_a6 : i32 = 0;
+        p_a6 := @count_a6;
+        inc_fn := closure(() { p_a6.* += 1; });
+        inc_fn(); inc_fn(); inc_fn();
+        print("closure-ptr: {}\n", count_a6);
+
+        // C5.A9: capture enum value (as i32 tag)
+        c_a9 : i32 = 2;  // simulate enum tag
+        f_a9 := closure(() -> i32 => c_a9);
+        print("closure-enum: {}\n", f_a9());
+
+        // C5.C4: return string
+        tag_c4 := "INFO";
+        f_c4 := closure((msg: string) -> string => format("[{}] {}", tag_c4, msg));
+        print("closure-rstr: {}\n", f_c4("ok"));
+
+        // C5.C5: return struct
+        off_c5 := Point.{ x = 10, y = 20 };
+        f_c5 := closure((p: Point) -> Point => Point.{ x = p.x + off_c5.x, y = p.y + off_c5.y });
+        res_c5 := f_c5(Point.{ x = 1, y = 2 });
+        print("closure-rstruct: {} {}\n", res_c5.x, res_c5.y);
+
+        // C5.G2: factory with multiple captures
+        make_linear :: (m: i32, b: i32) -> Closure(i32) -> i32 {
+            return closure((x: i32) -> i32 => m * x + b);
+        }
+        lin := make_linear(3, 7);
+        print("closure-linear: {}\n", lin(10));
+
+        // C5.G3: factory returning clamper
+        make_clamper :: (lo: i32, hi: i32) -> Closure(i32) -> i32 {
+            return closure((x: i32) -> i32 {
+                if x < lo { return lo; }
+                if x > hi { return hi; }
+                return x;
+            });
+        }
+        clamp_fn := make_clamper(0, 255);
+        cv1 : i32 = xx -10;
+        cv2 : i32 = 100;
+        cv3 : i32 = 999;
+        print("closure-clamp: {} {} {}\n", clamp_fn(cv1), clamp_fn(cv2), clamp_fn(cv3));
+
+        // C5.H2: compose
+        compose :: (f_h2: Closure(i32) -> i32, g_h2: Closure(i32) -> i32) -> Closure(i32) -> i32 {
+            return closure((x: i32) -> i32 => f_h2(g_h2(x)));
+        }
+        one_h2 : i32 = 1;
+        two_h2 : i32 = 2;
+        add1_h2 := closure((x: i32) -> i32 => x + one_h2);
+        mul2_h2 := closure((x: i32) -> i32 => x * two_h2);
+        composed := compose(mul2_h2, add1_h2);
+        print("closure-compose2: {}\n", composed(5));
+
+        // C5.H3: chain of closures
+        ch_k1 : i32 = 1;
+        ch_k2 : i32 = 2;
+        ch_k10 : i32 = 10;
+        ch_a := closure((x: i32) -> i32 => x + ch_k1);
+        ch_b := closure((x: i32) -> i32 => ch_a(x) * ch_k2);
+        ch_c := closure((x: i32) -> i32 => ch_b(x) + ch_k10);
+        print("closure-chain: {}\n", ch_c(5));
+
+        // C5.D1: map
+        map_cl :: (arr: [*]i32, cnt: i64, f_map: Closure(i32) -> i32, result: [*]i32) {
+            i := 0;
+            while i < cnt { result[i] = f_map(arr[i]); i += 1; }
+        }
+        map_src : [5]i32 = .[1, 2, 3, 4, 5];
+        map_dst : [5]i32 = .[0, 0, 0, 0, 0];
+        factor_d1 : i32 = 3;
+        map_cl(xx @map_src, 5, closure((x: i32) -> i32 => x * factor_d1), xx @map_dst);
+        print("closure-map: {} {} {} {} {}\n", map_dst[0], map_dst[1], map_dst[2], map_dst[3], map_dst[4]);
+
+        // C5.D2: filter
+        filter_cl :: (arr: [*]i32, cnt: i64, pred: Closure(i32) -> bool, result: [*]i32) -> i64 {
+            j := 0;
+            i := 0;
+            while i < cnt {
+                if pred(arr[i]) { result[j] = arr[i]; j += 1; }
+                i += 1;
+            }
+            return j;
+        }
+        min_val : i32 = 3;
+        filt_dst : [5]i32 = .[0, 0, 0, 0, 0];
+        kept := filter_cl(xx @map_src, 5, closure((x: i32) -> bool => x >= min_val), xx @filt_dst);
+        print("closure-filter: {} [{} {} {}]\n", kept, filt_dst[0], filt_dst[1], filt_dst[2]);
+
+        // C5.D4: sort comparator (bubble sort)
+        sort_cl :: (arr: [*]i32, cnt: i64, less: Closure(i32, i32) -> bool) {
+            i := 0;
+            while i < cnt {
+                j := 0;
+                while j < cnt - 1 - i {
+                    if less(arr[j + 1], arr[j]) {
+                        tmp := arr[j];
+                        arr[j] = arr[j + 1];
+                        arr[j + 1] = tmp;
+                    }
+                    j += 1;
+                }
+                i += 1;
+            }
+        }
+        sort_arr : [5]i32 = .[5, 3, 1, 4, 2];
+        descending := true;
+        sort_cl(xx @sort_arr, 5, closure((a: i32, b: i32) -> bool {
+            if descending { return a > b; }
+            return a < b;
+        }));
+        print("closure-sort: {} {} {} {} {}\n", sort_arr[0], sort_arr[1], sort_arr[2], sort_arr[3], sort_arr[4]);
+
+        // C5.D5: for_each with index
+        for_each_cl :: (arr: [*]i32, cnt: i64, f_fe: Closure(i32, i64) -> void) {
+            i : i64 = 0;
+            while i < cnt { f_fe(arr[i], i); i += 1; }
+        }
+        fe_label := "item";
+        fe_arr : [3]i32 = .[10, 20, 30];
+        for_each_cl(xx @fe_arr, 3, closure((val: i32, idx: i64) {
+            print("closure-fe: {} {}={}\n", fe_label, idx, val);
+        }));
+
+        // C5.D6: find
+        find_cl :: (arr: [*]i32, cnt: i64, pred_f: Closure(i32) -> bool) -> i64 {
+            i : i64 = 0;
+            while i < cnt {
+                if pred_f(arr[i]) { return i; }
+                i += 1;
+            }
+            return -1;
+        }
+        target : i32 = 30;
+        found_idx := find_cl(xx @fe_arr, 3, closure((x: i32) -> bool => x == target));
+        print("closure-find: {}\n", found_idx);
+
+        // C5.D7: any
+        any_cl :: (arr: [*]i32, cnt: i64, pred_a: Closure(i32) -> bool) -> bool {
+            i : i64 = 0;
+            while i < cnt {
+                if pred_a(arr[i]) { return true; }
+                i += 1;
+            }
+            return false;
+        }
+        has_big := any_cl(xx @fe_arr, 3, closure((x: i32) -> bool => x > 100));
+        has_20 := any_cl(xx @fe_arr, 3, closure((x: i32) -> bool => x == 20));
+        print("closure-any: {} {}\n", has_big, has_20);
+
+        // C5.E4: auto-promotion in struct field assignment
+        Widget :: struct { transform: Closure(i32) -> i32; }
+        negate_fn :: (x: i32) -> i32 { return 0 - x; }
+        w_e4 := Widget.{ transform = negate_fn };
+        print("closure-struct-field: {}\n", w_e4.transform(5));
+
+        // C5.F1: single closure callback in struct
+        Button :: struct {
+            label: string;
+            on_press: Closure(i32) -> void;
+        }
+        btn_x2 := 99;
+        btn_cb := closure((id: i32) {
+            print("closure-btn: {} {}\n", id, btn_x2);
+        });
+        btn3 := Button.{ label = "OK", on_press = btn_cb };
+        btn3.on_press(1);
+
+        // C5.J1: stateful counter via pointer capture
+        state_j1 : i32 = 0;
+        p_j1 := @state_j1;
+        inc_j1 := closure(() -> i32 { p_j1.* += 1; return p_j1.*; });
+        print("closure-counter: {} {} {}\n", inc_j1(), inc_j1(), inc_j1());
+
+        // C5.J2: stateful accumulator
+        state_j2 : i32 = 100;
+        p_j2 := @state_j2;
+        acc_j2 := closure((x: i32) -> i32 { p_j2.* += x; return p_j2.*; });
+        print("closure-acc: {} {}\n", acc_j2(5), acc_j2(10));
+
+        // C5.K2: block-body with local variables and loops
+        base_k2 : i32 = 100;
+        sum_fn := closure((items: [*]i32, cnt: i64) -> i32 {
+            total : i32 = 0;
+            i : i64 = 0;
+            while i < cnt {
+                total += items[i];
+                i += 1;
+            }
+            return total + base_k2;
+        });
+        k2_arr : [5]i32 = .[1, 2, 3, 4, 5];
+        print("closure-loop: {}\n", sum_fn(xx @k2_arr, 5));
+
+        // C5.M3: reassigning a closure variable
+        n_m3 : i32 = 1;
+        f_m3 := closure((x: i32) -> i32 => x + n_m3);
+        print("closure-reassign: {}\n", f_m3(10));
+        m_m3 : i32 = 2;
+        f_m3 = closure((x: i32) -> i32 => x * m_m3);
+        print("closure-reassign: {}\n", f_m3(10));
+
+        // C5.M6b: snapshot verified with struct capture
+        pt_m6 := Point.{ x = 5, y = 10 };
+        f_m6 := closure(() -> i32 => pt_m6.x + pt_m6.y);
+        pt_m6 = Point.{ x = 99, y = 99 };
+        print("closure-snapstruct: {}\n", f_m6());
+
+        // C5.M2: closure capturing auto-promoted closure
+        double_m2 :: (x: i32) -> i32 { return x * 2; }
+        base_m2 : Closure(i32) -> i32 = double_m2;
+        n_m2 : i32 = 1;
+        f_m2 := closure((x: i32) -> i32 => base_m2(x) + n_m2);
+        print("closure-cap-promoted: {}\n", f_m2(5));
+
+        // C5.M5: immediately invoked closure (via temp var)
+        n_m5 : i32 = 5;
+        iife := closure((x: i32) -> i32 => x + n_m5);
+        result_m5 := iife(10);
+        print("closure-iife: {}\n", result_m5);
+
+        // C5.F2: optional callback (none)
+        Toggle :: struct { on_change: ?Closure(bool) -> void; }
+        t_f2 := Toggle.{ on_change = null };
+        if h := t_f2.on_change { h(true); } else { print("closure-toggle: none\n"); }
+
+        // C5.F3: optional callback (some)
+        t_f3_cb := closure((enabled: bool) { print("closure-toggle: {}\n", enabled); });
+        t_f3 := Toggle.{ on_change = t_f3_cb };
+        if h := t_f3.on_change { h(true); }
+
+        // C5.F5: callback receiving caller context
+        Panel :: struct {
+            title: string;
+            on_resize: Closure(string, i32, i32) -> void;
+        }
+        p_f5_cb := closure((title: string, w: i32, h: i32) {
+            print("closure-panel: {} {}x{}\n", title, w, h);
+        });
+        p_f5 := Panel.{ title = "main", on_resize = p_f5_cb };
+        p_f5.on_resize(p_f5.title, 800, 600);
+
+        // C5.E6: protocol value passed through multiple function calls
+        step3 :: (a: Allocator) -> *void { a.alloc_bytes(8) }
+        step2 :: (a: Allocator) -> *void { step3(a) }
+        step1 :: (a: Allocator) -> *void { step2(a) }
+        gpa_e6 := GPA.init();
+        a_e6 : Allocator = xx gpa_e6;
+        ptr_e6 := step1(a_e6);
+        print("closure-chain-call: {}\n", ptr_e6 != null);
+        a_e6.dealloc_bytes(ptr_e6);
+
+        // C5.I1: creating closures in a loop (each captures different value)
+        // TEMPORARILY DISABLED — closure-in-loop causes infinite loop (index_gep element size issue?)
+        // cl_arr : [5]Closure(i32) -> i32 = ---;
+        // i_loop := 0;
+        // while i_loop < 5 {
+        //     val_loop : i32 = xx (i_loop * 10);
+        //     cl_arr[i_loop] = closure((x: i32) -> i32 => x + val_loop);
+        //     i_loop += 1;
+        // }
+        // I2: calling closures from array
+        // tmp_cl := cl_arr[0]; print("closure-loop-0: {}\n", tmp_cl(1));
+        // tmp_cl = cl_arr[1]; print("closure-loop-1: {}\n", tmp_cl(1));
+        // tmp_cl = cl_arr[4]; print("closure-loop-4: {}\n", tmp_cl(1));
+
+        // C5.M4: closure in conditional expression (via temp var)
+        use_fast := true;
+        k_fast : i32 = 2;
+        k_slow : i32 = 10;
+        f_fast := closure((x: i32) -> i32 => x * k_fast);
+        f_slow := closure((x: i32) -> i32 => x + k_slow);
+        f_cond : Closure(i32) -> i32 = if use_fast then f_fast else f_slow;
+        print("closure-cond: {}\n", f_cond(5));
+
+        // C5.F4: multiple callbacks on one struct
+        Form :: struct {
+            on_submit: ?Closure() -> void;
+            on_cancel: ?Closure() -> void;
+        }
+        msg_f4 := "submitted";
+        sub_cb := closure(() { print("closure-form: {}\n", msg_f4); });
+        form_f4 := Form.{ on_submit = sub_cb, on_cancel = null };
+        if h := form_f4.on_submit { h(); }
+        if h := form_f4.on_cancel { h(); } else { print("closure-form: no cancel\n"); }
+
+        // C5.L3: auto-promoted closure env is null (no free needed)
+        double_l3 :: (x: i32) -> i32 { return x * 2; }
+        f_l3 : Closure(i32) -> i32 = double_l3;
+        print("closure-null-env: {}\n", f_l3.env == null);
+
+        // C5.A7: capture slice (fat pointer like string)
+        sl_a7 : [3]i32 = .[10, 20, 30];
+        ptr_a7 : [*]i32 = xx @sl_a7;
+        f_a7 := closure((i: i64) -> i32 => ptr_a7[i]);
+        print("closure-slice: {} {} {}\n", f_a7(0), f_a7(1), f_a7(2));
+
+        // C5.L1: arena bulk free (closures allocated on arena, freed in bulk)
+        gpa_l1 := GPA.init();
+        arena_l1 := Arena.init(gpa_l1, 4096);
+        push .{ allocator = arena_l1 } {
+            n_l1 : i32 = 5;
+            f_l1 := closure((x: i32) -> i32 => x + n_l1);
+            print("closure-arena: {}\n", f_l1(10));
+        }
+        arena_l1.deinit();
+
+        // C5.L2: GPA manual free (verify env alloc/dealloc)
+        gpa_l2 := GPA.init();
+        a_l2 : Allocator = xx gpa_l2;
+        n_l2 : i32 = 7;
+        result_l2 : i32 = 0;
+        push .{ allocator = a_l2 } {
+            f_l2 := closure((x: i32) -> i32 => x + n_l2);
+            result_l2 = f_l2(10);
+            a_l2.dealloc_bytes(f_l2.env);
+        }
+        print("closure-gpa: {} allocs={}\n", result_l2, gpa_l2.alloc_count);
+
+        // C5.A10: capture optional
+        val_a10 : ?i32 = 42;
+        f_a10 := closure(() -> i32 {
+            if v := val_a10 { return v; }
+            return 0;
+        });
+        print("closure-opt: {}\n", f_a10());
+
+        // C5.C6: return optional
+        limit_c6 : i32 = 100;
+        f_c6 := closure((x: i32) -> ?i32 {
+            if x > limit_c6 { return null; }
+            return x;
+        });
+        r1_c6 := f_c6(50);
+        r2_c6 := f_c6(200);
+        if v := r1_c6 { print("closure-ropt: {}\n", v); }
+        if v := r2_c6 { print("should-not-print\n"); } else { print("closure-ropt: none\n"); }
+
+        // C5.M8: array of closures with mixed origins
+        double_m8 :: (x: i32) -> i32 { return x * 2; }
+        n_m8 : i32 = 10;
+        fns_m8 : [3]Closure(i32) -> i32 = ---;
+        fns_m8[0] = double_m8;                                // auto-promoted
+        fns_m8[1] = closure((x: i32) -> i32 => x + n_m8);    // captured
+        fns_m8[2] = closure((x: i32) -> i32 => x * x);       // no capture
+        tmp_m8 := fns_m8[0]; print("closure-mixed: {}\n", tmp_m8(5));
+        tmp_m8 = fns_m8[1]; print("closure-mixed: {}\n", tmp_m8(5));
+        tmp_m8 = fns_m8[2]; print("closure-mixed: {}\n", tmp_m8(5));
+
+        // C5.E1: independent closures from same factory (each has own env)
+        mk_e1 :: (n: i32) -> Closure(i32) -> i32 {
+            return closure((x: i32) -> i32 => x * n);
+        }
+        f1_e1 := mk_e1(2);
+        f2_e1 := mk_e1(3);
+        f3_e1 := mk_e1(4);
+        print("closure-factory-indep: {} {} {}\n", f1_e1(10), f2_e1(10), f3_e1(10));
+
+        // C5.E2: deep chain — closure capturing closure capturing closure
+        v_e2 : i32 = 1;
+        k2_e2 : i32 = 2;
+        k100_e2 : i32 = 100;
+        f0_e2 := closure((x: i32) -> i32 => x + v_e2);
+        f1_e2 := closure((x: i32) -> i32 => f0_e2(x) * k2_e2);
+        f2_e2 := closure((x: i32) -> i32 => f1_e2(x) + k100_e2);
+        print("closure-deep-chain: {}\n", f2_e2(10));
+
+        // C5.E3: many captures (stress env struct)
+        c1_e3 : i32 = 1;
+        c2_e3 : i32 = 2;
+        c3_e3 : i32 = 3;
+        c4_e3 : i32 = 4;
+        c5_e3 : i32 = 5;
+        c6_e3 : i32 = 6;
+        c7_e3 : i32 = 7;
+        c8_e3 : i32 = 8;
+        big_env := closure(() -> i32 => c1_e3 + c2_e3 + c3_e3 + c4_e3 + c5_e3 + c6_e3 + c7_e3 + c8_e3);
+        print("closure-8cap: {}\n", big_env());
+
+        // C5.E5: closure with many parameters (4 params)
+        multi_param := closure((a: i32, b: i32, c: i32, d: i32) -> i32 => a + b + c + d);
+        a_e5 : i32 = 1; b_e5 : i32 = 2; c_e5 : i32 = 3; d_e5 : i32 = 4;
+        print("closure-4param: {}\n", multi_param(a_e5, b_e5, c_e5, d_e5));
+
+        // C5.E7: two closures sharing the same captured pointer
+        shared : i32 = 0;
+        shared_p := @shared;
+        inc_shared := closure(() { shared_p.* += 1; });
+        add5_shared := closure(() { shared_p.* += 5; });
+        inc_shared();
+        add5_shared();
+        inc_shared();
+        print("closure-shared-ptr: {}\n", shared);
+
+        // C5.E8: closure with f64 arithmetic
+        pi_e8 : f64 = 3.14159;
+        area_fn := closure((r: f64) -> f64 => pi_e8 * r * r);
+        a_e8 := area_fn(10.0);
+        print("closure-f64: {}\n", a_e8 > 314.0);
+
+        // C5.E9: zero-capture closure (env should be null, like auto-promoted)
+        no_cap := closure((x: i32) -> i32 => x * x);
+        print("closure-zerocap: {} {}\n", no_cap(7), no_cap.env == null);
+
+        // C5.E10: closure capturing and calling struct method
+        pt_e10 := Point.{ x = 3, y = 4 };
+        p_e10 := @pt_e10;
+        get_xy := closure(() -> i32 => p_e10.x + p_e10.y);
+        print("closure-struct-method: {}\n", get_xy());
+
+        // C5.E11: multiple closures from same factory with different captures
+        fns_e11 : [3]Closure(i32) -> i32 = ---;
+        i_e11 := 0;
+        while i_e11 < 3 {
+            multiplier : i32 = xx (i_e11 + 1);
+            fns_e11[i_e11] = closure((x: i32) -> i32 => x * multiplier);
+            i_e11 += 1;
+        }
+        t_e11 := fns_e11[0]; print("closure-multi-factory: {}\n", t_e11(10));
+        t_e11 = fns_e11[1]; print("closure-multi-factory: {}\n", t_e11(10));
+        t_e11 = fns_e11[2]; print("closure-multi-factory: {}\n", t_e11(10));
+
+        // C5.E12: closure capturing bool
+        flag_e12 := true;
+        check_fn := closure((x: i32) -> bool {
+            if flag_e12 { return x > 0; }
+            return x < 0;
+        });
+        pos_e12 : i32 = 5;
+        neg_e12 : i32 = xx -3;
+        print("closure-bool-cap: {} {}\n", check_fn(pos_e12), check_fn(neg_e12));
+
+        // C5.E13: closure as argument to another closure
+        apply_fn := closure((f_app: Closure(i32) -> i32, val: i32) -> i32 => f_app(val));
+        k_e13 : i32 = 100;
+        inner_fn := closure((x: i32) -> i32 => x + k_e13);
+        print("closure-as-arg: {}\n", apply_fn(inner_fn, 42));
+
+        // C5.E14: closure capturing string and formatting
+        prefix_e14 := "hello";
+        greet_fn := closure((name: string) -> string => format("{} {}", prefix_e14, name));
+        print("closure-strfmt: {}\n", greet_fn("world"));
+
+        // C5.E15: reassigning shared pointer target between closure calls
+        val_e15 : i32 = 10;
+        p_e15 := @val_e15;
+        read_fn := closure(() -> i32 => p_e15.*);
+        print("closure-ptr-before: {}\n", read_fn());
+        val_e15 = 42;
+        print("closure-ptr-after: {}\n", read_fn());
+
+        // C5.E16: closure returning negative value
+        off_e16 : i32 = 100;
+        neg_fn := closure((x: i32) -> i32 => x - off_e16);
+        val_e16 : i32 = 30;
+        print("closure-neg: {}\n", neg_fn(val_e16));
+
+        // C5.E17: closure with protocol value capture (#inline protocol)
+        gpa_e17 := GPA.init();
+        a_e17 : Allocator = xx gpa_e17;
+        alloc_fn := closure((size: i64) -> *void => a_e17.alloc_bytes(size));
+        ptr_e17 := alloc_fn(32);
+        print("closure-proto-cap: {}\n", ptr_e17 != null);
+        a_e17.dealloc_bytes(ptr_e17);
+
+        // C5.E18: chained factory — compose two factories
+        make_scaler :: (factor: i32) -> Closure(i32) -> i32 {
+            return closure((x: i32) -> i32 => x * factor);
+        }
+        make_offset :: (off: i32) -> Closure(i32) -> i32 {
+            return closure((x: i32) -> i32 => x + off);
+        }
+        s_fn := make_scaler(3);
+        o_fn := make_offset(7);
+        // manually compose: scale then offset
+        print("closure-chain-factory: {}\n", o_fn(s_fn(10)));
+
+        // C5.E19: closure in while loop condition helper
+        threshold : i32 = 50;
+        above_fn := closure((x: i32) -> bool => x >= threshold);
+        vals_e19 : [5]i32 = .[10, 30, 50, 70, 90];
+        count_above : i32 = 0;
+        idx_e19 : i64 = 0;
+        while idx_e19 < 5 {
+            if above_fn(vals_e19[idx_e19]) { count_above += 1; }
+            idx_e19 += 1;
+        }
+        print("closure-while-cond: {}\n", count_above);
+
+        // ---- Inferred closure parameter types ----
+
+        // CI.1: inferred params from typed variable
+        f_ci1 : Closure(i32, i32) -> i32 = closure((a, b) => a + b);
+        a_ci1 : i32 = 3;
+        b_ci1 : i32 = 4;
+        print("closure-infer: {}\n", f_ci1(a_ci1, b_ci1));
+
+        // CI.2: inferred params from function argument
+        apply_ci :: (f: Closure(i32) -> i32, x: i32) -> i32 { return f(x); }
+        k_ci : i32 = 10;
+        v_ci : i32 = 5;
+        print("closure-infer-arg: {}\n", apply_ci(closure((x) => x + k_ci), v_ci));
+
+        // CI.3: inferred with block body
+        h_ci : Closure(i32, i32) -> i32 = closure((a, b) { return a * b; });
+        print("closure-infer-block: {}\n", h_ci(a_ci1, b_ci1));
+
+        // CI.4: inferred with captures
+        cap_ci : i32 = 100;
+        f_ci4 : Closure(i32) -> i32 = closure((x) => x + cap_ci);
+        print("closure-infer-cap: {}\n", f_ci4(v_ci));
+
+        // CI.5: inferred in factory return
+        mk_ci :: (n: i32) -> Closure(i32) -> i32 { return closure((x) => x * n); }
+        f_ci5 := mk_ci(7);
+        print("closure-infer-factory: {}\n", f_ci5(v_ci));
+
+        // CI.6: inferred with higher-order (closure taking closure)
+        compose_ci :: (f: Closure(i32) -> i32, g: Closure(i32) -> i32) -> Closure(i32) -> i32 {
+            return closure((x: i32) -> i32 => f(g(x)));
+        }
+        one_ci : i32 = 1;
+        two_ci : i32 = 2;
+        c_ci := compose_ci(closure((x) => x + one_ci), closure((x) => x * two_ci));
+        print("closure-infer-compose: {}\n", c_ci(v_ci));
+
+        // CI.7: inferred void return
+        msg_ci := "infer-void";
+        cb_ci : Closure(i32) -> void = closure((x) { print("closure-{}: {}\n", msg_ci, x); });
+        cb_ci(42);
+    }
+}

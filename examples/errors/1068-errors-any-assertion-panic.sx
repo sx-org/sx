@@ -1,0 +1,13 @@
+// The UNCONSUMED assertion temperament: `v := av.(T);` with a mismatched
+// tag PANICS (Go/Odin parity) — prints expected vs actual runtime type
+// names + the assertion's location, exits 1. This is the deliberate,
+// assertion-scoped carve-out from the unconsumed-failable rule: the
+// implicit handler is `catch { panic }`, never a silent zero.
+#import "modules/std.sx";
+
+main :: () {
+    av : any = 2.5;
+    print("before\n");
+    v := av.(i64);
+    print("unreached: {}\n", v);
+}

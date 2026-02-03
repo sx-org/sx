@@ -1,0 +1,194 @@
+// std.http — lingering close: error responses must actually reach the client.
+//
+// Regression: error paths (400/413/431/...) wrote the response and then
+// close()d the fd immediately. When the client's request bytes were still
+// unread in the server's receive queue — the NORMAL case for a flood/overrun
+// rejection — close() made the kernel send RST and DISCARD the server's
+// unsent send buffer: the client usually got a reset instead of the error
+// response it was owed.
+//
+// The fix (Config.linger_timeout_ms, default 1000; 0 restores the old abrupt
+// close): after an error response drains, the server shutdown(SHUT_WR)s
+// (FIN after the response — no RST), then keeps reading and DISCARDING
+// inbound bytes until EOF or the linger deadline, and only then closes.
+//
+// This test:
+//   1. Sends a 64 KB junk burst (no header terminator; read_buf_cap 8 KB) —
+//      the server 431s with ~56 KB still unread in its receive queue.
+//   2. Asserts the client RECEIVES the full "HTTP/1.1 431" response and then
+//      a CLEAN FIN — a raw read() == 0 — never a reset. Pre-fix the close
+//      fired an RST (read() < 0, ECONNRESET); on a slower/wide-area path
+//      that same RST routinely destroys the 431 itself (loopback usually
+//      wins the race, which is why the FIN-vs-RST kind is the assertion).
+//   3. Client closes; the lingering slot sees EOF and is freed well before
+//      the linger deadline (polled via stats().active_conns == 0).
+//   4. The server stays healthy: a fresh request gets a 200.
+//   5. GPA leak gate: net-zero after close.
+#import "modules/std.sx";
+http  :: #import "modules/std/http.sx";
+posix :: #import "modules/std/posix.sx";
+
+PORT :: 18994;
+JUNK_LEN :: 65536;
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    resp.body = "healthy";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 16384;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{
+            port = PORT,
+            read_buf_cap = 8192,
+            timeout_request_ms = 5000,
+            timeout_keepalive_ms = 5000,
+            request_count = 50,
+            max_conn = 4,
+        };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        // ── flood a junk burst; do NOT read anything yet ──────────────
+        junk : [*]u8 = xx context.allocator.alloc_bytes(JUNK_LEN);
+        i : i64 = 0;
+        while i < JUNK_LEN { junk[i] = 88; i += 1; }   // 'X': never a header end
+        ca := dial_port(PORT);
+        if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
+        fsent : i64 = 0;
+        t : i64 = 0;
+        wb : i64 = 0;
+        while fsent < JUNK_LEN and t < 400 {
+            n, we := socket.write_nb(ca, @junk[fsent], xx (JUNK_LEN - fsent));
+            if !we { fsent += n; wb = 0; }
+            else if we == error.WouldBlock {
+                // Post-fix the server drains + discards, so the burst always
+                // completes; pre-fix its kernel queue jams once it stops
+                // reading — either way the 431 has fired long before this.
+                wb += 1;
+                if wb > 50 and fsent >= 24576 { break; }
+            }
+            else { break; }   // reset by the server (pre-fix RST path)
+            srv.tick(1) catch {};
+            t += 1;
+        }
+
+        // ── the client must RECEIVE the 431, then a clean FIN ─────────
+        // Raw reads so FIN and RST are distinguishable: 0 = orderly FIN
+        // (lingering close), -1/ECONNRESET = the old abrupt-close RST.
+        total : i64 = 0;
+        got_fin := false;
+        got_rst := false;
+        stall : i64 = 0;
+        while !got_fin and !got_rst and stall < 300 {
+            srv.tick(1) catch {};
+            got : i64 = 0;
+            while true {
+                rn := socket.read(ca, @rbuf[total], xx (cap - total));
+                if rn > 0 { total += rn; got += rn; continue; }
+                if rn == 0 { got_fin = true; break; }
+                e := socket.errno();
+                if e == posix.EINTR { continue; }
+                if e == posix.EAGAIN { break; }            // nothing yet
+                got_rst = true;                             // ECONNRESET & co.
+                break;
+            }
+            if got > 0 { stall = 0; } else { stall += 1; }
+        }
+        resp := string.{ ptr = rbuf, len = xx total };
+        if !contains(resp, "HTTP/1.1 431") {
+            print("431 never reached the client (got {} bytes)\n", total);
+            failed = 1;
+        }
+        if got_rst {
+            print("connection was RESET, not lingered (error response at risk)\n");
+            failed = 1;
+        }
+        if !got_fin {
+            print("no clean FIN after the error response\n");
+            failed = 1;
+        }
+
+        // ── client closes; the lingering slot must be freed on EOF ────
+        socket.close(ca);
+        t = 0;
+        while t < 500 {
+            srv.tick(1) catch {};
+            st := srv.stats();
+            if st.active_conns == 0 { break; }
+            t += 1;
+        }
+        st := srv.stats();
+        if st.active_conns != 0 {
+            print("lingering slot never freed (active={})\n", st.active_conns);
+            failed = 1;
+        }
+
+        // ── server stays healthy ──────────────────────────────────────
+        cb := dial_port(PORT);
+        if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
+        req := "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
+        socket.write(cb, req.ptr, xx req.len);
+        btotal : i64 = 0;
+        bdone := false;
+        stall = 0;
+        while !bdone and stall < 300 {
+            srv.tick(1) catch {};
+            got : i64 = 0;
+            while true {
+                n, re := socket.read_nb(cb, @rbuf[btotal], xx (cap - btotal));
+                if !re { btotal += n; got += n; continue; }
+                if re == error.Closed { bdone = true; }
+                break;
+            }
+            if got > 0 { stall = 0; } else { stall += 1; }
+        }
+        bresp := string.{ ptr = rbuf, len = xx btotal };
+        if !contains(bresp, "HTTP/1.1 200 OK") or !contains(bresp, "healthy") {
+            print("server unhealthy after lingering close\n");
+            failed = 1;
+        }
+        socket.close(cb);
+
+        srv.close();
+        context.allocator.dealloc_bytes(xx junk);
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

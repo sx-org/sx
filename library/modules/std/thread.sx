@@ -1,0 +1,227 @@
+// std.thread — OS threads, Mutex/Cond, and a bounded worker Pool over
+// pthreads (PLAN-HTTPZ S6).
+//
+// THE RE-ENTRY CONTRACT (pinned by examples/1636): a thread entry is a
+// `abi(.c)` function — it has NO implicit context — and enters
+// the sx world by fabricating one: `push .{ allocator = gpa }`
+// around the default-conv code it runs. Pool workers do exactly that,
+// each with its own malloc-backed GPA, so tasks allocate freely and
+// never share allocator state across threads.
+//
+// ALLOCATOR DISCIPLINE: GPA is malloc/free — thread-safe. Arena and
+// every other context-flowing allocator is NOT; never share one across
+// threads. Pool buffers come from the creating context's allocator and
+// are touched only under the pool mutex.
+//
+// MOVE SEMANTICS: a pthread mutex/cond is address-sensitive once
+// initialized — POSIX leaves moving one undefined. Mutex/Cond therefore
+// initialize IN PLACE (`m.setup()`) and Pool lives behind a pointer
+// (`Pool.create`), never by-value copy.
+//
+// PTHREAD STRUCT SIZES (PLAN-HTTPZ C3b): `MutexBuf`/`CondBuf` below are sized
+// to the SAFE MAXIMUM across every supported target, so no per-OS branch is
+// needed — a single layout is correct everywhere. `pthread_mutex_init` (and the
+// cond/lock ops) only ever touch `sizeof(pthread_mutex_t)` bytes, so an OVER-
+// sized buffer is safe (extra trailing bytes are untouched); only an UNDERsized
+// one would corrupt the heap. Real sizes:
+//   pthread_mutex_t  darwin 64 · musl 40 · glibc x86_64 40 · glibc aarch64 48
+//   pthread_cond_t   48 on all of the above
+// Max mutex = 64 (darwin), cond = 48 (uniform) → `MutexBuf` 64, `CondBuf` 48
+// cover them all. NB: do NOT "right-size" the mutex down to musl's 40 — that
+// would UNDERsize glibc-aarch64 (48) and reintroduce heap corruption on a
+// dynamically-linked linux build. Validated: the pool runs correct on real
+// aarch64-linux (static musl) under Apple `container` (examples/concurrency/
+// 1828 covers it on the host).
+
+#import "modules/std/core.sx";
+#import "modules/std/mem.sx";
+c :: #import "modules/std/c.sx";
+
+// pthread_* bindings and the opaque `MutexBuf` / `CondBuf` storage types live
+// centrally in c.sx (namespace `c`); referenced as `c.pthread_*` / `c.MutexBuf`
+// / `c.CondBuf` below.
+
+ThreadErr :: error {
+    Spawn,    // pthread_create refused
+    Init,     // mutex/cond/pool initialization failed
+}
+
+// ── Mutex / Cond (in-place; see MOVE SEMANTICS above) ────────────────
+
+Mutex :: struct {
+    buf: c.MutexBuf = .{};
+
+    setup :: (self: *Mutex) -> bool {
+        return c.pthread_mutex_init(@self.buf, null) == 0;
+    }
+    lock :: (self: *Mutex) {
+        c.pthread_mutex_lock(@self.buf);
+    }
+    unlock :: (self: *Mutex) {
+        c.pthread_mutex_unlock(@self.buf);
+    }
+    destroy :: (self: *Mutex) {
+        c.pthread_mutex_destroy(@self.buf);
+    }
+}
+
+Cond :: struct {
+    buf: c.CondBuf = .{};
+
+    setup :: (self: *Cond) -> bool {
+        return c.pthread_cond_init(@self.buf, null) == 0;
+    }
+    // Atomically releases `m` and sleeps; reacquires `m` before returning.
+    wait :: (self: *Cond, m: *Mutex) {
+        c.pthread_cond_wait(@self.buf, @m.buf);
+    }
+    signal :: (self: *Cond) {
+        c.pthread_cond_signal(@self.buf);
+    }
+    broadcast :: (self: *Cond) {
+        c.pthread_cond_broadcast(@self.buf);
+    }
+    destroy :: (self: *Cond) {
+        c.pthread_cond_destroy(@self.buf);
+    }
+}
+
+// ── Thread ───────────────────────────────────────────────────────────
+
+Thread :: struct {
+    handle: usize = 0;
+
+    // `entry` is the C->sx boundary: abi(.c), fabricates its own
+    // Context before touching default-conv sx code (examples/1636).
+    spawn :: (entry: (*void) -> *void abi(.c), arg: *void) -> (Thread, !ThreadErr) {
+        t : Thread = .{};
+        if c.pthread_create(@t.handle, null, entry, arg) != 0 { raise error.Spawn; }
+        return t;
+    }
+    join :: (self: *Thread) {
+        c.pthread_join(self.handle, null);
+    }
+    detach :: (self: *Thread) {
+        c.pthread_detach(self.handle);
+    }
+}
+
+// ── Pool: fixed workers, bounded queue, backpressure ────────────────
+//
+// httpz's thread_pool shape: `submit` enqueues a task for the next free
+// worker and returns false when the backlog is full (the caller sheds —
+// reject, retry, or run inline). `shutdown` drains nothing: queued
+// tasks still run, then workers exit and join.
+
+PoolTask :: struct {
+    f: (usize) -> void;   // default-conv: runs inside the worker's context
+    arg: usize = 0;
+}
+
+Pool :: struct {
+    mu: Mutex = .{};
+    nonempty: Cond = .{};
+    tasks: [*]PoolTask = null;
+    cap: i64 = 0;
+    head: i64 = 0;
+    len: i64 = 0;
+    stop: bool = false;
+    threads: [*]usize = null;
+    count: i64 = 0;
+    // The allocator the pool (struct + tasks + threads) was created from.
+    // Captured at create so shutdown frees from the SAME allocator,
+    // independent of whatever context is current at shutdown time.
+    own_alloc: Allocator;
+
+    // Heap-allocate (the pool must never move: workers hold its address,
+    // and it embeds a live mutex), init in place, spawn the workers.
+    create :: (workers: i64, backlog: i64) -> (*Pool, !ThreadErr) {
+        alloc := context.allocator;
+        p : *Pool = xx alloc.alloc_bytes(size_of(Pool));
+        p.* = Pool.{};
+        p.own_alloc = alloc;
+        // Free-before-raise: nothing past `p` is allocated yet, so the
+        // mutex-setup failure only needs to release `p`. The cond-setup
+        // failure additionally tears down the already-init'd mutex.
+        if !p.mu.setup() { alloc.dealloc_bytes(xx p); raise error.Init; }
+        if !p.nonempty.setup() { p.mu.destroy(); alloc.dealloc_bytes(xx p); raise error.Init; }
+        p.tasks = xx alloc.alloc_bytes(backlog * size_of(PoolTask));
+        p.cap = backlog;
+        p.threads = xx alloc.alloc_bytes(workers * size_of(usize));
+        p.count = workers;
+        i : i64 = 0;
+        while i < workers {
+            if c.pthread_create(@p.threads[i], null, pool_worker, xx p) != 0 {
+                // join what started, then fail loudly
+                p.count = i;
+                p.shutdown();
+                raise error.Spawn;
+            }
+            i += 1;
+        }
+        return p;
+    }
+
+    // False = backlog full (backpressure); the task did not enqueue.
+    submit :: (self: *Pool, f: (usize) -> void, arg: usize) -> bool {
+        self.mu.lock();
+        if self.len == self.cap or self.stop {
+            self.mu.unlock();
+            return false;
+        }
+        slot := (self.head + self.len) % self.cap;
+        self.tasks[slot] = PoolTask.{ f = f, arg = arg };
+        self.len += 1;
+        self.nonempty.signal();
+        self.mu.unlock();
+        return true;
+    }
+
+    // Stop accepting work, let queued tasks finish, join every worker.
+    shutdown :: (self: *Pool) {
+        self.mu.lock();
+        self.stop = true;
+        self.nonempty.broadcast();
+        self.mu.unlock();
+        i : i64 = 0;
+        while i < self.count {
+            c.pthread_join(self.threads[i], null);
+            i += 1;
+        }
+        self.mu.destroy();
+        self.nonempty.destroy();
+        // Free everything create allocated, from the same allocator.
+        // tasks/threads first, then the Pool struct last (no field of
+        // self is read after this point).
+        a := self.own_alloc;
+        if self.tasks != null { a.dealloc_bytes(xx self.tasks); }
+        if self.threads != null { a.dealloc_bytes(xx self.threads); }
+        a.dealloc_bytes(xx self);
+    }
+}
+
+// The worker loop: C entry, own fabricated Context, then
+// pop-task/run-task until stop with an empty queue.
+pool_worker :: (arg: *void) -> *void abi(.c) {
+    p : *Pool = xx arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } {
+        while true {
+            p.mu.lock();
+            while !p.stop and p.len == 0 {
+                p.nonempty.wait(@p.mu);
+            }
+            if p.len == 0 {   // stop, and nothing queued
+                p.mu.unlock();
+                break;
+            }
+            t := p.tasks[p.head];
+            p.head = (p.head + 1) % p.cap;
+            p.len -= 1;
+            p.mu.unlock();
+            f := t.f;
+            f(t.arg);
+        }
+    }
+    return null;
+}

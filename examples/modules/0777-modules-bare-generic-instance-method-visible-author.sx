@@ -1,0 +1,24 @@
+// A BARE generic struct INSTANCE method (`x.tag()`) must dispatch to the method
+// authored alongside the instance's layout — the single bare-VISIBLE author —
+// NOT the global last-wins `fn_ast_map["Box.tag"]`, which a NON-visible
+// 2-flat-hop same-name template's method can win.
+//
+// `b.sx` declares a one-field `Box($T)` (size 8) whose `tag` returns `self.x+8`,
+// and itself flat-imports `c.sx`, whose two-field `Box($T)` (size 16) declares a
+// `tag` returning `self.x+16`. This file flat-imports ONLY `b.sx`, so `b.Box` is
+// one flat hop away (visible) and `c.Box` is two hops (NOT bare-visible).
+//
+// Regression (Phase E4 finding #1, instance-method site): the static head
+// `Box(i64).make(7)` already selected `b.Box` for the layout (size 8), but the
+// instance method `x.tag()` resolved by bare template name in `fn_ast_map`, so it
+// ran `c.Box.tag` (returning 7+16=23) on the b instance. Fail-before printed
+// `size=8 tag=23`; with body-author ≡ layout-author it runs b's `tag` (7+8=15).
+
+#import "modules/std.sx";
+#import "0777-modules-bare-generic-instance-method-visible-author/b.sx";
+
+main :: () -> i32 {
+    x := Box(i64).make(7);
+    print("size={} tag={}\n", size_of(type_of(x)), x.tag());
+    0
+}

@@ -1,0 +1,60 @@
+// The E4 leak harness: a full allocator chain — GPA → TrackingAllocator
+// → Arena — with owned protocol values built, mutated, freed; arena
+// reset/deinit; the tracker reports ZERO outstanding at the end. Owned
+// erasures pair with their allocator explicitly (`.(P, a)` + `free(p, a)`)
+// or ride the pushed context; identity borrows (the allocator chain
+// itself) allocate nothing.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Shape :: protocol {
+    area :: (self: *Self) -> i64;
+    grow :: (self: *Self);
+}
+Sq :: struct { side: i64; }
+impl Shape for Sq {
+    area :: (self: *Sq) -> i64 { self.side * self.side }
+    grow :: (self: *Sq) { self.side += 1; }
+}
+
+main :: () {
+    gpa := GPA.init();
+    tracker := TrackingAllocator.init(gpa);
+
+    // Owned values through the tracker, explicit pairing.
+    sq := Sq.{ side = 3 };
+    a := sq.(Shape, tracker);
+    b := sq.(Shape, tracker);
+    a.grow();
+    print("a={} b={} (independent)\n", a.area(), b.area());
+    free(a, tracker);
+    free(b, tracker);
+
+    // Owned values through a pushed tracker context (free pairs by
+    // context inside the same push; printing happens OUTSIDE the push —
+    // print's own format allocations would land in the tracker).
+    ca : i64 = 0;
+    da : i64 = 0;
+    push .{ allocator = tracker } {
+        c : Shape = xx Sq.{ side = 2 };
+        c.grow();
+        d := sq.(Shape);
+        ca = c.area();
+        da = d.area();
+        free(c);
+        free(d);
+    }
+    print("c={} d={}\n", ca, da);
+
+    // An arena over the tracker: owned copies land in the arena; reset +
+    // deinit hand the chunks back to the tracker.
+    arena := Arena.init(tracker, 512);
+    e := sq.(Shape, arena);
+    _ = e.area();
+    arena.reset();
+    f := sq.(Shape, arena);
+    print("f={}\n", f.area());
+    arena.deinit();
+
+    print("outstanding: {}\n", tracker.leak_count());
+}

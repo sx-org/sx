@@ -1,0 +1,50 @@
+// ffi-objc-arc-01 — M4.A smoke test for NSObject + autoreleasepool.
+//
+// Exercises:
+//   1. NSObject is declared in std/objc.sx and reachable from user code.
+//      `obj.retain()` / `obj.release()` dispatch via the M2.3 #extends-aware
+//      method chain. Pattern: `defer obj.release();` as the canonical
+//      sx idiom for owned Obj-C handles.
+//   2. `autoreleasepool(body)` stdlib helper wraps `body` in a
+//      push/defer-pop pair so Foundation factory returns drain at block
+//      end.
+//
+// macOS-only — libobjc + NSObject must be available at runtime.
+
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+#import "modules/build.sx";
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        // Manual retain/release on an NSObject instance — the
+        // `defer obj.release();` pattern is the canonical sx idiom.
+        obj := NSObject.alloc().init();
+        if obj == null { print("FAIL: alloc null\n"); return 1; }
+        defer obj.release();
+
+        // Bump the count and drop the extra; refcount math stays balanced.
+        _ = obj.retain();
+        obj.release();
+
+        print("retain/release: ok\n");
+
+        // autoreleasepool helper round-trip — just exercise that the
+        // push/pop pair executes. We don't have a side-effect to observe
+        // (NSObject.new returns a +1 retained, NOT autoreleased), so this
+        // is a smoke test of the helper's shape, not the runtime
+        // behavior.
+        autoreleasepool(() {
+            inner := NSObject.new();
+            if inner != null {
+                inner.release();
+            }
+        });
+
+        print("autoreleasepool: ok\n");
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

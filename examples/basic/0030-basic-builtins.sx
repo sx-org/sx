@@ -1,0 +1,127 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+Point :: struct { x, y: i32; }
+
+Color :: enum { red; green; blue; }
+
+Shape :: enum {
+    circle: f32;
+    rect: struct { w, h: f32; };
+    none;
+}
+
+main :: () {
+
+    // ========================================================
+    // 7. BUILT-IN FUNCTIONS
+    // ========================================================
+    print("=== 7. Builtins ===\n");
+
+    // out
+    out("out-ok\n");
+
+    // sqrt
+    print("sqrt: {}\n", sqrt(9.0));
+    print("sqrt-f64: {}\n", sqrt(16.0));
+
+    // size_of
+    print("sizeof-i32: {}\n", size_of(i32));
+    print("sizeof-f64: {}\n", size_of(f64));
+    print("sizeof-struct: {}\n", size_of(Point));
+
+    // align_of
+    print("alignof-u8: {}\n", align_of(u8));
+    print("alignof-i32: {}\n", align_of(i32));
+    print("alignof-i64: {}\n", align_of(i64));
+    print("alignof-struct: {}\n", align_of(Point));
+
+    // type_of + category matching
+    tv := 42;
+    ttype := type_of(tv);
+    if ttype == {
+        case int: print("typeof: int\n");
+        case float: print("typeof: float\n");
+        else: print("typeof: other\n");
+    }
+
+    // type_of — float
+    tf := 3.14;
+    if type_of(tf) == {
+        case float: print("typeof-float: float\n");
+        else: print("typeof-float: other\n");
+    }
+
+    // type_of — string
+    ts := "hello";
+    if type_of(ts) == {
+        case string: print("typeof-string: string\n");
+        else: print("typeof-string: other\n");
+    }
+
+    // type_of — bool
+    tb := true;
+    if type_of(tb) == {
+        case bool: print("typeof-bool: bool\n");
+        else: print("typeof-bool: other\n");
+    }
+
+    // type_of — struct
+    tst := Point.{ 1, 2 };
+    if type_of(tst) == {
+        case struct: print("typeof-struct: struct\n");
+        else: print("typeof-struct: other\n");
+    }
+
+    // type_of — enum
+    ten : Color = .red;
+    if type_of(ten) == {
+        case enum: print("typeof-enum: enum\n");
+        else: print("typeof-enum: other\n");
+    }
+
+    // type_name
+    print("typename: {}\n", type_name(Point));
+
+    // struct_field_count on struct
+    print("fieldcount: {}\n", struct_field_count(Point));
+
+    // struct_field_count on enum
+    print("fieldcount-enum: {}\n", variant_count(Color));
+
+    // struct_field_name on struct
+    print("fieldname0: {}\n", struct_field_name(Point, 0));
+    print("fieldname1: {}\n", struct_field_name(Point, 1));
+
+    // struct_field_name on enum
+    print("fieldname-enum0: {}\n", variant_name(Color, 0));
+    print("fieldname-enum2: {}\n", variant_name(Color, 2));
+
+    // struct_field_value (use any_to_string to avoid sext-on-any bug)
+    fv_pt := Point.{ 11, 22 };
+    out("fieldval0: ");
+    out(any_to_string(struct_field_value(fv_pt, 0)));
+    out("\n");
+    out("fieldval1: ");
+    out(any_to_string(struct_field_value(fv_pt, 1)));
+    out("\n");
+
+    // variant_index on plain enum
+    fi_c : Color = .green;
+    print("fieldidx: {}\n", variant_index(Color, fi_c));
+
+    // variant_index on tagged enum
+    fi_sh : Shape = .circle(1.0);
+    print("fieldidx-tagged: {}\n", variant_index(Shape, fi_sh));
+    fi_sh2 : Shape = .none;
+    print("fieldidx-tagged2: {}\n", variant_index(Shape, fi_sh2));
+
+    // cast
+    cval : f64 = 3.7;
+    print("cast: {}\n", cval.(i32));
+    cv2 : i32 = 42;
+    print("cast-int-f64: {}\n", cv2.(f64));
+}

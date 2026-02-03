@@ -1,0 +1,25 @@
+// Tuple element assignment + named tuples.
+//   - `t.0 = v` writes one element in place (was a known gap: the lvalue path
+//     looked the element up by name via getStructFields and left the pointee
+//     `.unresolved`; now it indexes the tuple positionally like the read path).
+//   - Named tuples `Tuple(x: T, y: U)` keep their field names through parsing and
+//     type resolution, so `t.x` reads/writes by name (and `.0` by position).
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    // Positional element assignment.
+    a : Tuple(i32, string) = ---;
+    a.0 = 11;
+    a.1 = "x";
+    print("a: {} {}\n", a.0, a.1);
+
+    // Named tuple: write + read by name, and read by position.
+    p : Tuple(x: i32, y: string) = ---;
+    p.x = 22;
+    p.y = "y";
+    print("p: x={} y={} .0={}\n", p.x, p.y, p.0);
+    p.0 = 33;                       // position write reaches the same slot as .x
+    print("p.x after .0=33: {}\n", p.x);
+    0
+}

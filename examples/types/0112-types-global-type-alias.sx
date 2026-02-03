@@ -1,0 +1,16 @@
+// Top-level type alias `Handle :: u32;` resolves to its target type in every
+// position — function signatures, type annotations on globals, and initializer
+// literal coercion.
+
+#import "modules/std.sx";
+
+Handle :: u32;
+
+ok :: () -> Handle { 0 }
+
+g : Handle = 0;
+
+main :: () -> i32 {
+    g = ok();
+    if g == 0 then 0 else 1
+}

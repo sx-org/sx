@@ -1,0 +1,25 @@
+// A type-returning FUNCTION head (`Make(i64)` where `Make :: ($T) -> Type`) is
+// NON-transitive even when a DIRECT flat import authors the same name as an
+// ORDINARY (non-type-returning) function. `main` flat-imports `b.sx`; `b.sx`
+// declares `Make :: () -> i32` (a plain function, NOT a type-fn) AND flat-imports
+// `c.sx`, whose `Make` IS the type-returning function. The only TYPE-FN author of
+// `Make` is two flat hops away (main → b → c), so the bare `Make(i64)` head must
+// emit the "type 'Make' is not visible" diagnostic and poison — the visible 1-hop
+// ordinary `Make :: () -> i32` must NOT vouch for it.
+//
+// Regression (Phase E4 attempt-8, finding E4-type-fn-head-hidden-by-visible-
+// nontypefn): attempt-7's `headFnLeak` decided visibility from any FUNCTION
+// author (`fnDeclOfRaw != null`), so the visible ordinary `Make` function (which
+// CANNOT be the type head being instantiated) still vouched — the global
+// `fn_ast_map` type-fn silently instantiated and `size_of(Make(i64))` printed 8
+// at exit 0 instead of the visibility diagnostic. The fix narrows the author view
+// to TYPE-FUNCTIONS (`typeFnAuthor`: a `fn_decl` with ≥1 `$`-param), the same
+// discriminator every instantiation site uses to recognize a type-fn head.
+
+#import "modules/std.sx";
+#import "0771-modules-type-fn-head-ordinary-fn-no-vouch/b.sx";
+
+main :: () -> i32 {
+    print("size={}\n", size_of(Make(i64)));
+    0
+}

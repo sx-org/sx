@@ -1,0 +1,102 @@
+{
+  "name": "sx-lang",
+  "displayName": "sx",
+  "description": "Language support for the sx programming language",
+  "version": "0.0.1",
+  "publisher": "swipelab",
+  "icon": "icon.png",
+  "galleryBanner": {
+    "color": "#000000",
+    "theme": "dark"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://git.swipelab.com/lab/sx.git"
+  },
+  "homepage": "https://git.swipelab.com/lab/sx",
+  "bugs": {
+    "url": "https://git.swipelab.com/lab/sx/issues"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "license": "MIT",
+  "activationEvents": [
+    "onLanguage:sx"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "sx",
+        "aliases": [
+          "sx"
+        ],
+        "extensions": [
+          ".sx"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "sx"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sx",
+        "scopeName": "source.sx",
+        "path": "./syntaxes/sx.tmLanguage.json",
+        "embeddedLanguages": {
+          "meta.embedded.block.glsl": "glsl",
+          "meta.embedded.block.sql": "sql",
+          "meta.embedded.block.html": "html",
+          "meta.embedded.block.json": "json"
+        }
+      }
+    ],
+    "configuration": {
+      "title": "sx",
+      "properties": {
+        "sx.lspPath": {
+          "type": "string",
+          "default": "sx",
+          "description": "Path to the sx-lsp binary"
+        }
+      }
+    },
+    "configurationDefaults": {
+      "[sx]": {
+        "editor.wordBasedSuggestions": "off"
+      },
+      "editor.tokenColorCustomizations": {
+        "textMateRules": [
+          {
+            "scope": "punctuation.definition.template-expression",
+            "settings": {
+              "foreground": "#E5C07B"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "vscode:prepublish": "npm run build",
+    "package": "vsce package --baseContentUrl https://git.swipelab.com/lab/sx/src/branch/master/editors/vscode --baseImagesUrl https://git.swipelab.com/lab/sx/raw/branch/master/editors/vscode"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^3.9.2",
+    "typescript": "^5.0.0"
+  }
+}

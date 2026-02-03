@@ -1,0 +1,86 @@
+// Stream B2 — the SUSPENDING `context.io.async` layer over the M:1 fiber
+// scheduler (PLAN-IO-UNIFY: the unified async stack — the bespoke `go`/`wait` was
+// retired in Phase 5). In contrast with 1805's `context.io.async` UNDER THE
+// BLOCKING `Io` (which runs each worker INLINE to completion — no interleaving),
+// here the scheduler is installed as `context.io`, so `context.io.async(work)`
+// runs `work` as a REAL fiber and `await()` SUSPENDS the caller until it finishes
+// — a worker that yields mid-body lets a sibling run first (cooperative
+// interleaving).
+//
+// `work` is a NULLARY worker: any inputs are captured in the lambda at the call
+// site (no `..args` pack crosses the fiber boundary — that would hit issue 0156
+// Part 2). Outputs flow OUT through pointers captured in the worker (the shared
+// `Log` struct), since closure capture-by-value does not write back.
+//
+// What this proves:
+//   - REAL suspend + interleave: worker A records 1, YIELDS; worker B then records
+//     2 and completes; A resumes, records 3, completes → interleave order 1 2 3.
+//   - awaited VALUES: A returns 42, B returns 100 (recorded after both awaits).
+//     → sequence: 1 2 3 42 100.
+//   - cancel rides the `!` channel (model (a), like 1806): a canceled worker's
+//     `await()` raises `.Canceled`, taken by the `or` default → -99.
+//
+// `wait` must run inside a fiber (it parks `self.current`), so the "main task"
+// is itself a `s.spawn(...)` fiber that drives the two `go` tasks.
+//
+// aarch64-macOS-pinned (the scheduler's asm + guard-page mmap constants are
+// per-arch / Apple-specific): runs end-to-end on a matching host, ir-only on a
+// mismatch.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+Log :: struct { seq: [16]i64; n: i64; }
+rec :: (l: *Log, v: i64) { l.seq[l.n] = v; l.n = l.n + 1; }
+
+main :: () -> i64 {
+    lg : Log = .{ n = 0 };   // seq[] zero-filled
+
+    s := sched.Scheduler.init();
+    ps := @s;
+    pl := @lg;
+
+    // The coordinator fiber: drives two async workers, awaits both, then exercises
+    // cancel. It runs as a fiber so `await` has a `self.current` to park. The
+    // scheduler is installed as `context.io`, so the unified async layer reaches it.
+    push .{ io = xx s } {
+        ps.spawn(() {
+            // Worker A yields mid-body so B interleaves before A completes.
+            a := context.io.async(() -> (i64, !) {
+                rec(pl, 1);
+                ps.yield_now();   // suspend A; B (already spawned) runs to completion
+                rec(pl, 3);
+                42
+            });
+            // Worker B runs straight through (no yield).
+            b := context.io.async(() -> (i64, !) {
+                rec(pl, 2);
+                100
+            });
+
+            // Await both — suspends the coordinator fiber until each completes.
+            va := a.await() or { -1 };
+            vb := b.await() or { -1 };
+            rec(pl, va);
+            rec(pl, vb);
+
+            // Cancel case: cancel before the worker runs; `await` raises .Canceled
+            // off the sticky flag, the `or` default (-99) is taken.
+            c := context.io.async(() -> (i64, !) => 7);
+            c.cancel();
+            rec(pl, c.await() or { -99 });
+        });
+
+        ps.run();
+    }
+
+    // Interleaving + value contract: 1 2 3 42 100, then the cancel default -99.
+    print("sequence:");
+    i := 0;
+    while i < lg.n {
+        print(" {}", lg.seq[i]);
+        i = i + 1;
+    }
+    print("\n");
+    print("spawned: {}\n", s.n_spawned);
+    return 0;
+}

@@ -1,0 +1,13 @@
+F1 ok: err int = 0
+F1 ok bare-if: ok
+F1 ok guard: c = 2
+F1 bad: err nonzero = true
+F1 bad: is Nope (ok)
+F1 bad: tag name = Nope
+F2 red: err int = 0
+F2 red bare-if: ok
+F2 red != Nope (ok)
+F2 red guard: c = 0
+F2 blue: err int = 0, c = 2
+F2 err: err nonzero = true
+F2 err: is Nope (ok)

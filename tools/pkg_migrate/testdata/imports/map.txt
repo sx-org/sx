@@ -1,0 +1,5 @@
+# old=new import-path mapping
+modules/old/thing.sx=modules/new/thing.sx
+modules/old/other.sx=modules/new/other.sx
+# unused entries are fine:
+modules/old/unused.sx=modules/new/unused.sx

@@ -1,0 +1,35 @@
+// A `Vector` lane count from a named const or a constant-foldable expression
+// resolves to the SAME layout as a literal lane — DIRECT (param / return type)
+// and via a type ALIAS. A 3-lane (named const `N`) and a 4-lane (const expr
+// `M + 1`) prove the lane VALUE is folded, not fabricated: reading `.w` requires
+// the 4-lane vector to actually have four lanes.
+//
+// Regression (issue 0083): the stateful Vector lane resolvers hand-rolled an
+// `else => 0` switch, so a module-const lane (`Vector(N, f32)`) lowered a 0-lane
+// `<0 x float>` and died in LLVM verification ("huge alignment values are
+// unsupported"); a const-expr lane (`Vector(M + 1, f32)`) was rejected at parse.
+// Both now fold through the single shared const-int evaluator
+// (`program_index.evalConstIntExpr`) — the same one the array-dimension path
+// uses — so a named-const / const-expr lane is identical to a literal lane.
+#import "modules/std.sx";
+
+N :: 3;
+M :: 3;
+
+LaneAlias :: Vector(N, f32);        // ALIAS: 3-lane via named const.
+ExprAlias :: Vector(M + 1, f32);    // ALIAS: 4-lane via const expression.
+
+mk3 :: () -> Vector(N, f32) { .[1.0, 2.0, 3.0] }       // DIRECT named-const lane.
+mk4 :: () -> Vector(M + 1, f32) { .[1.0, 2.0, 3.0, 4.0] } // DIRECT const-expr lane.
+
+main :: () {
+    a := mk3();
+    print("direct3: {} {} {}\n", a.x, a.y, a.z);
+    b := mk4();
+    print("direct4: {} {} {} {}\n", b.x, b.y, b.z, b.w);
+
+    c : LaneAlias = .[5.0, 6.0, 7.0];
+    print("alias3: {}\n", c.z);
+    d : ExprAlias = .[5.0, 6.0, 7.0, 8.0];
+    print("alias4: {}\n", d.w);
+}

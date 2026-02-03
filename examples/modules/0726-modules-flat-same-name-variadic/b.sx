@@ -1,0 +1,12 @@
+// b.sx is the SHADOW author for both names, with the OPPOSITE shapes:
+// `combine` is VARIADIC, `pick` is FIXED. Each `from_b_*` bare call must pack
+// against b's OWN author's signature (the F1 fix) — combine sums its variadic
+// pack, pick subtracts its two fixed args.
+combine :: (..xs: []i64) -> i64 {
+    result := 0;
+    for xs (it) { result = result + it; }
+    result
+}
+pick :: (a: i64, b: i64) -> i64 { return b - a; }
+from_b_combine :: () -> i64 { return combine(1, 2, 3, 4); }
+from_b_pick :: () -> i64 { return pick(2, 7); }

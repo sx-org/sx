@@ -1,0 +1,5 @@
+error: cannot infer enum type for '.Foo' — use an explicit type or assign to a typed variable
+  --> examples/diagnostics/1102-diagnostics-err-dot-shorthand.sx:5:10
+   |
+ 5 |     x := .Foo(1, 2);
+   |          ^^^^

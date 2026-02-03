@@ -1,0 +1,76 @@
+// Protocol RTTI (Step-4 phase 2, Option B): every protocol value carries
+// its concrete type_id at slot 1 — {ctx, __type_id, vtable} / #inline
+// {ctx, __type_id, fn_ptrs…} — so the value's first two words are an
+// `any` {data, type_id}. What that unlocks, all pinned here:
+//   - `type_of(p)` answers the CONCRETE type (never folds to the static
+//     protocol type — the any-operand rule extended);
+//   - the downcast `p.(T)` with the three assertion temperaments —
+//     unconsumed (panics on mismatch), soft `p.(?T)` (null), graceful
+//     `or` / `catch` (CastError.mismatch);
+//   - the type switch on PROTOCOL subjects — concrete arms bind the
+//     typed value (a copy, assertion parity), categories and else as on
+//     `any`;
+//   - `xx p : any` — the explicit CONCRETE view (the prefix); implicit
+//     boxing (`av : any = p`) still boxes the protocol value itself;
+//   - all of it layout-independent (default AND #inline protocols).
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Drawable :: protocol { area :: (self: *Self) -> i64; }
+Circle :: struct { r: i64; }
+Rect :: struct { w: i64; h: i64; }
+impl Drawable for Circle { area :: (self: *Circle) -> i64 { 3 * self.r * self.r } }
+impl Drawable for Rect { area :: (self: *Rect) -> i64 { self.w * self.h } }
+
+main :: () {
+    c := Circle.{ r = 2 };
+    q := Rect.{ w = 3, h = 4 };
+    s := c.(Drawable);
+    t := q.(Drawable);
+
+    // type_of(p) — concrete, both values; dispatch unaffected
+    print("{} {}\n", type_name(type_of(s)), type_name(type_of(t)));
+    print("{} {}\n", s.area(), t.area());
+
+    // unconsumed downcast (tag matches — no panic path taken)
+    w := s.(Circle);
+    print("r={}\n", w.r);
+
+    // soft: null on mismatch, value on match
+    if r := s.(?Rect) { print("? {}\n", r.w); } else { print("soft null\n"); }
+    if cc := s.(?Circle) { print("soft r={}\n", cc.r); }
+
+    // graceful: or-fallback and catch, mismatch and match
+    fallback := s.(Rect) or Rect.{ w = 9, h = 9 };
+    print("or w={}\n", fallback.w);
+    caught := s.(Rect) catch (e) { print("catch: {}\n", e); Rect.{ w = 1, h = 1 } };
+    print("caught w={}\n", caught.w);
+    ok := t.(Rect) catch (e) { _ = e; Rect.{ w = 0, h = 0 } };
+    print("ok w={}\n", ok.w);
+
+    // the type switch on a protocol subject
+    shapes : [2]Drawable = .[s, t];
+    for shapes (sh) {
+        if sh == {
+            case Circle: (ci) { print("circle r={}\n", ci.r); }
+            case struct: { print("some struct\n"); }
+            else: { print("?\n"); }
+        }
+    }
+
+    // xx p : any — the explicit concrete view
+    av : any = xx s;
+    print("view: {}\n", type_name(type_of(av)));
+
+    // #inline layout: same story through an Allocator value
+    ga := GPA.init();
+    a : Allocator = xx ga;
+    print("inline: {}\n", type_name(type_of(a)));
+    g := a.(GPA);
+    _ = g;
+
+    // the downcast binds a COPY (assertion parity) — the original is untouched
+    w2 := s.(Circle);
+    w2.r = 99;
+    print("copy: {} orig {}\n", w2.r, c.r);
+}

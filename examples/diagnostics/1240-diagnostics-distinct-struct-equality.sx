@@ -1,0 +1,4 @@
+#import "modules/std.sx";
+S1240 :: struct { a: i64 = 0; }
+T1240 :: struct { a: i64 = 0; }
+main :: () { s := S1240.{}; t := T1240.{}; _ := s == t; }

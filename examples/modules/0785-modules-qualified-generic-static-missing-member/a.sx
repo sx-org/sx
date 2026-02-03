@@ -1,0 +1,9 @@
+// Namespace A authors only `Other` — NO `Box`. The qualified static head
+// `a.Box(i64).make(..)` must diagnose the missing member, not fall to b's `Box`.
+Other :: struct($T: Type) {
+    v: T;
+
+    make :: (value: T) -> Other(T) {
+        .{ v = value }
+    }
+}

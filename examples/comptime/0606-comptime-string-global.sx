@@ -1,0 +1,26 @@
+// Phase 1.4a — a `#run` that returns a string (or any aggregate
+// containing a heap-allocated buffer) must serialize correctly into
+// the static binary. The interp computes the string at build time,
+// allocating its backing through `context.allocator` (which bottoms
+// out at c.libc_malloc in the default context). The serializer reads
+// the resulting `{addr, len}` aggregate, captures the bytes from
+// host memory, emits them as a private global byte array, and
+// rebuilds the aggregate to point at that array.
+//
+// Before Phase 1.4a this segfaulted at runtime — the pointer field
+// in the static const ended up as `i0 0` (malformed) because the
+// interp's host-address `.int` value can't be lowered as `ptr` by
+// `LLVMConstInt`.
+#import "modules/std.sx";
+
+build_greeting :: () -> string {
+    return concat("hello", " world");
+}
+
+GREETING :: #run build_greeting();
+
+main :: () -> i32 {
+    print("greeting = '{}'\n", GREETING);
+    print("greeting.len = {}\n", GREETING.len);
+    return 0;
+}

@@ -1,0 +1,14 @@
+// A qualified function re-export must keep the terminal extern's parameter
+// types. In `probe -> bool`, losing the `i32` target for literal 7 would lower
+// it through the ambient bool target as 1 before the libc call (issue 0282).
+
+api :: #import "0848-modules-qualified-extern-reexport/api.sx";
+
+probe :: () -> bool {
+    return api.abs(7) == 7;
+}
+
+main :: () -> i32 {
+    if probe() { return 0; }
+    1
+}

@@ -1,0 +1,34 @@
+// Array-typed `::` constants are IMMUTABLE GLOBALS: one storage, reads
+// GEP it, the emitter marks it constant, dead-global elimination drops
+// unused ones. Typed (`K : [4]i64 : .[...]`) and untyped (`A :: .[...]`,
+// element type inferred — all ints i64; any float promotes the element
+// type to f64 with ints converting exactly; bool/string homogeneous).
+// Element shapes cover nested aggregates. Reads are normal array values:
+// indexing, .len, by-value copies (independent of the const), passing to
+// fixed-array params, and @-address (reads through *[4]i64 — issue 0117).
+
+#import "modules/std.sx";
+
+K : [4]i64 : .[11, 22, 33, 44];
+A :: .[1, 2, 3];
+M :: .[1, 2.2, 3];
+F : [2]f64 : .[1, 2.5];
+S :: .["alpha", "beta"];
+B :: .[true, false, true];
+P :: struct { x, y: i64; }
+PTS : [2]P : .[P.{ x = 1, y = 2 }, P.{ x = 3, y = 4 }];
+GRID : [2][2]i64 : .[.[1, 2], .[3, 4]];
+
+sum :: (xs: [4]i64) -> i64 { xs[0] + xs[1] + xs[2] + xs[3] }
+
+main :: () {
+    print("typed={} untyped={} len={}\n", K[2], A[1], K.len);
+    print("mixed={} {} {} intfloat={}\n", M[0], M[1], M[2], F[0]);
+    print("str={} bool={} pt={} grid={}\n", S[1], B[2], PTS[1].y, GRID[1][0]);
+    k := K;
+    k[0] = 99;
+    print("copy={} const={}\n", k[0], K[0]);
+    print("sum={}\n", sum(K));
+    p := @K;
+    print("via-ptr={}\n", p[2]);
+}

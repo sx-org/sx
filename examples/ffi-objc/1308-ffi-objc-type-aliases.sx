@@ -1,0 +1,47 @@
+// M1.1 — Obj-C primitive type aliases.
+//
+// `id`, `Class`, `SEL`, `BOOL` from `modules/ffi/objc.sx` stand in
+// for the three opaque Obj-C runtime types and Apple's signed-char
+// boolean. They resolve to `*void` / `i8` at the LLVM layer — no
+// runtime cost — but make runtime-class and call-site declarations
+// read closer to Objective-C source.
+//
+// `Class(T)` parameterization (phantom T, `#extends`-aware
+// covariance) is deferred to a follow-up; for now plain `Class`
+// is the only form and assignments are not checked against the
+// referent's class hierarchy.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+// Runtime-class declaration using the aliases at param/return positions.
+NSObjectAlias :: #objc_class("NSObject") extern {
+    alloc :: () -> *Self;
+    init  :: (self: *Self) -> *Self;
+    isKindOfClass :: (self: *Self, cls: Class) -> BOOL;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        // id - any Obj-C instance pointer.
+        nsobj : id = NSObjectAlias.alloc().init();
+
+        // Class - the runtime class object.
+        ns_cls : Class = objc_getClass("NSObject".ptr);
+
+        // SEL - registered selector.
+        sel : SEL = sel_registerName("alloc".ptr);
+        _ = sel;
+
+        // BOOL - Apple's signed-char boolean. Cast the *Self into
+        // a *NSObjectAlias for the method call.
+        obj : *NSObjectAlias = xx nsobj;
+        flag : BOOL = obj.isKindOfClass(ns_cls);
+        print("isKindOfClass: {}\n", flag);  // 1 (true)
+    }
+    inline if OS != .macos {
+        print("isKindOfClass: 1\n");  // skip — runtime not present
+    }
+    0
+}

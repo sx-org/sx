@@ -1,0 +1,5 @@
+read: 3 [97 98 99]
+freed by deinit: 2
+live after deinit: 0
+kq open after run: true
+kq after deinit: -1

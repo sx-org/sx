@@ -1,0 +1,38 @@
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/font.sx";
+
+Label :: struct {
+    text: string;
+    font_size: f32;
+    color: Color;
+
+    make :: (text: string) -> Label {
+        Label.{
+            text = text,
+            font_size = 14.0,
+            color = COLOR_WHITE
+        }
+    }
+}
+
+impl View for Label {
+    size_that_fits :: (self: *Label, proposal: ProposedSize) -> Size {
+        measure_text(self.text, self.font_size)
+    }
+
+    layout :: (self: *Label, bounds: Frame) {
+        // Leaf view — nothing to place
+    }
+
+    render :: (self: *Label, ctx: *RenderContext, frame: Frame) {
+        ctx.add_text(frame, self.text, self.font_size, self.color);
+    }
+
+    handle_event :: (self: *Label, event: *Event, frame: Frame) -> bool {
+        false
+    }
+}

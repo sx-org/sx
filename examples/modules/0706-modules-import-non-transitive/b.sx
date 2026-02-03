@@ -1,0 +1,5 @@
+#import "c.sx";
+
+b_only_fn :: () -> i32 {
+    c_only_fn() + c_only_const
+}

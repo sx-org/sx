@@ -1,0 +1,5 @@
+call: 42
+context form: allocs 1 outstanding 0
+call: 42
+explicit form: allocs 2 outstanding 0
+null env: no-op true

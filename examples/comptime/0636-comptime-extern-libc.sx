@@ -1,0 +1,17 @@
+// Comptime host-FFI: a `#run` that calls real libc functions (`toupper`/`tolower`)
+// at compile time. The comptime VM resolves the symbol via dlsym and dispatches
+// through the host_ffi trampolines (Phase 4D) — a scalar arg in, a scalar return
+// out — folding the result into a constant. (The legacy interpreter does the same
+// via its own dlsym path; both agree.)
+#import "modules/std.sx";
+
+toupper :: (c: i32) -> i32 extern libc;
+tolower :: (c: i32) -> i32 extern libc;
+
+UP :: #run toupper(97);   // 'a' -> 'A' = 65
+LO :: #run tolower(90);   // 'Z' -> 'z' = 122
+
+main :: () -> i32 {
+    print("toupper(97)={} tolower(90)={}\n", UP, LO);
+    return 0;
+}

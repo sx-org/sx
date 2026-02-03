@@ -1,0 +1,61 @@
+// M1.2 A.7 — full instance state round-trip on a sx-defined
+// `#objc_class`. The plan's first integration smoke test
+// (A.2/A.3/A.4 integration through the now-open dispatch gate).
+//
+// What this exercises end-to-end:
+//   1. `SxFoo.alloc()` — sx-side call lowers to objc_msgSend(SxFoo, sel_alloc).
+//      The runtime invokes the synthesized +alloc IMP (M1.2 A.5)
+//      which allocates an instance + state struct and binds them
+//      via __sx_state.
+//   2. `f.bump()` — sx-side method call lowers to
+//      objc_msgSend(f, sel_bump). Runtime dispatches to the IMP
+//      trampoline (M1.2 A.4b.ii) which reads __sx_state to find
+//      the state pointer and forwards to the sx body
+//      `SxFoo.bump(__sx_default_context, state)`. Body mutates
+//      self.counter (M1.2 A.3).
+//   3. Repeat to confirm the state persists across calls.
+//   4. release — synthesized -dealloc (M1.2 A.6) frees the state
+//      and chains to [super dealloc].
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+SxFoo :: #objc_class("SxFoo") {
+    counter: i32;
+
+    // Declare the synthesized class methods so sx-side call sites
+    // can resolve them. +alloc / -dealloc IMPs are emitted by the
+    // compiler at module-init (M1.2 A.5 / A.6); these declarations
+    // just give the names a typed contract.
+    alloc :: () -> *SxFoo;
+
+    bump :: (self: *Self) {
+        self.counter += 1;
+    }
+
+    get :: (self: *Self) -> i32 {
+        return self.counter;
+    }
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        f := SxFoo.alloc();
+        if f == null { print("FAIL: alloc returned null\n"); return 1; }
+
+        f.bump();
+        f.bump();
+        f.bump();
+        print("counter: {}\n", f.get());  // expected: 3
+
+        // release
+        sel_release : SEL = sel_registerName("release".ptr);
+        release_fn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;
+        release_fn(xx f, sel_release);
+    }
+    inline if OS != .macos {
+        print("counter: 3\n");
+    }
+    0
+}

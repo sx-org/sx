@@ -1,0 +1,23 @@
+// Phase 1 step 1.21 (PLAN-FFI.md): `#jni_call(bool)` (jboolean
+// return). JNI's `jboolean` is a single-byte unsigned integer (0 or
+// 1) on every supported ABI; sx's `bool` lowers to LLVM `i1` but the
+// arg/return coercion path widens it to the byte slot the JNI
+// runtime expects. CallBooleanMethod lives at vtable slot 37.
+
+#import "modules/std.sx";
+
+g_should_call : bool = false;
+
+read_bool :: (env: *void, target: *void) -> bool {
+    #jni_env(env) {
+        #jni_call(bool)(target, "isShown", "()Z")
+    }
+}
+
+main :: () -> i32 {
+    if g_should_call {
+        _ := read_bool(null, null);
+    }
+    print("ok\n");
+    0
+}

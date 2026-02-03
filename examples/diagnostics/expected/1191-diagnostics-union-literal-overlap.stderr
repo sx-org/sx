@@ -1,0 +1,5 @@
+error: a union literal may set only one member, or several members of the same anonymous-struct arm — 'Overlay's members overlay the same storage
+  --> examples/diagnostics/1191-diagnostics-union-literal-overlap.sx:11:19
+   |
+11 |     o : Overlay = .{ f = 3.14, i = 7 };   // ERROR: f and i overlay the same bytes
+   |                   ^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,22 @@
+// Type alias resolution through `size_of` / `align_of` — a const-decl
+// alias (`MyInt :: i32;`, `MyChain :: MyInt;`, `WideAlias :: Wide;`)
+// resolves through `type_alias_map` when used as a `$T: Type` argument.
+// Covers chains and struct-name aliases, not just structural-type
+// aliases (those land in `examples/182-compound-type-in-expression.sx`).
+#import "modules/std.sx";
+
+MyInt   :: i32;
+MyChain :: MyInt;
+Wide    :: struct { a: i64; b: i64; }
+WideAlias :: Wide;
+
+main :: () -> i32 {
+    print("direct i32:        {}\n", size_of(i32));
+    print("alias i32:         {}\n", size_of(MyInt));
+    print("chain i32:         {}\n", size_of(MyChain));
+    print("align alias:       {}\n", align_of(MyInt));
+    print("align chain:       {}\n", align_of(MyChain));
+    print("size struct-alias: {}\n", size_of(WideAlias));
+    print("align struct-alias:{}\n", align_of(WideAlias));
+    0
+}

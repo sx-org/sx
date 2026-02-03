@@ -1,0 +1,16 @@
+// A negated literal is a compile-time constant for a global initializer:
+// ints serialize directly, an integral negative float narrows into an
+// integer global (non-integral errors), and boundary values fit exactly.
+// Out-of-range negatives get the literal fits-check, not "non-constant".
+// Regression (issue 0113): `g : i64 = -1;` was rejected as not a
+// compile-time constant (globalInitValue had no unary_op arm).
+
+#import "modules/std.sx";
+
+g1 : i64 = -1;
+g2 : i64 = -4.0;
+g3 : i8 = -128;
+
+main :: () {
+    print("{} {} {}\n", g1, g2, g3);
+}

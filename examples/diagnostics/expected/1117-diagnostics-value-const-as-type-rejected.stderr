@@ -1,0 +1,5 @@
+error: unknown type 'NotAType'
+  --> examples/diagnostics/1117-diagnostics-value-const-as-type-rejected.sx:15:8
+   |
+15 |     v: NotAType = ---;
+   |        ^^^^^^^^

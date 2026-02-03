@@ -1,0 +1,5 @@
+error: ambiguous import 'modules/std': both a file 'modules/std.sx' and a directory 'modules/std' exist — write "modules/std.sx" to import the file
+  --> examples/diagnostics/1158-diagnostics-import-dir-file-ambiguous.sx:7:1
+   |
+ 7 | #import "modules/std";
+   | ^^^^^^^^^^^^^^^^^^^^^^

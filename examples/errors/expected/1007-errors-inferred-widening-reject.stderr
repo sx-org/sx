@@ -1,0 +1,5 @@
+error: error tag 'error.Foo' is not in caller's error set 'A'
+  --> examples/errors/1007-errors-inferred-widening-reject.sx:23:5
+   |
+23 |     try via();                       // error: Foo (via's converged set) not in A
+   |     ^^^^^^^^^

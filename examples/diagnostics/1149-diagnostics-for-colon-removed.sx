@@ -1,0 +1,9 @@
+// The pre-multi-iterable `for xs: (x)` syntax (colon before the capture) is
+// rejected with a migration hint.
+
+#import "modules/std.sx";
+
+main :: () {
+    xs : [2]i64 = .[1, 2];
+    for xs: (x) { }
+}

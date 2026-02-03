@@ -1,0 +1,52 @@
+// Phase 1 step 1.8 (PLAN-FFI.md): >16 B non-HFA struct returns
+// through `#objc_call`. AAPCS64 routes these through the indirect-
+// return convention: caller allocates the result slot, passes its
+// pointer in x8 with the `sret(<T>)` attribute, callee writes
+// through it and returns void.
+//
+// Register a runtime-built Obj-C class with a method that returns
+// a fixed `Triple`. The IMP is a plain sx fn (abi .c) — its
+// sret-shaped lowering already works (Phase 0.3 fix for plain
+// `extern` returns). The `#objc_call` dispatch side now produces
+// the matching call shape: `call void @objc_msgSend(ptr sret %slot,
+// ...)` + load. The two halves must agree on the ABI for the
+// round-trip to return the right bytes.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+Triple :: struct { a: i64; b: i64; c: i64; }
+
+// IMP for the runtime-installed method. Obj-C convention: implicit
+// (self, _cmd) prefix, then declared args. Returns the value bytes.
+triple_imp :: (self: *void, _cmd: *void) -> Triple abi(.c) {
+    Triple.{ a = 11, b = 22, c = 33 }
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        // Build the class:
+        //   @interface SxTripleProbe : NSObject
+        //     - (Triple)tripleValue;
+        //   @end
+        ns_object := objc_getClass("NSObject".ptr);
+        my_cls := objc_allocateClassPair(ns_object, "SxTripleProbe".ptr, 0);
+        sel := sel_registerName("tripleValue".ptr);
+        // Type encoding: {Triple=qqq}@: → returns 24 B struct of 3 i64,
+        // implicit (self: id, _cmd: SEL).
+        ok := class_addMethod(my_cls, sel, xx triple_imp, "{Triple=qqq}@:".ptr);
+        print("addMethod = {}\n", ok);
+        objc_registerClassPair(my_cls);
+
+        // Call through #objc_call — sret transform applies because
+        // Triple is 24 B non-HFA.
+        instance := class_createInstance(my_cls, 0);
+        t := #objc_call(Triple)(instance, "tripleValue");
+        print("triple = ({}, {}, {})\n", t.a, t.b, t.c);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

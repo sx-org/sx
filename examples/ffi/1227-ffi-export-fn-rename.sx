@@ -1,0 +1,23 @@
+// export with a "csym" rename (FFI-linkage stream, Phase 2.2): the sx name
+// `sx_triple` is exposed to C under the symbol `triple_c` via the optional
+// symbol-name override after `export` — the define-direction mirror of
+// `extern "csym"` (1224). The companion C calls `triple_c` by that name; sx
+// `main` drives it via `call_triple`. Runs in AOT mode (see the `.aot`
+// marker) because a C->sx-by-name call cannot link against a JIT-resident
+// symbol.
+#import "modules/std.sx";
+
+#import c {
+    #include "1227-ffi-export-fn-rename.h";
+    #source "1227-ffi-export-fn-rename.c";
+};
+
+// sx-defined, exported to C under the C symbol `triple_c`.
+sx_triple :: (n: i32) -> i32 export "triple_c" {
+    return n * 3;
+}
+
+main :: () -> i32 {
+    print("call_triple(7) = {}\n", call_triple(7));
+    0
+}

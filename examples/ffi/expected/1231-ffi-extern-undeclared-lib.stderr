@@ -1,0 +1,5 @@
+error: extern library 'nosuchunit' is not declared; expected a #library constant or a named '#import c' unit
+  --> examples/ffi/1231-ffi-extern-undeclared-lib.sx:14:1
+   |
+14 | c_abs :: (n: i32) -> i32 extern nosuchunit "abs";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

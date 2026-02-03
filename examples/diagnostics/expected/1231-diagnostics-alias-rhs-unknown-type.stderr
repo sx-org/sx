@@ -1,0 +1,5 @@
+error: unknown type 'NoSuchType'
+  --> examples/diagnostics/1231-diagnostics-alias-rhs-unknown-type.sx:16:11
+   |
+16 | Bad :: [3]NoSuchType;
+   |           ^^^^^^^^^^

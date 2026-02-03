@@ -1,0 +1,30 @@
+// A reserved/builtin type name is rejected as a binding name inside an `impl`
+// block's method too — both as a parameter (`u8`) and as a local (`i2`). The
+// impl method is reached through the exhaustive binding-name walk's
+// `impl_block` arm (→ each method's `fn_decl`), so an `impl` method is no more
+// exempt than a free function. Without the diagnostic the reserved local's
+// `@i2` mis-lowers (a loaded aggregate passed by value to a `*Box` param →
+// LLVM verifier abort).
+//
+// Regression (issue 0076, attempt-4 coverage). Expected: one error for the
+// param and one for the local; exit 1.
+#import "modules/std.sx";
+
+Box :: struct { total: i64 = 0; count: i64 = 0; }
+update :: (self: *Box, n: i64) { self.total += n; self.count += 1; }
+
+Doer :: protocol { go :: (self: *Self, n: i64); }
+
+impl Doer for Box {
+    go :: (self: *Box, u8: i64) {
+        i2 := Box.{ total = 1 };
+        update(@i2, u8);
+        self.total += i2.total;
+    }
+}
+
+main :: () -> i32 {
+    b := Box.{};
+    b.go(7);
+    return 0;
+}

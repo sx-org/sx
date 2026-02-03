@@ -1,0 +1,2 @@
+comptime read the default: 1234
+runtime reads it too: 1234

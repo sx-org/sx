@@ -1,0 +1,5 @@
+error: type 'Make' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0769-modules-ambiguous-type-fn-head.sx:19:32
+   |
+19 |     print("size={}\n", size_of(Make(i64)));
+   |                                ^^^^

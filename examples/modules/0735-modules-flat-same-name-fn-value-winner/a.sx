@@ -1,0 +1,4 @@
+// a.sx authors `pick` (imported first → the first-wins name-keyed winner) but
+// its body references an undefined symbol, so lowering a.pick AT ALL is an
+// error. Nothing uses a.pick — taking b.pick as a value must not pre-lower it.
+pick :: () -> i64 { return missing_from_a(); }

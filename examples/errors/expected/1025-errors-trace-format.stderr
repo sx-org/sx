@@ -1,0 +1,7 @@
+error return trace (most recent call last):
+  leaf at 1025-errors-trace-format.sx:20:16
+        if n < 0 { raise error.BadInput; }   // pushes frame 0
+                   ^
+  mid at 1025-errors-trace-format.sx:25:5
+        try leaf(n);                          // propagation pushes frame 1
+        ^

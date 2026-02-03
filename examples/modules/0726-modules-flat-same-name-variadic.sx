@@ -1,0 +1,23 @@
+// fix-0102c F1 (issue 0102): two flat FILE imports each author same-name free
+// functions whose VARIADIC SHAPE differs. `combine` is fixed-arity in a.sx
+// (the first-wins winner) but variadic in b.sx (the shadow); `pick` is the
+// reverse. Each module's bare call must pack arguments against ITS OWN
+// author's signature — not the first-wins author's. Pre-fix the call path
+// re-fetched the first-wins AST by name to drive variadic packing, so b.sx's
+// variadic `combine` was packed as if fixed (and its fixed `pick` as if
+// variadic) → wrong lowering. Regression for the F1 review finding.
+#import "modules/std.sx";
+#import "0726-modules-flat-same-name-variadic/a.sx";
+#import "0726-modules-flat-same-name-variadic/b.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("from_a combine fixed", from_a_combine() == 30);
+    report("from_b combine variadic", from_b_combine() == 10);
+    report("from_a pick variadic", from_a_pick() == 6);
+    report("from_b pick fixed", from_b_pick() == 5);
+    0
+}

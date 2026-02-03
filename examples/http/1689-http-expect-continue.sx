@@ -1,0 +1,222 @@
+// std.http — Expect: 100-continue (RFC 9110 §10.1.1).
+//
+// Q1.3: an HTTP/1.1 request that declares a body (Content-Length > 0 or
+// chunked) and carries `Expect: 100-continue` is answered with a ONE-OFF
+// interim `HTTP/1.1 100 Continue\r\n\r\n` as soon as the headers are
+// complete and the body has not fully arrived — so a client holding back
+// a large body learns it may proceed. Rules locked here:
+//   • the interim is sent EXACTLY ONCE per request, even when the body
+//     trickles in across many read cycles;
+//   • a request the server rejects up front (413 for an over-max declared
+//     length) gets the FINAL status directly — never a 100 first;
+//   • a request whose body already arrived in full gets no 100 (nothing
+//     to wait for — the RFC lets the server skip it);
+//   • HTTP/1.0: the expectation is ignored (no 100, request still served);
+//   • an Expect with any OTHER value on 1.1 → 417 Expectation Failed;
+//   • works for both framings: Content-Length and chunked.
+//
+// Asserts: two-phase CL POST sees one 100 then the 200 echo (body split
+// across two sends → still exactly one 100); over-max CL → 413 with no
+// 100; one-shot POST → 200 with no 100; 1.0 two-phase POST → 200 with no
+// 100; Expect: whatever → 417; two-phase chunked POST → one 100 then the
+// 200 echo; GPA net-zero after close.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 19001;
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    resp.body = concat("got:", req.body);
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+count_occurrences :: (hay: string, needle: string) -> i64 {
+    n : i64 = 0;
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { n += 1; i += needle.len; } else { i += 1; }
+    }
+    return n;
+}
+
+// Drain whatever the server has ready into buf[*total]; true on EOF.
+drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool {
+    srv.tick(1) catch {};
+    while true {
+        n, re := socket.read_nb(fd, @buf[total.*], xx (cap - total.*));
+        if !re { total.* += n; continue; }
+        if re == error.Closed { return true; }
+        return false;
+    }
+    return false;   // unreachable — the loop above always returns
+}
+
+// Send `first`; tick until `wait_for` shows up (or give the server 50
+// quiet ticks to prove it stays silent when wait_for is empty); send
+// `second`; give the server 20 more ticks (a need-more read cycle over
+// the partial body — a duplicate interim would surface here); send
+// `third`; read to EOF. The whole wire exchange — interim + final
+// response — lands in buf. Empty pieces are skipped.
+staged :: (srv: *http.Server, first: string, second: string, third: string, wait_for: string, buf: [*]u8, cap: i64) -> string {
+    fd := dial_port(PORT);
+    if fd < 0 { return ""; }
+    socket.write(fd, first.ptr, xx first.len);
+    total : i64 = 0;
+    // Phase 1: wait for the interim (or prove silence).
+    if wait_for.len > 0 {
+        spins : i64 = 0;
+        while spins < 400 {
+            if drain(srv, fd, buf, cap, @total) { break; }   // early EOF (a reject)
+            if contains(string.{ ptr = buf, len = xx total }, wait_for) { break; }
+            spins += 1;
+        }
+    } else {
+        settle : i64 = 0;
+        while settle < 50 {
+            if drain(srv, fd, buf, cap, @total) { break; }
+            settle += 1;
+        }
+    }
+    // Phase 2: a partial body piece, then ticks that would expose a
+    // re-emitted interim on the extra need-more cycle.
+    if second.len > 0 {
+        socket.write(fd, second.ptr, xx second.len);
+        if third.len > 0 {
+            mid : i64 = 0;
+            while mid < 20 {
+                if drain(srv, fd, buf, cap, @total) { break; }
+                mid += 1;
+            }
+        }
+    }
+    // Phase 3: the rest of the request, then read to EOF.
+    if third.len > 0 { socket.write(fd, third.ptr, xx third.len); }
+    stall : i64 = 0;
+    done := false;
+    prev := total;
+    while !done and stall < 400 {
+        done = drain(srv, fd, buf, cap, @total);
+        if total > prev { stall = 0; prev = total; } else { stall += 1; }
+    }
+    socket.close(fd);
+    return string.{ ptr = buf, len = xx total };
+}
+
+check :: (r: string, frag: string, label: string, failed: *i64) {
+    if !contains(r, frag) {
+        print("{}: expected \"{}\"\n", label, frag);
+        failed.* = 1;
+    }
+}
+
+check_no_100 :: (r: string, label: string, failed: *i64) {
+    if count_occurrences(r, "100 Continue") != 0 {
+        print("{}: unexpected 100 Continue\n", label);
+        failed.* = 1;
+    }
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 16384;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{ port = PORT, max_conn = 4, request_count = 10, max_body = 1024 };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        // (a) staged CL POST: headers first → exactly one 100, then the
+        // body IN TWO PIECES (the second need-more cycle must not re-emit
+        // the interim), then the final 200 echo.
+        r := staged(@srv,
+            "POST /e HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nContent-Length: 10\r\nConnection: close\r\n\r\n",
+            "hello", "world", "HTTP/1.1 100 Continue\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 100 Continue", "CL staged interim", @failed);
+        check(r, "got:helloworld", "CL staged echo", @failed);
+        if count_occurrences(r, "100 Continue") != 1 {
+            print("CL staged: expected exactly one 100\n");
+            failed = 1;
+        }
+
+        // (b) over-max declared length → final 413 directly, never a 100
+        r = staged(@srv,
+            "POST /e HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nContent-Length: 2048\r\nConnection: close\r\n\r\n",
+            "", "", "", rbuf, cap);
+        check(r, "HTTP/1.1 413", "over-max final status", @failed);
+        check_no_100(r, "over-max", @failed);
+
+        // (c) body already complete in one shot → no 100, straight to 200
+        r = staged(@srv,
+            "POST /e HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nContent-Length: 3\r\nConnection: close\r\n\r\nabc",
+            "", "", "", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "one-shot status", @failed);
+        check(r, "got:abc", "one-shot echo", @failed);
+        check_no_100(r, "one-shot", @failed);
+
+        // (d) HTTP/1.0: the expectation is ignored — no 100, still served
+        r = staged(@srv,
+            "POST /e HTTP/1.0\r\nExpect: 100-continue\r\nContent-Length: 2\r\n\r\n",
+            "hi", "", "", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "1.0 status", @failed);
+        check(r, "got:hi", "1.0 echo", @failed);
+        check_no_100(r, "1.0", @failed);
+
+        // (e) an unsupported expectation on 1.1 → 417
+        r = staged(@srv,
+            "POST /e HTTP/1.1\r\nHost: t\r\nExpect: whatever\r\nContent-Length: 2\r\nConnection: close\r\n\r\n",
+            "", "", "", rbuf, cap);
+        check(r, "HTTP/1.1 417", "unsupported expectation", @failed);
+        check_no_100(r, "unsupported expectation", @failed);
+
+        // (f) chunked framing: headers → one 100 → chunked body → 200 echo
+        r = staged(@srv,
+            "POST /e HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
+            "3\r\nabc\r\n", "0\r\n\r\n", "HTTP/1.1 100 Continue\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 100 Continue", "chunked interim", @failed);
+        check(r, "got:abc", "chunked echo", @failed);
+        if count_occurrences(r, "100 Continue") != 1 {
+            print("chunked: expected exactly one 100\n");
+            failed = 1;
+        }
+
+        srv.close();
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

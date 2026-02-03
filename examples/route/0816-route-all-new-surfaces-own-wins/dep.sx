@@ -1,0 +1,11 @@
+// A flat-imported module authors its OWN `Box { a }`. The importing file (`main`)
+// ALSO authors a `Box { m }` — its own author must win there (own-wins), while this
+// module's `Box` stays a DISTINCT nominal type used by `dep_box`. The field sets
+// are disjoint, so a cross-binding to the wrong `Box` is a hard compile error.
+Box :: struct { a: i32; }
+
+dep_box :: () -> i32 {
+    b : Box = ---;
+    b.a = 9;
+    return b.a;
+}

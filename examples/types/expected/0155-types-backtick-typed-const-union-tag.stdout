@@ -1,0 +1,3 @@
+typed const = 5
+union tick  = 42
+union bare  = 42

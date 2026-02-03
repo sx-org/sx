@@ -1,0 +1,41 @@
+// make_enum — the GENERAL comptime enum constructor over declare/define: mint a
+// nominal enum from a `[]EnumVariant` VALUE, rather than a hardcoded literal
+// (the channel-result constructors hardcode theirs). The variant list is an
+// ordinary comptime value, so a builder ASSEMBLES it in a local before minting —
+// here `build_level` constructs `vs` (a local array, which could be filled
+// conditionally / in a loop), then mints `Level` from it.
+//
+// This exercises `define` decoding a value-arg SLICE (`decodeVariantElements`'s
+// slice-fat-pointer branch), as opposed to the inline `.[ … ]` array the
+// 0614–0618 examples pass directly into `.enum(...)`.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+build_level :: () -> Type {
+    // The variant list lives in a local (not inlined into `define`): a non-
+    // generic `() -> Type` builder has its whole body comptime-evaluated, so
+    // `vs` is in scope when `make_enum` mints from it.
+    vs := .[
+        EnumVariant.{ name = "info",  payload = void },
+        EnumVariant.{ name = "warn",  payload = void },
+        EnumVariant.{ name = "fatal", payload = i64 },   // carries an exit code
+    ];
+    return make_enum("Level", vs);
+}
+
+Level :: build_level();
+
+show :: (l: Level) {
+    if l == {
+        case .info:      { print("info\n"); }
+        case .warn:      { print("warn\n"); }
+        case .fatal: (c) { print("fatal code={}\n", c); }
+    }
+}
+
+main :: () -> i32 {
+    show(.info);
+    show(.warn);
+    show(.fatal(70));
+    return 0;
+}

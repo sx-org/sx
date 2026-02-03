@@ -1,0 +1,11 @@
+error: index 9 is out of bounds for constant 'K' (4 elements)
+  --> examples/diagnostics/1163-diagnostics-array-const-index-oob.sx:10:10
+   |
+10 |     b : [K[9]]u8 = ---;
+   |          ^^^^
+
+error: array dimension must be a compile-time integer constant
+  --> examples/diagnostics/1163-diagnostics-array-const-index-oob.sx:10:10
+   |
+10 |     b : [K[9]]u8 = ---;
+   |          ^^^^

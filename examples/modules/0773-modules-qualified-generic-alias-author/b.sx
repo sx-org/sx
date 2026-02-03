@@ -1,0 +1,3 @@
+// Author B's generic `Box` — two i64 fields (size 16). Same template NAME as
+// A's, different layout: the qualified alias head must select by namespace author.
+Box :: struct($T: Type) { x: T; y: T; }

@@ -1,0 +1,41 @@
+error: struct_field_count expects a struct or tuple type; 'Color' is an enum — use variant_count
+  --> examples/diagnostics/1244-diagnostics-reflection-family-gates.sx:12:19
+   |
+12 |     print("{}\n", struct_field_count(Color));       // enum → use variant_count
+   |                   ^^^^^^^^^^^^^^^^^^
+
+error: struct_field_name expects a struct or tuple type; 'Color' is an enum — use variant_name
+  --> examples/diagnostics/1244-diagnostics-reflection-family-gates.sx:13:19
+   |
+13 |     print("{}\n", struct_field_name(Color, 0));     // enum → use variant_name
+   |                   ^^^^^^^^^^^^^^^^^
+
+error: variant_count expects an enum or tagged-union type; 'Point' is not one — for struct/tuple fields use struct_field_count
+  --> examples/diagnostics/1244-diagnostics-reflection-family-gates.sx:14:19
+   |
+14 |     print("{}\n", variant_count(Point));            // struct → use struct_field_count
+   |                   ^^^^^^^^^^^^^
+
+error: variant_name expects an enum or tagged-union type; 'Point' is not one — for struct/tuple fields use struct_field_name
+  --> examples/diagnostics/1244-diagnostics-reflection-family-gates.sx:15:19
+   |
+15 |     print("{}\n", variant_name(Point, 0));          // struct → use struct_field_name
+   |                   ^^^^^^^^^^^^
+
+error: struct_field_count is not for arrays/vectors — use `.len` on the value (its length/lane count)
+  --> examples/diagnostics/1244-diagnostics-reflection-family-gates.sx:16:19
+   |
+16 |     print("{}\n", struct_field_count([4]i64));      // array → use .len
+   |                   ^^^^^^^^^^^^^^^^^^
+
+error: variant_payload expects an enum or tagged-union value; 'Point' is not one — for struct/tuple fields use struct_field_value
+  --> examples/diagnostics/1244-diagnostics-reflection-family-gates.sx:18:19
+   |
+18 |     print("{}\n", variant_payload(Point.{ x = 1, y = 2 }, 0));  // struct value → struct_field_value
+   |                   ^^^^^^^^^^^^^^^
+
+error: struct_field_value is not for arrays/vectors — index natively (`v[i]`, typed) instead
+  --> examples/diagnostics/1244-diagnostics-reflection-family-gates.sx:20:19
+   |
+20 |     print("{}\n", struct_field_value(v, 0));        // vector → index natively
+   |                   ^^^^^^^^^^^^^^^^^^

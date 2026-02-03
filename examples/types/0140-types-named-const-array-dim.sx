@@ -1,0 +1,69 @@
+// A fixed array whose dimension is a module-global named constant
+// (`N :: 16; [N]T`) has the same layout as a literal-dimension array
+// (`[16]T`): correct length and element stride for scalar, slice/pointer
+// (string), and struct element types — on EVERY type-resolution path:
+// direct local decls, type aliases (`Arr :: [N]T`), nested fixed arrays
+// (`[N][M]T`), and inline union fields. The named dim must resolve to the
+// same length whether it flows through the stateful body-lowering resolver
+// or the stateless registration-time resolver (type_bridge).
+// Regression (issue 0083): a named-const dim resolved to length 0, giving a
+// 0-byte alloca — scalar reads returned garbage and string/struct elements
+// bus-errored. The alias and union-field paths went through the stateless
+// resolver, which had no const table and silently fabricated a 0 length.
+#import "modules/std.sx";
+
+N :: 4;
+M :: 3;
+
+P :: struct { x: i64; y: i64; }
+
+// Type aliases whose dimension is the named const N (stateless registration).
+Arr :: [N]i64;
+SArr :: [N]string;
+
+// Inline union field with a named-const dimension (stateless registration).
+U :: union { a: [N]i64; tag: i64; }
+
+main :: () {
+    // Scalar elements (direct local): store then read back.
+    a : [N]i64 = ---;
+    a[0] = 7;
+    a[3] = 42;
+    print("scalar a0={} a3={}\n", a[0], a[3]);
+
+    // Slice/pointer elements (string, direct local): used to bus-error.
+    s : [N]string = ---;
+    s[0] = "hi";
+    s[1] = "yo";
+    print("string i0={} i1={}\n", s[0], s[1]);
+
+    // Struct elements (direct local).
+    ps : [N]P = ---;
+    ps[0] = P.{ x = 1, y = 2 };
+    ps[2] = P.{ x = 5, y = 6 };
+    print("struct p0x={} p0y={} p2x={}\n", ps[0].x, ps[0].y, ps[2].x);
+
+    // Type-alias dimension (scalar): same layout as the direct `[N]i64`.
+    aa : Arr = ---;
+    aa[0] = 11;
+    aa[3] = 99;
+    print("alias a0={} a3={}\n", aa[0], aa[3]);
+
+    // Type-alias dimension (string): no bus error, correct reads.
+    sa : SArr = ---;
+    sa[0] = "al";
+    sa[2] = "ok";
+    print("alias i0={} i2={}\n", sa[0], sa[2]);
+
+    // Nested fixed array `[N][M]i64`: both dimensions are named consts.
+    grid : [N][M]i64 = ---;
+    grid[0][0] = 1;
+    grid[3][2] = 8;
+    print("nested g00={} g32={}\n", grid[0][0], grid[3][2]);
+
+    // Inline union field with a named-const dimension.
+    u : U = ---;
+    u.a[0] = 70;
+    u.a[3] = 7;
+    print("union u0={} u3={}\n", u.a[0], u.a[3]);
+}

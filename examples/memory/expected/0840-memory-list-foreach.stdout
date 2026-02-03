@@ -1,0 +1,6 @@
+len=6 cap>=1
+foreach sum=210
+indexed: 10@0 30@2 50@4
+for-list sum=210
+indexed sum=210
+after trunc: len=0 iters=0

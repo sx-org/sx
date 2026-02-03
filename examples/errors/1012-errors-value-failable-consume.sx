@@ -1,0 +1,60 @@
+// Consuming value-carrying failables with `try` and `catch` (ERR step E2.1b —
+// the consumer side of the error-channel tuple ABI). `try f()` on a
+// `-> (T, !E)` callee binds the value slot on success and propagates the error
+// on failure (a pure-failable caller returns the tag; a value-carrying caller
+// returns `{undef, tag}`). `f() catch (e) BODY` yields the value slot on success
+// or the handler body's value on failure, merged through a block parameter.
+// The producer side is `examples/228-value-failable.sx`.
+
+#import "modules/std.sx";
+
+E :: error { Bad, Empty }
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0  { raise error.Bad; }
+    if n == 0 { raise error.Empty; }
+    return n * 2;
+}
+
+// value-carrying `try` in a value-carrying caller — propagates {undef, tag}.
+inc :: (n: i32) -> (i32, !E) {
+    v := try parse(n);
+    return v + 1;
+}
+
+// value-carrying `try` in a pure-failable caller — propagates the tag.
+relay :: (n: i32) -> !E {
+    v := try parse(n);
+    if v < 0 { raise error.Bad; }
+    return;
+}
+
+// value-carrying `catch`, bare-expression fallback.
+safe :: (n: i32) -> i32 {
+    return parse(n) catch (e) 0;
+}
+
+// value-carrying `catch`, match-body value.
+classify :: (n: i32) -> i32 {
+    return parse(n) catch (e) == {
+        case .Bad:   1;
+        case .Empty: 2;
+        else:        3
+    };
+}
+
+main :: () -> i32 {
+    r : i32 = 0;
+    a, ea := inc(5);                      // parse(5)=10 → v=10 → 11
+    if !ea { r = r + a; }                  // success → +11 (value live only when proven ok)
+    b, eb := inc(-1);                      // parse(-1)=Bad → propagate {undef, Bad}
+    if eb == error.Bad { r = r + 4; }      // true → +4
+    er := relay(3);                        // parse(3)=6 ok → relay ok
+    if er == error.Bad { r = r + 50; }     // false
+    r = r + safe(7);                       // parse(7)=14 → +14
+    r = r + safe(-1);                      // Bad → catch → 0
+    r = r + classify(-1);                  // Bad → 1
+    r = r + classify(0);                   // Empty → 2
+    print("consume result: {}\n", r);      // 11+4+14+0+1+2 = 32
+    return r;
+}

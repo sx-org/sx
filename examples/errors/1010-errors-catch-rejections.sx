@@ -1,0 +1,13 @@
+// `catch` rejection (ERR step E1.5): the operand must be failable. Unlike
+// `try` / `raise`, `catch` needs no failable enclosing function — it consumes
+// the error locally — so the only stable rejection is a non-failable operand.
+// The positive cases live in `examples/226-catch.sx`.
+
+#import "modules/std.sx";
+
+plain :: () -> i32 { return 0; }
+
+main :: () -> i32 {
+    plain() catch (e) { return 1; };   // error: operand has type i32 (not failable)
+    return 0;
+}

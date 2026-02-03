@@ -1,0 +1,28 @@
+// Failable calls in cleanup bodies must be absorbed locally (ERR step E1.7). A
+// `defer` / `onfail` body runs while the block is already exiting, so a failable
+// it calls has nowhere to propagate — it must be handled in place with `catch`
+// or an `or <value>` terminator. This file shows the accepted forms; the bare
+// (un-absorbed) form is rejected in 1049.
+
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+failing :: () -> !E { raise error.Bad; }
+recover :: () -> (i32, !E) { raise error.Bad; }
+
+work :: (n: i32) -> !E {
+    defer  print("defer: always\n");                                 // plain cleanup
+    onfail { failing() catch (e) print("onfail: caught (catch)\n"); }  // catch absorbs
+    onfail { x := recover() or 7; print("onfail: x={} (or)\n", x); } // or-value absorbs
+    if n < 0 { raise error.Bad; }
+    return;
+}
+
+main :: () -> i32 {
+    print("[error]\n");
+    a := work(-1);   // raises → onfail bodies fire, then defer (reverse decl order)
+    print("[ok]\n");
+    b := work(2);    // success → only defer fires
+    return 0;
+}

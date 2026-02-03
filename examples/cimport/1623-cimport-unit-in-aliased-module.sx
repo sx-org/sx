@@ -1,0 +1,11 @@
+// A named `#import c` unit declared INSIDE an aliased module (so the
+// unit's namespace nests two deep in the merged tree) still compiles
+// and links — collectCImportSources recurses through namespaces, the
+// same way #library collection does (issue 0130's pattern).
+#import "modules/std.sx";
+m :: #import "1623-cimport-unit-in-aliased-module/mod.sx";
+
+main :: () -> i32 {
+    print("nested unit answer = {}\n", m.answer_via_mod());
+    0
+}

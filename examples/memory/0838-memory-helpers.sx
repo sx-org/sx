@@ -1,0 +1,68 @@
+// Typed allocation helpers over the Allocator protocol (std/mem.sx):
+// create/destroy (one T), alloc/free (slices), clone, resize, and the
+// bytes-level mem_realloc. Declared `ufcs` — the dot spelling
+// (`context.allocator.create(Session)`), the pipe spelling, and the
+// direct call all hit the same generic machinery. Contents are
+// UNINITIALISED by design
+// (Zig-aligned): assign before reading. TrackingAllocator balances to
+// zero across every pair.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Session :: struct { id: i64; score: i64; }
+
+main :: () {
+    gpa := GPA.init();
+    tracker := TrackingAllocator.init(gpa);
+    a : Allocator = xx tracker;
+
+    // create / destroy — direct spelling
+    s := create(a, Session);
+    s.id = 7; s.score = 42;
+    print("create: {} {}\n", s.id, s.score);
+    destroy(a, s);
+
+    // create — fluent pipe spelling
+    p := a |> create(Session);
+    p.id = 1;
+    print("pipe-create: {}\n", p.id);
+    a |> destroy(p);
+
+    // create — canonical dot spelling on context.allocator
+    q := context.allocator.create(Session);
+    q.id = 2;
+    print("dot-create: {}\n", q.id);
+    context.allocator.destroy(q);
+
+    // alloc / free — typed slice
+    xs := a |> alloc(i64, 4);
+    xs[0] = 10; xs[1] = 20; xs[2] = 30; xs[3] = 40;
+    print("alloc: {} {} len={}\n", xs[0], xs[3], xs.len);
+
+    // clone — independent copy (canonical dot spelling)
+    ys := xs.clone(a);
+    xs[0] = 99;
+    print("clone: {} (orig {})\n", ys[0], xs[0]);
+    ys.free(a);
+
+    // resize — grow (copies, old backing freed)
+    zs := xs |> resize(a, 6);
+    zs[5] = 60;
+    print("resize: {} {} len={}\n", zs[1], zs[5], zs.len);
+    // resize — shrink
+    ws := zs |> resize(a, 2);
+    print("shrink: {} {} len={}\n", ws[0], ws[1], ws.len);
+    ws |> free(a);
+
+    // mem_realloc — bytes level
+    raw := a.alloc_bytes(8);
+    q : *i64 = xx raw;
+    q.* = 1234;
+    raw2 := mem_realloc(a, raw, 8, 16, 8);
+    q2 : *i64 = xx raw2;
+    print("realloc: {}\n", q2.*);
+    a.dealloc_bytes(raw2);
+
+    tracker.report();
+}

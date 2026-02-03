@@ -1,0 +1,7 @@
+// b.sx authors its OWN `pick` (returns 2) and takes it as a function VALUE. The
+// value binds b.pick (own-author wins), never the broken winner from a.sx.
+pick :: () -> i64 { return 2; }
+from_b_value :: () -> i64 {
+    g : () -> i64 = pick;
+    return g();
+}

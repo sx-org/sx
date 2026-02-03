@@ -1,0 +1,56 @@
+// Optional `?f32` fields in struct literals — exhaustively combine null/value
+// for both fields, through both direct calls and protocol dispatch.
+
+#import "modules/std.sx";
+
+ProposedSize :: struct {
+    width: ?f32;
+    height: ?f32;
+}
+
+// Direct function — does it work?
+direct_size :: (proposal: ProposedSize) -> f32 {
+    w := if pw := proposal.width { pw } else { 100.0 };
+    h := if ph := proposal.height { ph } else { 100.0 };
+    w + h
+}
+
+Sizable :: protocol {
+    size :: (self: *Self, proposal: ProposedSize) -> f32;
+}
+
+Widget :: struct {}
+
+impl Sizable for Widget {
+    size :: (self: *Widget, proposal: ProposedSize) -> f32 {
+        w := if pw := proposal.width { pw } else { 100.0 };
+        h := if ph := proposal.height { ph } else { 100.0 };
+        w + h
+    }
+}
+
+main :: () -> void {
+    // Test 1: Direct call
+    print("=== Direct calls ===\n");
+    d1 := direct_size(ProposedSize.{ width = 50.0, height = null });
+    print("d1 = {}\n", d1);
+    d2 := direct_size(ProposedSize.{ width = null, height = 50.0 });
+    print("d2 = {}\n", d2);
+    d3 := direct_size(ProposedSize.{ width = null, height = null });
+    print("d3 = {}\n", d3);
+    d4 := direct_size(ProposedSize.{ width = 50.0, height = 60.0 });
+    print("d4 = {}\n", d4);
+
+    // Test 2: Protocol dispatch
+    print("=== Protocol dispatch ===\n");
+    w := Widget.{};
+    s := w.(Sizable);
+    r1 := s.size(ProposedSize.{ width = 50.0, height = null });
+    print("r1 = {}\n", r1);
+    r2 := s.size(ProposedSize.{ width = null, height = 50.0 });
+    print("r2 = {}\n", r2);
+    r3 := s.size(ProposedSize.{ width = null, height = null });
+    print("r3 = {}\n", r3);
+    r4 := s.size(ProposedSize.{ width = 50.0, height = 60.0 });
+    print("r4 = {}\n", r4);
+}

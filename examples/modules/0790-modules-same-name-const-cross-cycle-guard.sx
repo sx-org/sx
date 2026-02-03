@@ -1,0 +1,16 @@
+// issue 0105 / F3 — the const cycle guard must key on (name, AUTHOR-source), not
+// name alone. `a.sx` declares `M :: 1` and `K :: M + 1` (= 2). `b.sx` flat-imports
+// `a.sx` and declares a DIFFERENT same-name `M :: K + 1` (= 3) — so the SAME name
+// `M` appears at two levels of one fold chain, in two different modules
+// (b's `M` → a's `K` → a's `M`). A name-only cycle guard sees `M` twice and trips
+// a FALSE cycle, folding b's `M` to null → the array dimension `[M]u8` becomes a
+// non-const error. Keyed on (name, source) the two `M`s are distinct, so the
+// chain folds: `m=3 len=3`, coherent for the value read and the dimension.
+#import "modules/std.sx";
+#import "0790-modules-same-name-const-cross-cycle-guard/b.sx";
+
+main :: () -> i32 {
+    arr : [M]u8 = ---;
+    print("m={} len={}\n", M, arr.len);
+    0
+}

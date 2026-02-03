@@ -1,0 +1,9 @@
+// Module A authors its OWN chain: `M :: 1`, `K :: M + 1` (= 2). Both the value
+// read and the array dimension must resolve `K` through A's `M`.
+M :: 1;
+K :: M + 1;
+a_val :: () -> i64 { return K; }
+a_len :: () -> i64 {
+    arr : [K]u8 = ---;
+    return arr.len;
+}

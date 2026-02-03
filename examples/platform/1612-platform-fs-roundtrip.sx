@@ -1,0 +1,43 @@
+#import "modules/std.sx";
+#import "modules/std/fs.sx";
+
+// fs.sx smoke test: every primitive the bundling phase needs.
+// Creates a temp tree, writes/reads/copies/renames/chmod/deletes
+// through it, then exercises basename/dirname.
+
+main :: () {
+    if !create_dir_all("/tmp/sx_fs_test/a/b/c") { print("FAIL mkdir_all\n"); return; }
+    if !exists("/tmp/sx_fs_test/a/b/c") { print("FAIL exists after mkdir_all\n"); return; }
+
+    if !write_file("/tmp/sx_fs_test/hello.txt", "hello fs") { print("FAIL write_file\n"); return; }
+    if r := read_file("/tmp/sx_fs_test/hello.txt") {
+        if r.len != 8 { print("FAIL read length: got {}\n", r.len); return; }
+        print("read: {}\n", r);
+    } else {
+        print("FAIL read_file\n");
+        return;
+    }
+
+    if !copy_file("/tmp/sx_fs_test/hello.txt", "/tmp/sx_fs_test/hello.copy") { print("FAIL copy\n"); return; }
+    if !exists("/tmp/sx_fs_test/hello.copy") { print("FAIL exists after copy\n"); return; }
+
+    if !move("/tmp/sx_fs_test/hello.copy", "/tmp/sx_fs_test/renamed.txt") { print("FAIL rename\n"); return; }
+    if exists("/tmp/sx_fs_test/hello.copy") { print("FAIL old still exists after rename\n"); return; }
+    if !exists("/tmp/sx_fs_test/renamed.txt") { print("FAIL new missing after rename\n"); return; }
+
+    if !set_mode("/tmp/sx_fs_test/hello.txt", 493) { print("FAIL chmod\n"); return; }
+
+    if !delete_file("/tmp/sx_fs_test/hello.txt") { print("FAIL delete_file\n"); return; }
+    if !delete_file("/tmp/sx_fs_test/renamed.txt") { print("FAIL delete renamed\n"); return; }
+    if !delete_dir("/tmp/sx_fs_test/a/b/c") { print("FAIL delete c\n"); return; }
+    if !delete_dir("/tmp/sx_fs_test/a/b") { print("FAIL delete b\n"); return; }
+    if !delete_dir("/tmp/sx_fs_test/a") { print("FAIL delete a\n"); return; }
+    if !delete_dir("/tmp/sx_fs_test") { print("FAIL delete root\n"); return; }
+
+    print("basename(/a/b/c.txt) = {}\n", basename("/a/b/c.txt"));
+    print("basename(foo) = {}\n", basename("foo"));
+    print("dirname(/a/b/c.txt) = {}\n", dirname("/a/b/c.txt"));
+    print("dirname(foo) = {}\n", dirname("foo"));
+
+    print("ok\n");
+}

@@ -1,0 +1,43 @@
+// List is `{ items: []T; cap }` — `items` is a `[]T` slice whose `.len` IS the
+// live element count, so a List is directly iterable with a `for`-each, and
+// `xs.len` reads the live count via a `#get` accessor. Exercises append (incl.
+// a realloc past the initial cap of 4), for-each, parallel for-with-index,
+// empty iteration, direct `for xs` over the List, and truncation via `xs.len = 0`.
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    xs : List(i64) = .{};
+    i := 0;
+    while i < 6 { xs.append((i + 1) * 10); i = i + 1; }   // 10..60; grows 4 -> 8
+
+    print("len={} cap>={}\n", xs.len, if xs.cap >= 6 then 1 else 0);  // len=6 cap>=1
+
+    // for-each over the items slice
+    sum := 0;
+    for xs.items (e) { sum = sum + e; }
+    print("foreach sum={}\n", sum);                       // 210
+
+    // parallel for with index
+    print("indexed:");
+    for xs.items, 0.. (e, ix) { if ix % 2 == 0 { print(" {}@{}", e, ix); } }
+    print("\n");                                          // 10@0 30@2 50@4
+
+    // direct `for xs` over the List value (listView path)
+    s2 := 0;
+    for xs (e) { s2 = s2 + e; }
+    print("for-list sum={}\n", s2);                       // 210
+
+    // len via #get used as a loop bound + indexing
+    acc := 0;
+    j := 0;
+    while j < xs.len { acc = acc + xs.items[j]; j = j + 1; }
+    print("indexed sum={}\n", acc);                       // 210
+
+    // truncate to empty via the `len` #set accessor, then iterate (zero iters)
+    xs.len = 0;
+    cnt := 0;
+    for xs.items (e) { cnt = cnt + 1; }
+    print("after trunc: len={} iters={}\n", xs.len, cnt); // len=0 iters=0
+
+    return 0;
+}

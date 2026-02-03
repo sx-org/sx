@@ -1,0 +1,23 @@
+// A QUALIFIED generic head `a.Box(i64)` where namespace `a` exists but authors
+// NO member named `Box` must DIAGNOSE the missing member — never silently fall
+// back to the bare last-wins `struct_template_map` and instantiate an unrelated
+// module's same-name `Box`.
+//
+// `a.sx` authors only `Other` (no `Box`); `b.sx` authors a generic `Box($T)`.
+// The qualified reference `a.Box(i64)` must report that `a` has no member `Box`,
+// NOT resolve to `b.Box`.
+//
+// Regression (Phase E4 finding #2): before the qualified head path diagnosed the
+// missing member, `qualifiedStructTemplate` returned null and the code fell
+// through to the bare global template, silently instantiating `b.Box`
+// (`size=16 x=1 y=2`, exit 0).
+
+#import "modules/std.sx";
+a :: #import "0775-modules-qualified-generic-missing-member/a.sx";
+b :: #import "0775-modules-qualified-generic-missing-member/b.sx";
+
+main :: () -> i32 {
+    x : a.Box(i64) = .{ x = 1, y = 2 };
+    print("{}\n", x.x);
+    0
+}

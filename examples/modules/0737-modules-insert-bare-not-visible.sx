@@ -1,0 +1,15 @@
+// A bare name inside a USER `#insert <expr>` is visibility-checked in the
+// USER's module, not skipped (regression, issue 0106). `a.sx` is imported only
+// as `m :: #import` — its top-level `secret` is reachable ONLY as `m.secret`.
+// A BARE `secret()` driving a `#insert` must error just like any other bare
+// reference into a namespaced-only import: `#insert` expansion does NOT exempt
+// user-typed code from visibility. (Library metaprograms like `std.print` keep
+// working because their bodies lower in their OWN module's context — see
+// `monomorphizePackFn` / `lowerComptimeCall` pinning `current_source_file` to
+// the body's defining module — not because `#insert` is exempt.)
+m :: #import "0737-modules-insert-bare-not-visible/a.sx";
+
+main :: () -> i32 {
+    #insert secret();
+    0
+}

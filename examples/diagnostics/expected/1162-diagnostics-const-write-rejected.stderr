@@ -1,0 +1,23 @@
+error: cannot assign through constant 'WHITE' — constants are immutable (use a '=' global or a local copy for mutable data)
+  --> examples/diagnostics/1162-diagnostics-const-write-rejected.sx:15:5
+   |
+15 |     WHITE.r = 0;
+   |     ^^^^^^^
+
+error: cannot assign through constant 'K' — constants are immutable (use a '=' global or a local copy for mutable data)
+  --> examples/diagnostics/1162-diagnostics-const-write-rejected.sx:16:5
+   |
+16 |     K[0] = 5;
+   |     ^^^^
+
+error: cannot assign through constant 'K' — constants are immutable (use a '=' global or a local copy for mutable data)
+  --> examples/diagnostics/1162-diagnostics-const-write-rejected.sx:17:5
+   |
+17 |     K[1] += 2;
+   |     ^^^^
+
+error: cannot assign through constant 'N' — constants are immutable (use a '=' global or a local copy for mutable data)
+  --> examples/diagnostics/1162-diagnostics-const-write-rejected.sx:18:5
+   |
+18 |     N = 9;
+   |     ^^^^^^

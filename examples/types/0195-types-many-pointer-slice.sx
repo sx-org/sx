@@ -1,0 +1,26 @@
+// Slicing a many-pointer `mp[lo..hi]` builds a correct `{ ptr = mp + lo,
+// len = hi - lo }` slice — the caller supplies the bounds (a `[*]T` carries no
+// length of its own). This makes a `List` (whose `items` is `[*]T`) iterable
+// with a `for`-each over `items[0..len]`.
+//
+// Regression (issue 0159): a many-pointer base previously fell through the
+// subslice emitter's `else` arm to an undefined slice (`LLVMGetUndef`), so the
+// resulting `.len` was garbage and iterating it segfaulted.
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    a : [4]i64 = .[5, 6, 7, 8];
+
+    // Slice a many-pointer with explicit bounds.
+    mp : [*]i64 = xx @a[0];
+    s := mp[1..4];                       // { &a[1], len 3 }
+    print("mp[1..4]: len={} [{} {} {}]\n", s.len, s[0], s[1], s[2]);  // 3 [6 7 8]
+
+    // The payoff: iterate a List with a for-each over items[0..len].
+    xs : List(i64) = .{};
+    xs.append(10); xs.append(20); xs.append(30);
+    sum := 0;
+    for xs.items[0..xs.len] (e) { sum = sum + e; }
+    print("List for-each sum={}\n", sum);                            // 60
+    return 0;
+}

@@ -1,0 +1,5 @@
+error: array dimension must be non-negative, got -2
+  --> examples/diagnostics/1133-diagnostics-array-dim-negative-float.sx:10:10
+   |
+10 |     a : [-2.0]i64 = ---;
+   |          ^^^^

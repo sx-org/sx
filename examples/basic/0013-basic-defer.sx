@@ -1,0 +1,11 @@
+#import "modules/std.sx";
+main :: () -> i32 {
+    defer print("still here\n");
+    return 42;
+}
+
+// ** exit code ** 
+// 42 
+// ** stdout **
+// still here
+//

@@ -1,0 +1,8 @@
+g=40 a=50
+g=42
+opt_set=7
+g_opt_null=true lo_null=true a=3
+col_red=true a=4
+arr1=77 a=5
+arr=88 77 99
+swap=2 1

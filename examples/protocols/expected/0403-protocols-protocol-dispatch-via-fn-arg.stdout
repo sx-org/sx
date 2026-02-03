@@ -1,0 +1,8 @@
+=== Direct 1 ===
+r1 = 42
+=== Direct 2 ===
+r2 = 42
+=== From function ===
+dispatch_fn: about to dispatch
+dispatch_fn: result = 42
+=== OK ===

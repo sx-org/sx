@@ -1,0 +1,370 @@
+// =====================================================================
+// cli.sx — process command-line argument accessor (macOS), pure sx.
+//
+// `os_args(buf)` returns the real OS-level process argv as a `[]string`,
+// each element a zero-copy VIEW over the C runtime's argv memory. The
+// caller provides the `buf: []string` backing (typically a stack array);
+// every element points straight into the process's own argv block, which
+// lives for the whole process lifetime, so the views never dangle.
+//
+// Zero heap, zero per-arg allocation: nothing here touches
+// `context.allocator`. The returned slice header is a by-value stack
+// return whose `.ptr` is the caller's `buf` and whose elements are views
+// into C argv — ladder rungs "by-value", "view", and "caller buffer".
+//
+// `sx run <prog.sx> ...` reality — READ THIS BEFORE CONSUMING:
+//   Under `sx run`, the process argv is the sx INTERPRETER's argv, e.g.
+//   ["sx", "run", "prog.sx", ...] — NOT a program's "own" logical args.
+//   (The interpreter also consumes trailing tokens as additional source
+//   files, so they don't reach the program as plain args anyway.) This
+//   accessor reports the real process argv truthfully and does NOT strip
+//   the interpreter prefix. Mapping process argv -> a program's logical
+//   args (dropping the `sx run prog.sx` prefix, or via an sx-run
+//   convention) is a CONSUMER concern handled later (distribution P3.1),
+//   NOT here.
+//
+// Platform: macOS only for now, via the C runtime's `_NSGetArgv()`
+// (char***) and `_NSGetArgc()` (int*). On any other OS the accessors bail
+// loudly (message + `EX_UNAVAILABLE` exit via `process.exit`) rather than
+// returning a silent empty.
+// =====================================================================
+
+#import "modules/std/core.sx";   // out
+#import "modules/build.sx";
+proc :: #import "modules/std/process.sx";
+c :: #import "modules/std/c.sx"; // the shared libc handle for the macOS crt externs below
+
+// _NSGetArgv/_NSGetArgc are macOS-specific — not in the shared c.sx surface —
+// so keep them here, bound through the shared libc handle.
+libc :: c.libc;
+
+// macOS C-runtime argv/argc accessors (crt_externs.h):
+//   extern char ***_NSGetArgv(void);   extern int *_NSGetArgc(void);
+// Each returns a pointer to the runtime's slot; dereference once for the
+// `char**` / `int` the process was launched with. Declared as `*i64` /
+// `*i32` since on 64-bit a `char***` is just a pointer to a pointer-sized
+// slot.
+ns_get_argv :: () -> *i64 extern libc "_NSGetArgv";
+ns_get_argc :: () -> *i32 extern libc "_NSGetArgc";
+
+// =====================================================================
+// EXIT-CODE & `--json` CONTRACT (F3.3) — the minimal surface `dist` (and
+// any sx CLI front-end) relies on. Two pieces:
+//
+//   1. NAMED EXIT CODES (sysexits.h subset). A front-end ends with the
+//      code that matches the outcome: `EX_OK` on success, `EX_USAGE`
+//      after a `parse` failure (a `CliError` — bad command / flag /
+//      value), `EX_UNAVAILABLE` when the platform is unsupported.
+//   2. TERMINATORS. `exit_ok()` / `exit_usage()` end the process with the
+//      matching code. They route through the canonical
+//      `process.exit(code: u8)` (modules/std/process.sx) — there is NO second
+//      hand-rolled `_exit` binding in this module; the unsupported-platform
+//      path below goes through `proc.exit(EX_UNAVAILABLE)` too.
+//
+// `--json` MODE needs no new code here: the parser already surfaces it as
+// `parsed.json` (true iff `--json` appears in the argv — see `Parsed.json`).
+// The convention a front-end follows: in json mode stdout carries ONLY the
+// machine result, and human diagnostics go to stderr (e.g. via
+// `modules/std/log.sx`'s `log.err`). Detect json mode by reading `parsed.json`.
+// =====================================================================
+
+EX_OK          :u8: 0;    // success
+EX_USAGE       :u8: 64;   // command-line usage error (sysexits.h EX_USAGE)
+EX_UNAVAILABLE :u8: 70;   // service / platform unavailable (sysexits.h)
+
+// End the process successfully (`EX_OK` = 0). Thin wrapper over the
+// canonical `process.exit` terminator — immediate `_exit(2)`, no unwinding.
+exit_ok :: () -> noreturn { proc.exit(EX_OK); }
+
+// End the process with the usage-error code (`EX_USAGE` = 64). A CLI
+// front-end calls this after `parse` raises a `CliError` and the human
+// diagnostic has been written to stderr.
+exit_usage :: () -> noreturn { proc.exit(EX_USAGE); }
+
+// Number of process arguments (argc). >= 1 for any normally-launched
+// process, since argv[0] is the executable path.
+os_argc :: () -> i64 {
+    inline if OS == {
+        case .macos: { return (ns_get_argc().*).(i64); }
+        else: {
+            out("std.cli: unsupported platform — only macOS is implemented (needs _NSGetArgv/_NSGetArgc).\n");
+            proc.exit(EX_UNAVAILABLE);
+        }
+    }
+}
+
+// Fill `buf` with VIEWS over the process argv and return the filled prefix
+// `buf[0 .. min(argc, buf.len)]`. Zero heap, zero copy: each element's
+// bytes live in the C runtime's argv block, valid for the whole process.
+//
+// The caller owns `buf` (typically a stack `[N]string`); the returned
+// slice points into it and is valid for as long as `buf` is in scope. If
+// the process has more than `buf.len` arguments only the first `buf.len`
+// are returned — call `os_argc()` first and size `buf` accordingly when an
+// exact count matters.
+os_args :: (buf: []string) -> []string {
+    inline if OS == {
+        case .macos: {
+            argc := (ns_get_argc().*).(i64);
+            argv : [*]i64 = xx ns_get_argv().*;
+            n := if argc > buf.len then buf.len else argc;
+            i := 0;
+            while i < n {
+                cstr : [*]u8 = xx argv[i];
+                len := 0;
+                while cstr[len] != 0 { len += 1; }
+                buf[i] = string.{ ptr = cstr, len = len };
+                i += 1;
+            }
+            result : []string = ---;
+            result.ptr = buf.ptr;
+            result.len = n;
+            return result;
+        }
+        else: {
+            out("std.cli: unsupported platform — only macOS is implemented (needs _NSGetArgv/_NSGetArgc).\n");
+            proc.exit(EX_UNAVAILABLE);
+        }
+    }
+}
+
+// =====================================================================
+// Argument PARSER — subcommand dispatch + `--flag` over an EXPLICIT
+// logical argv (F3.2).
+//
+// `parse(args, commands, diag)` reads a caller-supplied logical argument
+// vector `[]string` — NOT the process argv. (Mapping process argv ->
+// logical args, e.g. dropping the `sx run prog.sx` prefix, is the
+// consumer's job; see the `os_args` note above and F3.1.) The grammar:
+//
+//     <group> <command> [--flag VALUE | --bool]... [--json] [-- rest...]
+//
+//   - args[0] is the GROUP, args[1] the COMMAND. The (group, command)
+//     pair is matched against the caller's `commands` table; no match is
+//     `error.UnknownCommand`.
+//   - `--name VALUE` sets a value-taking flag to a VIEW of the next token;
+//     `--name` alone records a boolean flag's presence. Which is which is
+//     fixed by the matched command's `FlagSpec` list.
+//   - `--json` is a RESERVED global boolean mode flag, always recognized
+//     (commands do not declare it); it surfaces as `parsed.json`.
+//   - `--` ends flag parsing; the tokens after it become `parsed.rest`
+//     (operand VIEWS). The first bare (non `--`-prefixed) token likewise
+//     ends flag parsing and, with the remainder, becomes `parsed.rest`.
+//   - Only long `--flags` are recognized; a single-dash token (`-v`, `-`)
+//     is treated as a bare operand. A value-taking flag accepts any next
+//     token that is not itself a long flag (so `--n -5` gives value "-5").
+//
+// FAILURE SURFACING (no silent skip): an unknown command, an unknown
+// flag, a value-flag missing its value, or an absent required flag each
+// raise a meaningful `CliError` on the error channel — never a silent
+// default. Because error tags carry no data, the caller-owned `diag`
+// records the offending token (its `args` index + a VIEW of it) before
+// the raise, so the caller can report exactly which token failed.
+//
+// HEAP DISCIPLINE (binding, see heap-discipline.md): zero heap, zero copy.
+//   - group / command / every flag value / every `rest` operand are VIEWS
+//     (slices) into the caller's `args` — never copied.
+//   - `Parsed` is a by-value STACK struct the caller binds (like
+//     `hash.init()`); flag presence/values live in a FIXED-capacity inline
+//     array `[16]FlagValue` (at most 16 flags per command), indexed
+//     positionally by the matched command's spec — no per-flag allocation.
+//   - The flag-spec list and the command table are caller storage passed
+//     as VIEWS. Nothing here touches `context.allocator`.
+//
+// Usage:
+//
+//     flags : []FlagSpec = .[
+//         FlagSpec.{ name = "out",     takes_value = true,  required = true },
+//         FlagSpec.{ name = "verbose", takes_value = false, required = false },
+//     ];
+//     cmds : []Command = .[ Command.{ group = "ci", command = "publish", flags = flags } ];
+//     d : Diag = .{};
+//     p := try parse(args, cmds, @d);
+//     // p.group == "ci"; p.command == "publish";
+//     // p.value_of("out"); p.is_set("verbose"); p.json; p.rest
+// =====================================================================
+
+// The parser's failure contract. The first four are INPUT errors a caller
+// reacts to; `TooManyFlags` rejects a command that declares more flags than
+// the inline `Parsed.values` array holds (16) — never a silent truncation.
+CliError :: error { UnknownCommand, UnknownFlag, MissingValue, MissingRequired, TooManyFlags }
+
+// One flag's contract: its long name (without the `--`), whether it takes
+// a value, and whether it must be present. Caller-owned; passed as a view.
+FlagSpec :: struct {
+    name: string;
+    takes_value: bool;
+    required: bool;
+}
+
+// One command's contract: a (group, command) pair and its flag specs (a
+// VIEW into caller storage).
+Command :: struct {
+    group: string;
+    command: string;
+    flags: []FlagSpec;
+}
+
+// A parsed flag slot, positionally matched to a `FlagSpec`. `value` is a
+// VIEW into `args`, meaningful only for a value-taking flag that was set.
+// Defaults make a whole `Parsed` zero-initializable via `.{}`.
+FlagValue :: struct {
+    set: bool = false;
+    value: string = "";
+}
+
+// The offending token on the error path. The caller owns a stack `Diag`
+// and passes it by pointer; the parser writes it before any raise because
+// error tags carry no data. `index` is the position in `args`, or -1 when
+// the failure names a flag rather than an input token (a missing required
+// flag sets `token` to the flag name).
+Diag :: struct {
+    index: i64 = -1;
+    token: string = "";
+}
+
+// The parse result — a by-value stack struct. group / command / flag
+// values / rest are all VIEWS into `args`.
+Parsed :: struct {
+    group: string;
+    command: string;
+    cmd_index: i64;
+    json: bool;                // `--json` mode: true iff `--json` is in argv
+    rest: []string;
+    spec: []FlagSpec;          // view of the matched command's flag specs
+    values: [16]FlagValue;     // fixed inline storage, indexed by spec position
+
+    // Presence of a declared flag (boolean or value-taking). False for an
+    // undeclared name.
+    is_set :: (self: *Parsed, name: string) -> bool {
+        j := 0;
+        while j < self.spec.len {
+            if self.spec[j].name == name { return self.values[j].set; }
+            j += 1;
+        }
+        return false;
+    }
+
+    // The VIEW value of a value-taking flag, or "" if absent/undeclared.
+    // Use `is_set` to distinguish "absent" from "present, empty value".
+    value_of :: (self: *Parsed, name: string) -> string {
+        j := 0;
+        while j < self.spec.len {
+            if self.spec[j].name == name { return self.values[j].value; }
+            j += 1;
+        }
+        return "";
+    }
+}
+
+// True for a long-option token (`--x`). A single dash or a bare word is
+// not a flag. Exactly `--` is the separator, tested before this.
+is_long_flag :: (s: string) -> bool {
+    return s.len >= 2 and s[0] == '-' and s[1] == '-';
+}
+
+// Parse `args` (the logical argv) against the `commands` table, writing
+// the offending token into `diag` on the error path. See the section
+// header for grammar, failure contract, and heap discipline.
+parse :: (args: []string, commands: []Command, diag: *Diag) -> (Parsed, !CliError) {
+    // ── Dispatch: match (args[0], args[1]) against the command table ──
+    if args.len < 2 {
+        diag.index = if args.len == 0 then -1 else 0;
+        diag.token = if args.len == 0 then "" else args[0];
+        raise error.UnknownCommand;
+    }
+    group := args[0];
+    command := args[1];
+    ci := -1;
+    k := 0;
+    while k < commands.len {
+        if commands[k].group == group and commands[k].command == command { ci = k; break; }
+        k += 1;
+    }
+    if ci < 0 {
+        diag.index = 1;
+        diag.token = command;
+        raise error.UnknownCommand;
+    }
+    spec := commands[ci].flags;
+    if spec.len > 16 {
+        diag.index = -1;
+        diag.token = command;
+        raise error.TooManyFlags;
+    }
+
+    // ── Result skeleton ──
+    // Clear ALL 16 `values` slots (not just the spec prefix): the whole
+    // struct must be live before it is returned by value. `rest` is an
+    // empty slice until a `--`/operand sets it.
+    result : Parsed = ---;
+    result.group = group;
+    result.command = command;
+    result.cmd_index = ci;
+    result.json = false;
+    result.spec = spec;
+    result.rest = args[args.len ..];
+    j := 0;
+    while j < 16 {
+        result.values[j].set = false;
+        result.values[j].value = "";
+        j += 1;
+    }
+
+    // ── Flags ──
+    i := 2;
+    while i < args.len {
+        tok := args[i];
+        if tok == "--" {                 // explicit separator: rest follows
+            result.rest = args[i + 1 ..];
+            break;
+        }
+        if !is_long_flag(tok) {          // first bare operand ends flag parsing
+            result.rest = args[i ..];
+            break;
+        }
+        name := tok[2 ..];
+        if name == "json" {              // reserved global mode flag
+            result.json = true;
+            i += 1;
+            continue;
+        }
+        si := -1;
+        s := 0;
+        while s < spec.len {
+            if spec[s].name == name { si = s; break; }
+            s += 1;
+        }
+        if si < 0 {
+            diag.index = i;
+            diag.token = tok;
+            raise error.UnknownFlag;
+        }
+        if spec[si].takes_value {
+            if i + 1 >= args.len or is_long_flag(args[i + 1]) {
+                diag.index = i;
+                diag.token = tok;
+                raise error.MissingValue;
+            }
+            result.values[si].set = true;
+            result.values[si].value = args[i + 1];   // VIEW into args
+            i += 2;
+        } else {
+            result.values[si].set = true;
+            i += 1;
+        }
+    }
+
+    // ── Required-flag check ──
+    r := 0;
+    while r < spec.len {
+        if spec[r].required and !result.values[r].set {
+            diag.index = -1;
+            diag.token = spec[r].name;
+            raise error.MissingRequired;
+        }
+        r += 1;
+    }
+
+    return result;
+}

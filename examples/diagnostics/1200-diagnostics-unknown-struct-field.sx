@@ -1,0 +1,16 @@
+// A struct literal naming a field the struct does not have is a COMPILE ERROR —
+// not silently dropped. Catches typos and fields removed by an `inline if OS`
+// branch (the motivating case: a darwin-only `sin_len` written into the linux
+// `SockAddr`). Before the fix the unknown field's value was lowered and
+// discarded, so the mistake shipped silently. Regression (issue 0203).
+//
+// Punned bare-ident shorthand (`.{ x, y }`) that misses a field is NOT this
+// case — it is reclassified as a positional literal earlier; only an explicit
+// `name = expr` naming no field is rejected here.
+
+Point :: struct { x: i64 = 0; y: i64 = 0; }
+
+main :: () -> i32 {
+    p : Point = .{ x = 1, zz = 9 };   // 'zz' is not a field of Point
+    return xx p.x;
+}

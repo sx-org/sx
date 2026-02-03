@@ -1,0 +1,41 @@
+// `?*P` (optional VIEW) method dispatch: the optional of a pointer is
+// pointer-sentinel-shaped, so the optional value IS the `*P` word —
+// `opt_view.method()` unwraps and dispatches exactly like `?P` does for
+// owned optionals (calling on null is undefined, same as `?P`).
+// Both the direct field call and the unwrap-bind spelling work.
+// Regression (issue 0310): the optional-receiver dispatch arm only
+// looked for a protocol CHILD, so `h.gpu.n()` with `gpu: ?*P` was
+// "unresolved 'n'" while the same shape with `?P` compiled.
+#import "modules/std.sx";
+
+P :: protocol {
+    n :: (self: *Self) -> i32;
+    bump :: (self: *Self);
+}
+
+C :: struct { v: i32 = 42; }
+impl P for C {
+    n :: (self: *C) -> i32 { self.v }
+    bump :: (self: *C) { self.v += 1; }
+}
+
+Holder :: struct { gpu: ?*P = null; }
+
+main :: () {
+    c := C.{};
+    v : *P = c;
+    h := Holder.{ gpu = v };
+    if h.gpu != null {
+        print("direct:  {}\n", h.gpu.n());
+    }
+    // The view aliases c — mutations through the optional view land there.
+    h.gpu.bump();
+    print("aliased: {}\n", c.v);
+    // Unwrap-bind keeps working.
+    if g := h.gpu {
+        print("bound:   {}\n", g.n());
+    }
+    // ?P (owned optional) parity.
+    op : ?P = c.(P);
+    print("owned:   {}\n", op.n());
+}

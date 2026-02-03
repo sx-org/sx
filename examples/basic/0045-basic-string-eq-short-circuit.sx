@@ -1,0 +1,53 @@
+// String `==`/`!=` as an operand of a short-circuit `and`/`or`.
+//
+// A string compare lowers to its own multi-block memcmp sub-CFG, so the
+// operand finishes in a later basic block than the one the short-circuit
+// started in. The `and`/`or` merge PHI must take that actual block as the
+// incoming predecessor.
+//
+// Regression (issue 0078): combining string equality with `and`/`or` used to
+// emit invalid LLVM (`PHI node entries do not match predecessors!`).
+#import "modules/std.sx";
+
+Json :: enum {
+    str: string;
+    int_: i64;
+    null_;
+}
+
+main :: () {
+    a := "k";
+    b := "v";
+
+    // string == on both sides of `and`
+    and_tt := a == "k" and b == "v";
+    and_tf := a == "k" and b == "x";
+    and_ft := a == "z" and b == "v";
+    print("and: {} {} {}\n", and_tt, and_tf, and_ft);
+
+    // string == on both sides of `or`
+    or_ff := a == "z" or b == "x";
+    or_tf := a == "k" or b == "x";
+    or_ft := a == "z" or b == "v";
+    print("or: {} {} {}\n", or_ff, or_tf, or_ft);
+
+    // string == feeding both `and` and `or` in one expression
+    mixed := a == "k" and b == "v" or a == "z";
+    print("mixed: {}\n", mixed);
+
+    // string `!=` operands too
+    ne := a != "z" and b != "z";
+    print("ne: {}\n", ne);
+
+    // the larger shape: a match-expression value plus an enum-payload string
+    // == combined under `and`/`or`.
+    v : Json = .str("v");
+    kind := if v == {
+        case .str: 1;
+        case .int_: 2;
+        case .null_: 3;
+    }
+    ok := kind == 1 and v.str == "v";
+    bad := kind == 2 or v.str == "x";
+    print("payload: {} {}\n", ok, bad);
+}

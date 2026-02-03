@@ -1,0 +1,5 @@
+error: unknown type 'MissingType'
+  --> examples/types/0171-types-undeclared-type-in-generic-struct-field.sx:22:10
+   |
+22 |     bad: MissingType;
+   |          ^^^^^^^^^^^

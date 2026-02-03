@@ -1,0 +1,10 @@
+// A module that owns a named C unit + a hand-curated binding.
+#import "modules/std.sx";
+
+cunit :: #import c {
+    #source "inmod.c";
+};
+
+unit_in_mod_answer :: () -> i32 extern cunit "unit_in_mod_answer";
+
+answer_via_mod :: () -> i32 { return unit_in_mod_answer(); }

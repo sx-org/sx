@@ -1,0 +1,32 @@
+// Variadic heterogeneous type packs — step 2: typed pack indexing.
+//
+// `args[$i]` (with `$i` a comptime-known integer) inside a pack-fn
+// body should resolve to the i-th call-site argument with its
+// CONCRETE type, not the boxed `any` that today's `[]any` slice
+// path yields. Without typed access, downstream operations on the
+// element (field access, typed coercion, passing to a typed slot)
+// either fail with "field 'X' not found on type 'any'" or silently
+// box/unbox through any.
+//
+// This file pins today's failure: `args[0].x` on a struct-typed
+// call arg trips "field 'x' not found on type 'any'" because the
+// AST-level type inference for `args[0]` returns any.
+//
+// Next commit teaches `lowerIndexExpr` to detect a pack-name base
+// with a comptime-int-literal index and substitute the i-th
+// call-site arg's lowered value directly — propagating the call
+// arg's real type through field access, typed assignments, and
+// further indexing.
+
+#import "modules/std.sx";
+
+Point :: struct { x: i64; y: i64; }
+
+get_x :: (..$args) -> i64 => args[0].x;
+
+main :: () -> i32 {
+    p := Point.{ x = 7, y = 9 };
+    n := get_x(p);
+    print("{}\n", n);
+    return 0;
+}

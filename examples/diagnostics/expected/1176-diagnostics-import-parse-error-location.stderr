@@ -1,0 +1,5 @@
+error: parse error in 'examples/diagnostics/1176-diagnostics-import-parse-error-location/broken.sx': expected ';'
+  --> examples/diagnostics/1176-diagnostics-import-parse-error-location/broken.sx:6:13
+   |
+ 6 | broken :: 1 2;
+   |             ^

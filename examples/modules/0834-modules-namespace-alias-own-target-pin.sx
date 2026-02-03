@@ -1,0 +1,15 @@
+// Two modules each declare their OWN alias `t` to different targets, and the
+// targets export the SAME member name `f`. Each module's `t.f()` dispatches
+// its OWN target's `f` — a.sx gets x.sx's (1), b.sx gets y.sx's (2). The
+// caller here never uses `t` itself, so no ambiguity arises.
+//
+// Regression (issue 0114): the global qualified-fn map registered `t.f`
+// first-wins, so both modules used to call whichever registered first.
+
+#import "modules/std.sx";
+#import "0834-modules-namespace-alias-own-target-pin/a.sx";
+#import "0834-modules-namespace-alias-own-target-pin/b.sx";
+
+main :: () {
+    print("{} {}\n", use_a(), use_b());
+}

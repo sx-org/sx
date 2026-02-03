@@ -1,0 +1,53 @@
+// Phase 0 baseline (PLAN-FFI.md step 0.3): structs >16 bytes passed
+// by value into a C `extern` fn and returned by value. Exercises
+// the byval-pointer ABI path — the caller copies the struct onto its
+// stack and hands a pointer to the callee; on AAPCS64 the return
+// uses the indirect `x8` register; on SysV AMD64 the return is a
+// hidden first arg pointer that the caller allocates.
+//
+// Distinct from the register-pair / [2 x i64] / HFA paths the
+// small-struct baseline (ffi-02) covers. The two relevant emit_llvm
+// helpers are `needsByval` (returns true when size > 16) and
+// `materializeByvalArg` (alloca + store + pass pointer).
+//
+//   Big24 — 24 B, three i64
+//   Big48 — 48 B, six i64
+
+#import "modules/std.sx";
+
+#import c {
+    #source "1211-ffi-03-large-struct.c";
+};
+
+Big24 :: struct { a: i64; b: i64; c: i64; }
+Big48 :: struct {
+    a: i64; b: i64; c: i64;
+    d: i64; e: i64; f: i64;
+}
+
+ffi_big24_make   :: (a: i64, b: i64, c: i64) -> Big24 extern;
+ffi_big24_rotate :: (v: Big24)               -> Big24 extern;
+ffi_big24_sum    :: (v: Big24)               -> i64   extern;
+
+ffi_big48_make    :: (a: i64, b: i64, c: i64,
+                      d: i64, e: i64, f: i64) -> Big48 extern;
+ffi_big48_reverse :: (v: Big48)               -> Big48 extern;
+ffi_big48_sum     :: (v: Big48)               -> i64   extern;
+
+main :: () -> i32 {
+    // ── Big24 (24 bytes, byval pointer) ────────────────────────────
+    v := ffi_big24_make(1, 2, 3);
+    print("big24 make    = ({}, {}, {})\n", v.a, v.b, v.c);
+    w := ffi_big24_rotate(v);
+    print("big24 rotate  = ({}, {}, {})\n", w.a, w.b, w.c);
+    print("big24 sum     = {}\n", ffi_big24_sum(v));
+
+    // ── Big48 (48 bytes, byval pointer) ────────────────────────────
+    x := ffi_big48_make(10, 20, 30, 40, 50, 60);
+    print("big48 make    = ({}, {}, {}, {}, {}, {})\n", x.a, x.b, x.c, x.d, x.e, x.f);
+    y := ffi_big48_reverse(x);
+    print("big48 reverse = ({}, {}, {}, {}, {}, {})\n", y.a, y.b, y.c, y.d, y.e, y.f);
+    print("big48 sum     = {}\n", ffi_big48_sum(x));
+
+    0
+}

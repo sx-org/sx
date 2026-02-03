@@ -1,0 +1,42 @@
+// Integer literals default to i64 regardless of context: an unannotated
+// `x := <int literal>` local stays i64 even inside a function whose return
+// type is a narrower integer (the implicit-return target must not type the
+// body's declarations), and a large literal initializer keeps its value.
+// Also covers destructure decls (`a, b := ...`), which share the same rule.
+// Regression (issue 0111): these locals adopted the enclosing fn's return
+// type (i32/i8), silently wrapping `big := 3000000000` to -1294967296.
+
+#import "modules/std.sx";
+
+f :: () -> i32 {
+    x := 0;
+    print("f.x: {}\n", type_name(type_of(x)));
+    0
+}
+
+g :: () -> i8 {
+    x := 0;
+    print("g.x: {}\n", type_name(type_of(x)));
+    0
+}
+
+big_host :: () -> i32 {
+    big := 3000000000;
+    print("big: {} = {}\n", type_name(type_of(big)), big);
+    0
+}
+
+d_host :: () -> i32 {
+    a, b := .{1, 2};
+    print("a: {} b: {}\n", type_name(type_of(a)), type_name(type_of(b)));
+    0
+}
+
+main :: () {
+    f();
+    g();
+    big_host();
+    d_host();
+    x := 0;
+    print("main.x: {}\n", type_name(type_of(x)));
+}

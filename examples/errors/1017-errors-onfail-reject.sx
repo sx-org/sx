@@ -1,0 +1,15 @@
+// `onfail` rejection (ERR step E1.7): `onfail` is only valid inside a failable
+// function. A non-failable function never error-exits, so an `onfail` could
+// never fire — use `defer` for unconditional cleanup. The positive cases live
+// in `examples/233-onfail.sx`.
+
+#import "modules/std.sx";
+
+non_failable :: () -> i32 {
+    onfail print("never fires\n");   // error: onfail outside a failable function
+    return 0;
+}
+
+main :: () -> i32 {
+    return non_failable();
+}

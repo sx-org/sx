@@ -1,0 +1,22 @@
+// Boundary and exemption cases for the int-literal fits-check: extreme
+// in-range values compile (incl. negated literals via the constant fold);
+// width-64 types accept any representable literal; explicit `xx` / `cast`
+// still truncate on request; literal call args check against param types.
+
+#import "modules/std.sx";
+
+clamp_i8 :: (v: i8) -> i8 { v }
+
+main :: () {
+    a : i8 = -128;
+    b : i8 = 127;
+    c : u8 = 0;
+    d : u8 = 255;
+    e : u64 = 0x7FFFFFFFFFFFFFFF;
+    f : u32 = 0xFFFFFFFF;
+    g : i16 = -32768;
+    h : i8 = xx 300;            // explicit truncation stays legal
+    i := 300.(i8);          // cast form too
+    j : i8 = clamp_i8(-5);
+    print("{} {} {} {} {} {} {} {} {} {}\n", a, b, c, d, e, f, g, h, i, j);
+}

@@ -1,0 +1,511 @@
+// std.http_router (PLAN-HTTPZ D2): a thin ergonomic layer over the
+// std.http server core. Method+path ROUTING with path PARAMS (/users/:id),
+// QUERY-string parsing, urlencoded FORM parsing, and JSON request/response
+// helpers over std/json — so apps stop hand-rolling `if req.path == …`.
+//
+// The router is a CONSUMER of the public Server/Request/Response API: it
+// touches http.sx not at all. It exposes ONE plain handler
+// (Router.dispatch) you hand to Server.init, and the Router itself is
+// reached through the server's `ctx` word (the established no-globals
+// pattern). Route handlers get a *RouteCtx carrying the request, response,
+// extracted path params, and the app's OWN ctx word (Router.app_ctx).
+//
+// MEMORY: route registration captures the Router's owning allocator
+// (init) and grows the route table through it — the table outlives any
+// transient per-request scope (CLAUDE.md long-lived-container rule). The
+// HOT PATH allocates NOTHING: path params, query pairs, and form pairs all
+// land in FIXED-CAPACITY arrays on the stack-resident RouteCtx — no
+// per-request heap, so the server's leak gate stays net-zero. Decoded
+// query/form VALUES (percent/`+` decoding needs fresh bytes) use the
+// per-request context arena, which the server tears down after the handler.
+//
+// ROUTING ORDER: matching is FIRST-REGISTERED-WINS over the route table, NOT
+// static-preferred. If a param route (`/users/:id`) is registered before a
+// static one (`/users/me`), the param route shadows the static — `/users/me`
+// binds `:id="me"` and the static handler never runs. REGISTER STATIC ROUTES
+// BEFORE PARAM ROUTES on the same prefix.
+//
+// DECODING: percent-decoding is permissive — a malformed `%` sequence
+// (trailing `%`, `%G…`) is left literal, never an error or an OOB read. `%00`
+// decodes to an embedded NUL byte; sx strings are length-based so this is
+// memory-safe, but a handler treating such a value as a C string should know.
+//
+// multipart/form-data is OUT OF SCOPE (it is large — boundary framing,
+// streamed parts, per-part headers); a follow-up. This layer covers
+// application/x-www-form-urlencoded only.
+
+#import "modules/std/fmt.sx";          // concat
+types :: #import "modules/std/http/types.sx";
+json  :: #import "modules/std/json.sx";   // router uses `json.Value` / `json.parse` (namespaced)
+
+// Fixed capacities for the per-request scratch. A request that exceeds any
+// of these simply drops the overflow (the extra params/pairs are not
+// visible) rather than allocating — bounded memory is the contract.
+MAX_PARAMS  :: 16;   // path params per route (e.g. /a/:x/b/:y → 2)
+MAX_QUERY   :: 32;   // query pairs parsed from ?a=1&b=2
+MAX_FORM    :: 64;   // urlencoded form fields
+MAX_SEGS    :: 32;   // path segments a pattern/path may have
+
+// One (name → value) pair. `name`/`value` are VIEWS — params point into the
+// request's path (untouched during dispatch); decoded query/form values
+// point into per-request-arena storage. Valid only for the handler call.
+KV :: struct {
+    name: string = "";
+    value: string = "";
+}
+
+// One registered route: (method, pattern) → handler. The pattern is the
+// raw "/users/:id" string; matching splits it on '/' each dispatch (cheap,
+// no per-route preprocessing, no heap beyond the table row).
+RouteHandler :: (rc: *RouteCtx) -> void;
+
+Route :: struct {
+    method: string = "";    // "GET", "POST", … (compared case-insensitively)
+    pattern: string = "";   // "/users/:id"
+    handler: RouteHandler = null;
+}
+
+// The handler-facing context. Built fresh (on the stack) per dispatch by
+// Router.dispatch; carries the live request/response, the matched path
+// params, and the app's own ctx word. Query/form pairs are parsed LAZILY
+// on first access and cached here, so a handler that never asks pays
+// nothing.
+RouteCtx :: struct {
+    req: *types.Request = null;
+    resp: *types.Response = null;
+    app_ctx: usize = 0;          // the word the app gave Router.init
+
+    // path params (filled by the match)
+    params: [MAX_PARAMS]KV = ---;
+    n_params: i64 = 0;
+
+    // query cache (lazy)
+    query_parsed: bool = false;
+    query: [MAX_QUERY]KV = ---;
+    n_query: i64 = 0;
+
+    // form cache (lazy)
+    form_parsed: bool = false;
+    form: [MAX_FORM]KV = ---;
+    n_form: i64 = 0;
+
+    // ── path params ──────────────────────────────────────────────────
+    // Look up a path param by name; "" when absent. Names come straight
+    // from the pattern's ":name" segments.
+    param :: (self: *RouteCtx, name: string) -> string {
+        i := 0;
+        while i < self.n_params {
+            if str_eq(self.params[i].name, name) { return self.params[i].value; }
+            i += 1;
+        }
+        return "";
+    }
+
+    // ── query string ─────────────────────────────────────────────────
+    // Value of query key `name` from the request path's `?...` portion;
+    // "" when the key is absent. A bare flag (`?x`) yields "". Decoded
+    // (percent + '+') into the per-request arena on first call.
+    query_get :: (self: *RouteCtx, name: string) -> string {
+        if !self.query_parsed {
+            qs := query_string_of(self.req.path);
+            self.n_query = parse_pairs(qs, @self.query[0], MAX_QUERY);
+            self.query_parsed = true;
+        }
+        i := 0;
+        while i < self.n_query {
+            if str_eq(self.query[i].name, name) { return self.query[i].value; }
+            i += 1;
+        }
+        return "";
+    }
+
+    // True if the query key is present at all (distinguishes a flag with
+    // no value, `?x`, whose query_get is "", from a missing key).
+    query_has :: (self: *RouteCtx, name: string) -> bool {
+        if !self.query_parsed {
+            qs := query_string_of(self.req.path);
+            self.n_query = parse_pairs(qs, @self.query[0], MAX_QUERY);
+            self.query_parsed = true;
+        }
+        i := 0;
+        while i < self.n_query {
+            if str_eq(self.query[i].name, name) { return true; }
+            i += 1;
+        }
+        return false;
+    }
+
+    // ── urlencoded form body ─────────────────────────────────────────
+    // Value of form field `name` from an application/x-www-form-urlencoded
+    // request body; "" when absent. Same percent/'+' decoding as the query.
+    form_get :: (self: *RouteCtx, name: string) -> string {
+        if !self.form_parsed {
+            self.n_form = parse_pairs(self.req.body, @self.form[0], MAX_FORM);
+            self.form_parsed = true;
+        }
+        i := 0;
+        while i < self.n_form {
+            if str_eq(self.form[i].name, name) { return self.form[i].value; }
+            i += 1;
+        }
+        return "";
+    }
+
+    form_has :: (self: *RouteCtx, name: string) -> bool {
+        if !self.form_parsed {
+            self.n_form = parse_pairs(self.req.body, @self.form[0], MAX_FORM);
+            self.form_parsed = true;
+        }
+        i := 0;
+        while i < self.n_form {
+            if str_eq(self.form[i].name, name) { return true; }
+            i += 1;
+        }
+        return false;
+    }
+
+    // ── JSON request body ────────────────────────────────────────────
+    // Parse the request body as JSON (under the per-request arena) and
+    // return the root Value + an ok flag. A malformed body → (.null,
+    // false). Strings/ints/bools/objects/arrays per std/json (no floats).
+    json_body :: (self: *RouteCtx) -> (json.Value, bool) {
+        v, e := json.parse(self.req.body, context.allocator);
+        if e {
+            nv : json.Value = .null;
+            return .{nv, false};
+        }
+        return v, true;
+    }
+
+    // ── JSON response ────────────────────────────────────────────────
+    // Send `v` as the response body: sets Content-Type application/json
+    // and serializes via std/json into the per-request arena. `status`
+    // sets the response status. Returns false if serialization overflows
+    // the scratch (huge document) — the caller can fall back.
+    json_send :: (self: *RouteCtx, status: i64, v: json.Value) -> bool {
+        // Stage into an arena-backed buffer sized generously; json.sx's
+        // writer reports overflow rather than truncating.
+        cap : i64 = 65536;
+        buf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        n, e := json.write_to_buffer(v, string.{ ptr = buf, len = cap });
+        if e { return false; }
+        self.resp.status = status;
+        self.resp.content_type = "application/json";
+        self.resp.body = string.{ ptr = buf, len = n };
+        return true;
+    }
+}
+
+// ── string helpers ───────────────────────────────────────────────────
+
+str_eq :: (a: string, b: string) -> bool {
+    if a.len != b.len { return false; }
+    i := 0;
+    while i < a.len {
+        if a[i] != b[i] { return false; }
+        i += 1;
+    }
+    return true;
+}
+
+// Case-insensitive ASCII equality (for method comparison).
+ci_eq :: (a: string, b: string) -> bool {
+    if a.len != b.len { return false; }
+    i := 0;
+    while i < a.len {
+        ca := a[i];
+        cb := b[i];
+        if ca >= 'A' and ca <= 'Z' { ca = ca + ' '; }
+        if cb >= 'A' and cb <= 'Z' { cb = cb + ' '; }
+        if ca != cb { return false; }
+        i += 1;
+    }
+    return true;
+}
+
+// The portion of a request path before any '?': "/users/42?x=1" → "/users/42".
+path_only :: (path: string) -> string {
+    i := 0;
+    while i < path.len {
+        if path[i] == '?' { return string.{ ptr = path.ptr, len = i }; }
+        i += 1;
+    }
+    return path;
+}
+
+// The query string AFTER the '?': "/s?a=1&b=2" → "a=1&b=2"; "" when none.
+query_string_of :: (path: string) -> string {
+    i := 0;
+    while i < path.len {
+        if path[i] == '?' {
+            return string.{ ptr = @path[i + 1], len = path.len - i - 1 };
+        }
+        i += 1;
+    }
+    return "";
+}
+
+// ── percent / '+' decoding ───────────────────────────────────────────
+
+hex_nibble :: (c: u8) -> i64 {
+    if c >= '0' and c <= '9' { return c.(i64) - '0'; }
+    if c >= 'a' and c <= 'f' { return c.(i64) - 'a' + 10; }
+    if c >= 'A' and c <= 'F' { return c.(i64) - 'A' + 10; }
+    return -1;
+}
+
+// Decode one urlencoded token (`%XX` → byte, `+` → space, others verbatim)
+// from `s` into `dst` (must be >= s.len bytes — decoding only shrinks).
+// Returns the decoded byte length. A malformed `%` (truncated or non-hex)
+// is passed through literally rather than dropped.
+url_decode_into :: (s: string, dst: [*]u8) -> i64 {
+    di : i64 = 0;
+    i := 0;
+    while i < s.len {
+        c := s[i];
+        if c == '%' and i + 2 < s.len {   // '%' with two more chars
+            hi := hex_nibble(s[i + 1]);
+            lo := hex_nibble(s[i + 2]);
+            if hi >= 0 and lo >= 0 {
+                dst[di] = xx (hi * 16 + lo);
+                di += 1;
+                i += 3;
+                continue;
+            }
+        }
+        if c == '+' { dst[di] = ' '; }   // '+' → space
+        else { dst[di] = c; }
+        di += 1;
+        i += 1;
+    }
+    return di;
+}
+
+// True if a raw token needs decoding (has a '%' or '+'); a clean token is
+// returned as a zero-copy view, no arena byte spent.
+needs_decode :: (s: string) -> bool {
+    i := 0;
+    while i < s.len {
+        if s[i] == '%' or s[i] == '+' { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+// Decode a token: a clean one is a view into the source; one with escapes
+// is decoded into the per-request arena (context.allocator).
+decode_token :: (s: string) -> string {
+    if !needs_decode(s) { return s; }
+    buf : [*]u8 = xx context.allocator.alloc_bytes(if s.len > 0 then s.len else 1);
+    n := url_decode_into(s, buf);
+    return string.{ ptr = buf, len = n };
+}
+
+// Parse `a=1&b=two&flag` into up to `cap` decoded KV pairs at `out`.
+// A pair with no '=' (`flag`) has value "". Keys AND values are decoded
+// (percent + '+'). Returns the number of pairs written (overflow dropped).
+parse_pairs :: (s: string, out: [*]KV, cap: i64) -> i64 {
+    n : i64 = 0;
+    i := 0;
+    while i < s.len and n < cap {
+        // one segment runs to the next '&'
+        seg_start := i;
+        while i < s.len and s[i] != '&' { i += 1; }
+        seg := string.{ ptr = @s[seg_start], len = i - seg_start };
+        if i < s.len { i += 1; }   // skip '&'
+
+        if seg.len == 0 { continue; }   // empty segment ("&&")
+
+        // split on the first '='
+        eq := -1;
+        k := 0;
+        while k < seg.len {
+            if seg[k] == '=' { eq = k; break; }
+            k += 1;
+        }
+        key : string = "";
+        val : string = "";
+        if eq < 0 {
+            key = seg;
+        } else {
+            key = string.{ ptr = seg.ptr, len = eq };
+            val = string.{ ptr = @seg[eq + 1], len = seg.len - eq - 1 };
+        }
+        out[n] = KV.{ name = decode_token(key), value = decode_token(val) };
+        n += 1;
+    }
+    return n;
+}
+
+// ── pattern matching ─────────────────────────────────────────────────
+
+// Match `path` (already stripped of any query) against `pattern`,
+// extracting ":name" segments into `params` (up to MAX_PARAMS). Both are
+// split on '/'. Returns (true, n_params) on a match; false otherwise.
+// Trailing-slash insensitive: "/users" matches "/users/" (empty trailing
+// segments are ignored on both sides).
+match_pattern :: (pattern: string, path: string, params: [*]KV) -> (bool, i64 = 0) {
+    pi := 0;   // pattern cursor
+    xi := 0;   // path cursor
+    n : i64 = 0;
+    while true {
+        // advance past leading '/'
+        while pi < pattern.len and pattern[pi] == '/' { pi += 1; }
+        while xi < path.len and path[xi] == '/' { xi += 1; }
+        pat_end := pi >= pattern.len;
+        path_end := xi >= path.len;
+        if pat_end and path_end { return true, n; }
+        if pat_end or path_end { return false, 0; }
+        // grab one segment from each
+        ps := pi;
+        while pi < pattern.len and pattern[pi] != '/' { pi += 1; }
+        pseg := string.{ ptr = @pattern[ps], len = pi - ps };
+        xs := xi;
+        while xi < path.len and path[xi] != '/' { xi += 1; }
+        xseg := string.{ ptr = @path[xs], len = xi - xs };
+        if pseg.len > 0 and pseg[0] == ':' {   // param segment
+            if n < MAX_PARAMS {
+                name := string.{ ptr = @pseg[1], len = pseg.len - 1 };
+                params[n] = KV.{ name = name, value = xseg };
+                n += 1;
+            }
+        } else {
+            if !str_eq(pseg, xseg) { return false, 0; }
+        }
+    }
+    // Unreachable (the loop only exits via the returns above), but the
+    // checker still needs a full-arity terminating return: a defaulted return
+    // slot seeds only on the IMPLICIT/naked return, not on an explicit
+    // under-arity `return false;`.
+    return false, 0;
+}
+
+// ── the Router ───────────────────────────────────────────────────────
+
+MAX_ROUTES :: 128;
+
+Router :: struct {
+    routes: [MAX_ROUTES]Route = ---;
+    n_routes: i64 = 0;
+    app_ctx: usize = 0;             // the word route handlers see (RouteCtx.app_ctx)
+    not_found: RouteHandler = null; // optional custom 404 handler
+
+    // Initialize with the app's own ctx word (whatever route handlers want
+    // — a store handle, config). No allocation: the route table is inline
+    // (fixed MAX_ROUTES), so the Router needs no owning allocator and never
+    // grows the heap. Bind the result to a local; `xx router` is the ctx.
+    init :: (app_ctx: usize) -> Router {
+        Router.{ app_ctx = app_ctx, n_routes = 0, not_found = null }
+    }
+
+    // Register (method, pattern) → handler. Method is matched case-
+    // insensitively; pattern segments beginning ':' are path params.
+    // Silently ignores registration past MAX_ROUTES (bounded table).
+    route :: (self: *Router, method: string, pattern: string, h: RouteHandler) {
+        if self.n_routes >= MAX_ROUTES { return; }
+        self.routes[self.n_routes] = Route.{ method = method, pattern = pattern, handler = h };
+        self.n_routes += 1;
+    }
+
+    get  :: (self: *Router, pattern: string, h: RouteHandler) { self.route("GET",  pattern, h); }
+    post :: (self: *Router, pattern: string, h: RouteHandler) { self.route("POST", pattern, h); }
+    put  :: (self: *Router, pattern: string, h: RouteHandler) { self.route("PUT",  pattern, h); }
+    del  :: (self: *Router, pattern: string, h: RouteHandler) { self.route("DELETE", pattern, h); }
+
+    // Set a custom 404 handler (else a plain "404 Not Found" text body).
+    set_not_found :: (self: *Router, h: RouteHandler) { self.not_found = h; }
+}
+
+// The one handler you hand to Server.init — a plain free function with the
+// exact (*Request, *Response, usize) server-handler shape (so it binds to
+// the Server's handler fn-ptr field). `ctx` is `xx router`. Matches the
+// request to a route and dispatches; a path that matches no pattern → 404;
+// a path that matches a pattern but whose method no route registered → 405
+// with an `Allow` header listing the methods registered for that path.
+//
+// Use it as:  srv, e := http.Server.init(cfg, http.dispatch, xx @router);
+dispatch :: (req: *types.Request, resp: *types.Response, ctx: *Router) {
+    self := ctx;
+    path := path_only(req.path);    
+
+    rc : RouteCtx = .{ req = req, resp = resp, app_ctx = self.app_ctx };
+
+    // First pass: find an exact (method, pattern) match.
+    i := 0;
+    while i < self.n_routes {
+        r := self.routes[i];
+        if ci_eq(r.method, req.method) {
+            ok, np := match_pattern(r.pattern, path, @rc.params[0]);
+            if ok {
+                rc.n_params = np;
+                h := r.handler;
+                h(@rc);
+                return;
+            }
+        }
+        i += 1;
+    }
+
+    // Q1.10 (RFC 9110 §9.3.2): HEAD must be supported wherever GET is —
+    // a HEAD request with no HEAD route of its own (the exact pass above
+    // found nothing, so an explicitly registered HEAD route still wins)
+    // dispatches the matching GET route. The SERVER layer suppresses the
+    // response body (automatic HEAD, Q1.4), so the handler needs no HEAD
+    // awareness.
+    if ci_eq(req.method, "HEAD") {
+        i = 0;
+        while i < self.n_routes {
+            r := self.routes[i];
+            if ci_eq(r.method, "GET") {
+                ok, np := match_pattern(r.pattern, path, @rc.params[0]);
+                if ok {
+                    rc.n_params = np;
+                    h := r.handler;
+                    h(@rc);
+                    return;
+                }
+            }
+            i += 1;
+        }
+    }
+
+    // No method+path match. Does the PATH match any route (wrong method)
+    // → 405 + Allow; else → 404.
+    path_matched := false;
+    allow : string = "";
+    has_get := false;
+    has_head := false;
+    scratch : [MAX_PARAMS]KV = ---;
+    i = 0;
+    while i < self.n_routes {
+        r := self.routes[i];
+        ok, _ := match_pattern(r.pattern, path, @scratch[0]);
+        if ok {
+            path_matched = true;
+            if allow.len == 0 { allow = r.method; }
+            else { allow = concat(allow, concat(", ", r.method)); }
+            if ci_eq(r.method, "GET") { has_get = true; }
+            if ci_eq(r.method, "HEAD") { has_head = true; }
+        }
+        i += 1;
+    }
+    // Q1.10 (RFC 9110 §10.2.1): HEAD is implicitly supported wherever GET
+    // is (the fallback pass above dispatches it), so Allow must say so —
+    // unless an explicit HEAD route already put it in the list.
+    if has_get and !has_head { allow = concat(allow, ", HEAD"); }
+
+    if path_matched {
+        resp.status = 405;
+        resp.body = "405 Method Not Allowed";
+        resp.add_header("Allow", allow);
+        return;
+    }
+
+    if self.not_found != null {
+        h := self.not_found;
+        h(@rc);
+        return;
+    }
+    resp.status = 404;
+    resp.body = "404 Not Found";
+}

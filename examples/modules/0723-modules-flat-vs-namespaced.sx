@@ -1,0 +1,17 @@
+// fix-0102c (issue 0102): one FLAT and one NAMESPACED author of `value`. The
+// bare call `value()` binds the FLAT author (10); the namespaced author is
+// reached only through `nm.value()` (20). A namespaced author must NOT make the
+// bare call ambiguous — only flat authors collide.
+#import "modules/std.sx";
+#import "0723-modules-flat-vs-namespaced/flat.sx";
+nm :: #import "0723-modules-flat-vs-namespaced/named.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("bare binds flat", value() == 10);
+    report("nm.value binds named", nm.value() == 20);
+    0
+}

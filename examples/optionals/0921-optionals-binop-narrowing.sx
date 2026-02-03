@@ -1,0 +1,29 @@
+// Flow narrowing extends to binary-op OPERANDS: a `?T` proven present by a
+// `!= null` guard reads as its concrete payload in arithmetic / comparison.
+//
+// Regression (issue 0185): an un-narrowed `?T` operand used to unwrap
+// unconditionally, so `null + 10` silently yielded `10` (the zero payload).
+// Narrowing is now the only implicit operand unwrap; everything else is a
+// compile error (see 0922).
+#import "modules/std.sx";
+
+sum :: (a: ?i64, b: ?i64) -> i64 {
+    if a == null or b == null { return -1; }
+    return a + b;          // both operands narrowed
+}
+
+main :: () {
+    x : ?i64 = 30;
+    y : ?i64 = 12;
+    if x != null and y != null {
+        print("add {}\n", x + y);     // 42
+        print("lt {}\n", x < y);      // false
+    }
+    print("sum 11: {}\n", sum(5, 6));     // 11
+    print("sum null: {}\n", sum(5, null)); // -1
+
+    // guard form narrows for the rest of the scope
+    n : ?i64 = 9;
+    if n == null { return; }
+    print("times {}\n", n * 2);       // 18
+}

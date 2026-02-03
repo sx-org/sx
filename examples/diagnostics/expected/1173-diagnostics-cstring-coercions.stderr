@@ -1,0 +1,11 @@
+error: only a string LITERAL coerces to 'cstring' implicitly; an arbitrary string may be an unterminated view — materialize it with to_cstring(s)
+  --> examples/diagnostics/1173-diagnostics-cstring-coercions.sx:9:5
+   |
+ 9 |     c : cstring = s;            // error: non-literal string -> cstring
+   |     ^^^^^^^^^^^^^^^^
+
+error: 'cstring' does not coerce to 'string' implicitly (the length is implicit); convert with from_cstring(c)
+  --> examples/diagnostics/1173-diagnostics-cstring-coercions.sx:10:5
+   |
+10 |     t : string = c;             // error: cstring -> string
+   |     ^^^^^^^^^^^^^^^

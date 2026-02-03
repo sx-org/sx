@@ -1,0 +1,26 @@
+// A named multi-return slot may carry a DEFAULT: `-> (sum: i32 = 0, good: bool)`.
+// A defaulted slot is EXEMPT from the must-set rule — if the body never assigns
+// it, the default seeds it at the implicit return. A non-defaulted slot must
+// still be set (see 0206). An explicit assignment overrides the default.
+#import "modules/std.sx";
+
+// `sum` defaults to -1; only `good` must be assigned.
+classify :: (n: i32) -> (sum: i32 = -1, good: bool) {
+    good = n > 0;
+    // `sum` is left unset → the default (-1) is returned.
+}
+
+// Both slots default; the body overrides them.
+combine :: (a: i32, b: i32) -> (total: i32 = 0, ok: bool = false) {
+    total = a + b;
+    ok = true;
+}
+
+main :: () -> i64 {
+    s, g := classify(5);
+    print("classify(5): sum={} good={}\n", s, g);   // default sum -1, good true
+
+    t, o := combine(3, 4);
+    print("combine(3,4): total={} ok={}\n", t, o);  // overridden: 7, true
+    return 0;
+}

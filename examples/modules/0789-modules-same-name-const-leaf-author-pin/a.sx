@@ -1,0 +1,5 @@
+// Module A authors `M :: 1` and the EXPRESSION const `K :: M + 1` (= 2). `K` is
+// unique across the program; only A defines it. Its RHS leaf `M` must always
+// fold against A's `M` (= 1), no matter which module reads `K`.
+M :: 1;
+K :: M + 1;

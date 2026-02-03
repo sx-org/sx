@@ -1,0 +1,50 @@
+// Indirect calls (closures + default-conv fn pointers) pass small
+// by-value structs with the same default-ABI packing the callee's
+// definition uses (≤8-byte non-HFA structs → i64), so every field
+// survives the register handoff. Wide (>8 B) and HFA structs stay
+// unpacked on both sides.
+// Regression (issue 0292): the closure/fn-pointer call site built its
+// signature from the raw LLVM type, so the second field of a packed
+// struct arg arrived zeroed.
+#import "modules/std.sx";
+
+Point :: struct { x: i32; y: i32; }
+Tiny :: struct { a: u8; b: u8; }
+Wide :: struct { x: i64; y: i64; }
+Hfa :: struct { x: f32; y: f32; }
+
+add_pt :: (p: Point) -> i32 { return p.x + p.y; }
+add_tiny :: (t: Tiny) -> i32 { return xx t.a + xx t.b; }
+add_wide :: (w: Wide) -> i64 { return w.x + w.y; }
+add_hfa :: (h: Hfa) -> f32 { return h.x + h.y; }
+
+main :: () {
+    // Closure with a captured struct + packed struct param (the 0292 repro).
+    off_c5 := Point.{ x = 10, y = 20 };
+    f_c5 := closure((p: Point) -> Point => Point.{ x = p.x + off_c5.x, y = p.y + off_c5.y });
+    res_c5 := f_c5(Point.{ x = 1, y = 2 });
+    print("closure-rstruct: {} {}\n", res_c5.x, res_c5.y);
+
+    // Pre-bound local arg takes the same call path as a literal.
+    q := Point.{ x = 3, y = 4 };
+    res_q := f_c5(q);
+    print("closure-local: {} {}\n", res_q.x, res_q.y);
+
+    // Width matrix through closures: packed (2 B), wide (16 B), HFA.
+    ft := closure((t: Tiny) -> i32 => xx t.a + xx t.b);
+    print("closure-tiny: {}\n", ft(Tiny.{ a = 7, b = 8 }));
+    fw := closure((w: Wide) -> i64 => w.x + w.y);
+    print("closure-wide: {}\n", fw(Wide.{ x = 30, y = 40 }));
+    fh := closure((h: Hfa) -> f32 => h.x + h.y);
+    print("closure-hfa: {}\n", fh(Hfa.{ x = 0.5, y = 0.25 }));
+
+    // Same matrix through default-conv fn pointers.
+    fp : (Point) -> i32 = add_pt;
+    print("fnptr-point: {}\n", fp(Point.{ x = 1, y = 2 }));
+    fpt : (Tiny) -> i32 = add_tiny;
+    print("fnptr-tiny: {}\n", fpt(Tiny.{ a = 5, b = 6 }));
+    fpw : (Wide) -> i64 = add_wide;
+    print("fnptr-wide: {}\n", fpw(Wide.{ x = 100, y = 200 }));
+    fph : (Hfa) -> f32 = add_hfa;
+    print("fnptr-hfa: {}\n", fph(Hfa.{ x = 1.5, y = 2.5 }));
+}

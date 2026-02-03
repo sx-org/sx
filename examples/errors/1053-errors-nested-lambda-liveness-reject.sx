@@ -1,0 +1,31 @@
+// Value-slot liveness (ERR step E1.8) is analysed inside a nested lambda as its
+// OWN boundary: `flowExpr` recurses into a lambda literal via `analyzeFnBody`.
+// Reading a failable's value slot inside the lambda where its error is NOT
+// proven absent is rejected — even though the lambda is never called and the
+// outer function proves nothing for it.
+//
+// Negative counterpart to 1051(b): were `flowExpr`'s `.lambda` recursion
+// removed, the lambda body would go un-analysed and this read would slip
+// through. The program never runs (exit 1).
+
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0 { raise error.Bad; }
+    return n * 10;
+}
+
+build :: () {
+    emit := () -> i32 {
+        v, err := parse(5);
+        return v;               // REJECTED: err not proven absent (inside lambda)
+    };
+    print("unreached\n");
+}
+
+main :: () -> i32 {
+    build();
+    return 0;
+}

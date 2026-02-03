@@ -1,0 +1,13 @@
+error: comptime type construction failed: comptime register_type: duplicate member name 'value'
+  --> examples/diagnostics/1180-diagnostics-metatype-duplicate-variant.sx:8:8
+   |
+ 8 | Bad :: define(declare("Bad"), .enum(.{ variants = .[
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 9 |     EnumVariant.{ name = "value",  payload = i64 },
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+10 |     EnumVariant.{ name = "closed", payload = void },
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+11 |     EnumVariant.{ name = "value",  payload = f64 },   // duplicate name
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+12 | ] }));
+   | ^^^^^

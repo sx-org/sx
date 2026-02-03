@@ -1,0 +1,5 @@
+error: `or value` requires a value-carrying failable (`-> (T, !)`) — a `-> !` has no success value to fall back to; use `catch` to absorb the error
+  --> examples/errors/1015-errors-failable-or-reject.sx:17:10
+   |
+17 |     x := must(-1) or 0;        // error: `-> !` has no success value to fall back to
+   |          ^^^^^^^^

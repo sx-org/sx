@@ -1,0 +1,22 @@
+// ASM stream — global (module-scope) `asm { … }` executed via the JIT (`sx run`),
+// NOT AOT. `sx run` compiles the whole module to an in-memory object (the
+// integrated assembler assembles the `module asm` block into it), then ORC
+// relocates and runs it — so a module-asm symbol IS resolvable at JIT main
+// execution, just like a normal symbol. The only path that can't see it is a
+// COMPILE-TIME `#run` call (the interpreter resolves externs via host dlsym; the
+// symbol isn't linked yet — see 1654). Sibling of 1648 (which exercises the same
+// feature via AOT). aarch64-macos-pinned; ir-only elsewhere.
+asm {
+    #string ASM
+.global _my_sub
+_my_sub:
+    sub x0, x0, x1
+    ret
+ASM,
+};
+
+my_sub :: (a: i64, b: i64) -> i64 extern;
+
+main :: () -> i64 {
+    return my_sub(44, 2);   // 42, computed by the global-asm routine, under JIT
+}

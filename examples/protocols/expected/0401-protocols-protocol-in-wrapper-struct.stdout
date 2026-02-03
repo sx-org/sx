@@ -1,0 +1,4 @@
+inside add: 42
+inside add: 99
+items[0] = 42 (expected 42)
+items[1] = 99 (expected 99)

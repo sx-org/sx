@@ -1,0 +1,12 @@
+// `x.(T)` where `T` is a value parameter declared `: Type` (without the `$`
+// generic sigil) is rejected with the generic-param hint. Previously it
+// silently cast to a fabricated empty struct (an unknown *literal* cast target
+// already errored via value resolution, but the value-param case was silent).
+// Regression (issue 0064, cast position). Expected: tailored error; exit 1.
+conv :: (T: Type, x: i32) -> i32 {
+    return x.(T);
+}
+
+main :: () -> i32 {
+    return conv(i32, 5);
+}

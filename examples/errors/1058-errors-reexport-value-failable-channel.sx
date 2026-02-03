@@ -1,0 +1,23 @@
+// A generic value-failable fn `($R, !E)` reached through a RE-EXPORT alias
+// keeps its `!` error channel at the call site — the result types as a
+// value-failable, so `or` / `try` accept it. Mirrors std.sx's
+// `await :: io_mod.await` (+ `IoErr :: io_mod.IoErr`) re-export.
+// Regression (issue 0153): the planned call-result type was resolved in the
+// CALL-SITE module (where `LE` is a re-export alias → a non-`.error_set`
+// TypeId), so `errorChannelOf` saw a plain tuple and `b.get() or {…}` built a
+// malformed i1 PHI. The fix pins return-type resolution to the fn's defining
+// module, matching `monomorphizeFunction`. Needs BOTH generic + re-export.
+#import "modules/std.sx";
+lib :: #import "1058-errors-reexport-value-failable-channel/lib.sx";
+
+// Re-export the generic fn AND its error set (the std.sx facade pattern).
+Box :: lib.Box;
+get :: lib.get;
+LE  :: lib.LE;
+
+main :: () -> i32 {
+    b : Box(i64) = .{ v = 42 };
+    r := b.get() or { -1 };   // value-failable channel preserved → r=42
+    print("r={}\n", r);
+    return 0;
+}

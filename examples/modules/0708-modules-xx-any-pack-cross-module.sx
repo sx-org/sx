@@ -1,0 +1,13 @@
+// Regression for issue 0057: `xx <int>` as a variadic `format` arg inside an
+// imported-module function used to segfault (mis-typed as the enclosing fn's
+// return type, monomorphizing __pack_string + ABI-coercing the int as a
+// 16-byte string fat pointer). Now it auto-boxes to any like the bare form.
+// The companion module is examples/242-xx-any-pack-cross-module/fmt.sx.
+
+#import "modules/std.sx";
+#import "0708-modules-xx-any-pack-cross-module/fmt.sx";
+
+main :: () -> i32 {
+    print("{}", build(3));
+    return 0;
+}

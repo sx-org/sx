@@ -1,0 +1,1 @@
+error: type 'L' is infinitely sized (it contains itself by value); use a pointer ('*L') to break the cycle

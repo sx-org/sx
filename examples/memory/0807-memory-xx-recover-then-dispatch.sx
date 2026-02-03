@@ -1,0 +1,27 @@
+// `xx allocator` recovers the typed concrete pointer (ctx) from a
+// protocol value. The recovery is read-only and must not perturb
+// subsequent dispatch through the protocol value, regardless of
+// whether the recovery happens BEFORE or AFTER the first dispatch.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx"; // `Allocator` is non-transitive: name it, import it.
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    a : Allocator = xx gpa;
+
+    // Recover BEFORE first dispatch.
+    recovered : *GPA = xx a;
+    print("recovered == gpa? {}\n", recovered == @gpa);
+
+    p := a.alloc_bytes(64);
+    print("alloc count after first alloc: {}\n", gpa.alloc_count);
+
+    // Recover AFTER dispatch — still works.
+    recovered2 : *GPA = xx a;
+    print("recovered2 == gpa? {}\n", recovered2 == @gpa);
+
+    a.dealloc_bytes(p);
+    print("alloc count after dealloc: {}\n", gpa.alloc_count);
+    0
+}

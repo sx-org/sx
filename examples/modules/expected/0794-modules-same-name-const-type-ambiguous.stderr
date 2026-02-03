@@ -1,0 +1,5 @@
+error: 'K' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0794-modules-same-name-const-type-ambiguous.sx:13:21
+   |
+13 |     print("K={}\n", K);
+   |                     ^

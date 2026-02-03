@@ -1,0 +1,5 @@
+lvalue view   = 42
+ptr view      = 7
+global assign = 7
+aliased       = 8
+lvalue assign = 42

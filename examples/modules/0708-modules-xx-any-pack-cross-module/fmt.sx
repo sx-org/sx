@@ -1,0 +1,20 @@
+// Companion module for issue-0057 regression. The bug: an `xx <int>` argument
+// to a variadic `format` (a comptime `..$args` pack), inside a function that
+// lives in an IMPORTED module, was mis-typed as the enclosing fn's
+// `target_type` (here `string`) instead of auto-boxing to `any` — so it
+// monomorphized `__pack_string` and ABI-coerced the 4-byte int as a 16-byte
+// string fat pointer, corrupting memory at runtime. Fixed by clearing
+// `target_type` while lowering pack args.
+
+#import "modules/std.sx";
+
+build :: (n: i32) -> string {
+    result := "items:\n";
+    i : i32 = 0;
+    while i < n {
+        line := format("  item {}\n", xx i);   // <-- the xx-to-any pack arg
+        result = concat(result, line);
+        i = i + 1;
+    }
+    result
+}

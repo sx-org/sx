@@ -1,0 +1,24 @@
+// Phase 1 step 1.23 (PLAN-FFI.md): `#jni_static_call` lowering.
+// For static dispatch the `target` arg IS already a `jclass`, so the
+// lowering skips `GetObjectClass` and uses `GetStaticMethodID` +
+// `CallStatic<Type>Method` instead. Today `is_static = true` drops
+// to `LLVMGetUndef`; the snapshot captures the placeholder. Next
+// commit wires the static dispatch path.
+
+#import "modules/std.sx";
+
+g_should_call : bool = false;
+
+call_static_max :: (env: *void, cls: *void) -> i32 {
+    #jni_env(env) {
+        #jni_static_call(i32)(cls, "max", "(II)I", 3, 7)
+    }
+}
+
+main :: () -> i32 {
+    if g_should_call {
+        _ := call_static_max(null, null);
+    }
+    print("ok\n");
+    0
+}

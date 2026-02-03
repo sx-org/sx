@@ -1,0 +1,2 @@
+addMethod = true
+combine(7, 42) = 742

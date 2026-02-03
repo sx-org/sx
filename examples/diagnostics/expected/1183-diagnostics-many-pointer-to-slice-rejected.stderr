@@ -1,0 +1,5 @@
+error: a many-pointer '[*]T' does not coerce to a slice '[]T' implicitly (it carries no length) — slice it with a length: ptr[0..len]
+  --> examples/diagnostics/1183-diagnostics-many-pointer-to-slice-rejected.sx:20:10
+   |
+20 |     r := sum(mp);             // [*]i64 → []i64 — rejected; needs mp[0..len]
+   |          ^^^^^^^

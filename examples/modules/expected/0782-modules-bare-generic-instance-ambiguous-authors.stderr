@@ -1,0 +1,5 @@
+error: type 'Box' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0782-modules-bare-generic-instance-ambiguous-authors.sx:15:10
+   |
+15 |     x := Box(i64).make(7);
+   |          ^^^

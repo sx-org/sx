@@ -1,0 +1,27 @@
+// A declaration whose implementation lives in the compiler ends in the reserved
+// word `intrinsic`, in body position:
+//
+//     size_of :: ($T: Type) -> i64 intrinsic;
+//
+// The declaration binds to the intrinsic registry by (module, name): `size_of`
+// is an intrinsic because std/core.sx declares it, not because the name is
+// magic. This example pins the parse + the layout/reflection intrinsics that
+// fold at lowering.
+#import "modules/std.sx";
+
+P :: struct { a: i64; b: f32; }
+E :: enum { X; Y; }
+
+main :: () {
+    // Layout — folded to a constant at lowering.
+    print("size_of(i64)   = {}\n", size_of(i64));
+    print("align_of(i64)  = {}\n", align_of(i64));
+    print("size_of(P)     = {}\n", size_of(P));
+
+    // Reflection — same fold.
+    print("struct_field_count(P) = {}\n", struct_field_count(P));
+    print("struct_field_name(P,0)= {}\n", struct_field_name(P, 0));
+    print("type_name(P)   = {}\n", type_name(P));
+    print("is_flags(E)    = {}\n", is_flags(E));
+    print("variant_index    = {}\n", variant_index(E, E.Y));
+}

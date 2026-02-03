@@ -1,0 +1,30 @@
+// Variadic heterogeneous type packs — step 3: `$args[$i]` in
+// fn-pointer type literals.
+//
+// `(*void, $args[0]) -> $args[1]` is the shape step 5's generic
+// `Into(Block) for Closure(..$args) -> $R` body needs for its
+// trampoline:
+//   typed_fn : (*void, $args[0], $args[1], ...) -> $R =
+//       xx block_self.sx_fn;
+// — the trampoline's invoke slot is typed against the pack
+// positions to bridge the Block ABI to the sx closure.
+//
+// This test exercises the same plumbing on a smaller scale: a
+// local var with a fn-pointer type whose param + return types
+// both interpolate through `$args[$i]`.
+
+#import "modules/std.sx";
+
+// Two concrete handlers that match the per-mono fn-pointer shape.
+double_i64 :: (env: *void, x: i64) -> i64 => x * 2;
+
+via_fnptr :: (..$args) -> $args[1] {
+    fp : (*void, $args[0]) -> $args[1] = double_i64;
+    return fp(null, args[0]);
+}
+
+main :: () -> i32 {
+    n := via_fnptr(7, 0);  // (i64, i64) → fp : (*void, i64) -> i64
+    print("{}\n", n);
+    return 0;
+}

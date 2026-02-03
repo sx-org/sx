@@ -1,0 +1,926 @@
+// Pure UIKit + CAEAGLLayer + CADisplayLink backend for iOS.
+//
+// Linking is per-target via the game's build.sx (`opts.add_framework("UIKit")`
+// + `opts.add_framework("OpenGLES")` + `opts.add_framework("QuartzCore")` on
+// `.ios`). The file compiles cleanly on every target — the UIKit-touching
+// bodies live behind `inline if OS == .ios` guards, so non-iOS builds never
+// reach the unresolved Obj-C symbols.
+
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+#import "modules/build.sx";
+#import "modules/ffi/opengl.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/events.sx";
+#import "modules/platform/types.sx";
+#import "modules/platform/api.sx";
+
+UIApplicationMain :: (argc: i32, argv: *void, principal_class: *NSString, delegate_class: *NSString) -> i32 extern;
+dlsym             :: (handle: *void, name: [*]u8) -> *void extern;
+chdir             :: (path: [*]u8) -> i32 extern;
+
+// QuartzCore's wall-clock helper used by CoreAnimation. Seconds since boot,
+// monotonic. We use it as the timebase for keyboard-inset lockstep so the
+// per-frame interpolation lines up with UIKit's own animation timestamp.
+CACurrentMediaTime :: () -> f64 extern;
+
+
+// kEAGLRenderingAPIOpenGLES3 = 3
+EAGL_API_GLES3 :: 3;
+
+// CGFloat is a `double` on 64-bit Apple platforms; CGPoint = {x, y} fits in
+// 16 bytes and returns via the FP-register path on arm64.
+CGPoint :: struct { x: f64; y: f64; }
+
+// UIEdgeInsets = {top, left, bottom, right} CGFloats — 32 bytes; exceeds the
+// 16-byte registers cutoff so it returns via the x8 indirect-result-pointer
+// convention. sx generates the right call sequence when the function-pointer
+// type declares it as a by-value struct return.
+UIEdgeInsets :: struct {
+    top: f64;
+    left: f64;
+    bottom: f64;
+    right: f64;
+}
+
+// CGRect for unwrapping NSValue-wrapped rects (e.g. keyboard end frame). Same
+// 32-byte indirect-return shape as UIEdgeInsets.
+CGRect :: struct {
+    x: f64;
+    y: f64;
+    width: f64;
+    height: f64;
+}
+
+// ── Foundation utility classes (Phase 3.2 C1) ─────────────────────────
+// Declarative `#objc_class` bindings replace the previous
+// `objc_getClass(...) + #objc_call(T)(...)` pattern. Each method's sx-
+// side name maps to its Obj-C selector via the default mangling rule
+// (split on `_`; each piece becomes a keyword with `:`).
+
+NSValue :: #objc_class("NSValue") extern {
+    #extends NSObject;
+    // CGRect unboxing — returns by value via the sret/HFA path.
+    CGRectValue :: (self: *Self) -> CGRect;
+}
+
+NSNumber :: #objc_class("NSNumber") extern {
+    #extends NSObject;
+    // Class method (no `self: *Self` first param → static dispatch).
+    numberWithBool :: (b: i8) -> *NSNumber;
+    // Instance value extractors.
+    doubleValue        :: (self: *Self) -> f64;
+    unsignedLongValue  :: (self: *Self) -> u64;
+}
+
+NSDictionary :: #objc_class("NSDictionary") extern {
+    #extends NSObject;
+    objectForKey :: (self: *Self, key: *NSString) -> *void;
+}
+
+NSMutableDictionary :: #objc_class("NSMutableDictionary") extern {
+    #extends NSDictionary;
+    dictionary         :: () -> *NSMutableDictionary;
+    setObject_forKey   :: (self: *Self, obj: *void, key: *void);
+}
+
+NSSet :: #objc_class("NSSet") extern {
+    #extends NSObject;
+    anyObject :: (self: *Self) -> *void;
+}
+
+// ── Notifications + Bundle (Phase 3.2 C2) ──────────────────────────────
+
+NSNotification :: #objc_class("NSNotification") extern {
+    #extends NSObject;
+    userInfo :: (self: *Self) -> *NSDictionary;
+}
+
+NSBundle :: #objc_class("NSBundle") extern {
+    #extends NSObject;
+    mainBundle   :: () -> *NSBundle;
+    resourcePath :: (self: *Self) -> *NSString;
+}
+
+NSNotificationCenter :: #objc_class("NSNotificationCenter") extern {
+    #extends NSObject;
+    defaultCenter :: () -> *NSNotificationCenter;
+    addObserver_selector_name_object :: (self: *Self, observer: *void, sel: *void, name: *NSString, obj: *void);
+}
+
+// ── RunLoop + display timing (Phase 3.2 C3) ────────────────────────────
+
+NSRunLoop :: #objc_class("NSRunLoop") extern {
+    #extends NSObject;
+    currentRunLoop :: () -> *NSRunLoop;
+}
+
+CADisplayLink :: #objc_class("CADisplayLink") extern {
+    #extends NSObject;
+    displayLinkWithTarget_selector :: (target: *void, sel: *void) -> *CADisplayLink;
+    addToRunLoop_forMode :: (self: *Self, runloop: *NSRunLoop, mode: *NSString);
+    targetTimestamp :: (self: *Self) -> f64;
+    duration :: (self: *Self) -> f64;
+}
+
+// ── View tree + GL drawables (Phase 3.2 C5) ────────────────────────────
+// (Declared before UIView so `layer :: (...) -> *CALayer` can reference it.)
+
+CALayer :: #objc_class("CALayer") extern {
+    #extends NSObject;
+    setOpaque :: (self: *Self, opaque: i8);
+}
+
+CAEAGLLayer :: #objc_class("CAEAGLLayer") extern {
+    #extends CALayer;
+    class :: () -> *void;
+    setDrawableProperties :: (self: *Self, props: *void);
+}
+
+CAMetalLayer :: #objc_class("CAMetalLayer") extern {
+    #extends CALayer;
+    class :: () -> *void;
+}
+
+EAGLContext :: #objc_class("EAGLContext") extern {
+    #extends NSObject;
+    alloc                            :: () -> *EAGLContext;
+    initWithAPI                      :: (self: *Self, api: i32) -> *EAGLContext;
+    setCurrentContext                :: (ctx: *EAGLContext);
+    renderbufferStorage_fromDrawable :: (self: *Self, target: u32, drawable: *void) -> i8;
+    presentRenderbuffer              :: (self: *Self, target: u32) -> i8;
+}
+
+// ── UIKit chrome (Phase 3.2 C4) ────────────────────────────────────────
+
+UIScreen :: #objc_class("UIScreen") extern {
+    #extends NSObject;
+    mainScreen  :: () -> *UIScreen;
+    nativeScale :: (self: *Self) -> f64;
+    bounds      :: (self: *Self) -> CGRect;
+}
+
+// UIResponder is the root for keyboard / touch / focus dispatch.
+// Most UIKit classes inherit from it; sx-defined classes that
+// participate in lifecycle callbacks (delegates, scene delegates)
+// extend it so the runtime picks up the responder-chain behavior.
+UIResponder :: #objc_class("UIResponder") extern {
+    #extends NSObject;
+    becomeFirstResponder :: (self: *Self) -> i8;
+    resignFirstResponder :: (self: *Self) -> i8;
+}
+
+UIView :: #objc_class("UIView") extern {
+    #extends UIResponder;
+    safeAreaInsets        :: (self: *Self) -> UIEdgeInsets;
+    addSubview            :: (self: *Self, view: *void);
+    layer                 :: (self: *Self) -> *CALayer;
+    setContentScaleFactor :: (self: *Self, scale: f64);
+}
+
+UIWindow :: #objc_class("UIWindow") extern {
+    #extends UIView;
+    alloc                  :: () -> *UIWindow;
+    initWithWindowScene    :: (self: *Self, scene: *void) -> *UIWindow;
+    setRootViewController  :: (self: *Self, vc: *void);
+    makeKeyAndVisible      :: (self: *Self);
+    screen                 :: (self: *Self) -> *UIScreen;
+}
+
+UIViewController :: #objc_class("UIViewController") extern {
+    #extends UIResponder;
+    alloc   :: () -> *UIViewController;
+    init    :: (self: *Self) -> *UIViewController;
+    setView :: (self: *Self, view: *void);
+}
+
+UITextField :: #objc_class("UITextField") extern {
+    #extends UIResponder;
+    alloc :: () -> *UITextField;
+    init  :: (self: *Self) -> *UITextField;
+}
+
+// SxAppDelegate — UIApplicationMain's delegate class (the app delegate, a
+// UIResponder — NOT the UIApplication principal class). Method bodies
+// dispatch to UIKitPlatform methods on the shared `g_uikit_plat`.
+SxAppDelegate :: #objc_class("SxAppDelegate") export {
+    #extends UIResponder;
+
+    application_didFinishLaunchingWithOptions :: (self: *Self, app: *void, opts: *void) -> BOOL {
+        inline if OS == .ios {
+            if g_uikit_plat != null {
+                center := NSNotificationCenter.defaultCenter();
+                center.addObserver_selector_name_object(
+                    xx self,
+                    sel_registerName("sxKeyboardWillChangeFrame:".ptr),
+                    xx "UIKeyboardWillChangeFrameNotification",
+                    null);
+            }
+        }
+        return 1;
+    }
+
+    sxKeyboardWillChangeFrame :: (self: *Self, notification: *void) {
+        if g_uikit_plat == null { return; }
+        notif : *NSNotification = xx notification;
+        g_uikit_plat.keyboard_will_change_frame(notif);
+    }
+
+    alloc :: () -> *SxAppDelegate;
+    init  :: (self: *SxAppDelegate) -> *SxAppDelegate;
+}
+
+// SxSceneDelegate — iOS 13+ scene-based lifecycle delegate. Two
+// `#implements` declarations formally conform to the scene-delegate
+// protocols — iOS rejects the class otherwise.
+SxSceneDelegate :: #objc_class("SxSceneDelegate") export {
+    #extends UIResponder;
+    #implements UISceneDelegate;
+    #implements UIWindowSceneDelegate;
+
+    scene_willConnectToSession_options :: (self: *Self, scene: *void, session: *void, options: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.scene_will_connect(xx self, scene);
+    }
+
+    window :: (self: *Self) -> ?*UIWindow {
+        if g_uikit_plat == null { return null; }
+        return g_uikit_plat.window;
+    }
+
+    setWindow :: (self: *Self, w: ?*UIWindow) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.window = w;
+    }
+}
+
+// GLenum constants for renderbuffer/framebuffer setup that aren't in opengl.sx's
+// loader path (they live on the framework's symbol table directly).
+GL_RENDERBUFFER          :u32: 0x8D41;
+GL_FRAMEBUFFER           :u32: 0x8D40;
+GL_COLOR_ATTACHMENT0     :u32: 0x8CE0;
+GL_FRAMEBUFFER_COMPLETE  :u32: 0x8CD5;
+
+g_uikit_plat : *UIKitPlatform = null;
+
+// Which GPU API the UIKit backend wires up. `.gles` keeps the existing
+// CAEAGLLayer + EAGLContext + renderbuffer path; `.metal` swaps the view
+// for a CAMetalLayer-backed one and leaves rendering to MetalGPU. Set
+// before calling `init`; default `.gles` preserves prior behavior.
+GpuMode :: enum {
+    gles;
+    metal;
+}
+
+UIKitPlatform :: struct {
+    window: ?*UIWindow = null;
+    root_vc: ?*UIViewController = null;
+    // SxGLView (gles mode) or SxMetalView (metal mode) — both extend
+    // UIView, so the common method surface is reachable as *UIView.
+    gl_view: ?*UIView = null;
+    // CAEAGLLayer (gles) or CAMetalLayer (metal) — both extend CALayer.
+    gl_layer: ?*CALayer = null;
+    gl_ctx: ?*EAGLContext = null;
+    display_link: ?*CADisplayLink = null;
+    color_renderbuffer: u32 = 0;
+    framebuffer: u32 = 0;
+    gl_initialized: bool = false;
+    gpu_mode: GpuMode = .gles;
+
+    // Hidden UITextField; firstResponder ⇆ keyboard visibility.
+    text_field: ?*UITextField = null;
+
+    viewport_w: f32 = 0.0;
+    viewport_h: f32 = 0.0;
+    pixel_w: i32 = 0;
+    pixel_h: i32 = 0;
+    dpi_scale: f32 = 1.0;
+
+    delta_time: f32 = 0.016;
+    // Latest CADisplayLink.targetTimestamp captured each tick — forwarded
+    // through FrameContext to MetalGPU.end_frame() for presentDrawable:atTime:.
+    last_target_ts: f64 = 0.0;
+
+    frame_closure: Closure() = ---;
+    has_frame_closure: bool = false;
+
+    events: List(Event) = .{};
+
+    safe_top: f32 = 0.0;
+    safe_left: f32 = 0.0;
+    safe_bottom: f32 = 0.0;
+    safe_right: f32 = 0.0;
+
+    keyboard_visible: bool = false;
+    keyboard_height: f32 = 0.0;
+
+    // Keyboard inset lockstep: when willChangeFrame fires we read the
+    // animation duration from the notification's userInfo and interpolate
+    // `keyboard_height` over that window on each display-link tick. Each
+    // animation has a fresh start time and target — if a second event
+    // arrives mid-animation, the next interpolation starts from the
+    // currently-interpolated value (not from the previous animation's
+    // origin). The easing is `smoothstep` (cubic Hermite) which closely
+    // approximates UIKit's keyboard curve to within a frame at the
+    // standard 0.25s slide duration.
+    kb_anim_from: f32 = 0.0;
+    kb_anim_to: f32 = 0.0;
+    kb_anim_start: f64 = 0.0;
+    kb_anim_dur: f64 = 0.0;
+    kb_anim_curve: u64 = 0;
+    kb_animating: bool = false;
+
+    saved_title: [*]u8 = null;
+}
+
+impl Platform for UIKitPlatform {
+    init :: (self: *UIKitPlatform, title: [:0]u8, w: i32, h: i32) -> bool {
+        self.dpi_scale = 1.0;
+        self.delta_time = 0.016;
+        self.has_frame_closure = false;
+        self.gl_initialized = false;
+        self.keyboard_visible = false;
+        self.keyboard_height = 0.0;
+        self.saved_title = title.ptr;
+        g_uikit_plat = self;
+
+        // iOS apps start with CWD=/. chdir to the bundle's resourcePath so the
+        // game's relative `fopen("assets/...")` calls find their data — must
+        // happen BEFORE any code that loads fonts/textures from disk.
+        inline if OS == .ios {
+            uikit_chdir_to_bundle();
+            if self.gpu_mode == .gles {
+                self.create_gl_context();
+            } else {
+                // Metal mode: skip EAGL. dpi_scale still needs to be known
+                // before the window exists so callers can size resources.
+                self.read_screen_scale();
+            }
+        }
+        true
+    }
+
+    run_frame_loop :: (self: *UIKitPlatform, frame_fn: Closure()) {
+        self.frame_closure = frame_fn;
+        self.has_frame_closure = true;
+        g_uikit_plat = self;
+        inline if OS == .ios {
+            // (argc, argv, principalClassName, delegateClassName). SxAppDelegate
+            // is the DELEGATE (a UIResponder), not the UIApplication subclass —
+            // pass nil for the principal so UIKit uses the default UIApplication.
+            // Passing it as the principal makes newer UIKit call UIApplication
+            // class methods on it (e.g. `+registerAsSystemApp`) → unrecognized
+            // selector crash during UIApplicationMain prep.
+            UIApplicationMain(0, xx 0, xx 0, xx "SxAppDelegate");
+        }
+    }
+
+    poll_events :: (self: *UIKitPlatform) -> []Event {
+        result : []Event = ---;
+        result.ptr = self.events.items.ptr;
+        result.len = self.events.len;
+        self.events.len = 0;
+        result
+    }
+
+    begin_frame :: (self: *UIKitPlatform) -> FrameContext {
+        inline if OS == .ios {
+            self.refresh_safe_insets();
+        }
+        FrameContext.{
+            viewport_w = self.viewport_w,
+            viewport_h = self.viewport_h,
+            pixel_w = self.pixel_w,
+            pixel_h = self.pixel_h,
+            dpi_scale = self.dpi_scale,
+            delta_time = self.delta_time,
+            target_present_time = self.last_target_ts,
+        }
+    }
+
+    end_frame :: (self: *UIKitPlatform) {
+        inline if OS == .ios {
+            if self.gpu_mode == .gles {
+                self.present_renderbuffer();
+            }
+            // Metal mode: caller's gpu.end_frame() handles present.
+        }
+    }
+
+    safe_insets :: (self: *UIKitPlatform) -> EdgeInsets {
+        bottom := self.safe_bottom;
+        if self.keyboard_visible {
+            if self.keyboard_height > bottom { bottom = self.keyboard_height; }
+        }
+        EdgeInsets.{
+            top = self.safe_top,
+            left = self.safe_left,
+            bottom = bottom,
+            right = self.safe_right,
+        }
+    }
+
+    keyboard :: (self: *UIKitPlatform) -> KeyboardState {
+        KeyboardState.{
+            visible = self.keyboard_visible,
+            height = self.keyboard_height,
+        }
+    }
+
+    show_keyboard :: (self: *UIKitPlatform) {
+        inline if OS == .ios {
+            if tf := self.text_field {
+                tf.becomeFirstResponder();
+            }
+        }
+    }
+
+    hide_keyboard :: (self: *UIKitPlatform) {
+        inline if OS == .ios {
+            if tf := self.text_field {
+                tf.resignFirstResponder();
+            }
+        }
+    }
+
+    stop :: (self: *UIKitPlatform) { }
+
+    shutdown :: (self: *UIKitPlatform) { }
+
+    // ── iOS-only internal helpers ──────────────────────────────────────────
+    // Bodies are guarded with `inline if OS != .ios { return; }` so non-iOS
+    // builds never reach unresolved UIKit / OpenGLES symbols.
+
+    refresh_safe_insets :: (self: *UIKitPlatform) {
+        inline if OS != .ios { return; }
+        if gl_view := self.gl_view {
+            i := gl_view.safeAreaInsets();
+            self.safe_top    = xx i.top;
+            self.safe_left   = xx i.left;
+            self.safe_bottom = xx i.bottom;
+            self.safe_right  = xx i.right;
+        }
+    }
+
+    read_screen_scale :: (self: *UIKitPlatform) {
+        inline if OS != .ios { return; }
+        screen := UIScreen.mainScreen();
+        self.dpi_scale = xx screen.nativeScale();
+    }
+
+    create_gl_context :: (self: *UIKitPlatform) {
+        inline if OS != .ios { return; }
+        // Read the screen scale up-front so callers can size font caches and
+        // textures with the right DPI before the window even exists.
+        screen := UIScreen.mainScreen();
+        self.dpi_scale = xx screen.nativeScale();
+
+        ctx := EAGLContext.alloc().initWithAPI(EAGL_API_GLES3);
+        self.gl_ctx = ctx;
+        EAGLContext.setCurrentContext(ctx);
+
+        load_gl(@ios_gl_proc);
+    }
+
+    // Allocate the color renderbuffer + framebuffer and bind them. The
+    // renderbuffer gets its pixel storage from the CAEAGLLayer via
+    // `[ctx renderbufferStorage:GL_RENDERBUFFER fromDrawable:layer]`, so the
+    // layer must already be in the view hierarchy at the right size.
+    setup_renderbuffer :: (self: *UIKitPlatform) {
+        inline if OS != .ios { return; }
+
+        glGenFramebuffers(1, @self.framebuffer);
+        glGenRenderbuffers(1, @self.color_renderbuffer);
+
+        glBindRenderbuffer(GL_RENDERBUFFER, self.color_renderbuffer);
+
+        if gl_ctx := self.gl_ctx {
+            gl_ctx.renderbufferStorage_fromDrawable(GL_RENDERBUFFER, self.gl_layer);
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, self.framebuffer);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, self.color_renderbuffer);
+
+        pw : i32 = 0;
+        ph : i32 = 0;
+        GL_RENDERBUFFER_WIDTH  :u32: 0x8D42;
+        GL_RENDERBUFFER_HEIGHT :u32: 0x8D43;
+        glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH,  @pw);
+        glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, @ph);
+        self.pixel_w = pw;
+        self.pixel_h = ph;
+        self.viewport_w = xx pw;
+        self.viewport_h = xx ph;
+        if self.dpi_scale > 0.0 {
+            self.viewport_w = self.viewport_w / self.dpi_scale;
+            self.viewport_h = self.viewport_h / self.dpi_scale;
+        }
+
+        glViewport(0, 0, pw, ph);
+
+        status := glCheckFramebufferStatus(GL_FRAMEBUFFER);
+        if status != GL_FRAMEBUFFER_COMPLETE {
+            NSLog(xx "[sx] framebuffer incomplete after renderbuffer setup\n");
+        }
+    }
+
+    present_renderbuffer :: (self: *UIKitPlatform) {
+        inline if OS != .ios { return; }
+        glBindRenderbuffer(GL_RENDERBUFFER, self.color_renderbuffer);
+        if gl_ctx := self.gl_ctx {
+            gl_ctx.presentRenderbuffer(GL_RENDERBUFFER);
+        }
+    }
+
+    // Metal mode equivalent of setup_renderbuffer's "tell me how big the
+    // drawable is in pixels". Reads the layer's bounds in points and scales
+    // to pixels via dpi_scale.
+    compute_layer_pixel_size :: (self: *UIKitPlatform) {
+        inline if OS != .ios { return; }
+        if gl_view := self.gl_view {
+            b := #objc_call(CGRect)(gl_view, "bounds");
+
+            w_pts : f64 = b.width;
+            h_pts : f64 = b.height;
+            self.viewport_w = xx w_pts;
+            self.viewport_h = xx h_pts;
+
+            scale64 : f64 = xx self.dpi_scale;
+            pw : f64 = w_pts * scale64;
+            ph : f64 = h_pts * scale64;
+            self.pixel_w = xx pw;
+            self.pixel_h = xx ph;
+        }
+    }
+
+    // ── Obj-C class-method callbacks ────────────────────────────────────
+    // Sx-defined class methods (SxAppDelegate / SxSceneDelegate / SxGLView /
+    // SxMetalView) forward to these on the shared `g_uikit_plat` so the
+    // tick/layout/touch/scene/keyboard paths share one implementation.
+
+    // NSNotification callback. The notification's userInfo dict has the
+    // keyboard's end-frame and animation curve/duration.
+    //   UIKeyboardFrameEndUserInfoKey       → NSValue wrapping CGRect (screen coords)
+    //   UIKeyboardAnimationDurationUserInfoKey → NSNumber wrapping double
+    // Keyboard height = how much of the screen the keyboard covers from the bottom.
+    // If the keyboard's end Y >= screen.height, the keyboard is offscreen (hiding).
+    keyboard_will_change_frame :: (self: *UIKitPlatform, notification: *NSNotification) {
+        inline if OS != .ios { return; }
+
+        user_info := notification.userInfo();
+        if user_info == null { return; }
+
+        end_value_raw := user_info.objectForKey(xx "UIKeyboardFrameEndUserInfoKey");
+        if end_value_raw == null { return; }
+        end_value : *NSValue = xx end_value_raw;
+        end_rect := end_value.CGRectValue();
+
+        dur_value_raw := user_info.objectForKey(xx "UIKeyboardAnimationDurationUserInfoKey");
+        anim_dur : f64 = 0.0;
+        if dur_value_raw != null {
+            dur_value : *NSNumber = xx dur_value_raw;
+            anim_dur = dur_value.doubleValue();
+        }
+
+        curve_value_raw := user_info.objectForKey(xx "UIKeyboardAnimationCurveUserInfoKey");
+        curve_int : u64 = 0;
+        if curve_value_raw != null {
+            curve_value : *NSNumber = xx curve_value_raw;
+            curve_int = curve_value.unsignedLongValue();
+        }
+
+        if win := self.window {
+            win_screen := win.screen();
+            screen_bounds := win_screen.bounds();
+
+            // Keyboard height = how much of the screen the keyboard covers from the
+            // bottom. When the keyboard is hiding, its end-frame.y == screen.height,
+            // so the height comes out 0 and visible becomes false.
+            kb_top : f64 = end_rect.y;
+            sh     : f64 = screen_bounds.height;
+            h := sh - kb_top;
+            if h < 0.0 { h = 0.0; }
+            if h > sh  { h = sh;  }
+            target_h : f32 = xx h;
+
+            self.keyboard_visible = h > 0.5;
+
+            if anim_dur <= 0.0 {
+                self.keyboard_height = target_h;
+                self.kb_animating = false;
+                return;
+            }
+
+            self.kb_anim_from = self.keyboard_height;
+            self.kb_anim_to = target_h;
+            self.kb_anim_start = CACurrentMediaTime();
+            self.kb_anim_dur = anim_dur;
+            self.kb_anim_curve = curve_int;
+            self.kb_animating = true;
+        }
+    }
+
+    // First scene-connect: builds the window, root VC, GL/Metal view, layer,
+    // EAGL props (if gles), display link, and hidden text-field. Called from
+    // SxSceneDelegate.scene_willConnectToSession_options.
+    scene_will_connect :: (self: *UIKitPlatform, delegate: *void, scene: *void) {
+        inline if OS != .ios { return; }
+
+        SxGLView    := objc_getClass("SxGLView".ptr);
+        SxMetalView := objc_getClass("SxMetalView".ptr);
+
+        win := UIWindow.alloc().initWithWindowScene(scene);
+        self.window = win;
+
+        // Make the scene delegate own the window so iOS retains it. Per the
+        // scene-based lifecycle, the scene delegate is expected to provide
+        // the UIWindow via -window/-setWindow:.
+        #objc_call(void)(delegate, "setWindow:", win);
+
+        vc := UIViewController.alloc().init();
+        self.root_vc = vc;
+
+        // Allocate either SxGLView or SxMetalView based on gpu_mode. The
+        // view's +layerClass override gives us the right CAEAGLLayer /
+        // CAMetalLayer subclass. Set the VC's view BEFORE
+        // setRootViewController to avoid a default-view lazy-load.
+        view_class := if self.gpu_mode == .gles then SxGLView else SxMetalView;
+        glv_raw := #objc_call(*void)(view_class, "alloc");
+        gl_view := #objc_call(*UIView)(glv_raw, "init");
+        self.gl_view = gl_view;
+        vc.setView(gl_view);
+
+        win.setRootViewController(vc);
+
+        gl_layer := gl_view.layer();
+        self.gl_layer = gl_layer;
+
+        // Mark the layer opaque (no compositor blend). Required for EAGL +
+        // recommended for Metal (CAMetalLayer.opaque defaults YES but doesn't
+        // hurt to be explicit).
+        gl_layer.setOpaque(1);
+
+        if self.gpu_mode == .gles {
+            // EAGL drawable properties dict required by
+            // EAGLContext.renderbufferStorage:fromDrawable: (color format,
+            // non-retained backing). Without this dict the renderbuffer
+            // allocation silently fails and the framebuffer reports INCOMPLETE.
+            ns_no := NSNumber.numberWithBool(0);
+
+            retained_key    := uikit_extern_nsstring("kEAGLDrawablePropertyRetainedBacking".ptr);
+            colorformat_key := uikit_extern_nsstring("kEAGLDrawablePropertyColorFormat".ptr);
+            rgba8_value     := uikit_extern_nsstring("kEAGLColorFormatRGBA8".ptr);
+
+            dict := NSMutableDictionary.dictionary();
+            dict.setObject_forKey(xx ns_no, retained_key);
+            dict.setObject_forKey(rgba8_value, colorformat_key);
+            eagl_layer : *CAEAGLLayer = xx gl_layer;
+            eagl_layer.setDrawableProperties(xx dict);
+        }
+
+        // Match the layer's drawable scale to the screen's native scale so we
+        // get pixel-accurate rendering on retina displays. CGFloat is `double`
+        // on 64-bit Apple platforms; reading as f32 would clobber the value.
+        screen2 := win.screen();
+        scale := screen2.nativeScale();
+        self.dpi_scale = xx scale;
+        gl_view.setContentScaleFactor(scale);
+
+        // Renderbuffer is allocated lazily in -[SxGLView layoutSubviews] once
+        // the layer has its real on-screen bounds. makeKeyAndVisible triggers
+        // a layout pass; layoutSubviews calls setup_renderbuffer.
+        win.makeKeyAndVisible();
+
+        // Hidden UITextField as the firstResponder source for show_keyboard /
+        // hide_keyboard. Lives as a subview of the GL view so it's in the
+        // responder chain but is sized 0×0 so it can't be tapped.
+        tf := UITextField.alloc().init();
+        self.text_field = tf;
+        gl_view.addSubview(tf);
+
+        // CADisplayLink: vsync-driven tick into our SxGLView. The second arg
+        // is a SEL value (not a dispatch selector), so it still goes through
+        // sel_registerName.
+        sel_tick := sel_registerName("sxTick:".ptr);
+        link := CADisplayLink.displayLinkWithTarget_selector(gl_view, sel_tick);
+        self.display_link = link;
+        runloop := NSRunLoop.currentRunLoop();
+        link.addToRunLoop_forMode(runloop, xx "kCFRunLoopDefaultMode");
+
+        NSLog(xx "[sx] UIKitPlatform booted\n");
+    }
+
+    // CADisplayLink callback (vsync-paced). Drives keyboard-inset
+    // interpolation and calls the user's frame closure.
+    gl_view_tick :: (self: *UIKitPlatform, link: *CADisplayLink) {
+        inline if OS != .ios { return; }
+
+        // Keyboard-inset lockstep — sx-side cubic ease-out approximation of
+        // UIKit's private keyboard curve. Sample targetTimestamp so we
+        // interpolate at the time this frame will be visible.
+        if self.kb_animating {
+            target_ts := link.targetTimestamp();
+            elapsed := target_ts - self.kb_anim_start;
+            // Negative elapsed can happen if a just-fired willChangeFrame set
+            // kb_anim_start to a wall time AFTER this tick already captured
+            // its targetTimestamp. Without the clamp, t < 0 makes the cubic
+            // ease-out overshoot in the opposite direction.
+            if elapsed < 0.0 { elapsed = 0.0; }
+            if elapsed >= self.kb_anim_dur or self.kb_anim_dur <= 0.0 {
+                self.keyboard_height = self.kb_anim_to;
+                self.kb_animating = false;
+            } else {
+                t : f32 = xx (elapsed / self.kb_anim_dur);
+                inv := 1.0 - t;
+                eased := 1.0 - inv * inv * inv;
+                self.keyboard_height = self.kb_anim_from + (self.kb_anim_to - self.kb_anim_from) * eased;
+            }
+        }
+
+        if !self.has_frame_closure { return; }
+        if !self.gl_initialized { return; }
+
+        dur_d := link.duration();
+        self.delta_time = xx dur_d;
+        self.last_target_ts = link.targetTimestamp();
+
+        fn := self.frame_closure;
+        fn();
+    }
+
+    // UIView -layoutSubviews callback. Sets up the renderbuffer (gles) or
+    // computes the layer pixel size (metal) on the first layout pass.
+    gl_view_did_layout :: (self: *UIKitPlatform) {
+        inline if OS != .ios { return; }
+        if self.gl_initialized { return; }
+        if self.gpu_mode == .gles {
+            self.setup_renderbuffer();
+        } else {
+            self.compute_layer_pixel_size();
+        }
+        self.gl_initialized = true;
+    }
+
+    // Touch IMPs — UIKit fires touchesBegan/Moved/Ended/Cancelled with an
+    // NSSet<UITouch *> + UIEvent. Single-touch model matching chess's UX.
+
+    push_touch_down :: (self: *UIKitPlatform, view: *void, touches: *void) {
+        inline if OS != .ios { return; }
+        touch := uikit_first_touch(touches);
+        if touch == null { return; }
+        pos := uikit_touch_location(touch, view);
+        self.events.append(.mouse_down(.{ position = pos, button = .left }));
+    }
+
+    push_touch_moved :: (self: *UIKitPlatform, view: *void, touches: *void) {
+        inline if OS != .ios { return; }
+        touch := uikit_first_touch(touches);
+        if touch == null { return; }
+        pos := uikit_touch_location(touch, view);
+        self.events.append(.mouse_moved(.{ position = pos, delta = Point.zero() }));
+    }
+
+    push_touch_up :: (self: *UIKitPlatform, view: *void, touches: *void) {
+        inline if OS != .ios { return; }
+        touch := uikit_first_touch(touches);
+        if touch == null { return; }
+        pos := uikit_touch_location(touch, view);
+        self.events.append(.mouse_up(.{ position = pos, button = .left }));
+    }
+}
+
+// dlsym(RTLD_DEFAULT, name) — Apple platforms. RTLD_DEFAULT is (void*)-2.
+// abi(.c) so this is callable from `load_gl`'s C-conv proc-loader slot.
+ios_gl_proc :: (name: [*]u8) -> *void abi(.c) {
+    rtld_default : *void = xx (0 - 2);
+    dlsym(rtld_default, name)
+}
+
+// Read a `extern NSString * const k...` global from the loaded image. The
+// extern variable holds a pointer to the NSString instance — dlsym returns
+// the address of that variable, which we dereference.
+uikit_extern_nsstring :: (name: [*]u8) -> *void {
+    rtld_default : *void = xx (0 - 2);
+    p := dlsym(rtld_default, name);
+    if p == null { return null; }
+    pp : **void = xx p;
+    pp.*
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// iOS-only helpers — only reachable from `inline if OS == .ios` call sites,
+// so non-iOS builds never reference the unresolved UIKit symbols below.
+// ───────────────────────────────────────────────────────────────────────────
+
+uikit_chdir_to_bundle :: () {
+    inline if OS != .ios { return; }
+    bundle := NSBundle.mainBundle();
+    rsrc := bundle.resourcePath();
+    if rsrc == null { return; }
+    chdir(rsrc.UTF8String());
+}
+
+// ── SxGLView class ─────────────────────────────────────────────────────────
+// UIView subclass overriding `+layerClass` to return [CAEAGLLayer class].
+// Instance method `sxTick:` is what CADisplayLink calls.
+//
+// M3.3 — migrated to declarative `#objc_class` form. The compiler
+// synthesises class-pair init, metaclass `+layerClass`, and the
+// instance-method IMP trampolines at module init.
+SxGLView :: #objc_class("SxGLView") export {
+    #extends UIView;
+
+    layerClass :: () => CAEAGLLayer.class();
+
+    sxTick :: (self: *Self, link: *CADisplayLink) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.gl_view_tick(link);
+    }
+
+    layoutSubviews :: (self: *Self) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.gl_view_did_layout();
+    }
+
+    touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_down(xx self, touches);
+    }
+
+    touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_moved(xx self, touches);
+    }
+
+    touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_up(xx self, touches);
+    }
+
+    touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_up(xx self, touches);
+    }
+}
+
+// Pull the first UITouch out of an NSSet<UITouch *> and convert its
+// location to view-local coordinates. Used by push_touch_* methods on
+// UIKitPlatform.
+
+uikit_touch_location :: (touch: *void, view: *void) -> Point {
+    p := #objc_call(CGPoint)(touch, "locationInView:", view);
+    Point.{ x = xx p.x, y = xx p.y }
+}
+
+uikit_first_touch :: (touches: *void) -> *void {
+    touches_set : *NSSet = xx touches;
+    touches_set.anyObject()
+}
+
+// uikit_register_gl_view_class — deleted (M3.3). SxGLView is now
+// declarative; the compiler synthesises everything at module init.
+
+// SxMetalView reuses the same tick/layout/touch IMPs as SxGLView. The IMPs
+// already branch on `plat.gpu_mode` for the GL-specific bits (renderbuffer
+// setup, etc.), so a single set of IMPs serves both view classes.
+//
+// M3.4 — migrated to declarative `#objc_class`. Only `+layerClass`
+// differs from SxGLView (returns CAMetalLayer instead of CAEAGLLayer).
+SxMetalView :: #objc_class("SxMetalView") export {
+    #extends UIView;
+
+    layerClass :: () => CAMetalLayer.class();
+
+    sxTick :: (self: *Self, link: *CADisplayLink) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.gl_view_tick(link);
+    }
+
+    layoutSubviews :: (self: *Self) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.gl_view_did_layout();
+    }
+
+    touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_down(xx self, touches);
+    }
+
+    touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_moved(xx self, touches);
+    }
+
+    touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_up(xx self, touches);
+    }
+
+    touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_up(xx self, touches);
+    }
+}
+
+// uikit_register_metal_view_class — deleted (M3.4). Replaced by
+// the declarative SxMetalView form above.

@@ -1,0 +1,3 @@
+strerror(2) len ok
+optional non-null ok
+optional null ok

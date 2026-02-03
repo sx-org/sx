@@ -1,0 +1,13 @@
+peek after make    = 100
+bump(+5)           = 105
+bump(+3)           = 108
+peek after bumps   = 108
+ctr label          = ctr-a
+ctr peek           = 50
+ctr after bump     = 57
+list[0] peek      = 0
+list[1] peek      = 10
+list[2] peek      = 20
+list[0] after bump= 1
+list[1] after bump= 11
+list[2] after bump= 21

@@ -1,0 +1,17 @@
+// Pins the curated-bindings shape (PLAN-C C0.2): a `#source`-only unit
+// (no `#include`, so no auto-synthesized decls) paired with a
+// hand-written `extern` decl naming the unit. Works in JIT and AOT
+// today — but see 1620: the unit ref is not yet validated or scoped,
+// so the symbol actually resolves globally, not through the unit.
+#import "modules/std.sx";
+
+only :: #import c {
+    #source "1619-cimport-source-only/only.c";
+};
+
+only_answer :: () -> i32 extern only "only_answer";
+
+main :: () -> i32 {
+    print("answer = {}\n", only_answer() + 1);
+    0
+}

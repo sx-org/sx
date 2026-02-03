@@ -1,0 +1,20 @@
+// E6BR-1 — a plain qualified `ns.Type` type ANNOTATION resolves to the namespace
+// target module's OWN member type. `a.Box` parses as a single dotted `type_expr`,
+// so it reaches the bare nominal-leaf path; before E6BR-1 that path had no
+// dot-qualified split and fabricated an empty-struct stub literally named
+// "a.Box", so `x.a` failed with `field 'a' not found on type 'a.Box'` — even with
+// this SINGLE namespace import and NO same-name flat author.
+//
+// Pass-after: `resolveNominalLeaf` dot-splits the name and routes it through the
+// namespace-author selector (`qualifiedNamedTypeTid`), binding `a`'s real
+// `Box { a }`, so `x.a` resolves, exit 0.
+
+#import "modules/std.sx";
+a :: #import "0817-modules-qualified-annotation-single-import-resolve/dep.sx";
+
+main :: () -> i32 {
+    x : a.Box = ---;
+    x.a = 4;
+    print("x.a={}\n", x.a);
+    0
+}

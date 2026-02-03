@@ -1,0 +1,4 @@
+// Namespace target authoring its OWN error-set `IoErr { Net }`. The importer
+// (`main`) also authors a same-name `IoErr { Disk }`; the qualified `a.IoErr` must
+// bind THIS one (whose `Net` tag main's `IoErr` lacks).
+IoErr :: error { Net }

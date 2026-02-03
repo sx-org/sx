@@ -1,0 +1,18 @@
+// `#import` is non-transitive: when A imports B and B imports C, A
+// must NOT see C's top-level names. This file imports `b.sx` (which
+// in turn imports `c.sx`) and then deliberately references C's names
+// directly — the compiler is expected to reject the references with
+// "not visible; #import the module that declares it" diagnostics.
+//
+// `b.sx` ↔ `c.sx` together still compile: `b_only_fn`'s body sees
+// `c_only_fn` / `c_only_const` because b.sx directly imports c.sx.
+
+#import "modules/std.sx";
+#import "0706-modules-import-non-transitive/b.sx";
+
+main :: () -> i32 {
+    print("b_only_fn: {}\n", b_only_fn());
+    print("c_only_fn direct: {}\n", c_only_fn());
+    print("c_only_const direct: {}\n", c_only_const);
+    0
+}

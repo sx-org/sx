@@ -1,0 +1,7 @@
+lvalue: 7
+aliased: 17
+ptr: 17
+field: 13
+owned-view: 17
+inline: 1 1
+decl-view: 17

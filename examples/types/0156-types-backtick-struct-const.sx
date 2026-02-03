@@ -1,0 +1,21 @@
+// Backtick raw-identifier escape at a STRUCT-BODY constant — both the untyped
+// `` `name :: value `` and the typed `` `name : T : value `` forms. A struct
+// member constant is a binding site like any top-level const (examples/0153),
+// so a reserved type spelling (`i2`, `u8`) needs the backtick to be used as the
+// constant's name; the value is read back via `Holder.`name`. A *bare*
+// reserved-name struct const still errors with the caret on the name (see
+// examples/1142). The backtick is never part of the name's text.
+// Regression (issue 0089 — attempt-5: struct-body const decls thread is_raw +
+// the precise name_span, previously dropped to a false reject / 1:1 caret).
+#import "modules/std.sx";
+
+Holder :: struct {
+    `i2 :: 5;          // untyped raw struct-body const
+    `u8 : i64 : 9;     // typed raw struct-body const
+}
+
+main :: () -> i32 {
+    print("untyped = {}\n", Holder.`i2);
+    print("typed   = {}\n", Holder.`u8);
+    return 0;
+}

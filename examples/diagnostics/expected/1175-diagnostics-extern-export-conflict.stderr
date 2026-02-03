@@ -1,0 +1,5 @@
+error: conflicting linkage: 'extern' and 'export' cannot be combined — a declaration is either an import ('extern') or a definition ('export')
+  --> examples/diagnostics/1175-diagnostics-extern-export-conflict.sx:9:29
+   |
+ 9 | f :: (a: i32) -> i32 extern export;
+   |                             ^^^^^^

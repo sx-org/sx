@@ -1,0 +1,24 @@
+// `#import c` extern-name exemption: C names that collide with sx's reserved
+// type spellings import unedited. Extern decls are treated as RAW — their names
+// are never type-classified nor reserved-checked — so the generated `extern`
+// bindings import and call without hand-edits (no backticks needed). This covers
+// parameter names (`i1`/`i2`), a function whose own NAME is a reserved spelling
+// (`i2`), and bare-calling that function (its callee spelling parses as a type
+// but resolves to the extern fn). Before issue 0089 the params errored with
+// "'i1' is a reserved type name and cannot be used as an identifier", and the
+// bare call errored with "unresolved 'i2'".
+// Regression (issue 0089).
+#import "modules/std.sx";
+
+#import c {
+    #include "1220-ffi-c-import-reserved-name-params.h";
+    #source "1220-ffi-c-import-reserved-name-params.c";
+};
+
+main :: () -> i32 {
+    print("pick(10,20,0) = {}\n", ffi_pick(10, 20, 0));
+    print("pick(10,20,1) = {}\n", ffi_pick(10, 20, 1));
+    print("sum(10,20)    = {}\n", ffi_sum(10, 20));
+    print("i2(4) bare    = {}\n", i2(4));
+    0
+}

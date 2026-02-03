@@ -1,0 +1,28 @@
+// Obj-C runtime FFI smoke test: round-trip a string through NSString.
+//
+// Demonstrates the typed-fn-pointer cast idiom for `objc_msgSend`. Each
+// shape we invoke gets its own variable typed with the exact ABI:
+//
+//   msg_3 : (*void, *void, [*]u8) -> *void = xx objc_msgSend;
+//   msg_2 : (*void, *void) -> [*]u8 = xx objc_msgSend;
+//
+// On ARM64 Apple, objc_msgSend doesn't take a varargs path — invoking it
+// through a typed fn-pointer is the only correct way to land args in the
+// right registers.
+
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+
+main :: () -> i32 {
+    ns_class      := objc_getClass("NSString".ptr);
+    sel_with_utf8 := sel_registerName("stringWithUTF8String:".ptr);
+    sel_utf8      := sel_registerName("UTF8String".ptr);
+
+    msg_3 : (*void, *void, [*]u8) -> *void abi(.c) = xx objc_msgSend;
+    ns_str := msg_3(ns_class, sel_with_utf8, "hi".ptr);
+
+    msg_2 : (*void, *void) -> [*]u8 abi(.c) = xx objc_msgSend;
+    back := msg_2(ns_str, sel_utf8);
+
+    return xx (back[0] + back[1]); // 'h' + 'i' = 104 + 105 = 209
+}

@@ -1,0 +1,34 @@
+// any_element(av, elem, i) — element view into an array/vector held by
+// an `any`: pure stride math, `{elem, raw data + i * size_of(elem)}`.
+// The walker's array/vector arms re-aim ONE view per index; `elem` can
+// be a compile-time type (size folds to a constant) or a runtime Type
+// (size reads the rt table). Views alias the boxed storage.
+
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    arr : [4]i16 = .[10, -20, 30, -40];
+    av : any = arr;
+    i := 0;
+    while i < 4 {
+        if i > 0 { print(" "); }
+        print("{}", any_element(av, i16, i));
+        i += 1;
+    }
+    print("\n");                                     // 10 -20 30 -40
+
+    // SIMD vector lanes: contiguous, stride = lane size (the vector's
+    // ALIGNMENT is bigger; the lanes are packed).
+    vel := Vector(3, f32).[1.0, 3.0, 2.0];
+    vv : any = vel;
+    print("{} {} {}\n", any_element(vv, f32, 0), any_element(vv, f32, 1), any_element(vv, f32, 2));
+
+    // Runtime element Type: same composition through the size table.
+    et := type_of(arr[0]);
+    print("{}\n", any_element(av, et, 2));           // 30
+
+    // Views alias the array's storage.
+    arr[1] = 99;
+    print("{}\n", any_element(av, i16, 1));          // 99
+    return 0;
+}

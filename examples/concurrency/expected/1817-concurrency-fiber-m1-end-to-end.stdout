@@ -1,0 +1,7 @@
+completion order (id @ virtual-ms):
+  task 2 @ 10ms
+  task 3 @ 20ms
+  task 1 @ 30ms
+sum: 123
+final virtual clock: 30ms
+tasks: 4

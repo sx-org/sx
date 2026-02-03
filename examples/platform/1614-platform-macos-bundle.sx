@@ -1,0 +1,18 @@
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/platform/bundle.sx";
+
+// Register the sx-side `.app` bundler. Under `sx build` on macOS, the
+// post-link callback runs and writes a real `.app` next to the
+// binary. Under `sx run` (JIT) the callback is registered but never
+// fires — so the test runner only sees `runtime main`.
+
+configure :: () {
+    opts := build_options();
+    opts.set_bundle_path("HelloApp.app");
+    opts.set_bundle_id("co.example.hello");
+    on_build(bundle_main);
+}
+#run configure();
+
+main :: () { print("runtime main\n"); }

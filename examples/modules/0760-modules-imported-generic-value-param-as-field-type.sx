@@ -1,0 +1,18 @@
+// A generic struct's VALUE param (`$N: u32`) named in a TYPE position must emit
+// a clean diagnostic even when the struct is declared in an IMPORTED module —
+// not just the main file (examples/0172 covers the main-file case). Before the
+// fix the imported template's field `x: N` resolved to the `.unresolved`
+// sentinel and PANICKED at LLVM emission ("unresolved type reached LLVM
+// emission"); the field type leaf now diagnoses the imported value-param misuse
+// at the reference, the same way the main-file `UnknownTypeChecker` does.
+//
+// Expected: `error: 'N' is a value parameter, not a type` pointing into lib.sx;
+// exit 1. Regression (stdlib E3).
+#import "modules/std.sx";
+#import "0760-modules-imported-generic-value-param-as-field-type/lib.sx";
+
+main :: () -> i32 {
+    b : Bad(3) = .{ x = 1 };
+    print("{}\n", b.x);
+    return 0;
+}

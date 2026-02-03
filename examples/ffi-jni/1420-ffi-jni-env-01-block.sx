@@ -1,0 +1,21 @@
+// Phase 2 step 2.16a (PLAN-FFI.md): xfail then green for the
+// `#jni_env(env) { body }` block-form intrinsic.
+//
+// Scopes a JNIEnv* over a lexical block. Step 2.16a lands parser +
+// AST + sema acceptance — the body runs as a normal block, the env
+// arg is captured but not yet used at lowering. The TL push/pop
+// semantics (step 2.16b) and lexical-direct resolution in `#jni_call`
+// (step 2.16c) follow.
+//
+// Today the lexer doesn't recognise `#jni_env` and the parser errors
+// at the unknown directive token.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    synth_env : *void = null;
+    #jni_env(synth_env) {
+        print("inside #jni_env scope\n");
+    }
+    0
+}

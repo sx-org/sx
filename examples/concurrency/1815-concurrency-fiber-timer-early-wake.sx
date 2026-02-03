@@ -1,0 +1,47 @@
+// Stream B1 (fibers) B1.4b — a fiber's pending `sleep` timer is EVICTED when it
+// is woken early by another path, so a stale timer can never outlive (and
+// dereference) a reaped fiber.
+//
+// Scenario: a "sleeper" fiber arms `sleep(100)` and parks; a "waker" fiber wakes
+// it EARLY (at virtual t=0) via `wake`. The sleeper resumes, finishes, and is
+// reaped (its stack `munmap`'d + `Fiber` freed). Its 100ms timer must already be
+// gone — otherwise, when the run loop later fired that stale timer, it would
+// `wake` a freed `*Fiber` (use-after-free) and wrongly advance the virtual clock
+// to 100. Here `wake` evicts the timer, so the clock stays at 0 and nothing
+// dereferences freed memory.
+//
+// Regression: the timer-vs-early-wake use-after-free found reviewing B1.4b.
+// Contract: `log: 2 1` (waker records 2, then the early-woken sleeper records 1),
+// `clock: 0` (no stale timer fired), `n_suspended: 0` (balanced).
+//
+// aarch64-macOS-pinned (the scheduler's per-arch asm + Apple mmap constants):
+// runs end-to-end on a matching host, ir-only on a mismatch.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+S :: struct { sleeper: *sched.Fiber; log: [8]i64; n: i64; }
+rec :: (s: *S, v: i64) { s.log[s.n] = v; s.n = s.n + 1; }
+
+main :: () -> i64 {
+    st : S = ---; st.n = 0; st.sleeper = null;
+    s := sched.Scheduler.init();
+    ps := @s; pst := @st;
+
+    // Sleeper: arm sleep(100), park; when woken (early), record 1 and finish.
+    mk_sleeper :: (ps: *sched.Scheduler, pst: *S) {
+        pst.sleeper = ps.spawn(() { ps.sleep(100); rec(pst, 1); });
+    }
+    // Waker: record 2, then wake the sleeper BEFORE its 100ms timer fires.
+    mk_waker :: (ps: *sched.Scheduler, pst: *S) {
+        ps.spawn(() { rec(pst, 2); ps.wake(pst.sleeper); });
+    }
+    mk_sleeper(ps, pst);
+    mk_waker(ps, pst);
+    s.run();
+
+    print("log:");
+    i := 0; while i < st.n { print(" {}", st.log[i]); i = i + 1; }
+    print("\n");
+    print("clock: {}  n_suspended: {}\n", s.now_ms(), s.n_suspended);
+    return 0;
+}

@@ -1,0 +1,23 @@
+// Variadic heterogeneous type packs — `..$args` — type-system
+// representation lock-in.
+//
+// Step 1c slice for the pack feature (see
+// ~/.claude/plans/lets-see-options-for-merry-dijkstra.md). Exercises
+// the parser's acceptance of `..$args` inside a `Closure(...)` type
+// expression — the pack-shape spelling used by impl headers like
+// `impl Into(Block) for Closure(..$args) -> $R`.
+//
+// Today's parser only accepts `..$args` in fn parameter lists (1b);
+// the same syntax inside a `Closure(...)` type expression hits
+// `expected type name` at the `..` token. This file pins that
+// rejection. The next commit teaches `parseTypeExpr`'s `Closure(...)`
+// arm + the type-table representation to carry the pack.
+
+#import "modules/std.sx";
+
+takes_cb :: (cb: Closure(..$args) -> $R) -> void { }
+
+main :: () -> i32 {
+    print("pack type rep ok\n");
+    return 0;
+}

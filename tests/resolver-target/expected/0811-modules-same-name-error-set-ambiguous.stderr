@@ -1,0 +1,29 @@
+error: type 'IoErr' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0811-modules-same-name-error-set-ambiguous.sx:34:18
+   |
+34 | fail_io :: () -> !IoErr {
+   |                  ^^^^^^
+
+error: type 'IoErr' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0811-modules-same-name-error-set-ambiguous.sx:39:19
+   |
+39 |     sz := size_of(IoErr);
+   |                   ^^^^^
+
+error: type 'IoErr' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0811-modules-same-name-error-set-ambiguous.sx:40:9
+   |
+40 |     e : IoErr = error.Disk;
+   |         ^^^^^
+
+error: type 'IoErr' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0811-modules-same-name-error-set-ambiguous.sx:41:16
+   |
+41 |     t : Type = IoErr;
+   |                ^^^^^
+
+error: type 'IoErr' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0811-modules-same-name-error-set-ambiguous.sx:28:14
+   |
+28 |         case IoErr: 1;
+   |              ^^^^^

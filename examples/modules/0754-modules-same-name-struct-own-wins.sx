@@ -1,0 +1,15 @@
+// issue 0105 case 3 — own-wins-over-flat. `main` flat-imports `dep.sx` (which
+// authors `Widget { a }`) AND authors its OWN `Widget { m }`. A bare `Widget`
+// reference in `main` resolves to `main`'s OWN author, not the flat-imported one
+// (the querying source's author wins outright — no ambiguity), so `Widget.{ m }`
+// builds `main`'s type while `dep_widget()` returns `dep`'s distinct `Widget`.
+#import "modules/std.sx";
+#import "0754-modules-same-name-struct-own-wins/dep.sx";
+
+Widget :: struct { m: i64; }
+
+main :: () -> i32 {
+    w := Widget.{ m = 5 };
+    print("own={} dep={}\n", w, dep_widget());
+    0
+}

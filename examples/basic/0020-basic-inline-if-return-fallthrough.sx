@@ -1,0 +1,16 @@
+// `inline if COND { return E; }` followed by a fall-through final expression:
+// when COND evaluates true at comptime, the body is spliced unconditionally
+// and the trailing expression must NOT also be emitted into the same LLVM
+// block (only one terminator per block).
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+do_it :: () -> bool {
+    inline if OS != .ios { return false; }
+    true
+}
+
+main :: () -> i32 {
+    if do_it() then 0 else 1
+}

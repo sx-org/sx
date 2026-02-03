@@ -1,0 +1,37 @@
+// Integer `{}` formatting across the full signed/unsigned range.
+//
+// Regression (issue 0090): the `{}` formatter was i64-based — it negated
+// the value to print the sign (so i64::MIN, whose magnitude is
+// unrepresentable as a positive i64, rendered as a bare "-"), and it had
+// no unsigned-aware path (so a u64 all-ones value printed as the i64
+// reinterpretation, "-1"). Both extremes now render correctly: signed
+// MIN prints all its digits, and unsigned integers print as unsigned
+// decimal across all 64 bits.
+
+#import "modules/std.sx";
+
+main :: () {
+    // Signed extreme: magnitude is never negated, so MIN survives.
+    print("i64.min={}\n", i64.min);
+    print("i64.max={}\n", i64.max);
+
+    // Unsigned extreme: all 64 bits as unsigned decimal, not -1.
+    print("u64.max={}\n", u64.max);
+
+    // Spread across widths — signed.
+    print("i8.min={} i8.max={}\n", i8.min, i8.max);
+    print("i16.min={} i16.max={}\n", i16.min, i16.max);
+    print("i32.min={} i32.max={}\n", i32.min, i32.max);
+
+    // Spread across widths — unsigned (max is all-ones for that width).
+    print("u8.max={} u16.max={}\n", u8.max, u16.max);
+    print("u32.max={}\n", u32.max);
+
+    // Mins of unsigned widths and zero.
+    print("u8.min={} u64.min={} zero={}\n", u8.min, u64.min, 0);
+
+    // Ordinary signed/unsigned values still print correctly.
+    neg : i32 = -42;
+    pos : u32 = 4000000000;
+    print("neg={} pos={}\n", neg, pos);
+}

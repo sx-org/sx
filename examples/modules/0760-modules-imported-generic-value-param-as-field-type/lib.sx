@@ -1,0 +1,10 @@
+// Flat-imported generic struct whose VALUE param `$N: u32` is named in a TYPE
+// position (`x: N`). Because this module is imported (not the main file), the
+// `UnknownTypeChecker` trusts it and never walks it — so the field type leaf is
+// the sole guard. `instantiateGenericStruct` resolves the template's field nodes
+// in THIS source context, so the leaf classifies the value-param misuse as
+// imported and emits the tailored hint instead of poisoning the field with the
+// `.unresolved` sentinel (which panicked at LLVM emission before the fix).
+Bad :: struct($N: u32) {
+    x: N;
+}

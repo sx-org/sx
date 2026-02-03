@@ -1,0 +1,26 @@
+// Global struct initialized with `.{}` (or a partial struct literal) honors
+// the struct's per-field defaults, matching the function-local behavior.
+
+#import "modules/std.sx";
+
+Foo :: struct {
+    running: bool = true;
+    x: i32 = 42;
+    name: string = "default";
+}
+
+g_empty       : Foo = .{};
+g_partial     : Foo = .{ x = 99 };
+g_override    : Foo = .{ running = false };
+g_reorder     : Foo = .{ x = 7, running = false, name = "hi" };
+g_positional  : Foo = .{ false, 13, "pos" };
+
+main :: () -> void {
+    l_empty : Foo = .{};
+    print("local         running={} x={} name={}\n", l_empty.running, l_empty.x, l_empty.name);
+    print("g_empty       running={} x={} name={}\n", g_empty.running, g_empty.x, g_empty.name);
+    print("g_partial     running={} x={} name={}\n", g_partial.running, g_partial.x, g_partial.name);
+    print("g_override    running={} x={} name={}\n", g_override.running, g_override.x, g_override.name);
+    print("g_reorder     running={} x={} name={}\n", g_reorder.running, g_reorder.x, g_reorder.name);
+    print("g_positional  running={} x={} name={}\n", g_positional.running, g_positional.x, g_positional.name);
+}

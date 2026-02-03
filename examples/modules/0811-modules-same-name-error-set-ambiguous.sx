@@ -1,0 +1,44 @@
+// E6b — per-decl nominal identity for ERROR-SET decls. A bare ERROR-SET reference
+// is non-transitive AND ambiguity-checked at every site, exactly like the struct
+// leaf (0755) and the enum/union leaves (0795/0797). `main` flat-imports two
+// modules that each author a same-name `IoErr` error set and authors none itself,
+// so EACH of the following bare ERROR-SET forms is a genuine collision the source
+// cannot disambiguate — and each must emit the LOUD "type 'IoErr' is ambiguous"
+// diagnostic and poison the result, NEVER silently pick a global `findByName`
+// last-wins author:
+//
+//   - reflection / type-arg slot     `size_of(IoErr)`
+//   - typed error-value annotation    `e : IoErr = error.Disk`
+//   - type-as-value                   `t : Type = IoErr`
+//   - type-category match arm         `case IoErr:`
+//   - `!Named` failable channel       `-> !IoErr`   (E6b audited use surface)
+//
+// Fail-before (pre-E6b): the stateless `type_bridge.resolveInlineErrorSet`
+// `findByName` short-circuit interned ONE global last-wins `IoErr`, so every bare
+// form silently resolved to it; the `!IoErr` channel resolved through
+// `resolveErrorType -> resolveTypeName` straight to that global slot. The program
+// exited 0.
+
+#import "modules/std.sx";
+#import "0811-modules-same-name-error-set-ambiguous/a.sx";
+#import "0811-modules-same-name-error-set-ambiguous/b.sx";
+
+describe :: ($T: Type) -> i32 {
+    r := if T == {
+        case IoErr: 1;
+        else: 0;
+    }
+    r
+}
+
+fail_io :: () -> !IoErr {
+    raise error.Disk;
+}
+
+main :: () -> i32 {
+    sz := size_of(IoErr);
+    e : IoErr = error.Disk;
+    t : Type = IoErr;
+    k := describe(i64);
+    0
+}

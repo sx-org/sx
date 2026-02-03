@@ -1,0 +1,41 @@
+// Checked assertions: `av.(T)` on an `any` receiver is failable `(T, !)`
+// with ONE spelling and two temperaments (aggregate ladder Step 4, S2).
+// CONSUMED via the error channel = graceful: `try av.(T)` propagates
+// (the caller's set absorbs the global `mismatch` tag), `av.(T) or d`
+// falls back, `av.(T) catch (e) { … }` binds the tag. UNCONSUMED with a
+// MATCHING tag just yields the value (the panic temperament only fires
+// on mismatch — pinned separately). Assertions nested in call arguments
+// are NOT consumed by an outer try — they stay in the panic form.
+#import "modules/std.sx";
+
+Point :: struct { x: i64; y: i64; }
+
+use :: () -> ! {
+    av : any = 42;
+    v := try av.(i64);
+    print("try: {}\n", v);
+    bv : any = true;
+    w := bv.(f32) or 1.25;
+    print("or miss: {}\n", w);
+    x := bv.(bool) or false;
+    print("or hit: {}\n", x);
+    y := av.(f64) catch (e) { print("catch: {}\n", e); 0.5 };
+    print("caught: {}\n", y);
+    z := try bv.(string);          // mismatch — propagates to main's catch
+    print("unreached: {}\n", z);
+}
+
+main :: () {
+    use() catch (e) { print("outer: {}\n", e); };
+    // Unconsumed + matching: plain value, no panic.
+    av : any = 7;
+    u := av.(i64);
+    print("plain: {}\n", u);
+    // Struct payloads assert through the same tag machinery.
+    p := Point.{ x = 3, y = 4 };
+    pv : any = p;
+    q := pv.(Point);
+    print("struct: {} {}\n", q.x, q.y);
+    r := pv.(i64) or 9;
+    print("struct-or: {}\n", r);
+}

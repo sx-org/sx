@@ -1,0 +1,6 @@
+// One of two flat-imported authors of a same-name `Box` struct. With both modules
+// flat-visible from a file that authors none itself, every bare reference to the
+// name is genuinely ambiguous — at EVERY use surface, including the ones E6b-R
+// newly routed through the source-aware engine (wrapper aliases, tuple-literal
+// elements, enum/union body-builder child types, inline-anonymous types).
+Box :: struct { x: i32; }

@@ -1,0 +1,24 @@
+// An array dimension that is not a compile-time integer constant is a hard
+// error, not a silently-fabricated 0-length array. Here a type alias's
+// dimension is a runtime function call (`get()`), which is genuinely not
+// compile-time-known — the registration-time resolver cannot evaluate it.
+//
+// (A const-FOLDABLE expression dimension such as `[M + 1]` is NOT an error — it
+// folds; see examples/0144-types-const-expr-array-dim.sx. Only a dimension with
+// a genuinely runtime operand halts here.)
+//
+// Regression (issue 0083): the stateless resolver printed a non-fatal warning
+// and fabricated length 0, then let compilation continue — producing a 0-byte
+// alloca and corrupt element access. It now yields the `.unresolved` sentinel,
+// which the alias registration surfaces as this diagnostic, aborting the build
+// with a non-zero exit.
+#import "modules/std.sx";
+
+get :: () -> i64 { return 5; }
+BadArr :: [get()]i64;
+
+main :: () {
+    a : BadArr = ---;
+    a[0] = 7;
+    print("a0={}\n", a[0]);
+}

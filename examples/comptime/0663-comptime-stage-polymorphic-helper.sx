@@ -1,0 +1,28 @@
+// Functions are stage-polymorphic: nothing in a declaration says which stage it
+// belongs to. What decides is REACHABILITY — a function is in the binary because
+// a runtime root (`main`, an export) reaches it, and it runs at compile time
+// because a `#run` / constant initializer reaches it.
+//
+// `shared` is reached from BOTH, so it does both: evaluated by the comptime VM
+// for `CT`, and emitted into the binary for `main`. The two must agree.
+#import "modules/std.sx";
+
+P :: struct { a: i64; b: i64; }
+
+// A plain function — no annotation marks it comptime or runtime.
+shared :: (n: i64) -> i64 {
+    return n * 2 + size_of(P);   // an intrinsic works in either stage
+}
+
+// Compile-time root.
+CT :: #run shared(10);
+
+main :: () -> i64 {
+    // Runtime root.
+    rt := shared(10);
+
+    // Same function, same input, two stages — one answer.
+    if rt != CT { return 1; }
+    if CT != 36 { return 2; }   // 10*2 + size_of(P)=16
+    return 0;
+}

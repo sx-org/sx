@@ -1,0 +1,1 @@
+bind ok: [::1] v6-only-loopback, 127.0.0.1, dual-stack both families + localhost resolve, ipv6_only refuses v4, unix socket served + unlinked, guards loud; net-zero GPA

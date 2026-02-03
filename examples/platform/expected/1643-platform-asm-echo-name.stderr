@@ -1,0 +1,5 @@
+error: redundant asm operand name `eax` — it already names the pinned register; drop the `[eax]`
+  --> examples/platform/1643-platform-asm-echo-name.sx:5:25
+   |
+ 5 | f :: () -> u32 { return asm volatile { "cpuid", [eax] "={eax}" -> u32, "{eax}" = 1 }; }
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,1 @@
+COnly :: struct { v: i64 = 0; }

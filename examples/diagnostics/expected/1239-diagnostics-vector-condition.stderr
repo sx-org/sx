@@ -1,0 +1,5 @@
+error: condition must be a bool, integer, pointer, or optional, but has type 'Vector(4,bool)'
+  --> examples/diagnostics/1239-diagnostics-vector-condition.sx:5:8
+   |
+ 5 |     if a == b {}
+   |        ^^^^^^

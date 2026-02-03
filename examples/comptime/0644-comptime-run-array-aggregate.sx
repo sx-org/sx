@@ -1,0 +1,62 @@
+// A `#run` (comptime const init) whose function returns an aggregate that
+// CONTAINS AN ARRAY — or an array directly — evaluates: the comptime VM's
+// reg→value bridge reads the array's elements out of comptime memory and
+// produces a `Value` array the LLVM serializer emits as a constant.
+//
+// Regression (issue 0167 C): the array-in-aggregate shape used to bail with
+//   `reg→value: aggregate shape not bridged yet`.
+// Covers: struct-with-array-field, array-of-structs, nested array `[2][2]`,
+// a direct `[N]T` return, and the `?Arr` optional payload (composes with the
+// optional bridge arm) unwrapped via `!`.
+
+#import "modules/std.sx";
+
+Arr3 :: struct { xs: [3]i64; }
+Pt   :: struct { x: i64; y: i64; }
+Box  :: struct { items: [2]Pt; }
+Mat  :: struct { g: [2][2]i64; }
+
+mk_struct :: () -> Arr3 {
+    r : Arr3 = ---;
+    r.xs[0] = 1; r.xs[1] = 2; r.xs[2] = 3;
+    return r;
+}
+
+mk_aos :: () -> Box {
+    r : Box = ---;
+    r.items[0].x = 1; r.items[0].y = 2;
+    r.items[1].x = 3; r.items[1].y = 4;
+    return r;
+}
+
+mk_nested :: () -> Mat {
+    r : Mat = ---;
+    r.g[0][0] = 1; r.g[0][1] = 2;
+    r.g[1][0] = 3; r.g[1][1] = 4;
+    return r;
+}
+
+mk_direct :: () -> [3]i64 {
+    r : [3]i64 = ---;
+    r[0] = 7; r[1] = 8; r[2] = 9;
+    return r;
+}
+
+mk_opt :: () -> ?Arr3 {
+    r : Arr3 = .{ xs = .[10, 20, 30] };
+    return r;
+}
+
+G   :: #run mk_struct();   // struct { [3]i64 }
+B   :: #run mk_aos();      // struct { [2]Pt }
+M   :: #run mk_nested();   // struct { [2][2]i64 }
+D   :: #run mk_direct();   // [3]i64
+A   :: #run mk_opt();      // ?Arr3
+
+main :: () {
+    print("{} {} {}\n", G.xs[0], G.xs[1], G.xs[2]);                 // 1 2 3
+    print("{} {} {} {}\n", B.items[0].x, B.items[0].y, B.items[1].x, B.items[1].y); // 1 2 3 4
+    print("{} {} {} {}\n", M.g[0][0], M.g[0][1], M.g[1][0], M.g[1][1]);             // 1 2 3 4
+    print("{} {} {}\n", D[0], D[1], D[2]);                          // 7 8 9
+    print("{}\n", A!.xs[0]);                                        // 10
+}

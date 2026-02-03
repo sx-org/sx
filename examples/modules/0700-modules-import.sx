@@ -1,0 +1,17 @@
+std :: #import "modules/std.sx";
+
+//flat
+#import "modules/math";
+
+main :: () -> i32 {
+    {
+        defer std.print("after hello");
+        //expect stdout : hello there
+        std.print("hello there");
+    }
+
+    v:= std.Vector(3,f32).[1,2,3];
+
+    std.print("\n{}\n", v);
+    0
+}

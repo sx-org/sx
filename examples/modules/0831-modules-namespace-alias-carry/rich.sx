@@ -1,0 +1,9 @@
+Thing :: struct {
+    v: i64;
+    init :: () -> Thing { Thing.{ v = 5 } }
+    get :: (self: *Thing) -> i64 { self.v }
+}
+Color :: enum { red; green; }
+LIMIT :i64: 99;
+Box :: struct ($T: Type) { item: T; }
+helper :: () -> i64 { 7 }

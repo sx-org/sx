@@ -1,0 +1,62 @@
+// Feature 1 / Step 0.4 — tuple baseline probe (gate for Decision 2:
+// "tuples are first-class for pack storage").
+//
+// This file is the audit artifact: it exercises every tuple operation the
+// canonical `Combined`/`map` body relies on, EXCEPT the two pack/tuple
+// projection+spread sugars that are themselves Feature 1 work (documented
+// as gaps at the bottom). Everything here RUNS today.
+//
+// Run:  ./zig-out/bin/sx run examples/probes/tuple-baseline.sx
+
+#import "modules/std.sx";
+
+Listenable :: struct { value: i64; }      // stand-in element struct
+Combined   :: struct { sources: Tuple(i32, i32); }  // tuple-typed field (Decision 2)
+
+swap :: (a: i64, b: i64) -> Tuple(i64, i64) { .{b, a} }
+fst  :: (t: Tuple(i64, i64)) -> i64 { t.0 }
+
+main :: () -> i32 {
+    // ── Block A — primitives (WORKS) ───────────────────────────────
+    pair := .{40, 2};                       // inferred positional
+    print("A.idx     {} {}\n", pair.0, pair.1);
+    named := .{x = 10, y = 20};               // named + numeric access
+    print("A.named   {} {} {}\n", named.x, named.0, named.1);
+    one := .{42};                          // 1-tuple
+    print("A.one     {}\n", one.0);
+    a : i64 = pair.0;                      // element into typed local
+    print("A.local   {}\n", a);
+
+    // ── Block B — storage in a struct field (WORKS; core of Decision 2)
+    c : Combined = ---;
+    c.sources = .{7, 9};                    // assign tuple value to field
+    print("B.field   {} {}\n", c.sources.0, c.sources.1);
+
+    // ── Block C — return / pass / operators (WORKS) ────────────────
+    s := swap(1, 2);
+    print("C.ret     {} {}\n", s.0, s.1);
+    print("C.pass    {}\n", fst(.{11, 22}));
+    print("C.eq      {}\n", .{1, 2} == .{1, 2});
+    cc := .{1, 2} + .{3, 4};
+    print("C.concat  {} {}\n", cc.0, cc.3);
+    print("C.mem     {}\n", 3 in .{1, 2, 3});
+    0
+}
+
+// ── GAPS (Feature 1 work — intentionally NOT exercised above) ──────
+//
+//   G1. Tuple field projection across elements:
+//         t := .(Listenable.{value=1}, Listenable.{value=2});
+//         v := t.value;        // expected: .(1, 2)   — Decision 3 "tuple.field"
+//       Today: `error: field 'value' not found on type 'tuple'`.
+//       Needed by canonical `self.sources.value`.
+//
+//   G2. Tuple spread into call args:
+//         p := .(10, 20);
+//         add(..p);            // expected: add(10, 20) — Decision 3 "..tuple"
+//       Today: lowers to one `undef` arg → LLVM arity verification failure.
+//       Needed by canonical `mapper(..sources.value)` and `.(..sources)`.
+//
+// Both are already scheduled: parsing in Phase 1.2 (PackExpansion node covers
+// `.(..pack)` / `..pack.field`), sema in Phase 2.3 ("tuple-spread parallels").
+// No separate Feature 1.5 needed — see Step 0.4 triage in CHECKPOINT-LANG.md.

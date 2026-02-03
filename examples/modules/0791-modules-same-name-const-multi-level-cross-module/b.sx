@@ -1,0 +1,4 @@
+// Module B authors a full same-name shadow `M :: 10`, `K :: M + 1` (= 11). `main`
+// flat-imports B, so bare `K` in `main` is B's (= 11).
+M :: 10;
+K :: M + 1;

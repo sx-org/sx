@@ -1,0 +1,14 @@
+present[0]: 1
+present[2]: 3
+null:       99
+bound:      2
+unwrap:     3
+struct.x:   20
+struct.y:   21
+slice[1]:   6
+ptr[0]:     10
+ptr[1]:     20
+ptr[2]:     30
+ptr null:   99
+u8[0]:      7
+u8[3]:      200

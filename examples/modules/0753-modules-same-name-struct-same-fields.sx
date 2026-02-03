@@ -1,0 +1,15 @@
+// issue 0105 case 2 — same-name struct, SAME fields. Two flat-imported modules
+// each declare `Pair { x, y }` with identical shape. They are STILL distinct
+// nominal identities (each holds its own per-source TypeId / nominal id), not
+// folded into one — both register, both monomorphize their own formatter, and
+// each module's value prints correctly. (The nominal-distinctness mechanism is
+// pinned at the unit level in `types.test.zig`; this example pins that two
+// identically-shaped same-name structs coexist without collapse or crash.)
+#import "modules/std.sx";
+#import "0753-modules-same-name-struct-same-fields/a.sx";
+#import "0753-modules-same-name-struct-same-fields/b.sx";
+
+main :: () -> i32 {
+    print("a={} b={}\n", a_pair(), b_pair());
+    0
+}

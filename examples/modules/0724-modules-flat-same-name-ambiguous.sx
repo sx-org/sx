@@ -1,0 +1,12 @@
+// fix-0102c (issue 0102): a genuinely-ambiguous bare call. `main` flat-imports
+// two modules that each author `dup` and neither is `main`'s own — a bare
+// `dup()` can't pick one, so the compiler rejects it with a loud diagnostic
+// instead of silently first-wins-binding one. Qualify the call to disambiguate.
+#import "modules/std.sx";
+#import "0724-modules-flat-same-name-ambiguous/a.sx";
+#import "0724-modules-flat-same-name-ambiguous/b.sx";
+
+main :: () -> i32 {
+    print("{}\n", dup());
+    0
+}

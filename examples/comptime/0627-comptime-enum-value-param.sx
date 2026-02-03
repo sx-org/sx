@@ -1,0 +1,27 @@
+// Comptime ENUM value parameter: `$o: <EnumType>` binds the enum-literal
+// argument to its variant tag, monomorphizes the inlined body per distinct
+// ordering value, and resolves `o` in the body as a compile-time-known enum
+// constant — usable both in `if o == .a` comparisons AND as a comptime-readable
+// variant tag during lowering (a downstream lowerer reads it via
+// `comptime_value_bindings`, exercised here as the `[o]i64` array dimension).
+#import "modules/std.sx";
+
+Ord :: enum { a; b; c; }
+
+pick :: ($o: Ord) -> i64 {
+    if o == .a { return 10; }
+    if o == .b { return 20; }
+    return 30;
+}
+
+// `o` read as a compile-time integer (its variant tag) in a TYPE position.
+tag_dim :: ($o: Ord) -> i64 {
+    arr : [o]i64 = ---;
+    return arr.len;
+}
+
+main :: () {
+    print("{}\n", pick(.b));                       // 20
+    print("{} {} {}\n", pick(.a), pick(.b), pick(.c)); // 10 20 30
+    print("{} {} {}\n", tag_dim(.a), tag_dim(.b), tag_dim(.c)); // 0 1 2
+}

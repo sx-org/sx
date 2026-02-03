@@ -1,0 +1,28 @@
+// Indexing a pointer-to-scalar/struct `*T` is rejected in ALL FOUR positions —
+// read (`pc[i]`), write (`pc[i] = v`), address-of (`@pc[i]`), and as a
+// field-lvalue base (`ps[i].field = v`) — with the same located diagnostic.
+// Per specs.md (Pointer Types), a bare `*T` has no `[i]`: the indexable
+// pointer shapes are the many-pointer `[*]T`, the pointer-to-array `*[N]T`,
+// and the pointer-to-slice `*[]T`; `*T` converts implicitly to `[*]T` when
+// buffer indexing is intended.
+//
+// Regression (issue 0155): `pc[0]` on a `*i64` panicked the compiler at LLVM
+// emission ("unresolved type reached LLVM emission", exit 134) instead of
+// diagnosing. The read path was guarded under issue 0183 (see
+// 1203-diagnostics-index-non-indexable.sx); the WRITE, ADDRESS-OF, and
+// L-VALUE-POINTER (`lowerExprAsPtr`) paths still emitted an `index_gep` typed
+// `ptrTo(.unresolved)` and kept panicking. All four now diagnose cleanly
+// (exit 1). Legit lvalue-through-index shapes (`w.arr[i].a = v`,
+// `ps_arr[i].a = v` for `*[N]S`, `mp[i].a = v` for `[*]S`) are unaffected.
+#import "modules/std.sx";
+S :: struct { a: i64; }
+main :: () -> i64 {
+    x : i64 = 5;
+    pc : *i64 = @x;
+    pc[0] = 7;      // error: cannot index '*i64' (write position)
+    q := @pc[0];    // error: cannot index '*i64' (address-of position)
+    s := S.{ a = 1 };
+    ps : *S = @s;
+    ps[0].a = 9;    // error: cannot index '*S' (field-lvalue-through-index)
+    return pc[0];   // error: cannot index '*i64' (read position)
+}

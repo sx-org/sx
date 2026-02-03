@@ -1,0 +1,38 @@
+// The `cstring` type: ONE pointer to a null-terminated u8 buffer — C's
+// `char *`. Crosses extern boundaries verbatim in both directions;
+// `?cstring` is the nullable case (null pointer = absent); string
+// LITERALS coerce implicitly (terminated constants); arbitrary strings
+// materialize via to_cstring; from_cstring is the zero-copy view back.
+#import "modules/std.sx";
+
+libc :: #library "c";
+strerror_c :: (code: i32) -> cstring extern libc "strerror";
+getenv_c   :: (name: cstring) -> ?cstring extern libc "getenv";
+dlerror_c  :: () -> ?cstring extern libc "dlerror";
+
+main :: () -> i32 {
+    // literal -> cstring param; cstring return -> view
+    e := strerror_c(2);
+    v := from_cstring(e);
+    if v.len < 5 { print("BUG: strerror short\n"); return 1; }
+    print("strerror ok\n");
+
+    // ?cstring: present, absent, and null-returning C call
+    p := getenv_c("PATH");
+    if p == null { print("BUG: PATH null\n"); return 2; }
+    if cstring_len(p!) < 1 { print("BUG: PATH empty\n"); return 3; }
+    q := getenv_c("NO_SUCH_VAR_ZZZ");
+    if q != null { print("BUG: missing not null\n"); return 4; }
+    d := dlerror_c();
+    if d != null { print("BUG: dlerror non-null\n"); return 5; }
+    print("?cstring ok\n");
+
+    // round trip: built string -> owned cstring -> view -> equality
+    s := concat("hi-", "there");
+    c := to_cstring(s);
+    r := from_cstring(c);
+    if r != "hi-there" { print("BUG: round trip\n"); return 6; }
+    if cstring_len(c) != 8 { print("BUG: len\n"); return 7; }
+    print("round trip ok\n");
+    return 0;
+}

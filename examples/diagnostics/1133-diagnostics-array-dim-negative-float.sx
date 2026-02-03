@@ -1,0 +1,12 @@
+// A NEGATIVE integral float (`-2.0`) used as an array dimension is a hard error.
+// The integral-float rule folds and negates it to `-2`, then the shared u32 dim
+// gate rejects a below-minimum dimension — a clean diagnostic + non-zero exit.
+//
+// Regression (F0.4 attempt 8, Agra ruling): integral floats fold, but a negative
+// result is still rejected (a dimension must be non-negative).
+#import "modules/std.sx";
+
+main :: () {
+    a : [-2.0]i64 = ---;
+    print("unreachable: {}\n", a.len);
+}

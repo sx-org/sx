@@ -1,0 +1,93 @@
+// std.socket nonblocking surface (PLAN-HTTPZ S2): set_nonblocking via
+// the C-variadic fcntl, and the typed _nb wrappers' full result
+// algebra — bytes, WouldBlock, Closed — on a unix socketpair, plus
+// accept_nb on a nonblocking TCP listener (WouldBlock with an empty
+// backlog, a connection after a loopback connect).
+#import "modules/std.sx";
+
+PORT :: 18931;
+
+main :: () -> i32 {
+    // ── socketpair: read/write algebra ────────────────────────────────
+    pair : [2]i32 = ---;
+    if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, @pair[0]) != 0 {
+        print("socketpair failed\n");
+        return 1;
+    }
+    a := pair[0];
+    b := pair[1];
+    if !socket.set_nonblocking(a) or !socket.set_nonblocking(b) {
+        print("set_nonblocking failed\n");
+        return 1;
+    }
+
+    buf : [16]u8 = ---;
+    n, e := socket.read_nb(a, @buf[0], 16);
+    if e != error.WouldBlock {
+        print("empty pair read: expected WouldBlock\n");
+        return 1;
+    }
+    print("empty read: WouldBlock\n");
+
+    msg := "ping";
+    wn, we := socket.write_nb(b, msg.ptr, 4);
+    if we { print("write_nb failed\n"); return 1; }
+    if wn != 4 { print("short write: {}\n", wn); return 1; }
+    rn, re := socket.read_nb(a, @buf[0], 16);
+    if re { print("read_nb after write failed\n"); return 1; }
+    if rn != 4 { print("short read: {}\n", rn); return 1; }
+    print("pair round trip: {} bytes\n", rn);
+
+    socket.close(b);
+    cn, ce := socket.read_nb(a, @buf[0], 16);
+    if ce != error.Closed {
+        print("read after peer close: expected Closed\n");
+        return 1;
+    }
+    print("peer close: Closed\n");
+    socket.close(a);
+
+    // ── nonblocking listener: accept_nb ───────────────────────────────
+    lfd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if lfd < 0 { print("listener socket failed\n"); return 1; }
+    one : i32 = 1;
+    socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEADDR, @one, 4);
+    // Per-OS sockaddr_in (PLAN-HTTPZ C3a) — the constructor hides the darwin
+    // sin_len / linux layout split; addr is 127.0.0.1 in network order.
+    addr := socket.sockaddr_in(PORT, 0x0100007F);
+    if socket.bind(lfd, @addr, 16) != 0 { print("bind failed\n"); return 1; }
+    if socket.listen(lfd, 4) != 0 { print("listen failed\n"); return 1; }
+    if !socket.set_nonblocking(lfd) { print("listener set_nonblocking failed\n"); return 1; }
+
+    afd, ae := socket.accept_nb(lfd);
+    if ae != error.WouldBlock {
+        print("empty backlog: expected WouldBlock\n");
+        return 1;
+    }
+    print("empty backlog: WouldBlock\n");
+
+    // A blocking loopback connect completes the handshake against the
+    // listen queue without an accept having run yet.
+    cfd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if cfd < 0 { print("client socket failed\n"); return 1; }
+    if socket.connect(cfd, @addr, 16) != 0 {
+        print("connect failed: errno {}\n", socket.errno());
+        return 1;
+    }
+    got := -1;
+    tries := 0;
+    while got < 0 and tries < 1000 {
+        c2, ae2 := socket.accept_nb(lfd);
+        if !ae2 { got = xx c2; }
+        else if ae2 != error.WouldBlock { print("accept_nb fault\n"); return 1; }
+        tries += 1;
+    }
+    if got < 0 { print("accept never produced the connection\n"); return 1; }
+    print("accept after connect: ok\n");
+
+    socket.close(xx got);
+    socket.close(cfd);
+    socket.close(lfd);
+    print("socket nonblocking ok\n");
+    return 0;
+}

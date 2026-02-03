@@ -1,0 +1,2 @@
+from_a v.bump() binds a.bump (+1): ok
+from_b v.bump() binds b.bump (+100): ok

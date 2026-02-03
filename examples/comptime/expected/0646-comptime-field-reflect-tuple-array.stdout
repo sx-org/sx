@@ -1,0 +1,6 @@
+struct: fc=2 fn=(a,b) ft0=i64
+enum: fc=3 fn=(X,Y,Z)
+postuple: fc=2 ft=(i64,bool) fn0=[]
+namtuple: fc=2 fn=(a,b)
+array: len=4 a1=20
+vector: len=4 v1=2.000000

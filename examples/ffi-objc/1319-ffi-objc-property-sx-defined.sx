@@ -1,0 +1,72 @@
+// M2.2 second pass — `#property` on sx-defined `#objc_class`
+// synthesizes getter/setter IMPs that read/write the hidden
+// state struct.
+//
+// User writes:
+//   field: T #property[(modifiers)];
+//
+// Compiler emits:
+//   __<Cls>_<field>_imp(self, _cmd) -> T          // load state.field
+//   __<Cls>_set<Field>_imp(self, _cmd, v) -> void // store state.field
+// (setter skipped for `readonly`.)
+//
+// Both register on the class via class_addMethod with auto-derived
+// selectors and type encodings.
+//
+// Verifies dispatch through the real Obj-C runtime by direct
+// objc_msgSend — round-trips a primitive property and confirms
+// `readonly` skips setter registration.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+class_getInstanceMethod :: (cls: *void, sel: *void) -> *void extern objc;
+
+SxBox :: #objc_class("SxBox") {
+    width:  i32 #property;
+    height: i32 #property;
+    area:   i32 #property(readonly);   // setter omitted
+
+    alloc :: () -> *SxBox;
+    init  :: (self: *SxBox) -> *SxBox;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        b := SxBox.alloc().init();
+
+        // width / height round-trip through synthesized IMPs.
+        b.width  = 10;
+        b.height = 7;
+        w := b.width;
+        h := b.height;
+        if w != 10 or h != 7 {
+            print("FAIL: width/height round-trip\n");
+            return 1;
+        }
+
+        // `area` is readonly — getter registered, setter NOT.
+        // area starts at 0 (state zero-init); read works:
+        a := b.area;
+        if a != 0 {
+            print("FAIL: area expected 0, got {}\n", a);
+            return 1;
+        }
+
+        // Confirm the setter selector is absent on the class.
+        cls : Class = objc_getClass("SxBox".ptr);
+        sel_set_area : SEL = sel_registerName("setArea:".ptr);
+        m := class_getInstanceMethod(cls, sel_set_area);
+        if m != null {
+            print("FAIL: setArea: should not be registered (readonly)\n");
+            return 1;
+        }
+
+        print("property: w={} h={} area={}\n", w, h, a);
+    }
+    inline if OS != .macos {
+        print("property: w=10 h=7 area=0\n");
+    }
+    0
+}

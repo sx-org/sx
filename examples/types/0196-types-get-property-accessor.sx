@@ -1,0 +1,31 @@
+// `#get` property accessors — a method marked `#get` is invoked via no-paren
+// field syntax (`obj.name`) rather than `obj.name()`. Works on plain structs
+// and generic-struct instances (including a getter whose return type is the
+// instance's type parameter), and the accessed value types correctly in
+// expressions and bindings.
+#import "modules/std.sx";
+
+Counter :: struct {
+    n: i64;
+    doubled :: (self: *Counter) -> i64 #get => self.n * 2;
+}
+
+Vec :: struct ($T: Type) {
+    data: []T;
+    count :: (self: *Vec(T)) -> i64 #get => self.data.len;   // returns i64
+    first :: (self: *Vec(T)) -> T #get => self.data[0];      // returns the type param T
+}
+
+main :: () -> i64 {
+    c : Counter = .{ n = 21 };
+    print("doubled={}\n", c.doubled);          // 42
+    x := c.doubled;                             // inference: x is i64
+    print("x+1={}\n", x + 1);                   // 43
+
+    a : [3]i64 = .[10, 20, 30];
+    v : Vec(i64) = .{ data = a[0..3] };
+    print("count={}\n", v.count);               // 3
+    print("first={}\n", v.first);               // 10
+    print("sum={}\n", v.count + v.first);       // 13
+    return 0;
+}

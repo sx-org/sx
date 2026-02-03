@@ -1,0 +1,13 @@
+// Phase 4 (xx-via-Into mechanism): an `impl Into(...) for ...` lives in
+// a separate file and reaches the xx site through a direct `#import`.
+// The visibility filter accepts the impl because the user file
+// transitively imports the impl's defining module.
+
+#import "modules/std.sx";
+#import "./0703-modules-into-impl-helper.sx";
+
+main :: () -> i32 {
+  w : Wrap = xx 3;
+  print("w.v = {}\n", w.v);
+  0
+}

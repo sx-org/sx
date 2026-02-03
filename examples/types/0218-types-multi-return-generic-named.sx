@@ -1,0 +1,40 @@
+// A NAMED multi-return whose slots are generic type params, using the implicit
+// return (assign the named slot locals, no explicit `return`), works for both a
+// generic free function and a generic struct method.
+//
+// Regression (issue 0200): the generic monomorph path (`monomorphizeFunction`)
+// bound params but never called `bindNamedReturnSlots`, so `named_return_names`
+// stayed null and the implicit-return synthesis didn't fire — the body wrongly
+// reported "produces no value". Now the binder runs on the generic path too
+// (mirroring `lowerFunctionBodyInto`), incl. with defaults and the failable
+// error channel.
+#import "modules/std.sx";
+
+ErrX :: error { Bad }
+
+// generic free function, named slots, implicit return, mixed inference + default
+split :: (a: $T, b: $U) -> (first: T, second: U) { first = a; second = b; }
+withd  :: (a: $T)        -> (x: T, y: i32 = 99)    { x = a; }
+fallible :: (a: $T, b: $U) -> (x: T, y: U, !)      { x = a; y = b; }
+
+// generic struct method, named slots, implicit return
+Box :: struct ($T: Type) {
+    v: T;
+    pair :: (self: *Box(T)) -> (a: T, b: T) { a = self.v; b = self.v + 1; }
+}
+
+main :: () -> i64 {
+    x, y := split(7, true);
+    print("{} {}\n", x, y);          // 7 true
+
+    p, q := withd(5);
+    print("{} {}\n", p, q);          // 5 99
+
+    r := fallible(3, false) catch { return 9; };
+    print("{} {}\n", r.x, r.y);      // 3 false
+
+    bx := Box(i32).{ v = 10 };
+    m, n := bx.pair();
+    print("{} {}\n", m, n);          // 10 11
+    return 0;
+}

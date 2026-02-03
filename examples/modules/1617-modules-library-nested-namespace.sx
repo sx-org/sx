@@ -1,0 +1,10 @@
+// Regression (issue 0130): a #library declared in a module reached through
+// TWO aliased imports must still be linked (AOT) / dlopened (JIT).
+#import "modules/std.sx";
+b :: #import "1617-modules-library-nested-namespace/b.sx";
+
+main :: () -> i32 {
+    v := b.version_via_b();
+    print("pcap version non-empty: {}\n", v.len > 0);
+    return 0;
+}

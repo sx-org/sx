@@ -1,0 +1,11 @@
+// L4: the Context field namespace is program-global and FLAT — two
+// `#context_extend` declarations with the same field name (here across two
+// modules) are a hard compile error naming BOTH declaration sites: the
+// primary at the later site in L6 order, a note at the first. No merging, no
+// own-wins, no per-source resolution.
+#import "modules/std.sx";
+#import "1260-diagnostics-context-extend-collision/lib.sx";
+
+#context_extend tracer: i64 = 1;
+
+main :: () {}

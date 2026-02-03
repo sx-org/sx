@@ -1,0 +1,31 @@
+// A value-position match (`if subject == { case … }`) returning a small
+// integer type works when arms mix positive and negated literals: every arm
+// value is lowered against the merge's result type, so the phi operands all
+// share one width.
+//
+// Regression (issue 0066): a negated-literal arm (`else: -1`) previously
+// lowered at a narrower width than the positive arms, tripping LLVM's
+// "PHI node operands are not the same type as the result".
+
+#import "modules/std.sx";
+
+sign :: (n: i32) -> i32 {
+    if n == {
+        case 0:  0;
+        else:    if n > 0 then 1 else -1;
+    }
+}
+
+classify :: (n: i32) -> i32 {
+    if n == {
+        case 0:  100;
+        case 1:  10;
+        else:    -1;
+    }
+}
+
+main :: () -> i32 {
+    print("sign: {} {} {}\n", sign(-9), sign(0), sign(9));   // -1 0 1
+    print("classify: {} {} {}\n", classify(0), classify(1), classify(5)); // 100 10 -1
+    0
+}

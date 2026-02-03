@@ -1,0 +1,13 @@
+basic: 142
+snapshot: 15
+clamp: 50 0 100
+[INFO] system ready
+factory: 105 110
+auto-promote: 21
+hof: 40
+reduce: 15
+compose: 30
+multi: 105 500
+widget: slider = 42
+widget: no handler
+=== DONE ===

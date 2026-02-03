@@ -1,0 +1,15 @@
+fixed Content-Length body -> 200 exact
+chunked multi-chunk (ext + trailers, split reads) -> 200 exact
+chunked single chunk -> 200 exact
+Content-Length over max_body -> 413 (early)
+chunked body over max_body -> 413 (early)
+Content-Length + Transfer-Encoding -> 400
+Transfer-Encoding: gzip -> 501
+malformed chunk (bad hex) -> 400
+malformed chunk (missing CRLF) -> 400
+malformed chunk (0x-prefix size) -> 400
+chunk size over max_body -> 413
+mid-body disconnect -> clean close, slot freed
+server healthy after run
+no leak: net-zero allocations after request-body handling
+ok

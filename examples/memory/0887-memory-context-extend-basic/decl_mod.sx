@@ -1,0 +1,5 @@
+// Declares a context field. NOT imported by reader_mod.sx — the L3 pin:
+// imports gate existence, never visibility.
+#import "modules/std.sx";
+
+#context_extend trace_depth: i64 = 3;

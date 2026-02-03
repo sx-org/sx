@@ -1,0 +1,30 @@
+// Comptime reflection: `struct_field_type($T, i) -> Type` — the type-only field
+// projection the value-level reflection (`struct_field_value` / `type_of`) couldn't
+// express.
+// Reflect a struct's fields by name (`struct_field_name`) AND by type (`struct_field_type`),
+// and a tagged-union's variant payloads. It folds at lower time, so it composes
+// inside `type_eq` / `type_name` / any type-arg slot.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+Point :: struct { x: i64; y: f64; on: bool; }
+
+Msg :: enum { num: i64; tag: bool; quit; }
+
+main :: () -> i32 {
+    // Struct fields: name + type, position by position.
+    print("Point has {} fields\n", struct_field_count(Point));
+    print("  0: {} : {}\n", struct_field_name(Point, 0), type_name(struct_field_type(Point, 0)));
+    print("  1: {} : {}\n", struct_field_name(Point, 1), type_name(struct_field_type(Point, 1)));
+    print("  2: {} : {}\n", struct_field_name(Point, 2), type_name(struct_field_type(Point, 2)));
+
+    // struct_field_type composes in a type-arg slot (type_eq folds at comptime).
+    print("field 0 is i64: {}\n", type_eq(struct_field_type(Point, 0), i64));
+    print("field 1 is f64: {}\n", type_eq(struct_field_type(Point, 1), f64));
+
+    // Tagged-union variant payloads (the tagless `quit` → void).
+    print("Msg.num  payload: {}\n", type_name(struct_field_type(Msg, 0)));
+    print("Msg.tag  payload: {}\n", type_name(struct_field_type(Msg, 1)));
+    print("Msg.quit payload: {}\n", type_name(struct_field_type(Msg, 2)));
+    return 0;
+}

@@ -1,0 +1,285 @@
+// =====================================================================
+// vendors/mbedtls — sx bindings over the VENDORED mbedTLS (c/, tag
+// v3.6.6, Apache-2.0; see VENDORED.md for provenance + the config trim).
+//
+// `#import "vendors/mbedtls/mbedtls.sx"` gives any sx program native TLS
+// with NO system dependency and NO build flags: the `#import c` unit
+// below compiles c/library/*.c (109 files) against the sx-owned trimmed
+// config (c/sx_mbedtls_config.h, selected via MBEDTLS_CONFIG_FILE), and
+// every `extern mbedtls` decl binds against it — through sx's
+// content-addressed object cache (compiled once per machine, like the
+// sqlite vendor), linking directly into a `sx build` binary or as a
+// priority symbol target under `sx run`. A program that never imports
+// this module compiles NONE of it.
+//
+// CONTEXT STRUCTS — opaque sized blobs (same discipline as std.thread's
+// MutexBuf). sx never reads these bytes; mbedTLS owns them. Each is a
+// `[N]i64` giving the byte count AND 8-byte alignment (the C structs hold
+// pointers / size_t); `.{}` zero-fills. Sizes are the v3.6.6 `sizeof`
+// rounded UP to an i64 multiple plus headroom — over-sizing is safe
+// (mbedTLS only touches the real prefix), under-sizing corrupts the heap;
+// aarch64 == x86_64 (all members are pointer / size_t / fixed buffers).
+// Measured sizeof (v3.6.6, sx_mbedtls_config.h): ssl_context 448 ·
+// ssl_config 352 · x509_crt 744 · pk_context 16 · ctr_drbg 344 ·
+// entropy 832. Re-probe after any mbedTLS bump or config change.
+// =====================================================================
+
+#import "modules/std.sx";
+
+mbedtls :: #import c {
+    #include "c/include/sx_mbedtls_anchor.h";
+    #include "c/library/sx_mbedtls_lib_anchor.h";
+    #flags  "-Os";
+    #source "c/library/aes.c";
+    #source "c/library/aesce.c";
+    #source "c/library/aesni.c";
+    #source "c/library/aria.c";
+    #source "c/library/asn1parse.c";
+    #source "c/library/asn1write.c";
+    #source "c/library/base64.c";
+    #source "c/library/bignum.c";
+    #source "c/library/bignum_core.c";
+    #source "c/library/bignum_mod.c";
+    #source "c/library/bignum_mod_raw.c";
+    #source "c/library/block_cipher.c";
+    #source "c/library/camellia.c";
+    #source "c/library/ccm.c";
+    #source "c/library/chacha20.c";
+    #source "c/library/chachapoly.c";
+    #source "c/library/cipher.c";
+    #source "c/library/cipher_wrap.c";
+    #source "c/library/cmac.c";
+    #source "c/library/constant_time.c";
+    #source "c/library/ctr_drbg.c";
+    #source "c/library/debug.c";
+    #source "c/library/des.c";
+    #source "c/library/dhm.c";
+    #source "c/library/ecdh.c";
+    #source "c/library/ecdsa.c";
+    #source "c/library/ecjpake.c";
+    #source "c/library/ecp.c";
+    #source "c/library/ecp_curves.c";
+    #source "c/library/ecp_curves_new.c";
+    #source "c/library/entropy.c";
+    #source "c/library/entropy_poll.c";
+    #source "c/library/error.c";
+    #source "c/library/gcm.c";
+    #source "c/library/hkdf.c";
+    #source "c/library/hmac_drbg.c";
+    #source "c/library/lmots.c";
+    #source "c/library/lms.c";
+    #source "c/library/md.c";
+    #source "c/library/md5.c";
+    #source "c/library/memory_buffer_alloc.c";
+    #source "c/library/mps_reader.c";
+    #source "c/library/mps_trace.c";
+    #source "c/library/net_sockets.c";
+    #source "c/library/nist_kw.c";
+    #source "c/library/oid.c";
+    #source "c/library/padlock.c";
+    #source "c/library/pem.c";
+    #source "c/library/pk.c";
+    #source "c/library/pk_ecc.c";
+    #source "c/library/pk_wrap.c";
+    #source "c/library/pkcs12.c";
+    #source "c/library/pkcs5.c";
+    #source "c/library/pkcs7.c";
+    #source "c/library/pkparse.c";
+    #source "c/library/pkwrite.c";
+    #source "c/library/platform.c";
+    #source "c/library/platform_util.c";
+    #source "c/library/poly1305.c";
+    #source "c/library/psa_crypto.c";
+    #source "c/library/psa_crypto_aead.c";
+    #source "c/library/psa_crypto_cipher.c";
+    #source "c/library/psa_crypto_client.c";
+    #source "c/library/psa_crypto_driver_wrappers_no_static.c";
+    #source "c/library/psa_crypto_ecp.c";
+    #source "c/library/psa_crypto_ffdh.c";
+    #source "c/library/psa_crypto_hash.c";
+    #source "c/library/psa_crypto_mac.c";
+    #source "c/library/psa_crypto_pake.c";
+    #source "c/library/psa_crypto_random.c";
+    #source "c/library/psa_crypto_rsa.c";
+    #source "c/library/psa_crypto_se.c";
+    #source "c/library/psa_crypto_slot_management.c";
+    #source "c/library/psa_crypto_storage.c";
+    #source "c/library/psa_its_file.c";
+    #source "c/library/psa_util.c";
+    #source "c/library/ripemd160.c";
+    #source "c/library/rsa.c";
+    #source "c/library/rsa_alt_helpers.c";
+    #source "c/library/sha1.c";
+    #source "c/library/sha256.c";
+    #source "c/library/sha3.c";
+    #source "c/library/sha512.c";
+    #source "c/library/ssl_cache.c";
+    #source "c/library/ssl_ciphersuites.c";
+    #source "c/library/ssl_client.c";
+    #source "c/library/ssl_cookie.c";
+    #source "c/library/ssl_debug_helpers_generated.c";
+    #source "c/library/ssl_msg.c";
+    #source "c/library/ssl_ticket.c";
+    #source "c/library/ssl_tls.c";
+    #source "c/library/ssl_tls12_client.c";
+    #source "c/library/ssl_tls12_server.c";
+    #source "c/library/ssl_tls13_client.c";
+    #source "c/library/ssl_tls13_generic.c";
+    #source "c/library/ssl_tls13_keys.c";
+    #source "c/library/ssl_tls13_server.c";
+    #source "c/library/threading.c";
+    #source "c/library/timing.c";
+    #source "c/library/version.c";
+    #source "c/library/version_features.c";
+    #source "c/library/x509.c";
+    #source "c/library/x509_create.c";
+    #source "c/library/x509_crl.c";
+    #source "c/library/x509_crt.c";
+    #source "c/library/x509_csr.c";
+    #source "c/library/x509write.c";
+    #source "c/library/x509write_crt.c";
+    #source "c/library/x509write_csr.c";
+};
+
+
+// ── Opaque context blobs (see header) ───────────────────────────────
+// ssl_context  448 → 480 (60 slots)
+SslContext  :: struct { slots: [60]i64; }
+// ssl_config   352 → 384 (48 slots)
+SslConfig   :: struct { slots: [48]i64; }
+// x509_crt     744 → 776 (97 slots)
+X509Crt     :: struct { slots: [97]i64; }
+// pk_context    16 →  48 (6 slots)
+PkContext   :: struct { slots: [6]i64; }
+// ctr_drbg     344 → 376 (47 slots)
+CtrDrbg     :: struct { slots: [47]i64; }
+// entropy      832 → 864 (108 slots)
+Entropy     :: struct { slots: [108]i64; }
+
+// ── SSL context lifecycle + I/O ─────────────────────────────────────
+mbedtls_ssl_init         :: (ssl: *SslContext) extern mbedtls;
+mbedtls_ssl_free         :: (ssl: *SslContext) extern mbedtls;
+mbedtls_ssl_setup        :: (ssl: *SslContext, conf: *SslConfig) -> i32 extern mbedtls;
+mbedtls_ssl_handshake    :: (ssl: *SslContext) -> i32 extern mbedtls;
+mbedtls_ssl_read         :: (ssl: *SslContext, buf: [*]u8, len: usize) -> i32 extern mbedtls;
+mbedtls_ssl_write        :: (ssl: *SslContext, buf: [*]u8, len: usize) -> i32 extern mbedtls;
+mbedtls_ssl_close_notify :: (ssl: *SslContext) -> i32 extern mbedtls;
+
+// f_send / f_recv are C-ABI callbacks: int (*)(void *ctx, const uchar *buf, size_t len).
+mbedtls_ssl_set_bio :: (
+    ssl: *SslContext,
+    p_bio: *void,
+    f_send: (*void, [*]u8, usize) -> i32 abi(.c),
+    f_recv: (*void, [*]u8, usize) -> i32 abi(.c),
+    f_recv_timeout: *void,
+) extern mbedtls;
+
+// ── SSL config lifecycle ────────────────────────────────────────────
+mbedtls_ssl_config_init     :: (conf: *SslConfig) extern mbedtls;
+mbedtls_ssl_config_free     :: (conf: *SslConfig) extern mbedtls;
+mbedtls_ssl_config_defaults :: (conf: *SslConfig, endpoint: i32, transport: i32, preset: i32) -> i32 extern mbedtls;
+
+// f_rng is a C-ABI callback: int (*)(void *p_rng, uchar *out, size_t len).
+mbedtls_ssl_conf_rng :: (
+    conf: *SslConfig,
+    f_rng: (*void, [*]u8, usize) -> i32 abi(.c),
+    p_rng: *void,
+) extern mbedtls;
+
+mbedtls_ssl_conf_own_cert :: (conf: *SslConfig, own_cert: *X509Crt, pk_key: *PkContext) -> i32 extern mbedtls;
+// NOTE: mbedtls_ssl_conf_min/max_tls_version are `static inline` in ssl.h (they
+// assign an opaque config field), so they expose NO linkable symbol and cannot
+// be bound here as extern. Pinning a min version needs a small C wrapper.
+
+// The trusted CA chain for verifying the PEER's certificate (server-side:
+// client-cert auth; client-side: the server's trust anchor). ca_crl may be
+// null (bound as *void — we never build CRLs).
+mbedtls_ssl_conf_ca_chain :: (conf: *SslConfig, ca_chain: *X509Crt, ca_crl: *void) extern mbedtls;
+
+// ── ALPN (Q3.4) ─────────────────────────────────────────────────────
+// protos: NULL-terminated array of NUL-terminated protocol names, in
+// preference order. mbedTLS stores the POINTER — the array and every string
+// must outlive the config.
+mbedtls_ssl_conf_alpn_protocols :: (conf: *SslConfig, protos: [*][*]u8) -> i32 extern mbedtls;
+// The negotiated protocol after the handshake (null = none negotiated).
+mbedtls_ssl_get_alpn_protocol :: (ssl: *SslContext) -> [*]u8 extern mbedtls;
+
+// ── SNI (Q3.4) ──────────────────────────────────────────────────────
+// f_sni fires during the server handshake with the client's server_name
+// (NOT NUL-terminated — name_len bytes). Return 0 to continue (after an
+// optional mbedtls_ssl_set_hs_own_cert to switch certs); nonzero aborts
+// the handshake with an unrecognized_name alert.
+mbedtls_ssl_conf_sni :: (
+    conf: *SslConfig,
+    f_sni: (*void, *SslContext, [*]u8, usize) -> i32 abi(.c),
+    p_sni: *void,
+) extern mbedtls;
+// Switch the handshake's own cert/key from inside the SNI callback.
+mbedtls_ssl_set_hs_own_cert :: (ssl: *SslContext, own_cert: *X509Crt, pk_key: *PkContext) -> i32 extern mbedtls;
+
+// Client-side: the expected server name — drives BOTH the SNI extension and
+// certificate hostname verification (mbedTLS 3.6 REQUIRES it when the peer
+// cert is verified). NUL-terminated.
+mbedtls_ssl_set_hostname :: (ssl: *SslContext, hostname: [*]u8) -> i32 extern mbedtls;
+
+// ── X.509 certificate chain ─────────────────────────────────────────
+mbedtls_x509_crt_init  :: (crt: *X509Crt) extern mbedtls;
+mbedtls_x509_crt_free  :: (crt: *X509Crt) extern mbedtls;
+mbedtls_x509_crt_parse :: (chain: *X509Crt, buf: [*]u8, buflen: usize) -> i32 extern mbedtls;
+
+// ── Private key ─────────────────────────────────────────────────────
+mbedtls_pk_init :: (ctx: *PkContext) extern mbedtls;
+mbedtls_pk_free :: (ctx: *PkContext) extern mbedtls;
+// f_rng / p_rng are the DRBG callback + state (PEM decryption RNG).
+mbedtls_pk_parse_key :: (
+    ctx: *PkContext,
+    key: [*]u8, keylen: usize,
+    pwd: *void, pwdlen: usize,
+    f_rng: (*void, [*]u8, usize) -> i32 abi(.c),
+    p_rng: *void,
+) -> i32 extern mbedtls;
+
+// ── RNG: CTR_DRBG + entropy ─────────────────────────────────────────
+mbedtls_ctr_drbg_init :: (ctx: *CtrDrbg) extern mbedtls;
+mbedtls_ctr_drbg_free :: (ctx: *CtrDrbg) extern mbedtls;
+// f_entropy is mbedtls_entropy_func; p_entropy is the *Entropy ctx.
+mbedtls_ctr_drbg_seed :: (
+    ctx: *CtrDrbg,
+    f_entropy: (*void, [*]u8, usize) -> i32 abi(.c),
+    p_entropy: *void,
+    custom: *void, len: usize,
+) -> i32 extern mbedtls;
+
+mbedtls_entropy_init :: (ctx: *Entropy) extern mbedtls;
+mbedtls_entropy_free :: (ctx: *Entropy) extern mbedtls;
+// The default entropy collector — pass its address as ctr_drbg's f_entropy.
+mbedtls_entropy_func :: (data: *void, output: [*]u8, len: usize) -> i32 abi(.c) extern mbedtls;
+// The DRBG output function — pass its address (with the *CtrDrbg ctx) to
+// mbedtls_ssl_conf_rng as the session RNG. abi(.c): int (*)(void *, uchar *, size_t).
+mbedtls_ctr_drbg_random :: (p_rng: *void, output: [*]u8, len: usize) -> i32 abi(.c) extern mbedtls;
+
+// ── TLS verification mode (client/peer-auth) ────────────────────────
+// authmode controls whether the peer certificate is verified. The server
+// provider leaves it at the preset default; a client (T5 loopback test)
+// sets VERIFY_NONE to accept the self-signed fixture cert.
+mbedtls_ssl_conf_authmode :: (conf: *SslConfig, authmode: i32) extern mbedtls;
+
+// ── Version ─────────────────────────────────────────────────────────
+// Writes the version string (e.g. "3.6.6") into a >=9-byte buffer.
+mbedtls_version_get_string :: (buf: [*]u8) extern mbedtls;
+
+// ── Constants (numeric values pinned from mbedtls/ssl.h, v3.6.6) ─────
+MBEDTLS_SSL_IS_SERVER         :i32: 1;
+MBEDTLS_SSL_IS_CLIENT         :i32: 0;
+MBEDTLS_SSL_TRANSPORT_STREAM  :i32: 0;
+MBEDTLS_SSL_PRESET_DEFAULT    :i32: 0;
+MBEDTLS_SSL_VERIFY_NONE       :i32: 0;
+MBEDTLS_SSL_VERIFY_OPTIONAL   :i32: 1;
+MBEDTLS_SSL_VERIFY_REQUIRED   :i32: 2;
+MBEDTLS_ERR_SSL_WANT_READ          :i32: -0x6900;
+MBEDTLS_ERR_SSL_WANT_WRITE         :i32: -0x6880;
+MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY  :i32: -0x7880;
+// TLS 1.3 client: ssl_read's non-fatal "a NewSessionTicket arrived" signal —
+// the caller retries the read (mainstream servers send 1-2 immediately after
+// the handshake).
+MBEDTLS_ERR_SSL_RECEIVED_NEW_SESSION_TICKET :i32: -0x7B00;

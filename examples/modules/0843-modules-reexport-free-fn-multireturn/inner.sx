@@ -1,0 +1,7 @@
+// Companion: defines the struct + a multi-return-with-error free function.
+Thing :: struct { x: i64 = 0; }
+E :: error { Bad }
+make :: (fail: bool) -> (Thing, !E) {
+    if fail { raise error.Bad; }
+    return Thing.{ x = 42 };
+}

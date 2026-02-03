@@ -1,0 +1,32 @@
+// Slice range bound markers — same matrix as for-header ranges: each side
+// of `..` takes `=` (inclusive) or `<` (exclusive), defaults 0-inclusive
+// start / exclusive end. Prefix form takes markers too ([..=2], [<..3]);
+// [..] is the whole slice; bounds are arbitrary expressions; strings slice
+// through the same path.
+
+#import "modules/std.sx";
+
+dump :: (s: []i64, tag: string) {
+    print("{}: ", tag);
+    for s (v) { print("{} ", v); }
+    print("(len {})\n", s.len);
+}
+
+main :: () -> i32 {
+    xs : [6]i64 = .[10, 11, 12, 13, 14, 15];
+    full : []i64 = xs[0..6];
+
+    dump(full[1..=3],  "1..=3");     // 11 12 13
+    dump(full[0<..<4], "0<..<4");    // 11 12 13
+    dump(full[..=2],   "..=2");      // 10 11 12
+    dump(full[<..3],   "<..3");      // 11 12
+    dump(full[2<..],   "2<..");      // 13 14 15
+    dump(full[..],     "..");        // all six
+    x := 3;
+    dump(full[x-1..=x+1], "x-1..=x+1"); // 12 13 14
+
+    s := "abcdef";
+    print("str 1..=3: {}\n", s[1..=3]);   // bcd
+    print("str 0<..<4: {}\n", s[0<..<4]); // bcd
+    0
+}

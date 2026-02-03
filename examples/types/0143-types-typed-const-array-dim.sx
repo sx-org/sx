@@ -1,0 +1,65 @@
+// A named-const array dimension lays out identically whether the const is
+// TYPED (`N : i64 : 16`) or untyped (`N :: 16`), used DIRECTLY (`a : [N]T`) or
+// through a type alias (`Arr :: [N]T`), and regardless of whether the const is
+// declared before or after the alias that consumes it.
+//
+// Regression (issue 0083): the stateless registration-time resolver
+// (type_bridge) only saw module consts that were already in `module_const_map`
+// when a type alias resolved its dimension. Typed consts register in a later
+// pass, and a forward-declared untyped const had not registered yet — so the
+// alias dimension fabricated length 0 (a 0-byte alloca), and element access
+// returned garbage (scalars) or bus-errored (slice/struct elements). Module
+// consts are now pre-registered before any alias resolves, and both the
+// stateful and stateless paths share one dimension resolver.
+#import "modules/std.sx";
+
+NT : i64 : 8; // typed const used as a dimension
+
+P :: struct { x: i64; y: i64; }
+
+// Type aliases whose dimension is the TYPED const NT (stateless registration).
+TArr :: [NT]i64;
+TSArr :: [NT]string;
+TPArr :: [NT]P;
+
+// Forward reference: this alias is declared BEFORE its dimension const NF.
+FArr :: [NF]i64;
+NF :: 5;
+
+main :: () {
+    // Typed-const dimension, DIRECT local decl.
+    d : [NT]i64 = ---;
+    d[0] = 3;
+    d[7] = 21;
+    print("direct d0={} d7={} len={}\n", d[0], d[7], d.len);
+
+    // Typed-const dimension via ALIAS (scalar): same layout as the direct form.
+    a : TArr = ---;
+    a[0] = 7;
+    a[7] = 99;
+    print("alias a0={} a7={} len={}\n", a[0], a[7], a.len);
+
+    // Typed-const dimension via ALIAS (string elements): no bus error.
+    s : TSArr = ---;
+    s[0] = "hi";
+    s[7] = "yo";
+    print("alias i0={} i7={}\n", s[0], s[7]);
+
+    // Typed-const dimension via ALIAS (struct elements).
+    ps : TPArr = ---;
+    ps[0] = P.{ x = 1, y = 2 };
+    ps[7] = P.{ x = 5, y = 6 };
+    print("alias p0x={} p0y={} p7x={}\n", ps[0].x, ps[0].y, ps[7].x);
+
+    // Nested fixed array whose both dimensions are the typed const NT.
+    grid : [NT][NT]i64 = ---;
+    grid[0][0] = 1;
+    grid[7][7] = 10;
+    print("nested g00={} g77={}\n", grid[0][0], grid[7][7]);
+
+    // Forward-referenced alias dimension (untyped const declared after it).
+    f : FArr = ---;
+    f[0] = 4;
+    f[4] = 40;
+    print("fwd f0={} f4={} len={}\n", f[0], f[4], f.len);
+}

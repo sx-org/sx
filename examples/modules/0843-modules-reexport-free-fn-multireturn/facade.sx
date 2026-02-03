@@ -1,0 +1,4 @@
+// A facade re-exporting the free function + its struct (the std.sx pattern).
+inner :: #import "inner.sx";
+make  :: inner.make;
+Thing :: inner.Thing;

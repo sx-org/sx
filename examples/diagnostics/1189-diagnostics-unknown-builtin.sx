@@ -1,0 +1,16 @@
+// A bodiless `intrinsic` carrying a `$T: Type` parameter, whose name the
+// compiler does not recognize, must fail LOUDLY with an "unknown intrinsic"
+// diagnostic — not silently evaluate to 0 (the CLAUDE.md silent-fallback
+// pattern). The generic monomorphization path (monomorphizeFunction's
+// builtin-body branch) now diagnoses an unresolved builtin name instead of
+// falling through to `ensureTerminator`'s `constInt(0)`.
+//
+// Regression (issue 0144).
+#import "modules/std.sx";
+
+// `mystery` is not a recognized intrinsic.
+mystery :: ($T: Type, x: T) -> T intrinsic;
+
+main :: () {
+    print("mystery(42) = {}\n", mystery(i64, 42));
+}

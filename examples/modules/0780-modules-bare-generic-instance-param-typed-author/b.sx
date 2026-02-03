@@ -1,0 +1,16 @@
+// The bare-VISIBLE author: a one-field generic `Box` (size 8). `combine` adds the
+// param. `b.sx` flat-imports `c.sx`, so a file importing only b.sx reaches
+// `c.Box` (and `c.Box.combine`) at two hops and must NOT dispatch to it.
+Box :: struct($T: Type) {
+    x: T;
+
+    make :: (value: T) -> Box(T) {
+        .{ x = value }
+    }
+
+    combine :: (self: *Box, v: T) -> T {
+        self.x + v
+    }
+}
+
+#import "c.sx";

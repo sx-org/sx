@@ -1,0 +1,45 @@
+// Char literals: `'A'` decodes to its integer code point and types/lowers
+// identically to an `int_literal` (default `i64`, coerces to any int/float in
+// context). No `char` type exists — storage is whatever the context demands
+// (`u8`, `u32`, `i64`, …). Escapes: `\n \t \r \\ \' \0 \xNN \u{XXXX}`.
+
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    // ASCII — value is the code point.
+    print("{}\n", 'A');              // 65
+    print("{}\n", 'a');              // 97
+    print("{}\n", '0');              // 48
+
+    // Standard escapes.
+    print("{}\n", '\n');             // 10
+    print("{}\n", '\t');             // 9
+    print("{}\n", '\r');             // 13
+    print("{}\n", '\'');             // 39
+    print("{}\n", '\\');             // 92
+    print("{}\n", '\0');             // 0
+
+    // Hex byte escape.
+    print("{}\n", '\x41');           // 65
+    print("{}\n", '\xFF');           // 255
+
+    // Unicode scalar escape — any code point up to U+10FFFF.
+    print("{}\n", '\u{1F980}');      // 129408 (the crab)
+    print("{}\n", '\u{E9}');         // 233 (é)
+
+    // Context coercion: the literal narrows to the declared storage type.
+    c : u8 = 'A';
+    print("{}\n", c);                // 65
+    cp : u32 = '\u{1F980}';
+    print("{}\n", cp);               // 129408
+
+    // An array of char literals (each coerces to u8).
+    buf : [3]u8 = .['H', 'i', 0];
+    print("{} {} {}\n", buf[0], buf[1], buf[2]);  // 72 105 0
+
+    // Char literal as a compile-time integer (array dim folds).
+    arr : ['A']u8 = ---;
+    print("{}\n", arr.len);          // 65
+
+    return 0;
+}

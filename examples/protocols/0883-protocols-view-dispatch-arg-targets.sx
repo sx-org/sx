@@ -1,0 +1,31 @@
+// Args in a view-dispatched protocol call lower under the method's
+// DECLARED param types, for every receiver shape — owned `P`, view
+// `*P`, and the optionals `?P` / `?*P`. The sharp case is an enum
+// LITERAL argument (`.bgra8`): it can only type itself from the param
+// target; through a view it previously fell back to the ambient
+// destination and refused.
+// Regression (issue 0313, found building m3te after the 0310-0312 wave).
+#import "modules/std.sx";
+
+Fmt :: enum { rgba8; bgra8; }
+
+P :: protocol {
+    make :: (self: *Self, w: i64, fmt: Fmt) -> i64;
+}
+
+C :: struct { last: i64 = 0; }
+impl P for C {
+    make :: (self: *C, w: i64, fmt: Fmt) -> i64 { w + fmt.(i64) }
+}
+
+main :: () {
+    c := C.{};
+    v : *P = c;
+    print("view: {}\n", v.make(10, .bgra8));
+    ov : ?*P = v;
+    print("opt:  {}\n", ov.make(20, .bgra8));
+    op : ?P = c.(P);
+    print("optP: {}\n", op.make(25, .bgra8));
+    o := c.(P);
+    print("own:  {}\n", o.make(30, .bgra8));
+}

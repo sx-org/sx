@@ -1,0 +1,36 @@
+// Program-wide inferred-`!` union per closure shape (ERR E5.1 sub-feature 2).
+// All occurrences of `Closure(i32) -> (i32, !)` share ONE inferred error set;
+// every bare-`!` closure literal of that shape unions its raised tags in. A
+// `try slot(x)` against any matching-shape slot widens against that union — so
+// a caller whose named set covers { Negative, Other } type-checks, and the
+// error channel actually carries each closure's own tag at runtime.
+
+#import "modules/std.sx";
+
+All :: error { Negative, Other }
+
+// `h` is a bare-`!` Closure slot; the caller declares the union as `!All`.
+dispatch :: (h: Closure(i32) -> (i32, !), x: i32) -> (i32, !All) {
+    return try h(x);
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    push .{ allocator = gpa } {
+        // Two literals of the SAME shape raising DIFFERENT tags both feed the
+        // one shared `Closure(i32)->(i32,!)` union node.
+        handlers : List(Closure(i32) -> (i32, !)) = .{};
+        handlers.append(closure((x: i32) -> (i32, !) { if x < 0 { raise error.Negative; } return x * 2; }));
+        handlers.append(closure((x: i32) -> (i32, !) { if x == 0 { raise error.Other; } return x + 100; }));
+
+        // success paths
+        print("ok0={}\n", dispatch(handlers.items[0], 5) catch (e) 0);   // 10
+        print("ok1={}\n", dispatch(handlers.items[1], 7) catch (e) 0);   // 107
+
+        // failure paths: each closure raises its own tag, which propagates
+        // through `try` and is absorbed by the call-site `catch` fallback
+        print("err0={}\n", dispatch(handlers.items[0], -1) catch (e) -1); // raised Negative → -1
+        print("err1={}\n", dispatch(handlers.items[1], 0) catch (e) -2);  // raised Other → -2
+    }
+    return 0;
+}

@@ -1,0 +1,71 @@
+error: cannot implicitly narrow non-integral float '1.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:41:16
+   |
+41 |     y  : i64 = 1.5;       // non-integral float LITERAL local → error
+   |                ^^^
+
+error: cannot implicitly narrow non-integral float '2.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:42:16
+   |
+42 |     ye : i64 = M + 0.5;   // non-integral int-const-EXPRESSION local → error
+   |                ^^^^^^^
+
+error: cannot implicitly narrow non-integral float '2.75' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:43:16
+   |
+43 |     yf : i64 = F + 0.25;  // non-integral float-const-LEAF local → error
+   |                ^^^^^^^^
+
+error: cannot implicitly narrow non-integral float '0.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:44:16
+   |
+44 |     yn : i64 = f64.true_min + 0.5;  // non-integral numeric-limit float expr → error
+   |                ^^^^^^^^^^^^^^^^^^
+
+error: cannot implicitly narrow non-integral float '1.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:45:16
+   |
+45 |     ym : i64 = 5.5 % 2.0;           // non-integral float `%` remainder (1.5) → error
+   |                ^^^^^^^^^
+
+error: array dimension must be an integer, but '2.75' is a non-integral float
+  --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:46:11
+   |
+46 |     ad : [F + 0.25]i64 = ---;  // non-integral float-const-LEAF array DIMENSION → error
+   |           ^^^^^^^^
+
+error: cannot implicitly narrow non-integral float '3.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:31:16
+   |
+31 |     f  : i64 = 3.5;       // non-integral float LITERAL field default → error
+   |                ^^^
+
+error: cannot implicitly narrow non-integral float '2.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:32:16
+   |
+32 |     fe : i64 = M + 0.5;   // non-integral int-const-EXPR field default → error
+   |                ^^^^^^^
+
+error: cannot implicitly narrow non-integral float '2.75' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:33:16
+   |
+33 |     ff : i64 = F + 0.25;  // non-integral float-const-LEAF field default → error
+   |                ^^^^^^^^
+
+error: cannot implicitly narrow non-integral float '2.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:36:23
+   |
+36 | badLit  :: (x : i64 = 2.5)      -> i64 { return x; }   // non-integral LITERAL param default → error
+   |                       ^^^
+
+error: cannot implicitly narrow non-integral float '2.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:37:23
+   |
+37 | badExpr :: (x : i64 = M + 0.5)  -> i64 { return x; }   // non-integral int-const-EXPR param default → error
+   |                       ^^^^^^^
+
+error: cannot implicitly narrow non-integral float '2.75' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1146-diagnostics-nonintegral-float-to-int.sx:38:23
+   |
+38 | badFlt  :: (x : i64 = F + 0.25) -> i64 { return x; }   // non-integral float-const-LEAF param default → error
+   |                       ^^^^^^^^

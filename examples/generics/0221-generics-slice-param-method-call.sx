@@ -1,0 +1,59 @@
+// A generic method taking a slice (`xs: []$T`), reached through method-call
+// syntax (`b.take(a)`) rather than the explicit `Box.take(@b, a)` form.
+//
+// Regression: `resolveCallParamTypes` resolved the callee's declared params
+// eagerly to give each arg a target type, but did so with NO bindings
+// installed for a generic method — so `[]$T` resolved to `[]unresolved` and
+// that poison was interned into the TypeTable. Nothing consumed it until a
+// `print` made `any_to_string` reachable: its `case slice:` arm scans the
+// TypeTable for every slice type and monomorphizes `slice_to_string` per tag,
+// stamping a `slice_to_string__unresolved` whose element type tripped the
+// emitter's "unresolved type reached LLVM emission" panic — no diagnostic, a
+// compiler crash. The explicit-call form bound correctly and was unaffected,
+// as was the same signature on a free function.
+//
+// Both halves of the fix are exercised here: params now bind through the
+// receiver-prepended call site, and the category scan skips container types
+// built over `.unresolved` (no runtime value can ever have one).
+
+#import "modules/std.sx";
+
+Box :: struct {
+    n: i64;
+
+    take :: (self: *Box, xs: []$T) -> i64 {
+        print("take {}\n", xs.len);   // the `print` that made the poison bite
+        xs.len
+    }
+
+    first :: (self: *Box, xs: []$T) -> T {
+        xs[0]
+    }
+}
+
+// The same shape as a free function — the path that always worked.
+free_take :: (n: *i64, xs: []$T) -> i64 { xs.len }
+
+main :: () -> i64 {
+    b := Box.{ n = 1 };
+    a : [4]i64 = .[10, 20, 30, 40];
+
+    print("{}\n", Box.take(@b, a));   // explicit form
+    print("{}\n", b.take(a));         // method syntax — used to panic
+
+    // `T` binds to the element type, not just to the slice's length.
+    print("{}\n", b.first(a));        // 10
+
+    // A second element type monomorphizes independently.
+    f : [2]f32 = .[1.5, 2.5];
+    print("{}\n", b.first(f));        // 1.5
+
+    v : i64 = 0;
+    print("{}\n", free_take(@v, a));
+
+    // Printing a real slice still formats through `slice_to_string`.
+    s : []i64 = a;
+    print("{}\n", s);
+
+    return 0;
+}

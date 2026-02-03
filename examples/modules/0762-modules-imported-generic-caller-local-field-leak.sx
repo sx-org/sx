@@ -1,0 +1,25 @@
+// An IMPORTED generic template's field that names a type the CALLER declared
+// only as a BLOCK-LOCAL must NOT bind that caller-local type — a block-local is
+// visible only within its OWN source. `lib.sx` defines
+// `Bad :: struct($T) { x: T; y: LocalOnly; }`; `main` declares `LocalOnly` only
+// inside its own body before instantiating `Bad(i32)`. The imported template's
+// module cannot see a caller block-local, so `y: LocalOnly` is undeclared in the
+// lib file.
+//
+// Before the fix the global `local_type_names` set was source-insensitive: the
+// template's field resolution (run in the template's source context, E3
+// attempt-4) consulted it, found the caller's `LocalOnly`, and silently compiled
+// (printed a value, exit 0). `local_type_names` is now keyed by declaring source,
+// so a cross-source block-local no longer leaks into another source's resolution.
+//
+// Expected: `error: unknown type 'LocalOnly'` pointing into lib.sx; exit 1.
+// Regression (stdlib E3 attempt-5).
+#import "modules/std.sx";
+#import "0762-modules-imported-generic-caller-local-field-leak/lib.sx";
+
+main :: () -> i32 {
+    LocalOnly :: struct { v: i32; }
+    b : Bad(i32) = .{ x = 1, y = .{ v = 9 } };
+    print("{} {}\n", b.x, b.y.v);
+    return 0;
+}

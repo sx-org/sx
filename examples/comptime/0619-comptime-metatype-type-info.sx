@@ -1,0 +1,34 @@
+// Comptime reflection — `type_info($T)`: reflect a SOURCE enum INTO a `TypeInfo`
+// value, then feed that value straight back to `define` to mint a byte-identical
+// copy. This is the inverse of `define`'s decode: `type_info` reads a type's
+// variants (name + payload type) out of the type table and constructs the same
+// `.enum(EnumInfo{ variants })` value the `define` examples write by hand.
+//
+// Round-trip: `ShapeCopy` is reconstructed purely from `type_info(Shape)` — no
+// literal variant list — and constructs/matches like the original.
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+Shape :: enum {
+    circle: f64;
+    rect: i64;
+    empty;
+}
+
+// Reflect Shape → TypeInfo, then reconstruct an identical nominal enum.
+ShapeCopy :: define(declare("ShapeCopy"), type_info(Shape));
+
+describe :: (s: ShapeCopy) {
+    if s == {
+        case .circle: (r) { print("circle r={}\n", r); }
+        case .rect:   (n) { print("rect n={}\n", n); }
+        case .empty:       { print("empty\n"); }
+    }
+}
+
+main :: () -> i32 {
+    describe(.circle(2.5));
+    describe(.rect(7));
+    describe(.empty);
+    return 0;
+}

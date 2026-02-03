@@ -1,0 +1,47 @@
+error: type mismatch: constant 'N' is declared 'string' but its initializer is an integer literal
+  --> examples/diagnostics/1143-diagnostics-typed-module-const-mismatch.sx:24:15
+   |
+24 | N  : string : 4;        // integer literal where a string is annotated
+   |               ^
+
+error: type mismatch: constant 'F' is declared 'i64' but its initializer is a string literal
+  --> examples/diagnostics/1143-diagnostics-typed-module-const-mismatch.sx:25:15
+   |
+25 | F  : i64    : "x";      // string literal where an integer is annotated
+   |               ^^^
+
+error: type mismatch: constant 'B' is declared 'i64' but its initializer is a boolean literal
+  --> examples/diagnostics/1143-diagnostics-typed-module-const-mismatch.sx:26:15
+   |
+26 | B  : i64    : true;     // boolean literal where an integer is annotated
+   |               ^^^^
+
+error: cannot implicitly narrow non-integral float '1.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1143-diagnostics-typed-module-const-mismatch.sx:27:15
+   |
+27 | G  : i64    : 1.5;      // float literal where an integer is annotated
+   |               ^^^
+
+error: type mismatch: constant 'E' is declared 'string' but its initializer is an integer expression
+  --> examples/diagnostics/1143-diagnostics-typed-module-const-mismatch.sx:28:15
+   |
+28 | E  : string : M + 2;    // integer EXPRESSION where a string is annotated
+   |               ^^^^^
+
+error: type mismatch: constant 'V' is declared 'string' but its initializer is an integer expression
+  --> examples/diagnostics/1143-diagnostics-typed-module-const-mismatch.sx:29:15
+   |
+29 | V  : string : -M;       // integer (unary) expression where a string is annotated
+   |               ^^
+
+error: cannot implicitly narrow non-integral float '2.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1143-diagnostics-typed-module-const-mismatch.sx:30:15
+   |
+30 | BAD  : i64  : M + 0.5;  // mixed int+float (int LHS) → f64, rejected vs i64
+   |               ^^^^^^^
+
+error: cannot implicitly narrow non-integral float '2.5' to 'i64'; use an explicit cast (`xx`/`.(T)`)
+  --> examples/diagnostics/1143-diagnostics-typed-module-const-mismatch.sx:31:15
+   |
+31 | BAD2 : i64  : 0.5 + M;  // mixed float+int (float LHS) → f64, rejected vs i64 — order-independent
+   |               ^^^^^^^

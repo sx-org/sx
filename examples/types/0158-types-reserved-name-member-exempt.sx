@@ -1,0 +1,55 @@
+// Reserved-name MEMBER positions are EXEMPT from the reserved-type-name rule:
+// a bare reserved spelling (`i2`, `u8`, `i1`, …) is legal as a struct FIELD
+// name, a union TAG name, and a protocol METHOD-SIGNATURE name. These are
+// unambiguous — the name sits in a member slot and is reached via `obj.name`
+// (or dispatched by string), so it is never type-classified and never
+// mislowers. The backtick form is optional there and resolves to the same
+// member. Backtick access (`obj.`i2`) and bare access (`obj.i2`) both work.
+//
+// The exemption stops at member SIGNATURES: an `impl` method DEFINITION is a
+// real function, so its name is a declaration site (like a free function) and a
+// reserved spelling still needs the backtick (`` `i2 :: (self) ``) — bare would
+// be type-classified and mislower (the issue-0076 protection). A bare reserved
+// VALUE binding / declaration name still errors (see examples/1119, 1141, 1142).
+// Regression (issue 0089 — attempt-7: pins the Agra-ruled member-name exemption).
+#import "modules/std.sx";
+
+// Struct fields spelled with reserved type names — bare is legal.
+Holder :: struct {
+    i2: i64;
+    u8: i64;
+}
+
+// Union tags spelled with reserved type names — bare is legal.
+Tag :: union {
+    i1: i32;
+    u16: f64;
+}
+
+// Protocol method SIGNATURE spelled with a reserved type name — bare is legal.
+Speaker :: protocol {
+    i2 :: (self: *Self) -> i64;
+}
+
+Dog :: struct { n: i64; }
+impl Speaker for Dog {
+    `i2 :: (self: *Dog) -> i64 { self.n }   // impl DEFINITION → backtick required
+}
+
+main :: () -> i32 {
+    h := Holder.{ i2 = 10, u8 = 20 };
+    print("fields bare = {} {}\n", h.i2, h.u8);       // bare member access
+    print("fields tick = {} {}\n", h.`i2, h.`u8);     // backtick member access
+    h.i2 = 11;
+    h.`u8 = 21;                                        // backtick write
+    print("fields set  = {} {}\n", h.i2, h.u8);
+
+    t : Tag = ---;
+    t.i1 = 5;
+    print("union       = {} {}\n", t.i1, t.`i1);      // bare + backtick — same tag
+
+    items : List(Speaker) = .{};
+    items.append(Dog.{ n = 7 });
+    print("dispatch    = {}\n", items.items[0].i2()); // bare reserved-name method call
+    return 0;
+}

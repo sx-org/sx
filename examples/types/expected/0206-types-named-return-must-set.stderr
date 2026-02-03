@@ -1,0 +1,11 @@
+error: named return 'good' may be unset (not assigned on every path) and has no default — assign it on every path, give it a default, or end with an explicit `return`
+  --> examples/types/0206-types-named-return-must-set.sx:7:57
+   |
+ 7 | combine :: (f1: i32, f2: i32) -> (sum: i32, good: bool) {
+   |                                                         ^
+ 8 |     sum = f1 + f2;
+   | ^^^^^^^^^^^^^^^^^^
+ 9 |     // `good` is never assigned — must-set violation.
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+10 | }
+   | ^

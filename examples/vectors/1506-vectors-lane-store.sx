@@ -1,0 +1,46 @@
+// Writing a `Vector` lane — `v.x = …` (and `.y`/`.z`/`.w`, plus the colour
+// aliases `.r`/`.g`/`.b`/`.a`) — stores through a pointer to that lane and
+// reads back the written value. Covers a `.[…]`-init write, a `= ---`
+// (undefined) init write, writes to every lane of a 4-lane vector, the colour
+// aliases, and a compound lane assignment (`+= / *=`).
+//
+// Regression (issue 0086): the lane STORE path fell through to struct-field
+// lookup, where no field matched a vector lane, leaving the lane pointer's
+// pointee as the `.unresolved` sentinel — which panicked at LLVM emission
+// ("unresolved type reached LLVM emission"). The store path now resolves the
+// lane index via the same shared `vectorLaneIndex` resolver the read path uses
+// and GEPs a typed pointer to the lane, so the two paths never diverge.
+#import "modules/std.sx";
+
+main :: () {
+    // `.[…]`-init, then write each lane of a 4-lane vector.
+    v : Vector(4, f32) = .[0.0, 0.0, 0.0, 0.0];
+    v.x = 1.0;
+    v.y = 2.0;
+    v.z = 3.0;
+    v.w = 4.0;
+    print("x={}\n", v.x);
+    print("y={}\n", v.y);
+    print("z={}\n", v.z);
+    print("w={}\n", v.w);
+
+    // `= ---` (undefined) init, then write every lane.
+    u : Vector(4, f32) = ---;
+    u.x = 10.0;
+    u.y = 20.0;
+    u.z = 30.0;
+    u.w = 40.0;
+    print("u={} {} {} {}\n", u.x, u.y, u.z, u.w);
+
+    // Colour aliases on a 3-lane vector.
+    col : Vector(3, f32) = .[0.0, 0.0, 0.0];
+    col.r = 0.5;
+    col.g = 0.25;
+    col.b = 0.125;
+    print("col={} {} {}\n", col.r, col.g, col.b);
+
+    // Compound lane assignment.
+    col.r += 0.5;
+    col.g *= 4.0;
+    print("col2={} {}\n", col.r, col.g);
+}

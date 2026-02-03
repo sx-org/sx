@@ -1,0 +1,23 @@
+// A struct literal `.{ ... }` whose resolved target type is a scalar (or any
+// other non-aggregate) is a type error, diagnosed at lowering with a located
+// message — for the named form, the empty `.{}`, and through the optional
+// `?T = .{...}` recursion (which unwraps to the scalar child).
+//
+// Regression (issue 0161): these previously reached LLVM emission and failed
+// verification ("Invalid InsertValueInst operands!"), and the empty
+// `.{}`-against-scalar silently produced garbage with no diagnostic at all.
+// Aggregate targets — struct / tuple / array / vector / slice / `string` (the
+// two {ptr,len} fat-pointer forms) — are unaffected.
+
+#import "modules/std.sx";
+
+main :: () {
+    x : i64 = .{ a = 1 };     // error: named literal against a scalar
+    print("{}\n", x);
+
+    y : i64 = .{};            // error: empty literal against a scalar (was silent garbage)
+    print("{}\n", y);
+
+    o : ?i64 = .{ a = 1 };    // error: optional path recurses with child 'i64'
+    print("{}\n", o);
+}

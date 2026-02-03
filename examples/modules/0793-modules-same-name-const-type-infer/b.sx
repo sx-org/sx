@@ -1,0 +1,5 @@
+// Module B authors a DIFFERENT same-name `K` declared `f64` (a shadow of A's
+// `K`). Its inferred-return `b_k` reads `K` bare; the inferred return type must
+// be B's `f64`, so the value prints as `2.500000`.
+K : f64 : 2.5;
+b_k :: () { return K; }

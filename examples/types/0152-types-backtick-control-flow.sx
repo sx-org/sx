@@ -1,0 +1,57 @@
+// Backtick raw identifier across every control-flow / capture / binding form,
+// plus bare later uses. A reserved type-name spelling (`i2`, `u8`, …) works as a
+// binding name in a destructure, an `if`/`while` optional binding, a `for`
+// capture + index, and a match-arm capture; a backtick-named function is
+// bare-callable; and a backtick struct field is bare- or backtick-accessible.
+// The escape is needed only at the binding site — a later BARE reference / call
+// / member access resolves to the binding. A *bare* binding name is still the
+// reserved type (see examples/1121), so the escape is the only way to spell
+// these as values.
+// Regression (issue 0089 — attempt-2 completeness across binding forms).
+#import "modules/std.sx";
+
+pair :: () -> Tuple(i64, i64) { .{1, 2} }
+maybe :: () -> ?i64 { return 42; }
+
+// Function named with a reserved spelling — bare-callable (no backtick at call).
+`i2 :: (n: i64) -> i64 { return n + 1; }
+
+Quad :: struct { `i1: i32; `i2: i32; }
+
+main :: () -> i32 {
+    // destructure binding names
+    `u8, rest := pair();
+    print("dstr  = {} {}\n", `u8, rest);
+
+    // if optional binding + bare-position reference inside the branch
+    if `i16 := maybe() {
+        print("if    = {}\n", `i16);
+    }
+
+    // while optional binding (name only — the while binding isn't body-exposed)
+    while `i32 := maybe() {
+        break;
+    }
+
+    // for capture + index names
+    xs := [3]i64.{ 10, 20, 30 };
+    for xs, 0.. (`bool, `u16) {
+        print("for   = {} @ {}\n", `bool, `u16);
+    }
+
+    // match-arm capture
+    opt: ?i64 = 5;
+    m := if opt == {
+        case .some: (`string) { `string * 2 }
+        case .none: { 0 }
+    };
+    print("match = {}\n", m);
+
+    // backtick function called BARE and via backtick — both resolve to the fn
+    print("call  = {} {}\n", i2(10), `i2(10));
+
+    // struct field named with a reserved spelling: bare + backtick member access
+    q := Quad.{ `i1 = 7, `i2 = 9 };
+    print("field = {} {} | {} {}\n", q.i1, q.i2, q.`i1, q.`i2);
+    return 0;
+}

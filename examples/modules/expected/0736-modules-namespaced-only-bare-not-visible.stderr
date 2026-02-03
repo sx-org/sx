@@ -1,0 +1,5 @@
+error: 'secret' is not visible; #import the module that declares it
+  --> examples/modules/0736-modules-namespaced-only-bare-not-visible.sx:10:10
+   |
+10 |     x := secret();
+   |          ^^^^^^

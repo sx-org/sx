@@ -1,0 +1,20 @@
+// A direct write to a tagged-union (enum-with-payload) variant member is
+// rejected: a tagged union is laid out `{ tag, payload }`, and a member write
+// would set the payload but leave the tag stale. The variant is set via
+// construction (`s = .rect(...)`), which writes both tag and payload.
+//
+// Regression (issue 0136): `s.rect = .{...}` used to silently store the payload
+// only, desyncing the tag so a later `match` took the wrong arm. It now errors.
+
+#import "modules/std.sx";
+
+Shape :: enum {
+    circle: f32;
+    rect: struct { w, h: f32; };
+}
+
+main :: () {
+    s : Shape = .circle(1.0);
+    s.rect = .{ w = 4.0, h = 2.0 };   // rejected — use `s = .rect(.{...})` instead
+    print("unreachable: {}\n", s.rect.w);
+}

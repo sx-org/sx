@@ -1,0 +1,79 @@
+error: 'one' expects 1 argument, but 2 were given
+  --> examples/diagnostics/1214-diagnostics-closure-value-arity.sx:20:19
+   |
+20 |     print("{}\n", one(1, 2));
+   |                   ^^^
+
+error: 'two' expects 2 arguments, but 1 was given
+  --> examples/diagnostics/1214-diagnostics-closure-value-arity.sx:24:19
+   |
+24 |     print("{}\n", two(1));
+   |                   ^^^
+
+error: 'zero' expects 0 arguments, but 1 was given
+  --> examples/diagnostics/1214-diagnostics-closure-value-arity.sx:28:19
+   |
+28 |     print("{}\n", zero(1));
+   |                   ^^^^
+
+error: 'cb' expects 1 argument, but 2 were given
+  --> examples/diagnostics/1214-diagnostics-closure-value-arity.sx:32:19
+   |
+32 |     print("{}\n", s.cb(3, 4));
+   |                   ^^^^
+
+error: 'f' expects 2 arguments, but 3 were given
+  --> examples/diagnostics/1214-diagnostics-closure-value-arity.sx:36:19
+   |
+36 |     print("{}\n", f(7, 8, 9));
+   |                   ^
+
+error: this closure expects 1 argument, but 2 were given
+  --> examples/diagnostics/1214-diagnostics-closure-value-arity.sx:40:19
+   |
+40 |     print("{}\n", g!(4, 5));
+   |                   ^^
+
+error: cannot spread this value into a closure — a runtime slice/array has no statically-known length to expand into positional arguments
+  --> examples/diagnostics/1214-diagnostics-closure-value-arity.sx:45:23
+   |
+45 |     print("{}\n", two(..sl));
+   |                       ^^^^
+
+help: spread a tuple (or a comptime pack) instead, or pass the elements individually
+   |
+45 |     print("{}\n", two(..sl));
+   |                       ^^^^
+
+error: cannot spread this value into a function pointer — a runtime slice/array has no statically-known length to expand into positional arguments
+  --> examples/diagnostics/1214-diagnostics-closure-value-arity.sx:48:21
+   |
+48 |     print("{}\n", f(..sl));
+   |                     ^^^^
+
+help: spread a tuple (or a comptime pack) instead, or pass the elements individually
+   |
+48 |     print("{}\n", f(..sl));
+   |                     ^^^^
+
+error: cannot spread this value into 'addfn' — a runtime slice/array has no statically-known length to expand into positional arguments
+  --> examples/diagnostics/1214-diagnostics-closure-value-arity.sx:52:25
+   |
+52 |     print("{}\n", addfn(..sl));
+   |                         ^^^^
+
+help: spread a tuple (or a comptime pack) instead, or pass the elements individually
+   |
+52 |     print("{}\n", addfn(..sl));
+   |                         ^^^^
+
+error: cannot spread this value into 'take1' — a runtime slice/array has no statically-known length to expand into positional arguments
+  --> examples/diagnostics/1214-diagnostics-closure-value-arity.sx:53:25
+   |
+53 |     print("{}\n", take1(..sl));
+   |                         ^^^^
+
+help: spread a tuple (or a comptime pack) instead, or pass the elements individually
+   |
+53 |     print("{}\n", take1(..sl));
+   |                         ^^^^

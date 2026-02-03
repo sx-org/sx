@@ -1,0 +1,2 @@
+t :: #import "y.sx";
+use_b :: () -> i64 { t.f() }

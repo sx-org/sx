@@ -1,0 +1,77 @@
+// A constant-FOLDABLE expression array dimension (`[M + 1]`, `[M * N]`,
+// `[N - M]`, nested `[M + N - 1]`, parenthesised `[(M + 1) * 2]`, and an
+// expression mixing an untyped and a typed module const) resolves to its
+// evaluated length — IDENTICALLY whether used DIRECTLY (`a : [M + 1]T`) or
+// through a type alias (`A :: [M + 1]T`), and for scalar, string (slice/pointer
+// class), and struct element types.
+//
+// Regression (issue 0083): the shared array-dimension resolver only looked up a
+// bare named const or a literal; any const-foldable EXPRESSION dimension was
+// rejected as "not a compile-time integer constant". It now routes the
+// dimension through the shared comptime integer-expression evaluator
+// (`program_index.evalConstIntExpr`), so integer `+ - * /` and parenthesisation
+// over literals and module consts fold on BOTH the stateful (direct) and
+// stateless (alias) paths — they share the one evaluator and cannot diverge.
+#import "modules/std.sx";
+
+M :: 4;
+N :: 6;
+TK : i64 : 2; // typed const, used inside an expression dimension
+
+P :: struct { x: i64; y: i64; }
+
+AddAlias :: [M + 1]i64;       // 5
+MulAlias :: [M * N]i64;       // 24
+SubAlias :: [N - M]i64;       // 2
+NestAlias :: [M + N - 1]i64;  // 9
+ParenAlias :: [(M + 1) * 2]i64; // 10
+TypedAlias :: [M + TK]i64;    // 6
+StrAlias :: [M + 1]string;    // 5, slice/pointer elements
+StructAlias :: [M + 1]P;      // 5, struct elements
+
+main :: () {
+    // const + literal: direct and via alias resolve to the same length.
+    add_d : [M + 1]i64 = ---;
+    add_a : AddAlias = ---;
+    add_d[4] = 7;
+    add_a[4] = 7;
+    print("add direct.len={} alias.len={} d4={} a4={}\n", add_d.len, add_a.len, add_d[4], add_a[4]);
+
+    // const * const.
+    mul_d : [M * N]i64 = ---;
+    mul_a : MulAlias = ---;
+    mul_d[23] = 230;
+    mul_a[23] = 230;
+    print("mul direct.len={} alias.len={} d23={} a23={}\n", mul_d.len, mul_a.len, mul_d[23], mul_a[23]);
+
+    // const - const.
+    sub_d : [N - M]i64 = ---;
+    sub_a : SubAlias = ---;
+    sub_d[1] = 9;
+    sub_a[1] = 9;
+    print("sub direct.len={} alias.len={} d1={} a1={}\n", sub_d.len, sub_a.len, sub_d[1], sub_a[1]);
+
+    // nested and parenthesised forms (direct vs alias).
+    nest_d : [M + N - 1]i64 = ---;
+    nest_a : NestAlias = ---;
+    paren_d : [(M + 1) * 2]i64 = ---;
+    paren_a : ParenAlias = ---;
+    print("nest direct.len={} alias.len={} paren direct.len={} alias.len={}\n", nest_d.len, nest_a.len, paren_d.len, paren_a.len);
+
+    // typed const inside the expression dimension.
+    typ_d : [M + TK]i64 = ---;
+    typ_a : TypedAlias = ---;
+    print("typed direct.len={} alias.len={}\n", typ_d.len, typ_a.len);
+
+    // string elements (slice/pointer class) — no bus error, correct reads.
+    str_a : StrAlias = ---;
+    str_a[0] = "hi";
+    str_a[4] = "yo";
+    print("str alias.len={} i0={} i4={}\n", str_a.len, str_a[0], str_a[4]);
+
+    // struct elements.
+    ps : StructAlias = ---;
+    ps[0] = P.{ x = 1, y = 2 };
+    ps[4] = P.{ x = 5, y = 6 };
+    print("struct alias.len={} p0x={} p4y={}\n", ps.len, ps[0].x, ps[4].y);
+}

@@ -1,0 +1,5 @@
+error: type 'Secret' is not visible; #import the module that declares it
+  --> examples/modules/0745-modules-flat-value-shadows-ns-only-type.sx:13:9
+   |
+13 |     s : Secret = .{ x = 5, y = 6 };
+   |         ^^^^^^

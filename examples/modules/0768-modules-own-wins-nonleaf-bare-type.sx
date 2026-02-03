@@ -1,0 +1,44 @@
+// Own-wins (0754 / issue 0105 case 3) holds at EVERY non-leaf bare-type site,
+// not just the nominal leaf annotation. `main` flat-imports `dep.sx` (which
+// authors a same-name `Widget { a, b }` = 16 bytes and `Nums :: [2]i32` = 8
+// bytes) AND authors its OWN `Widget { a }` = 8 bytes and `Nums :: [2]i64` = 16
+// bytes. Each bare reference below must resolve to MAIN's own author — the gate's
+// source-keyed `.resolved` author — NOT whichever same-name flat import a global
+// `findByName` / `struct_template_map` pick would return:
+//
+//   - reflection / type-arg slot   `size_of(Widget)`        → 8  (own)
+//   - typed array-literal head      `Nums.[…]` / size_of    → 16 (own [2]i64)
+//   - type-as-value                 `t : Type = Widget`
+//   - type-category match arm       `case Widget:`          → own identity
+//
+// Regression (Phase E4 attempt-6, finding #1): before the bare-type gate carried
+// the OWN author's source-keyed TypeId into the non-leaf sites, an own author
+// produced `.proceed` and these sites fell through to a global `findByName` — so
+// `size_of(Widget)` printed the IMPORTED type's 16 and `case Widget:` matched the
+// imported nominal identity (describe → 222). `dep_sizes` proves dep's distinct
+// types still resolve to THEIR own 16 + 8 = 24 inside dep.
+
+#import "modules/std.sx";
+#import "0768-modules-own-wins-nonleaf-bare-type/dep.sx";
+
+Widget :: struct { a: i64; }
+Nums :: [2]i64;
+
+describe :: ($T: Type) -> i32 {
+    r := if T == {
+        case Widget: 111;
+        else: 222;
+    }
+    r
+}
+
+main :: () -> i32 {
+    print("reflection={}\n", size_of(Widget));
+    xs := Nums.[1, 2];
+    print("array={}\n", size_of(Nums));
+    t : Type = Widget;
+    print("typeval_eq={}\n", t == Widget);
+    print("match={}\n", describe(Widget));
+    print("dep={}\n", dep_sizes());
+    0
+}

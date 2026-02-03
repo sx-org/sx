@@ -1,0 +1,5 @@
+error: left operand of '??' must be an optional, but has type 'i64'
+  --> examples/diagnostics/1200-diagnostics-null-coalesce-non-optional.sx:15:8
+   |
+15 |   x := 5 ?? 7;   // <- left operand of '??' must be an optional, but has type 'i64'
+   |        ^

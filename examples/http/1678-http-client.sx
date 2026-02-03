@@ -1,0 +1,78 @@
+// std.http client (PLAN-HTTPZ): a minimal blocking HTTP/1.1 client driven
+// against a live server. The server runs its event loop on a BACKGROUND
+// thread (a blocking client cannot interleave a same-thread tick loop); the
+// main thread dials in via http.request and asserts the round-trips. Covers
+// GET, POST-with-body echo, a 404, and a header lookup on the response.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 18794;
+
+handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/hello" { resp.body = "world"; return; }
+    if req.path == "/echo"  { resp.body = req.body; return; }
+    resp.status = 404;
+    resp.body = "nope";
+}
+
+// C→sx thread boundary: fabricate a Context, then run the server's loop until
+// stop() wakes it (the 1636 re-entry contract).
+srv_entry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = xx arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } {
+        srv.run();
+    }
+    return null;
+}
+
+LOOPBACK :u32: 0x0100007F;   // 127.0.0.1 in sockaddr_in order
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    rc : i32 = 0;
+    push .{ allocator = gpa } {
+        cfg : http.Config = .{ port = PORT };
+        srv, se := http.Server.init(cfg, handler, 0);
+        if se { print("init failed\n"); rc = 1; }
+
+        if rc == 0 {
+            t, te := thread.Thread.spawn(srv_entry, xx @srv);
+            if te { print("spawn failed\n"); rc = 1; }
+
+            if rc == 0 {
+                b1 : [4096]u8 = ---;
+                r1, e1 := http.Client.request(LOOPBACK, PORT, "GET", "/hello", "t", "", "", @b1[0], 4096);
+                if e1 { print("GET /hello errored\n"); rc = 1; }
+                else if r1.status != 200 or r1.body != "world" {
+                    print("GET /hello wrong: status={} body={}\n", r1.status, r1.body); rc = 1;
+                }
+
+                b2 : [4096]u8 = ---;
+                r2, e2 := http.Client.request(LOOPBACK, PORT, "POST", "/echo", "t", "", "ping-pong", @b2[0], 4096);
+                if e2 { print("POST /echo errored\n"); rc = 1; }
+                else {
+                    if r2.status != 200 or r2.body != "ping-pong" {
+                        print("POST /echo wrong: status={} body={}\n", r2.status, r2.body); rc = 1;
+                    }
+                    // header lookup on the response reuses the server-side parser
+                    if r2.header("content-length") != "9" {
+                        print("content-length wrong: '{}'\n", r2.header("content-length")); rc = 1;
+                    }
+                }
+
+                b3 : [4096]u8 = ---;
+                r3, e3 := http.Client.request(LOOPBACK, PORT, "GET", "/missing", "t", "", "", @b3[0], 4096);
+                if e3 { print("GET /missing errored\n"); rc = 1; }
+                else if r3.status != 404 {
+                    print("GET /missing wrong: status={}\n", r3.status); rc = 1;
+                }
+
+                srv.stop();
+                t.join();
+            }
+        }
+    }
+    if rc == 0 { print("client ok\n"); }
+    return rc;
+}

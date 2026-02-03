@@ -1,0 +1,37 @@
+// Value-position match over a POINTER-to-tagged-union subject: the subject
+// auto-derefs to the pointee (specs §for by-ref capture — "a pointer subject
+// matches through the deref"), payload captures bind the variant payload, and
+// the match RESULT TYPE is inferred from the arms even when every arm's value
+// depends on its capture.
+// Regression (issue 0226): the result-type inference typed capture-dependent
+// arms against the RAW pointer subject, leaked `.unresolved` as the match
+// expression's type, and panicked at LLVM emission ("unresolved type reached
+// LLVM emission" via declareFunction). Statement position and value subjects
+// worked only when some arm's type was inferable without the capture.
+#import "modules/std.sx";
+
+Shape :: enum { circle: i64; rect: i64; }
+
+main :: () {
+    s : Shape = .rect(4);
+    p := @s;
+
+    // Value position, pointer subject, every arm capture-dependent (the 0226 repro).
+    r := if p == { case .circle: (v) { v } case .rect: (v) { v * 2 } };
+    print("{}\n", r);
+
+    // Statement position, pointer subject — unchanged leg.
+    if p == { case .rect: (v) { print("{}\n", v); } case .circle: (v) { print("{}\n", v); } }
+
+    // Value position, VALUE subject, every arm capture-dependent.
+    w := if s == { case .circle: (v) { v } case .rect: (v) { v * 10 } };
+    print("{}\n", w);
+
+    // A pointer subject also matches through the deref for integer pointees
+    // (specs §for by-ref capture: "a pointer subject matches through the
+    // deref") — the pointee value drives the case dispatch directly.
+    n : i64 = 42;
+    pn := @n;
+    m := if pn == { case 42: { 1 } else: { 0 } };
+    print("{}\n", m);
+}

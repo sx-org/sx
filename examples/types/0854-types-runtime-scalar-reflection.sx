@@ -1,0 +1,41 @@
+// 1a-S2 — the scalar reflection family accepts RUNTIME `Type` values:
+// size_of / align_of / struct_field_count / variant_count / is_flags
+// read tag-indexed tables; type_eq compares tags. Includes the parity
+// pins: for each shape the RUNTIME answer must equal the COMPTIME fold
+// (padded, nested, union — the layouts most likely to diverge).
+// Replaces 1245-diagnostics-runtime-type-reflection-deferred, which
+// pinned the pre-S2 rejections.
+#import "modules/std.sx";
+
+Padded  :: struct { a: u8; b: i64; c: u16; }        // tail+interior padding
+Inner   :: struct { x: u16; }
+Nested  :: struct { i: Inner; j: Inner; k: u8; }
+Overlay :: union { as_int: i64; as_bytes: [8]u8; }
+Color   :: enum { red; green; blue; }
+Flags   :: enum flags { vsync; fullscreen; }
+
+check :: (label: string, rt: i64, ct: i64) {
+    print("{}: {} parity={}\n", label, rt, rt == ct);
+}
+
+main :: () {
+    tp : Type = Padded;
+    tn : Type = Nested;
+    to : Type = Overlay;
+    tc : Type = Color;
+    tf : Type = Flags;
+
+    check("padded-size", size_of(tp), size_of(Padded));
+    check("padded-align", align_of(tp), align_of(Padded));
+    check("nested-size", size_of(tn), size_of(Nested));
+    check("union-size", size_of(to), size_of(Overlay));
+    check("padded-sfc", struct_field_count(tp), struct_field_count(Padded));
+    check("union-sfc", struct_field_count(to), struct_field_count(Overlay));
+    check("color-vc", variant_count(tc), variant_count(Color));
+
+    print("eq={} neq={}\n", type_eq(tp, Padded), type_eq(tp, Nested));
+    print("flags: color={} flags={}\n", is_flags(tc), is_flags(tf));
+
+    av : any = Color.green;
+    print("any-tag: vc={} size={}\n", variant_count(type_of(av)), size_of(type_of(av)));
+}

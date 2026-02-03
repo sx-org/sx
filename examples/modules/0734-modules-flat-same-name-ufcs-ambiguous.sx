@@ -1,0 +1,16 @@
+// fix-0102d site 3 ambiguity (issue 0102): two flat FILE imports each author a
+// same-name free function `dup`, and the MAIN file (which authors neither)
+// dispatches it via free-function UFCS `v.dup()`. With two distinct flat
+// authors reachable and no own-author to prefer, the call is ambiguous — the
+// UFCS dispatch site must emit the loud "qualify the call" diagnostic rather
+// than silently binding the first-wins winner. Mirrors 0724 (the bare-call
+// ambiguity) one site over.
+#import "modules/std.sx";
+#import "0734-modules-flat-same-name-ufcs-ambiguous/a.sx";
+#import "0734-modules-flat-same-name-ufcs-ambiguous/b.sx";
+
+main :: () -> i32 {
+    v : i64 = 10;
+    print("{}\n", v.dup());
+    0
+}

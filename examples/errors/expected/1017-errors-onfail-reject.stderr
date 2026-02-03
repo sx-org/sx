@@ -1,0 +1,5 @@
+error: `onfail` is only valid inside a failable function (a return type with `!` or `!Named`) — use `defer` for unconditional cleanup
+  --> examples/errors/1017-errors-onfail-reject.sx:9:5
+   |
+ 9 |     onfail print("never fires\n");   // error: onfail outside a failable function
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,20 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+main :: () {
+
+    // ========================================================
+    // 17. SLICE/ARRAY .ptr ACCESS
+    // ========================================================
+    print("=== 17. Slice Ptr ===\n");
+    {
+        sarr : [5]i32 = .[10, 20, 30, 40, 50];
+        ssl := sarr[1..4];
+        sp := ssl.ptr;
+        print("sl-ptr[0]: {}\n", sp[0]);
+        print("sl-ptr[1]: {}\n", sp[1]);
+    }
+}

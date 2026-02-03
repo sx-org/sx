@@ -1,0 +1,19 @@
+// Named return elements may be given in ANY order — they are matched to the
+// return slots BY NAME and permuted to slot order before lowering. Here `b` is
+// given before `a`; the result still destructures as (a, b).
+#import "modules/std.sx";
+pair :: (n: i32) -> (a: i32, b: i32) {
+    return b = n, a = n + 1;   // out of slot order — reordered by name
+}
+// Works through the value-carrying-failable channel too (error slot is implicit).
+ErrX :: error { Bad }
+fpair :: (n: i32) -> (a: i32, b: i32, !) {
+    return b = n, a = n + 1;
+}
+main :: () -> i64 {
+    x, y := pair(5);             // a = 6, b = 5
+    print("{} {}\n", x, y);
+    r := fpair(10) catch { return 9; };
+    print("{} {}\n", r.a, r.b);  // a = 11, b = 10
+    return 0;
+}

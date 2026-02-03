@@ -1,0 +1,260 @@
+// std.http — Q3.6b client conveniences: URL fetch, redirect following, and
+// keep-alive connection pooling.
+//
+//   Client.fetch(method, url, body, opts, buf, cap)
+//       — parse the URL (http/https, host, optional :port, path), open
+//         (https requires opts.tls — error.Tls without), send, receive,
+//         and follow redirects up to opts.max_redirects: 301/302/303
+//         switch to GET and drop the body; 307/308 keep method + body;
+//         a cross-host Location re-resolves and re-dials. Exceeding the
+//         cap is error.Redirect.
+//   ClientOpts.max_redirects (default 5; 0 = return the 3xx as-is)
+//   ClientPool
+//       — single-threaded keep-alive reuse keyed host:port:
+//         pool.fetch(...) reuses an open conn when one exists; a REUSED
+//         conn that faults at send/first-read is retried ONCE on a fresh
+//         dial (the stale-keep-alive race); pool.close() closes all.
+//
+// Cases (servers on background threads; the client is blocking):
+//   A. plain fetch → 200.
+//   B. redirect chain /r1 → /r2 → /final (302s) lands 200 with the hop
+//      count visible to the server; 303 after POST arrives as a GET with
+//      no body; 307 after POST arrives as a POST with the body intact.
+//   C. a 302 loop errors with error.Redirect after max_redirects; with
+//      max_redirects = 0 the 302 itself is returned un-followed.
+//   D. https fetch through opts.tls → 200; the SAME url without a dialer
+//      → error.Tls (never plaintext-to-a-TLS-port).
+//   E. pooling: five pooled fetches ride ONE server connection
+//      (accepted_total == 1); after the server evicts the idle conn
+//      (short keep-alive timeout), the next pooled fetch transparently
+//      redials (accepted_total == 2, still 200).
+//   F. cross-host redirect: server A 302s to server B (different port) —
+//      fetch follows, re-resolves, lands 200 on B.
+//   + net-zero GPA gate.
+#import "modules/std.sx";
+socket :: #import "modules/std/socket.sx";
+http   :: #import "modules/std/http.sx";
+tlsp   :: #import "modules/std/http/tls_mbedtls.sx";
+
+PORT_A   :: 19027;   // main plaintext server
+PORT_B   :: 19028;   // cross-host redirect target
+PORT_TLS :: 19029;   // TLS server (case D)
+
+handler_a :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    _ := ctx;
+    if req.path == "/hello" { resp.body = "fetched"; return; }
+    if req.path == "/r1" {
+        resp.status = 302;
+        resp.add_header("Location", "/r2");
+        resp.body = "hop";
+        return;
+    }
+    if req.path == "/r2" {
+        resp.status = 302;
+        resp.add_header("Location", "/final");
+        resp.body = "hop";
+        return;
+    }
+    if req.path == "/final" {
+        // echo the arriving method + whether a body came along — the
+        // redirect-semantics cases assert on this
+        if req.method == "GET" and req.body.len == 0 { resp.body = "final-get"; return; }
+        if req.method == "POST" { resp.body = concat("final-post:", req.body); return; }
+        resp.body = "final-other";
+        return;
+    }
+    if req.path == "/r303" {
+        resp.status = 303;
+        resp.add_header("Location", "/final");
+        resp.body = "see-other";
+        return;
+    }
+    if req.path == "/r307" {
+        resp.status = 307;
+        resp.add_header("Location", "/final");
+        resp.body = "preserve";
+        return;
+    }
+    if req.path == "/loop" {
+        resp.status = 302;
+        resp.add_header("Location", "/loop");
+        resp.body = "again";
+        return;
+    }
+    if req.path == "/xhost" {
+        resp.status = 302;
+        resp.add_header("Location", "http://localhost:19028/final");
+        resp.body = "hop-host";
+        return;
+    }
+    resp.body = "pong";
+}
+
+handler_b :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    _ := ctx;
+    if req.path == "/final" { resp.body = "b-final"; return; }
+    resp.status = 404;
+    resp.body = "b-404";
+}
+
+srv_entry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = xx arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } {
+        srv.run();
+    }
+    return null;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    rc : i32 = 1;
+    push .{ allocator = gpa } { rc = run(); }
+    leaked := gpa.alloc_count;
+    if rc != 0 { print("FAIL: case rc={}\n", rc); return rc; }
+    if leaked != 0 { print("LEAK: {} outstanding allocations\n", leaked); return 7; }
+    print("fetch ok: url round-trip, 302 chain + 303-to-GET + 307-preserves-POST, loop capped + uncapped-returns-3xx, https gated on a dialer, pool reused one conn + redialed after eviction, cross-host followed; net-zero GPA\n");
+    0
+}
+
+run :: () -> i32 {
+    cfg_a : http.Config = .{ port = PORT_A, timeout_request_ms = 5000,
+                             timeout_keepalive_ms = 1200, max_conn = 16 };
+    srv_a, se_a := http.Server.init(cfg_a, handler_a, 0);
+    if se_a { return 2; }
+    ta, tae := thread.Thread.spawn(srv_entry, xx @srv_a);
+    if tae { return 3; }
+    // dual-stack: the cross-host Location names "localhost", which the
+    // resolver may answer with ::1 — B must serve either family.
+    cfg_b : http.Config = .{ port = PORT_B, bind_addr = "::", timeout_request_ms = 5000, max_conn = 8 };
+    srv_b, se_b := http.Server.init(cfg_b, handler_b, 0);
+    if se_b { srv_a.stop(); ta.join(); return 4; }
+    tb, tbe := thread.Thread.spawn(srv_entry, xx @srv_b);
+    if tbe { srv_a.stop(); ta.join(); return 5; }
+
+    opts : http.ClientOpts = .{ connect_timeout_ms = 2000, io_timeout_ms = 3000 };
+    buf : [8192]u8 = ---;
+
+    // ── A. plain fetch ──
+    r1, e1 := http.Client.fetch("GET", "http://127.0.0.1:19027/hello", "", opts, @buf[0], 8192);
+    if e1 { return teardown(90, @srv_a, @ta, @srv_b, @tb); }
+    if r1.status != 200 or r1.body != "fetched" { return teardown(10, @srv_a, @ta, @srv_b, @tb); }
+
+    // ── B. redirects: chain, 303→GET, 307 preserves POST ──
+    r2, e2 := http.Client.fetch("GET", "http://127.0.0.1:19027/r1", "", opts, @buf[0], 8192);
+    if e2 { return teardown(91, @srv_a, @ta, @srv_b, @tb); }
+    if r2.status != 200 or r2.body != "final-get" { return teardown(11, @srv_a, @ta, @srv_b, @tb); }
+    r3, e3 := http.Client.fetch("POST", "http://127.0.0.1:19027/r303", "payload", opts, @buf[0], 8192);
+    if e3 { return teardown(92, @srv_a, @ta, @srv_b, @tb); }
+    if r3.status != 200 or r3.body != "final-get" { return teardown(12, @srv_a, @ta, @srv_b, @tb); }
+    r4, e4 := http.Client.fetch("POST", "http://127.0.0.1:19027/r307", "payload", opts, @buf[0], 8192);
+    if e4 { return teardown(93, @srv_a, @ta, @srv_b, @tb); }
+    if r4.status != 200 or r4.body != "final-post:payload" { return teardown(13, @srv_a, @ta, @srv_b, @tb); }
+
+    // ── C. loop capped; max_redirects = 0 returns the 3xx ──
+    _, e5 := http.Client.fetch("GET", "http://127.0.0.1:19027/loop", "", opts, @buf[0], 8192);
+    if e5 != error.Redirect { return teardown(14, @srv_a, @ta, @srv_b, @tb); }
+    opts0 := opts;
+    opts0.max_redirects = 0;
+    r6, e6 := http.Client.fetch("GET", "http://127.0.0.1:19027/r1", "", opts0, @buf[0], 8192);
+    if e6 { return teardown(94, @srv_a, @ta, @srv_b, @tb); }
+    if r6.status != 302 { return teardown(15, @srv_a, @ta, @srv_b, @tb); }
+
+    // ── F. cross-host redirect (A → B) ──
+    r7, e7 := http.Client.fetch("GET", "http://127.0.0.1:19027/xhost", "", opts, @buf[0], 8192);
+    if e7 { return teardown(95, @srv_a, @ta, @srv_b, @tb); }
+    if r7.status != 200 or r7.body != "b-final" { return teardown(16, @srv_a, @ta, @srv_b, @tb); }
+
+    // ── E. pooling: five fetches, one conn; redial after eviction ──
+    accepts_before := srv_a.stats().accepted_total;
+    pool := http.ClientPool.init(opts);
+    k : i64 = 0;
+    while k < 5 {
+        rp, ep := pool.fetch("GET", "http://127.0.0.1:19027/hello", "", @buf[0], 8192);
+        if ep { pool.close(); return teardown(96, @srv_a, @ta, @srv_b, @tb); }
+        if rp.status != 200 or rp.body != "fetched" { pool.close(); return teardown(17, @srv_a, @ta, @srv_b, @tb); }
+        k += 1;
+    }
+    st1 := srv_a.stats();
+    // the direct fetches above used their own conns; the POOLED five must
+    // have added exactly ONE accept (review L5: now actually asserted)
+    if st1.accepted_total != accepts_before + 1 { pool.close(); return teardown(21, @srv_a, @ta, @srv_b, @tb); }
+    base := st1.accepted_total;
+    rp2, ep2 := pool.fetch("GET", "http://127.0.0.1:19027/hello", "", @buf[0], 8192);
+    if ep2 { pool.close(); return teardown(97, @srv_a, @ta, @srv_b, @tb); }
+    _ := rp2;
+    st2 := srv_a.stats();
+    if st2.accepted_total != base { pool.close(); return teardown(18, @srv_a, @ta, @srv_b, @tb); }   // reused, no new accept
+    // let the server evict the idle pooled conn (keepalive 1200ms)...
+    sleep_ms(2000);
+    // ...then the pool must transparently redial.
+    rp3, ep3 := pool.fetch("GET", "http://127.0.0.1:19027/hello", "", @buf[0], 8192);
+    if ep3 { pool.close(); return teardown(98, @srv_a, @ta, @srv_b, @tb); }
+    if rp3.status != 200 or rp3.body != "fetched" { pool.close(); return teardown(19, @srv_a, @ta, @srv_b, @tb); }
+    st3 := srv_a.stats();
+    if st3.accepted_total != base + 1 { pool.close(); return teardown(20, @srv_a, @ta, @srv_b, @tb); }
+    pool.close();
+
+    // ── D. https gated on a dialer ──
+    ts : tlsp.TlsServer = .{};
+    if !ts.setup_files("examples/http/1705-http-client-transport/cert.pem",
+                       "examples/http/1705-http-client-transport/key.pem",
+                       context.allocator) { return teardown(30, @srv_a, @ta, @srv_b, @tb); }
+    cfg_t : http.Config = .{ port = PORT_TLS, timeout_request_ms = 5000, max_conn = 8 };
+    cfg_t.tls = xx @ts;
+    srv_t, se_t := http.Server.init(cfg_t, handler_a, 0);
+    if se_t { return teardown(31, @srv_a, @ta, @srv_b, @tb); }
+    tt, tte := thread.Thread.spawn(srv_entry, xx @srv_t);
+    if tte { return teardown(32, @srv_a, @ta, @srv_b, @tb); }
+    tcc : tlsp.TlsClientConfig = .{};
+    if !tcc.setup_files("examples/http/1705-http-client-transport/cert.pem", context.allocator) {
+        srv_t.stop(); tt.join(); srv_t.close();
+        return teardown(33, @srv_a, @ta, @srv_b, @tb);
+    }
+    opts_tls := opts;
+    opts_tls.tls = xx @tcc;
+    opts_tls.tls_host = "client-transport.test";
+    rt, et := http.Client.fetch("GET", "https://127.0.0.1:19029/hello", "", opts_tls, @buf[0], 8192);
+    if et { tcc.deinit(); srv_t.stop(); tt.join(); srv_t.close(); return teardown(99, @srv_a, @ta, @srv_b, @tb); }
+    if rt.status != 200 or rt.body != "fetched" {
+        tcc.deinit(); srv_t.stop(); tt.join(); srv_t.close();
+        return teardown(34, @srv_a, @ta, @srv_b, @tb);
+    }
+    // pooled https (review I3): two pooled fetches must ride ONE TLS conn.
+    tls_accepts0 := srv_t.stats().accepted_total;
+    tpool := http.ClientPool.init(opts_tls);
+    rq1, eq1 := tpool.fetch("GET", "https://127.0.0.1:19029/hello", "", @buf[0], 8192);
+    if eq1 { tpool.close(); tcc.deinit(); srv_t.stop(); tt.join(); srv_t.close(); return teardown(36, @srv_a, @ta, @srv_b, @tb); }
+    rq2, eq2 := tpool.fetch("GET", "https://127.0.0.1:19029/hello", "", @buf[0], 8192);
+    if eq2 { tpool.close(); tcc.deinit(); srv_t.stop(); tt.join(); srv_t.close(); return teardown(37, @srv_a, @ta, @srv_b, @tb); }
+    if rq1.status != 200 or rq2.status != 200 { tpool.close(); tcc.deinit(); srv_t.stop(); tt.join(); srv_t.close(); return teardown(38, @srv_a, @ta, @srv_b, @tb); }
+    if srv_t.stats().accepted_total != tls_accepts0 + 1 { tpool.close(); tcc.deinit(); srv_t.stop(); tt.join(); srv_t.close(); return teardown(39, @srv_a, @ta, @srv_b, @tb); }
+    tpool.close();
+    // the same https url WITHOUT a dialer must refuse loudly.
+    _, en := http.Client.fetch("GET", "https://127.0.0.1:19029/hello", "", opts, @buf[0], 8192);
+    srv_t.stop();
+    tt.join();
+    srv_t.close();
+    tcc.deinit();
+    ts.deinit();
+    if en != error.Tls { return teardown(35, @srv_a, @ta, @srv_b, @tb); }
+
+    return teardown(0, @srv_a, @ta, @srv_b, @tb);
+}
+
+teardown :: (rc: i32, sa: *http.Server, ta: *thread.Thread, sb: *http.Server, tb: *thread.Thread) -> i32 {
+    sa.stop();
+    ta.join();
+    sa.close();
+    sb.stop();
+    tb.join();
+    sb.close();
+    return rc;
+}
+
+clib :: #library "c";
+usleep :: (usec: i64) -> i32 extern clib;
+
+sleep_ms :: (ms: i64) {
+    usleep(ms * 1000);
+}

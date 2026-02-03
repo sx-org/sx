@@ -1,0 +1,4 @@
+sequence: 0 1 2 0 1 2 0 1 2
+spawned: 3
+done: 1 1 1
+all done: 3

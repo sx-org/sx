@@ -1,0 +1,14 @@
+#import "modules/std.sx";
+
+#import c {
+    #include "vendors/test_c/test.h";
+    #source "vendors/test_c/test.c";
+};
+
+main :: () -> i32 {
+    a := add_numbers(10, 20);
+    b := multiply(5, 6);
+    print("add_numbers(10, 20) = {}\n", a);
+    print("multiply(5, 6) = {}\n", b);
+    0
+}

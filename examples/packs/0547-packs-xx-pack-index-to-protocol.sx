@@ -1,0 +1,27 @@
+// `xx <pack>[i]` erased to a protocol-typed local.
+//
+// Erasing a single comptime-pack element to a protocol scalar routes through
+// buildProtocolErasure. A pack index is a comptime rvalue (a pack has no
+// runtime storage — `sources[i]` resolves to the call-site arg, which only
+// gets storage when lowered as a value), so the erasure must heap-copy the
+// materialized element rather than take its address.
+//
+// Regression (issue 0135): `xx sources[0]` used to lower the bare pack as a
+// value and error with "pack 'sources' has no runtime value".
+
+#import "modules/std.sx";
+
+VL :: protocol(T: Type) { get :: (self: *Self) -> T; }
+IntCell :: struct { v: i64; }
+impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
+
+first :: (..sources: VL) -> i64 {
+    x : VL(i64) = xx sources[0];   // erase element 0 to VL(i64)
+    return x.get();
+}
+
+main :: () -> i32 {
+    print("{}\n", first(IntCell.{ v = 7 }));                       // 7
+    print("{}\n", first(IntCell.{ v = 42 }, IntCell.{ v = 99 }));  // 42 (element 0)
+    0
+}

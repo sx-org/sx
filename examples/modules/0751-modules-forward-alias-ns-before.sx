@@ -1,0 +1,36 @@
+// Source-aware forward-alias fixpoint — the INITIAL scan registration (E1.5).
+// Sibling of 0750, but the namespaced import is placed BEFORE the forward alias:
+//
+//     ns :: #import ".../dep.sx";   // authors a same-name `B :: u8`
+//     A :: B;                       // forward alias
+//     B :: u64;                     // its LOCAL target, declared later
+//
+// Because `ns` is scanned first, dep's `B :: u8` is already in the global
+// `type_alias_map` when `A :: B` is scanned. The pre-E1.5-attempt-2 `scanDecls`
+// identifier-RHS branch resolved the RHS through that GLOBAL map and bound `A` to
+// dep's `u8` right there; the per-source fixpoint guard then saw `A` already
+// resolved and skipped it, so the source-aware leaf never corrected it (`A` came
+// out `u8`, truncating 300 -> 44). The source-aware scan registration resolves
+// `B` AS SEEN FROM main's source: dep's `B` is namespaced-only (not bare-visible)
+// and main's `B` is not registered yet, so `A` is left UNWRITTEN and the fixpoint
+// binds it to the local `B :: u64` once that registers.
+//
+// Observable: a runtime 300 coerced into an `A`-typed slot round-trips as 300
+// when `A` is `u64` (correct) and truncates to 44 when `A` is wrongly `u8`.
+// Regression (stdlib E1.5).
+#import "modules/std.sx";
+
+ns :: #import "0751-modules-forward-alias-ns-before/dep.sx";
+
+A :: B;
+B :: u64;
+
+main :: () -> i32 {
+    n : i64 = 300;
+    a : A = xx n;
+    b : B = xx n;
+    print("forward A (u64=300): {}\n", a.(i64));
+    print("direct  B (u64=300): {}\n", b.(i64));
+    print("ns.width():          {}\n", ns.width());
+    return 0;
+}

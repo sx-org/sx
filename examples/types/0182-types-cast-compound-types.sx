@@ -1,0 +1,27 @@
+// `expr.(T)` accepts any compile-time-resolvable type argument,
+// including compound shapes: `*T`, `[*]T`, `?T`, `[]T`. The same lowering
+// makes a compound type literal a first-class `Type` value in expression
+// position (`t : Type = *i64;`), mirroring named types (`t : Type = f64;`).
+// Regression (issue 0118): compound casts fell into the runtime-dispatch
+// path and died with "unresolved 'unknown_expr'".
+
+#import "modules/std.sx";
+
+main :: () {
+    x := 42;
+    p : *i64 = @x;
+    q : *i64 = p.(*i64);        // no-op pointer cast
+    print("a: {}\n", q.*);
+    addr : i64 = xx p;
+    r : *i64 = addr.(*i64);     // int → ptr through compound cast
+    print("b: {}\n", r.*);
+    mp : [*]i64 = p.([*]i64);   // ptr → many-pointer
+    print("c: {}\n", mp[0]);
+    o : ?i32 = 7.(?i32);        // optional wrap
+    print("d: {}\n", o ?? -1);
+    arr := .[1, 2, 3];
+    s : []i64 = arr.([]i64);    // array → slice
+    print("e: {} {}\n", s.len, s[2]);
+    t : Type = *i64;                // first-class compound Type value
+    print("f: {}\n", type_name(t));
+}

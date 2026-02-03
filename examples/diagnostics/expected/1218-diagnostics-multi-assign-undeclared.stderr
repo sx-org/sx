@@ -1,0 +1,23 @@
+error: unresolved 'undeclared_b' in assignment — no variable or global with this name; use 'undeclared_b := ...' to declare a new variable
+  --> examples/diagnostics/1218-diagnostics-multi-assign-undeclared.sx:29:8
+   |
+29 |     a, undeclared_b = b, a;     // typo'd target — plain multi-assign to an undeclared name
+   |        ^^^^^^^^^^^^
+
+error: cannot assign to by-ref capture 'x' directly — write through it with 'x.* = ...'
+  --> examples/diagnostics/1218-diagnostics-multi-assign-undeclared.sx:32:9
+   |
+32 |         x, a = 9, 9;            // by-ref capture target assigned without `.*`
+   |         ^
+
+error: cannot assign to by-ref capture 'g' directly — write through it with 'g.* = ...'
+  --> examples/diagnostics/1218-diagnostics-multi-assign-undeclared.sx:35:9
+   |
+35 |         g, a = 9, 9;            // capture shadows the module global `g` — same diagnostic
+   |         ^
+
+error: cannot assign through constant 'GC' — constants are immutable (use a '=' global or a local copy for mutable data)
+  --> examples/diagnostics/1218-diagnostics-multi-assign-undeclared.sx:37:5
+   |
+37 |     GC, a = 1, 2;               // `::` const as a multi-assign target
+   |     ^^

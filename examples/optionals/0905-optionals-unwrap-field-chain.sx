@@ -1,0 +1,51 @@
+// Postfix `!` (optional force-unwrap) chained directly with a member access.
+// `opt!.field`, `opt!.method()`, `opt!.a.b`, and `opt![i]` must read the same
+// value the bind-first form (`v := opt!; v.field`) produces — the unwrapped
+// value's type has to flow into the chained access.
+//
+// Regression (issue 0101): chained `opt!.field` typed its receiver as
+// `.unresolved` (inferExprType had no force_unwrap arm), so a string field read
+// as garbage and `opt!.method()` failed to resolve at all.
+
+#import "modules/std.sx";
+
+Inner :: struct { tag: string; k: i64; }
+
+S :: struct {
+    id: string;
+    n: i64;
+    inner: Inner;
+
+    greet :: (self: *S) -> string { return self.id; }      // pointer receiver
+    bump  :: (self: S, extra: i64) -> i64 { return self.n + extra; }  // value receiver
+}
+
+mk :: () -> ?S {
+    return S.{ id = "hello", n = 42, inner = Inner.{ tag = "deep", k = 7 } };
+}
+
+arr :: () -> ?[3]i64 {
+    v : [3]i64 = .[10, 20, 30];
+    return v;
+}
+
+main :: () -> void {
+    // opt!.field — string and int field, chained vs bind-first.
+    print("chain id:  {}\n", mk()!.id);   // hello
+    print("chain n:   {}\n", mk()!.n);    // 42
+    v := mk()!;
+    print("bind id:   {}\n", v.id);       // hello
+    print("bind n:    {}\n", v.n);        // 42
+
+    // opt!.method()
+    print("meth ptr:  {}\n", mk()!.greet());   // hello
+    print("meth val:  {}\n", mk()!.bump(8));   // 50
+
+    // nested opt!.a.b
+    print("nest tag:  {}\n", mk()!.inner.tag); // deep
+    print("nest k:    {}\n", mk()!.inner.k);   // 7
+
+    // opt![i]
+    print("index 0:   {}\n", arr()![0]);  // 10
+    print("index 2:   {}\n", arr()![2]);  // 30
+}

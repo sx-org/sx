@@ -1,0 +1,181 @@
+// std.http — request-target forms (RFC 9112 §3.2).
+//
+// Q1.2: the server must handle all four request-target forms:
+//   origin-form    "/path?query"       — the normal case (unchanged).
+//   absolute-form  "http://auth/path"  — an origin server MUST accept it
+//                  (§3.2.2): the embedded authority is exposed on
+//                  req.authority and routing uses the embedded path
+//                  (scheme http/https only; anything else → 400).
+//   asterisk-form  "*"                 — OPTIONS only (server-wide);
+//                  any other method with "*" is malformed → 400.
+//   authority-form "host:port"         — CONNECT only, and CONNECT is
+//                  unimplemented → 501; a non-CONNECT request whose
+//                  target is neither origin- nor absolute-form → 400.
+//
+// The handler echoes "authority|path" so the test asserts BOTH what
+// routing sees and what authority was extracted. A pooled server repeats
+// the absolute-form case to lock the HandlerJob view rebuild (the
+// job-owned copy must rebuild path/authority at their parse offsets).
+//
+// Asserts: origin-form 200 "|/hello"; absolute-form 200 with authority +
+// path split (query preserved); empty-path absolute-form → path "/";
+// https scheme accepted; OPTIONS * 200 "|*"; GET * → 400; authority-form
+// GET → 400; CONNECT → 501; ftp scheme → 400; pooled absolute-form
+// rebuild byte-exact; GPA net-zero after close.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT_A :: 18999;
+PORT_B :: 19000;
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    resp.body = concat(req.authority, concat("|", req.path));
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+// One connection, one request, read to EOF (every case closes: errors
+// linger-close, the 200 cases send Connection: close).
+roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -> string {
+    fd := dial_port(port);
+    if fd < 0 { return ""; }
+    socket.write(fd, req.ptr, xx req.len);
+    total : i64 = 0;
+    stall : i64 = 0;
+    done := false;
+    while !done and stall < 400 {
+        srv.tick(1) catch {};
+        got : i64 = 0;
+        while true {
+            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            if !re { total += n; got += n; continue; }
+            if re == error.Closed { done = true; }
+            break;
+        }
+        if got > 0 { stall = 0; } else { stall += 1; }
+    }
+    socket.close(fd);
+    return string.{ ptr = buf, len = xx total };
+}
+
+check :: (r: string, frag: string, label: string, failed: *i64) {
+    if !contains(r, frag) {
+        print("{}: expected \"{}\"\n", label, frag);
+        failed.* = 1;
+    }
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 16384;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{ port = PORT_A, max_conn = 4, request_count = 10 };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        // (a) origin-form control: empty authority, path routed as-is
+        r := roundtrip(@srv, PORT_A, "GET /hello HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "origin-form status", @failed);
+        check(r, "|/hello", "origin-form echo", @failed);
+
+        // (b) absolute-form: authority extracted, embedded path (with its
+        // query) is what routing sees
+        r = roundtrip(@srv, PORT_A, "GET http://example.com:8080/hello?x=1 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "absolute-form status", @failed);
+        check(r, "example.com:8080|/hello?x=1", "absolute-form echo", @failed);
+
+        // (c) absolute-form with empty path → path "/"
+        r = roundtrip(@srv, PORT_A, "GET http://example.com HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "empty-path absolute status", @failed);
+        check(r, "example.com|/", "empty-path absolute echo", @failed);
+
+        // (d) https scheme is accepted in absolute-form (the target scheme
+        // need not match the transport)
+        r = roundtrip(@srv, PORT_A, "GET https://h/p HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "https absolute status", @failed);
+        check(r, "h|/p", "https absolute echo", @failed);
+
+        // (e) OPTIONS * — asterisk-form is legal for OPTIONS only
+        r = roundtrip(@srv, PORT_A, "OPTIONS * HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "OPTIONS * status", @failed);
+        check(r, "|*", "OPTIONS * echo", @failed);
+
+        // (f) "*" with any other method is malformed
+        r = roundtrip(@srv, PORT_A, "GET * HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 400", "GET * rejected", @failed);
+
+        // (g) authority-form on a non-CONNECT method is malformed
+        r = roundtrip(@srv, PORT_A, "GET example.com:80 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 400", "authority-form GET rejected", @failed);
+
+        // (h) CONNECT is not implemented — 501 for EVERY target form (an
+        // origin- or absolute-form CONNECT must never reach the handler
+        // as if it were a GET)
+        r = roundtrip(@srv, PORT_A, "CONNECT example.com:443 HTTP/1.1\r\nHost: t\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 501", "CONNECT authority-form 501", @failed);
+        r = roundtrip(@srv, PORT_A, "CONNECT / HTTP/1.1\r\nHost: t\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 501", "CONNECT origin-form 501", @failed);
+        r = roundtrip(@srv, PORT_A, "CONNECT http://example.com/ HTTP/1.1\r\nHost: t\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 501", "CONNECT absolute-form 501", @failed);
+
+        // (i) non-http(s) scheme in absolute-form is rejected
+        r = roundtrip(@srv, PORT_A, "GET ftp://example.com/ HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 400", "ftp scheme rejected", @failed);
+
+        srv.close();
+
+        // (j) pooled dispatch: the HandlerJob owns a COPY of the request
+        // bytes — path and authority must be rebuilt over the copy at
+        // their parse offsets, byte-exact
+        cfgp : http.Config = .{ port = PORT_B, max_conn = 4, request_count = 10, thread_pool_count = 1 };
+        srvp, spe := http.Server.init(cfgp, route, 0);
+        if spe { print("pool init failed\n"); return 1; }
+        r = roundtrip(@srvp, PORT_B, "GET http://pool.example:9/deep?a=b HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "pooled absolute status", @failed);
+        check(r, "pool.example:9|/deep?a=b", "pooled absolute echo", @failed);
+        // ...and the two pooled shapes with NON-rebuilt views: the static
+        // "/" (empty-path absolute-form skips the path rebuild — an
+        // inverted skip flag would ship a dangling view) and OPTIONS *
+        r = roundtrip(@srvp, PORT_B, "GET http://root.example HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "root.example|/", "pooled static-root echo", @failed);
+        r = roundtrip(@srvp, PORT_B, "OPTIONS * HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "|*", "pooled OPTIONS * echo", @failed);
+        srvp.close();
+
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

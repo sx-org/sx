@@ -1,0 +1,17 @@
+// raw_make_any REFUSES a non-pointer 'data' operand at compile time —
+// welding a plain value (or an `any` box) into the view's data slot is
+// never meaningful, and the runtime contract (data points at a live,
+// aligned value of tp) could not catch it.
+
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    x : i64 = 42;
+    bad := raw_make_any(i64, x);        // error: data must be a pointer
+    ax : any = x;
+    bad2 := raw_make_any(i64, ax);      // error: an any is not a data pointer
+    ok := raw_make_any(i64, xx @x);     // fine: the value's address
+    print("{}\n", ok.(i64));
+    if type_of(bad) == type_of(bad2) { }
+    return 0;
+}

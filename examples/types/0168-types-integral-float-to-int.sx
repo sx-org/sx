@@ -1,0 +1,119 @@
+// Unified float→int narrowing rule (F0.11), POSITIVE side: an INTEGRAL float
+// flowing into an integer-typed binding FOLDS to its integer — the same
+// `floatToIntExact` rule an array dimension / `$K: Count` already uses — across
+// all FIVE sites: a typed LOCAL, a struct FIELD default, a typed module CONST, a
+// function PARAM default, and an array DIMENSION. It folds whether written as a
+// float LITERAL (`4.0`), an INT-const-EXPRESSION (`M + 2.0`, with `M :: 2`), a
+// FLOAT-const-LEAF expression whose sum is integral (`F + 1.5`, with
+// `F : f64 : 2.5`, = 4.0) — including such a float-const-leaf expression driving
+// an array dimension directly, through a const, or via a type alias — a builtin
+// FLOAT numeric-limit leaf in an integral expression (`f64.max - f64.max` = 0),
+// and an integral float `%` (`6.0 % 4.0` = 2). The compile-time float evaluator
+// is at parity with the integer one, so integer numeric-limit accessors (`i8.max`,
+// `[u8.max]` count) keep folding through the shared int folder, unregressed.
+// The escape hatch (`xx` / `cast`) still TRUNCATES any float, integral or not —
+// including a non-integral const expression (`xx (M + 0.5)` / `xx (F + 0.25)`).
+//
+// Companion to the negative example 1146 (non-integral floats error).
+// Regression (issue 0095): a typed local/param/field silently truncated a float
+// initializer (`y : i64 = 1.5` → 1) with no diagnostic; a non-integral const
+// EXPRESSION (`M + 0.5`) and a non-integral float-const-LEAF expression
+// (`F + 0.25`) truncated even when written through an int binding; the rule now
+// folds an integral float (literal, int-const expr, or float-const leaf) and
+// rejects a non-integral one.
+#import "modules/std.sx";
+
+M :: 2;          // int module const, for the INT-const-EXPRESSION cases
+F : f64 : 2.5;   // float module const, for the FLOAT-const-LEAF cases
+
+Box :: struct {
+    n  : i64 = 4.0;       // integral float field default → folds to 4
+    ne : i64 = M + 2.0;   // integral int-const-EXPR field default → folds to 4
+    nf : i64 = F + 1.5;   // integral float-const-LEAF field default → folds to 4
+    nd : i64 = 8.0 / 2.0; // integral float-DIVISION field default → folds to 4
+}
+
+withDefault :: (x : i64 = 6.0)     -> i64 { return x; }   // param default → 6
+withFlt     :: (x : i64 = F + 1.5) -> i64 { return x; }   // float-const-leaf param default → 4
+
+K  : i64 : 8.0;          // integral float module const → folds to 8
+KF : i64 : F + 1.5;      // integral float-const-LEAF module const → folds to 4
+KD : i64 : 12.0 / 4.0;   // integral float-DIVISION module const → folds to 3
+
+ArrFE :: [F + 1.5]i64;   // array-dim type ALIAS over a float-const-leaf expr → [4]i64
+                         // (the stateless registration path must agree with the
+                         //  direct form `a : [F + 1.5]i64` below — issue 0083).
+
+main :: () {
+    // Typed local: integral float folds (literal + int-const expr + float-const leaf).
+    z : i64 = 4.0;
+    ze : i64 = M + 2.0;
+    zf : i64 = F + 1.5;
+    print("local={} localExpr={} localFlt={}\n", z, ze, zf);
+
+    // Negative integral float folds to its (negative) integer.
+    neg : i64 = -2.0;
+    print("neg={}\n", neg);
+
+    // Integral float DIVISION folds (the subtle case: integral operands, but the
+    // `/` is float division). `6.0 / 2.0` = 3.0 → 3; the int folder refuses the
+    // float `/` and the unified rule folds the integral result.
+    zd : i64 = 6.0 / 2.0;
+    print("localDiv={}\n", zd);
+
+    // Struct field defaults fold (literal + int-const expr + float-const leaf +
+    // float division).
+    b := Box.{};
+    print("field={} fieldExpr={} fieldFlt={} fieldDiv={}\n", b.n, b.ne, b.nf, b.nd);
+
+    // Param defaults fold.
+    print("param={} paramFlt={}\n", withDefault(), withFlt());
+
+    // Module consts fold (and an integral float const can drive an array dim: len 8).
+    a : [K]i64 = ---;
+    print("const={} constFlt={} len={}\n", K, KF, a.len);
+
+    // Integral float-DIVISION const folds, and drives an array dimension directly
+    // (`[6.0 / 2.0]` → len 3) through the SAME refuse-int-fold / fold-float rule.
+    ad2 : [6.0 / 2.0]i64 = ---;
+    print("constDiv={} dimDiv={}\n", KD, ad2.len);
+
+    // Array DIMENSION — the fifth site joins the unified rule: an integral
+    // float-const-leaf expression folds to a count whether written DIRECTLY
+    // (`[F + 1.5]` → 4), THROUGH a float-expr const (`[KF]`, KF = F + 1.5 = 4),
+    // or via a type ALIAS (`ArrFE`, the stateless path agreeing with the direct).
+    ad : [F + 1.5]i64 = ---;
+    ak : [KF]i64 = ---;
+    aa : ArrFE = ---;
+    print("dim.direct={} dim.const={} dim.alias={}\n", ad.len, ak.len, aa.len);
+
+    // Numeric-limit float leaf in an expression: an INTEGRAL result folds (the
+    // compile-time float evaluator is at parity with the integer one — a
+    // `f64`/`f32` `.max`/`.min`/`.epsilon`/… leaf is recognised inside an
+    // expression, not only as a direct value). `f64.max - f64.max` = 0.0 → 0.
+    lim : i64 = f64.max - f64.max;
+    // Integral float `%` (parity with int `%`): `6.0 % 4.0` = 2.0 → 2.
+    fm : i64 = 6.0 % 4.0;
+    print("limit={} fmod={}\n", lim, fm);
+
+    // Integer numeric-limit accessors (NL.1) are unregressed by the float-leaf
+    // parity work: they still fold at a binding (`i8.max` = 127) and as an array
+    // dimension count (`[u8.max]` = len 255), through the SAME int folder.
+    il : i64 = i8.max;
+    iarr : [u8.max]i64 = ---;
+    print("intlimit={} intcount={}\n", il, iarr.len);
+
+    // Explicit escape: `xx` / `cast` always truncate, integral or not —
+    // including a non-integral const EXPRESSION (`xx (M + 0.5)` → 2), a
+    // non-integral float-const-LEAF expression (`xx (F + 0.25)` → 2), a
+    // non-integral numeric-limit expr (`xx (f64.true_min + 0.5)` → 0), and a
+    // non-integral float `%` (`xx (5.5 % 2.0)` → 1).
+    e : i64 = xx 4.9;
+    c : i64 = 1.5.(i64);
+    xc : i64 = xx (M + 0.5);
+    xf : i64 = xx (F + 0.25);
+    xl : i64 = xx (f64.true_min + 0.5);
+    xm : i64 = xx (5.5 % 2.0);
+    xd : i64 = xx (5.0 / 2.0);   // non-integral float DIVISION → truncates to 2
+    print("xx={} cast={} xxExpr={} xxFlt={} xxLimit={} xxMod={} xxDiv={}\n", e, c, xc, xf, xl, xm, xd);
+}

@@ -1,0 +1,11 @@
+// The bare-VISIBLE author: a one-field generic `Box` (size 8). `b.sx` itself
+// flat-imports `c.sx`, so `b_make`'s `Box(i64)` resolves here (the head is one
+// flat hop away in this module) — but a file that imports b.sx reaches `c.Box`
+// only at two hops, so it must NOT win the bare head in the importer.
+Box :: struct($T: Type) { x: T; }
+
+#import "c.sx";
+
+b_make :: () -> Box(i64) {
+    .{ x = 99 }
+}

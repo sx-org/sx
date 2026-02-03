@@ -1,0 +1,17 @@
+error: 'c_only_fn' is not visible; #import the module that declares it
+  --> examples/modules/0706-modules-import-non-transitive.sx:15:37
+   |
+15 |     print("c_only_fn direct: {}\n", c_only_fn());
+   |                                     ^^^^^^^^^
+
+error: 'c_only_const' is not visible; #import the module that declares it
+  --> examples/modules/0706-modules-import-non-transitive.sx:16:40
+   |
+16 |     print("c_only_const direct: {}\n", c_only_const);
+   |                                        ^^^^^^^^^^^^
+
+error: unresolved 'c_only_const' (in examples/modules/0706-modules-import-non-transitive.sx fn main)
+  --> examples/modules/0706-modules-import-non-transitive.sx:16:40
+   |
+16 |     print("c_only_const direct: {}\n", c_only_const);
+   |                                        ^^^^^^^^^^^^

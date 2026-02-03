@@ -1,0 +1,24 @@
+// Backtick raw identifier at the two remaining binding positions (issue 0089,
+// attempt-4): a TYPED constant (`` `i2 : i64 : 5 ``) and a union TAG / field
+// (`` `i2: i32 ``). The typed-const form previously slipped past the decl check
+// without a name span (caret at 1:1); a bare `i2 : i64 : 5` is still rejected
+// with the caret ON the name (see examples/1141). A union tag spelled with a
+// reserved name works and is accessible bare or backticked.
+// Regression (issue 0089 — attempt-4 typed const + union tag).
+#import "modules/std.sx";
+
+// Typed constant whose name is a reserved type spelling.
+`i2 : i64 : 5;
+
+// Union whose tags are reserved type spellings.
+Mix :: union { `i1: i32; `u8: f32; }
+
+main :: () -> i32 {
+    print("typed const = {}\n", `i2);
+
+    m : Mix = ---;
+    m.`i1 = 42;
+    print("union tick  = {}\n", m.`i1);   // backtick member access
+    print("union bare  = {}\n", m.i1);    // bare member access — same field
+    return 0;
+}

@@ -1,0 +1,28 @@
+// The sx library ships kb_text_shape: `#import "vendors/kb_text_shape/
+// kb_text_shape.sx"` resolves through the stdlib search paths and the
+// ~30k-line implementation compiles through the object cache (decls
+// come from the curated c/kbts_api.h). Pins INVARIANTS only: a shape
+// context constructs, the system Helvetica loads as a shaping font,
+// and teardown is clean.
+#import "modules/std.sx";
+fs :: #import "modules/std/fs.sx";
+kb :: #import "vendors/kb_text_shape/kb_text_shape.sx";
+
+main :: () -> i32 {
+    data := fs.read_file("/System/Library/Fonts/Helvetica.ttc");
+    if data == null {
+        print("font missing\n");
+        return 1;
+    }
+    bytes := data!;
+
+    ctx := kb.kbts_CreateShapeContext(xx 0, xx 0);
+    print("context created: {}\n", xx ctx != 0);
+
+    font := kb.kbts_ShapePushFontFromMemory(ctx, xx bytes.ptr, xx bytes.len, 0);
+    print("font pushed: {}\n", xx font != 0);
+
+    kb.kbts_DestroyShapeContext(ctx);
+    print("context destroyed\n");
+    0
+}

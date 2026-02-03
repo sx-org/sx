@@ -1,0 +1,15 @@
+// A zero `Vector` lane count is rejected — a vector must have at least one lane
+// (strictly positive). Contrast with an array dimension / value-param count,
+// where zero is a valid length-0 instantiation (see 0147). This pins the
+// zero-rejecting half of the context-dependent count rule (specs.md, Array
+// Types).
+//
+// Regression (F0.4 attempt 12): the spec now states the zero rule per consumer;
+// the `Vector` lane count stays strictly positive while array dims / value-param
+// counts accept zero.
+#import "modules/std.sx";
+
+main :: () {
+    v : Vector(0, f32) = ---;
+    print("unreachable: {}\n", v.x);
+}

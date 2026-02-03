@@ -1,0 +1,1 @@
+io: await — future already has an awaiter (one awaiter per future in the M:1 model)

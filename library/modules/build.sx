@@ -1,0 +1,155 @@
+// `List` (for the default build script) + the compiler-API build primitives
+// (`emit_object`/`link`/`c_object_paths`/…). The std↔build import cycle (std's
+// tail imports cli.sx which imports this file) is handled by the resolver.
+#import "modules/std.sx";
+#import "modules/compiler.sx";
+// The sx-side `.app`/`.apk` bundler. `default_pipeline` delegates to its
+// `bundle_main` when a bundle was requested. The bundler is compile-time-only
+// (comptime-only, never emitted into the binary), and the build↔bundle import
+// cycle resolves like the std↔build one.
+#import "modules/platform/bundle.sx";
+// The target facts — OS / ARCH / POINTER_SIZE + the OperatingSystem /
+// Architecture enums — live in a dependency-free module (std/target.sx) so
+// low-level code can name the enum TYPES without the build/std baggage.
+// build.sx imports it (flat) so those decls stay registered in the standard
+// import graph (build.sx is reachable from std.sx — dropping the import would
+// shift every std program's type table). This is NOT a re-export: flat import
+// only splices the names into build.sx's own scope, never into build.sx's
+// importers. Consumers need no import anyway — the compiler resolves OS / ARCH
+// / POINTER_SIZE by name (comptime constants, for both `inline if` and value
+// reads); a module that names OperatingSystem / Architecture imports
+// std/target.sx directly.
+#import "modules/std/target.sx";
+
+// An opaque compile-time build-configuration handle. `build_options()` hands one
+// back; its real state lives on the compiler's threaded `BuildConfig`. The handle
+// itself is a null-sentinel word (never dereferenced) — every accessor below takes
+// it as an ignored `self` and reads/writes the `BuildConfig` instead. The accessors
+// are free `intrinsic` functions (resolved on `opt.method(...)` via UFCS) and
+// serviced by `comptime_vm.callCompilerFn` — migrated off the old `struct #compiler`
+// hook surface (Phase 5.5).
+BuildOptions :: struct { }
+
+build_options :: () -> BuildOptions intrinsic;
+
+// ── BuildOptions accessors (free `intrinsic` functions, UFCS) ────────────────
+
+add_link_flag :: ufcs (self: BuildOptions, flag: [:0]u8) intrinsic;
+add_framework :: ufcs (self: BuildOptions, name: [:0]u8) intrinsic;
+set_output_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+set_wasm_shell :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+
+// Register a directory of runtime assets to bundle alongside the
+// binary. `src` is the path on disk (relative to the CWD at build
+// time); `dest` is the relative location inside the bundle / APK.
+// Apple .app: copied to `<bundle>/<dest>/`. Android APK: zipped under
+// `<dest>/` at the APK root. Idiomatic form is
+// `opts.add_asset_dir("assets", "assets")`.
+add_asset_dir :: ufcs (self: BuildOptions, src: [:0]u8, dest: [:0]u8) intrinsic;
+asset_dir_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
+asset_dir_src_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+asset_dir_dest_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+
+// Name-based alternative to `on_build`. The compiler resolves
+// `<module_name>.bundle_main` after linking.
+set_post_link_module :: ufcs (self: BuildOptions, module_name: [:0]u8) intrinsic;
+
+// Path of the freshly-linked binary, only meaningful while a
+// post-link callback is running. Returns "" before linking.
+binary_path :: ufcs (self: BuildOptions) -> string intrinsic;
+
+// Apple `.app` / Android `.apk` bundling parameters. Accessors
+// return "" when unset so the bundler can use a single string
+// type. macOS bundling needs `bundle_path` and `bundle_id`;
+// codesign / provisioning are iOS-device-only.
+set_bundle_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+set_bundle_id :: ufcs (self: BuildOptions, id: [:0]u8) intrinsic;
+set_codesign_identity :: ufcs (self: BuildOptions, identity: [:0]u8) intrinsic;
+set_provisioning_profile :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+
+bundle_path :: ufcs (self: BuildOptions) -> string intrinsic;
+bundle_id :: ufcs (self: BuildOptions) -> string intrinsic;
+codesign_identity :: ufcs (self: BuildOptions) -> string intrinsic;
+provisioning_profile :: ufcs (self: BuildOptions) -> string intrinsic;
+
+// Target accessors. Empty triple before linking; predicates mirror
+// TargetConfig.is{MacOS,IOS,IOSDevice,IOSSimulator}() on the Zig
+// side. Used by the sx bundler to switch Info.plist shape and
+// codesigning ceremony per platform.
+target_triple :: ufcs (self: BuildOptions) -> string intrinsic;
+is_macos :: ufcs (self: BuildOptions) -> bool intrinsic;
+is_ios :: ufcs (self: BuildOptions) -> bool intrinsic;
+is_ios_device :: ufcs (self: BuildOptions) -> bool intrinsic;
+is_ios_simulator :: ufcs (self: BuildOptions) -> bool intrinsic;
+is_android :: ufcs (self: BuildOptions) -> bool intrinsic;
+
+// Framework list accessors. The bundler walks `framework_count() *
+// framework_at(i)` to find each `-framework` name and recursively
+// copies its `<Name>.framework` directory from one of
+// `framework_path_at(0..framework_path_count())` into
+// `<bundle>/Frameworks/`. Indexed form (slice returns are expressible
+// now via `List`, but the bundler still walks these by index).
+framework_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
+framework_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+framework_path_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
+framework_path_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+
+// Android APK bundling parameters. `manifest_path` overrides the
+// bundler's auto-generated AndroidManifest.xml; `keystore_path`
+// overrides the default `$HOME/.android/debug.keystore`. Accessors
+// return "" when unset.
+set_manifest_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+set_keystore_path :: ufcs (self: BuildOptions, path: [:0]u8) intrinsic;
+manifest_path :: ufcs (self: BuildOptions) -> string intrinsic;
+keystore_path :: ufcs (self: BuildOptions) -> string intrinsic;
+
+// `#jni_main #jni_class("path") { ... }` decls collected during
+// lowering. The Android bundler walks `0..jni_main_count()` and
+// for each entry writes a `.java` file at
+// `<stage>/java/<runtime_path>.java`, compiles via javac + d8, and
+// bundles the resulting classes.dex into the APK.
+jni_main_count :: ufcs (self: BuildOptions) -> i64 intrinsic;
+jni_main_runtime_path_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+jni_main_java_source_at :: ufcs (self: BuildOptions, i: i64) -> string intrinsic;
+
+// The build callback registrar (Phase 5). Registers the sx function that drives
+// the build — the compiler invokes it after codegen with the `BuildOptions`
+// handle. `#run on_build(build);` (from inside a `#run` block) is the override
+// form, where `build :: (opt: BuildOptions) -> bool { … }`; the
+// last registration wins. With no override the compiler auto-invokes the stdlib
+// `default_pipeline` (below). This is the sole post-build callback mechanism.
+on_build :: (cb: (opt: BuildOptions) -> bool) intrinsic;
+
+// ── The default build script ────────────────────────────────────────────────
+//
+// `emit_and_link` is the build CORE: emit the sx object, gather the C companion
+// objects, and link them into the output with the build's libraries / frameworks /
+// flags / target. Shared by `default_pipeline` AND `platform.bundle.bundle_main`
+// (which wraps it with the per-target `.app` / `.apk` bundling) so a bundler
+// override doesn't re-implement emit+link.
+emit_and_link :: (opt: BuildOptions) -> bool {
+    obj := emit_object();
+    objs := c_object_paths();
+    objs.append(obj);
+    link(objs, build_output(), link_libraries(), build_frameworks(), build_flags(), build_target());
+    return true;
+}
+
+// `default_pipeline` is the stdlib build driver: the compiler invokes it after
+// codegen (everything is sx-driven — there is no auto-emit/auto-link). It emits +
+// links the program via `emit_and_link`. A user overrides the whole pipeline with
+// their own `#run on_build(custom);` in main.sx (last-wins) — e.g. bundling is
+// `#import "modules/platform/bundle.sx"; #run on_build(bundle_main);`, where
+// `bundle_main` runs `emit_and_link` then wraps the binary into a `.app` / `.apk`.
+// The compiler FORCE-LOWERS this well-known name and auto-invokes it after codegen
+// when no `on_build` override was registered (no library `#run` needed).
+//
+// When a bundle was requested (`--bundle`/`--apk` or `set_bundle_path`), delegate
+// to the per-target bundler (`bundle_main` runs the emit+link core then wraps the
+// `.app`/`.apk`); otherwise just emit + link.
+default_pipeline :: (opt: BuildOptions) -> bool {
+    if opt.bundle_path().len > 0 {
+        return bundle_main(opt);
+    }
+    return emit_and_link(opt);
+}

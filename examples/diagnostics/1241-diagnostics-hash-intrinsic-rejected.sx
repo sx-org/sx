@@ -1,0 +1,18 @@
+// `intrinsic` is a KEYWORD in body position, not a directive. `#intrinsic` is
+// not a spelling of it and must not parse — there is exactly one way to write an
+// intrinsic declaration, so the old `#builtin`-style directive form cannot creep
+// back in under a new name.
+//
+// The message below is the GENERIC unknown-directive parse error (`#wibble`
+// produces the same one), not an intrinsic-specific diagnostic: `#intrinsic` is
+// simply not in the directive table. What this example pins is the REJECTION.
+// The error text points at the parameter list rather than the offending `#`,
+// which is a pre-existing wart of unknown-directive recovery, not a property of
+// intrinsics.
+#import "modules/std.sx";
+
+foo :: ($T: Type) -> i64 #intrinsic;
+
+main :: () {
+    print("{}\n", foo(i64));
+}

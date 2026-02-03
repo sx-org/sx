@@ -1,0 +1,71 @@
+// Dynamic indexing of an array struct field reads the element IN PLACE —
+// address arithmetic plus one element load, never a whole-array copy to a
+// temporary — and the object/index expressions evaluate exactly once.
+// Covers: a pointer receiver (`table.fast[index]`), a side-effecting index,
+// a nested field/index chain, and a module-global root.
+// Regression (issue 0317): the addressable-array read path accepted only
+// simple identifiers, so a field expression lowered as an array VALUE and
+// every read copied all 4 KiB of the field.
+
+Table :: struct {
+    fast: [1024]i32;
+}
+
+Grid :: struct {
+    rows: [4][4]i32;
+}
+
+g_table : Table = ---;
+calls : i64 = 0;
+
+next_index :: () -> i64 {
+    calls += 1;
+    2
+}
+
+lookup :: (table: *Table, index: i64) -> i32 {
+    table.fast[index]
+}
+
+main :: () -> i32 {
+    t : Table = ---;
+    i := 0;
+    while i < 1024 {
+        t.fast[i] = i.(i32);
+        i += 1;
+    }
+
+    // Dynamic index through an array field on a pointer receiver.
+    if lookup(@t, 17) != 17 { return 1; }
+
+    // A side-effecting index expression runs exactly once per read.
+    calls = 0;
+    if t.fast[next_index()] != 2 { return 2; }
+    if calls != 1 { return 3; }
+
+    // Nested chain: field -> dynamic index -> dynamic index, two calls total.
+    grid : Grid = ---;
+    r := 0;
+    while r < 4 {
+        c := 0;
+        while c < 4 {
+            grid.rows[r][c] = (r * 4 + c).(i32);
+            c += 1;
+        }
+        r += 1;
+    }
+    calls = 0;
+    if grid.rows[next_index()][next_index()] != 10 { return 4; }
+    if calls != 2 { return 5; }
+
+    // Module-global root: the field chain GEPs the global's storage.
+    j := 0;
+    while j < 1024 {
+        g_table.fast[j] = (1023 - j).(i32);
+        j += 1;
+    }
+    idx := 100;
+    if g_table.fast[idx] != 923 { return 6; }
+
+    0
+}

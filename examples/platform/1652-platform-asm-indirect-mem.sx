@@ -1,0 +1,19 @@
+// ASM stream — indirect-memory (`=*m`) place output. The place address is passed
+// to the asm as a pointer and the asm writes THROUGH it (no return slot): here
+// `str x9, %[out]` stores 42 into `x`'s storage directly. Distinct from a
+// write-through `=` output (which returns a value that is then stored). Mixes a
+// value output and an input below to exercise operand ordering. aarch64-pinned;
+// ir-only elsewhere (the `.ir` locks the `=*m` constraint + `elementtype` attr).
+poke :: () -> i64 {
+    x : i64 = 0;
+    asm volatile {
+        #string ASM
+        mov x9, #42
+        str x9, %[out]
+ASM,
+        [out] "=*m" -> @x,
+        clobbers(.x9),
+    };
+    return x;   // 42 — written through the pointer
+}
+main :: () -> i64 { return poke(); }

@@ -1,0 +1,32 @@
+// PLAN-HTTPZ C3a — std/socket per-OS ABI (host run). The sockaddr_in
+// constructor + the nonblocking-I/O classifiers resolve against the host OS and
+// behave identically on darwin (dev host) and a linux runner: every assertion is
+// phrased against the module's OWN per-OS constants, so it is correct on
+// whichever OS lowered it. The linux-specific NUMERIC values are locked
+// separately, cross-target, by 1668-http-socket-linux-abi.
+//
+// Imports ONLY socket.sx (libc-only) — no std barrel — so this stays a small,
+// focused run test (mirror of event/1633's self-contained import).
+socket :: #import "modules/std/socket.sx";
+posix   :: #import "modules/std/posix.sx";
+
+main :: () -> i32 {
+    // sockaddr_in is 16 bytes on both BSD and linux; only the first two bytes'
+    // split differs (sin_len:u8 + sin_family:u8 vs a 2-byte sin_family).
+    if size_of(socket.SockAddr) != 16 { return 1; }
+
+    // The constructor fills family + network-order port regardless of layout.
+    a := socket.sockaddr_in(8080, 0);
+    if a.sin_family != xx socket.AF_INET { return 2; }
+    if a.sin_port != socket.htons(8080) { return 3; }   // 8080 -> net order 0x901F
+    if a.sin_addr != 0 { return 4; }                    // INADDR_ANY
+
+    // EAGAIN is the wouldblock code on this OS (35 darwin / 11 linux); EPIPE is
+    // not. The classifier reads the branched constant, so this holds on both.
+    if !socket.is_wouldblock(posix.EAGAIN) { return 5; }
+    if socket.is_wouldblock(posix.EPIPE) { return 6; }
+
+    // O_NONBLOCK is a single nonzero status bit (4 darwin / 2048 linux).
+    if socket.O_NONBLOCK == 0 { return 7; }
+    return 0;
+}

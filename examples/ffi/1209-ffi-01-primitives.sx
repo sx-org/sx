@@ -1,0 +1,49 @@
+// Phase 0 baseline (PLAN-FFI.md step 0.1): every primitive type passed
+// in/out of a C `extern` fn via `#import c { #include / #source }`.
+// Locks today's parameter + return ABI so Phase 1's lowering changes
+// (`#objc_call` / `#jni_call`) can't silently regress us.
+//
+// Note: c_import maps `signed char` to sx `u8` (see c_import.zig:541)
+// — narrow signed-char roundtrips are still surfaced here so any future
+// mapping change shows up as a snapshot diff.
+
+#import "modules/std.sx";
+
+#import c {
+    #include "1209-ffi-01-primitives.h";
+    #source "1209-ffi-01-primitives.c";
+};
+
+main :: () -> i32 {
+    // Signed roundtrips
+    print("ffi_id_int(-42)         = {}\n", ffi_id_int(0 - 42));
+    print("ffi_id_short(-1234)     = {}\n", ffi_id_short(0 - 1234));
+    print("ffi_id_i64(huge)        = {}\n", ffi_id_i64(9000000000000000000));
+
+    // Unsigned roundtrips
+    print("ffi_id_uint(0xDEADBEEF) = {}\n", ffi_id_uint(0xDEADBEEF));
+    print("ffi_id_ushort(0xFFFF)   = {}\n", ffi_id_ushort(0xFFFF));
+    print("ffi_id_u64(0x7FEE...)   = {}\n", ffi_id_u64(0x7FEEDFACECAFEBEE));
+
+    // Narrow char roundtrips (both map to u8 in current sx)
+    print("ffi_id_schar(127)       = {}\n", ffi_id_schar(127));
+    print("ffi_id_uchar(255)       = {}\n", ffi_id_uchar(255));
+
+    // Floating point
+    print("ffi_id_f32(3.5)         = {}\n", ffi_id_f32(3.5));
+    print("ffi_id_f64(1.5)         = {}\n", ffi_id_f64(1.5));
+
+    // Pointer roundtrip — proves *void survives the boundary
+    sentinel : i32 = 42;
+    p_in : *void = xx @sentinel;
+    p_out := ffi_id_ptr(p_in);
+    addr_in  : u64 = xx p_in;
+    addr_out : u64 = xx p_out;
+    print("ffi_id_ptr roundtrip    = {}\n", addr_in == addr_out);
+
+    // Arithmetic helpers — exercise multi-arg ABI
+    print("ffi_add_int(7, 8)       = {}\n", ffi_add_int(7, 8));
+    print("ffi_add_double(0.25, 0.75) = {}\n", ffi_add_double(0.25, 0.75));
+
+    0
+}

@@ -1,0 +1,45 @@
+// Phase 1 step 1.15 (PLAN-FFI.md): `#jni_call(void)` codegen.
+//
+// `#jni_call(T)(env, target, "method_name", "(Sig)RetSig", args...)`
+// dispatches a JNI instance-method call. The lowering hand-emits the
+// vtable indirection:
+//
+//   ifs = *env                                  // JNINativeInterface*
+//   cls = ifs->GetObjectClass(env, target)
+//   mid = ifs->GetMethodID(env, cls, name, sig)
+//   ifs->Call<Type>Method(env, target, mid, args...)
+//
+// Phase 1.17 introduces method-ID caching via static slots populated
+// at module-init; this step keeps the per-call-site lookup.
+//
+// Host can't dlopen libjvm via the JIT, so the JNI body is gated
+// behind `inline if OS == .android`. The macOS test path strips the
+// body and prints "skipped"; the cross_compile.sh Android target
+// verifies that the gated body actually compiles + links against
+// libjvm in the Android sysroot.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+// Android target requires a `#jni_main` Activity declaration to
+// satisfy the entry-point check. An empty stub class is enough — this
+// file is testing `#jni_call` lowering, not Activity wiring.
+SxJniCallVoidStub :: #jni_main #jni_class("co/swipelab/sxjnicall/SxJniCallVoidStub") { }
+
+main :: () -> i32 {
+    inline if OS == .android {
+        // Real Android entry passes env + target via the user's `onCreate`
+        // / `#jni_attach`. For the cross-compile-only test we just need
+        // the lowering to emit valid IR; runtime correctness is exercised
+        // by the chess sx_android_query_safe_insets path.
+        env    : *void = null;
+        target : *void = null;
+        #jni_env(env) {
+            #jni_call(void)(target, "noop", "()V");
+        }
+    }
+    inline if OS != .android {
+        print("skipped (not android)\n");
+    }
+    0
+}

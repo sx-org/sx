@@ -1,0 +1,34 @@
+// Phase 3 step 3.0: multi-keyword selector mangling. The sx method
+// name is split on `_`; each piece becomes a keyword with a trailing
+// `:`. `combine_and(a, b)` → `combine:and:` — two keywords, two args.
+//
+// Pre-3.0: bails at lower.zig with the Phase 3/4 diagnostic.
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+SxProbeMultiKeyword :: #objc_class("SxProbeMultiKeyword") extern {
+    combine_and :: (self: *Self, a: i32, b: i32) -> i32;
+}
+
+combine_imp :: (self: *void, _cmd: *void, a: i32, b: i32) -> i32 abi(.c) {
+    a * 100 + b
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        ns_object := objc_getClass("NSObject".ptr);
+        cls := objc_allocateClassPair(ns_object, "SxProbeMultiKeyword".ptr, 0);
+        sel := sel_registerName("combine:and:".ptr);
+        class_addMethod(cls, sel, xx combine_imp, "i@:ii".ptr);
+        objc_registerClassPair(cls);
+
+        inst : *SxProbeMultiKeyword = xx class_createInstance(cls, 0);
+        n := inst.combine_and(7, 42);
+        print("combine_and(7, 42) = {}\n", n);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

@@ -1,0 +1,3 @@
+in catch: len=2
+after catch: len=0
+after success: len=0

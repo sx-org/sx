@@ -1,0 +1,21 @@
+// Empty parens `()` as a return type mean `void`: `f :: () -> () { … }` is
+// exactly `f :: () -> void { … }`. The zero-parameter FUNCTION type `() -> R`
+// (a callable taking no args) is unaffected — only an empty `()` in the
+// return-TYPE slot folds to void.
+#import "modules/std.sx";
+
+// `-> ()` is void: no value returned.
+greet :: () -> () { print("hi\n"); }
+
+// A `-> void` spelling, for contrast — identical behavior.
+greet2 :: () -> void { print("bye\n"); }
+
+// Zero-param function-typed parameter still parses as a callable, not void.
+run :: (f: () -> i64) -> i64 { return f(); }
+
+main :: () -> i64 {
+    greet();
+    greet2();
+    print("{}\n", run(() => 7));
+    return 0;
+}

@@ -1,0 +1,25 @@
+// Step 2.7 — pack-as-value diagnostics. A pack is comptime-only (Decision 1),
+// so using the bare pack name where a runtime value is required is an error,
+// with a context-tailored suggestion. All four categories below fire (the
+// functions are monomorphized when called from main).
+
+#import "modules/std.sx";
+
+Show :: protocol { show :: (self: *Self) -> string; }
+A :: struct {}
+impl Show for A { show :: (self: *A) -> string => "A"; }
+
+sink :: (v: i64) -> void { _ = v; }
+
+storage :: (..xs: Show) -> void { y := xs; _ = y; }          // A: store
+call    :: (..xs: Show) -> void { sink(xs); }                // B: pass to a call
+ret     :: (..xs: Show) -> i64  { return xs; }               // C: return
+iter    :: (..xs: Show) -> void { for xs  (x) { _ = x; } }  // D: runtime iterate
+
+main :: () -> i32 {
+    storage(A.{});
+    call(A.{});
+    _ = ret(A.{});
+    iter(A.{});
+    0
+}

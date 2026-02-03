@@ -1,0 +1,46 @@
+// Unified float→int narrowing rule (F0.11), float-DIVISION pin: a compile-time
+// float division (`5.0 / 2.0` = 2.5) is a NON-INTEGRAL float, so narrowing it
+// implicitly into an integer-typed binding is a COMPILE ERROR — exactly like any
+// other non-integral float (example 1146). The division is the subtle case: its
+// operands (`5.0`, `2.0`) are individually INTEGRAL, so a naive integer fold
+// would truncate `5.0 / 2.0` to 2 with no diagnostic. The rule fires at all five
+// sites — a typed module CONST, a struct FIELD default, a function PARAM default,
+// a typed LOCAL, and an array DIMENSION — because the shared compile-time integer
+// folder now refuses a division with a float operand, deferring it to the float
+// evaluator + the unified rule (integral folds, non-integral errors). A float
+// operand on either side (literal or float-typed const) makes the `/` a float
+// division.
+//
+// The escape hatch stays open: `xx (5.0 / 2.0)` truncates to 2 with no error, and
+// an INTEGRAL float division (`6.0 / 2.0` → 3) folds — both exercised on the
+// POSITIVE side (example 0168).
+//
+// Regression (issue 0095, F0.11-6): `5.0 / 2.0` at a typed local, field default,
+// param default, typed const, and array dimension all silently folded to 2 via
+// integer truncating division; each now rejects the non-integral float.
+#import "modules/std.sx";
+
+// An UNTYPED float-EXPRESSION const carries a placeholder `i64` type, yet its
+// value is float — `ME / 2` is still float division and must reject (judged by
+// the const's VALUE, not its declared type), at BOTH the typed-binding path and
+// the count path.
+ME :: 4.0 + 1.0;       // untyped float-EXPRESSION const (= 5.0)
+
+// Typed CONST: declared but not referenced, so the single narrowing error is not
+// followed by a downstream "unresolved const" cascade.
+K : i64 : 5.0 / 2.0;   // 2.5 non-integral float-DIVISION const → error
+
+BadField :: struct {
+    f : i64 = 5.0 / 2.0;   // non-integral float-DIVISION field default → error
+}
+
+badParam :: (x : i64 = 5.0 / 2.0) -> i64 { return x; }  // float-DIVISION param default → error
+
+main :: () {
+    local : i64 = 5.0 / 2.0;     // non-integral float-DIVISION local → error
+    dim : [5.0 / 2.0]i64 = ---;  // non-integral float-DIVISION array dimension → error
+    cdiv : i64 = ME / 2;         // untyped float-EXPR const division (5.0/2 = 2.5) → error
+    cdim : [ME / 2]i64 = ---;    // same, at the count path → error
+    b := BadField.{};
+    print("{} {} {} {} {} {}\n", local, b.f, badParam(), dim.len, cdiv, cdim.len);
+}

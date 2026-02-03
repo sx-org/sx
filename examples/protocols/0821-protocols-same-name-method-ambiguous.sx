@@ -1,0 +1,18 @@
+// G8 (ambiguous half) — because a protocol method-signature concrete return type
+// is now resolved SOURCE-AWARE, a genuinely ambiguous same-name type poisons
+// LOUDLY at the protocol declaration instead of silently picking a global
+// `findByName` last-wins author. `main` flat-imports two `Box` authors and
+// declares none itself, so the `Provider.get` return `Box` is an unresolvable
+// collision and the build exits 1.
+
+#import "modules/std.sx";
+#import "0821-protocols-same-name-method-ambiguous/a.sx";
+#import "0821-protocols-same-name-method-ambiguous/b.sx";
+
+Provider :: protocol {
+    get :: (self: *Self) -> Box;
+}
+
+main :: () -> i32 {
+    0
+}

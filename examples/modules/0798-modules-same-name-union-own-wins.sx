@@ -1,0 +1,23 @@
+// E6a — own-wins-over-flat for UNION per-decl nominal identity. `main` flat-imports
+// `dep.sx` (which authors `Pair { a }`) AND authors its OWN `Pair { m }`. A bare
+// `Pair` reference in `main` resolves to `main`'s OWN author, not the flat-imported
+// one (the querying source's author wins outright — no ambiguity), so `p : Pair`
+// here binds `main`'s union (whose `m` field dep's `Pair` lacks) while `dep_pair()`
+// uses dep's DISTINCT `Pair`.
+//
+// Fail-before (pre-E6a): the stateless `type_bridge.resolveInlineUnion` `findByName`
+// short-circuit interned ONE global last-wins `Pair`, so `main`'s `Pair` and dep's
+// `Pair` collapsed to a single nominal — `p.m` would resolve against whichever
+// author won the global slot, silently wrong with no diagnostic.
+
+#import "modules/std.sx";
+#import "0798-modules-same-name-union-own-wins/dep.sx";
+
+Pair :: union { m: i32; }
+
+main :: () -> i32 {
+    p : Pair = ---;
+    p.m = 5;
+    print("own={} dep={}\n", p.m, dep_pair());
+    0
+}

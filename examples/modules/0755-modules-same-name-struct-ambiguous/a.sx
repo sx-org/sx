@@ -1,0 +1,2 @@
+// One of two flat-imported authors of a same-name `Thing`.
+Thing :: struct { a: i64; }

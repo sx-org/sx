@@ -1,0 +1,47 @@
+// Phase 2 step 2.7 (PLAN-FFI.md): xfail then green for the remaining
+// six type-introducer directive forms parsing with the same body
+// grammar as `#jni_class`. No codegen yet — Phase 3 picks up Obj-C
+// codegen, Phase 4 picks up Swift.
+//
+// The directives this step turns on:
+//   #jni_interface  — Java interface binding
+//   #objc_class     — Obj-C class binding
+//   #objc_protocol  — Obj-C protocol binding
+//   #swift_class    — Swift class binding (via @_cdecl bridge)
+//   #swift_struct   — Swift @frozen value-type binding
+//   #swift_protocol — Swift @objc-bridgeable protocol binding
+//
+// Internally the AST collapses into one `runtime_class_decl` node
+// carrying a `runtime` discriminator. Today the parser rejects each
+// of these because the lexer doesn't recognise the directive name.
+
+#import "modules/std.sx";
+
+IFoo :: #jni_interface("com/example/IFoo") extern {
+    bar :: (self: *Self) -> i32;
+}
+
+NSString :: #objc_class("NSString") extern {
+    length :: (self: *Self) -> i32;
+}
+
+NSCopying :: #objc_protocol("NSCopying") extern {
+    copy :: (self: *Self) -> *Self;
+}
+
+URL :: #swift_class("Foundation.URL") extern {
+    absoluteString :: (self: *Self) -> *void;
+}
+
+Date :: #swift_struct("Foundation.Date") extern {
+    timeIntervalSince1970 :: (self: *Self) -> f64;
+}
+
+Hashable :: #swift_protocol("Swift.Hashable") extern {
+    hash :: (self: *Self) -> i32;
+}
+
+main :: () -> i32 {
+    print("parse-only ok\n");
+    0
+}

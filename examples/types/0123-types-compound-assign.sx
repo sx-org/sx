@@ -1,0 +1,24 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+main :: () {
+
+    // ========================================================
+    // 16. COMPOUND ASSIGNMENT TYPE CONVERSION
+    // ========================================================
+    print("=== 16. Compound Assign ===\n");
+    {
+        ca_a : f64 = 10.0;
+        ca_b : f32 = 3.0;
+        ca_a += ca_b;
+        print("f64+=f32: {}\n", ca_a);
+
+        ca_c : i64 = 100;
+        ca_d : i32 = 7;
+        ca_c -= ca_d;
+        print("i64-=i32: {}\n", ca_c);
+    }
+}

@@ -1,0 +1,811 @@
+// =====================================================================
+// vendors/sqlite — sx bindings over the VENDORED SQLite amalgamation
+// (c/, see README.md for version + provenance + upgrade notes).
+//
+// `#import "vendors/sqlite/sqlite.sx"` gives any sx program SQLite
+// with no system dependency and no build flags: the named `#import c`
+// unit below compiles c/sqlite3.c with the pinned options (through
+// sx's content-addressed object cache, so it compiles once per
+// machine, not once per run) and every `extern sqlib` decl binds
+// against it. Under `sx run` the unit's dylib is a PRIORITY
+// symbol-search target consulted before the process images, so an OS
+// libsqlite3 of a different version can never shadow the vendored
+// copy; under `sx build` the unit's objects link directly into the
+// binary. `sqlite_version()` answers the vendored version — pin it in
+// the importing project's tests to make any fallback loud.
+//
+// COVERAGE — the full practical C API, ONE variant per function (the
+// modern/64-bit form where duplicates exist; `bind_text`/`bind_blob`
+// keep the 32-bit length forms, which skip text64's encoding arg —
+// per-value sizes beyond 2 GiB are out of scope). Deliberately NOT
+// bound, each a real boundary rather than an omission:
+//   * callback-taking APIs (exec's row callback, busy_handler,
+//     hooks, trace/progress, authorizer, create_function/collation)
+//     — they need C->sx function-pointer callbacks; busy_timeout and
+//     callback-less exec cover the storage layer's needs;
+//   * the sqlite3_value_* family + bind/column_value — only
+//     meaningful with user-defined functions (callbacks, above);
+//   * varargs APIs (sqlite3_config, db_config, log, mprintf) —
+//     configuration happens via the unit's compile-time defines;
+//   * UTF-16 variants (we are UTF-8 only), the VFS layer,
+//     sessions/snapshots/vtabs/loadable
+//     extensions (not compiled in), deprecated API (compiled out via
+//     SQLITE_OMIT_DEPRECATED).
+//
+// FFI type choices: handles cross as `usize` (`sqlite3*`,
+// `sqlite3_stmt*`, `sqlite3_blob*`, `sqlite3_backup*` are opaque and
+// never dereferenced; `usize` keeps out-params single-level `*usize`
+// instead of `**void`). Whole C strings cross as `cstring` — IN via
+// `to_cstring` (literals coerce), OUT as `?cstring` copied through
+// `sq_from_cstr` before sqlite's buffer dies on the next
+// step/finalize/close. `prepare_v2/v3` and `bind_text/blob` take
+// `[*]u8` + explicit byte length instead, so un-terminated sx string
+// views pass without copying — and `column_text`/`column_blob`/
+// `serialize` return `?*u8` + explicit byte counts, never `cstring`:
+// their payloads may carry interior NULs that a strlen would truncate.
+// Integer widths are SQLite's own, on the wrappers too: `i32` where
+// the C API says `int` (result codes, counts, indexes, byte sizes),
+// `u32`/`u64` where it says unsigned, and `i64` only for the genuinely
+// 64-bit APIs (rowids, changes64, memory accounting, serialize sizes).
+// =====================================================================
+
+#import "modules/std.sx";
+
+sqlib :: #import c {
+    #define "SQLITE_DQS=0";
+    #define "SQLITE_THREADSAFE=1";
+    #define "SQLITE_DEFAULT_MEMSTATUS=0";
+    #define "SQLITE_OMIT_DEPRECATED";
+    #define "SQLITE_OMIT_SHARED_CACHE";
+    #define "SQLITE_LIKE_DOESNT_MATCH_BLOBS";
+    #define "SQLITE_ENABLE_COLUMN_METADATA";
+    #flags  "-O2";
+    #source "c/sqlite3.c";
+};
+
+// ── FFI: connection lifecycle ─────────────────────────────────────────
+sqlite3_open        :: (path: cstring, out_db: *usize) -> i32 extern sqlib "sqlite3_open";
+sqlite3_open_v2     :: (path: cstring, out_db: *usize, flags: i32, vfs: usize) -> i32 extern sqlib "sqlite3_open_v2";
+sqlite3_close       :: (db: usize) -> i32 extern sqlib "sqlite3_close";
+sqlite3_close_v2    :: (db: usize) -> i32 extern sqlib "sqlite3_close_v2";
+
+// ── FFI: errors ───────────────────────────────────────────────────────
+sqlite3_errcode            :: (db: usize) -> i32 extern sqlib "sqlite3_errcode";
+sqlite3_extended_errcode   :: (db: usize) -> i32 extern sqlib "sqlite3_extended_errcode";
+sqlite3_errmsg             :: (db: usize) -> ?cstring extern sqlib "sqlite3_errmsg";
+sqlite3_errstr             :: (code: i32) -> ?cstring extern sqlib "sqlite3_errstr";
+sqlite3_error_offset       :: (db: usize) -> i32 extern sqlib "sqlite3_error_offset";
+sqlite3_extended_result_codes :: (db: usize, onoff: i32) -> i32 extern sqlib "sqlite3_extended_result_codes";
+
+// ── FFI: connection state & control ───────────────────────────────────
+sqlite3_busy_timeout       :: (db: usize, ms: i32) -> i32 extern sqlib "sqlite3_busy_timeout";
+sqlite3_interrupt          :: (db: usize) extern sqlib "sqlite3_interrupt";
+sqlite3_is_interrupted     :: (db: usize) -> i32 extern sqlib "sqlite3_is_interrupted";
+sqlite3_get_autocommit     :: (db: usize) -> i32 extern sqlib "sqlite3_get_autocommit";
+sqlite3_txn_state          :: (db: usize, schema: cstring) -> i32 extern sqlib "sqlite3_txn_state";
+sqlite3_db_filename        :: (db: usize, db_name: cstring) -> ?cstring extern sqlib "sqlite3_db_filename";
+sqlite3_db_readonly        :: (db: usize, db_name: cstring) -> i32 extern sqlib "sqlite3_db_readonly";
+sqlite3_db_cacheflush      :: (db: usize) -> i32 extern sqlib "sqlite3_db_cacheflush";
+sqlite3_db_release_memory  :: (db: usize) -> i32 extern sqlib "sqlite3_db_release_memory";
+sqlite3_last_insert_rowid  :: (db: usize) -> i64 extern sqlib "sqlite3_last_insert_rowid";
+sqlite3_set_last_insert_rowid :: (db: usize, rowid: i64) extern sqlib "sqlite3_set_last_insert_rowid";
+sqlite3_changes64          :: (db: usize) -> i64 extern sqlib "sqlite3_changes64";
+sqlite3_total_changes64    :: (db: usize) -> i64 extern sqlib "sqlite3_total_changes64";
+sqlite3_limit              :: (db: usize, id: i32, new_val: i32) -> i32 extern sqlib "sqlite3_limit";
+sqlite3_exec               :: (db: usize, sql: cstring, cb: usize, arg: usize, errmsg: usize) -> i32 extern sqlib "sqlite3_exec";
+sqlite3_table_column_metadata :: (db: usize, db_name: cstring, table: cstring, column: cstring, out_data_type: *usize, out_coll_seq: *usize, out_not_null: *i32, out_primary_key: *i32, out_autoinc: *i32) -> i32 extern sqlib "sqlite3_table_column_metadata";
+
+// ── FFI: statements ───────────────────────────────────────────────────
+sqlite3_prepare_v2   :: (db: usize, sql: [*]u8, nbyte: i32, out_stmt: *usize, out_tail: usize) -> i32 extern sqlib "sqlite3_prepare_v2";
+sqlite3_prepare_v3   :: (db: usize, sql: [*]u8, nbyte: i32, prep_flags: u32, out_stmt: *usize, out_tail: usize) -> i32 extern sqlib "sqlite3_prepare_v3";
+sqlite3_step         :: (stmt: usize) -> i32 extern sqlib "sqlite3_step";
+sqlite3_reset        :: (stmt: usize) -> i32 extern sqlib "sqlite3_reset";
+sqlite3_finalize     :: (stmt: usize) -> i32 extern sqlib "sqlite3_finalize";
+sqlite3_clear_bindings :: (stmt: usize) -> i32 extern sqlib "sqlite3_clear_bindings";
+sqlite3_sql          :: (stmt: usize) -> ?cstring extern sqlib "sqlite3_sql";
+sqlite3_expanded_sql :: (stmt: usize) -> ?cstring extern sqlib "sqlite3_expanded_sql";
+sqlite3_stmt_busy    :: (stmt: usize) -> i32 extern sqlib "sqlite3_stmt_busy";
+sqlite3_stmt_readonly :: (stmt: usize) -> i32 extern sqlib "sqlite3_stmt_readonly";
+sqlite3_stmt_isexplain :: (stmt: usize) -> i32 extern sqlib "sqlite3_stmt_isexplain";
+sqlite3_stmt_explain :: (stmt: usize, mode: i32) -> i32 extern sqlib "sqlite3_stmt_explain";
+sqlite3_stmt_status  :: (stmt: usize, op: i32, reset: i32) -> i32 extern sqlib "sqlite3_stmt_status";
+sqlite3_db_handle    :: (stmt: usize) -> usize extern sqlib "sqlite3_db_handle";
+sqlite3_next_stmt    :: (db: usize, stmt: usize) -> usize extern sqlib "sqlite3_next_stmt";
+
+// ── FFI: binding ──────────────────────────────────────────────────────
+sqlite3_bind_parameter_count :: (stmt: usize) -> i32 extern sqlib "sqlite3_bind_parameter_count";
+sqlite3_bind_parameter_index :: (stmt: usize, name: cstring) -> i32 extern sqlib "sqlite3_bind_parameter_index";
+sqlite3_bind_parameter_name  :: (stmt: usize, idx: i32) -> ?cstring extern sqlib "sqlite3_bind_parameter_name";
+sqlite3_bind_text    :: (stmt: usize, idx: i32, text: [*]u8, n: i32, destructor: isize) -> i32 extern sqlib "sqlite3_bind_text";
+sqlite3_bind_blob    :: (stmt: usize, idx: i32, data: [*]u8, n: i32, destructor: isize) -> i32 extern sqlib "sqlite3_bind_blob";
+sqlite3_bind_double  :: (stmt: usize, idx: i32, v: f64) -> i32 extern sqlib "sqlite3_bind_double";
+sqlite3_bind_int64   :: (stmt: usize, idx: i32, v: i64) -> i32 extern sqlib "sqlite3_bind_int64";
+sqlite3_bind_null    :: (stmt: usize, idx: i32) -> i32 extern sqlib "sqlite3_bind_null";
+sqlite3_bind_zeroblob64 :: (stmt: usize, idx: i32, n: u64) -> i32 extern sqlib "sqlite3_bind_zeroblob64";
+
+// ── FFI: result columns ───────────────────────────────────────────────
+sqlite3_column_blob   :: (stmt: usize, icol: i32) -> ?*u8 extern sqlib "sqlite3_column_blob";
+sqlite3_column_double :: (stmt: usize, icol: i32) -> f64 extern sqlib "sqlite3_column_double";
+sqlite3_column_int64  :: (stmt: usize, icol: i32) -> i64 extern sqlib "sqlite3_column_int64";
+sqlite3_column_text   :: (stmt: usize, icol: i32) -> ?*u8 extern sqlib "sqlite3_column_text";
+sqlite3_column_bytes  :: (stmt: usize, icol: i32) -> i32 extern sqlib "sqlite3_column_bytes";
+sqlite3_column_type   :: (stmt: usize, icol: i32) -> i32 extern sqlib "sqlite3_column_type";
+sqlite3_column_count  :: (stmt: usize) -> i32 extern sqlib "sqlite3_column_count";
+sqlite3_column_name   :: (stmt: usize, icol: i32) -> ?cstring extern sqlib "sqlite3_column_name";
+sqlite3_column_decltype :: (stmt: usize, icol: i32) -> ?cstring extern sqlib "sqlite3_column_decltype";
+sqlite3_column_database_name :: (stmt: usize, icol: i32) -> ?cstring extern sqlib "sqlite3_column_database_name";
+sqlite3_column_table_name    :: (stmt: usize, icol: i32) -> ?cstring extern sqlib "sqlite3_column_table_name";
+sqlite3_column_origin_name   :: (stmt: usize, icol: i32) -> ?cstring extern sqlib "sqlite3_column_origin_name";
+sqlite3_data_count    :: (stmt: usize) -> i32 extern sqlib "sqlite3_data_count";
+
+// ── FFI: incremental blob I/O ─────────────────────────────────────────
+sqlite3_blob_open   :: (db: usize, db_name: cstring, table: cstring, column: cstring, rowid: i64, flags: i32, out_blob: *usize) -> i32 extern sqlib "sqlite3_blob_open";
+sqlite3_blob_reopen :: (blob: usize, rowid: i64) -> i32 extern sqlib "sqlite3_blob_reopen";
+sqlite3_blob_close  :: (blob: usize) -> i32 extern sqlib "sqlite3_blob_close";
+sqlite3_blob_bytes  :: (blob: usize) -> i32 extern sqlib "sqlite3_blob_bytes";
+sqlite3_blob_read   :: (blob: usize, buf: [*]u8, n: i32, offset: i32) -> i32 extern sqlib "sqlite3_blob_read";
+sqlite3_blob_write  :: (blob: usize, buf: [*]u8, n: i32, offset: i32) -> i32 extern sqlib "sqlite3_blob_write";
+
+// ── FFI: online backup ────────────────────────────────────────────────
+sqlite3_backup_init      :: (dst: usize, dst_name: cstring, src: usize, src_name: cstring) -> usize extern sqlib "sqlite3_backup_init";
+sqlite3_backup_step      :: (bk: usize, n_page: i32) -> i32 extern sqlib "sqlite3_backup_step";
+sqlite3_backup_finish    :: (bk: usize) -> i32 extern sqlib "sqlite3_backup_finish";
+sqlite3_backup_remaining :: (bk: usize) -> i32 extern sqlib "sqlite3_backup_remaining";
+sqlite3_backup_pagecount :: (bk: usize) -> i32 extern sqlib "sqlite3_backup_pagecount";
+
+// ── FFI: serialization ────────────────────────────────────────────────
+sqlite3_serialize   :: (db: usize, schema: cstring, out_size: *i64, flags: u32) -> ?*u8 extern sqlib "sqlite3_serialize";
+sqlite3_deserialize :: (db: usize, schema: cstring, data: usize, sz_db: i64, sz_buf: i64, flags: u32) -> i32 extern sqlib "sqlite3_deserialize";
+
+// ── FFI: library utilities ────────────────────────────────────────────
+sqlite3_libversion        :: () -> ?cstring extern sqlib "sqlite3_libversion";
+sqlite3_libversion_number :: () -> i32 extern sqlib "sqlite3_libversion_number";
+sqlite3_sourceid          :: () -> ?cstring extern sqlib "sqlite3_sourceid";
+sqlite3_threadsafe        :: () -> i32 extern sqlib "sqlite3_threadsafe";
+sqlite3_compileoption_used :: (name: cstring) -> i32 extern sqlib "sqlite3_compileoption_used";
+sqlite3_compileoption_get  :: (n: i32) -> ?cstring extern sqlib "sqlite3_compileoption_get";
+sqlite3_complete          :: (sql: cstring) -> i32 extern sqlib "sqlite3_complete";
+sqlite3_free              :: (p: usize) extern sqlib "sqlite3_free";
+sqlite3_malloc64          :: (n: u64) -> usize extern sqlib "sqlite3_malloc64";
+sqlite3_msize             :: (p: usize) -> u64 extern sqlib "sqlite3_msize";
+sqlite3_memory_used       :: () -> i64 extern sqlib "sqlite3_memory_used";
+sqlite3_memory_highwater  :: (reset: i32) -> i64 extern sqlib "sqlite3_memory_highwater";
+sqlite3_release_memory    :: (n: i32) -> i32 extern sqlib "sqlite3_release_memory";
+sqlite3_soft_heap_limit64 :: (n: i64) -> i64 extern sqlib "sqlite3_soft_heap_limit64";
+sqlite3_hard_heap_limit64 :: (n: i64) -> i64 extern sqlib "sqlite3_hard_heap_limit64";
+sqlite3_randomness        :: (n: i32, buf: [*]u8) extern sqlib "sqlite3_randomness";
+sqlite3_sleep             :: (ms: i32) -> i32 extern sqlib "sqlite3_sleep";
+sqlite3_stricmp           :: (a: cstring, b: cstring) -> i32 extern sqlib "sqlite3_stricmp";
+sqlite3_strnicmp          :: (a: cstring, b: cstring, n: i32) -> i32 extern sqlib "sqlite3_strnicmp";
+sqlite3_strglob           :: (glob: cstring, s: cstring) -> i32 extern sqlib "sqlite3_strglob";
+sqlite3_strlike           :: (like: cstring, s: cstring, esc: u32) -> i32 extern sqlib "sqlite3_strlike";
+
+// ── Result codes (primary; full set) ──────────────────────────────────
+SQLITE_OK         ::   0;
+SQLITE_ERROR      ::   1;
+SQLITE_INTERNAL   ::   2;
+SQLITE_PERM       ::   3;
+SQLITE_ABORT      ::   4;
+SQLITE_BUSY       ::   5;
+SQLITE_LOCKED     ::   6;
+SQLITE_NOMEM      ::   7;
+SQLITE_READONLY   ::   8;
+SQLITE_INTERRUPT  ::   9;
+SQLITE_IOERR      ::  10;
+SQLITE_CORRUPT    ::  11;
+SQLITE_NOTFOUND   ::  12;
+SQLITE_FULL       ::  13;
+SQLITE_CANTOPEN   ::  14;
+SQLITE_PROTOCOL   ::  15;
+SQLITE_EMPTY      ::  16;
+SQLITE_SCHEMA     ::  17;
+SQLITE_TOOBIG     ::  18;
+SQLITE_CONSTRAINT ::  19;
+SQLITE_MISMATCH   ::  20;
+SQLITE_MISUSE     ::  21;
+SQLITE_NOLFS      ::  22;
+SQLITE_AUTH       ::  23;
+SQLITE_FORMAT     ::  24;
+SQLITE_RANGE      ::  25;
+SQLITE_NOTADB     ::  26;
+SQLITE_NOTICE     ::  27;
+SQLITE_WARNING    ::  28;
+SQLITE_ROW        :: 100;
+SQLITE_DONE       :: 101;
+
+// Extended result codes are `primary | (n << 8)`; the families a storage
+// layer actually branches on are spelled out, others compute by formula.
+SQLITE_ABORT_ROLLBACK        ::  516;   // ABORT      | (2<<8)
+SQLITE_BUSY_RECOVERY         ::  261;   // BUSY       | (1<<8)
+SQLITE_BUSY_SNAPSHOT         ::  517;   // BUSY       | (2<<8)
+SQLITE_BUSY_TIMEOUT          ::  773;   // BUSY       | (3<<8)
+SQLITE_LOCKED_SHAREDCACHE    ::  262;   // LOCKED     | (1<<8)
+SQLITE_LOCKED_VTAB           ::  518;   // LOCKED     | (2<<8)
+SQLITE_CONSTRAINT_CHECK      ::  275;   // CONSTRAINT | (1<<8)
+SQLITE_CONSTRAINT_COMMITHOOK ::  531;
+SQLITE_CONSTRAINT_FOREIGNKEY ::  787;
+SQLITE_CONSTRAINT_FUNCTION   :: 1043;
+SQLITE_CONSTRAINT_NOTNULL    :: 1299;
+SQLITE_CONSTRAINT_PRIMARYKEY :: 1555;
+SQLITE_CONSTRAINT_TRIGGER    :: 1811;
+SQLITE_CONSTRAINT_UNIQUE     :: 2067;
+SQLITE_CONSTRAINT_VTAB       :: 2323;
+SQLITE_CONSTRAINT_ROWID      :: 2579;
+SQLITE_CONSTRAINT_PINNED     :: 2835;
+SQLITE_CONSTRAINT_DATATYPE   :: 3091;
+
+// ── Fundamental datatypes (column_type) ───────────────────────────────
+SQLITE_INTEGER :: 1;
+SQLITE_FLOAT   :: 2;
+SQLITE_TEXT    :: 3;
+SQLITE_BLOB    :: 4;
+SQLITE_NULL    :: 5;
+
+// ── open_v2 flags ─────────────────────────────────────────────────────
+SQLITE_OPEN_READONLY  :: 0x00000001;
+SQLITE_OPEN_READWRITE :: 0x00000002;
+SQLITE_OPEN_CREATE    :: 0x00000004;
+SQLITE_OPEN_URI       :: 0x00000040;
+SQLITE_OPEN_MEMORY    :: 0x00000080;
+SQLITE_OPEN_NOMUTEX   :: 0x00008000;
+SQLITE_OPEN_FULLMUTEX :: 0x00010000;
+SQLITE_OPEN_NOFOLLOW  :: 0x01000000;
+SQLITE_OPEN_EXRESCODE :: 0x02000000;
+
+// ── prepare_v3 flags ──────────────────────────────────────────────────
+SQLITE_PREPARE_PERSISTENT :: 0x01;
+SQLITE_PREPARE_NO_VTAB    :: 0x04;
+
+// ── txn_state values ──────────────────────────────────────────────────
+SQLITE_TXN_NONE  :: 0;
+SQLITE_TXN_READ  :: 1;
+SQLITE_TXN_WRITE :: 2;
+
+// ── limit ids ─────────────────────────────────────────────────────────
+SQLITE_LIMIT_LENGTH              ::  0;
+SQLITE_LIMIT_SQL_LENGTH          ::  1;
+SQLITE_LIMIT_COLUMN              ::  2;
+SQLITE_LIMIT_EXPR_DEPTH          ::  3;
+SQLITE_LIMIT_COMPOUND_SELECT     ::  4;
+SQLITE_LIMIT_VDBE_OP             ::  5;
+SQLITE_LIMIT_FUNCTION_ARG        ::  6;
+SQLITE_LIMIT_ATTACHED            ::  7;
+SQLITE_LIMIT_LIKE_PATTERN_LENGTH ::  8;
+SQLITE_LIMIT_VARIABLE_NUMBER     ::  9;
+SQLITE_LIMIT_TRIGGER_DEPTH       :: 10;
+SQLITE_LIMIT_WORKER_THREADS      :: 11;
+
+// ── stmt_status ops ───────────────────────────────────────────────────
+SQLITE_STMTSTATUS_FULLSCAN_STEP :: 1;
+SQLITE_STMTSTATUS_SORT          :: 2;
+SQLITE_STMTSTATUS_AUTOINDEX     :: 3;
+SQLITE_STMTSTATUS_VM_STEP       :: 4;
+SQLITE_STMTSTATUS_REPREPARE     :: 5;
+SQLITE_STMTSTATUS_RUN           :: 6;
+SQLITE_STMTSTATUS_FILTER_MISS   :: 7;
+SQLITE_STMTSTATUS_FILTER_HIT    :: 8;
+SQLITE_STMTSTATUS_MEMUSED       :: 99;
+
+// ── serialize / deserialize flags ─────────────────────────────────────
+SQLITE_SERIALIZE_NOCOPY        :: 1;
+SQLITE_DESERIALIZE_FREEONCLOSE :: 1;
+SQLITE_DESERIALIZE_RESIZEABLE  :: 2;
+SQLITE_DESERIALIZE_READONLY    :: 4;
+
+// bind destructor sentinels: TRANSIENT = copy the bytes NOW (sx-side
+// buffers — arena strings, stack temporaries — don't outlive the call);
+// STATIC = the caller guarantees the bytes outlive the statement.
+SQLITE_STATIC    : isize :  0;
+SQLITE_TRANSIENT : isize : -1;
+
+SqliteErr :: error {
+    Open,
+    Exec,
+    Prepare,
+    Bind,
+    Step,
+    Blob,
+    Backup,
+    Serialize,
+    Metadata,
+}
+
+// ── string helpers ────────────────────────────────────────────────────
+
+// Copy the C string at `p` (null = empty) into context.allocator —
+// sqlite's buffer dies on the next step/finalize/close, so the view from
+// `from_cstring` must not escape.
+sq_from_cstr :: (p: ?cstring) -> string {
+    if p == null { return ""; }
+    v := from_cstring(p!);
+    if v.len == 0 { return ""; }
+    return substr(v, 0, v.len);
+}
+
+// `n` raw bytes at `p` as a context.allocator copy ("" when p is null).
+sq_copy_bytes :: (p: ?*u8, n: i64) -> string {
+    if p == null or n <= 0 { return ""; }
+    cp : [*]u8 = xx p!;
+    raw : [*]u8 = xx context.allocator.alloc_bytes(n + 1);
+    c.memcpy(raw, cp, n);
+    raw[n] = 0;
+    return string.{ ptr = raw, len = n };
+}
+
+// ── library-level utilities ───────────────────────────────────────────
+
+// The linked/loaded SQLite's version string (e.g. "3.53.2").
+sqlite_version :: () -> string {
+    return sq_from_cstr(sqlite3_libversion());
+}
+sqlite_version_number :: () -> i32 {
+    return sqlite3_libversion_number();
+}
+sqlite_sourceid :: () -> string {
+    return sq_from_cstr(sqlite3_sourceid());
+}
+sqlite_threadsafe :: () -> bool {
+    return sqlite3_threadsafe() != 0;
+}
+sqlite_compileoption_used :: (name: string) -> bool {
+    return sqlite3_compileoption_used(to_cstring(name)) != 0;
+}
+// The n'th compile option ("" past the end).
+sqlite_compileoption_get :: (n: i32) -> string {
+    return sq_from_cstr(sqlite3_compileoption_get(n));
+}
+// Human text for a result code (static storage; copied anyway).
+sqlite_errstr :: (code: i32) -> string {
+    return sq_from_cstr(sqlite3_errstr(code));
+}
+// True iff `sql` ends in a complete SQL statement.
+sqlite_complete :: (sql: string) -> bool {
+    return sqlite3_complete(to_cstring(sql)) != 0;
+}
+// `n` bytes from SQLite's CSPRNG.
+sqlite_randomness :: (n: i32) -> string {
+    len : i64 = n;
+    raw : [*]u8 = xx context.allocator.alloc_bytes(len + 1);
+    sqlite3_randomness(n, raw);
+    raw[len] = 0;
+    return string.{ ptr = raw, len = len };
+}
+sqlite_sleep :: (ms: i32) -> i32 {
+    return sqlite3_sleep(ms);
+}
+// memory_used/highwater read 0 in this build: SQLITE_DEFAULT_MEMSTATUS=0.
+sqlite_memory_used :: () -> i64 {
+    return sqlite3_memory_used();
+}
+sqlite_memory_highwater :: (reset: bool) -> i64 {
+    return sqlite3_memory_highwater(if reset then 1 else 0);
+}
+sqlite_release_memory :: (n: i32) -> i32 {
+    return sqlite3_release_memory(n);
+}
+sqlite_soft_heap_limit :: (n: i64) -> i64 {
+    return sqlite3_soft_heap_limit64(n);
+}
+sqlite_hard_heap_limit :: (n: i64) -> i64 {
+    return sqlite3_hard_heap_limit64(n);
+}
+// GLOB / LIKE / case-insensitive compare, sqlite's own semantics.
+// strglob/strlike answer 0 on MATCH (C convention) — exposed as bools.
+sqlite_strglob :: (glob: string, s: string) -> bool {
+    return sqlite3_strglob(to_cstring(glob), to_cstring(s)) == 0;
+}
+sqlite_strlike :: (like: string, s: string, esc: u32) -> bool {
+    return sqlite3_strlike(to_cstring(like), to_cstring(s), esc) == 0;
+}
+sqlite_stricmp :: (a: string, b: string) -> i32 {
+    return sqlite3_stricmp(to_cstring(a), to_cstring(b));
+}
+
+// ── prepared statements ───────────────────────────────────────────────
+
+// One prepared statement. `finalize` releases it; bind indexes are
+// 1-based and column indexes 0-based, as in the C API.
+SqliteStmt :: struct {
+    handle: usize;
+    db: usize;
+
+    // ── binding ──
+    bind_text :: (self: *SqliteStmt, idx: i32, s: string) -> !SqliteErr {
+        rc := sqlite3_bind_text(self.handle, idx, s.ptr, xx s.len, SQLITE_TRANSIENT);
+        if rc != SQLITE_OK { raise error.Bind; }
+        return;
+    }
+    bind_blob :: (self: *SqliteStmt, idx: i32, bytes: string) -> !SqliteErr {
+        rc := sqlite3_bind_blob(self.handle, idx, bytes.ptr, xx bytes.len, SQLITE_TRANSIENT);
+        if rc != SQLITE_OK { raise error.Bind; }
+        return;
+    }
+    bind_double :: (self: *SqliteStmt, idx: i32, v: f64) -> !SqliteErr {
+        rc := sqlite3_bind_double(self.handle, idx, v);
+        if rc != SQLITE_OK { raise error.Bind; }
+        return;
+    }
+    bind_int64 :: (self: *SqliteStmt, idx: i32, v: i64) -> !SqliteErr {
+        rc := sqlite3_bind_int64(self.handle, idx, v);
+        if rc != SQLITE_OK { raise error.Bind; }
+        return;
+    }
+    bind_null :: (self: *SqliteStmt, idx: i32) -> !SqliteErr {
+        rc := sqlite3_bind_null(self.handle, idx);
+        if rc != SQLITE_OK { raise error.Bind; }
+        return;
+    }
+    // Reserve an `n`-byte zero-filled blob (fill it via SqliteBlob I/O).
+    bind_zeroblob :: (self: *SqliteStmt, idx: i32, n: u64) -> !SqliteErr {
+        rc := sqlite3_bind_zeroblob64(self.handle, idx, n);
+        if rc != SQLITE_OK { raise error.Bind; }
+        return;
+    }
+    clear_bindings :: (self: *SqliteStmt) {
+        sqlite3_clear_bindings(self.handle);
+    }
+
+    // ── parameters ──
+    parameter_count :: (self: *SqliteStmt) -> i32 {
+        return sqlite3_bind_parameter_count(self.handle);
+    }
+    // 1-based index of a named parameter (":name" / "@name" / "?N"), 0 if absent.
+    parameter_index :: (self: *SqliteStmt, name: string) -> i32 {
+        return sqlite3_bind_parameter_index(self.handle, to_cstring(name));
+    }
+    // The name of parameter `idx` ("" for nameless `?` parameters).
+    parameter_name :: (self: *SqliteStmt, idx: i32) -> string {
+        return sq_from_cstr(sqlite3_bind_parameter_name(self.handle, idx));
+    }
+
+    // ── execution ──
+    // SQLITE_ROW / SQLITE_DONE on success; anything else raises with the
+    // detail left in the connection's errmsg.
+    step :: (self: *SqliteStmt) -> (i32, !SqliteErr) {
+        rc := sqlite3_step(self.handle);
+        if rc != SQLITE_ROW and rc != SQLITE_DONE { raise error.Step; }
+        return rc;
+    }
+    reset :: (self: *SqliteStmt) {
+        sqlite3_reset(self.handle);
+    }
+    finalize :: (self: *SqliteStmt) {
+        sqlite3_finalize(self.handle);
+        self.handle = 0;
+    }
+
+    // ── columns (copies into context.allocator; NULL reads as ""/0) ──
+    column_int64 :: (self: *SqliteStmt, icol: i32) -> i64 {
+        return sqlite3_column_int64(self.handle, icol);
+    }
+    column_double :: (self: *SqliteStmt, icol: i32) -> f64 {
+        return sqlite3_column_double(self.handle, icol);
+    }
+    column_text :: (self: *SqliteStmt, icol: i32) -> string {
+        p := sqlite3_column_text(self.handle, icol);
+        n := sqlite3_column_bytes(self.handle, icol);
+        return sq_copy_bytes(p, xx n);
+    }
+    column_blob :: (self: *SqliteStmt, icol: i32) -> string {
+        p := sqlite3_column_blob(self.handle, icol);
+        n := sqlite3_column_bytes(self.handle, icol);
+        return sq_copy_bytes(p, xx n);
+    }
+    column_bytes :: (self: *SqliteStmt, icol: i32) -> i32 {
+        return sqlite3_column_bytes(self.handle, icol);
+    }
+    column_type :: (self: *SqliteStmt, icol: i32) -> i32 {
+        return sqlite3_column_type(self.handle, icol);
+    }
+    column_count :: (self: *SqliteStmt) -> i32 {
+        return sqlite3_column_count(self.handle);
+    }
+    column_name :: (self: *SqliteStmt, icol: i32) -> string {
+        return sq_from_cstr(sqlite3_column_name(self.handle, icol));
+    }
+    // The declared type from the schema ("" for expressions).
+    column_decltype :: (self: *SqliteStmt, icol: i32) -> string {
+        return sq_from_cstr(sqlite3_column_decltype(self.handle, icol));
+    }
+    column_database_name :: (self: *SqliteStmt, icol: i32) -> string {
+        return sq_from_cstr(sqlite3_column_database_name(self.handle, icol));
+    }
+    column_table_name :: (self: *SqliteStmt, icol: i32) -> string {
+        return sq_from_cstr(sqlite3_column_table_name(self.handle, icol));
+    }
+    column_origin_name :: (self: *SqliteStmt, icol: i32) -> string {
+        return sq_from_cstr(sqlite3_column_origin_name(self.handle, icol));
+    }
+    data_count :: (self: *SqliteStmt) -> i32 {
+        return sqlite3_data_count(self.handle);
+    }
+
+    // ── introspection ──
+    sql :: (self: *SqliteStmt) -> string {
+        return sq_from_cstr(sqlite3_sql(self.handle));
+    }
+    // The SQL with bound parameters substituted; sqlite allocates, we
+    // copy + free.
+    expanded_sql :: (self: *SqliteStmt) -> string {
+        p := sqlite3_expanded_sql(self.handle);
+        s := sq_from_cstr(p);
+        if p != null { sqlite3_free(xx p!); }
+        return s;
+    }
+    busy :: (self: *SqliteStmt) -> bool {
+        return sqlite3_stmt_busy(self.handle) != 0;
+    }
+    readonly :: (self: *SqliteStmt) -> bool {
+        return sqlite3_stmt_readonly(self.handle) != 0;
+    }
+    // 0 = normal, 1 = EXPLAIN, 2 = EXPLAIN QUERY PLAN.
+    isexplain :: (self: *SqliteStmt) -> i32 {
+        return sqlite3_stmt_isexplain(self.handle);
+    }
+    status :: (self: *SqliteStmt, op: i32, reset: bool) -> i32 {
+        return sqlite3_stmt_status(self.handle, op, if reset then 1 else 0);
+    }
+}
+
+// ── table column metadata (ENABLE_COLUMN_METADATA build) ─────────────
+ColumnMeta :: struct {
+    data_type: string;
+    coll_seq: string;
+    not_null: bool;
+    primary_key: bool;
+    autoinc: bool;
+}
+
+// ── connections ───────────────────────────────────────────────────────
+
+// One connection. `open` creates the file per SQLite's defaults;
+// `open_v2` takes SQLITE_OPEN_* flags; `close` is safe on an
+// already-closed handle. Schema-qualified queries default to "main".
+Sqlite :: struct {
+    handle: usize;
+
+    open :: (path: string) -> (Sqlite, !SqliteErr) {
+        h : usize = 0;
+        rc := sqlite3_open(to_cstring(path), @h);
+        if rc != SQLITE_OK {
+            if h != 0 { sqlite3_close(h); }
+            raise error.Open;
+        }
+        return Sqlite.{ handle = h };
+    }
+
+    open_v2 :: (path: string, flags: i32) -> (Sqlite, !SqliteErr) {
+        h : usize = 0;
+        rc := sqlite3_open_v2(to_cstring(path), @h, flags, 0);
+        if rc != SQLITE_OK {
+            if h != 0 { sqlite3_close(h); }
+            raise error.Open;
+        }
+        return Sqlite.{ handle = h };
+    }
+
+    close :: (self: *Sqlite) {
+        if self.handle != 0 { sqlite3_close(self.handle); }
+        self.handle = 0;
+    }
+    // Deferred close: succeeds even with unfinalized statements, the
+    // handle dies once the last one is finalized.
+    close_v2 :: (self: *Sqlite) {
+        if self.handle != 0 { sqlite3_close_v2(self.handle); }
+        self.handle = 0;
+    }
+
+    // Run one or more ;-separated statements with no result rows
+    // (DDL, pragmas, BEGIN/COMMIT). Detail via errmsg on failure.
+    exec :: (self: *Sqlite, sql: string) -> !SqliteErr {
+        rc := sqlite3_exec(self.handle, to_cstring(sql), 0, 0, 0);
+        if rc != SQLITE_OK { raise error.Exec; }
+        return;
+    }
+
+    prepare :: (self: *Sqlite, sql: string) -> (SqliteStmt, !SqliteErr) {
+        sh : usize = 0;
+        rc := sqlite3_prepare_v2(self.handle, sql.ptr, xx sql.len, @sh, 0);
+        if rc != SQLITE_OK { raise error.Prepare; }
+        return SqliteStmt.{ handle = sh, db = self.handle };
+    }
+    // prepare with SQLITE_PREPARE_* flags (e.g. PERSISTENT for the
+    // statement cache a storage layer keeps hot).
+    prepare_v3 :: (self: *Sqlite, sql: string, flags: u32) -> (SqliteStmt, !SqliteErr) {
+        sh : usize = 0;
+        rc := sqlite3_prepare_v3(self.handle, sql.ptr, xx sql.len, flags, @sh, 0);
+        if rc != SQLITE_OK { raise error.Prepare; }
+        return SqliteStmt.{ handle = sh, db = self.handle };
+    }
+
+    // ── errors ──
+    errmsg :: (self: *Sqlite) -> string {
+        return sq_from_cstr(sqlite3_errmsg(self.handle));
+    }
+    errcode :: (self: *Sqlite) -> i32 {
+        return sqlite3_errcode(self.handle);
+    }
+    extended_errcode :: (self: *Sqlite) -> i32 {
+        return sqlite3_extended_errcode(self.handle);
+    }
+    // Byte offset of the most recent error's token in its SQL, -1 if n/a.
+    error_offset :: (self: *Sqlite) -> i32 {
+        return sqlite3_error_offset(self.handle);
+    }
+    extended_result_codes :: (self: *Sqlite, on: bool) {
+        sqlite3_extended_result_codes(self.handle, if on then 1 else 0);
+    }
+
+    // ── state & control ──
+    busy_timeout :: (self: *Sqlite, ms: i32) {
+        sqlite3_busy_timeout(self.handle, ms);
+    }
+    interrupt :: (self: *Sqlite) {
+        sqlite3_interrupt(self.handle);
+    }
+    is_interrupted :: (self: *Sqlite) -> bool {
+        return sqlite3_is_interrupted(self.handle) != 0;
+    }
+    get_autocommit :: (self: *Sqlite) -> bool {
+        return sqlite3_get_autocommit(self.handle) != 0;
+    }
+    // SQLITE_TXN_NONE / _READ / _WRITE for the "main" schema.
+    txn_state :: (self: *Sqlite) -> i32 {
+        return sqlite3_txn_state(self.handle, to_cstring("main"));
+    }
+    db_filename :: (self: *Sqlite) -> string {
+        return sq_from_cstr(sqlite3_db_filename(self.handle, to_cstring("main")));
+    }
+    // 1 readonly, 0 read-write, -1 no such database name.
+    db_readonly :: (self: *Sqlite) -> i32 {
+        return sqlite3_db_readonly(self.handle, to_cstring("main"));
+    }
+    cacheflush :: (self: *Sqlite) {
+        sqlite3_db_cacheflush(self.handle);
+    }
+    db_release_memory :: (self: *Sqlite) {
+        sqlite3_db_release_memory(self.handle);
+    }
+    last_insert_rowid :: (self: *Sqlite) -> i64 {
+        return sqlite3_last_insert_rowid(self.handle);
+    }
+    set_last_insert_rowid :: (self: *Sqlite, rowid: i64) {
+        sqlite3_set_last_insert_rowid(self.handle, rowid);
+    }
+    changes :: (self: *Sqlite) -> i64 {
+        return sqlite3_changes64(self.handle);
+    }
+    total_changes :: (self: *Sqlite) -> i64 {
+        return sqlite3_total_changes64(self.handle);
+    }
+    // Set a SQLITE_LIMIT_* runtime limit; answers the PRIOR value.
+    // new_val < 0 reads without changing.
+    limit :: (self: *Sqlite, id: i32, new_val: i32) -> i32 {
+        return sqlite3_limit(self.handle, id, new_val);
+    }
+
+    // Schema introspection for one column of "main".`table`.
+    table_column_metadata :: (self: *Sqlite, table: string, column: string) -> (ColumnMeta, !SqliteErr) {
+        dt : usize = 0;
+        cs : usize = 0;
+        nn : i32 = 0;
+        pk : i32 = 0;
+        ai : i32 = 0;
+        rc := sqlite3_table_column_metadata(self.handle, to_cstring("main"), to_cstring(table), to_cstring(column), @dt, @cs, @nn, @pk, @ai);
+        if rc != SQLITE_OK { raise error.Metadata; }
+        dtp : ?*u8 = if dt != 0 then dt.(*u8).(?*u8) else null;
+        csp : ?*u8 = if cs != 0 then cs.(*u8).(?*u8) else null;
+        return ColumnMeta.{
+            data_type = sq_from_cstr(dtp), coll_seq = sq_from_cstr(csp),
+            not_null = nn != 0, primary_key = pk != 0, autoinc = ai != 0,
+        };
+    }
+
+    // ── serialization ──
+    // The whole "main" database as bytes (a valid database image).
+    serialize :: (self: *Sqlite) -> (string, !SqliteErr) {
+        size : i64 = 0;
+        p := sqlite3_serialize(self.handle, to_cstring("main"), @size, 0);
+        if p == null { raise error.Serialize; }
+        out := sq_copy_bytes(p, size);
+        sqlite3_free(xx p!);
+        return out;
+    }
+    // Replace "main" with the database image in `bytes`. The image is
+    // copied into sqlite-owned memory (FREEONCLOSE+RESIZEABLE), so
+    // `bytes` may die immediately after.
+    deserialize :: (self: *Sqlite, bytes: string) -> !SqliteErr {
+        buf := sqlite3_malloc64(xx (bytes.len));
+        if buf == 0 { raise error.Serialize; }
+        bp : [*]u8 = xx buf;
+        c.memcpy(bp, bytes.ptr, bytes.len);
+        rc := sqlite3_deserialize(self.handle, to_cstring("main"), buf, bytes.len, bytes.len,
+                                  SQLITE_DESERIALIZE_FREEONCLOSE | SQLITE_DESERIALIZE_RESIZEABLE);
+        if rc != SQLITE_OK { raise error.Serialize; }
+        return;
+    }
+}
+
+// ── incremental blob I/O ──────────────────────────────────────────────
+
+// An open handle onto one blob cell ("main".`table`.`column` at `rowid`).
+// Reserve space with bind_zeroblob, then stream through this. The handle
+// cannot change a blob's SIZE — that's an UPDATE.
+SqliteBlob :: struct {
+    handle: usize;
+
+    open :: (db: *Sqlite, table: string, column: string, rowid: i64, writable: bool) -> (SqliteBlob, !SqliteErr) {
+        h : usize = 0;
+        rc := sqlite3_blob_open(db.handle, to_cstring("main"), to_cstring(table), to_cstring(column),
+                                rowid, if writable then 1 else 0, @h);
+        if rc != SQLITE_OK { raise error.Blob; }
+        return SqliteBlob.{ handle = h };
+    }
+    // Point this handle at the same column in a DIFFERENT row (cheaper
+    // than close + open).
+    reopen :: (self: *SqliteBlob, rowid: i64) -> !SqliteErr {
+        rc := sqlite3_blob_reopen(self.handle, rowid);
+        if rc != SQLITE_OK { raise error.Blob; }
+        return;
+    }
+    bytes :: (self: *SqliteBlob) -> i32 {
+        return sqlite3_blob_bytes(self.handle);
+    }
+    read :: (self: *SqliteBlob, offset: i32, n: i32) -> (string, !SqliteErr) {
+        len : i64 = n;
+        raw : [*]u8 = xx context.allocator.alloc_bytes(len + 1);
+        rc := sqlite3_blob_read(self.handle, raw, n, offset);
+        if rc != SQLITE_OK { raise error.Blob; }
+        raw[len] = 0;
+        return string.{ ptr = raw, len = len };
+    }
+    write :: (self: *SqliteBlob, offset: i32, data: string) -> !SqliteErr {
+        rc := sqlite3_blob_write(self.handle, data.ptr, xx data.len, offset);
+        if rc != SQLITE_OK { raise error.Blob; }
+        return;
+    }
+    close :: (self: *SqliteBlob) {
+        if self.handle != 0 { sqlite3_blob_close(self.handle); }
+        self.handle = 0;
+    }
+}
+
+// ── online backup ─────────────────────────────────────────────────────
+
+// Copy `src`'s "main" into `dst`'s "main" page by page while both stay
+// usable. `run` drives it to completion in one call; `step` exposes the
+// incremental form.
+SqliteBackup :: struct {
+    handle: usize;
+
+    init :: (dst: *Sqlite, src: *Sqlite) -> (SqliteBackup, !SqliteErr) {
+        h := sqlite3_backup_init(dst.handle, to_cstring("main"), src.handle, to_cstring("main"));
+        if h == 0 { raise error.Backup; }
+        return SqliteBackup.{ handle = h };
+    }
+    // Copy up to `n` pages (-1 = all remaining). SQLITE_OK = more to do,
+    // SQLITE_DONE = complete; BUSY/LOCKED are retryable per the C API.
+    step :: (self: *SqliteBackup, n: i32) -> i32 {
+        return sqlite3_backup_step(self.handle, n);
+    }
+    remaining :: (self: *SqliteBackup) -> i32 {
+        return sqlite3_backup_remaining(self.handle);
+    }
+    pagecount :: (self: *SqliteBackup) -> i32 {
+        return sqlite3_backup_pagecount(self.handle);
+    }
+    finish :: (self: *SqliteBackup) -> i32 {
+        rc := sqlite3_backup_finish(self.handle);
+        self.handle = 0;
+        return rc;
+    }
+}
+
+// One-shot full copy of src."main" into dst."main".
+sqlite_backup_run :: (dst: *Sqlite, src: *Sqlite) -> !SqliteErr {
+    bk := try SqliteBackup.init(dst, src);
+    rc := bk.step(-1);
+    frc := bk.finish();
+    if rc != SQLITE_DONE or frc != SQLITE_OK { raise error.Backup; }
+    return;
+}

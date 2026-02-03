@@ -1,0 +1,27 @@
+// Option 3 — `xx <lvalue>` borrows the operand's storage instead of
+// heap-copying. The protocol value's `ctx` points directly at the local;
+// mutations through the protocol are visible to the original.
+//
+// The witness is TrackingAllocator: incrementing the parent allocator's
+// counter happens through the Allocator protocol value. If `xx tracker`
+// heap-copied the Tracker, the parent counter would land in the copy
+// and the local would stay at zero. With Option 3 the local sees the
+// increments because they ARE the local.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    tracker := TrackingAllocator.init(xx gpa);   // value, stack-local
+
+    // xx tracker — operand is an identifier (lvalue), so the protocol
+    // borrows tracker's storage. No heap copy. Mutations propagate.
+    push .{ allocator = tracker } {
+        p := context.allocator.alloc_bytes(128);
+        context.allocator.dealloc_bytes(p);
+    }
+
+    print("alloc_count   = {}\n", tracker.alloc_count);
+    print("dealloc_count = {}\n", tracker.dealloc_count);
+    return 0;
+}

@@ -1,0 +1,5 @@
+// Two lib-less `extern` C-symbol imports: each declares a C function
+// resolved at link time with no library reference. Both are policed by
+// the non-transitive C-import visibility gate, per-symbol.
+c_abs_one :: (x: i32) -> i32 extern;
+c_abs_two :: (x: i32) -> i32 extern;

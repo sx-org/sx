@@ -1,0 +1,4 @@
+// One of two flat-imported `Box` authors. With no own author, the concrete
+// `*Box` leaf — even when NESTED inside a parameterized pattern — is a genuine
+// collision the importing source cannot disambiguate.
+Box :: struct { a: i32; }

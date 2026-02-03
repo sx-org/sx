@@ -1,0 +1,31 @@
+// Regression (issue 0142): a comptime-minted FULLY payloadless enum (every
+// variant tagless) must mint as a real `.@"enum"`, not an all-void tagged_union
+// — the latter has an IR/LLVM size mismatch that tripped `verifySizes` at
+// codegen. `make_enum` (declare/define) with an all-void variant list now
+// produces an ordinary enum, usable like a hand-written one.
+
+#import "modules/std.sx";
+#import "modules/std/meta.sx";
+
+make_suit :: () -> Type {
+    return make_enum("Suit", .[
+        EnumVariant.{ name = "hearts",   payload = void },
+        EnumVariant.{ name = "spades",   payload = void },
+        EnumVariant.{ name = "diamonds", payload = void },
+    ]);
+}
+Suit :: make_suit();
+
+show :: (s: Suit) {
+    if s == {
+        case .hearts:   { print("hearts\n"); }
+        case .spades:   { print("spades\n"); }
+        case .diamonds: { print("diamonds\n"); }
+    }
+}
+
+main :: () {
+    show(.spades);       // leading-dot, typed context
+    x := Suit.diamonds;  // qualified construction
+    show(x);
+}

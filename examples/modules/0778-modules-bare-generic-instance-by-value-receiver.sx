@@ -1,0 +1,20 @@
+// A BARE generic struct instance method with a BY-VALUE receiver (`self: Box`)
+// must dispatch to the VISIBLE author's method, whose receiver ABI matches the
+// VISIBLE author's layout. The single visible `b.Box` is one field (size 8); the
+// 2-flat-hop `c.Box` is two fields (size 16). Selecting `c.Box.dbl` (a `{i64,i64}`
+// by-value receiver) for a `b.Box` instance (`{i64}`) mismatches the layout.
+//
+// Regression (Phase E4 finding #1, by-value receiver variant): before
+// body-author ≡ layout-author, the instance method resolved by bare template name
+// and selected `c.Box.dbl`, whose by-value receiver signature did not match the
+// `b.Box` instance layout (an LLVM verify failure / wrong body). With the fix it
+// runs `b.Box.dbl` (`self.x * 2`).
+
+#import "modules/std.sx";
+#import "0778-modules-bare-generic-instance-by-value-receiver/b.sx";
+
+main :: () -> i32 {
+    x := Box(i64).make(5);
+    print("size={} dbl={}\n", size_of(type_of(x)), x.dbl());
+    0
+}

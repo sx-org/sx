@@ -1,0 +1,63 @@
+// Stream B2 — structured first-wins `race` over `context.io` (PLAN-IO-UNIFY
+// Phase 4). `context.io.race(.(a = fa, b = fb, c = fc))` takes a named tuple of
+// already-spawned `*Future(..)` handles (from `context.io.async`), SUSPENDS the
+// calling fiber until the FIRST is `.ready`, and returns a comptime-SYNTHESIZED
+// tagged-union (`RaceResult`) mirroring the tuple's labels — variant NAME = the
+// tuple label, payload = that future's result type. Here the three workers return
+// DIFFERENT types (i64 / bool / f64), so the minted union is
+// `enum { a: i64; b: bool; c: f64 }` and the winner is matched by label.
+//
+// TRUE cancellation (Phase 3): the workers sleep 10/20/30 ms (deterministic
+// virtual clock), so `a` wins at t=10. The losers `b`/`c` are parked mid-`sleep`
+// when cancelled; their next `suspend_raw` raises `Canceled` and unwinds the body,
+// so their POST-SLEEP `rec(...)` NEVER runs and `race` returns at WINNER-time. The
+// completion log therefore shows ONLY `a @ 10ms`, and the final virtual clock is
+// 10 — NOT 30 (the old cooperative-join behaviour that let losers run to their
+// natural end). The losers end `.canceled` with their work stopped.
+//
+// aarch64-pinned (the scheduler's per-arch asm + per-OS mmap/event constants):
+// runs end-to-end on a matching host (macOS + linux), ir-only on a mismatch.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+Log :: struct { id: [8]i64; at: [8]i64; n: i64; }
+rec :: (l: *Log, id: i64, at: i64) { l.id[l.n] = id; l.at[l.n] = at; l.n = l.n + 1; }
+
+main :: () -> i64 {
+    lg : Log = ---; lg.n = 0;
+    s := sched.Scheduler.init();
+    ps := @s; pl := @lg;
+
+    // The coordinator runs as a fiber so `race` has a `current` to park.
+    push .{ io = xx s } {
+        ps.spawn(() {
+            // Three async workers, DIFFERENT result types and sleep durations.
+            a := context.io.async(() -> (i64,  !) { try context.io.sleep(10); rec(pl, 1, context.io.now_ms()); 111 });
+            b := context.io.async(() -> (bool, !) { try context.io.sleep(20); rec(pl, 2, context.io.now_ms()); true });
+            c := context.io.async(() -> (f64,  !) { try context.io.sleep(30); rec(pl, 3, context.io.now_ms()); 2.5 });
+
+            // Race them. `a` (sleep 10) wins; `b` and `c` are cancelled — their
+            // post-sleep work never runs (true cancellation).
+            winner := context.io.race(.{a = a, b = b, c = c});
+            if winner == {
+                case .a: (v) { print("winner: a (i64)  = {}\n", v); }
+                case .b: (v) { print("winner: b (bool) = {}\n", v); }
+                case .c: (v) { print("winner: c (f64)  = {}\n", v); }
+            }
+
+            // The losers were cancelled; their work was stopped at the suspend.
+            print("loser b: canceled={}\n", b.state == .canceled);
+            print("loser c: canceled={}\n", c.state == .canceled);
+        });
+        ps.run();
+    }
+
+    print("completion order (id @ virtual-ms):\n");
+    i := 0;
+    while i < lg.n {
+        print("  task {} @ {}ms\n", lg.id[i], lg.at[i]);
+        i = i + 1;
+    }
+    print("final virtual clock: {}ms\n", s.now_ms());
+    return 0;
+}

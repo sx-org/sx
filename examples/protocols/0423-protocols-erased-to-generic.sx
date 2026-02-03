@@ -1,0 +1,61 @@
+// Erasing a builtin VALUE to a protocol, and passing an already-erased
+// protocol value to a generic `$T` parameter.
+//
+// Regression (issue 0279): a builtin scalar (`f32`) erased to a protocol
+// took a code path that passed the raw scalar as the erased value's ctx
+// pointer, producing a malformed `insertvalue {ptr,ptr} undef, float, 0`
+// and an LLVM verification failure. Erasing a value (not a `*T` pointer)
+// must materialize storage for the ctx pointer.
+//
+// Semantics: passing an erased protocol value `a: Lerpable` to `check($T)`
+// binds `T = Lerpable` (the erased fat-pointer type) and forwards the value
+// unchanged — no re-erase, no unwrap.
+
+#import "modules/std.sx";
+
+Lerpable :: protocol {
+    lerp :: (self: Self, b: f32, t: f32) -> f32;
+    name :: (self: Self) -> string;
+}
+impl Lerpable for f32 {
+    lerp :: (self: f32, b: f32, t: f32) -> f32 { self + (b - self) * t }
+    name :: (self: f32) -> string { "f32" }
+}
+
+// Generic param that USES the erased value through the protocol.
+run1 :: (v: $T) -> f32 { v.lerp(3.0, 0.5) }
+// Second generic hop — forwards the already-erased value to another generic.
+run2 :: (v: $U) -> f32 { run1(v) }
+
+use_one :: (a: Lerpable) -> f32 { run1(a) }
+use_two :: (a: Lerpable) -> f32 { run2(a) }
+
+// Bind an erased value into a container/struct field.
+Holder :: struct { item: Lerpable; }
+use_struct :: (a: Lerpable) -> string {
+    h := Holder.{ item = a };
+    h.item.name()
+}
+
+// A generic `$T` called with a CONCRETE (non-erased) value still works.
+gen_concrete :: (v: $T) -> f32 { v.lerp(3.0, 0.5) }
+
+main :: () {
+    x : f32 = 1.0;
+
+    // Direct erasure of a builtin value to a protocol param.
+    print("use_one    = {}\n", use_one(x.(Lerpable)));       // lerp(1,3,0.5) = 2
+
+    // Two generic hops carrying the erased value.
+    print("use_two    = {}\n", use_two(x.(Lerpable)));       // 2
+
+    // Explicit `xx` of a builtin VALUE to a protocol.
+    l := x.(Lerpable);
+    print("via_cast   = {}\n", l.lerp(3.0, 0.5)); // 2
+
+    // Erased value bound into a struct field (multi-method protocol).
+    print("use_struct = {}\n", use_struct(x.(Lerpable)));    // "f32"
+
+    // Concrete (non-erased) value into a generic $T.
+    print("gen_concr  = {}\n", gen_concrete(x));  // 2
+}

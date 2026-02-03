@@ -1,0 +1,42 @@
+// The ownership cutover (E4) DEMAND diagnostics: a value/own protocol
+// value always OWNS its ctx, so the retired borrow spellings are compile
+// errors with the copy/view fixits —
+//   - implicit lvalue erasure (decl, call arg, struct field);
+//   - `xx <lvalue>` (xx is the conversion operator, not an ownership
+//     spelling);
+//   - pointer-to-concrete at a P target;
+// plus the two `.(P, alloc)` refusals: an rvalue allocator argument, and
+// `.(P, alloc)` on an `#identity` target (a borrow allocates nothing).
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Sizable :: protocol { size :: (self: *Self) -> i64; }
+W :: struct { v: i64; }
+impl Sizable for W { size :: (self: *W) -> i64 { self.v } }
+Holder :: struct { s: Sizable; }
+
+IdP :: protocol #identity { ping :: (self: *Self) -> i64; }
+impl IdP for W { ping :: (self: *W) -> i64 { self.v } }
+
+use_val :: (s: Sizable) -> i64 { s.size() }
+mk_gpa :: () -> GPA { GPA.init() }
+
+main :: () {
+    w := W.{ v = 1 };
+
+    a : Sizable = w;            // implicit lvalue at a decl → demand
+    _ = a;
+    b : Sizable = xx w;         // xx lvalue → same demand
+    _ = b;
+    _ = use_val(w);             // implicit lvalue call arg → demand
+    h : Holder = .{ s = w };    // implicit lvalue struct field → demand
+    _ = h;
+    pw : *W = @w;
+    c : Sizable = xx pw;        // pointer-to-concrete at a P target → demand
+    _ = c;
+
+    d := w.(Sizable, mk_gpa()); // allocator argument must be an lvalue
+    _ = d;
+    e := w.(IdP, context.allocator); // .(P, alloc) on #identity → refusal
+    _ = e;
+}

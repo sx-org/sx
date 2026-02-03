@@ -1,0 +1,23 @@
+error: 'eq' is unavailable on an erased 'Eq' value — its parameter 'other: Self' has no expressible type here ('Self' denotes no type through erasure); call it through a generic bound instead: `f :: (a: $T/Eq, b: T) { a.eq(b); }`
+  --> examples/diagnostics/1253-diagnostics-era2-excluded-method-call.sx:42:19
+   |
+42 |     print("{}\n", e.eq(q));         // excluded through P → refusal + fixit
+   |                   ^^^^
+
+error: 'eq' is unavailable on an erased 'Eq' value — its parameter 'other: Self' has no expressible type here ('Self' denotes no type through erasure); call it through a generic bound instead: `f :: (a: $T/Eq, b: T) { a.eq(b); }`
+  --> examples/diagnostics/1253-diagnostics-era2-excluded-method-call.sx:45:19
+   |
+45 |     print("{}\n", pv.eq(q));        // excluded through *P → same refusal
+   |                   ^^^^^
+
+error: 'clone' is unavailable on an erased 'Cloneable' value — its return type mentions 'Self', which has no expressible type here ('Self' denotes no type through erasure); call it through a generic bound instead: `f :: (a: $T/Cloneable) -> T { a.clone() }`
+  --> examples/diagnostics/1253-diagnostics-era2-excluded-method-call.sx:48:11
+   |
+48 |     p2 := c.clone();                // Self return → return-position refusal
+   |           ^^^^^^^
+
+error: 'Bad' does not implement protocol 'Eq': no `impl Eq for Bad` provides method 'eq' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)
+  --> examples/diagnostics/1253-diagnostics-era2-excluded-method-call.sx:52:11
+   |
+52 |     eb := b.(Eq);                   // missing excluded method → conformance error
+   |           ^^^^^^

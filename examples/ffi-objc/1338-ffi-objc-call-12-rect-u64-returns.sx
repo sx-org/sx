@@ -1,0 +1,61 @@
+// Backfill for Phase 1D cluster 1.32 (PLAN-FFI.md): `#objc_call(CGRect)`
+// and `#objc_call(u64)` against `class_addMethod`-registered IMPs.
+// Both shapes were already exercised transitively in earlier work —
+// CGRect is structurally a 4×f64 HFA (same as UIEdgeInsets from
+// ffi-objc-call-07), and u64 is i64 at the LLVM level (same as the
+// i64 return from ffi-objc-call-04's `hash`). The cluster-1.32
+// migration of `uikit_keyboard_will_change_frame` was the first
+// place we used both shapes through `#objc_call` directly, but the
+// keyboard-change-frame callback isn't reached by the chess launch
+// path, so this test gives the two shapes their own runtime lockdown.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+CGRect :: struct {
+    x: f64;
+    y: f64;
+    width: f64;
+    height: f64;
+}
+
+rect_imp :: (self: *void, _cmd: *void) -> CGRect abi(.c) {
+    CGRect.{ x = 10.5, y = 20.5, width = 30.5, height = 40.5 }
+}
+
+u64_imp :: (self: *void, _cmd: *void) -> u64 abi(.c) {
+    // sx integer-literal parser rejects values ≥ 2^63 even when the
+    // receiving type is u64, so the leading bit stays clear.
+    0x7FEDCBA987654321
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        ns_object := objc_getClass("NSObject".ptr);
+        my_cls := objc_allocateClassPair(ns_object, "SxRectU64Probe".ptr, 0);
+
+        // CGRect type encoding: {CGRect={CGPoint=dd}{CGSize=dd}}@: for a
+        // strict structural encoding, but the runtime accepts the
+        // flattened `{CGRect=dddd}@:` form for IMP registration since
+        // arm64 BOOL/struct returns route on the ABI shape, not on the
+        // type-encoding's nested-struct structure.
+        sel_rect := sel_registerName("rect".ptr);
+        sel_uval := sel_registerName("uval".ptr);
+        class_addMethod(my_cls, sel_rect, xx rect_imp, "{CGRect=dddd}@:".ptr);
+        class_addMethod(my_cls, sel_uval, xx u64_imp,  "Q@:".ptr);
+        objc_registerClassPair(my_cls);
+
+        instance := class_createInstance(my_cls, 0);
+
+        r := #objc_call(CGRect)(instance, "rect");
+        print("rect = ({}, {}, {}, {})\n", r.x, r.y, r.width, r.height);
+
+        u := #objc_call(u64)(instance, "uval");
+        print("uval = {}\n", u);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

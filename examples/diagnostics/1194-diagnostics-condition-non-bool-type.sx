@@ -1,0 +1,16 @@
+// A branch condition (`if` / `while` / `and` / `or`) must reduce to an i1:
+// its type must be a bool, integer, pointer, or optional. A struct (or float,
+// etc.) has no truthiness — it used to be silently folded truthy at lowering
+// then `@panic` in the LLVM backend (issue 0164). It must instead be a clean,
+// located compile-time TYPE error.
+//
+// Negative test: locks the new diagnostic. `if <struct>` is rejected.
+#import "modules/std.sx";
+
+S :: struct { x: i64; }
+
+main :: () -> i64 {
+    s : S = .{ x = 1 };
+    if s { return 1; }   // ERROR: condition must be a bool, integer, pointer, or optional
+    return 0;
+}

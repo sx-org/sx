@@ -1,0 +1,19 @@
+// Zero is a context-dependent count. An array dimension and a generic
+// value-param count both ACCEPT zero — `[0]T` is a valid empty (zero-length)
+// array, and `Box(0)` is a length-0 instantiation. (A `Vector` lane count
+// rejects zero — see 1505.) This pins the zero-accepting half of the
+// context-dependent count rule documented in specs.md (Array Types).
+//
+// Regression (F0.4 attempt 12): the spec previously claimed every count must be
+// "positive integral", which wrongly implied `[0]T` / `Box(0)` are illegal.
+#import "modules/std.sx";
+
+Box :: struct($N: u32) { items: [N]i64; }
+
+main :: () {
+    a : [0]i64 = ---;
+    print("array_dim={}\n", a.len);
+
+    b : Box(0) = ---;
+    print("value_param={}\n", b.items.len);
+}

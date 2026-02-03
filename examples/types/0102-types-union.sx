@@ -1,0 +1,48 @@
+#import "modules/std.sx";
+
+Shape :: enum {
+    circle: f32;
+    rect: struct { w, h: f32;};
+    none;
+}
+
+main :: () {
+    // Construction with .variant(payload)
+    s :Shape = .circle(3.14);
+    print("circle: {}\n", s);
+
+    // Payload access
+    r := s.circle;
+    print("radius: {}\n", r);
+
+    // Void variant via enum literal
+    s = .none;
+    print("none: {}\n", s);
+
+    // Reassign with payload
+    s = .rect(.{4, 2});
+    print("rect: {}\n", s);
+
+    // Explicit prefix construction
+    sh :Shape = Shape.circle(2.71);
+    print("sh: {}\n", sh);
+
+    // Field access on second variable
+    sh2 :Shape = .rect(.{2,4});
+    val := sh2.rect;
+    print("rect val: {}\n", val);
+
+    // Match on enum
+    if sh2 == {
+        case .circle: print("matched circle\n");
+        case .rect: print("matched rect\n");
+        case .none: print("matched none\n");
+    }
+
+    cs := if sh2 == {
+        case .circle: 1;
+        case .rect: 2;
+        case .none: 3;
+    }
+    print("case : {}", cs);
+}

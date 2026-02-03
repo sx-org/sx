@@ -1,0 +1,2 @@
+libc :: #library "c";
+abs :: (n: i32) -> i32 extern libc;

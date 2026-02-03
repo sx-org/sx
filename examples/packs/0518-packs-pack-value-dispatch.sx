@@ -1,0 +1,44 @@
+// Variadic heterogeneous type packs — step 4 source-construction
+// path: `$args[$i]` in expression position yields a comptime Type
+// VALUE (`Value.type_tag(TypeId)` in the interp). Lets builders +
+// pack-fn bodies dispatch on the i-th pack type at compile time.
+//
+// Two usage shapes covered here:
+//
+// 1. `type_name($args[0])` — the value-form Type goes through the
+//    reflection intrinsic, picking up the per-mono concrete type.
+//
+// 2. `inline if type_eq($args[0], i64) { ... }` — compile-time
+//    branch over the pack element's type. The fold via
+//    `tryConstBoolCondition` reads $args[0] via `resolveTypeArg`,
+//    which the step-4 work taught to walk `pack_arg_types`.
+//
+// Lowering: `$args[$i]` in expression position emits a
+// `const_type(arg_types[i])` IR op. The interp materialises a
+// `Value.type_tag(TypeId)`. LLVM emit bails (Type is comptime-only).
+
+#import "modules/std.sx";
+
+show :: (..$args) -> string => type_name($args[0]);
+
+describe :: (..$args) -> string {
+    inline if type_eq($args[0], i64) { return "got i64"; }
+    inline if type_eq($args[0], string) { return "got string"; }
+    inline if type_eq($args[0], bool) { return "got bool"; }
+    return "got other";
+}
+
+main :: () -> i32 {
+    // type_name picks up the per-mono first-arg type.
+    print("{}\n", show(42));         // i64
+    print("{}\n", show("hi"));        // string
+    print("{}\n", show(3.14));        // f64
+
+    // inline-if + type_eq picks the right branch per mono.
+    print("{}\n", describe(42));      // got i64
+    print("{}\n", describe("hello"));  // got string
+    print("{}\n", describe(true));     // got bool
+    print("{}\n", describe(3.14));     // got other
+
+    return 0;
+}

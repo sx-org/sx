@@ -1,0 +1,35 @@
+// Float `!=` is UNORDERED not-equal: `nan != nan` is true (the canonical
+// `x != x` NaN idiom), and `!=` is the exact complement of `==` for every
+// float input — including NaN, where `nan == nan` is false (ordered `==`).
+// For all non-NaN operands unordered `!=` matches ordered `!=`, so finite
+// comparisons are unchanged. The native backend agrees with the interpreter.
+//
+// Regression (issue 0091): the LLVM backend lowered float `!=` to ordered
+// not-equal (LLVMRealONE), so `nan != nan` was false in native code.
+#import "modules/std.sx";
+
+main :: () {
+    // Produce a genuine NaN without any numeric-limit accessor: 0.0 / 0.0.
+    z := 0.0;
+    nan := z / z;
+
+    // The fix: `!=` is unordered, `==` is ordered.
+    print("nan != nan: {}\n", nan != nan);   // true
+    print("nan == nan: {}\n", nan == nan);   // false
+    print("nan != 1.0: {}\n", nan != 1.0);   // true
+    print("nan == 1.0: {}\n", nan == 1.0);   // false
+
+    // Complementarity holds for finite operands too (unchanged behavior).
+    print("1.0 != 2.0: {}\n", 1.0 != 2.0);   // true
+    print("1.0 != 1.0: {}\n", 1.0 != 1.0);   // false
+    print("2.0 != 2.0: {}\n", 2.0 != 2.0);   // false
+
+    // Native codegen converges with the comptime interpreter.
+    print("comptime nan != nan: {}\n", #run nan_ne_nan());
+}
+
+nan_ne_nan :: () -> bool {
+    z := 0.0;
+    n := z / z;
+    return n != n;
+}

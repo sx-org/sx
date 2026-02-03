@@ -1,0 +1,14 @@
+// A `#run` body executes in the comptime VM under the same assembled default
+// context the binary gets: an added field's default is readable at comptime.
+// One source of truth — the VM materializes `__sx_default_context`, so the
+// constant the LLVM backend emits and the value `#run` sees cannot diverge.
+#import "modules/std.sx";
+
+#context_extend build_tag: i64 = 1234;
+
+TAG :: #run context.build_tag;
+
+main :: () {
+    print("comptime read the default: {}\n", TAG);
+    print("runtime reads it too: {}\n", context.build_tag);
+}

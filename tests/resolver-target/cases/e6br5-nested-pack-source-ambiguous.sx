@@ -1,0 +1,48 @@
+// E6BR-5 regression — the open nested-pattern ambiguity hole that PAUSED E6b,
+// re-filed under Fork C as a RESOLVER-TARGET regression (NOT an E6b attempt-6).
+//
+// Shape: a param-impl SOURCE pattern whose concrete `*Box` leaf is NESTED inside
+// an inner parameterized form that itself carries unbound pack parts
+// (`Closure(*Box, ..$inner) -> $IR`). On flow/stdlib/E6b the bug lived in
+// `walkConcreteSigArgs` (lower.zig:14686): it SKIPS any direct arg that has an
+// unbound part instead of RECURSING into it, so the nested concrete `*Box` leaf
+// is never ambiguity-checked — `impl ... for Closure(Closure(*Box, ..)->.., ..)->..`
+// compiled rc=0 while the DIRECT `Closure(*Box, ..)` form (0829) errored. It was
+// the 3rd consecutive major on the parameterized-pattern surface
+// (bare E6BR-2 -> wrapped E6BR-4 -> nested E6BR-5).
+//
+// CURRENT BASE (wt-stdlib-base, E6b unmerged): both the direct AND the nested
+// concrete leaf silently resolve via the pre-E6BR-4 no-author wrapper path
+// (`type_bridge.resolveTemplateSignatureType`, global last-wins) — this program
+// exits 0 with NO diagnostic. Run it to see the fail-before.
+//
+// TARGET (Fork C, flips active+green at S3.9): the whole-AST resolver walks EVERY
+// reference position — including nested parameterized-pattern leaves — so the
+// nested `Box` is ambiguity-checked like any other reference and the build emits
+// the loud "type 'Box' is ambiguous" diagnostic and exits 1. The exact golden
+// bytes are produced by the resolver at S3.9 (no oracle produces them today);
+// see ../expected/e6br5-nested-pack-source-ambiguous.target.md for the spec.
+//
+// WHY SUBSUMED (one line): a resolver that resolves every reference position has
+// no notion of "skip a nested arg with an unbound sibling" — the nested `*Box`
+// leaf is resolved by construction, so the hole cannot exist.
+
+#import "modules/std.sx";
+#import "e6br5-nested-pack-source-ambiguous/a.sx";
+#import "e6br5-nested-pack-source-ambiguous/b.sx";
+
+Block :: struct { tag: i32; }
+
+Sink :: protocol(T: Type) {
+    convert :: (self: Self) -> T;
+}
+
+impl Sink(Block) for Closure(Closure(*Box, ..$inner) -> $IR, ..$args) -> $R {
+    convert :: (self: Closure(Closure(*Box, ..$inner) -> $IR, ..$args) -> $R) -> Block {
+        .{ tag = 0 }
+    }
+}
+
+main :: () -> i32 {
+    0
+}

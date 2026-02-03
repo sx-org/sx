@@ -1,0 +1,17 @@
+// A capturing closure rides through `xx ... : Block` and the
+// captured state survives across the call. The block's sx_env field
+// holds the closure's env pointer; the invoke trampoline restores it
+// before delegating.
+
+#import "modules/std.sx";
+#import "modules/ffi/objc_block.sx";
+
+main :: () -> i32 {
+  x : i64 = 42;
+  y : i64 = 100;
+  cl := () { print("x + y = {}\n", x + y); };
+  b : Block = xx cl;
+  invoke_fn : (*Block) -> void abi(.c) = xx b.invoke;
+  invoke_fn(@b);
+  0
+}

@@ -1,0 +1,31 @@
+// Multi-return signatures: a function may return MULTIPLE values, written as a
+// bare-paren list in the return slot — `-> (i64, bool)` (positional) or
+// `-> (sum: i32, bigger: bool)` (named). The returned values use the bare comma
+// `return a, b` form (no `.(…)` literal).
+//
+// The result is consumed either by DESTRUCTURING (`q, r := f()`) or by binding
+// it to a single name and reaching the value slots by field (`c := f(); c.sum`).
+// A multi-return is return-position-only as a TYPE: a parameter / variable
+// annotation `x: (A, B)` is rejected — use `Tuple(…)` for a tuple value.
+#import "modules/std.sx";
+
+// Positional multi-return.
+divmod :: (a: i64, b: i64) -> (i64, i64) {
+    return a / b, a % b;
+}
+
+// Named multi-return — the slot names ride the signature.
+stats :: (a: i32, b: i32) -> (sum: i32, bigger: bool) {
+    return sum = a + b, bigger = a > b;
+}
+
+main :: () -> i64 {
+    // Destructure the values.
+    q, r := divmod(17, 5);
+    print("17 / 5 = {} rem {}\n", q, r);
+
+    // …or bind once and reach the named slots by field.
+    c := stats(40, 2);
+    print("sum={} bigger={}\n", c.sum, c.bigger);
+    return 0;
+}

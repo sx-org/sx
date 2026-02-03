@@ -1,0 +1,8 @@
+default trace_depth = 3
+default marker is null = true
+reader (no import of decl_mod) sees 3
+pushed trace_depth = 7
+pushed marker = 5
+reader inside push sees 7
+inner trace_depth = 7, marker null = true
+restored trace_depth = 3

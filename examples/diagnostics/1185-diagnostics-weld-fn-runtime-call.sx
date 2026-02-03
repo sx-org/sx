@@ -1,0 +1,15 @@
+// Diagnostic: a welded `compiler`-library function is comptime-only — it has no
+// runtime symbol (the comptime interpreter dispatches it to a Zig handler).
+// Calling one from runtime code is a build error with a clear message, NOT an
+// undefined-symbol link failure. (A comptime use — inside `#run` or a `::` —
+// is fine; see examples/0626.)
+
+#import "modules/std.sx";
+
+
+StringId :: u32;
+
+main :: () {
+    id := raw_intern("called at runtime");
+    print("{}\n", id);
+}

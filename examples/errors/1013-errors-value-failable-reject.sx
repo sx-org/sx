@@ -1,0 +1,19 @@
+// Value-carrying `catch` rejection (ERR step E2.1b): when the failable LHS
+// carries a value, a non-diverging catch handler must produce a value of the
+// success type — a value-less (void) body is a type error (otherwise the
+// success and error paths couldn't merge to one value). Diverge instead
+// (`return` / `raise`) or yield a value. Positives: `examples/229-value-failable-consume.sx`.
+
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0 { raise error.Bad; }
+    return n;
+}
+
+main :: () -> i32 {
+    x := parse(-1) catch (e) { print("oops\n") };   // error: body yields no value
+    return x;
+}

@@ -1,0 +1,20 @@
+#import "modules/std.sx";
+// this will bake x to be 7 as a global constant
+x :: #run compute(5);
+
+compute :: (v: i32) -> i32 => v + 2;
+
+main :: () {
+    //test
+    y :: #run compute(7);
+    c :: 2;
+    print("hello {}\n", x + y * c);
+}
+
+#run main();
+
+// ** stdout after build **
+// hello 25
+
+// ** stdout after run **
+// hello 25

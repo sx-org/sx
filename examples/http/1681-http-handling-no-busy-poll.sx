@@ -1,0 +1,140 @@
+// std.http — no busy-poll while a pooled handler runs (CONN_HANDLING).
+//
+// Regression: read interest stayed armed while a slot sat in CONN_HANDLING,
+// and both backends (kqueue/epoll) are level-triggered — so a client that
+// sent MORE bytes (pipelining) while the worker held the request made
+// Loop.wait() return the same readable event instantly, every tick, until
+// the handler finished: 100% CPU for the whole handler runtime, and the
+// event was ignored each time (tick skips CONN_HANDLING slots).
+//
+// The fix drops read interest when a slot enters CONN_HANDLING and re-arms
+// it when the completion is drained. This test proves BOTH halves:
+//   1. NO SPIN: with a 300 ms pooled handler running and pipelined bytes
+//      sitting unread in the kernel buffer, the tick loop stays asleep —
+//      the number of tick(30) iterations until the response arrives is
+//      ~10, not thousands. Asserted < 100.
+//   2. RE-ARM: after the completion is drained the pipelined second request
+//      IS served (read interest was re-added; without it the bytes would
+//      sit in the kernel until the keepalive deadline killed the conn).
+//   3. GPA leak gate: net-zero after close.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+clib :: #library "c";
+usleep :: (usec: i64) -> i32 extern clib;
+
+PORT :: 18992;
+SLOW_SLEEP_US :: 300000;   // 300 ms of worker runtime while bytes are pending
+MAX_TICKS :: 100;          // spin would burn thousands of iterations in 300 ms
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/slow" {
+        usleep(SLOW_SLEEP_US);
+        resp.body = "slow-ok";
+        return;
+    }
+    resp.body = "fast-ok";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 16384;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{
+            port = PORT,
+            timeout_request_ms = 5000,
+            timeout_keepalive_ms = 5000,
+            request_count = 50,
+            max_conn = 4,
+            thread_pool_count = 2,
+            thread_pool_backlog = 16,
+            handler_timeout_ms = 0,   // no sweep — isolate the busy-poll path
+        };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        ca := dial_port(PORT);
+        if ca < 0 { print("dial failed\n"); srv.close(); return 1; }
+
+        // Request 1: /slow — accepted, parsed, dispatched to a worker.
+        req1 := "GET /slow HTTP/1.1\r\nHost: t\r\n\r\n";
+        socket.write(ca, req1.ptr, xx req1.len);
+        t : i64 = 0;
+        while t < 5 { srv.tick(2) catch {}; t += 1; }   // accept + dispatch
+
+        // Request 2 arrives WHILE the worker holds request 1. These bytes sit
+        // unread in the kernel buffer — pre-fix, level-triggered readiness
+        // reports them every wait() and the loop spins doing nothing.
+        req2 := "GET /fast HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
+        socket.write(ca, req2.ptr, xx req2.len);
+        usleep(10000);   // let the bytes land
+
+        // Count loop iterations until both responses are in (worker sleeps
+        // 300 ms; a sleeping loop needs ~10-20 tick(30)s, a spinning one
+        // burns thousands).
+        total : i64 = 0;
+        ticks : i64 = 0;
+        done := false;
+        while ticks < 20000 and !done {
+            srv.tick(30) catch {};
+            ticks += 1;
+            n, re := socket.read_nb(ca, @rbuf[total], xx (cap - total));
+            if !re { total += n; }
+            else if re == error.Closed { done = true; }
+            resp := string.{ ptr = rbuf, len = xx total };
+            if contains(resp, "slow-ok") and contains(resp, "fast-ok") { done = true; }
+        }
+        resp := string.{ ptr = rbuf, len = xx total };
+
+        // (2) both responses arrived — the pipelined request WAS served
+        // after the completion re-armed read interest.
+        if !contains(resp, "slow-ok") { print("missing slow response\n"); failed = 1; }
+        if !contains(resp, "fast-ok") { print("missing pipelined fast response\n"); failed = 1; }
+
+        // (1) the loop slept instead of spinning.
+        if ticks >= MAX_TICKS {
+            print("busy-poll: {} tick iterations for a 300 ms handler\n", ticks);
+            failed = 1;
+        }
+
+        socket.close(ca);
+        srv.close();
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

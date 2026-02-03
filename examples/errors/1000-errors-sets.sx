@@ -1,0 +1,24 @@
+// Error-set declarations + `error.X` tag values + enum-like `==` typing
+// (ERR step E1.1). A declared `error { ... }` set is a real type with a u32
+// runtime layout; `error.X` is its tag value — the named set when context
+// provides one (membership-checked), else the raw global u32 id. Tags compare
+// with an `error.X` literal or another error-set value. The rejections live in
+// `examples/218-error-set-typing.sx`.
+
+#import "modules/std.sx";
+
+ParseErr :: error { BadDigit, Overflow, Empty }
+
+main :: () -> i32 {
+    c : ParseErr = error.BadDigit;
+    d : ParseErr = error.Overflow;
+    r : i32 = 0;
+    if c == error.BadDigit { r = r + 1; }    // true  -> +1
+    if c == error.Overflow { r = r + 2; }     // false
+    if c == d              { r = r + 4; }     // false (BadDigit != Overflow)
+    if d == error.Overflow { r = r + 8; }     // true  -> +8
+    tag : u32 = error.Empty;                  // u32 context -> raw global tag id
+    if tag != 0 { r = r + 16; }               // tag ids are >= 1 -> +16
+    print("error-set result: {}\n", r);       // -> 25
+    return r;
+}

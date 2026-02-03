@@ -1,0 +1,11 @@
+narrow: -24
+lit: 56
+f2i: 2
+i2f: 3.000000
+neg: 24
+range: 10
+chain: 44
+ptr: 8
+opt: true
+speak: 42
+borrow: 42

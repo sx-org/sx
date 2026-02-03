@@ -1,0 +1,5 @@
+error: intrinsic 'size_of' is declared by modules/std/core.sx, not by this module
+  --> examples/diagnostics/1242-diagnostics-intrinsic-wrong-module.sx:9:1
+   |
+ 9 | size_of :: ($T: Type) -> i64 intrinsic;
+   | ^^^^^^^

@@ -1,0 +1,379 @@
+// std.http S3 (PLAN-HTTPZ): BOUNDED, DETERMINISTIC in-process fuzz SMOKE.
+//
+// A seeded PRNG throws thousands of mutated / malformed / random HTTP
+// requests at one live server (driven single-thread via Server.tick) and
+// asserts the server never crashes, panics, aborts, or hangs — it only
+// ever (a) sends a syntactically-plausible response ("HTTP/1.1 " + a
+// 3-digit status) or (b) cleanly closes the connection. Partial / split
+// sends (the bytes dribbled across ticks in random-sized pieces) exercise
+// the partial-read resume paths in read_more / try_serve_one. A clean GET
+// is interleaved through the noise to confirm LIVENESS — the server still
+// serves correctly amid garbage, not merely "doesn't crash". The WHOLE run
+// sits under a GPA: net-zero alloc_count at the end is the leak gate (one
+// server reused across all iterations, so a per-request leak accumulates).
+//
+// This guards H1 (parser hardening) + S2 (chunked decode) against
+// regression. It is DETERMINISTIC (seeded xorshift, NO time/Math.random)
+// so its golden output is stable, and BOUNDED (ITERATIONS small enough
+// that wall-clock is comfortably under the corpus 10s/example timeout).
+//
+// ── Running a LONGER fuzz (CI, NOT the corpus) ───────────────────────────
+// The corpus runner (10s/example, no network) cannot host a long-running
+// fuzzer. To fuzz harder OUTSIDE the corpus:
+//   • bump ITERATIONS (e.g. 200_000) and/or sweep SEED across many runs —
+//     each SEED is a fresh deterministic stream of mutations; a crash is
+//     then reproducible by pinning the failing SEED + iteration index.
+//   • a future libFuzzer/AFL target would feed raw bytes straight into a
+//     decode_chunked / try_serve_one harness (no socket) — sx has no
+//     libFuzzer integration today, so that target lives as a separate CI
+//     job, never in examples/. See tests/fuzz-http.md.
+// If THIS smoke ever finds a crash/hang/leak, that is a REAL parser bug:
+// the failing SEED + iteration + the exact bytes are the repro — fix the
+// parser, do not weaken the assertions here.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+// Reproducibility knobs — CONSTANTS so the run is deterministic + bounded.
+// SEED fits in i64 (the corpus has no >i64 literal); it is just a nonzero
+// starting state for the xorshift below — any nonzero value works.
+SEED   :: 0x2545F4914F6CDD1D;   // fixed nonzero PRNG state (< i64.max)
+PORT   :: 18977;
+
+// Iteration count. Tuned so the whole run is comfortably < 5s wall-clock
+// on the dev host (~3s) while still exercising over a thousand mutated
+// requests. Bump it (and/or sweep SEED) for a longer out-of-corpus fuzz —
+// see the CI note in the header + tests/fuzz-http.md.
+ITERATIONS :: 1200;
+
+// Deterministic xorshift PRNG over i64 — NO time, NO Math.random (the corpus
+// has no nondeterministic RNG anyway). The shifts/xors wrap in i64, which is
+// exactly what an xorshift wants; the result is masked non-negative before
+// use. Same SEED ⇒ same byte stream every run.
+Rng :: struct {
+    s: i64 = 0;
+    next :: (self: *Rng) -> i64 {
+        x := self.s;
+        x = x ^ (x << 13);
+        x = x ^ (x >> 7);
+        x = x ^ (x << 17);
+        self.s = x;
+        // clear the sign bit so callers get a non-negative magnitude
+        return x & 0x7FFFFFFFFFFFFFFF;
+    }
+    // uniform-ish in [0, n)
+    upto :: (self: *Rng, n: i64) -> i64 {
+        if n <= 0 { return 0; }
+        return self.next() % n;
+    }
+}
+
+handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    // Echo path for liveness; everything else 200 "ok".
+    if req.path == "/echo" { resp.body = req.body; return; }
+    resp.body = "ok";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+// A plausible HTTP response: "HTTP/1.1 " followed by a 3-digit status code.
+// This is the "responded, not garbage" assertion — the fuzzer accepts any
+// well-formed status line; the parser must never emit non-HTTP bytes.
+plausible_response :: (s: string) -> bool {
+    pre := "HTTP/1.1 ";
+    if s.len < pre.len + 3 { return false; }
+    i := 0;
+    while i < pre.len { if s[i] != pre[i] { return false; } i += 1; }
+    d0 := s[pre.len]; d1 := s[pre.len + 1]; d2 := s[pre.len + 2];
+    if d0 < 48 or d0 > 57 { return false; }
+    if d1 < 48 or d1 > 57 { return false; }
+    if d2 < 48 or d2 > 57 { return false; }
+    return true;
+}
+
+// ── request templates ────────────────────────────────────────────────────
+// A mix of valid requests and known-nasty fragments. Each is copied into a
+// per-iteration mutable buffer, mutated, then sent. Returned as `string`.
+TEMPLATES :: 12;
+
+template :: (idx: i64) -> string {
+    if idx == 0  { return "GET /ok HTTP/1.1\r\nHost: t\r\n\r\n"; }                                            // valid GET
+    if idx == 1  { return "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 9\r\n\r\nping-pong"; }            // POST + CL + body
+    if idx == 2  { return "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n"; } // chunked POST
+    if idx == 3  { return "GET /ok HTTP/1.1\r\nHost: t\r\nConnection: keep-alive\r\n\r\nGET /ok HTTP/1.1\r\nHost: t\r\n\r\n"; } // keep-alive pair
+    if idx == 4  { return "POST /ok HTTP/1.1\r\nHost: t\r\nContent-Length: 99999999999999999999\r\n\r\n"; }    // huge/overflow CL
+    if idx == 5  { return "GET /ok HTTP/9.9\r\nHost: t\r\n\r\n"; }                                             // bad version
+    if idx == 6  { return "GET /o\x01k HTTP/1.1\r\nHost: t\r\n\r\n"; }                                         // control char in path
+    if idx == 7  { return "POST /ok HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n"; } // TE+CL pair
+    if idx == 8  { return "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n0x5\r\nhello\r\n0\r\n\r\n"; } // malformed chunk size
+    if idx == 9  { return "POST /ok HTTP/1.1\r\nHost: t\r\nContent-Length: 3\r\nContent-Length: 5\r\n\r\nabc"; } // dup headers
+    if idx == 10 { return "GET /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding : chunked\r\n\r\n"; }              // WS before colon
+    // a chunk size with no terminator framing — bad chunked
+    return "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5hello0\r\n\r\n";
+}
+
+// ── mutation ─────────────────────────────────────────────────────────────
+// Copy `src` into `dst` (cap MUTBUF), apply a few deterministic mutations,
+// return the mutated length. Ops: flip / insert / delete / duplicate a byte;
+// corrupt CL/chunk-size digits; truncate; inject CR/LF/NUL; splice a second
+// template fragment. All bounded by `cap`.
+MUTBUF :: 4096;
+
+mutate :: (rng: *Rng, src: string, dst: [*]u8, cap: i64) -> i64 {
+    // base copy (truncated to cap)
+    n := src.len;
+    if n > cap { n = cap; }
+    i := 0;
+    while i < n { dst[i] = src[i]; i += 1; }
+
+    ops := 1 + rng.upto(4);   // 1..4 mutations
+    o := 0;
+    while o < ops {
+        if n <= 0 { break; }
+        op := rng.upto(9);
+        if op == 0 {
+            // flip a byte to a random value
+            p := rng.upto(n);
+            dst[p] = xx rng.upto(256);
+        } else if op == 1 {
+            // insert a byte
+            if n < cap {
+                p := rng.upto(n + 1);
+                k := n;
+                while k > p { dst[k] = dst[k - 1]; k -= 1; }
+                dst[p] = xx rng.upto(256);
+                n += 1;
+            }
+        } else if op == 2 {
+            // delete a byte
+            p := rng.upto(n);
+            k := p;
+            while k + 1 < n { dst[k] = dst[k + 1]; k += 1; }
+            n -= 1;
+        } else if op == 3 {
+            // duplicate a run of bytes
+            p := rng.upto(n);
+            run := 1 + rng.upto(8);
+            k := 0;
+            while k < run and n < cap {
+                // shift tail right by 1, copy dst[p]
+                m := n;
+                while m > p { dst[m] = dst[m - 1]; m -= 1; }
+                n += 1;
+                k += 1;
+            }
+        } else if op == 4 {
+            // corrupt a digit (CL value / chunk-size): find a digit, change it
+            p := rng.upto(n);
+            scan := 0;
+            while scan < n {
+                q := (p + scan) % n;
+                if dst[q] >= 48 and dst[q] <= 57 {
+                    dst[q] = xx (48 + rng.upto(10));
+                    break;
+                }
+                scan += 1;
+            }
+        } else if op == 5 {
+            // truncate
+            cut := rng.upto(n);
+            n = cut;
+        } else if op == 6 {
+            // inject a CR / LF / NUL
+            p := rng.upto(n);
+            pick := rng.upto(3);
+            if pick == 0 { dst[p] = 13; }
+            else if pick == 1 { dst[p] = 10; }
+            else { dst[p] = 0; }
+        } else if op == 7 {
+            // splice a fragment of another template onto the end
+            frag := template(rng.upto(TEMPLATES));
+            fl := frag.len;
+            f := 0;
+            while f < fl and n < cap { dst[n] = frag[f]; n += 1; f += 1; }
+        } else {
+            // overwrite a span with a high-byte / random blob
+            p := rng.upto(n);
+            run := 1 + rng.upto(16);
+            k := 0;
+            while k < run and p + k < n { dst[p + k] = xx rng.upto(256); k += 1; }
+        }
+        o += 1;
+    }
+    return n;
+}
+
+// Drive one fuzzed request over its own connection, sending the bytes in
+// random-sized pieces across ticks (partial/split sends), then ticking
+// until the server responds OR closes — within a BOUNDED tick budget (a
+// hang would blow the budget → reported as a failure, not an infinite
+// loop). Returns: 0 = responded plausibly OR closed cleanly (PASS),
+// 1 = a hang (budget exhausted with no response and no close), 2 = garbage
+// response (responded but not "HTTP/1.1 <ddd>").
+fuzz_once :: (rng: *Rng, srv: *http.Server, bytes: [*]u8, blen: i64, scratch: [*]u8, scap: i64) -> i64 {
+    fd := dial_port(PORT);
+    if fd < 0 { return 0; }   // couldn't dial (e.g. transient) — not a parser fault
+
+    sent : i64 = 0;
+    total : i64 = 0;
+    closed := false;
+    responded := false;
+    // Bounded WALL-CLOCK budget (a real hang exhausts it → reported as a
+    // failure, never an infinite loop). Generously past the 2ms request
+    // deadline so a NEED_MORE request always reaches its eviction within it.
+    budget := event.deadline_in(100);
+    while !event.expired(budget) {
+        // dribble out a random-sized next piece
+        if sent < blen {
+            piece := 1 + rng.upto(64);
+            if sent + piece > blen { piece = blen - sent; }
+            wn, we := socket.write_nb(fd, @bytes[sent], xx piece);
+            if !we { sent += wn; }
+            // WouldBlock / fault: just keep ticking; the server reads what it can
+        }
+        srv.tick(1) catch {};
+        if total < scap {
+            n, re := socket.read_nb(fd, @scratch[total], xx (scap - total));
+            if !re { total += n; }
+            else if re == error.Closed { closed = true; break; }
+        }
+        if total > 0 {
+            s := string.{ ptr = scratch, len = xx total };
+            // a complete-enough response: we saw the status line + the
+            // header terminator (CRLFCRLF) — enough to assert plausibility.
+            he := -1;
+            i := 0;
+            while i + 3 < s.len {
+                if s[i] == 13 and s[i+1] == 10 and s[i+2] == 13 and s[i+3] == 10 { he = i; break; }
+                i += 1;
+            }
+            if he >= 0 { responded = true; break; }
+        }
+    }
+    socket.close(fd);
+
+    if responded {
+        s := string.{ ptr = scratch, len = xx total };
+        if !plausible_response(s) { return 2; }   // garbage
+        return 0;
+    }
+    if closed { return 0; }   // clean close, no response — acceptable
+    return 1;                  // neither responded nor closed within budget → hang
+}
+
+// A clean GET on its own connection — must round-trip 200 "ok". This is the
+// LIVENESS check interleaved through the fuzz noise.
+liveness_ok :: (srv: *http.Server, scratch: [*]u8, scap: i64) -> bool {
+    fd := dial_port(PORT);
+    if fd < 0 { return false; }
+    req := "GET /ok HTTP/1.1\r\nHost: t\r\n\r\n";
+    socket.write(fd, req.ptr, xx req.len);
+    total : i64 = 0;
+    tries := 0;
+    out := false;
+    while tries < 600 {
+        srv.tick(1) catch {};
+        n, re := socket.read_nb(fd, @scratch[total], xx (scap - total));
+        if !re { total += n; }
+        else if re == error.Closed { break; }
+        s := string.{ ptr = scratch, len = xx total };
+        if contains(s, "HTTP/1.1 200 OK") and contains(s, "\r\n\r\n") { out = true; break; }
+        tries += 1;
+    }
+    socket.close(fd);
+    return out;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+
+    leaked : i64 = 0;
+    failed := false;
+    detail : string = "";
+    crash_iter : i64 = -1;
+
+    // Everything that allocates runs under the GPA so the leak gate sees
+    // every server alloc/dealloc. ONE server is reused across all iterations
+    // (keep-alive + reconnect), so a per-request leak accumulates and trips.
+    push .{ allocator = gpa } {
+        // SHORT request/keepalive timeouts: a truncated/incomplete mutation
+        // leaves the server legitimately waiting for more bytes (NEED_MORE),
+        // and the only resolution is a deadline eviction (a clean close). A
+        // small deadline keeps each such iteration fast so the whole bounded
+        // run stays well under the corpus timeout.
+        cfg : http.Config = .{
+            port = PORT,
+            timeout_request_ms = 2,
+            timeout_keepalive_ms = 2,
+            request_count = 1000,
+            max_conn = 16,
+            max_headers = 50,
+            max_header_line = 1024,
+        };
+        srv, se := http.Server.init(cfg, handler, 0);
+        if se { print("server init failed\n"); return 1; }
+
+        mutbuf : [*]u8  = xx context.allocator.alloc_bytes(MUTBUF);
+        scratch : [*]u8 = xx context.allocator.alloc_bytes(8192);
+
+        rng : Rng = .{ s = SEED };
+
+        hangs : i64 = 0;
+        garbage : i64 = 0;
+        live_fail : i64 = 0;
+
+        it : i64 = 0;
+        while it < ITERATIONS {
+            // pick a template, mutate it
+            tidx := rng.upto(TEMPLATES);
+            blen := mutate(@rng, template(tidx), mutbuf, MUTBUF);
+            r := fuzz_once(@rng, @srv, mutbuf, blen, scratch, 8192);
+            if r == 1 { hangs += 1; failed = true; detail = "HANG"; crash_iter = it; break; }
+            if r == 2 { garbage += 1; failed = true; detail = "GARBAGE RESPONSE"; crash_iter = it; break; }
+
+            // every 250 iterations, prove the server still serves a clean GET
+            if it % 250 == 0 {
+                if !liveness_ok(@srv, scratch, 8192) {
+                    live_fail += 1; failed = true; detail = "LIVENESS"; crash_iter = it; break;
+                }
+            }
+            it += 1;
+        }
+
+        context.allocator.dealloc_bytes(xx mutbuf);
+        context.allocator.dealloc_bytes(xx scratch);
+        srv.close();
+        leaked = gpa.alloc_count;
+    }
+
+    if failed {
+        print("FUZZ FAIL ({}) at iteration {}\n", detail, crash_iter);
+        return 1;
+    }
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations after {} fuzzed requests\n", leaked, ITERATIONS);
+        return 1;
+    }
+    print("fuzzed {} requests, no crash/hang/garbage/leak\n", ITERATIONS);
+    print("ok\n");
+    return 0;
+}

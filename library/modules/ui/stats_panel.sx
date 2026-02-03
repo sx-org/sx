@@ -1,0 +1,63 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/font.sx";
+
+StatsPanel :: struct {
+    delta_time: *f32;
+    font_size: f32;
+
+    PADDING      :f32: 12.0;
+    LINE_SPACING :f32: 4.0;
+    TITLE_SIZE   :f32: 12.0;
+    VALUE_SIZE   :f32: 11.0;
+    BG_COLOR     :Color: Color.rgba(30, 30, 38, 200);
+    CORNER_RADIUS:f32: 12.0;
+}
+
+impl View for StatsPanel {
+    size_that_fits :: (self: *StatsPanel, proposal: ProposedSize) -> Size {
+        title_size := measure_text("Statistics", StatsPanel.TITLE_SIZE);
+        fps_size := measure_text("FPS: 0000", StatsPanel.VALUE_SIZE);
+        w := max(title_size.width, fps_size.width) + StatsPanel.PADDING * 2.0;
+        h := title_size.height + StatsPanel.LINE_SPACING + fps_size.height + StatsPanel.PADDING * 2.0;
+        Size.{ width = w, height = h }
+    }
+
+    layout :: (self: *StatsPanel, bounds: Frame) {}
+
+    render :: (self: *StatsPanel, ctx: *RenderContext, frame: Frame) {
+        // Background
+        ctx.add_rounded_rect(frame, StatsPanel.BG_COLOR, StatsPanel.CORNER_RADIUS);
+
+        // Title
+        title_size := measure_text("Statistics", StatsPanel.TITLE_SIZE);
+        title_frame := Frame.make(
+            frame.origin.x + StatsPanel.PADDING,
+            frame.origin.y + StatsPanel.PADDING,
+            title_size.width,
+            title_size.height
+        );
+        ctx.add_text(title_frame, "Statistics", StatsPanel.TITLE_SIZE, COLOR_WHITE);
+
+        // FPS value
+        dt := self.delta_time.*;
+        fps : i64 = if dt > 0.0 then xx (1.0 / dt) else 0;
+        fps_text := format("FPS: {}", fps);
+        fps_size := measure_text(fps_text, StatsPanel.VALUE_SIZE);
+        fps_frame := Frame.make(
+            frame.origin.x + StatsPanel.PADDING,
+            title_frame.max_y() + StatsPanel.LINE_SPACING,
+            fps_size.width,
+            fps_size.height
+        );
+        ctx.add_text(fps_frame, fps_text, StatsPanel.VALUE_SIZE, Color.rgba(180, 180, 190, 255));
+    }
+
+    handle_event :: (self: *StatsPanel, event: *Event, frame: Frame) -> bool {
+        false
+    }
+}

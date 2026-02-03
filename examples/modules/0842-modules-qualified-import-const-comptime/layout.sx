@@ -1,0 +1,6 @@
+// A namespaced-import module exporting compile-time consts of each shape the
+// regression exercises: a plain int, an expression-RHS int, and a float.
+BASE  :: 4;
+CAP   :: BASE + 4;     // 8 — nested const RHS, folded in THIS module's scope
+LANES :: 4;
+FOURF : f64 : 4.0;     // integral float const

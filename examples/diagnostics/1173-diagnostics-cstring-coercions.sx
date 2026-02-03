@@ -1,0 +1,13 @@
+// cstring's coercion discipline (Odin-style): only a string LITERAL
+// converts implicitly — an arbitrary string may be an unterminated view
+// (use to_cstring); and cstring never converts to string implicitly —
+// the length is an O(n) strlen the code must ask for (from_cstring).
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    s := concat("a", "b");
+    c : cstring = s;            // error: non-literal string -> cstring
+    t : string = c;             // error: cstring -> string
+    print("{}{}\n", t, cstring_len(c));
+    return 0;
+}

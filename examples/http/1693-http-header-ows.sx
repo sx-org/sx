@@ -1,0 +1,179 @@
+// std.http — header-value OWS handling in find_header (RFC 9112 §5.1).
+//
+// Q1.7: a field value is `OWS field-value OWS` — optional whitespace is
+// SP *or* HTAB on both sides, and it is not part of the value. find_header
+// used to skip only leading spaces (not tabs) and never trimmed trailing
+// OWS, so legal requests broke wherever a header value is compared:
+//   • `Content-Length:\t5`      → the tab reached the digit parser → 400;
+//   • `Transfer-Encoding: chunked ` (trailing SP) → not "chunked" → 501;
+//   • `Expect: 100-continue `   → not "100-continue" → 417 (the Q1.3
+//     adversarial review's MED finding — a served request became a hard
+//     reject);
+// Interior whitespace is NOT OWS and must be preserved verbatim.
+//
+// The handler echoes `[<X-Echo value>]` so trimming is byte-observable.
+//
+// Asserts: tab after the colon on Content-Length → 200 echo; trailing-OWS
+// chunked TE → 200 decoded; `Expect:\t100-continue \r\n` (tab + trailing
+// SP) with a held-back body → exactly one interim 100 then the 200;
+// X-Echo "  a b\t c  " → body "[a b\t c]" (edges trimmed, interior
+// preserved); GPA net-zero after close.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 19007;
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    ev := http.find_header(req, "x-echo");
+    if ev.len > 0 {
+        resp.body = concat("[", concat(ev, "]"));
+        return;
+    }
+    resp.body = concat("got:", req.body);
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+count_occurrences :: (hay: string, needle: string) -> i64 {
+    n : i64 = 0;
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { n += 1; i += needle.len; } else { i += 1; }
+    }
+    return n;
+}
+
+drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool {
+    srv.tick(1) catch {};
+    while true {
+        n, re := socket.read_nb(fd, @buf[total.*], xx (cap - total.*));
+        if !re { total.* += n; continue; }
+        if re == error.Closed { return true; }
+        return false;
+    }
+    return false;   // unreachable — the loop above always returns
+}
+
+// Send `first`; if wait_for is set, tick until it shows; send `second`;
+// read to EOF.
+staged :: (srv: *http.Server, first: string, second: string, wait_for: string, buf: [*]u8, cap: i64) -> string {
+    fd := dial_port(PORT);
+    if fd < 0 { return ""; }
+    socket.write(fd, first.ptr, xx first.len);
+    total : i64 = 0;
+    if wait_for.len > 0 {
+        spins : i64 = 0;
+        while spins < 400 {
+            if drain(srv, fd, buf, cap, @total) { break; }
+            if contains(string.{ ptr = buf, len = xx total }, wait_for) { break; }
+            spins += 1;
+        }
+    }
+    if second.len > 0 { socket.write(fd, second.ptr, xx second.len); }
+    stall : i64 = 0;
+    done := false;
+    prev := total;
+    while !done and stall < 400 {
+        done = drain(srv, fd, buf, cap, @total);
+        if total > prev { stall = 0; prev = total; } else { stall += 1; }
+    }
+    socket.close(fd);
+    return string.{ ptr = buf, len = xx total };
+}
+
+check :: (r: string, frag: string, label: string, failed: *i64) {
+    if !contains(r, frag) {
+        print("{}: expected \"{}\"\n", label, frag);
+        failed.* = 1;
+    }
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 16384;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{ port = PORT, max_conn = 4, request_count = 10 };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        // (a) tab after the colon on Content-Length
+        r := staged(@srv,
+            "POST / HTTP/1.1\r\nHost: t\r\nContent-Length:\t5\r\nConnection: close\r\n\r\nhello",
+            "", "", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "CL-tab status", @failed);
+        check(r, "got:hello", "CL-tab echo", @failed);
+
+        // (b) trailing OWS on Transfer-Encoding — still exactly "chunked"
+        r = staged(@srv,
+            "POST / HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked \r\nConnection: close\r\n\r\n3\r\nabc\r\n0\r\n\r\n",
+            "", "", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "TE-ows status", @failed);
+        check(r, "got:abc", "TE-ows echo", @failed);
+
+        // (c) tab + trailing OWS around Expect: 100-continue — the interim
+        // must fire (not 417), exactly once, then the final 200
+        r = staged(@srv,
+            "POST / HTTP/1.1\r\nHost: t\r\nExpect:\t100-continue \r\nContent-Length: 4\r\nConnection: close\r\n\r\n",
+            "body", "HTTP/1.1 100 Continue\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 100 Continue", "Expect-ows interim", @failed);
+        check(r, "got:body", "Expect-ows echo", @failed);
+        if count_occurrences(r, "100 Continue") != 1 {
+            print("Expect-ows: expected exactly one 100\n");
+            failed = 1;
+        }
+
+        // (d2) a PRESENT-but-empty Content-Length (value all OWS) is not
+        // "0" — it must 400, never serve with the payload left buffered
+        // (Q1.6/Q1.7 adversarial review MED)
+        r = staged(@srv,
+            "POST / HTTP/1.1\r\nHost: t\r\nContent-Length: \t \r\nConnection: close\r\n\r\nhello",
+            "", "", rbuf, cap);
+        check(r, "HTTP/1.1 400", "empty-CL rejected", @failed);
+
+        // (d) edges trimmed, interior preserved — byte-observable via echo
+        r = staged(@srv,
+            "GET / HTTP/1.1\r\nHost: t\r\nX-Echo:  a b\t c  \r\nConnection: close\r\n\r\n",
+            "", "", rbuf, cap);
+        check(r, "[a b\t c]", "echo trim", @failed);
+
+        srv.close();
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

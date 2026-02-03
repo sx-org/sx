@@ -1,0 +1,18 @@
+// A struct constant with a NON-serializable initializer field (a call, a
+// runtime read) keeps INLINE RE-LOWERING semantics: the initializer is
+// evaluated AT EACH USE. This is the documented contract for this class
+// — `CALL.r` may differ between reads and side effects run per use.
+// For evaluate-once semantics use `NAME :: #run f();`.
+
+#import "modules/std.sx";
+
+Color :: struct { r, g, b: i64; }
+counter : i64 = 0;
+bump :: () -> i64 { counter += 1; counter }
+CALL :: Color.{ r = bump(), g = 0, b = 0 };
+
+main :: () {
+    print("use1={}\n", CALL.r);
+    print("use2={}\n", CALL.r);
+    print("counter={}\n", counter);
+}

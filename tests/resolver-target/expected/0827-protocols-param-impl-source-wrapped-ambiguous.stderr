@@ -1,0 +1,5 @@
+error: type 'Box' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0827-protocols-param-impl-source-wrapped-ambiguous.sx:19:24
+   |
+19 | impl Into(Marker) for *Box {
+   |                        ^^^

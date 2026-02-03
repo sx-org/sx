@@ -1,0 +1,5 @@
+error: type 'IoErr' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/0814-modules-same-name-error-set-lambda-ambiguous.sx:25:30
+   |
+25 |     fail_io := closure(() -> !IoErr { return; });
+   |                              ^^^^^^

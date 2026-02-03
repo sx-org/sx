@@ -1,0 +1,4 @@
+font offset >= 0: true
+init ok: true
+scale > 0: true
+ascent > 0, descent < 0: true true

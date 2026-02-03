@@ -1,0 +1,15 @@
+// `sleep(ms)` rejects a NEGATIVE duration loudly — the virtual clock is
+// monotonic (advances only as timers fire), so a negative deadline would rewind
+// it and break every ordering contract. Regression (B1.4b review, P2-c): the
+// guard aborts instead of silently arming a past deadline.
+//
+// aborts (exit 134) after the diagnostic — aarch64-macOS-pinned.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+main :: () -> i64 {
+    s := sched.Scheduler.init(); ps := @s;
+    ps.spawn(() { ps.sleep(10); ps.sleep(-5); });   // -5 → loud abort
+    s.run();
+    print("unreachable\n");
+    return 0;
+}

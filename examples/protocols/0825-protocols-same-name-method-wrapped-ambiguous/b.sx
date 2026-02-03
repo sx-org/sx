@@ -1,0 +1,8 @@
+// The second flat-imported `Box` author — a DISTINCT nominal from a.sx's `Box`.
+Box :: struct { b: i32; }
+
+b_box :: () -> i32 {
+    x : Box = ---;
+    x.b = 2;
+    return x.b;
+}

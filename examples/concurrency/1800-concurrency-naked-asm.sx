@@ -1,0 +1,25 @@
+// Stream B1 (fibers) — `abi(.naked)` emits a naked function end-to-end.
+//
+// An `abi(.naked)` function has no calling-convention prologue/epilogue/frame
+// and no implicit `__sx_ctx`: its body is a single asm block that sets the
+// return register and emits its own `ret`. This is the substrate the per-arch
+// fiber context-switch is built on (design §4.6) — a `.c` epilogue would
+// restore SP from the wrong stack across a switch (SP-in ≠ SP-out by design).
+//
+// Lowered via LLVM's `naked` function attribute: the body is emitted verbatim
+// (the inline asm + its own `ret`) with NO frame setup; the IR shows
+// `attributes #N = { naked noinline nounwind }` and the bare asm. aarch64-pinned
+// (the asm body is per-arch); runs end-to-end here (exit 42), ir-only on a
+// mismatch. See the x86_64 sibling 1802. NOTE: the `.ir` proves the `naked`
+// keyword + asm emitted, NOT register-save correctness (that's the B1.3
+// switch-stress harness's job).
+answer :: () -> i64 abi(.naked) {
+    asm volatile {
+        #string ASM
+        mov x0, #42
+        ret
+ASM
+    };
+}
+
+main :: () -> i64 { return answer(); }

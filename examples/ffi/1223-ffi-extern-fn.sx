@@ -1,0 +1,14 @@
+// extern function binding (FFI-linkage stream, Phase 1): bind libc's `abs`
+// directly via the bare `extern` linkage modifier — no `extern`, no
+// `#library`. `extern` ⇒ external linkage + C ABI + no sx ctx; the symbol
+// resolves against the default-linked libc at link time. The sx name `abs`
+// IS the C symbol (no rename — the `extern LIB "csym"` forms land in 1.2).
+#import "modules/std.sx";
+
+abs :: (n: i32) -> i32 extern;
+
+main :: () -> i32 {
+    print("abs(-7) = {}\n", abs(xx -7));
+    print("abs(42) = {}\n", abs(xx 42));
+    0
+}

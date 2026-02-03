@@ -1,0 +1,7 @@
+strlen("hello")     = 5
+first_byte           = 104
+strlen(sx string)    = 14
+sum_bytes([10,20,30,40]) = 100
+bytes[1] after write = 99
+static greeting len  = 12
+static greeting [0]  = 104

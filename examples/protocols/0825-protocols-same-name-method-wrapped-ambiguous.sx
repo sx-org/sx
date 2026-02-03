@@ -1,0 +1,23 @@
+// E6BR-4 (ambiguous) — because a protocol method-signature WRAPPED return type is
+// now resolved SOURCE-AWARE (the reconciled choke-point recurses `*Box` and
+// resolves its leaf via `resolveNominalLeaf`), a genuinely ambiguous same-name
+// element poisons LOUDLY at the protocol declaration instead of silently picking a
+// global `findByName` last-wins author. `main` flat-imports two `Box` authors and
+// declares none itself, so the `Provider.getp` return `*Box` is an unresolvable
+// collision and the build exits 1.
+//
+// Fail-before (pre-E6BR-4): the wrapped `*Box` fell to the no-author
+// `type_bridge.resolveTemplateSignatureType` wrapper (global last-wins, no
+// diagnostic), so the build did NOT report the collision.
+
+#import "modules/std.sx";
+#import "0825-protocols-same-name-method-wrapped-ambiguous/a.sx";
+#import "0825-protocols-same-name-method-wrapped-ambiguous/b.sx";
+
+Provider :: protocol {
+    getp :: (self: *Self) -> *Box;
+}
+
+main :: () -> i32 {
+    0
+}

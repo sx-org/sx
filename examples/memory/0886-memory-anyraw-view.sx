@@ -1,0 +1,39 @@
+// AnyRaw completes the raw-view family (ClosureRaw / SliceRaw /
+// ProtocolRaw): the `any` view's own pair `{data, type_id}`. Retrieval
+// is the POSTFIX spelling ONLY — `av.(AnyRaw)` builds the pair
+// field-wise and is the one target exempt from the assertion regime.
+// `xx av` keeps its unchecked-unbox meaning for every target (the
+// assert helpers' generic `xx av` depends on that), and the soft form
+// `.(?AnyRaw)` still asserts the boxed payload.
+// `raw_make_any(r.type_id, r.data)` reassembles a view from the pair.
+#import "modules/std.sx";
+
+main :: () {
+    x := 42;
+    av : any = x;
+
+    // the raw pair mirrors the stable accessors
+    r := av.(AnyRaw);
+    print("tag: {}\n", r.type_id == type_of(av));
+    print("data: {}\n", r.data == raw_any_data(av));
+    p : *i64 = xx r.data;
+    print("payload: {}\n", p.*);
+
+    // the pair reassembles into a working view
+    av2 := raw_make_any(r.type_id, r.data);
+    print("round-trip: {}\n", av2.(i64));
+
+    // the assertion regime is untouched: concrete asserts still work,
+    // and the SOFT form checks the payload (null — av holds an i64)
+    print("assert: {}\n", av.(i64));
+    if s := av.(?AnyRaw) { print("soft: some\n"); } else { print("soft: null\n"); }
+
+    // an any that really boxes an AnyRaw: bare .(AnyRaw) still answers
+    // the VIEW (tag = AnyRaw); the payload comes back via the soft
+    // assert, or through the view's own data pointer
+    avr : any = r;
+    print("outer: {}\n", avr.(AnyRaw).type_id == AnyRaw);
+    if s2 := avr.(?AnyRaw) { print("payload tag: {}\n", type_name(s2.type_id)); }
+    inner : *AnyRaw = xx avr.(AnyRaw).data;
+    print("inner data: {}\n", inner.data == r.data);
+}

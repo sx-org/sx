@@ -1,0 +1,27 @@
+// Cross-type rules for the numeric-limit accessors. `.min` / `.max` are valid on
+// BOTH integer and float types, but `.epsilon` / `.min_positive` / `.true_min` /
+// `.inf` / `.nan` are FLOAT-ONLY. Applying a float-only accessor to an INTEGER
+// type, or ANY accessor to a non-numeric type, is a clean compile error — never
+// a silent value, never the `.unresolved` sentinel reaching codegen.
+//
+//   - float-only accessor on an integer (`i32.epsilon`, `u8.inf`,
+//     `i64.true_min`) → a dedicated "applies only to float types" diagnostic
+//     from the accessor intercept, located at the access;
+//   - any accessor on a non-numeric builtin (`bool.nan`, `string.max`) → the
+//     "numeric limits apply only to integer and float types" diagnostic;
+//   - a user struct (`MyStruct.epsilon`) → the type name is not a builtin, so the
+//     intercept stays out and the existing field-not-found path reports it.
+// Each case is accurate and located at the access; the program exits non-zero.
+#import "modules/std.sx";
+
+MyStruct :: struct { a: i64; }
+
+main :: () -> i32 {
+    a := i32.epsilon;
+    b := u8.inf;
+    c := i64.true_min;
+    d := bool.nan;
+    e := string.max;
+    f := MyStruct.epsilon;
+    return 0;
+}

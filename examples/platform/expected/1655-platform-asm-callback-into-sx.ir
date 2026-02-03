@@ -1,0 +1,28 @@
+
+module asm ".global _caller"
+module asm "_caller:"
+module asm "    stp x29, x30, [sp, #-16]!"
+module asm "    bl _cb                      // x0 = cb(x0)  \E2\80\94 back into sx"
+module asm "    ldp x29, x30, [sp], #16"
+module asm "    ret"
+
+; Function Attrs: nounwind
+define i64 @cb(i64 %0) #0 {
+entry:
+  %alloca = alloca i64, align 8
+  store i64 %0, ptr %alloca, align 8
+  %load = load i64, ptr %alloca, align 8
+  %add = add i64 %load, 1
+  ret i64 %add
+}
+
+; Function Attrs: nounwind
+declare i64 @caller(i64) #0
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %call = call i64 @caller(i64 41)
+  %ca.tr = trunc i64 %call to i32
+  ret i32 %ca.tr
+}

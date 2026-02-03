@@ -1,0 +1,28 @@
+// A block-body closure (`closure((params) { ... })`) with an INFERRED return
+// type whose value is produced via early `return`s must infer the return type
+// from the `return` operands — not fall through to void.
+//
+// Regression (issue 0187): `closure(() { if c { return 11; } return 22; })`
+// used to infer `void` (the block's last stmt is the `return`, not a value), so
+// the call site fed an `i64 undef` to `print` and LLVM verification failed. The
+// closure return-type inference now mirrors the function-decl path, scanning
+// the body's `return` statements.
+//
+// Syntax note: a block body is the `closure((params) -> R? { ... })` form; the
+// bare `(params) => expr` lambda is arrow + EXPRESSION only (no block).
+#import "modules/std.sx";
+
+main :: () {
+  // early returns only — inferred return, no optionals
+  f := closure(() { if 1 > 0 { return 11; } return 22; });
+  print("f: {}\n", f());
+
+  // early return + trailing-expression block value
+  g := closure((n: i64) { if n > 0 { return 100; } 200 });
+  print("g+: {}\n", g(1));
+  print("g-: {}\n", g(-1));
+
+  // inferred float return via early returns
+  h := closure((n: i64) { if n > 0 { return 3.5; } return 1.5; });
+  print("h: {}\n", h(1));
+}

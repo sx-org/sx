@@ -1,0 +1,20 @@
+// Auto-ref of a COMPOUND lvalue (field access / index / deref) passed to a
+// `*T` parameter must reference the REAL lvalue, not a copy. Regression: a
+// field-access argument (e.g. `make_move(self.board, m)`) silently passed the
+// address of a temporary copy, so mutations through the pointer were lost with
+// no diagnostic. A plain local (`bump(x)`) already auto-ref'd; now compound
+// lvalues do too. Expected: w.s.v == 42 (the real field was mutated).
+
+#import "modules/std.sx";
+
+S :: struct { v: i32; }
+W :: struct { s: S; }
+
+bump :: (p: *S) { p.v = p.v + 41; }
+
+main :: () -> i32 {
+    w : W = .{ s = .{ v = 1 } };
+    bump(w.s);                       // field access, no `@` — auto-refs &w.s
+    print("w.s.v = {}\n", w.s.v);    // 42, not 1
+    return 0;
+}

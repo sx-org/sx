@@ -1,0 +1,1 @@
+client transport ok: resolve + unix dialing, chunked decoded + keep-alive, TLS verified (and wrong-trust refused), connect + io timeouts bounded; net-zero GPA

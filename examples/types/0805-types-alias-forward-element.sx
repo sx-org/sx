@@ -1,0 +1,47 @@
+// A composite type alias whose element is declared LATER in the file is ADOPTED
+// once the forward-alias fixpoint reaches that decl — it compiles and works with
+// the correct layout, instead of freezing a permanent size-0 empty-struct stub
+// (issue 0230, generalizing the 0196 tuple-alias deferred-fixpoint to array /
+// slice / optional / pointer / function RHS). A generic-instantiation element
+// (`List(i64)`) instantiates for REAL, so its `size_of` matches the inline
+// spelling — no lying size-0 nominal.
+//
+// Regression (issue 0230).
+#import "modules/std.sx";
+
+// Element alias declared AFTER the array alias — adopted via the fixpoint.
+ArrLater :: [2]B;
+B        :: i64;
+
+// Nested composite, all forward: `[2][]C` -> array of slices of C.
+NestLater :: [2]D;
+D         :: []C;
+C         :: i64;
+
+// Forward pointer / optional / function elements.
+PtrLater :: *E;
+OptLater :: ?E;
+FnLater  :: (E) -> E;
+E        :: i64;
+
+// Generic-instantiation element — real instantiation, correct size_of.
+ListArr :: [2]List(i64);
+
+main :: () -> i32 {
+    a : ArrLater = ---;
+    a[0] = 10; a[1] = 20;
+    print("a = {} {}\n", a[0], a[1]);
+
+    print("size_of ArrLater  = {}\n", size_of(ArrLater));   // 2 * 8 = 16
+    print("size_of NestLater = {}\n", size_of(NestLater));  // 2 * 16 = 32
+    print("size_of PtrLater  = {}\n", size_of(PtrLater));   // 8
+    print("size_of OptLater  = {}\n", size_of(OptLater));   // 16
+    print("size_of FnLater   = {}\n", size_of(FnLater));    // 8
+
+    // A generic-instantiation element instantiates for real: the alias
+    // size_of matches the inline `[2]List(i64)` spelling exactly.
+    print("size_of ListArr   = {}\n", size_of(ListArr));
+    print("size_of inline    = {}\n", size_of([2]List(i64)));
+    print("list-elem parity  = {}\n", size_of(ListArr) == size_of([2]List(i64)));
+    0
+}

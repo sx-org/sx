@@ -1,0 +1,49 @@
+#import "modules/std.sx";
+SPECIAL_VALUE :u8: 42;
+
+resolve :: (x: u8) -> i32 {
+    return 12 + x;
+}
+
+Foo :: struct {
+    a : u2; // this will have 0 as default
+    b : u8 = SPECIAL_VALUE; 
+    c : u8 = ---; // default for c is undefined
+    d : u8 = #run xx resolve(5); // converts i32 to u8
+}
+
+main :: () {
+    a : Foo; // a=0, b=42, d=17 from defaults; c is `---` (undefined)
+    // `c` was declared `---`, so its contents are undefined here. Pin it
+    // before printing so the snapshot is deterministic — printing the raw
+    // undefined byte yields whatever garbage the stack/codegen leaves.
+    a.c = 0;
+    print("a 0 : {}\n", a);
+    a.a = 1;
+    a.c = 8;
+    print("a 1 : {}\n", a);
+
+    large: f64 = 5989.5;
+    b : Foo = ---; // EVERY field undefined — `= ---` skips all defaults
+    // Assign each field explicitly; nothing here may be read before it is
+    // written, since `= ---` left the whole struct undefined.
+    b.a = 1;
+    b.b = SPECIAL_VALUE;      // re-supply the default `= ---` skipped
+    b.c = xx large;           // converts f64 to u8 (5989.5 -> 101)
+    b.d = xx resolve(5);      // converts i32 to u8 (17)
+    print("b: {}", b);
+    print("\n");
+
+    f := Pack.{1,0,3,5,9,100,3.5};
+    print("{}\n", f);
+}
+
+Pack :: struct {
+    a: u1;
+    b: u2;
+    c: u8;    
+    d: u32;
+    f: u64;
+    v: i32;
+    x: f32;
+}

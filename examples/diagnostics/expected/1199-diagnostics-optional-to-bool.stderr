@@ -1,0 +1,5 @@
+error: cannot use a value of type '?i64' where 'bool' is expected; test presence explicitly with '!= null'
+  --> examples/diagnostics/1199-diagnostics-optional-to-bool.sx:18:3
+   |
+18 |   takes_bool(a);   // <- '?i64' cannot be used where 'bool' is expected
+   |   ^^^^^^^^^^^^^

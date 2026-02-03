@@ -1,0 +1,9 @@
+// An atomic op on a non-scalar type is rejected with a clean diagnostic
+// (not a raw LLVM verifier error). Stream A (atomics) guard.
+#import "modules/std.sx";
+#import "modules/std/atomic.sx";
+
+main :: () {
+    arr : [8]u8 = .[0, 0, 0, 0, 0, 0, 0, 0];
+    x := atomic_load([8]u8, @arr, .seq_cst);
+}

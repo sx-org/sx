@@ -1,0 +1,308 @@
+// The compiler-coupled prelude primitives: `intrinsic` declarations and the
+// types the compiler resolves by NAME program-wide
+// (`Context`, `Allocator`, `Into`, `Source_Location`). Consumers never import
+// this file directly — std.sx re-exports every name here.
+//
+// `string` and `Vector` are NOT declared here: they are language primitives
+// that the type system resolves by name program-wide (`type_resolver` and
+// `type_bridge` respectively), exactly like `int` / `bool` / `f64`. They need
+// no declaration and cannot be re-bound.
+
+// `out` writes a string straight to fd 1 via libc `write` — a plain sx function,
+// NOT a compiler builtin. At comptime it runs through the evaluator's host-FFI
+// escape (the VM's dlsym path / the interp's extern call); at runtime it's an
+// ordinary libc call through the canonical std/c.sx surface.
+out :: (str: string) -> void {
+    c.write(1, str.ptr, xx str.len);
+}
+// sqrt :: (x: $T) -> T intrinsic;
+// sin :: (x: $T) -> T intrinsic;
+// cos :: (x: $T) -> T intrinsic;
+size_of :: ($T: Type) -> i64 intrinsic;
+align_of :: ($T: Type) -> i64 intrinsic;
+type_of :: (val: $T) -> Type intrinsic;
+type_name :: ($T: Type) -> string intrinsic;
+// Struct/tuple field reads (structs, tuples, untagged unions). The enum
+// duals are the variant_* family below; arrays/vectors use `.len` and
+// native indexing instead.
+struct_field_count :: ($T: Type) -> i64 intrinsic;
+struct_field_name :: ($T: Type, idx: i64) -> string intrinsic;
+// The i-th field type of a struct/tuple. A comptime reflection builtin that
+// folds at LOWER time, so it composes inside `type_eq` / `type_name` / any
+// type-arg slot. Lives here beside its sibling reflection builtins (NOT in
+// `meta.sx`) because it declares no data types of its own — so it costs
+// nothing in the prelude — and both `map.sx`'s structural key hash and
+// `meta.sx`'s DSL need it (each imports `core.sx` directly) rather than each
+// re-declaring the builtin locally.
+struct_field_type :: ($T: Type, idx: i64) -> Type intrinsic;
+// The i-th field's byte offset within the struct (tuples: element offset).
+struct_field_offset :: ($T: Type, idx: i64) -> i64 intrinsic;
+// The target type of a pointer: `pointee_type(*X)` -> `X`. Comptime reflection,
+// folded at lower time like `struct_field_type` (so it composes in any type-arg
+// slot). A non-pointer argument is a loud compile error, not a silent fallthrough.
+pointee_type :: ($P: Type) -> Type intrinsic;
+struct_field_value :: (s: $T, idx: i64) -> any intrinsic;
+// Enum / tagged-union variant reads — the kind-specific duals of the
+// struct_field_* family above.
+variant_count :: ($T: Type) -> i64 intrinsic;
+variant_name :: ($T: Type, idx: i64) -> string intrinsic;
+variant_type :: ($T: Type, idx: i64) -> Type intrinsic;
+variant_payload :: (u: $T, idx: i64) -> any intrinsic;
+is_flags :: ($T: Type) -> bool intrinsic;
+// Is T an `#identity` protocol (borrow-only ownership class)? COMPILE-TIME
+// only — a runtime `Type` value always tags a concrete type, never a
+// protocol, so there is no runtime form.
+is_identity :: ($T: Type) -> bool intrinsic;
+is_unsigned :: ($T: Type) -> bool intrinsic;
+variant_value :: ($T: Type, idx: i64) -> i64 intrinsic;
+variant_index :: ($T: Type, val: T) -> i64 intrinsic;
+error_name :: (e: $T) -> string intrinsic;
+// A vector's lane COUNT (`vector_lanes(Vector(3,f32))` -> 3). The one length
+// the flat size tables cannot answer: a vector's ABI size is pow2-rounded, so
+// size/elem_size over-counts (3 lanes read as 4). Accepts a runtime Type
+// (lane-table read); any non-vector tag answers 0 at runtime — kind
+// discrimination is type_info's job, like the count tables.
+vector_lanes :: ($T: Type) -> i64 intrinsic;
+// INTERNAL (fmt's runtime variant walk): the byte width of the tag word a
+// variant read loads from a value of T, sign-encoded — negative means |w|
+// bytes then sign-extend (signed backing / tag type). A payload-less enum's
+// whole value is its tag; a tagged union's tag is the LOW size_of(tag_type)
+// bytes at offset 0 (a backing-type union's header can be wider than the
+// tag). 0 for non-variant kinds.
+__sx_variant_tag_width :: ($T: Type) -> i64 intrinsic;
+// Element view into an array/vector held by an `any`: pure stride math —
+// `{ elem,  raw_any_data(av) + idx * size_of(elem) }`. The walker's array
+// and vector arms re-aim ONE view per index; `elem` may be a runtime Type.
+any_element :: (av: any, elem: Type, idx: i64) -> any intrinsic;
+
+// ── Raw `any` access (the view's two words) ─────────────────────────────────
+// The `{data, type_id}` layout is private; these two are the stable contract
+// over it. Three sharp edges (specs §any): tags are PER-BUILD values — a serializer
+// writes names and re-resolves, never raw tags; byte copies through the data
+// pointer are SHALLOW — interior pointers are not followed; and a view carries
+// NO lifetime — `raw_make_any` trusts the caller that `data` points at a live,
+// aligned value of `tp` covering size_of(tp) bytes.
+raw_any_data :: (av: any) -> *void intrinsic;
+raw_make_any :: (tp: Type, data: *void) -> any intrinsic;
+
+// ── The comptime compiler-API readers ────────────────────────────────────────
+// Serviced by the comptime evaluator (mode `evaluate`) — they read and mint into
+// the compiler's own string pool and type table, so they exist only at `#run` /
+// constant-evaluation time and have no runtime form.
+//
+// Handles are bare `u32`s on purpose: a `StringId` / `TypeId` alias would be a
+// data type declared in the always-loaded prelude, interning into every module's
+// type table and shifting every `.ir` snapshot — the same cost the note below
+// keeps `TypeInfo` out for. Callers alias them locally where it aids reading.
+raw_intern            :: (s: string) -> u32 intrinsic;              // text  -> StringId
+raw_text_of           :: (id: u32) -> string intrinsic;             // StringId -> text
+raw_find_type         :: (name: u32) -> u32 intrinsic;              // StringId -> TypeId (0 = unresolved)
+raw_type_kind         :: (t: u32) -> i64 intrinsic;                 // 0 other 1 struct 2 enum 3 tagged_union
+                                                                // 4 tuple 5 union 6 array 7 vector 8 error_set
+raw_type_name :: (t: u32) -> u32 intrinsic;                 // TypeId -> StringId
+raw_field_count  :: (t: u32) -> i64 intrinsic;
+raw_field_name   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> StringId
+raw_field_type   :: (t: u32, idx: i64) -> u32 intrinsic;       // -> TypeId
+raw_variant_value  :: (t: u32, idx: i64) -> i64 intrinsic;       // enum variant's value
+raw_pointer_to        :: (t: Type) -> Type intrinsic;
+
+// The DATA-TYPE-carrying comptime metaprogramming (`declare` / `define` /
+// `type_info`, plus the `TypeInfo` / `EnumVariant` / … model they reflect INTO
+// and construct FROM) lives in the on-demand `modules/std/meta.sx`, NOT here —
+// declaring those data types in the always-loaded prelude would intern them
+// into every module's type table and shift every `.ir` snapshot. (The bare
+// `field_type` builtin above carries no data type, so it stays in the prelude.)
+// Import `modules/std/meta.sx` to construct or reflect types at comptime.
+
+// Call-site location, synthesized by the `#caller_location` directive when it
+// is a parameter's default value (ERR E4.1b). `process.exit` / `assert` use it
+// to report where they were invoked.
+Source_Location :: struct {
+    file: string;
+    line: i32;
+    col: i32;
+    func: string;
+}
+// --- Allocator protocol (impls live in std/mem.sx) ---
+
+// Bytes-level primitives carry the `_bytes` suffix so the typed
+// helpers in std/mem.sx own the bare names (`alloc(T, n)`, `free(s)`).
+// `#identity`: an allocator IS its state object — protocol values only
+// ever borrow a named allocator (`xx gpa`, `gpa.(Allocator)`); rvalue
+// erasure and `free` of the protocol value refuse at compile time.
+Allocator :: protocol #inline #identity {
+    alloc_bytes :: (self: *Self, size: i64) -> *void;
+    dealloc_bytes :: (self: *Self, ptr: *void);
+}
+
+// --- Io capability protocol (impls live in std/io.sx) ---
+//
+// `Io` is threaded on `Context` exactly like `Allocator`: a `#inline`
+// protocol whose default impl (the stateless `CBlockingIo` in std/io.sx)
+// is installed in the process-wide `__sx_default_context`. Async runtime
+// is sx LIBRARY code — the compiler provides only the primitives (inline
+// asm, `abi(.naked)`, atomics) + fiber-safe codegen. The protocol is the
+// minimum the fiber scheduler [B1.3+] needs; everything ergonomic
+// (`async` / `await` / `cancel` / `timeout`) is a generic free-fn on top
+// (std/io.sx), the same way `alloc(T,n)` sits over `alloc_bytes`.
+//
+//   spawn_raw  — submit a task; opaque handle (B1.3 fiber bootstrap).
+//   suspend_raw— suspend current fiber; `!` so cancel can raise out.
+//   ready      — wake a parked fiber (B1.4/B1.5).
+//   poll       — drive one step; blocking impl returns 0.
+//   now_ms     — clock hook (a PROTOCOL method so the deterministic-sim
+//                Io [B1.4] can return a fake clock — the B1.4 keystone).
+//   arm_timer  — register a timer; backs `timeout` (B1.4).
+//
+// `ParkToken` is an opaque per-suspension token (unused by the blocking
+// impl). `SpawnOpts.pin` is inert in the M:1 model. (`PinTarget.on` —
+// pin to a specific `Thread` — is deferred with the M:N model; the
+// `on_thread` variant is a placeholder until a `Thread` type exists.)
+PinTarget :: enum { any; main; on_thread; }
+
+SpawnOpts :: struct {
+    pin: PinTarget = .any;
+    // Cancellation back-ref (Phase 3 — true cancellation). A pointer to the
+    // spawned task's cancel flag (the `Future.canceled` `Atomic(bool)`, erased to
+    // `*void` so this foundation type stays free of the atomic dependency). A
+    // suspending impl stashes it on the spawned execution context so its
+    // `suspend_raw` can consult it and raise `IoErr.Canceled` on resume. `null`
+    // (the default) means "no cancellation channel" — the blocking impl and any
+    // uncancellable spawn leave it unset.
+    cancel_flag: *void = null;
+}
+
+ParkToken :: struct {
+    handle: *void = null;
+}
+
+// `#identity` — like `Allocator`: the runtime object is unique state,
+// borrowed into the protocol value, never owned by it.
+Io :: protocol #inline #identity {
+    spawn_raw :: (self: *Self, entry: *void, arg: *void, opts: SpawnOpts) -> *void;
+    // `park` is IN/OUT: a suspending impl records the parked execution context
+    // (e.g. the awaiter's fiber) into `park.handle` before parking, so a later
+    // `ready(park)` — called from a DIFFERENT context (the worker that completes
+    // the awaited task) — knows which context to resume. Passed by pointer for
+    // exactly that write-back. `ready`/`arm_timer` read the recorded handle.
+    suspend_raw :: (self: *Self, park: *ParkToken) -> !;
+    ready :: (self: *Self, park: ParkToken);
+    poll :: (self: *Self, deadline_ms: i64) -> i64;
+    now_ms :: (self: *Self) -> i64;
+    arm_timer :: (self: *Self, deadline_ms: i64, park: ParkToken) -> *void;
+    // `current_park()` — a `ParkToken` identifying the CURRENTLY-running execution
+    // context, so a fan-in waiter (`race`) can register the SAME awaiter across
+    // several futures' `park` slots before parking once. A suspending impl
+    // returns `{ handle = <current fiber> }`; the blocking impl has no fiber and
+    // returns `{ handle = null }` (race never parks there — its futures are born
+    // `.ready`). Unlike `suspend_raw`, this captures the awaiter WITHOUT parking.
+    current_park :: (self: *Self) -> ParkToken;
+}
+
+// --- Context ---
+//
+// The dynamically-scoped capability bag. The struct is declared EMPTY: the
+// compiler assembles 100% of its fields from the program's `#context_extend`
+// declarations (sorted by declaring module path, then field name) —
+// `allocator` lives in std/mem.sx and `io` in std/io.sx, declared exactly
+// like any user field. `__sx_default_context` is emitted from the assembled
+// layout with each declaration's folded default; compiler-internal accesses
+// resolve fields BY NAME, never by index. This empty declaration is ALSO the
+// implicit-context mode marker: a compilation without a `Context` struct
+// runs bare-C-ABI (no hidden param, declarations stay inert).
+//
+// There is no untyped escape slot: a module that wants to carry a payload
+// declares its own typed field:
+//
+//     #context_extend logger: ?*Logger = null;
+//
+// Guideline (not enforced): prefer one POINTER per concern over fat inline
+// values — every `push` copies the whole Context, so a 2 KB inline field
+// makes every push a 2 KB memcpy. Small value fields are fine.
+
+Context :: struct {}
+
+// User-space `xx` extension. `xx val : T` where the built-in conversion
+// ladder makes no progress falls through to an `impl Into(T) for Source`
+// lookup; the compiler monomorphises `convert` for the (Source, T) pair
+// and emits a direct call. Compile-time only — no vtable, no runtime
+// dispatch.
+Into :: protocol(Target: Type) {
+    convert :: (self: *Self) -> Target;
+}
+
+// --- Raw ABI views of the language's fat-pointer types -----------------------
+//
+// sx's closures and slices/strings are two-word "fat" values. These structs name
+// that underlying layout in ONE place so it is discoverable and documented, and so
+// owning code can reinterpret a fat value (`raw : ClosureRaw = xx c`) to reach a
+// field the ergonomic accessors do not expose for a use case — e.g. freeing a
+// stored closure's heap `env`. Field order/types mirror the compiler ABI
+// (`types.zig`: closure / slice size = 2 words); if that ABI ever changes these
+// move with it.
+//
+// The ergonomic accessors are the normal way in: a closure value answers
+// `.fn_ptr` (the code pointer) and `.env` (the captured environment — heap,
+// allocated at the literal via the then-current `context.allocator`; `null` for a
+// capture-free closure), and a slice/string answers `.ptr` / `.len`. The `*Raw`
+// structs are the explicit type-erased layout behind those accessors.
+
+// A closure value: `{ fn_ptr, env }`. Reinterpret with `xx` to reach `env` for
+// ownership/lifetime work (the owner of a stored closure frees `env` when the
+// closure is dead). Equivalent to the `c.fn_ptr` / `c.env` field accessors.
+ClosureRaw :: struct {
+    fn_ptr: *void;
+    env: *void;
+}
+
+// A slice or string value: `{ ptr, len }` (the element type is erased to bytes
+// here). Equivalent to the `s.ptr` / `s.len` accessors. `len` is the element
+// count (an `i64`, matching the ABI), not a byte count.
+SliceRaw :: struct {
+    ptr: [*]u8;
+    len: i64;
+}
+
+// A `string` value: `{ ptr, len }` — the same two words as SliceRaw, named
+// for the string domain. `len` is the byte count. NUL termination is a
+// property of the PRODUCER, not the type: literals and `alloc_string`-backed
+// strings (substr / format / concat) carry a terminator at `ptr[len]`, but a
+// slice VIEW (`s[a..b]`) does not — which is why only a string LITERAL
+// coerces to `cstring` implicitly and everything else crosses the C boundary
+// through `to_cstring`. Never treat `raw.ptr` as a `char*` for an arbitrary
+// string.
+StringRaw :: struct {
+    ptr: [*]u8;
+    len: i64;
+}
+
+// A protocol value's raw view: the `{ctx, type_id}` prefix BOTH protocol
+// layouts share (default `{ctx, __type_id, vtable}` and `#inline`
+// `{ctx, __type_id, fn_ptrs…}`) — byte-identical to an `any`
+// `{data, type_id}`. `ctx` is the concrete data (the heap COPY for an
+// owning `xx <rvalue>` erasure, the borrowed storage otherwise); `type_id`
+// is the erased value's concrete type. Retrieval is a MODELED conversion
+// (`p.(ProtocolRaw)` / `xx p`), built field-wise per the operand's
+// layout — never a bit reinterpret.
+ProtocolRaw :: struct {
+    ctx: *void;
+    type_id: Type;
+}
+
+// An `any` view's raw pair: `{data, type_id}` — the data pointer and the
+// held value's type tag. Retrieval is the POSTFIX spelling ONLY:
+// `av.(AnyRaw)` builds the pair field-wise, the one target exempt from
+// the `av.(T)` assertion regime (which otherwise checks the boxed
+// PAYLOAD; the soft/failable forms `.(?AnyRaw)` etc. still assert the
+// payload). `xx av` is NOT a retrieval spelling — on an `any` it keeps
+// its unchecked-unbox meaning for every target, AnyRaw included. Same
+// sharp edges as the raw accessors below: per-build tags, shallow data,
+// no lifetime. `raw_make_any(r.type_id, r.data)` reassembles a view
+// from the pair.
+AnyRaw :: struct {
+    data: *void;
+    type_id: Type;
+}
+
+// Raw libc lives in its dependency-free leaf module; core owns no externs.
+c :: #import "modules/std/c.sx";

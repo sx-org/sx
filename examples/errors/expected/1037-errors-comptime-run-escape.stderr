@@ -1,0 +1,4 @@
+error: comptime `#run` (x) raised an unhandled error: error.Bad
+error return trace (most recent call last):
+  parse at 1037-errors-comptime-run-escape.sx:11:17
+help: handle it at the `#run` site — `#run <expr> catch (e) { ... }` or `#run <expr> or <default>`

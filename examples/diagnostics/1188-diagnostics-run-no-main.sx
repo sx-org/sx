@@ -1,0 +1,12 @@
+// `sx run` on a program with no `main` must emit a clean diagnostic and exit
+// non-zero — never call into a garbage JIT address and segfault. A pre-JIT
+// entry-point check in main.zig (plus a defensive `main_addr == 0` backstop in
+// target.zig's runJITFromObject) replaces the old silent garbage-pointer call.
+//
+// Regression (issue 0137).
+#import "modules/std.sx";
+
+// Intentionally no `main` — only a helper.
+greet :: () {
+    print("unreachable\n");
+}

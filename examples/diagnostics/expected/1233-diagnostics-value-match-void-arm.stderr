@@ -1,0 +1,5 @@
+error: this `match` arm is used as a value but yields no value — every arm of a value `match` must produce a value
+  --> examples/diagnostics/1233-diagnostics-value-match-void-arm.sx:19:18
+   |
+19 |         case .A: { print("x\n"); }   // void tail — no value
+   |                  ^^^^^^^^^^^^^^^^^

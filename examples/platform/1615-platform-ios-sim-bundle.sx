@@ -1,0 +1,20 @@
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/platform/bundle.sx";
+
+// Cross-compile regression for the iOS-simulator branch of
+// `platform.bundle`. On a host with the iPhoneSimulator SDK installed,
+// `sx build --target ios-sim` writes a `.app` with the iOS-shaped
+// Info.plist (UIDeviceFamily, LSRequiresIPhoneOS,
+// UIApplicationSceneManifest, DTPlatformName=iPhoneSimulator). Ad-hoc
+// codesign; no provisioning embed needed for the simulator.
+
+configure :: () {
+    opts := build_options();
+    opts.set_bundle_path("IosSimApp.app");
+    opts.set_bundle_id("co.example.iossim");
+    on_build(bundle_main);
+}
+#run configure();
+
+main :: () { print("ios-sim runtime main\n"); }

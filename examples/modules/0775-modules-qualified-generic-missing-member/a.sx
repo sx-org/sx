@@ -1,0 +1,3 @@
+// Namespace `a` authors ONLY `Other` — no `Box`. A qualified `a.Box(..)` head
+// must diagnose the missing member, not resolve to another module's `Box`.
+Other :: struct { z: i64; }

@@ -1,0 +1,5 @@
+add 42
+lt false
+sum 11: 11
+sum null: -1
+times 18

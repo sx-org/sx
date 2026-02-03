@@ -1,0 +1,23 @@
+error: unresolved 'totl' in assignment — no variable or global with this name; use 'totl := ...' to declare a new variable
+  --> examples/diagnostics/1212-diagnostics-assign-undeclared-identifier.sx:22:5
+   |
+22 |     totl = 42;          // typo of `total` — plain `=` to an undeclared name
+   |     ^^^^^^^^^^
+
+error: unresolved 'cnt' in assignment — no variable or global with this name; use 'cnt := ...' to declare a new variable
+  --> examples/diagnostics/1212-diagnostics-assign-undeclared-identifier.sx:23:5
+   |
+23 |     cnt += 1;           // compound assign to an undeclared name
+   |     ^^^^^^^^^
+
+error: cannot assign to by-ref capture 'x' directly — write through it with 'x.* = ...'
+  --> examples/diagnostics/1212-diagnostics-assign-undeclared-identifier.sx:26:9
+   |
+26 |         x = 99;         // by-ref capture assigned without `.*`
+   |         ^^^^^^^
+
+error: cannot use compound assignment on '_' — the discard has no value to read; only '_ = expr' is allowed
+  --> examples/diagnostics/1212-diagnostics-assign-undeclared-identifier.sx:28:5
+   |
+28 |     _ += 1;             // compound assign to the discard
+   |     ^^^^^^^

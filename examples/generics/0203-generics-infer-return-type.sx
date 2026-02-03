@@ -1,0 +1,16 @@
+// Functions without an explicit return type infer the type from the first
+// `return <value>;` statement in the body, so `foo :: () { return 42; }` is
+// usable from a typed context. No explicit-value return → `.void` default.
+
+foo :: () { return 42; }
+bar :: () { return foo() * 2; }
+nested :: () {
+    if true {
+        return foo() + 10;
+    }
+    return 0;
+}
+
+main :: () -> i32 {
+    return xx (foo() + bar() + nested());
+}

@@ -1,0 +1,22 @@
+// fix-0102c F2 (issue 0102): two flat FILE imports each author a same-name free
+// function `apply` with a DIFFERENT parameter TYPE — a.sx takes a value
+// (`x: i64`), b.sx takes a pointer (`x: *i64`). The first-wins import merge
+// keeps a.sx's value-typed `apply`, but each module's bare call must type its
+// arguments against ITS OWN author. b.sx's `from_b` passes a local `v` to its
+// pointer-param `apply` via implicit address-of; before the fix the arg was
+// typed against the first-wins (value) winner, lowered as a value, then the
+// resolved pointer-param author was called with that value bit-cast to a
+// pointer — a segfault. Regression: per-source parameter target typing.
+#import "modules/std.sx";
+#import "0728-modules-flat-same-name-paramtype/a.sx";
+#import "0728-modules-flat-same-name-paramtype/b.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("from_a binds a.apply (value param)", from_a() == 11);
+    report("from_b binds b.apply (pointer param)", from_b() == 42);
+    0
+}

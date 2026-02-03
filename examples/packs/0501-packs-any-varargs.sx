@@ -1,0 +1,47 @@
+#import "modules/std.sx";
+
+Point :: struct {
+    x: i32;
+    y: i32;
+}
+
+// Print all arguments — accepts any type, dispatches via type-switch
+print_any :: (..args: []any) {
+    for args (it) {
+        type := type_of(it);
+        if type == {
+            case int: out(int_to_string(xx it));
+            case string: out(it.(string));
+            case bool: out(bool_to_string(it.(bool)));
+            case float: out(float_to_string(xx it));
+            case Point: {
+                p := it.(Point);
+                out("(");
+                out(int_to_string(p.x));
+                out(",");
+                out(int_to_string(p.y));
+                out(")");
+            }
+        }
+        out(" ");
+    }
+    out("\n");
+}
+
+count :: (..args: []any) -> i32 {
+    args.len
+}
+
+main :: () -> i32 {
+    print_any(42, "hello", true, 3.14);
+
+    // Test with struct
+    p := Point.{ x=10, y=20 };
+    print_any("point:", p, 99);
+
+    // Test count
+    out(int_to_string(count(1, 2, 3)));
+    out("\n");
+
+    0
+}

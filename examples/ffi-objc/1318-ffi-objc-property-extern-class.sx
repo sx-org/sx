@@ -1,0 +1,67 @@
+// M2.2 (first pass) — `#property` directive on runtime-class
+// fields synthesizes Obj-C-runtime getter/setter dispatch.
+//
+//   field: T #property[(modifiers)];
+//
+// `obj.field`      → [obj field]         (selector = field name)
+// `obj.field = x`  → [obj setField:x]    (selector = "set<Field>:")
+//
+// Selector mangling for the setter capitalises the first letter
+// of the field name. Modifiers (strong, weak, copy, readonly, ...)
+// parse but don't yet drive ARC ops — that's Month 4.
+//
+// This slice covers RUNTIME-class properties. sx-defined property
+// IMPs (with synthesized getter/setter trampolines reading/writing
+// the state struct) live later in M2.2.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+// Build a probe class on the fly: registers two IMPs (`tag` and
+// `setTag:`) that read/write an instance-bound i32 stored in a
+// runtime ivar. Property dispatch should round-trip through them.
+g_probe_tag: i32 = 0;
+
+probe_get_tag :: (self: *void, _cmd: *void) -> i32 abi(.c) {
+    return g_probe_tag;
+}
+probe_set_tag :: (self: *void, _cmd: *void, v: i32) abi(.c) {
+    g_probe_tag = v;
+}
+
+// Extern declaration with #property on `tag`.
+SxPropProbe :: #objc_class("SxPropProbe") extern {
+    alloc :: () -> *SxPropProbe;
+    init  :: (self: *SxPropProbe) -> *SxPropProbe;
+    tag: i32 #property;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        // Register the class + the two IMPs.
+        ns_object := objc_getClass("NSObject".ptr);
+        cls := objc_allocateClassPair(ns_object, "SxPropProbe".ptr, 0);
+        class_addMethod(cls, sel_registerName("tag".ptr),    xx probe_get_tag, "i@:".ptr);
+        class_addMethod(cls, sel_registerName("setTag:".ptr), xx probe_set_tag, "v@:i".ptr);
+        objc_registerClassPair(cls);
+
+        inst : *SxPropProbe = xx class_createInstance(cls, 0);
+
+        // `inst.tag` → [inst tag] → probe_get_tag → reads g_probe_storage
+        v0 := inst.tag;
+
+        // `inst.tag = 42` → [inst setTag:42] → probe_set_tag
+        inst.tag = 42;
+        v1 := inst.tag;
+
+        inst.tag = -7;
+        v2 := inst.tag;
+
+        print("tag round-trip: {} -> {} -> {}\n", v0, v1, v2);
+    }
+    inline if OS != .macos {
+        print("tag round-trip: 0 -> 42 -> -7\n");
+    }
+    0
+}

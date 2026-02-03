@@ -1,0 +1,35 @@
+#import "modules/std.sx";
+
+sum :: (..args: []i32) -> i32 {
+    result := 0;
+    for args (it) {
+        result = result + it;
+    }
+    result
+}
+
+print_all :: (..args: []i32) {
+    for args (it) {
+        out(int_to_string(it));
+        out(" ");
+    }
+    out("\n");
+}
+
+main :: () -> i32 {
+    out(int_to_string(sum(10, 20, 30)));
+    out("\n");
+
+    print_all(1, 2, 3, 4, 5);
+
+    arr : [3]i32 = .[10, 20, 30];
+    out(int_to_string(sum(..arr)));
+    out("\n");
+
+    for arr (it) {
+        out(int_to_string(it));
+        out(" ");
+    }
+    out("\n");
+    0
+}

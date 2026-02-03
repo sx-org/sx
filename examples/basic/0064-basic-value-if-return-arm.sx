@@ -1,0 +1,82 @@
+// A value-position block `if` whose one arm diverges via a `return`/`break`/
+// `continue` statement (not a diverging expression). The diverging arm
+// terminates its block cleanly; only the LIVE arm feeds the merge phi, and the
+// live arm's type — never the diverging arm's — decides the `if`'s result type.
+//
+// Regression (issue 0269):
+//   Bug A — SILENT WRONG VALUE: `return if c { 7 } else { return -1; }` returned
+//   0 for c==true (want 7). A `return`-position value-`if` was lowered with
+//   `force_block_value` clear (a trailing arm's `produces_value` leaks up through
+//   the parser), so `is_value` was false and the whole `if` collapsed to a void
+//   statement that returned 0. Fix: `lowerReturn` forces value-mode for a
+//   non-void value return.
+//   Bug B — CRASH: `x := if c { a := 1; a + 6 } else { return -1; }` hit
+//   `alloca void` — the live arm's type wasn't statically inferable (block-local
+//   tail), so `result_type` fell back to the diverging void arm and demoted the
+//   `if` to a void statement. Fix: infer `result_type` from the live arm only,
+//   never a diverging one; resolve an un-inferable live arm from its lowered value.
+//   The original "terminator in the middle of a basic block" IR shape (a block
+//   arm ending in `return` getting both the terminator AND a `br` to merge) is
+//   also covered.
+#import "modules/std.sx";
+
+// Bug A — return position, ELSE arm diverges (was silently 0).
+r_else :: (c: bool) -> i64 { return if c { 7 } else { return -1; }; }
+// Symmetric — return position, THEN arm diverges.
+r_then :: (c: bool) -> i64 { return if c { return -1; } else { 7 }; }
+
+// Bug B — `:=` position, MULTI-statement live arm, else arm diverges.
+d_else :: (c: bool) -> i64 {
+    x := if c { a := 1; a + 6 } else { return -1; };
+    return x;
+}
+// Symmetric — `:=` position, multi-statement live arm, THEN arm diverges.
+d_then :: (c: bool) -> i64 {
+    x := if c { return -1; } else { a := 2; a + 5 };
+    return x;
+}
+
+// `=` assignment position, else arm returns.
+a_pos :: (c: bool) -> i64 { z := 0; z = if c { 9 } else { return -1; }; return z; }
+
+// Call-argument position, else arm returns.
+take :: (x: i64) { print("got {}\n", x); }
+
+// `break` arm inside a loop, value position.
+sum_below :: (n: i64) -> i64 {
+    total := 0;
+    i := 0;
+    while true {
+        v := if i < n { i } else { break; };
+        total = total + v;
+        i = i + 1;
+    }
+    return total;
+}
+
+// `continue` arm inside a loop, value position.
+sum_skip2 :: (n: i64) -> i64 {
+    total := 0;
+    i := 0;
+    while i < n {
+        i = i + 1;
+        v := if i == 2 { continue; } else { i };
+        total = total + v;
+    }
+    return total;
+}
+
+main :: () {
+    print("{}\n", r_else(true));    // 7
+    print("{}\n", r_else(false));   // -1
+    print("{}\n", r_then(false));   // 7
+    print("{}\n", r_then(true));    // -1
+    print("{}\n", d_else(true));    // 7
+    print("{}\n", d_else(false));   // -1
+    print("{}\n", d_then(false));   // 7
+    print("{}\n", d_then(true));    // -1
+    print("{}\n", a_pos(true));     // 9
+    take(if true { 42 } else { return; });
+    print("sum={}\n", sum_below(4));   // 0+1+2+3 = 6
+    print("skip2={}\n", sum_skip2(4)); // 1+3+4 = 8
+}

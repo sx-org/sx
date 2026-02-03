@@ -1,0 +1,12 @@
+// ASM stream — indirect-memory (`=*m`) place output on x86_64 (cross-arch sibling
+// of the aarch64 1652). `movq $42, %[out]` stores straight through the place's
+// address — the address is passed as an opaque `ptr` with an `elementtype(i64)`
+// attribute, no return slot. Note `$42`: a literal `$` in the template is escaped
+// to LLVM's `$$` and emitted back as `$42` (an x86 immediate). x86-pinned;
+// ir-only here, runs on x86_64-linux.
+poke :: () -> i64 {
+    x : i64 = 0;
+    asm volatile { "movq $42, %[out]", [out] "=*m" -> @x };
+    return x;   // 42
+}
+main :: () -> i64 { if poke() != 42 { return 1; } return 0; }

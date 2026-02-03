@@ -1,0 +1,33 @@
+// Android `.apk` bundle smoke test — the corpus's first Android bundler
+// coverage.
+//
+// `sx build --target android --apk <out.apk> --bundle-id <id> -o <lib.so>`
+// cross-compiles for aarch64-linux-android and runs the sx default_pipeline
+// → bundle_main, which drives javac/d8/aapt2/zipalign/apksigner to produce a
+// signed APK containing `AndroidManifest.xml`, `classes.dex`,
+// `lib/arm64-v8a/<lib.so>`, and `META-INF/` signatures. The `.build` `apk`
+// directive builds + inspects the zip entries, then cleans up.
+//
+// GATED on the Android SDK (auto-discovered at $ANDROID_HOME /
+// $ANDROID_SDK_ROOT / ~/Library/Android/sdk) + a real JDK on PATH — the macOS
+// `/usr/bin/javac` stub is not enough. When either is missing the example
+// SKIPS cleanly so a plain `zig build test` stays green.
+//
+// Build-only: `--target android` is a cross-compile, so the APK can't run on
+// the build host. Runtime launch is validated manually on an emulator/device.
+//
+// Shape mirrors 1424 (a `#jni_main` Activity whose `onCreate` calls
+// `super.onCreate(b)`, so the app is well-formed).
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+Bundle :: #jni_class("android/os/Bundle") extern { }
+
+SxApp :: #jni_main #jni_class("co/swipelab/sxapksmoke/SxApp") {
+    onCreate :: (self: *Self, b: *Bundle) {
+        super.onCreate(b);
+    }
+}
+
+main :: () -> i32 { 0 }

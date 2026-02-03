@@ -1,0 +1,12 @@
+// `#framework "Name"` top-level directive registers an Apple framework for
+// linking; `extern` declarations can omit the library identifier (frameworks
+// resolve symbols by global namespace at link time).
+
+#framework "CoreFoundation";
+
+CFAbsoluteTimeGetCurrent :: () -> f64 extern;
+
+main :: () -> i32 {
+    t := CFAbsoluteTimeGetCurrent();
+    return if t > 0.0 then 0 else 1;
+}

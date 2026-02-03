@@ -1,0 +1,29 @@
+// Generic `$T` inferred through a generic-struct argument head — both
+// by-value (`Box($T)`) and pointer-wrapped (`*Box($T)`), the latter also
+// via a UFCS dot-call (auto-address-of receiver). Multi-param heads
+// (`Pair($A, $B)`) and nested heads (`Box(Box($T))`) bind positionally.
+// Regression (issue 0151, widened): `extractTypeParam` had no
+// `parameterized_type_expr` arm, so `$T` never bound from a generic-struct
+// param — the call failed with "cannot infer generic type parameter 'T'".
+#import "modules/std.sx";
+
+Box  :: struct ($T: Type) { v: T; }
+Pair :: struct ($A: Type, $B: Type) { a: A; b: B; }
+
+unbox      :: (b: *Box($T)) -> $T { return b.v; }      // infer through `*`
+byval      :: (b: Box($T)) -> $T { return b.v; }        // infer through head
+second     :: (p: Pair($A, $B)) -> $B { return p.b; }   // 2nd of two params
+nested     :: (b: Box(Box($T))) -> $T { return b.v.v; } // nested head
+get        :: ufcs (b: *Box($T)) -> $T { return b.v; }  // UFCS auto-ref
+
+main :: () -> i32 {
+    b  : Box(i64)      = .{ v = 42 };
+    p  : Pair(i64, f64) = .{ a = 1, b = 2.5 };
+    nb : Box(Box(i64)) = .{ v = .{ v = 9 } };
+    print("unbox={}\n", unbox(@b));
+    print("byval={}\n", byval(b));
+    print("second={}\n", second(p));
+    print("nested={}\n", nested(nb));
+    print("ufcs={}\n", b.get());
+    return 0;
+}

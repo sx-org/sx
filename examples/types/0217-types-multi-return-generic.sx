@@ -1,0 +1,24 @@
+// Generic multi-return: a positional multi-return whose slots are generic type
+// params resolves with the inferred (or explicit) bindings — `-> (T, U)` with
+// `a: $T, b: $U` infers from the args; an explicit `$T: Type` form also works.
+// (The NAMED-slot implicit-return form with generics is a separate gap — issue
+// 0200; the positional explicit-`return` form here is the supported surface.)
+#import "modules/std.sx";
+
+// inferred type params from the value args
+pair :: (a: $T, b: $U) -> (T, U) { return a, b; }
+
+// explicit comptime type params
+mk :: ($T: Type, $U: Type, a: T, b: U) -> (T, U) { return a, b; }
+
+main :: () -> i64 {
+    x, y := pair(7, true);
+    print("{} {}\n", x, y);          // 7 true
+
+    s, n := pair("hi", 42);
+    print("{} {}\n", s, n);          // hi 42
+
+    p, q := mk(i32, bool, 3, false);
+    print("{} {}\n", p, q);          // 3 false
+    return 0;
+}

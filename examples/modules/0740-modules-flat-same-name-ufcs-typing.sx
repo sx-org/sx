@@ -1,0 +1,17 @@
+// Regression (issue 0102, Phase C): value-receiver free-function UFCS under a
+// flat same-name collision must be TYPED as the author lowering dispatches.
+// a.sx (imported first → first-wins winner) authors `tag -> string`; b.sx
+// authors its OWN `tag -> i64`. In b.sx, `v.tag()` dispatches b.tag (i64), but
+// before the fix the call PLAN typed it as a.tag (string, first-wins) — so the
+// pack-fn `print` boxed the raw i64 110 as a string pointer and dereferenced
+// 0x6e → segfault. `CallResolver.plan` now selects the SAME author the lowering
+// call-path binds, so plan-typing and dispatch can't disagree (fix-0102 F2).
+#import "modules/std.sx";
+#import "0740-modules-flat-same-name-ufcs-typing/a.sx";
+#import "0740-modules-flat-same-name-ufcs-typing/b.sx";
+
+main :: () -> i32 {
+    show_a();   // a-side: own == winner → string, byte-for-byte unchanged
+    show_b();   // b-side: shadow author → i64, typed + dispatched as b.tag
+    0
+}

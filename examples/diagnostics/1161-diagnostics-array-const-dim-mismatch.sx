@@ -1,0 +1,10 @@
+// A typed array constant's annotation dimension must match the
+// initializer's element count.
+
+#import "modules/std.sx";
+
+BAD : [3]i64 : .[1, 2];
+
+main :: () {
+    print("{}\n", BAD[0]);
+}

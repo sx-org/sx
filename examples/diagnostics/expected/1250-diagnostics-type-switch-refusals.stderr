@@ -1,0 +1,23 @@
+error: this arm is unreachable — earlier arms already claim every type it names (a concrete arm must come BEFORE the category that contains it)
+  --> examples/diagnostics/1250-diagnostics-type-switch-refusals.sx:16:14
+   |
+16 |         case i64: (v) { print("i64 {}\n", v); }   // unreachable: int claims i64
+   |              ^^^
+
+error: a category arm cannot bind a value — it names a kind, not one type; read the value through the reflection views instead
+  --> examples/diagnostics/1250-diagnostics-type-switch-refusals.sx:19:9
+   |
+19 |         case struct: (s) { _ = s; }               // category arms bind nothing
+   |         ^^^^^^^^^^^
+
+error: this arm is unreachable — earlier arms already claim every type it names (a concrete arm must come BEFORE the category that contains it)
+  --> examples/diagnostics/1250-diagnostics-type-switch-refusals.sx:24:14
+   |
+24 |         case i64: { }                             // duplicate = unreachable
+   |              ^^^
+
+error: a type switch arm names a type or a category — value patterns don't apply to an `any` subject
+  --> examples/diagnostics/1250-diagnostics-type-switch-refusals.sx:27:14
+   |
+27 |         case 5: { }                               // value pattern
+   |              ^

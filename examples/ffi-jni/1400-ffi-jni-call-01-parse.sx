@@ -1,0 +1,27 @@
+// Phase 1 step 1.2 (PLAN-FFI.md): parser coverage for `#jni_call`
+// and `#jni_static_call`. Same `#<intrinsic>(ReturnT)(args...)`
+// shape as `#objc_call`; lands green on the existing parse rule
+// (Phase 1.1 added all three).
+//
+// `inline if false` suppresses sema/codegen — the lowering arrives
+// in Phase 1.15+; this file pins the parse surface only.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    inline if false {
+        env : *void = null;
+        #jni_env(env) {
+            // Instance method: target, name, sig, args...
+            #jni_call(*void)(null, "getWindow", "()Landroid/view/Window;");
+
+            // Static method: class, name, sig, args...
+            #jni_static_call(i32)(null, "max", "(II)I", 3, 7);
+
+            // Returning a Java primitive (jboolean → sx bool).
+            #jni_call(bool)(null, "isShown", "()Z");
+        }
+    }
+    print("parse-only ok\n");
+    0
+}

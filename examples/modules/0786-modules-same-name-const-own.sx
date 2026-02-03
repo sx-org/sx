@@ -1,0 +1,14 @@
+// issue 0105 / F2 — same-name VALUE const, own-wins. Two flat-imported modules
+// each declare a top-level `K` with a different value and a function that reads
+// `K` bare. Each function's OWN reference must bind ITS OWN module's `K`
+// (own-wins), exactly as same-name structs (0754) and functions (0722) do —
+// NOT the global last-wins author: `a_k` returns 1 and `b_k` returns 2,
+// resolved by the source-aware const author selector (`selectModuleConst`).
+#import "modules/std.sx";
+#import "0786-modules-same-name-const-own/a.sx";
+#import "0786-modules-same-name-const-own/b.sx";
+
+main :: () -> i32 {
+    print("a={} b={}\n", a_k(), b_k());
+    0
+}

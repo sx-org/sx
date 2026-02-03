@@ -1,0 +1,11 @@
+#import "modules/std.sx";
+
+main :: () {
+    i := 0;
+    while i < 10 {
+        i+=1;
+        if i == 2 then continue;
+        if i == 5 then break;
+    }
+    print("{}\n", i);
+}

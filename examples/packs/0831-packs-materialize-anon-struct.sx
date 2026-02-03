@@ -1,0 +1,19 @@
+// Pack materialization with the brace literal: `stored := .{ ..xs };`
+// splices the comptime pack's elements into an anonymous POSITIONAL
+// struct (fields "0"/"1"/…), and `f(..stored)` re-spreads a struct
+// value field-wise — the `.{ }` counterpart of the tuple carrier.
+
+#import "modules/std.sx";
+
+sum3 :: (a: i64, b: i64, c: f64) -> f64 { (a + b).(f64) + c }
+
+maker :: (..$xs) -> f64 {
+    stored := .{ ..xs };
+    print("{} {}\n", stored.0, stored.1);
+    sum3(..stored)
+}
+
+main :: () -> i64 {
+    print("{}\n", maker(1, 2, 0.5));    // 3.500000
+    return 0;
+}

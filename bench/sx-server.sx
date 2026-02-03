@@ -1,0 +1,48 @@
+// Standalone std/http server for the stress (tests/stress-http.sh) and
+// benchmark (bench/run.sh) harnesses — NOT a corpus test (it calls run(),
+// which loops forever). Build it to a binary and load-test it with ab/curl:
+//
+//   ./zig-out/bin/sx build bench/sx-server.sx -o .sx-tmp/sx-server
+//   .sx-tmp/sx-server &            # listens on PORT (default 8080)
+//   ab -n 10000 -c 50 http://127.0.0.1:8080/
+//
+// Routes: GET / and /healthz → "ok"; POST /echo → the request body. Pool
+// mode is enabled when SX_HTTP_POOL is set (e.g. SX_HTTP_POOL=4); otherwise
+// the handler runs inline. PORT overrides the listen port.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/echo" { resp.body = req.body; return; }
+    if req.path == "/" or req.path == "/healthz" { resp.body = "ok"; return; }
+    resp.status = 404;
+    resp.body = "not found";
+}
+
+env_int :: (name: [:0]u8, dflt: i64) -> i64 {
+    if v := process.env(name) {
+        if v.len == 0 { return dflt; }
+        n : i64 = 0;
+        i := 0;
+        while i < v.len {
+            d := v.ptr[i];
+            if d < 48 or d > 57 { return dflt; }
+            n = n * 10 + xx (d - 48);
+            i += 1;
+        }
+        return n;
+    }
+    return dflt;
+}
+
+main :: () -> i32 {
+    port := env_int("PORT", 8080);
+    pool := env_int("SX_HTTP_POOL", 0);
+    cfg := http.Config.{ port = port, thread_pool_count = pool };
+    s, e := http.Server.init(cfg, handler, 0);
+    if e { print("server init failed (port {})\n", port); return 1; }
+    print("sx-server listening on :{} (pool={})\n", port, pool);
+    s.run();        // serve until killed
+    s.close();
+    return 0;
+}

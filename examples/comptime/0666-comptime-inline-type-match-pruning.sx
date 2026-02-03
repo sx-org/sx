@@ -1,0 +1,46 @@
+// `inline if T == { case <category|Type>: … }` over a BOUND generic type
+// param selects its arm at LOWER time and drops the siblings whole — each
+// kind arm only type-checks for its own kind (`x.len` on slices,
+// `x.(ProtocolRaw)` on protocol values), so pruning is the only way a
+// mixed-kind generic body can compile for every instantiation. Categories
+// mirror the runtime tag switch arm for arm (int incl. arb-width, float,
+// bool, string, struct, enum, slice, array, pointer, vector, optional) —
+// plus `protocol`, which exists ONLY in this static form (a protocol value
+// carries no runtime tag; the runtime spelling is a pointed error, and the
+// dedicated diagnostics pin covers it). Specific type names and `else:`
+// select as in any match; a `compile_error(…)` arm fires only when
+// SELECTED (the dead-arm case is exactly the OS-match discipline).
+// Value-producing arms use explicit `return` (inline branches lower in
+// statement position, like `inline if OS`).
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Sizable :: protocol { size :: (self: *Self) -> i64; }
+Widget :: struct { value: i64; }
+impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
+
+describe :: (x: $T) -> string {
+    inline if T == {
+        case protocol: { p := x.(ProtocolRaw); if p.ctx != null { return "protocol"; } return "null-proto"; }
+        case slice:    { if x.len >= 0 { return "slice"; } return "?"; }
+        case int:      return "int";
+        case Widget:   return "widget";      // specific type beats the struct category below
+        case struct:   return "struct";
+        case optional: return "optional";
+        else:          return "other";
+    }
+    return "unreachable";
+}
+
+Pt :: struct { x: i64; }
+
+main :: () {
+    w := Widget.{ value = 1 };
+    s := w.(Sizable);
+    xs : []i64 = .[1, 2, 3];
+    o : ?i64 = 5;
+    ga := GPA.init();
+    a : Allocator = xx ga;    // #inline protocol — classifies as protocol too
+    print("{} {} {} {}\n", describe(s), describe(xs), describe(5), describe(w));
+    print("{} {} {} {}\n", describe(Pt.{ x = 1 }), describe(o), describe(a), describe(1.5));
+}

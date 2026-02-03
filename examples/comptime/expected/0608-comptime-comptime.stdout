@@ -1,0 +1,9 @@
+=== 8. Comptime ===
+run-const: 25
+run-expr: 42
+run-chain: 30
+ct-opt-coalesce: 141
+ct-opt-unwrap: 77
+ct-opt-guard: 10
+insert-ok
+insert-gen: 42

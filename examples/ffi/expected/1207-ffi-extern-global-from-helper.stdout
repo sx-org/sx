@@ -1,0 +1,3 @@
+direct non-null = true
+helper non-null = true
+eq              = true

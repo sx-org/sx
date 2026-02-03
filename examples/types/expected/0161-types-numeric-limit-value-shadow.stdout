@@ -1,0 +1,13 @@
+local f64: epsilon=11 max=22 min_positive=33
+local i32: max=78 min=-78
+local u8: max=7
+global f32: epsilon=44 max=55 min_positive=66
+const i16: max=99 min=-99
+typed val e=11
+lim i32.max=2147483647 i32.min=-2147483648
+lim u8.max=255
+lim i16.max=32767 i16.min=-32768
+lim (1.0+f64.epsilon)!=1.0: true
+lim f64.inf > f64.max: true
+lim f64.min == -f64.max: true
+lim f32.inf > f32.max: true

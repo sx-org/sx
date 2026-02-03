@@ -1,0 +1,63 @@
+// A `#get` property accessor is reachable through an optional chain
+// (`obj?.getter`): the some-branch dispatches the getter and the result is
+// re-wrapped as `?R`; a null receiver short-circuits to null. Works for a value
+// optional (`?T`), a pointer optional (`?*T`), and a generic-instance getter —
+// including a COLD user generic reached ONLY through the chain (its monomorph
+// is warmed so its return type resolves, not `?unresolved`). Real fields read
+// correctly through `?.` for both `?T` and `?*T` (the pointer is loaded, not
+// reinterpreted). All type correctly without an explicit annotation.
+// Regression (issue 0160).
+#import "modules/std.sx";
+
+Temp :: struct {
+    raw: i64 = 0;
+    doubled :: (self: *Temp) -> i64 #get => self.raw * 2;
+}
+
+// A user generic with a type-parameter field, reached ONLY through `?.` (never
+// a direct call first) — exercises the cold-monomorph warming.
+Cell :: struct ($T: Type) {
+    slot: T;           // type-parameter field — the cold-panic trigger
+    n: i64;
+    count :: (self: *Cell($T)) -> i64 #get => self.n;
+    head :: (self: *Cell($T)) -> T #get => self.slot;   // returns the type param
+}
+
+main :: () -> i64 {
+    t : Temp = .{ raw = 4 };
+
+    // value optional ?T — getter through chain
+    ot : ?Temp = t;
+    print("?T getter: {}\n", ot?.doubled ?? -1);     // 8
+
+    // pointer optional ?*T — getter through chain
+    pt : ?*Temp = @t;
+    print("?*T getter: {}\n", pt?.doubled ?? -1);     // 8
+
+    // null receiver short-circuits
+    nope : ?Temp = null;
+    print("null getter: {}\n", nope?.doubled ?? -1);  // -1
+
+    // real field through chain still works
+    print("?T field: {}\n", ot?.raw ?? -1);           // 4
+
+    // generic-instance getter (List.len) through chain
+    xs : List(i64) = .{};
+    xs.append(10); xs.append(20); xs.append(30);
+    pxs : ?*List(i64) = @xs;
+    print("?*List len: {}\n", pxs?.len ?? -1);        // 3
+
+    // COLD user generic getter through chain (no direct call first): concrete
+    // return and type-parameter return, via ?*Cell and ?Cell.
+    c := Cell(i64).{ slot = 99, n = 5 };
+    pc : ?*Cell(i64) = @c;
+    print("cold ?*Cell count: {}\n", pc?.count ?? -1);  // 5
+    print("cold ?*Cell head: {}\n", pc?.head ?? -1);    // 99
+    oc : ?Cell(i64) = c;
+    print("cold ?Cell count: {}\n", oc?.count ?? -1);   // 5
+
+    // real field read through ?*T (the pointer is loaded, not reinterpreted)
+    print("?*Cell field n: {}\n", pc?.n ?? -1);         // 5
+    print("?*Cell field slot: {}\n", pc?.slot ?? -1);   // 99
+    return 0;
+}

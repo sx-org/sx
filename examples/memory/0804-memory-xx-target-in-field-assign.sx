@@ -1,0 +1,42 @@
+// `xx` cast inside an RHS expression assigned to a struct field takes its
+// target type from the field, not from the enclosing function's return type.
+// Covers if-then-else RHS and binary-op RHS variants.
+
+#import "modules/std.sx";
+
+Foo :: struct {
+    pixel_w: i32;
+    dpi: f32;
+    last_perf: i64;
+    delta_time: f32;
+}
+FC :: struct { a: f32; b: f32; c: i32; d: i32; e: f32; f: f32; }
+
+// If-then-else RHS in a function whose return type is not f32.
+calc_bool :: (self: *Foo, wf: f32) -> bool {
+    self.dpi = if wf > 0.0 then xx self.pixel_w / wf else 1.0;
+    true
+}
+
+// Binary-op RHS in a struct-returning function. The xx casts must target f32,
+// not the FC return-struct shape.
+begin :: (self: *Foo, current: i64, freq: i64) -> FC {
+    if self.last_perf > 0 {
+        self.delta_time = xx (current - self.last_perf) / xx freq;
+    }
+    FC.{ a = 1.0, b = 2.0, c = 3, d = 4, e = 5.0, f = 6.0 }
+}
+
+main :: () -> void {
+    f : *Foo = xx c.libc_malloc(size_of(Foo));
+    f.pixel_w = 2880;
+    f.dpi = 0.0;
+    f.last_perf = 1000;
+    f.delta_time = 0.0;
+
+    _ := calc_bool(f, 1440.0);
+    print("dpi={}\n", f.dpi);
+
+    fc := begin(f, 1500, 1000);
+    print("delta={} fc.a={}\n", f.delta_time, fc.a);
+}

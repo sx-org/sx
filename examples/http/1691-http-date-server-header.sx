@@ -1,0 +1,258 @@
+// std.http — Date header on every response + optional Server: knob
+// (RFC 9110 §6.6.1, §10.2.4).
+//
+// Q1.5: every response carries a `Date:` header in IMF-fixdate form
+// ("Sun, 06 Nov 1994 08:49:37 GMT" — fixed 29 bytes, GMT), including
+// error responses; the value is cached on the Server and refreshed at
+// most once per second (the loop thread serializes; pool workers stamp
+// their own). `Config.server_name` ("" = default) adds a `Server:`
+// header when set — absent by default.
+//
+// The test validates the Date value INDEPENDENTLY: it re-derives the
+// epoch from the wire text via days-from-civil (the inverse of the
+// server's civil-from-days formatter) and asserts it lands within the
+// [before, after] wall-clock window of the exchange — a wrong month
+// table, weekday base, or a stale cache would all miss the window or
+// the shape checks.
+//
+// Asserts: 200 carries a well-formed Date inside the wall-clock window
+// (weekday/month names from the valid sets, exact punctuation, GMT);
+// no Server: header by default; a malformed request's 400 also carries
+// Date; a pooled server with server_name set stamps both Date and
+// `Server: sx-test/1` (worker serialization path); GPA net-zero.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT_A :: 19004;
+PORT_B :: 19005;
+
+producer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64 {
+    if offset >= 4 { return 0; }
+    src := "data";
+    n := 4 - offset;
+    if n > dst_cap { n = dst_cap; }
+    i : i64 = 0;
+    while i < n { dst[i] = src[offset + i]; i += 1; }
+    return n;
+}
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    // "/stream" opts into chunked output — locks Date on the streamed
+    // serialization path (start_stream / serialize_chunked_head).
+    if req.path.len == 7 and req.path[1] == 115 {   // "/stream"
+        resp.stream(producer, 0);
+        return;
+    }
+    resp.body = "served";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -> string {
+    fd := dial_port(port);
+    if fd < 0 { return ""; }
+    socket.write(fd, req.ptr, xx req.len);
+    total : i64 = 0;
+    stall : i64 = 0;
+    done := false;
+    while !done and stall < 400 {
+        srv.tick(1) catch {};
+        got : i64 = 0;
+        while true {
+            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            if !re { total += n; got += n; continue; }
+            if re == error.Closed { done = true; }
+            break;
+        }
+        if got > 0 { stall = 0; } else { stall += 1; }
+    }
+    socket.close(fd);
+    return string.{ ptr = buf, len = xx total };
+}
+
+check :: (r: string, frag: string, label: string, failed: *i64) {
+    if !contains(r, frag) {
+        print("{}: expected \"{}\"\n", label, frag);
+        failed.* = 1;
+    }
+}
+
+// ── independent Date validation ─────────────────────────────────────
+
+WDAYS :: "SunMonTueWedThuFriSat";
+MONTHS :: "JanFebMarAprMayJunJulAugSepOctNovDec";
+
+// Index of a 3-char name inside a packed table; -1 when absent.
+name_index :: (table: string, s: string, off: i64) -> i64 {
+    k : i64 = 0;
+    while k * 3 < table.len {
+        if table[k*3] == s[off] and table[k*3+1] == s[off+1] and table[k*3+2] == s[off+2] { return k; }
+        k += 1;
+    }
+    return -1;
+}
+
+two_digits :: (s: string, off: i64) -> i64 {
+    a := s[off]; b := s[off + 1];
+    if a < 48 or a > 57 or b < 48 or b > 57 { return -1; }
+    return xx ((a - 48) * 10 + (b - 48));
+}
+
+// days-from-civil (the INVERSE of the server's civil-from-days).
+days_from_civil :: (y: i64, m: i64, d: i64) -> i64 {
+    yy := y;
+    if m <= 2 { yy -= 1; }
+    era := (if yy >= 0 then yy else yy - 399) / 400;
+    yoe := yy - era * 400;
+    mm := if m > 2 then m - 3 else m + 9;
+    doy := (153 * mm + 2) / 5 + d - 1;
+    doe := yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468;
+}
+
+// Find "\r\nDate: <IMF-fixdate>\r\n" in the response; validate the shape
+// and return the re-derived unix epoch (-1 = malformed/absent).
+date_epoch_of :: (r: string) -> i64 {
+    // locate "\r\nDate: "
+    ds := -1;
+    i := 0;
+    marker := "\r\nDate: ";
+    while i + marker.len + 29 <= r.len {
+        j := 0;
+        ok := true;
+        while j < marker.len { if r[i + j] != marker[j] { ok = false; break; } j += 1; }
+        if ok { ds = i + marker.len; break; }
+        i += 1;
+    }
+    if ds < 0 { return -1; }
+    v := string.{ ptr = @r[ds], len = 29 };
+    // "Www, DD Mmm YYYY HH:MM:SS GMT"
+    wd := name_index(WDAYS, v, 0);
+    if wd < 0 { return -1; }
+    if v[3] != 44 or v[4] != 32 { return -1; }        // ", "
+    day := two_digits(v, 5);
+    if day < 1 or day > 31 { return -1; }
+    if v[7] != 32 { return -1; }
+    mon := name_index(MONTHS, v, 8);
+    if mon < 0 { return -1; }
+    if v[11] != 32 { return -1; }
+    y1 := two_digits(v, 12);
+    y2 := two_digits(v, 14);
+    if y1 < 0 or y2 < 0 { return -1; }
+    year := y1 * 100 + y2;
+    if v[16] != 32 { return -1; }
+    hh := two_digits(v, 17);
+    mm := two_digits(v, 20);
+    ss := two_digits(v, 23);
+    if hh < 0 or hh > 23 or mm < 0 or mm > 59 or ss < 0 or ss > 60 { return -1; }
+    if v[19] != 58 or v[22] != 58 { return -1; }      // ':'
+    if v[25] != 32 or v[26] != 71 or v[27] != 77 or v[28] != 84 { return -1; }   // " GMT"
+    days := days_from_civil(year, mon + 1, day);
+    // the weekday must agree with the date (1970-01-01 = Thursday)
+    wd_expect := (days + 4) % 7;
+    if wd_expect < 0 { wd_expect += 7; }
+    if wd != wd_expect { return -1; }
+    return days * 86400 + hh * 3600 + mm * 60 + ss;
+}
+
+check_date :: (r: string, before: i64, after: i64, label: string, failed: *i64) {
+    ep := date_epoch_of(r);
+    if ep < 0 {
+        print("{}: Date header absent or malformed\n", label);
+        failed.* = 1;
+        return;
+    }
+    if ep < before - 2 or ep > after + 2 {
+        print("{}: Date epoch {} outside [{}, {}]\n", label, ep, before, after);
+        failed.* = 1;
+    }
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 16384;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{ port = PORT_A, max_conn = 4, request_count = 10 };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        // (a) a normal 200 carries a valid, current Date
+        before := time.now_secs();
+        r := roundtrip(@srv, PORT_A, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        after := time.now_secs();
+        check(r, "HTTP/1.1 200 OK", "basic status", @failed);
+        check_date(r, before, after, "basic Date", @failed);
+
+        // (a2) a streamed (chunked) response carries Date too
+        before = time.now_secs();
+        r2 := roundtrip(@srv, PORT_A, "GET /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        after = time.now_secs();
+        check(r2, "Transfer-Encoding: chunked", "stream TE", @failed);
+        check_date(r2, before, after, "stream Date", @failed);
+
+        // (b) no Server: header unless configured
+        if contains(r, "\r\nServer:") {
+            print("default: unexpected Server header\n");
+            failed = 1;
+        }
+
+        // (c) an error response carries Date too
+        before = time.now_secs();
+        r = roundtrip(@srv, PORT_A, "BAD\r\n\r\n", rbuf, cap);
+        after = time.now_secs();
+        check(r, "HTTP/1.1 400", "error status", @failed);
+        check_date(r, before, after, "error Date", @failed);
+
+        srv.close();
+
+        // (d) pooled server with server_name: worker-side serialization
+        // stamps Date and the configured Server: header
+        cfgp : http.Config = .{ port = PORT_B, max_conn = 4, request_count = 10,
+                                thread_pool_count = 1, server_name = "sx-test/1" };
+        srvp, spe := http.Server.init(cfgp, route, 0);
+        if spe { print("pool init failed\n"); return 1; }
+        before = time.now_secs();
+        r = roundtrip(@srvp, PORT_B, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        after = time.now_secs();
+        check(r, "HTTP/1.1 200 OK", "pooled status", @failed);
+        check(r, "\r\nServer: sx-test/1\r\n", "pooled Server header", @failed);
+        check_date(r, before, after, "pooled Date", @failed);
+        srvp.close();
+
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

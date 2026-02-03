@@ -1,0 +1,19 @@
+#import "modules/ffi/raylib.sx";
+
+main :: () {
+    InitWindow(800, 600, "sx - Triangle");
+
+    while !WindowShouldClose() {
+        BeginDrawing();
+        ClearBackground(Color.{50, 50, 50, 255});
+
+        v1 := Vector2.{400.0, 100.0};
+        v2 := Vector2.{200.0, 500.0};
+        v3 := Vector2.{600.0, 500.0};
+        DrawTriangle(v1, v2, v3, Color.{230, 41, 55, 255});
+
+        EndDrawing();
+    }
+
+    CloseWindow();
+}

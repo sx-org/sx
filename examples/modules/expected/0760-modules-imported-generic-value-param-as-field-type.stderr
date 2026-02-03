@@ -1,0 +1,5 @@
+error: 'N' is a value parameter, not a type; introduce a generic type parameter with `$N: Type`
+  --> examples/modules/0760-modules-imported-generic-value-param-as-field-type/lib.sx:9:8
+   |
+ 9 |     x: N;
+   |        ^

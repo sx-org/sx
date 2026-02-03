@@ -1,0 +1,37 @@
+// Stream B2/A1 — a fiber INHERITS the dynamic `context` in force when it was
+// spawned. Previously a fiber body ran under the static `__sx_default_context`
+// (the `abi(.c)` `fib_dispatch` dropped the implicit context), so a
+// `push Context { … }` around `spawn` was invisible inside the fiber. Now
+// `Scheduler.spawn` snapshots `context` into the fiber and `fib_dispatch`
+// re-pushes it around the body — so a capability installed before `spawn`
+// (here a typed `#context_extend marker` field) is visible to the worker.
+//
+// This is the foundation for folding a fiber scheduler behind `context.io`: a
+// worker's `context.io.*` must resolve to the scheduler that spawned it, not the
+// blocking default. Behavior-preserving for fibers spawned under the default
+// context (the snapshot just re-pushes that same default).
+//
+// aarch64-pinned (the scheduler's per-arch asm): runs end-to-end on a matching
+// host (macOS + linux), ir-only on a mismatch.
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+Marker :: struct { id: i64; }
+
+#context_extend marker: ?*Marker = null;
+
+main :: () -> i64 {
+    mk := Marker.{ id = 7 };
+    s := sched.Scheduler.init();
+    ps := @s;
+    print("outside: marker id = {}\n", mk.id);
+    push .{ marker = @mk } {
+        ps.spawn(() {
+            m := context.marker!;                 // inherited from the spawn-time context
+            print("inside fiber: context.marker id = {}\n", m.id);
+        });
+        ps.run();
+    }
+    print("done\n");
+    return 0;
+}

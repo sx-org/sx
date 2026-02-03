@@ -1,0 +1,34 @@
+// Compound type literals in expression position — `size_of` /
+// `align_of` accept pointer (`*T`), optional (`?T`), array (`[N]T`),
+// function (`(A) -> B`), and tuple (`Tuple(A, B)`) types directly. Also
+// const-decl RHS aliases through the same forms (`Ptr :: *u8;` etc).
+// Same shape as the existing `size_of(i32)` baseline path.
+
+#import "modules/std.sx";
+
+// Unambiguous type-form const-decl aliases.
+Ptr   :: *u8;
+Maybe :: ?u8;
+Arr   :: [3]u8;
+Cb    :: (i32) -> i32;
+
+main :: () -> i32 {
+  // Direct: parser fix for *T, ?T  + existing [N]T path.
+  print("size_of(*u8)        = {}\n", size_of(*u8));
+  print("align_of(*u8)       = {}\n", align_of(*u8));
+  print("size_of(?u8)        = {}\n", size_of(?u8));
+  print("size_of([3]u8)      = {}\n", size_of([3]u8));
+
+  // Function-type literal in expression position.
+  print("size_of((i32)->i32) = {}\n", size_of((i32) -> i32));
+
+  // Tuple type at the type-demanding site.
+  print("size_of((i32, i32)) = {}\n", size_of(Tuple(i32, i32)));
+
+  // Aliases.
+  print("size_of(Ptr)        = {}\n", size_of(Ptr));
+  print("size_of(Maybe)      = {}\n", size_of(Maybe));
+  print("size_of(Arr)        = {}\n", size_of(Arr));
+  print("size_of(Cb)         = {}\n", size_of(Cb));
+  0
+}

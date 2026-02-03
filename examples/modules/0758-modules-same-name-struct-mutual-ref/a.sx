@@ -1,0 +1,3 @@
+// Module A authors its OWN `Box` and `Node` (the FIRST same-name authors).
+Box  :: struct { x: i64; }
+Node :: struct { n: i64; }

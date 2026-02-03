@@ -1,0 +1,5 @@
+error: unknown type 'Coordnate'
+  --> examples/modules/0759-modules-undeclared-type-in-import/lib.sx:7:8
+   |
+ 7 |     y: Coordnate;
+   |        ^^^^^^^^^

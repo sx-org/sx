@@ -1,0 +1,5 @@
+error: namespace 't' is not visible; #import the module that declares it
+  --> examples/modules/0832-modules-namespace-alias-two-hop-not-visible.sx:14:19
+   |
+14 |     print("{}\n", t.helper());
+   |                   ^

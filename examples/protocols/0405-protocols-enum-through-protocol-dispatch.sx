@@ -1,0 +1,32 @@
+// Sub-32-bit enum variants ride through a protocol-typed receiver's
+// method call without being collapsed to tag=0.
+
+#import "modules/std.sx";
+
+Fmt :: enum { a; b; }
+
+Proto :: protocol {
+  take_fmt :: (self: *Self, f: Fmt);
+}
+
+Impl :: struct {}
+impl Proto for Impl {
+  take_fmt :: (self: *Impl, f: Fmt) {
+    n : i64 = xx f;
+    print("proto f = {}\n", n);
+  }
+}
+
+take :: (f: Fmt) -> i64 {
+  n : i64 = xx f;
+  n
+}
+
+main :: () -> i32 {
+  print("direct a={} b={}\n", take(.a), take(.b));
+
+  p := Impl.{}.(Proto);
+  p.take_fmt(.b);
+  p.take_fmt(.a);
+  0
+}

@@ -1,0 +1,9 @@
+// Companion of 0211: the re-export facade — own alias decls over another
+// module's members. Flat importers of THIS file see the aliases bare.
+#import "modules/std.sx";
+
+r :: #import "0211-generics-struct-alias-head-rich.sx";
+
+helper :: r.helper;
+Thing :: r.Thing;
+Box :: r.Box;

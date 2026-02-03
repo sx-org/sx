@@ -1,0 +1,34 @@
+// A `.[...]` array/slice literal passed DIRECTLY as a call argument behaves
+// identically to binding it to a typed local first: the literal is
+// materialized into addressable storage and a {ptr,len} slice header is built
+// over it, so the callee reads the element CONTENTS correctly.
+// Regression (issue 0084): a direct literal arg passed the raw array value
+// where a slice was expected, so the callee read its header off the wrong
+// bytes and returned garbage (0).
+#import "modules/std.sx";
+
+count_nope :: (xs: []string) -> i64 {
+    n := 0;
+    i := 0;
+    while i < xs.len { if xs[i] == "nope" { n += 1; } i += 1; }
+    return n;
+}
+
+sum :: (xs: []i64) -> i64 {
+    s := 0;
+    i := 0;
+    while i < xs.len { s += xs[i]; i += 1; }
+    return s;
+}
+
+main :: () {
+    // string slice: direct literal vs local-bound — both see 2 "nope"s.
+    print("str direct={}\n", count_nope(.["a", "nope", "b", "nope"]));
+    local : []string = .["a", "nope", "b", "nope"];
+    print("str local={}\n", count_nope(local));
+
+    // numeric slice: direct literal vs local-bound — both sum to 100.
+    print("num direct={}\n", sum(.[10, 20, 30, 40]));
+    nums : []i64 = .[10, 20, 30, 40];
+    print("num local={}\n", sum(nums));
+}

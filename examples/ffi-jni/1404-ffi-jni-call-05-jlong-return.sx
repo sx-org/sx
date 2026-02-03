@@ -1,0 +1,24 @@
+// Phase 1 step 1.19 (PLAN-FFI.md): `#jni_call(i64)` (jlong return).
+// Today the non-void switch falls through to `LLVMGetUndef`; the IR
+// snapshot captures the placeholder. The make-green commit adds the
+// `.i64 => Jni.CallLongMethod` arm and the snapshot updates to show
+// the full dispatch through vtable slot 52, reusing the 1.17 slot
+// interning.
+
+#import "modules/std.sx";
+
+g_should_call : bool = false;
+
+read_long :: (env: *void, target: *void) -> i64 {
+    #jni_env(env) {
+        #jni_call(i64)(target, "currentTimeMillis", "()J")
+    }
+}
+
+main :: () -> i32 {
+    if g_should_call {
+        _ := read_long(null, null);
+    }
+    print("ok\n");
+    0
+}

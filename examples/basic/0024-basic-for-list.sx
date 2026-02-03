@@ -1,0 +1,40 @@
+// `for` over a `List(T)` (a `{ items: [*]T, len, cap }` struct): value capture,
+// by-ref capture (mutates in place), iterating a `*List`, and a by-ref capture
+// used as a value-receiver method call (auto-deref).
+#import "modules/std.sx";
+
+Box :: struct {
+    v: i64;
+    boxed :: (self: Box) -> i64 { self.v }   // value receiver
+}
+
+sum_ptr :: (xs: *List(i64)) -> i64 {
+    total : i64 = 0;
+    for xs (n) { total = total + n; }         // iterate through a *List
+    total
+}
+
+main :: () -> i32 {
+    xs := List(i64).{};
+    xs.append(10);
+    xs.append(20);
+    xs.append(30);
+
+    s : i64 = 0;
+    for xs (n) { s = s + n; }                 // value capture
+    print("sum {}\n", s);                      // 60
+
+    for xs (*n) { n.* = n + 100; }            // by-ref: writes back
+    s = 0;
+    for xs (n) { s = s + n; }
+    print("sum2 {}\n", s);                     // 360
+
+    print("via ptr {}\n", sum_ptr(@xs));       // 360
+
+    bs := List(Box).{};
+    bs.append(.{ v = 7 });
+    bt : i64 = 0;
+    for bs (*b) { bt = bt + b.boxed(); }      // *Box receiver, value-self method
+    print("boxes {}\n", bt);                   // 7
+    0
+}

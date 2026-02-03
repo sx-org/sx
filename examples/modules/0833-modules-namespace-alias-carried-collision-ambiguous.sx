@@ -1,0 +1,15 @@
+// Two direct flat imports each declare the SAME alias name `t` pointing at
+// DIFFERENT targets. Using the carried alias here is ambiguous and rejected
+// loudly — never a silent first-registration pick. (Each module's own use
+// of its own `t` stays valid — see 0834.)
+//
+// Regression (issue 0114): collisions used to resolve silently first-wins
+// through the global qualified-fn registration.
+
+#import "modules/std.sx";
+#import "0833-modules-namespace-alias-carried-collision-ambiguous/a.sx";
+#import "0833-modules-namespace-alias-carried-collision-ambiguous/b.sx";
+
+main :: () {
+    print("{} {} {}\n", use_a(), use_b(), t.fx());
+}

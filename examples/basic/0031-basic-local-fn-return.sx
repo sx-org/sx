@@ -1,0 +1,30 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+Point :: struct { x, y: i32; }
+
+Shape :: enum {
+    circle: f32;
+    rect: struct { w, h: f32; };
+    none;
+}
+
+main :: () {
+
+    // ========================================================
+    // 19. LOCAL FUNCTION RETURNING STRUCT/ENUM
+    // ========================================================
+    print("=== 19. Local Fn Return ===\n");
+    {
+        local_pt :: () -> Point { Point.{42, 99} }
+        lp := local_pt();
+        print("local-struct: {} {}\n", lp.x, lp.y);
+
+        local_sh :: () -> Shape { .circle(2.5) }
+        ls := local_sh();
+        print("local-enum: {}\n", ls);
+    }
+}

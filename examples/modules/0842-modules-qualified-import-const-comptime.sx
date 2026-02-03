@@ -1,0 +1,27 @@
+// A qualified-import-member const (`m.CAP`) folds as a compile-time constant in
+// every comptime position the bare-import form already supported: array
+// dimensions, const arithmetic, an integral-float dimension, a Vector lane
+// count, and a generic value-param argument.
+//
+// Regression (issue 0192): a namespaced import's const reached the const
+// folders only as a runtime value — `evalConstIntExpr`'s field_access arm had
+// no namespace-member arm, and a qualified ref in type-argument position
+// (`Vector(m.LANES, …)`) arrives as a single dotted name. Both now resolve
+// through the namespace alias to the target module's per-source const.
+#import "modules/std.sx";
+m :: #import "0842-modules-qualified-import-const-comptime/layout.sx";
+
+Box :: struct($N: i64) { data: [N]u8; }
+
+main :: () -> i64 {
+    a  : [m.CAP]u8 = ---;            // array dimension          → 8
+    b  : [m.CAP * 2 + 1]u8 = ---;    // arithmetic over a qualified const → 17
+    c  : [m.FOURF]u8 = ---;          // integral float const dim → 4
+    v  : Vector(m.LANES, f32) = ---; // Vector lane count        → 4 lanes
+    bx : Box(m.CAP) = ---;           // generic value-param arg  → 8
+    iter := 0;
+    inline for 0..m.CAP (i) { iter += 1; }   // inline-for bound → 8
+
+    print("a={} b={} c={} box={} lanes-iter={}\n", a.len, b.len, c.len, bx.data.len, iter);
+    return a.len + b.len + c.len + bx.data.len + iter;   // 8+17+4+8+8 = 45
+}

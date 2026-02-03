@@ -1,0 +1,41 @@
+// `try` rejections (ERR step E1.4a):
+//   - `try` is only valid inside a failable function,
+//   - the operand must be failable (the sole failable-operand check —
+//     the parser imposes none),
+//   - propagating a `try` whose callee's error set is not a subset of the
+//     caller's named set is rejected (widening at a function-propagation site).
+// The positive case lives in `examples/221-try.sx`.
+
+#import "modules/std.sx";
+
+A :: error { Xa }
+B :: error { Yb }
+
+ga    :: () -> !A  { return; }
+gb    :: () -> !B  { return; }
+plain :: () -> i32 { return 0; }
+
+// `try` in a non-failable function.
+bad_ctx :: () -> i32 {
+    try ga();                  // error: `try` outside a failable function
+    return 0;
+}
+
+// `try` on a non-failable operand.
+bad_operand :: () -> !A {
+    try plain();               // error: operand has type i32 (not failable)
+    return;
+}
+
+// Callee's set (B = {Yb}) is not a subset of the caller's set (A = {Xa}).
+widen :: () -> !A {
+    try gb();                  // error: Yb not in caller's error set A
+    return;
+}
+
+main :: () -> i32 {
+    a := bad_ctx();            // force bad_ctx to lower
+    b := bad_operand();        // force bad_operand to lower
+    c := widen();              // force widen to lower
+    return 0;
+}

@@ -1,0 +1,342 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+Point :: struct { x, y: i32; }
+
+Color :: enum { red; green; blue; }
+
+Shape :: enum {
+    circle: f32;
+    rect: struct { w, h: f32; };
+    none;
+}
+
+Overlay :: union {
+    f: f32;
+    i: i32;
+}
+
+Vec2 :: union {
+    data: [2]f32;
+    struct { x, y: f32; };
+}
+
+Defaults :: struct {
+    a: i32;
+    b: i32 = 99;
+    c: i32 = ---;
+}
+
+MyFloat :: f64;
+
+Status :: enum u8 { ok; err; timeout; }
+
+add :: (a: i32, b: i32) -> i32 { a + b }
+
+mul :: (a: i32, b: i32) -> i32 { a * b }
+
+vec3 :: (x: f32, y: f32, z: f32) -> Vector(3, f32) {
+    .[x, y, z]
+}
+
+// Global variable for address-of test
+g_smoke_val : i32 = 42;
+
+write_to_ptr :: (p: *i32) {
+    p.* = 99;
+}
+
+main :: () {
+
+    // ========================================================
+    // 3. TYPE SYSTEM
+    // ========================================================
+    print("=== 3. Types ===\n");
+
+    // Primitive types
+    v_i8 : i8 = 127;
+    v_i16 : i16 = 32000;
+    v_i32 : i32 = 100000;
+    v_u8 : u8 = 255;
+    v_u16 : u16 = 65000;
+    v_u32 : u32 = 4000000;
+    print("i8: {}\n", v_i8);
+    print("i16: {}\n", v_i16);
+    print("i32: {}\n", v_i32);
+    print("u8: {}\n", v_u8);
+    print("u16: {}\n", v_u16);
+    print("u32: {}\n", v_u32);
+
+    // Type alias
+    mf : MyFloat = 1.5;
+    print("alias: {}\n", mf);
+
+    // --- Structs ---
+    // Positional literal
+    p1 : Point = .{ 1, 2 };
+    print("struct-pos: {}\n", p1);
+
+    // Type-prefix literal
+    p2 := Point.{ 3, 4 };
+    print("struct-prefix: {}\n", p2);
+
+    // Named fields
+    p3 := Point.{ y=10, x=20 };
+    print("struct-named: {}\n", p3);
+
+    // Shorthand (variable name = field name)
+    x : i32 = 5;
+    y : i32 = 6;
+    p4 := Point.{ x, y };
+    print("struct-shorthand: {}\n", p4);
+
+    // Field defaults
+    d1 : Defaults;
+    print("defaults: a={} b={}\n", d1.a, d1.b);
+
+    // Field access and assignment
+    p5 := Point.{ 0, 0 };
+    p5.x = 42;
+    p5.y = 99;
+    print("field-assign: {}\n", p5);
+
+    // --- Enum (payload-less) ---
+    ec : Color = .red;
+    print("enum: {}\n", ec);
+
+    // Enum comparison
+    ce1 : Color = .red;
+    ce2 : Color = .red;
+    ce3 : Color = .blue;
+    print("enum-eq: {}\n", ce1 == ce2);
+    print("enum-neq: {}\n", ce1 != ce3);
+
+    // Backing type
+    st : Status = .err;
+    print("backing: {}\n", st);
+
+    // --- Enum (tagged union) ---
+    sh : Shape = .circle(3.14);
+    print("tagged: {}\n", sh);
+
+    // Payload access
+    radius := sh.circle;
+    print("payload: {}\n", radius);
+
+    // Void variant
+    sh = .none;
+    print("void-variant: {}\n", sh);
+
+    // Variant reassignment
+    sh = .circle(1.0);
+    print("reassign: {}\n", sh);
+    sh = .rect(.{ 5, 3 });
+    print("reassign2: {}\n", sh);
+
+    // Type-prefix construction
+    tp := Shape.circle(2.5);
+    print("enum-prefix: {}\n", tp);
+
+    // Pattern matching
+    sh2 : Shape = .rect(.{ 5, 3 });
+    if sh2 == {
+        case .circle: print("match: circle\n");
+        case .rect: print("match: rect\n");
+        case .none: print("match: none\n");
+    }
+
+    // Match as expression
+    sh3 : Shape = .circle(1.0);
+    ms := if sh3 == {
+        case .circle: 10;
+        case .rect: 20;
+        case .none: 30;
+    }
+    print("match-expr: {}\n", ms);
+
+    // Match expression with else
+    me_val := 42;
+    me_res := if me_val == {
+        case 1: 10;
+        case 2: 20;
+        else: 99;
+    }
+    print("match-expr-else: {}\n", me_res);
+
+    // Payload capture (block form)
+    sh4 : Shape = .circle(9.5);
+    if sh4 == {
+        case .circle: (r) { print("capture: {}\n", r); }
+        case .rect: (sz) { print("capture: {}\n", sz); }
+        case .none: print("capture: none\n");
+    }
+
+    // Payload capture (arrow form)
+    sh_ca : Shape = .circle(7.5);
+    if sh_ca == {
+        case .circle: (r) => print("capture-arrow: {}\n", r);
+        case .rect: (sz) => print("capture-arrow: rect\n");
+        case .none: print("capture-arrow: none\n");
+    }
+
+    // else arm in match
+    num := 42;
+    if num == {
+        case 1: print("else-match: one\n");
+        case 2: print("else-match: two\n");
+        else: print("else-match: other\n");
+    }
+
+    // Integer pattern matching
+    code := 2;
+    if code == {
+        case 1: print("int-match: one\n");
+        case 2: print("int-match: two\n");
+        case 3: print("int-match: three\n");
+    }
+
+    // Integer match with else
+    im_code := 99;
+    if im_code == {
+        case 1: print("int-match-else: one\n");
+        case 2: print("int-match-else: two\n");
+        else: print("int-match-else: unknown\n");
+    }
+
+    // Bool pattern matching
+    bm := true;
+    if bm == {
+        case true: print("bool-match-t: yes\n");
+        case false: print("bool-match-t: no\n");
+    }
+    bm2 := false;
+    if bm2 == {
+        case true: print("bool-match-f: yes\n");
+        case false: print("bool-match-f: no\n");
+    }
+
+    // Bool conditional
+    flag := true;
+    if flag { print("bool: true\n"); }
+
+    // --- Union (untagged) ---
+    o : Overlay = ---;
+    o.f = 3.14;
+    print("union-f: {}\n", o.f);
+    // Type punning — read same bits as i32
+    print("union-i: {}\n", o.i);
+
+    // Union member promotion
+    uv : Vec2 = ---;
+    uv.x = 1.0;
+    uv.y = 2.0;
+    print("promoted-x: {}\n", uv.x);
+    print("promoted-data0: {}\n", uv.data[0]);
+
+    // --- Arrays ---
+    arr : [5]i32 = .[10, 20, 30, 40, 50];
+    print("arr[2]: {}\n", arr[2]);
+    print("arr.len: {}\n", arr.len);
+
+    // Array element assignment
+    aa : [3]i32 = .[1, 2, 3];
+    aa[1] = 99;
+    print("arr-assign: {}\n", aa);
+
+    // --- Slices ---
+    sl : []i32 = .[1, 2, 3, 4, 5];
+    print("sl[0]: {}\n", sl[0]);
+    print("sl.len: {}\n", sl.len);
+
+    // Slice element write
+    sla : []i32 = .[10, 20, 30];
+    sla[1] = 55;
+    print("sl-assign: {}\n", sla);
+
+    // Subslicing
+    sub := arr[1..4];
+    print("sub: {}\n", sub);
+    head := arr[..3];
+    print("head: {}\n", head);
+    tail := arr[2..];
+    print("tail: {}\n", tail);
+
+    // Slice of slice
+    sos : []i32 = .[10, 20, 30, 40, 50];
+    mid := sos[1..4];
+    inner := mid[0..2];
+    print("slice-of-slice: {}\n", inner);
+
+    // String subslicing
+    msg := "hello world";
+    print("strsub: {}\n", msg[6..11]);
+    print("str-prefix: {}\n", msg[..5]);
+    print("str-suffix: {}\n", msg[6..]);
+
+    // --- Pointers ---
+    // Address-of global variable
+    write_to_ptr(@g_smoke_val);
+    print("global-addr-of: {}\n", g_smoke_val);
+
+    pv := Point.{ 10, 20 };
+    ptr := @pv;
+    print("deref: {}\n", ptr.*);
+
+    // Auto-deref
+    print("auto-deref: {}\n", ptr.x);
+
+    // Many-pointer
+    mp : [*]i32 = @arr[0];
+    print("mp[0]: {}\n", mp[0]);
+    print("mp[3]: {}\n", mp[3]);
+
+    // Many-pointer write
+    mpw : [5]i32 = .[10, 20, 30, 40, 50];
+    mpw_ptr : [*]i32 = @mpw[0];
+    mpw_ptr[2] = 99;
+    print("mp-write: {}\n", mpw[2]);
+
+    // Pointer-null comparison
+    np : *i32 = null;
+    print("ptr==null: {}\n", np == null);
+    print("ptr!=null: {}\n", np != null);
+    np2 := @pv.x;
+    print("ptr2==null: {}\n", np2 == null);
+    print("ptr2!=null: {}\n", np2 != null);
+
+    // Pointer to nested struct field
+    Inner3 :: struct { a: f32; b: f32; c: f32; }
+    Outer3 :: struct { key: i32; inner: Inner3; }
+    out3 := Outer3.{ key = 42, inner = Inner3.{ a = 1.0, b = 2.0, c = 3.0 } };
+    ip3 := @out3.inner;
+    print("ptr-nested-field: {} {} {}\n", ip3.a, ip3.b, ip3.c);
+
+    // Store to many-pointer field must not corrupt adjacent memory
+    MpHolder :: struct { items: [*]i64; sentinel: i64; }
+    mph := MpHolder.{ items = xx 0, sentinel = 42 };
+    mph.items = xx 0;
+    print("mp-store-sentinel: {}\n", mph.sentinel);
+
+    // --- Vectors ---
+    vc := vec3(1, 3, 2);
+    print("vec-construct: {}\n", vc);
+
+    va := vec3(1, 2, 3);
+    vb := vec3(4, 5, 6);
+    print("vec-add: {}\n", va + vb);
+    print("vec-sub: {}\n", vec3(5, 5, 5) - vec3(1, 2, 3));
+    print("vec-mul: {}\n", vec3(2, 3, 4) * vec3(1, 2, 3));
+    print("vec-div: {}\n", vec3(10, 9, 8) / vec3(2, 3, 4));
+
+    print("vec-scalar: {}\n", vec3(1, 3, 2) * 2.0);
+    print("vec-neg: {}\n", -vec3(1, 3, 2));
+
+    ve := vec3(10, 20, 30);
+    print("vec-x: {}\n", ve.x);
+    print("vec-y: {}\n", ve.y);
+    print("vec-z: {}\n", ve.z);
+    print("vec-idx: {}\n", ve[1]);
+}

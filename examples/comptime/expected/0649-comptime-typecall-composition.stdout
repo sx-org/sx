@@ -1,0 +1,4 @@
+a (i64)  = 42
+b (bool) = true
+c (f64)  = 2.500000
+R: variants=3 names=(a,b,c)

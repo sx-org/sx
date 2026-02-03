@@ -1,0 +1,28 @@
+// A BARE generic struct head (`Box(i64)`) and a BARE generic alias
+// (`ABox :: Box(i64)`) must instantiate the template authored by the single
+// bare-VISIBLE author — this file's own author or a DIRECT (1-hop) flat import —
+// NOT the global last-wins `struct_template_map`, which a NON-visible 2-flat-hop
+// same-name template can win.
+//
+// `b.sx` declares a one-field `Box($T)` (size 8) and itself flat-imports `c.sx`,
+// which declares a two-field `Box($T)` (size 16). This file flat-imports ONLY
+// `b.sx`, so `b.Box` is one flat hop away (visible) and `c.Box` is two hops away
+// (NOT bare-visible, mirrors 0764/0706). The bare head `Box(i64)` and the bare
+// alias `ABox :: Box(i64)` must both select `b.Box` (size 8).
+//
+// Regression (Phase E4 finding #1): before the bare head/alias consulted the
+// source-keyed visible author, both fell through the `.unregistered` gate arm to
+// the global last-wins template and instantiated the non-visible `c.Box`
+// (size 16). Fail-before printed `size=16 alias=16`.
+
+#import "modules/std.sx";
+#import "0774-modules-bare-generic-head-visible-author/b.sx";
+
+ABox :: Box(i64);
+
+main :: () -> i32 {
+    x : Box(i64) = .{ x = 1 };
+    a : ABox = .{ x = 2 };
+    print("size={} alias={} x={} a={}\n", size_of(Box(i64)), size_of(ABox), x.x, a.x);
+    0
+}

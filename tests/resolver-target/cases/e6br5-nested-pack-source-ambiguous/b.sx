@@ -1,0 +1,3 @@
+// The second flat-imported `Box` author — a DISTINCT nominal from a.sx's `Box`,
+// so the nested `*Box` leaf is a real ambiguity the source cannot resolve.
+Box :: struct { b: i32; }

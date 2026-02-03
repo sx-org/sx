@@ -1,0 +1,20 @@
+// Phase 1 (xx-via-Into mechanism): proves the new syntax parses + lowers
+// without error. The parameterised protocol Into(Target: Type) and the
+// matching `impl Into(Block) for Closure() -> void` declarations are
+// registered but unused. Resolution (Phase 3) is what makes the impl
+// reachable from `xx`.
+
+#import "modules/std.sx";
+
+MyTag :: struct { value: i64 = 0; }
+
+impl Into(MyTag) for i64 {
+  convert :: (self: i64) -> MyTag {
+    .{ value = self }
+  }
+}
+
+main :: () -> i32 {
+  print("ok\n");
+  0
+}

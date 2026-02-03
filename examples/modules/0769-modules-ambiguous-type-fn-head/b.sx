@@ -1,0 +1,5 @@
+// The second flat-imported author of same-name type-fn `Make`. Its distinct
+// one-field body makes a bare `Make(i64)` head ambiguous against a.sx's.
+Make :: ($T: Type) -> Type {
+    return struct { x: T; };
+}

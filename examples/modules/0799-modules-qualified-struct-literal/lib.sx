@@ -1,0 +1,3 @@
+// Companion module for issue 0204.
+Cfg :: struct { p: i64 = 0; q: i64 = 0; r: i64 = 0; }
+use :: (c: Cfg) -> i64 { return c.p + c.q + c.r; }

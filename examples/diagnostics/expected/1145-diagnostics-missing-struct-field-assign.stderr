@@ -1,0 +1,17 @@
+error: field 'q' not found on type 'Point'
+  --> examples/diagnostics/1145-diagnostics-missing-struct-field-assign.sx:20:5
+   |
+20 |     p.q = 2;                              // site 1: lowerAssignment target path
+   |     ^^^
+
+error: field 'missing' not found on type 'Outer'
+  --> examples/diagnostics/1145-diagnostics-missing-struct-field-assign.sx:23:5
+   |
+23 |     o.missing.a = 5;                      // site 2: lowerExprAsPtr fallback
+   |     ^^^^^^^^^
+
+error: field 'r' not found on type 'Point'
+  --> examples/diagnostics/1145-diagnostics-missing-struct-field-assign.sx:26:5
+   |
+26 |     p.r, y = 3, 4;                        // site 3: lowerMultiAssign field path
+   |     ^^^

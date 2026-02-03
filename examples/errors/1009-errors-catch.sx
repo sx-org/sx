@@ -1,0 +1,64 @@
+// `catch` on a pure-failable LHS (ERR step E1.5). `expr catch [e] BODY`
+// consumes the error inline: on failure it binds the tag to `e` (optional)
+// and runs BODY; on success the result is void (a `-> !` LHS has no success
+// value). BODY may diverge (`return` / `raise` — typed `noreturn`, E1.4c) or
+// fall through. `catch` needs no failable *enclosing* function — it handles
+// the error locally. All four body forms appear below: block, no-binding
+// block, match-body (`== { case ... }`), and the selective handle + re-raise
+// pattern. Value-carrying `-> (T, !)` catch (binding the success value) lands
+// with the tuple ABI in E2.
+
+#import "modules/std.sx";
+
+E :: error { Bad, Empty }
+
+must :: (n: i32) -> !E {
+    if n < 0  { raise error.Bad; }
+    if n == 0 { raise error.Empty; }
+    return;
+}
+
+// Diverging body — returns from `classify` on error.
+classify :: (n: i32) -> i32 {
+    must(n) catch (e) {
+        if e == error.Bad   { return 1; }
+        if e == error.Empty { return 2; }
+        return 9;
+    };
+    return 0;                               // must(n) succeeded
+}
+
+// Match-body form — sugar for `catch (e) { if e == { case ... } }`.
+mclassify :: (n: i32) -> i32 {
+    must(n) catch (e) == {
+        case .Bad:   return 11;
+        case .Empty: return 22;
+        else:        return 99;
+    };
+    return 0;
+}
+
+// Selective handle + re-raise (failable enclosing fn; `raise e` is the
+// variable form). Swallows Bad → success; re-raises everything else.
+handle_some :: (n: i32) -> !E {
+    must(n) catch (e) {
+        if e == error.Bad { return; }       // swallow → success
+        raise e;                            // re-raise the rest
+    };
+    return;
+}
+
+main :: () -> i32 {
+    r : i32 = 0;
+    must(-1) catch (e) { if e == error.Bad { r = r + 1; } };  // Bad → +1
+    must(5)  catch { r = r + 100; };                         // success → body skipped
+    r = r + classify(0);                                     // Empty → 2
+    r = r + classify(8);                                     // success → 0
+    he := handle_some(0);                                    // Empty re-raised
+    if he == error.Empty { r = r + 4; }                      // +4
+    hb := handle_some(-1);                                   // Bad swallowed → success
+    if hb == error.Bad { r = r + 50; }                       // not taken
+    r = r + mclassify(-1);                                   // Bad → 11
+    print("catch result: {}\n", r);                          // 1+2+4+11 = 18
+    return r;
+}

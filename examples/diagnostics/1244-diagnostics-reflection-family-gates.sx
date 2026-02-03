@@ -1,0 +1,21 @@
+// The split reflection families are kind-gated: struct_field_* serves
+// structs/tuples (and untagged unions); variant_* serves enums/tagged
+// unions; arrays/vectors use `.len` + native indexing. Each wrong-kind
+// call is a loud compile error naming the right builtin — never a
+// silently-wrong count/name.
+#import "modules/std.sx";
+
+Point :: struct { x: i64; y: i64; }
+Color :: enum { red; green; blue; }
+
+main :: () {
+    print("{}\n", struct_field_count(Color));       // enum → use variant_count
+    print("{}\n", struct_field_name(Color, 0));     // enum → use variant_name
+    print("{}\n", variant_count(Point));            // struct → use struct_field_count
+    print("{}\n", variant_name(Point, 0));          // struct → use struct_field_name
+    print("{}\n", struct_field_count([4]i64));      // array → use .len
+    c := Color.red;
+    print("{}\n", variant_payload(Point.{ x = 1, y = 2 }, 0));  // struct value → struct_field_value
+    v : Vector(3, f32) = .[1.0, 2.0, 3.0];
+    print("{}\n", struct_field_value(v, 0));        // vector → index natively
+}

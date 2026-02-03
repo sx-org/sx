@@ -1,0 +1,4 @@
+MyEnum :: enum {
+    a;
+    b: i32;
+}

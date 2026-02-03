@@ -1,0 +1,51 @@
+// Char literals as explicit enum values. A char literal `::`-assigned to an
+// enum variant is its integer code point — read back by `xx`, it yields that
+// value, NOT the variant's positional index. Covers plain enums, sized
+// backing (`enum u32`), and `enum flags`.
+//
+// Regression: before the char-enum-value fix, `type_bridge.buildEnumInfo`
+// matched only `int_literal` when extracting explicit values, so a
+// `char_literal` silently fell through to the ordinal fallback (`esc :: '\x1b'`
+// shipped tag 0 instead of 27) with no diagnostic.
+
+#import "modules/std.sx";
+
+Key :: enum {
+    esc   :: '\x1b';
+    a     :: 'a';
+    space :: ' ';
+}
+
+// Sized backing + a mix of char and int values (auto-increment does NOT apply
+// across explicit values here; each is set explicitly).
+Ascii :: enum u32 {
+    nul :: '\0';
+    tab :: '\t';
+    nl  :: '\n';
+}
+
+// Flags enum: char literals spell the bit values directly.
+Bits :: enum flags u32 {
+    one   :: '\x01';
+    two   :: '\x02';
+    eight :: '\x08';
+}
+
+main :: () -> i64 {
+    e : i64 = xx Key.esc;
+    a : i64 = xx Key.a;
+    s : i64 = xx Key.space;
+    print("{} {} {}\n", e, a, s);          // 27 97 32
+
+    n : i64 = xx Ascii.nul;
+    t : i64 = xx Ascii.tab;
+    l : i64 = xx Ascii.nl;
+    print("{} {} {}\n", n, t, l);          // 0 9 10
+
+    b1 : i64 = xx Bits.one;
+    b2 : i64 = xx Bits.two;
+    b8 : i64 = xx Bits.eight;
+    print("{} {} {}\n", b1, b2, b8);       // 1 2 8
+
+    return 0;
+}

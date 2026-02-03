@@ -1,0 +1,17 @@
+error: an 'any' value's type tag is always a concrete type — it never holds an erased 'Sizable', so this assertion can never succeed; assert the concrete type instead ('av.(T)') or switch on the tag ('if av == { case T: … }')
+  --> examples/diagnostics/1254-diagnostics-any-protocol-assert-refusal.sx:17:10
+   |
+17 |     s := av.(Sizable);          // checked form → refusal
+   |          ^^^^^^^^^^^^
+
+error: an 'any' value's type tag is always a concrete type — it never holds an erased 'Sizable', so this assertion can never succeed; assert the concrete type instead ('av.(T)') or switch on the tag ('if av == { case T: … }')
+  --> examples/diagnostics/1254-diagnostics-any-protocol-assert-refusal.sx:20:13
+   |
+20 |     soft := av.(?Sizable);      // soft form → refusal
+   |             ^^^^^^^^^^^^^
+
+error: an 'any' value's type tag is always a concrete type — it never holds an erased 'Sizable', so this assertion can never succeed; assert the concrete type instead ('av.(T)') or switch on the tag ('if av == { case T: … }')
+  --> examples/diagnostics/1254-diagnostics-any-protocol-assert-refusal.sx:24:11
+   |
+24 |     ch := oav?.(Sizable);       // chained form → refusal
+   |           ^^^^^^^^^^^^^^

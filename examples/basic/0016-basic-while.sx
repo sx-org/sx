@@ -1,0 +1,50 @@
+#import "modules/std.sx";
+
+sumOf10 :: () -> i32 {
+    i:= 1;
+    s:=0;
+    while i <= 10 {
+        s+=i;
+        i+=1;
+    }
+    s
+}
+
+someSum :: #run sumOf10();
+
+main :: () {
+    // Basic while loop: count to 5
+    i := 0;
+    while i < 5 {
+        i += 1;
+    }
+    print("count: {}\n", i);
+
+    // While with break
+    x := 1;
+    while x < 100 {
+        if x == 12 {
+            break;
+        }
+        x += 1;
+    }
+    print("break at: {}\n", x);
+
+    // While with continue: sum odd numbers 1-9
+    sum := 0;
+    j := 0;
+    while j < 10 {
+        j += 1;
+        // Skip even numbers
+        if j == 2 { continue; }
+        if j == 4 { continue; }
+        if j == 6 { continue; }
+        if j == 8 { continue; }
+        if j == 10 { continue; }
+        sum += j;
+    }
+    print("sum of odd 1-9: {}\n", sum);
+
+    print("sum {}", someSum);
+    
+}

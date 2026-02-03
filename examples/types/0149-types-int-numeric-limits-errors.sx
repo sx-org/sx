@@ -1,0 +1,18 @@
+// Numeric-limit accessors apply only to numeric types. `.min`/`.max` on a
+// NON-numeric receiver is a clean compile error (never a silent value, never
+// the `.unresolved` sentinel reaching codegen):
+//   - a builtin non-numeric type (`bool`, `void`, `string`) → a dedicated
+//     "type 'X' has no '.min'/'.max'" diagnostic from the accessor intercept;
+//   - a user struct (`MyStruct`) → the type name is not a builtin, so the
+//     intercept stays out and the existing field-not-found path reports it.
+// Each case is accurate and located at the access; the program exits non-zero.
+#import "modules/std.sx";
+
+MyStruct :: struct { a: i64; }
+
+main :: () -> i32 {
+    b := bool.max;
+    s := MyStruct.min;
+    v := void.max;
+    return 0;
+}

@@ -1,0 +1,5 @@
+error: duplicate asm operand name `x`
+  --> examples/platform/1644-platform-asm-duplicate-name.sx:3:25
+   |
+ 3 | f :: () -> u64 { return asm volatile { "nop", [x] "=r" -> u64, [x] "r" = 5 }; }
+   |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

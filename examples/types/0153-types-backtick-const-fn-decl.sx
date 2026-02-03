@@ -1,0 +1,23 @@
+// Backtick raw-identifier escape at the `::` declaration sites: a leading
+// backtick makes a CONSTANT name and a FUNCTION name raw, so a reserved type
+// spelling (`i2`, `u8`) can be declared and used. Complements examples/0151
+// (var / param / field / global). The backtick fn is callable both via the
+// backtick (`` `u8(5) ``) and bare (`u8(5)`) — the bare reserved-name callee
+// resolves to the raw fn because its declaration is raw (issue 0089). A *bare*
+// `i2 :: …` / `u8 :: …` declaration is still the reserved-name error (see
+// examples/1140).
+// Regression (issue 0089).
+#import "modules/std.sx";
+
+// Constant whose name is a reserved type spelling.
+`i2 :: 2.5;
+
+// Function whose name is a reserved type spelling.
+`u8 :: (n: i64) -> i64 { return n + 7; }
+
+main :: () -> i32 {
+    print("const    = {}\n", `i2);
+    print("fn tick  = {}\n", `u8(5));
+    print("fn bare  = {}\n", u8(5));
+    return 0;
+}

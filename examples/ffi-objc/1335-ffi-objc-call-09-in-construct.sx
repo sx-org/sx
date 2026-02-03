@@ -1,0 +1,80 @@
+// Phase 1 steps 1.11–1.13 (PLAN-FFI.md): `#objc_call` call sites
+// embedded inside the sx surface constructs. None touch a new ABI
+// path — the lowering routes the call identically regardless of
+// the enclosing scope, and this test pins that lemma.
+//
+//   1. Struct method body                  Probe.fetch
+//   2. Protocol impl method body           impl Hashable for Probe
+//   3. Closure value body                  closure that calls hash
+//
+// 1.14 (separate test): `inline if OS == { case }` gating across
+// targets — verified by `tests/cross_compile.sh`.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+// ── 1. Struct method calling #objc_call ─────────────────────────────
+Probe :: struct {
+    receiver: *void = null;
+    fetch :: (self: *Probe) -> i64 {
+        #objc_call(i64)(self.receiver, "hash")
+    }
+}
+
+// ── 2. Protocol impl method ────────────────────────────────────────
+Hashable :: protocol {
+    sx_hash :: (self: *Self) -> i64;
+}
+
+impl Hashable for Probe {
+    sx_hash :: (self: *Probe) -> i64 {
+        #objc_call(i64)(self.receiver, "hash") * 2
+    }
+}
+
+// ── 3. Closure body invoking #objc_call ─────────────────────────────
+// The closure captures `recv` from its enclosing function and
+// references it inside the `#objc_call` arg list. Locked in by
+// `examples/103-ffi-closure-capture.sx`.
+make_hasher :: (recv: *void) -> Closure(i32) -> i64 {
+    closure((dummy: i32) -> i64 => #objc_call(i64)(recv, "hash"))
+}
+
+// ── 4. Generic function body — instantiated per call site ───────────
+hash_through :: (recv: $T) -> i64 {
+    p : *void = xx recv;
+    #objc_call(i64)(p, "hash")
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        ns_object := objc_getClass("NSObject".ptr);
+
+        p : Probe = .{ receiver = ns_object };
+
+        // 1. struct method
+        h1 := p.fetch();
+        print("fetch != 0   = {}\n", h1 != 0);
+
+        // 2. protocol method (doubles the raw hash; mostly checking
+        //    dispatch / arg threading, not the math)
+        h2 := p.sx_hash();
+        print("protocol h2 = {}\n", h2 == h1 * 2);
+
+        // 3. closure (receives a dummy arg to keep the `Closure(T) -> R`
+        //    arity matching 35-closures.sx; `recv` is captured from
+        //    `make_hasher`'s arg list and used inside the `#objc_call`).
+        hasher := make_hasher(ns_object);
+        h3 := hasher(0);
+        print("closure h3  = {}\n", h3 == h1);
+
+        // 4. generic function — instantiates with T = *void here
+        h4 := hash_through(ns_object);
+        print("generic h4  = {}\n", h4 == h1);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

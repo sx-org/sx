@@ -1,0 +1,12 @@
+// Slicing a many-pointer `[*]T` requires an explicit upper bound — it carries
+// no length, so an open-ended `mp[lo..]` has no bound to resolve and would
+// otherwise build a garbage-length slice. This guards that diagnostic.
+// (Companion: examples/types/0195 covers the valid explicit-bound form.)
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    a : [4]i64 = .[5, 6, 7, 8];
+    mp : [*]i64 = xx @a[0];
+    s := mp[1..];          // ERROR: many-pointer slice needs an explicit hi
+    return s.len;
+}

@@ -1,0 +1,4 @@
+// Module A authors the base chain `M :: 1`, `K :: M + 1` (= 2). Reached only via
+// C's flat import — never bare-visible in `main`.
+M :: 1;
+K :: M + 1;

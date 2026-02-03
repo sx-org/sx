@@ -1,0 +1,30 @@
+// Regression: a generic function (with `$T: Type` type params)
+// called from inside a pack-fn mono must NOT inherit the outer
+// pack maps during its own body lowering. Before the fix landed
+// in `monomorphizeFunction`, the cached mono of a generic with
+// an `args`-named param had its `args.len` constant-folded to
+// the arity of whichever pack shape triggered the first mono;
+// every subsequent shape read the same baked-in constant.
+//
+// Same root cause as issue-0048 (`lazyLowerFunction`), in a
+// different lowering path (`monomorphizeFunction`).
+
+#import "modules/std.sx";
+
+build :: (args: []Type, $ret: Type) -> string {
+    return concat("len=", int_to_string(args.len));
+}
+
+probe :: (..$args) -> string {
+    return build($args, void);
+}
+
+run_all :: () {
+    print("0: {}\n", probe());
+    print("1: {}\n", probe(true));
+    print("2: {}\n", probe(42, "hi"));
+    print("4: {}\n", probe(1, 2.0, "x", true));
+}
+#run run_all();
+
+main :: () { print("rt\n"); }

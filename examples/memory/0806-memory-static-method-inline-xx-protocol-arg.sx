@@ -1,0 +1,47 @@
+// Inline `xx` cast as the first argument to a struct static method must
+// flow the leading param's type into the cast — otherwise an `xx ptr`
+// targeting a protocol param falls back to i64 and the call frame is
+// corrupted, SIGTRAPping when the body dispatches through the field.
+//
+// Three call shapes that must all succeed:
+//   1. Named-variable receiver: `a : Allocator = xx p; T.init(a, ...)`
+//   2. Free function with inline xx: `make_t(xx p, ...)`
+//   3. Static method with inline xx: `T.init(xx p, ...)`  ← used to crash
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Box :: struct {
+    parent: Allocator;
+    first_ptr: *void;
+
+    init :: (parent_alloc: Allocator, size: i64) -> *Box {
+        self : *Box = xx c.libc_malloc(size_of(Box));
+        self.parent = parent_alloc;
+        self.first_ptr = self.parent.alloc_bytes(size);
+        self
+    }
+}
+
+make_box :: (parent_alloc: Allocator, size: i64) -> *Box {
+    self : *Box = xx c.libc_malloc(size_of(Box));
+    self.parent = parent_alloc;
+    self.first_ptr = self.parent.alloc_bytes(size);
+    self
+}
+
+main :: () -> i32 {
+    g_gpa : GPA = .{ alloc_count = 0 };
+
+    a : Allocator = xx @g_gpa;
+    b1 := Box.init(a, 64);
+    print("Box.init (named-var):  ok\n");
+
+    b2 := make_box(xx @g_gpa, 64);
+    print("make_box (inline-xx):  ok\n");
+
+    b3 := Box.init(xx @g_gpa, 64);
+    print("Box.init (inline-xx):  ok\n");
+
+    0
+}

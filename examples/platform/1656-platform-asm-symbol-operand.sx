@@ -1,0 +1,25 @@
+// ASM stream — symbol operand (`"s"`): feed a function/global SYMBOL into the
+// template so a DIRECT `bl %[fn]` (PC-relative — one fewer indirection than a
+// register-indirect `blr`: no pointer load, a relative reloc, a predictable
+// branch) goes straight to it. The backend emits the platform-mangled name
+// (`_cb` on macOS, `cb` on Linux), so the template stays portable — no hardcoded
+// underscore. Round trip: sx → asm → `bl _cb` → sx → 42. aarch64-macos-pinned;
+// runs under the JIT here, ir-only elsewhere (the `.ir` locks `"s"`/`ptr @cb`).
+cb :: (n: i64) -> i64 export "cb" { return n + 1; }
+
+tramp :: (n: i64) -> i64 {
+    return asm volatile {
+        #string ASM
+        stp x29, x30, [sp, #-16]!
+        mov x0, %[arg]
+        bl %[fn]
+        mov %[res], x0
+        ldp x29, x30, [sp], #16
+ASM,
+        [res] "=r" -> i64,
+        [arg] "r" = n,
+        [fn]  "s" = cb,             // symbol operand → direct `bl _cb`
+        clobbers(.x0, .x30, .memory),
+    };
+}
+main :: () -> i64 { return tramp(41); }

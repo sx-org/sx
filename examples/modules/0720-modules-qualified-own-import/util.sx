@@ -1,0 +1,2 @@
+triple :: (x: i64) -> i64 { return x * 3; }
+base   :: () -> i64 { return 14; }

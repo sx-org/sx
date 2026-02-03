@@ -1,0 +1,74 @@
+// Multi-value value-carrying failables (ERR — the multi-value error-channel
+// ABI). A `-> (T1, T2, !E)` function returns EITHER a value-tuple OR an error:
+// `return (a, b)` yields the success tuple `{a, b, 0}` (the compiler appends the
+// no-error slot) and `raise error.X` yields `{undef, undef, tag}`. Every consumer
+// generalizes from the single-value shape: a destructure binds every slot
+// INCLUDING the error (dropping it is the spec'd discard error — bind it and
+// inspect); `try` binds the value-tuple on success and propagates `{undef..., tag}`
+// on failure; `catch` / `or` absorb the failure and merge the value-tuple or the
+// handler/terminator value. Single-value `-> (T, !E)` is examples/228-231.
+
+#import "modules/std.sx";
+
+E :: error { Bad, Empty }
+
+parse :: (n: i32) -> (i32, i32, !E) {
+    if n < 0  { raise error.Bad; }
+    if n == 0 { raise error.Empty; }
+    return .{n * 2, n + 1};            // success → {n*2, n+1, 0}
+}
+
+// Multi-value `try` in a multi-value caller — propagates {undef, undef, tag}.
+inc :: (n: i32) -> (i32, i32, !E) {
+    v, b := try parse(n);
+    return .{v + 1, b + 1};
+}
+
+// Multi-value `catch`, bare-expression tuple fallback (absorbs the failure).
+safe :: (n: i32) -> i32 {
+    v, b := parse(n) catch (e) .{40, 50};
+    return v + b;
+}
+
+// Multi-value `catch` match-body — per-tag dispatch, each arm a value-tuple.
+classify :: (n: i32) -> i32 {
+    v, b := parse(n) catch (e) == {
+        case .Bad:   .{1, 1};
+        case .Empty: .{2, 2};
+        else:        .{9, 9};
+    };
+    return v + b;
+}
+
+// Multi-value `or (tuple)` value-terminator (absorbs the failure).
+ortest :: (n: i32) -> i32 {
+    v, b := parse(n) or .{7, 8};
+    return v + b;
+}
+
+main :: () -> i32 {
+    r : i32 = 0;
+
+    // Destructure binds EVERY slot including the error tag (e1 / e2 / e3) —
+    // the error is treated, never dropped.
+    v1, b1, e1 := parse(5);          // success → (10, 6, no-error)
+    if !e1 { r = r + v1 + b1; }      // success → +16 (slots live only when proven ok)
+
+    v2, b2, e2 := parse(-1);         // Bad → {undef, undef, Bad}
+    if e2 == error.Bad { r = r + 4; }   // +4
+
+    a, c, ea := inc(5);              // parse(5)=(10,6) → (11, 7, no-error)
+    if !ea { r = r + a + c; }        // success → +18
+
+    a2, c2, e3 := inc(-1);           // try parse(-1)=Bad → propagate {undef, undef, Bad}
+    if e3 == error.Bad { r = r + 5; }   // +5
+
+    r = r + safe(5);                 // (10, 6) → 16
+    r = r + safe(-1);                // Bad → catch → (40, 50) → 90
+    r = r + classify(-1);            // Bad → match-body → (1, 1) → 2
+    r = r + classify(0);             // Empty → match-body → (2, 2) → 4
+    r = r + ortest(0);               // Empty → or → (7, 8) → 15
+
+    print("multi-value result: {}\n", r);  // 16+4+18+5+16+90+2+4+15 = 170
+    return r;
+}

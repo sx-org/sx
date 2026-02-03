@@ -1,0 +1,213 @@
+// std.http Phase T (PLAN-HTTPZ): native HTTPS end-to-end. A real http.Server
+// with `cfg.tls` set to an mbedTLS provider (TlsServer), driven in ONE thread
+// via Server.tick, serves a request to an in-process mbedTLS CLIENT over a
+// loopback TLS connection — exercising the CONN_TLS_HANDSHAKE state machine,
+// the provider's TlsConn/TlsAcceptor impls, and the abi(.c) BIO bridge.
+//
+// Cases:
+//   A. successful HTTPS request → 200 with the expected body.
+//   B. bad cert path → setup_files returns false (server accepts no TLS; loud).
+//   C. handshake failure (a plaintext client sends garbage to the TLS port) →
+//      the server drops that slot, then still serves a fresh good client.
+//   + net-zero GPA leak gate across the whole run.
+//
+// The cert/key are a self-signed RSA fixture under 1679-http-tls-https/ (read
+// CWD-relative from the repo root, the corpus child's cwd). The client sets
+// VERIFY_NONE to accept the self-signed cert (MBEDTLS_SSL_CLI_C is enabled in
+// the vendored config for exactly this in-process test client).
+#import "modules/std.sx";
+socket  :: #import "modules/std/socket.sx";
+posix   :: #import "modules/std/posix.sx";
+mbedtls :: #import "vendors/mbedtls/mbedtls.sx";
+http    :: #import "modules/std/http.sx";
+tlsp    :: #import "modules/std/http/tls_mbedtls.sx";
+
+PORT :: 18973;
+
+// Static body — the measured region must allocate nothing the framework
+// doesn't own (a `concat` body would leak via context.allocator), so the
+// net-zero GPA gate stays honest.
+handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    resp.body = "secure-ok";
+}
+
+// ── client-side BIO over a bare nonblocking fd (ctx = *i32) ──
+cli_send :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
+    fd : *i32 = xx ctx;
+    n := socket.write(fd.*, buf, len);
+    if n >= 0 { return xx n; }
+    e := socket.errno();
+    if e == posix.EINTR or socket.is_wouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE; }
+    return -1;
+}
+cli_recv :: (ctx: *void, buf: [*]u8, len: usize) -> i32 abi(.c) {
+    fd : *i32 = xx ctx;
+    n := socket.read(fd.*, buf, len);
+    if n > 0 { return xx n; }
+    if n == 0 { return 0; }
+    e := socket.errno();
+    if e == posix.EINTR or socket.is_wouldblock(e) { return mbedtls.MBEDTLS_ERR_SSL_WANT_READ; }
+    return -1;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0; ok := true;
+        while j < needle.len { if hay[i+j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+// A TLS client bound to a freshly-connected loopback fd. The fd box must
+// outlive the session (it is the BIO ctx), so it lives in this struct.
+TlsClient :: struct {
+    cfg:  mbedtls.SslConfig;
+    ssl:  mbedtls.SslContext;
+    drbg: mbedtls.CtrDrbg;
+    ent:  mbedtls.Entropy;
+    fd:   i32 = -1;
+}
+
+client_init :: (c: *TlsClient, fd: i32) -> bool {
+    c.fd = fd;
+    mbedtls.mbedtls_ssl_config_init(@c.cfg);
+    mbedtls.mbedtls_ssl_init(@c.ssl);
+    mbedtls.mbedtls_ctr_drbg_init(@c.drbg);
+    mbedtls.mbedtls_entropy_init(@c.ent);
+    if mbedtls.mbedtls_ctr_drbg_seed(@c.drbg, mbedtls.mbedtls_entropy_func, xx @c.ent, null, 0) != 0 { return false; }
+    if mbedtls.mbedtls_ssl_config_defaults(@c.cfg, mbedtls.MBEDTLS_SSL_IS_CLIENT, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 { return false; }
+    mbedtls.mbedtls_ssl_conf_authmode(@c.cfg, mbedtls.MBEDTLS_SSL_VERIFY_NONE);
+    mbedtls.mbedtls_ssl_conf_rng(@c.cfg, mbedtls.mbedtls_ctr_drbg_random, xx @c.drbg);
+    if mbedtls.mbedtls_ssl_setup(@c.ssl, @c.cfg) != 0 { return false; }
+    mbedtls.mbedtls_ssl_set_bio(@c.ssl, xx @c.fd, cli_send, cli_recv, null);
+    return true;
+}
+
+client_free :: (c: *TlsClient) {
+    mbedtls.mbedtls_ssl_free(@c.ssl);
+    mbedtls.mbedtls_ssl_config_free(@c.cfg);
+    mbedtls.mbedtls_ctr_drbg_free(@c.drbg);
+    mbedtls.mbedtls_entropy_free(@c.ent);
+}
+
+// Blocking connect to the loopback server, then nonblocking.
+dial :: () -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(PORT, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+// run() does ALL the work WITHOUT printing (print/concat allocate via
+// context.allocator and would pollute the net-zero gate). It returns 0 on
+// full success, else a distinct code per failed case. main measures the GPA
+// AFTER run returns, then prints — so the only allocations counted are the
+// framework's own, and a non-zero count is a real leak.
+main :: () -> i32 {
+    gpa := GPA.init();
+    rc : i32 = 1;
+    push .{ allocator = gpa } { rc = run(); }
+    leaked := gpa.alloc_count;
+    if rc != 0 { print("FAIL: case rc={}\n", rc); return rc; }
+    if leaked != 0 { print("LEAK: {} outstanding allocations\n", leaked); return 7; }
+    print("HTTPS ok: bad-cert rejected, handshake-failure dropped, 200 served; net-zero GPA\n");
+    0
+}
+
+run :: () -> i32 {
+    // ── B. bad cert path → setup_files must fail loudly ──
+    bad : tlsp.TlsServer = .{};
+    if bad.setup_files("examples/http/1679-http-tls-https/does-not-exist.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
+        return 1;   // setup_files unexpectedly succeeded on a missing cert
+    }
+
+    // ── shared acceptor from the fixture cert/key ──
+    ts : tlsp.TlsServer = .{};
+    if !ts.setup_files("examples/http/1679-http-tls-https/cert.pem", "examples/http/1679-http-tls-https/key.pem", context.allocator) {
+        return 2;
+    }
+    cfg : http.Config = .{ port = PORT, timeout_request_ms = 3000, max_conn = 8 };
+    cfg.tls = xx @ts;
+    srv, se := http.Server.init(cfg, handler, 0);
+    if se { return 3; }
+
+    // ── C. handshake failure: a PLAINTEXT client speaks garbage to the TLS
+    //      port. The server's handshake parses it as a bad ClientHello → drops
+    //      the slot. We drive a few ticks so the server processes + closes it. ──
+    bad_fd := dial();
+    if bad_fd < 0 { return 4; }
+    socket.write(bad_fd, "GET / HTTP/1.1\r\n\r\n".ptr, 18);
+    t : i64 = 0;
+    while t < 50 { srv.tick(5) catch {}; t += 1; }
+    socket.close(bad_fd);
+    t = 0;
+    while t < 20 { srv.tick(5) catch {}; t += 1; }
+
+    // ── A. successful HTTPS request → 200 ──
+    fd := dial();
+    if fd < 0 { return 5; }
+    cl : TlsClient = .{};
+    if !client_init(@cl, fd) { return 6; }
+
+    rc := https_roundtrip(@srv, @cl);
+
+    mbedtls.mbedtls_ssl_close_notify(@cl.ssl);
+    client_free(@cl);
+    socket.close(fd);
+    srv.close();
+    ts.deinit();
+    return rc;
+}
+
+// Drive the handshake + one HTTPS GET to completion, asserting 200 + body.
+// Returns 0 on success, else a code in 10..19. No prints (measured region).
+https_roundtrip :: (srv: *http.Server, cl: *TlsClient) -> i32 {
+    done := false;
+    i : i64 = 0;
+    while i < 1000 and !done {
+        srv.tick(5) catch {};
+        r := mbedtls.mbedtls_ssl_handshake(@cl.ssl);
+        if r == 0 { done = true; }
+        else if r != mbedtls.MBEDTLS_ERR_SSL_WANT_READ and r != mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 10; }
+        i += 1;
+    }
+    if !done { return 11; }
+
+    req := "GET /vault HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
+    sent := false; j : i64 = 0;
+    while j < 200 and !sent {
+        srv.tick(5) catch {};
+        w := mbedtls.mbedtls_ssl_write(@cl.ssl, xx req.ptr, xx req.len);
+        if w > 0 { sent = true; }
+        else if w != mbedtls.MBEDTLS_ERR_SSL_WANT_READ and w != mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 12; }
+        j += 1;
+    }
+    if !sent { return 13; }
+
+    rbuf : [4096]u8 = ---;
+    total : i64 = 0; k : i64 = 0; got := false;
+    while k < 1000 and !got {
+        srv.tick(5) catch {};
+        r := mbedtls.mbedtls_ssl_read(@cl.ssl, xx @rbuf[total], xx (4096 - total));
+        if r > 0 {
+            total += r;
+            s := string.{ ptr = xx @rbuf[0], len = xx total };
+            if contains(s, "\r\n\r\n") { got = true; }
+        } else if r == mbedtls.MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY or r == 0 {
+            got = true;
+        } else if r != mbedtls.MBEDTLS_ERR_SSL_WANT_READ and r != mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE {
+            return 14;
+        }
+        k += 1;
+    }
+    resp := string.{ ptr = xx @rbuf[0], len = xx total };
+    if !contains(resp, "HTTP/1.1 200 OK") { return 15; }
+    if !contains(resp, "secure-ok")       { return 16; }
+    return 0;
+}

@@ -1,0 +1,5 @@
+// a.sx authors `cfg` defaulting to 10. Imported first, so it is the first-wins
+// merge winner. `from_a` calls `cfg()` with the arg omitted — own == winner →
+// existing default-expansion path, byte-for-byte unchanged.
+cfg    :: (n: i64 = 10) -> i64 { return n; }
+from_a :: () -> i64 { return cfg(); }

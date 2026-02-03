@@ -1,0 +1,51 @@
+// Stream B1 (fibers) step B1.1 — per-fiber `context` root, via plain
+// snapshot + `push` (NO compiler change — the substrate the fiber spawn relies on).
+//
+// `context` is an implicit `*Context` parameter (slot 0) threaded through every
+// sx call, and `push Context` allocates the new context on the caller's stack
+// frame — so a function's context is CALL-CARRIED and rides its own stack, never
+// read from a global. That is exactly what a fiber needs: each fiber, on its own
+// stack, reads its own root context.
+//
+// This locks the spawn convention end-to-end with ordinary language features:
+//   1. capture the spawner's context as a value     (`snap := context`)
+//   2. store the snapshot in a struct                (the stand-in `Fiber`)
+//   3. a trampoline, running under a DIFFERENT ambient context, installs the
+//      fiber's stored root before entering the body  (`push f.root { … }`)
+// The body sees the snapshot (42), not the trampoline's ambient context (99),
+// and the `push` scope restores the ambient context on exit. No fiber runtime
+// exists yet (that is B1.3) — this proves the context plumbing it will build on.
+#import "modules/std.sx";
+
+// Stand-in for a Fiber: stores the spawner's snapshotted root Context.
+Fiber :: struct { root: Context; }
+
+// The per-call sentinel rides the context as a typed `#context_extend` field
+// (a real fiber carries its allocator / io the same way).
+#context_extend sentinel: i64 = 0;
+
+// Reads this call's context sentinel.
+sentinel :: () -> i64 { return context.sentinel; }
+
+// Trampoline: runs under its own ambient context, but installs the fiber's
+// stored root before entering the fiber body.
+run_fiber :: (f: *Fiber) -> i64 {
+    push f.root {
+        return sentinel();
+    }
+}
+
+main :: () {
+    snap := context;
+    snap.sentinel = 42;           // the spawner's sentinel
+    f := Fiber.{ root = snap };   // snapshot stored in the fiber
+
+    other := context;
+    other.sentinel = 99;          // a DIFFERENT ambient context
+    push other {
+        // Ambient is 99 here; the trampoline must install f.root (42).
+        print("fiber root: {}\n", run_fiber(@f));
+        // After run_fiber returns, this scope's ambient context is intact.
+        print("ambient after: {}\n", sentinel());
+    }
+}

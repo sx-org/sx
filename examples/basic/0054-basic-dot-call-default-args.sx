@@ -1,0 +1,33 @@
+// Trailing parameter defaults fill on method and ufcs dot-calls (the
+// receiver-prepending dispatch paths), matching bare-call expansion (0044);
+// a `#caller_location` default and a slice variadic keep their flexible
+// arity under the call-arity check.
+// Regression (issue 0123).
+
+#import "modules/std.sx";
+
+Point :: struct {
+    x: i64;
+    scaled :: (self: Point, k: i64 = 2) -> i64 { return self.x * k; }
+}
+
+bump :: ufcs (p: Point, by: i64 = 10) -> i64 { return p.x + by; }
+
+sum_var :: (..xs: []i64) -> i64 {
+    t := 0;
+    for xs (x) { t = t + x; }
+    return t;
+}
+
+here :: (loc: Source_Location = #caller_location) -> i64 { return loc.line; }
+
+main :: () {
+    p := Point.{ x = 5 };
+    print("{}\n", p.scaled());        // default filled on method dispatch
+    print("{}\n", p.scaled(3));       // explicit overrides
+    print("{}\n", p.bump());          // default filled on ufcs dispatch
+    print("{}\n", p.bump(1));
+    print("{}\n", sum_var());         // variadic: zero args
+    print("{}\n", sum_var(1, 2, 3));  // variadic: many args
+    print("{}\n", here() > 0);        // #caller_location default
+}

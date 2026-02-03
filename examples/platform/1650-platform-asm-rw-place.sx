@@ -1,0 +1,11 @@
+// ASM stream Phase 2 — read-write (`+`) place output. The place is LOADED as a
+// seed, the asm both reads and writes the operand register (tied input ↔ output),
+// and the (modified) result is STORED back through the place. Increment-in-place:
+// the register holds 41 on entry, the asm adds 1, 42 is written back to `x`.
+// aarch64-pinned; ir-only elsewhere.
+compute :: () -> i64 {
+    x : i64 = 41;
+    asm volatile { "add %[v], %[v], #1", [v] "+r" -> @x };
+    return x;   // 42
+}
+main :: () -> i64 { return compute(); }

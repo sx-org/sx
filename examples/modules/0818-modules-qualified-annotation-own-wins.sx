@@ -1,0 +1,21 @@
+// G1 (struct) — a qualified `a.Box` annotation selects the NAMESPACE target's OWN
+// `Box`, distinct from `main`'s same-name bare author. `main` authors its OWN
+// `Box { m }` AND namespace-imports `a` (which authors `Box { a }`). A bare `Box`
+// binds main's own author (own-wins); the qualified `a.Box` binds `a`'s DISTINCT
+// nominal even though main has a same-name bare author. The field sets are
+// disjoint, so a cross-binding (`q.m` / `own.a`) is a hard compile error — the
+// example compiling and running proves the two `Box`es are distinct nominals.
+
+#import "modules/std.sx";
+a :: #import "0818-modules-qualified-annotation-own-wins/dep.sx";
+
+Box :: struct { m: i32; }
+
+main :: () -> i32 {
+    own : Box = ---;
+    own.m = 5;
+    q : a.Box = ---;
+    q.a = 9;
+    print("own.m={} q.a={}\n", own.m, q.a);
+    0
+}

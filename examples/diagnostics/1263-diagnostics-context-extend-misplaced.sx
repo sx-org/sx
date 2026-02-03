@@ -1,0 +1,8 @@
+// L7: `#context_extend` is a top-level-only directive — the Context is
+// assembled once per program, so a function-local declaration is meaningless
+// and rejected with a placement error at parse time.
+#import "modules/std.sx";
+
+main :: () {
+    #context_extend x: i64 = 0;
+}

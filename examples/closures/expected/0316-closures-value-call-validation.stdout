@@ -1,0 +1,21 @@
+closure direct: 3
+closure spread: 30
+capture direct: 103
+capture spread: 130
+field direct: 12
+field spread: 200
+fnptr direct: 15
+fnptr spread: 30
+param: 10
+top spread: 30
+mix spread: 130
+vartup: 30
+varslice: 15
+coerce some: 7
+coerce null: -1
+post-spread null closure: -1
+post-spread null topfn: -1
+post-spread some topfn: 9
+post-spread struct: 69
+defaults full spread: 30
+defaults 1-tuple spread: 106

@@ -1,0 +1,26 @@
+// BufAlloc.init returns the state BY VALUE: the caller's local is the
+// allocator state and the FULL buffer is usable. Regression: init used
+// to carve its own struct off the buffer's head (returning *BufAlloc
+// into the buffer), so a 128-byte buffer could only serve 104 bytes —
+// the second 64-byte allocation below failed with null.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+main :: () {
+    stack_buf : [128]u8 = ---;
+    buf := BufAlloc.init(@stack_buf[0], 128);
+    a : Allocator = xx buf;
+
+    b1 := a.alloc_bytes(64);
+    b2 := a.alloc_bytes(64);          // fills the buffer EXACTLY
+    b1_ok := b1 != null;
+    b2_ok := b2 != null;
+    print("full capacity: {} {} pos={}\n", b1_ok, b2_ok, buf.pos);
+
+    b3 := a.alloc_bytes(1);           // one byte over — must fail
+    print("over: {}\n", b3 == null);
+
+    buf.reset();
+    print("reset: {}\n", buf.pos);
+}

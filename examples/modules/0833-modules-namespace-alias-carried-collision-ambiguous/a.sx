@@ -1,0 +1,2 @@
+t :: #import "x.sx";
+use_a :: () -> i64 { t.fx() }

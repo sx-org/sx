@@ -1,0 +1,6 @@
+ex-ok-is-0: ok
+ex-usage-is-64: ok
+json-set-true: ok
+json-set-false: ok
+{"out":"dist"}
+usage-error-raised: ok

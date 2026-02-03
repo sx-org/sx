@@ -1,0 +1,11 @@
+error: 'i2' is a reserved type name and cannot be used as an identifier
+  --> examples/diagnostics/1142-diagnostics-reserved-name-struct-const.sx:14:5
+   |
+14 |     i2 :: 5;
+   |     ^^
+
+error: 'u8' is a reserved type name and cannot be used as an identifier
+  --> examples/diagnostics/1142-diagnostics-reserved-name-struct-const.sx:15:5
+   |
+15 |     u8 : i64 : 9;
+   |     ^^

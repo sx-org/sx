@@ -1,0 +1,81 @@
+// Comptime compiler API — the WRITE side: one kind-branching `raw_register_type`
+// minting an actual enum AND a graph of mutually-recursive types (Phase 3).
+//
+// `raw_declare_type` / `raw_pointer_to` / `raw_register_type` are bound to the `compiler`
+// library. They MINT into the type table, so they run at LOWERING time (lazily,
+// on demand) — when a `-> Type` builder's result is first referenced — where the
+// compiler still resolves references to the new types. (`#run` is too late: it
+// runs at emit time, after the type table is frozen.) They take/return real
+// `Type` values (like the metatype's declare/define), and `raw_register_type`
+// branches on the `kind` arg IN THE COMPILER — the codes match the read-side
+// `raw_type_kind`: 1 struct · 2 enum · 3 tagged_union · 4 tuple.
+//
+//   Suit   :: enum { hearts; spades; diamonds; }          (actual, payloadless)
+//   GraphA :: enum { self_ref: *A; to_b: B; tag: u32; }   (payloads → tagged_union)
+//   GraphB :: enum { back_a:  *A; self_b: *B; num: u32; }
+//
+// Forward `raw_declare_type` handles + `raw_pointer_to` make the A<->B cycle expressible
+// before either body is filled.
+
+#import "modules/std.sx";
+#import "modules/std/meta.sx";   // raw_declare_type / raw_register_type / Member
+
+
+
+StringId :: u32;
+TypeId   :: u32;
+
+
+KIND_ENUM         :: 2; // an ACTUAL payloadless enum
+KIND_TAGGED_UNION :: 3; // a payload-carrying enum
+
+// An actual enum: variants are names, no payloads (ty = void).
+make_suit :: () -> Type {
+    return raw_register_type(raw_declare_type("Suit"), KIND_ENUM, .[
+        Member.{ name = "hearts",   ty = void },
+        Member.{ name = "spades",   ty = void },
+        Member.{ name = "diamonds", ty = void },
+    ]);
+}
+Suit :: make_suit();
+
+// The mutually-recursive A <-> B graph (payload variants → tagged_union).
+build_graph :: () -> Type {
+    hA := raw_declare_type("GraphA");
+    hB := raw_declare_type("GraphB");
+    raw_register_type(hA, KIND_TAGGED_UNION, .[
+        Member.{ name = "self_ref", ty = raw_pointer_to(hA) }, // *A — self-reference
+        Member.{ name = "to_b",     ty = hB },             // B by value (forward)
+        Member.{ name = "tag",      ty = u32 },            // a plain payload
+    ]);
+    raw_register_type(hB, KIND_TAGGED_UNION, .[
+        Member.{ name = "back_a", ty = raw_pointer_to(hA) },    // *A — back-reference
+        Member.{ name = "self_b", ty = raw_pointer_to(hB) },    // *B — self-reference
+        Member.{ name = "num",    ty = u32 },
+    ]);
+    return hA;
+}
+GraphA :: build_graph();
+
+// Reflect the minted types (read side, at #run) to confirm their kinds.
+suit_kind   :: #run raw_type_kind(raw_find_type(raw_intern("Suit")));   // 2 = actual enum
+grapha_kind :: #run raw_type_kind(raw_find_type(raw_intern("GraphA"))); // 3 = tagged_union
+
+main :: () -> i32 {
+    // Suit is a real, usable enum.
+    s := Suit.spades;
+    if s == {
+        case .hearts:   { print("hearts\n"); }
+        case .spades:   { print("spades\n"); }
+        case .diamonds: { print("diamonds\n"); }
+    }
+    // GraphA is a real, usable tagged union.
+    a := GraphA.tag(7);
+    if a == {
+        case .tag: (n)      { print("tag={}\n", n); }
+        case .self_ref: (p) { print("self_ref\n"); }
+        case .to_b: (b)     { print("to_b\n"); }
+    }
+    print("Suit kind={}, GraphA kind={}\n", suit_kind, grapha_kind);
+    return 0;
+}

@@ -1,0 +1,49 @@
+// Stream B2 — TRUE cancellation (PLAN-IO-UNIFY Phase 3). A `cancel` delivered to
+// a worker that is PARKED at a suspend point makes the worker ABANDON its body:
+// the worker's next `suspend_raw` raises `IoErr.Canceled`, which unwinds out
+// through `try context.io.sleep(..)` and the failable worker, so every line AFTER
+// the suspend never runs. This is "true cancellation, model (a)" — cancel rides
+// the `!` channel and stops in-flight work at the next suspend, not merely flags
+// a result.
+//
+// Flow (deterministic, virtual clock): the worker records 1 and parks in
+// `sleep`; the coordinator (a fiber, so it can `yield`) lets the worker reach its
+// park, then `cancel`s it. The worker's parked `suspend_raw` is woken and raises
+// `Canceled` → the post-sleep `rec(pl, 2)` and the `42` return NEVER execute. The
+// coordinator's `await` raises `Canceled` (sticky flag) → `or` default -99.
+// Sequence: `1 -99` — the absence of `2` is the proof that the post-suspend work
+// was truly cancelled.
+//
+// aarch64-pinned (the scheduler's per-arch asm): runs end-to-end on a matching
+// host (macOS + linux, byte-identical under the deterministic virtual clock).
+#import "modules/std.sx";
+sched :: #import "modules/std/sched.sx";
+
+Log :: struct { seq: [8]i64; n: i64; }
+rec :: (l: *Log, v: i64) { l.seq[l.n] = v; l.n = l.n + 1; }
+
+main :: () -> i64 {
+    lg : Log = .{ n = 0 };
+    s := sched.Scheduler.init();
+    ps := @s; pl := @lg;
+    push .{ io = xx s } {
+        ps.spawn(() {
+            w := context.io.async(() -> (i64, !) {
+                rec(pl, 1);                  // worker started
+                try context.io.sleep(10);    // park; cancel delivers Canceled HERE
+                rec(pl, 2);                  // POST-SUSPEND — must NEVER run
+                42
+            });
+            ps.yield_now();                  // let the worker run & park in sleep
+            w.cancel();                      // cancel while parked → wakes + raises
+            r := w.await() or { -99 };       // await raises Canceled → -99
+            rec(pl, r);
+        });
+        ps.run();
+    }
+    print("seq:");
+    i := 0;
+    while i < lg.n { print(" {}", lg.seq[i]); i = i + 1; }
+    print("\n");
+    return 0;
+}

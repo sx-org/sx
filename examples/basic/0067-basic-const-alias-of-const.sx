@@ -1,0 +1,35 @@
+// A const may alias another const by bare name (`B :: A`) — any
+// declaration order, any chain depth, any value type. The alias
+// carries the target's TYPE and folds wherever the target folds:
+// value uses, typed consts, array dimensions, runtime `if`
+// conditions, and `inline if` branch elimination.
+// Regression (issue 0296): a bare-identifier RHS was never registered
+// as a module const, so `B` failed as "unresolved" at every value use
+// while the expression spelling `B :: A + 0` worked.
+#import "modules/std.sx";
+
+C :: B;             // forward chain, declared before its targets
+B :: A;
+A :: 5;
+S2 :: S1;
+S1 :: "hello";
+F2 :: F1;
+F1 :: 2.5;
+EN :: false;
+FEATURE :: EN;      // bool chain
+T : i64 : A;        // typed const over an alias target
+
+main :: () {
+    print("{} {} {}\n", A, B, C);
+    print("{} {}\n", S2, F2);
+    print("{}\n", T);
+    arr : [B]i64 = .[1, 2, 3, 4, 5];
+    print("len {}\n", arr.len);
+    if FEATURE { print("t\n"); } else { print("f\n"); }
+    inline if FEATURE {
+        x : *Missing = null;    // dead branch — pruned whole (issue 0290)
+        print("{}\n", x);
+    } else {
+        print("dead ok\n");
+    }
+}

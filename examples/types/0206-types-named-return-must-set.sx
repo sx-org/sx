@@ -1,0 +1,16 @@
+// Negative: a NAMED multi-return slot that the body never assigns (and that has
+// no default) is a compile error. Here `good` is never set, so the implicit
+// return cannot be synthesized — the must-set rule rejects it. (Assign every
+// slot, give it a default, or end with an explicit `return`.)
+#import "modules/std.sx";
+
+combine :: (f1: i32, f2: i32) -> (sum: i32, good: bool) {
+    sum = f1 + f2;
+    // `good` is never assigned — must-set violation.
+}
+
+main :: () -> i64 {
+    s, g := combine(1, 2);
+    print("{} {}\n", s, g);
+    return 0;
+}

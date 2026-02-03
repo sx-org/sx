@@ -1,0 +1,33 @@
+// Assignment to an undeclared identifier is a compile error — a plain `=`
+// (or a compound `OP=`) whose LHS name resolves to no local and no visible
+// global must diagnose, never silently create a slot or discard the store.
+// A typo'd variable name in an assignment (`totl` for `total`) fails the
+// build instead of shipping a dead assignment.
+//
+// Also pinned here (same lowering arm, diagnostics accumulate so none
+// masks another):
+//   - a by-ref loop capture (`for xs (*x)`) assigned WITHOUT `.*` — no
+//     store path through the bare name; the error points at `x.* = ...`;
+//   - `_ OP= expr` — the discard has no value to read; only the plain
+//     `_ = expr` discard idiom is allowed.
+//
+// Regression (issue 0216): `totl = 42;` compiled and ran silently — the RHS
+// lowered and the store was dropped because the failed global lookup had no
+// else branch. Same gap for compound assignment (`cnt += 1;`), for the
+// by-ref capture store, and for `_ += 1;`.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    totl = 42;          // typo of `total` — plain `=` to an undeclared name
+    cnt += 1;           // compound assign to an undeclared name
+    xs : [2]i64 = .[1, 2];
+    for xs (*x) {
+        x = 99;         // by-ref capture assigned without `.*`
+    }
+    _ += 1;             // compound assign to the discard
+    total := 0;
+    total = total + 1;
+    print("{}\n", total);
+    0
+}

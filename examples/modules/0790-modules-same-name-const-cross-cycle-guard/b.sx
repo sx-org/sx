@@ -1,0 +1,6 @@
+// Module B flat-imports A and authors a DIFFERENT same-name `M :: K + 1` (= 3),
+// reading A's `K`. Folding B's `M` walks B's `M` → A's `K` → A's `M` — the name
+// `M` recurs across two modules. The cycle guard must NOT confuse B's `M` with
+// A's `M`: keyed on (name, source) the chain folds to 3.
+#import "a.sx";
+M :: K + 1;

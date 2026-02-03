@@ -1,0 +1,275 @@
+// std.http H4 (PLAN-HTTPZ): explicit errors + observability.
+//
+// Today accept/read/write/parse/timeout/503 faults close a connection
+// SILENTLY. H4 adds two opt-in observers, BOTH driven from the loop
+// thread so no cross-thread atomics are needed:
+//   1. a pluggable on_event hook (Config.on_event + on_event_ctx) called
+//      at every fault / key lifecycle site — the user formats however
+//      they want; a null hook (default) = today's silent behavior.
+//   2. plain i64 counters exposed by Server.stats() -> Stats.
+//
+// This drives a single-thread tick harness (the 1633 shape) through a
+// mix of outcomes against ONE server:
+//   - several successful GET/POST requests (200),
+//   - a parser error (bad HTTP version → 400),
+//   - an unknown path (404, also a 4xx),
+// then asserts Server.stats() reflects the right counts AND that the
+// on_event hook actually fired for the fault events (recorded into a
+// fixed array reached through the ctx word — NO heap alloc in the hook,
+// so this stays leak-clean).
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 18972;
+NCONN :: 8;
+
+handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    if req.path == "/hello" { resp.body = concat("hello ", req.method); return; }
+    if req.path == "/echo"  { resp.body = req.body; return; }
+    resp.status = 404;
+    resp.body = "nope";
+}
+
+// ── on_event sink: a fixed array of (kind, status) pairs, NO heap. The
+//    ctx word points at this struct; the hook only writes into it. ──────
+EventLog :: struct {
+    n: i64 = 0;
+    kind: [64]i64 = ---;
+    detail: [64]i64 = ---;
+}
+
+on_event :: (ctx: usize, ev: http.EventKind, slot: i64, detail: i64) {
+    log : *EventLog = xx ctx;
+    if log.n < 64 {
+        log.kind[log.n] = xx ev;     // enum → its ordinal
+        log.detail[log.n] = detail;
+        log.n += 1;
+    }
+}
+
+// Count recorded events of a given kind.
+count_kind :: (log: *EventLog, ev: http.EventKind) -> i64 {
+    want : i64 = xx ev;
+    c := 0;
+    i := 0;
+    while i < log.n {
+        if log.kind[i] == want { c += 1; }
+        i += 1;
+    }
+    return c;
+}
+
+// Count PARSE_ERROR events whose detail (status) equals `status`.
+count_parse_status :: (log: *EventLog, status: i64) -> i64 {
+    want : i64 = xx http.EventKind.PARSE_ERROR;
+    c := 0;
+    i := 0;
+    while i < log.n {
+        if log.kind[i] == want and log.detail[i] == status { c += 1; }
+        i += 1;
+    }
+    return c;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len {
+            if hay[i + j] != needle[j] { ok = false; break; }
+            j += 1;
+        }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+dial :: () -> i32 { return dial_port(PORT); }
+
+resp_complete :: (buf: [*]u8, len: i64) -> bool {
+    s := string.{ ptr = buf, len = xx len };
+    he := -1;
+    i := 0;
+    while i + 3 < s.len {
+        if s[i] == 13 and s[i+1] == 10 and s[i+2] == 13 and s[i+3] == 10 { he = i; break; }
+        i += 1;
+    }
+    if he < 0 { return false; }
+    cl : i64 = 0;
+    seen := false;
+    j := 0;
+    needle := "Content-Length: ";
+    while j + needle.len < s.len {
+        k := 0;
+        ok := true;
+        while k < needle.len { if s[j + k] != needle[k] { ok = false; break; } k += 1; }
+        if ok {
+            d := j + needle.len;
+            while d < s.len and s[d] >= 48 and s[d] <= 57 { cl = cl * 10 + (s[d] - 48); d += 1; }
+            seen = true;
+            break;
+        }
+        j += 1;
+    }
+    if !seen { return false; }
+    return len >= he + 4 + cl;
+}
+
+// Send a request, tick until the full response (or a close) arrives.
+roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8) -> string {
+    socket.write(fd, reqtext.ptr, xx reqtext.len);
+    total : i64 = 0;
+    tries := 0;
+    while tries < 400 {
+        srv.tick(5) catch {};
+        n, re := socket.read_nb(fd, @scratch[total], xx (4096 - total));
+        if !re { total += n; }
+        else if re == error.Closed { return string.{ ptr = scratch, len = xx total }; }
+        if resp_complete(scratch, total) { return string.{ ptr = scratch, len = xx total }; }
+        tries += 1;
+    }
+    return "";
+}
+
+main :: () -> i32 {
+    elog : EventLog = .{};
+
+    cfg : http.Config = .{
+        port = PORT,
+        timeout_request_ms = 150,
+        timeout_keepalive_ms = 400,
+        request_count = 50,
+        max_conn = 8,
+        on_event = on_event,
+        on_event_ctx = xx @elog,
+    };
+    srv, se := http.Server.init(cfg, handler, 0);
+    if se { print("server init failed\n"); return 1; }
+
+    buf : [4096]u8 = ---;
+
+    // ── 1. three successful requests (200) over one keep-alive conn ────
+    c1 := dial();
+    if c1 < 0 { print("dial failed\n"); return 1; }
+    r1 := roundtrip(@srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    if !contains(r1, "HTTP/1.1 200 OK") { print("case1: bad status\n"); return 1; }
+    r2 := roundtrip(@srv, c1, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 4\r\n\r\npong", @buf[0]);
+    if !contains(r2, "pong") { print("case2: echo failed\n"); return 1; }
+
+    // ── 2. parser error: a malformed version token → 400 ───────────────
+    // (a well-formed unsupported version like HTTP/9.9 is 505 since Q0.7 —
+    // a garbage token keeps this case a 400 PARSE_ERROR for the counters)
+    c2 := dial();
+    if c2 < 0 { print("dial2 failed\n"); return 1; }
+    r3 := roundtrip(@srv, c2, "GET /hello FOO/9.9\r\nHost: t\r\n\r\n", @buf[0]);
+    if !contains(r3, "HTTP/1.1 400 Bad Request") { print("case3: expected 400\n"); return 1; }
+    socket.close(c2);
+
+    // ── 3. unknown path → 404 (a 4xx too, but NOT a parser error: the
+    //       handler produced it, so it counts as a served request) ──────
+    r4 := roundtrip(@srv, c1, "GET /missing HTTP/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    if !contains(r4, "HTTP/1.1 404 Not Found") { print("case4: expected 404\n"); return 1; }
+    socket.close(c1);
+
+    // Tick a few times so the 400-closed and dropped client sockets are
+    // fully reaped (READ_FAULT/CLOSE) before snapshotting.
+    t := 0;
+    while t < 60 { srv.tick(5) catch {}; t += 1; }
+
+    // ── assertions on the counter snapshot ─────────────────────────────
+    s := srv.stats();
+
+    // accepted: two distinct connections dialed.
+    if s.accepted_total != 2 { print("stats: accepted_total != 2\n"); return 1; }
+    // requests_served: /hello, /echo, /missing all reached the handler
+    // and produced a response → 3. The 400 was a PARSE_ERROR, NOT served.
+    if s.requests_served != 3 { print("stats: requests_served != 3\n"); return 1; }
+    // errors_4xx: exactly the 400 (the 404 is a handler response, not a
+    // parser/transport error, so it is NOT counted in errors_4xx).
+    if s.errors_4xx != 1 { print("stats: errors_4xx != 1\n"); return 1; }
+    if s.errors_5xx != 0 { print("stats: errors_5xx != 0\n"); return 1; }
+    if s.rejected_503 != 0 { print("stats: rejected_503 != 0\n"); return 1; }
+    // all connections closed → active back to 0, closed == accepted.
+    if s.active_conns != 0 { print("stats: active_conns != 0\n"); return 1; }
+    if s.closed_total != 2 { print("stats: closed_total != 2\n"); return 1; }
+    // bytes flowed in and out.
+    if s.bytes_in <= 0 { print("stats: bytes_in not positive\n"); return 1; }
+    if s.bytes_out <= 0 { print("stats: bytes_out not positive\n"); return 1; }
+
+    // ── assertions on the hook firings ─────────────────────────────────
+    // ACCEPT fired twice, CLOSE fired for every closed slot.
+    if count_kind(@elog, http.EventKind.ACCEPT) != 2 { print("hook: ACCEPT count wrong\n"); return 1; }
+    if count_kind(@elog, http.EventKind.CLOSE)  != 2 { print("hook: CLOSE count wrong\n"); return 1; }
+    // the 400 surfaced as a PARSE_ERROR carrying status 400 in `detail`.
+    if count_parse_status(@elog, 400) != 1 { print("hook: missing PARSE_ERROR(400)\n"); return 1; }
+
+    srv.close();
+
+    // ── 4. 503 backpressure on a tiny pooled backlog ───────────────────
+    // A pool with one slow worker and a backlog of 1: dispatch enough
+    // concurrent requests that submit() refuses one → 503 + REJECTED_503.
+    plog : EventLog = .{};
+    pcfg : http.Config = .{
+        port = PORT + 1,
+        timeout_request_ms = 2000,
+        timeout_keepalive_ms = 2000,
+        request_count = 50,
+        max_conn = 16,
+        thread_pool_count = 1,
+        thread_pool_backlog = 1,
+        on_event = on_event,
+        on_event_ctx = xx @plog,
+    };
+    psrv, pse := http.Server.init(pcfg, slow_handler, 0);
+    if pse { print("pooled init failed\n"); return 1; }
+
+    // Open several conns and fire a request on each without waiting, so
+    // they pile into the pool at once: 1 running + 1 queued + the rest
+    // shed with 503.
+    fds : [NCONN]i32 = ---;
+    ci := 0;
+    while ci < NCONN {
+        fds[ci] = dial_port(PORT + 1);
+        if fds[ci] < 0 { print("pooled dial failed\n"); return 1; }
+        req := "GET /slow HTTP/1.1\r\nHost: t\r\n\r\n";
+        socket.write(fds[ci], req.ptr, xx req.len);
+        ci += 1;
+    }
+    // Pump the loop so the requests get parsed + dispatched + drained.
+    pt := 0;
+    while pt < 400 { psrv.tick(5) catch {}; pt += 1; }
+
+    ps := psrv.stats();
+    if ps.rejected_503 < 1 { print("pooled: expected at least one 503 shed\n"); return 1; }
+    if ps.errors_5xx < ps.rejected_503 { print("pooled: 5xx must include the sheds\n"); return 1; }
+    if count_kind(@plog, http.EventKind.REJECTED_503) < 1 { print("pooled: missing REJECTED_503 hook\n"); return 1; }
+
+    ci = 0;
+    while ci < NCONN { socket.close(fds[ci]); ci += 1; }
+    psrv.close();
+
+    print("ok\n");
+    return 0;
+}
+
+clib :: #library "c";
+usleep :: (usec: i64) -> i32 extern clib;
+
+// Slow handler: pins the single pool worker long enough that the backlog
+// fills and later requests are shed with 503.
+slow_handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    usleep(40000);   // 40 ms
+    resp.body = "ok";
+}

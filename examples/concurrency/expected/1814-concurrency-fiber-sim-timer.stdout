@@ -1,0 +1,8 @@
+wake order (id @ virtual-ms):
+  id=2 @ 10ms
+  id=4 @ 15ms
+  id=5 @ 15ms
+  id=3 @ 20ms
+  id=1 @ 30ms
+final virtual clock: 30ms
+spawned: 5

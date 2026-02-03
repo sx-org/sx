@@ -1,0 +1,42 @@
+// Optional-typed module globals with static initializers.
+//
+// An optional global `g : ?T = <present>;` must carry the 2-field
+// `{ payload, has_value }` aggregate the optional's LLVM layout expects,
+// NOT the raw payload constant. Covers: non-null scalar init read back,
+// null init read back, and a runtime set/clear round-trip in both
+// directions. Also exercises a nested optional payload and an optional
+// struct payload (both wrap correctly).
+//
+// Regression (issue 0234) — a non-null-initialized optional global used
+// to emit the raw payload constant into the `{T, i1}` global type,
+// failing LLVM verification ("Global variable initializer type does not
+// match global variable type!").
+
+#import "modules/std.sx";
+
+go   : ?i64        = 5;         // present scalar
+gn   : ?i64        = null;      // absent
+gnst : ?(?i64)     = 7;         // present nested optional
+S    :: struct { a: i64; b: i64; }
+gst  : ?S          = S.{ a = 1, b = 2 };  // present struct payload
+
+main :: () -> i32 {
+    // Non-null init reads its payload back.
+    if go != null { print("go={}\n", go!); }
+    // Null init reads back as absent.
+    if gn == null { print("gn is null\n"); }
+    // Nested optional present.
+    if gnst != null { print("gnst={}\n", gnst!!); }
+    // Struct payload present.
+    if gst != null { print("gst.a={} gst.b={}\n", gst!.a, gst!.b); }
+
+    // Runtime set the initially-null global.
+    gn = 42;
+    if gn != null { print("gn set to {}\n", gn!); }
+
+    // Runtime clear the initially-present global.
+    go = null;
+    if go == null { print("go cleared\n"); }
+
+    0
+}

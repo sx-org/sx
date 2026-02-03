@@ -1,0 +1,42 @@
+// `any` is a type-erased BORROW `{type tag, pointer to value}` (Odin
+// Raw_Any analog). Boxing a scalar points at its storage (lvalue) or at
+// a spilled frame temp (rvalue); unboxing is a typed LOAD back through
+// the view — f32 rides the load path (4-byte single re-loaded), not the
+// old bitcast-into-the-payload-word path. This pins the box/unbox
+// roundtrip across the scalar family, plus printing (the variadic pack
+// boxes each arg; the formatter's int arm dispatches per-tag widths).
+
+#import "modules/std.sx";
+
+main :: () -> i64 {
+    a : i8  = -8;    aa : any = a;   ra : i8  = xx aa;
+    b : i16 = -1616; ab : any = b;   rb : i16 = xx ab;
+    c : i32 = -32;   ac : any = c;   rc : i32 = xx ac;
+    d : i64 = -64;   ad : any = d;   rd : i64 = xx ad;
+    print("{} {} {} {}\n", ra, rb, rc, rd);
+
+    e : u8  = 255;   ae : any = e;   re : u8  = xx ae;
+    f : u16 = 65535; af : any = f;   rf : u16 = xx af;
+    g : u32 = 4294967295; ag : any = g; rg : u32 = xx ag;
+    h : u64 = 18446744073709551615;  ah : any = h; rh : u64 = xx ah;
+    print("{} {} {} {}\n", re, rf, rg, rh);
+
+    x : f32 = 2.25;  ax : any = x;   rx : f32 = xx ax;
+    y : f64 = -3.5;  ay : any = y;   ry : f64 = xx ay;
+    z := true;       az : any = z;   rz : bool = xx az;
+    s := "view";     as : any = s;   rs : string = xx as;
+    print("{} {} {} {}\n", rx, ry, rz, rs);
+
+    // Rvalue boxing spills to a frame temp — the view stays valid for
+    // the frame and round-trips the same way.
+    rv : any = 40 + 2;
+    print("{}\n", rv.(i64));
+
+    // A scalar lvalue box borrows its storage: mutations of the source
+    // are visible through a live view.
+    m : i64 = 1;
+    am : any = m;
+    m = 99;
+    print("{}\n", am.(i64));
+    return 0;
+}

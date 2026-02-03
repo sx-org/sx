@@ -1,0 +1,6 @@
+struct: Pair -> i32
+array: [4]i16 -> i16
+vector: Vector(3,f32) -> f32
+slice: []i64 -> i64
+optional: ?u8 -> u8
+parity: true true

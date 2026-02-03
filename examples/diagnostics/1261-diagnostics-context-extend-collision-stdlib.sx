@@ -1,0 +1,11 @@
+// L4 against the stdlib: `allocator` is an ordinary `#context_extend`
+// declaration in std/mem.sx (the L8 retrofit — no builtin prefix remains),
+// so a user redeclaring it is the ordinary two-declaration collision, both
+// sites named. The structural error halts lowering, so this is the ONE
+// diagnostic — no field-not-found cascade from stdlib code that uses
+// `context.allocator`.
+#import "modules/std.sx";
+
+#context_extend allocator: i64 = 0;
+
+main :: () {}

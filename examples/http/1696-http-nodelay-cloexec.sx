@@ -1,0 +1,157 @@
+// std.http — accepted sockets get TCP_NODELAY + CLOEXEC (Q2.1).
+//
+// TCP_NODELAY: a response written in one write_more pass otherwise sits in
+// the kernel's Nagle buffer waiting for the peer's ACK — 40 ms latency
+// cliffs under keep-alive request/response traffic. The server sets it on
+// every accepted connection.
+//
+// CLOEXEC: a fork/exec'd child (process.run, the sx bundler) must not
+// inherit the server's fds — an inherited conn fd keeps the peer's
+// connection half-open past our close; an inherited listener keeps the
+// port bound after Server.close. On linux accept4(SOCK_NONBLOCK |
+// SOCK_CLOEXEC) applies both atomically (and saves two fcntls per accept);
+// darwin has no accept4, so accept + two fcntls is the per-OS branch
+// (socket.accept_stream_nb). The listener gets FD_CLOEXEC at init.
+//
+// Asserts, in-process on the server's own fds (the flags are invisible to
+// the peer): a keep-alive request round-trips 200; the accepted conn fd
+// has TCP_NODELAY set, FD_CLOEXEC set, O_NONBLOCK still set; the listener
+// fd has FD_CLOEXEC set; GPA net-zero after close.
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+libc :: #library "c";
+getsockopt :: (fd: i32, level: i32, optname: i32, optval: *i32, optlen: *u32) -> i32 extern libc;
+
+PORT :: 19011;
+
+// Same numeric value on darwin + linux.
+IPPROTO_TCP :i32: 6;
+TCP_NODELAY :i32: 1;
+F_GETFD     :i32: 1;
+FD_CLOEXEC  :i32: 1;
+
+route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    resp.body = "served";
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    failed : i64 = 0;
+    leaked : i64 = 0;
+
+    push .{ allocator = gpa } {
+        cap : i64 = 16384;
+        rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
+
+        cfg : http.Config = .{ port = PORT, max_conn = 4, request_count = 10 };
+        srv, se := http.Server.init(cfg, route, 0);
+        if se { print("init failed\n"); return 1; }
+
+        // Keep-alive request: the conn stays open (CONN_KEEPALIVE) after the
+        // response, so its server-side fd can be inspected below.
+        fd := dial_port(PORT);
+        if fd < 0 { print("dial failed\n"); return 1; }
+        req := "GET / HTTP/1.1\r\nHost: t\r\n\r\n";
+        socket.write(fd, req.ptr, xx req.len);
+        total : i64 = 0;
+        stall : i64 = 0;
+        while stall < 400 {
+            srv.tick(1) catch {};
+            got : i64 = 0;
+            while true {
+                n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+                if !re { total += n; got += n; continue; }
+                break;
+            }
+            if got > 0 { stall = 0; } else { stall += 1; }
+            r := string.{ ptr = rbuf, len = xx total };
+            if contains(r, "served") { break; }
+        }
+        resp := string.{ ptr = rbuf, len = xx total };
+        if !contains(resp, "HTTP/1.1 200 OK") or !contains(resp, "served") {
+            print("keep-alive roundtrip: expected 200\n");
+            failed = 1;
+        }
+
+        // Find the occupied slot (state != CONN_FREE) and inspect its fd.
+        cfd : i32 = -1;
+        i : i64 = 0;
+        while i < cfg.max_conn {
+            if srv.conns[i].state != 0 { cfd = srv.conns[i].fd; break; }
+            i += 1;
+        }
+        if cfd < 0 {
+            print("no live conn slot found\n");
+            failed = 1;
+        } else {
+            nd : i32 = 0;
+            ndlen : u32 = 4;
+            if getsockopt(cfd, IPPROTO_TCP, TCP_NODELAY, @nd, @ndlen) != 0 {
+                print("getsockopt(TCP_NODELAY) failed\n");
+                failed = 1;
+            } else if nd == 0 {
+                print("TCP_NODELAY not set on accepted socket\n");
+                failed = 1;
+            }
+            fdf := socket.fcntl(cfd, F_GETFD);
+            if fdf < 0 or (fdf & FD_CLOEXEC) == 0 {
+                print("FD_CLOEXEC not set on accepted socket\n");
+                failed = 1;
+            }
+            fl := socket.fcntl(cfd, socket.F_GETFL);
+            if fl < 0 or (fl & socket.O_NONBLOCK) == 0 {
+                print("O_NONBLOCK not set on accepted socket\n");
+                failed = 1;
+            }
+        }
+
+        lff := socket.fcntl(srv.lfd, F_GETFD);
+        if lff < 0 or (lff & FD_CLOEXEC) == 0 {
+            print("FD_CLOEXEC not set on listener\n");
+            failed = 1;
+        }
+
+        socket.close(fd);
+        // Reap the client's close so the slot is freed before teardown.
+        reap : i64 = 0;
+        while reap < 50 {
+            srv.tick(1) catch {};
+            if srv.conns[0].state == 0 { break; }
+            reap += 1;
+        }
+        srv.close();
+        context.allocator.dealloc_bytes(xx rbuf);
+        leaked = gpa.alloc_count;
+    }
+
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations\n", leaked);
+        return 1;
+    }
+    if failed != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

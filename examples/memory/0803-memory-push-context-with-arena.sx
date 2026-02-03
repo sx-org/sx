@@ -1,0 +1,20 @@
+// `push <Context>` of a WHOLE Context value whose `allocator` field is an
+// `#inline` protocol carrying an `Arena` upcast. The value is seeded from the
+// ambient context (`new_ctx := context`) so every other capability — builtin
+// or `#context_extend`ed — carries through, then the one field is overwritten.
+// Exercises save/restore of the boxed context across the push.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+main :: () -> void {
+    arena := Arena.init(context.allocator, 4096);
+
+    new_ctx := context;
+    new_ctx.allocator = xx arena;
+    push new_ctx {
+        ptr := context.allocator.alloc_bytes(128);
+        out("inside push\n");
+    }
+    out("after push\n");
+}

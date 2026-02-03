@@ -1,0 +1,37 @@
+// FFI plan step 5.2 — generic `Into(Block) for Closure(..$args) ->
+// $R` impl. One impl in stdlib covers every closure shape; the
+// compiler monomorphises the impl body per call shape and emits a
+// dedicated `__invoke` `abi(.c)` trampoline + Block literal
+// (via `#insert build_block_convert($args, $R);`).
+//
+// This test exercises a closure shape (`Closure(i64, i64) -> void`)
+// that has NO hand-rolled `Into(Block)` impl in
+// `library/modules/ffi/objc_block.sx`. Before step 5.2 lands,
+// `xx cl : Block` errors out with the "no Into(Block) for
+// cl_i64_i64__void" focused diagnostic. After the generic impl
+// lands, the same call resolves through the pack-shaped impl and
+// the per-shape trampoline ferries control back to the sx closure.
+//
+// The block is invoked directly through `b.invoke` (a typed
+// `abi(.c)` fn-pointer) — the same shape the Apple Block
+// runtime calls when a UIKit/Foundation API hands the block back
+// to its registered invoke.
+
+#import "modules/std.sx";
+#import "modules/ffi/objc_block.sx";
+
+g_a: i64 = 0;
+g_b: i64 = 0;
+
+main :: () -> i32 {
+    cl := (a: i64, b: i64) { g_a = a; g_b = b; };
+    blk : Block = xx cl;
+
+    invoke_fn : (*Block, i64, i64) -> void abi(.c) = xx blk.invoke;
+    invoke_fn(@blk, 10, 20);
+
+    if g_a != 10 { print("FAIL: g_a={}\n", g_a); return 1; }
+    if g_b != 20 { print("FAIL: g_b={}\n", g_b); return 1; }
+    print("generic-into-block ok: a={} b={}\n", g_a, g_b);
+    0
+}

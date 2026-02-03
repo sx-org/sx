@@ -1,0 +1,24 @@
+// An `inline for` / `for` range bound is a range ENDPOINT, not a count, so the
+// count negative-rejection rule does NOT apply to it: negative endpoints are
+// valid and an empty/inverted range simply runs zero iterations.
+//
+// Regression (F0.4 attempt 11, Agra ruling): the spec wrongly lumped inline-for
+// bounds with counts (array dim / Vector lane / value-param), which reject
+// negatives. Bounds are exempt — `inline for -2..1` iterates -2,-1,0 and an
+// integral-float empty range `0..(-2.0)` runs zero iterations. Comptime and
+// runtime loops must agree.
+#import "modules/std.sx";
+
+main :: () {
+    s := 0;
+    inline for -2..1 (i) { s += i; }
+    print("inline for -2..1 sum = {}\n", s);   // -2 + -1 + 0 = -3
+
+    r := 0;
+    for -2..1 (i) { r += i; }
+    print("for -2..1 sum = {}\n", r);          // -2 + -1 + 0 = -3 (runtime parity)
+
+    e := 0;
+    inline for 0..(-2.0) (i) { e += i; }
+    print("inline for 0..(-2.0) sum = {}\n", e);  // empty range -> 0 iterations
+}

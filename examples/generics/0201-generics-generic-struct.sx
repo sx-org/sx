@@ -1,0 +1,87 @@
+#import "modules/std.sx";
+#import "modules/math";
+
+Vec :: struct($N: u32, $T:Type) {
+    // <N x T> (LLVM Vector)
+    // Vector is a Builtin Type
+    data: Vector(N,T);
+}
+
+Complex :: ($T:Type) -> Type {
+    return struct {
+        value: T;
+        //..inject
+        count: u32;
+    };
+}
+
+Vec3 :: Vec(3, f32);
+
+vec3 :: (x:f32, y:f32, z:f32) -> Vector(3,f32) {
+    .[x, y, z]
+}
+
+Foo :: Complex(u32);
+
+main :: () {
+    v1 := Vec3.{data = .[1,3,2]};
+    print("v1: {}\n", v1);
+    //stdout: Vec(3,f32){data: [1.0, 3.0, 2.0]}
+    //
+
+    v2 := vec3(1,3,2);
+    print("v2: {}\n", v2);
+    //stdout: [1.0, 3.0, 2.0]
+    //
+
+    // [N x T] (LLVM Array)
+    buffer : [5]f32 = .[0, 2, 3.5, 4, 0];
+    print("buff: {}\n", buffer);
+    //stdout: [0.0, 2.0, 3.5, 4.0, 0.0]
+    //
+
+    comp : Foo = .{value = 42, count = 1};
+    print("comp: {}\n", comp);
+    //stdout: Foo{value: 42, count: 1}
+    //
+
+    // Vector arithmetic
+    v3 := vec3(3,2,1);
+    add := v2 + v3;
+    print("add: {}\n", add);
+
+    // Element access
+    v2x := v2.x;
+    print("v2.x: {}\n", v2x);
+
+    // Index access
+    v2i := v2[1];
+    print("v2[1]: {}\n", v2i);
+
+    // Scalar broadcast
+    scaled := v2 * 2.0;
+    print("scaled: {}\n", scaled);
+
+    // Negation
+    neg := -v2;
+    print("neg: {}\n", neg);
+
+    // sqrt
+    s := sqrt(9.0);
+    print("sqrt(9): {}\n", s);
+
+    // inline generic type
+    Sx :: (user: $T) -> Type {
+        return enum {
+            counter: i32;
+            user: T;
+        };
+    } 
+
+    sx := Sx(f32).user(0.5);
+    print("{}\n", sx);
+
+    print("{}\n", size_of(f32));
+    print("{}\n", size_of(Sx(f32)));
+    print("{}\n", size_of(Foo));
+}

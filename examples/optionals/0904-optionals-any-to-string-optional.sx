@@ -1,0 +1,31 @@
+// any_to_string didn't handle optionals. A struct field of type `?T`
+// printed as `<?>` (any_to_string's "no case matched" default)
+// because there was no `case optional:` arm, and no dispatch table
+// entry mapping `?T` TypeIds to the optional category.
+//
+// The variadic auto-unwrap path (packVariadicCallArgs) papered over
+// this for direct `print("{}\n", opt)` calls — it stringified
+// optionals to either the inner value's repr or `"null"` BEFORE
+// boxing as any. But anywhere else that boxes an optional and reads
+// it back through any_to_string (struct field printing,
+// `xx opt : any`, future user code) hit the `<?>` floor.
+//
+// Locks in the fix: each ?T variant routes through `case optional:` —
+// the repr-classified table walk — to either the inner value's
+// `any_to_string` representation or the literal `"null"`.
+
+#import "modules/std.sx";
+
+S :: struct {
+    a: ?i64;
+    b: ?string;
+    c: ?bool;
+}
+
+main :: () {
+    filled := S.{ a = 42, b = "hi", c = true };
+    print("{}\n", filled);
+    empty := S.{ a = null, b = null, c = null };
+    print("{}\n", empty);
+    0;
+}

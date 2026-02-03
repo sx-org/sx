@@ -1,0 +1,101 @@
+// The OWNING erasure of an effectful operand evaluates the expression
+// ONCE. `arr[next()].(P)` lowers the receiver a single time — the
+// side-effectful index runs once, and the copied element is the one that
+// single evaluation picked. This held for the pre-E4 borrow erasure
+// (issue 0214: `xx arr[next()]` used to re-lower the AST for the borrow
+// address and run `next()` twice) and must keep holding for the postfix
+// owning copy, for every index base shape: a LOCAL array, a module-GLOBAL
+// array, and a STRUCT-FIELD array — and for `?P` destinations.
+// Ownership contract (E4): the erased value is an independent COPY — the
+// source element is untouched by mutations through it. Transient
+// write-through lives in `*P` views (pinned in 0829); the by-REF capture
+// leg below drives one through a view.
+// Regression (issue 0214 lineage; rewritten at the E4 cutover).
+
+#import "modules/std.sx";
+
+P :: protocol {
+    get :: (self: *Self) -> i64;
+    bump :: (self: *Self);
+}
+
+S :: struct { v: i64 = 0; }
+
+impl P for S {
+    get :: (self: *S) -> i64 { return self.v; }
+    bump :: (self: *S) { self.v += 1; }
+}
+
+H :: struct { arr: [2]S; }
+
+g_arr : [2]S = .[ S.{ v = 100 }, S.{ v = 200 } ];
+
+g_calls : i64 = 0;
+next_ret : i64 = 1;
+
+next :: () -> i64 {
+    g_calls += 1;
+    return next_ret;
+}
+
+main :: () -> i32 {
+    fails : i64 = 0;
+
+    arr : [3]S = ---;
+    arr[0] = S.{ v = 10 };
+    arr[1] = S.{ v = 20 };
+    arr[2] = S.{ v = 30 };
+
+    // Plain P destination: one eval, right element, independent copy.
+    g_calls = 0;
+    p := arr[next()].(P);
+    if g_calls != 1 { print("plain evals {}\n", g_calls); fails += 1; }
+    if p.get() != 20 { print("plain element {}\n", p.get()); fails += 1; }
+    p.bump();
+    if p.get() != 21 { print("plain copy bump {}\n", p.get()); fails += 1; }
+    if arr[1].v != 20 { print("copy aliased source {}\n", arr[1].v); fails += 1; }
+
+    // ?P destination: one eval, same copy semantics.
+    g_calls = 0;
+    op : ?P = arr[next()].(P);
+    if g_calls != 1 { print("opt evals {}\n", g_calls); fails += 1; }
+    if op == null { print("opt null\n"); fails += 1; }
+    if op.get() != 20 { print("opt element {}\n", op.get()); fails += 1; }
+
+    // Module-GLOBAL array base: one eval, right element.
+    next_ret = 0;
+    g_calls = 0;
+    pg := g_arr[next()].(P);
+    if g_calls != 1 { print("global evals {}\n", g_calls); fails += 1; }
+    if pg.get() != 100 { print("global element {}\n", pg.get()); fails += 1; }
+
+    // STRUCT-FIELD array base: one eval, right element.
+    h : H = .{ arr = .[ S.{ v = 300 }, S.{ v = 400 } ] };
+    g_calls = 0;
+    pf := h.arr[next()].(P);
+    if g_calls != 1 { print("field evals {}\n", g_calls); fails += 1; }
+    if pf.get() != 300 { print("field element {}\n", pf.get()); fails += 1; }
+
+    // By-VALUE for capture: x is a per-iteration copy; the owning erasure
+    // copies THE COPY — bumps land there, the array is untouched.
+    warr : [2]S = .[ S.{ v = 1 }, S.{ v = 2 } ];
+    total : i64 = 0;
+    for warr (x) {
+        pv := x.(P);
+        pv.bump();
+        total += pv.get();
+    }
+    if total != 5 { print("byval total {}\n", total); fails += 1; }
+    if warr[0].v != 1 or warr[1].v != 2 { print("byval capture aliased: {} {}\n", warr[0].v, warr[1].v); fails += 1; }
+
+    // By-REF (*x) capture through a *P VIEW: writes reach the array.
+    for warr (*x) {
+        pr : *P = x;
+        pr.bump();
+    }
+    if warr[0].v != 2 or warr[1].v != 3 { print("byref view not written: {} {}\n", warr[0].v, warr[1].v); fails += 1; }
+
+    if fails != 0 { return 1; }
+    print("ok\n");
+    return 0;
+}

@@ -1,0 +1,13 @@
+// A block-LOCAL type resolves even when a namespaced-only import authors a
+// top-level type of the same name (Phase E1, R2). `dep.sx` is namespaced
+// (`dep :: #import`) and authors a top-level `Secret`; `main` declares its OWN
+// block-local `Secret`. The local must resolve to ITS fields (a legitimately-
+// scoped local is never a namespaced-only leak), not be rejected by the bare-TYPE
+// visibility gate just because the namespaced import shares the name.
+dep :: #import "0746-modules-local-type-shadows-ns-only-type/dep.sx";
+
+main :: () -> i32 {
+    Secret :: struct { z: i32; }
+    s : Secret = .{ z = 7 };
+    s.z
+}

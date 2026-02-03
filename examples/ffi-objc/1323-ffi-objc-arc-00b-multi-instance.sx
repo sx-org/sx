@@ -1,0 +1,74 @@
+// ffi-objc-arc-00b — multi-instance allocator threading.
+//
+// Verifies that EACH sx-defined-class instance captures its own
+// allocator and round-trips through it. Catches bugs where:
+//   - the captured allocator is shared across instances (one global
+//     slot instead of per-instance).
+//   - alloc captures the wrong allocator on the 2nd+ instance.
+//   - dealloc reads garbage if state[0] is overwritten between
+//     instances.
+//
+// Three instances → three alloc events → three dealloc events. The
+// tracker observes exactly +3 / +3 deltas.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/ffi/objc.sx";
+#import "modules/build.sx";
+
+SxMultiProbe :: #objc_class("SxMultiProbe") {
+    #extends NSObject;
+    a: i32;
+    b: i32;
+    alloc :: () -> *SxMultiProbe;
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        gpa := GPA.init();
+        tracker := TrackingAllocator.init(gpa);
+
+        push .{ allocator = tracker } {
+            alloc_before   := tracker.alloc_count;
+            dealloc_before := tracker.dealloc_count;
+
+            f1 := SxMultiProbe.alloc();
+            f2 := SxMultiProbe.alloc();
+            f3 := SxMultiProbe.alloc();
+
+            alloc_after_three := tracker.alloc_count - alloc_before;
+
+            f1.release();
+            f2.release();
+            f3.release();
+
+            alloc_delta   := tracker.alloc_count   - alloc_before;
+            dealloc_delta := tracker.dealloc_count - dealloc_before;
+
+            // alloc_delta MAY include extras from autorelease/etc. but
+            // each SxMultiProbe.alloc contributes at least 1. Check the
+            // BALANCE: every alloc paired with a dealloc.
+            if dealloc_delta != alloc_delta {
+                print("FAIL: alloc/dealloc unbalanced; alloc={} dealloc={}\n",
+                      alloc_delta, dealloc_delta);
+                return 1;
+            }
+            if alloc_after_three < 3 {
+                print("FAIL: 3 SxMultiProbe.alloc()s should produce >= 3 tracker allocs; saw {}\n",
+                      alloc_after_three);
+                return 1;
+            }
+            if dealloc_delta < 3 {
+                print("FAIL: 3 release()s should produce >= 3 tracker deallocs; saw {}\n",
+                      dealloc_delta);
+                return 1;
+            }
+        }
+
+        print("multi-instance round-trip: ok\n");
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

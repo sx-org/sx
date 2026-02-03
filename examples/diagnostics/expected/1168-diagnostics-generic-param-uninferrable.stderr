@@ -1,0 +1,5 @@
+error: cannot infer generic type parameter 'T' for 'first' from this call's arguments
+  --> examples/diagnostics/1168-diagnostics-generic-param-uninferrable.sx:17:19
+   |
+17 |     print("{}\n", first("abc"));
+   |                   ^^^^^

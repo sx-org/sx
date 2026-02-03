@@ -1,0 +1,23 @@
+// Step 2.7 — forwarding a variadic to a `[]any` helper.
+//
+// A comptime pack `..$args` is comptime-only (Decision 1): `args` bare is NOT a
+// runtime value, so `log_count(args)` on a pack is an error (see the
+// pack-as-value tests). To forward a variadic to a runtime `[]any` helper,
+// declare it as the *slice* variadic `..args: []any` — then `args` is a real
+// `[]any` slice that passes straight through.
+
+#import "modules/std.sx";
+
+log_count :: (items: []any) -> i64 {
+    return items.len;
+}
+
+// Slice variadic: `args` is a runtime []any, forwarded directly.
+forward :: (..args: []any) -> i64 {
+    return log_count(args);
+}
+
+main :: () -> i32 {
+    print("{}\n", forward(1, "hi", 2.5));
+    return 0;
+}

@@ -1,0 +1,51 @@
+// Unified float→int narrowing rule (F0.11), NEGATIVE side: a NON-INTEGRAL float
+// implicitly narrowing to an integer-typed binding is a COMPILE ERROR — not a
+// silent truncation. The rule fires at a typed LOCAL initializer, a function
+// PARAM default, a struct FIELD default, AND an array DIMENSION; each emits a
+// narrowing diagnostic at the offending float and aborts (exit 1). It fires
+// whether the float is a LITERAL (`1.5`), an INT-const-expression (`M + 0.5`,
+// with `M :: 2`), a FLOAT-const-leaf expression (`F + 0.25`, with `F : f64 : 2.5`,
+// = 2.75), a builtin FLOAT numeric-limit leaf inside an expression
+// (`f64.true_min + 0.5` = 0.5), or a float `%` whose remainder is non-integral
+// (`5.5 % 2.0` = 1.5) — all of these are the core of issue 0095, which previously
+// slipped through and truncated. The fix is the integral-fold / non-integral-error
+// rule shared across all five sites (local, field, param, const, and array
+// dimension), applied to ANY compile-time-constant float expression (literal,
+// int-const leaf, float-const leaf, numeric-limit leaf, `+ - * / %`, and
+// combinations) — the compile-time float evaluator is at parity with the integer
+// one, so no float leaf shape escapes. The array-dimension site phrases the same
+// rejection as "must be an integer".
+//
+// The escape hatch stays open: `y : i64 = xx 1.5` (or `1.5.(i64)` — but a
+// float literal needs parens: `(1.5).(i64)`) truncates with no error —
+// exercised on the POSITIVE side (example 0168).
+//
+// Regression (issue 0095): `y : i64 = 1.5` silently truncated to 1,
+// `y : i64 = M + 0.5` to 2, and `y : i64 = F + 0.25` (float-const leaf) to 2.
+#import "modules/std.sx";
+
+M :: 2;          // int module const, for the INT-const-EXPRESSION cases
+F : f64 : 2.5;   // float module const, for the FLOAT-const-LEAF cases
+
+Bad :: struct {
+    f  : i64 = 3.5;       // non-integral float LITERAL field default → error
+    fe : i64 = M + 0.5;   // non-integral int-const-EXPR field default → error
+    ff : i64 = F + 0.25;  // non-integral float-const-LEAF field default → error
+}
+
+badLit  :: (x : i64 = 2.5)      -> i64 { return x; }   // non-integral LITERAL param default → error
+badExpr :: (x : i64 = M + 0.5)  -> i64 { return x; }   // non-integral int-const-EXPR param default → error
+badFlt  :: (x : i64 = F + 0.25) -> i64 { return x; }   // non-integral float-const-LEAF param default → error
+
+main :: () {
+    y  : i64 = 1.5;       // non-integral float LITERAL local → error
+    ye : i64 = M + 0.5;   // non-integral int-const-EXPRESSION local → error
+    yf : i64 = F + 0.25;  // non-integral float-const-LEAF local → error
+    yn : i64 = f64.true_min + 0.5;  // non-integral numeric-limit float expr → error
+    ym : i64 = 5.5 % 2.0;           // non-integral float `%` remainder (1.5) → error
+    ad : [F + 0.25]i64 = ---;  // non-integral float-const-LEAF array DIMENSION → error
+    b := Bad.{};
+    print("{} {} {}\n", b.f, b.fe, b.ff);
+    print("{} {} {}\n", badLit(), badExpr(), badFlt());
+    print("{} {} {} {} {} {}\n", y, ye, yf, yn, ym, ad.len);
+}

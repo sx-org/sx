@@ -1,0 +1,20 @@
+// Two top-level structs each carry an inline anonymous-struct field named
+// `inner`, but of DIFFERENT shapes. Each `inner` must resolve to its OWN
+// anonymous type (`A.inner` has `x`; `B.inner` has `y, z`) — they must not
+// cross-bind on the shared field spelling.
+//
+// Regression (folded from the Phase-D `replaceKeyedInfo` re-key, which made the
+// per-parent anon rename key-safe): on master 7ffc0c1 the two anon types
+// cross-bound and `b.inner.y` failed with "field 'y' not found on type
+// 'B.inner'". Pins fail-before / pass-after.
+#import "modules/std.sx";
+
+A :: struct { inner: struct { x: i64; }; }
+B :: struct { inner: struct { y: i64; z: i64; }; }
+
+main :: () -> i32 {
+    a := A.{ inner = .{ x = 1 } };
+    b := B.{ inner = .{ y = 2, z = 3 } };
+    print("{} {} {}\n", a.inner.x, b.inner.y, b.inner.z);
+    0
+}

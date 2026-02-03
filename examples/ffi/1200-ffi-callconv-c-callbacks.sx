@@ -1,0 +1,16 @@
+// `abi(.c)` on function pointers passed to extern callbacks — ensures
+// the function uses C ABI so it can be safely invoked from `extern`
+// functions like SDL_AddEventWatch.
+
+#import "modules/std.sx";
+
+// A function with C calling convention
+add_c :: (a: i64, b: i64) -> i64 abi(.c) {
+    a + b
+}
+
+main :: () {
+    // Call it directly — should work like any other function
+    result := add_c(10, 32);
+    print("abi(.c): {}\n", result);
+}

@@ -1,0 +1,34 @@
+// Dead statements after a block-terminating statement (`return` / `raise`) are
+// dropped instead of being emitted into the already-closed basic block.
+// Regression (issue 0061): a bare `return X;` / `raise` mid-block closed the
+// LLVM basic block but lowering kept emitting the trailing statements into it
+// → "Terminator found in the middle of a basic block". The canonical failable
+// closure form `{ raise error.X; return x; }` tripped this, blocking ERR E5.1.
+//
+// The fix must NOT over-reach: a CONDITIONAL `if cond { return }` (and the
+// `inline if` pack form) leaves a fresh merge block, so its trailing statements
+// must still run — exercised by `clamp` / `pick` below.
+
+#import "modules/std.sx";
+
+E :: error { Neg }
+
+// dead `return 99;` after an unconditional return
+const_one :: () -> i64 { return 1; return 99; }
+
+// dead `return x;` after an unconditional raise (the failable closure shape)
+always_raise :: (x: i64) -> (i64, !E) { raise error.Neg; return x; }
+
+// guard: a conditional return must still fall through to the trailing return
+clamp :: (x: i64) -> i64 { if x > 10 { return 10; } return x; }
+
+main :: () -> i32 {
+    print("const_one={}\n", const_one());            // 1
+    print("raised={}\n", always_raise(5) catch (e) 0); // 0
+    print("clamp_hi={}\n", clamp(42));               // 10
+    print("clamp_lo={}\n", clamp(7));                // 7
+
+    // dead code after a `return` at main's own block level is dropped.
+    return 0;
+    print("unreachable\n")
+}

@@ -1,0 +1,5 @@
+error: field 'bogus' not found on type 'Vec'
+  --> examples/diagnostics/1100-diagnostics-err-field-not-found.sx:8:15
+   |
+ 8 |     return xx v.bogus;
+   |               ^^^^^^^

@@ -1,0 +1,13 @@
+old add: 10
+old sub: 15
+now: 12
+old and: 240
+old or:  48
+old xor: 51
+now: 60
+old min: 20
+old max: 8
+now: 15
+runtime signed max(-5,3): 3
+runtime signed min(-5,3): -5
+comptime signed max(-5,3)=3 min(-5,3)=-5

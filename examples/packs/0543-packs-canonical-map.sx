@@ -1,0 +1,41 @@
+// Phase 6 — the canonical heterogeneous `map`, end to end. A pack-fn whose
+// return type `$R` is inferred from the mapper's closure return:
+//   - `mapper: Closure(..sources.T) -> $R` types the lambda's params from the
+//     projected pack element types, and its body (`a + b`) drives `$R`.
+//   - `$R` is inferred at the call site from the lowered mapper's closure ret,
+//     bound into the mono (`-> VL($R)` ⇒ `VL(i64)`, `Combined($R, ..)` ⇒
+//     `Combined(i64, ..)`), and folded into the mangle.
+//   - `.(..sources)` materializes the pack into the `Tuple(..VL(Ts))` field (per-element
+//     erase) and `mapper(..sources.get)` projects+spreads; `xx c` erases the
+//     generic-struct instance to `VL(i64)` via the generic impl's monomorphized
+//     thunk.
+
+#import "modules/std.sx";
+
+VL :: protocol(T: Type) { get :: (self: *Self) -> T; }
+IntCell :: struct { v: i64; }
+impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
+
+Combined :: struct($R: Type, ..$Ts: []Type) {
+    sources: Tuple(..VL(Ts));
+    value:   $R;
+}
+impl VL($R) for Combined($R, ..$Ts) { get :: (self: *Combined) -> $R => self.value; }
+
+// (named `zip_map`, not `map`: the prelude now exports a `map` namespace —
+// `std/map.sx`'s HashMap / IndexMap — which a bare top-level `map` here
+// would collide with.)
+zip_map :: (mapper: Closure(..sources.T) -> $R, ..sources: VL) -> VL($R) {
+    c : Combined($R, ..sources.T) = ---;
+    c.sources = .{..sources};
+    c.value = mapper(..sources.get);
+    // Owning copy — the erased value escapes this frame (`xx c` borrowed
+    // the local and returned a dangle; the cutover demands the spelling).
+    return c.(VL(R));
+}
+
+main :: () -> i32 {
+    r := zip_map((a, b) => a + b, IntCell.{ v = 40 }, IntCell.{ v = 2 });
+    print("{}\n", r.get());     // 42
+    0
+}

@@ -1,0 +1,39 @@
+// Atomic($T) read-modify-write: fetch_add/sub/and/or/xor/min/max → LLVM atomicrmw.
+// Each returns the OLD value. Stream A (atomics) A.1. Single-thread.
+// Also covers signed min/max with NEGATIVES at BOTH comptime (#run) and runtime —
+// they must agree (regression: comptime once did an unsigned compare).
+#import "modules/std.sx";
+#import "modules/std/atomic.sx";
+
+// comptime (#run) signed min/max with a negative — must match runtime.
+c_max :: () -> i64 { a := Atomic(i64).init(-5); _ := a.fetch_max(3, .seq_cst); return a.load(.seq_cst); }
+c_min :: () -> i64 { a := Atomic(i64).init(-5); _ := a.fetch_min(3, .seq_cst); return a.load(.seq_cst); }
+G_MAX :: #run c_max();
+G_MIN :: #run c_min();
+
+main :: () {
+    a := Atomic(i64).init(10);
+    print("old add: {}\n", a.fetch_add(5, .seq_cst));   // returns 10, now 15
+    print("old sub: {}\n", a.fetch_sub(3, .acq_rel));   // returns 15, now 12
+    print("now: {}\n", a.load(.acquire));               // 12
+
+    b := Atomic(i64).init(0xF0);
+    print("old and: {}\n", b.fetch_and(0x3C, .relaxed));// returns 0xF0(240), now 0x30(48)
+    print("old or:  {}\n", b.fetch_or(0x03, .relaxed)); // returns 0x30(48), now 0x33(51)
+    print("old xor: {}\n", b.fetch_xor(0x0F, .relaxed));// returns 0x33(51), now 0x3C(60)
+    print("now: {}\n", b.load(.relaxed));               // 60
+
+    m := Atomic(i64).init(20);
+    print("old min: {}\n", m.fetch_min(8, .seq_cst));   // returns 20, now 8
+    print("old max: {}\n", m.fetch_max(15, .seq_cst));  // returns 8, now 15
+    print("now: {}\n", m.load(.seq_cst));               // 15
+
+    // signed min/max with a negative — comptime (#run) and runtime must agree.
+    s := Atomic(i64).init(-5);
+    _ := s.fetch_max(3, .seq_cst);
+    print("runtime signed max(-5,3): {}\n", s.load(.seq_cst));  // 3
+    s.store(-5, .seq_cst);
+    _ := s.fetch_min(3, .seq_cst);
+    print("runtime signed min(-5,3): {}\n", s.load(.seq_cst));  // -5
+    print("comptime signed max(-5,3)={} min(-5,3)={}\n", G_MAX, G_MIN);  // 3 / -5
+}

@@ -1,0 +1,28 @@
+// Pack-fn (or any comptime-param fn) with a block body containing
+// an explicit `return X;` lowers to clean IR — the inline-return
+// path stores into a dedicated result slot and branches to the
+// shared `ret_done` block instead of emitting a `ret` inside the
+// caller's basic block. Without that, LLVM's verifier rejected the
+// IR with "Terminator found in the middle of a basic block".
+//
+// Surfaced by the variadic heterogeneous type packs feature (step
+// 1 made `..$args` parseable, so the simplest pack-fn smoke test
+// exercised the bug). The root cause is broader than packs: ANY
+// comptime fn with `is_comptime` params, a non-void return, and a
+// block body with `return X;` had the same crash. `format`/`print`
+// use arrow form (`=> expr`) or `#insert`-only bodies, so the bug
+// was invisible until pack-fn bodies surfaced it.
+//
+// Once fixed, calling foo() reaches the body's `return 42;`, the
+// inliner stores 42 into a result slot, the caller loads it as the
+// inline value, and main prints "42".
+
+#import "modules/std.sx";
+
+foo :: (..$args) -> i64 { return 42; }
+
+main :: () -> i32 {
+    n : i64 = foo(1, "hello");
+    print("{}\n", n);
+    return 0;
+}

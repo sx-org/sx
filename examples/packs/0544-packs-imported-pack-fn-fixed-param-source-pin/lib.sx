@@ -1,0 +1,16 @@
+// `lib.sx` imports `dep.sx`, so `Needs` is bare-visible HERE. A module that
+// imports only `lib.sx` cannot see `Needs` (non-transitive). The pack fn's
+// fixed-prefix param `n: Needs` must therefore resolve in this module's
+// context, not the caller's.
+#import "modules/std.sx";
+#import "dep.sx";
+
+make :: () -> Needs => Needs.{ v = 7 };
+
+// Control: a plain (non-pack) fn with the same fixed param already resolves in
+// its defining module — the cross-module call-arg typing path is source-pinned.
+use_plain :: (n: Needs) -> i64 => n.v;
+
+// Pack fn: the fixed-prefix param `n: Needs` is bound during pack
+// monomorphization. Its type must resolve under this module's source.
+use_pack :: (n: Needs, ..$args) -> i64 => n.v + args[0];

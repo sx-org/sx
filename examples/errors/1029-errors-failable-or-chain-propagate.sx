@@ -1,0 +1,21 @@
+// Failable `or` chain propagation (ERR step E2.4b). When every operand of a
+// `try …  or try …` chain fails and there is no value terminator, the final
+// failure propagates to the enclosing function — here `main`, so the E4.2
+// entry-point wrapper prints the unhandled-error header + return trace to
+// stderr and exits 1. Each failed attempt contributes its `raise` frame plus
+// the chain-attempt frame, so three all-failing attempts leave six frames
+// (locations are placeholders until DWARF / E3.0). Expected exit code: 1.
+
+#import "modules/std.sx";
+
+E :: error { A };
+
+fa :: (n: i32) -> (i32, !E) {
+    if n == 0 { raise error.A; }
+    return n;
+}
+
+main :: () -> (i32, !E) {
+    v := try fa(0) or try fa(0) or try fa(0);   // all fail → propagate to main
+    return v;
+}

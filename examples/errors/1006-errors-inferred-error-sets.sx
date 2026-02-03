@@ -1,0 +1,40 @@
+// Whole-program inferred error sets (ERR step E1.4b). A bare `-> !` function's
+// error set is INFERRED: the union of the tags it raises directly plus the
+// sets of the failable functions it `try`s, converged across the whole call
+// graph by a fix-point pass. Here `leaf` raises {Foo}; `mid` try-propagates
+// leaf AND raises Bar, so `mid` converges to {Foo, Bar}; the named caller
+// `run :: -> !A` then type-checks because mid's converged set is a subset of
+// A. The rejection (a converged tag NOT in the caller's set) lives in
+// `examples/224-inferred-widening-reject.sx`.
+
+#import "modules/std.sx";
+
+A :: error { Foo, Bar }
+
+leaf :: (n: i32) -> ! {
+    if n < 0 { raise error.Foo; }
+    return;
+}
+
+// Inferred set converges to {Foo, Bar}: {Foo} absorbed from `try leaf` plus
+// the directly-raised Bar.
+mid :: (n: i32) -> ! {
+    try leaf(n);
+    if n == 100 { raise error.Bar; }
+    return;
+}
+
+// Named caller: mid's converged {Foo, Bar} is a subset of A -> widening OK.
+run :: (n: i32) -> !A {
+    try mid(n);
+    return;
+}
+
+main :: () -> i32 {
+    e := run(-1);                          // leaf raises Foo -> propagates out
+    r : i32 = 0;
+    if e == error.Foo { r = r + 7; }       // true  -> +7
+    if e == error.Bar { r = r + 1; }        // false (Foo escaped, not Bar)
+    print("inferred result: {}\n", r);      // -> 7
+    return r;
+}

@@ -1,0 +1,266 @@
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/build.sx";
+#import "modules/ffi/opengl.sx";
+#import "modules/ffi/sdl3.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/events.sx";
+#import "modules/platform/types.sx";
+#import "modules/platform/api.sx";
+
+g_sdl_plat : *SdlPlatform = null;
+
+chdir :: (path: [*]u8) -> i32 extern;
+SDL_GetBasePath :: () -> [*]u8 extern;
+
+// A macOS `.app` launched via Finder / `open` starts with CWD=`/`, so a
+// game's CWD-relative asset loads (`read_file_bytes("assets/...")`) miss and
+// the app crashes loading fonts/textures. SDL's base path is the directory
+// holding the executable — inside the `.app`, where the bundler copied
+// `assets/`. chdir there, but ONLY when actually running from within a `.app`
+// bundle, so the `sx run` dev flow (binary not bundled, assets in the project
+// CWD) is left alone. Mirrors uikit.sx's iOS `chdir_to_bundle`.
+sdl_chdir_to_bundle :: () {
+    inline if OS != .macos { return; }
+    bp := SDL_GetBasePath();
+    if bp == null { return; }
+    // Reorient only when the base path lives inside a `.app` bundle.
+    i : i64 = 0;
+    found := false;
+    while bp[i] != '\0' {
+        if bp[i] == '.' and bp[i + 1] == 'a' and bp[i + 2] == 'p' and bp[i + 3] == 'p' {
+            found = true;
+            break;
+        }
+        i = i + 1;
+    }
+    if found { chdir(bp); }
+}
+
+SdlPlatform :: struct {
+    window: *void = null;
+    gl_ctx: *void = null;
+    running: bool = true;
+
+    width: i32 = 0;
+    height: i32 = 0;
+    pixel_w: i32 = 0;
+    pixel_h: i32 = 0;
+    dpi_scale: f32 = 1.0;
+
+    delta_time: f32 = 0.008;
+    last_perf: u64 = 0;
+
+    frame_closure: Closure() = ---;
+    has_frame_closure: bool = false;
+
+    events: List(Event) = .{};
+}
+
+impl Platform for SdlPlatform {
+    init :: (self: *SdlPlatform, title: [:0]u8, w: i32, h: i32) -> bool {
+        self.running = true;
+        self.has_frame_closure = false;
+        self.delta_time = 0.008;
+        self.dpi_scale = 1.0;
+        SDL_Init(SDL_INIT_VIDEO);
+        // Find bundled assets when launched as a `.app` (CWD=/ under Finder).
+        sdl_chdir_to_bundle();
+
+        inline if OS == {
+            case .wasm: {
+                SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+                SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+                SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+            }
+            case .ios: {
+                SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+                SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+                SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+            }
+            else: {
+                SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+                SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+                SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+            }
+        }
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+
+        init_w := w;
+        init_h := h;
+        inline if OS == {
+            case .wasm: {
+                init_w = c.emscripten_run_script_int("window.innerWidth");
+                init_h = c.emscripten_run_script_int("window.innerHeight");
+            }
+            else: {
+                display_id := SDL_GetPrimaryDisplay();
+                bounds : SDL_Rect = ---;
+                if SDL_GetDisplayUsableBounds(display_id, @bounds) {
+                    init_w = bounds.w * 3 / 4;
+                    init_h = bounds.h * 3 / 4;
+                }
+            }
+        }
+
+        self.window = SDL_CreateWindow(title, init_w, init_h,
+            SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        if self.window == null { return false; }
+
+        self.gl_ctx = SDL_GL_CreateContext(self.window);
+        SDL_GL_MakeCurrent(self.window, self.gl_ctx);
+        // Vsync: pace swaps to the display refresh. Without this the frame
+        // loop free-runs and pins every core it can get (interval 0 =
+        // immediate). Ignored on wasm, where emscripten's rAF loop paces.
+        SDL_GL_SetSwapInterval(1);
+
+        load_gl(@SDL_GL_GetProcAddress);
+
+        SDL_GetWindowSize(self.window, @self.width, @self.height);
+        SDL_GetWindowSizeInPixels(self.window, @self.pixel_w, @self.pixel_h);
+        wf : f32 = xx self.width;
+        pw : f32 = xx self.pixel_w;
+        self.dpi_scale = if wf > 0.0 then pw / wf else 1.0;
+
+        glViewport(0, 0, self.pixel_w, self.pixel_h);
+
+        g_sdl_plat = self;
+        self.last_perf = SDL_GetPerformanceCounter();
+        true
+    }
+
+    run_frame_loop :: (self: *SdlPlatform, frame_fn: Closure()) {
+        self.frame_closure = frame_fn;
+        self.has_frame_closure = true;
+        g_sdl_plat = self;
+
+        inline if OS == {
+            case .wasm: {}
+            else: { SDL_AddEventWatch(@sdl_event_watch, xx self); }
+        }
+
+        inline if OS == {
+            case .wasm: { c.emscripten_set_main_loop(@sdl_wasm_tick, 0, 1); }
+            else: {
+                while self.running {
+                    frame_fn();
+                }
+            }
+        }
+    }
+
+    poll_events :: (self: *SdlPlatform) -> []Event {
+        self.events.len = 0;
+        sdl_event : SDL_Event = .none;
+        while SDL_PollEvent(@sdl_event) {
+            if sdl_event == {
+                case .quit: { self.running = false; }
+                case .window_resized: (data) {
+                    self.width = data.data1;
+                    self.height = data.data2;
+                    SDL_GetWindowSizeInPixels(self.window, @self.pixel_w, @self.pixel_h);
+                }
+            }
+            ui_event := translate_sdl_event(@sdl_event);
+            if ui_event != .none {
+                self.events.append(ui_event);
+            }
+        }
+
+        result : []Event = ---;
+        result.ptr = self.events.items.ptr;
+        result.len = self.events.len;
+        result
+    }
+
+    begin_frame :: (self: *SdlPlatform) -> FrameContext {
+        current := SDL_GetPerformanceCounter();
+        freq := SDL_GetPerformanceFrequency();
+        if freq > 0 and self.last_perf > 0 {
+            diff : f32 = xx (current - self.last_perf);
+            fr : f32 = xx freq;
+            self.delta_time = diff / fr;
+        }
+        self.last_perf = current;
+
+        inline if OS == {
+            case .wasm: {
+                new_w : i32 = 0;
+                new_h : i32 = 0;
+                SDL_GetWindowSize(self.window, @new_w, @new_h);
+                if new_w != self.width or new_h != self.height {
+                    self.width = new_w;
+                    self.height = new_h;
+                    SDL_GetWindowSizeInPixels(self.window, @self.pixel_w, @self.pixel_h);
+                }
+            }
+            else: {}
+        }
+
+        FrameContext.{
+            viewport_w = xx self.width,
+            viewport_h = xx self.height,
+            pixel_w = self.pixel_w,
+            pixel_h = self.pixel_h,
+            dpi_scale = self.dpi_scale,
+            delta_time = self.delta_time,
+        }
+    }
+
+    end_frame :: (self: *SdlPlatform) {
+        SDL_GL_SwapWindow(self.window);
+    }
+
+    safe_insets :: (self: *SdlPlatform) -> EdgeInsets {
+        EdgeInsets.zero()
+    }
+
+    keyboard :: (self: *SdlPlatform) -> KeyboardState {
+        KeyboardState.zero()
+    }
+
+    show_keyboard :: (self: *SdlPlatform) { }
+    hide_keyboard :: (self: *SdlPlatform) { }
+
+    stop :: (self: *SdlPlatform) {
+        self.running = false;
+    }
+
+    shutdown :: (self: *SdlPlatform) {
+        inline if OS == {
+            case .wasm: {}
+            else: {
+                SDL_GL_DestroyContext(self.gl_ctx);
+                SDL_DestroyWindow(self.window);
+                SDL_Quit();
+            }
+        }
+    }
+}
+
+// SDL fires the watch synchronously when events are added — including during
+// macOS's modal resize-drag, when SDL_PollEvent can't run. Re-invoking the
+// frame closure here keeps content rendering at the new size during the drag.
+sdl_event_watch :: (userdata: *void, event: *SDL_Event) -> bool abi(.c) {
+    plat : *SdlPlatform = xx userdata;
+    if event.* == {
+        case .window_resized: (data) {
+            plat.width = data.data1;
+            plat.height = data.data2;
+            SDL_GetWindowSizeInPixels(plat.window, @plat.pixel_w, @plat.pixel_h);
+            if plat.has_frame_closure {
+                fn := plat.frame_closure;
+                fn();
+            }
+        }
+    }
+    true
+}
+
+sdl_wasm_tick :: () abi(.c) {
+    if g_sdl_plat == null { return; }
+    if !g_sdl_plat.has_frame_closure { return; }
+    fn := g_sdl_plat.frame_closure;
+    fn();
+}

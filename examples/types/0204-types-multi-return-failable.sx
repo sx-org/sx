@@ -1,0 +1,34 @@
+// A multi-return signature may carry an error channel as its LAST slot:
+// `-> (i32, bool, !)` returns two values OR fails. This reuses the existing
+// value-carrying-failable machinery — the error is always the final slot. A
+// single-value failable `-> (T, !)` (one value + error) is exactly `-> (T, !)`,
+// NOT a multi-return.
+//
+// Consume it like any failable: `catch` / `or` / a guarded destructure or
+// single bind. The error rides the SEPARATE `!` channel — a bound result holds
+// only the VALUE slots, never the error (so `c.doubled` / `c.big`, no `c.err`).
+#import "modules/std.sx";
+
+CheckErr :: error { Negative }
+
+// Two values plus an error channel. The success values use the bare comma
+// `return` form; `raise` rides the error channel as usual.
+classify :: (n: i32) -> (doubled: i32, big: bool, !) {
+    if n < 0 { raise error.Negative; }
+    return doubled = n * 2, big = n > 10;
+}
+
+main :: () -> i64 {
+    // Success: destructure the two value slots (the catch diverges on error).
+    d, b := classify(7) catch { print("unexpected error\n"); return 1; };
+    print("classify(7): doubled={} big={}\n", d, b);
+
+    // Or bind once (error stripped by `catch`) and reach the value slots by
+    // field — the error is NOT part of the bound value.
+    c := classify(21) catch { print("unexpected error\n"); return 1; };
+    print("classify(21): doubled={} big={}\n", c.doubled, c.big);
+
+    // Failure: the error path is taken.
+    classify(-3) catch { print("classify(-3): caught Negative\n"); return 0; };
+    return 0;
+}

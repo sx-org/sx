@@ -1,0 +1,19 @@
+// A top-level global initialized from a non-constant expression (here a field
+// access on a module constant, `K.x`) is rejected with a diagnostic. Without
+// the fix `registerTopLevelGlobal`'s init_val serializer handled only literals
+// / array / struct literals / identifiers and let every other shape fall through
+// to a null payload, so the global silently zero-initialized (`g=0`) — a wrong
+// value with no error.
+// Regression (issue 0072).
+// Expected: "global 'g' must be initialized by a compile-time constant"; exit 1.
+
+#import "modules/std.sx";
+
+Point :: struct { x: i32; y: i32; }
+K : Point : Point.{ x = 9, y = 4 };
+g : i32 = K.x;
+
+main :: () -> i32 {
+    print("g={}\n", g);
+    return g;
+}

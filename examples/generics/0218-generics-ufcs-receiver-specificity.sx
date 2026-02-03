@@ -1,0 +1,28 @@
+// A more-specific UFCS receiver overload must win over a fully-generic one
+// (`*Box($T)` beats `*$T`), AND call planning must agree with lowering on which
+// overload is dispatched — else the result is typed by one function but produced
+// by another, misboxing it.
+//
+// Regression (issue 0157 review, P1-a + P2-b): the planner (calls.zig) used the
+// last-wins `fn_ast_map` winner while lowering reselected by receiver, so a
+// `*$T->string` winner could type a call that lowering dispatched to
+// `*Box($T)->i64` — boxing the i64 as a string pointer. And boolean specificity
+// treated `*$T` and `*Box($T)` as equal (false ambiguity). Fixed by sharing one
+// receiver-aware, pointer-peeling selection between planner and lowering.
+#import "modules/std.sx";
+#import "0218-generics-ufcs-receiver-specificity/0218-shared.sx";
+#import "0218-generics-ufcs-receiver-specificity/anyref.sx";
+
+// More-specific receiver than the imported `pick(x: *$T)`.
+pick :: ufcs (b: *Box($T)) -> i64 { return 7; }
+
+// Generic passthrough — its result type is the PLANNED type of its argument, so
+// a planner/lowering disagreement on `pick`'s return type surfaces here.
+echo :: (x: $U) -> $U { return x; }
+
+main :: () -> i64 {
+    b : Box(i64) = ---; b.v = 0;
+    r := echo((@b).pick());   // *Box wins → i64 7; plan must agree (else misbox)
+    print("r: {}\n", r);
+    return 0;
+}

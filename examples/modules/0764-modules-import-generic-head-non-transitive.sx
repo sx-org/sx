@@ -1,0 +1,24 @@
+// `#import` is non-transitive for a PARAMETERIZED TYPE HEAD (a generic-struct
+// constructor like `Box(i64)`), exactly like a bare leaf type (0763) and like
+// values/functions (0706): when A imports B and B imports C, A must NOT see C's
+// top-level generic type `Box`. This file imports `b.sx` (which imports `c.sx`)
+// and instantiates C's generic `Box(i64)` directly — the compiler rejects the
+// head with a "type ... is not visible; #import the module that declares it"
+// diagnostic, BEFORE instantiating the template.
+//
+// `b.sx` ↔ `c.sx` together still compile: `b_make`'s `Box(i64)` resolves because
+// b.sx directly imports c.sx (the head is one flat hop away there, two from a
+// file that imports b.sx).
+//
+// Regression (Phase E4): before the bare-head gate went single-hop this 2-flat-
+// hop generic head was wrongly visible — the head lookup hit the global
+// `struct_template_map` before any source-aware visibility check.
+
+#import "modules/std.sx";
+#import "0764-modules-import-generic-head-non-transitive/b.sx";
+
+main :: () -> i32 {
+    x : Box(i64) = .{ v = 3 };
+    print("{}\n", x.v);
+    0
+}

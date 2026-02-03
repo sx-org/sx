@@ -1,0 +1,7 @@
+celsius=30
+after +=5: 35
+after *=2: 70
+box=99
+box=90
+swap: p=2 q=1
+once: c0=11 c1=20 idx=1

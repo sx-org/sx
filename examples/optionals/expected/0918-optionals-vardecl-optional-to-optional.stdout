@@ -1,0 +1,10 @@
+widen-null: absent
+widen-pres: 7
+narrow-null: absent
+narrow-pres: 9
+i2f-null: absent
+wrap: 5
+arr2slice-pres: len=3 first=10
+arr2slice-null: absent
+erase-pres: area=16
+erase-null: absent

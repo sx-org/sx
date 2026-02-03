@@ -1,0 +1,42 @@
+#import "modules/std.sx";
+#import "modules/math";
+#import "modules/build.sx";
+#import "modules/std/test.sx";
+pkg :: #import "tests/fixtures/testpkg";
+
+main :: () {
+
+    // --- UFCS Aliases & Pipe ---
+    {
+        print("=== UFCS Aliases ===\n");
+
+        num_sum :: (a: i64, b: i64) -> i64 { a + b }
+        sum :: ufcs num_sum;
+
+        print("{}\n", num_sum(40, 2));   // 42 — direct call
+        print("{}\n", sum(40, 2));       // 42 — alias direct call
+        print("{}\n", 40 |> sum(2));     // 42 — pipe UFCS via alias
+
+        print("{}\n", num_sum(40, 2));   // 42 — direct (was tuple full-splat)
+        print("{}\n", 40 |> sum(2));     // 42 — pipe (was tuple partial-splat)
+
+        compute :: (a: i64, b: i64, c: i64, d: i64) -> i64 { a + b * c - d }
+        calc :: ufcs compute;
+
+        print("{}\n", compute(1, 2, 3, 4));    // 1+2*3-4 = 3 (was tuple full-splat)
+        print("{}\n", compute(1, 2, 3, 4));    // same = 3 (was tuple partial-splat)
+        print("{}\n", 1 |> calc(2, 3, 4));     // same = 3 — pipe UFCS
+
+        // Tuple return type
+        swap :: (a: i64, b: i64) -> Tuple(i64, i64) { .{b, a} }
+        s := swap(1, 2);
+        a := s.0;
+        b := s.1;
+        print("{}\n", a);                // 2
+        print("{}\n", b);                // 1
+
+        wrap :: (x: i64) -> Tuple(i64) { .{x} }   // 1-tuple type `Tuple(i64)`; bare `(i64)` groups
+        t := wrap(99);
+        print("{}\n", t.0);             // 99
+    }
+}

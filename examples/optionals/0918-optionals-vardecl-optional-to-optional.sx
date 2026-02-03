@@ -1,0 +1,59 @@
+// Annotated local var-decl `x : ?B = <a ?A value>` preserves the SOURCE
+// optional's presence across a payload coercion.
+//
+// Regression (issue 0180): `lowerVarDecl`'s optional-target branch hand-rolled
+// the optional handling — for a non-null initializer it coerced to the
+// optional's CHILD (classifying `?A → child_B` as an unconditional unwrap → 0
+// for a null source) then re-wrapped with a hardcoded present has-bit. So a
+// null `?A` source became a PRESENT `?B` carrying zero. The fix routes an
+// optional source through the presence-preserving `.optional_to_optional`
+// coercion (the general trailing coerce) instead of the wrap-present path,
+// which now only handles a genuine non-optional `T → ?T` wrap.
+#import "modules/std.sx";
+
+Shape :: protocol { area :: (self: *Self) -> i64; }
+Sq :: struct { s: i64; }
+impl Shape for Sq { area :: (self: *Sq) -> i64 { return self.s * self.s; } }
+
+main :: () {
+    // Widen ?i32 → ?i64: null stays absent, present carries its value.
+    a : ?i32 = null;
+    b : ?i64 = a;
+    if b { print("widen-null: present\n"); } else { print("widen-null: absent\n"); }
+    c : ?i32 = 7;
+    d : ?i64 = c;
+    print("widen-pres: {}\n", d ?? -1);
+
+    // Narrow ?i64 → ?i32.
+    e : ?i64 = null;
+    f : ?i32 = e;
+    if f { print("narrow-null: present\n"); } else { print("narrow-null: absent\n"); }
+    g : ?i64 = 9;
+    h : ?i32 = g;
+    print("narrow-pres: {}\n", h ?? -1);
+
+    // int → float ?i32 → ?f64.
+    i : ?i32 = null;
+    j : ?f64 = i;
+    if j { print("i2f-null: present\n"); } else { print("i2f-null: absent\n"); }
+
+    // A genuine non-optional wrap `T → ?T` stays present.
+    k : ?i64 = 5;
+    print("wrap: {}\n", k ?? -1);
+
+    // Aggregate payload: ?[3]i64 → ?[]i64 (presence-preserving array→slice).
+    arr : ?[3]i64 = .[10, 20, 30];
+    sl : ?[]i64 = arr;
+    if s := sl { print("arr2slice-pres: len={} first={}\n", s.len, s[0]); }
+    narr : ?[3]i64 = null;
+    nsl : ?[]i64 = narr;
+    if nsl { print("arr2slice-null: present\n"); } else { print("arr2slice-null: absent\n"); }
+
+    // Aggregate payload: ?Sq → ?Shape (presence-preserving protocol erasure).
+    sq : ?Sq = Sq.{ s = 4 };
+    sh : ?Shape = sq;
+    if x := sh { print("erase-pres: area={}\n", x.area()); }
+    nsq : ?Sq = null;
+    nsh : ?Shape = nsq;
+    if nsh { print("erase-null: present\n"); } else { print("erase-null: absent\n"); }
+}

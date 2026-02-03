@@ -1,0 +1,62 @@
+// Variadic heterogeneous type packs — step 3: type-reflection
+// intrinsics.
+//
+// Three comptime helpers used by pack-fn bodies to branch on
+// type identity / protocol membership:
+//
+//   type_name(T)     -> string  // display name of T
+//   type_eq(T1, T2)  -> bool    // structural TypeId equality
+//   has_impl(P, T)   -> bool    // T has a reachable impl for P
+//
+// All three fold to compile-time constants and are accepted by
+// `tryConstBoolCondition`, so `inline if type_eq(...)` /
+// `inline if has_impl(...)` collapse to a single branch at lower
+// time — no runtime cost.
+//
+// `has_impl`'s protocol arg accepts both shapes:
+//   - plain protocol name: `has_impl(Allocator, CAllocator)`.
+//   - parameterised call:  `has_impl(Wrap(i64), i32)` — the args
+//     match the impl's protocol type-args exactly.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+// User-defined parameterised protocol + an impl, so has_impl can
+// confirm parameterised matching works with a known-true case.
+Wrap :: protocol(Target: Type) {
+    wrap :: (self: *Self) -> Target;
+}
+
+impl Wrap(i64) for i32 {
+    wrap :: (self: i32) -> i64 => xx self;
+}
+
+main :: () -> i32 {
+    // type_name — display names.
+    print("{} {} {}\n", type_name(i64), type_name(string), type_name(bool));
+
+    // type_eq — structural equality on TypeIds.
+    print("{} {} {} {}\n",
+        type_eq(i64, i64),
+        type_eq(i64, string),
+        type_eq(*i64, *i64),
+        type_eq(*i64, *i32));
+
+    // inline-if folds type_eq at lower time.
+    inline if type_eq(i64, i64) {
+        print("inline-if folded: same\n");
+    } else {
+        print("inline-if folded: different\n");
+    }
+
+    // has_impl — plain protocol (Allocator is unary).
+    print("Allocator/CAllocator: {}\n", has_impl(Allocator, CAllocator));
+    print("Allocator/i64: {}\n", has_impl(Allocator, i64));
+
+    // has_impl — parameterised protocol (Wrap takes a Target type arg).
+    print("Wrap(i64)/i32: {}\n", has_impl(Wrap(i64), i32));
+    print("Wrap(i64)/bool: {}\n", has_impl(Wrap(i64), bool));
+    print("Wrap(bool)/i32: {}\n", has_impl(Wrap(bool), i32));
+
+    return 0;
+}

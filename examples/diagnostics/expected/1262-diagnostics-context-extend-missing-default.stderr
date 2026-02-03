@@ -1,0 +1,5 @@
+error: #context_extend 'logger' has no default value — the default context must be constructible before `main` runs
+  --> examples/diagnostics/1262-diagnostics-context-extend-missing-default.sx:8:1
+   |
+ 8 | #context_extend logger: ?*i64;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,4 @@
+size_of BigNode = 40
+before: sentinel = 3735928559
+after:  sentinel = 3735928559
+OK

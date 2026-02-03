@@ -1,0 +1,63 @@
+// `inline for` element form over a pack — multi-iterable parity with the
+// runtime for-loop. Position 0 drives the unroll count (a pack's arity or a
+// bounded range's span); trailing iterables pair with it. A pack capture is
+// the concrete per-position element viewed through the constraint protocol
+// (same semantics as `xs[i]`); a range capture is a comptime cursor.
+//
+//   inline for xs (x)            — element form
+//   inline for xs, 0.. (x, i)    — element + paired index
+//   inline for 0..xs.len, xs (i, x) — range driver, trailing pack
+//   inline for xs { }            — captureless; N=0 unrolls nothing
+
+#import "modules/std.sx";
+
+Show :: protocol { show :: (self: *Self) -> string; }
+IntBox :: struct { v: i64; }
+StrBox :: struct { s: string; }
+impl Show for IntBox { show :: (self: *IntBox) -> string { int_to_string(self.v) } }
+impl Show for StrBox { show :: (self: *StrBox) -> string { self.s } }
+
+bare :: (..xs: Show) {
+    inline for xs (x) {
+        print("bare: {}\n", x.show());
+    }
+}
+elem_and_index :: (..xs: Show) {
+    inline for xs, 0.. (x, i) {
+        print("{}: {}\n", i, x.show());
+    }
+}
+range_driver :: (..xs: Show) {
+    inline for 0..xs.len, xs (i, x) {
+        print("r{}: {}\n", i, x.show());
+    }
+}
+offset_index :: (..xs: Show) {
+    inline for xs, 10.. (x, i) {
+        print("{} -> {}\n", i, x.show());
+    }
+}
+captureless :: (..xs: Show) {
+    n := 0;
+    inline for xs { n += 1; }
+    print("ran {}\n", n);
+}
+value_pos :: (..xs: Show) {
+    inline for xs (x) {
+        print("val: {}\n", x);
+    }
+}
+empty :: (..xs: Show) {
+    inline for xs (x) { print("never\n"); }
+    print("empty ok\n");
+}
+
+main :: () {
+    bare(IntBox.{ v = 7 }, StrBox.{ s = "hi" });
+    elem_and_index(IntBox.{ v = 7 }, StrBox.{ s = "hi" });
+    range_driver(IntBox.{ v = 1 }, StrBox.{ s = "two" });
+    offset_index(StrBox.{ s = "x" }, StrBox.{ s = "y" });
+    captureless(IntBox.{ v = 0 }, IntBox.{ v = 0 }, IntBox.{ v = 0 });
+    value_pos(IntBox.{ v = 42 });
+    empty();
+}

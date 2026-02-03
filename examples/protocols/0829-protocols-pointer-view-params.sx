@@ -1,0 +1,56 @@
+// `*P` — the borrowed protocol VIEW (erasure model, first slice). A
+// pointer-to-protocol parameter receives a view of existing storage:
+//   - a concrete LVALUE arg builds the view in place (ctx = the lvalue's
+//     address — mutations through the view reach the original);
+//   - a pointer-to-concrete arg views its pointee;
+//   - `@p` on an owned protocol value lends a plain pointer to it;
+//   - protocol methods dispatch through `*P` (default AND #inline layouts).
+// Regression (issues 0303/0304): the lvalue case used to emit an ill-typed
+// call (LLVM verifier abort, no diagnostic); the rvalue case is pinned as a
+// refusal in diagnostics/1251.
+#import "modules/std.sx";
+
+Sizable :: protocol { size :: (self: *Self) -> i64; grow :: (self: *Self, by: i64); }
+Widget :: struct { value: i64; }
+impl Sizable for Widget {
+    size :: (self: *Widget) -> i64 { self.value }
+    grow :: (self: *Widget, by: i64) { self.value += by; }
+}
+
+Fast :: protocol #inline { tick :: (self: *Self) -> i64; }
+Clock :: struct { n: i64; }
+impl Fast for Clock { tick :: (self: *Clock) -> i64 { self.n += 1; self.n } }
+
+measure :: (v: *Sizable) -> i64 { v.size() }
+bump    :: (v: *Sizable)        { v.grow(10); }
+tickit  :: (f: *Fast) -> i64    { f.tick() }
+
+main :: () {
+    // concrete lvalue → *P: view in place, aliasing visible both ways
+    w := Widget.{ value = 7 };
+    print("lvalue: {}\n", measure(w));
+    bump(w);
+    print("aliased: {}\n", w.value);
+
+    // pointer-to-concrete → *P: view of the pointee
+    pw := @w;
+    print("ptr: {}\n", measure(pw));
+
+    // field lvalue → *P
+    Holder :: struct { inner: Widget; }
+    h := Holder.{ inner = Widget.{ value = 3 } };
+    bump(h.inner);
+    print("field: {}\n", h.inner.value);
+
+    // owned protocol value lends a view via plain @
+    s := w.(Sizable);
+    print("owned-view: {}\n", measure(@s));
+
+    // #inline layout dispatches through *P too, mutating the original
+    c := Clock.{ n = 0 };
+    print("inline: {} {}\n", tickit(c), c.n);
+
+    // decl-position view
+    pv : *Sizable = w;
+    print("decl-view: {}\n", pv.size());
+}

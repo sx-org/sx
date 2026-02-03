@@ -1,0 +1,10 @@
+[fail]
+defer C
+onfail B
+defer A
+[ok]
+defer C
+defer A
+[bound]
+cleanup: bad
+[done]

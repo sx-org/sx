@@ -1,0 +1,144 @@
+// Obj-C runtime FFI primitives.
+//
+// objc_msgSend has the standard ARM64 calling convention (no varargs path).
+// Each call site must invoke through a function pointer of the *exact*
+// argument and return shape. The idiom:
+//
+//     msg_fn : (recv: *void, sel: *void, arg: [*]u8) -> *void = xx objc_msgSend;
+//     result := msg_fn(receiver, selector, c_str);
+
+// ─── Obj-C primitive type aliases ───────────────────────────────────────
+// Named stand-ins for the three opaque Obj-C runtime types. They all
+// resolve to `*void` at the LLVM layer (no runtime cost) but improve
+// readability in runtime-class declarations and call sites.
+//
+//   id    — any Obj-C instance pointer
+//   Class — a class object pointer
+//   SEL   — a registered selector
+//
+// `Class(T)` parameterization (phantom-typed, with `#extends`-aware
+// covariance) is a follow-up — needs compiler-level type-check support.
+// For now, `Class` alone is the only form; assignments are not checked
+// against the referent's class hierarchy.
+id    :: *void;
+Class :: *void;
+SEL   :: *void;
+
+// Apple's `BOOL` is a signed char (NOT sx's built-in `bool`, which is
+// LLVM `i1`). Obj-C method signatures that take or return `BOOL` cross
+// the FFI boundary as `i8`.
+BOOL :: i8;
+
+// On macOS libobjc is auto-loaded by libSystem; on iOS it isn't, so we
+// link it explicitly. Foundation registers NSString etc. with the runtime,
+// also auto-loaded on macOS and required as an explicit framework on iOS.
+objc :: #library "objc";
+#framework "Foundation";
+
+objc_getClass         :: (name: [*]u8)                  -> *void  extern objc;
+objc_lookUpClass      :: (name: [*]u8)                  -> *void  extern objc;
+sel_registerName      :: (name: [*]u8)                  -> *void  extern objc;
+class_createInstance  :: (cls: *void, extra: usize)     -> *void  extern objc;
+object_getClass       :: (obj: *void)                   -> *void  extern objc;
+object_getIvar        :: (obj: *void, ivar: *void)      -> *void  extern objc;
+object_setIvar        :: (obj: *void, ivar: *void, val: *void)    extern objc;
+
+// Declared with the simplest non-variadic shape. Cast per call site.
+objc_msgSend          :: (recv: *void, sel: *void)      -> *void  extern objc;
+
+// ─── Dynamic class registration ─────────────────────────────────────────
+// Define a new Obj-C class at runtime: allocate the pair, attach methods +
+// protocols, then finalize with `objc_registerClassPair`. The class is then
+// usable via `class_createInstance` and Obj-C dispatch.
+//
+// IMPs (method implementations) are function pointers with the implicit
+// Obj-C method shape: `(self: *void, _cmd: *void, ...args) -> ret` with
+// `abi(.c)` so they land args in the standard C registers.
+//
+// Method type encoding strings follow Apple's runtime DSL:
+//   v = void   c = char/BOOL   i = int   l = long   f = float   d = double
+//   @ = id (object)            : = SEL                # = Class
+// Return type comes first, then receiver (`@`), then `_cmd` (`:`), then args.
+// Examples:
+//   "v@:"     -> void   method(id, SEL)
+//   "c@:"     -> BOOL   method(id, SEL)
+//   "@@:@"    -> id     method(id, SEL, id)
+//   "B@:@@"   -> BOOL   method(id, SEL, id, id)
+objc_allocateClassPair :: (super: *void, name: [*]u8, extra: usize) -> *void  extern objc;
+class_addMethod        :: (cls: *void, sel: *void, imp: *void, types: [*]u8) -> bool   extern objc;
+class_addProtocol      :: (cls: *void, proto: *void)                          -> bool   extern objc;
+objc_getProtocol       :: (name: [*]u8)                                       -> *void  extern objc;
+objc_registerClassPair :: (cls: *void)                                        -> void   extern objc;
+
+// Foundation C-API helpers (Foundation is already linked above via #framework).
+// NSLog takes an NSString format; the variadic tail is not exposed here.
+NSLog :: (fmt: *NSString) extern;
+
+// ─── NSObject (Phase 4 / M4.A) ───────────────────────────────────────────
+// Root of every Obj-C class hierarchy. Apple's runtime supplies the IMPs;
+// sx declares the method surface so user code can write
+// `defer view.release();` and `view.retain()` directly instead of going
+// through `objc_msgSend` casts. M2.3's `#extends`-aware dispatch finds
+// these methods automatically once a class roots its `#extends` chain at
+// NSObject (runtime classes in uikit.sx etc. add `#extends NSObject;` to
+// inherit the surface).
+//
+// `release` is NOT a reserved keyword in sx — modern clang ARC bans
+// user-source calls to it (the ARC compiler emits them automatically), but
+// sx isn't under clang ARC. Calling `view.release()` here is equivalent to
+// pre-ARC Obj-C source code: dispatches through the runtime, decrements the
+// refcount, fires `-dealloc` at zero.
+NSObject :: #objc_class("NSObject") extern {
+    alloc       :: () -> *NSObject;
+    init        :: (self: *Self) -> *NSObject;
+    new         :: () -> *NSObject;       // shorthand for [[Cls alloc] init]
+    retain      :: (self: *Self) -> *Self;
+    release     :: (self: *Self);
+    autorelease :: (self: *Self) -> *Self;
+    class       :: () -> *void;            // metaclass query — `Cls.class()`
+    description :: (self: *Self) -> *void;  // returns *NSString
+    hash        :: (self: *Self) -> u64;
+    isEqual         :: (self: *Self, other: *void) -> BOOL;
+    isKindOfClass   :: (self: *Self, cls: *void) -> BOOL;
+    respondsToSelector :: (self: *Self, sel: *void) -> BOOL;
+}
+
+// ─── NSString ────────────────────────────────────────────────────────────
+// Foundation's immutable string. `UTF8String` views the bytes as a C string
+// whose lifetime is tied to the NSString (don't free it). The `Into` impl
+// lets a string literal flow into any `*NSString` slot via `xx`, e.g.
+// `dict.objectForKey(xx "SomeKey")`.
+NSString :: #objc_class("NSString") extern {
+    #extends NSObject;
+    UTF8String :: (self: *Self) -> [*]u8;
+}
+
+// Wraps the bytes in an autoreleased NSString via `+stringWithUTF8String:`.
+// `self.ptr` must be NUL-terminated — string literals are; an arbitrary
+// sliced/built `string` may not be.
+impl Into(*NSString) for string {
+    convert :: (self: string) -> *NSString {
+        cls := objc_getClass("NSString".ptr);
+        sel := sel_registerName("stringWithUTF8String:".ptr);
+        msg : (*void, *void, [*]u8) -> *void abi(.c) = xx objc_msgSend;
+        return xx msg(cls, sel, self.ptr);
+    }
+}
+
+// ─── Autoreleasepool (M4.A) ──────────────────────────────────────────────
+// Foundation factory methods (`NSString.stringWithUTF8String:`,
+// `[NSArray array]`, ...) return autoreleased objects — valid until the
+// current pool drains. Wrap such code in `autoreleasepool(() { ... })`
+// so the pool drains deterministically at block end.
+//
+// Stdlib helper, not a language keyword. The closure call adds a frame —
+// for hot loops, inline the push/defer-pop pattern manually.
+
+objc_autoreleasePoolPush :: ()                  -> *void  extern objc;
+objc_autoreleasePoolPop  :: (pool: *void)                 extern objc;
+
+autoreleasepool :: (body: Closure()) {
+    pool := objc_autoreleasePoolPush();
+    defer objc_autoreleasePoolPop(pool);
+    body();
+}

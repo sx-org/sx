@@ -1,0 +1,16 @@
+// Bare TYPE-ALIAS visibility under a NAMESPACED-only import — the alias sibling
+// of 0743 (bare named type) and 0742 (bare const). A type ALIAS is a `const_decl`
+// whose value resolved to a type, so it never registers a `findByName` named-type
+// entry; the source-aware leaf must still treat it as a TYPE author (R4). `dep.sx`
+// is imported only as `dep :: #import`, so its top-level `Secret :: i32` alias is
+// reachable ONLY as `dep.Secret`. A BARE `Secret` in a type position must NOT
+// resolve: bare-TYPE visibility joins over the FLAT import edges, and a namespaced
+// alias is not a flat edge. Before the fix the ns-only alias was NOT a recognised
+// type author, so the bare reference fell to the legacy empty-struct stub with NO
+// diagnostic (the value silently came out 0). Regression (issue R4).
+dep :: #import "0747-modules-namespaced-only-bare-alias-not-visible/dep.sx";
+
+main :: () -> i32 {
+    x : Secret = 7;
+    x
+}

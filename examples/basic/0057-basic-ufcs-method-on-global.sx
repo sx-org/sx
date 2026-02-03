@@ -1,0 +1,23 @@
+// A UFCS method call on a module-global struct, where the method takes
+// `self: *T`, mutates the GLOBAL's live storage — not a stack copy. Each
+// `g.bump()` increments the same `g`, so after three calls `g.n == 3`.
+//
+// Regression (issue 0202): the receiver of a `*Self` method on a global used to
+// be alloca+stored into a throwaway copy, so mutations through `self` were lost
+// (the global stayed 0). Locals and explicit `@g` were always fine; only the
+// UFCS-on-global path copied. Fixed in fixupMethodReceiver by addressing the
+// global's `global_addr` directly.
+
+Counter :: struct {
+    n: i64 = 0;
+    bump :: (self: *Counter) { self.n += 1; }
+}
+
+g : Counter = .{};
+
+main :: () -> i32 {
+    g.bump();
+    g.bump();
+    g.bump();
+    return xx g.n;   // 3
+}

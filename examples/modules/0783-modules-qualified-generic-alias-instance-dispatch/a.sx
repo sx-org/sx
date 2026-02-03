@@ -1,0 +1,9 @@
+// Author A's generic `Box` — one i64 field (size 8). Its `tag` returns
+// `self.x + 1`. The alias `ABox :: a.Box(i64)` must dispatch to THIS `tag`.
+Box :: struct($T: Type) {
+    x: T;
+
+    tag :: (self: *Box) -> T {
+        self.x + 1
+    }
+}

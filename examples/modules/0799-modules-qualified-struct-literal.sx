@@ -1,0 +1,18 @@
+// A MODULE-QUALIFIED struct literal — `m.Cfg.{...}` — in a `:=`-inferred
+// declaration resolves to the imported type `m.Cfg` (not an empty `{}` stub),
+// so the value passes correctly to a function taking that type.
+//
+// Regression (issue 0204): the parser flattened the qualified prefix to a
+// "m.Cfg" struct_name STRING, which `findByName`/`resolveNominalLeaf` looked up
+// as a bare type name → failed → fabricated an empty-fields struct literally
+// named "m.Cfg" → invalid LLVM IR (`call use({} ...)`), in both JIT and AOT.
+// Fix: the parser carries the qualified prefix as a `type_expr` NODE, and the
+// type resolver handles a `field_access` in type position by resolving it the
+// way a `: m.Cfg` annotation does (namespace alias → leaf in its module).
+
+m :: #import "0799-modules-qualified-struct-literal/lib.sx";
+
+main :: () -> i32 {
+    c := m.Cfg.{ p = 1, q = 2 };   // qualified Type.{} via := → resolves to m.Cfg
+    return xx m.use(c);            // 1 + 2 + 0 = 3
+}

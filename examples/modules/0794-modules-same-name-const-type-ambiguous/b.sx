@@ -1,0 +1,2 @@
+// Module B authors a DIFFERENT same-name `K` declared `f64`.
+K : f64 : 2.5;

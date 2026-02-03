@@ -1,0 +1,16 @@
+// Error-set value + `==` typing rejections (ERR step E1.1):
+//   - an `error.X` literal must name a tag that is in the destination set,
+//   - an error-set value compares only with an `error.X` tag or another
+//     error-set value; comparing to a raw integer is a type error
+//     (coerce with `xx` to compare the raw id).
+// The positive cases live in `examples/217-error-sets.sx`.
+
+#import "modules/std.sx";
+
+ParseErr :: error { BadDigit, Overflow }
+
+main :: () -> i32 {
+    c : ParseErr = error.NotInSet;   // error: NotInSet not in ParseErr
+    if c == 42 { return 1; }         // error: error-set value vs raw integer
+    return 0;
+}

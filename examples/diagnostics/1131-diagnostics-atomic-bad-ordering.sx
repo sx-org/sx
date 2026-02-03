@@ -1,0 +1,9 @@
+// An atomic load with an ordering LLVM forbids (.release / .acq_rel) is
+// rejected with a clean diagnostic. Stream A (atomics) guard.
+#import "modules/std.sx";
+#import "modules/std/atomic.sx";
+
+main :: () {
+    n : i64 = 0;
+    x := atomic_load(i64, @n, .release);
+}

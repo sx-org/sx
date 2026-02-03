@@ -1,0 +1,35 @@
+// ASM stream — the round trip: sx → asm → sx. A global-asm routine (`_caller`)
+// CALLS BACK into an sx function (`cb`) by its symbol, then returns. For the asm
+// `bl _cb` to resolve, the sx callback needs EXTERNAL LINKAGE and a stable C
+// symbol — that is exactly what `export` provides (it also implies the C ABI, so
+// no hidden context parameter). `abi(.c)` alone is NOT enough: it sets the
+// ABI but leaves the function `internal`, so it is dead-code-eliminated (nothing
+// in the IR references it — the `bl` is opaque to the optimizer) and `_cb` is
+// undefined at link. macOS gives `export "cb"` the symbol `_cb` (leading
+// underscore), which the template references. aarch64-macos-pinned; runs under
+// the JIT here (sx run), ir-only elsewhere.
+
+// The sx callback — `export` gives it external linkage + the `_cb` symbol + C ABI.
+cb :: (n: i64) -> i64 export "cb" {
+    return n + 1;
+}
+
+// A global-asm trampoline that calls back into `cb`. It saves/restores the link
+// register (x30) around the `bl` — it was itself reached via `bl`, so the return
+// address must survive the nested call.
+asm {
+    #string ASM
+.global _caller
+_caller:
+    stp x29, x30, [sp, #-16]!
+    bl _cb                      // x0 = cb(x0)  — back into sx
+    ldp x29, x30, [sp], #16
+    ret
+ASM,
+};
+
+caller :: (n: i64) -> i64 extern;
+
+main :: () -> i64 {
+    return caller(41);          // sx main → asm caller → bl _cb → sx cb → 42
+}

@@ -1,0 +1,32 @@
+// `xx <pack>` materializes a comptime pack into a runtime slice (issue 0053):
+// the explicit pack→slice bridge. With a `[]any` target each element is boxed
+// to `any`; with a `[]P` target each is `xx`-erased to the protocol `P`. This is
+// how you forward a pack to a runtime (`[]any` / `[]P`) helper.
+
+#import "modules/std.sx";
+
+Show :: protocol { show :: (self: *Self) -> string; }
+A :: struct {}
+B :: struct { s: string; }
+impl Show for A { show :: (self: *A) -> string => "A"; }
+impl Show for B { show :: (self: *B) -> string => "B"; }
+
+count_any :: (items: []any) -> i64 { return items.len; }
+
+show_all :: (items: []Show) -> i64 {
+    i := 0;
+    while i < items.len { print("{}\n", items[i].show()); i = i + 1; }
+    return items.len;
+}
+
+// `..$args` pack → []any via `xx`.
+fwd_any :: (..$args) -> i64 { return count_any(xx args); }
+
+// `..xs: Show` pack → []Show via `xx`.
+fwd_show :: (..xs: Show) -> i64 { return show_all(xx xs); }
+
+main :: () -> i32 {
+    print("any={}\n", fwd_any(1, "hi", 2.5));     // 3
+    print("show={}\n", fwd_show(A.{}, B.{ s = "x" }, A.{}));  // A B A, 3
+    0
+}

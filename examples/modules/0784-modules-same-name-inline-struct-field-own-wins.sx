@@ -1,0 +1,25 @@
+// Own-wins for an INLINE struct field's member type over a NAMESPACED import.
+// Regression (issue 0132's broader class — the inline-decl resolution boundary).
+//
+// `Holder.inner` is an inline `struct { e: Event }`. The member type `Event`
+// must resolve to THIS file's `Event` (which has `code`), not the namespaced
+// stdlib `event.Event` struct carried by `#import "modules/std.sx"` (reachable
+// only as `event.Event`, never bare).
+//
+// Fail-before: `Lowering.resolveTypeWithBindings` delegated inline `struct_decl`
+// field types to the FLAT `type_bridge.resolveAstType`, dropping the visibility
+// context — so `e: Event` resolved via global `findByName` to the stdlib struct
+// and `h.inner.e.code` errored "field 'code' not found on type 'Event'". Fixed
+// by routing inline enum/struct/union decls through the `inner` recursion hook
+// with `self` (visibility-aware), the same own-wins rule top-level decls use.
+
+#import "modules/std.sx";
+
+Event :: struct { code: i64; }
+Holder :: struct { inner: struct { e: Event; }; }
+
+main :: () {
+    h : Holder = ---;
+    h.inner.e = .{ code = 5 };
+    print("code={}\n", h.inner.e.code);
+}

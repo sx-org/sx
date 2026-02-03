@@ -1,0 +1,228 @@
+// std.http_router (PLAN-HTTPZ D2): method+path routing, path params,
+// query/form parsing, and JSON request/response helpers over the std.http
+// server core. Drives a routed live server in ONE thread via Server.tick
+// (1633-style) and asserts:
+//   • GET / and GET /hello → distinct handlers, both 200;
+//   • GET /users/:id → path param extracted (/users/42 → id="42", echoed);
+//   • GET /search?q=hello+world&n=3 → q="hello world" (decoded), n="3";
+//   • POST /form (urlencoded a=1&b=hi%20there) → fields decoded;
+//   • GET /j (JSON response) → Content-Type application/json + valid body;
+//   • POST /echojson (JSON request) → reads a field from the posted body;
+//   • GET /nope → 404; PUT /hello (registered GET only) → 405 + Allow.
+// The whole run is under a GPA: net-zero allocations after close (the
+// router/param machinery must not leak per request).
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+
+PORT :: 18980;
+
+// ── route handlers ───────────────────────────────────────────────────
+
+h_root :: (rc: *http.RouteCtx) {
+    rc.resp.body = "root";
+}
+
+h_hello :: (rc: *http.RouteCtx) {
+    rc.resp.body = "hello";
+}
+
+h_user :: (rc: *http.RouteCtx) {
+    rc.resp.body = concat("user:", rc.param("id"));
+}
+
+h_search :: (rc: *http.RouteCtx) {
+    q := rc.query_get("q");
+    n := rc.query_get("n");
+    rc.resp.body = concat("q=[", concat(q, concat("] n=[", concat(n, "]"))));
+}
+
+h_form :: (rc: *http.RouteCtx) {
+    a := rc.form_get("a");
+    b := rc.form_get("b");
+    rc.resp.body = concat("a=[", concat(a, concat("] b=[", concat(b, "]"))));
+}
+
+// JSON response: {"name":"sx","n":7}
+h_json :: (rc: *http.RouteCtx) {
+    obj : json.Object = .{};
+    obj.put("name", .str("sx"), context.allocator);
+    obj.put("n", .int(7), context.allocator);
+    root : json.Value = .object(obj);
+    if !rc.json_send(200, root) { rc.resp.status = 500; rc.resp.body = "json fail"; }
+}
+
+// JSON request: read top-level "name" string field from the posted body
+// and echo it back as text.
+h_echojson :: (rc: *http.RouteCtx) {
+    v, ok := rc.json_body();
+    if !ok { rc.resp.status = 400; rc.resp.body = "bad json"; return; }
+    if v != .object { rc.resp.status = 400; rc.resp.body = "not object"; return; }
+    o := v.object;
+    name : string = "";
+    i := 0;
+    while i < o.len {
+        if o.items[i].key == "name" {
+            mv := o.items[i].val;
+            if mv == .str { name = mv.str; }
+        }
+        i += 1;
+    }
+    rc.resp.body = concat("name=", name);
+}
+
+// ── client harness (1633-style) ──────────────────────────────────────
+
+contains :: (hay: string, needle: string) -> bool {
+    if needle.len > hay.len { return false; }
+    i := 0;
+    while i + needle.len <= hay.len {
+        j := 0;
+        ok := true;
+        while j < needle.len { if hay[i + j] != needle[j] { ok = false; break; } j += 1; }
+        if ok { return true; }
+        i += 1;
+    }
+    return false;
+}
+
+dial_port :: (port: i64) -> i32 {
+    fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
+    if fd < 0 { return -1; }
+    addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
+    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
+    return fd;
+}
+
+resp_complete :: (buf: [*]u8, len: i64) -> bool {
+    s := string.{ ptr = buf, len = xx len };
+    he := -1;
+    i := 0;
+    while i + 3 < s.len {
+        if s[i] == 13 and s[i+1] == 10 and s[i+2] == 13 and s[i+3] == 10 { he = i; break; }
+        i += 1;
+    }
+    if he < 0 { return false; }
+    cl : i64 = 0;
+    seen := false;
+    j := 0;
+    needle := "Content-Length: ";
+    while j + needle.len < s.len {
+        k := 0;
+        ok := true;
+        while k < needle.len { if s[j + k] != needle[k] { ok = false; break; } k += 1; }
+        if ok {
+            d := j + needle.len;
+            while d < s.len and s[d] >= 48 and s[d] <= 57 { cl = cl * 10 + (s[d] - 48); d += 1; }
+            seen = true;
+            break;
+        }
+        j += 1;
+    }
+    if !seen { return false; }
+    return len >= he + 4 + cl;
+}
+
+roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: i64) -> string {
+    socket.write(fd, reqtext.ptr, xx reqtext.len);
+    total : i64 = 0;
+    tries := 0;
+    while tries < 800 {
+        srv.tick(5) catch {};
+        n, re := socket.read_nb(fd, @scratch[total], xx (cap - total));
+        if !re { total += n; }
+        else if re == error.Closed { return string.{ ptr = scratch, len = xx total }; }
+        if resp_complete(scratch, total) { return string.{ ptr = scratch, len = xx total }; }
+        tries += 1;
+    }
+    return "";
+}
+
+// Run the whole routed-server exercise on one connection (keep-alive). All
+// requests + assertions live here; returns true on success. Runs under
+// whatever allocator is current (the GPA-pushed scope in main).
+run_suite :: (scratch: [*]u8, cap: i64) -> bool {
+    router := http.Router.init(0);
+    router.get("/", h_root);
+    router.get("/hello", h_hello);
+    router.get("/users/:id", h_user);
+    router.get("/search", h_search);
+    router.post("/form", h_form);
+    router.get("/j", h_json);
+    router.post("/echojson", h_echojson);
+
+    cfg : http.Config = .{
+        port = PORT,
+        timeout_request_ms = 1000,
+        timeout_keepalive_ms = 1000,
+        request_count = 100,
+        max_conn = 8,
+    };
+    srv, se := http.Server.init(cfg, http.dispatch, xx @router);
+    if se { print("server init failed\n"); return false; }
+
+    c := dial_port(PORT);
+    if c < 0 { print("dial failed\n"); srv.close(); return false; }
+
+    // 1. GET / and GET /hello → distinct 200s
+    r := roundtrip(@srv, c, "GET / HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
+    if !contains(r, "HTTP/1.1 200 OK") or !contains(r, "root") { print("root: bad\n"); socket.close(c); srv.close(); return false; }
+
+    r = roundtrip(@srv, c, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
+    if !contains(r, "HTTP/1.1 200 OK") or !contains(r, "hello") { print("hello: bad\n"); socket.close(c); srv.close(); return false; }
+
+    // 2. path param
+    r = roundtrip(@srv, c, "GET /users/42 HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
+    if !contains(r, "user:42") { print("param: bad\n"); socket.close(c); srv.close(); return false; }
+
+    // 3. query: decode '+' → space, multiple keys
+    r = roundtrip(@srv, c, "GET /search?q=hello+world&n=3 HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
+    if !contains(r, "q=[hello world]") or !contains(r, "n=[3]") { print("query: bad\n"); socket.close(c); srv.close(); return false; }
+
+    // 4. urlencoded form body: a=1&b=hi%20there → b decodes "%20" → space
+    r = roundtrip(@srv, c, "POST /form HTTP/1.1\r\nHost: t\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 16\r\n\r\na=1&b=hi%20there", scratch, cap);
+    if !contains(r, "a=[1]") or !contains(r, "b=[hi there]") { print("form: bad\n"); socket.close(c); srv.close(); return false; }
+
+    // 5. JSON response route
+    r = roundtrip(@srv, c, "GET /j HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
+    if !contains(r, "Content-Type: application/json") { print("json resp: no ct\n"); socket.close(c); srv.close(); return false; }
+    if !contains(r, "\"name\":\"sx\"") or !contains(r, "\"n\":7") { print("json resp: bad body\n"); socket.close(c); srv.close(); return false; }
+
+    // 6. JSON request route: read top-level "name"
+    r = roundtrip(@srv, c, "POST /echojson HTTP/1.1\r\nHost: t\r\nContent-Type: application/json\r\nContent-Length: 15\r\n\r\n{\"name\":\"alex\"}", scratch, cap);
+    if !contains(r, "name=alex") { print("json req: bad\n"); socket.close(c); srv.close(); return false; }
+
+    // 7. unregistered path → 404
+    r = roundtrip(@srv, c, "GET /nope HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
+    if !contains(r, "HTTP/1.1 404 Not Found") { print("404: bad\n"); socket.close(c); srv.close(); return false; }
+
+    // 8. registered path, wrong method → 405 + Allow header
+    r = roundtrip(@srv, c, "PUT /hello HTTP/1.1\r\nHost: t\r\nContent-Length: 0\r\n\r\n", scratch, cap);
+    if !contains(r, "HTTP/1.1 405 Method Not Allowed") { print("405: bad status\n"); socket.close(c); srv.close(); return false; }
+    if !contains(r, "Allow: GET") { print("405: missing Allow\n"); socket.close(c); srv.close(); return false; }
+
+    socket.close(c);
+    srv.close();
+    return true;
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    leaked : i64 = 0;
+    okall := false;
+    push .{ allocator = gpa } {
+        cap : i64 = 16384;
+        scratch : [*]u8 = xx context.allocator.alloc_bytes(cap);
+        okall = run_suite(scratch, cap);
+        context.allocator.dealloc_bytes(xx scratch);
+        leaked = gpa.alloc_count;
+    }
+    if !okall { return 1; }
+    if leaked != 0 {
+        print("LEAK: {} outstanding allocations after routed server lifetime\n", leaked);
+        return 1;
+    }
+    print("routing, path params, query, form, json req/resp, 404/405 all ok; net-zero leak\n");
+    print("ok\n");
+    return 0;
+}

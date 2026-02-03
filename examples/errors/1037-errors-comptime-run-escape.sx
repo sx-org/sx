@@ -1,0 +1,18 @@
+// Comptime `#run` of a failable whose error ESCAPES (no `catch` / `or`): the
+// compiler reports the raised tag name + the return trace at the `#run` site and
+// halts with a non-zero exit (E5.2). Before this, a bare failable `#run`
+// segfaulted (const form) or silently succeeded (statement form).
+
+#import "modules/std.sx";
+
+E :: error { Bad, Empty }
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0  { raise error.Bad; }
+    if n == 0 { raise error.Empty; }
+    return n * 2;
+}
+
+x :: #run parse(-1);            // error.Bad escapes → comptime diagnostic + halt
+
+main :: () -> i32 { return x; }

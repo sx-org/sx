@@ -1,0 +1,29 @@
+// Nested optional `?(?i64)` written via a type alias — `Opt :: ?i64; ?Opt`.
+// The outer optional's payload is the inner optional, so the layout is the
+// well-formed double-wrap `{ {i64,i1}, i1 }`. Assigning an inner `?i64`,
+// unwrapping the outer to recover the inner `?i64`, and unwrapping that all
+// round-trip cleanly.
+//
+// Regression (issue 0165): the type-table interning always produced the
+// correct `{ {i64,i1}, i1 }` for a genuine nested optional — this locks that in.
+#import "modules/std.sx";
+
+Opt :: ?i64;
+
+main :: () {
+  inner : ?i64 = 5;
+  outer : ?Opt = inner;        // ?(?i64) — payload is the inner optional
+
+  print("outer present: {}\n", outer != null);
+
+  mid := outer!;               // unwrap outer  -> ?i64
+  print("mid present: {}\n", mid != null);
+  print("value: {}\n", mid!);  // unwrap inner  -> 5
+
+  // null-coalesce through the recovered inner optional
+  print("coalesced: {}\n", mid ?? 0);
+
+  // a none outer
+  empty : ?Opt = null;
+  print("empty present: {}\n", empty != null);
+}

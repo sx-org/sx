@@ -1,0 +1,48 @@
+// A closure literal inside a `defer` / `onfail` body is its OWN function
+// boundary (ERR step E1.7). Two boundary effects, both pinned here:
+//
+//   (a) `checkCleanupNode` sees a bare lambda STATEMENT as a `.lambda` node and
+//       STOPS — it does not descend into the lambda body. So the bare failable
+//       inside the lambda is the lambda's concern, not a cleanup violation
+//       (were the `.lambda` arm to recurse, this bare `failing()` would reject
+//       like the ones in 1052).
+//
+//   (b) value-slot liveness (E1.8) is analysed per-boundary: `flowExpr` recurses
+//       into the lambda via `analyzeFnBody`, so a value slot read inside the
+//       lambda must prove its own error absent — `v` here is live under its
+//       `if !err` guard. (The rejecting counterpart is 1053.)
+//
+// Also: `try` is legal inside the lambda (it propagates through the lambda's own
+// `!E` channel) even though it is parser-banned in the cleanup body directly.
+//
+// Locks the closure-boundary arms of the error-flow pass before A5.2 extracts it
+// into its own module. Constructible since issue 0073 (closure literal in a
+// `defer` body no longer segfaults lowering — see 0310).
+
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+failing :: () -> !E { raise error.Bad; }
+recover :: () -> (i32, !E) { return 21; }
+
+work :: () {
+    defer {
+        // (a) bare lambda statement — checkCleanupNode stops at the `.lambda`.
+        () -> !E { failing(); };
+
+        // (b) called closure — its body is analysed as its own boundary.
+        emit := () -> !E {
+            v, err := recover();
+            if !err { print("defer closure: v={}\n", v); }   // E1.8: live under guard
+            try failing();
+        };
+        emit() catch (e) print("defer closure: raised\n");
+    }
+    print("body\n");
+}
+
+main :: () -> i32 {
+    work();
+    return 0;
+}

@@ -1,0 +1,3 @@
+argc>=1: ok
+arg0-nonempty: ok
+argc-consistent: ok

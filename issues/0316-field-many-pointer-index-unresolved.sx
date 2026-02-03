@@ -1,0 +1,10 @@
+Raw :: struct {
+    ptr: [*]u8;
+}
+
+main :: () -> i32 abi(.c) {
+    buf : [4]u8 = .[7, 8, 9, 10];
+    r := Raw.{ ptr = xx @buf };
+    x := r.ptr[0];
+    return xx x;
+}

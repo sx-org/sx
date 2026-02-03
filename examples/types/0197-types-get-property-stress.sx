@@ -1,0 +1,51 @@
+// `#get` property accessor — stress coverage: getters returning scalars / bool
+// / a type param / a struct / a pointer; getters used as a field read, in
+// expressions, conditions, call args, loop bounds, chained, and nested
+// (a getter calling another getter); on a pointer receiver and via auto-deref;
+// a getter still callable with explicit parens; multiple getters per type.
+#import "modules/std.sx";
+
+Pt :: struct { x: i64; y: i64; }
+
+Box :: struct {
+    v: i64;
+    is_pos :: (self: *Box) -> bool #get => self.v > 0;          // bool
+    neg    :: (self: *Box) -> i64  #get => -self.v;             // scalar
+    origin :: (self: *Box) -> Pt   #get => .{ x = self.v, y = self.v };  // struct
+    // nested: a getter that reads another getter
+    twice_neg :: (self: *Box) -> i64 #get => self.neg + self.neg;
+}
+
+Holder :: struct ($T: Type) {
+    data: []T;
+    n     :: (self: *Holder(T)) -> i64 #get => self.data.len;  // i64
+    head  :: (self: *Holder(T)) -> T   #get => self.data[0];   // type param T
+    tailp :: (self: *Holder(T)) -> *T  #get => @self.data[self.data.len - 1]; // pointer
+}
+
+main :: () -> i64 {
+    b : Box = .{ v = 7 };
+    print("is_pos={} neg={} twice_neg={}\n", b.is_pos, b.neg, b.twice_neg);  // true -7 -14
+    if b.is_pos { print("positive\n"); }                  // condition
+    o := b.origin;                                         // struct-returning getter + binding
+    print("origin=({},{})\n", o.x, o.y);                   // (7,7)
+    print("paren neg()={}\n", b.neg());                    // explicit-paren call still works
+
+    a : [4]i64 = .[100, 200, 300, 400];
+    h : Holder(i64) = .{ data = a[0..4] };
+    print("n={} head={}\n", h.n, h.head);                  // 4 100
+    print("tail={}\n", h.tailp.*);                         // 400 (pointer getter, deref)
+    print("n+head={}\n", h.n + h.head);                    // 104 (in expression)
+
+    // getter as a loop bound + call arg
+    total := 0;
+    k := 0;
+    while k < h.n { total = total + h.data[k]; k = k + 1; }
+    print("loop-bound total={}\n", total);                 // 1000
+
+    // via a pointer receiver (auto-deref) and an explicit postfix deref
+    pb := @b;
+    print("via ptr is_pos={}\n", pb.is_pos);               // true
+    print("via deref is_pos={}\n", pb.*.is_pos);           // true (p.*.getter)
+    return 0;
+}

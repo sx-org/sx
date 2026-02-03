@@ -1,0 +1,16 @@
+
+module asm ".global _my_sub"
+module asm "_my_sub:"
+module asm "    sub x0, x0, x1"
+module asm "    ret"
+
+; Function Attrs: nounwind
+declare i64 @my_sub(i64, i64) #0
+
+; Function Attrs: nounwind
+define i32 @main() #0 {
+entry:
+  %call = call i64 @my_sub(i64 44, i64 2)
+  %ca.tr = trunc i64 %call to i32
+  ret i32 %ca.tr
+}

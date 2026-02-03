@@ -1,0 +1,28 @@
+// A single-type generic binding (`$R` from `Closure(..$args) -> $R`) used as a
+// generic-struct TYPE ARGUMENT inside a variadic-pack function's body —
+// `Box($R)` / `size_of(Box($R))` — must resolve `$R` to its bound TypeId.
+//
+// Regression (issue 0156, part 1): the parser tags every `$name` expression as
+// `comptime_pack_ref`, so a single-type `$R` arrived at `resolveTypeWithBindings`
+// (the resolver `instantiateGenericStruct` uses for each type-arg) as a
+// `comptime_pack_ref` it had no arm for → fell to the catch-all → `.unresolved`
+// → an LLVM-emission panic. `resolveTypeArg` already handled this; the fix
+// mirrors its arm in `resolveTypeWithBindings` (look up `type_bindings`, else a
+// loud "pack used where a single type is required" diagnostic — never a silent
+// default type).
+#import "modules/std.sx";
+
+Box :: struct ($R: Type) { v: R; }
+
+// A pack fn whose body references `$R` (the closure's return type) in a
+// type-arg slot: both `*Box($R)` (annotation) and `size_of(Box($R))`.
+boxed :: ufcs (io: Io, worker: Closure(..$args) -> $R, ..$args) -> Box($R) {
+    b : *Box($R) = xx context.allocator.alloc_bytes(size_of(Box($R)));
+    b.v = worker(..args);
+    return b.*;
+}
+
+main :: () {
+    r := context.io.boxed((a: i64, b: i64) -> i64 => a + b, 40, 2);
+    print("r: {}\n", r.v);   // r: 42
+}

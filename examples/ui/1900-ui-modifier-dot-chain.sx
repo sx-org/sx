@@ -1,0 +1,50 @@
+// The modifier combinators (ui/modifier.sx) are ufcs: a view tree builds
+// as a dot-chain — each call wraps its receiver (an rvalue, so the owning
+// View erasure is implicit) in the next modifier struct. The pipe
+// spelling composes the same functions and keeps working; the two mix
+// freely in one expression.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/modifier.sx";
+
+// A minimal concrete leaf: reports a fixed intrinsic size.
+Leaf :: struct { w, h: f32; }
+impl View for Leaf {
+    size_that_fits :: (self: *Leaf, proposal: ProposedSize) -> Size {
+        Size.{ width = self.w, height = self.h }
+    }
+    layout :: (self: *Leaf, bounds: Frame) {}
+    render :: (self: *Leaf, ctx: *RenderContext, frame: Frame) {}
+    handle_event :: (self: *Leaf, event: *Event, frame: Frame) -> bool { false }
+}
+
+main :: () {
+    flexible := ProposedSize.{ width = null, height = null };
+
+    // Dot-chain through five combinators; the fixed frame pins the
+    // chain's measured size, the padding grows it by its insets.
+    tapped := 0;
+    tree := Leaf.{ w = 10.0, h = 20.0 }
+        .with_opacity(0.5)
+        .clip(2.0)
+        .fixed_frame(30.0, 40.0)
+        .padding(EdgeInsets.all(8.0))
+        .on_tap(() { tapped += 1; });
+    sz := tree.size_that_fits(flexible);
+    print("chain: {}x{}\n", sz.width, sz.height);
+
+    // hidden() collapses the measured size to zero.
+    h := Leaf.{ w = 10.0, h = 20.0 }.hidden(true);
+    hz := h.size_that_fits(flexible);
+    print("hidden: {}x{}\n", hz.width, hz.height);
+
+    // The pipe spelling still composes the same combinators — and mixes
+    // with the dot-chain in one expression.
+    mixed := (Leaf.{ w = 5.0, h = 5.0 } |> background(COLOR_RED, 1.0))
+        .padding(EdgeInsets.all(2.0));
+    ms := mixed.size_that_fits(flexible);
+    print("mixed: {}x{}\n", ms.width, ms.height);
+}

@@ -1,0 +1,31 @@
+// `#jni_main` pipeline slice 2 (PLAN-FFI.md): the compiler renders a
+// `.java` source for a `#jni_main #jni_class("...")` declaration, runs
+// `javac` + `d8`, and bundles `classes.dex` into the APK.
+//
+// Slice 2 only wires the plumbing — the manifest still points at
+// `android.app.NativeActivity`, so the user's class isn't loaded at
+// runtime. Slice 3 (manifest synthesis) and slice 4 (RegisterNatives)
+// land in follow-up commits.
+//
+// Build to inspect APK contents (requires Android SDK + JDK):
+//   /Users/agra/projects/sx/zig-out/bin/sx build --target android \
+//       --apk /tmp/sxjnimain.apk --bundle-id co.swipelab.sxjnimain \
+//       -o /tmp/libsxjnimain.so examples/ffi-jni-main-01-emit.sx
+//   unzip -l /tmp/sxjnimain.apk | grep classes.dex
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+// `*Bundle` resolves through the class registry to `android.os.Bundle`
+// in the emitted Java — needed for `onCreate`'s @Override to match
+// NativeActivity's superclass signature.
+Bundle :: #jni_class("android/os/Bundle") extern { }
+
+// `#jni_main` flags this as the launchable Android Activity class. The
+// `onCreate` body is empty for now — slice 4 wires `RegisterNatives`
+// so the `sx_onCreate` native delegate actually binds to a sx-side fn.
+SxApp :: #jni_main #jni_class("co/swipelab/sxjnimain/SxApp") {
+    onCreate :: (self: *Self, b: *Bundle) { }
+}
+
+main :: () -> i32 { 0 }

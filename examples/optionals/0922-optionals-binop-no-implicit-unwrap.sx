@@ -1,0 +1,14 @@
+// An un-narrowed `?T` used directly as a binary-op operand is a compile error
+// — it does not implicitly unwrap.
+//
+// Regression (issue 0185): `null + 10` used to compile and unconditionally
+// extract the payload, silently yielding `10` (0 + 10) with no diagnostic.
+// The legal forms are `!` / `??` / a `!= null` guard (see 0921).
+#import "modules/std.sx";
+
+main :: () {
+    a : ?i64 = null;
+    b : i64 = 10;
+    c := a + b;            // error: optional operand does not implicitly unwrap
+    print("c = {}\n", c);
+}

@@ -1,0 +1,47 @@
+// Protocol methods declare their receiver EXPLICITLY as the first parameter —
+// `self: *Self` (or `self: Self`) — matching the `impl` method signature. This
+// is required (the old implicit-receiver form is a parse error). The receiver
+// annotation is validated then erased, so dispatch and call sites are unchanged:
+// a method with N declared extra args is still called with N args.
+#import "modules/std.sx";
+
+Size :: struct { w: i32; h: i32; }
+
+// `self: *Self` receiver; one no-arg method and one with extra args.
+Measurable :: protocol #inline {
+    measure :: (self: *Self) -> Size;
+    scaled  :: (self: *Self, factor: i32) -> Size;
+}
+
+// `self: Self` (by-value) receiver is also accepted.
+Named :: protocol {
+    name :: (self: Self) -> string;
+}
+
+Widget :: struct { base: i32; }
+
+impl Measurable for Widget {
+    measure :: (self: *Widget) -> Size { return Size.{ w = self.base, h = self.base * 2 }; }
+    scaled  :: (self: *Widget, factor: i32) -> Size {
+        return Size.{ w = self.base * factor, h = self.base * 2 * factor };
+    }
+}
+
+impl Named for Widget {
+    name :: (self: Widget) -> string { return "widget"; }
+}
+
+main :: () -> i32 {
+    w : Widget = .{ base = 5 };
+    p : *Widget = @w;
+
+    m := p.(Measurable);   // snapshot of the pointee
+    s := m.measure();          // 0 extra args
+    s2 := m.scaled(3);         // 1 extra arg
+    print("measure={}x{}\n", s.w, s.h);    // 5x10
+    print("scaled={}x{}\n", s2.w, s2.h);   // 15x30
+
+    n := p.(Named);
+    print("name={}\n", n.name());          // widget
+    return 0;
+}

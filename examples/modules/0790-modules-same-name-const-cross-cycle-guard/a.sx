@@ -1,0 +1,4 @@
+// Module A authors `M :: 1` and `K :: M + 1` (= 2). A's `K` folds its leaf `M`
+// against A's own `M`.
+M :: 1;
+K :: M + 1;

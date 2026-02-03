@@ -1,0 +1,28 @@
+#import "modules/std.sx";
+
+Vec2 :: struct { x, y: f32; }
+
+set_x :: (p: *Vec2, val: f32) {
+    p.x = val;
+}
+
+main :: () {
+    v := Vec2.{ 1.0, 2.0 };
+    print("before: {}\n", v);
+
+    set_x(@v, 99.0);
+    print("after: {}\n", v);
+
+    ptr := @v;
+    copy := ptr.*;
+    print("copy: {}\n", copy);
+    
+    // null pointer
+    np : *Vec2 = null;
+
+    // many-pointer indexing
+    arr : [5]i32 = .[10, 20, 30, 40, 50];
+    mp : [*]i32 = @arr[0];
+    print("mp[0] = {}\n", mp[0]);
+    print("mp[2] = {}\n", mp[2]);
+}

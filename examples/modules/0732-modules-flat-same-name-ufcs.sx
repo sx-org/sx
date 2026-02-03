@@ -1,0 +1,19 @@
+// fix-0102d site 3 (issue 0102): two flat FILE imports each author a same-name
+// free function `bump` (a.sx adds 1, b.sx adds 100). Each module dispatches it
+// via free-function UFCS — `v.bump()` lowers to `bump(v)`. The dispatched
+// author must be the RESOLVED one for the receiver's source (own-author wins),
+// not the first-wins winner. Before the fix, b.sx's `v.bump()` dispatched
+// a.sx's winner (+1 → 11). Regression: per-source free-function UFCS dispatch.
+#import "modules/std.sx";
+#import "0732-modules-flat-same-name-ufcs/a.sx";
+#import "0732-modules-flat-same-name-ufcs/b.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("from_a v.bump() binds a.bump (+1)", from_a_ufcs() == 11);
+    report("from_b v.bump() binds b.bump (+100)", from_b_ufcs() == 110);
+    0
+}

@@ -1,0 +1,38 @@
+// Variadic heterogeneous type packs — step 4A final-slice
+// follow-up. `type_name(<dynamic-arg>)` where the argument is
+// NOT a static type expression (e.g. `list[i]` indexing into
+// a `$args`-derived `[]Type` slice) silently folded to "i64"
+// because `resolveTypeArg`'s catch-all `else => .i64` lied —
+// the kind of silent unimplemented arm the project's REJECTED
+// PATTERNS forbid.
+//
+// The fix: `tryLowerReflectionCall` now splits static vs
+// dynamic args via `isStaticTypeArg(node)`. Static → fold to
+// const_string at lower time (today's fast path). Dynamic →
+// emit `callBuiltin(.type_name, [arg_ref])` for the interp's
+// runtime arm to handle.
+//
+// Type values are comptime-only — the dynamic path only works
+// inside a comptime context (`#run` / `#insert`). The test
+// runs `walk(42, "hi")` at `#run` time and prints the result.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+walk :: (..$args) -> string {
+    list := $args;
+    s := "";
+    i : i64 = 0;
+    while i < list.len {
+        s = concat(s, type_name(list[i]));
+        i = i + 1;
+    }
+    return s;
+}
+
+show :: () {
+    print("{}\n", walk(42, "hi"));
+}
+#run show();
+
+main :: () { print("rt\n"); }

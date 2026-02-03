@@ -1,0 +1,11 @@
+error: cannot index a value of type '*i64' — use a many-pointer '[*]T', or dereference first
+  --> examples/diagnostics/1203-diagnostics-index-non-indexable.sx:28:19
+   |
+28 |     print("{}\n", p[0]);    // error: '*i64' is not indexable (hint form)
+   |                   ^
+
+error: cannot index a value of type 'S'
+  --> examples/diagnostics/1203-diagnostics-index-non-indexable.sx:32:19
+   |
+32 |     print("{}\n", s[j]);    // error: runtime index into 'S' (bare form)
+   |                   ^

@@ -1,0 +1,11 @@
+// A flat-imported module authors its OWN `Box { a }`, a DISTINCT nominal from
+// main's same-name `Box { m }`. The parameterised-impl protocol type-ARG `*Box`
+// registers SOURCE-AWARE against main's `Box` (own-wins), never the global
+// last-wins author.
+Box :: struct { a: i32; }
+
+dep_box :: () -> i32 {
+    b : Box = ---;
+    b.a = 9;
+    return b.a;
+}

@@ -1,0 +1,35 @@
+// FFI plan step 5.1 — `build_block_convert(args: []Type, $ret: Type)
+// -> string` emits the per-shape source body for the generic
+// `Into(Block) for Closure(..$args) -> $R` impl that lands in step
+// 5.2. Per-call-shape monomorphisation of the impl body re-runs the
+// builder with concrete types bound, so each closure shape gets its
+// own dedicated `__invoke` trampoline + Block literal.
+//
+// This test exercises the builder directly (no `#insert`, no impl
+// wiring) — three pack shapes through the same `void`-returning
+// wrapper plus one non-void `i32`-returning wrapper to pin the
+// `return typed_fn(...)` branch. The expected output captures the
+// generated source verbatim so any formatting drift surfaces here
+// rather than as a downstream compile error inside the eventual
+// step-5.2 impl.
+
+#import "modules/std.sx";
+#import "modules/ffi/objc_block.sx";
+
+preview_void :: (..$args) -> string {
+    return build_block_convert($args, void);
+}
+
+preview_i32 :: (..$args) -> string {
+    return build_block_convert($args, i32);
+}
+
+run_all :: () {
+    print("--- void / 0 args ---\n{}\n", preview_void());
+    print("--- void / bool ---\n{}\n", preview_void(true));
+    print("--- void / i64, string ---\n{}\n", preview_void(42, "hi"));
+    print("--- i32 / f64 ---\n{}\n", preview_i32(3.14));
+}
+#run run_all();
+
+main :: () { print("rt\n"); }

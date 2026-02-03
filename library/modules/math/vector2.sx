@@ -1,0 +1,49 @@
+Vec2 :: struct {
+    x, y: f32;
+
+    zero :: () -> Vec2 { Vec2.{ x = 0.0, y = 0.0 } }
+
+    add :: (self: Vec2, b: Vec2) -> Vec2 {
+        Vec2.{ x = self.x + b.x, y = self.y + b.y }
+    }
+
+    sub :: (self: Vec2, b: Vec2) -> Vec2 {
+        Vec2.{ x = self.x - b.x, y = self.y - b.y }
+    }
+
+    scale :: (self: Vec2, s: f32) -> Vec2 {
+        Vec2.{ x = self.x * s, y = self.y * s }
+    }
+
+    dot :: (self: Vec2, b: Vec2) -> f32 {
+        self.x * b.x + self.y * b.y
+    }
+
+    length :: (self: Vec2) -> f32 {
+        sqrt(self.x * self.x + self.y * self.y)
+    }
+
+    normalize :: (self: Vec2) -> Vec2 {
+        len := self.length();
+        if len > 0.0 {
+            return Vec2.{ x = self.x / len, y = self.y / len };
+        }
+        Vec2.zero()
+    }
+
+    lerp :: (self: Vec2, b: Vec2, t: f32) -> Vec2 {
+        Vec2.{ x = self.x + (b.x - self.x) * t, y = self.y + (b.y - self.y) * t }
+    }
+
+    distance :: (self: Vec2, b: Vec2) -> f32 {
+        self.sub(b).length()
+    }
+
+    negate :: (self: Vec2) -> Vec2 {
+        Vec2.{ x = 0.0 - self.x, y = 0.0 - self.y }
+    }
+
+    equals :: (self: Vec2, b: Vec2) -> bool {
+        self.x == b.x and self.y == b.y
+    }
+}

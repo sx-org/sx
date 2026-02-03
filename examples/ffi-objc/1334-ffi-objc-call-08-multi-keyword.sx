@@ -1,0 +1,41 @@
+// Phase 1 step 1.10 (PLAN-FFI.md): multi-keyword Obj-C selectors
+// through `#objc_call`. Selector mangling matches clang's: every
+// `:` in the source-level selector becomes a `_` in the symbol
+// name of the cached SEL slot (so `initWithFrame:options:` →
+// `OBJC_SELECTOR_REFERENCES_initWithFrame_options_`).
+//
+// The selector is opaque text to the lowering — no codegen change
+// needed beyond Phase 1.6's variadic argument list. This test
+// pins that the round-trip works end-to-end via class_addMethod
+// + a real IMP that consumes both keyword args.
+
+#import "modules/std.sx";
+#import "modules/build.sx";
+#import "modules/ffi/objc.sx";
+
+combine_imp :: (self: *void, _cmd: *void, a: i32, b: i32) -> i32 abi(.c) {
+    a * 100 + b
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        ns_object := objc_getClass("NSObject".ptr);
+        my_cls := objc_allocateClassPair(ns_object, "SxComboProbe".ptr, 0);
+
+        // Two-keyword selector: `combine:and:`.
+        // Method type encoding: i@:ii → returns int, implicit (self, _cmd),
+        // takes two ints. (`i` = int, `@` = id, `:` = SEL.)
+        sel := sel_registerName("combine:and:".ptr);
+        ok := class_addMethod(my_cls, sel, xx combine_imp, "i@:ii".ptr);
+        print("addMethod = {}\n", ok);
+        objc_registerClassPair(my_cls);
+
+        instance := class_createInstance(my_cls, 0);
+        r := #objc_call(i32)(instance, "combine:and:", 7, 42);
+        print("combine(7, 42) = {}\n", r);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

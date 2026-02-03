@@ -1,0 +1,26 @@
+// Loop-body locals reuse one stack slot per frame: a body-declared local
+// (and every compiler temp) must not grow the stack per iteration, so
+// million-iteration loops run in constant stack. Covers body locals,
+// nested loops (the inner loop's hidden index slot), and element reads.
+// Regression (issue 0109): allocas were emitted at their use site, so each
+// iteration re-executed them — LLVM only reclaims allocas at `ret`, and
+// these loops segfaulted on stack exhaustion.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    sum := 0;
+    for 0..1000000 (i) {
+        buf : [128]i64 = ---;
+        buf[0] = i;
+        sum += buf[0];
+    }
+    print("sum={}\n", sum);
+
+    n := 0;
+    for 0..3000000 (i) {
+        for 0..1 (j) { n += 1; }
+    }
+    print("n={}\n", n);
+    0
+}

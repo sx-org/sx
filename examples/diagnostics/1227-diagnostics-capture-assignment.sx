@@ -1,0 +1,72 @@
+// Assigning to a by-VALUE capture is a compile error, not a silent no-op
+// (issue 0219). A capture is a read-only alias into storage the loop / match
+// / error machinery owns — mutating it bare would corrupt nothing (the store
+// used to be silently dropped, reaching neither the container nor the copy),
+// so it is rejected. Every by-value capture family is covered here; each `=`
+// below is diagnosed with a SHAPE-AWARE "cannot assign to immutable capture"
+// message: only the for-loop ELEMENT form suggests the `(*x)` by-ref
+// write-back (its container storage exists); range indexes, match payloads,
+// catch/onfail bindings, and pack-element aliases have no storage behind
+// them, so they get the copy-into-a-`:=`-local advice alone. A function-local
+// `::` const rides the same enforcement but gets the constant-family message.
+//
+// The sibling by-REF misuse (`for xs (*x) { x = v }`) is issue 0216.
+
+#import "modules/std.sx";
+
+Shape :: enum { circle: f64; rect: i64; }
+E :: error { Bad, Empty }
+
+must :: (n: i32) -> !E { if n == 0 { raise error.Empty; } return; }
+
+pack_mut :: (..xs: i64) {
+    inline for xs (x) { x = 999; }          // pack-element alias — immutable
+}
+
+fail_note :: () -> !E {
+    onfail (e) { e = error.Bad; }           // onfail binding — immutable
+    raise error.Empty;
+}
+
+main :: () -> i32 {
+    xs : [3]i64 = .[10, 20, 30];
+
+    // 1. for-loop element capture — the one shape with a (*x) write-back hint
+    for xs (x) { x += 100; }
+
+    // 2. paired range index capture — no storage, no (*i) spelling
+    for xs, 0.. (v, i) { i = 99; }
+
+    // 3. match-arm payload capture (tagged union)
+    s : Shape = .circle(3.0);
+    if s == {
+        case .circle: (r) { r = 5.0; }
+        case .rect: (n) { n = 7; }
+    }
+
+    // 3b. optional-match payload capture
+    o : ?i64 = 5;
+    if o == {
+        case .some: (ov) { ov = 9; }
+        case .none: { }
+    }
+
+    // 4. catch error binding
+    must(0) catch (e) { e = error.Bad; };
+
+    // 4b. onfail error binding (in fail_note above)
+    fail_note() catch {};
+
+    // 5. inline-for pack-element alias (in pack_mut above)
+    pack_mut(1, 2, 3);
+
+    // 6. multi-assign spelling — capture on the LHS
+    a := 0;
+    for xs (x) { x, a = 5, 6; }
+
+    // 7. function-local '::' const — same enforcement, constant-family message
+    c :: 5;
+    c = 10;
+
+    0
+}

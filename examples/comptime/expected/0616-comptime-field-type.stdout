@@ -1,0 +1,9 @@
+Point has 3 fields
+  0: x : i64
+  1: y : f64
+  2: on : bool
+field 0 is i64: true
+field 1 is f64: true
+Msg.num  payload: i64
+Msg.tag  payload: bool
+Msg.quit payload: void

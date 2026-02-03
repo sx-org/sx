@@ -1,0 +1,23 @@
+// Variadic heterogeneous type packs — follow-up #2 (generic $R
+// return type).
+//
+// A pack-fn's return type can be a generic name (`$R`) — bound at
+// the call site to match the body's natural type or the caller's
+// target. Today's `monomorphizePackFn` calls `resolveReturnType`
+// which treats `$R` as an opaque struct, so the mono's signature
+// gets a wrong ret_ty and the value is silently zero / garbage.
+//
+// `first(42)` should return 42; the lock-in pins today's `0`.
+// Next commit infers the ret type from the body's tail expression
+// (or first `return X;`) and rebuilds the mono signature.
+
+#import "modules/std.sx";
+
+first :: (..$args) -> $R => args[0];
+
+main :: () -> i32 {
+    a : i64 = first(42);
+    b : i64 = first(99);
+    print("{} {}\n", a, b);
+    return 0;
+}

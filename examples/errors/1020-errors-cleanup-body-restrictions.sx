@@ -1,0 +1,26 @@
+// Cleanup-body control-flow restrictions (ERR step E1.7 follow-up). A `defer`
+// or `onfail` body runs while the block/function is already exiting, so it has
+// no target to transfer control to: `raise` / `try` / `return` / `break` /
+// `continue` are all rejected inside one. The ban is transitive through nested
+// `catch` bodies and loops, but NOT through a nested closure (its own function
+// boundary). `raise` was already banned (E1.3); this adds the other four.
+// This file is expected to FAIL compilation (exit 1).
+//
+// Run: ./zig-out/bin/sx run examples/237-cleanup-body-restrictions.sx
+
+#import "modules/std.sx";
+
+E :: error { Bad }
+
+g :: () -> !E { return; }
+
+f :: () -> !E {
+    defer  { return; }                 // ERROR: return in defer body
+    onfail { try g(); }                // ERROR: try in onfail body
+    defer  { for 0..1 (i) { break; } }   // ERROR: break in defer body (transitive through loop)
+    onfail (e) { if e == error.Bad { continue; } }  // ERROR: continue in onfail body
+    try g();
+    return;
+}
+
+main :: () -> i32 { return 0; }

@@ -1,0 +1,140 @@
+// Obj-C blocks bridged to sx closures.
+//
+// Apple's block ABI (clang's "Block Implementation Specification"): a block
+// pointer is a struct whose first five fields are { isa, flags, reserved,
+// invoke, descriptor } followed by per-block captured state. When an API
+// like `[UIView animateWithDuration:animations:]` receives a block, the
+// runtime reads `invoke` and calls it with the block pointer as the first
+// argument. UIKit / Foundation callers always `_Block_copy` synchronously
+// before returning, so a stack-allocated block is safe to pass directly.
+//
+// We layer the sx closure onto Apple's layout by appending two pointer
+// fields to the standard 32-byte header: `sx_env` (the closure's captured
+// environment pointer) and `sx_fn` (the closure trampoline). The per-
+// signature `__block_invoke_*` C-ABI fn knows the offsets and calls
+// through to `sx_fn(sx_env, args...)`.
+//
+// ── Lifetime contract ───────────────────────────────────────────────────
+// `xx <closure> : *Block` returns a pointer into the surrounding sx
+// function's stack frame. Same rule as `&local_var`: pass it directly to
+// a callee that consumes it immediately or `_Block_copy`s internally
+// (UIKit/Foundation always do). Don't store the pointer to use after the
+// caller returns. If you need that, ship a `Block_copy`-backed sibling
+// API and use it instead.
+
+// `build_block_convert` (below) is a comptime metaprogram that emits sx source
+// with `concat` / `int_to_string`; those live in std.sx. A metaprogram body
+// resolves its bare names in its OWN module (issue 0106), so this module must
+// import std.sx itself rather than relying on the call site's visibility.
+#import "modules/std.sx";
+
+// Standard 32-byte block header plus two trailing slots for the sx closure
+// it wraps. Total = 48 bytes.
+Block :: struct {
+    isa: *void;
+    flags: i32;
+    reserved: i32;
+    invoke: *void;
+    descriptor: *void;
+    sx_env: *void;
+    sx_fn: *void;
+}
+
+// Per-block-shape metadata. The runtime reads `size` when copying the
+// block to the heap, so it must equal the actual instance size.
+BlockDescriptor :: struct {
+    reserved: u64;
+    size: u64;
+}
+
+// libSystem isa pointer for stack-allocated blocks. Resolved at link time
+// (auto-linked on every Apple target via libSystem).
+_NSConcreteStackBlock : *void extern;
+
+// Shared descriptor for the 48-byte sx-block layout. All Into impls below
+// point their `descriptor` field at this.
+__sx_block_descriptor : BlockDescriptor = .{
+    reserved = 0,
+    size = 48,
+};
+
+// Single generic impl covers every closure shape. The compiler
+// monomorphises this body per call shape; inside each mono,
+// `$args` is the bound pack of arg types and `$R` is the bound
+// return type. The `#insert` evaluates `build_block_convert` at
+// comptime and substitutes the resulting source — a nested
+// `abi(.c)` trampoline + the Block literal that points its
+// `invoke` slot at it. One impl in stdlib replaces every per-
+// signature hand-rolled `__block_invoke_*` + `Into(Block)` pair.
+impl Into(Block) for Closure(..$args) -> $R {
+    convert :: (self: Closure(..$args) -> $R) -> Block {
+        #insert build_block_convert($args, $R);
+    }
+}
+
+// Comptime builder for the generic `Into(Block) for Closure(..$args)
+// -> $R` impl body. Receives the closure's per-position pack types
+// (`args`, a comptime `[]Type`) and the closure's return type
+// (`$ret`), emits source that:
+//
+//   1. Declares a nested `__invoke` `abi(.c)` trampoline whose
+//      signature matches the per-shape Apple Block ABI: first arg is
+//      `block_self: *Block`, then the pack types verbatim. The body
+//      reconstructs a typed fn-pointer from `block_self.sx_fn`,
+//      prepends `block_self.sx_env`, and tail-calls the sx closure.
+//   2. Returns a stack Block literal whose `invoke` slot points at
+//      the nested trampoline via `xx @__invoke`.
+//
+// The host impl wraps the emitted source via `#insert
+// build_block_convert($args, $R);`. Per-call-shape monomorphisation
+// of the impl body re-runs this builder with the concrete types
+// bound, so each closure shape gets its own dedicated trampoline.
+//
+// Void return type emits `typed_fn(...)`; non-void emits
+// `return typed_fn(...)`.
+build_block_convert :: (args: []Type, $ret: Type) -> string {
+    ret_name := type_name(ret);
+    code := "__invoke :: (block_self: *Block";
+    i : i64 = 0;
+    while i < args.len {
+        code = concat(code, ", arg");
+        code = concat(code, int_to_string(i));
+        code = concat(code, ": ");
+        code = concat(code, type_name(args[i]));
+        i = i + 1;
+    }
+    code = concat(code, ") -> ");
+    code = concat(code, ret_name);
+    code = concat(code, " abi(.c) { typed_fn : (*void");
+    i = 0;
+    while i < args.len {
+        code = concat(code, ", ");
+        code = concat(code, type_name(args[i]));
+        i = i + 1;
+    }
+    code = concat(code, ") -> ");
+    code = concat(code, ret_name);
+    code = concat(code, " = xx block_self.sx_fn; ");
+    if ret_name == "void" {
+        code = concat(code, "typed_fn(block_self.sx_env");
+    } else {
+        code = concat(code, "return typed_fn(block_self.sx_env");
+    }
+    i = 0;
+    while i < args.len {
+        code = concat(code, ", arg");
+        code = concat(code, int_to_string(i));
+        i = i + 1;
+    }
+    code = concat(code, "); } ");
+    code = concat(code, "return .{ ");
+    code = concat(code, "isa = @_NSConcreteStackBlock, ");
+    code = concat(code, "flags = 0, ");
+    code = concat(code, "reserved = 0, ");
+    code = concat(code, "invoke = xx @__invoke, ");
+    code = concat(code, "descriptor = xx @__sx_block_descriptor, ");
+    code = concat(code, "sx_env = self.env, ");
+    code = concat(code, "sx_fn = self.fn_ptr, ");
+    code = concat(code, "};");
+    return code;
+}
