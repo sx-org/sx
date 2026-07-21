@@ -164,7 +164,7 @@ main :: () -> i32 {
             max_conn = 8,
         };
         srv, se := http.Server.init(cfg, handler, 0);
-        if se { print("server init failed\n"); rc = 1; }
+        if se { print("server init failed: {}\n", se); rc = 1; }
         else {
             // Response buffer big enough for the framed 200 KB response.
             cap : i64 = BODY_LEN + 65536;

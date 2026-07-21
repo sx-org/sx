@@ -67,6 +67,24 @@ fn currentEnviron() std.process.Environ {
     return .{ .block = .{ .slice = std.mem.span(raw) } };
 }
 
+/// Socket-heavy categories run with BOUNDED concurrency. The warm object
+/// cache removed the natural compile stagger, so their run phases otherwise
+/// collide inside a few seconds — loopback/kqueue/accept/timeout contention
+/// produced sporadic single-example failures (1674 bind, 1705 timeout case)
+/// that never reproduce solo. Two lanes gives MORE stagger than the old
+/// compile-dominated suite had, without serializing the whole category.
+/// (Io.Semaphore futexes on shared addresses, so it synchronizes across the
+/// workers' separate Io.Threaded instances — same reasoning as
+/// g_build_mutex below.)
+var g_http_slots: std.Io.Semaphore = .{ .permits = 2 };
+
+/// The run-slot semaphore for a category, or null when unbounded.
+fn categoryRunSlots(rel_prefix: []const u8) ?*std.Io.Semaphore {
+    const base = std.fs.path.basename(rel_prefix);
+    if (std.mem.eql(u8, base, "http")) return &g_http_slots;
+    return null;
+}
+
 /// `sx build` writes fixed-path intermediates under the shared repo cwd —
 /// `.sx-tmp/main.o` (kept there for lldb's debug map) and `.sx-tmp/sx_c_<i>.o`
 /// — so two concurrent builds clobber each other. All build-pipeline
@@ -876,9 +894,17 @@ fn runOne(
         }
     } else {
         // --- sx run --- (`--time` is stripped back out of stderr before the
-        // snapshot comparison; it exists to source the compile-vs-run split.)
+        // snapshot comparison; it exists to source the compile-vs-run split.
+        // `--cache` reuses the compiler-identity-keyed object cache: a suite
+        // run after a non-compiler change skips codegen for every unchanged
+        // example — the difference between a ~2min and a sub-minute suite.
+        // The key hashes the compiler binary itself, so a rebuilt compiler
+        // always recompiles; examples with top-level #run self-exempt.)
+        const slots = categoryRunSlots(item.rel_prefix);
+        if (slots) |s| s.waitUncancelable(io);
+        defer if (slots) |s| s.post(io);
         const run_res = std.process.run(a, io, .{
-            .argv = try withTarget(a, &.{ corpus_paths.sx_exe, "run", rel_path, "--time" }, cfg.target),
+            .argv = try withTarget(a, &.{ corpus_paths.sx_exe, "run", rel_path, "--time", "--cache" }, cfg.target),
             .cwd = .{ .path = repo_root },
             .timeout = deadline(io),
         }) catch |err| {
@@ -1113,11 +1139,22 @@ fn sweepRoot(
     const outcomes = try a.alloc(Outcome, items.items.len);
     for (outcomes) |*o| o.* = .{};
 
+    // Slot-capped categories (http) go to the END of the parallel queue:
+    // sorted collection clusters a category's items, and a worker blocked on
+    // a run slot does no other work — draining the unbounded categories
+    // first keeps the pool saturated until only the capped tail remains.
     var parallel_q: std.ArrayList(usize) = .empty;
+    var capped_q: std.ArrayList(usize) = .empty;
     var serial_q: std.ArrayList(usize) = .empty;
     for (items.items, 0..) |*item, i| {
-        if (item.cfg.serial) try serial_q.append(a, i) else try parallel_q.append(a, i);
+        if (item.cfg.serial)
+            try serial_q.append(a, i)
+        else if (categoryRunSlots(item.rel_prefix) != null)
+            try capped_q.append(a, i)
+        else
+            try parallel_q.append(a, i);
     }
+    try parallel_q.appendSlice(a, capped_q.items);
 
     var next = std.atomic.Value(usize).init(0);
     var ctx = WorkerCtx{
@@ -1306,6 +1343,66 @@ test "hostMatchesTarget: host arch+os matches, cross-arch does not" {
 
     // `arm64` normalizes to `aarch64`.
     try std.testing.expect(normalizeArch("arm64").len == "aarch64".len);
+}
+
+/// True when the `--time` stage table at the end of `stderr_raw` contains
+/// `stage` (e.g. "cache", "codegen"). Only the LAST table counts, matching
+/// splitTimedStderr's split point.
+fn timedStageRecorded(stderr_raw: []const u8, stage: []const u8) bool {
+    const marker = "\n--- timing ---\n";
+    const idx = std.mem.lastIndexOf(u8, stderr_raw, marker) orelse return false;
+    var lines = std.mem.splitScalar(u8, stderr_raw[idx + marker.len ..], '\n');
+    while (lines.next()) |line| {
+        var it = std.mem.tokenizeAny(u8, line, " \t");
+        const name = it.next() orelse continue;
+        if (std.mem.eql(u8, name, stage)) return true;
+    }
+    return false;
+}
+
+test "object cache: second identical run hits, source edit invalidates (issue 0336)" {
+    const io = test_io();
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+
+    const repo_root = std.fs.path.dirname(corpus_paths.examples_dir) orelse ".";
+    const fixture_rel = ".sx-tmp/cache_mech_0336.sx";
+    const fixture_abs = try std.fs.path.join(a, &.{ repo_root, fixture_rel });
+    defer std.Io.Dir.deleteFile(.cwd(), io, fixture_abs) catch {};
+
+    const runFixture = struct {
+        fn go(alloc: std.mem.Allocator, io_: std.Io, root: []const u8, rel: []const u8) !std.process.RunResult {
+            return std.process.run(alloc, io_, .{
+                .argv = &.{ corpus_paths.sx_exe, "run", rel, "--time", "--cache" },
+                .cwd = .{ .path = root },
+                .timeout = deadline(io_),
+            });
+        }
+    }.go;
+
+    // The fixture SOURCE embeds this process's pid: the object cache
+    // (correctly) persists across suite runs, so a constant fixture would
+    // hit on "run 1" — uniqueness guarantees the first run is cold.
+    const pid_line = try std.fmt.allocPrint(a, "// pid {d}\n", .{std.c.getpid()});
+    const src1 = try std.fmt.allocPrint(a, "{s}main :: () -> i32 {{ return 41; }}\n", .{pid_line});
+    const src2 = try std.fmt.allocPrint(a, "{s}main :: () -> i32 {{ return 42; }}\n", .{pid_line});
+
+    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = fixture_abs, .data = src1 });
+    const r1 = try runFixture(a, io, repo_root, fixture_rel);
+    try std.testing.expectEqual(@as(u32, 41), termCode(r1.term));
+    try std.testing.expect(timedStageRecorded(r1.stderr, "codegen"));
+
+    const r2 = try runFixture(a, io, repo_root, fixture_rel);
+    try std.testing.expectEqual(@as(u32, 41), termCode(r2.term));
+    try std.testing.expect(timedStageRecorded(r2.stderr, "cache"));
+    try std.testing.expect(!timedStageRecorded(r2.stderr, "codegen"));
+
+    // A source edit rotates the key: codegen again, and the NEW result runs.
+    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = fixture_abs, .data = src2 });
+    const r3 = try runFixture(a, io, repo_root, fixture_rel);
+    try std.testing.expectEqual(@as(u32, 42), termCode(r3.term));
+    try std.testing.expect(timedStageRecorded(r3.stderr, "codegen"));
 }
 
 test "splitTimedStderr: table stripped, jit stage parsed, body preserved" {

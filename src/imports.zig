@@ -424,7 +424,7 @@ pub fn processCwd(allocator: std.mem.Allocator) ?[]const u8 {
     return allocator.dupe(u8, std.mem.span(cwd_z)) catch null;
 }
 
-fn selfExePath(allocator: std.mem.Allocator) ![]const u8 {
+pub fn selfExePath(allocator: std.mem.Allocator) ![]const u8 {
     var buf: [4096]u8 = undefined;
     switch (builtin.os.tag) {
         .macos, .ios => {

@@ -259,8 +259,12 @@ pub fn main(init: std.process.Init) !void {
             std.process.exit(1);
         }
 
-        const use_cache = enable_cache and !hasTopLevelRun(root);
-        const key = computeCacheKey(source, &comp.import_sources, target_config);
+        // A failed compiler self-hash disables the cache for this process
+        // (slower, never stale) — the key must always carry the compiler's
+        // identity (issue 0336).
+        const self_hash: ?u64 = if (enable_cache and !hasTopLevelRun(root)) compilerSelfHash(allocator, io) else null;
+        const use_cache = self_hash != null;
+        const key = computeCacheKey(source, &comp.import_sources, target_config, self_hash orelse 0);
         const cache_obj = cachePath(allocator, key, "o") catch std.process.exit(1);
 
         timer.mark();
@@ -882,9 +886,28 @@ fn runAOT(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, targ
 
 // --- Cache helpers ---
 
-fn computeCacheKey(source: [:0]const u8, import_sources: *const std.StringHashMap([:0]const u8), target_config: sx.target.TargetConfig) u64 {
+/// Content hash of the RUNNING compiler executable, computed once per
+/// process (~11MB wyhash, a few ms). Mixed into the object-cache key so a
+/// rebuilt compiler can never satisfy a key an older build produced
+/// (issue 0336 — the cache silently replayed stale codegen). Null when the
+/// executable cannot be located or read: the caller must treat that as
+/// cache-off — slower but never stale.
+var g_compiler_hash: ?u64 = null;
+var g_compiler_hash_computed: bool = false;
+fn compilerSelfHash(allocator: std.mem.Allocator, io: std.Io) ?u64 {
+    if (g_compiler_hash_computed) return g_compiler_hash;
+    g_compiler_hash_computed = true;
+    const exe_path = sx.imports.selfExePath(allocator) catch return null;
+    defer allocator.free(exe_path);
+    const data = std.Io.Dir.readFileAlloc(.cwd(), io, exe_path, allocator, .limited(512 * 1024 * 1024)) catch return null;
+    defer allocator.free(data);
+    g_compiler_hash = std.hash.Wyhash.hash(0x5158_0336, data);
+    return g_compiler_hash;
+}
+
+fn computeCacheKey(source: [:0]const u8, import_sources: *const std.StringHashMap([:0]const u8), target_config: sx.target.TargetConfig, compiler_hash: u64) u64 {
     const Wyhash = std.hash.Wyhash;
-    var key = Wyhash.hash(0, source);
+    var key = Wyhash.hash(compiler_hash, source);
 
     // XOR import hashes for order independence (HashMap iteration is non-deterministic)
     var import_hash: u64 = 0;
@@ -915,9 +938,15 @@ fn saveObjectToCache(obj_buf: sx.llvm_api.c.LLVMMemoryBufferRef, io: std.Io, cac
     const size = c_api.LLVMGetBufferSize(obj_buf);
     if (start == null or size == 0) return;
     const data = @as([*]const u8, @ptrCast(start))[0..size];
-    // Write to temp file, then copy to cache (make_path creates .sx-cache/ if needed)
-    std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = ".sx-cache-tmp", .data = data }) catch return;
-    std.Io.Dir.copyFile(.cwd(), ".sx-cache-tmp", .cwd(), cache_path, io, .{ .make_path = true }) catch {};
+    // Stage through a PID-UNIQUE temp inside the cache dir, then rename —
+    // atomic on POSIX (same directory), so concurrent `--cache` processes
+    // (the parallel corpus runner) never observe or clobber a half-written
+    // object. The old fixed `.sx-cache-tmp` staging path raced (issue 0336).
+    var tmp_buf: [64]u8 = undefined;
+    const tmp = std.fmt.bufPrint(&tmp_buf, ".sx-cache/.tmp-{d}", .{std.c.getpid()}) catch return;
+    std.Io.Dir.createDirPath(.cwd(), io, ".sx-cache") catch return;
+    std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = tmp, .data = data }) catch return;
+    std.Io.Dir.rename(.cwd(), tmp, .cwd(), cache_path, io) catch {};
     std.Io.Dir.deleteFile(.cwd(), io, ".sx-cache-tmp") catch {};
 }
 
