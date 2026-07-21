@@ -28,6 +28,7 @@ client :: #import "modules/std/http/client.sx";
 Request        :: types.Request;
 Response       :: types.Response;
 StreamProducer :: types.StreamProducer;
+ContentCoding  :: types.ContentCoding;
 find_header    :: types.find_header;
 count_header   :: types.count_header;
 reason_for     :: types.reason_for;

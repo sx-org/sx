@@ -11,12 +11,11 @@
 // such a server on another thread (thread.Thread.spawn(... srv.run ...)) and
 // drive the client from the main thread (see the corpus example).
 //
-// SCOPE (deliberately minimal):
-//   • `recv` reads a response delimited by Content-Length, or — when no
-//     Content-Length is present — by the peer closing the connection. It does
-//     NOT decode `Transfer-Encoding: chunked`; against a keep-alive response
-//     with neither Content-Length nor close it would block. (std.http's own
-//     server always sends Content-Length on the fixed-body path.)
+// SCOPE (deliberately blocking):
+//   • `recv`/`recv_on` read Content-Length, close-delimited, or chunked
+//     responses. Chunk framing is removed, and gzip/deflate is decoded
+//     incrementally unless ClientOpts.accept_compression is false. Output is
+//     always bounded by the caller's buffer.
 //   • `send` builds the request through `context.allocator` and does not free
 //     it; drive a long-lived client under an arena (or reset per request).
 //   • `method`/`path`/`host`/`extra_headers` are sent verbatim (no CRLF
@@ -28,6 +27,10 @@ clib :: #import "modules/std/c.sx";    // block ops (`c` is a ClientConn local t
 socket :: #import "modules/std/socket.sx";
 #import "modules/std/http/tls.sx";     // TlsConn, TlsDialer (Q3.6a client TLS seam)
 types :: #import "modules/std/http/types.sx";
+#import "modules/std/compress.sx";     // shared codec Error/Progress contract
+#import "modules/std/http/content_encoding.sx";
+
+HDR_ACCEPT_ENCODING :: "Accept-Encoding: gzip, deflate\r\n";
 
 ClientErr :: error {
     Connect,    // socket()/connect()/resolve failed, or the connect timed out
@@ -45,6 +48,7 @@ ClientErr :: error {
                 // differently depending on a race — the stale-keep-alive
                 // signature (the pool's ONLY safe retry window besides a send
                 // fault: the request provably never executed)
+    Allocation, // content-decoder state could not be allocated
 }
 
 // ── Q3.6a: sessions ──────────────────────────────────────────────────
@@ -71,6 +75,10 @@ ClientOpts :: struct {
     // and drop the body; 307/308 preserve method + body). 0 = return the
     // 3xx un-followed; exceeding the cap is error.Redirect.
     max_redirects: i64 = 5;
+    // Advertise and transparently decode gzip/deflate. A caller-supplied
+    // Accept-Encoding suppresses only the automatic field; decoding remains
+    // enabled. False does neither and preserves every raw coding field/body.
+    accept_compression: bool = true;
 }
 
 // An open client connection: the fd plus the optional TLS session all
@@ -78,6 +86,10 @@ ClientOpts :: struct {
 ClientConn :: struct {
     fd: i32 = -1;
     tls: ?TlsConn = null;
+    accept_compression: bool = true;
+    // Set only after send_on has written a complete request. recv_on uses it
+    // to apply HEAD's bodyless response framing before looking at CL/TE.
+    request_was_head: bool = false;
 }
 
 // Open a connection to a prebuilt address (any family — unix included).
@@ -98,6 +110,7 @@ open_addr :: (a: *socket.Addr, opts: ClientOpts) -> (ClientConn, !ClientErr) {
         if !socket.set_io_timeout(fd, opts.io_timeout_ms) { socket.close(fd); raise error.Connect; }
     }
     c.fd = fd;
+    c.accept_compression = opts.accept_compression;
     if opts.tls != null {
         if opts.tls_host.len == 0 { socket.close(fd); raise error.Tls; }
         tc := opts.tls.connect(fd, opts.tls_host);
@@ -178,6 +191,10 @@ ClientResponse :: struct {
     reason: string = "";
     headers_raw: string = "";
     body: string = "";
+    // Transparent content decoding removes Content-Encoding and the encoded
+    // Content-Length from headers_raw. null means no transform; a value names
+    // the one coding removed. With accept_compression=false this stays null.
+    decoded_from: ?types.ContentCoding = null;
 
     // Case-insensitive header lookup (`name` lowercase); "" when absent.
     // Reuses the server-side parser by viewing headers_raw as a request
@@ -213,6 +230,9 @@ send :: (fd: i32, method: string, path: string, host: string, extra_headers: str
         req = concat(req, "\r\n");
     }
     req = concat(req, extra_headers);
+    if !has_header(extra_headers, "accept-encoding") and !has_header(extra_headers, "range") {
+        req = concat(req, HDR_ACCEPT_ENCODING);
+    }
     req = concat(req, "\r\n");
     if body.len > 0 { req = concat(req, body); }
 
@@ -246,72 +266,11 @@ parse_status_line :: (line: string) -> (i64, string) {
     return code, reason;
 }
 
-// Read a full response on `fd` into `buf` (caller-owned, `cap` bytes). Blocks
-// until the headers + the Content-Length body are in (or, for a response with
-// no Content-Length, until the peer closes). Returns views INTO `buf`.
-recv :: (fd: i32, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
-    total : i64 = 0;
-    head_end : i64 = -1;     // index just past the "\r\n\r\n"
-    content_len : i64 = -1;  // -1 = no Content-Length seen
-    while true {
-        if total >= cap { raise error.TooLarge; }
-        n := socket.read(fd, @buf[total], xx (cap - total));
-        if n < 0 { raise error.Recv; }
-        if n == 0 { break; }   // peer closed
-        total += n;
-
-        if head_end < 0 {
-            i : i64 = 0;
-            while i + 3 < total {
-                if buf[i] == '\r' and buf[i+1] == '\n' and buf[i+2] == '\r' and buf[i+3] == '\n' {
-                    head_end = i + 4;
-                    break;
-                }
-                i += 1;
-            }
-            if head_end >= 0 {
-                // status-line end (first CRLF)
-                sl : i64 = 0;
-                while sl + 1 < head_end and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
-                hdr_start := sl + 2;
-                hdrs := string.{ ptr = @buf[hdr_start], len = head_end - 2 - hdr_start };
-                tmp : types.Request = .{ headers_raw = hdrs };
-                cl := types.find_header(@tmp, "content-length");
-                if cl.len > 0 {
-                    v : i64 = 0;
-                    k : i64 = 0;
-                    while k < cl.len and cl.ptr[k] >= '0' and cl.ptr[k] <= '9' { v = v * 10 + xx (cl.ptr[k] - '0'); k += 1; }
-                    content_len = v;
-                }
-            }
-        }
-        if head_end >= 0 {
-            if content_len < 0 { continue; }            // no CL → drain until close
-            if total - head_end >= content_len { break; } // full body in
-        }
-    }
-    if head_end < 0 { raise error.BadStatus; }
-    // Q3.6a-review H1 (legacy surface too — no divergence between the two
-    // recv paths): a close short of the declared Content-Length is a
-    // truncated response, never a fabricated full-length body view.
-    if content_len >= 0 and total - head_end < content_len { raise error.Recv; }
-
-    // status line views
-    sl : i64 = 0;
-    while sl + 1 < total and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
-    status_line := string.{ ptr = buf, len = sl };
-    code, reason := parse_status_line(status_line);
-    if code == 0 { raise error.BadStatus; }
-
-    hdr_start := sl + 2;
-    body_len := if content_len >= 0 then content_len else total - head_end;
-    resp : ClientResponse = .{
-        status = code,
-        reason = reason,
-        headers_raw = string.{ ptr = @buf[hdr_start], len = head_end - 2 - hdr_start },
-        body = string.{ ptr = @buf[head_end], len = body_len },
-    };
-    return resp;
+// Read a full response on `fd` into `buf` (caller-owned, `cap` bytes), using
+// the same transfer/content decoding as recv_on. Returns views INTO `buf`.
+recv :: (fd: i32, buf: [*]u8, cap: i64, request_method: string = "GET") -> (ClientResponse, !ClientErr) {
+    conn : ClientConn = .{ fd = fd, request_was_head = ce_ascii_ieq(request_method, "head") };
+    recv_on(@conn, buf, cap)
 }
 
 // Send one HTTP/1.1 request on an open ClientConn (TLS-aware `send`).
@@ -319,6 +278,9 @@ recv :: (fd: i32, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
 // freed before returning — no arena required, nothing retained (a concat
 // chain would leak every intermediate into the caller's context).
 send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_headers: string, body: string) -> !ClientErr {
+    advertise := c.accept_compression
+        and !has_header(extra_headers, "accept-encoding")
+        and !has_header(extra_headers, "range");
     // Content-Length digits on the stack.
     clbuf : [20]u8 = ---;
     cln : i64 = 0;
@@ -332,6 +294,7 @@ send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_he
     total := method.len + 1 + path.len + 11            // "<m> <p> HTTP/1.1\r\n"
            + 6 + host.len + 2;                         // "Host: <h>\r\n"
     if body.len > 0 { total += 16 + cln + 2; }         // "Content-Length: <n>\r\n"
+    if advertise { total += HDR_ACCEPT_ENCODING.len; }
     total += extra_headers.len + 2 + body.len;         // "<extra>\r\n<body>"
     p : [*]u8 = xx context.allocator.alloc_bytes(total);
     w : i64 = 0;
@@ -349,6 +312,7 @@ send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_he
         w = put(p, w, "\r\n");
     }
     w = put(p, w, extra_headers);
+    if advertise { w = put(p, w, HDR_ACCEPT_ENCODING); }
     w = put(p, w, "\r\n");
     w = put(p, w, body);
 
@@ -361,6 +325,7 @@ send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_he
     }
     context.allocator.dealloc_bytes(xx p);
     if failed { raise error.Send; }
+    c.request_was_head = ce_ascii_ieq(method, "head");
     return;
 }
 
@@ -619,117 +584,430 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
     raise error.Url;   // unreachable — the loop returns or raises
 }
 
-// Read a full response on an open ClientConn into `buf` (TLS-aware `recv`,
-// plus Q3.6a: Transfer-Encoding: chunked responses are decoded IN PLACE via
-// the shared types.decode_chunked — body views the decoded bytes; the
-// framing is fully consumed, so a keep-alive conn is reusable after).
+CLIENT_WIRE_PIECE :: 16384;
+CLIENT_LINE_LIMIT :: 8192;
+
+EncodedChunkPhase :: enum {
+    size;
+    extension;
+    size_lf;
+    data;
+    data_cr;
+    data_lf;
+    trailer;
+    trailer_lf;
+    done;
+}
+
+// Feed one content-coded payload span into the decoder. The returned counts
+// are relative to this span/output window; `done` means the content coding
+// reached its terminal checksum/trailer.
+feed_content_decoder :: (decoder: *Decoder, input: string, output: string) -> (i64, i64, bool, !ClientErr) {
+    progress := decoder.read(input, output) catch (e) {
+        if e == error.OutputLimit { raise error.TooLarge; }
+        raise error.Recv;
+    };
+    return progress.consumed, progress.produced, progress.status == .done;
+}
+
+finish_content_decoder :: (decoder: *Decoder, output: string) -> (i64, bool, !ClientErr) {
+    progress := decoder.finish(output) catch (e) {
+        if e == error.OutputLimit { raise error.TooLarge; }
+        raise error.Recv;
+    };
+    return progress.produced, progress.status == .done;
+}
+
+// Compact a parsed response header block in place, removing representation
+// metadata that no longer describes the transparently-decoded body. The body
+// remains at its original head_end; only the public headers_raw view shrinks.
+normalize_decoded_headers :: (raw: [*]u8, len: i64) -> i64 {
+    read_at : i64 = 0;
+    write_at : i64 = 0;
+    while read_at < len {
+        line_end := read_at;
+        while line_end < len and raw[line_end] != '\r' and raw[line_end] != '\n' { line_end += 1; }
+        after := line_end;
+        if after < len and raw[after] == '\r' { after += 1; }
+        if after < len and raw[after] == '\n' { after += 1; }
+        colon := read_at;
+        while colon < line_end and raw[colon] != ':' { colon += 1; }
+        remove := false;
+        if colon < line_end {
+            field := string.{ ptr = @raw[read_at], len = colon - read_at };
+            remove = ce_ascii_ieq(field, "content-encoding")
+                or ce_ascii_ieq(field, "content-length");
+        }
+        if !remove {
+            count := after - read_at;
+            if write_at != read_at { clib.memmove(xx @raw[write_at], xx @raw[read_at], count); }
+            write_at += count;
+        }
+        read_at = after;
+    }
+    write_at
+}
+
+// Decode a gzip/deflate response while its transfer framing is read. The
+// caller's body region is the destination; compressed wire bytes live only
+// in one 16 KiB stack window, so chunked and close-delimited responses do not
+// require buffering their encoded form. `initial` is the body prefix that
+// arrived with the header read and is copied before output can overwrite it.
+recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
+                      initial: string, content_len: i64, chunked: bool,
+                      encoding: Encoding) -> (i64, !ClientErr) {
+    output_cap := cap - head_end;
+    decoder := Decoder.init(encoding, output_cap, context.allocator) catch (e) {
+        if e == error.AllocationFailed { raise error.Allocation; }
+        raise error.Recv;
+    };
+    defer decoder.deinit();
+
+    wire : [CLIENT_WIRE_PIECE]u8 = ---;
+    if initial.len > CLIENT_WIRE_PIECE { raise error.TooLarge; }
+    if initial.len > 0 { clib.memcpy(@wire[0], initial.ptr, xx initial.len); }
+    wire_at : i64 = 0;
+    wire_len : i64 = initial.len;
+    output_at : i64 = 0;
+    transfer_done := false;
+    decoder_done := false;
+    fixed_left := content_len;
+
+    phase := EncodedChunkPhase.size;
+    chunk_size : i64 = 0;
+    chunk_left : i64 = 0;
+    size_digits : i64 = 0;
+    line_len : i64 = 0;
+
+    while !transfer_done {
+        // Content-Length is a wire-length delimiter. A zero-length encoded
+        // body is still passed to finish below, which correctly rejects a
+        // missing gzip/zlib stream.
+        if !chunked and content_len >= 0 and fixed_left == 0 {
+            if wire_at != wire_len { raise error.Recv; }
+            transfer_done = true;
+            break;
+        }
+
+        if wire_at >= wire_len {
+            n := conn_read_step(c, @wire[0], CLIENT_WIRE_PIECE);
+            if n < 0 { raise error.Recv; }
+            if n == 0 {
+                if chunked or content_len >= 0 { raise error.Recv; }
+                transfer_done = true; // close-delimited body
+                break;
+            }
+            wire_at = 0;
+            wire_len = n;
+        }
+
+        if !chunked {
+            take := wire_len - wire_at;
+            if content_len >= 0 and take > fixed_left { take = fixed_left; }
+            if decoder_done and take > 0 { raise error.Recv; }
+            while take > 0 {
+                output : string = "";
+                if output_at < output_cap {
+                    output = string.{ ptr = @buf[head_end + output_at], len = output_cap - output_at };
+                }
+                consumed, produced, done := try feed_content_decoder(@decoder,
+                    string.{ ptr = @wire[wire_at], len = take }, output);
+                wire_at += consumed;
+                take -= consumed;
+                if content_len >= 0 { fixed_left -= consumed; }
+                output_at += produced;
+                if done {
+                    decoder_done = true;
+                    if take > 0 { raise error.Recv; }
+                }
+                if output_at >= output_cap and !decoder_done and take > 0 { raise error.TooLarge; }
+                if consumed == 0 and produced == 0 { raise error.Recv; }
+            }
+            continue;
+        }
+
+        // Incremental chunked transfer parser. Only chunk DATA is handed to
+        // the content decoder; size lines, extensions, CRLF and trailers are
+        // validated and discarded in bounded state.
+        if phase == .data {
+            available := wire_len - wire_at;
+            take := if available < chunk_left then available else chunk_left;
+            if decoder_done and take > 0 { raise error.Recv; }
+            while take > 0 {
+                output : string = "";
+                if output_at < output_cap {
+                    output = string.{ ptr = @buf[head_end + output_at], len = output_cap - output_at };
+                }
+                consumed, produced, done := try feed_content_decoder(@decoder,
+                    string.{ ptr = @wire[wire_at], len = take }, output);
+                wire_at += consumed;
+                take -= consumed;
+                chunk_left -= consumed;
+                output_at += produced;
+                if done {
+                    decoder_done = true;
+                    if take > 0 or chunk_left > 0 { raise error.Recv; }
+                }
+                if output_at >= output_cap and !decoder_done and take > 0 { raise error.TooLarge; }
+                if consumed == 0 and produced == 0 { raise error.Recv; }
+            }
+            if chunk_left == 0 { phase = .data_cr; }
+            continue;
+        }
+
+        b := wire[wire_at];
+        wire_at += 1;
+        if phase == .size {
+            digit : i64 = -1;
+            if b >= '0' and b <= '9' { digit = xx (b - '0'); }
+            else if b >= 'a' and b <= 'f' { digit = xx (b - 'a' + 10); }
+            else if b >= 'A' and b <= 'F' { digit = xx (b - 'A' + 10); }
+            if digit >= 0 {
+                if chunk_size > 0x07FFFFFFFFFFFFFF { raise error.Recv; }
+                chunk_size = chunk_size * 16 + digit;
+                size_digits += 1;
+                line_len += 1;
+                if line_len > CLIENT_LINE_LIMIT { raise error.Recv; }
+            } else if b == ';' and size_digits > 0 {
+                phase = .extension;
+                line_len += 1;
+            } else if b == '\r' and size_digits > 0 {
+                phase = .size_lf;
+            } else {
+                raise error.Recv;
+            }
+            continue;
+        }
+        if phase == .extension {
+            if b == '\r' { phase = .size_lf; }
+            else {
+                if b == '\n' { raise error.Recv; }
+                line_len += 1;
+                if line_len > CLIENT_LINE_LIMIT { raise error.Recv; }
+            }
+            continue;
+        }
+        if phase == .size_lf {
+            if b != '\n' { raise error.Recv; }
+            if chunk_size == 0 {
+                phase = .trailer;
+                line_len = 0;
+            } else {
+                chunk_left = chunk_size;
+                phase = .data;
+            }
+            continue;
+        }
+        if phase == .data_cr {
+            if b != '\r' { raise error.Recv; }
+            phase = .data_lf;
+            continue;
+        }
+        if phase == .data_lf {
+            if b != '\n' { raise error.Recv; }
+            phase = .size;
+            chunk_size = 0;
+            size_digits = 0;
+            line_len = 0;
+            continue;
+        }
+        if phase == .trailer {
+            if b == '\r' { phase = .trailer_lf; }
+            else {
+                if b == '\n' { raise error.Recv; }
+                line_len += 1;
+                if line_len > CLIENT_LINE_LIMIT { raise error.Recv; }
+            }
+            continue;
+        }
+        if phase == .trailer_lf {
+            if b != '\n' { raise error.Recv; }
+            if line_len == 0 {
+                phase = .done;
+                if wire_at != wire_len { raise error.Recv; }
+                transfer_done = true;
+            } else {
+                line_len = 0;
+                phase = .trailer;
+            }
+            continue;
+        }
+        raise error.Recv;
+    }
+
+    while !decoder_done {
+        output : string = "";
+        if output_at < output_cap {
+            output = string.{ ptr = @buf[head_end + output_at], len = output_cap - output_at };
+        }
+        produced, done := try finish_content_decoder(@decoder, output);
+        output_at += produced;
+        decoder_done = done;
+        if !done and output_at >= output_cap { raise error.TooLarge; }
+        if !done and produced == 0 { raise error.Recv; }
+    }
+    output_at
+}
+
+valid_content_length :: (value: string) -> (i64, bool) {
+    if value.len == 0 { return 0, false; }
+    result : i64 = 0;
+    i : i64 = 0;
+    while i < value.len {
+        b := value[i];
+        if b < '0' or b > '9' { return 0, false; }
+        if result > 0x0CCCCCCCCCCCCCCC { return 0, false; }
+        result = result * 10 + xx (b - '0');
+        if result < 0 { return 0, false; }
+        i += 1;
+    }
+    return result, true;
+}
+
+// Read a full response on an open ClientConn. The status and request method are
+// known before body framing is chosen: HEAD and 1xx/204/304 never consume a
+// body, and informational heads are consumed until the final response.
+response_head_end :: (buf: [*]u8, len: i64) -> i64 {
+    i : i64 = 0;
+    while i + 3 < len {
+        if buf[i] == '\r' and buf[i+1] == '\n' and buf[i+2] == '\r' and buf[i+3] == '\n' { return i + 4; }
+        i += 1;
+    }
+    -1
+}
+
 recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
     total : i64 = 0;
     head_end : i64 = -1;
+    header_start : i64 = 0;
     content_len : i64 = -1;
     chunked := false;
     scan : types.ChunkScan = .{};
     decoded : i64 = -1;
+    encoding := Encoding.identity;
+    decoded_from : ?types.ContentCoding = null;
+    normalized_headers_len : i64 = -1;
+    final_status : i64 = 0;
+    final_reason : string = "";
+    request_was_head := c.request_was_head;
+    c.request_was_head = false;
+    saw_informational := false;
+
     while true {
-        if head_end >= 0 and chunked {
-            // resumable validation over what is buffered so far
-            r := types.decode_chunked(@buf[head_end], total - head_end, cap - head_end, scan);
-            if r.status == types.ChunkStatus.OK {
-                decoded = r.decoded_len;
+        // Parse any complete head already buffered. This runs before another
+        // read so a coalesced 1xx + final response cannot block waiting for
+        // bytes that are already in the caller's buffer.
+        if head_end < 0 { head_end = response_head_end(buf, total); }
+        if head_end >= 0 and final_status == 0 {
+            sl : i64 = 0;
+            while sl + 1 < head_end and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
+            if sl + 1 >= head_end { raise error.BadStatus; }
+            code, reason := parse_status_line(string.{ ptr = buf, len = sl });
+            if code == 0 { raise error.BadStatus; }
+
+            if code >= 100 and code < 200 {
+                remaining := total - head_end;
+                if remaining > 0 { clib.memmove(xx buf, xx @buf[head_end], remaining); }
+                total = remaining;
+                head_end = -1;
+                saw_informational = true;
+                continue;
+            }
+
+            final_status = code;
+            final_reason = reason;
+            header_start = sl + 2;
+            hdrs := string.{ ptr = @buf[header_start], len = head_end - 2 - header_start };
+
+            if !(request_was_head or code == 204 or code == 304) {
+                tmp : types.Request = .{ headers_raw = hdrs };
+                te_count := types.count_header(@tmp, "transfer-encoding");
+                cl_count := types.count_header(@tmp, "content-length");
+                if te_count > 1 or cl_count > 1 { raise error.Recv; }
+                if te_count > 0 and cl_count > 0 { raise error.Recv; }
+                te := types.find_header(@tmp, "transfer-encoding");
+                if te.len > 0 {
+                    if !te_is_chunked(te) { raise error.Recv; }
+                    chunked = true;
+                } else {
+                    cl := types.find_header(@tmp, "content-length");
+                    if cl_count > 0 {
+                        v, valid := valid_content_length(cl);
+                        if !valid { raise error.Recv; }
+                        content_len = v;
+                    }
+                }
+
+                range_response := code == 206 or code == 416 or has_header(hdrs, "content-range");
+                if c.accept_compression and !range_response {
+                    ce_count := types.count_header(@tmp, "content-encoding");
+                    if ce_count > 0 {
+                        if ce_count != 1 { raise error.Recv; }
+                        encoding = parse_content_encoding(types.find_header(@tmp, "content-encoding"));
+                        if encoding == .unacceptable { raise error.Recv; }
+                    }
+                    if encoding != .identity {
+                        initial := string.{ ptr = @buf[head_end], len = total - head_end };
+                        decoded = try recv_encoded_body(c, buf, cap, head_end,
+                            initial, content_len, chunked, encoding);
+                        decoded_from = if encoding == .gzip then types.ContentCoding.gzip else types.ContentCoding.deflate;
+                        normalized_headers_len = normalize_decoded_headers(@buf[header_start], head_end - 2 - header_start);
+                        total = head_end + decoded;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if head_end >= 0 and final_status > 0 {
+            bodyless := request_was_head or final_status == 204 or final_status == 304;
+            if bodyless {
+                total = head_end;
+                decoded = 0;
                 break;
             }
-            // Q3.6a-review M1: a body DECLARED past the buffer is the same
-            // condition as the raw fill hitting cap — TooLarge (a grow-and-
-            // retry caller keys on it), not "malformed framing".
-            if r.status == types.ChunkStatus.TOO_BIG { raise error.TooLarge; }
-            if r.status != types.ChunkStatus.NEED_MORE { raise error.Recv; }   // BAD / OVERFLOW framing
-            scan.rp = r.resume_rp;
-            scan.decoded = r.resume_decoded;
+            if chunked {
+                r := types.decode_chunked(@buf[head_end], total - head_end, cap - head_end, scan);
+                if r.status == types.ChunkStatus.OK { decoded = r.decoded_len; break; }
+                if r.status == types.ChunkStatus.TOO_BIG { raise error.TooLarge; }
+                if r.status != types.ChunkStatus.NEED_MORE { raise error.Recv; }
+                scan.rp = r.resume_rp;
+                scan.decoded = r.resume_decoded;
+            } else if content_len >= 0 and total - head_end >= content_len {
+                break;
+            }
         }
-        if head_end >= 0 and !chunked {
-            if content_len >= 0 and total - head_end >= content_len { break; }   // full body in
-        }
+
         if total >= cap { raise error.TooLarge; }
-        n := conn_read_step(c, @buf[total], cap - total);
-        // An RST before ANY byte is the same stale-keep-alive fact as an EOF
-        // before any byte: the peer had already closed, so the request never
-        // executed. Which of the two the kernel reports is a race (the RST our
-        // request provokes discards the FIN's queued EOF), so both must reach
-        // the pool as `Closed` — otherwise the retry fires only sometimes.
-        // Once a byte HAS arrived the response is in flight, and a reset is a
-        // genuine receipt failure like any other.
-        if n == READ_RESET and total == 0 { raise error.Closed; }
+        room := cap - total;
+        if head_end < 0 and room > CLIENT_WIRE_PIECE { room = CLIENT_WIRE_PIECE; }
+        n := conn_read_step(c, @buf[total], room);
+        if n == READ_RESET and total == 0 and !saw_informational { raise error.Closed; }
         if n < 0 { raise error.Recv; }
         if n == 0 {
-            // Q3.6b-review H1: EOF before ANY byte is the stale-keep-alive
-            // signature — its own class, so a pool retry can distinguish
-            // "never executed" from every receipt failure (which may have).
-            if total == 0 { raise error.Closed; }
-            // Q3.6a-review H1: a close is only a legitimate delimiter for a
-            // response WITHOUT framing. Mid-chunked or short of the declared
-            // Content-Length it is a truncated response — returning it would
-            // present len bytes of uninitialized buffer as body.
+            if total == 0 {
+                if saw_informational { raise error.Recv; }
+                raise error.Closed;
+            }
+            if head_end < 0 { raise error.BadStatus; }
             if chunked { raise error.Recv; }
             if content_len >= 0 and total - head_end < content_len { raise error.Recv; }
             break;
         }
         total += n;
-
-        if head_end < 0 {
-            i : i64 = 0;
-            while i + 3 < total {
-                if buf[i] == '\r' and buf[i+1] == '\n' and buf[i+2] == '\r' and buf[i+3] == '\n' {
-                    head_end = i + 4;
-                    break;
-                }
-                i += 1;
-            }
-            if head_end >= 0 {
-                sl : i64 = 0;
-                while sl + 1 < head_end and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
-                hdr_start := sl + 2;
-                hdrs := string.{ ptr = @buf[hdr_start], len = head_end - 2 - hdr_start };
-                tmp : types.Request = .{ headers_raw = hdrs };
-                te := types.find_header(@tmp, "transfer-encoding");
-                if te.len > 0 {
-                    // Q3.6a-review M2: only the "chunked" coding is
-                    // implemented — decode ONLY that (case-insensitive);
-                    // any other Transfer-Encoding is refused LOUDLY rather
-                    // than silently mis-decoded as chunked framing.
-                    if !te_is_chunked(te) { raise error.Recv; }
-                    chunked = true;
-                }
-                else {
-                    cl := types.find_header(@tmp, "content-length");
-                    if cl.len > 0 {
-                        v : i64 = 0;
-                        k : i64 = 0;
-                        while k < cl.len and cl.ptr[k] >= '0' and cl.ptr[k] <= '9' { v = v * 10 + xx (cl.ptr[k] - '0'); k += 1; }
-                        content_len = v;
-                    }
-                }
-            }
-        }
     }
-    if head_end < 0 { raise error.BadStatus; }
+    if head_end < 0 or final_status == 0 { raise error.BadStatus; }
 
-    sl : i64 = 0;
-    while sl + 1 < total and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
-    status_line := string.{ ptr = buf, len = sl };
-    code, reason := parse_status_line(status_line);
-    if code == 0 { raise error.BadStatus; }
-
-    hdr_start := sl + 2;
     body_len := if decoded >= 0 then decoded
                 else if content_len >= 0 then content_len
                 else total - head_end;
-    resp : ClientResponse = .{
-        status = code,
-        reason = reason,
-        headers_raw = string.{ ptr = @buf[hdr_start], len = head_end - 2 - hdr_start },
+    return ClientResponse.{
+        status = final_status,
+        reason = final_reason,
+        headers_raw = string.{ ptr = @buf[header_start], len = if normalized_headers_len >= 0 then normalized_headers_len else head_end - 2 - header_start },
         body = string.{ ptr = @buf[head_end], len = body_len },
+        decoded_from = decoded_from,
     };
-    return resp;
 }
 
 // Convenience: dial ip:port, send the request, read the response into `buf`,
@@ -738,7 +1016,7 @@ request :: (ip: u32, port: i64, method: string, path: string, host: string, extr
     fd := try dial(ip, port);
     defer socket.close(fd);
     try send(fd, method, path, host, extra_headers, body);
-    return recv(fd, buf, cap);
+    return recv(fd, buf, cap, method);
 }
 
 // ── Q3.6b: keep-alive connection pool ────────────────────────────────
@@ -963,7 +1241,9 @@ Client :: struct {
         return send(fd, method, path, host, extra_headers, body);
     }
     // Read a full response on an open fd (see free `recv`).
-    recv :: (fd: i32, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) { return recv(fd, buf, cap); }
+    recv :: (fd: i32, buf: [*]u8, cap: i64, request_method: string = "GET") -> (ClientResponse, !ClientErr) {
+        return recv(fd, buf, cap, request_method);
+    }
     // One blocking round-trip: dial → send → recv → close (see free `request`).
     request :: (ip: u32, port: i64, method: string, path: string, host: string, extra_headers: string, body: string, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr) {
         return request(ip, port, method, path, host, extra_headers, body, buf, cap);

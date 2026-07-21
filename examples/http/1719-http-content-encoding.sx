@@ -1,0 +1,553 @@
+// std.http negotiated gzip/deflate content encoding.
+//
+// Pins:
+//   - automatic client advertisement and transparent fixed-body decode;
+//   - qvalue selection, explicit identity, Vary, media/floor/response opt-out;
+//   - bounded gzip + deflate over Transfer-Encoding: chunked, including
+//     keep-alive reuse and caller-output exhaustion;
+//   - inline and pool-mode server parity;
+//   - malformed/unknown/truncated content coding and framing rejection;
+//   - public std.gzip is sufficient for a .tgs payload (no shell/dependency).
+
+#import "modules/std.sx";
+http :: #import "modules/std/http.sx";
+socket :: #import "modules/std/socket.sx";
+ClientResponse :: http.ClientResponse;
+
+PORT_INLINE :: 19119;
+PORT_POOL :: 19120;
+BODY_LEN :: 200000;
+FIXED_LEN :: 65536;
+TGS_JSON :: "{\"v\":\"5.7.4\",\"fr\":60,\"ip\":0,\"op\":120,\"layers\":[]}";
+
+App :: struct {
+    body: string;
+    packed: string;
+}
+
+same :: (a: string, b: string) -> bool {
+    if a.len != b.len { return false; }
+    i : i64 = 0;
+    while i < a.len {
+        if a[i] != b[i] { return false; }
+        i += 1;
+    }
+    true
+}
+
+contains :: (value: string, needle: string) -> bool {
+    if needle.len == 0 { return true; }
+    at : i64 = 0;
+    while at + needle.len <= value.len {
+        i : i64 = 0;
+        while i < needle.len and value[at + i] == needle[i] { i += 1; }
+        if i == needle.len { return true; }
+        at += 1;
+    }
+    false
+}
+
+stream_body :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 {
+    app : *App = xx ctx;
+    if offset >= app.body.len { return 0; }
+    n := app.body.len - offset;
+    if n > 7001 { n = 7001; }
+    if n > cap { n = cap; }
+    i : i64 = 0;
+    while i < n { dst[i] = app.body[offset + i]; i += 1; }
+    n
+}
+
+fault_before :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 { -1 }
+
+fault_after :: (ctx: usize, offset: i64, dst: [*]u8, cap: i64) -> i64 {
+    app : *App = xx ctx;
+    if offset >= 7001 { return -1; }
+    n := 7001 - offset;
+    if n > cap { n = cap; }
+    i : i64 = 0;
+    while i < n { dst[i] = app.body[offset + i]; i += 1; }
+    n
+}
+
+handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
+    app : *App = xx ctx;
+    if req.path == "/stream" {
+        resp.stream(stream_body, ctx);
+        return;
+    }
+    if req.path == "/fixed" {
+        resp.body = app.body[..FIXED_LEN];
+        return;
+    }
+    if req.path == "/small" {
+        resp.body = "small";
+        return;
+    }
+    if req.path == "/png" {
+        resp.content_type = "image/png";
+        resp.body = app.body[..FIXED_LEN];
+        return;
+    }
+    if req.path == "/jsonp" {
+        resp.content_type = "application/jsonp";
+        resp.body = app.body[..FIXED_LEN];
+        return;
+    }
+    if req.path == "/disabled" {
+        resp.disable_compression();
+        resp.body = app.body[..FIXED_LEN];
+        return;
+    }
+    if req.path == "/partial" {
+        resp.status = 206;
+        resp.add_header("Content-Range", "bytes 0-65535/200000");
+        resp.body = app.body[..FIXED_LEN];
+        return;
+    }
+    if req.path == "/content-range" {
+        resp.add_header("Content-Range", "bytes 0-65535/200000");
+        resp.body = app.body[..FIXED_LEN];
+        return;
+    }
+    if req.path == "/unsatisfied" {
+        resp.status = 416;
+        resp.add_header("Content-Range", "bytes */200000");
+        resp.body = "range unsatisfied";
+        return;
+    }
+    if req.path == "/no-transform" {
+        resp.add_header("Cache-Control", "public, no-transform");
+        resp.body = app.body[..FIXED_LEN];
+        return;
+    }
+    if req.path == "/no-transform-repeat" {
+        resp.add_header("Cache-Control", "public");
+        resp.add_header("Cache-Control", "private, no-transform");
+        resp.body = app.body[..FIXED_LEN];
+        return;
+    }
+    if req.path == "/strong-etag" {
+        resp.add_header("ETag", "\"identity-v1\"");
+        resp.body = app.body[..FIXED_LEN];
+        return;
+    }
+    if req.path == "/weak-etag" {
+        resp.add_header("ETag", "W/\"semantic-v1\"");
+        resp.body = app.body[..FIXED_LEN];
+        return;
+    }
+    if req.path == "/digest" {
+        resp.add_header("Content-Digest", "sha-256=:identity:");
+        resp.body = app.body[..FIXED_LEN];
+        return;
+    }
+    if req.path == "/range-request" {
+        if http.find_header(req, "range") == "bytes=0-99" and http.find_header(req, "accept-encoding").len == 0 { resp.body = "range-no-ae"; }
+        else { resp.body = "range-bad"; }
+        return;
+    }
+    if req.path == "/coded-partial" {
+        resp.status = 206;
+        resp.add_header("Content-Range", "bytes 0-9/100");
+        resp.add_header("Content-Encoding", "gzip");
+        resp.body = app.packed;
+        return;
+    }
+    if req.path == "/coded-unsatisfied" {
+        resp.status = 416;
+        resp.add_header("Content-Range", "bytes */100");
+        resp.add_header("Content-Encoding", "gzip");
+        resp.body = app.packed;
+        return;
+    }
+    if req.path == "/existing" {
+        resp.add_header("Content-Encoding", "gzip");
+        resp.body = app.packed;
+        return;
+    }
+    if req.path == "/stacked" {
+        resp.add_header("Content-Encoding", "br");
+        resp.add_header("Content-Encoding", "gzip");
+        resp.body = "raw-stacked";
+        return;
+    }
+    if req.path == "/framing-cl" {
+        resp.add_header("Content-Length", "999");
+        resp.body = "bad framing";
+        return;
+    }
+    if req.path == "/framing-te" {
+        resp.add_header("Transfer-Encoding", "chunked");
+        resp.body = "bad framing";
+        return;
+    }
+    if req.path == "/fault-before" { resp.stream(fault_before, ctx); return; }
+    if req.path == "/fault-after" { resp.stream(fault_after, ctx); return; }
+    if req.path == "/bad" {
+        resp.add_header("Content-Encoding", "gzip");
+        resp.body = "not a gzip stream";
+        return;
+    }
+    resp.body = "pong";
+}
+
+server_entry :: (arg: *void) -> *void abi(.c) {
+    srv : *http.Server = xx arg;
+    gpa := GPA.init();
+    push .{ allocator = gpa } { srv.run(); }
+    null
+}
+
+request_on :: (conn: *http.ClientConn, path: string, headers: string,
+               storage: [*]u8, cap: i64) -> (ClientResponse, bool) {
+    se := http.Client.send_on(conn, "GET", path, "content.test", headers, "");
+    if se { return .{}, true; }
+    response, re := http.Client.recv_on(conn, storage, cap);
+    if re { return .{}, true; }
+    return response, false;
+}
+
+write_all :: (fd: i32, data: string) -> bool {
+    at : i64 = 0;
+    while at < data.len {
+        n := socket.write(fd, @data.ptr[at], xx (data.len - at));
+        if n <= 0 { return false; }
+        at += n;
+    }
+    true
+}
+
+malformed_response_fails :: (wire: string) -> bool {
+    pair : [2]i32 = ---;
+    if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, @pair[0]) != 0 { return false; }
+    if !write_all(pair[1], wire) {
+        socket.close(pair[0]); socket.close(pair[1]); return false;
+    }
+    socket.close(pair[1]);
+    storage : [4096]u8 = ---;
+    _, e := http.Client.recv(pair[0], @storage[0], storage.len);
+    socket.close(pair[0]);
+    e == error.Recv
+}
+
+exact_capacity_decodes :: (plain: string, packed: string) -> bool {
+    pair : [2]i32 = ---;
+    if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, @pair[0]) != 0 { return false; }
+    head := "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nConnection: close\r\n\r\n";
+    if !write_all(pair[1], head) or !write_all(pair[1], packed) {
+        socket.close(pair[0]); socket.close(pair[1]); return false;
+    }
+    socket.close(pair[1]);
+    cap := head.len + plain.len;
+    storage := context.allocator.alloc_bytes(cap);
+    if storage == null { socket.close(pair[0]); return false; }
+    response, e := http.Client.recv(pair[0], xx storage, cap);
+    socket.close(pair[0]);
+    ok := !e and response.decoded_from != null and response.decoded_from! == http.ContentCoding.gzip
+        and response.header("content-encoding").len == 0
+        and same(response.body, plain);
+    context.allocator.dealloc_bytes(storage);
+    ok
+}
+
+faulted_stream_rejected :: (port: i64, path: string, headers: string,
+                            storage: [*]u8, cap: i64) -> bool {
+    opts : http.ClientOpts = .{ connect_timeout_ms = 2000, io_timeout_ms = 5000 };
+    conn, oe := http.Client.open("127.0.0.1", port, opts);
+    if oe { return false; }
+    se := http.Client.send_on(@conn, "GET", path, "content.test", headers, "");
+    if se { http.Client.close_conn(@conn); return false; }
+    _, re := http.Client.recv_on(@conn, storage, cap);
+    http.Client.close_conn(@conn);
+    re == error.Recv
+}
+
+run_server_cases :: (app: *App, pool_count: i64, port: i64) -> bool {
+    cfg : http.Config = .{
+        port = port,
+        max_conn = 16,
+        timeout_request_ms = 5000,
+        timeout_keepalive_ms = 5000,
+        thread_pool_count = pool_count,
+        compress_responses = true,
+        compress_min_size = 1024,
+        compress_level = 6,
+    };
+    srv, se := http.Server.init(cfg, handler, xx app);
+    if se { return false; }
+    t, te := thread.Thread.spawn(server_entry, xx @srv);
+    if te { srv.close(); return false; }
+
+    opts : http.ClientOpts = .{ connect_timeout_ms = 2000, io_timeout_ms = 5000 };
+    conn, oe := http.Client.open("127.0.0.1", port, opts);
+    if oe { srv.stop(); t.join(); srv.close(); return false; }
+    storage : [*]u8 = xx context.allocator.alloc_bytes(BODY_LEN + 4096);
+    ok := true;
+
+    // The default client advertises both codings; the server tie-breaks gzip.
+    fixed, fe := request_on(@conn, "/fixed", "", storage, BODY_LEN + 4096);
+    if fe or fixed.status != 200 or fixed.decoded_from == null or fixed.decoded_from! != http.ContentCoding.gzip
+        or fixed.header("content-encoding").len != 0
+        or fixed.header("content-length").len != 0
+        or fixed.header("vary") != "Accept-Encoding"
+        or !same(fixed.body, app.body[..FIXED_LEN]) { ok = false; }
+    // Header normalization + decoded metadata make accidental double decode
+    // visible and prevent a compressed Content-Length from sizing plain data.
+    double_bytes, double_decode := gzip.decode(fixed.body, BODY_LEN);
+    if !double_decode {
+        context.allocator.dealloc_bytes(double_bytes.ptr);
+        ok = false;
+    }
+
+    // Explicit weights select RFC 9110 `deflate` (zlib framing).
+    deflated, de := request_on(@conn, "/fixed",
+        "Accept-Encoding: deflate, gzip;q=0.5\r\n", storage, BODY_LEN + 4096);
+    if de or deflated.decoded_from == null or deflated.decoded_from! != http.ContentCoding.deflate
+        or deflated.header("content-encoding").len != 0
+        or !same(deflated.body, app.body[..FIXED_LEN]) { ok = false; }
+
+    // Identity has a higher default q than a lower-weight gzip offer.
+    identity, ie := request_on(@conn, "/fixed",
+        "Accept-Encoding: gzip;q=0.5\r\n", storage, BODY_LEN + 4096);
+    if ie or identity.header("content-encoding").len != 0
+        or identity.decoded_from != null
+        or identity.header("vary") != "Accept-Encoding"
+        or !same(identity.body, app.body[..FIXED_LEN]) { ok = false; }
+
+    small, sme := request_on(@conn, "/small", "", storage, BODY_LEN + 4096);
+    if sme or small.header("content-encoding").len != 0 or small.body != "small"
+        or small.header("vary") != "Accept-Encoding" { ok = false; }
+
+    png, pe := request_on(@conn, "/png", "", storage, BODY_LEN + 4096);
+    if pe or png.header("content-encoding").len != 0
+        or !same(png.body, app.body[..FIXED_LEN]) { ok = false; }
+
+    jsonp, jpe := request_on(@conn, "/jsonp", "", storage, BODY_LEN + 4096);
+    if jpe or jsonp.header("content-encoding").len != 0
+        or !same(jsonp.body, app.body[..FIXED_LEN]) { ok = false; }
+
+    disabled, die := request_on(@conn, "/disabled", "", storage, BODY_LEN + 4096);
+    if die or disabled.header("content-encoding").len != 0
+        or !same(disabled.body, app.body[..FIXED_LEN]) { ok = false; }
+
+    partial, pae := request_on(@conn, "/partial", "", storage, BODY_LEN + 4096);
+    if pae or partial.status != 206 or partial.decoded_from != null
+        or partial.header("content-encoding").len != 0
+        or partial.header("content-range") != "bytes 0-65535/200000"
+        or !same(partial.body, app.body[..FIXED_LEN]) { ok = false; }
+
+    unchanged, ute := request_on(@conn, "/no-transform", "", storage, BODY_LEN + 4096);
+    if ute or unchanged.decoded_from != null or unchanged.header("content-encoding").len != 0
+        or unchanged.header("cache-control") != "public, no-transform"
+        or !same(unchanged.body, app.body[..FIXED_LEN]) { ok = false; }
+
+    repeated, rce := request_on(@conn, "/no-transform-repeat", "", storage, BODY_LEN + 4096);
+    if rce or repeated.decoded_from != null or repeated.header("content-encoding").len != 0
+        or !same(repeated.body, app.body[..FIXED_LEN]) { ok = false; }
+
+    strong, see := request_on(@conn, "/strong-etag", "", storage, BODY_LEN + 4096);
+    if see or strong.decoded_from != null or strong.header("etag") != "\"identity-v1\""
+        or !same(strong.body, app.body[..FIXED_LEN]) { ok = false; }
+
+    weak, wee := request_on(@conn, "/weak-etag", "", storage, BODY_LEN + 4096);
+    if wee or weak.decoded_from == null or weak.decoded_from! != http.ContentCoding.gzip
+        or weak.header("etag") != "W/\"semantic-v1\""
+        or !same(weak.body, app.body[..FIXED_LEN]) { ok = false; }
+
+    digest, dge := request_on(@conn, "/digest", "", storage, BODY_LEN + 4096);
+    if dge or digest.decoded_from != null or digest.header("content-digest").len == 0
+        or !same(digest.body, app.body[..FIXED_LEN]) { ok = false; }
+
+    ranged, rge := request_on(@conn, "/range-request", "Range: bytes=0-99\r\n",
+        storage, BODY_LEN + 4096);
+    if rge or ranged.body != "range-no-ae" { ok = false; }
+
+    ranged_meta, rme := request_on(@conn, "/content-range", "", storage, BODY_LEN + 4096);
+    if rme or ranged_meta.decoded_from != null
+        or ranged_meta.header("content-range") != "bytes 0-65535/200000"
+        or !same(ranged_meta.body, app.body[..FIXED_LEN]) { ok = false; }
+
+    unsatisfied, use := request_on(@conn, "/unsatisfied", "", storage, BODY_LEN + 4096);
+    if use or unsatisfied.status != 416 or unsatisfied.decoded_from != null
+        or unsatisfied.header("content-range") != "bytes */200000" { ok = false; }
+
+    coded_partial, cpe := request_on(@conn, "/coded-partial", "", storage, BODY_LEN + 4096);
+    if cpe or coded_partial.status != 206 or coded_partial.decoded_from != null
+        or coded_partial.header("content-encoding") != "gzip"
+        or !same(coded_partial.body, app.packed) { ok = false; }
+
+    coded_unsat, cue := request_on(@conn, "/coded-unsatisfied", "", storage, BODY_LEN + 4096);
+    if cue or coded_unsat.status != 416 or coded_unsat.decoded_from != null
+        or coded_unsat.header("content-encoding") != "gzip"
+        or !same(coded_unsat.body, app.packed) { ok = false; }
+
+    existing, exe := request_on(@conn, "/existing", "", storage, BODY_LEN + 4096);
+    if exe or existing.decoded_from == null or existing.decoded_from! != http.ContentCoding.gzip
+        or !same(existing.body, app.body) { ok = false; }
+
+    refused, re := request_on(@conn, "/fixed",
+        "Accept-Encoding: gzip;q=0, deflate;q=0, identity;q=0\r\n",
+        storage, BODY_LEN + 4096);
+    if re or refused.status != 406 or refused.body.len != 0 { ok = false; }
+
+    refusal := "Accept-Encoding: gzip, identity;q=0\r\n";
+    floor_refused, fre := request_on(@conn, "/small", refusal, storage, BODY_LEN + 4096);
+    disabled_refused, dre := request_on(@conn, "/disabled", refusal, storage, BODY_LEN + 4096);
+    media_refused, mre := request_on(@conn, "/png", refusal, storage, BODY_LEN + 4096);
+    transform_refused, tre := request_on(@conn, "/no-transform-repeat", refusal, storage, BODY_LEN + 4096);
+    range_refused, rre := request_on(@conn, "/partial", refusal, storage, BODY_LEN + 4096);
+    validator_refused, vre := request_on(@conn, "/strong-etag", refusal, storage, BODY_LEN + 4096);
+    if fre or dre or mre or tre or rre or vre
+        or floor_refused.status != 406 or disabled_refused.status != 406
+        or media_refused.status != 406 or transform_refused.status != 406
+        or range_refused.status != 406 or validator_refused.status != 406 { ok = false; }
+
+    framing_cl, fce := request_on(@conn, "/framing-cl", "", storage, BODY_LEN + 4096);
+    if fce or framing_cl.status != 500 or framing_cl.header("content-length") == "999" { ok = false; }
+    framing_te, fte := request_on(@conn, "/framing-te", "", storage, BODY_LEN + 4096);
+    if fte or framing_te.status != 500 or framing_te.header("transfer-encoding") == "chunked" { ok = false; }
+
+    // Chunked transfer framing is removed before incremental gzip decode.
+    streamed, stre := request_on(@conn, "/stream", "", storage, BODY_LEN + 4096);
+    if stre or streamed.header("transfer-encoding") != "chunked"
+        or streamed.header("content-encoding").len != 0
+        or streamed.decoded_from == null or streamed.decoded_from! != http.ContentCoding.gzip
+        or !same(streamed.body, app.body) { ok = false; }
+
+    // The entire compressed transfer was consumed; keep-alive remains clean.
+    pong, poe := request_on(@conn, "/small", "Accept-Encoding: identity\r\n",
+        storage, BODY_LEN + 4096);
+    if poe or pong.body != "small" { ok = false; }
+    http.Client.close_conn(@conn);
+
+    // A negative producer result is a fault, never clean EOF. Exercise before
+    // and after output, both raw and through the gzip encoder. A clean zero
+    // chunk would make the raw cases succeed, so Recv proves truncation.
+    if !faulted_stream_rejected(port, "/fault-before", "Accept-Encoding: identity\r\n", storage, BODY_LEN + 4096)
+        or !faulted_stream_rejected(port, "/fault-after", "Accept-Encoding: identity\r\n", storage, BODY_LEN + 4096)
+        or !faulted_stream_rejected(port, "/fault-before", "", storage, BODY_LEN + 4096)
+        or !faulted_stream_rejected(port, "/fault-after", "", storage, BODY_LEN + 4096) { ok = false; }
+
+    // Opting out leaves the content-coded representation and its headers
+    // intact. The caller can decode it explicitly exactly once.
+    raw_opts : http.ClientOpts = .{
+        connect_timeout_ms = 2000,
+        io_timeout_ms = 5000,
+        accept_compression = false,
+    };
+    raw_conn, roe := http.Client.open("127.0.0.1", port, raw_opts);
+    if roe { ok = false; }
+    else {
+        raw_fixed, rfe := request_on(@raw_conn, "/fixed",
+            "Accept-Encoding: gzip\r\n", storage, BODY_LEN + 4096);
+        if rfe or raw_fixed.decoded_from != null or raw_fixed.header("content-encoding") != "gzip"
+            or raw_fixed.header("content-length").len == 0 { ok = false; }
+        else {
+            explicit := gzip.decode(raw_fixed.body, BODY_LEN) catch { ok = false; "" };
+            if ok { ok = same(explicit, app.body[..FIXED_LEN]); }
+            if explicit.ptr != null { context.allocator.dealloc_bytes(explicit.ptr); }
+        }
+        raw_stacked, rse := request_on(@raw_conn, "/stacked",
+            "Accept-Encoding: br, gzip\r\n", storage, BODY_LEN + 4096);
+        if rse or raw_stacked.decoded_from != null or raw_stacked.body != "raw-stacked"
+            or raw_stacked.header("content-encoding") != "br"
+            or !contains(raw_stacked.headers_raw, "Content-Encoding: gzip") { ok = false; }
+        http.Client.close_conn(@raw_conn);
+    }
+
+    // Decoded size, not compressed size, is bounded by the caller buffer.
+    short_conn, soe := http.Client.open("127.0.0.1", port, opts);
+    if soe { ok = false; }
+    else {
+        try_send := http.Client.send_on(@short_conn, "GET", "/stream", "content.test", "", "");
+        if try_send { ok = false; }
+        else {
+            _, short_error := http.Client.recv_on(@short_conn, storage, 4096);
+            if short_error != error.TooLarge { ok = false; }
+        }
+        http.Client.close_conn(@short_conn);
+    }
+
+    // A handler-provided coding is never double-encoded; malformed payloads
+    // fail in the client rather than surfacing undecoded bytes.
+    bad_conn, boe := http.Client.open("127.0.0.1", port, opts);
+    if boe { ok = false; }
+    else {
+        bad_send := http.Client.send_on(@bad_conn, "GET", "/bad", "content.test", "", "");
+        if bad_send { ok = false; }
+        else {
+            _, bad_error := http.Client.recv_on(@bad_conn, storage, BODY_LEN + 4096);
+            if bad_error != error.Recv { ok = false; }
+        }
+        http.Client.close_conn(@bad_conn);
+    }
+
+    context.allocator.dealloc_bytes(xx storage);
+    srv.stop();
+    t.join();
+    srv.close();
+    ok
+}
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    result : i32 = 1;
+    push .{ allocator = gpa } {
+        raw := context.allocator.alloc_bytes(BODY_LEN);
+        if raw == null { return 2; }
+        body : string = .{ ptr = xx raw, len = BODY_LEN };
+        i : i64 = 0;
+        while i < body.len {
+            // Compressible but not constant: catches ordering/copy mistakes.
+            body.ptr[i] = xx ('a' + ((i / 97) % 17));
+            i += 1;
+        }
+        body_packed := gzip.encode(body) catch { context.allocator.dealloc_bytes(raw); return 2; };
+        app : App = .{ body = body, packed = body_packed };
+
+        ok := run_server_cases(@app, 0, PORT_INLINE);
+        if ok { ok = run_server_cases(@app, 2, PORT_POOL); }
+
+        if ok {
+            ok = malformed_response_fails(
+                "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nContent-Encoding: gzip\r\nConnection: close\r\n\r\nbad");
+        }
+        if ok {
+            ok = malformed_response_fails(
+                "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Encoding: gzip\r\nConnection: close\r\n\r\n3\r\nbadX\r\n0\r\n\r\n");
+        }
+        if ok {
+            ok = malformed_response_fails(
+                "HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Encoding: br\r\nConnection: close\r\n\r\nx");
+        }
+        if ok {
+            ok = malformed_response_fails(
+                "HTTP/1.1 200 OK\r\nContent-Length: 4x\r\nContent-Encoding: gzip\r\nConnection: close\r\n\r\nbad!");
+        }
+
+        // Telegram animated stickers are gzip-compressed JSON. This public
+        // codec path is allocation-aware and needs no gzip executable.
+        if ok {
+            packed := gzip.encode(TGS_JSON) catch { ok = false; "" };
+            if ok {
+                unpacked := gzip.decode(packed, 4096) catch { ok = false; "" };
+                if ok { ok = same(unpacked, TGS_JSON); }
+                if unpacked.ptr != null { context.allocator.dealloc_bytes(unpacked.ptr); }
+            }
+            if ok { ok = exact_capacity_decodes(TGS_JSON, packed); }
+            if packed.ptr != null { context.allocator.dealloc_bytes(packed.ptr); }
+        }
+
+        context.allocator.dealloc_bytes(body_packed.ptr);
+        context.allocator.dealloc_bytes(raw);
+        if ok { result = 0; }
+    }
+    if result != 0 { print("std.http content encoding failed\n"); return result; }
+    if gpa.alloc_count != 0 {
+        print("std.http content encoding leaked {} allocations\n", gpa.alloc_count);
+        return 3;
+    }
+    print("std.http gzip/deflate fixed+streamed ok; identity/malformed/.tgs ok; net-zero GPA\n");
+    0
+}

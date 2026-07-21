@@ -1,0 +1,1 @@
+std.http gzip/deflate fixed+streamed ok; identity/malformed/.tgs ok; net-zero GPA

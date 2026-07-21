@@ -7,6 +7,14 @@
 #import "modules/std/fmt.sx";    // concat (Response.add_header)
 c :: #import "modules/std/c.sx"; // c.memmove (overlap-safe chunked-decode compaction)
 
+// A content coding the blocking client can decode transparently. Identity is
+// represented by the absence of a value (`?ContentCoding = null`), so response
+// metadata cannot disagree through redundant bool/string fields.
+ContentCoding :: enum {
+    gzip;
+    deflate;
+}
+
 // One parsed request, viewed in place over the connection's read
 // buffer — valid for the duration of the handler call only.
 Request :: struct {
@@ -83,8 +91,9 @@ Request :: struct {
 //     (ctx, offset, dst, dst_cap) -> i64
 // Called repeatedly by the server; on each call it must write up to
 // `dst_cap` bytes of the body starting at logical byte `offset` into
-// `dst`, and return the count written (0 = end of body — emits the
-// terminating zero chunk). `offset` is the running total the server has
+// `dst`, and return the count written (0 = clean end of body — emits the
+// terminating zero chunk; a negative value is a source fault — the connection
+// closes without a terminator and is never reused). `offset` is the running total the server has
 // already pulled, so the producer is fully resumable across write
 // readiness: when the socket would block mid-stream the server pauses
 // (existing add_write arming) and resumes the producer at the same
@@ -116,13 +125,20 @@ BodyReadFn :: (ctx: usize, dst: [*]u8, cap: i64) -> i64;
 Response :: struct {
     status: i64 = 200;
     content_type: string = "text/plain; charset=utf-8";
-    extra_headers: string = "";   // preformatted "Name: value\r\n" lines
+    // Preformatted "Name: value\r\n" lines. Content-Length and
+    // Transfer-Encoding are reserved: the server owns framing and turns a
+    // handler response containing either field into a 500 before serialization.
+    extra_headers: string = "";
     body: string = "";
     // S1 streamed/chunked output. When `streamed` is true the server
     // ignores `body` and pulls from `producer` (see StreamProducer).
     streamed: bool = false;
     producer: StreamProducer = null;
     producer_ctx: usize = 0;
+    // The server may apply negotiated gzip/deflate when its compression
+    // policy is enabled. Disable this for secret-bearing reflected content
+    // (BREACH-style side channels) or data that should remain identity.
+    allow_compression: bool = true;
 
     // ── helpers (add only what's missing) ────────────────────────────
     set_status :: (self: *Response, status: i64) { self.status = status; }
@@ -141,6 +157,7 @@ Response :: struct {
         self.producer = producer;
         self.producer_ctx = ctx;
     }
+    disable_compression :: (self: *Response) { self.allow_compression = false; }
 }
 
 // Case-insensitive header lookup in `headers_raw`; "" when absent.
@@ -596,6 +613,7 @@ status_line_for :: (status: i64) -> string {
     if status == 200 { return "HTTP/1.1 200 OK"; }
     if status == 201 { return "HTTP/1.1 201 Created"; }
     if status == 204 { return "HTTP/1.1 204 No Content"; }
+    if status == 206 { return "HTTP/1.1 206 Partial Content"; }
     if status == 301 { return "HTTP/1.1 301 Moved Permanently"; }
     if status == 302 { return "HTTP/1.1 302 Found"; }
     if status == 304 { return "HTTP/1.1 304 Not Modified"; }
@@ -604,6 +622,7 @@ status_line_for :: (status: i64) -> string {
     if status == 403 { return "HTTP/1.1 403 Forbidden"; }
     if status == 404 { return "HTTP/1.1 404 Not Found"; }
     if status == 405 { return "HTTP/1.1 405 Method Not Allowed"; }
+    if status == 406 { return "HTTP/1.1 406 Not Acceptable"; }
     if status == 408 { return "HTTP/1.1 408 Request Timeout"; }
     if status == 413 { return "HTTP/1.1 413 Content Too Large"; }
     if status == 417 { return "HTTP/1.1 417 Expectation Failed"; }
@@ -620,6 +639,7 @@ reason_for :: (status: i64) -> string {
     if status == 200 { return "OK"; }
     if status == 201 { return "Created"; }
     if status == 204 { return "No Content"; }
+    if status == 206 { return "Partial Content"; }
     if status == 301 { return "Moved Permanently"; }
     if status == 302 { return "Found"; }
     if status == 304 { return "Not Modified"; }
@@ -628,6 +648,7 @@ reason_for :: (status: i64) -> string {
     if status == 403 { return "Forbidden"; }
     if status == 404 { return "Not Found"; }
     if status == 405 { return "Method Not Allowed"; }
+    if status == 406 { return "Not Acceptable"; }
     if status == 408 { return "Request Timeout"; }
     if status == 413 { return "Content Too Large"; }
     if status == 417 { return "Expectation Failed"; }

@@ -1,0 +1,23 @@
+error: namespace 'client' has no member 'Encoding'
+  --> examples/http/1730-http-content-encoding-internals-hidden.sx:7:9
+   |
+ 7 |     a : http.client.Encoding = ---;
+   |         ^^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'client' has no member 'Decoder'
+  --> examples/http/1730-http-content-encoding-internals-hidden.sx:8:9
+   |
+ 8 |     b : http.client.Decoder = ---;
+   |         ^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'server' has no member 'Encoding'
+  --> examples/http/1730-http-content-encoding-internals-hidden.sx:9:9
+   |
+ 9 |     c : http.server.Encoding = ---;
+   |         ^^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'server' has no member 'EncodedProducer'
+  --> examples/http/1730-http-content-encoding-internals-hidden.sx:10:9
+   |
+10 |     d : http.server.EncodedProducer = ---;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -16,6 +16,8 @@ time   :: #import "modules/std/time.sx";
 #import "modules/std/http/tls.sx";     // TlsConn, TlsAcceptor, TlsStep
 #import "modules/std/http/fiber.sx";   // FiberRunner (Q3.3 fiber-handler seam)
 fs :: #import "modules/std/fs.sx";     // Q3.5: unlink for the AF_UNIX listener's socket file
+#import "modules/std/compress.sx";     // shared codec Error/Progress contract
+#import "modules/std/http/content_encoding.sx";
 
 libc :: clib.libc;
 // Q0.6: run()'s backoff between consecutive loop failures (never on the
@@ -217,6 +219,14 @@ Config :: struct {
     // Emitted VERBATIM, like content_type/extra_headers: developer-owned
     // config, so it must not contain CR/LF (that would inject headers).
     server_name: string = "";
+    // Opt-in negotiated response compression. Fixed bodies at or above
+    // `compress_min_size` and every streamed body with a compressible media
+    // type are encoded when Accept-Encoding permits gzip/deflate. The
+    // default stays identity, preserving existing wire behavior. The level
+    // is the shared std.compress level (0...10).
+    compress_responses: bool = false;
+    compress_min_size: i64 = 1024;
+    compress_level: i64 = 6;
     // Q3.1: dispatch every body-carrying request (Transfer-Encoding, or a
     // Content-Length > 0) at HEADERS-COMPLETE and hand the handler an
     // incremental reader (req.read_body: > 0 bytes / 0 end / -1 fault;
@@ -356,6 +366,11 @@ Conn :: struct {
     streaming: bool = false;
     producer: StreamProducer = null;
     producer_ctx: usize = 0;
+    // Inline/fiber streamed response content encoder. Pool workers encode
+    // before feeding OutChan, so this is null for their streams. The state
+    // owns one bounded source piece + codec state and is released at stream
+    // end or connection teardown.
+    encoded_producer: *EncodedProducer = null;
     stream_off: i64 = 0;      // running bytes pulled from the producer
     stream_done: bool = false;// the producer returned 0 (zero chunk queued)
     // Q3.2 worker-fed stream (pool mode): non-null = stream_refill takes
@@ -580,11 +595,18 @@ body_chan_read :: (ctx: usize, dst: [*]u8, cap: i64) -> i64 {
 // here; the loop takes them nonblocking into the chunk-framing scratch.
 // Backpressure both ways: a full buffer BLOCKS the feeder on the cond; an
 // empty one marks `hungry` so the next feed wakes the loop
-// (resume_stream_pumps). Refcount 2 = conn (from completion attach) +
-// worker; the last release frees. While a worker is pumping, the chan is
+// (resume_stream_pumps). Creation gives the worker one reference; queueing a
+// completion retains the connection's reference. The last release frees.
 // registered in PoolState.ochans so Server.close can abort every feeder
 // BEFORE joining the pool (a blocked feeder would deadlock the join).
 OUT_CHAN_CAP :: 65536;
+
+OutChanTake :: enum {
+    data;
+    pending;
+    eof;
+    producer_fault;
+}
 
 OutChan :: struct {
     mu: thread.Mutex = .{};
@@ -594,8 +616,9 @@ OutChan :: struct {
     len: i64 = 0;
     eof: bool = false;      // producer finished (worker side)
     fault: bool = false;    // conn died / server closing — feeder aborts
+    producer_fault: bool = false; // producer/codec failed; close without terminator
     hungry: bool = false;   // loop found it empty; the next feed wakes lp
-    refs: i64 = 2;          // conn + worker
+    refs: i64 = 1;          // worker initially; retained once for completion/conn
     alloc: Allocator;       // own_alloc: frees buf + self on the last release
     lp: event.Loop = .{};   // loop copy for the worker→loop wake
 
@@ -623,8 +646,8 @@ OutChan :: struct {
         return true;
     }
 
-    // Worker side: the producer returned 0 (or the feed aborted) — no more
-    // bytes are coming. The loop's next take stages the terminator chunk.
+    // Worker side: the producer returned clean EOF. The loop's next take
+    // stages the terminator chunk after all buffered bytes drain.
     finish_eof :: (self: *OutChan) {
         self.mu.lock();
         self.eof = true;
@@ -634,11 +657,21 @@ OutChan :: struct {
         if w { self.lp.wake(); }
     }
 
-    // Loop side, NONBLOCKING: (bytes, end). (0, false) = empty but the
-    // producer is still running — `hungry` is marked in the same critical
-    // section, so the worker's next feed wakes the loop (no lost wake).
-    // (0, true) = drained to end-of-stream (stage the terminator).
-    take :: (self: *OutChan, dst: [*]u8, want: i64) -> (i64, bool) {
+    // Worker side: source/codec failure. Already-buffered bytes may drain, but
+    // the loop then closes the connection without staging a zero chunk.
+    finish_fault :: (self: *OutChan) {
+        self.mu.lock();
+        self.producer_fault = true;
+        w := self.hungry;
+        if w { self.hungry = false; }
+        self.mu.unlock();
+        if w { self.lp.wake(); }
+    }
+
+    // Loop side, NONBLOCKING. A zero-byte result distinguishes pending, clean
+    // EOF, and producer fault so truncation can never masquerade as a clean
+    // terminating chunk.
+    take :: (self: *OutChan, dst: [*]u8, want: i64) -> (i64, OutChanTake) {
         self.mu.lock();
         n := if want < self.len then want else self.len;
         if n > 0 {
@@ -648,10 +681,14 @@ OutChan :: struct {
             self.len = rest;
             self.cv.signal();   // space freed — unblock the feeder
         }
-        e := self.eof and self.len == 0 and n == 0;
-        if n == 0 and !e { self.hungry = true; }
+        status := OutChanTake.data;
+        if n == 0 {
+            if self.producer_fault { status = .producer_fault; }
+            else if self.eof { status = .eof; }
+            else { status = .pending; self.hungry = true; }
+        }
         self.mu.unlock();
-        return .{n, e};
+        return .{n, status};
     }
 
     // Loop side (or Server.close): the connection is gone — wake and stop
@@ -660,6 +697,12 @@ OutChan :: struct {
         self.mu.lock();
         self.fault = true;
         self.cv.broadcast();
+        self.mu.unlock();
+    }
+
+    retain :: (self: *OutChan) {
+        self.mu.lock();
+        self.refs += 1;
         self.mu.unlock();
     }
 
@@ -678,6 +721,29 @@ OutChan :: struct {
             a.dealloc_bytes(xx self);
         }
     }
+}
+
+create_out_chan :: (alloc: Allocator, lp: event.Loop) -> *OutChan {
+    raw := alloc.alloc_bytes(size_of(OutChan));
+    if raw == null { return null; }
+    result : *OutChan = xx raw;
+    result.* = OutChan.{ alloc = alloc, lp = lp };
+    if !result.mu.setup() { alloc.dealloc_bytes(raw); return null; }
+    if !result.cv.setup() {
+        result.mu.destroy();
+        alloc.dealloc_bytes(raw);
+        return null;
+    }
+    bytes := alloc.alloc_bytes(OUT_CHAN_CAP);
+    if bytes == null {
+        result.cv.destroy();
+        result.mu.destroy();
+        alloc.dealloc_bytes(raw);
+        return null;
+    }
+    result.buf = xx bytes;
+    result.cap = OUT_CHAN_CAP;
+    result
 }
 
 // The listener's udata; connection udata is the slot index.
@@ -813,6 +879,9 @@ HandlerJob :: struct {
     // can stamp the Server: header (the bytes outlive the Server per the
     // Config field's contract).
     server_name: string = "";
+    compress_responses: bool = false;
+    compress_min_size: i64 = 1024;
+    compress_level: i64 = 6;
     // Q3.1: the body channel of a STREAMED request (null = accumulated).
     // The job holds one of the two references; run_handler_job wires it
     // into req.body_read_fn/_ctx and releases it after the handler returns.
@@ -821,6 +890,106 @@ HandlerJob :: struct {
     // request same-thread (serialize into the conn's wbuf, gen-checked)
     // and body_fiber_read reaches the runner through it. Null in pool mode.
     srv: *Server = null;
+}
+
+add_accept_encoding_vary :: (resp: *Response) {
+    if !has_header_token(resp.extra_headers, "vary", "accept-encoding")
+        and !has_header_token(resp.extra_headers, "vary", "*") {
+        // A second Vary field is equivalent to extending the existing field,
+        // and avoids rewriting caller-owned preformatted headers.
+        resp.add_header("Vary", "Accept-Encoding");
+    }
+}
+
+has_strong_validator_or_digest :: (raw: string) -> bool {
+    at : i64 = 0;
+    while at < raw.len {
+        line_end := at;
+        while line_end < raw.len and raw[line_end] != '\r' and raw[line_end] != '\n' { line_end += 1; }
+        colon := at;
+        while colon < line_end and raw[colon] != ':' { colon += 1; }
+        if colon < line_end {
+            field := raw[at..colon];
+            if ascii_ieq(field, "content-digest") or ascii_ieq(field, "repr-digest")
+                or ascii_ieq(field, "digest") or ascii_ieq(field, "content-md5") { return true; }
+            if ascii_ieq(field, "etag") {
+                value := trim_ows(raw[colon + 1..line_end]);
+                if value.len < 2 or ascii_lower(value[0]) != 'w' or value[1] != '/' { return true; }
+            }
+        }
+        while line_end < raw.len and (raw[line_end] == '\r' or raw[line_end] == '\n') { line_end += 1; }
+        at = line_end;
+    }
+    false
+}
+
+set_not_acceptable :: (resp: *Response) {
+    resp.* = Response.{ status = 406, body = "", allow_compression = false };
+    resp.add_header("Vary", "Accept-Encoding");
+}
+
+// Apply the server's response-compression policy after the handler returns
+// but before any response bytes are serialized. Fixed bodies are encoded in
+// the current per-request arena. Streamed bodies return the selected coding;
+// start_stream / the pool worker drives a bounded incremental encoder.
+prepare_content_encoding :: (req: *Request, resp: *Response, enabled: bool, min_size: i64, level: i64, alloc: Allocator) -> Encoding {
+    // Message framing is exclusively server-owned. Reject a handler response
+    // that tries to inject a second delimiter before any bytes are serialized.
+    if has_header(resp.extra_headers, "content-length") or has_header(resp.extra_headers, "transfer-encoding") {
+        resp.* = Response.{ status = 500, body = reason_for(500), allow_compression = false };
+        return .identity;
+    }
+    if resp.status == 204 or resp.status == 304 { return .identity; }
+
+    accept := parse_accept_encoding(req.headers_raw);
+    existing_coding := has_header(resp.extra_headers, "content-encoding");
+    if enabled or accept.found or existing_coding { add_accept_encoding_vary(resp); }
+
+    // Existing/stacked codings belong to the handler. Preserve them byte-for-
+    // byte only when every coding is accepted; never automatically re-encode.
+    if existing_coding {
+        if !content_coding_acceptable(@accept, resp.extra_headers) { set_not_acceptable(resp); }
+        return .identity;
+    }
+
+    eligible := enabled and resp.allow_compression
+        and !has_header(req.headers_raw, "range")
+        and resp.status != 206 and resp.status != 416
+        and !has_header(resp.extra_headers, "content-range")
+        and !has_header_token(resp.extra_headers, "cache-control", "no-transform")
+        and !has_strong_validator_or_digest(resp.extra_headers)
+        and compressible_content_type(resp.content_type);
+    if !eligible {
+        if !identity_acceptable(@accept) { set_not_acceptable(resp); }
+        return .identity;
+    }
+
+    selected := preferred_encoding(@accept);
+    if selected == .unacceptable { set_not_acceptable(resp); return .identity; }
+    if selected == .identity { return .identity; }
+    if !resp.streamed and resp.body.len < min_size {
+        if !identity_acceptable(@accept) { set_not_acceptable(resp); }
+        return .identity;
+    }
+    if resp.streamed and resp.producer != null {
+        resp.add_header("Content-Encoding", if selected == .gzip then "gzip" else "deflate");
+        return selected;
+    }
+
+    failed := false;
+    encoded := encode(resp.body, selected, level, alloc) catch {
+        failed = true;
+        ""
+    };
+    if failed {
+        // Compression state could not be built before the head went out: a
+        // plain 500 is honest; never advertise an encoding for identity data.
+        resp.* = Response.{ status = 500, body = reason_for(500), allow_compression = false };
+        return .identity;
+    }
+    resp.body = encoded;
+    resp.add_header("Content-Encoding", if selected == .gzip then "gzip" else "deflate");
+    selected
 }
 
 // Q3.3: the fiber-mode BodyReadFn — the same-thread twin of BodyChan.read.
@@ -899,6 +1068,20 @@ run_handler_job :: (arg: usize) {
         is_head := ascii_ieq(job.req.method, "head");
         h(@job.req, @resp, job.app_ctx);
         if job.chan != null and !job.chan.was_drained() { keep = false; }
+        encoding := prepare_content_encoding(@job.req, @resp,
+            job.compress_responses, job.compress_min_size,
+            job.compress_level, context.allocator);
+        encoded : *EncodedProducer = null;
+        if resp.streamed and resp.producer != null and !is_head and encoding != .identity {
+            encoded = create_encoded_producer(encoding,
+                job.compress_level, resp.producer, resp.producer_ctx,
+                job.alloc);
+            if encoded == null {
+                resp = Response.{ status = 500, body = reason_for(500), allow_compression = false };
+                keep = false;
+                encoding = .identity;
+            }
+        }
         format_imf_date(time.now_secs(), @db[0]);
         date = string.{ ptr = @db[0], len = IMF_DATE_LEN };
         no_body := resp.status == 204 or resp.status == 304;
@@ -913,50 +1096,68 @@ run_handler_job :: (arg: usize) {
             // stream larger than the channel would deadlock otherwise).
             // COST: this worker is pinned for the stream's lifetime — size
             // the pool for the number of concurrent streamed responses.
-            och : *OutChan = xx job.alloc.alloc_bytes(size_of(OutChan));
-            och.* = OutChan.{ alloc = job.alloc, lp = job.ps.loop_copy };
-            ok := och.mu.setup();
-            if ok {
-                if !och.cv.setup() {
-                    och.mu.destroy();
-                    ok = false;
+            och := create_out_chan(job.alloc, job.ps.loop_copy);
+            if och == null {
+                // Allocation/primitive setup failed before the head escaped.
+                if encoded != null {
+                    destroy_encoded_producer(encoded, job.alloc);
+                    encoded = null;
                 }
-            }
-            if !ok {
-                // Channel setup failed (pthread init) — degrade LOUDLY to a
-                // plain 500, never a half-streamed response.
-                job.alloc.dealloc_bytes(xx och);
                 resp = Response.{ status = 500, body = reason_for(500) };
                 keep = false;
                 ob = serialize_bytes(@resp, keep, job.alloc, is_head, date, job.server_name);   // is_head: a HEAD 500 ships no body (Q3.2-review LOW)
             } else {
-                och.buf = xx job.alloc.alloc_bytes(OUT_CHAN_CAP);
-                och.cap = OUT_CHAN_CAP;
                 ob = serialize_chunked_head(@resp, keep, job.alloc, date, job.server_name);
-                streamed = true;
-                queue_completion(job.ps, job.alloc, Completion.{
-                    slot = job.slot, gen = job.gen, out = ob,
-                    close_after = !keep, consumed = job.consumed,
-                    streamed = true, ochan = och,
-                });
-                completed = true;
-                // The pump: pull one bounded piece at a time, feed it into
-                // the channel (blocking on backpressure), until the
-                // producer ends or the connection dies.
-                ochan_register(job.ps, och);
-                piece : [STREAM_PIECE]u8 = ---;
-                off : i64 = 0;
-                prod := resp.producer;
-                pctx := resp.producer_ctx;
-                while true {
-                    n := prod(pctx, off, @piece[0], STREAM_PIECE);
-                    if n <= 0 { break; }
-                    off += n;
-                    if !och.feed_all(@piece[0], n) { break; }   // aborted
+                if ob.buf == null {
+                    och.release();
+                    if encoded != null { destroy_encoded_producer(encoded, job.alloc); encoded = null; }
+                    resp = Response.{ status = 500, body = reason_for(500) };
+                    keep = false;
+                    ob = serialize_bytes(@resp, keep, job.alloc, is_head, date, job.server_name);
+                } else {
+                    streamed = true;
+                    och.retain(); // completion/connection reference
+                    queue_completion(job.ps, job.alloc, Completion.{
+                        slot = job.slot, gen = job.gen, out = ob,
+                        close_after = !keep, consumed = job.consumed,
+                        streamed = true, ochan = och,
+                    });
+                    completed = true;
+                    // Pull bounded steps. A producer/codec fault is distinct
+                    // from EOF: the loop drains queued bytes, then closes the
+                    // connection without a terminating zero chunk.
+                    ochan_register(job.ps, och);
+                    piece : [STREAM_PIECE]u8 = ---;
+                    off : i64 = 0;
+                    prod := resp.producer;
+                    pctx := resp.producer_ctx;
+                    producer_failed := false;
+                    aborted := false;
+                    while true {
+                        n : i64 = 0;
+                        if encoded != null {
+                            step_failed := false;
+                            step := encoded.next(piece[..]) catch { step_failed = true; EncodedProduceStep.{} };
+                            if step_failed { producer_failed = true; break; }
+                            if step.status == .pending { continue; }
+                            if step.status == .done { break; }
+                            n = step.produced;
+                        } else {
+                            n = prod(pctx, off, @piece[0], STREAM_PIECE);
+                            if n < 0 or n > STREAM_PIECE { producer_failed = true; break; }
+                            if n == 0 { break; }
+                        }
+                        off += n;
+                        if !och.feed_all(@piece[0], n) { aborted = true; break; }
+                    }
+                    if encoded != null { destroy_encoded_producer(encoded, job.alloc); encoded = null; }
+                    if !aborted {
+                        if producer_failed { och.finish_fault(); }
+                        else { och.finish_eof(); }
+                    }
+                    ochan_unregister(job.ps, och);
+                    och.release();   // worker reference; completion/conn owns the other
                 }
-                och.finish_eof();
-                ochan_unregister(job.ps, och);
-                och.release();   // the worker's ref; the conn side holds the other
             }
         } else if resp.streamed and resp.producer != null and is_head and !no_body {
             // HEAD of a streamed response: the chunked head ALONE is the
@@ -1007,6 +1208,9 @@ run_fiber_job :: (arg: usize) {
         is_head := ascii_ieq(job.req.method, "head");
         h(@job.req, @resp, job.app_ctx);
         if job.chan != null and !job.chan.was_drained() { keep = false; }
+        encoding := prepare_content_encoding(@job.req, @resp,
+            job.compress_responses, job.compress_min_size,
+            job.compress_level, context.allocator);
         c := @srv.conns[job.slot];
         // Same-thread completion, gen-checked exactly like a pool
         // completion: a closed/recycled slot (eviction, disconnect,
@@ -1030,7 +1234,7 @@ run_fiber_job :: (arg: usize) {
                 if c.bchan != null { c.bchan.finish(true); }
                 c.linger_close = true;
             }
-            srv.serialize_response(job.slot, @resp, keep, is_head);
+            srv.serialize_response(job.slot, @resp, keep, is_head, encoding);
             // Drop the consumed request bytes (accumulate dispatch; the
             // streamed dispatch consumed its headers up front → 0).
             rest := c.read_len - job.consumed;
@@ -1142,7 +1346,9 @@ serialize_bytes :: (resp: *Response, keep: bool, alloc: Allocator, head_only: bo
     no_body_status := resp.status == 204 or resp.status == 304;
     hl := resp_head_len(resp, keep, date, server_name, no_body_status, false);
     body_len : i64 = if head_only or no_body_status then 0 else xx resp.body.len;
-    buf : [*]u8 = xx alloc.alloc_bytes(hl + body_len);
+    raw := alloc.alloc_bytes(hl + body_len);
+    if raw == null { return .{}; }
+    buf : [*]u8 = xx raw;
     w := resp_head_write(resp, keep, date, server_name, no_body_status, false, buf);
     if body_len > 0 { clib.memcpy(@buf[w], resp.body.ptr, xx body_len); }
     return OutBytes.{ buf = buf, len = w + body_len };
@@ -1155,7 +1361,9 @@ serialize_bytes :: (resp: *Response, keep: bool, alloc: Allocator, head_only: bo
 // workers; the inline stream path writes into its scratch directly).
 serialize_chunked_head :: (resp: *Response, keep: bool, alloc: Allocator, date: string, server_name: string) -> OutBytes {
     hl := resp_head_len(resp, keep, date, server_name, false, true);
-    buf : [*]u8 = xx alloc.alloc_bytes(hl);
+    raw := alloc.alloc_bytes(hl);
+    if raw == null { return .{}; }
+    buf : [*]u8 = xx raw;
     w := resp_head_write(resp, keep, date, server_name, false, true, buf);
     return OutBytes.{ buf = buf, len = w };
 }
@@ -1381,6 +1589,9 @@ Server :: struct {
     }
 
     init :: (cfg: Config, handler: (*Request, *Response, usize) -> void, ctx: usize) -> (Server, !HttpErr) {
+        if cfg.compress_level < 0 or cfg.compress_level > 10 or cfg.compress_min_size < 0 {
+            raise error.Config;
+        }
         // Q3.3: fibers and a worker pool are mutually exclusive dispatch
         // models — configuring both is ambiguous, never silently resolved.
         if cfg.fibers != null and cfg.thread_pool_count > 0 {
@@ -1710,6 +1921,10 @@ Server :: struct {
             c.ochan.release();
             c.ochan = null;
         }
+        if c.encoded_producer != null {
+            destroy_encoded_producer(c.encoded_producer, self.own_alloc);
+            c.encoded_producer = null;
+        }
         if c.stream_waiting {
             c.stream_waiting = false;
             self.stream_waiting_n -= 1;
@@ -1763,6 +1978,7 @@ Server :: struct {
         c.streaming = false;
         c.producer = null;
         c.producer_ctx = 0;
+        c.encoded_producer = null;
         c.stream_off = 0;
         c.stream_done = false;
     }
@@ -1955,7 +2171,7 @@ Server :: struct {
                     // request's method, stamped on the slot at dispatch — a
                     // timed-out HEAD is owed a body-less 504 like any other
                     // HEAD response (RFC 9110 §9.3.2).
-                    self.serialize_response(slot, @resp, false, c.head_req);
+                    self.serialize_response(slot, @resp, false, c.head_req, .identity);
                 }
                 to_arena.deinit();
                 // Leave CONN_HANDLING: any completion the worker queues after
@@ -3228,6 +3444,9 @@ Server :: struct {
                 alloc = self.own_alloc, req = jreq,
                 slot = slot, gen = c.gen, keep = keep, consumed = 0,
                 server_name = self.cfg.server_name,
+                compress_responses = self.cfg.compress_responses,
+                compress_min_size = self.cfg.compress_min_size,
+                compress_level = self.cfg.compress_level,
                 chan = ch, srv = self,
             };
 
@@ -3418,6 +3637,9 @@ Server :: struct {
                 alloc = self.own_alloc, req = jreq,
                 slot = slot, gen = c.gen, keep = keep, consumed = total,
                 server_name = self.cfg.server_name,
+                compress_responses = self.cfg.compress_responses,
+                compress_min_size = self.cfg.compress_min_size,
+                compress_level = self.cfg.compress_level,
                 srv = self,
             };
             c.state = CONN_HANDLING;
@@ -3478,9 +3700,12 @@ Server :: struct {
         req_arena := Arena.init(self.own_alloc, 65536);
         push .{ allocator = req_arena } {
             h(@req, @resp, self.ctx);
+            encoding := prepare_content_encoding(@req, @resp,
+                self.cfg.compress_responses, self.cfg.compress_min_size,
+                self.cfg.compress_level, context.allocator);
             // Q1.4: HEAD runs the handler like GET; serialization suppresses
             // the body bytes (and never drives a stream producer).
-            self.serialize_response(slot, @resp, keep, is_head);
+            self.serialize_response(slot, @resp, keep, is_head, encoding);
         }
         req_arena.deinit();
         // A real request produced a response and begins sending: count it
@@ -3516,8 +3741,15 @@ Server :: struct {
         c.wbuf_cap = want;
     }
 
-    start_stream :: (self: *Server, slot: i64, resp: *Response, keep: bool) {
+    start_stream :: (self: *Server, slot: i64, resp: *Response, keep: bool, encoding: Encoding) -> bool {
         c := @self.conns[slot];
+        encoded : *EncodedProducer = null;
+        if encoding != .identity {
+            encoded = create_encoded_producer(encoding,
+                self.cfg.compress_level, resp.producer, resp.producer_ctx,
+                self.own_alloc);
+            if encoded == null { return false; }
+        }
         // The scratch must hold the head's first staging AND every later
         // chunk-framed piece (≤ STREAM_BUF_CAP). Size it to the larger so a
         // pathologically large header block still fits its one-time staging.
@@ -3529,7 +3761,12 @@ Server :: struct {
         hl := resp_head_len(resp, keep, date, self.cfg.server_name, false, true);
         cap := STREAM_BUF_CAP;
         if hl > cap { cap = hl; }
-        sb : [*]u8 = xx self.own_alloc.alloc_bytes(cap);
+        raw := self.own_alloc.alloc_bytes(cap);
+        if raw == null {
+            if encoded != null { destroy_encoded_producer(encoded, self.own_alloc); }
+            return false;
+        }
+        sb : [*]u8 = xx raw;
         w := resp_head_write(resp, keep, date, self.cfg.server_name, false, true, sb);
         c.out_buf = sb;
         c.out_len = w;
@@ -3539,8 +3776,10 @@ Server :: struct {
         c.streaming = true;
         c.producer = resp.producer;
         c.producer_ctx = resp.producer_ctx;
+        c.encoded_producer = encoded;
         c.stream_off = 0;
         c.stream_done = false;
+        true
     }
 
     // Q1.4: `head_only` = the request was HEAD — suppress body bytes (and
@@ -3549,12 +3788,14 @@ Server :: struct {
     // method and wins over a contradictory stream() call.
     // Q2.3: the inline paths serialize into the slot's persistent wbuf
     // (out_owned = false) — zero per-response allocations on the fast path.
-    serialize_response :: (self: *Server, slot: i64, resp: *Response, keep: bool, head_only: bool) {
+    serialize_response :: (self: *Server, slot: i64, resp: *Response, keep: bool, head_only: bool, encoding: Encoding) {
         c := @self.conns[slot];
         no_body := resp.status == 204 or resp.status == 304;
         if resp.streamed and resp.producer != null and !head_only and !no_body {
-            self.start_stream(slot, resp, keep);
-            return;
+            if self.start_stream(slot, resp, keep, encoding) { return; }
+            // Encoder initialization failed before any bytes were staged.
+            // Replace the response atomically with an identity 500.
+            resp.* = Response.{ status = 500, body = reason_for(500), allow_compression = false };
         }
         date := self.date_now();
         if resp.streamed and resp.producer != null and head_only and !no_body {
@@ -3612,13 +3853,21 @@ Server :: struct {
             i += 1;
             c := @self.conns[done.slot];
             if (c.state != CONN_HANDLING and c.state != CONN_BODY) or c.gen != done.gen {
-                self.own_alloc.dealloc_bytes(xx done.out.buf);
+                if done.out.buf != null { self.own_alloc.dealloc_bytes(xx done.out.buf); }
                 // Q3.2: the conn died before attach — abort the feeder (the
                 // worker may still be pumping) and drop the conn-side ref.
                 if done.ochan != null {
                     done.ochan.abort();
                     done.ochan.release();
                 }
+                continue;
+            }
+            // The worker could not allocate even the response head. No bytes
+            // escaped, so drop the completion and close the connection.
+            if done.out.buf == null {
+                if done.ochan != null { done.ochan.abort(); done.ochan.release(); }
+                self.emit(EventKind.WRITE_FAULT, done.slot, 0);
+                self.conn_close(done.slot);
                 continue;
             }
             // Q3.1 EARLY RESPONSE: the handler answered while the body was
@@ -3681,7 +3930,15 @@ Server :: struct {
                 // Free the worker's head buffer once copied.
                 cap := STREAM_BUF_CAP;
                 if done.out.len > cap { cap = done.out.len; }
-                sb : [*]u8 = xx self.own_alloc.alloc_bytes(cap);
+                raw := self.own_alloc.alloc_bytes(cap);
+                if raw == null {
+                    self.own_alloc.dealloc_bytes(xx done.out.buf);
+                    if done.ochan != null { done.ochan.abort(); done.ochan.release(); }
+                    self.emit(EventKind.WRITE_FAULT, done.slot, 0);
+                    self.conn_close(done.slot);
+                    continue;
+                }
+                sb : [*]u8 = xx raw;
                 clib.memcpy(sb, done.out.buf, done.out.len);
                 self.own_alloc.dealloc_bytes(xx done.out.buf);
                 c.out_buf = sb;
@@ -3731,9 +3988,9 @@ Server :: struct {
     // body stages the terminating `0\r\n\r\n` and marks stream_done.
     // Returns true iff something was staged. Memory is bounded: out_buf is
     // one STREAM_BUF_CAP scratch reused every refill.
-    stream_refill :: (self: *Server, slot: i64) -> bool {
+    stream_refill :: (self: *Server, slot: i64) -> i64 {
         c := @self.conns[slot];
-        if c.stream_done { return false; }
+        if c.stream_done { return 0; }
         // Stage the chunk header room at the front, data after it, then the
         // trailing CRLF — but the header length is variable (hex digits), so
         // produce data into a known offset and assemble. Layout in out_buf:
@@ -3747,16 +4004,31 @@ Server :: struct {
         DATA_OFF :: 18;   // 16 hex digits + "\r\n"
         produced : i64 = 0;
         if c.ochan != null {
-            n, fin := c.ochan.take(@c.out_buf[DATA_OFF], STREAM_PIECE);
-            if n == 0 and !fin { return false; }   // hungry — the worker's feed wakes us
+            n, take_status := c.ochan.take(@c.out_buf[DATA_OFF], STREAM_PIECE);
+            if n == 0 and take_status == .pending { return 0; }
+            if n == 0 and take_status == .producer_fault { return -1; }
             produced = n;
             // Q3.2: channel progress refreshes the delivery deadline — a
             // PROGRESSING worker-paced stream must outlive one fixed
             // window; a stalled one still dies at the stall bound.
             self.set_deadline(slot, self.cfg.timeout_request_ms);
+        } else if c.encoded_producer != null {
+            failed := false;
+            step := c.encoded_producer.next(string.{ ptr = @c.out_buf[DATA_OFF], len = STREAM_PIECE }) catch {
+                failed = true;
+                EncodedProduceStep.{}
+            };
+            if failed { return -1; }
+            if step.status == .pending {
+                // Re-enter on the next loop turn, not recursively in this
+                // writable drain. This bounds cooperative work per tick.
+                self.loop.wake();
+                return 0;
+            }
+            if step.status == .data { produced = step.produced; }
         } else {
             produced = c.producer(c.producer_ctx, c.stream_off, @c.out_buf[DATA_OFF], STREAM_PIECE);
-            if produced < 0 { produced = 0; }
+            if produced < 0 or produced > STREAM_PIECE { return -1; }
         }
         if produced == 0 {
             // terminating zero chunk: "0\r\n\r\n"
@@ -3766,7 +4038,7 @@ Server :: struct {
             c.out_len = 5;
             c.out_sent = 0;
             c.stream_done = true;
-            return true;
+            return 1;
         }
         c.stream_off += produced;
         // header: hex(produced) + CRLF, right-aligned so it butts against
@@ -3787,7 +4059,7 @@ Server :: struct {
         // into out_buf and out_len as the absolute end.
         c.out_sent = hstart;
         c.out_len = DATA_OFF + produced + 2;
-        return true;
+        return 1;
     }
 
     write_more :: (self: *Server, slot: i64) {
@@ -3823,7 +4095,13 @@ Server :: struct {
             // current buffer fully sent. If streaming and not yet terminated,
             // refill with the next chunk and keep draining (bounded memory).
             if c.streaming and !c.stream_done {
-                if self.stream_refill(slot) { continue; }
+                refilled := self.stream_refill(slot);
+                if refilled > 0 { continue; }
+                if refilled < 0 {
+                    self.emit(EventKind.WRITE_FAULT, slot, 0);
+                    self.conn_close(slot);
+                    return;
+                }
                 // Q3.2: the worker-fed channel is empty but still running —
                 // pause the drain until the feed wakes the loop. Drop the
                 // write watch: a level-triggered writable with nothing
@@ -3847,6 +4125,10 @@ Server :: struct {
         c.producer = null;
         c.stream_off = 0;
         c.stream_done = false;
+        if c.encoded_producer != null {
+            destroy_encoded_producer(c.encoded_producer, self.own_alloc);
+            c.encoded_producer = null;
+        }
         // Q3.2: the stream is over — drop the conn's channel reference (the
         // worker released its side when the pump ended).
         if c.ochan != null {
@@ -3973,7 +4255,7 @@ Server :: struct {
             // head_only=false: an error reply may not know the method (the
             // request line can be the malformed part) — the tiny reason body
             // ships even to a HEAD; safe, since error closes never pipeline.
-            self.serialize_response(slot, @resp, false, false);
+            self.serialize_response(slot, @resp, false, false, .identity);
         }
         err_arena.deinit();
         self.write_more(slot);

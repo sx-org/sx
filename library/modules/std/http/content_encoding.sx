@@ -1,0 +1,585 @@
+// HTTP content-coding helpers shared by the client and server.
+//
+// This module deliberately keeps HTTP policy separate from the codec APIs:
+// RFC 9110 `deflate` is the zlib-wrapped RFC 1950 representation, while
+// `gzip` is RFC 1952. The concrete encoders/decoders remain the public
+// std.zlib and std.gzip types; HTTP only selects and drives them.
+
+#import "modules/std/core.sx";
+#import "modules/std/compress.sx";
+gzip_codec :: #import "modules/std/codecs/gzip.sx";
+zlib_codec :: #import "modules/std/codecs/zlib.sx";
+
+Encoding :: enum {
+    identity;
+    gzip;
+    deflate;
+    unacceptable;
+}
+
+// Parsed Accept-Encoding preferences. Identity acceptability is deliberately
+// retained independently from the preferred coding: a policy decision that
+// prevents transformation may only fall back to identity when identity_q > 0.
+AcceptEncoding :: struct {
+    headers: string = "";
+    found: bool = false;
+    gzip_q: i64 = 0;
+    deflate_q: i64 = 0;
+    identity_q: i64 = 1000;
+    wildcard_q: i64 = -1;
+}
+
+// A response producer has the same shape as http.StreamProducer. Keeping the
+// signature local avoids importing http/types.sx back into this helper.
+Producer :: (ctx: usize, offset: i64, dst: [*]u8, dst_cap: i64) -> i64;
+
+ascii_lower :: (c: u8) -> u8 {
+    if c >= 'A' and c <= 'Z' { return c + ' '; }
+    c
+}
+
+ce_ascii_ieq :: (a: string, b: string) -> bool {
+    if a.len != b.len { return false; }
+    i : i64 = 0;
+    while i < a.len {
+        if ascii_lower(a[i]) != ascii_lower(b[i]) { return false; }
+        i += 1;
+    }
+    true
+}
+
+ascii_iprefix :: (value: string, prefix: string) -> bool {
+    if value.len < prefix.len { return false; }
+    i : i64 = 0;
+    while i < prefix.len {
+        if ascii_lower(value[i]) != ascii_lower(prefix[i]) { return false; }
+        i += 1;
+    }
+    true
+}
+
+is_ows :: (c: u8) -> bool { c == ' ' or c == '\t' }
+
+trim_ows :: (value: string) -> string {
+    first : i64 = 0;
+    last : i64 = value.len;
+    while first < last and is_ows(value[first]) { first += 1; }
+    while last > first and is_ows(value[last - 1]) { last -= 1; }
+    value[first..last]
+}
+
+// Return the first value of `name` in a raw header block. Header names are
+// matched case-insensitively and OWS is trimmed from both value edges.
+header :: (raw: string, name: string) -> string {
+    at : i64 = 0;
+    while at < raw.len {
+        line_end := at;
+        while line_end < raw.len and raw[line_end] != '\r' and raw[line_end] != '\n' { line_end += 1; }
+        colon := at;
+        while colon < line_end and raw[colon] != ':' { colon += 1; }
+        if colon < line_end {
+            field := raw[at..colon];
+            if ce_ascii_ieq(field, name) { return trim_ows(raw[colon + 1..line_end]); }
+        }
+        while line_end < raw.len and (raw[line_end] == '\r' or raw[line_end] == '\n') { line_end += 1; }
+        at = line_end;
+    }
+    ""
+}
+
+has_header :: (raw: string, name: string) -> bool {
+    at : i64 = 0;
+    while at < raw.len {
+        line_end := at;
+        while line_end < raw.len and raw[line_end] != '\r' and raw[line_end] != '\n' { line_end += 1; }
+        colon := at;
+        while colon < line_end and raw[colon] != ':' { colon += 1; }
+        if colon < line_end and ce_ascii_ieq(raw[at..colon], name) { return true; }
+        while line_end < raw.len and (raw[line_end] == '\r' or raw[line_end] == '\n') { line_end += 1; }
+        at = line_end;
+    }
+    false
+}
+
+// True when any occurrence of `name` contains `token` as a complete
+// comma-delimited item. Parameters after ';' are ignored for the match.
+has_header_token :: (raw: string, name: string, token: string) -> bool {
+    line_at : i64 = 0;
+    while line_at < raw.len {
+        line_end := line_at;
+        while line_end < raw.len and raw[line_end] != '\r' and raw[line_end] != '\n' { line_end += 1; }
+        colon := line_at;
+        while colon < line_end and raw[colon] != ':' { colon += 1; }
+        if colon < line_end and ce_ascii_ieq(raw[line_at..colon], name) {
+            value := raw[colon + 1..line_end];
+            at : i64 = 0;
+            while at <= value.len {
+                end := at;
+                while end < value.len and value[end] != ',' { end += 1; }
+                item := trim_ows(value[at..end]);
+                item_end : i64 = 0;
+                while item_end < item.len and item[item_end] != ';' { item_end += 1; }
+                if ce_ascii_ieq(trim_ows(item[..item_end]), token) { return true; }
+                if end >= value.len { break; }
+                at = end + 1;
+            }
+        }
+        while line_end < raw.len and (raw[line_end] == '\r' or raw[line_end] == '\n') { line_end += 1; }
+        line_at = line_end;
+    }
+    false
+}
+
+// Parse one RFC qvalue to thousandths. Invalid values are treated as zero:
+// refusing a coding is safer than silently accepting a malformed weight.
+quality :: (value: string) -> i64 {
+    v := trim_ows(value);
+    if v.len == 0 { return 0; }
+    whole := v[0];
+    if whole != '0' and whole != '1' { return 0; }
+    if v.len == 1 { return if whole == '1' then 1000 else 0; }
+    if v[1] != '.' { return 0; }
+    if v.len > 5 { return 0; } // at most three fractional digits
+    result : i64 = 0;
+    scale : i64 = 100;
+    i : i64 = 2;
+    while i < v.len {
+        if v[i] < '0' or v[i] > '9' { return 0; }
+        digit : i64 = xx (v[i] - '0');
+        if whole == '1' and digit != 0 { return 0; }
+        result += digit * scale;
+        scale = scale / 10;
+        i += 1;
+    }
+    if whole == '1' { return 1000; }
+    result
+}
+
+// Extract q from one comma-delimited coding item. Unknown parameters are
+// ignored; duplicate q parameters conservatively take the lowest value.
+item_quality :: (item: string) -> i64 {
+    q : i64 = 1000;
+    seen := false;
+    at : i64 = 0;
+    while at < item.len and item[at] != ';' { at += 1; }
+    while at < item.len {
+        at += 1; // ';'
+        while at < item.len and is_ows(item[at]) { at += 1; }
+        name_at := at;
+        while at < item.len and item[at] != '=' and item[at] != ';' { at += 1; }
+        name := trim_ows(item[name_at..at]);
+        value : string = "";
+        if at < item.len and item[at] == '=' {
+            at += 1;
+            value_at := at;
+            while at < item.len and item[at] != ';' { at += 1; }
+            value = trim_ows(item[value_at..at]);
+        }
+        if ce_ascii_ieq(name, "q") {
+            parsed := quality(value);
+            if !seen or parsed < q { q = parsed; }
+            seen = true;
+        }
+    }
+    q
+}
+
+// Parse all Accept-Encoding lines. Duplicate entries conservatively take the
+// lowest q so a later permissive occurrence cannot bypass an explicit refusal.
+parse_accept_encoding :: (headers: string) -> AcceptEncoding {
+    result : AcceptEncoding = .{ headers = headers };
+    gzip_q : i64 = -1;
+    deflate_q : i64 = -1;
+    identity_q : i64 = -1;
+    wildcard_q : i64 = -1;
+    found := false;
+
+    line_at : i64 = 0;
+    while line_at < headers.len {
+        line_end := line_at;
+        while line_end < headers.len and headers[line_end] != '\r' and headers[line_end] != '\n' { line_end += 1; }
+        colon := line_at;
+        while colon < line_end and headers[colon] != ':' { colon += 1; }
+        if colon < line_end and ce_ascii_ieq(headers[line_at..colon], "accept-encoding") {
+            found = true;
+            value := headers[colon + 1..line_end];
+            at : i64 = 0;
+            while at <= value.len {
+                end := at;
+                while end < value.len and value[end] != ',' { end += 1; }
+                item := trim_ows(value[at..end]);
+                token_end : i64 = 0;
+                while token_end < item.len and item[token_end] != ';' and !is_ows(item[token_end]) { token_end += 1; }
+                token := item[..token_end];
+                q := item_quality(item);
+                if ce_ascii_ieq(token, "gzip") {
+                    if gzip_q < 0 or q < gzip_q { gzip_q = q; }
+                } else if ce_ascii_ieq(token, "deflate") {
+                    if deflate_q < 0 or q < deflate_q { deflate_q = q; }
+                } else if ce_ascii_ieq(token, "identity") {
+                    if identity_q < 0 or q < identity_q { identity_q = q; }
+                } else if ce_ascii_ieq(token, "*") {
+                    if wildcard_q < 0 or q < wildcard_q { wildcard_q = q; }
+                }
+                if end >= value.len { break; }
+                at = end + 1;
+            }
+        }
+        while line_end < headers.len and (headers[line_end] == '\r' or headers[line_end] == '\n') { line_end += 1; }
+        line_at = line_end;
+    }
+
+    // An absent field means no content coding was requested. An empty field
+    // likewise means identity only.
+    result.found = found;
+    if !found { return result; }
+    if gzip_q < 0 { gzip_q = wildcard_q; }
+    if deflate_q < 0 { deflate_q = wildcard_q; }
+    if gzip_q < 0 { gzip_q = 0; }
+    if deflate_q < 0 { deflate_q = 0; }
+    if identity_q < 0 { identity_q = if wildcard_q == 0 then 0 else 1000; }
+    result.gzip_q = gzip_q;
+    result.deflate_q = deflate_q;
+    result.identity_q = identity_q;
+    result.wildcard_q = wildcard_q;
+    result
+}
+
+// Choose between supported automatic representations. An absent field means
+// the server keeps identity; equal positive weights prefer gzip, then deflate.
+preferred_encoding :: (accept: *AcceptEncoding) -> Encoding {
+    if !accept.found { return .identity; }
+    if accept.gzip_q > 0 and accept.gzip_q >= accept.deflate_q and accept.gzip_q >= accept.identity_q { return .gzip; }
+    if accept.deflate_q > 0 and accept.deflate_q >= accept.identity_q { return .deflate; }
+    if accept.identity_q > 0 { return .identity; }
+    if accept.gzip_q > 0 and accept.gzip_q >= accept.deflate_q { return .gzip; }
+    if accept.deflate_q > 0 { return .deflate; }
+    .unacceptable
+}
+
+identity_acceptable :: (accept: *AcceptEncoding) -> bool { accept.identity_q > 0 }
+
+// Find an explicit q for an arbitrary content-coding token. This is used for
+// handler-supplied/stacked representations, which must be preserved only when
+// the requester accepts every coding in the stack.
+explicit_quality :: (headers: string, wanted: string) -> i64 {
+    best : i64 = -1;
+    line_at : i64 = 0;
+    while line_at < headers.len {
+        line_end := line_at;
+        while line_end < headers.len and headers[line_end] != '\r' and headers[line_end] != '\n' { line_end += 1; }
+        colon := line_at;
+        while colon < line_end and headers[colon] != ':' { colon += 1; }
+        if colon < line_end and ce_ascii_ieq(headers[line_at..colon], "accept-encoding") {
+            value := headers[colon + 1..line_end];
+            at : i64 = 0;
+            while at <= value.len {
+                end := at;
+                while end < value.len and value[end] != ',' { end += 1; }
+                item := trim_ows(value[at..end]);
+                token_end : i64 = 0;
+                while token_end < item.len and item[token_end] != ';' and !is_ows(item[token_end]) { token_end += 1; }
+                if ce_ascii_ieq(item[..token_end], wanted) {
+                    q := item_quality(item);
+                    if best < 0 or q < best { best = q; }
+                }
+                if end >= value.len { break; }
+                at = end + 1;
+            }
+        }
+        while line_end < headers.len and (headers[line_end] == '\r' or headers[line_end] == '\n') { line_end += 1; }
+        line_at = line_end;
+    }
+    best
+}
+
+coding_quality :: (accept: *AcceptEncoding, coding: string) -> i64 {
+    if !accept.found { return 1000; }
+    if ce_ascii_ieq(coding, "identity") { return accept.identity_q; }
+    if ce_ascii_ieq(coding, "gzip") { return accept.gzip_q; }
+    if ce_ascii_ieq(coding, "deflate") { return accept.deflate_q; }
+    q := explicit_quality(accept.headers, coding);
+    if q >= 0 { return q; }
+    if accept.wildcard_q >= 0 { return accept.wildcard_q; }
+    0
+}
+
+is_tchar :: (c: u8) -> bool {
+    if c >= 'a' and c <= 'z' { return true; }
+    if c >= 'A' and c <= 'Z' { return true; }
+    if c >= '0' and c <= '9' { return true; }
+    c == '!' or c == '#' or c == '$' or c == '%' or c == '&' or c == '\''
+        or c == '*' or c == '+' or c == '-' or c == '.' or c == '^'
+        or c == '_' or c == '`' or c == '|' or c == '~'
+}
+
+valid_coding_token :: (value: string) -> bool {
+    if value.len == 0 { return false; }
+    i : i64 = 0;
+    while i < value.len {
+        if !is_tchar(value[i]) { return false; }
+        i += 1;
+    }
+    true
+}
+
+// Validate every Content-Encoding field/item and require every stacked coding
+// to be acceptable. No field means the identity representation.
+content_coding_acceptable :: (accept: *AcceptEncoding, raw: string) -> bool {
+    found := false;
+    line_at : i64 = 0;
+    while line_at < raw.len {
+        line_end := line_at;
+        while line_end < raw.len and raw[line_end] != '\r' and raw[line_end] != '\n' { line_end += 1; }
+        colon := line_at;
+        while colon < line_end and raw[colon] != ':' { colon += 1; }
+        if colon < line_end and ce_ascii_ieq(raw[line_at..colon], "content-encoding") {
+            found = true;
+            value := raw[colon + 1..line_end];
+            at : i64 = 0;
+            while at <= value.len {
+                end := at;
+                while end < value.len and value[end] != ',' { end += 1; }
+                coding := trim_ows(value[at..end]);
+                if !valid_coding_token(coding) or coding_quality(accept, coding) <= 0 { return false; }
+                if end >= value.len { break; }
+                at = end + 1;
+            }
+        }
+        while line_end < raw.len and (raw[line_end] == '\r' or raw[line_end] == '\n') { line_end += 1; }
+        line_at = line_end;
+    }
+    if !found { return identity_acceptable(accept); }
+    true
+}
+
+// Compatibility wrapper for existing internal callers.
+select :: (headers: string) -> Encoding {
+    accept := parse_accept_encoding(headers);
+    preferred_encoding(@accept)
+}
+
+parse_content_encoding :: (value: string) -> Encoding {
+    v := trim_ows(value);
+    if !valid_coding_token(v) { return .unacceptable; }
+    if ce_ascii_ieq(v, "identity") { return .identity; }
+    if ce_ascii_ieq(v, "gzip") { return .gzip; }
+    if ce_ascii_ieq(v, "deflate") { return .deflate; }
+    .unacceptable
+}
+
+// Conservative response allowlist: avoid wasting cycles recompressing data
+// formats that already carry their own compression.
+compressible_content_type :: (value: string) -> bool {
+    end : i64 = 0;
+    while end < value.len and value[end] != ';' { end += 1; }
+    media := trim_ows(value[..end]);
+    (media.len > 5 and ascii_iprefix(media, "text/"))
+        or ce_ascii_ieq(media, "application/json")
+        or ce_ascii_ieq(media, "application/javascript")
+        or ce_ascii_ieq(media, "application/xml")
+        or ce_ascii_ieq(media, "image/svg+xml")
+}
+
+encode :: (data: string, encoding: Encoding, level: i64, alloc: Allocator) -> (string, !Error) {
+    if encoding == .gzip {
+        return gzip_codec.encode(data, .{ level = level }, .{}, alloc);
+    }
+    if encoding == .deflate {
+        return zlib_codec.encode(data, .{ level = level }, alloc);
+    }
+    raise error.Unsupported;
+}
+
+EncoderStorage :: union {
+    gzip: gzip_codec.Encoder;
+    deflate: zlib_codec.Encoder;
+}
+
+Encoder :: struct {
+    encoding: Encoding;
+    storage: EncoderStorage;
+
+    init :: (encoding: Encoding, level: i64, alloc: Allocator) -> (Encoder, !Error) {
+        result : Encoder = ---;
+        result.encoding = encoding;
+        if encoding == .gzip {
+            result.storage.gzip = try gzip_codec.Encoder.init(.{ level = level }, .{}, alloc);
+            return result;
+        }
+        if encoding == .deflate {
+            result.storage.deflate = try zlib_codec.Encoder.init(.{ level = level }, alloc);
+            return result;
+        }
+        raise error.Unsupported;
+    }
+
+    write :: (self: *Encoder, input: string, output: string) -> (Progress, !Error) {
+        if self.encoding == .gzip { return self.storage.gzip.write(input, output); }
+        if self.encoding == .deflate { return self.storage.deflate.write(input, output); }
+        raise error.Unsupported;
+    }
+
+    finish :: (self: *Encoder, output: string) -> (Progress, !Error) {
+        if self.encoding == .gzip { return self.storage.gzip.finish(output); }
+        if self.encoding == .deflate { return self.storage.deflate.finish(output); }
+        raise error.Unsupported;
+    }
+
+    deinit :: (self: *Encoder) {
+        if self.encoding == .gzip { self.storage.gzip.deinit(); }
+        else if self.encoding == .deflate { self.storage.deflate.deinit(); }
+        self.encoding = .identity;
+    }
+}
+
+DecoderStorage :: union {
+    gzip: gzip_codec.Decoder;
+    deflate: zlib_codec.Decoder;
+}
+
+Decoder :: struct {
+    encoding: Encoding;
+    storage: DecoderStorage;
+
+    init :: (encoding: Encoding, max_output: i64, alloc: Allocator) -> (Decoder, !Error) {
+        result : Decoder = ---;
+        result.encoding = encoding;
+        if encoding == .gzip {
+            result.storage.gzip = try gzip_codec.Decoder.init(max_output, alloc);
+            return result;
+        }
+        if encoding == .deflate {
+            result.storage.deflate = try zlib_codec.Decoder.init(max_output, alloc);
+            return result;
+        }
+        raise error.Unsupported;
+    }
+
+    read :: (self: *Decoder, input: string, output: string) -> (Progress, !Error) {
+        if self.encoding == .gzip { return self.storage.gzip.read(input, output); }
+        if self.encoding == .deflate { return self.storage.deflate.read(input, output); }
+        raise error.Unsupported;
+    }
+
+    finish :: (self: *Decoder, output: string) -> (Progress, !Error) {
+        if self.encoding == .gzip { return self.storage.gzip.finish(output); }
+        if self.encoding == .deflate { return self.storage.deflate.finish(output); }
+        raise error.Unsupported;
+    }
+
+    deinit :: (self: *Decoder) {
+        if self.encoding == .gzip { self.storage.gzip.deinit(); }
+        else if self.encoding == .deflate { self.storage.deflate.deinit(); }
+        self.encoding = .identity;
+    }
+}
+
+// Bounded adapter over a response producer. It retains at most one 16 KiB
+// source piece and the codec's fixed-size state, irrespective of total body
+// length. `next` fills one caller-provided output piece.
+SOURCE_PIECE :: 16384;
+
+EncodedProduceStatus :: enum {
+    data;
+    pending;
+    done;
+}
+
+EncodedProduceStep :: struct {
+    produced: i64 = 0;
+    status: EncodedProduceStatus = .pending;
+}
+
+EncodedProducer :: struct {
+    source: Producer;
+    source_ctx: usize;
+    source_off: i64;
+    input: [*]u8;
+    input_at: i64;
+    input_len: i64;
+    source_eof: bool;
+    finished: bool;
+    encoder: Encoder;
+    alloc: Allocator;
+
+    init :: (encoding: Encoding, level: i64, source: Producer, source_ctx: usize, alloc: Allocator) -> (EncodedProducer, !Error) {
+        input := alloc.alloc_bytes(SOURCE_PIECE);
+        if input == null { raise error.AllocationFailed; }
+        encoder := Encoder.init(encoding, level, alloc) catch (e) {
+            alloc.dealloc_bytes(input);
+            raise e;
+        };
+        EncodedProducer.{
+            source = source,
+            source_ctx = source_ctx,
+            source_off = 0,
+            input = xx input,
+            input_at = 0,
+            input_len = 0,
+            source_eof = false,
+            finished = false,
+            encoder = encoder,
+            alloc = alloc,
+        }
+    }
+
+    // Perform at most one bounded source pull OR one codec drive. `pending`
+    // means forward progress without output and is never confused with EOF;
+    // event-loop callers yield before asking for another step.
+    next :: (self: *EncodedProducer, output: string) -> (EncodedProduceStep, !Error) {
+        if self.finished { return EncodedProduceStep.{ status = EncodedProduceStatus.done }; }
+        if self.input_at < self.input_len {
+            input := string.{ ptr = @self.input[self.input_at], len = self.input_len - self.input_at };
+            progress := try self.encoder.write(input, output);
+            self.input_at += progress.consumed;
+            if progress.status == .done { self.finished = true; }
+            if progress.produced > 0 { return EncodedProduceStep.{ produced = progress.produced, status = EncodedProduceStatus.data }; }
+            if self.finished { return EncodedProduceStep.{ status = EncodedProduceStatus.done }; }
+            if progress.consumed > 0 { return EncodedProduceStep.{ status = EncodedProduceStatus.pending }; }
+            raise error.InvalidData;
+        }
+
+        if !self.source_eof {
+            n := self.source(self.source_ctx, self.source_off, self.input, SOURCE_PIECE);
+            if n < 0 or n > SOURCE_PIECE { raise error.Io; }
+            if n > 0 {
+                self.source_off += n;
+                self.input_at = 0;
+                self.input_len = n;
+                return EncodedProduceStep.{ status = EncodedProduceStatus.pending };
+            }
+            self.source_eof = true;
+        }
+
+        progress := try self.encoder.finish(output);
+        if progress.status == .done { self.finished = true; }
+        if progress.produced > 0 { return EncodedProduceStep.{ produced = progress.produced, status = EncodedProduceStatus.data }; }
+        if self.finished { return EncodedProduceStep.{ status = EncodedProduceStatus.done }; }
+        raise error.InvalidData;
+    }
+
+    deinit :: (self: *EncodedProducer) {
+        self.encoder.deinit();
+        if self.input != null { self.alloc.dealloc_bytes(xx self.input); self.input = null; }
+        self.finished = true;
+    }
+}
+
+create_encoded_producer :: (encoding: Encoding, level: i64, source: Producer, source_ctx: usize, alloc: Allocator) -> *EncodedProducer {
+    raw := alloc.alloc_bytes(size_of(EncodedProducer));
+    if raw == null { return null; }
+    state := EncodedProducer.init(encoding, level, source, source_ctx, alloc) catch {
+        alloc.dealloc_bytes(raw);
+        return null;
+    };
+    result : *EncodedProducer = xx raw;
+    result.* = state;
+    result
+}
+
+destroy_encoded_producer :: (state: *EncodedProducer, alloc: Allocator) {
+    if state == null { return; }
+    state.deinit();
+    alloc.dealloc_bytes(xx state);
+}

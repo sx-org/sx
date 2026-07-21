@@ -122,6 +122,8 @@ allocator and **never shares allocator state across threads**.
   connection (a buffer pool); they're freed at `Server.close()`.
 - Streamed-response scratch is a single bounded buffer reused per chunk and
   freed at stream end (or on abort).
+- A content-encoded stream retains one 16 KiB source window plus the selected
+  gzip/zlib codec state. Its memory does not grow with the representation.
 
 ### Scaling across cores: the SO_REUSEPORT multi-loop pattern
 
@@ -223,6 +225,81 @@ srv.run();   // each instance owns its loop, slots, buffers, stats
     `error.Config`.
 
   See `examples/http/1698-http-stream-request-body.sx`.
+
+---
+
+## Negotiated response compression
+
+Response compression is off by default. Enable it explicitly:
+
+```sx
+cfg : http.Config = .{
+    compress_responses = true,
+    compress_min_size = 1024,
+    compress_level = 6,
+};
+```
+
+For complete compressible media types (`text/*`, `application/json`,
+`application/javascript`, `application/xml`, and `image/svg+xml`), the server
+parses every `Accept-Encoding` field and selects the highest-quality supported
+representation: gzip, RFC 9110 `deflate` (zlib framing), or identity. Wildcards,
+duplicate entries, qvalues, and an explicit identity refusal are handled
+independently. A policy or size-floor exit may use identity only when identity
+is acceptable; otherwise the response is 406. Streams are encoded
+incrementally because their final size is not known when the head is sent.
+Inline, pool, and fiber modes retain bounded codec state and yield between
+cooperative encoder steps.
+
+Eligible responses carry `Vary: Accept-Encoding` even when this request chose
+identity. A handler-provided `Content-Encoding` stack is preserved byte for
+byte and never encoded again, but receives 406 unless the request accepts every
+coding in the stack. These responses are intentionally left unchanged:
+
+- `resp.disable_compression()` was called;
+- a request has `Range`, the response is 206/416, or any response field is
+  `Content-Range` (transforming a selected range would invalidate offsets);
+- any `Cache-Control` field includes `no-transform`;
+- a strong ETag or representation/content digest describes the identity bytes;
+- status 204/304, an ineligible media type, or a fixed body below the floor.
+
+`Response.extra_headers` must not contain `Content-Length` or
+`Transfer-Encoding`; framing belongs to the server. A handler that supplies
+either gets an atomic 500 response before any conflicting head is written.
+For streamed bodies, producer return values are `>0` data, `0` clean EOF, and
+negative source failure. A failure closes the connection without a terminating
+zero chunk, and that connection is never reused.
+
+Compression can expose secret-dependent length through BREACH-style attacks
+when a response mixes secrets with attacker-controlled reflected input. Keep
+the feature disabled globally unless the application has assessed that risk,
+and call `resp.disable_compression()` for affected responses.
+
+The blocking client advertises `Accept-Encoding: gzip, deflate` by default,
+except when the request already contains `Accept-Encoding` or contains
+`Range`. It decodes either coding while reading fixed, close-delimited, or
+chunked bodies. HEAD responses and 1xx/204/304 framing are resolved before
+Content-Length or Transfer-Encoding, and informational responses are consumed
+until the final response. The encoded input window is 16 KiB and decoded output
+is bounded by the caller's buffer. After transparent decoding,
+`ClientResponse.decoded_from` is the optional typed value
+`http.ContentCoding.gzip` or `.deflate`; null means no transform. Stale
+`Content-Encoding` plus encoded `Content-Length` fields are removed from
+`headers_raw`, and `body.len` is the authoritative decoded size. Coded 206/416
+or any `Content-Range` response is deliberately returned unchanged.
+
+Set `ClientOpts.accept_compression = false` to neither advertise nor
+transparently decode. If the caller manually sends an `Accept-Encoding` in that
+mode, arbitrary unknown, repeated, or stacked coding fields and the coded body
+remain intact, allowing explicit codec use. With decoding enabled, exactly one
+supported coding is required. Malformed framing/coding lists, unsupported
+codings, truncated streams, and checksum failures return `error.Recv`;
+insufficient decoded capacity returns `error.TooLarge`.
+
+See `examples/http/1719-http-content-encoding.sx` and the adjacent 1727–1730
+regressions for fixed/streamed coding, negotiation and range policy, framing
+matrices, mode parity, failure propagation, allocation unwind, and `.tgs`
+coverage.
 
 ---
 
@@ -486,6 +563,7 @@ rejected/timeout/5xx counters for abuse or saturation.
 | `handler_timeout_ms` | per-request deadline (hard in pool mode) |
 | `shutdown_timeout_ms` | graceful-drain bound |
 | `on_event`, `on_event_ctx` | observability hook |
+| `compress_responses`, `compress_min_size`, `compress_level` | negotiated gzip/deflate policy (off by default) |
 
 ---
 
@@ -501,7 +579,8 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
 - HTTP/1.1 request parsing with the hardening guards (smuggling, overflow,
   resource caps), keep-alive + pipelining, inline and pooled handlers.
 - Response: fixed body (`Content-Length`) and chunked streaming
-  (`resp.stream`); the `set_status` / `set_content_type` / `add_header` helpers.
+  (`resp.stream`); bounded negotiated gzip/deflate; the `set_status` /
+  `set_content_type` / `add_header` / `disable_compression` helpers.
 - Request bodies: `Content-Length` and inbound chunked decode, bounded by
   `max_body`.
 - Graceful shutdown (`stop`), the `Stats` counters + `on_event` hook, and the
@@ -523,8 +602,10 @@ subprocess-isolated, on macOS and validated end-to-end on aarch64-Linux.
   timeouts, HTTPS through the `TlsDialer` seam
   (`tls_mbedtls.TlsClientConfig` — explicit trust anchor with hostname
   verification, or the loudly-named `insecure()`; TLS 1.3 session tickets
-  handled), chunked response decoding via the server's own decoder, and
-  truncated responses surfaced as errors — never a padded body.
+  handled), chunked transfer decoding plus bounded transparent gzip/deflate
+  content decoding, and truncated responses surfaced as errors — never a
+  padded body. `ClientOpts.accept_compression=false` retains the coded
+  representation instead.
   `Client.fetch(method, url, …)` adds URL parsing and redirect following
   (301/302/303 → GET, 307/308 preserve, capped by
   `ClientOpts.max_redirects`; https targets require a configured dialer);
