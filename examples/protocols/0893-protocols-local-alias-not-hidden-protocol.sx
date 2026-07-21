@@ -1,0 +1,24 @@
+// A namespace-only foreign protocol with the same spelling must not hijack a
+// local alias used by an impl. Canonicalization is source-visible, not global.
+// Regression (issue 0320 adversarial review).
+
+foreign :: #import "0893-protocols-local-alias-not-hidden-protocol/foreign.sx";
+
+Q :: protocol #identity {
+    value :: (self: *Self) -> i64;
+}
+
+P :: Q;
+
+Thing :: struct { n: i64; }
+
+impl P for Thing {
+    value :: (self: *Thing) -> i64 { self.n }
+}
+
+main :: () -> i32 {
+    value := Thing.{ n = 42 };
+    erased : Q = xx value;
+    if erased.value() != 42 { return 1; }
+    0
+}

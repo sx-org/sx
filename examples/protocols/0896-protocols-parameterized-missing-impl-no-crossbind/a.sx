@@ -1,0 +1,7 @@
+#import "contract.sx";
+
+Thing :: struct { n: i64; }
+impl Value(i64) for Thing {
+    get :: (self: *Thing) -> i64 { self.n + 1 }
+}
+make :: () -> Thing { .{ n = 10 } }

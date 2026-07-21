@@ -1,0 +1,9 @@
+// Every namespace-qualified multi-assignment target is selected and diagnosed
+// before any target-directed RHS is evaluated.
+
+lib :: #import "1226-diagnostics-qualified-global-store-nonlvalue/lib.sx";
+
+main :: () -> i32 {
+    lib.LIB_C, lib.lib_fn = null, .selected;
+    0
+}

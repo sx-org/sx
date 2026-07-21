@@ -1,0 +1,1 @@
+take :: (value: i32) -> i64 { value.(i64) }

@@ -1,0 +1,56 @@
+// Inline comptime methods retain ordinary function and receiver boundaries:
+// an explicit return runs only callee defers, a pointer receiver may spill an
+// rvalue temporary, and a tagged-union payload resolves caller locals before
+// the hygienic body scope is installed.
+
+Mode :: enum { run; }
+Shape :: enum { circle: f64; point; }
+
+cleanups : i64 = 0;
+
+cleanup :: () {
+    cleanups += 1;
+}
+
+Thing :: struct {
+    value: i64;
+
+    ping :: ($mode: Mode) -> i64 {
+        if mode == .run { return 7; }
+        0
+    }
+
+    make :: (value: i64) -> Thing {
+        .{ value = value }
+    }
+
+    bump :: (self: *Thing, $mode: Mode) -> i64 {
+        if mode == .run { self.value += 1; }
+        self.value
+    }
+
+    classify :: ($shape: Shape) -> i64 {
+        if shape == .circle { return 1; }
+        0
+    }
+}
+
+run :: () -> i32 {
+    defer cleanup();
+
+    if Thing.ping(.run) != 7 { return 1; }
+    if cleanups != 0 { return 2; }
+
+    if Thing.make(4).bump(.run) != 5 { return 3; }
+
+    radius := 2.0;
+    if Thing.classify(.circle(radius)) != 1 { return 4; }
+    0
+}
+
+main :: () -> i32 {
+    result := run();
+    if result != 0 { return result; }
+    if cleanups != 1 { return 5; }
+    0
+}

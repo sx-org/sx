@@ -1,0 +1,2 @@
+// Namespaced-only from the 0913 root (two flat hops through hidden_bridge).
+api : i64 = 99;

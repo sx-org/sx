@@ -19,6 +19,7 @@
 // The whole run is under a GPA; net-zero alloc_count after close proves
 // no per-request / decode leak. Single-thread tick harness (1633-style).
 #import "modules/std.sx";
+mem  :: #import "modules/std/mem.sx";
 http :: #import "modules/std/http.sx";
 
 PORT :: 18975;
@@ -199,7 +200,7 @@ main :: () -> i32 {
         if rc == 0 {
             // build the multi-chunk request under a scratch arena (freed
             // below) so the test's own concats don't show up as GPA leaks.
-            ta := Arena.init(gpa, 4096);
+            ta := mem.Arena.init(gpa, 4096);
             req : string = "";
             push .{ allocator = ta } {
                 req = concat(

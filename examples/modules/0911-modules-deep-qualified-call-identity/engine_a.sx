@@ -1,0 +1,23 @@
+#import "modules/std.sx";
+
+Record :: struct { a: i64; }
+Mode :: enum { chosen; other; }
+LocationBox :: struct { loc: Source_Location; }
+Counter :: struct {
+    value: i64;
+    get :: (self: *Counter) -> i64 { self.value }
+}
+
+LOCAL_DEFAULT :: 51;
+STATE : Counter = .{ value = 111 };
+
+make :: () -> Record { .{ a = 11 } }
+accept :: (value: Record) -> i64 { value.a }
+defaulted :: (value: i64 = LOCAL_DEFAULT) -> i64 { value }
+generic :: ($T: Type, value: T) -> i64 { 71 }
+generic_record :: ($T: Type, value: T) -> Record { .{ a = 121 } }
+choose :: ($mode: Mode) -> i64 {
+    if mode == .chosen { return 91; }
+    0
+}
+caller :: (box: LocationBox = .{ loc = #caller_location }) -> Source_Location { box.loc }

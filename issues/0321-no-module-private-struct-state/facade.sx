@@ -1,0 +1,11 @@
+#import "internal.sx";
+
+Wrapper :: struct {
+    state: Secret;
+
+    init :: (value: i64) -> Wrapper {
+        Wrapper.{ state = make_secret(value) }
+    }
+
+    get :: (self: *Wrapper) -> i64 { self.state.value }
+}

@@ -1,0 +1,5 @@
+error: error tag 'error.NotFailure' is not in error set 'Failure'
+  --> examples/diagnostics/1266-diagnostics-optional-error-set-membership.sx:8:15
+   |
+ 8 |     failure = error.NotFailure;
+   |               ^^^^^^^^^^^^^^^^

@@ -1,0 +1,8 @@
+Choice :: enum { idle; selected; }
+Record :: struct { a: i64; }
+
+OPTION : ?i64 = 1;
+CHOICE : Choice = .idle;
+RECORD : Record = .{ a = 1 };
+
+ping :: () -> i64 { 17 }

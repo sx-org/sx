@@ -1,0 +1,16 @@
+// Two namespace targets may author the same inner alias spelling. Nested
+// dispatch must retain both outer and inner target identity rather than
+// collapsing through a process-global `engine_alias.value` key.
+
+a :: #import "0902-modules-nested-namespace-alias-identity/a.sx";
+b :: #import "0902-modules-nested-namespace-alias-identity/b.sx";
+
+main :: () -> i32 {
+    if a.engine_alias.value() != 11 { return 1; }
+    if b.engine_alias.value() != 22 { return 2; }
+    if a.engine_alias.generic(1) != 11 { return 3; }
+    if b.engine_alias.generic(1) != 22 { return 4; }
+    if a.engine_alias.defaulted() != 31 { return 5; }
+    if b.engine_alias.defaulted() != 42 { return 6; }
+    0
+}

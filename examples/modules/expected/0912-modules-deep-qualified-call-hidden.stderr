@@ -1,0 +1,5 @@
+error: namespace 'two' has no member 'three'
+  --> examples/modules/0912-modules-deep-qualified-call-hidden.sx:8:5
+   |
+ 8 |     facade.one.two.three.engine.value();
+   |     ^^^^^^^^^^^^^^^^^^^^

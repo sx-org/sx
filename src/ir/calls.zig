@@ -4,6 +4,7 @@ const types = @import("types.zig");
 const type_bridge = @import("type_bridge.zig");
 const lower = @import("lower.zig");
 const inst = @import("inst.zig");
+const program_index = @import("program_index.zig");
 
 const Node = ast.Node;
 const TypeId = types.TypeId;
@@ -73,17 +74,20 @@ pub const CallPlan = struct {
         /// A callee carried by name — reflection builtin, generic / lazy fn,
         /// closure / fn-pointer binding, or a not-yet-lowered namespace fn.
         named: []const u8,
-        /// The single bare-call author `selectPlainCallableAuthor` selected for a
-        /// genuine flat same-name collision (R5 §#3). Carries the resolved
-        /// `*FnDecl` + source so `plan` and the lowering call-path read ONE
-        /// author and can no longer disagree; the FuncId is
-        /// materialized on demand. Only set when the bare name reroutes away from
-        /// the first-wins winner; the common path still uses `func` / `named`.
+        /// An exact callable author selected before any signature consumer.
+        /// Carries the resolved `*FnDecl` + source so planning, contextual
+        /// typing, defaults, lowering and monomorphization all read ONE author.
+        /// Bare same-name collisions and namespace-qualified calls share this
+        /// identity-bearing arm; the FuncId is materialized on demand.
         selected: Lowering.SelectedFunc,
         /// Protocol method, by index in the protocol's method table.
         protocol_method: u32,
         /// Runtime-class method (Obj-C / JNI), with its static-ness.
         runtime_method: struct { name: []const u8, is_static: bool },
+        /// A namespace-selected global whose exact type is callable.  Keeping
+        /// its GlobalId in the plan prevents a later bare-name lookup from
+        /// rebinding `pkg.cb()` to another module's same-spelled global.
+        callable_global: program_index.GlobalInfo,
         /// Enum / tagged-union type under construction.
         constructed: TypeId,
     };
@@ -103,6 +107,28 @@ pub const CallPlan = struct {
 /// than re-threading every field.
 pub const CallResolver = struct {
     l: *Lowering,
+
+    /// Domain-aware classification for a field-access callee.  This is the
+    /// single namespace/value boundary shared by call planning and lowering.
+    /// In particular, `.never_qualified` is reserved for syntax which cannot
+    /// be a qualified call at all; a selected non-function is retained as
+    /// `.non_callable` and can never fall through to an unrelated bare member.
+    pub const CallableValue = struct {
+        global: program_index.GlobalInfo,
+        member: []const u8,
+    };
+
+    pub const QualifiedCall = union(enum) {
+        never_qualified,
+        value_receiver,
+        type_prefix,
+        func: Lowering.SelectedFunc,
+        callable_value: CallableValue,
+        non_callable: struct { member: []const u8, span: ast.Span },
+        missing: struct { namespace: []const u8, member: []const u8, span: ast.Span },
+        not_visible: struct { alias: []const u8, span: ast.Span },
+        ambiguous: struct { alias: []const u8, span: ast.Span },
+    };
 
     /// Infer the IR type a call expression evaluates to (without lowering it).
     pub fn resultType(self: CallResolver, c: *const ast.Call) TypeId {
@@ -231,7 +257,41 @@ pub const CallResolver = struct {
             }
         } else if (c.callee.data == .field_access) {
             const cfa = c.callee.data.field_access;
-            const recv_ty = self.l.inferExprType(cfa.object);
+            const qualified_call = self.classifyQualifiedCall(c);
+
+            // Namespace-qualified free function. Resolve the COMPLETE path
+            // once (`a.b.c.fn`, at arbitrary depth), before receiver typing or
+            // any qualified-name compatibility map can collapse its author.
+            // A value-shadowed root and an ordinary authored intermediate
+            // return `.none`, leaving method/static dispatch below untouched.
+            switch (qualified_call) {
+                .func => |sf| return self.selectedNamespacePlan(sf, c),
+                .callable_value => |cv| {
+                    if (!cv.global.ty.isBuiltin()) {
+                        const ti = self.l.module.types.get(cv.global.ty);
+                        if (ti == .closure) return .{
+                            .kind = .closure,
+                            .return_type = ti.closure.ret,
+                            .target = .{ .callable_global = cv.global },
+                            .prepends_ctx = self.l.implicit_ctx_enabled,
+                        };
+                        if (ti == .function) return .{
+                            .kind = .fn_pointer,
+                            .return_type = ti.function.ret,
+                            .target = .{ .callable_global = cv.global },
+                            .prepends_ctx = self.l.implicit_ctx_enabled and ti.function.call_conv != .c,
+                        };
+                    }
+                    return .{ .kind = .unresolved, .return_type = .unresolved };
+                },
+                .non_callable, .missing, .not_visible, .ambiguous => return .{ .kind = .unresolved, .return_type = .unresolved },
+                .never_qualified, .value_receiver, .type_prefix => {},
+            }
+
+            const recv_ty = if (qualified_call == .value_receiver)
+                self.l.inferExprType(cfa.object)
+            else
+                TypeId.unresolved;
             // Receiver is a protocol type → protocol method dispatch. The
             // receiver may be erased directly (`P`), a view (`*P`), or the
             // optional of either (`?P` / `?*P`, issue 0312/0310 — the
@@ -338,18 +398,27 @@ pub const CallResolver = struct {
                 if (!obj_ty.isBuiltin()) {
                     const oi = self.l.module.types.get(obj_ty);
                     if (oi == .@"struct") {
-                        const struct_name = self.l.module.types.getString(oi.@"struct".name);
-                        const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ struct_name, cfa.field }) catch cfa.field;
-                        if (self.l.resolveFuncByName(qualified)) |fid| {
-                            const func = &self.l.module.functions.items[@intFromEnum(fid)];
-                            return .{
-                                .kind = .struct_method,
-                                .return_type = func.ret,
-                                .target = .{ .func = fid },
-                                .prepends_receiver = true,
-                                .prepends_ctx = func.has_implicit_ctx,
-                                .expands_defaults = if (self.l.program_index.fn_ast_map.get(qualified)) |fd| defaultsFor(fd, c.args.len + 1) else false,
-                            };
+                        // Plain nominal struct: select the method from the
+                        // receiver TypeId's author before consulting the
+                        // global `StructName.method` compatibility map. Two
+                        // namespace modules may both declare `Thing`; their
+                        // distinct TypeIds must carry distinct method bodies.
+                        if (self.l.plainStructMethod(obj_ty, cfa.field)) |method|
+                            return self.plainStructMethodPlan(method, c, true);
+                        if (!self.l.hasPlainStructAuthor(obj_ty)) {
+                            const struct_name = self.l.module.types.getString(oi.@"struct".name);
+                            const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ struct_name, cfa.field }) catch cfa.field;
+                            if (self.l.resolveFuncByName(qualified)) |fid| {
+                                const func = &self.l.module.functions.items[@intFromEnum(fid)];
+                                return .{
+                                    .kind = .struct_method,
+                                    .return_type = func.ret,
+                                    .target = .{ .func = fid },
+                                    .prepends_receiver = true,
+                                    .prepends_ctx = func.has_implicit_ctx,
+                                    .expands_defaults = if (self.l.program_index.fn_ast_map.get(qualified)) |fd| defaultsFor(fd, c.args.len + 1) else false,
+                                };
+                            }
                         }
                     }
                 }
@@ -360,7 +429,7 @@ pub const CallResolver = struct {
             // receiver and fixes up a `*T` first param. Mirror that boundary so
             // the plan carries `prepends_receiver`, distinct from a true
             // namespace call (`pkg.fn()`), which must NOT prepend.
-            if (self.objectIsValue(cfa.object)) {
+            if (qualified_call == .value_receiver) {
                 // Free-fn dot-dispatch is OPT-IN (mirror lowerCall's gate so
                 // plan and dispatch agree): only a `ufcs` alias or a fn
                 // declared `name :: ufcs (...)` classifies as free_fn_ufcs.
@@ -447,9 +516,20 @@ pub const CallResolver = struct {
                     };
                 }
             }
+
             // Type.variant(args) — qualified construction; runtime static; or a
             // qualified namespace function. Reached for namespace / type
             // prefixes (and inert for value receivers handled above).
+            switch (self.l.staticStructHead(cfa.object)) {
+                .resolved => |owner_ty| {
+                    if (self.l.plainStructMethod(owner_ty, cfa.field)) |method|
+                        return self.plainStructMethodPlan(method, c, false);
+                    if (self.l.hasPlainStructAuthor(owner_ty))
+                        return .{ .kind = .unresolved, .return_type = .unresolved };
+                },
+                .ambiguous, .not_visible => return .{ .kind = .unresolved, .return_type = .unresolved },
+                .none => {},
+            }
             const type_name = switch (cfa.object.data) {
                 .identifier => |id| id.name,
                 .type_expr => |te| te.name,
@@ -554,6 +634,17 @@ pub const CallResolver = struct {
                 }
             }
         } else if (c.callee.data == .enum_literal) {
+            // A target-typed `.method(args)` on a plain struct is the static
+            // method shorthand twin of `Type.method(args)`. Select it by the
+            // target's nominal TypeId before treating the spelling as an enum
+            // variant, so planning and lowering agree on both the body and
+            // result type under same-name struct collisions.
+            if (self.l.target_type) |tgt| {
+                if (self.l.plainStructMethod(tgt, c.callee.data.enum_literal.name)) |method|
+                    return self.plainStructMethodPlan(method, c, false);
+                if (self.l.hasPlainStructAuthor(tgt))
+                    return .{ .kind = .unresolved, .return_type = .unresolved };
+            }
             // .Variant(args) — dot-shorthand construction. Result type is
             // whatever target type is in scope; absent one it stays unresolved.
             const rt = self.l.target_type orelse .unresolved;
@@ -616,8 +707,253 @@ pub const CallResolver = struct {
         }
     }
 
+    fn terminalSpan(callee: *const Node, member: []const u8) ast.Span {
+        const width: u32 = @intCast(@min(member.len, callee.span.end -| callee.span.start));
+        return .{ .start = callee.span.end - width, .end = callee.span.end };
+    }
+
+    pub fn pathSliceSpan(callee: *const Node, path: []const u8, part: []const u8) ast.Span {
+        const off = @intFromPtr(part.ptr) - @intFromPtr(path.ptr);
+        const logical_end = @min(path.len, off + part.len);
+        const source_width: usize = callee.span.end -| callee.span.start;
+        return .{
+            .start = callee.span.start,
+            .end = callee.span.start + @as(u32, @intCast(@min(source_width, logical_end))),
+        };
+    }
+
+    fn selectedGlobal(self: CallResolver, sel: Lowering.QualifiedMember) ?program_index.GlobalInfo {
+        if (self.l.program_index.globals_by_source.get(sel.author.source)) |inner| {
+            if (inner.get(sel.member)) |g| return g;
+        }
+        // Duplicate extern declarations may intentionally share the one
+        // registered symbol.  The raw selected author still proves that this
+        // fallback denotes the same global domain, rather than a same-spelled
+        // value from another module.
+        if (sel.author.raw == .var_decl)
+            return self.l.program_index.global_names.get(sel.member);
+        return null;
+    }
+
+    fn selectedObjectIsValue(self: CallResolver, sel: Lowering.QualifiedMember) bool {
+        return switch (sel.author.raw) {
+            .var_decl => true,
+            .const_decl => self.l.sourceModuleConst(sel.author.source, sel.member) != null,
+            else => false,
+        };
+    }
+
+    /// Classify a possibly-qualified call before any signature consumer or
+    /// receiver inference.  Runtime/lexical roots own the value domain first;
+    /// only then may a namespace path select an exact declaration.  A selected
+    /// terminal declaration is authoritative even when it is not callable.
+    pub fn classifyQualifiedCall(self: CallResolver, c: *const ast.Call) QualifiedCall {
+        if (c.callee.data != .field_access) return .never_qualified;
+        const fa = c.callee.data.field_access;
+        if (fa.object.data == .type_expr) {
+            // Reserved type spellings parse as `.type_expr` even when an
+            // invalid value binding with that spelling exists. The semantic
+            // pass owns the reserved-name diagnostic, but call planning must
+            // still honor the lexical value long enough to avoid a bogus
+            // namespace/static arity cascade (`i2.update(7)`).
+            if (self.l.scope) |scope| {
+                if (scope.lookup(fa.object.data.type_expr.name) != null) return .value_receiver;
+            }
+            return .type_prefix;
+        }
+
+        const path = self.l.qualifiedTypeName(c.callee) orelse return .value_receiver;
+        const root_end = std.mem.indexOfScalar(u8, path, '.') orelse {
+            self.l.alloc.free(path);
+            return .value_receiver;
+        };
+        const root = path[0..root_end];
+        if (self.l.identifierBindsVisibleValue(root)) {
+            self.l.alloc.free(path);
+            return .value_receiver;
+        }
+
+        // Runtime classes have their own declaration/type domain. Their
+        // opaque TypeId is materialized lazily, so `staticStructHead` may
+        // legitimately report `.none`/forward here; the source-visible
+        // runtime-class registration is still positive proof of a type/static
+        // receiver and must win before terminal-name UFCS fallback (`Cls.alloc`
+        // must never bind std.mem.alloc).
+        if (self.l.program_index.runtime_class_map.contains(root) and self.l.isNameVisible(root)) {
+            self.l.alloc.free(path);
+            return .type_prefix;
+        }
+
+        // Remember a root which is a namespace somewhere in the program but
+        // is not carried into this source. If no visible type/static head wins
+        // below, this is a terminal visibility error — not evidence that the
+        // spelling is a runtime receiver whose terminal may UFCS-cross-bind.
+        const hidden_alias: ?[]const u8 = switch (self.l.namespaceAliasVerdict(root)) {
+            .none => if (self.l.aliasDeclaredAnywhere(root))
+                (self.l.alloc.dupe(u8, root) catch @panic("out of memory while retaining hidden namespace diagnostic"))
+            else
+                null,
+            .target, .ambiguous => null,
+        };
+        const hidden_span = pathSliceSpan(c.callee, path, root);
+
+        switch (self.l.qualifiedMemberVerdict(path)) {
+            .selected => |sel| {
+                if (self.l.namespaceFnMember(&sel.target, sel.member)) |fd| {
+                    self.l.alloc.free(path);
+                    return .{ .func = .{
+                        .decl = fd,
+                        .source = fd.body.source_file orelse sel.author.source,
+                    } };
+                }
+                if (self.selectedGlobal(sel)) |global| {
+                    if (!global.ty.isBuiltin()) {
+                        const ti = self.l.module.types.get(global.ty);
+                        if (ti == .closure or ti == .function) {
+                            self.l.alloc.free(path);
+                            return .{ .callable_value = .{ .global = global, .member = fa.field } };
+                        }
+                    }
+                }
+                self.l.alloc.free(path);
+                return .{ .non_callable = .{ .member = fa.field, .span = terminalSpan(c.callee, fa.field) } };
+            },
+            .missing => |m| {
+                // Failure names borrow `path`; retain this diagnostic-sized
+                // allocation for the lowering lifetime.
+                return .{ .missing = .{
+                    .namespace = m.namespace,
+                    .member = m.member,
+                    .span = pathSliceSpan(c.callee, path, m.member),
+                } };
+            },
+            .ambiguous => |alias| {
+                return .{ .ambiguous = .{
+                    .alias = alias,
+                    .span = pathSliceSpan(c.callee, path, alias),
+                } };
+            },
+            .not_qualified => {},
+        }
+        self.l.alloc.free(path);
+
+        // The full path stopped at an ordinary authored member.  Classify the
+        // complete receiver prefix: an exact global/const remains a runtime
+        // value; a nominal head remains a static/type prefix.
+        const object_path = self.l.qualifiedTypeName(fa.object) orelse return .value_receiver;
+        switch (self.l.qualifiedMemberVerdict(object_path)) {
+            .selected => |sel| {
+                const is_value = self.selectedObjectIsValue(sel);
+                self.l.alloc.free(object_path);
+                if (is_value) return .value_receiver;
+                return switch (self.l.staticStructHead(fa.object)) {
+                    .resolved, .ambiguous, .not_visible => .type_prefix,
+                    .none => .type_prefix,
+                };
+            },
+            .missing => |m| return .{ .missing = .{
+                .namespace = m.namespace,
+                .member = m.member,
+                .span = pathSliceSpan(fa.object, object_path, m.member),
+            } },
+            .ambiguous => |alias| return .{ .ambiguous = .{
+                .alias = alias,
+                .span = pathSliceSpan(fa.object, object_path, alias),
+            } },
+            .not_qualified => self.l.alloc.free(object_path),
+        }
+        // Source-less unit/comptime hosts predate import facts and register
+        // namespace functions only under their qualified compatibility key.
+        // Preserve that narrow legacy form without weakening source-backed
+        // programs (where an unknown dotted root remains a value/unresolved
+        // receiver and cannot cross-bind by terminal name).
+        if (self.l.current_source_file == null and self.l.main_file == null and fa.object.data == .identifier) {
+            const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ fa.object.data.identifier.name, fa.field }) catch
+                @panic("out of memory while classifying source-less qualified call");
+            if (self.l.program_index.fn_ast_map.contains(qualified)) return .type_prefix;
+        }
+        return switch (self.l.staticStructHead(fa.object)) {
+            .resolved, .ambiguous, .not_visible => .type_prefix,
+            .none => if (hidden_alias) |alias|
+                .{ .not_visible = .{ .alias = alias, .span = hidden_span } }
+            else
+                .value_receiver,
+        };
+    }
+
     fn refl(name: []const u8, rt: TypeId) CallPlan {
         return .{ .kind = .reflection, .return_type = rt, .target = .{ .named = name } };
+    }
+
+    /// Build a namespace-call plan exclusively from the selected declaration.
+    /// No process-global name lookup is permitted here: the exact author drives
+    /// result typing, implicit-context ABI and default availability.
+    fn selectedNamespacePlan(self: CallResolver, sf: Lowering.SelectedFunc, c: *const ast.Call) CallPlan {
+        const fd = sf.decl;
+        const ret_ty: TypeId = if (fd.type_params.len > 0)
+            self.l.genericResolver().inferGenericReturnType(fd, c)
+        else if (self.l.fn_decl_fids.get(fd)) |fid|
+            self.l.module.functions.items[@intFromEnum(fid)].ret
+        else if (fd.return_type) |rt|
+            self.l.resolveTypeInSource(sf.source, rt)
+        else
+            .void;
+        const has_ctx = if (self.l.fn_decl_fids.get(fd)) |fid|
+            self.l.module.functions.items[@intFromEnum(fid)].has_implicit_ctx
+        else
+            self.l.funcWantsImplicitCtx(fd);
+        return .{
+            .kind = if (fd.type_params.len > 0) .generic_fn else .namespace_fn,
+            .return_type = ret_ty,
+            .target = .{ .selected = sf },
+            .prepends_ctx = has_ctx,
+            .expands_defaults = defaultsFor(fd, c.args.len),
+        };
+    }
+
+    /// Build the typing half of a nominally-selected plain-struct method call.
+    /// Concrete methods already have a decl-identity FuncId whose signature was
+    /// resolved in the author's source. Generic methods infer with the receiver
+    /// prepended, matching the lowering-side binding shape.
+    fn plainStructMethodPlan(self: CallResolver, method: Lowering.PlainStructMethod, c: *const ast.Call, prepends_receiver: bool) CallPlan {
+        const fd = method.fd;
+        const ret_ty: TypeId = if (fd.type_params.len > 0) blk: {
+            // GenericResolver builds argument-derived bindings in the CALLER's
+            // visibility context and pins only the declared return type to the
+            // callee. Pinning this whole operation to the callee would make a
+            // caller-owned argument resolve through the wrong module.
+            break :blk if (!prepends_receiver)
+                self.l.genericResolver().inferGenericReturnType(fd, c)
+            else infer: {
+                const fa = c.callee.data.field_access;
+                const eff_args = self.l.alloc.alloc(*ast.Node, c.args.len + 1) catch break :infer TypeId.unresolved;
+                eff_args[0] = fa.object;
+                @memcpy(eff_args[1..], c.args);
+                var c2 = c.*;
+                c2.args = eff_args;
+                break :infer self.l.genericResolver().inferGenericReturnType(fd, &c2);
+            };
+        } else if (self.l.fn_decl_fids.get(fd)) |fid|
+            self.l.module.functions.items[@intFromEnum(fid)].ret
+        else blk: {
+            const saved = self.l.current_source_file;
+            self.l.setCurrentSourceFile(Lowering.plainStructMethodSource(method));
+            const ret = self.l.resolveReturnType(fd);
+            self.l.setCurrentSourceFile(saved);
+            break :blk ret;
+        };
+        const has_ctx = if (self.l.fn_decl_fids.get(fd)) |fid|
+            self.l.module.functions.items[@intFromEnum(fid)].has_implicit_ctx
+        else
+            self.l.funcWantsImplicitCtx(fd);
+        return .{
+            .kind = if (prepends_receiver) .struct_method else .namespace_fn,
+            .return_type = ret_ty,
+            .target = .{ .named = self.l.plainStructMethodName(method) },
+            .prepends_receiver = prepends_receiver,
+            .prepends_ctx = has_ctx,
+            .expands_defaults = defaultsFor(fd, c.args.len + @intFromBool(prepends_receiver)),
+        };
     }
 
     /// True when a field-access receiver is a value (so `recv.fn(...)` is a
@@ -628,18 +964,38 @@ pub const CallResolver = struct {
     /// `pub` so `lowerCall` sources its namespace/value boundary here rather
     /// than re-deriving it — one definition, shared by typing and lowering.
     pub fn objectIsValue(self: CallResolver, obj: *const Node) bool {
-        const obj_name: []const u8 = switch (obj.data) {
-            .identifier => |id| id.name,
-            .type_expr => |te| te.name,
-            // `alias.Type` (namespace-rooted prefix) is a type head, not a
-            // value — `mem.GPA.init()` must take the namespace-call path.
-            .field_access => return self.l.namespaceRootedMember(obj) == null,
-            else => return true,
-        };
-        if (self.l.scope) |scope| {
-            if (scope.lookup(obj_name) != null) return true;
+        if (obj.data == .type_expr) {
+            if (self.l.scope) |scope| {
+                if (scope.lookup(obj.data.type_expr.name) != null) return true;
+            }
+            return false;
         }
-        return self.l.program_index.global_names.contains(obj_name);
+        const path = self.l.qualifiedTypeName(obj) orelse return true;
+        defer self.l.alloc.free(path);
+        const root_end = std.mem.indexOfScalar(u8, path, '.') orelse path.len;
+        if (self.l.identifierBindsVisibleValue(path[0..root_end])) return true;
+        if (root_end == path.len) {
+            return switch (self.l.namespaceAliasVerdict(path)) {
+                .target, .ambiguous => false,
+                .none => switch (self.l.staticStructHead(obj)) {
+                    .resolved, .ambiguous, .not_visible => false,
+                    .none => true,
+                },
+            };
+        }
+        return switch (self.l.qualifiedMemberVerdict(path)) {
+            .selected => |sel| if (self.selectedObjectIsValue(sel))
+                true
+            else switch (self.l.staticStructHead(obj)) {
+                .resolved, .ambiguous, .not_visible => false,
+                .none => false,
+            },
+            .missing, .ambiguous => false,
+            .not_qualified => switch (self.l.staticStructHead(obj)) {
+                .resolved, .ambiguous, .not_visible => false,
+                .none => true,
+            },
+        };
     }
 
     /// True when a call supplying `supplied` leading params (user args plus a

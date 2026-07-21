@@ -1,0 +1,20 @@
+// A comptime method is still a function boundary. Inlining must not make an
+// undeclared identifier in its body capture a same-named caller local.
+#import "modules/std.sx";
+
+Ord :: enum { one; }
+
+Thing :: struct {
+    value: i64;
+
+    bad :: (self: *Thing, $o: Ord) -> i64 {
+        if o == .one { return self.value + hidden; }
+        return 0;
+    }
+}
+
+main :: () {
+    hidden := 40;
+    thing := Thing.{ value = 2 };
+    print("{}\n", thing.bad(.one));
+}

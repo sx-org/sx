@@ -1,0 +1,5 @@
+error: namespace 'facade' has no member 'engine_alias'
+  --> issues/0322-transitive-namespace-alias-carry.sx:4:8
+   |
+ 4 |     if facade.engine_alias.secret() == 9 { return 0; }
+   |        ^^^^^^^^^^^^^^^^^^^

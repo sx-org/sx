@@ -1,0 +1,10 @@
+// Regression target for issue 0332: an error tag is an error-set value before
+// it is implicitly wrapped into an optional of that same set.
+Failure :: error { Broken };
+
+main :: () -> i32 {
+    failure : ?Failure = null;
+    failure = error.Broken;
+    if failure == null { return 1; }
+    0
+}

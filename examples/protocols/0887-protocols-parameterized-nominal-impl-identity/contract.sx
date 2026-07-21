@@ -1,0 +1,3 @@
+Value :: protocol(T: Type) #identity {
+    get :: (self: *Self) -> T;
+}

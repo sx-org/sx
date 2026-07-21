@@ -1,0 +1,40 @@
+// A synthesized protocol default executes in the exact protocol impl's method
+// domain. Its `self.value()` must select P's value=10 even though Thing has an
+// inherent value=1. The domain is body-scoped: an explicit impl body lazily
+// reached from the default still uses ordinary inherent-first dispatch.
+
+P :: protocol #identity {
+    // Declared first so thunk creation lowers this default before the explicit
+    // methods it calls, exercising nested function-body context isolation.
+    through_explicit :: (self: *Self) -> i64 {
+        self.explicit_value() + self.value()
+    }
+    doubled :: (self: *Self) -> i64 { self.value() * 2 }
+    value :: (self: *Self) -> i64;
+    explicit_value :: (self: *Self) -> i64;
+}
+
+Thing :: struct {
+    value :: (self: *Thing) -> i64 { 1 }
+    inherent_doubled :: (self: *Thing) -> i64 { self.value() * 2 }
+}
+
+impl P for Thing {
+    value :: (self: *Thing) -> i64 { 10 }
+    // This is an ordinary explicit impl body, not a synthesized default. Its
+    // `self.value()` therefore retains inherent-first lookup and returns 1.
+    explicit_value :: (self: *Thing) -> i64 { self.value() }
+}
+
+main :: () -> i32 {
+    thing := Thing.{};
+    if thing.value() != 1 { return 1; }
+    if thing.inherent_doubled() != 2 { return 2; }
+
+    p : P = xx thing;
+    if p.value() != 10 { return 3; }
+    if p.explicit_value() != 1 { return 4; }
+    if p.doubled() != 20 { return 5; }
+    if p.through_explicit() != 11 { return 6; }
+    0
+}

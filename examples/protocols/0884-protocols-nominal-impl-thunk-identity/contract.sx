@@ -1,0 +1,4 @@
+P :: protocol #identity {
+    value :: (self: *Self) -> i64;
+    doubled :: (self: *Self) -> i64 { self.value() * 2 }
+}

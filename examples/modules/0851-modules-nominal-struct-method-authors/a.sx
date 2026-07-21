@@ -1,0 +1,45 @@
+AState :: struct { a: i64; }
+AArg :: struct { amount: i64; }
+AResult :: struct { value: i64; }
+Ord :: enum { one; two; }
+
+Thing :: struct {
+    state: AState;
+
+    init :: () -> Thing { Thing.{ state = .{ a = 1 } } }
+    from :: (arg: AArg = .{ amount = 5 }) -> Thing {
+        Thing.{ state = .{ a = arg.amount * 2 } }
+    }
+    reset :: (self: *Thing) { self.state = AState.{ a = 2 }; }
+    value :: (self: *Thing) -> i64 #get { self.state.a }
+    value :: (self: *Thing, v: i64) #set { self.state.a = v + 1; }
+    wrap :: (self: *Thing, $T: Type, v: T) -> AResult {
+        AResult.{ value = self.state.a + size_of(T) }
+    }
+    pick :: (self: *Thing, $o: Ord) -> i64 {
+        if o == .one { return self.state.a + 1; }
+        self.state.a + 2
+    }
+    mix :: (self: *Thing, arg: AArg, $o: Ord) -> i64 {
+        if o == .one { return self.state.a + arg.amount; }
+        self.state.a - arg.amount
+    }
+    after_pick :: (self: *Thing, other: *Thing) -> i64 {
+        _ := other.pick(.one);
+        self.state.a
+    }
+    count :: (self: *Thing, ..$args) -> i64 { self.state.a + args.len }
+    static_pick :: ($o: Ord) -> i64 { if o == .one { return 3; } 4 }
+    static_count :: (..$args) -> i64 { args.len }
+}
+
+use :: () -> i64 {
+    value := Thing.init();
+    value.reset();
+    value.value = 8;
+    made := Thing.from();
+    wrapped := value.wrap(i32, 0);
+    short : Thing = .from();
+    if short.value != 10 { return 0; }
+    value.value + made.value + wrapped.value
+}

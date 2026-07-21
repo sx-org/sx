@@ -165,8 +165,7 @@ main :: () -> i32 {
         };
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("server init failed\n"); rc = 1; }
-
-        if rc == 0 {
+        else {
             // Response buffer big enough for the framed 200 KB response.
             cap : i64 = BODY_LEN + 65536;
             rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);

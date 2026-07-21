@@ -23,13 +23,15 @@ InlShape :: protocol #inline {
 }
 
 Sq :: struct { side: i64; }
+// Deliberately declared before the provider impl: empty-impl adoption must be
+// resolved by concrete identity at conformance/dispatch time, not scan order.
+impl InlShape for Sq {}
 impl Shape for Sq {
     // Conformance still demands the excluded method — this impl is required.
     area :: (self: *Sq) -> i64 { return self.side * self.side; }
     combine :: (self: *Sq, other: Sq) -> i64 { return self.side + other.side; }
     name :: (self: *Sq) -> string { return "square"; }
 }
-impl InlShape for Sq {}
 
 combine_bound :: (a: $T/Shape, b: T) -> i64 {
     return a.combine(b);   // generic bound: Self is the bound T — legal

@@ -1,0 +1,105 @@
+// Comptime methods must behave like ordinary calls even though their bodies
+// are lowered inline: arguments evaluate once in the caller, declaration
+// targets contextually type them, pointer args borrow caller storage, and the
+// body has a hygienic scope. Covers static, instance, target shorthand,
+// method-generic, and generic-struct-instance composition.
+#import "modules/std.sx";
+
+Ord :: enum { one; two; }
+
+calls : i64 = 0;
+
+next :: () -> i64 {
+    calls += 1;
+    return 7;
+}
+
+Thing :: struct {
+    base: i64;
+
+    combine :: (self: *Thing, x: i64, y: i64, $o: Ord) -> i64 {
+        if o == .two { return 0; }
+        return self.base + x * 100 + y;
+    }
+
+    bump :: (self: *Thing, value: *i64, $o: Ord) -> i64 {
+        if o == .two { return 0; }
+        value.* += self.base;
+        return value.*;
+    }
+
+    apply :: (self: Thing, callback: Closure(i64) -> i64, $o: Ord) -> i64 {
+        if o == .two { return 0; }
+        return callback(self.base);
+    }
+
+    make :: (value: i64, $o: Ord) -> Thing {
+        if o == .two { return .{ base = 0 }; }
+        return .{ base = value };
+    }
+
+    type_size :: ($T: Type, value: T, $o: Ord) -> i64 {
+        if o == .two { return 0; }
+        return size_of(T);
+    }
+
+    instance_type_size :: (self: *Thing, $T: Type, value: T, $o: Ord) -> i64 {
+        if o == .two { return 0; }
+        return self.base + size_of(T);
+    }
+
+    count :: (self: *Thing, $o: Ord, ..values: []any) -> i64 {
+        if o == .two { return 0; }
+        return self.base + values.len;
+    }
+}
+
+Box :: struct ($T: Type) {
+    value: i64;
+
+    add :: (self: *Box(T), x: i64, $o: Ord) -> i64 {
+        if o == .two { return 0; }
+        return self.value + x;
+    }
+}
+
+main :: () {
+    thing := Thing.{ base = 10 };
+
+    // `y` must resolve to the caller's x (9), not the already-staged formal
+    // x (1). The receiver and both runtime args each evaluate once.
+    x := 9;
+    print("ordered={}\n", thing.combine(1, x, .one));
+
+    // The implicit `*i64` conversion borrows n's storage.
+    n := 5;
+    print("bump={}\n", thing.bump(n, .one));
+    print("after={}\n", n);
+
+    // The untyped lambda gets its parameter type from the method signature.
+    print("lambda={}\n", thing.apply((v) => v + 2, .one));
+
+    // A static inline call must not replace the caller's x binding.
+    made := Thing.make(3, .one);
+    print("static={} caller-x={}\n", made.base, x);
+
+    // Target-typed shorthand follows the same selected static-method path.
+    short : Thing = .make(4, .one);
+    print("short={}\n", short.base);
+
+    // Explicit and inferred method type arguments both install T before the
+    // runtime value is target-typed and before the body resolves size_of(T).
+    print("types={} {}\n", Thing.type_size(i32, 1, .one), Thing.type_size(1, .one));
+    print("instance-types={} {}\n",
+        thing.instance_type_size(i16, 1, .one),
+        thing.instance_type_size(1, .one));
+
+    // A runtime slice-variadic remains a real callee local when another
+    // comptime parameter makes the method inline.
+    print("variadic={}\n", thing.count(.one, 1, true));
+
+    // This used to evaluate next() in the ordinary call loop and again in the
+    // generic-instance comptime helper.
+    box := Box(i64).{ value = 20 };
+    print("generic={} calls={}\n", box.add(next(), .one), calls);
+}

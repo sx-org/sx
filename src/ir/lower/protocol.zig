@@ -16,6 +16,8 @@ const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
+const ProtocolImplMethod = lower.ProtocolImplMethod;
+const ProtocolDefaultDispatchDomain = lower.ProtocolDefaultDispatchDomain;
 
 /// Shared implementation for the `has_impl(P, T)` builtin and its
 /// `tryConstBoolCondition` arm. The protocol expression is either:
@@ -76,17 +78,15 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     const table = &self.module.types;
     const void_ptr_ty = table.ptrTo(.void);
 
-    var np = std.ArrayList(u8).empty;
-    np.appendSlice(self.alloc, pd.name) catch {};
     var tb = std.StringHashMap(TypeId).init(self.alloc);
+    var arg_tys = std.ArrayList(TypeId).empty;
     for (pd.type_params, 0..) |tp, i| {
         if (i >= args.len) break;
         const ty = self.resolveTypeWithBindings(args[i]);
         tb.put(tp.name, ty) catch {};
-        np.appendSlice(self.alloc, "__") catch {};
-        np.appendSlice(self.alloc, self.formatTypeName(ty)) catch {};
+        arg_tys.append(self.alloc, ty) catch @panic("out of memory");
     }
-    const mangled = np.items;
+    const mangled = self.protocolResolver().paramProtocolInstanceName(pd.name, arg_tys.items);
     const name_id = table.internString(mangled);
     if (table.findByName(name_id)) |existing| {
         const info = table.get(existing);
@@ -150,12 +150,14 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     self.type_bindings = saved_tb;
 
     const owned = self.alloc.dupe(u8, mangled) catch return id;
-    self.program_index.protocol_decl_map.put(owned, .{
+    const protocol_info: ProtocolDeclInfo = .{
         .name = owned,
         .is_inline = pd.is_inline,
         .ownership = if (pd.is_identity) .identity else .value_own,
         .methods = self.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
-    }) catch {};
+    };
+    self.program_index.protocol_decl_map.put(owned, protocol_info) catch {};
+    self.protocol_info_by_type.put(id, protocol_info) catch @panic("out of memory");
     // Record the type-arg binding so projection (`xs.T`, `.value`) and
     // method-arg resolution on this instance can recover it.
     self.struct_instance_bindings.put(owned, tb) catch {};
@@ -166,10 +168,10 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
             if (program_index_mod.protocolMethodSelfOccurrence(m) != null) continue;
             vtable_fields.append(self.alloc, .{ .name = table.internString(m.name), .ty = void_ptr_ty }) catch unreachable;
         }
-        var vtable_name_buf: [192]u8 = undefined;
-        const vtable_name = std.fmt.bufPrint(&vtable_name_buf, "__{s}__Vtable", .{mangled}) catch "__Vtable";
+        const vtable_name = std.fmt.allocPrint(self.alloc, "__{s}__Vtable", .{mangled}) catch @panic("out of memory");
         const vtable_ty = table.intern(.{ .@"struct" = .{ .name = table.internString(vtable_name), .fields = vtable_fields.items } });
         self.protocol_vtable_type_map.put(owned, vtable_ty) catch {};
+        self.protocol_vtable_type_by_type.put(id, vtable_ty) catch @panic("out of memory");
     }
     return id;
 }
@@ -185,7 +187,6 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
 // Resolution is POSITION-driven, not precedence-driven: type position
 // consults type-args, value position consults methods, with NO
 // cross-namespace fallback.
-
 
 /// Find `name` in `protocol_name`'s type-arg namespace (`protocol($T,...)`).
 /// Returns the `type_params` index, or null (also for unknown protocols).
@@ -220,15 +221,21 @@ pub fn getProtocolInfo(self: *Lowering, ty: TypeId) ?ProtocolDeclInfo {
     return self.protocolResolver().getProtocolInfo(ty);
 }
 
+/// Source-aware classification for `$T: Protocol` generic constraints.
+pub fn isProtocolConstraint(self: *Lowering, written: []const u8, source: ?[]const u8) bool {
+    return self.protocolResolver().isProtocolConstraint(written, source);
+}
+
 /// Get or create thunks for a (protocol, concrete_type) pair.
 /// Returns a slice of FuncIds, one per protocol method.
-pub fn getOrCreateThunks(self: *Lowering, proto_name: []const u8, concrete_type_name: []const u8) []const FuncId {
-    // Key: "Proto\x00Type"
-    const key = std.fmt.allocPrint(self.alloc, "{s}\x00{s}", .{ proto_name, concrete_type_name }) catch return &.{};
+pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) []const FuncId {
+    const pd = self.getProtocolInfo(proto_ty) orelse return &.{};
+    const identity_ty: ?TypeId = if (self.protocol_ast_by_type.contains(proto_ty)) proto_ty else null;
+    const key = self.protocolResolver().protocolConcreteKey(identity_ty, pd.name, concrete_ty);
     if (self.protocol_thunk_map.get(key)) |thunks| return thunks;
 
     // PLANNING: which methods need a thunk (owned by the registry).
-    const methods = self.protocolResolver().protocolMethodInfos(proto_name) orelse return &.{};
+    const methods = pd.methods;
     var thunk_ids = std.ArrayList(FuncId).empty;
     defer thunk_ids.deinit(self.alloc);
 
@@ -238,12 +245,12 @@ pub fn getOrCreateThunks(self: *Lowering, proto_name: []const u8, concrete_type_
     // vtable/#inline field lists built at protocol registration.
     for (methods) |method| {
         if (!method.dispatchable) continue;
-        const thunk_id = self.createProtocolThunk(proto_name, concrete_type_name, method);
+        const thunk_id = self.createProtocolThunk(proto_ty, pd.name, concrete_type_name, concrete_ty, method);
         thunk_ids.append(self.alloc, thunk_id) catch unreachable;
     }
 
     const owned = self.alloc.dupe(FuncId, thunk_ids.items) catch unreachable;
-    self.protocol_thunk_map.put(key, owned) catch {};
+    self.protocol_thunk_map.put(key, owned) catch @panic("out of memory");
     return owned;
 }
 
@@ -274,7 +281,7 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
         else => return null,
     };
     const concrete_name = self.formatTypeName(g.ty);
-    const thunks = self.getOrCreateThunks(pd.name, concrete_name);
+    const thunks = self.getOrCreateThunks(proto_ty, concrete_name, g.ty);
     const want = dispatchableCount(pd.methods);
     if (want == 0 or thunks.len != want) return null;
     const fields = self.alloc.alloc(inst_mod.ConstantValue, want + 2) catch return null;
@@ -376,7 +383,7 @@ fn emitDefaultContextGlobalImpl(self: *Lowering, mode: enum { early, final }) vo
 
 /// Create a thunk function: __thunk_ConcreteType_Protocol_method(ctx: *void, args...) -> ret
 /// The thunk calls ConcreteType.method(ctx, args...).
-pub fn createProtocolThunk(self: *Lowering, proto_name: []const u8, concrete_type_name: []const u8, method: ProtocolMethodInfo) FuncId {
+pub fn createProtocolThunk(self: *Lowering, proto_ty: TypeId, proto_name: []const u8, concrete_type_name: []const u8, concrete_ty: TypeId, method: ProtocolMethodInfo) FuncId {
     // Build params: [__sx_ctx]? + ctx: *void + method params.
     // Thunks are sx-side functions, so they get the implicit __sx_ctx
     // at slot 0 when it's enabled program-wide. The concrete protocol
@@ -395,9 +402,11 @@ pub fn createProtocolThunk(self: *Lowering, proto_name: []const u8, concrete_typ
         params.append(self.alloc, .{ .name = self.module.types.internString(pname), .ty = pty }) catch unreachable;
     }
 
-    // Generate unique name
-    var name_buf: [192]u8 = undefined;
-    const thunk_name = std.fmt.bufPrint(&name_buf, "__thunk_{s}_{s}_{s}", .{ concrete_type_name, proto_name, method.name }) catch "__thunk";
+    // Generate a unique internal name. Same-display-name nominal structs need
+    // distinct LLVM symbols just as they need distinct FuncIds and cache keys.
+    const concrete_dispatch_name = protocolConcreteDispatchName(self, concrete_type_name, concrete_ty);
+    const protocol_dispatch_name = protocolRuntimeDispatchName(self, proto_name, proto_ty);
+    const thunk_name = std.fmt.allocPrint(self.alloc, "__thunk_{s}_{s}_{s}", .{ concrete_dispatch_name, protocol_dispatch_name, method.name }) catch @panic("out of memory");
     const thunk_name_id = self.module.types.internString(thunk_name);
 
     // Save builder state
@@ -417,25 +426,30 @@ pub fn createProtocolThunk(self: *Lowering, proto_name: []const u8, concrete_typ
     const entry_block = self.builder.appendBlock(self.module.types.internString("entry"), &.{});
     self.builder.switchToBlock(entry_block);
 
-    // Ensure the concrete method is lowered
-    const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ concrete_type_name, method.name }) catch method.name;
-    if (!self.lowered_functions.contains(qualified)) {
-        if (self.program_index.fn_ast_map.contains(qualified)) {
-            self.lazyLowerFunction(qualified);
-        } else if (self.genericInstanceMethod(concrete_type_name, method.name)) |gm| {
-            // Generic-struct instance (`Combined__i64_i64`): the impl method is
-            // authored on the instance's STAMPED decl (CP-4). Monomorphize it
-            // for this instance's bindings so the thunk has a concrete
-            // `Combined__i64_i64.get` to call.
-            self.monomorphizeFunction(gm.fd, qualified, gm.bindings);
-        }
-    }
+    // Ensure the exact protocol impl method is lowered. The explicit impl
+    // registry is keyed by nominal TypeId; the display-name path remains only
+    // for generic-struct instances, whose mangled names are already unique.
+    const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ concrete_type_name, method.name }) catch @panic("out of memory");
+    const identity_ty: ?TypeId = if (self.protocol_ast_by_type.contains(proto_ty)) proto_ty else null;
+    const selected_impl = self.protocolResolver().protocolDispatchMethod(identity_ty, proto_name, concrete_ty, method.name);
+    const selected_fid: ?FuncId = if (selected_impl) |impl_method|
+        ensureProtocolImplMethodLowered(self, proto_ty, proto_name, concrete_type_name, impl_method)
+    else if (self.genericInstanceMethod(concrete_type_name, method.name)) |gm| blk: {
+        // A stamped generic-struct instance is the sole binding-aware textual
+        // route: its author stamp and instance bindings prove which template
+        // owns the method. Concrete parameterized-protocol impls must already
+        // have matched `protocolDispatchMethod` by protocol-instance + TypeId;
+        // consulting a flat `Type.method` name here would let a distinct
+        // same-display-name nominal type borrow another type's impl.
+        self.monomorphizeFunction(gm.fd, qualified, gm.bindings);
+        break :blk self.resolveFuncByName(qualified);
+    } else null;
 
     // Call the concrete method: ConcreteType.method(__sx_ctx?, ctx, args...).
     // The concrete method is itself an sx function that takes the
     // implicit __sx_ctx at slot 0 (when implicit_ctx is enabled); we
     // forward the thunk's own __sx_ctx.
-    if (self.resolveFuncByName(qualified)) |concrete_fid| {
+    if (selected_fid) |concrete_fid| {
         const concrete_func = &self.module.functions.items[@intFromEnum(concrete_fid)];
         var call_args = std.ArrayList(Ref).empty;
         defer call_args.deinit(self.alloc);
@@ -512,6 +526,67 @@ pub fn createProtocolThunk(self: *Lowering, proto_name: []const u8, concrete_typ
     return func_id;
 }
 
+/// Return the exact protocol/concrete lookup domain owned by a synthesized
+/// default declaration. Every concrete impl gets its own synthesized FnDecl,
+/// so one declaration mapping to two domains would be an internal identity
+/// violation rather than an ambiguity to resolve by name.
+pub fn protocolDefaultDispatchDomain(self: *Lowering, fd: *const ast.FnDecl) ?ProtocolDefaultDispatchDomain {
+    var selected: ?ProtocolDefaultDispatchDomain = null;
+    var it = self.protocol_impl_methods.iterator();
+    while (it.next()) |entry| {
+        const impl_method = entry.value_ptr.*;
+        if (impl_method.fd != fd or !impl_method.is_synthesized_default) continue;
+        const candidate: ProtocolDefaultDispatchDomain = .{
+            .protocol = entry.key_ptr.protocol,
+            .protocol_name = entry.key_ptr.protocol_name,
+            .concrete = entry.key_ptr.concrete,
+        };
+        if (selected) |prior| {
+            if (prior.protocol != candidate.protocol or prior.protocol_name != candidate.protocol_name or prior.concrete != candidate.concrete)
+                std.debug.panic("synthesized protocol default '{s}' belongs to multiple dispatch domains", .{fd.name});
+        } else {
+            selected = candidate;
+        }
+    }
+    return selected;
+}
+
+fn protocolConcreteDispatchName(self: *Lowering, display_name: []const u8, concrete_ty: TypeId) []const u8 {
+    if (concrete_ty.isBuiltin()) return display_name;
+    const ti = self.module.types.get(concrete_ty);
+    const nominal_id: u32 = switch (ti) {
+        .@"struct" => |s| s.nominal_id,
+        .@"enum" => |e| e.nominal_id,
+        .@"union" => |u| u.nominal_id,
+        .tagged_union => |u| u.nominal_id,
+        .error_set => |e| e.nominal_id,
+        else => 0,
+    };
+    if (nominal_id == 0) return display_name;
+    return std.fmt.allocPrint(self.alloc, "{s}$nominal{d}", .{ display_name, nominal_id }) catch @panic("out of memory");
+}
+
+fn protocolRuntimeDispatchName(self: *Lowering, display_name: []const u8, proto_ty: TypeId) []const u8 {
+    if (!self.protocol_ast_by_type.contains(proto_ty)) return display_name;
+    const nominal_id = Lowering.nominalIdOf(self.module.types.get(proto_ty));
+    if (nominal_id == 0) return display_name;
+    return std.fmt.allocPrint(self.alloc, "{s}$nominal{d}", .{ display_name, nominal_id }) catch @panic("out of memory");
+}
+
+fn ensureProtocolImplMethodLowered(self: *Lowering, proto_ty: TypeId, proto_name: []const u8, concrete_type_name: []const u8, method: ProtocolImplMethod) FuncId {
+    const fid = self.fn_decl_fids.get(method.fd) orelse
+        std.debug.panic("protocol impl method '{s}.{s}' has no decl-identity function slot", .{ concrete_type_name, method.fd.name });
+    if (!self.lowered_fids.contains(fid)) {
+        self.lowered_fids.put(fid, {}) catch @panic("out of memory");
+        const owner = protocolConcreteDispatchName(self, concrete_type_name, method.concrete);
+        const protocol_owner = protocolRuntimeDispatchName(self, proto_name, proto_ty);
+        const internal_name = std.fmt.allocPrint(self.alloc, "{s}$impl${s}.{s}", .{ owner, protocol_owner, self.accessorEffName(method.fd) }) catch @panic("out of memory");
+        self.impl_method_names.put(internal_name, {}) catch @panic("out of memory");
+        self.lowerFunctionBodyInto(method.fd, fid, internal_name);
+    }
+    return fid;
+}
+
 /// Why a concrete type fails to conform to a protocol method, named at the
 /// specific method that fails. `kind` drives the diagnostic wording.
 const NonConformance = struct {
@@ -565,16 +640,18 @@ const NonConformance = struct {
 /// type params are bound by the instance, not introduced by the method, and
 /// `monomorphizeFunction` always registers it. Conformance is IMPL-DRIVEN, so a
 /// type satisfying the method only via a free / `ufcs` function does NOT conform.
-fn firstUnimplementedMethod(self: *Lowering, proto_name: []const u8, concrete_type_name: []const u8, concrete_ty: TypeId) ?NonConformance {
-    const pd = self.program_index.protocol_decl_map.get(proto_name) orelse return null;
+fn firstUnimplementedMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?NonConformance {
+    const pd = self.getProtocolInfo(proto_ty) orelse return null;
+    const proto_name = pd.name;
     // AST of the protocol (carries each method's raw param/return type nodes +
-    // the protocol's defining module). Absent only for synthesized protocols —
-    // then we fall back to NAME/arity checks without per-type validation.
-    const pd_ast = self.program_index.protocol_ast_map.get(proto_name);
+    // the protocol's defining module). Absent for a materialized parameterized
+    // instance, where its concrete impl identity is still mandatory but the
+    // base declaration's raw signature is not available under this name.
+    const pd_ast = self.protocol_ast_by_type.get(proto_ty);
+    const identity_ty: ?TypeId = if (pd_ast != null) proto_ty else null;
     for (pd.methods) |m| {
-        const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ concrete_type_name, m.name }) catch
-            return .{ .method = m.name, .kind = .missing };
-        if (self.program_index.fn_ast_map.get(qualified)) |fd| {
+        if (self.protocolResolver().protocolDispatchMethod(identity_ty, proto_name, concrete_ty, m.name)) |impl_method| {
+            const fd = impl_method.fd;
             // A direct impl/struct-method body exists. It only conforms if the
             // thunk's `lazyLowerFunction(qualified)` would actually register it.
             // A method with its own type params bails there → unreachable thunk.
@@ -589,6 +666,10 @@ fn firstUnimplementedMethod(self: *Lowering, proto_name: []const u8, concrete_ty
             }
             continue;
         }
+        // Concrete parameterized-protocol impls are identity-registered and
+        // must have matched above. The only valid lazy route is a generic
+        // instance carrying a stamped template author plus concrete bindings;
+        // a flat `<display-name>.<method>` lookup is never proof of conformance.
         if (self.genericInstanceMethod(concrete_type_name, m.name) != null) continue;
         return .{ .method = m.name, .kind = .missing };
     }
@@ -668,12 +749,11 @@ fn resolveProtoTypeSubSelf(self: *Lowering, node: *const Node, concrete_ty: Type
 /// form is `*T` / `T`. `resolveProtoTypeSubSelf` substitutes `Self → concrete`
 /// before resolving, so a correct impl matches and is NOT flagged.
 ///
-/// Comparison is by STRUCTURAL NAME (`formatTypeName`), which is independent of
-/// the resolving module's visibility context — so the same type resolved in the
-/// protocol's module (protocol side) vs the impl's module (impl side) compares
-/// equal. We only flag when BOTH sides resolve to concrete, fully-known types
-/// AND their structural names differ — conservative against false positives on
-/// any shape we can't confidently resolve.
+/// Comparison is by canonical TypeId. Structurally identical compound types are
+/// interned to the same TypeId, while distinct nominal declarations deliberately
+/// remain distinct even when they have the same display name. We only flag when
+/// BOTH sides resolve to concrete, fully-known types and their identities differ
+/// — conservative against false positives on any shape we cannot resolve.
 ///
 /// Each side is source-pinned to its OWN defining module: the protocol side via
 /// `resolveProtoTypeSubSelf(..., proto_src)`, the impl side via
@@ -710,14 +790,19 @@ fn signatureMismatch(self: *Lowering, mast: ast.ProtocolMethodDecl, m: ProtocolM
     // module (`proto_src`) with `Self → value_ty`; impl types resolve in the
     // IMPL's own module (`fd.body.source_file`), so a module-local impl type
     // resolves where it's visible rather than at the erasure site (issue 0208).
-    // Comparison is structural-name based, so the same type resolved either way
-    // compares equal.
+    // Canonical TypeIds remain equal when the same type resolves through either
+    // source, and remain distinct for separate same-display-name nominals.
     for (mast.params, impl_extra) |proto_pnode, impl_param| {
         const proto_pty = resolveProtoTypeSubSelf(self, proto_pnode, value_ty, proto_src);
         const impl_pty = self.resolveTypeInSource(fd.body.source_file, impl_param.type_expr);
         if (typesClearlyDiffer(self, proto_pty, impl_pty)) {
-            const detail = std.fmt.allocPrint(self.alloc, "parameter '{s}': protocol declares '{s}', impl declares '{s}'", .{
-                impl_param.name, self.formatTypeName(proto_pty), self.formatTypeName(impl_pty),
+            const proto_name = self.formatTypeName(proto_pty);
+            const impl_name = self.formatTypeName(impl_pty);
+            const detail = std.fmt.allocPrint(self.alloc, "parameter '{s}': protocol declares '{s}', impl declares '{s}'{s}", .{
+                impl_param.name,
+                proto_name,
+                impl_name,
+                if (std.mem.eql(u8, proto_name, impl_name)) " (same spelling, distinct nominal declarations)" else "",
             }) catch "";
             return .{ .method = m.name, .kind = .type_mismatch, .detail = detail };
         }
@@ -727,8 +812,12 @@ fn signatureMismatch(self: *Lowering, mast: ast.ProtocolMethodDecl, m: ProtocolM
     const proto_ret: TypeId = if (mast.return_type) |rt| resolveProtoTypeSubSelf(self, rt, value_ty, proto_src) else .void;
     const impl_ret: TypeId = if (fd.return_type) |rt| self.resolveTypeInSource(fd.body.source_file, rt) else .void;
     if (typesClearlyDiffer(self, proto_ret, impl_ret)) {
-        const detail = std.fmt.allocPrint(self.alloc, "return type: protocol declares '{s}', impl declares '{s}'", .{
-            self.formatTypeName(proto_ret), self.formatTypeName(impl_ret),
+        const proto_name = self.formatTypeName(proto_ret);
+        const impl_name = self.formatTypeName(impl_ret);
+        const detail = std.fmt.allocPrint(self.alloc, "return type: protocol declares '{s}', impl declares '{s}'{s}", .{
+            proto_name,
+            impl_name,
+            if (std.mem.eql(u8, proto_name, impl_name)) " (same spelling, distinct nominal declarations)" else "",
         }) catch "";
         return .{ .method = m.name, .kind = .type_mismatch, .detail = detail };
     }
@@ -757,17 +846,14 @@ fn typeContainsUnresolved(self: *Lowering, ty: TypeId) bool {
 }
 
 /// True when both `a` and `b` resolve to concrete, fully-known types whose
-/// STRUCTURAL names differ. Conservative: if EITHER side contains an unresolved
+/// canonical identities differ. Conservative: if EITHER side contains an unresolved
 /// leaf at any depth (a type — or a nesting — we couldn't resolve / fully
 /// substitute), returns false, so we never flag a shape outside our resolver's
 /// reach. A REAL mismatch between two fully-resolved compounds (e.g. `[]i64` vs
-/// `[]i32`) still differs in structural name and IS caught.
+/// `[]i32`) still has a distinct interned TypeId and IS caught.
 fn typesClearlyDiffer(self: *Lowering, a: TypeId, b: TypeId) bool {
     if (typeContainsUnresolved(self, a) or typeContainsUnresolved(self, b)) return false;
-    if (a == b) return false;
-    const an = self.formatTypeName(a);
-    const bn = self.formatTypeName(b);
-    return !std.mem.eql(u8, an, bn);
+    return a != b;
 }
 
 /// Refusal for a postfix ASSERTION with a PROTOCOL target on an `any`
@@ -936,14 +1022,14 @@ pub fn dispatchableCount(methods: []const ProtocolMethodInfo) usize {
 /// outlives the current stack frame (used when source is a value, not an explicit pointer).
 /// When false, the pointer is used directly (user manages the pointee's lifetime).
 pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []const u8, concrete_type_name: []const u8, proto_ty: TypeId, concrete_ty: TypeId, heap_copy: bool) Ref {
-    const pd = self.program_index.protocol_decl_map.get(proto_name) orelse return concrete_ptr;
+    const pd = self.getProtocolInfo(proto_ty) orelse return concrete_ptr;
 
     // Conformance gate: a concrete type may only be erased to a protocol it
     // actually `impl`-ements. Without this, `getOrCreateThunks` below would
     // happily synthesize a vtable whose thunks fall through to `unreachable`
     // (no resolvable concrete method) — a SILENT SIGABRT at the first dispatch
     // with no diagnostic (issue 0176). Surface it as a hard error instead.
-    if (firstUnimplementedMethod(self, proto_name, concrete_type_name, concrete_ty)) |nc| {
+    if (firstUnimplementedMethod(self, proto_ty, concrete_type_name, concrete_ty)) |nc| {
         if (self.diagnostics) |d| {
             const cs = self.builder.current_span;
             const span = ast.Span{ .start = cs.start, .end = cs.end };
@@ -970,7 +1056,7 @@ pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []cons
         return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-erasure") }, proto_ty);
     }
 
-    const thunks = self.getOrCreateThunks(proto_name, concrete_type_name);
+    const thunks = self.getOrCreateThunks(proto_ty, concrete_type_name, concrete_ty);
     if (thunks.len != dispatchableCount(pd.methods)) return concrete_ptr;
 
     const void_ptr_ty = self.module.types.ptrTo(.void);
@@ -1008,14 +1094,16 @@ pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []cons
         // Vtable: { ctx, vtable_ptr }
         // Vtable is a global constant (same function pointers for every instance
         // of the same Protocol+ConcreteType pair). Cached per pair.
-        const vtable_ty = self.protocol_vtable_type_map.get(proto_name) orelse return concrete_ptr;
+        const vtable_ty = self.protocol_vtable_type_by_type.get(proto_ty) orelse return concrete_ptr;
 
-        // Build cache key: "Proto\x00Type"
-        const key = std.fmt.allocPrint(self.alloc, "{s}\x00{s}", .{ proto_name, concrete_type_name }) catch unreachable;
+        const identity_ty: ?TypeId = if (self.protocol_ast_by_type.contains(proto_ty)) proto_ty else null;
+        const key = self.protocolResolver().protocolConcreteKey(identity_ty, proto_name, concrete_ty);
 
         const vtable_global_id = self.protocol_vtable_global_map.get(key) orelse blk: {
             // Create vtable global with function pointer initializer
-            const global_name = std.fmt.allocPrint(self.alloc, "__{s}__{s}__vtable", .{ proto_name, concrete_type_name }) catch unreachable;
+            const concrete_dispatch_name = protocolConcreteDispatchName(self, concrete_type_name, concrete_ty);
+            const protocol_dispatch_name = protocolRuntimeDispatchName(self, proto_name, proto_ty);
+            const global_name = std.fmt.allocPrint(self.alloc, "__{s}__{s}__vtable", .{ protocol_dispatch_name, concrete_dispatch_name }) catch unreachable;
             const global_name_id = self.module.types.strings.intern(self.alloc, global_name);
             const thunk_ids = self.alloc.dupe(FuncId, thunks) catch unreachable;
             const gid = self.module.addGlobal(.{
@@ -1024,7 +1112,7 @@ pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []cons
                 .init_val = .{ .vtable = thunk_ids },
                 .is_const = true,
             });
-            self.protocol_vtable_global_map.put(key, gid) catch {};
+            self.protocol_vtable_global_map.put(key, gid) catch @panic("out of memory");
             break :blk gid;
         };
 

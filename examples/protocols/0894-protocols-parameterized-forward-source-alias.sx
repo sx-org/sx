@@ -1,0 +1,21 @@
+// A parameterized impl whose concrete source is a forward alias must be
+// retried after the alias fixpoint instead of being keyed as unresolved.
+// Regression (issue 0320 adversarial review).
+
+Value :: protocol (T: Type) #identity {
+    get :: (self: *Self) -> T;
+}
+
+impl Value(i64) for Alias {
+    get :: (self: *Alias) -> i64 { self.n }
+}
+
+Alias :: Thing;
+Thing :: struct { n: i64; }
+
+main :: () -> i32 {
+    value := Thing.{ n = 42 };
+    erased : Value(i64) = xx value;
+    if erased.get() != 42 { return 1; }
+    0
+}

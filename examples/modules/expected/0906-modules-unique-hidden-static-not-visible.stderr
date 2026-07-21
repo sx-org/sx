@@ -1,0 +1,5 @@
+error: type 'Hidden' is not visible; #import the module that declares it
+  --> examples/modules/0906-modules-unique-hidden-static-not-visible.sx:7:14
+   |
+ 7 |     value := Hidden.make();
+   |              ^^^^^^

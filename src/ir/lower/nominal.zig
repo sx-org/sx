@@ -12,12 +12,207 @@ const TemplateParam = program_index_mod.TemplateParam;
 const TypeId = types.TypeId;
 const StringId = types.StringId;
 const Module = mod_mod.Module;
-
+const FuncId = @import("../inst.zig").FuncId;
 
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 const VisibleStructAuthor = Lowering.VisibleStructAuthor;
 const structDeclOfRaw = Lowering.structDeclOfRaw;
+
+/// A method selected from the concrete plain-struct TypeId's nominal author.
+/// `source` is retained with the declaration so signatures and bodies resolve
+/// in the module that authored the layout.
+pub const PlainStructMethod = struct {
+    fd: *const ast.FnDecl,
+    owner_ty: TypeId,
+    source: ?[]const u8,
+};
+
+/// Source-aware result for a static type head (`Thing.make` / `ns.Thing.make`).
+/// Ambiguity and visibility are kept distinct so lowering can preserve the
+/// existing loud diagnostics while inference remains side-effect-free.
+pub const StaticStructHead = union(enum) {
+    resolved: TypeId,
+    ambiguous,
+    not_visible,
+    none,
+};
+
+fn staticHeadInSource(self: *Lowering, name: []const u8, source: ?[]const u8) StaticStructHead {
+    const from = source orelse {
+        const sid = self.module.types.internString(name);
+        return if (self.module.types.findByName(sid)) |ty| .{ .resolved = ty } else .none;
+    };
+    return switch (self.selectNominalLeaf(name, from, false)) {
+        .resolved => |ty| .{ .resolved = ty },
+        .ambiguous => .ambiguous,
+        .not_visible => .not_visible,
+        .pending, .forward, .undeclared => .none,
+    };
+}
+
+/// Resolve the nominal TypeId named by a static-call head without emitting a
+/// diagnostic. A namespace-qualified head is resolved from the namespace's
+/// target module, so `a.Thing.make()` selects a's `Thing` even when another
+/// namespace also declares `Thing`.
+pub fn staticStructHead(self: *Lowering, node: *const Node) StaticStructHead {
+    return switch (node.data) {
+        .identifier => |id| switch (self.namespaceAliasVerdict(id.name)) {
+            // A visible namespace alias owns `pkg.member`; do not let an
+            // unrelated hidden type named `pkg` hijack that domain. The
+            // namespace-call gate diagnoses an ambiguous alias itself.
+            .target, .ambiguous => .none,
+            .none => staticHeadInSource(self, id.name, self.current_source_file),
+        },
+        .type_expr => |te| blk: {
+            if (std.mem.indexOfScalar(u8, te.name, '.') != null) {
+                switch (self.qualifiedMemberVerdict(te.name)) {
+                    .selected => |sel| break :blk staticHeadInSource(self, sel.member, sel.target.target_module_path),
+                    .ambiguous => break :blk .ambiguous,
+                    .missing => break :blk .none,
+                    .not_qualified => {},
+                }
+            }
+            break :blk staticHeadInSource(self, te.name, self.current_source_file);
+        },
+        .field_access => blk: {
+            const path = self.qualifiedTypeName(node) orelse break :blk .none;
+            defer self.alloc.free(path);
+            break :blk switch (self.qualifiedMemberVerdict(path)) {
+                .selected => |sel| staticHeadInSource(self, sel.member, sel.target.target_module_path),
+                .ambiguous => .ambiguous,
+                .not_qualified, .missing => .none,
+            };
+        },
+        else => .none,
+    };
+}
+
+/// Select a method owned by the concrete nominal `ty`: first an inline method
+/// from the struct declaration, then a uniquely matching nullary-protocol impl
+/// method. Pointer receivers are dereferenced once, matching
+/// `getStructTypeName` and the call dispatch path. Generic-struct instances use
+/// their separate author stamp and therefore intentionally do not appear in
+/// this map.
+fn plainStructOwnerType(self: *Lowering, ty: TypeId) TypeId {
+    var owner_ty = ty;
+    if (!owner_ty.isBuiltin()) {
+        const info = self.module.types.get(owner_ty);
+        if (info == .pointer) owner_ty = info.pointer.pointee;
+    }
+    return owner_ty;
+}
+
+/// Whether `ty` is a concrete plain struct whose declaration provenance is
+/// known. Once this is true, a missing method is authoritative: callers must
+/// not consult the lossy global `StructName.method` compatibility map, where a
+/// different module's same-display-name struct may have registered that name.
+pub fn hasPlainStructAuthor(self: *Lowering, ty: TypeId) bool {
+    return self.plain_struct_authors.contains(plainStructOwnerType(self, ty));
+}
+
+fn selectPlainStructMethod(self: *Lowering, ty: TypeId, method: []const u8, include_protocol_defaults: bool) ?PlainStructMethod {
+    const owner_ty = plainStructOwnerType(self, ty);
+    const author = self.plain_struct_authors.get(owner_ty) orelse return null;
+    if (Lowering.structMethodFn(author.decl, method)) |fd| {
+        return .{ .fd = fd, .owner_ty = owner_ty, .source = author.source };
+    }
+
+    // `impl P for Thing` methods historically also live in the flat
+    // `Thing.method` compatibility namespace. Select them by concrete TypeId
+    // before consulting that lossy name map, otherwise two modules' distinct
+    // `Thing` impls cross-bind. If one concrete type supplies the same method
+    // through multiple protocols, retain the legacy path rather than silently
+    // choosing between genuinely distinct implementations.
+    const method_id = self.module.types.internString(method);
+    var selected: ?PlainStructMethod = null;
+    var it = self.protocol_impl_methods.iterator();
+    while (it.next()) |entry| {
+        if (entry.key_ptr.concrete != owner_ty or entry.key_ptr.method != method_id) continue;
+        if (!include_protocol_defaults and entry.value_ptr.is_synthesized_default) continue;
+        const candidate: PlainStructMethod = .{
+            .fd = entry.value_ptr.fd,
+            .owner_ty = owner_ty,
+            .source = entry.value_ptr.source,
+        };
+        if (selected) |prior| {
+            if (prior.fd != candidate.fd) return null;
+        } else {
+            selected = candidate;
+        }
+    }
+    return selected;
+}
+
+pub fn plainStructMethod(self: *Lowering, ty: TypeId, method: []const u8) ?PlainStructMethod {
+    const owner_ty = plainStructOwnerType(self, ty);
+    if (self.protocol_default_dispatch) |domain| {
+        if (domain.concrete == owner_ty) {
+            // Inside a synthesized default, calls on `self` belong to that
+            // exact protocol impl before they belong to the concrete type's
+            // inherent namespace. This is deliberately scoped by
+            // `lowerFunctionBodyInto`; ordinary and explicit impl bodies see
+            // `protocol_default_dispatch == null` and retain inherent-first
+            // lookup. `protocolDispatchMethod` is identity-keyed and its
+            // adoption path excludes foreign synthesized defaults.
+            const protocol_name = self.module.types.getString(domain.protocol_name);
+            if (self.protocolResolver().protocolDispatchMethod(domain.protocol, protocol_name, owner_ty, method)) |impl_method| {
+                return .{
+                    .fd = impl_method.fd,
+                    .owner_ty = owner_ty,
+                    .source = impl_method.source,
+                };
+            }
+        }
+    }
+    return selectPlainStructMethod(self, ty, method, true);
+}
+
+/// Method body eligible for adoption by an explicit empty/partial protocol
+/// impl. A synthesized default belongs only to its declaring protocol and must
+/// never satisfy another protocol's required method.
+pub fn plainStructAdoptableMethod(self: *Lowering, ty: TypeId, method: []const u8) ?PlainStructMethod {
+    return selectPlainStructMethod(self, ty, method, false);
+}
+
+/// Internal dispatch key for a selected plain-struct method. The first/single
+/// author preserves the historical `Name.method` key. A shadow author includes
+/// its nominal id so independently monomorphized generic methods cannot collide;
+/// this key is compiler-internal and does not alter SX spelling.
+pub fn plainStructMethodName(self: *Lowering, method: PlainStructMethod) []const u8 {
+    const info = self.module.types.get(method.owner_ty);
+    if (info != .@"struct") return method.fd.name;
+    const s = info.@"struct";
+    const name = self.module.types.getString(s.name);
+    const eff = self.accessorEffName(method.fd);
+    if (s.nominal_id == 0)
+        return std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ name, eff }) catch @panic("out of memory");
+    // `$` is not legal inside a user identifier, so this internal segment
+    // cannot collide with a real source-level struct such as `Thing__n1`.
+    return std.fmt.allocPrint(self.alloc, "{s}$nominal{d}.{s}", .{ name, s.nominal_id, eff }) catch @panic("out of memory");
+}
+
+/// Author source for signature/body resolution. A selected nominal method with
+/// no source would make caller-context fallback silently bind unrelated names;
+/// treat that as an internal invariant violation instead.
+pub fn plainStructMethodSource(method: PlainStructMethod) []const u8 {
+    return method.source orelse method.fd.body.source_file orelse
+        std.debug.panic("plain struct method '{s}' has no author source", .{method.fd.name});
+}
+
+/// Materialize the selected declaration into its identity-addressed FuncId.
+/// Lowering directly into the slot registered for this AST declaration keeps
+/// a same-named method from being lowered into another author's function.
+pub fn ensurePlainStructMethodLowered(self: *Lowering, method: PlainStructMethod) FuncId {
+    const name = self.plainStructMethodName(method);
+    const fid = self.fn_decl_fids.get(method.fd) orelse
+        std.debug.panic("plain struct method '{s}' has no decl-identity function slot", .{method.fd.name});
+    if (!self.lowered_fids.contains(fid)) {
+        self.lowered_fids.put(fid, {}) catch @panic("out of memory");
+        self.lowerFunctionBodyInto(method.fd, fid, name);
+    }
+    return fid;
+}
 
 /// Register a struct declaration's fields and methods in the IR type table.
 /// Register a `Foo :: error { A, B }` declaration as an error-set type.
@@ -151,6 +346,24 @@ pub fn reserveShadowErrorSetSlot(self: *Lowering, esd: *const ast.ErrorSetDecl) 
     table.type_decl_tids.put(decl_key, reserved) catch {};
 }
 
+/// Reserve a nullary protocol shadow as the protocol-backed struct slot that
+/// `registerProtocolDecl` will later fill. Parameterized protocols are
+/// compile-time templates and deliberately have no runtime TypeId.
+pub fn reserveShadowProtocolSlot(self: *Lowering, pd: *const ast.ProtocolDecl) void {
+    if (pd.type_params.len > 0) return;
+    const table = &self.module.types;
+    const decl_key: *const anyopaque = @ptrCast(pd);
+    if (table.type_decl_tids.contains(decl_key)) return;
+    const name_id = table.internString(pd.name);
+    const nominal_id = self.shadowNominalId(name_id);
+    const reserved = table.internNominal(.{ .@"struct" = .{
+        .name = name_id,
+        .fields = &.{},
+        .is_protocol = true,
+    } }, nominal_id);
+    table.type_decl_tids.put(decl_key, reserved) catch {};
+}
+
 /// A top-level NAMED type decl the genuine-shadow scan tracks, KIND-tagged so
 /// same-name authors of DIFFERENT kinds (a `struct Foo` and an `enum Foo`) are
 /// NOT mistaken for one shadow group. Carries the stable decl pointer (the
@@ -160,7 +373,8 @@ const ShadowTypeDecl = union(enum) {
     @"struct": *const ast.StructDecl,
     @"enum": *const ast.EnumDecl,
     @"union": *const ast.UnionDecl,
-    @"error_set": *const ast.ErrorSetDecl,
+    error_set: *const ast.ErrorSetDecl,
+    protocol: *const ast.ProtocolDecl,
 
     pub fn key(self: ShadowTypeDecl) *const anyopaque {
         return switch (self) {
@@ -175,6 +389,7 @@ const ShadowTypeDecl = union(enum) {
     pub fn isGeneric(self: ShadowTypeDecl) bool {
         return switch (self) {
             .@"struct" => |p| p.type_params.len > 0,
+            .protocol => |p| p.type_params.len > 0,
             else => false,
         };
     }
@@ -190,12 +405,13 @@ pub fn topLevelTypeDecl(decl: *const Node) ?ShadowTypeDecl {
         .struct_decl => .{ .@"struct" = &decl.data.struct_decl },
         .enum_decl => .{ .@"enum" = &decl.data.enum_decl },
         .union_decl => .{ .@"union" = &decl.data.union_decl },
-        .error_set_decl => .{ .@"error_set" = &decl.data.error_set_decl },
+        .error_set_decl => .{ .error_set = &decl.data.error_set_decl },
+        .protocol_decl => .{ .protocol = &decl.data.protocol_decl },
         .const_decl => |cd| switch (cd.value.data) {
             .struct_decl => .{ .@"struct" = &cd.value.data.struct_decl },
             .enum_decl => .{ .@"enum" = &cd.value.data.enum_decl },
             .union_decl => .{ .@"union" = &cd.value.data.union_decl },
-            .error_set_decl => .{ .@"error_set" = &cd.value.data.error_set_decl },
+            .error_set_decl => .{ .error_set = &cd.value.data.error_set_decl },
             else => null,
         },
         else => null,
@@ -208,7 +424,8 @@ pub fn reserveShadowSlot(self: *Lowering, td: ShadowTypeDecl) void {
         .@"struct" => |sd| self.reserveShadowStructSlot(sd),
         .@"enum" => |ed| self.reserveShadowEnumSlot(ed),
         .@"union" => |ud| self.reserveShadowUnionSlot(ud),
-        .@"error_set" => |esd| self.reserveShadowErrorSetSlot(esd),
+        .error_set => |esd| self.reserveShadowErrorSetSlot(esd),
+        .protocol => |pd| self.reserveShadowProtocolSlot(pd),
     }
 }
 
@@ -342,6 +559,10 @@ pub fn rawNamedTypePtr(ref: resolver_mod.RawDeclRef) ?*const anyopaque {
 /// template is heap-owned via `self.alloc`; callers register it under a bare
 /// or namespace-qualified key. Null on OOM.
 pub fn buildGenericStructTemplate(self: *Lowering, sd: *const ast.StructDecl, source_file: ?[]const u8) ?StructTemplate {
+    // Main-file top-level AST nodes are deliberately unstamped. Preserve the
+    // declaration's real lookup authority instead of leaving a null template
+    // to inherit an unrelated instantiation/facade context (issue 0328).
+    const author_source = source_file orelse self.current_source_file orelse self.main_file;
     const owned_name = self.alloc.dupe(u8, sd.name) catch return null;
 
     const tps = self.alloc.alloc(TemplateParam, sd.type_params.len) catch return null;
@@ -350,8 +571,7 @@ pub fn buildGenericStructTemplate(self: *Lowering, sd: *const ast.StructDecl, so
             const cname = tp.constraint.data.type_expr.name;
             // "Type" or a protocol name → type param
             break :blk std.mem.eql(u8, cname, "Type") or
-                self.program_index.protocol_decl_map.contains(cname) or
-                self.program_index.protocol_ast_map.contains(cname);
+                self.isProtocolConstraint(cname, author_source);
         } else false);
         tps[i] = .{
             .name = self.alloc.dupe(u8, tp.name) catch return null,
@@ -383,7 +603,7 @@ pub fn buildGenericStructTemplate(self: *Lowering, sd: *const ast.StructDecl, so
         .type_params = tps,
         .field_names = fnames,
         .field_type_nodes = ftype_nodes,
-        .source_file = source_file,
+        .source_file = author_source,
         .decl = sd,
     };
 }
@@ -491,14 +711,13 @@ pub fn followAliasChain(self: *Lowering, author: resolver_mod.RawAuthor, depth: 
     const next: ?resolver_mod.RawAuthor = switch (cd.value.data) {
         .identifier => |id| singleVisibleAuthor(self, id.name, author.source),
         .field_access => |fa| blk: {
-            if (fa.object.data != .identifier) break :blk null;
-            const target = switch (self.namespaceAliasVerdictFrom(fa.object.data.identifier.name, author.source)) {
-                .target => |t| t,
-                .none, .ambiguous => break :blk null,
+            _ = fa;
+            const path = self.qualifiedTypeName(cd.value) orelse break :blk null;
+            defer self.alloc.free(path);
+            break :blk switch (self.qualifiedMemberVerdictFrom(path, author.source)) {
+                .selected => |sel| sel.author,
+                .not_qualified, .missing, .ambiguous => null,
             };
-            var res = self.resolver();
-            const member_set = res.collectNamespaceAuthors(target, fa.field);
-            break :blk member_set.own;
         },
         else => null,
     };
@@ -723,13 +942,20 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     // any forward-reference stub. Same-name structs in DIFFERENT sources get
     // distinct TypeIds instead of last-wins clobbering the first.
     const info: types.TypeInfo = .{ .@"struct" = .{ .name = name_id, .fields = fields.items } };
-    _ = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
+    const struct_ty = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
+    // Couple the nominal layout identity to its authoring declaration. Method
+    // calls must select through this TypeId-keyed provenance, never through the
+    // process-global `StructName.method` spelling (issue 0320).
+    self.plain_struct_authors.put(struct_ty, .{ .decl = sd, .source = source_file orelse self.current_source_file }) catch @panic("out of memory");
 
     // Store field defaults for struct literal lowering
     if (sd.field_defaults.len > 0) {
         var has_any_default = false;
         for (sd.field_defaults) |d| {
-            if (d != null) { has_any_default = true; break; }
+            if (d != null) {
+                has_any_default = true;
+                break;
+            }
         }
         if (has_any_default) {
             self.struct_defaults_map.put(sd.name, sd.field_defaults) catch {};
@@ -745,7 +971,12 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
             // fn_ast_map slots and two distinct FuncId stubs (coexistence).
             const eff = self.accessorEffName(method_fd);
             const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sd.name, eff }) catch continue;
-            self.program_index.fn_ast_map.put(qualified, method_fd) catch {};
+            // The function table resolves the first stub by name. Keep the
+            // compatibility AST map coherent with that first author; every
+            // later same-name method remains reachable through its decl-
+            // identity `fn_decl_fids` slot and nominal author dispatch.
+            if (!self.program_index.fn_ast_map.contains(qualified))
+                self.program_index.fn_ast_map.put(qualified, method_fd) catch {};
             // Declare extern stub (body is lowered lazily on demand)
             self.declareFunction(method_fd, qualified);
         }

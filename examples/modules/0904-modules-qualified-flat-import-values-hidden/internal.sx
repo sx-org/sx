@@ -1,0 +1,5 @@
+HiddenKind :: enum { zero; one; }
+
+HIDDEN_CONST : i64 = 22;
+hidden_global : i64 = 33;
+hidden_fn :: () -> i64 { 44 }

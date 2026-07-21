@@ -1,0 +1,36 @@
+// Qualified global destinations are selected before RHS lowering. Direct and
+// deeply nested authors deliberately reuse all type/global names with distinct
+// nominal layouts and enum ordinals.
+
+direct :: #import "0913-modules-qualified-store-target-typing/engine_a.sx";
+deep :: #import "0913-modules-qualified-store-target-typing/deep.sx";
+api :: #import "0913-modules-qualified-store-target-typing/engine_a.sx";
+#import "0913-modules-qualified-store-target-typing/hidden_bridge.sx";
+
+main :: () -> i32 {
+    direct.OPTION = null;
+    deep.one.two.three.engine.OPTION = if false { 9 } else { null };
+    direct.CHOICE = .selected;
+    deep.one.two.three.engine.CHOICE = .selected;
+    direct.RECORD = if true { .{ a = 7 } } else { .{ a = 8 } };
+    deep.one.two.three.engine.RECORD = .{ b = 8 };
+    deep.one.two.three.engine.RECORD.b = if true { 44 } else { 0 };
+
+    // A namespaced-only global named `api` exists two flat hops away. It is
+    // not visible here and therefore cannot shadow this namespace alias in
+    // either call or store classification.
+    if api.ping() != 17 { return 7; }
+    api.OPTION = null;
+
+    if direct.OPTION != null or deep.one.two.three.engine.OPTION != null { return 1; }
+    if direct.CHOICE != .selected or deep.one.two.three.engine.CHOICE != .selected { return 2; }
+    if direct.RECORD.a != 7 or deep.one.two.three.engine.RECORD.b != 44 { return 3; }
+
+    direct.OPTION, deep.one.two.three.engine.CHOICE, direct.RECORD = null, .selected, .{ a = 9 };
+    deep.one.two.three.engine.OPTION, direct.CHOICE, deep.one.two.three.engine.RECORD = null, .selected, .{ b = 10 };
+
+    if direct.OPTION != null or deep.one.two.three.engine.OPTION != null { return 4; }
+    if direct.CHOICE != .selected or deep.one.two.three.engine.CHOICE != .selected { return 5; }
+    if direct.RECORD.a != 9 or deep.one.two.three.engine.RECORD.b != 10 { return 6; }
+    0
+}

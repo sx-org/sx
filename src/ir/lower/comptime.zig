@@ -792,7 +792,7 @@ pub fn substituteComptimeNodes(self: *Lowering, node: *const Node, cpn: std.Stri
 /// Lower a call to a function with comptime params by inlining its body.
 /// Comptime params are substituted, `#insert` expressions are evaluated.
 pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const ast.Call) Ref {
-    return self.lowerComptimeCallArgs(fd, call_node.args);
+    return lowerComptimeCallArgsMode(self, fd, call_node.args, 0, false, false, call_node.callee.span);
 }
 
 /// Core of `lowerComptimeCall`, parameterized over the EFFECTIVE call-site arg
@@ -803,7 +803,27 @@ pub fn lowerComptimeCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *con
 /// (e.g. `type_bindings` for a generic struct's `T`) before invoking this — the
 /// body lowers with whatever bindings are active.
 pub fn lowerComptimeCallArgs(self: *Lowering, fd: *const ast.FnDecl, call_args: []const *Node) Ref {
-    return self.lowerComptimeCallArgsSkip(fd, call_args, 0);
+    return lowerComptimeCallArgsMode(self, fd, call_args, 0, false, false, fd.body.span);
+}
+
+/// Inline a selected comptime METHOD with a hygienic call frame. `call_args`
+/// is the effective declaration-order argument list: instance callers prepend
+/// the receiver, while static callers pass their source arguments unchanged.
+///
+/// Argument expressions are staged in a scope which can read the caller but
+/// contains no callee formals. Only after every runtime argument has been
+/// evaluated once do we install the formals in a parentless callee scope. This
+/// gives inline methods ordinary call semantics: an earlier formal cannot
+/// shadow a caller local used by a later argument, and the method body cannot
+/// capture or overwrite caller locals merely because it was inlined.
+pub fn lowerComptimeMethodCallArgs(
+    self: *Lowering,
+    fd: *const ast.FnDecl,
+    call_args: []const *Node,
+    first_arg_is_receiver: bool,
+    call_span: ast.Span,
+) Ref {
+    return lowerComptimeCallArgsMode(self, fd, call_args, 0, true, first_arg_is_receiver, call_span);
 }
 
 /// Generalization of `lowerComptimeCallArgs` that skips the FIRST `skip_params`
@@ -814,9 +834,224 @@ pub fn lowerComptimeCallArgs(self: *Lowering, fd: *const ast.FnDecl, call_args: 
 /// `fd.params[skip_params..]`. With `skip_params == 0` this is the ordinary
 /// free-call inline.
 pub fn lowerComptimeCallArgsSkip(self: *Lowering, fd: *const ast.FnDecl, call_args: []const *Node, skip_params: usize) Ref {
+    return lowerComptimeCallArgsMode(self, fd, call_args, skip_params, false, false, fd.body.span);
+}
+
+const StagedRuntimeArg = struct {
+    name: []const u8,
+    ty: TypeId,
+    value: Ref,
+};
+
+/// `isTypeParamDecl` includes every `$` parameter, including comptime VALUES
+/// such as `$o: Ord`. Only metatype/protocol-constrained params are argument
+/// slots that disappear in the inferred generic-call form.
+fn isComptimeTypeBindingParam(self: *Lowering, fd: *const ast.FnDecl, param: *const ast.Param) bool {
+    for (fd.type_params) |tp| {
+        if (!std.mem.eql(u8, tp.name, param.name) or tp.constraint.data != .type_expr) continue;
+        const constraint = tp.constraint.data.type_expr.name;
+        return std.mem.eql(u8, constraint, "Type") or
+            self.isProtocolConstraint(constraint, fd.body.source_file);
+    }
+    return false;
+}
+
+/// Validate the source argument count using the same explicit-vs-inferred type
+/// parameter rule as the binder below. Comptime calls consume AST arguments
+/// themselves, before the ordinary call path, so leaving this check to
+/// `checkCallArity` silently discarded extras and accepted missing required
+/// params. Returns true after emitting a diagnostic.
+fn checkComptimeCallArity(
+    self: *Lowering,
+    fd: *const ast.FnDecl,
+    supplied: usize,
+    skip_params: usize,
+    first_arg_is_receiver: bool,
+    span: ast.Span,
+) bool {
+    const params = fd.params[skip_params..];
+    const type_args_explicit = supplied == params.len;
+    var min: usize = 0;
+    var max: ?usize = 0;
+    for (params) |*param| {
+        if (isComptimeTypeBindingParam(self, fd, param) and !type_args_explicit) continue;
+        if (param.is_variadic) {
+            max = null;
+            break;
+        }
+        max.? += 1;
+        if (param.default_expr == null) min = max.?;
+    }
+    if (supplied >= min and (max == null or supplied <= max.?)) return false;
+
+    if (self.diagnostics) |d| {
+        const recv: usize = @intFromBool(first_arg_is_receiver);
+        const got = supplied -| recv;
+        const lo = min -| recv;
+        const got_verb: []const u8 = if (got == 1) "was" else "were";
+        if (max == null) {
+            const suffix: []const u8 = if (lo == 1) "" else "s";
+            d.addFmt(.err, span, "'{s}' expects at least {d} argument{s}, but {d} {s} given", .{ fd.name, lo, suffix, got, got_verb });
+        } else if (max.? -| recv == lo) {
+            const suffix: []const u8 = if (lo == 1) "" else "s";
+            d.addFmt(.err, span, "'{s}' expects {d} argument{s}, but {d} {s} given", .{ fd.name, lo, suffix, got, got_verb });
+        } else {
+            d.addFmt(.err, span, "'{s}' expects between {d} and {d} arguments, but {d} {s} given", .{ fd.name, lo, max.? -| recv, got, got_verb });
+        }
+    }
+    return true;
+}
+
+/// Lower one runtime argument of an inlined comptime call with the same
+/// essential adaptations as an ordinary call: contextual typing, implicit
+/// address-of for lvalues, node-aware protocol erasure, value-position
+/// lowering, and final coercion to the declaration's parameter type.
+fn lowerComptimeRuntimeArg(
+    self: *Lowering,
+    arg: *const Node,
+    param_ty: TypeId,
+    is_receiver: bool,
+) Ref {
+    const saved_target = self.target_type;
+    if (param_ty != .unresolved) self.target_type = param_ty;
+    defer self.target_type = saved_target;
+
+    if (param_ty != .unresolved) {
+        if (self.foldComptimeFloatInit(arg, param_ty)) |folded| return folded;
+    }
+
+    // T lvalue -> *T: pass the caller's storage, never a loaded temporary.
+    if (!param_ty.isBuiltin()) {
+        const param_info = self.module.types.get(param_ty);
+        if (param_info == .pointer) {
+            const pointee = param_info.pointer.pointee;
+            if (arg.data == .identifier) {
+                const name = arg.data.identifier.name;
+                const local = if (self.scope) |scope| scope.lookup(name) else null;
+                if (local) |binding| {
+                    if (binding.is_alloca and binding.ty == pointee)
+                        return self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, param_ty);
+                } else if (self.resolveGlobalRef(name, null)) |global| {
+                    if (global.ty == pointee and !self.rootIsConstant(name)) {
+                        const place = self.lowerExprAsPtr(arg);
+                        const place_ty = self.builder.getRefType(place);
+                        return if (place_ty == param_ty)
+                            place
+                        else
+                            self.builder.emit(.{ .addr_of = .{ .operand = place } }, param_ty);
+                    }
+                }
+            }
+            if ((arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr) and
+                self.inferExprType(arg) == pointee)
+            {
+                const place = self.lowerExprAsPtr(arg);
+                const place_ty = self.builder.getRefType(place);
+                if (place_ty == param_ty) return place;
+                if (place_ty == pointee)
+                    return self.builder.emit(.{ .addr_of = .{ .operand = place } }, param_ty);
+            }
+
+            // Ordinary dot dispatch spills a non-addressable T receiver when
+            // the method expects `self: *T`. Comptime methods must do the same
+            // instead of asking the generic coercer to invent `T -> *T`.
+            if (is_receiver and self.inferExprType(arg) == pointee) {
+                self.target_type = pointee;
+                const value = self.lowerExpr(arg);
+                const value_ty = self.builder.getRefType(value);
+                const coerced = if (value_ty != pointee)
+                    self.coerceToType(value, value_ty, pointee)
+                else
+                    value;
+                const slot = self.builder.alloca(pointee);
+                self.builder.store(slot, coerced);
+                return slot;
+            }
+        }
+    }
+
+    // Concrete -> protocol value keeps the argument AST so #identity
+    // parameters borrow lvalues and value/own parameters retain ownership.
+    if (self.getProtocolInfo(param_ty) != null) {
+        const concrete_ty = self.inferExprType(arg);
+        if (concrete_ty != .unresolved and concrete_ty != param_ty and concrete_ty != .any and
+            !concrete_ty.isBuiltin() and self.getProtocolInfo(concrete_ty) == null)
+        {
+            const concrete_info = self.module.types.get(concrete_ty);
+            if (concrete_info == .@"struct" or concrete_info == .pointer) {
+                const value = self.lowerExpr(arg);
+                return self.buildProtocolErasure(value, arg, concrete_ty, param_ty);
+            }
+        }
+    }
+
+    // Concrete lvalue -> *Protocol: build a borrowed view around its real
+    // address, matching the direct-call path.
+    if (!param_ty.isBuiltin() and
+        (arg.data == .identifier or arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr))
+    {
+        const param_info = self.module.types.get(param_ty);
+        if (param_info == .pointer and self.getProtocolInfo(param_info.pointer.pointee) != null) {
+            const concrete_ty = self.inferExprType(arg);
+            if (concrete_ty != .unresolved and !concrete_ty.isBuiltin() and concrete_ty != param_info.pointer.pointee and
+                self.getProtocolInfo(concrete_ty) == null and self.module.types.get(concrete_ty) == .@"struct")
+            {
+                const place = self.lowerExprAsPtr(arg);
+                const place_ty = self.builder.getRefType(place);
+                const address = if (place_ty == concrete_ty)
+                    self.builder.emit(.{ .addr_of = .{ .operand = place } }, self.module.types.ptrTo(concrete_ty))
+                else
+                    place;
+                if (self.viewOfConcreteAddr(address, concrete_ty, param_ty)) |view| return view;
+            }
+        }
+    }
+
+    const saved_force_block_value = self.force_block_value;
+    self.force_block_value = true;
+    defer self.force_block_value = saved_force_block_value;
+    var value = self.lowerExpr(arg);
+    var value_ty = self.builder.getRefType(value);
+
+    // Dot dispatch permits a *T receiver for a value-receiver `self: T`.
+    if (is_receiver and !value_ty.isBuiltin()) {
+        const value_info = self.module.types.get(value_ty);
+        if (value_info == .pointer and value_info.pointer.pointee == param_ty) {
+            value = self.builder.load(value, param_ty);
+            value_ty = param_ty;
+        }
+    }
+
+    if (param_ty != .unresolved and value_ty != param_ty)
+        value = self.coerceToType(value, value_ty, param_ty);
+    return value;
+}
+
+fn lowerComptimeCallArgsMode(
+    self: *Lowering,
+    fd: *const ast.FnDecl,
+    call_args: []const *Node,
+    skip_params: usize,
+    isolate_callee: bool,
+    first_arg_is_receiver: bool,
+    call_span: ast.Span,
+) Ref {
+    if (checkComptimeCallArity(self, fd, call_args.len, skip_params, first_arg_is_receiver, call_span))
+        return Ref.none;
+
+    const caller_scope = self.scope;
+    var staging_scope = Scope.init(self.alloc, caller_scope);
+    defer staging_scope.deinit();
+    var callee_scope = Scope.init(self.alloc, null);
+    defer callee_scope.deinit();
+    if (isolate_callee) self.scope = &staging_scope;
+    defer self.scope = caller_scope;
+
     // Build comptime param substitution map: param_name → call_site AST node
     var cpn = std.StringHashMap(*const Node).init(self.alloc);
     var call_arg_idx: usize = 0;
+    var runtime_args = std.ArrayList(StagedRuntimeArg).empty;
+    defer runtime_args.deinit(self.alloc);
     // Pack-arg-node registration (step 2 of the variadic heterogeneous
     // type packs feature): when the fn declares a pack param, record
     // the slice of call-site arg nodes under the pack name so the
@@ -825,10 +1060,32 @@ pub fn lowerComptimeCallArgsSkip(self: *Lowering, fd: *const ast.FnDecl, call_ar
     var pack_arg_name: ?[]const u8 = null;
     var pack_arg_slice: []const *const Node = &.{};
 
-    for (fd.params[skip_params..]) |param| {
+    // A generic `$T: Type` declaration consumes a source argument only in the
+    // explicit form. In the inferred form it has no argument slot, matching
+    // GenericResolver.buildTypeBindings.
+    const type_args_explicit = call_args.len == fd.params.len - skip_params;
+    for (fd.params[skip_params..], skip_params..) |param, param_idx| {
+        if (isComptimeTypeBindingParam(self, fd, &param)) {
+            if (type_args_explicit and call_arg_idx < call_args.len) call_arg_idx += 1;
+            continue;
+        }
         if (param.is_variadic) {
             // Variadic param: pack remaining call args into []Any slice
             self.lowerVariadicArgs(param.name, call_args, call_arg_idx);
+            // Runtime slice-variadics are not pack functions, so a comptime
+            // method can still reach this helper when another `$` param is
+            // present. lowerVariadicArgs binds into the staging scope; carry
+            // its value into the parentless callee scope like every other
+            // runtime formal.
+            if (isolate_callee) {
+                if (staging_scope.map.get(param.name)) |binding| {
+                    const value = if (binding.is_alloca)
+                        self.builder.load(binding.ref, binding.ty)
+                    else
+                        binding.ref;
+                    runtime_args.append(self.alloc, .{ .name = param.name, .ty = binding.ty, .value = value }) catch unreachable;
+                }
+            }
             // Only heterogeneous pack form `..$args` (is_comptime AND
             // is_variadic) registers for typed indexing. Plain
             // `args: ..Any` keeps the existing []Any path so stdlib's
@@ -850,21 +1107,34 @@ pub fn lowerComptimeCallArgsSkip(self: *Lowering, fd: *const ast.FnDecl, call_ar
             }
             break; // variadic is always the last param
         }
-        if (call_arg_idx >= call_args.len) break;
+        const arg_node: *const Node = if (call_arg_idx < call_args.len) blk: {
+            const node = call_args[call_arg_idx];
+            call_arg_idx += 1;
+            break :blk node;
+        } else param.default_expr orelse break;
         if (param.is_comptime) {
-            self.stampCallerSource(call_args[call_arg_idx]);
-            cpn.put(param.name, call_args[call_arg_idx]) catch {};
-            call_arg_idx += 1;
+            self.stampCallerSource(@constCast(arg_node));
+            cpn.put(param.name, arg_node) catch {};
         } else {
-            const arg_val = self.lowerExpr(call_args[call_arg_idx]);
-            const pty = self.resolveParamType(&param);
-            const slot = self.builder.alloca(pty);
-            self.builder.store(slot, arg_val);
-            if (self.scope) |scope| {
-                scope.put(param.name, .{ .ref = slot, .ty = pty, .is_alloca = true });
-            }
-            call_arg_idx += 1;
+            const pty = self.resolveDeclParamType(fd, param_idx);
+            const arg_val = lowerComptimeRuntimeArg(
+                self,
+                arg_node,
+                pty,
+                first_arg_is_receiver and param_idx == skip_params,
+            );
+            runtime_args.append(self.alloc, .{ .name = param.name, .ty = pty, .value = arg_val }) catch unreachable;
         }
+    }
+
+    // Runtime expressions above all saw caller bindings and no callee
+    // formals. Now install the staged values in the hygienic body scope.
+    if (isolate_callee) self.scope = &callee_scope;
+    for (runtime_args.items) |arg| {
+        const slot = self.builder.alloca(arg.ty);
+        self.builder.store(slot, arg.value);
+        if (self.scope) |scope|
+            scope.put(arg.name, .{ .ref = slot, .ty = arg.ty, .is_alloca = true });
     }
 
     // Also bind comptime params as local string variables (for `fmt` used in runtime code)
@@ -896,7 +1166,22 @@ pub fn lowerComptimeCallArgsSkip(self: *Lowering, fd: *const ast.FnDecl, call_ar
     const saved_value_ref_bindings = self.comptime_value_ref_bindings;
     var value_bindings: ?std.StringHashMap(i64) = null;
     var value_ref_bindings: ?std.StringHashMap(Ref) = null;
+    // Tagged-union payload expressions belong to the caller. Materialize them
+    // in the staging scope (whose parent is the caller), then transfer only the
+    // resulting comptime formal bindings into the parentless callee scope.
+    // This keeps the body hygienic without making `.circle(caller_local)` lose
+    // its authored scope.
+    const body_scope = self.scope;
+    if (isolate_callee) self.scope = &staging_scope;
     self.bindComptimeValueParams(fd, cpn, &value_bindings, &value_ref_bindings);
+    if (isolate_callee) {
+        self.scope = body_scope;
+        for (fd.params) |param| {
+            if (!param.is_comptime or param.is_variadic) continue;
+            if (staging_scope.map.get(param.name)) |binding|
+                callee_scope.put(param.name, binding);
+        }
+    }
     defer {
         if (value_bindings) |*vb| vb.deinit();
         if (value_ref_bindings) |*vrb| vrb.deinit();
@@ -938,6 +1223,13 @@ pub fn lowerComptimeCallArgsSkip(self: *Lowering, fd: *const ast.FnDecl, call_ar
     const saved_source = self.current_source_file;
     defer self.setCurrentSourceFile(saved_source);
     if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
+
+    // An inlined comptime body is still a function boundary for cleanup. Its
+    // explicit `return` may emit defers declared inside the body, but must not
+    // observe caller defers that happen to precede the inline call.
+    const saved_func_defer_base = self.func_defer_base;
+    self.func_defer_base = self.defer_stack.items.len;
+    defer self.func_defer_base = saved_func_defer_base;
 
     // Lower the body — capture return value for functions with return type
     const ret_ty = self.resolveReturnType(fd);
@@ -1435,12 +1727,14 @@ pub fn selectQualifiedConst(self: *Lowering, ns: []const u8, field: []const u8) 
     // (where `ns` binds). A main-file body carries a null `current_source_file`
     // (it IS the root), so fall back to `main_file`, matching `selectModuleConst`.
     const from = self.current_source_file orelse self.main_file orelse return null;
-    const target = switch (self.namespaceAliasVerdictFrom(ns, from)) {
-        .target => |t| t,
-        .ambiguous, .none => return null,
+    const path = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ ns, field }) catch return null;
+    defer self.alloc.free(path);
+    const sel = switch (self.qualifiedMemberVerdictFrom(path, from)) {
+        .selected => |s| s,
+        .not_qualified, .missing, .ambiguous => return null,
     };
-    const src = target.target_module_path;
-    const ci = self.sourceModuleConst(src, field) orelse return null;
+    const src = sel.target.target_module_path;
+    const ci = self.sourceModuleConst(src, sel.member) orelse return null;
     return .{ .info = ci, .source = src };
 }
 
@@ -1485,6 +1779,31 @@ pub fn qualifiedConstIsFloatTyped(self: *Lowering, ns: []const u8, field: []cons
     const restore = self.pinConstAuthorSource(sel.source);
     defer restore.unpin();
     return program_index_mod.isFloatValuedExpr(sel.info.value, SourceConstCtx{ .lowering = self, .frame = &f });
+}
+
+/// AST-shaped qualified-const folds for a nested field-access chain. The
+/// generic constant evaluator cannot flatten `facade.engine_alias.N` itself;
+/// the stateful lowering context owns the allocator and the namespace graph,
+/// so reconstruct and route it through the same full-path selector here.
+pub fn foldQualifiedConstNodeInt(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?i64 {
+    const path = self.qualifiedTypeName(node) orelse return null;
+    defer self.alloc.free(path);
+    const dot = std.mem.lastIndexOfScalar(u8, path, '.') orelse return null;
+    return self.foldQualifiedConstInt(path[0..dot], path[dot + 1 ..], frame);
+}
+
+pub fn foldQualifiedConstNodeFloat(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) ?f64 {
+    const path = self.qualifiedTypeName(node) orelse return null;
+    defer self.alloc.free(path);
+    const dot = std.mem.lastIndexOfScalar(u8, path, '.') orelse return null;
+    return self.foldQualifiedConstFloat(path[0..dot], path[dot + 1 ..], frame);
+}
+
+pub fn qualifiedConstNodeIsFloatTyped(self: *Lowering, node: *const Node, frame: ?*const ConstFoldFrame) bool {
+    const path = self.qualifiedTypeName(node) orelse return false;
+    defer self.alloc.free(path);
+    const dot = std.mem.lastIndexOfScalar(u8, path, '.') orelse return false;
+    return self.qualifiedConstIsFloatTyped(path[0..dot], path[dot + 1 ..], frame);
 }
 
 /// Float counterpart of `foldSourceConstInt` (E2/F2/R1).

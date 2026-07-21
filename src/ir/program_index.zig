@@ -227,6 +227,15 @@ const ModuleConstCtx = struct {
     pub fn qualifiedNameIsFloatTyped(_: ModuleConstCtx, _: []const u8, _: []const u8) bool {
         return false;
     }
+    pub fn lookupQualifiedConstNode(_: ModuleConstCtx, _: *const Node) ?i64 {
+        return null;
+    }
+    pub fn lookupQualifiedConstNodeFloat(_: ModuleConstCtx, _: *const Node) ?f64 {
+        return null;
+    }
+    pub fn qualifiedNodeIsFloatTyped(_: ModuleConstCtx, _: *const Node) bool {
+        return false;
+    }
     /// Float counterpart of `lookupDimName`, so `evalConstFloatExpr` resolves a
     /// float-const leaf whose value references another const
     /// (`G : f64 : 2.0; F : f64 : G + 0.5`) recursively through the SAME
@@ -382,6 +391,7 @@ pub fn isFloatValuedExpr(node: *const Node, ctx: anytype) bool {
                 // division exactly as it does a bare `K / 3`.
                 if (ctx.qualifiedNameIsFloatTyped(on, fa.field)) break :blk true;
             }
+            if (ctx.qualifiedNodeIsFloatTyped(node)) break :blk true;
             break :blk false;
         },
         .unary_op => |u| isFloatValuedExpr(u.operand, ctx),
@@ -394,21 +404,20 @@ pub fn isFloatValuedExpr(node: *const Node, ctx: anytype) bool {
 /// f32)`, a generic value-param `Vec(m.N, …)`) reaches the const folders as a
 /// SINGLE dotted name — a `type_expr` / `identifier` whose `name` is `"m.N"` —
 /// not the `field_access` node the EXPRESSION position (`[m.N]T`) produces.
-/// Split on the first `.` and resolve the tail as a const in namespace `m`'s
-/// target module (issue 0192). Null for an unqualified name (no `.`), so an
-/// ordinary leaf is unaffected. (sx identifiers carry no `.`, so a dotted name
-/// is always a namespace qualification; a single-level alias yields exactly one
-/// `.`, and a stray multi-dot tail simply finds no const and folds to null.)
+/// Split on the LAST `.` so the complete namespace prefix is preserved
+/// (`facade.engine_alias.N` -> prefix `facade.engine_alias`, member `N`). The
+/// lowering context proves every prefix edge; stateless contexts simply return
+/// null as before. Null for an unqualified name (no `.`).
 fn qualifiedDottedInt(name: []const u8, ctx: anytype) ?i64 {
-    const dot = std.mem.indexOfScalar(u8, name, '.') orelse return null;
+    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
     return ctx.lookupQualifiedConst(name[0..dot], name[dot + 1 ..]);
 }
 fn qualifiedDottedFloat(name: []const u8, ctx: anytype) ?f64 {
-    const dot = std.mem.indexOfScalar(u8, name, '.') orelse return null;
+    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return null;
     return ctx.lookupQualifiedConstFloat(name[0..dot], name[dot + 1 ..]);
 }
 fn qualifiedDottedIsFloat(name: []const u8, ctx: anytype) bool {
-    const dot = std.mem.indexOfScalar(u8, name, '.') orelse return false;
+    const dot = std.mem.lastIndexOfScalar(u8, name, '.') orelse return false;
     return ctx.qualifiedNameIsFloatTyped(name[0..dot], name[dot + 1 ..]);
 }
 
@@ -488,6 +497,7 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
                 // receiver keeps its existing meaning.
                 if (ctx.lookupQualifiedConst(on, fa.field)) |v| break :blk v;
             }
+            if (ctx.lookupQualifiedConstNode(node)) |v| break :blk v;
             // Any other field access is not a compile-time integer leaf.
             break :blk null;
         },
@@ -607,6 +617,7 @@ pub fn evalConstFloatExpr(node: *const Node, ctx: anytype) ?f64 {
                 // the float twin of the int folder's qualified-const arm.
                 if (ctx.lookupQualifiedConstFloat(on, fa.field)) |v| break :blk v;
             }
+            if (ctx.lookupQualifiedConstNodeFloat(node)) |v| break :blk v;
             break :blk null;
         },
         .unary_op => |u| switch (u.op) {

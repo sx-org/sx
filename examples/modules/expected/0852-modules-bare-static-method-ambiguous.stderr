@@ -1,0 +1,5 @@
+error: type 'Thing' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/modules/0852-modules-bare-static-method-ambiguous.sx:9:10
+   |
+ 9 |     _ := Thing.init();
+   |          ^^^^^

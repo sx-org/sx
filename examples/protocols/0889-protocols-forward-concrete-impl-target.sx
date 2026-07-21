@@ -1,0 +1,20 @@
+// A concrete impl may precede its target type declaration. Registration must
+// wait for the target's nominal TypeId instead of committing name-only state.
+// Regression (issue 0320 adversarial review).
+
+P :: protocol #identity {
+    value :: (self: *Self) -> i64;
+}
+
+impl P for Thing {
+    value :: (self: *Thing) -> i64 { self.n }
+}
+
+Thing :: struct { n: i64; }
+
+main :: () -> i32 {
+    value := Thing.{ n = 42 };
+    erased : P = xx value;
+    if erased.value() != 42 { return 1; }
+    0
+}

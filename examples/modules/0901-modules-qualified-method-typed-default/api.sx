@@ -1,0 +1,16 @@
+ApiError :: error { Bad }
+
+Options :: struct {
+    amount: i64 = 7;
+}
+
+Writer :: struct {
+    total: i64;
+
+    init :: () -> Writer { Writer.{ total = 0 } }
+
+    add :: (self: *Writer, value: i64, options: Options = .{}) -> ApiError {
+        if options.amount < 0 { raise error.Bad; }
+        self.total += value + options.amount;
+    }
+}

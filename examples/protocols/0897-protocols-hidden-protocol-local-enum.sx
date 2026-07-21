@@ -1,0 +1,19 @@
+// A protocol visible only through a named namespace is a distinct nominal
+// declaration from a same-spelled local enum. It must neither occupy the
+// enum's TypeId nor make `$mode: Mode` look like a protocol/type parameter.
+
+hidden :: #import "0897-protocols-hidden-protocol-local-enum/hidden.sx";
+
+Mode :: enum { run; }
+
+Thing :: struct {
+    ping :: ($mode: Mode) -> i64 {
+        if mode == .run { return 7; }
+        0
+    }
+}
+
+main :: () -> i32 {
+    if Thing.ping(.run) != 7 { return 1; }
+    0
+}

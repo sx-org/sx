@@ -9,6 +9,7 @@ const program_index_mod = @import("../program_index.zig");
 const unescape = @import("../../unescape.zig");
 const errors = @import("../../errors.zig");
 const TypeResolver = @import("../type_resolver.zig").TypeResolver;
+const CallResolver = @import("../calls.zig").CallResolver;
 
 const TypeId = types.TypeId;
 const StringId = types.StringId;
@@ -48,18 +49,29 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         // `Ev.key` in type position and returns `.unresolved` → LLVM panic.
         if (te.data == .field_access) {
             const fa = te.data.field_access;
-            const obj_name: ?[]const u8 = switch (fa.object.data) {
-                .identifier => |id| id.name,
-                .type_expr => |t| t.name,
-                else => null,
-            };
-            if (obj_name) |on| {
-                const resolved = self.resolveNominalLeaf(on, false, fa.object.span);
-                if (!resolved.isBuiltin() and resolved != .unresolved) {
-                    const info = self.module.types.get(resolved);
-                    if (info == .tagged_union) {
-                        return self.lowerTaggedEnumLiteral(sl, fa.field, resolved, info.tagged_union, span);
-                    }
+            var resolved: TypeId = .unresolved;
+            if (self.qualifiedTypeName(fa.object)) |path| {
+                defer self.alloc.free(path);
+                switch (self.qualifiedMemberVerdict(path)) {
+                    .selected => |sel| resolved = switch (self.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
+                        .resolved => |ty| ty,
+                        else => .unresolved,
+                    },
+                    .not_qualified, .missing, .ambiguous => {},
+                }
+            }
+            if (resolved == .unresolved) {
+                const obj_name: ?[]const u8 = switch (fa.object.data) {
+                    .identifier => |id| id.name,
+                    .type_expr => |t| t.name,
+                    else => null,
+                };
+                if (obj_name) |on| resolved = self.resolveNominalLeaf(on, false, fa.object.span);
+            }
+            if (!resolved.isBuiltin() and resolved != .unresolved) {
+                const info = self.module.types.get(resolved);
+                if (info == .tagged_union) {
+                    return self.lowerTaggedEnumLiteral(sl, fa.field, resolved, info.tagged_union, span);
                 }
             }
         }
@@ -771,79 +783,109 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
         return self.lowerErrorTagLiteral(fa.field, span);
     }
 
-    // Namespace-alias stripping in value position. The target module's
-    // declarations register under their bare names, so `alias.Member`
-    // re-enters as `Member` (`r.LIMIT`, and `r.Color` as the receiver of
-    // `r.Color.green`); `alias.Type.field` re-enters as `Type.field`.
-    if (self.namespaceRootedMember(fa.object)) |inner| {
-        const root = fa.object.data.field_access.object.data.identifier.name;
-        if (self.namespaceAliasTarget(root, span)) |target| {
-            // `alias.global.field`: the inner namespace member may be a VALUE
-            // global, not a type/static head (issue 0261). Resolve it in the
-            // target module and then apply ordinary field access to its value.
-            const saved_global_src = self.current_source_file;
-            self.setCurrentSourceFile(target.target_module_path);
-            var global_info: ?program_index_mod.GlobalInfo = null;
-            if (self.program_index.global_names.get(inner)) |fallback| {
-                switch (self.selectGlobalAuthor(inner)) {
-                    .resolved => |g| global_info = g,
-                    .untracked => global_info = fallback,
-                    else => {},
-                }
-            }
-            self.setCurrentSourceFile(saved_global_src);
-            if (global_info) |gi| {
-                const value = self.builder.emit(.{ .global_get = gi.id }, gi.ty);
-                return self.lowerFieldAccessOnType(value, gi.ty, fa.field, span);
-            }
-            // Resolve the inner name as a TYPE in the target's context
-            // (the alias edge authorizes the reach).
-            const saved_src = self.current_source_file;
-            self.setCurrentSourceFile(target.target_module_path);
-            const ty = self.resolveNominalLeaf(inner, false, span);
-            self.setCurrentSourceFile(saved_src);
-            if (ty != .unresolved and !ty.isBuiltin()) {
-                const info = self.module.types.get(ty);
-                if (info == .@"enum" or info == .tagged_union) {
-                    // `alias.Enum.variant` — a typed enum literal.
+    // Full namespace-member selection in value position. This handles both a
+    // direct member (`alias.CONST`) and a nested namespace terminal
+    // (`facade.engine_alias.CONST`) without ever stripping to a globally keyed
+    // bare name before the complete prefix is proved.
+    const full_node = Node{ .span = span, .data = .{ .field_access = fa.* } };
+    if (self.qualifiedTypeName(&full_node)) |full_path| {
+        defer self.alloc.free(full_path);
+        const root_end = std.mem.indexOfScalar(u8, full_path, '.') orelse full_path.len;
+        const root = full_path[0..root_end];
+        if (!self.identifierBindsVisibleValue(root)) {
+            switch (self.qualifiedMemberVerdict(full_path)) {
+                .selected => |sel| {
                     const synth = self.alloc.create(Node) catch null;
                     if (synth) |n| {
-                        n.* = .{ .span = span, .data = .{ .enum_literal = .{ .name = fa.field } } };
-                        const saved_tt = self.target_type;
-                        self.target_type = ty;
-                        const ref = self.lowerExpr(n);
-                        self.target_type = saved_tt;
-                        return ref;
+                        n.* = .{ .span = span, .data = .{ .identifier = .{ .name = sel.member } } };
+                        const saved_src = self.current_source_file;
+                        self.setCurrentSourceFile(sel.target.target_module_path);
+                        defer self.setCurrentSourceFile(saved_src);
+                        return self.lowerExpr(n);
                     }
-                }
-            }
-            // `alias.Type.member` (struct constants etc.) — strip the alias;
-            // the type's members register under the bare type name globally.
-            const synth = self.alloc.create(Node) catch null;
-            if (synth) |n| {
-                n.* = .{ .span = fa.object.span, .data = .{ .identifier = .{ .name = inner } } };
-                const stripped = ast.FieldAccess{ .object = n, .field = fa.field, .is_optional = fa.is_optional };
-                return self.lowerFieldAccess(&stripped, span);
+                },
+                .missing => |m| {
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, CallResolver.pathSliceSpan(&full_node, full_path, m.member), "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
+                    return Ref.none;
+                },
+                .ambiguous => |alias| {
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                    return Ref.none;
+                },
+                .not_qualified => {},
             }
         }
     }
-    if (fa.object.data == .identifier) {
-        const oname = fa.object.data.identifier.name;
-        const shadowed = if (self.scope) |s| s.lookup(oname) != null else false;
-        if (!shadowed and !self.program_index.global_names.contains(oname)) {
-            if (self.namespaceAliasTarget(oname, span)) |target| {
-                const synth = self.alloc.create(Node) catch null;
-                if (synth) |n| {
-                    n.* = .{ .span = span, .data = .{ .identifier = .{ .name = fa.field } } };
-                    // Lower in the TARGET module's context: the alias edge
-                    // authorizes the member, so the bare-visibility gate must
-                    // judge it as the target's own name, not the caller's.
+
+    // If the complete chain stopped at an ordinary target-owned member,
+    // resolve the OBJECT prefix as the namespace terminal, then apply the last
+    // field as an enum variant / global field / static member. Covers both
+    // `alias.Enum.variant` and `facade.engine_alias.Enum.variant`.
+    if (self.qualifiedTypeName(fa.object)) |object_path| {
+        defer self.alloc.free(object_path);
+        const root_end = std.mem.indexOfScalar(u8, object_path, '.') orelse object_path.len;
+        const root = object_path[0..root_end];
+        if (!self.identifierBindsVisibleValue(root)) {
+            switch (self.qualifiedMemberVerdict(object_path)) {
+                .selected => |sel| {
+                    const saved_global_src = self.current_source_file;
+                    self.setCurrentSourceFile(sel.target.target_module_path);
+                    var global_info: ?program_index_mod.GlobalInfo = null;
+                    if (self.program_index.global_names.get(sel.member)) |fallback| {
+                        switch (self.selectGlobalAuthor(sel.member)) {
+                            .resolved => |g| global_info = g,
+                            .untracked => global_info = fallback,
+                            else => {},
+                        }
+                    }
+                    self.setCurrentSourceFile(saved_global_src);
+                    if (global_info) |gi| {
+                        const value = self.builder.emit(.{ .global_get = gi.id }, gi.ty);
+                        return self.lowerFieldAccessOnType(value, gi.ty, fa.field, span);
+                    }
+
                     const saved_src = self.current_source_file;
-                    self.setCurrentSourceFile(target.target_module_path);
-                    const ref = self.lowerExpr(n);
+                    self.setCurrentSourceFile(sel.target.target_module_path);
+                    const ty = self.resolveNominalLeaf(sel.member, false, span);
                     self.setCurrentSourceFile(saved_src);
-                    return ref;
-                }
+                    if (ty != .unresolved and !ty.isBuiltin()) {
+                        const info = self.module.types.get(ty);
+                        if (info == .@"enum" or info == .tagged_union) {
+                            const synth = self.alloc.create(Node) catch null;
+                            if (synth) |n| {
+                                n.* = .{ .span = span, .data = .{ .enum_literal = .{ .name = fa.field } } };
+                                const saved_tt = self.target_type;
+                                self.target_type = ty;
+                                const ref = self.lowerExpr(n);
+                                self.target_type = saved_tt;
+                                return ref;
+                            }
+                        }
+                    }
+
+                    const synth = self.alloc.create(Node) catch null;
+                    if (synth) |n| {
+                        n.* = .{ .span = fa.object.span, .data = .{ .identifier = .{ .name = sel.member } } };
+                        const stripped = ast.FieldAccess{ .object = n, .field = fa.field, .is_optional = fa.is_optional };
+                        const saved_member_src = self.current_source_file;
+                        self.setCurrentSourceFile(sel.target.target_module_path);
+                        defer self.setCurrentSourceFile(saved_member_src);
+                        return self.lowerFieldAccess(&stripped, span);
+                    }
+                },
+                .missing => |m| {
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, fa.object.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
+                    return Ref.none;
+                },
+                .ambiguous => |alias| {
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, fa.object.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                    return Ref.none;
+                },
+                .not_qualified => {},
             }
         }
     }
@@ -1317,7 +1359,13 @@ pub fn getAccessorFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const as
     if (self.genericInstanceMethod(tn, field)) |m| {
         return if (m.fd.is_get) m.fd else null;
     }
-    // Plain struct: methods are registered "StructName.method" in fn_ast_map.
+    // Plain nominal struct: select from this TypeId's author before the global
+    // compatibility map, so same-display-name structs keep distinct accessors.
+    if (self.plainStructMethod(ty, field)) |m| {
+        return if (m.fd.is_get) m.fd else null;
+    }
+    if (self.hasPlainStructAuthor(ty)) return null;
+    // Legacy fallback for methods supplied outside the inline struct decl.
     const info = self.module.types.get(ty);
     if (info == .@"struct") {
         const sname = self.module.types.getString(info.@"struct".name);
@@ -1375,7 +1423,12 @@ pub fn getSetterFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const ast.
     if (self.genericInstanceMethod(tn, eff)) |m| {
         return if (m.fd.is_set) m.fd else null;
     }
-    // Plain struct: the setter stub is registered "StructName.field$set".
+    // Plain nominal struct: source-pin the setter to this TypeId's author.
+    if (self.plainStructMethod(ty, eff)) |m| {
+        return if (m.fd.is_set) m.fd else null;
+    }
+    if (self.hasPlainStructAuthor(ty)) return null;
+    // Legacy fallback for methods supplied outside the inline struct decl.
     const info = self.module.types.get(ty);
     if (info == .@"struct") {
         const sname = self.module.types.getString(info.@"struct".name);
@@ -1625,21 +1678,35 @@ pub fn emitBadEnumVariant(
 }
 
 /// Lower an `error.X` tag literal to its global tag id (a `u32`). When the
-/// destination context (`target_type`) is a named error set, the value is
-/// typed as that set and `X`'s membership is validated; otherwise the value
-/// is the raw `u32` global tag id (per the spec's context rule).
+/// destination context (`target_type`) is a named error set, or an optional
+/// wrapping one, the value is typed as that set and `X`'s membership is
+/// validated; otherwise the value is the raw `u32` global tag id (per the
+/// spec's context rule).
 pub fn lowerErrorTagLiteral(self: *Lowering, tag_name: []const u8, span: ast.Span) Ref {
     const tag_id = self.module.types.internTag(tag_name);
     if (self.target_type) |t| {
         if (!t.isBuiltin()) {
             const info = self.module.types.get(t);
-            if (info == .error_set) {
+            var error_set_ty: ?TypeId = null;
+            var optional_ty: ?TypeId = null;
+            switch (info) {
+                .error_set => error_set_ty = t,
+                .optional => |opt| {
+                    if (!opt.child.isBuiltin() and self.module.types.get(opt.child) == .error_set) {
+                        error_set_ty = opt.child;
+                        optional_ty = t;
+                    }
+                },
+                else => {},
+            }
+            if (error_set_ty) |set_ty| {
+                const set_info = self.module.types.get(set_ty).error_set;
                 // The bare-`!` inferred placeholder (reserved name "!") accepts
                 // any tag — its members aren't known until the whole-program SCC
                 // pass (E1.4) folds in every raised tag. Skip membership for it.
-                if (!std.mem.eql(u8, self.module.types.getString(info.error_set.name), "!")) {
+                if (!std.mem.eql(u8, self.module.types.getString(set_info.name), "!")) {
                     var in_set = false;
-                    for (info.error_set.tags) |member| {
+                    for (set_info.tags) |member| {
                         if (member == tag_id) {
                             in_set = true;
                             break;
@@ -1647,11 +1714,13 @@ pub fn lowerErrorTagLiteral(self: *Lowering, tag_name: []const u8, span: ast.Spa
                     }
                     if (!in_set) {
                         if (self.diagnostics) |diags| {
-                            diags.addFmt(.err, span, "error tag 'error.{s}' is not in error set '{s}'", .{ tag_name, self.module.types.getString(info.error_set.name) });
+                            diags.addFmt(.err, span, "error tag 'error.{s}' is not in error set '{s}'", .{ tag_name, self.module.types.getString(set_info.name) });
                         }
                     }
                 }
-                return self.builder.constInt(@as(i64, @intCast(tag_id)), t);
+                const tag = self.builder.constInt(@as(i64, @intCast(tag_id)), set_ty);
+                if (optional_ty) |opt_ty| return self.builder.optionalWrap(tag, opt_ty);
+                return tag;
             }
             // A NOMINAL non-error destination (struct / enum / union /
             // tagged union): an error tag has no representation there — the
@@ -2002,12 +2071,10 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
             // `a.Box(i64).[...]` selects a's OWN template via the namespace edge
             // (Counter-1: was the global last-wins map); a bare head selects the
             // single bare-VISIBLE author.
-            if (headNameOfCallee(cl.callee)) |hn| {
-                switch (self.selectGenericStructHead(hn.name, hn.alias, hn.is_qualified, cl.callee.span)) {
-                    .template => |t| return self.instantiateGenericStruct(&t, cl.args),
-                    .poisoned => return .unresolved,
-                    .not_generic => {},
-                }
+            switch (self.selectGenericStructCallee(cl.callee, cl.callee.span)) {
+                .template => |t| return self.instantiateGenericStruct(&t, cl.args),
+                .poisoned => return .unresolved,
+                .not_generic => {},
             }
             return .unresolved;
         },
@@ -2697,6 +2764,23 @@ pub fn resolveOptionalInner(self: *Lowering, ty: TypeId) TypeId {
 // ── Core expression dispatch ───────────────────────────────────
 
 pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
+    // A synthetic declared-default root evaluates with the callee declaration's
+    // lexical authority, not the caller's local scope. Keep this override for
+    // the entire recursive lowering of the default expression. Caller-provided
+    // comptime substitutions also carry `source_file` but are deliberately not
+    // in this identity map, so they retain caller bindings.
+    const authored_default = self.authored_call_defaults.get(node);
+    const saved_scope_for_default = self.scope;
+    const saved_default_call_site = self.active_default_call_site;
+    if (authored_default) |call_site| {
+        self.scope = null;
+        self.active_default_call_site = call_site;
+    }
+    defer if (authored_default != null) {
+        self.scope = saved_scope_for_default;
+        self.active_default_call_site = saved_default_call_site;
+    };
+
     // Stamp this node's source span onto the instructions it emits (ERR
     // E3.0 — feeds DWARF line-info + comptime frame resolution). Save/
     // restore so a parent's later emits keep the parent's span after a

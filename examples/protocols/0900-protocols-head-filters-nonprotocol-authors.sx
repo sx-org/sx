@@ -1,0 +1,15 @@
+// Protocol-head selection filters unrelated same-spelled functions/values
+// before deciding ambiguity. Exactly one visible terminal protocol remains.
+
+#import "0900-protocols-head-filters-nonprotocol-authors/protocol.sx";
+#import "0900-protocols-head-filters-nonprotocol-authors/value.sx";
+
+S :: struct { n: i64; }
+impl P for S { value :: (self: *S) -> i64 { self.n } }
+
+take :: (item: P) -> i64 { item.value() }
+
+main :: () -> i32 {
+    value := S.{ n = 37 };
+    if take(xx value) == 37 then 0 else 1
+}

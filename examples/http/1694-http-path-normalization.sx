@@ -22,6 +22,7 @@
 // unchanged; "/a/.." → "/"; trailing "/a/." → "/a/"; pooled request
 // with a SHRINKING path (decode + pop) rebuilt byte-exact; GPA net-zero.
 #import "modules/std.sx";
+mem  :: #import "modules/std/mem.sx";
 http :: #import "modules/std/http.sx";
 
 PORT_A :: 19008;
@@ -127,7 +128,7 @@ main :: () -> i32 {
 
         // request-building concats live in a throwaway arena so the GPA
         // gate below counts only real server leaks
-        req_arena := Arena.init(gpa, 65536);
+        req_arena := mem.Arena.init(gpa, 65536);
         push .{ allocator = req_arena } {
             // (a) percent-decode in the path
             expect_path(@srv, "/a%20b", "/a b", "pct-decode", rbuf, cap, @failed);

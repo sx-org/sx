@@ -1,0 +1,10 @@
+ordered=119
+bump=15
+after=15
+lambda=12
+static=3 caller-x=9
+short=4
+types=4 8
+instance-types=12 18
+variadic=12
+generic=27 calls=1

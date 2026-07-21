@@ -1,0 +1,22 @@
+// Comptime methods consume their AST arguments before the ordinary call path,
+// but still require ordinary arity diagnostics. Extra arguments must not be
+// silently skipped, and every required trailing parameter must be present.
+
+Mode :: enum { run; }
+
+Thing :: struct {
+    ping :: ($mode: Mode) -> i64 {
+        if mode == .run { return 7; }
+        0
+    }
+
+    needs_value :: ($mode: Mode, value: i64) -> i64 {
+        if mode == .run { return value; }
+        0
+    }
+}
+
+main :: () {
+    Thing.ping(.run, 9);
+    Thing.needs_value(.run);
+}

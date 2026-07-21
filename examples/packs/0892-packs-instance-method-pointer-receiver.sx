@@ -1,0 +1,47 @@
+// A heterogeneous-pack instance method must pass its implicit receiver with
+// the same pointer semantics as an ordinary method. The receiver AST is
+// prepended to the pack call's fixed prefix; lowering that prefix as a value
+// mutates only a copy of `t`.
+#import "modules/std.sx";
+
+Thing :: struct {
+    n: i64;
+
+    bump :: (self: *Thing, ..$args) {
+        self.n += args[0];
+    }
+
+    bump_one :: (self: *Thing, amount: i64) {
+        self.n += amount;
+    }
+
+    bump_static :: (other: *Thing, ..$args) {
+        other.n += args[0];
+    }
+}
+
+Box :: struct { inner: Thing; }
+
+// Fixed prefixes on static and ordinary free pack functions use the same
+// parameter-aware lowering. Keep both covered alongside the method receiver.
+bump_free :: (other: *Thing, ..$args) {
+    other.n += args[0];
+}
+
+sum :: (base: i64, ..$args) -> i64 {
+    base + args[0] + args[1]
+}
+
+main :: () {
+    t := Thing.{ n = 5 };
+    t.bump(7);
+    print("instance={}\n", t.n);
+    Thing.bump_static(t, 8);
+    print("static={}\n", t.n);
+    bump_free(t, 9);
+    print("free={} sum={}\n", t.n, sum(10, 20, 30));
+    box := Box.{ inner = .{ n = 40 } };
+    box.inner.bump_one(1);
+    box.inner.bump(2);
+    print("nested={}\n", box.inner.n);
+}

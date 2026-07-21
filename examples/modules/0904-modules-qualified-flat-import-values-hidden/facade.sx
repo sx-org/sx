@@ -1,0 +1,3 @@
+#import "internal.sx";
+
+public_value :: () -> i64 { HIDDEN_CONST + hidden_global + hidden_fn() }

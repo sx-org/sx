@@ -1,0 +1,5 @@
+error: cannot call 'COUNT' — this namespace member is not callable
+  --> examples/modules/0914-modules-qualified-noncall-no-fallback.sx:10:12
+   |
+10 |     engine.COUNT();
+   |            ^^^^^

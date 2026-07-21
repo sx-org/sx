@@ -1,0 +1,25 @@
+// Positive companion to issue 0326: explicit aliases are declarations authored
+// by the facade and therefore remain namespace members. Own constants/globals
+// and function aliases likewise remain accessible.
+
+facade :: #import "0905-modules-qualified-flat-import-explicit-reexports/facade.sx";
+
+main :: () -> i32 {
+    value : facade.PublicStruct = .{ value = 7 };
+    if value.value != 7 { return 1; }
+    if facade.PublicStruct.make().value != 11 { return 2; }
+    if facade.PublicKind.one.(i64) != 1 { return 3; }
+
+    overlay : facade.PublicUnion = ---;
+    overlay.number = 9;
+    if overlay.number != 9 { return 4; }
+
+    err : facade.PublicError = error.Bad;
+    protocol : facade.PublicProtocol = ---;
+    alias : facade.PublicAlias = .{ value = 10 };
+    if alias.value != 10 { return 5; }
+
+    if facade.PUBLIC_CONST != 22 or facade.public_global != 33 { return 6; }
+    if facade.public_fn() != 44 { return 7; }
+    0
+}

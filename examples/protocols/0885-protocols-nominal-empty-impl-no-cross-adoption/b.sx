@@ -1,0 +1,5 @@
+#import "contract.sx";
+
+Thing :: struct { n: i64; }
+impl P for Thing {}
+make :: () -> Thing { Thing.{ n = 20 } }

@@ -1,0 +1,16 @@
+// Regression (issue 0326): a namespace exposes declarations authored by its
+// target module, not declarations merely visible there through a flat import.
+// Every qualified hidden type surface below must fail at the namespace edge.
+
+facade :: #import "0903-modules-qualified-flat-import-types-hidden/facade.sx";
+
+main :: () -> i32 {
+    plain : facade.HiddenStruct = ---;
+    alias : facade.HiddenAlias = ---;
+    overlay : facade.HiddenUnion = ---;
+    err : facade.HiddenError = ---;
+    stream : facade.HiddenProtocol = ---;
+    generic := facade.HiddenGeneric(i64).{ value = 1 };
+    made := facade.HiddenStruct.make();
+    0
+}

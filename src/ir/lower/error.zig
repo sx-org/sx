@@ -591,9 +591,22 @@ pub fn lowerCallerLocation(self: *Lowering, node: *const Node) Ref {
         if (self.diagnostics) |d| d.addFmt(.err, node.span, "`#caller_location` needs `Source_Location` (from std.sx) in scope", .{});
         return self.builder.constInt(0, .void);
     };
-    const file = node.source_file orelse self.current_source_file orelse (self.main_file orelse "");
+    // A caller-location marker may be nested inside a larger declared default
+    // expression. That root evaluates under the callee's lexical source, so
+    // consult the separately retained call-site provenance before the node /
+    // current source. A marker which is itself the whole default was cloned
+    // directly onto the call site and reaches the same fallback path.
+    const call_site = if (self.active_default_call_site) |site|
+        if (site.caller_func == self.builder.func) site else null
+    else
+        null;
+    const file = if (call_site) |site|
+        site.source orelse node.source_file orelse self.current_source_file orelse (self.main_file orelse "")
+    else
+        node.source_file orelse self.current_source_file orelse (self.main_file orelse "");
+    const location_span = if (call_site) |site| site.span else node.span;
     const src = self.sourceForFile(file);
-    const loc = errors.SourceLoc.compute(src, node.span.start);
+    const loc = errors.SourceLoc.compute(src, location_span.start);
     const func_name = self.currentFunctionName();
     var fields = [_]Ref{
         self.builder.constString(self.module.types.internString(file)),

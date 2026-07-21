@@ -1,0 +1,10 @@
+// Positive companion to issue 0324: an explicit alias authored by a facade is
+// visible to flat importers and preserves the underlying type's static methods.
+
+#import "0907-modules-explicit-static-reexport/facade.sx";
+
+main :: () -> i32 {
+    value : Public = Public.make();
+    if value.value != 23 { return 1; }
+    0
+}

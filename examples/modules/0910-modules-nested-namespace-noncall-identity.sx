@@ -1,0 +1,56 @@
+// Issue 0325 positive + target identity. `direct` owns its inner alias while
+// `carried` receives the same alias spelling through exactly one flat hop.
+// Both engines author the same terminal names with deliberately different
+// layouts/values/variant ordinals, proving every surface keeps the exact inner
+// target rather than collapsing through a global name or monomorph cache.
+
+direct :: #import "0910-modules-nested-namespace-noncall-identity/direct.sx";
+carried :: #import "0910-modules-nested-namespace-noncall-identity/carried.sx";
+
+ARecord :: direct.engine_alias.Record;
+BRecord :: carried.engine_alias.Record;
+AValue :: direct.engine_alias.COUNT;
+BValue :: carried.engine_alias.COUNT;
+ABox :: direct.engine_alias.Box(i64);
+BBox :: carried.engine_alias.Box(i64);
+AMade :: direct.engine_alias.Make(i64);
+BMade :: carried.engine_alias.Make(i64);
+
+main :: () -> i32 {
+    ar : direct.engine_alias.Record = .{ a_only = 1 };
+    br : carried.engine_alias.Record = .{ b_only = 2 };
+    ar_literal := direct.engine_alias.Record.{ a_only = 3 };
+    br_literal := carried.engine_alias.Record.{ b_only = 4 };
+    if ar.a_only != 1 or br.b_only != 2 or ar_literal.a_only != 3 or br_literal.b_only != 4 { return 1; }
+
+    aa : ARecord = .{ a_only = 5 };
+    ba : BRecord = .{ b_only = 6 };
+    if aa.a_only != 5 or ba.b_only != 6 { return 2; }
+
+    if direct.engine_alias.COUNT != 11 or carried.engine_alias.COUNT != 22 { return 3; }
+    if AValue != 11 or BValue != 22 { return 4; }
+    a_counted : [direct.engine_alias.COUNT]u8 = ---;
+    b_counted : [carried.engine_alias.COUNT]u8 = ---;
+    if a_counted.len != 11 or b_counted.len != 22 { return 9; }
+    if direct.engine_alias.Kind.selected.(i64) != 0 { return 5; }
+    if carried.engine_alias.Kind.selected.(i64) != 1 { return 6; }
+
+    direct.engine_alias.STATE = 31;
+    carried.engine_alias.STATE = 42;
+    direct.engine_alias.STATE += 1;
+    carried.engine_alias.STATE += 2;
+    if direct.engine_alias.STATE != 32 or carried.engine_alias.STATE != 44 { return 10; }
+
+    ag : direct.engine_alias.Box(i64) = .{ a_box = 7 };
+    bg : carried.engine_alias.Box(i64) = .{ b_box = 8 };
+    aga : ABox = .{ a_box = 9 };
+    bga : BBox = .{ b_box = 10 };
+    if ag.a_box != 7 or bg.b_box != 8 or aga.a_box != 9 or bga.b_box != 10 { return 7; }
+
+    am : direct.engine_alias.Make(i64) = .{ a_made = 12 };
+    bm : carried.engine_alias.Make(i64) = .{ b_made = 13 };
+    ama : AMade = .{ a_made = 14 };
+    bma : BMade = .{ b_made = 15 };
+    if am.a_made != 12 or bm.b_made != 13 or ama.a_made != 14 or bma.b_made != 15 { return 8; }
+    0
+}

@@ -117,6 +117,18 @@ const StatelessInner = struct {
     pub fn qualifiedNameIsFloatTyped(_: StatelessInner, _: []const u8, _: []const u8) bool {
         return false;
     }
+    pub fn lookupQualifiedConstNode(_: StatelessInner, _: *const Node) ?i64 {
+        return null;
+    }
+
+    pub fn lookupQualifiedConstNodeFloat(_: StatelessInner, _: *const Node) ?f64 {
+        return null;
+    }
+
+    pub fn qualifiedNodeIsFloatTyped(_: StatelessInner, _: *const Node) bool {
+        return false;
+    }
+
     /// Float-valued leaf for the shared float-expression evaluator — the FLOAT
     /// twin of `lookupDimName`, routed through the SAME `program_index.moduleConstFloat`
     /// the stateful body-lowering path uses, so a float-const-leaf dimension

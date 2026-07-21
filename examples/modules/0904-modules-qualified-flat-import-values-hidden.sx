@@ -1,0 +1,14 @@
+// Regression (issue 0326): value lowering must not turn `facade.member` into a
+// bare lookup in the facade's source context, where its flat imports are
+// legitimately visible to its own implementation.
+
+facade :: #import "0904-modules-qualified-flat-import-values-hidden/facade.sx";
+
+main :: () -> i32 {
+    constant := facade.HIDDEN_CONST;
+    global := facade.hidden_global;
+    kind := facade.HiddenKind.one;
+    function := facade.hidden_fn;
+    facade.hidden_global = 34;
+    0
+}

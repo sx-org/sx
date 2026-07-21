@@ -1,0 +1,43 @@
+// Same-display-name structs imported through distinct namespaces keep their
+// own method declarations, signatures, defaults, generic/pack monomorphs,
+// accessors, and source visibility.
+// Regression (issue 0320): `Thing.method` used to select one global AST body.
+
+a :: #import "0851-modules-nominal-struct-method-authors/a.sx";
+b :: #import "0851-modules-nominal-struct-method-authors/b.sx";
+
+main :: () -> i32 {
+    if a.use() != 32 { return 1; }
+    if !b.use() { return 2; }
+
+    av := a.Thing.from(.{ amount = 7 });
+    if av.value != 14 { return 3; }
+    av.value = 20;
+    if av.value != 21 { return 4; }
+    ar := av.wrap(i32, 0);
+    if ar.value != 25 { return 5; }
+    if av.pick(.one) != 22 { return 6; }
+    if av.count(1, true) != 23 { return 7; }
+    if a.Thing.static_pick(.one) != 3 { return 8; }
+    if a.Thing.static_count(1, true) != 2 { return 9; }
+    ashort : a.Thing = .from();
+    if ashort.value != 10 { return 10; }
+    if av.mix(.{ amount = 2 }, .one) != 23 { return 18; }
+    aother := a.Thing.from(.{ amount = 1 });
+    if av.after_pick(@aother) != 21 { return 19; }
+
+    bv := b.Thing.from(.{ enabled = true });
+    if !bv.value { return 11; }
+    br := bv.wrap(i32, 0);
+    if !br.value { return 12; }
+    if !bv.pick(.one) { return 13; }
+    if !bv.count(1, true) { return 14; }
+    if !b.Thing.static_pick(.one) { return 15; }
+    if !b.Thing.static_count(1, true) { return 16; }
+    bshort : b.Thing = .from();
+    if bshort.value { return 17; }
+    if !bv.mix(.{ enabled = true }, .one) { return 20; }
+    bother := b.Thing.from(.{ enabled = false });
+    if !bv.after_pick(@bother) { return 21; }
+    0
+}

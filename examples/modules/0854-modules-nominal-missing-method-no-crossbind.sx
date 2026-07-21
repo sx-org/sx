@@ -1,0 +1,14 @@
+// A method absent from one nominal struct must not fall through to a
+// same-display-name struct's global compatibility entry, for either instance
+// or static dispatch.
+// Regression (issue 0320).
+
+a :: #import "0854-modules-nominal-missing-method-no-crossbind/a.sx";
+b :: #import "0854-modules-nominal-missing-method-no-crossbind/b.sx";
+
+main :: () -> i32 {
+    av := a.Thing.make();
+    _ := av.only_b();
+    _ := a.Thing.static_b();
+    0
+}

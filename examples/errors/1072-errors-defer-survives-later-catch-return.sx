@@ -1,0 +1,27 @@
+// Lowering a return in a later catch-handler is one CFG edge. It must not
+// erase defers already registered for the sibling success path.
+
+E :: error { Bad }
+
+cleanups : i64 = 0;
+
+ok :: () -> E {}
+
+cleanup :: () {
+    cleanups += 1;
+}
+
+run :: () -> bool {
+    ok() catch { return false; };
+    defer cleanup();
+    ok() catch { return false; };
+    defer cleanup();
+    ok() catch { return false; };
+    true
+}
+
+main :: () -> i32 {
+    if !run() { return 1; }
+    if cleanups != 2 { return 2; }
+    0
+}

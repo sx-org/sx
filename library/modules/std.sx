@@ -115,6 +115,11 @@ cancel      :: io_mod.cancel;
 c       :: #import "modules/std/c.sx";
 posix   :: #import "modules/std/posix.sx";
 mem     :: #import "modules/std/mem.sx";
+// Intentional allocator-prelude re-export. Static method heads obey the same
+// one-hop visibility boundary as every other type use; this own alias is what
+// makes bare `GPA.init()` part of the std facade rather than an accidental
+// reach-through into `std/mem.sx`.
+GPA     :: mem.GPA;
 fs      :: #import "modules/std/fs.sx";
 process :: #import "modules/std/process.sx";
 socket  :: #import "modules/std/socket.sx";

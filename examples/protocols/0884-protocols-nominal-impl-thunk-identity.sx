@@ -1,0 +1,25 @@
+// Protocol impl lookup, conformance, thunk creation, and vtable caching use the
+// concrete nominal TypeId, so same-display-name structs dispatch independently.
+// Regression (issue 0320): both `Thing` impls used one `Thing.value` body/thunk.
+
+#import "0884-protocols-nominal-impl-thunk-identity/contract.sx";
+a :: #import "0884-protocols-nominal-impl-thunk-identity/a.sx";
+b :: #import "0884-protocols-nominal-impl-thunk-identity/b.sx";
+
+main :: () -> i32 {
+    av := a.make();
+    bv := b.make();
+    // Direct concrete dispatch uses the same nominal protocol-method registry;
+    // it must not fall back through the shared display name either.
+    if av.value() != 11 { return 1; }
+    if bv.value() != 100 { return 2; }
+    if av.doubled() != 22 { return 3; }
+    if bv.doubled() != 200 { return 4; }
+    ap : P = xx av;
+    bp : P = xx bv;
+    if ap.value() != 11 { return 5; }
+    if bp.value() != 100 { return 6; }
+    if ap.doubled() != 22 { return 7; }
+    if bp.doubled() != 200 { return 8; }
+    0
+}

@@ -95,7 +95,7 @@ main :: () -> i32 {
             srv3.close();
         }
 
-        if failed == 0 {
+        if !e2 and failed == 0 {
             served : i64 = 0;
             k : i64 = 0;
             while k < 8 {

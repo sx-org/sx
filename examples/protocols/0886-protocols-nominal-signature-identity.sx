@@ -1,0 +1,14 @@
+// Protocol conformance compares canonical TypeIds, not display names. An impl
+// cannot substitute its own same-named nominal parameter type for the distinct
+// type authored by the protocol module.
+// Regression (issue 0320 adversarial review).
+
+#import "0886-protocols-nominal-signature-identity/contract.sx";
+implmod :: #import "0886-protocols-nominal-signature-identity/impl.sx";
+
+main :: () -> i32 {
+    value := implmod.make();
+    erased : P = xx value;
+    _ := erased;
+    0
+}

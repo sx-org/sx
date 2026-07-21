@@ -1,0 +1,8 @@
+a :: #import "0320-namespace-same-name-struct-method-crossbind/a.sx";
+b :: #import "0320-namespace-same-name-struct-method-crossbind/b.sx";
+
+main :: () -> i32 {
+    if a.use() != 2 { return 1; }
+    if b.use() { return 2; }
+    0
+}

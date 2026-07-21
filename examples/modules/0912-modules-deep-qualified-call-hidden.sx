@@ -1,0 +1,10 @@
+// A namespace alias hidden behind two flat edges stays hidden even when the
+// attempted call has four more qualified segments and a same-named function
+// exists elsewhere in the program.
+
+facade :: #import "0912-modules-deep-qualified-call-hidden/facade.sx";
+
+main :: () -> i32 {
+    facade.one.two.three.engine.value();
+    0
+}

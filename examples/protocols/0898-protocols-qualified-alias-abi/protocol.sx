@@ -1,0 +1,4 @@
+P :: protocol #identity {
+    bump :: (self: *Self) -> i64;
+    value :: (self: *Self) -> i64;
+}

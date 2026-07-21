@@ -1,0 +1,3 @@
+P :: protocol #identity {
+    value :: (self: *Self) -> i64;
+}

@@ -106,9 +106,9 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
             .ty = self.module.types.ptrTo(.void),
         }) catch unreachable;
     }
-    for (fd.params) |p| {
+    for (fd.params, 0..) |p, param_decl_idx| {
         if (isTypeParamDecl(&p, fd.type_params)) continue;
-        const pty = self.resolveParamType(&p);
+        const pty = self.resolveDeclParamType(fd, param_decl_idx);
         params.append(self.alloc, .{
             .name = self.module.types.internString(p.name),
             .ty = pty,
@@ -140,9 +140,9 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     // function that uses its arguments). Mirrors the decl-path guard.
     if (fd.abi != .naked) {
         var param_idx: u32 = if (wants_ctx) 1 else 0;
-        for (fd.params) |p| {
+        for (fd.params, 0..) |p, param_decl_idx| {
             if (isTypeParamDecl(&p, fd.type_params)) continue;
-            const pty = self.resolveParamType(&p);
+            const pty = self.resolveDeclParamType(fd, param_decl_idx);
             const slot = self.builder.alloca(pty);
             const param_ref = Ref.fromIndex(param_idx);
             self.builder.store(slot, param_ref);
@@ -264,34 +264,25 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
             }
             return true;
         },
-        .field_access => |fa| {
-            // A module-alias-qualified type name (`sel.Selection`) is a static
-            // type iff `fa.object` is a namespace ALIAS (not a runtime scope var)
-            // whose target module authors a TYPE named `fa.field` (issue 0147).
-            // Pure predicate: scan the target's own decls — no type resolution
-            // side effects (the actual TypeId is produced later by
-            // `resolveTypeArg`'s matching `.field_access` arm).
-            if (fa.object.data != .identifier) return false;
-            const oname = fa.object.data.identifier.name;
+        .field_access => {
+            const path = self.qualifiedTypeName(node) orelse return false;
+            defer self.alloc.free(path);
+            const root_end = std.mem.indexOfScalar(u8, path, '.') orelse return false;
             if (self.scope) |scope| {
-                if (scope.lookup(oname) != null) return false;
+                if (scope.lookup(path[0..root_end]) != null) return false;
             }
-            const target = self.namespaceAliasTarget(oname, node.span) orelse return false;
-            for (target.own_decls) |decl| {
-                const dn = decl.data.declName() orelse continue;
-                if (!std.mem.eql(u8, dn, fa.field)) continue;
-                return switch (decl.data) {
-                    .struct_decl, .enum_decl, .union_decl, .error_set_decl => true,
-                    // A const-wrapped type definition or a type alias
-                    // (`Foo :: Bar;` / `Foo :: ns.Bar;`).
-                    .const_decl => |cd| switch (cd.value.data) {
-                        .struct_decl, .enum_decl, .union_decl, .error_set_decl, .identifier, .field_access => true,
-                        else => false,
-                    },
+            const sel = switch (self.qualifiedMemberVerdict(path)) {
+                .selected => |s| s,
+                .not_qualified, .missing, .ambiguous => return false,
+            };
+            return switch (sel.author.raw) {
+                .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .runtime_class_decl => true,
+                .const_decl => |cd| switch (cd.value.data) {
+                    .struct_decl, .enum_decl, .union_decl, .error_set_decl, .identifier, .field_access => true,
                     else => false,
-                };
-            }
-            return false;
+                },
+                else => false,
+            };
         },
         .pack_index_type_expr,
         .pointer_type_expr,
@@ -578,20 +569,32 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         // empty-struct-stub fallback would silently fabricate a 0-sized type for
         // an unregistered name (the silent-default trap) — a failed lookup must
         // surface as a diagnostic + `.unresolved`.
-        .field_access => |fa| {
-            // Resolve the member as a TYPE in the alias's TARGET module context —
-            // the same mechanism `lowerFieldAccess` uses for `alias.Type` in value
-            // position (src/ir/lower/expr.zig): the alias edge authorizes the reach,
-            // so set the current source to the target module and resolve the bare
-            // member name through the source-aware nominal leaf.
-            if (fa.object.data == .identifier) {
-                if (self.namespaceAliasTarget(fa.object.data.identifier.name, node.span)) |target| {
+        .field_access => {
+            const path = self.qualifiedTypeName(node) orelse {
+                if (self.diagnostics) |diags|
+                    diags.addFmt(.err, node.span, "unresolved qualified type in type-argument position", .{});
+                return .unresolved;
+            };
+            defer self.alloc.free(path);
+            switch (self.qualifiedMemberVerdict(path)) {
+                .selected => |sel| {
                     const saved_src = self.current_source_file;
-                    self.setCurrentSourceFile(target.target_module_path);
-                    const ty = self.resolveNominalLeaf(fa.field, false, node.span);
+                    self.setCurrentSourceFile(sel.target.target_module_path);
+                    const ty = self.resolveNominalLeaf(sel.member, false, node.span);
                     self.setCurrentSourceFile(saved_src);
                     if (ty != .unresolved) return ty;
-                }
+                },
+                .missing => |m| {
+                    if (self.diagnostics) |diags|
+                        diags.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
+                    return .unresolved;
+                },
+                .ambiguous => |alias| {
+                    if (self.diagnostics) |diags|
+                        diags.addFmt(.err, node.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                    return .unresolved;
+                },
+                .not_qualified => {},
             }
             if (self.diagnostics) |diags| {
                 diags.addFmt(.err, node.span, "unresolved qualified type in type-argument position", .{});
@@ -1226,9 +1229,9 @@ pub fn unifyValueArmTypes(self: *Lowering, a: TypeId, b: TypeId) ?TypeId {
 /// `type`/`Type` stay set-style (a Type-holding `any` is dispatch-only).
 pub fn isRuntimeCategoryName(name: []const u8) bool {
     const cats = [_][]const u8{
-        "int",   "float",    "struct",   "enum", "union", "slice",
-        "array", "pointer",  "vector",   "optional", "error_set",
-        "closure", "type",  "Type",
+        "int",   "float",   "struct", "enum",     "union",     "slice",
+        "array", "pointer", "vector", "optional", "error_set", "closure",
+        "type",  "Type",
     };
     for (cats) |c| if (std.mem.eql(u8, name, c)) return true;
     return false;
@@ -1415,40 +1418,51 @@ const HeadTemplate = union(enum) {
 
 /// THE single selector every generic-struct LAYOUT-head site funnels through —
 /// no head site reads `struct_template_map` for selection directly. Decides the
-/// authoring template for a head named `name`, qualified by namespace `alias`
-/// (non-null only for `ns.Box(..)` with an identifier object) and flagged
-/// `is_qualified` (any `.field_access` callee, including a non-identifier
-/// object). Emits the visibility / missing-member diagnostics INLINE at `span`,
+/// authoring template for a head named `name`, optionally carrying the COMPLETE
+/// qualified spelling (`ns.Box` / `facade.engine_alias.Box`). Emits visibility,
+/// ambiguity, and missing-member diagnostics INLINE at `span`,
 /// at the same program point and ordering the sites used before (0767/0769/0775),
 /// and returns a control-flow-only outcome:
-///   - qualified, namespace authors `name` as a generic struct → that author.
-///   - qualified, namespace exists but lacks `name` → diagnose missing member,
+///   - qualified, every namespace edge is proved and the exact terminal author
+///     is a generic struct → rebuild that author's template.
+///   - qualified, a namespace edge/member is missing → diagnose and poison,
 ///     `.poisoned` (never the bare global map, E4 #2).
 ///   - qualified, namespace authors `name` but NOT as a generic struct (a
 ///     type-fn / named type) → `.not_generic` (caller's non-struct path).
-///   - qualified with no usable alias (nested-ns object) → the global template
-///     if one exists (pre-existing behavior; no namespace edge to consult).
+///   - qualified but not a namespace path → `.not_generic`; NEVER use a global
+///     template merely because a nested qualifier could not be represented.
 ///   - bare, ≥2 visible authors / 2-flat-hop only → `headTypeLeak` diagnosed →
 ///     `.poisoned`.
 ///   - bare, single visible author → that author (own / 1-hop flat), source-keyed.
 ///   - bare, visible author IS the canonical map author → the global template
 ///     (byte-identical single-author path).
 ///   - not in `struct_template_map` at all → `.not_generic`.
-pub fn selectGenericStructHead(self: *Lowering, name: []const u8, alias: ?[]const u8, is_qualified: bool, span: ?ast.Span) HeadTemplate {
+pub fn selectGenericStructHead(self: *Lowering, name: []const u8, qualified_path: ?[]const u8, is_qualified: bool, span: ?ast.Span) HeadTemplate {
     if (is_qualified) {
-        if (alias) |a| {
-            if (self.qualifiedStructTemplate(a, name)) |tmpl| return .{ .template = tmpl };
-            if (self.qualifiedMemberMissing(a, name)) {
+        const path = qualified_path orelse return .not_generic;
+        switch (self.qualifiedMemberVerdict(path)) {
+            .selected => |sel| {
+                const sd: *const ast.StructDecl = switch (sel.author.raw) {
+                    .struct_decl => |decl| decl,
+                    .const_decl => |cd| if (cd.value.data == .struct_decl) &cd.value.data.struct_decl else return .not_generic,
+                    else => return .not_generic,
+                };
+                if (!std.mem.eql(u8, sd.name, name) or sd.type_params.len == 0) return .not_generic;
+                const tmpl = self.buildGenericStructTemplate(sd, sel.author.source) orelse return .poisoned;
+                return .{ .template = tmpl };
+            },
+            .missing => |m| {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, span, "namespace '{s}' has no member '{s}'", .{ a, name });
+                    d.addFmt(.err, span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                 return .poisoned;
-            }
-            return .not_generic;
+            },
+            .ambiguous => |alias| {
+                if (self.diagnostics) |d|
+                    d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                return .poisoned;
+            },
+            .not_qualified => return .not_generic,
         }
-        // Qualified but un-aliasable object (nested namespace / non-identifier):
-        // no namespace edge to select from — use the global template if present.
-        if (self.program_index.struct_template_map.getPtr(name)) |tmpl| return .{ .template = tmpl.* };
-        return .not_generic;
     }
     // Const-alias head (`BoxAlias :: Box;` / `Box :: r.Box;`, issue 0120):
     // follow the alias decl hop-by-hop to its authoring template, each hop
@@ -1467,6 +1481,16 @@ pub fn selectGenericStructHead(self: *Lowering, name: []const u8, alias: ?[]cons
         return .{ .template = tmpl.* };
     }
     return .not_generic;
+}
+
+/// Node-shaped wrapper for every call-syntax generic head. It reconstructs the
+/// complete dotted path once, keeping nested namespace provenance intact.
+pub fn selectGenericStructCallee(self: *Lowering, callee: *const Node, span: ?ast.Span) HeadTemplate {
+    const hn = headNameOfCallee(callee) orelse return .not_generic;
+    if (!hn.is_qualified) return self.selectGenericStructHead(hn.name, null, false, span);
+    const path = self.qualifiedTypeName(callee) orelse return .not_generic;
+    defer self.alloc.free(path);
+    return self.selectGenericStructHead(hn.name, path, true, span);
 }
 
 /// Decompose a head callee NODE (`.identifier Box` or `.field_access ns.Box`)
@@ -1780,21 +1804,29 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
     // Bare → the single bare-VISIBLE author (own / 1-hop flat), source-keyed;
     // qualified `ns.Box(..)` → ns's OWN template (or a missing-member diagnostic);
     // never the global last-wins map for a visible-shadowed or qualified head.
-    if (headNameOfCallee(cl.callee)) |hn| {
-        switch (self.selectGenericStructHead(hn.name, hn.alias, hn.is_qualified, cl.callee.span)) {
-            .template => |t| return self.instantiateGenericStruct(&t, cl.args),
-            .poisoned => return .unresolved,
-            .not_generic => {},
-        }
+    switch (self.selectGenericStructCallee(cl.callee, cl.callee.span)) {
+        .template => |t| return self.instantiateGenericStruct(&t, cl.args),
+        .poisoned => return .unresolved,
+        .not_generic => {},
     }
-    // User-defined type-returning function: Complex(u32), Sx(f32)
-    // Also resolve via scope fn_names (local functions get mangled names)
-    const resolved_name = if (self.scope) |scope| (scope.lookupFn(callee_name) orelse callee_name) else callee_name;
-    if (self.program_index.fn_ast_map.get(resolved_name)) |fd| {
-        if (fd.type_params.len > 0) {
-            if (!is_qualified and self.headFnLeak(callee_name, cl.callee.span)) return .unresolved;
-            if (self.instantiateTypeFunction(callee_name, callee_name, fd, cl.args)) |ty| {
-                return ty;
+    // User-defined type-returning function: Complex(u32), Sx(f32). A
+    // qualified head selects the exact terminal namespace author; it must
+    // never consult the process-global same-name function map.
+    if (is_qualified) {
+        const path = self.qualifiedTypeName(cl.callee) orelse return .unresolved;
+        defer self.alloc.free(path);
+        if (self.qualifiedFnMember(path)) |fd| {
+            if (fd.type_params.len > 0) {
+                if (self.instantiateTypeFunction(callee_name, callee_name, fd, cl.args)) |ty| return ty;
+            }
+        }
+    } else {
+        // Also resolve via scope fn_names (local functions get mangled names).
+        const resolved_name = if (self.scope) |scope| (scope.lookupFn(callee_name) orelse callee_name) else callee_name;
+        if (self.program_index.fn_ast_map.get(resolved_name)) |fd| {
+            if (fd.type_params.len > 0) {
+                if (self.headFnLeak(callee_name, cl.callee.span)) return .unresolved;
+                if (self.instantiateTypeFunction(callee_name, callee_name, fd, cl.args)) |ty| return ty;
             }
         }
     }
@@ -1851,8 +1883,7 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
     // qualified `ns.Box(..)` → ns's OWN template (or a missing-member diagnostic);
     // never the global last-wins map for a visible-shadowed or qualified head.
     {
-        const alias: ?[]const u8 = if (std.mem.indexOfScalar(u8, pt.name, '.')) |dot| pt.name[0..dot] else null;
-        switch (self.selectGenericStructHead(base_name, alias, is_qualified, span)) {
+        switch (self.selectGenericStructHead(base_name, if (is_qualified) pt.name else null, is_qualified, span)) {
             .template => |t| return self.instantiateGenericStruct(&t, pt.args),
             .poisoned => return .unresolved,
             .not_generic => {},
@@ -1873,12 +1904,18 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
     // `.call`-node path (`resolveTypeCallWithBindings`) already routes here;
     // a `parameterized_type_expr` must too, or the function name falls through
     // to the empty-struct stub below and `b.field` / `b.len` fails.
-    const resolved_name = if (self.scope) |scope| (scope.lookupFn(base_name) orelse base_name) else base_name;
-    if (self.program_index.fn_ast_map.get(resolved_name)) |fd| {
-        if (fd.type_params.len > 0) {
-            if (!is_qualified and self.headFnLeak(base_name, span)) return .unresolved;
-            if (self.instantiateTypeFunction(base_name, base_name, fd, pt.args)) |ty| {
-                return ty;
+    if (is_qualified) {
+        if (self.qualifiedFnMember(pt.name)) |fd| {
+            if (fd.type_params.len > 0) {
+                if (self.instantiateTypeFunction(base_name, base_name, fd, pt.args)) |ty| return ty;
+            }
+        }
+    } else {
+        const resolved_name = if (self.scope) |scope| (scope.lookupFn(base_name) orelse base_name) else base_name;
+        if (self.program_index.fn_ast_map.get(resolved_name)) |fd| {
+            if (fd.type_params.len > 0) {
+                if (self.headFnLeak(base_name, span)) return .unresolved;
+                if (self.instantiateTypeFunction(base_name, base_name, fd, pt.args)) |ty| return ty;
             }
         }
     }
@@ -1967,58 +2004,47 @@ pub fn lowerComptimeGenericInstanceMethod(
     self: *Lowering,
     m: GenericStructMethod,
     recv_node: *const Node,
-    recv_val: Ref,
-    recv_ty: TypeId,
     call_args: []const *Node,
+    call_span: ast.Span,
 ) Ref {
-    // Install the struct instance's type bindings for the duration of the inline
-    // body (mirrors `monomorphizeFunction`), so `self: *Box(T)` and any `T` in
-    // the body / return type resolve to the concrete instantiation.
-    const saved_bindings = self.type_bindings;
-    self.type_bindings = m.bindings.*;
-    defer self.type_bindings = saved_bindings;
-
     const fd = m.fd;
-    // hasComptimeParams was true to route here, so the body declares at least one
-    // `$` param. A receiver `self` is param[0] for any instance method.
-    if (fd.params.len == 0) return self.lowerComptimeCallArgsSkip(fd, call_args, 0);
+    var effective_args = std.ArrayList(*Node).empty;
+    defer effective_args.deinit(self.alloc);
+    effective_args.append(self.alloc, @constCast(recv_node)) catch unreachable;
+    effective_args.appendSlice(self.alloc, call_args) catch unreachable;
 
-    // Pre-bind the receiver `self` into scope — same shape normal param lowering
-    // uses: an alloca of the (resolved) param type holding the receiver. For a
-    // pointer receiver (`self: *Box(T)`) the stored value is the receiver's
-    // ADDRESS, so body `self.field` reads load-the-pointer-then-deref correctly.
-    const self_param = &fd.params[0];
-    const self_pty = self.resolveParamType(self_param);
-    const recv_ref: Ref = blk: {
-        if (!self_pty.isBuiltin() and self.module.types.get(self_pty) == .pointer) {
-            // Param wants `*T`. If the receiver is already a pointer, pass it; else
-            // take its address (identifier-with-alloca → addr_of the alloca; any
-            // other lvalue → lowerExprAsPtr).
-            if (!recv_ty.isBuiltin() and self.module.types.get(recv_ty) == .pointer) break :blk recv_val;
-            if (recv_node.data == .identifier) {
-                if (self.scope) |scope| {
-                    if (scope.lookup(recv_node.data.identifier.name)) |b| {
-                        if (b.is_alloca) {
-                            const ptr_ty = self.module.types.ptrTo(b.ty);
-                            break :blk self.builder.emit(.{ .addr_of = .{ .operand = b.ref } }, ptr_ty);
-                        }
-                    }
-                }
-            }
-            break :blk self.lowerExprAsPtr(recv_node);
+    // Compose the generic struct's stored bindings with any type parameters
+    // declared by the method itself. The latter intentionally win on a same-
+    // name shadow. One combined map drives both signature resolution and body
+    // lowering, so `T` and a method-local `$R` cannot observe different calls.
+    var combined = std.StringHashMap(TypeId).init(self.alloc);
+    defer combined.deinit();
+    var struct_it = m.bindings.iterator();
+    while (struct_it.next()) |entry|
+        combined.put(entry.key_ptr.*, entry.value_ptr.*) catch unreachable;
+    if (fd.type_params.len > 0) {
+        var method_bindings = self.genericResolver().buildTypeBindings(fd, effective_args.items);
+        defer method_bindings.deinit();
+        var method_it = method_bindings.iterator();
+        while (method_it.next()) |entry|
+            combined.put(entry.key_ptr.*, entry.value_ptr.*) catch unreachable;
+
+        for (fd.type_params) |tp| {
+            if (tp.is_variadic or tp.constraint.data != .type_expr) continue;
+            const constraint = tp.constraint.data.type_expr.name;
+            const needs_type = std.mem.eql(u8, constraint, "Type") or
+                self.isProtocolConstraint(constraint, fd.body.source_file);
+            if (!needs_type or combined.contains(tp.name)) continue;
+            if (self.diagnostics) |d|
+                d.addFmt(.err, call_span, "cannot infer generic type parameter '{s}' for comptime method '{s}' from this call's arguments", .{ tp.name, fd.name });
+            return Ref.none;
         }
-        // Value receiver param (`self: Box(T)`): if we have a pointer, deref it.
-        if (!recv_ty.isBuiltin() and self.module.types.get(recv_ty) == .pointer)
-            break :blk self.builder.load(recv_val, self_pty);
-        break :blk recv_val;
-    };
-    const slot = self.builder.alloca(self_pty);
-    self.builder.store(slot, recv_ref);
-    if (self.scope) |scope| scope.put(self_param.name, .{ .ref = slot, .ty = self_pty, .is_alloca = true });
+    }
 
-    // The remaining params (`$o`, ...) bind from the call-site args; the receiver
-    // is already bound, so skip param[0].
-    return self.lowerComptimeCallArgsSkip(fd, call_args, 1);
+    const saved_bindings = self.type_bindings;
+    self.type_bindings = combined;
+    defer self.type_bindings = saved_bindings;
+    return self.lowerComptimeMethodCallArgs(fd, effective_args.items, true, call_span);
 }
 
 /// Debug invariant (CP coverage lock): the two generic-instance maps written
@@ -2282,6 +2308,24 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     // Build mangled name
     var name_parts = std.ArrayList(u8).empty;
     name_parts.appendSlice(self.alloc, template_name) catch {};
+
+    // Two namespace targets may author the same type-function spelling and
+    // receive the same type arguments. The exact `fd` selection above is not
+    // enough if both cache as `Make__i64`: the second lookup would return the
+    // first author's materialized type before reading its own body. Mirror the
+    // generic-struct identity rule by source-tagging a non-canonical author;
+    // the canonical/single-author spelling remains byte-for-byte unchanged.
+    if (self.program_index.fn_ast_map.get(template_name)) |canonical| {
+        if (canonical != fd) {
+            const canonical_src = canonical.body.source_file orelse "";
+            const this_src = fd.body.source_file orelse self.current_source_file orelse self.main_file orelse "";
+            if (!std.mem.eql(u8, canonical_src, this_src)) {
+                var tag_buf: [24]u8 = undefined;
+                const tag = std.fmt.bufPrint(&tag_buf, "$m{x}", .{std.hash.Wyhash.hash(0, this_src)}) catch "";
+                name_parts.appendSlice(self.alloc, tag) catch {};
+            }
+        }
+    }
 
     for (fd.type_params, 0..) |tp, i| {
         if (i >= args.len) break;

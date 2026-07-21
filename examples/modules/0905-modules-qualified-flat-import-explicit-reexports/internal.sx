@@ -1,0 +1,12 @@
+InternalStruct :: struct {
+    value: i64;
+    make :: () -> InternalStruct { .{ value = 11 } }
+}
+
+InternalKind :: enum { zero; one; }
+InternalUnion :: union { number: i64; byte: u8; }
+InternalError :: error { Bad }
+InternalProtocol :: protocol { read :: (self: *Self) -> i64; }
+InternalAlias :: InternalStruct;
+
+internal_fn :: () -> i64 { 44 }

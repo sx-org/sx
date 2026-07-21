@@ -1,0 +1,51 @@
+// Arbitrary-depth namespace calls retain the exact terminal FnDecl and author
+// through defaults, comptime argument typing, result typing and generic mono
+// identity. Both terminal modules deliberately reuse every public name.
+
+a :: #import "0911-modules-deep-qualified-call-identity/a.sx";
+b :: #import "0911-modules-deep-qualified-call-identity/b.sx";
+long_a :: #import "0911-modules-deep-qualified-call-identity/long_author_a_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.sx";
+long_b :: #import "0911-modules-deep-qualified-call-identity/long_author_b_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.sx";
+
+LOCAL_DEFAULT :: 900;
+
+main :: () -> i32 {
+    ar := a.one.two.three.engine.make();
+    br := b.one.two.three.engine.make();
+    if ar.a != 11 or br.b != 22 { return 1; }
+
+    if a.one.two.three.engine.accept(.{ a = 31 }) != 31 { return 2; }
+    if b.one.two.three.engine.accept(.{ b = 42 }) != 42 { return 3; }
+
+    if a.one.two.three.engine.defaulted() != 51 { return 4; }
+    if b.one.two.three.engine.defaulted() != 62 { return 5; }
+
+    // Same terminal name + same inferred T must still produce two monos.
+    if a.one.two.three.engine.generic(1) != 71 { return 6; }
+    if b.one.two.three.engine.generic(1) != 82 { return 7; }
+    agr := a.one.two.three.engine.generic_record(1);
+    bgr := b.one.two.three.engine.generic_record(1);
+    if agr.a != 121 or bgr.b != 232 { return 12; }
+
+    // An authored global value remains a receiver even though its root is a
+    // deep namespace path; method dispatch uses the global's exact TypeId.
+    if a.one.two.three.engine.STATE.get() != 111 { return 13; }
+    if b.one.two.three.engine.STATE.get() != 222 { return 14; }
+
+    // These author source paths make each identity-bearing base exceed 256
+    // bytes after full-path encoding. Generic and pack monos must stay exact.
+    if long_a.generic(1) != 301 or long_b.generic(1) != 401 { return 16; }
+    if long_a.pack(1, 2) != 302 or long_b.pack(1, 2) != 402 { return 17; }
+
+    if a.one.two.three.engine.choose(.chosen) != 91 { return 8; }
+    if b.one.two.three.engine.choose(.chosen) != 102 { return 9; }
+
+    // The marker is nested in a declaration-authored struct-literal default:
+    // names resolve in the engine module, while location remains this call.
+    aloc := a.one.two.three.engine.caller();
+    bloc := b.one.two.three.engine.caller();
+    if aloc.func != "main" or bloc.func != "main" { return 10; }
+    if aloc.file != "examples/modules/0911-modules-deep-qualified-call-identity.sx" or bloc.file != aloc.file { return 11; }
+    if aloc.line != 45 or aloc.col != 13 or bloc.line != 46 or bloc.col != 13 { return 15; }
+    0
+}

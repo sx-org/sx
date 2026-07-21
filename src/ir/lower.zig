@@ -58,6 +58,64 @@ const Function = inst_mod.Function;
 const Module = mod_mod.Module;
 const Builder = mod_mod.Builder;
 
+/// Call-site provenance retained while a declaration-authored default AST is
+/// evaluated. Nested `#caller_location` markers use this instead of the
+/// default expression's lexical source; ordinary names still resolve in the
+/// function author's module.
+pub const DefaultCallSite = struct {
+    source: ?[]const u8,
+    span: ast.Span,
+    caller_func: ?FuncId,
+};
+
+/// The declaration and source that author a concrete, non-generic struct
+/// TypeId. This is compiler-internal nominal provenance used by method
+/// selection; it does not change the SX type or method surface.
+pub const PlainStructAuthor = struct {
+    decl: *const ast.StructDecl,
+    source: ?[]const u8,
+};
+
+/// Identity key for a materialized protocol/concrete dispatch table. The
+/// concrete TypeId (not its display name) keeps two modules' same-named
+/// structs from sharing thunks or a vtable global.
+pub const ProtocolConcreteKey = struct {
+    /// Exact nullary-protocol nominal identity. Parameterized runtime
+    /// instances use `.unresolved` and are distinguished by their canonical
+    /// mangled `protocol_name` (their names already include nominal args).
+    protocol: TypeId,
+    protocol_name: types.StringId,
+    concrete: TypeId,
+};
+
+/// Identity key for one method supplied by an explicit, non-parameterized
+/// protocol impl. Protocol is part of the key because one concrete type may
+/// implement same-named methods for distinct protocols.
+pub const ProtocolImplMethodKey = struct {
+    protocol: TypeId,
+    protocol_name: types.StringId,
+    concrete: TypeId,
+    method: types.StringId,
+};
+
+pub const ProtocolImplMethod = struct {
+    fd: *const ast.FnDecl,
+    concrete: TypeId,
+    source: ?[]const u8,
+    is_synthesized_default: bool,
+};
+
+/// Method-lookup domain active while lowering one synthesized protocol-default
+/// body. Calls on the matching concrete receiver resolve against that exact
+/// protocol impl before ordinary inherent lookup. Function-body lowering
+/// replaces this value at every re-entry, so nested ordinary/explicit bodies
+/// never inherit a default body's dispatch rules.
+pub const ProtocolDefaultDispatchDomain = struct {
+    protocol: TypeId,
+    protocol_name: types.StringId,
+    concrete: TypeId,
+};
+
 /// One frame in the chain of module-const names currently being folded by the
 /// SOURCE-AWARE const evaluator (`Lowering.foldSourceConstInt` and its float
 /// twins). Stack-allocated per recursive frame, so cycle detection needs no
@@ -132,6 +190,15 @@ pub const SourceConstCtx = struct {
     }
     pub fn qualifiedNameIsFloatTyped(self: SourceConstCtx, ns: []const u8, field: []const u8) bool {
         return self.lowering.qualifiedConstIsFloatTyped(ns, field, self.frame);
+    }
+    pub fn lookupQualifiedConstNode(self: SourceConstCtx, node: *const Node) ?i64 {
+        return self.lowering.foldQualifiedConstNodeInt(node, self.frame);
+    }
+    pub fn lookupQualifiedConstNodeFloat(self: SourceConstCtx, node: *const Node) ?f64 {
+        return self.lowering.foldQualifiedConstNodeFloat(node, self.frame);
+    }
+    pub fn qualifiedNodeIsFloatTyped(self: SourceConstCtx, node: *const Node) bool {
+        return self.lowering.qualifiedConstNodeIsFloatTyped(node, self.frame);
     }
 };
 
@@ -345,6 +412,14 @@ pub const Lowering = struct {
     resolved_root: ?*const Node = null, // full AST root (for building comptime modules)
     comptime_param_nodes: ?std.StringHashMap(*const Node) = null, // active comptime substitutions
     target_type: ?TypeId = null, // target type for struct/enum literals without explicit names
+    /// Synthetic call-default roots keyed by node identity. Unlike caller-owned
+    /// comptime substitutions (which also carry `Node.source_file`), a declared
+    /// default has lexical/module authority at the function declaration and must
+    /// not capture a same-named local from the call site. `inferExprType` and
+    /// `lowerExpr` temporarily hide the caller scope for these roots while the
+    /// node's source pin remains active through all recursive children.
+    authored_call_defaults: std.AutoHashMap(*const Node, DefaultCallSite),
+    active_default_call_site: ?DefaultCallSite = null,
     // Count of diagnostics emitted by the annotated-store assignability guard
     // (`checkAssignable` / the named-return-default guard, issue 0197). Lets the
     // guard skip when ANY OTHER error already exists (`errorCount() > this`) —
@@ -359,6 +434,12 @@ pub const Lowering = struct {
     /// map addresses each author's OWN slot by decl identity, letting
     /// a SHADOWED author lower its body into a distinct FuncId.
     fn_decl_fids: std.AutoHashMap(*const ast.FnDecl, FuncId),
+    /// Identity map for mutable top-level globals. The name/source indexes are
+    /// compatibility and visibility views; a qualified namespace selection
+    /// already carries the exact `*VarDecl`, so reads/writes/address-taking
+    /// must recover the slot from that identity instead of reselecting a
+    /// same-spelled process-global entry.
+    global_decl_infos: std.AutoHashMap(*const ast.VarDecl, GlobalInfo),
     /// FuncId-keyed lowered tracking — the identity twin of `lowered_functions`
     /// (which keys by name). A shadowed same-name author shares the winner's name
     /// but not its FuncId, so name-keyed tracking can't tell them apart; this
@@ -374,6 +455,47 @@ pub const Lowering = struct {
     /// records each name's first author source to make that decision.
     nominal_name_authors: std.AutoHashMap(types.StringId, []const u8),
     next_nominal_id: u32 = 0,
+    /// Nominal plain-struct TypeId → the declaration that authored its layout.
+    /// Same-display-name structs already receive distinct TypeIds; retaining the
+    /// author here lets method dispatch select the body from that identity rather
+    /// than from the global last-wins `fn_ast_map["Struct.method"]` entry.
+    plain_struct_authors: std.AutoHashMap(TypeId, PlainStructAuthor),
+    /// Explicit nullary-protocol impl methods, addressed by protocol + nominal
+    /// concrete TypeId + method. The legacy `Type.method` AST map is only a
+    /// compatibility surface and cannot distinguish same-display-name types.
+    protocol_impl_methods: std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod),
+    /// Explicit nullary-protocol impl declarations, including empty/partial
+    /// impl bodies. Keeping the pair separate from its methods lets a declared
+    /// impl adopt an exact method already owned by the same concrete TypeId
+    /// without turning protocol conformance structural or scan-order dependent.
+    protocol_impl_decls: std.AutoHashMap(ProtocolConcreteKey, void),
+    /// Exact receiver type recorded when a nullary-protocol impl method is
+    /// declared. Synthesized default methods are authored in the protocol's
+    /// module, where re-resolving their synthetic `self: *Target` annotation
+    /// can select the wrong same-display-name target; body lowering must reuse
+    /// the already-resolved parameter type from the concrete impl declaration.
+    protocol_impl_receiver_types: std.AutoHashMap(*const ast.FnDecl, TypeId),
+    /// Non-null only while a synthesized protocol-default function body is the
+    /// body currently being lowered. See `protocolDefaultDispatchDomain` and
+    /// `lowerFunctionBodyInto`; this is deliberately lowering context, not a
+    /// global method-precedence rule.
+    protocol_default_dispatch: ?ProtocolDefaultDispatchDomain,
+    /// Impl declarations successfully registered by identity. The scan retries
+    /// only absent entries after forward aliases settle, preserving ordinary
+    /// declaration order while making forward protocol aliases deterministic.
+    registered_protocol_impls: std.AutoHashMap(*const ast.ImplBlock, void),
+    /// Protocol declarations already materialized. Qualified alias resolution
+    /// may need to materialize a terminal protocol before declaration-order
+    /// scanning reaches it so earlier ABI consumers see the canonical layout.
+    /// The normal scan consults the same guard and therefore remains exactly-
+    /// once even for forward/import-after-alias source order (issue 0323).
+    registered_protocol_decls: std.AutoHashMap(*const ast.ProtocolDecl, void),
+    /// Runtime protocol metadata keyed by the exact protocol TypeId. The
+    /// legacy name maps remain for parameterized-template discovery and
+    /// source-less unit hosts, but runtime ABI/dispatch never round-trips a
+    /// nominal protocol through its display name.
+    protocol_info_by_type: std.AutoHashMap(TypeId, program_index_mod.ProtocolDeclInfo),
+    protocol_ast_by_type: std.AutoHashMap(TypeId, *const ast.ProtocolDecl),
     /// Declaration-name / import / visibility facts (architecture phase A1,
     /// `ProgramIndex`). Owns `import_flags`; borrows `module_scopes` /
     /// `import_graph` from the compilation driver. Reached via
@@ -496,9 +618,10 @@ pub const Lowering = struct {
     /// returning it); this map carries the full value Ref so a lowering-time
     /// consumer can read the whole bound value (`comptimeValueRefNamed`).
     comptime_value_ref_bindings: ?std.StringHashMap(Ref) = null,
-    protocol_thunk_map: std.StringHashMap([]const FuncId), // "Proto\x00Type" → thunk FuncIds
+    protocol_thunk_map: std.AutoHashMap(ProtocolConcreteKey, []const FuncId),
     protocol_vtable_type_map: std.StringHashMap(TypeId), // protocol name → vtable struct TypeId
-    protocol_vtable_global_map: std.StringHashMap(inst_mod.GlobalId), // "Proto\x00Type" → vtable GlobalId
+    protocol_vtable_type_by_type: std.AutoHashMap(TypeId, TypeId),
+    protocol_vtable_global_map: std.AutoHashMap(ProtocolConcreteKey, inst_mod.GlobalId),
     param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; list lets Phase 4/5 detect cross-module overlap)
     /// Pack-variadic impl entries — separate map keyed by `"Proto\x00<arg_mangled>"`
     /// (NO source suffix) so a single impl `Closure(..$args) -> $R` can be
@@ -753,17 +876,29 @@ pub const Lowering = struct {
             .builder = Builder.init(module),
             .alloc = module.alloc,
             .lowered_functions = std.StringHashMap(void).init(module.alloc),
+            .authored_call_defaults = std.AutoHashMap(*const Node, DefaultCallSite).init(module.alloc),
             .fn_decl_fids = std.AutoHashMap(*const ast.FnDecl, FuncId).init(module.alloc),
+            .global_decl_infos = std.AutoHashMap(*const ast.VarDecl, GlobalInfo).init(module.alloc),
             .lowered_fids = std.AutoHashMap(FuncId, void).init(module.alloc),
             .nominal_name_authors = std.AutoHashMap(types.StringId, []const u8).init(module.alloc),
+            .plain_struct_authors = std.AutoHashMap(TypeId, PlainStructAuthor).init(module.alloc),
+            .protocol_impl_methods = std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod).init(module.alloc),
+            .protocol_impl_decls = std.AutoHashMap(ProtocolConcreteKey, void).init(module.alloc),
+            .protocol_impl_receiver_types = std.AutoHashMap(*const ast.FnDecl, TypeId).init(module.alloc),
+            .protocol_default_dispatch = null,
+            .registered_protocol_impls = std.AutoHashMap(*const ast.ImplBlock, void).init(module.alloc),
+            .registered_protocol_decls = std.AutoHashMap(*const ast.ProtocolDecl, void).init(module.alloc),
+            .protocol_info_by_type = std.AutoHashMap(TypeId, program_index_mod.ProtocolDeclInfo).init(module.alloc),
+            .protocol_ast_by_type = std.AutoHashMap(TypeId, *const ast.ProtocolDecl).init(module.alloc),
             .local_type_names = std.StringHashMap(std.StringHashMap(void)).init(module.alloc),
             .struct_defaults_map = std.StringHashMap([]const ?*const Node).init(module.alloc),
             .struct_instance_bindings = std.StringHashMap(std.StringHashMap(TypeId)).init(module.alloc),
             .struct_instance_template = std.StringHashMap([]const u8).init(module.alloc),
             .struct_instance_author = std.StringHashMap(*const ast.StructDecl).init(module.alloc),
-            .protocol_thunk_map = std.StringHashMap([]const FuncId).init(module.alloc),
+            .protocol_thunk_map = std.AutoHashMap(ProtocolConcreteKey, []const FuncId).init(module.alloc),
             .protocol_vtable_type_map = std.StringHashMap(TypeId).init(module.alloc),
-            .protocol_vtable_global_map = std.StringHashMap(inst_mod.GlobalId).init(module.alloc),
+            .protocol_vtable_type_by_type = std.AutoHashMap(TypeId, TypeId).init(module.alloc),
+            .protocol_vtable_global_map = std.AutoHashMap(ProtocolConcreteKey, inst_mod.GlobalId).init(module.alloc),
             .param_impl_map = std.StringHashMap(std.ArrayList(ParamImplEntry)).init(module.alloc),
             .param_impl_pack_map = std.StringHashMap(std.ArrayList(PackParamImplEntry)).init(module.alloc),
             .struct_const_map = std.StringHashMap(StructConstInfo).init(module.alloc),
@@ -959,6 +1094,19 @@ pub const Lowering = struct {
         return self.resolveParamType(p);
     }
 
+    /// Resolve one declared function parameter in its authoring domain while
+    /// preserving the exact receiver type recorded for protocol impl/default
+    /// methods. A synthesized default's body belongs to the protocol module,
+    /// but its synthetic `self: *Target` belongs to one concrete nominal
+    /// TypeId and must never be text-resolved in that foreign module.
+    pub fn resolveDeclParamType(self: *Lowering, fd: *const ast.FnDecl, index: usize) TypeId {
+        std.debug.assert(index < fd.params.len);
+        if (index == 0) {
+            if (self.protocol_impl_receiver_types.get(fd)) |receiver_ty| return receiver_ty;
+        }
+        return self.resolveParamTypeInSource(fd.body.source_file, &fd.params[index]);
+    }
+
     /// Construct a `TypeResolver` view over the current lowering state (borrows
     /// only; cheap by-value, reflects current `diagnostics` / `program_index`).
     pub fn typeResolver(self: *Lowering) TypeResolver {
@@ -1126,6 +1274,15 @@ pub const Lowering = struct {
     pub fn qualifiedNameIsFloatTyped(self: *Lowering, ns: []const u8, field: []const u8) bool {
         return self.qualifiedConstIsFloatTyped(ns, field, null);
     }
+    pub fn lookupQualifiedConstNode(self: *Lowering, node: *const Node) ?i64 {
+        return self.foldQualifiedConstNodeInt(node, null);
+    }
+    pub fn lookupQualifiedConstNodeFloat(self: *Lowering, node: *const Node) ?f64 {
+        return self.foldQualifiedConstNodeFloat(node, null);
+    }
+    pub fn qualifiedNodeIsFloatTyped(self: *Lowering, node: *const Node) bool {
+        return self.qualifiedConstNodeIsFloatTyped(node, null);
+    }
 
     /// Resolve a type node, checking type_bindings first for generic type params.
     pub fn resolveTypeWithBindings(self: *Lowering, node: *const Node) TypeId {
@@ -1203,14 +1360,25 @@ pub const Lowering = struct {
         if (node.data == .field_access) {
             if (self.qualifiedTypeName(node)) |qname| {
                 defer self.alloc.free(qname);
-                if (std.mem.lastIndexOfScalar(u8, qname, '.')) |dot| {
-                    if (self.namespaceAliasTarget(qname[0..dot], node.span)) |target| {
+                switch (self.qualifiedMemberVerdict(qname)) {
+                    .selected => |sel| {
                         const saved = self.current_source_file;
-                        self.setCurrentSourceFile(target.target_module_path);
-                        const ty = self.resolveNominalLeaf(qname[dot + 1 ..], false, node.span);
+                        self.setCurrentSourceFile(sel.target.target_module_path);
+                        const ty = self.resolveNominalLeaf(sel.member, false, node.span);
                         self.setCurrentSourceFile(saved);
                         return ty;
-                    }
+                    },
+                    .missing => |m| {
+                        if (self.diagnostics) |d|
+                            d.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
+                        return .unresolved;
+                    },
+                    .ambiguous => |alias| {
+                        if (self.diagnostics) |d|
+                            d.addFmt(.err, node.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                        return .unresolved;
+                    },
+                    .not_qualified => {},
                 }
             }
         }
@@ -1323,15 +1491,29 @@ pub const Lowering = struct {
         // the global compat maps (cut over in a later phase).
         switch (node.data) {
             .type_expr => |te| {
-                // Qualified `alias.Type` (incl. a carried alias): resolve the
-                // base name pinned to the alias's target module.
+                // Qualified namespace type (including nested aliases): prove
+                // every namespace edge and pin the leaf to the exact terminal
+                // target before nominal resolution.
                 if (std.mem.lastIndexOfScalar(u8, te.name, '.')) |dot| {
-                    if (self.namespaceAliasTarget(te.name[0..dot], node.span)) |target| {
-                        const saved = self.current_source_file;
-                        self.setCurrentSourceFile(target.target_module_path);
-                        const ty = self.resolveNominalLeaf(te.name[dot + 1 ..], te.is_raw, node.span);
-                        self.setCurrentSourceFile(saved);
-                        return ty;
+                    switch (self.qualifiedMemberVerdict(te.name)) {
+                        .selected => |sel| {
+                            const saved = self.current_source_file;
+                            self.setCurrentSourceFile(sel.target.target_module_path);
+                            const ty = self.resolveNominalLeaf(sel.member, te.is_raw, node.span);
+                            self.setCurrentSourceFile(saved);
+                            return ty;
+                        },
+                        .missing => |m| {
+                            if (self.diagnostics) |d|
+                                d.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
+                            return .unresolved;
+                        },
+                        .ambiguous => |alias| {
+                            if (self.diagnostics) |d|
+                                d.addFmt(.err, node.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                            return .unresolved;
+                        },
+                        .not_qualified => {},
                     }
                     // A dotted `type_expr` whose prefix is NOT a namespace alias
                     // is the only remaining qualified form — and sx has no
@@ -1429,6 +1611,17 @@ pub const Lowering = struct {
 
     /// Infer the type of an expression from its AST node (used for untyped var decls).
     pub fn inferExprType(self: *Lowering, node: *const Node) TypeId {
+        const authored_default = self.authored_call_defaults.contains(node);
+        const saved_scope = self.scope;
+        const saved_source = self.current_source_file;
+        if (authored_default) {
+            self.scope = null;
+            if (node.source_file) |src| self.setCurrentSourceFile(src);
+        }
+        defer if (authored_default) {
+            self.scope = saved_scope;
+            self.setCurrentSourceFile(saved_source);
+        };
         return switch (node.data) {
             .call => |*c| self.callResolver().resultType(c),
             else => self.exprTyper().inferType(node),
@@ -1801,6 +1994,172 @@ pub const Lowering = struct {
             }
         }
         return null;
+    }
+
+    /// The declaration authored by a namespace target for `name`, or null when
+    /// the name is merely visible to the target through one of its flat
+    /// imports. Qualified access exposes only authored members; the target's
+    /// direct flat imports remain available while lowering its own bodies but
+    /// are not re-exported (specs.md §9, issue 0326).
+    pub fn namespaceOwnMember(self: *Lowering, target: imports_mod.NamespaceTarget, name: []const u8) ?resolver_mod.RawAuthor {
+        var res = self.resolver();
+        return res.collectNamespaceAuthors(target, name).own;
+    }
+
+    /// True when the target authors a named compiler-special declaration that
+    /// intentionally does not enter `RawDeclRef` (currently `#library`,
+    /// `#framework`, C-import metadata, or a UFCS alias). These names belong to
+    /// their existing non-type/value resolution domains; the dotted selector
+    /// must fall back rather than misdiagnose them as a missing namespace
+    /// member. In particular stdlib's `libc :: c.libc` re-export is a library
+    /// handle alias, not a value/type alias (issue 0325 regression guard).
+    pub fn namespaceOwnSpecialMember(_: *Lowering, target: imports_mod.NamespaceTarget, name: []const u8) bool {
+        for (target.own_decls) |decl| {
+            const own_name: ?[]const u8 = switch (decl.data) {
+                .library_decl => |d| d.name,
+                .framework_decl => |d| d.name,
+                .c_import_decl => |d| d.name,
+                .ufcs_alias => |d| d.name,
+                else => null,
+            };
+            if (own_name) |n| if (std.mem.eql(u8, n, name)) return true;
+        }
+        return false;
+    }
+
+    /// Exact author selected by a dotted namespace-member path. `target` is
+    /// the namespace whose OWN declaration supplies `member`; callers must
+    /// keep using that source/author rather than falling back to a process-
+    /// global name map.
+    pub const QualifiedMember = struct {
+        target: imports_mod.NamespaceTarget,
+        author: resolver_mod.RawAuthor,
+        member: []const u8,
+    };
+
+    /// Diagnostic-free result of resolving a full dotted namespace-member
+    /// path (`facade.engine_alias.Member`) from an explicit source authority.
+    /// Intermediate segments are namespace aliases and obey the same carry
+    /// rule as a root alias: own edge first, otherwise exactly one direct flat
+    /// hop. The terminal segment must be authored by the exact final target.
+    pub const QualifiedMemberVerdict = union(enum) {
+        /// The root is not a namespace alias from `from`, or an intermediate
+        /// segment is an ordinary authored value/type member. The caller may
+        /// continue with its non-namespace field/type interpretation.
+        not_qualified,
+        /// An already-proved namespace lacks the next alias/member.
+        missing: struct { namespace: []const u8, member: []const u8 },
+        /// The named root/intermediate alias is carried from multiple direct
+        /// flat imports to distinct targets.
+        ambiguous: []const u8,
+        selected: QualifiedMember,
+    };
+
+    /// Whether `name` currently denotes a VALUE in the caller's resolution
+    /// domain.  This is deliberately source-aware: the process-wide value
+    /// maps are only registration indexes and a namespaced-only/global value
+    /// must not shadow a namespace alias in an unrelated source.
+    ///
+    /// Lexical and active specialization bindings win first.  A registered
+    /// module global/const counts only when the source-aware author selector
+    /// says it is visible from the current source; `.not_visible` therefore
+    /// leaves a same-spelled namespace alias available.
+    pub fn identifierBindsVisibleValue(self: *Lowering, name: []const u8) bool {
+        if (self.scope) |scope| {
+            if (scope.lookup(name) != null) return true;
+        }
+        if (self.comptime_param_nodes) |m| if (m.contains(name)) return true;
+        if (self.comptime_value_bindings) |m| if (m.contains(name)) return true;
+        if (self.comptime_value_ref_bindings) |m| if (m.contains(name)) return true;
+        if (self.pack_arg_nodes) |m| if (m.contains(name)) return true;
+        if (self.pack_param_count) |m| if (m.contains(name)) return true;
+        if (self.pack_arg_types) |m| if (m.contains(name)) return true;
+        if (self.comptime_constants.contains(name)) return true;
+
+        if (self.program_index.global_names.get(name) != null) {
+            switch (self.selectGlobalAuthor(name)) {
+                .resolved, .untracked => return true,
+                .not_a_global, .ambiguous, .not_visible => {},
+            }
+        }
+        if (self.program_index.module_const_map.get(name) != null) {
+            switch (self.selectModuleConst(name)) {
+                .resolved, .own_opaque => return true,
+                .ambiguous, .none => {},
+            }
+        }
+        return false;
+    }
+
+    /// Resolve a complete dotted namespace-member spelling from `from`.
+    ///
+    /// For `facade.engine_alias.Member`, `facade` is resolved from `from`, then
+    /// `engine_alias` from the facade target's source, and only then `Member`
+    /// is proved as an OWN declaration of the exact inner target. A namespace
+    /// alias hidden behind two flat edges therefore stops at `.missing` before
+    /// any global `Member` lookup can cross-bind. An ordinary authored
+    /// intermediate (`facade.Kind.one`) returns `.not_qualified`; callers can
+    /// resolve `facade.Kind` as the namespace terminal and apply `.one` as an
+    /// enum/static/value member.
+    pub fn qualifiedMemberVerdictFrom(self: *Lowering, path: []const u8, from: []const u8) QualifiedMemberVerdict {
+        const first_dot = std.mem.indexOfScalar(u8, path, '.') orelse return .not_qualified;
+        if (first_dot == 0 or first_dot + 1 >= path.len) return .not_qualified;
+
+        const root = path[0..first_dot];
+        var target = switch (self.namespaceAliasVerdictFrom(root, from)) {
+            .target => |t| t,
+            .ambiguous => return .{ .ambiguous = root },
+            .none => return .not_qualified,
+        };
+        var namespace_name = root;
+        var segment_start = first_dot + 1;
+
+        while (std.mem.indexOfScalar(u8, path[segment_start..], '.')) |rel_dot| {
+            const dot = segment_start + rel_dot;
+            const segment = path[segment_start..dot];
+            if (segment.len == 0) return .not_qualified;
+
+            // An ordinary member authored by the current target shadows a
+            // same-spelled namespace alias carried by one of its flat imports.
+            // This is an ordinary field/static chain, not a nested namespace.
+            if (self.namespaceOwnMember(target, segment)) |own| {
+                if (own.raw != .namespace_decl) return .not_qualified;
+            }
+            if (self.namespaceOwnSpecialMember(target, segment)) return .not_qualified;
+
+            target = switch (self.namespaceAliasVerdictFrom(segment, target.target_module_path)) {
+                .target => |t| t,
+                .ambiguous => return .{ .ambiguous = segment },
+                .none => return .{ .missing = .{ .namespace = namespace_name, .member = segment } },
+            };
+            namespace_name = segment;
+            segment_start = dot + 1;
+            if (segment_start >= path.len) return .not_qualified;
+        }
+
+        const member = path[segment_start..];
+        if (member.len == 0) return .not_qualified;
+        const author = self.namespaceOwnMember(target, member) orelse {
+            if (self.namespaceOwnSpecialMember(target, member)) return .not_qualified;
+            return .{ .missing = .{ .namespace = namespace_name, .member = member } };
+        };
+        return .{ .selected = .{ .target = target, .author = author, .member = member } };
+    }
+
+    pub fn qualifiedMemberVerdict(self: *Lowering, path: []const u8) QualifiedMemberVerdict {
+        const from = self.current_source_file orelse self.main_file orelse return .not_qualified;
+        return self.qualifiedMemberVerdictFrom(path, from);
+    }
+
+    /// Function-valued projection of the full-path selector. The path must
+    /// first prove an exact terminal author; namespaceFnMember then follows an
+    /// explicit function alias authored by that target without consulting a
+    /// same-spelled global winner.
+    pub fn qualifiedFnMember(self: *Lowering, path: []const u8) ?*const ast.FnDecl {
+        return switch (self.qualifiedMemberVerdict(path)) {
+            .selected => |sel| self.namespaceFnMember(&sel.target, sel.member),
+            .not_qualified, .missing, .ambiguous => null,
+        };
     }
 
     /// Reconstruct a dotted name from a pure identifier/field_access chain
@@ -2248,6 +2607,7 @@ pub const Lowering = struct {
     pub const lowerComptimeSideEffect = lower_comptime.lowerComptimeSideEffect;
     pub const lowerComptimeCall = lower_comptime.lowerComptimeCall;
     pub const lowerComptimeCallArgs = lower_comptime.lowerComptimeCallArgs;
+    pub const lowerComptimeMethodCallArgs = lower_comptime.lowerComptimeMethodCallArgs;
     pub const lowerComptimeCallArgsSkip = lower_comptime.lowerComptimeCallArgsSkip;
     pub const bindComptimeValueParams = lower_comptime.bindComptimeValueParams;
     pub const recordComptimeTag = lower_comptime.recordComptimeTag;
@@ -2275,6 +2635,9 @@ pub const Lowering = struct {
     pub const foldQualifiedConstInt = lower_comptime.foldQualifiedConstInt;
     pub const foldQualifiedConstFloat = lower_comptime.foldQualifiedConstFloat;
     pub const qualifiedConstIsFloatTyped = lower_comptime.qualifiedConstIsFloatTyped;
+    pub const foldQualifiedConstNodeInt = lower_comptime.foldQualifiedConstNodeInt;
+    pub const foldQualifiedConstNodeFloat = lower_comptime.foldQualifiedConstNodeFloat;
+    pub const qualifiedConstNodeIsFloatTyped = lower_comptime.qualifiedConstNodeIsFloatTyped;
     pub const comptimeIntNamed = lower_comptime.comptimeIntNamed;
     pub const selectModuleConst = lower_comptime.selectModuleConst;
     pub const GlobalAuthor = lower_comptime.GlobalAuthor;
@@ -2400,6 +2763,7 @@ pub const Lowering = struct {
     pub const lowerRetainedSameNameAuthors = lower_decl.lowerRetainedSameNameAuthors;
     pub const selectPlainCallableAuthor = lower_decl.selectPlainCallableAuthor;
     pub const selectNominalLeaf = lower_decl.selectNominalLeaf;
+    pub const typeNodeLeavesReady = lower_decl.typeNodeLeavesReady;
     pub const isNamedTypeKind = lower_decl.isNamedTypeKind;
     pub const namedRefTid = lower_decl.namedRefTid;
     pub const nameAuthoredAsTypeAnywhere = lower_decl.nameAuthoredAsTypeAnywhere;
@@ -2425,7 +2789,17 @@ pub const Lowering = struct {
 
     // --- moved to lower/nominal.zig (lower_nominal) ---
     pub const registerErrorSetDecl = lower_nominal.registerErrorSetDecl;
+    pub const PlainStructMethod = lower_nominal.PlainStructMethod;
+    pub const StaticStructHead = lower_nominal.StaticStructHead;
     pub const registerStructDecl = lower_nominal.registerStructDecl;
+    pub const staticStructHead = lower_nominal.staticStructHead;
+    pub const hasPlainStructAuthor = lower_nominal.hasPlainStructAuthor;
+    pub const plainStructMethod = lower_nominal.plainStructMethod;
+    pub const plainStructAdoptableMethod = lower_nominal.plainStructAdoptableMethod;
+    pub const plainStructMethodName = lower_nominal.plainStructMethodName;
+    pub const plainStructMethodSource = lower_nominal.plainStructMethodSource;
+    pub const ensurePlainStructMethodLowered = lower_nominal.ensurePlainStructMethodLowered;
+    pub const followAliasChain = lower_nominal.followAliasChain;
     pub const registerEnumDecl = lower_nominal.registerEnumDecl;
     pub const registerUnionDecl = lower_nominal.registerUnionDecl;
     pub const qualifyAnonType = lower_nominal.qualifyAnonType;
@@ -2435,6 +2809,7 @@ pub const Lowering = struct {
     pub const reserveShadowEnumSlot = lower_nominal.reserveShadowEnumSlot;
     pub const reserveShadowUnionSlot = lower_nominal.reserveShadowUnionSlot;
     pub const reserveShadowErrorSetSlot = lower_nominal.reserveShadowErrorSetSlot;
+    pub const reserveShadowProtocolSlot = lower_nominal.reserveShadowProtocolSlot;
     pub const topLevelTypeDecl = lower_nominal.topLevelTypeDecl;
     pub const reserveShadowSlot = lower_nominal.reserveShadowSlot;
     pub const internNamedTypeDecl = lower_nominal.internNamedTypeDecl;
@@ -2460,11 +2835,13 @@ pub const Lowering = struct {
     pub const lookupProtocolField = lower_protocol.lookupProtocolField;
     pub const isProtocolType = lower_protocol.isProtocolType;
     pub const getProtocolInfo = lower_protocol.getProtocolInfo;
+    pub const isProtocolConstraint = lower_protocol.isProtocolConstraint;
     pub const getOrCreateThunks = lower_protocol.getOrCreateThunks;
     pub const emitDefaultContextGlobal = lower_protocol.emitDefaultContextGlobal;
     pub const emitDefaultContextGlobalEarly = lower_protocol.emitDefaultContextGlobalEarly;
     pub const protocolErasureConst = lower_protocol.protocolErasureConst;
     pub const createProtocolThunk = lower_protocol.createProtocolThunk;
+    pub const protocolDefaultDispatchDomain = lower_protocol.protocolDefaultDispatchDomain;
     pub const buildProtocolValue = lower_protocol.buildProtocolValue;
     pub const emitProtocolDispatch = lower_protocol.emitProtocolDispatch;
     pub const refuseProtocolAssertTargetOnAny = lower_protocol.refuseProtocolAssertTargetOnAny;
@@ -2601,6 +2978,7 @@ pub const Lowering = struct {
     pub const materialisePackSlice = lower_pack.materialisePackSlice;
     pub const inferPackBodyReturnType = lower_pack.inferPackBodyReturnType;
     pub const lowerPackFnCall = lower_pack.lowerPackFnCall;
+    pub const lowerPackFnCallNamed = lower_pack.lowerPackFnCallNamed;
     pub const monomorphizePackFn = lower_pack.monomorphizePackFn;
     pub const resolvePackProjection = lower_pack.resolvePackProjection;
     pub const isPackFn = lower_pack.isPackFn;
@@ -2639,6 +3017,7 @@ pub const Lowering = struct {
     pub const hasComptimeParams = lower_generic.hasComptimeParams;
     pub const isPlainFreeFn = lower_generic.isPlainFreeFn;
     pub const selectGenericStructHead = lower_generic.selectGenericStructHead;
+    pub const selectGenericStructCallee = lower_generic.selectGenericStructCallee;
     pub const headTypeLeak = lower_generic.headTypeLeak;
     pub const headNameOfCallee = lower_generic.headNameOfCallee;
     pub const headTypeGate = lower_generic.headTypeGate;

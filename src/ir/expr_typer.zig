@@ -314,48 +314,56 @@ pub const ExprTyper = struct {
                         }
                     }
                 }
-                // Module-qualified `alias.Enum.variant` — the object is itself
-                // a namespace-rooted member (`lib.Mode`) that resolves to an
-                // enum / tagged-union TYPE in the aliased module, read here as a
-                // VALUE (its type is that enum). Sibling of the bare
-                // `Enum.variant` arm above; mirrors `lowerFieldAccess`'s
-                // `namespaceRootedMember` enum-literal path — resolved
-                // diagnostic-free (inference must not emit) via
-                // `namespaceAliasVerdict` + `selectNominalLeaf` against the
-                // target module. Payloadless variant only; a genuine non-enum
-                // qualified member (`mod.value`, `mod.CONST`, `mod.Struct.field`)
-                // falls through to `.unresolved`. Without this, `id(lib.Mode.on)`
-                // generic-arg inference bound `T = .unresolved` and minted a
-                // `__unresolved` monomorph that reached LLVM emission (issue 0276).
-                if (fa.object.data == .field_access) {
-                    const outer = fa.object.data.field_access;
-                    if (outer.object.data == .identifier) {
-                        const root = outer.object.data.identifier.name;
-                        const shadowed = if (self.l.scope) |s| s.lookup(root) != null else false;
-                        if (!shadowed and !self.l.program_index.global_names.contains(root)) {
-                            switch (self.l.namespaceAliasVerdict(root)) {
-                                .target => |target| {
-                                    const saved_src = self.l.current_source_file;
-                                    self.l.setCurrentSourceFile(target.target_module_path);
-                                    var global_info: ?program_index_mod.GlobalInfo = null;
-                                    if (self.l.program_index.global_names.get(outer.field)) |fallback| {
-                                        switch (self.l.selectGlobalAuthor(outer.field)) {
-                                            .resolved => |g| global_info = g,
-                                            .untracked => global_info = fallback,
-                                            else => {},
-                                        }
-                                    }
-                                    self.l.setCurrentSourceFile(saved_src);
-                                    if (global_info) |gi| return self.l.resolveFieldType(gi.ty, fa.field);
-                                    switch (self.l.selectNominalLeaf(outer.field, target.target_module_path, false)) {
-                                        .resolved => |ty| {
-                                            if (!ty.isBuiltin() and self.l.isPayloadlessVariant(ty, fa.field)) return ty;
-                                        },
+                // Full qualified terminal (`alias.CONST` or
+                // `facade.engine_alias.CONST`) — infer the selected author's
+                // bare member while pinned to its exact target. Diagnostic-free:
+                // lowering owns missing/ambiguous messages.
+                if (self.l.qualifiedTypeName(node)) |path| {
+                    defer self.l.alloc.free(path);
+                    const root_end = std.mem.indexOfScalar(u8, path, '.') orelse path.len;
+                    const root = path[0..root_end];
+                    if (!self.l.identifierBindsVisibleValue(root)) {
+                        switch (self.l.qualifiedMemberVerdict(path)) {
+                            .selected => |sel| {
+                                const synth = Node{ .span = node.span, .data = .{ .identifier = .{ .name = sel.member } } };
+                                const saved_src = self.l.current_source_file;
+                                self.l.setCurrentSourceFile(sel.target.target_module_path);
+                                defer self.l.setCurrentSourceFile(saved_src);
+                                return self.l.inferExprType(&synth);
+                            },
+                            .not_qualified, .missing, .ambiguous => {},
+                        }
+                    }
+                }
+
+                // Qualified enum/global field object. Resolve the complete
+                // object prefix (`lib.Mode` / `facade.engine_alias.Mode`) as an
+                // exact namespace terminal, then type the final field.
+                if (self.l.qualifiedTypeName(fa.object)) |path| {
+                    defer self.l.alloc.free(path);
+                    const root_end = std.mem.indexOfScalar(u8, path, '.') orelse path.len;
+                    const root = path[0..root_end];
+                    if (!self.l.identifierBindsVisibleValue(root)) {
+                        switch (self.l.qualifiedMemberVerdict(path)) {
+                            .selected => |sel| {
+                                const saved_src = self.l.current_source_file;
+                                self.l.setCurrentSourceFile(sel.target.target_module_path);
+                                var global_info: ?program_index_mod.GlobalInfo = null;
+                                if (self.l.program_index.global_names.get(sel.member)) |fallback| {
+                                    switch (self.l.selectGlobalAuthor(sel.member)) {
+                                        .resolved => |g| global_info = g,
+                                        .untracked => global_info = fallback,
                                         else => {},
                                     }
-                                },
-                                else => {},
-                            }
+                                }
+                                self.l.setCurrentSourceFile(saved_src);
+                                if (global_info) |gi| return self.l.resolveFieldType(gi.ty, fa.field);
+                                switch (self.l.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
+                                    .resolved => |ty| if (!ty.isBuiltin() and self.l.isPayloadlessVariant(ty, fa.field)) return ty,
+                                    else => {},
+                                }
+                            },
+                            .not_qualified, .missing, .ambiguous => {},
                         }
                     }
                 }
@@ -447,6 +455,16 @@ pub const ExprTyper = struct {
                     // warning (issue 0281); lowering routes the same shape.
                     if (te.data == .field_access) {
                         const fa = te.data.field_access;
+                        if (self.l.qualifiedTypeName(fa.object)) |path| {
+                            defer self.l.alloc.free(path);
+                            switch (self.l.qualifiedMemberVerdict(path)) {
+                                .selected => |sel| switch (self.l.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
+                                    .resolved => |oty| if (!oty.isBuiltin() and self.l.module.types.get(oty) == .tagged_union) return oty,
+                                    else => {},
+                                },
+                                .not_qualified, .missing, .ambiguous => {},
+                            }
+                        }
                         const obj_name: ?[]const u8 = switch (fa.object.data) {
                             .identifier => |id| id.name,
                             .type_expr => |t| t.name,

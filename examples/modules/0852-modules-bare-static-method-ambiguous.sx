@@ -1,0 +1,11 @@
+// A bare static method head remains ambiguous when two flat imports author
+// the same struct name; source-aware method selection must never pick one.
+// Regression (issue 0320).
+
+#import "0852-modules-bare-static-method-ambiguous/a.sx";
+#import "0852-modules-bare-static-method-ambiguous/b.sx";
+
+main :: () -> i32 {
+    _ := Thing.init();
+    0
+}

@@ -1,0 +1,11 @@
+error: 'ping' expects 1 argument, but 2 were given
+  --> examples/diagnostics/1264-diagnostics-comptime-method-arity.sx:20:5
+   |
+20 |     Thing.ping(.run, 9);
+   |     ^^^^^^^^^^
+
+error: 'needs_value' expects 2 arguments, but 1 was given
+  --> examples/diagnostics/1264-diagnostics-comptime-method-arity.sx:21:5
+   |
+21 |     Thing.needs_value(.run);
+   |     ^^^^^^^^^^^^^^^^^

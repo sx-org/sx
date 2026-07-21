@@ -1,0 +1,2 @@
+#import "internal.sx";
+bridged :: () -> i64 { internal_api() }

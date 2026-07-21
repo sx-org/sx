@@ -1,17 +1,17 @@
 error: cannot assign to 'lib.LIB_C' — it is a constant, not a mutable global
-  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:19:5
+  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:19:9
    |
-19 |     lib.LIB_C = 3;      // const member — immutable
-   |     ^^^^^^^^^
+19 |     lib.LIB_C = null;              // target-directed null must not lower
+   |         ^^^^^
 
 error: cannot assign to 'lib.lib_fn' — it is a function, not a mutable global
-  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:20:5
+  --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:20:9
    |
-20 |     lib.lib_fn = 3;     // fn member — not a mutable global
-   |     ^^^^^^^^^^
+20 |     lib.lib_fn = .selected;        // target-directed enum must not lower
+   |         ^^^^^^
 
-error: 'shared' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+error: namespace 'amb' has no member 'shared'
   --> examples/diagnostics/1226-diagnostics-qualified-global-store-nonlvalue.sx:21:5
    |
-21 |     amb.shared = 9;     // ambiguous member — two flat authors in the target
+21 |     amb.shared = .{ value = 9 };   // target-directed struct must not lower
    |     ^^^^^^^^^^

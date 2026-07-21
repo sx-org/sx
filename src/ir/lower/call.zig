@@ -27,6 +27,38 @@ const isPackFn = Lowering.isPackFn;
 const headNameOfCallee = Lowering.headNameOfCallee;
 const hasComptimeParams = Lowering.hasComptimeParams;
 
+/// Compiler-internal dispatch/monomorphization base for an exactly-selected
+/// declaration.  Encode the complete source path and stable declaration
+/// location/ordinal: hashes can collide, source+name alone does not distinguish
+/// overload/local/synthesized declarations, and pointer text is nondeterministic.
+/// A synthesized zero-span declaration must have a DeclId; otherwise there is
+/// no stable identity to emit and compilation fails loudly.
+fn selectedDispatchName(self: *Lowering, sf: *const SelectedFunc) []const u8 {
+    const decl_id = if (self.program_index.decl_table) |dt|
+        dt.declIdForRef(.{ .fn_decl = sf.decl })
+    else
+        null;
+    if (sf.decl.name_span.start == 0 and sf.decl.name_span.end == 0 and decl_id == null)
+        @panic("selected synthesized function has no stable declaration identity");
+
+    var out = std.ArrayList(u8).empty;
+    out.appendSlice(self.alloc, sf.decl.name) catch @panic("out of memory while mangling selected function");
+    out.appendSlice(self.alloc, "$src$") catch @panic("out of memory while mangling selected function");
+    const hex = "0123456789abcdef";
+    for (sf.source) |byte| {
+        out.append(self.alloc, hex[byte >> 4]) catch @panic("out of memory while mangling selected function");
+        out.append(self.alloc, hex[byte & 0xf]) catch @panic("out of memory while mangling selected function");
+    }
+    var numeric: [96]u8 = undefined;
+    const span_fragment = std.fmt.bufPrint(&numeric, "$span${d}_{d}", .{ sf.decl.name_span.start, sf.decl.name_span.end }) catch unreachable;
+    out.appendSlice(self.alloc, span_fragment) catch @panic("out of memory while mangling selected function");
+    if (decl_id) |id| {
+        const ordinal_fragment = std.fmt.bufPrint(&numeric, "$decl${d}", .{@intFromEnum(id)}) catch unreachable;
+        out.appendSlice(self.alloc, ordinal_fragment) catch @panic("out of memory while mangling selected function");
+    }
+    return out.toOwnedSlice(self.alloc) catch @panic("out of memory while mangling selected function");
+}
+
 /// True iff every type-parameter of generic ufcs/free-fn `fd` binds to a
 /// concrete (present) type given `args_ast` (receiver prepended). A param the
 /// argument shapes can't pin is simply absent from the bindings map (e.g. a
@@ -243,6 +275,45 @@ fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Bi
     return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, ret_ty);
 }
 
+/// Call an exactly-selected namespace global without round-tripping through
+/// the process-wide name map.  Closure and function-pointer globals keep the
+/// same ABI, arity and coercion behavior as their bare callable-value forms.
+fn callThroughSelectedGlobal(
+    self: *Lowering,
+    selected: CallResolver.CallableValue,
+    args: []Ref,
+    c: *const ast.Call,
+    span: ast.Span,
+) Ref {
+    const ty = selected.global.ty;
+    if (ty.isBuiltin()) return self.emitError(selected.member, span);
+    const info = self.module.types.get(ty);
+    const callee_ref = self.builder.emit(.{ .global_get = selected.global.id }, ty);
+    if (info == .closure) {
+        if (checkCallableValueArgs(self, "closure", selected.member, args, info.closure.params.len, info.closure.pack_start, c, span)) return Ref.none;
+        coerceClosureCallArgs(self, args, info.closure.params);
+        const owned = if (self.implicit_ctx_enabled) blk: {
+            const with_ctx = self.alloc.alloc(Ref, args.len + 1) catch @panic("out of memory while preparing qualified closure call");
+            with_ctx[0] = self.current_ctx_ref;
+            @memcpy(with_ctx[1..], args);
+            break :blk with_ctx;
+        } else self.alloc.dupe(Ref, args) catch @panic("out of memory while preparing qualified closure call");
+        return self.builder.emit(.{ .call_closure = .{ .callee = callee_ref, .args = owned } }, info.closure.ret);
+    }
+    if (info == .function) {
+        if (checkCallableValueArgs(self, "function pointer", selected.member, args, info.function.params.len, info.function.pack_start, c, span)) return Ref.none;
+        coerceClosureCallArgs(self, args, info.function.params);
+        var final_args = std.ArrayList(Ref).empty;
+        defer final_args.deinit(self.alloc);
+        if (self.fnPtrTypeWantsCtx(ty))
+            final_args.append(self.alloc, self.current_ctx_ref) catch @panic("out of memory while preparing qualified function-pointer call");
+        final_args.appendSlice(self.alloc, args) catch @panic("out of memory while preparing qualified function-pointer call");
+        const owned = self.alloc.dupe(Ref, final_args.items) catch @panic("out of memory while preparing qualified function-pointer call");
+        return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, info.function.ret);
+    }
+    return self.emitError(selected.member, span);
+}
+
 /// Whether the callee MAY declare a slice-variadic param (`..xs: []T`).
 /// Consulted by the value-spread expansion in the arg loop: an ARRAY spread
 /// into a slice variadic must stay whole (the packVariadicCallArgs fast path
@@ -251,7 +322,8 @@ fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Bi
 /// name here, unknown identifier) reports true — the placeholder path then
 /// keeps existing behavior (slice-variadic pass-through or an arity
 /// diagnostic), never a desynced expansion.
-fn calleeMayHaveVariadicParam(self: *Lowering, c: *const ast.Call, sel_author: ?*SelectedFunc) bool {
+fn calleeMayHaveVariadicParam(self: *Lowering, c: *const ast.Call, sel_author: ?*SelectedFunc, qualified_callable: ?GlobalInfo) bool {
+    if (qualified_callable != null) return false;
     const fd: ?*const ast.FnDecl = blk: {
         if (sel_author) |sf| break :blk sf.decl;
         switch (c.callee.data) {
@@ -266,6 +338,18 @@ fn calleeMayHaveVariadicParam(self: *Lowering, c: *const ast.Call, sel_author: ?
                 return true; // unknown callee — stay conservative
             },
             .field_access => |fa| {
+                if (self.callResolver().objectIsValue(fa.object)) {
+                    const recv_ty = self.inferExprType(fa.object);
+                    if (self.plainStructMethod(recv_ty, fa.field)) |method| break :blk method.fd;
+                    if (self.hasPlainStructAuthor(recv_ty)) return true;
+                } else switch (self.staticStructHead(fa.object)) {
+                    .resolved => |owner_ty| {
+                        if (self.plainStructMethod(owner_ty, fa.field)) |method| break :blk method.fd;
+                        if (self.hasPlainStructAuthor(owner_ty)) return true;
+                    },
+                    .ambiguous, .not_visible => return true,
+                    .none => {},
+                }
                 // Namespaced / UFCS free fn by bare member name; anything we
                 // can't resolve stays conservative.
                 const eff = self.program_index.ufcs_alias_map.get(fa.field) orelse fa.field;
@@ -280,6 +364,64 @@ fn calleeMayHaveVariadicParam(self: *Lowering, c: *const ast.Call, sel_author: ?
         if (p.is_variadic) return true;
     }
     return false;
+}
+
+/// Whether a generic declaration parameter denotes a TYPE which must be bound
+/// before the comptime body can resolve its signature/body. Comptime value
+/// params (`$o: Ord`, `$n: i64`) use the value-binding machinery instead.
+fn comptimeTypeParamNeedsBinding(self: *Lowering, tp: ast.StructTypeParam, source: ?[]const u8) bool {
+    if (tp.is_variadic or tp.constraint.data != .type_expr) return false;
+    const constraint = tp.constraint.data.type_expr.name;
+    return std.mem.eql(u8, constraint, "Type") or
+        self.isProtocolConstraint(constraint, source);
+}
+
+fn comptimeMethodBindingsComplete(
+    self: *Lowering,
+    fd: *const ast.FnDecl,
+    bindings: *const std.StringHashMap(TypeId),
+    span: ast.Span,
+) bool {
+    for (fd.type_params) |tp| {
+        if (!comptimeTypeParamNeedsBinding(self, tp, fd.body.source_file) or bindings.contains(tp.name)) continue;
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "cannot infer generic type parameter '{s}' for comptime method '{s}' from this call's arguments", .{ tp.name, fd.name });
+        return false;
+    }
+    return true;
+}
+
+/// Inline a selected plain-struct comptime method through one effective AST
+/// argument list. Instance calls prepend their receiver; static and
+/// target-typed shorthand calls do not. The shared comptime helper stages the
+/// whole list before installing any formal, so all call forms get identical
+/// target typing, pointer adaptation, single evaluation, and body hygiene.
+fn lowerComptimePlainStructMethod(
+    self: *Lowering,
+    method: Lowering.PlainStructMethod,
+    recv_node: ?*const Node,
+    call_args: []const *Node,
+    call_span: ast.Span,
+) Ref {
+    const fd = method.fd;
+    var effective_args = std.ArrayList(*Node).empty;
+    defer effective_args.deinit(self.alloc);
+    if (recv_node) |receiver| effective_args.append(self.alloc, @constCast(receiver)) catch unreachable;
+    effective_args.appendSlice(self.alloc, call_args) catch unreachable;
+
+    const saved_bindings = self.type_bindings;
+    var method_bindings: ?std.StringHashMap(TypeId) = null;
+    defer {
+        self.type_bindings = saved_bindings;
+        if (method_bindings) |*bindings| bindings.deinit();
+    }
+    if (fd.type_params.len > 0) {
+        method_bindings = self.genericResolver().buildTypeBindings(fd, effective_args.items);
+        if (!comptimeMethodBindingsComplete(self, fd, &method_bindings.?, call_span)) return Ref.none;
+        self.type_bindings = method_bindings.?;
+    }
+
+    return self.lowerComptimeMethodCallArgs(fd, effective_args.items, recv_node != null, call_span);
 }
 
 pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
@@ -312,33 +454,78 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             c = rewritten;
         };
     }
-    // R5 §C: select the bare / value-UFCS same-name call author
-    // ONCE, via `CallResolver.selectedFreeAuthor` — the SINGLE producer of
-    // this verdict, the exact same one `CallResolver.plan` consumes for typing.
-    // The call-path consumers (default expansion, param typing, dispatch) all
-    // read THIS one author object, so plan-typing and lowering-dispatch can no
-    // longer disagree about which same-name function the call names, and the
-    // shadow's FuncId is materialized at most once (into `author_verdict`).
-    // `selectedFreeAuthor` is side-effect-free (it only runs the author
-    // selector — no return-type inference / type-arg resolution), so computing
-    // it eagerly here can't emit a premature diagnostic the way the full plan
-    // would.
-    var author_verdict = self.callResolver().selectedFreeAuthor(c);
-    const sel_author: ?*SelectedFunc = switch (author_verdict) {
+    // Select an identity-bearing call author ONCE before any signature
+    // consumer. Bare same-name collisions use the flat-author selector;
+    // namespace calls use the arbitrary-depth qualified-member selector. The
+    // two forms are mutually exclusive. Defaults, contextual argument typing,
+    // specialized/generic lowering and final dispatch all consume this exact
+    // `FnDecl` + source pair rather than re-looking up a collapsed global name.
+    var qualified_call_verdict = self.callResolver().classifyQualifiedCall(c);
+    var bare_author_verdict: Lowering.BareCallee = switch (qualified_call_verdict) {
+        .never_qualified, .value_receiver => self.callResolver().selectedFreeAuthor(c),
+        .type_prefix, .func, .callable_value, .non_callable, .missing, .not_visible, .ambiguous => .none,
+    };
+    const bare_author: ?*SelectedFunc = switch (bare_author_verdict) {
         .func => |*sf| sf,
         else => null,
     };
-    const author_ambiguous = author_verdict == .ambiguous;
+    const qualified_author: ?*SelectedFunc = switch (qualified_call_verdict) {
+        .func => |*sf| sf,
+        else => null,
+    };
+    const qualified_callable: ?CallResolver.CallableValue = switch (qualified_call_verdict) {
+        .callable_value => |cv| cv,
+        else => null,
+    };
+    const sel_author: ?*SelectedFunc = bare_author orelse qualified_author;
+    const author_ambiguous = bare_author_verdict == .ambiguous;
+
+    // A proved namespace path that fails at one edge/member is terminal. Emit
+    // the selector's exact failure now and do not evaluate argument side effects
+    // before reporting a call which cannot exist.
+    switch (qualified_call_verdict) {
+        .missing => |m| {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, m.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
+            return Ref.none;
+        },
+        .not_visible => |hidden| {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, hidden.span, "namespace '{s}' is not visible; #import the module that declares it", .{hidden.alias});
+            return Ref.none;
+        },
+        .ambiguous => |amb| {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, amb.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{amb.alias});
+            return Ref.none;
+        },
+        .non_callable => |nc| {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, nc.span, "cannot call '{s}' — this namespace member is not callable", .{nc.member});
+            return Ref.none;
+        },
+        .never_qualified, .value_receiver, .type_prefix, .func, .callable_value => {},
+    }
     // Expand default parameter values for bare identifier callees:
     // when the caller omits trailing positional args, fill them in
     // from the callee's `param: T = expr` declarations.
-    if (self.expandCallDefaults(c, sel_author, author_ambiguous)) |expanded| c = expanded;
+    if (self.expandCallDefaults(c, sel_author, qualified_author != null, author_ambiguous)) |expanded| c = expanded;
     // Check reflection builtins first (before lowering args — some args are type names, not values)
     if (c.callee.data == .identifier) {
         if (self.tryLowerReflectionCall(c.callee.data.identifier.name, c)) |ref| return ref;
         // Atomic intrinsics (atomic_load/atomic_store): a type arg + value args,
         // so lower them here (before generic arg lowering) like reflection calls.
         if (self.tryLowerAtomicIntrinsic(c.callee.data.identifier.name, c)) |ref| return ref;
+    }
+    // Qualified intrinsic spelling is legal too. Only dispatch a compiler
+    // recognizer after the full namespace path selected the exact declaration
+    // and proved that its body is intrinsic; the terminal name alone is not
+    // authority (intrinsic identity is module + name).
+    if (qualified_author) |sf| {
+        if (sf.decl.body.data == .intrinsic_expr) {
+            if (self.tryLowerReflectionCall(sf.decl.name, c)) |ref| return ref;
+            if (self.tryLowerAtomicIntrinsic(sf.decl.name, c)) |ref| return ref;
+        }
     }
 
     if (c.callee.data == .identifier) {
@@ -544,11 +731,76 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         }
     }
 
+    // Exactly-selected qualified pack/comptime functions own AST argument
+    // evaluation and therefore dispatch before the ordinary arg loop. Generic
+    // runtime functions still need the lowered values and dispatch afterward.
+    // The identity-bearing name keeps same-spelled pack monos from two modules
+    // distinct; comptime lowering consumes the exact declaration directly.
+    if (qualified_author) |sf| {
+        if (isPackFn(sf.decl))
+            return self.lowerPackFnCallNamed(sf.decl, selectedDispatchName(self, sf), c, null);
+        if (hasComptimeParams(sf.decl))
+            return self.lowerComptimeCall(sf.decl, c);
+    }
+
+    // Selected static plain-struct pack/comptime methods must dispatch before
+    // ordinary argument lowering: both specialized lowerers consume and lower
+    // the AST arguments themselves. Reaching the later namespace/static arm
+    // after the loop below would evaluate every argument twice. The same rule
+    // applies to the target-typed `.method(...)` shorthand.
+    const early_static_method: ?Lowering.PlainStructMethod = switch (c.callee.data) {
+        .field_access => |fa| if (qualified_author == null and qualified_call_verdict == .type_prefix) blk: {
+            break :blk switch (self.staticStructHead(fa.object)) {
+                .resolved => |owner_ty| self.plainStructMethod(owner_ty, fa.field),
+                .ambiguous, .not_visible, .none => null,
+            };
+        } else null,
+        .enum_literal => |el| if (self.target_type) |tgt| self.plainStructMethod(tgt, el.name) else null,
+        else => null,
+    };
+    if (early_static_method) |method| {
+        if (isPackFn(method.fd)) return self.lowerPackFnCallNamed(method.fd, self.plainStructMethodName(method), c, null);
+        if (hasComptimeParams(method.fd))
+            return lowerComptimePlainStructMethod(self, method, null, c.args, c.callee.span);
+    }
+
+    // Instance pack/comptime methods also own AST argument evaluation. Select
+    // the nominal author before the ordinary arg loop and splice the receiver
+    // into pack calls so declaration positions line up with `self`.
+    if (qualified_author == null and qualified_call_verdict == .value_receiver and c.callee.data == .field_access) {
+        const fa = c.callee.data.field_access;
+        {
+            const recv_ty = self.inferExprType(fa.object);
+            if (self.plainStructMethod(recv_ty, fa.field)) |method| {
+                if (isPackFn(method.fd)) {
+                    const eff_args = self.alloc.alloc(*Node, c.args.len + 1) catch return Ref.none;
+                    eff_args[0] = @constCast(fa.object);
+                    @memcpy(eff_args[1..], c.args);
+                    const syn_call = ast.Call{ .callee = c.callee, .args = eff_args };
+                    return self.lowerPackFnCallNamed(method.fd, self.plainStructMethodName(method), &syn_call, fa.object);
+                }
+                if (hasComptimeParams(method.fd))
+                    return lowerComptimePlainStructMethod(self, method, fa.object, c.args, c.callee.span);
+            }
+            // Generic-struct instances carry a separate author stamp and are
+            // intentionally absent from plainStructMethod. Select their
+            // comptime methods here too, before the ordinary argument loop,
+            // otherwise every runtime argument is evaluated once here and a
+            // second time by the inline helper below.
+            if (self.getStructTypeName(recv_ty)) |inst_name| {
+                if (self.genericInstanceMethod(inst_name, fa.field)) |gm| {
+                    if (hasComptimeParams(gm.fd))
+                        return self.lowerComptimeGenericInstanceMethod(gm, fa.object, c.args, c.callee.span);
+                }
+            }
+        }
+    }
+
     // Lower args (with target type propagation for xx conversions)
     var args = std.ArrayList(Ref).empty;
     defer args.deinit(self.alloc);
     // Try to resolve param types for target_type context
-    const param_types = self.resolveCallParamTypes(c, sel_author);
+    const param_types = self.resolveCallParamTypes(c, sel_author, qualified_author != null, if (qualified_callable) |cv| cv.global else null);
     // For enum_literal callees (.Variant(payload)), resolve the payload target type
     // from the union field type so struct literal fields get proper coercion
     var enum_payload_ty: ?TypeId = null;
@@ -598,7 +850,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // materialized-pack carrier is an anonymous positional
                 // struct (`stored := .{ ..xs };` → `f(..stored)`).
                 if (op_info != .tuple and op_info != .array and op_info != .@"struct") break :expand;
-                if (op_info == .array and calleeMayHaveVariadicParam(self, c, sel_author)) break :expand;
+                if (op_info == .array and calleeMayHaveVariadicParam(self, c, sel_author, if (qualified_callable) |cv| cv.global else null)) break :expand;
                 if (self.valueSpreadRefs(arg.data.spread_expr.operand, arg.span)) |elems| {
                     defer self.alloc.free(elems);
                     for (elems) |e| args.append(self.alloc, e) catch unreachable;
@@ -1051,6 +1303,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             return self.emitError(id.name, c.callee.span);
         },
         .field_access => |fa| {
+            if (qualified_callable) |selected|
+                return callThroughSelectedGlobal(self, selected, args.items, c, c.callee.span);
+
             // `super.method(args)` from inside a `#jni_main` (or any
             // sx-defined `#jni_class`) bodied method. Dispatch via
             // CallNonvirtual<T>Method against the parent class
@@ -1086,23 +1341,21 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // by the single head choke-point (CP-1) and the method body by
                 // the instance's STAMPED author (CP-4), so layout-author ≡
                 // body-author for BOTH bare and qualified heads (E4 #1 / #2).
-                if (headNameOfCallee(inner_call.callee)) |hn| {
-                    switch (self.selectGenericStructHead(hn.name, hn.alias, hn.is_qualified, inner_call.callee.span)) {
-                        .poisoned => return Ref.none,
-                        .template => |t| {
-                            const inst_ty = self.instantiateGenericStruct(&t, inner_call.args);
-                            const inst_name = self.formatTypeName(inst_ty);
-                            if (self.genericInstanceMethod(inst_name, fa.field)) |gm| {
-                                if (self.ensureGenericInstanceMethodLowered(gm)) |fid| {
-                                    const func = &self.module.functions.items[@intFromEnum(fid)];
-                                    const final_args = self.prependCtxIfNeeded(func, args.items);
-                                    self.coerceCallArgs(final_args, func.params);
-                                    return self.builder.call(fid, final_args, func.ret);
-                                }
+                switch (self.selectGenericStructCallee(inner_call.callee, inner_call.callee.span)) {
+                    .poisoned => return Ref.none,
+                    .template => |t| {
+                        const inst_ty = self.instantiateGenericStruct(&t, inner_call.args);
+                        const inst_name = self.formatTypeName(inst_ty);
+                        if (self.genericInstanceMethod(inst_name, fa.field)) |gm| {
+                            if (self.ensureGenericInstanceMethodLowered(gm)) |fid| {
+                                const func = &self.module.functions.items[@intFromEnum(fid)];
+                                const final_args = self.prependCtxIfNeeded(func, args.items);
+                                self.coerceCallArgs(final_args, func.params);
+                                return self.builder.call(fid, final_args, func.ret);
                             }
-                        },
-                        .not_generic => {},
-                    }
+                        }
+                    },
+                    .not_generic => {},
                 }
 
                 if (inner_call.callee.data == .identifier) {
@@ -1162,9 +1415,96 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // plan's `free_fn_ufcs` (prepends) vs `namespace_fn` (does not)
             // classification — source it from the single definition in
             // `CallResolver` rather than re-deriving it here.
-            const is_namespace = !self.callResolver().objectIsValue(fa.object);
+            const is_namespace = qualified_call_verdict != .value_receiver;
 
             if (is_namespace) {
+                // Arbitrary-depth namespace function selected before defaults /
+                // argument lowering. Every callable shape dispatches by this
+                // declaration identity: generic monomorphs use an author-stable
+                // key, sx bodies materialize the exact declaration, and
+                // extern/intrinsic stubs use that declaration's registered fid.
+                if (qualified_author) |sf| {
+                    const fd = sf.decl;
+                    if (fd.type_params.len > 0)
+                        return self.lowerGenericCall(fd, selectedDispatchName(self, sf), c, args.items);
+                    if (self.checkCallArity(fd, fd.name, args.items.len, false, c.callee.span)) return Ref.none;
+                    const fid: FuncId = if (fd.extern_export == .extern_ or fd.body.data == .intrinsic_expr)
+                        self.fn_decl_fids.get(fd) orelse declared: {
+                            const saved_source = self.current_source_file;
+                            self.setCurrentSourceFile(sf.source);
+                            self.declareFunction(fd, fd.name);
+                            self.setCurrentSourceFile(saved_source);
+                            break :declared self.fn_decl_fids.get(fd) orelse return self.emitError(fd.name, c.callee.span);
+                        }
+                    else
+                        self.selectedFuncId(sf, fd.name);
+                    const func = &self.module.functions.items[@intFromEnum(fid)];
+                    self.packVariadicCallArgs(fd, c, &args);
+                    const final_args = self.prependCtxIfNeeded(func, args.items);
+                    self.coerceCallArgs(final_args, func.params);
+                    if (func.is_variadic) self.promoteCVariadicArgs(final_args, func.params.len);
+                    return self.builder.call(fid, final_args, func.ret);
+                }
+
+                // A static method on a plain struct is selected from the
+                // nominal type head's author, not the global last-wins
+                // `StructName.method` entry (issue 0320). This precedes
+                // namespace-name stripping so `a.Thing.init()` retains a's
+                // TypeId and body provenance end to end.
+                switch (self.staticStructHead(fa.object)) {
+                    .resolved => |owner_ty| {
+                        if (self.plainStructMethod(owner_ty, fa.field)) |method| {
+                            const fd = method.fd;
+                            const dispatch_name = self.plainStructMethodName(method);
+                            if (isPackFn(fd)) return self.lowerPackFnCallNamed(fd, dispatch_name, c, null);
+                            if (hasComptimeParams(fd))
+                                return lowerComptimePlainStructMethod(self, method, null, c.args, c.callee.span);
+                            if (fd.type_params.len > 0) return self.lowerGenericCall(fd, dispatch_name, c, args.items);
+                            if (self.checkCallArity(fd, dispatch_name, args.items.len, false, c.callee.span)) return Ref.none;
+                            self.appendDefaultArgs(fd, &args, c.callee);
+                            const fid = self.ensurePlainStructMethodLowered(method);
+                            const func = &self.module.functions.items[@intFromEnum(fid)];
+                            const ret_ty = func.ret;
+                            const params = func.params;
+                            const has_ctx = func.has_implicit_ctx;
+                            const is_variadic = func.is_variadic;
+                            self.packVariadicCallArgs(fd, c, &args);
+                            const final_args = blk: {
+                                if (!has_ctx) break :blk args.items;
+                                const new_args = self.alloc.alloc(Ref, args.items.len + 1) catch break :blk args.items;
+                                new_args[0] = self.current_ctx_ref;
+                                @memcpy(new_args[1..], args.items);
+                                break :blk new_args;
+                            };
+                            self.coerceCallArgs(final_args, params);
+                            if (is_variadic) self.promoteCVariadicArgs(final_args, params.len);
+                            return self.builder.call(fid, final_args, ret_ty);
+                        }
+                        if (self.hasPlainStructAuthor(owner_ty))
+                            return self.emitError(fa.field, c.callee.span);
+                    },
+                    .ambiguous => {
+                        if (self.diagnostics) |d| {
+                            if (fa.object.data == .field_access and fa.object.data.field_access.object.data == .identifier) {
+                                const alias = fa.object.data.field_access.object.data.identifier.name;
+                                d.addFmt(.err, fa.object.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                            } else {
+                                const head = self.qualifiedTypeName(fa.object) orelse "<type>";
+                                d.addFmt(.err, fa.object.span, "type '{s}' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import", .{head});
+                            }
+                        }
+                        return Ref.none;
+                    },
+                    .not_visible => {
+                        if (self.diagnostics) |d| {
+                            const head = self.qualifiedTypeName(fa.object) orelse "<type>";
+                            d.addFmt(.err, fa.object.span, "type '{s}' is not visible; #import the module that declares it", .{head});
+                        }
+                        return Ref.none;
+                    },
+                    .none => {},
+                }
+
                 // Namespace call: module.func(args) — don't prepend object
                 const func_name = fa.field;
                 // Also try qualified name: Namespace.method (for struct methods)
@@ -1187,9 +1527,13 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // alias's TARGET module — never the global first-wins
                 // qualified registration, never the last-wins bare fallback.
                 gate: {
+                    // A qualified call which selected an exact author above has
+                    // already returned and must never be re-selected through
+                    // this legacy one-segment gate.
+                    if (qualified_author != null) break :gate;
                     if (fa.object.data != .identifier) break :gate;
                     const oname = fa.object.data.identifier.name;
-                    if (self.program_index.global_names.contains(oname)) break :gate;
+                    if (self.identifierBindsVisibleValue(oname)) break :gate;
                     switch (self.namespaceAliasVerdict(oname)) {
                         .target => |target| {
                             const fd = self.namespaceFnMember(&target, fa.field) orelse {
@@ -1453,6 +1797,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (struct_name) |sname| {
                 // Try direct qualified name: StructName.method
                 const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sname, fa.field }) catch fa.field;
+                const nominal_method = self.plainStructMethod(obj_ty, fa.field);
+                const nominal_author = self.hasPlainStructAuthor(obj_ty);
 
                 // Generic-struct instance method: select the body via the
                 // instance's STAMPED author (CP-4), so the dispatched method is
@@ -1465,14 +1811,14 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     // monomorphized for `T`; this composes that with the
                     // comptime-value-param binding (`bindComptimeValueParams`).
                     if (hasComptimeParams(gm.fd)) {
-                        return self.lowerComptimeGenericInstanceMethod(gm, effective_obj_node, obj, obj_ty, c.args);
+                        return self.lowerComptimeGenericInstanceMethod(gm, effective_obj_node, c.args, c.callee.span);
                     }
                     if (self.ensureGenericInstanceMethodLowered(gm)) |fid| {
                         const func = &self.module.functions.items[@intFromEnum(fid)];
                         const ret_ty = func.ret;
                         const params = func.params;
                         self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
-                        self.appendDefaultArgs(gm.fd, &method_args);
+                        self.appendDefaultArgs(gm.fd, &method_args, c.callee);
                         const final_args = self.prependCtxIfNeeded(func, method_args.items);
                         self.coerceCallArgs(final_args, params);
                         return self.builder.call(fid, final_args, ret_ty);
@@ -1481,7 +1827,13 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
 
                 // Generic method on a non-template struct: `obj.method($T, ...)`
                 // or inferred form `obj.method(val)` where val's type pins $T.
-                if (self.program_index.fn_ast_map.get(qualified)) |gen_fd| {
+                const generic_method_fd: ?*const ast.FnDecl = if (nominal_method) |m|
+                    m.fd
+                else if (nominal_author)
+                    null
+                else
+                    self.program_index.fn_ast_map.get(qualified);
+                if (generic_method_fd) |gen_fd| {
                     if (gen_fd.type_params.len > 0) {
                         // Effective AST args: prepend receiver so positions
                         // line up with fd.params (which has self at index 0).
@@ -1493,7 +1845,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         var gbindings = self.genericResolver().buildTypeBindings(gen_fd, eff_args.items);
                         defer gbindings.deinit();
 
-                        const gmangled = self.genericResolver().mangleGenericName(qualified, gen_fd, &gbindings);
+                        const generic_base = if (nominal_method) |m| self.plainStructMethodName(m) else qualified;
+                        const gmangled = self.genericResolver().mangleGenericName(generic_base, gen_fd, &gbindings);
                         if (!self.lowered_functions.contains(gmangled)) {
                             self.monomorphizeFunction(gen_fd, gmangled, &gbindings);
                         }
@@ -1527,25 +1880,21 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     }
                 }
 
-                // Try non-generic qualified method
-                const plain_method_fd = self.program_index.fn_ast_map.get(qualified);
-                if (plain_method_fd) |fd| {
-                    if (self.checkCallArity(fd, qualified, method_args.items.len, true, c.callee.span)) return Ref.none;
-                    if (!self.lowered_functions.contains(qualified)) {
-                        self.lazyLowerFunction(qualified);
-                    }
-                }
-                if (self.resolveFuncByName(qualified)) |fid| {
+                // Non-generic plain struct method: lower the declaration into
+                // its own identity-addressed FuncId. This must precede the
+                // compatibility name path below; that path cannot distinguish
+                // same-display-name nominal structs.
+                if (nominal_method) |method| {
+                    const fd = method.fd;
+                    const dispatch_name = self.plainStructMethodName(method);
+                    if (self.checkCallArity(fd, dispatch_name, method_args.items.len, true, c.callee.span)) return Ref.none;
+                    const fid = self.ensurePlainStructMethodLowered(method);
                     const func = &self.module.functions.items[@intFromEnum(fid)];
                     const ret_ty = func.ret;
                     const params = func.params;
                     const has_ctx = func.has_implicit_ctx;
                     self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
-                    if (plain_method_fd) |fd| self.appendDefaultArgs(fd, &method_args);
-                    // Note: coerceCallArgs can trigger protocol thunk creation
-                    // (module.addFunction), invalidating func pointer.
-                    // Use pre-extracted params/ret_ty (+ has_ctx) instead of
-                    // func.* after this.
+                    self.appendDefaultArgs(fd, &method_args, c.callee);
                     const final_args = blk: {
                         if (!has_ctx) break :blk method_args.items;
                         const new_args = self.alloc.alloc(Ref, method_args.items.len + 1) catch break :blk method_args.items;
@@ -1555,6 +1904,38 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     };
                     self.coerceCallArgs(final_args, params);
                     return self.builder.call(fid, final_args, ret_ty);
+                }
+
+                // Try non-generic qualified method
+                if (!nominal_author) {
+                    const plain_method_fd = self.program_index.fn_ast_map.get(qualified);
+                    if (plain_method_fd) |fd| {
+                        if (self.checkCallArity(fd, qualified, method_args.items.len, true, c.callee.span)) return Ref.none;
+                        if (!self.lowered_functions.contains(qualified)) {
+                            self.lazyLowerFunction(qualified);
+                        }
+                    }
+                    if (self.resolveFuncByName(qualified)) |fid| {
+                        const func = &self.module.functions.items[@intFromEnum(fid)];
+                        const ret_ty = func.ret;
+                        const params = func.params;
+                        const has_ctx = func.has_implicit_ctx;
+                        self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
+                        if (plain_method_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee);
+                        // Note: coerceCallArgs can trigger protocol thunk creation
+                        // (module.addFunction), invalidating func pointer.
+                        // Use pre-extracted params/ret_ty (+ has_ctx) instead of
+                        // func.* after this.
+                        const final_args = blk: {
+                            if (!has_ctx) break :blk method_args.items;
+                            const new_args = self.alloc.alloc(Ref, method_args.items.len + 1) catch break :blk method_args.items;
+                            new_args[0] = self.current_ctx_ref;
+                            @memcpy(new_args[1..], method_args.items);
+                            break :blk new_args;
+                        };
+                        self.coerceCallArgs(final_args, params);
+                        return self.builder.call(fid, final_args, ret_ty);
+                    }
                 }
             }
 
@@ -1702,7 +2083,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     // free function's first param is `*T` and the receiver is a
                     // value `T`, pass its address instead of a by-value copy
                     self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
-                    if (ufcs_arity_fd) |fd| self.appendDefaultArgs(fd, &method_args);
+                    if (ufcs_arity_fd) |fd| self.appendDefaultArgs(fd, &method_args, c.callee);
                     const final_args = self.prependCtxIfNeeded(func, method_args.items);
                     self.coerceCallArgs(final_args, params);
                     return self.builder.call(fid, final_args, ret_ty);
@@ -1730,6 +2111,22 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     if (target_info == .@"struct") {
                         const struct_name = self.module.types.typeName(tgt);
                         const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ struct_name, el.name }) catch el.name;
+                        if (self.plainStructMethod(tgt, el.name)) |method| {
+                            const fd = method.fd;
+                            const dispatch_name = self.plainStructMethodName(method);
+                            if (fd.type_params.len > 0) return self.lowerGenericCall(fd, dispatch_name, c, args.items);
+                            if (self.checkCallArity(fd, dispatch_name, args.items.len, false, c.callee.span)) return Ref.none;
+                            self.appendDefaultArgs(fd, &args, c.callee);
+                            const fid = self.ensurePlainStructMethodLowered(method);
+                            const func = &self.module.functions.items[@intFromEnum(fid)];
+                            const ret_ty = func.ret;
+                            const params = func.params;
+                            const final_args = self.prependCtxIfNeeded(func, args.items);
+                            self.coerceCallArgs(final_args, params);
+                            return self.builder.call(fid, final_args, ret_ty);
+                        }
+                        if (self.hasPlainStructAuthor(tgt))
+                            return self.emitError(el.name, c.callee.span);
                         if (self.program_index.fn_ast_map.get(qualified)) |fd| {
                             if (fd.type_params.len > 0) {
                                 return self.lowerGenericCall(fd, qualified, c, args.items);
@@ -2010,7 +2407,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .is_identity,
         .error_name,
         .vector_lanes,
-        .@"__sx_variant_tag_width",
+        .__sx_variant_tag_width,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -2111,8 +2508,7 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
         if (tp.constraint.data != .type_expr) continue;
         const cname = tp.constraint.data.type_expr.name;
         const is_type_param = std.mem.eql(u8, cname, "Type") or
-            self.program_index.protocol_decl_map.contains(cname) or
-            self.program_index.protocol_ast_map.contains(cname);
+            self.isProtocolConstraint(cname, fd.body.source_file);
         if (is_type_param and !bindings.contains(tp.name)) {
             if (self.diagnostics) |d|
                 d.addFmt(.err, call_node.callee.span, "cannot infer generic type parameter '{s}' for '{s}' from this call's arguments", .{ tp.name, base_name });
@@ -2231,7 +2627,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .is_identity,
         .error_name,
         .vector_lanes,
-        .@"__sx_variant_tag_width",
+        .__sx_variant_tag_width,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -2528,7 +2924,7 @@ fn isReflectionCall(name: []const u8) bool {
         .is_identity,
         .error_name,
         .vector_lanes,
-        .@"__sx_variant_tag_width",
+        .__sx_variant_tag_width,
         .any_element,
         .raw_any_data,
         .raw_make_any,
@@ -3430,19 +3826,57 @@ pub fn reflectionErrorSentinel(self: *Lowering, name: []const u8) Ref {
     return self.builder.constInt(0, .i64);
 }
 
+/// Clone one declared default into this call. Ordinary defaults carry the
+/// function author's source so `lowerExpr` resolves their bare names under the
+/// signature's authority. `#caller_location` is the deliberate exception: it
+/// is re-authored at the call site, preserving caller file/span/function.
+fn defaultArgAtCall(
+    self: *Lowering,
+    dflt: *const Node,
+    author_source: ?[]const u8,
+    call_site: *const Node,
+) ?*Node {
+    const n = self.alloc.create(Node) catch return null;
+    n.* = dflt.*;
+    if (dflt.data == .caller_location) {
+        n.span = call_site.span;
+        n.source_file = call_site.source_file orelse self.current_source_file;
+    } else {
+        const caller_site = lower.DefaultCallSite{
+            .source = call_site.source_file orelse self.current_source_file,
+            .span = call_site.span,
+            .caller_func = self.builder.func,
+        };
+        if (author_source orelse self.current_source_file) |src| n.source_file = src;
+        self.authored_call_defaults.put(n, caller_site) catch return null;
+    }
+    return n;
+}
+
 /// After args have been lowered, append the lowered values of any
 /// `param: T = default_expr` defaults for positions past `args.items.len`.
 /// Stops at the first param without a default. Used at method-dispatch
 /// sites whose callee is a field_access (so `expandCallDefaults` can't
-/// handle them up front). The default expression is lowered in the
-/// caller's current scope, so identifiers like `context.allocator`
-/// resolve to the caller's runtime context.
-pub fn appendDefaultArgs(self: *Lowering, fd: *const ast.FnDecl, args: *std.ArrayList(Ref)) void {
+/// handle them up front). Defaults resolve under the declaration author's
+/// source; caller bindings do not implicitly capture into a callee signature.
+pub fn appendDefaultArgs(self: *Lowering, fd: *const ast.FnDecl, args: *std.ArrayList(Ref), call_site: *const Node) void {
     if (args.items.len >= fd.params.len) return;
     var i: usize = args.items.len;
     while (i < fd.params.len) : (i += 1) {
         const dflt = fd.params[i].default_expr orelse break;
-        const v = self.lowerExpr(dflt);
+
+        // Defaults are argument expressions too: give aggregate/enum/null
+        // shorthand the declaration's parameter target instead of leaking an
+        // ambient target from the enclosing caller. Resolve the type in the
+        // function author's source (resolveDeclParamType owns that pin). The
+        // default cannot capture caller locals; contextual values such as
+        // `context.allocator` resolve through the implicit context channel.
+        const saved_target = self.target_type;
+        const param_ty = self.resolveDeclParamType(fd, i);
+        self.target_type = if (param_ty == .unresolved or param_ty == .void) null else param_ty;
+        const authored = defaultArgAtCall(self, dflt, fd.body.source_file, call_site) orelse break;
+        const v = self.lowerExpr(authored);
+        self.target_type = saved_target;
         args.append(self.alloc, v) catch unreachable;
     }
 }
@@ -3584,7 +4018,13 @@ fn fnDeclHasVariadicParam(fd: *const ast.FnDecl) bool {
 /// callee's signature provides defaults for them, return a fresh Call
 /// node with the defaults filled in. Returns null when no expansion is
 /// needed (callee unknown, all args provided, or no defaults available).
-pub fn expandCallDefaults(self: *Lowering, c: *const ast.Call, sel_author: ?*const SelectedFunc, author_ambiguous: bool) ?*ast.Call {
+pub fn expandCallDefaults(
+    self: *Lowering,
+    c: *const ast.Call,
+    sel_author: ?*const SelectedFunc,
+    qualified_selected: bool,
+    author_ambiguous: bool,
+) ?*ast.Call {
     const fd = blk: {
         switch (c.callee.data) {
             .identifier => |id| {
@@ -3622,18 +4062,39 @@ pub fn expandCallDefaults(self: *Lowering, c: *const ast.Call, sel_author: ?*con
             // (arg/param counts are offset), so it's excluded: only treat the
             // receiver as a namespace when it isn't a value in scope.
             .field_access => |fa| {
+                // An exact namespace author was selected once at lowerCall's
+                // entry. Its declaration is the sole source of defaults; do
+                // not rediscover the path through qualified/bare maps here.
+                if (qualified_selected) break :blk sel_author.?.decl;
+                // Static plain-struct methods need their OWN author's defaults.
+                // Selecting after global expansion is too late: the wrong AST
+                // default may already have been evaluated and appended.
+                if (!self.callResolver().objectIsValue(fa.object)) {
+                    switch (self.staticStructHead(fa.object)) {
+                        .resolved => |owner_ty| {
+                            if (self.plainStructMethod(owner_ty, fa.field)) |method| break :blk method.fd;
+                            if (self.hasPlainStructAuthor(owner_ty)) return null;
+                        },
+                        // A doomed type head must not splice (and later
+                        // evaluate) a default from an unrelated global winner.
+                        .ambiguous, .not_visible => return null,
+                        .none => {},
+                    }
+                }
                 const obj_name: ?[]const u8 = switch (fa.object.data) {
                     .identifier => |id| id.name,
                     .type_expr => |te| te.name,
                     else => null,
                 };
                 const name = obj_name orelse return null;
-                if (self.scope) |scope| {
-                    if (scope.lookup(name) != null) return null; // method call on a value
-                }
-                if (self.program_index.global_names.contains(name)) return null;
+                if (self.identifierBindsVisibleValue(name)) return null;
                 const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ name, fa.field }) catch fa.field;
                 break :blk self.program_index.fn_ast_map.get(qualified) orelse self.program_index.fn_ast_map.get(fa.field) orelse return null;
+            },
+            .enum_literal => |el| {
+                const tgt = self.target_type orelse return null;
+                const method = self.plainStructMethod(tgt, el.name) orelse return null;
+                break :blk method.fd;
             },
             else => return null,
         }
@@ -3665,18 +4126,10 @@ pub fn expandCallDefaults(self: *Lowering, c: *const ast.Call, sel_author: ?*con
     var new_args = self.alloc.alloc(*ast.Node, c.args.len + fill) catch return null;
     for (c.args, 0..) |arg, i| new_args[i] = arg;
     var i: usize = 0;
+    const default_source: ?[]const u8 = if (sel_author) |sf| sf.source else fd.body.source_file;
     while (i < fill) : (i += 1) {
         const def = fd.params[supplied + i].default_expr.?;
-        // `#caller_location` resolves at the CALL site, not the callee's
-        // signature: emit a fresh marker carrying the call's span + file so
-        // lowering synthesizes the caller's `Source_Location` (ERR E4.1b).
-        if (def.data == .caller_location) {
-            const n = self.alloc.create(ast.Node) catch return null;
-            n.* = .{ .span = c.callee.span, .data = .{ .caller_location = {} }, .source_file = c.callee.source_file };
-            new_args[c.args.len + i] = n;
-        } else {
-            new_args[c.args.len + i] = def;
-        }
+        new_args[c.args.len + i] = defaultArgAtCall(self, def, default_source, c.callee) orelse return null;
     }
     const new_call = self.alloc.create(ast.Call) catch return null;
     new_call.* = .{ .callee = c.callee, .args = new_args };
@@ -3755,17 +4208,60 @@ fn astCalleeParamTypes(self: *Lowering, fd: *const ast.FnDecl, args: []const *co
         self.type_bindings = gbindings.?;
     }
     var types_list = std.ArrayList(TypeId).empty;
-    for (fd.params) |p| {
-        types_list.append(self.alloc, self.resolveParamTypeInSource(fd.body.source_file, &p)) catch unreachable;
+    for (fd.params, 0..) |_, param_idx| {
+        types_list.append(self.alloc, self.resolveDeclParamType(fd, param_idx)) catch unreachable;
     }
     return types_list.items;
 }
 
-pub fn resolveCallParamTypes(self: *Lowering, c: *const ast.Call, sel_author: ?*SelectedFunc) []const TypeId {
+pub fn resolveCallParamTypes(
+    self: *Lowering,
+    c: *const ast.Call,
+    sel_author: ?*SelectedFunc,
+    qualified_selected: bool,
+    qualified_callable: ?GlobalInfo,
+) []const TypeId {
+    // Target-typed static method shorthand (`.make(args)` where the expected
+    // type is a struct) has no receiver: every declared param is supplied by
+    // the written args, exactly like `Type.make(args)`.
+    if (c.callee.data == .enum_literal) {
+        const tgt = self.target_type orelse return &.{};
+        const method = self.plainStructMethod(tgt, c.callee.data.enum_literal.name) orelse return &.{};
+        return astCalleeParamTypes(self, method.fd, c.args);
+    }
     // Method calls: obj.method(args) — resolve param types from the method signature,
     // skipping the first param (self) since it's prepended later.
     if (c.callee.data == .field_access) {
         const fa = c.callee.data.field_access;
+
+        // An exactly-selected namespace global keeps its callable type and
+        // source identity; no same-name bare/global lookup participates.
+        if (qualified_callable) |global| {
+            if (!global.ty.isBuiltin()) {
+                const ti = self.module.types.get(global.ty);
+                if (ti == .closure) return ti.closure.params;
+                if (ti == .function) return ti.function.params;
+            }
+            return &.{};
+        }
+
+        // Exact namespace selection precedes every name-keyed signature path.
+        // Args map directly to all declared params (no receiver prepend).
+        if (qualified_selected) return astCalleeParamTypes(self, sel_author.?.decl, c.args);
+
+        // Static plain-struct method: all declared params are user args. Select
+        // by the source-aware type head before namespace/global name lookup.
+        if (!self.callResolver().objectIsValue(fa.object)) {
+            switch (self.staticStructHead(fa.object)) {
+                .resolved => |owner_ty| {
+                    if (self.plainStructMethod(owner_ty, fa.field)) |method|
+                        return astCalleeParamTypes(self, method.fd, c.args);
+                    if (self.hasPlainStructAuthor(owner_ty)) return &.{};
+                },
+                .ambiguous, .not_visible => return &.{},
+                .none => {},
+            }
+        }
 
         // Namespace/static call: `Type.method(args)` where `Type` is a type
         // identifier (not a value in scope). Args correspond to ALL params
@@ -3774,13 +4270,8 @@ pub fn resolveCallParamTypes(self: *Lowering, c: *const ast.Call, sel_author: ?*
         // for `xx ptr` inline-cast args.
         if (fa.object.data == .identifier) {
             const obj_name = fa.object.data.identifier.name;
-            const is_value = blk: {
-                if (self.scope) |scope| {
-                    if (scope.lookup(obj_name) != null) break :blk true;
-                }
-                if (self.program_index.global_names.contains(obj_name)) break :blk true;
-                break :blk false;
-            };
+            var selected_namespace_fd: ?*const ast.FnDecl = null;
+            const is_value = self.identifierBindsVisibleValue(obj_name);
             if (!is_value) {
                 // Resolve the member from the selected namespace target before
                 // consulting process-global qualified/bare maps. This includes
@@ -3792,6 +4283,7 @@ pub fn resolveCallParamTypes(self: *Lowering, c: *const ast.Call, sel_author: ?*
                 switch (self.namespaceAliasVerdict(obj_name)) {
                     .target => |target| {
                         if (self.namespaceFnMember(&target, fa.field)) |fd| {
+                            selected_namespace_fd = fd;
                             // Plain/generic/builtin aliases already have
                             // qualified planning paths that bind/substitute
                             // their parameters. Only extern aliases collapse
@@ -3811,6 +4303,16 @@ pub fn resolveCallParamTypes(self: *Lowering, c: *const ast.Call, sel_author: ?*
                 if (self.program_index.fn_ast_map.get(qualified)) |fd| {
                     return astCalleeParamTypes(self, fd, c.args);
                 }
+                // A plain function re-export may collapse to its terminal
+                // symbol without registering an outer `alias.member` AST key
+                // (notably a multi-hop facade such as
+                // `fs.delete_file :: backend.delete_file`). Dispatch already
+                // follows namespaceFnMember to that terminal declaration; use
+                // the SAME selected declaration as the final signature
+                // fallback. Leaving the arg target empty makes explicit `xx`
+                // casts materialize `.unresolved` loads that survive to LLVM.
+                if (selected_namespace_fd) |fd|
+                    return astCalleeParamTypes(self, fd, c.args);
             }
         }
 
@@ -3901,6 +4403,18 @@ pub fn resolveCallParamTypes(self: *Lowering, c: *const ast.Call, sel_author: ?*
                     return &.{};
                 }
             }
+
+            // Plain nominal struct: resolve the selected author's signature,
+            // with the receiver prepended for generic binding, then elide the
+            // receiver slot from the user-argument target types.
+            if (self.plainStructMethod(obj_ty, fa.field)) |method| {
+                const eff_args = self.alloc.alloc(*const Node, c.args.len + 1) catch return &.{};
+                eff_args[0] = fa.object;
+                for (c.args, 0..) |a, i| eff_args[i + 1] = a;
+                const all = astCalleeParamTypes(self, method.fd, eff_args);
+                return if (all.len > 0) all[1..] else &.{};
+            }
+            if (self.hasPlainStructAuthor(obj_ty)) return &.{};
 
             const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sname, fa.field }) catch return &.{};
             // Try already-lowered functions first

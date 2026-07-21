@@ -46,6 +46,11 @@ pub const UnknownTypeChecker = struct {
     types: *TypeTable,
     index: *ProgramIndex,
     main_file: ?[]const u8,
+    /// Source that authors the declaration currently being checked. This is
+    /// semantic lookup authority, kept separate from the diagnostic renderer's
+    /// mutable current file so a previously visited facade cannot reclassify a
+    /// main-file protocol constraint (issue 0328).
+    author_source: ?[]const u8 = null,
     /// Declared error-set names (`E :: error { ... }`) gathered across every
     /// compiled module + nested scope. Populated in `run`; consulted by the
     /// `.error_type_expr` arm of `checkTypeNodeForUnknown` to tell a valid
@@ -96,18 +101,23 @@ pub const UnknownTypeChecker = struct {
                 }
             }
             // Render against the decl's own module, not the ambient file the
-            // previous phase left behind (issue 0122).
-            if (decl.source_file) |sf| self.diagnostics.current_source_file = sf;
+            // previous phase left behind (issue 0122). Main-file AST nodes are
+            // intentionally unstamped, so null means `main_file`; it is not
+            // permission to retain whichever facade was visited last (0328).
+            const author_source = decl.source_file orelse self.main_file;
+            if (author_source) |sf| self.diagnostics.current_source_file = sf;
+            var decl_checker = checker;
+            decl_checker.author_source = author_source;
             switch (decl.data) {
-                .fn_decl => checker.checkFnSignatureTypes(&decl.data.fn_decl, &declared),
-                .struct_decl => |sd| checker.checkStructDeclTypes(&sd, &declared),
+                .fn_decl => decl_checker.checkFnSignatureTypes(&decl.data.fn_decl, &declared),
+                .struct_decl => |sd| decl_checker.checkStructDeclTypes(&sd, &declared),
                 .impl_block => |ib| for (ib.methods) |method| {
-                    if (method.data == .fn_decl) checker.checkFnSignatureTypes(&method.data.fn_decl, &declared);
+                    if (method.data == .fn_decl) decl_checker.checkFnSignatureTypes(&method.data.fn_decl, &declared);
                 },
-                .var_decl => |vd| if (vd.value) |v| checker.checkTopLevelValue(v, &declared),
+                .var_decl => |vd| if (vd.value) |v| decl_checker.checkTopLevelValue(v, &declared),
                 .const_decl => |cd| switch (cd.value.data) {
-                    .fn_decl => checker.checkFnSignatureTypes(&cd.value.data.fn_decl, &declared),
-                    .struct_decl => |sd| checker.checkStructDeclTypes(&sd, &declared),
+                    .fn_decl => decl_checker.checkFnSignatureTypes(&cd.value.data.fn_decl, &declared),
+                    .struct_decl => |sd| decl_checker.checkStructDeclTypes(&sd, &declared),
                     // A COMPOSITE type alias — tuple / array / slice / optional
                     // / pointer / many-pointer / function / closure RHS
                     // (`NT :: Tuple(a: i64, b: bool)` issue 0196;
@@ -128,8 +138,8 @@ pub const UnknownTypeChecker = struct {
                     .many_pointer_type_expr,
                     .function_type_expr,
                     .closure_type_expr,
-                    => checker.checkTypeNodeForUnknown(cd.value, &declared, &.{}, &.{}, false),
-                    else => checker.checkTopLevelValue(cd.value, &declared),
+                    => decl_checker.checkTypeNodeForUnknown(cd.value, &declared, &.{}, &.{}, false),
+                    else => decl_checker.checkTopLevelValue(cd.value, &declared),
                 },
                 else => {},
             }
@@ -844,8 +854,12 @@ pub const UnknownTypeChecker = struct {
         if (tp.is_variadic) return true;
         if (tp.constraint.data == .type_expr) {
             const cname = tp.constraint.data.type_expr.name;
-            return std.mem.eql(u8, cname, "Type") or
-                self.index.protocol_decl_map.contains(cname) or
+            if (std.mem.eql(u8, cname, "Type")) return true;
+            if (self.lowering) |l| {
+                const source = tp.constraint.source_file orelse self.author_source orelse self.diagnostics.current_source_file;
+                return l.isProtocolConstraint(cname, source);
+            }
+            return self.index.protocol_decl_map.contains(cname) or
                 self.index.protocol_ast_map.contains(cname);
         }
         return false;

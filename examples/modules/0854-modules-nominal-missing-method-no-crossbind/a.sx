@@ -1,0 +1,4 @@
+Thing :: struct {
+    n: i64;
+    make :: () -> Thing { .{ n = 7 } }
+}

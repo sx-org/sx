@@ -1,0 +1,11 @@
+error: unresolved 'only_b' (in examples/modules/0854-modules-nominal-missing-method-no-crossbind.sx fn main)
+  --> examples/modules/0854-modules-nominal-missing-method-no-crossbind.sx:11:10
+   |
+11 |     _ := av.only_b();
+   |          ^^^^^^^^^
+
+error: unresolved 'static_b' (in examples/modules/0854-modules-nominal-missing-method-no-crossbind.sx fn main)
+  --> examples/modules/0854-modules-nominal-missing-method-no-crossbind.sx:12:10
+   |
+12 |     _ := a.Thing.static_b();
+   |          ^^^^^^^^^^^^^^^^

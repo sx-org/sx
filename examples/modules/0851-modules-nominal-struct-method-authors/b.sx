@@ -1,0 +1,45 @@
+BState :: struct { b: bool; }
+BArg :: struct { enabled: bool; }
+BResult :: struct { value: bool; }
+Ord :: enum { one; two; }
+
+Thing :: struct {
+    state: BState;
+
+    init :: () -> Thing { Thing.{ state = .{ b = true } } }
+    from :: (arg: BArg = .{ enabled = false }) -> Thing {
+        Thing.{ state = .{ b = arg.enabled } }
+    }
+    reset :: (self: *Thing) { self.state = BState.{ b = false }; }
+    value :: (self: *Thing) -> bool #get { self.state.b }
+    value :: (self: *Thing, v: bool) #set { self.state.b = v; }
+    wrap :: (self: *Thing, $T: Type, v: T) -> BResult {
+        BResult.{ value = self.state.b and size_of(T) > 0 }
+    }
+    pick :: (self: *Thing, $o: Ord) -> bool {
+        if o == .one { return self.state.b; }
+        !self.state.b
+    }
+    mix :: (self: *Thing, arg: BArg, $o: Ord) -> bool {
+        if o == .one { return self.state.b and arg.enabled; }
+        self.state.b or arg.enabled
+    }
+    after_pick :: (self: *Thing, other: *Thing) -> bool {
+        _ := other.pick(.one);
+        self.state.b
+    }
+    count :: (self: *Thing, ..$args) -> bool { self.state.b and args.len == 2 }
+    static_pick :: ($o: Ord) -> bool { o == .one }
+    static_count :: (..$args) -> bool { args.len == 2 }
+}
+
+use :: () -> bool {
+    value := Thing.init();
+    value.reset();
+    value.value = true;
+    made := Thing.from();
+    wrapped := value.wrap(i32, 0);
+    short : Thing = .from();
+    if short.value { return false; }
+    value.value and !made.value and wrapped.value
+}

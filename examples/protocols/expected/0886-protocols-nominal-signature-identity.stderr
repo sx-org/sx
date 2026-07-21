@@ -1,0 +1,5 @@
+error: 'Thing' does not implement protocol 'P': method 'take' has a mismatched signature — parameter 'payload': protocol declares 'Payload', impl declares 'Payload' (same spelling, distinct nominal declarations) (a protocol-method impl must match the protocol's declared types exactly, with `Self` written as `Thing`)
+  --> examples/protocols/0886-protocols-nominal-signature-identity.sx:11:18
+   |
+11 |     erased : P = xx value;
+   |                  ^^^^^^^^

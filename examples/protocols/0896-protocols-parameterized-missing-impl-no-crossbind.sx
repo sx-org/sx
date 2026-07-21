@@ -1,0 +1,18 @@
+// A concrete parameterized-protocol impl is keyed by protocol instance plus
+// nominal TypeId. A distinct same-display-name type cannot satisfy erasure by
+// borrowing the first type's flat `Thing.get` compatibility entry.
+
+#import "0896-protocols-parameterized-missing-impl-no-crossbind/contract.sx";
+a :: #import "0896-protocols-parameterized-missing-impl-no-crossbind/a.sx";
+b :: #import "0896-protocols-parameterized-missing-impl-no-crossbind/b.sx";
+
+main :: () -> i32 {
+    av := a.make();
+    ap : Value(i64) = xx av;
+    if ap.get() != 11 { return 1; }
+
+    bv := b.make();
+    bp : Value(i64) = xx bv;
+    _ = bp;
+    0
+}

@@ -1,0 +1,22 @@
+// An impl may name a protocol through an alias declared later. Registration is
+// retried after the alias fixpoint and keyed by the canonical protocol.
+// Regression (issue 0320 adversarial review).
+
+P :: protocol #identity {
+    value :: (self: *Self) -> i64;
+}
+
+Thing :: struct { n: i64; }
+
+impl Alias for Thing {
+    value :: (self: *Thing) -> i64 { self.n }
+}
+
+Alias :: P;
+
+main :: () -> i32 {
+    value := Thing.{ n = 42 };
+    erased : P = xx value;
+    if erased.value() != 42 { return 1; }
+    0
+}

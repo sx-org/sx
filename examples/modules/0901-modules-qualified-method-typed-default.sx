@@ -1,0 +1,12 @@
+// An omitted method default is lowered at the call site, but its shorthand
+// literal must retain the parameter type authored by the imported nominal
+// method. The enclosing `main -> i32` target must not turn `.{} ` into i32.
+
+api :: #import "0901-modules-qualified-method-typed-default/api.sx";
+
+main :: () -> i32 {
+    writer := api.Writer.init();
+    writer.add(5) catch { return 1; };
+    if writer.total == 12 { return 0; }
+    2
+}

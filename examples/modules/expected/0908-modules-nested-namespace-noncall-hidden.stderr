@@ -1,0 +1,41 @@
+error: namespace 'facade' has no member 'engine_alias'
+  --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:9:17
+   |
+ 9 |     annotated : facade.engine_alias.Record = ---;
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'engine_alias'
+  --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:10:16
+   |
+10 |     literal := facade.engine_alias.Record.{ value = 1 };
+   |                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'engine_alias'
+  --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:11:17
+   |
+11 |     constant := facade.engine_alias.COUNT;
+   |                 ^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'engine_alias'
+  --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:12:16
+   |
+12 |     variant := facade.engine_alias.Kind.selected;
+   |                ^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'engine_alias'
+  --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:13:15
+   |
+13 |     generic : facade.engine_alias.Box(i64) = ---;
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'engine_alias'
+  --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:14:12
+   |
+14 |     made : facade.engine_alias.Make(i64) = ---;
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'engine_alias'
+  --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:15:5
+   |
+15 |     facade.engine_alias.STATE = 1;
+   |     ^^^^^^^^^^^^^^^^^^^

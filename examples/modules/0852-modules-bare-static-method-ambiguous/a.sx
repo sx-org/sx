@@ -1,0 +1,1 @@
+Thing :: struct { init :: () -> Thing { .{} } }

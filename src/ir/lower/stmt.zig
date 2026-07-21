@@ -999,7 +999,6 @@ fn reorderNamedReturn(self: *Lowering, value_node: *const Node, ret_ty: TypeId) 
     return node;
 }
 
-
 /// A bare `.{ … }` in a TUPLE-returning position behaves as the old `.( )`
 /// tuple literal — rewrite the node shape so every downstream intercept
 /// (multi-return arity validation, named-element reorder, the
@@ -1110,7 +1109,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt) void {
                 self.module.types.get(iri.ret_ty) == .tuple and
                 self.errorChannelOf(iri.ret_ty) != null)
             {
-                self.emitBlockDefers(self.func_defer_base);
+                emitReturnDefers(self, self.func_defer_base);
                 self.lowerFailableSuccessReturn(ref, iri.ret_ty, rs.value.?.span);
                 return;
             }
@@ -1127,13 +1126,13 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt) void {
         }
         // Drain block-scoped defers up to the inlined-body base so
         // they fire on this return path the same as a real fn return.
-        self.emitBlockDefers(self.func_defer_base);
+        emitReturnDefers(self, self.func_defer_base);
         self.builder.br(iri.done_bb, &.{});
         return;
     }
 
     // Emit ALL pending defers for THIS function in LIFO order before the return
-    self.emitBlockDefers(self.func_defer_base);
+    emitReturnDefers(self, self.func_defer_base);
 
     if (ret_val) |ref| {
         const ret_ty = if (self.builder.func) |fid|
@@ -1300,21 +1299,270 @@ fn diagNonstoreBindingAssign(self: *Lowering, span: ast.Span, name: []const u8, 
 /// diagnostic was produced (const/fn/unresolved target); the caller stops.
 const QualifiedStore = enum { not_applicable, handled };
 
-/// Store through `alias.member = val` (or `alias.member OP= val`) where
-/// `alias` is a namespace-import edge and `member` is a MUTABLE global of the
-/// target module — the write counterpart of the module-alias member READ path
-/// in `lowerFieldAccess` (expr.zig). Without this arm the base `alias` lowered
-/// as a value expression and failed "unresolved 'alias'" (issue 0223): a
-/// module alias is not a value. Resolves the member as a global in the
-/// TARGET module's visibility context (mirroring the read path's
-/// `setCurrentSourceFile(target.target_module_path)` switch) and emits
-/// `global_set`. A qualified CONST or FUNCTION member is rejected cleanly
-/// (never silently dropped). `op == .assign` for a plain store; a compound op
-/// loads-op-stores through the global's type.
+/// Exact mutable-global slot selected from a complete qualified lvalue before
+/// its RHS is lowered. `field` is present for `a.b.GLOBAL.member`; otherwise the
+/// slot is the global itself. Carrying this descriptor through the store keeps
+/// target typing and final emission on the same author/field identity.
+const QualifiedGlobalStoreTarget = struct {
+    const Field = struct { name: []const u8, index: u32, ty: TypeId };
+
+    global: program_index_mod.GlobalInfo,
+    member: []const u8,
+    field: ?Field = null,
+
+    fn valueType(self: QualifiedGlobalStoreTarget) TypeId {
+        return if (self.field) |f| f.ty else self.global.ty;
+    }
+};
+
+/// Complete pre-RHS verdict for a namespace-qualified assignment target.
+/// Once a namespace path is proved, every failure is terminal and may not
+/// fall through to ordinary field lowering after the RHS has run.
+const QualifiedGlobalStoreVerdict = union(enum) {
+    not_applicable,
+    target: QualifiedGlobalStoreTarget,
+    missing: struct { namespace: []const u8, member: []const u8, span: ast.Span },
+    ambiguous: struct { alias: []const u8, span: ast.Span },
+    immutable: struct { name: []const u8, span: ast.Span },
+    non_lvalue: struct { name: []const u8, span: ast.Span, is_function: bool },
+};
+
+fn qualifiedStorePathSpan(node: *const Node, path: []const u8, part: []const u8) ast.Span {
+    const off = @intFromPtr(part.ptr) - @intFromPtr(path.ptr);
+    const logical_end = @min(path.len, off + part.len);
+    const source_width: usize = node.span.end -| node.span.start;
+    return .{
+        .start = node.span.start,
+        .end = node.span.start + @as(u32, @intCast(@min(source_width, logical_end))),
+    };
+}
+
+fn qualifiedStoreTerminalSpan(node: *const Node, member: []const u8) ast.Span {
+    const width: u32 = @intCast(@min(member.len, node.span.end -| node.span.start));
+    return .{ .start = node.span.end - width, .end = node.span.end };
+}
+
+fn selectedQualifiedGlobal(self: *Lowering, selected: Lowering.QualifiedMember) ?program_index_mod.GlobalInfo {
+    if (selected.author.raw == .var_decl) {
+        if (self.global_decl_infos.get(selected.author.raw.var_decl)) |global| return global;
+    }
+    if (self.program_index.globals_by_source.get(selected.author.source)) |inner| {
+        if (inner.get(selected.member)) |global| return global;
+    }
+    if (self.program_index.globals_by_source.get(selected.target.target_module_path)) |inner| {
+        if (inner.get(selected.member)) |global| return global;
+    }
+
+    // Some registrations are deliberately deduplicated (notably extern
+    // globals), so the per-source partition may have no row. Re-run only the
+    // source-aware author selector while pinned to the exact selected module;
+    // never consume the process-global winner directly.
+    const saved_source = self.current_source_file;
+    self.setCurrentSourceFile(selected.author.source);
+    const resolved: ?program_index_mod.GlobalInfo = if (self.program_index.global_names.get(selected.member)) |fallback|
+        switch (self.selectGlobalAuthor(selected.member)) {
+            .resolved => |global| global,
+            .untracked => if (selected.author.raw == .var_decl) fallback else null,
+            .not_a_global, .ambiguous, .not_visible => null,
+        }
+    else
+        null;
+    self.setCurrentSourceFile(saved_source);
+    return resolved;
+}
+
+/// Diagnostic-free preselection for a namespace-qualified mutable global. It
+/// proves every namespace edge, selects the exact authored slot, and retains
+/// invalid/ambiguous/immutable outcomes for diagnosis before RHS evaluation.
+fn selectQualifiedGlobalStoreTarget(self: *Lowering, node: *const Node) QualifiedGlobalStoreVerdict {
+    if (node.data != .field_access) return .not_applicable;
+    const fa = node.data.field_access;
+    const full_path = self.qualifiedTypeName(node) orelse return .not_applicable;
+
+    const root_end = std.mem.indexOfScalar(u8, full_path, '.') orelse {
+        self.alloc.free(full_path);
+        return .not_applicable;
+    };
+    if (self.identifierBindsVisibleValue(full_path[0..root_end])) {
+        self.alloc.free(full_path);
+        return .not_applicable;
+    }
+
+    var selected: Lowering.QualifiedMember = undefined;
+    var nested_field: ?[]const u8 = null;
+    switch (self.qualifiedMemberVerdict(full_path)) {
+        .selected => |sel| selected = sel,
+        .missing => |m| return .{ .missing = .{
+            .namespace = m.namespace,
+            .member = m.member,
+            .span = qualifiedStorePathSpan(node, full_path, m.member),
+        } },
+        .ambiguous => |alias| return .{ .ambiguous = .{
+            .alias = alias,
+            .span = qualifiedStorePathSpan(node, full_path, alias),
+        } },
+        .not_qualified => {
+            const object_path = self.qualifiedTypeName(fa.object) orelse return .not_applicable;
+            nested_field = fa.field;
+            switch (self.qualifiedMemberVerdict(object_path)) {
+                .selected => |sel| {
+                    selected = sel;
+                    self.alloc.free(object_path);
+                },
+                .not_qualified => {
+                    self.alloc.free(object_path);
+                    return .not_applicable;
+                },
+                .missing => |m| return .{ .missing = .{
+                    .namespace = m.namespace,
+                    .member = m.member,
+                    .span = qualifiedStorePathSpan(fa.object, object_path, m.member),
+                } },
+                .ambiguous => |alias| return .{ .ambiguous = .{
+                    .alias = alias,
+                    .span = qualifiedStorePathSpan(fa.object, object_path, alias),
+                } },
+            }
+        },
+    }
+
+    const diagnostic_name = full_path;
+    const terminal = nested_field orelse selected.member;
+    if (selected.author.raw == .const_decl) return .{ .immutable = .{
+        .name = diagnostic_name,
+        .span = qualifiedStoreTerminalSpan(node, terminal),
+    } };
+    if (selected.author.raw != .var_decl) return .{ .non_lvalue = .{
+        .name = diagnostic_name,
+        .span = qualifiedStoreTerminalSpan(node, terminal),
+        .is_function = selected.author.raw == .fn_decl,
+    } };
+
+    var gi = selectedQualifiedGlobal(self, selected) orelse return .{ .non_lvalue = .{
+        .name = diagnostic_name,
+        .span = qualifiedStoreTerminalSpan(node, terminal),
+        .is_function = false,
+    } };
+    // The process-wide global registration is a compatibility index and its
+    // cached TypeId can reflect a same-display-name winner. For an annotated
+    // exact var author, resolve the slot type in that declaration's source so
+    // `a.RECORD.b` uses a's nominal layout end to end.
+    if (selected.author.raw == .var_decl) {
+        if (selected.author.raw.var_decl.type_annotation) |annotation| {
+            const exact_ty = self.resolveTypeInSource(selected.author.source, annotation);
+            if (exact_ty != .unresolved) gi.ty = exact_ty;
+        }
+    }
+    if (gi.id.index() < self.module.globals.items.len and self.module.globals.items[gi.id.index()].is_const) {
+        return .{ .immutable = .{
+            .name = diagnostic_name,
+            .span = qualifiedStoreTerminalSpan(node, terminal),
+        } };
+    }
+
+    var field: ?QualifiedGlobalStoreTarget.Field = null;
+    if (nested_field) |field_name| {
+        const wanted = self.module.types.internString(field_name);
+        for (self.getStructFields(gi.ty), 0..) |f, i| {
+            if (f.name != wanted) continue;
+            field = .{ .name = field_name, .index = @intCast(i), .ty = f.ty };
+            break;
+        }
+        if (field == null) return .{ .non_lvalue = .{
+            .name = diagnostic_name,
+            .span = qualifiedStoreTerminalSpan(node, field_name),
+            .is_function = false,
+        } };
+    }
+
+    const stable_member = if (nested_field != null)
+        switch (fa.object.data) {
+            .field_access => |object_fa| object_fa.field,
+            else => return .not_applicable,
+        }
+    else
+        fa.field;
+    self.alloc.free(full_path);
+    return .{ .target = .{
+        .global = gi,
+        .member = stable_member,
+        .field = field,
+    } };
+}
+
+fn diagnoseQualifiedStoreVerdict(self: *Lowering, verdict: QualifiedGlobalStoreVerdict) bool {
+    switch (verdict) {
+        .not_applicable, .target => return false,
+        .missing => |m| if (self.diagnostics) |d|
+            d.addFmt(.err, m.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member }),
+        .ambiguous => |amb| if (self.diagnostics) |d|
+            d.addFmt(.err, amb.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{amb.alias}),
+        .immutable => |bad| if (self.diagnostics) |d|
+            d.addFmt(.err, bad.span, "cannot assign to '{s}' — it is a constant, not a mutable global", .{bad.name}),
+        .non_lvalue => |bad| if (self.diagnostics) |d| {
+            if (bad.is_function)
+                d.addFmt(.err, bad.span, "cannot assign to '{s}' — it is a function, not a mutable global", .{bad.name})
+            else
+                d.addFmt(.err, bad.span, "cannot assign to '{s}' — it is not a mutable global lvalue", .{bad.name});
+        },
+    }
+    return true;
+}
+
+/// Emit a store through a preselected qualified-global slot. No name lookup is
+/// performed here; target typing and the final write necessarily share the same
+/// `GlobalId`/field descriptor.
+fn lowerSelectedQualifiedGlobalStore(
+    self: *Lowering,
+    target: QualifiedGlobalStoreTarget,
+    op: ast.Assignment.Op,
+    val: Ref,
+    val_span: ast.Span,
+    val_node: *const Node,
+) void {
+    if (target.field) |field| {
+        const val_ty = self.builder.getRefType(val);
+        if (op == .assign and !self.checkAssignable(val_ty, field.ty, val_span, "assign", field.name, val_node)) return;
+        const base = self.builder.emit(.{ .global_addr = target.global.id }, self.module.types.ptrTo(target.global.ty));
+        const ptr = self.builder.structGepTyped(base, field.index, self.module.types.ptrTo(field.ty), target.global.ty);
+        self.storeOrCompound(ptr, val, op, field.ty);
+        return;
+    }
+
+    if (op == .assign) {
+        const val_ty = self.builder.getRefType(val);
+        if (val_ty != target.global.ty and val_ty != .void and target.global.ty != .void) {
+            if (!self.checkAssignable(val_ty, target.global.ty, val_span, "assign", target.member, val_node)) return;
+        }
+        const store_val = if (val_ty != target.global.ty and val_ty != .void and target.global.ty != .void)
+            self.coerceToType(val, val_ty, target.global.ty)
+        else
+            val;
+        self.builder.emitVoid(.{ .global_set = .{ .global = target.global.id, .value = store_val } }, .void);
+    } else {
+        const loaded = self.builder.emit(.{ .global_get = target.global.id }, target.global.ty);
+        const result = self.emitCompoundOp(loaded, val, op, target.global.ty);
+        self.builder.emitVoid(.{ .global_set = .{ .global = target.global.id, .value = result } }, .void);
+    }
+}
+
+/// Store through `alias.member = val` / `facade.inner.member = val` (or the
+/// compound-assignment equivalents) where the complete prefix resolves to a
+/// namespace target and `member` is one of that exact target's MUTABLE globals.
+/// This is the write counterpart of the full-path module-member READ path in
+/// `lowerFieldAccess` (expr.zig). Every nested namespace edge is proved under
+/// the own-or-one-direct-flat carry rule before the terminal member is selected;
+/// no dotted segment is stripped into a global bare-name lookup (issue 0325).
+///
+/// An ordinary target-owned intermediate deliberately remains a non-namespace
+/// boundary: `alias.global.field = val` first selects the exact qualified
+/// `alias.global`, then writes `field` through that global. A qualified CONST or
+/// FUNCTION member is rejected cleanly (never silently dropped). `op == .assign`
+/// for a plain store; a compound op loads-op-stores through the global's type.
 ///
 /// `val` is the already-lowered RHS; `val_span` locates it for coercion
-/// diagnostics. Returns `.not_applicable` (fall through) when the base is not
-/// an identifier or not a namespace alias.
+/// diagnostics. Returns `.not_applicable` (fall through) when the root is not a
+/// namespace alias or is shadowed by an ordinary value/global binding.
 fn tryLowerQualifiedGlobalStore(
     self: *Lowering,
     fa: ast.FieldAccess,
@@ -1324,24 +1572,58 @@ fn tryLowerQualifiedGlobalStore(
     val_span: ast.Span,
     val_node: *const Node,
 ) QualifiedStore {
-    const QualifiedPath = struct { alias: []const u8, member: []const u8, nested: ?[]const u8 };
-    const path: QualifiedPath = switch (fa.object.data) {
-        .identifier => |id| .{ .alias = id.name, .member = fa.field, .nested = @as(?[]const u8, null) },
-        .field_access => |outer| if (outer.object.data == .identifier)
-            .{ .alias = outer.object.data.identifier.name, .member = outer.field, .nested = @as(?[]const u8, fa.field) }
-        else
-            return .not_applicable,
-        else => return .not_applicable,
-    };
-    const alias = path.alias;
-    const member = path.member;
+    const full_node = Node{ .span = span, .data = .{ .field_access = fa } };
+    const full_path = self.qualifiedTypeName(&full_node) orelse return .not_applicable;
+    defer self.alloc.free(full_path);
+    const root_end = std.mem.indexOfScalar(u8, full_path, '.') orelse return .not_applicable;
+    const root = full_path[0..root_end];
+
     // A value binding or a same-named global SHADOWS a namespace alias — those
     // take the ordinary field-store path (mirrors the read-path guards).
-    if (self.scope) |s| {
-        if (s.lookup(alias) != null) return .not_applicable;
-    }
-    if (self.program_index.global_names.contains(alias)) return .not_applicable;
-    const target = self.namespaceAliasTarget(alias, span) orelse return .not_applicable;
+    if (self.identifierBindsVisibleValue(root)) return .not_applicable;
+
+    // Prefer the complete path: `facade.inner.GLOBAL`. When an ordinary member
+    // stops namespace descent (`facade.inner.GLOBAL.field`), prove the complete
+    // object prefix instead and retain only the final field as the lvalue tail.
+    var object_path: ?[]const u8 = null;
+    defer if (object_path) |path| self.alloc.free(path);
+    var nested_field: ?[]const u8 = null;
+    const selected: Lowering.QualifiedMember = switch (self.qualifiedMemberVerdict(full_path)) {
+        .selected => |sel| sel,
+        .missing => |m| {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
+            return .handled;
+        },
+        .ambiguous => |alias| {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+            return .handled;
+        },
+        .not_qualified => blk: {
+            const path = self.qualifiedTypeName(fa.object) orelse return .not_applicable;
+            object_path = path;
+            const sel = switch (self.qualifiedMemberVerdict(path)) {
+                .selected => |s| s,
+                .missing => |m| {
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
+                    return .handled;
+                },
+                .ambiguous => |alias| {
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias});
+                    return .handled;
+                },
+                .not_qualified => return .not_applicable,
+            };
+            nested_field = fa.field;
+            break :blk sel;
+        },
+    };
+    const target = selected.target;
+    const member = selected.member;
+    const qualified_name = object_path orelse full_path;
 
     // Classify + resolve the member in the TARGET module's context — the alias
     // edge authorizes the reach, so visibility is judged as the target's own
@@ -1378,22 +1660,22 @@ fn tryLowerQualifiedGlobalStore(
     // A qualified FUNCTION member (`lib.some_fn = 3`) is not an lvalue.
     if (is_fn) {
         if (self.diagnostics) |d|
-            d.addFmt(.err, span, "cannot assign to '{s}.{s}' — it is a function, not a mutable global", .{ alias, member });
+            d.addFmt(.err, span, "cannot assign to '{s}' — it is a function, not a mutable global", .{qualified_name});
         return .handled;
     }
     // A qualified CONST member (`lib.SOME_CONST = 3`) is immutable.
     if (is_const) {
         if (self.diagnostics) |d|
-            d.addFmt(.err, span, "cannot assign to '{s}.{s}' — it is a constant, not a mutable global", .{ alias, member });
+            d.addFmt(.err, span, "cannot assign to '{s}' — it is a constant, not a mutable global", .{qualified_name});
         return .handled;
     }
 
     // Mutable global of the target module → `global_set` (plain) or
     // load-op-store (compound).
     if (resolved) |gi| {
-        if (path.nested) |field_name| {
+        if (nested_field) |field_name| {
             if (gi.id.index() < self.module.globals.items.len and self.module.globals.items[gi.id.index()].is_const) {
-                if (self.diagnostics) |d| d.addFmt(.err, span, "cannot assign through constant global '{s}.{s}'", .{ alias, member });
+                if (self.diagnostics) |d| d.addFmt(.err, span, "cannot assign through constant global '{s}'", .{qualified_name});
                 return .handled;
             }
             const wanted = self.module.types.internString(field_name);
@@ -1406,7 +1688,7 @@ fn tryLowerQualifiedGlobalStore(
                 self.storeOrCompound(ptr, val, op, field.ty);
                 return .handled;
             }
-            if (self.diagnostics) |d| d.addFmt(.err, span, "field '{s}' not found on global '{s}.{s}'", .{ field_name, alias, member });
+            if (self.diagnostics) |d| d.addFmt(.err, span, "field '{s}' not found on global '{s}'", .{ field_name, qualified_name });
             return .handled;
         }
         if (op == .assign) {
@@ -1443,7 +1725,7 @@ fn tryLowerQualifiedGlobalStore(
     // The alias resolved but the member names nothing storable in the target
     // module — never a silent drop.
     if (self.diagnostics) |d|
-        d.addFmt(.err, span, "unresolved '{s}.{s}' in assignment — no mutable global with this name in the imported module", .{ alias, member });
+        d.addFmt(.err, span, "unresolved '{s}' in assignment — no mutable global with this name in the imported module", .{qualified_name});
     return .handled;
 }
 
@@ -1650,6 +1932,18 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
         if (tryLowerPropertyAssignment(self, asgn)) return;
     }
 
+    // Resolve a namespace-qualified global lvalue before touching the RHS.
+    // Target-directed literals must see this exact author's slot type, and
+    // the eventual store must reuse the same GlobalId instead of resolving
+    // the dotted spelling a second time after RHS lowering changed context.
+    const qualified_store_verdict = selectQualifiedGlobalStoreTarget(self, asgn.target);
+    if (diagnoseQualifiedStoreVerdict(self, qualified_store_verdict)) return;
+    const qualified_store_target: ?QualifiedGlobalStoreTarget = switch (qualified_store_verdict) {
+        .target => |target| target,
+        .not_applicable => null,
+        .missing, .ambiguous, .immutable, .non_lvalue => unreachable,
+    };
+
     // Set target_type from LHS for RHS lowering (enum literals, struct literals, etc.)
     const old_target = self.target_type;
     if (asgn.target.data == .identifier) {
@@ -1686,38 +1980,42 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
         // unchanged into method-call arg slots (`resolveCallParamTypes` can't
         // override target_type per-arg).
         if (rhsNeedsTargetType(asgn.value)) {
-            const fa = asgn.target.data.field_access;
-            const obj_ty_raw = self.inferExprType(fa.object);
-            const obj_ty = if (!obj_ty_raw.isBuiltin()) blk: {
-                const pinfo = self.module.types.get(obj_ty_raw);
-                break :blk if (pinfo == .pointer) pinfo.pointer.pointee else obj_ty_raw;
-            } else obj_ty_raw;
-            // Resolve the LHS member's type via the SAME resolver the lvalue-
-            // pointer path uses (fieldLvalueResolve), so the RHS target type
-            // and the store slot can't diverge. Covers union/tagged-union
-            // direct + promoted members, tuple/vector lanes, and structs —
-            // not just structs (a plain getStructFields loop returned nothing
-            // for a union member, leaving a struct-literal RHS untyped →
-            // struct_init.ty == .unresolved → LLVM-emission panic; issue 0133).
-            if (self.fieldLvalueResolve(obj_ty, fa.field)) |res| {
-                self.target_type = res.valueType();
+            if (qualified_store_target) |target| {
+                self.target_type = target.valueType();
             } else {
-                // The special-container pseudo-fields (`.ptr`/`.len` on
-                // string/slice/array/vector) are not struct fields, so the
-                // resolver returns null — without a target the AMBIENT one
-                // (the enclosing fn's return type, per decl.zig) leaks into
-                // the RHS and mis-types `s.ptr = xx raw` as an xx-to-string
-                // (surfaced by the 0305 explicit-pun refusal). Mirror the
-                // store arm's field types.
-                const is_special = obj_ty == .string or (!obj_ty.isBuiltin() and blk: {
-                    const oi = self.module.types.get(obj_ty);
-                    break :blk oi == .slice or oi == .array or oi == .vector;
-                });
-                if (is_special) {
-                    if (std.mem.eql(u8, fa.field, "ptr")) {
-                        self.target_type = self.module.types.manyPtrTo(self.getElementType(obj_ty));
-                    } else if (std.mem.eql(u8, fa.field, "len")) {
-                        self.target_type = .i64;
+                const fa = asgn.target.data.field_access;
+                const obj_ty_raw = self.inferExprType(fa.object);
+                const obj_ty = if (!obj_ty_raw.isBuiltin()) blk: {
+                    const pinfo = self.module.types.get(obj_ty_raw);
+                    break :blk if (pinfo == .pointer) pinfo.pointer.pointee else obj_ty_raw;
+                } else obj_ty_raw;
+                // Resolve the LHS member's type via the SAME resolver the lvalue-
+                // pointer path uses (fieldLvalueResolve), so the RHS target type
+                // and the store slot can't diverge. Covers union/tagged-union
+                // direct + promoted members, tuple/vector lanes, and structs —
+                // not just structs (a plain getStructFields loop returned nothing
+                // for a union member, leaving a struct-literal RHS untyped →
+                // struct_init.ty == .unresolved → LLVM-emission panic; issue 0133).
+                if (self.fieldLvalueResolve(obj_ty, fa.field)) |res| {
+                    self.target_type = res.valueType();
+                } else {
+                    // The special-container pseudo-fields (`.ptr`/`.len` on
+                    // string/slice/array/vector) are not struct fields, so the
+                    // resolver returns null — without a target the AMBIENT one
+                    // (the enclosing fn's return type, per decl.zig) leaks into
+                    // the RHS and mis-types `s.ptr = xx raw` as an xx-to-string
+                    // (surfaced by the 0305 explicit-pun refusal). Mirror the
+                    // store arm's field types.
+                    const is_special = obj_ty == .string or (!obj_ty.isBuiltin() and blk: {
+                        const oi = self.module.types.get(obj_ty);
+                        break :blk oi == .slice or oi == .array or oi == .vector;
+                    });
+                    if (is_special) {
+                        if (std.mem.eql(u8, fa.field, "ptr")) {
+                            self.target_type = self.module.types.manyPtrTo(self.getElementType(obj_ty));
+                        } else if (std.mem.eql(u8, fa.field, "len")) {
+                            self.target_type = .i64;
+                        }
                     }
                 }
             }
@@ -1756,6 +2054,10 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
     // write-side of issue 0250: bare stores silently no-op'd; indexed / member
     // stores Bus-errored through the enclosing frame's dead alloca.
     if (diagEnclosingRootWrite(self, asgn.target)) return;
+    if (qualified_store_target) |target| {
+        lowerSelectedQualifiedGlobalStore(self, target, asgn.op, val, asgn.value.span, asgn.value);
+        return;
+    }
     switch (asgn.target.data) {
         .identifier => |id| {
             var handled = false;
@@ -2345,6 +2647,29 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             }
         },
         .field_access => |fa| {
+            // A complete namespace-qualified mutable global is one lvalue,
+            // not a recursive field chain rooted at the alias token. Preserve
+            // the exact `VarDecl -> GlobalId` selected by the namespace walk;
+            // recursively lowering `a.one.engine.STATE` would eventually try
+            // to take the address of identifier `a` and diagnose it as an
+            // unresolved runtime value.
+            if (self.qualifiedTypeName(node)) |path| {
+                defer self.alloc.free(path);
+                const root_end = std.mem.indexOfScalar(u8, path, '.') orelse path.len;
+                if (!self.identifierBindsVisibleValue(path[0..root_end])) {
+                    switch (self.qualifiedMemberVerdict(path)) {
+                        .selected => |selected| if (selected.author.raw == .var_decl) {
+                            if (selectedQualifiedGlobal(self, selected)) |global| {
+                                if (!global.ty.isBuiltin() and self.module.types.get(global.ty) == .pointer) {
+                                    return self.builder.emit(.{ .global_get = global.id }, global.ty);
+                                }
+                                return self.builder.emit(.{ .global_addr = global.id }, self.module.types.ptrTo(global.ty));
+                            }
+                        },
+                        .not_qualified, .missing, .ambiguous => {},
+                    }
+                }
+            }
             var obj_ptr = self.lowerExprAsPtr(fa.object);
             var obj_ty = self.inferExprType(fa.object);
             // Auto-deref for chained pointer field access:
@@ -2491,6 +2816,22 @@ pub fn lowerOnFail(self: *Lowering, ofs: *const ast.OnFailStmt, span: ast.Span) 
 pub fn diagOnFailNotFailable(self: *Lowering, span: ast.Span) void {
     if (self.diagnostics) |diags| {
         diags.addFmt(.err, span, "`onfail` is only valid inside a failable function (a return type with `!` or `!Named`) — use `defer` for unconditional cleanup", .{});
+    }
+}
+
+/// Emit pending success cleanups for one RETURN edge without mutating the
+/// lowering-time stack. A return inside one branch (notably a `catch` handler)
+/// terminates only that CFG edge; sibling/success edges are lowered afterward
+/// and still own every cleanup registered before the branch. Truncating here
+/// erased those entries globally, so a later `catch { return ... }` made
+/// earlier defers disappear from the runtime success path.
+fn emitReturnDefers(self: *Lowering, base: usize) void {
+    if (base > self.defer_stack.items.len) return;
+    const stack = self.defer_stack.items;
+    var i = stack.len;
+    while (i > base) {
+        i -= 1;
+        if (!stack[i].is_onfail) self.lowerCleanupBody(stack[i].body);
     }
 }
 
@@ -2740,6 +3081,22 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
         if (t.data == .identifier) _ = self.narrowed.remove(t.data.identifier.name);
     }
 
+    // Select every namespace-qualified destination before evaluating any RHS.
+    // Multi-assignment evaluates all values first, so a later re-resolution
+    // cannot be allowed to choose the type/author for an earlier target.
+    const qualified_store_verdicts = self.alloc.alloc(QualifiedGlobalStoreVerdict, ma.targets.len) catch @panic("out of memory while selecting multi-assignment targets");
+    defer self.alloc.free(qualified_store_verdicts);
+    var invalid_qualified_target = false;
+    for (ma.targets, 0..) |target, i| {
+        qualified_store_verdicts[i] = selectQualifiedGlobalStoreTarget(self, target);
+        if (diagnoseQualifiedStoreVerdict(self, qualified_store_verdicts[i]))
+            invalid_qualified_target = true;
+    }
+    // Multi-assignment evaluates every RHS before storing any destination. If
+    // one namespace destination is invalid, stop before *all* RHS side effects
+    // while still reporting every invalid target in this statement.
+    if (invalid_qualified_target) return;
+
     // Evaluate all RHS values first (left-to-right, each typed against ITS
     // target — see setMultiAssignTargetType), then assign to LHS targets.
     var vals = std.ArrayList(Ref).empty;
@@ -2747,7 +3104,14 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
     const old_target = self.target_type;
     for (ma.values, 0..) |v, vi| {
         self.target_type = old_target;
-        if (vi < ma.targets.len) setMultiAssignTargetType(self, ma.targets[vi], v);
+        if (vi < ma.targets.len) {
+            if (qualified_store_verdicts[vi] == .target) {
+                const target = qualified_store_verdicts[vi].target;
+                if (rhsNeedsTargetType(v)) self.target_type = target.valueType();
+            } else {
+                setMultiAssignTargetType(self, ma.targets[vi], v);
+            }
+        }
         vals.append(self.alloc, self.lowerExpr(v)) catch unreachable;
     }
     self.target_type = old_target;
@@ -2766,6 +3130,11 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
         // assign runs, per target: a nested static fn's multi-assign to an
         // enclosing local previously stored into the dead alloca (silent no-op).
         if (diagEnclosingRootWrite(self, target)) continue;
+        if (qualified_store_verdicts[i] == .target) {
+            const selected = qualified_store_verdicts[i].target;
+            lowerSelectedQualifiedGlobalStore(self, selected, .assign, val, ma.values[i].span, ma.values[i]);
+            continue;
+        }
         switch (target.data) {
             .identifier => |id| {
                 // Mirror of lowerAssignment's ident arm (issue 0218, the

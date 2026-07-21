@@ -1,0 +1,3 @@
+package :: struct {
+    answer :: () -> i64 { 0 }
+}

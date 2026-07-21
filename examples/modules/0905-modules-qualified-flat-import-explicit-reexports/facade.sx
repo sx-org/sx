@@ -1,0 +1,12 @@
+#import "internal.sx";
+
+PublicStruct :: InternalStruct;
+PublicKind :: InternalKind;
+PublicUnion :: InternalUnion;
+PublicError :: InternalError;
+PublicProtocol :: InternalProtocol;
+PublicAlias :: InternalAlias;
+
+PUBLIC_CONST : i64 = 22;
+public_global : i64 = 33;
+public_fn :: internal_fn;

@@ -1,0 +1,5 @@
+error: 'Thing' does not implement protocol 'Value__i64': no `impl Value__i64 for Thing` provides method 'get' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)
+  --> examples/protocols/0896-protocols-parameterized-missing-impl-no-crossbind.sx:15:23
+   |
+15 |     bp : Value(i64) = xx bv;
+   |                       ^^^^^

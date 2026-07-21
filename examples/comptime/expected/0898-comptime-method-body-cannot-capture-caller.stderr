@@ -1,0 +1,5 @@
+error: unresolved 'hidden' (in examples/comptime/0898-comptime-method-body-cannot-capture-caller.sx fn main)
+  --> examples/comptime/0898-comptime-method-body-cannot-capture-caller.sx:11:44
+   |
+11 |         if o == .one { return self.value + hidden; }
+   |                                            ^^^^^^

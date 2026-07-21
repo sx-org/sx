@@ -1,0 +1,14 @@
+// An explicit empty impl may adopt methods only from its OWN concrete TypeId.
+// Module A's same-display-name `Thing.value` must not make module B conform.
+
+#import "0885-protocols-nominal-empty-impl-no-cross-adoption/contract.sx";
+a :: #import "0885-protocols-nominal-empty-impl-no-cross-adoption/a.sx";
+b :: #import "0885-protocols-nominal-empty-impl-no-cross-adoption/b.sx";
+
+main :: () -> i32 {
+    _ := a.make();
+    bv := b.make();
+    bp : P = xx bv;
+    if bp.value() != 20 { return 1; }
+    0
+}

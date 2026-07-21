@@ -1,0 +1,11 @@
+AState :: struct { a: i64; }
+Thing :: struct {
+    state: AState;
+    init :: () -> Thing { Thing.{ state = .{ a = 1 } } }
+    reset :: (self: *Thing) { self.state = AState.{ a = 2 }; }
+}
+use :: () -> i64 {
+    value := Thing.init();
+    value.reset();
+    value.state.a
+}

@@ -1,0 +1,3 @@
+Mode :: protocol {
+    ping :: (self: *Self) -> i64;
+}

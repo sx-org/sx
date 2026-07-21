@@ -1,0 +1,5 @@
+Thing :: struct {
+    n: i64;
+    only_b :: (self: *Thing) -> i64 { self.n + 100 }
+    static_b :: () -> i64 { 200 }
+}

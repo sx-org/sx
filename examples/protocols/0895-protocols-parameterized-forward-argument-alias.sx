@@ -1,0 +1,22 @@
+// Concrete protocol arguments may also be forward aliases. Registration must
+// wait until the alias has a concrete TypeId before constructing its key.
+// Regression (issue 0320 adversarial review).
+
+Value :: protocol (T: Type) #identity {
+    get :: (self: *Self) -> T;
+}
+
+Thing :: struct { n: i64; }
+
+impl Value(Alias) for Thing {
+    get :: (self: *Thing) -> Alias { self.n }
+}
+
+Alias :: i64;
+
+main :: () -> i32 {
+    value := Thing.{ n = 42 };
+    erased : Value(i64) = xx value;
+    if erased.get() != 42 { return 1; }
+    0
+}

@@ -63,38 +63,38 @@ pub const GenericResolver = struct {
             .@"enum" => |e| self.mangleNominalName(self.l.module.types.getString(e.name), e.nominal_id),
             .pointer => |p| blk: {
                 const inner = self.mangleTypeName(p.pointee);
-                break :blk std.fmt.allocPrint(self.l.alloc, "ptr_{s}", .{inner}) catch "pointer";
+                break :blk std.fmt.allocPrint(self.l.alloc, "ptr_{s}", .{inner}) catch @panic("out of memory while mangling type");
             },
             .many_pointer => |p| blk: {
                 const inner = self.mangleTypeName(p.element);
-                break :blk std.fmt.allocPrint(self.l.alloc, "mptr_{s}", .{inner}) catch "many_pointer";
+                break :blk std.fmt.allocPrint(self.l.alloc, "mptr_{s}", .{inner}) catch @panic("out of memory while mangling type");
             },
             .slice => |s| blk: {
                 const inner = self.mangleTypeName(s.element);
-                break :blk std.fmt.allocPrint(self.l.alloc, "SL_{s}", .{inner}) catch "slice";
+                break :blk std.fmt.allocPrint(self.l.alloc, "SL_{s}", .{inner}) catch @panic("out of memory while mangling type");
             },
             .array => |a| blk: {
                 const inner = self.mangleTypeName(a.element);
-                break :blk std.fmt.allocPrint(self.l.alloc, "AR_{d}_{s}", .{ a.length, inner }) catch "array";
+                break :blk std.fmt.allocPrint(self.l.alloc, "AR_{d}_{s}", .{ a.length, inner }) catch @panic("out of memory while mangling type");
             },
-            .signed => |w| std.fmt.allocPrint(self.l.alloc, "i{d}", .{w}) catch "signed",
-            .unsigned => |w| std.fmt.allocPrint(self.l.alloc, "u{d}", .{w}) catch "unsigned",
+            .signed => |w| std.fmt.allocPrint(self.l.alloc, "i{d}", .{w}) catch @panic("out of memory while mangling type"),
+            .unsigned => |w| std.fmt.allocPrint(self.l.alloc, "u{d}", .{w}) catch @panic("out of memory while mangling type"),
             .optional => |o| blk: {
                 const inner = self.mangleTypeName(o.child);
-                break :blk std.fmt.allocPrint(self.l.alloc, "opt_{s}", .{inner}) catch "optional";
+                break :blk std.fmt.allocPrint(self.l.alloc, "opt_{s}", .{inner}) catch @panic("out of memory while mangling type");
             },
             .vector => |v| blk: {
                 const inner = self.mangleTypeName(v.element);
-                break :blk std.fmt.allocPrint(self.l.alloc, "vec_{d}_{s}", .{ v.length, inner }) catch "vector";
+                break :blk std.fmt.allocPrint(self.l.alloc, "vec_{d}_{s}", .{ v.length, inner }) catch @panic("out of memory while mangling type");
             },
             .closure => |c| self.mangleParamList("cl", c.params, c.ret),
             .function => |f| self.mangleParamList("fn", f.params, f.ret),
             .tuple => |t| blk: {
                 var buf = std.ArrayList(u8).empty;
-                buf.appendSlice(self.l.alloc, "tu") catch break :blk "tuple";
+                buf.appendSlice(self.l.alloc, "tu") catch @panic("out of memory while mangling type");
                 for (t.fields) |fid| {
-                    buf.append(self.l.alloc, '_') catch break :blk "tuple";
-                    buf.appendSlice(self.l.alloc, self.mangleTypeName(fid)) catch break :blk "tuple";
+                    buf.append(self.l.alloc, '_') catch @panic("out of memory while mangling type");
+                    buf.appendSlice(self.l.alloc, self.mangleTypeName(fid)) catch @panic("out of memory while mangling type");
                 }
                 break :blk buf.items;
             },
@@ -107,18 +107,18 @@ pub const GenericResolver = struct {
     /// name unchanged so single-author mangling is byte-identical.
     fn mangleNominalName(self: GenericResolver, name: []const u8, nominal_id: u32) []const u8 {
         if (nominal_id == 0) return name;
-        return std.fmt.allocPrint(self.l.alloc, "{s}__n{d}", .{ name, nominal_id }) catch name;
+        return std.fmt.allocPrint(self.l.alloc, "{s}__n{d}", .{ name, nominal_id }) catch @panic("out of memory while mangling nominal type");
     }
 
     fn mangleParamList(self: GenericResolver, prefix: []const u8, params: []const TypeId, ret: TypeId) []const u8 {
         var buf = std.ArrayList(u8).empty;
-        buf.appendSlice(self.l.alloc, prefix) catch return prefix;
+        buf.appendSlice(self.l.alloc, prefix) catch @panic("out of memory while mangling callable type");
         for (params) |p| {
-            buf.append(self.l.alloc, '_') catch return prefix;
-            buf.appendSlice(self.l.alloc, self.mangleTypeName(p)) catch return prefix;
+            buf.append(self.l.alloc, '_') catch @panic("out of memory while mangling callable type");
+            buf.appendSlice(self.l.alloc, self.mangleTypeName(p)) catch @panic("out of memory while mangling callable type");
         }
-        buf.appendSlice(self.l.alloc, "__") catch return prefix;
-        buf.appendSlice(self.l.alloc, self.mangleTypeName(ret)) catch return prefix;
+        buf.appendSlice(self.l.alloc, "__") catch @panic("out of memory while mangling callable type");
+        buf.appendSlice(self.l.alloc, self.mangleTypeName(ret)) catch @panic("out of memory while mangling callable type");
         return buf.items;
     }
 
@@ -130,31 +130,19 @@ pub const GenericResolver = struct {
         fd: *const ast.FnDecl,
         bindings: *const std.StringHashMap(TypeId),
     ) []const u8 {
-        var mangled_buf: [256]u8 = undefined;
-        var mangled_len: usize = 0;
-        for (base_name) |ch| {
-            if (mangled_len < mangled_buf.len) {
-                mangled_buf[mangled_len] = ch;
-                mangled_len += 1;
-            }
-        }
+        var mangled = std.ArrayList(u8).empty;
+        mangled.appendSlice(self.l.alloc, base_name) catch @panic("out of memory while mangling generic function");
         for (fd.type_params) |tp| {
-            for ("__") |ch| {
-                if (mangled_len < mangled_buf.len) {
-                    mangled_buf[mangled_len] = ch;
-                    mangled_len += 1;
-                }
-            }
             const ty = bindings.get(tp.name) orelse .unresolved;
+            // `mangleTypeName` is the complete semantic type key (including
+            // nominal ids). Dynamic storage is mandatory: a long source-
+            // qualified base must never truncate into another declaration's
+            // monomorph.
+            mangled.appendSlice(self.l.alloc, "__") catch @panic("out of memory while mangling generic function");
             const type_name_str = self.mangleTypeName(ty);
-            for (type_name_str) |ch| {
-                if (mangled_len < mangled_buf.len) {
-                    mangled_buf[mangled_len] = ch;
-                    mangled_len += 1;
-                }
-            }
+            mangled.appendSlice(self.l.alloc, type_name_str) catch @panic("out of memory while mangling generic function");
         }
-        return self.l.alloc.dupe(u8, mangled_buf[0..mangled_len]) catch base_name;
+        return mangled.toOwnedSlice(self.l.alloc) catch @panic("out of memory while mangling generic function");
     }
 
     /// Append a comptime parameter VALUE's mono fragment to `buf` (int/bool
@@ -164,34 +152,34 @@ pub const GenericResolver = struct {
         switch (node.data) {
             .int_literal => |lit| {
                 var tmp: [32]u8 = undefined;
-                const written = std.fmt.bufPrint(&tmp, "{d}", .{lit.value}) catch return;
-                buf.appendSlice(self.l.alloc, written) catch return;
+                const written = std.fmt.bufPrint(&tmp, "{d}", .{lit.value}) catch unreachable;
+                buf.appendSlice(self.l.alloc, written) catch @panic("out of memory while mangling comptime value");
             },
             .char_literal => |lit| {
                 var tmp: [32]u8 = undefined;
-                const written = std.fmt.bufPrint(&tmp, "c{d}", .{lit.value}) catch return;
-                buf.appendSlice(self.l.alloc, written) catch return;
+                const written = std.fmt.bufPrint(&tmp, "c{d}", .{lit.value}) catch unreachable;
+                buf.appendSlice(self.l.alloc, written) catch @panic("out of memory while mangling comptime value");
             },
             .bool_literal => |lit| {
-                buf.appendSlice(self.l.alloc, if (lit.value) "true" else "false") catch return;
+                buf.appendSlice(self.l.alloc, if (lit.value) "true" else "false") catch @panic("out of memory while mangling comptime value");
             },
             .float_literal => |lit| {
                 var tmp: [64]u8 = undefined;
-                const written = std.fmt.bufPrint(&tmp, "{d}", .{lit.value}) catch return;
+                const written = std.fmt.bufPrint(&tmp, "{d}", .{lit.value}) catch unreachable;
                 for (written) |c| {
-                    buf.append(self.l.alloc, if (c == '.') '_' else if (c == '-') 'n' else c) catch return;
+                    buf.append(self.l.alloc, if (c == '.') '_' else if (c == '-') 'n' else c) catch @panic("out of memory while mangling comptime value");
                 }
             },
             .string_literal => |lit| {
-                // Hash the string to a fixed-length tag — keeps the
-                // mangle short and stable for arbitrary content.
-                var h = std.hash.Wyhash.init(0);
-                h.update(lit.raw);
-                var tmp: [32]u8 = undefined;
-                const written = std.fmt.bufPrint(&tmp, "s{x}", .{h.final()}) catch return;
-                buf.appendSlice(self.l.alloc, written) catch return;
+                // Encode the complete bytes. A hash is not an identity key.
+                buf.appendSlice(self.l.alloc, "s") catch @panic("out of memory while mangling comptime value");
+                const hex = "0123456789abcdef";
+                for (lit.raw) |byte| {
+                    buf.append(self.l.alloc, hex[byte >> 4]) catch @panic("out of memory while mangling comptime value");
+                    buf.append(self.l.alloc, hex[byte & 0xf]) catch @panic("out of memory while mangling comptime value");
+                }
             },
-            else => buf.append(self.l.alloc, '?') catch return,
+            else => @panic("unsupported comptime value in monomorph identity"),
         }
     }
 

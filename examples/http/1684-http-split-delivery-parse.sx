@@ -21,6 +21,7 @@
 //      (per-request parse state fully reset).
 //   4. GPA leak gate: net-zero.
 #import "modules/std.sx";
+mem  :: #import "modules/std/mem.sx";
 http :: #import "modules/std/http.sx";
 
 PORT :: 18995;
@@ -144,7 +145,7 @@ main :: () -> i32 {
     push .{ allocator = gpa } {
         cap : i64 = 32768;
         rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
-        req_arena := Arena.init(gpa, 65536);
+        req_arena := mem.Arena.init(gpa, 65536);
 
         cfg : http.Config = .{
             port = PORT,

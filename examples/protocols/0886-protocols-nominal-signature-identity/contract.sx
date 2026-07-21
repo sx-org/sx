@@ -1,0 +1,5 @@
+Payload :: struct { amount: i64; }
+
+P :: protocol #identity {
+    take :: (self: *Self, payload: Payload) -> i64;
+}

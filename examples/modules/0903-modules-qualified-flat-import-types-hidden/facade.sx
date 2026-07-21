@@ -1,0 +1,3 @@
+#import "internal.sx";
+
+PublicMarker :: struct { value: i64; }

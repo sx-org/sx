@@ -704,9 +704,22 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
             for (decls) |decl| {
                 if (decl.data != .const_decl) continue;
                 const cd = decl.data.const_decl;
-                if (cd.value.data != .identifier) continue;
+                if (cd.value.data != .identifier and cd.value.data != .field_access) continue;
                 if (self.program_index.module_const_map.contains(cd.name)) continue;
-                const target = self.program_index.module_const_map.get(cd.value.data.identifier.name) orelse continue;
+                const target: program_index_mod.ModuleConstInfo = switch (cd.value.data) {
+                    .identifier => |id| self.program_index.module_const_map.get(id.name) orelse continue,
+                    .field_access => blk: {
+                        const from = decl.source_file orelse self.main_file orelse continue;
+                        const path = self.qualifiedTypeName(cd.value) orelse continue;
+                        defer self.alloc.free(path);
+                        const sel = switch (self.qualifiedMemberVerdictFrom(path, from)) {
+                            .selected => |s| s,
+                            .not_qualified, .missing, .ambiguous => continue,
+                        };
+                        break :blk self.sourceModuleConst(sel.target.target_module_path, sel.member) orelse continue;
+                    },
+                    else => unreachable,
+                };
                 self.putModuleConst(decl.source_file, cd.name, .{ .value = cd.value, .ty = target.ty });
                 changed = true;
             }
@@ -874,17 +887,61 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
                                 .pending, .forward, .undeclared, .not_visible, .ambiguous => {},
                             }
                         }
+                    } else if (cd.value.data == .field_access) {
+                        // Qualified type alias: `Alias :: foreign.P`, including
+                        // a nested namespace prefix. Resolve every edge from the
+                        // alias AUTHOR's source and retain the exact terminal
+                        // target. A forward target remains unwritten and is
+                        // retried by the post-scan fixpoint.
+                        if (self.current_source_file orelse self.main_file) |from| {
+                            const path = self.qualifiedTypeName(cd.value) orelse continue;
+                            defer self.alloc.free(path);
+                            switch (self.qualifiedMemberVerdictFrom(path, from)) {
+                                .selected => |sel| {
+                                    // A field-access RHS can alias a VALUE const
+                                    // just as readily as a nominal type
+                                    // (`N :: facade.engine.COUNT`). Register the
+                                    // exact selected source's const before trying
+                                    // the type domain; otherwise the type probe
+                                    // correctly says `.undeclared` and the alias
+                                    // is silently lost at runtime. The stored RHS
+                                    // remains the qualified node, so emission and
+                                    // nested const folding re-prove the same path.
+                                    if (self.sourceModuleConst(sel.target.target_module_path, sel.member)) |target| {
+                                        self.putModuleConst(self.current_source_file, cd.name, .{ .value = cd.value, .ty = target.ty });
+                                    } else switch (self.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
+                                        .resolved => |tid| self.putTypeAlias(self.current_source_file, cd.name, tid),
+                                        .pending, .forward, .undeclared, .not_visible, .ambiguous => {},
+                                    }
+                                },
+                                .missing => |m| if (self.diagnostics) |d|
+                                    d.addFmt(.err, cd.value.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member }),
+                                .ambiguous => |alias| if (self.diagnostics) |d|
+                                    d.addFmt(.err, cd.value.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias}),
+                                .not_qualified => {},
+                            }
+                        }
                     }
                 }
                 // Handle generic struct instantiation: Vec3 :: Vec(3, f32)
                 // Parser produces a .call node for these (not parameterized_type_expr)
                 if (cd.value.data == .call) {
                     const call_data = &cd.value.data.call;
+                    const head_qualified = call_data.callee.data == .field_access;
                     const callee_name = switch (call_data.callee.data) {
                         .identifier => |id| id.name,
                         .field_access => |fa| fa.field,
                         else => "",
                     };
+                    const qualified_path: ?[]const u8 = if (head_qualified)
+                        self.qualifiedTypeName(call_data.callee)
+                    else
+                        null;
+                    defer if (qualified_path) |path| self.alloc.free(path);
+                    const selected_fd: ?*const ast.FnDecl = if (qualified_path) |path|
+                        self.qualifiedFnMember(path)
+                    else
+                        self.program_index.fn_ast_map.get(callee_name);
                     // `E :: f(...)` where `f` is a NON-generic fn returning
                     // `Type` (a comptime type constructor): comptime-evaluate the
                     // call — `declare`/`define` reached inside it mint the type —
@@ -893,7 +950,7 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
                     // Generic type-fns (`$T`) are minted by
                     // `instantiateTypeFunction` below. Poison on failure so
                     // `E.x` gets a clean follow-on, never a silent default.
-                    if (self.program_index.fn_ast_map.get(callee_name)) |fd| {
+                    if (selected_fd) |fd| {
                         if (fd.type_params.len == 0 and fnReturnsTypeValue(fd)) {
                             // The minted type's NAME comes from its `TypeInfo`
                             // (via `define`), not the binding LHS — no rename.
@@ -902,23 +959,16 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
                             continue;
                         }
                     }
-                    // A namespaced callee (`ns.Box(..)`) is an explicit qualified
-                    // reach, exempt from the bare-head visibility gate (E4).
-                    const head_qualified = call_data.callee.data == .field_access;
-                    // A qualified head `ABox :: a.Box(i64)` selects a's OWN
-                    // template via the namespace edge (mirrors the annotation
-                    // head site `resolveTypeCallWithBindings`), not the bare
-                    // last-wins `struct_template_map`.
-                    const qual_alias: ?[]const u8 = if (head_qualified and call_data.callee.data.field_access.object.data == .identifier)
-                        call_data.callee.data.field_access.object.data.identifier.name
-                    else
-                        null;
+                    // A namespaced callee is an explicit qualified reach,
+                    // exempt from the bare-head visibility gate (E4). The
+                    // complete path is retained by selectGenericStructCallee,
+                    // including nested namespace aliases.
                     if (callee_name.len > 0) {
                         // Generic-struct alias head (`ABox :: Box(i64)` /
                         // `a.Box(i64)`): route layout selection through the single
                         // choke-point (CP-1); the Vector / type-fn branches stay
                         // as the non-generic fall-through.
-                        switch (self.selectGenericStructHead(callee_name, qual_alias, head_qualified, call_data.callee.span)) {
+                        switch (self.selectGenericStructCallee(call_data.callee, call_data.callee.span)) {
                             .template => |t| self.registerGenericStructAlias(cd.name, &t, call_data.args),
                             .poisoned => self.putTypeAlias(self.current_source_file, cd.name, .unresolved),
                             .not_generic => {
@@ -934,7 +984,7 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
                                     if (result_ty != .void) {
                                         self.putTypeAlias(self.current_source_file, cd.name, result_ty);
                                     }
-                                } else if (self.program_index.fn_ast_map.get(callee_name)) |fd| {
+                                } else if (selected_fd) |fd| {
                                     // Type-returning function: Foo :: Complex(u32)
                                     if (fd.type_params.len > 0) {
                                         if (!head_qualified and self.headFnLeak(callee_name, call_data.callee.span)) {
@@ -956,11 +1006,10 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
                     // template via the namespace edge (mirrors the annotation
                     // head site `resolveParameterizedWithBindings`), not the
                     // bare last-wins `struct_template_map`.
-                    const pt_alias: ?[]const u8 = if (pt_qualified) pt.name[0..std.mem.indexOfScalar(u8, pt.name, '.').?] else null;
                     // Generic-struct alias base: route layout selection through the
                     // single choke-point (CP-1); the builtin parameterised-type
                     // path (Vector etc.) stays as the non-generic fall-through.
-                    switch (self.selectGenericStructHead(base_name, pt_alias, pt_qualified, cd.value.span)) {
+                    switch (self.selectGenericStructHead(base_name, if (pt_qualified) pt.name else null, pt_qualified, cd.value.span)) {
                         .template => |t| self.registerGenericStructAlias(cd.name, &t, pt.args),
                         .poisoned => self.putTypeAlias(self.current_source_file, cd.name, .unresolved),
                         .not_generic => {
@@ -968,7 +1017,7 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
                             // resolve via type_bridge and register the result
                             // under the alias name so `Vec4` in expression
                             // position can `const_type(<vector tid>)`.
-                            const result_ty = type_bridge.resolveAstType(cd.value, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
+                            const result_ty = self.resolveParameterizedWithBindings(pt, cd.value.span);
                             if (result_ty != .void and result_ty != .unresolved) {
                                 self.putTypeAlias(self.current_source_file, cd.name, result_ty);
                             }
@@ -1043,6 +1092,19 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
     }
     self.resolveForwardIdentifierAliases(decls);
     resolveCompositeAliases(self, decls);
+    // Retry only impls that could not be registered in declaration order
+    // (notably a protocol/alias declared later). Successful registrations are
+    // identity-marked and remain byte-for-byte in their original order.
+    for (decls) |decl| {
+        if (decl.data != .impl_block) continue;
+        if (self.registered_protocol_impls.contains(&decl.data.impl_block)) continue;
+        self.setCurrentSourceFile(decl.source_file);
+        const is_imported = if (self.main_file) |mf|
+            (if (decl.source_file) |sf| !std.mem.eql(u8, sf, mf) else false)
+        else
+            false;
+        self.protocolResolver().registerImplBlock(&decl.data.impl_block, is_imported, decl);
+    }
     // Pass 2: registrations that resolve a top-level type annotation run
     // after the alias fixpoint, so a forward identifier alias used as the
     // annotation resolves to its target.
@@ -1389,7 +1451,9 @@ pub fn registerTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
         .is_const = false,
         .is_extern = vd.is_extern,
     });
-    self.putGlobal(self.current_source_file, vd.name, .{ .id = gid, .ty = var_ty });
+    const info = program_index_mod.GlobalInfo{ .id = gid, .ty = var_ty };
+    self.global_decl_infos.put(vd, info) catch @panic("out of memory while indexing global declaration identity");
+    self.putGlobal(self.current_source_file, vd.name, info);
 }
 
 fn initializeTopLevelGlobal(self: *Lowering, vd: *const ast.VarDecl) void {
@@ -1626,16 +1690,23 @@ pub fn resolveForwardIdentifierAliases(self: *Lowering, decls: []const *const No
             //    a re-exported ENUM/union/error alias stays `.pending` and adopts
             //    the empty-struct `{}` stub — which silently name-reconciles for a
             //    struct target but corrupts a non-struct target (issue 0206).
+            var qualified_path: ?[]const u8 = null;
+            defer if (qualified_path) |path| self.alloc.free(path);
             const target_src, const leaf, const leaf_raw = switch (cd.value.data) {
                 .identifier => |rhs| .{ src, rhs.name, rhs.is_raw },
-                .field_access => |fa| blk: {
-                    if (fa.object.data != .identifier) continue;
-                    const ns = fa.object.data.identifier.name;
-                    const t = switch (self.namespaceAliasVerdictFrom(ns, src)) {
-                        .target => |tt| tt,
-                        .ambiguous, .none => continue,
+                .field_access => blk: {
+                    const path = self.qualifiedTypeName(cd.value) orelse continue;
+                    // `sel.member` is a slice into `path`; retain that owned
+                    // spelling through the `selectNominalLeaf` call below.
+                    // Freeing it inside this switch arm leaves `leaf`
+                    // dangling and Zig's debug allocator catches the aliased
+                    // memcpy while interning the poisoned slice.
+                    qualified_path = path;
+                    const sel = switch (self.qualifiedMemberVerdictFrom(path, src)) {
+                        .selected => |s| s,
+                        .not_qualified, .missing, .ambiguous => continue,
                     };
-                    break :blk .{ t.target_module_path, fa.field, false };
+                    break :blk .{ sel.target.target_module_path, sel.member, false };
                 },
                 else => continue,
             };
@@ -1701,7 +1772,7 @@ fn compositeAliasConstDecl(decl: *const Node) ?*const ast.ConstDecl {
 /// diagnosed there). Conservative by construction: node kinds without bare
 /// name leaves are treated as ready and validated by the post-resolution
 /// `typeCarriesUnresolved` check instead.
-fn typeNodeLeavesReady(self: *Lowering, node: *const Node, source: ?[]const u8) bool {
+pub fn typeNodeLeavesReady(self: *Lowering, node: *const Node, source: ?[]const u8) bool {
     const src = source orelse self.main_file orelse return true;
     switch (node.data) {
         // A `..pack` spread can never resolve at a top-level alias (no pack
@@ -2339,6 +2410,54 @@ pub fn selectPlainCallableAuthor(self: *Lowering, name: []const u8, caller_file:
     return .{ .func = .{ .decl = the_one.?, .source = the_source } };
 }
 
+/// Resolve an as-yet-unregistered alias author directly to a terminal named
+/// type when raw import/declaration facts already prove the whole chain. This
+/// is principally the declaration-ABI path for `Alias :: foreign.P`: function
+/// signatures and aggregate fields may precede either alias declaration in
+/// source, while the imported protocol's canonical aggregate layout must be
+/// known before their IR types are interned. Materializing a terminal protocol
+/// is safe and exactly-once through `registered_protocol_decls`; other named
+/// kinds are used only when their ordinary scan already registered a slot.
+fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alias_name: []const u8) ?TypeId {
+    const terminal = self.followAliasChain(author, 16) orelse return null;
+
+    if (terminal.raw == .protocol_decl) {
+        const pd = terminal.raw.protocol_decl;
+        // Parameterized protocols are compile-time templates, not runtime ABI
+        // types, so they cannot satisfy a plain alias annotation here.
+        if (pd.type_params.len > 0) return null;
+        const saved_source = self.current_source_file;
+        self.setCurrentSourceFile(terminal.source);
+        self.protocolResolver().registerProtocolDecl(pd);
+        self.setCurrentSourceFile(saved_source);
+    }
+
+    const terminal_name: []const u8 = switch (terminal.raw) {
+        .struct_decl => |d| d.name,
+        .enum_decl => |d| d.name,
+        .union_decl => |d| d.name,
+        .error_set_decl => |d| d.name,
+        .protocol_decl => |d| d.name,
+        .runtime_class_decl => |d| d.name,
+        .const_decl => |d| d.name,
+        .fn_decl, .var_decl, .namespace_decl => return null,
+    };
+    const tid: TypeId = switch (terminal.raw) {
+        .const_decl => blk: {
+            // `Name :: struct/enum/union/error { ... }` is a named type
+            // definition wrapped by the surface `::`, not a type alias. Its
+            // exact declaration slot is authoritative and must not be looked
+            // up through the alias compatibility map.
+            if (self.namedRefTid(terminal.raw, terminal_name)) |named| break :blk named;
+            const aliases = self.program_index.type_aliases_by_source.get(terminal.source) orelse return null;
+            break :blk aliases.get(terminal_name) orelse return null;
+        },
+        else => self.namedRefTid(terminal.raw, terminal_name) orelse return null,
+    };
+    self.putTypeAlias(author.source, alias_name, tid);
+    return tid;
+}
+
 /// THE source-aware bare TYPE leaf (R5 §E, E1). The type-position analogue
 /// of `selectPlainCallableAuthor`: resolve a bare type name `name` referenced
 /// from `from` by selecting its nominal author over the ONE graph-walk
@@ -2432,10 +2551,24 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     // 1a. Own type author wins outright (own-wins).
     if (author_set.own) |own| switch (own.raw) {
         .const_decl => {
+            // Surface named definitions (`Name :: struct/enum/union/error`)
+            // are raw const declarations, but semantically they are nominal
+            // authors. Resolve the inner declaration identity before the
+            // true-alias path; treating it as a pending alias fabricates an
+            // unstamped nominal-0 stub and collapses same-name module types.
+            if (constWrappedNamedTypeRef(own.raw.const_decl) != null) {
+                if (self.namedRefTid(own.raw, name)) |tid| return .{ .resolved = tid };
+                return .forward;
+            }
             // Type alias: present in type_aliases_by_source → resolved.
             if (self.program_index.type_aliases_by_source.get(own.source)) |inner| {
                 if (inner.get(name)) |tid| return .{ .resolved = tid };
             }
+            // Forward/qualified alias chains may be queried by an ABI consumer
+            // before declaration-order scanning reaches the alias. Resolve the
+            // raw chain now so params, returns, fields and wrappers all intern
+            // the same canonical protocol TypeId (issue 0323).
+            if (resolvePendingAliasType(self, own, name)) |tid| return .{ .resolved = tid };
             // Own const_decl not yet resolved: pending (own takes priority
             // over any flat author — prevents flat-preemption).
             return .pending;
@@ -2455,6 +2588,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     for (author_set.flat) |fa| {
         const is_type = switch (fa.raw) {
             .const_decl => blk: {
+                if (constWrappedNamedTypeRef(fa.raw.const_decl) != null) break :blk true;
                 if (self.program_index.type_aliases_by_source.get(fa.source)) |inner|
                     break :blk inner.contains(name);
                 break :blk false;
@@ -2465,6 +2599,8 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
         flat_type_count += 1;
         const fa_tid: ?TypeId = switch (fa.raw) {
             .const_decl => blk: {
+                if (constWrappedNamedTypeRef(fa.raw.const_decl) != null)
+                    break :blk self.namedRefTid(fa.raw, name);
                 if (self.program_index.type_aliases_by_source.get(fa.source)) |inner|
                     break :blk inner.get(name);
                 break :blk null;
@@ -2527,7 +2663,22 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
 pub fn isNamedTypeKind(raw: resolver_mod.RawDeclRef) bool {
     return switch (raw) {
         .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .runtime_class_decl => true,
-        .fn_decl, .const_decl, .var_decl, .namespace_decl => false,
+        .const_decl => |cd| constWrappedNamedTypeRef(cd) != null,
+        .fn_decl, .var_decl, .namespace_decl => false,
+    };
+}
+
+/// A surface named type definition written with `::` is represented in raw
+/// import facts as a const declaration whose value is the actual nominal AST
+/// declaration. Recover that declaration so source-aware type selection can
+/// use `type_decl_tids`, exactly like a bare nominal declaration.
+fn constWrappedNamedTypeRef(cd: *const ast.ConstDecl) ?resolver_mod.RawDeclRef {
+    return switch (cd.value.data) {
+        .struct_decl => .{ .struct_decl = &cd.value.data.struct_decl },
+        .enum_decl => .{ .enum_decl = &cd.value.data.enum_decl },
+        .union_decl => .{ .union_decl = &cd.value.data.union_decl },
+        .error_set_decl => .{ .error_set_decl = &cd.value.data.error_set_decl },
+        else => null,
     };
 }
 
@@ -2545,9 +2696,9 @@ pub fn isNamedTypeKind(raw: resolver_mod.RawDeclRef) bool {
 /// fallback. ENUM and UNION resolve the same per-decl way (E6a): registered
 /// through `internNamedTypeDecl` (`registerEnumDecl` / `registerUnionDecl`),
 /// keyed by the raw-facts decl pointer, with the `findByName` fallback for a
-/// single author registered before its slot lands. error-set / protocol /
-/// runtime-class keep the legacy `findByName` resolution (their same-name
-/// shadows are later E6 sub-steps — E6b/E6c/E6d).
+/// single author registered before its slot lands. Error-set and nullary
+/// protocol declarations likewise prefer their per-decl slots; runtime
+/// classes retain the legacy name lookup.
 pub fn namedRefTid(self: *Lowering, ref: resolver_mod.RawDeclRef, name: []const u8) ?TypeId {
     const table = &self.module.types;
     return switch (ref) {
@@ -2560,8 +2711,10 @@ pub fn namedRefTid(self: *Lowering, ref: resolver_mod.RawDeclRef, name: []const 
         // was not decl-registered (no `type_decl_tids` entry) falls back to the
         // name lookup, byte-identical to pre-0134.
         .error_set_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
-        .protocol_decl, .runtime_class_decl => table.findByName(table.internString(name)),
-        .fn_decl, .const_decl, .var_decl, .namespace_decl => null,
+        .protocol_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
+        .runtime_class_decl => table.findByName(table.internString(name)),
+        .const_decl => |d| if (constWrappedNamedTypeRef(d)) |inner| self.namedRefTid(inner, name) else null,
+        .fn_decl, .var_decl, .namespace_decl => null,
     };
 }
 
@@ -2937,8 +3090,15 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
             .ty = self.module.types.ptrTo(.void),
         }) catch unreachable;
     }
-    for (effective_params) |p| {
-        const pty = self.resolveParamType(&p);
+    for (effective_params, 0..) |p, i| {
+        // A synthesized protocol-default method carries an exact concrete
+        // receiver registered before declaration. Its body/signature otherwise
+        // belongs to the protocol module, where text-resolving `*Target` can
+        // be invisible or select a different same-display-name declaration.
+        const pty = if (i == 0)
+            self.protocol_impl_receiver_types.get(fd) orelse self.resolveParamType(&p)
+        else
+            self.resolveParamType(&p);
         params.append(self.alloc, .{
             .name = self.module.types.internString(p.name),
             .ty = pty,
@@ -3006,7 +3166,6 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     self.fn_decl_fids.put(fd, fid) catch {};
 }
 
-
 /// Validate an `intrinsic` declaration against the registry. The registry IS the
 /// allow-list: a name it does not carry has no handler anywhere, so accepting the
 /// declaration would defer the failure to a call site (or, worse, to a recognizer
@@ -3046,7 +3205,6 @@ pub fn isEvaluateIntrinsic(self: *Lowering, fd: *const ast.FnDecl, name: []const
     const e = intrinsics.find(name, self.current_source_file) orelse return false;
     return e.mode == .evaluate;
 }
-
 
 /// Register a namespaced import's OWN functions under their module-qualified
 /// name (`ns.fn`), giving each a UNIQUE FuncId in the function table. Two
@@ -3273,6 +3431,16 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
 /// both `lazyLowerFunction`'s name-keyed found path and the out-of-line
 /// `lowerRetainedSameNameAuthors` pass.
 pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId, name: []const u8) void {
+    // Synthesized protocol defaults execute in their declaring impl's method
+    // domain: `self.required()` must call that exact protocol requirement even
+    // when the concrete type has a same-named inherent method. Recompute the
+    // domain at EVERY function-body entry. This both activates it for a default
+    // reached through any lowering path and clears an outer default's domain
+    // while lazily lowering a nested ordinary/explicit method body.
+    const saved_protocol_default_dispatch = self.protocol_default_dispatch;
+    self.protocol_default_dispatch = self.protocolDefaultDispatchDomain(fd);
+    defer self.protocol_default_dispatch = saved_protocol_default_dispatch;
+
     // objc-defined-class method context for `*Self` substitution (M1.2 A.2b);
     // the resolveReturnType / resolveParamType calls below consult it.
     const saved_fc = self.current_runtime_class;
@@ -3344,7 +3512,15 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     // Leave the LLVM args declared-but-unused (the verifier allows that); the asm
     // references the registers.
     if (fd.abi != .naked) for (fd.params, 0..) |p, i| {
-        const pty = self.resolveParamType(&p);
+        // Protocol impl declarations already resolved their receiver in the
+        // concrete target's authoring domain. In particular, a synthesized
+        // default body belongs to the protocol module, so resolving its
+        // synthetic `self: *Target` again here could cross-bind a same-name
+        // target from another module. Reuse that exact declared receiver type.
+        const pty = if (i == 0)
+            self.protocol_impl_receiver_types.get(fd) orelse self.resolveParamType(&p)
+        else
+            self.resolveParamType(&p);
         const slot = self.builder.alloca(pty);
         const param_ref = Ref.fromIndex(@intCast(i + user_param_base));
         self.builder.store(slot, param_ref);

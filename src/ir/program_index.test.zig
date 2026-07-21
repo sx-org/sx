@@ -2,6 +2,7 @@ const std = @import("std");
 const pi = @import("program_index.zig");
 const ProgramIndex = pi.ProgramIndex;
 const ast = @import("../ast.zig");
+const Node = ast.Node;
 const types = @import("types.zig");
 const inst = @import("inst.zig");
 
@@ -200,6 +201,15 @@ const DimCtx = struct {
         return null;
     }
     pub fn qualifiedNameIsFloatTyped(_: DimCtx, _: []const u8, _: []const u8) bool {
+        return false;
+    }
+    pub fn lookupQualifiedConstNode(_: DimCtx, _: *const Node) ?i64 {
+        return null;
+    }
+    pub fn lookupQualifiedConstNodeFloat(_: DimCtx, _: *const Node) ?f64 {
+        return null;
+    }
+    pub fn qualifiedNodeIsFloatTyped(_: DimCtx, _: *const Node) bool {
         return false;
     }
 };

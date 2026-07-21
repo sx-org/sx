@@ -1,0 +1,33 @@
+// Same-spelled protocols from distinct namespaces retain distinct nominal
+// method sets, impl registries, thunks and vtables. One concrete type may
+// implement both without either protocol borrowing the other's metadata.
+
+one :: #import "0899-protocols-qualified-alias-nominal-identity/one.sx";
+two :: #import "0899-protocols-qualified-alias-nominal-identity/two.sx";
+
+take_one :: (item: One) -> i64 { item.value() }
+take_two :: (item: Two) -> bool { item.other() }
+
+One :: one.P;
+Two :: two.P;
+
+First :: struct { n: i64; }
+Second :: struct { b: bool; }
+Both :: struct { n: i64; b: bool; }
+
+impl One for First { value :: (self: *First) -> i64 { self.n } }
+impl Two for Second { other :: (self: *Second) -> bool { self.b } }
+impl One for Both { value :: (self: *Both) -> i64 { self.n } }
+impl Two for Both { other :: (self: *Both) -> bool { self.b } }
+
+main :: () -> i32 {
+    first := First.{ n = 37 };
+    second := Second.{ b = true };
+    if take_one(xx first) != 37 { return 1; }
+    if !take_two(xx second) { return 2; }
+
+    both := Both.{ n = 41, b = true };
+    if take_one(xx both) != 41 { return 3; }
+    if !take_two(xx both) { return 4; }
+    0
+}

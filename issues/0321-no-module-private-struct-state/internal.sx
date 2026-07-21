@@ -1,0 +1,5 @@
+Secret :: struct { value: i64; }
+
+make_secret :: (value: i64) -> Secret {
+    Secret.{ value = value }
+}

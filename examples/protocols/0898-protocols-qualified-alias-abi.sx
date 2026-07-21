@@ -1,0 +1,52 @@
+// A qualified protocol alias must be canonicalized before declaration ABI
+// lowering, independent of source order. Consumers deliberately precede the
+// nested alias, its qualified base, and even the namespace declaration. Every
+// spelling must preserve the same three-word #identity protocol layout.
+
+forward :: (item: Alias) -> i64 { item.bump() }
+roundtrip :: (item: Nested) -> Nested { item }
+
+Holder :: struct { item: Alias; }
+OptionalHolder :: struct { item: ?Nested; }
+ViewHolder :: struct { item: *Alias; optional: ?*Nested; }
+
+Nested :: Alias;
+Alias :: foreign.P;
+
+foreign :: #import "0898-protocols-qualified-alias-abi/protocol.sx";
+
+Counter :: struct { n: i64; }
+
+impl Alias for Counter {
+    bump :: (self: *Counter) -> i64 { self.n += 1; self.n }
+    value :: (self: *Counter) -> i64 { self.n }
+}
+
+qualified :: (item: foreign.P) -> i64 { item.bump() }
+
+main :: () -> i32 {
+    counter := Counter.{ n = 1 };
+
+    if forward(xx counter) != 2 { return 1; }
+
+    holder := Holder.{ item = xx counter };
+    if holder.item.bump() != 3 { return 2; }
+
+    optional : ?Nested = xx counter;
+    if optional.bump() != 4 { return 3; }
+
+    view : *Alias = counter;
+    if view.bump() != 5 { return 4; }
+
+    if roundtrip(xx counter).bump() != 6 { return 5; }
+    if qualified(xx counter) != 7 { return 6; }
+
+    optional_holder := OptionalHolder.{ item = xx counter };
+    if optional_holder.item.bump() != 8 { return 7; }
+
+    view_holder := ViewHolder.{ item = counter, optional = view };
+    if view_holder.item.bump() != 9 { return 8; }
+    if view_holder.optional.bump() != 10 { return 9; }
+    if counter.n != 10 { return 10; }
+    0
+}

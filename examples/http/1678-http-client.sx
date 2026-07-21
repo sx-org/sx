@@ -35,12 +35,10 @@ main :: () -> i32 {
         cfg : http.Config = .{ port = PORT };
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("init failed\n"); rc = 1; }
-
-        if rc == 0 {
+        else {
             t, te := thread.Thread.spawn(srv_entry, xx @srv);
             if te { print("spawn failed\n"); rc = 1; }
-
-            if rc == 0 {
+            else {
                 b1 : [4096]u8 = ---;
                 r1, e1 := http.Client.request(LOOPBACK, PORT, "GET", "/hello", "t", "", "", @b1[0], 4096);
                 if e1 { print("GET /hello errored\n"); rc = 1; }

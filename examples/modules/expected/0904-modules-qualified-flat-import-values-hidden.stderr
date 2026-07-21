@@ -1,0 +1,29 @@
+error: namespace 'facade' has no member 'HIDDEN_CONST'
+  --> examples/modules/0904-modules-qualified-flat-import-values-hidden.sx:8:17
+   |
+ 8 |     constant := facade.HIDDEN_CONST;
+   |                 ^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'hidden_global'
+  --> examples/modules/0904-modules-qualified-flat-import-values-hidden.sx:9:15
+   |
+ 9 |     global := facade.hidden_global;
+   |               ^^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'HiddenKind'
+  --> examples/modules/0904-modules-qualified-flat-import-values-hidden.sx:10:13
+   |
+10 |     kind := facade.HiddenKind.one;
+   |             ^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'hidden_fn'
+  --> examples/modules/0904-modules-qualified-flat-import-values-hidden.sx:11:17
+   |
+11 |     function := facade.hidden_fn;
+   |                 ^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'hidden_global'
+  --> examples/modules/0904-modules-qualified-flat-import-values-hidden.sx:12:5
+   |
+12 |     facade.hidden_global = 34;
+   |     ^^^^^^^^^^^^^^^^^^^^

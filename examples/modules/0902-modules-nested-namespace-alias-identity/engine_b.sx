@@ -1,0 +1,3 @@
+value :: () -> i64 { 22 }
+generic :: ($T: Type, value: T) -> i64 { 22 }
+defaulted :: (value: i64 = 42) -> i64 { value }

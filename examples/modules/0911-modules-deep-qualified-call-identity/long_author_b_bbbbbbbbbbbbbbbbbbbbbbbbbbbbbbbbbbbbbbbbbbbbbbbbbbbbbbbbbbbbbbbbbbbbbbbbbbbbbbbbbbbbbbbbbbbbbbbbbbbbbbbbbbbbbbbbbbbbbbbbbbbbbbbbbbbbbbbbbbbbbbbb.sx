@@ -1,0 +1,2 @@
+generic :: ($T: Type, value: T) -> i64 { 401 }
+pack :: (..$args) -> i64 { 402 }

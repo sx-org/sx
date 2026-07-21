@@ -1,0 +1,12 @@
+Record :: struct { b_only: i64; }
+
+COUNT :: 22;
+STATE : i64 = 200;
+
+Kind :: enum { other; selected; }
+
+Box :: struct($T: Type) { b_box: T; }
+
+Make :: ($T: Type) -> Type {
+    return struct { b_made: T; };
+}

@@ -1,0 +1,30 @@
+#import "modules/std.sx";
+
+Combines :: protocol #inline {
+    combine :: (self: *Self, other: Self) -> Self;
+}
+
+Value :: struct { n: i64; }
+
+impl Combines for Value {
+    combine :: (self: Value, other: Value) -> Value {
+        Value.{ n = self.n + other.n }
+    }
+}
+
+Box :: struct ($T: Combines) {
+    value: T;
+
+    init :: (value: T) -> Box(T) { Box(T).{ value = value } }
+
+    merge :: (self: *Box(T), other: T) {
+        self.value = self.value.combine(other);
+    }
+}
+
+main :: () -> i64 {
+    box := Box(Value).init(.{ n = 2 });
+    box.merge(.{ n = 3 });
+    print("{}\n", box.value.n);
+    0
+}

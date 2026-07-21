@@ -1,0 +1,17 @@
+// Issue 0325 negative: an inner namespace alias carried across two flat-import
+// edges is not part of the facade target's qualified surface. Every non-call
+// consumer must stop at `facade.engine_alias` before a same-spelled global
+// type/template/function/constant can be selected.
+
+facade :: #import "0908-modules-nested-namespace-noncall-hidden/facade.sx";
+
+main :: () -> i32 {
+    annotated : facade.engine_alias.Record = ---;
+    literal := facade.engine_alias.Record.{ value = 1 };
+    constant := facade.engine_alias.COUNT;
+    variant := facade.engine_alias.Kind.selected;
+    generic : facade.engine_alias.Box(i64) = ---;
+    made : facade.engine_alias.Make(i64) = ---;
+    facade.engine_alias.STATE = 1;
+    0
+}

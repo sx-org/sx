@@ -1,0 +1,23 @@
+// Discarding a bare value-slot binding does not observe its payload. This is
+// legal before the paired error is proven absent; an actual read remains
+// guarded by the usual E1.8 path proof.
+
+E :: error { Bad }
+
+parse :: (n: i32) -> (i32, !E) {
+    if n < 0 { raise error.Bad; }
+    return n * 10;
+}
+
+discard_then_guard :: (n: i32) -> i32 {
+    value, err := parse(n);
+    _ := value;
+    if err { return -1; }
+    return value;
+}
+
+main :: () -> i32 {
+    if discard_then_guard(5) != 50 { return 1; }
+    if discard_then_guard(-1) != -1 { return 2; }
+    return 0;
+}

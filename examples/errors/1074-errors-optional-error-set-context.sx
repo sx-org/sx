@@ -1,0 +1,11 @@
+// An error tag receives the optional error set's payload context before the
+// ordinary T -> ?T wrap is applied.
+
+Failure :: error { Broken };
+
+main :: () -> i32 {
+    failure : ?Failure = null;
+    failure = error.Broken;
+    if failure == null { return 1; }
+    0
+}

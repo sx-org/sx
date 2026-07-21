@@ -1,0 +1,13 @@
+#import "contract.sx";
+
+Payload :: struct { enabled: bool; }
+Thing :: struct { n: i64; }
+
+impl P for Thing {
+    take :: (self: *Thing, payload: Payload) -> i64 {
+        if payload.enabled { return self.n; }
+        0
+    }
+}
+
+make :: () -> Thing { .{ n = 7 } }

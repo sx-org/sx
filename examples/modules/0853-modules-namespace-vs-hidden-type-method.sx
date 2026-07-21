@@ -1,0 +1,11 @@
+// A visible namespace owns `package.answer()` even when a namespaced-only
+// import contains an unrelated type named `package` with a static method.
+// Regression (issue 0320): type-head selection must preserve call domains.
+
+package :: #import "0853-modules-namespace-vs-hidden-type-method/package.sx";
+hidden :: #import "0853-modules-namespace-vs-hidden-type-method/hidden.sx";
+
+main :: () -> i32 {
+    if package.answer() != 42 { return 1; }
+    0
+}

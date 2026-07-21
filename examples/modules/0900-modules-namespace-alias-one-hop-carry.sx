@@ -1,0 +1,12 @@
+// Namespace aliases are authored members of their own module and carry over
+// exactly one direct flat-import edge. Issue 0322's transitive gate must keep
+// both of these supported forms while rejecting a second flat hop.
+
+internal :: #import "0900-modules-namespace-alias-one-hop-carry/internal.sx";
+bridge :: #import "0900-modules-namespace-alias-one-hop-carry/bridge.sx";
+
+main :: () -> i32 {
+    if internal.engine_alias.secret() != 9 { return 1; }
+    if bridge.engine_alias.secret() != 9 { return 2; }
+    0
+}

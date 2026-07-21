@@ -201,7 +201,16 @@ pub const ErrorFlow = struct {
                 return false;
             },
             .var_decl => |vd| {
-                if (vd.value) |v| self.flowExpr(v, ctx, proven.*);
+                if (vd.value) |v| {
+                    // `_ := value` evaluates then discards the value. A bare
+                    // tainted identifier is not observed by that discard, so
+                    // it is safe even before its paired error is proven absent
+                    // (existing HTTP reset coverage relies on this). Compound
+                    // expressions still walk normally because they can read or
+                    // otherwise use the tainted payload while evaluating.
+                    const discards_bare_identifier = std.mem.eql(u8, vd.name, "_") and v.data == .identifier;
+                    if (!discards_bare_identifier) self.flowExpr(v, ctx, proven.*);
+                }
                 self.declareName(ctx, proven, vd.name);
                 return false;
             },

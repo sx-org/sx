@@ -1,0 +1,7 @@
+Hidden :: struct {
+    value: i64;
+
+    make :: () -> Hidden {
+        Hidden.{ value = 17 }
+    }
+}

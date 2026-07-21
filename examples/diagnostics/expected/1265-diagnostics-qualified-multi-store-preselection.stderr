@@ -1,0 +1,11 @@
+error: cannot assign to 'lib.LIB_C' — it is a constant, not a mutable global
+  --> examples/diagnostics/1265-diagnostics-qualified-multi-store-preselection.sx:7:9
+   |
+ 7 |     lib.LIB_C, lib.lib_fn = null, .selected;
+   |         ^^^^^
+
+error: cannot assign to 'lib.lib_fn' — it is a function, not a mutable global
+  --> examples/diagnostics/1265-diagnostics-qualified-multi-store-preselection.sx:7:20
+   |
+ 7 |     lib.LIB_C, lib.lib_fn = null, .selected;
+   |                    ^^^^^^

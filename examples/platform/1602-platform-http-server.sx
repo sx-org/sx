@@ -2,6 +2,7 @@
 
 #import "modules/std.sx";
 #import "modules/std/socket.sx";
+mem :: #import "modules/std/mem.sx";
 
 // --- Logger ---
 // Carried through the implicit context as a typed field: any handler below
@@ -47,7 +48,7 @@ main :: () -> i32 {
 
     print("listening on http://localhost:{}\n", PORT);
 
-    arena := Arena.init(context.allocator, 65536);
+    arena := mem.Arena.init(context.allocator, 65536);
     logger := Logger.{ prefix = "http", count = 0 };
 
     while true {

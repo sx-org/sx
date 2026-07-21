@@ -824,6 +824,125 @@ fn spreadElemNodes(self: *Lowering, operand: *const Node, span: ast.Span) ?[]*No
     }
 }
 
+/// Node-aware lowering for a pack function's fixed runtime prefix. Pack calls
+/// lower their own AST (the pack element types must be known before contextual
+/// prefix types such as `Closure(..xs.T)` can resolve), so they cannot use the
+/// ordinary call loop. Keep the same important parameter semantics here:
+/// contextual typing, implicit address-of, protocol erasure/borrowing, and
+/// value-position lowering. Each successful branch lowers `arg` exactly once.
+fn lowerPackPrefixArg(self: *Lowering, arg: *const Node, param_ty: TypeId, is_receiver: bool) Ref {
+    if (self.foldComptimeFloatInit(arg, param_ty)) |folded| return folded;
+
+    // Concrete lvalue T -> *T: borrow the caller's storage. Leaving this to
+    // node-less `coerceCallArgs` would alloca+store the already-loaded value,
+    // so mutations in the callee would affect only that temporary copy.
+    if (!param_ty.isBuiltin()) {
+        const param_info = self.module.types.get(param_ty);
+        if (param_info == .pointer) {
+            const pointee = param_info.pointer.pointee;
+            if (arg.data == .identifier) {
+                const name = arg.data.identifier.name;
+                const local = if (self.scope) |scope| scope.lookup(name) else null;
+                if (local) |binding| {
+                    if (binding.is_alloca and binding.ty == pointee)
+                        return self.builder.emit(.{ .addr_of = .{ .operand = binding.ref } }, param_ty);
+                } else if (self.resolveGlobalRef(name, null)) |global| {
+                    if (global.ty == pointee and !self.rootIsConstant(name)) {
+                        const place = self.lowerExprAsPtr(arg);
+                        const place_ty = self.builder.getRefType(place);
+                        return if (place_ty == param_ty)
+                            place
+                        else
+                            self.builder.emit(.{ .addr_of = .{ .operand = place } }, param_ty);
+                    }
+                }
+            }
+
+            if ((arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr) and
+                self.inferExprType(arg) == pointee)
+            {
+                const place = self.lowerExprAsPtr(arg);
+                const place_ty = self.builder.getRefType(place);
+                if (place_ty == param_ty) return place;
+                if (place_ty == pointee)
+                    return self.builder.emit(.{ .addr_of = .{ .operand = place } }, param_ty);
+            }
+        }
+    }
+
+    // Concrete -> protocol value: preserve the AST so #identity parameters
+    // borrow lvalues while value/own parameters keep owning semantics.
+    if (self.getProtocolInfo(param_ty) != null) {
+        const concrete_ty = self.inferExprType(arg);
+        if (concrete_ty != .unresolved and concrete_ty != param_ty and concrete_ty != .any and
+            !concrete_ty.isBuiltin() and self.getProtocolInfo(concrete_ty) == null)
+        {
+            const concrete_info = self.module.types.get(concrete_ty);
+            if (concrete_info == .@"struct" or concrete_info == .pointer) {
+                const value = self.lowerExpr(arg);
+                return self.buildProtocolErasure(value, arg, concrete_ty, param_ty);
+            }
+        }
+    }
+
+    // Concrete lvalue -> *Protocol: construct a borrowed view around the real
+    // concrete address, then pass the spilled protocol value by pointer.
+    if (!param_ty.isBuiltin() and
+        (arg.data == .identifier or arg.data == .field_access or arg.data == .index_expr or arg.data == .deref_expr))
+    {
+        const param_info = self.module.types.get(param_ty);
+        if (param_info == .pointer and self.getProtocolInfo(param_info.pointer.pointee) != null) {
+            const concrete_ty = self.inferExprType(arg);
+            if (concrete_ty != .unresolved and !concrete_ty.isBuiltin() and concrete_ty != param_info.pointer.pointee and
+                self.getProtocolInfo(concrete_ty) == null and self.module.types.get(concrete_ty) == .@"struct")
+            {
+                const place = self.lowerExprAsPtr(arg);
+                const place_ty = self.builder.getRefType(place);
+                const address = if (place_ty == concrete_ty)
+                    self.builder.emit(.{ .addr_of = .{ .operand = place } }, self.module.types.ptrTo(concrete_ty))
+                else
+                    place;
+                if (self.viewOfConcreteAddr(address, concrete_ty, param_ty)) |view| return view;
+            }
+        }
+    }
+
+    const saved_force_block_value = self.force_block_value;
+    self.force_block_value = true;
+    const value = self.lowerExpr(arg);
+    self.force_block_value = saved_force_block_value;
+
+    // Method receivers keep the ordinary method adaptation: calling a
+    // value-receiver method through `*T` passes the pointee. Explicit fixed
+    // params retain the normal pointer-to-value diagnostic below.
+    const value_ty = self.builder.getRefType(value);
+    if (is_receiver and !value_ty.isBuiltin()) {
+        const value_info = self.module.types.get(value_ty);
+        if (value_info == .pointer and value_info.pointer.pointee == param_ty)
+            return self.builder.load(value, param_ty);
+    }
+
+    if (!is_receiver and !value_ty.isBuiltin()) {
+        const value_info = self.module.types.get(value_ty);
+        if (value_info == .pointer and value_info.pointer.pointee == param_ty) {
+            if (self.diagnostics) |diagnostics| {
+                const type_name = self.formatTypeName(param_ty);
+                if (arg.data == .identifier) {
+                    const name = arg.data.identifier.name;
+                    const lead: []const u8 = if (self.refCapturePointee(arg) != null) "by-reference loop capture" else "argument";
+                    const fix = std.fmt.allocPrint(self.alloc, "{s}.*", .{name}) catch name;
+                    const id = diagnostics.addFmtId(.err, arg.span, "{s} '{s}' has type '*{s}', but '{s}' is expected here", .{ lead, name, type_name, type_name });
+                    diagnostics.addHelpFmt(id, arg.span, fix, "dereference it to pass the value: `{s}`", .{fix});
+                } else {
+                    const id = diagnostics.addFmtId(.err, arg.span, "this argument has type '*{s}', but '{s}' is expected here", .{ type_name, type_name });
+                    diagnostics.addHelpFmt(id, arg.span, null, "dereference it with `.*` to pass the value", .{});
+                }
+            }
+        }
+    }
+    return value;
+}
+
 /// Per-call-shape monomorphisation entry for pack-fns
 /// (`isPackFn(fd) == true`). Computes a mangled name from the
 /// call-site arg types, builds the mono if it's not cached, and
@@ -831,6 +950,22 @@ fn spreadElemNodes(self: *Lowering, operand: *const Node, span: ast.Span) ?[]*No
 /// params with concrete types; the body's `args[<lit>]` and
 /// `args.len` resolve to those params via the pack bindings.
 pub fn lowerPackFnCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const ast.Call) Ref {
+    return self.lowerPackFnCallNamed(fd, fd.name, call_node, null);
+}
+
+/// Pack-call lowering with an identity-bearing compiler-internal base name.
+/// Ordinary free functions pass `fd.name`; nominally selected struct methods
+/// pass their author-specific dispatch key so two same-named methods with the
+/// same call shape cannot share a monomorphized body. `receiver_node` marks a
+/// receiver AST prepended by instance-method dispatch; it occupies fixed-prefix
+/// index zero. Free/static pack calls pass null.
+pub fn lowerPackFnCallNamed(
+    self: *Lowering,
+    fd: *const ast.FnDecl,
+    dispatch_name: []const u8,
+    call_node: *const ast.Call,
+    receiver_node: ?*const Node,
+) Ref {
     // Spread args expand at AST level FIRST (element access nodes) so each
     // element is an independent pack arg: pack forwarding `g(..xs)`, tuple
     // spread `print(fmt, ..t)`, array spread. An unsupported operand keeps
@@ -838,7 +973,7 @@ pub fn lowerPackFnCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const
     // expanded list contains no expandable spreads.
     if (self.expandSpreadArgNodes(call_node.args)) |expanded| {
         const syn_call = ast.Call{ .callee = call_node.callee, .args = expanded };
-        return self.lowerPackFnCall(fd, &syn_call);
+        return self.lowerPackFnCallNamed(fd, dispatch_name, &syn_call, receiver_node);
     }
     // A spread that could not be expanded at AST level has already lost the
     // static element shape required by a pack call (notably `..make_tuple()`).
@@ -938,7 +1073,7 @@ pub fn lowerPackFnCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const
     defer args.deinit(self.alloc);
     {
         var ri: usize = 0;
-        for (fd.params) |p| {
+        for (fd.params, 0..) |p, param_idx| {
             if (isPackParam(p)) break;
             if (ri >= call_node.args.len) break;
             if (!p.is_comptime) {
@@ -949,13 +1084,15 @@ pub fn lowerPackFnCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const
                 // module must resolve there, not the caller's. The arg itself
                 // is lowered AFTER, in the caller's context.
                 const saved_tt = self.target_type;
-                const pty = self.resolveParamTypeInSource(fd.body.source_file, &p);
+                const pty = self.resolveDeclParamType(fd, param_idx);
                 if (pty != .unresolved) self.target_type = pty;
                 // Prefix arg is a value position (issue 0268 — see the pack-arg
                 // loop above): force block-form if/match to yield its value.
                 const saved_prefix_fbv = self.force_block_value;
                 self.force_block_value = true;
-                args.append(self.alloc, self.lowerExpr(call_node.args[ri])) catch return self.builder.constInt(0, .void);
+                const arg_node = call_node.args[ri];
+                const arg_ref = lowerPackPrefixArg(self, arg_node, pty, receiver_node != null and param_idx == 0);
+                args.append(self.alloc, arg_ref) catch return self.builder.constInt(0, .void);
                 self.force_block_value = saved_prefix_fbv;
                 self.target_type = saved_tt;
             }
@@ -1014,14 +1151,14 @@ pub fn lowerPackFnCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const
     // comptime VALUES — get distinct symbols.
     var name_buf = std.ArrayList(u8).empty;
     defer name_buf.deinit(self.alloc);
-    name_buf.appendSlice(self.alloc, fd.name) catch return self.builder.constInt(0, .void);
+    name_buf.appendSlice(self.alloc, dispatch_name) catch @panic("out of memory while mangling pack function");
     // Comptime values first (deterministic by fd.params order).
     var ct_fi: usize = 0;
     for (fd.params) |p| {
         if (isPackParam(p)) break;
         if (ct_fi >= call_node.args.len) break;
         if (p.is_comptime) {
-            name_buf.appendSlice(self.alloc, "__ct_") catch return self.builder.constInt(0, .void);
+            name_buf.appendSlice(self.alloc, "__ct_") catch @panic("out of memory while mangling pack function");
             self.genericResolver().appendComptimeValueMangle(&name_buf, call_node.args[ct_fi]);
         }
         ct_fi += 1;
@@ -1029,14 +1166,14 @@ pub fn lowerPackFnCall(self: *Lowering, fd: *const ast.FnDecl, call_node: *const
     // Inferred type-param bindings (deterministic by fd.type_params order).
     for (fd.type_params) |tp| {
         if (tparam_bindings.get(tp.name)) |ty| {
-            name_buf.appendSlice(self.alloc, "__tp_") catch return self.builder.constInt(0, .void);
-            name_buf.appendSlice(self.alloc, self.mangleTypeName(ty)) catch return self.builder.constInt(0, .void);
+            name_buf.appendSlice(self.alloc, "__tp_") catch @panic("out of memory while mangling pack function");
+            name_buf.appendSlice(self.alloc, self.mangleTypeName(ty)) catch @panic("out of memory while mangling pack function");
         }
     }
-    name_buf.appendSlice(self.alloc, "__pack") catch return self.builder.constInt(0, .void);
+    name_buf.appendSlice(self.alloc, "__pack") catch @panic("out of memory while mangling pack function");
     for (pack_arg_types.items) |t| {
-        name_buf.append(self.alloc, '_') catch return self.builder.constInt(0, .void);
-        name_buf.appendSlice(self.alloc, self.mangleTypeName(t)) catch return self.builder.constInt(0, .void);
+        name_buf.append(self.alloc, '_') catch @panic("out of memory while mangling pack function");
+        name_buf.appendSlice(self.alloc, self.mangleTypeName(t)) catch @panic("out of memory while mangling pack function");
     }
     const mangled = name_buf.items;
 
@@ -1213,7 +1350,7 @@ pub fn monomorphizePackFn(
     for (fd.params, 0..) |p, i| {
         if (i == pack_param_idx) continue;
         if (p.is_comptime) continue; // folded into mangle, not in IR
-        const pty = self.resolveParamType(&p);
+        const pty = self.resolveDeclParamType(fd, i);
         params.append(self.alloc, .{
             .name = self.module.types.internString(p.name),
             .ty = pty,
@@ -1276,7 +1413,7 @@ pub fn monomorphizePackFn(
         // there, not in the caller's restored context. Mirrors the
         // signature build above and `resolveParamTypeInSource` at the
         // cross-module call-arg typing sites.
-        const pty = self.resolveParamTypeInSource(fd.body.source_file, &p);
+        const pty = self.resolveDeclParamType(fd, i);
         const slot = self.builder.alloca(pty);
         self.builder.store(slot, Ref.fromIndex(param_idx));
         scope.put(p.name, .{ .ref = slot, .ty = pty, .is_alloca = true });

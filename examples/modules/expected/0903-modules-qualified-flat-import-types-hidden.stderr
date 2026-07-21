@@ -1,0 +1,41 @@
+error: namespace 'facade' has no member 'HiddenStruct'
+  --> examples/modules/0903-modules-qualified-flat-import-types-hidden.sx:8:13
+   |
+ 8 |     plain : facade.HiddenStruct = ---;
+   |             ^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'HiddenAlias'
+  --> examples/modules/0903-modules-qualified-flat-import-types-hidden.sx:9:13
+   |
+ 9 |     alias : facade.HiddenAlias = ---;
+   |             ^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'HiddenUnion'
+  --> examples/modules/0903-modules-qualified-flat-import-types-hidden.sx:10:15
+   |
+10 |     overlay : facade.HiddenUnion = ---;
+   |               ^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'HiddenError'
+  --> examples/modules/0903-modules-qualified-flat-import-types-hidden.sx:11:11
+   |
+11 |     err : facade.HiddenError = ---;
+   |           ^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'HiddenProtocol'
+  --> examples/modules/0903-modules-qualified-flat-import-types-hidden.sx:12:14
+   |
+12 |     stream : facade.HiddenProtocol = ---;
+   |              ^^^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'HiddenGeneric'
+  --> examples/modules/0903-modules-qualified-flat-import-types-hidden.sx:13:16
+   |
+13 |     generic := facade.HiddenGeneric(i64).{ value = 1 };
+   |                ^^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'facade' has no member 'HiddenStruct'
+  --> examples/modules/0903-modules-qualified-flat-import-types-hidden.sx:14:13
+   |
+14 |     made := facade.HiddenStruct.make();
+   |             ^^^^^^^^^^^^^^^^^^^

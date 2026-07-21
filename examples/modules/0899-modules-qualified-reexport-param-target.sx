@@ -1,0 +1,12 @@
+// A namespace facade's plain function re-export must carry the terminal
+// declaration's parameter types into argument lowering. In particular, `xx`
+// needs that target before it is lowered; an empty signature plan otherwise
+// emits an unresolved load which reaches LLVM.
+facade :: #import "0899-modules-qualified-reexport-param-target/facade.sx";
+
+main :: () -> i32 {
+    wide : i64 = 42;
+    got := facade.take(xx wide);
+    if got != 42 { return 1; }
+    return 0;
+}
