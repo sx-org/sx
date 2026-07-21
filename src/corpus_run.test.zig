@@ -1061,7 +1061,9 @@ fn writeTimingReport(
             }));
         }
     }
-    const path = try std.fmt.allocPrint(a, "{s}/.sx-tmp/corpus-timing-{s}.txt", .{ repo_root, label });
+    const dir_path = try std.fmt.allocPrint(a, "{s}/.sx-tmp", .{repo_root});
+    std.Io.Dir.createDirPath(.cwd(), io, dir_path) catch {};
+    const path = try std.fmt.allocPrint(a, "{s}/corpus-timing-{s}.txt", .{ dir_path, label });
     std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = path, .data = buf.items }) catch |err| {
         std.debug.print("[corpus-run] timing report write failed: {s} ({s})\n", .{ path, @errorName(err) });
         return;

@@ -1,11 +1,20 @@
 # 0328 — protocol-constrained generic is misclassified as a value parameter
 
-> **FOCUSED GATE PASS; FULL CORPUS PENDING (2026-07-21).** Main-file
-> declarations now carry explicit semantic lookup authority even though their
-> AST nodes are intentionally source-unstamped, and generic templates retain
-> that author source through instantiation. The positive issue/0204 cases and
-> exact negative value-parameter matrix pass at `--opt 0` and `--opt 3`. No
+> **RESOLVED (2026-07-21).** Root cause: `UnknownTypeChecker.isTypeParam`
+> classified `$T: Protocol` constraints (and attributed their spans) against
+> the diagnostic renderer's mutable current file, so a previously visited
+> facade (`modules/std.sx`) decided the classification for main-file and
+> imported generic declarations. Fix: declaration-author source is kept
+> separate from the renderer's current file (unstamped main-file nodes fall
+> back to `main_file` for both authorities), and
+> `buildGenericStructTemplate` stores normalized author provenance so
+> monomorphization cannot inherit an unrelated caller/facade context. No
 > syntax or public language API changed.
+> Evidence (verified on the committed tree, 2026-07-21): the pinned repro
+> `issues/0328-…​.sx` prints `5` at opt 0+3; example 0204 passes at opt 0+3;
+> negatives 0172/0760/1111/1115 keep byte-exact value-parameter diagnostics
+> at opt 0+3; four full `zig build test` corpus runs green today (the repro
+> stays pinned in the issues corpus as the regression).
 
 ## Symptom
 
@@ -96,4 +105,5 @@ Focused evidence after a clean `zig build`:
 - examples 0172, 0760, 1111, and 1115 retain byte-exact value-parameter
   diagnostics at opt 0/3.
 
-The full combined `zig build test`/corpus gate remains pending.
+The full combined `zig build test`/corpus gate has since passed repeatedly
+on the committed tree (see the RESOLVED banner).
