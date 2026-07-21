@@ -1,6 +1,29 @@
 # 0322 — namespace aliases leak through transitive flat imports
 
-> **ADVERSARIAL REVIEW REOPENED (2026-07-21).** The focused one-inner-edge call
+> **RESOLVED (2026-07-21).** Re-derivation against the current compiler
+> (post-`735c253f`, post-`1b1a59bb`) found EVERY reopened finding fixed —
+> the corrected qualified call/store slice (`735c253f`) closed them with
+> its source-aware domain verdicts and exact declaration identity:
+> - same-name generics through namespaces monomorphize per author (no
+>   shared base-name mono key), int and float instantiations, incl.
+>   >256-byte author-path keys (0911 long-author legs);
+> - selected default ASTs evaluate under the AUTHOR's module (module-local
+>   consts in defaults select per namespace);
+> - contextual/target-typed literal arguments select each author's
+>   parameter type;
+> - a selected terminal non-function DIAGNOSES ("this namespace member is
+>   not callable") — no silent fallback to a same-named global callable;
+> - an unrelated non-visible global does not suppress a valid namespace
+>   root (fresh regression `examples/modules/0923-modules-namespace-root-
+>   vs-hidden-global.sx`, opt 0/3);
+> - deep nested-namespace paths keep exact leaf identity; pack (`..$args`)
+>   authors select per namespace.
+> Evidence: the pinned multi-hop negative (this issue's repro, corpus);
+> permanent matrix 0851-0854, 0899-0902, 0908-0914 (incl. 0911's
+> arbitrary-depth default/comptime-typing/mono/pack legs and 0914's
+> non-callable no-fallback), new 0923; fresh probe set exercised at opt
+> 0+3 during re-derivation (recorded in the vault task). No code change
+> was needed in this slice; the only addition is the 0923 regression. The focused one-inner-edge call
 > matrix proves an inner alias against the outer target and rejects a
 > transitive alias before global fallback. Independent review found that deeper
 > call paths and several planning/default/monomorph consumers still use

@@ -1,0 +1,16 @@
+// A namespace alias whose ROOT spelling is also a GLOBAL VARIABLE in an
+// unrelated, non-visible module: the alias must stay a valid namespace root
+// here (the hidden global may not suppress it), while the module that owns
+// the global keeps using it as a value.
+// Regression (issue 0322 follow-up review: "an unrelated non-visible global
+// could suppress a valid namespace root").
+#import "modules/std.sx";
+g :: #import "0923-modules-namespace-root-vs-hidden-global/mid.sx";
+util :: #import "0923-modules-namespace-root-vs-hidden-global/util_mod.sx";
+
+main :: () -> i32 {
+    if util.helper() != 33 { return 1; }
+    if g.mid_fn() != 5 { return 2; }
+    print("ok\n");
+    return 0;
+}

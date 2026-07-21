@@ -1,0 +1,2 @@
+#import "other.sx";
+mid_fn :: () -> i64 { return touch(); }

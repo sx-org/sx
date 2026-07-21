@@ -1,0 +1,2 @@
+util := 5;
+touch :: () -> i64 { return util; }
