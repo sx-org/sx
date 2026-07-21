@@ -1,0 +1,8 @@
+Base :: struct { da: i64; }
+Thing :: struct {
+    SIZE :: 222;
+    #using Base;
+    x: i64 = 99;
+    extra: i64 = 7;
+}
+mk :: () -> Thing { return Thing.{ da = 5 }; }

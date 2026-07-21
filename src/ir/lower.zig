@@ -607,6 +607,20 @@ pub const Lowering = struct {
     /// name the CALLER declared block-local (E3 attempt-5).
     local_type_names: std.StringHashMap(std.StringHashMap(void)),
     struct_defaults_map: std.StringHashMap([]const ?*const Node), // struct name → field defaults
+    /// Concrete plain-struct TypeId → field defaults ALIGNED WITH THE
+    /// FLATTENED layout (a `#using`-embedded base field holds null — base
+    /// defaults do not flow through `#using`, matching generic instantiation;
+    /// issue 0335 records the open design question). Literal lowering selects
+    /// through this identity first; the display-name map above stays only as
+    /// the generic-instance / alias fallback, because its name key is
+    /// last-wins across same-name authors (issue 0320).
+    struct_defaults_by_tid: std.AutoHashMap(TypeId, []const ?*const Node),
+    /// (concrete TypeId, const name) → struct-level constant. TypeId-keyed
+    /// twin of `struct_const_map`: the `"Struct.CONST"` string key is
+    /// last-wins across same-name authors (issue 0320). When the head type
+    /// has a tracked author, this map is AUTHORITATIVE — a miss means the
+    /// selected struct has no such constant, never "try the global name".
+    struct_const_by_tid: std.AutoHashMap(StructConstTidKey, StructConstInfo),
     struct_instance_bindings: std.StringHashMap(std.StringHashMap(TypeId)), // mangled struct name → type param bindings
     struct_instance_template: std.StringHashMap([]const u8), // mangled struct name → template name
     struct_instance_author: std.StringHashMap(*const ast.StructDecl), // mangled struct name → authoring StructDecl (CP-2: body-author ≡ layout-author)
@@ -710,6 +724,13 @@ pub const Lowering = struct {
     pub const StructConstInfo = struct {
         value: *const Node,
         ty: ?TypeId, // null if no type annotation (inferred)
+    };
+
+    /// Identity key for a struct-level constant: the declaring struct's
+    /// concrete TypeId + the interned const name (issue 0320).
+    pub const StructConstTidKey = struct {
+        ty: TypeId,
+        name: types.StringId,
     };
 
     /// One impl block for a parameterised protocol (e.g. `impl Into(Block) for Closure() -> void`).
@@ -894,6 +915,8 @@ pub const Lowering = struct {
             .protocol_ast_by_type = std.AutoHashMap(TypeId, *const ast.ProtocolDecl).init(module.alloc),
             .local_type_names = std.StringHashMap(std.StringHashMap(void)).init(module.alloc),
             .struct_defaults_map = std.StringHashMap([]const ?*const Node).init(module.alloc),
+            .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
+            .struct_const_by_tid = std.AutoHashMap(StructConstTidKey, StructConstInfo).init(module.alloc),
             .struct_instance_bindings = std.StringHashMap(std.StringHashMap(TypeId)).init(module.alloc),
             .struct_instance_template = std.StringHashMap([]const u8).init(module.alloc),
             .struct_instance_author = std.StringHashMap(*const ast.StructDecl).init(module.alloc),
@@ -2839,6 +2862,7 @@ pub const Lowering = struct {
     pub const PlainStructMethod = lower_nominal.PlainStructMethod;
     pub const StaticStructHead = lower_nominal.StaticStructHead;
     pub const registerStructDecl = lower_nominal.registerStructDecl;
+    pub const resolveUsingBase = lower_nominal.resolveUsingBase;
     pub const staticStructHead = lower_nominal.staticStructHead;
     pub const hasPlainStructAuthor = lower_nominal.hasPlainStructAuthor;
     pub const plainStructMethod = lower_nominal.plainStructMethod;

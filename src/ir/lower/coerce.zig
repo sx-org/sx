@@ -989,10 +989,14 @@ pub fn buildDefaultValue(self: *Lowering, ty: TypeId) Ref {
             .tuple_init = .{ .fields = self.alloc.dupe(Ref, field_vals.items) catch unreachable },
         }, ty);
     }
-    // Check for struct defaults
+    // Check for struct defaults — TypeId identity first; for an
+    // author-tracked type a tid-map miss means "no defaults" (issue 0320).
     const struct_name_str = self.module.types.getString(info.@"struct".name);
-    const field_defaults = self.struct_defaults_map.get(struct_name_str) orelse
-        return self.builder.constUndef(ty);
+    const field_defaults = self.struct_defaults_by_tid.get(ty) orelse blk: {
+        if (self.plain_struct_authors.contains(ty)) return self.builder.constUndef(ty);
+        break :blk self.struct_defaults_map.get(struct_name_str) orelse
+            return self.builder.constUndef(ty);
+    };
     const fields = info.@"struct".fields;
     var field_vals = std.ArrayList(Ref).empty;
     defer field_vals.deinit(self.alloc);

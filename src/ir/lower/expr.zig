@@ -296,10 +296,19 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         const ti = self.module.types.get(ty);
         break :blk if (ti == .@"struct") self.module.types.getString(ti.@"struct".name) else @as(?[]const u8, null);
     } else @as(?[]const u8, null);
-    const field_defaults: []const ?*const Node = if (struct_name_for_defaults) |sn|
-        (self.struct_defaults_map.get(sn) orelse &.{})
-    else
-        &.{};
+    // The concrete TypeId selects the AUTHORING declaration's defaults. For
+    // an author-tracked type the identity map is AUTHORITATIVE — a miss means
+    // "this struct declares no defaults", never "borrow a same-name author's".
+    // The display-name map remains only for names without a nominal identity
+    // entry (generic instances, whose mangled names are unique) — its key is
+    // last-wins across same-name authors (issue 0320).
+    const field_defaults: []const ?*const Node = blk: {
+        if (!ty.isBuiltin()) {
+            if (self.struct_defaults_by_tid.get(ty)) |d| break :blk d;
+            if (self.plain_struct_authors.contains(ty)) break :blk &.{};
+        }
+        break :blk if (struct_name_for_defaults) |sn| (self.struct_defaults_map.get(sn) orelse &.{}) else &.{};
+    };
 
     // A generic instance's defaults may REFERENCE its type params — `sz: i64 =
     // size_of(T)` (issue 0221, dependent defaults). Those default AST nodes
@@ -980,11 +989,32 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
         }
     }
 
-    // Check for struct constant access: Struct.CONST
+    // Check for struct constant access: Struct.CONST. The head resolves
+    // through THIS source's nominal authority first (the namespace walk above
+    // already re-entered with the target module as current source), so
+    // same-name structs select their own constants; the process-global
+    // "Struct.CONST" spelling is last-wins and remains only the fallback for
+    // heads without a tracked author (issue 0320).
     if (fa.object.data == .identifier) {
-        const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ fa.object.data.identifier.name, fa.field }) catch fa.field;
-        if (self.struct_const_map.get(qualified)) |info| {
-            return self.lowerStructConstant(info);
+        const head_name = fa.object.data.identifier.name;
+        var author_tracked = false;
+        if (self.current_source_file orelse self.main_file) |from| {
+            switch (self.selectNominalLeaf(head_name, from, false)) {
+                .resolved => |head_ty| {
+                    if (!head_ty.isBuiltin() and self.plain_struct_authors.contains(head_ty)) {
+                        author_tracked = true;
+                        if (self.struct_const_by_tid.get(.{ .ty = head_ty, .name = self.module.types.internString(fa.field) })) |info|
+                            return self.lowerStructConstant(info);
+                    }
+                },
+                else => {},
+            }
+        }
+        if (!author_tracked) {
+            const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ head_name, fa.field }) catch fa.field;
+            if (self.struct_const_map.get(qualified)) |info| {
+                return self.lowerStructConstant(info);
+            }
         }
     }
 

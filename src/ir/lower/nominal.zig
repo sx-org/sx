@@ -883,21 +883,27 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     const decl_key: *const anyopaque = @ptrCast(sd);
     const nominal_id: u32 = if (table.type_decl_tids.get(decl_key)) |id| nominalIdOf(table.get(id)) else self.shadowNominalId(name_id);
 
-    // Build field list, expanding #using entries
+    // Build field list, expanding #using entries. Defaults are built IN THE
+    // SAME interleave so they stay aligned with the FLATTENED layout — an
+    // embedded base field holds null (base defaults do not flow through
+    // `#using`, matching generic instantiation; issue 0335), and an explicit
+    // field's declared default lands at its flattened position.
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
+    var layout_defaults = std.ArrayList(?*const Node).empty;
     var field_idx: usize = 0;
     var using_idx: usize = 0;
+    const using_authority: ?[]const u8 = source_file orelse self.current_source_file;
     const total_explicit = sd.field_names.len;
     while (field_idx < total_explicit or using_idx < sd.using_entries.len) {
         // Insert #using fields at their declared positions
         while (using_idx < sd.using_entries.len and sd.using_entries[using_idx].insert_index == fields.items.len) {
             const ue = sd.using_entries[using_idx];
-            const used_name_id = table.internString(ue.type_name);
-            if (table.findByName(used_name_id)) |used_ty| {
+            if (self.resolveUsingBase(ue.type_name, using_authority, sd.name)) |used_ty| {
                 const used_info = table.get(used_ty);
                 if (used_info == .@"struct") {
                     for (used_info.@"struct".fields) |f| {
                         fields.append(self.alloc, f) catch unreachable;
+                        layout_defaults.append(self.alloc, null) catch unreachable;
                     }
                 }
             }
@@ -910,18 +916,19 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
                 .name = table.internString(sd.field_names[field_idx]),
                 .ty = field_ty,
             }) catch unreachable;
+            layout_defaults.append(self.alloc, if (field_idx < sd.field_defaults.len) sd.field_defaults[field_idx] else null) catch unreachable;
             field_idx += 1;
         } else break;
     }
     // Append remaining #using entries after all explicit fields
     while (using_idx < sd.using_entries.len) {
         const ue = sd.using_entries[using_idx];
-        const used_name_id = table.internString(ue.type_name);
-        if (table.findByName(used_name_id)) |used_ty| {
+        if (self.resolveUsingBase(ue.type_name, using_authority, sd.name)) |used_ty| {
             const used_info = table.get(used_ty);
             if (used_info == .@"struct") {
                 for (used_info.@"struct".fields) |f| {
                     fields.append(self.alloc, f) catch unreachable;
+                    layout_defaults.append(self.alloc, null) catch unreachable;
                 }
             }
         }
@@ -950,17 +957,22 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     // process-global `StructName.method` spelling (issue 0320).
     self.plain_struct_authors.put(struct_ty, .{ .decl = sd, .source = source_file orelse self.current_source_file }) catch @panic("out of memory");
 
-    // Store field defaults for struct literal lowering
-    if (sd.field_defaults.len > 0) {
+    // Store field defaults for struct literal lowering — the LAYOUT-ALIGNED
+    // array, keyed by the concrete TypeId (authoritative; issue 0320) and by
+    // display name (legacy fallback for consumers without a nominal identity;
+    // still last-wins across same-name authors).
+    {
         var has_any_default = false;
-        for (sd.field_defaults) |d| {
+        for (layout_defaults.items) |d| {
             if (d != null) {
                 has_any_default = true;
                 break;
             }
         }
         if (has_any_default) {
-            self.struct_defaults_map.put(sd.name, sd.field_defaults) catch {};
+            const owned_defaults = layout_defaults.toOwnedSlice(self.alloc) catch &.{};
+            self.struct_defaults_by_tid.put(struct_ty, owned_defaults) catch {};
+            self.struct_defaults_map.put(sd.name, owned_defaults) catch {};
         }
     }
 
@@ -984,15 +996,41 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
         }
     }
 
-    // Register struct-level constants (e.g., GRAVITY :f32: 9.81)
+    // Register struct-level constants (e.g., GRAVITY :f32: 9.81) — keyed by
+    // the concrete TypeId (authoritative; issue 0320) and by the legacy
+    // "Struct.CONST" spelling (fallback for heads with no nominal identity;
+    // still last-wins across same-name authors).
     for (sd.constants) |const_node| {
         if (const_node.data == .const_decl) {
             const cd = const_node.data.const_decl;
             const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sd.name, cd.name }) catch continue;
             const ty: ?TypeId = if (cd.type_annotation) |ta| self.resolveType(ta) else null;
-            self.struct_const_map.put(qualified, .{ .value = cd.value, .ty = ty }) catch {};
+            const info_entry: Lowering.StructConstInfo = .{ .value = cd.value, .ty = ty };
+            self.struct_const_by_tid.put(.{ .ty = struct_ty, .name = table.internString(cd.name) }, info_entry) catch {};
+            self.struct_const_map.put(qualified, info_entry) catch {};
         }
     }
+}
+
+/// Resolve a `#using` base name from the DECLARING struct's own source
+/// authority (issue 0320: the global `findByName` first/last-match let a
+/// different module's same-name base win). `.resolved` wins; any other
+/// verdict falls back to the legacy global lookup so forward references and
+/// unwired-facts registration keep their existing behavior. When BOTH miss,
+/// the base is genuinely unknown — diagnose loudly instead of silently
+/// registering a layout without the embedded fields.
+pub fn resolveUsingBase(self: *Lowering, base_name: []const u8, authority: ?[]const u8, struct_name: []const u8) ?TypeId {
+    const table = &self.module.types;
+    if (authority) |from| {
+        switch (self.selectNominalLeaf(base_name, from, false)) {
+            .resolved => |ty| if (!ty.isBuiltin()) return ty,
+            else => {},
+        }
+    }
+    if (table.findByName(table.internString(base_name))) |ty| return ty;
+    if (self.diagnostics) |d|
+        d.addFmt(.err, .{ .start = 0, .end = 0 }, "unknown type '{s}' in #using inside struct '{s}'", .{ base_name, struct_name });
+    return null;
 }
 
 /// Register a top-level ENUM decl under a per-decl nominal identity (E6a) —

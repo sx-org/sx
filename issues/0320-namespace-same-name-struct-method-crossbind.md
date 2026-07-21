@@ -1,5 +1,33 @@
 # 0320 — namespace-imported same-name struct methods cross-bind last-wins
 
+> **RESOLVED (2026-07-21).** The three consumers the reopening review named
+> now select by concrete TypeId/author identity, closing the last
+> name-keyed surfaces:
+> - **Field defaults**: `registerStructDecl` builds LAYOUT-ALIGNED defaults
+>   (also fixing issue 0335's `#using` misalignment) and registers them in
+>   `struct_defaults_by_tid`; literal/coerce/comptime lowering select by
+>   TypeId first, and for an author-tracked type a miss is authoritative
+>   ("no defaults"), never a fall-through to another author's name entry.
+> - **Struct constants**: registered in `struct_const_by_tid` keyed by
+>   (concrete TypeId, name); the `Struct.CONST` intercepts in
+>   `lowerFieldAccess` and the expr-typer resolve the head through
+>   `selectNominalLeaf` under the current source authority (the namespace
+>   walk already re-enters with the target module as current source), with
+>   the global string map only serving untracked heads.
+> - **`#using` bases**: both plain-struct registration interleave loops and
+>   both generic-instantiation loops resolve the base via the new
+>   source-aware `resolveUsingBase` (declaring module's authority; legacy
+>   global lookup only as forward/unwired fallback; a double miss now
+>   DIAGNOSES instead of silently dropping the embedded fields).
+> Regressions: `examples/modules/0921-modules-nominal-defaults-constants-
+> using.sx` (defaults + constants + `#using` + 0335 alignment, opt 0/3) and
+> `0922-modules-nominal-identity-import-order.sx` (identical selection with
+> the import order flipped, opt 0/3), plus the original 0851-0853 /
+> 0884-0885 method matrix. Full corpus green; 61-trial benchmark gate on
+> the committed tree recorded in the commit message.
+>
+> Historical banner (method-surface fix + the reopening) below.
+
 > **ADVERSARIAL REVIEW REOPENED (2026-07-21).** Plain-struct method registration and dispatch
 > shared the process-global `StructName.method` spelling even though the
 > layouts already had distinct nominal `TypeId`s. The compiler now retains the
@@ -26,6 +54,28 @@
 > lookup. Distinct `a.Thing`/`b.Thing` types can therefore retain separate
 > methods while sharing defaults, constants, or embedded layout. This issue
 > remains open until those consumers use exact `TypeId`/author identity.
+>
+> **RE-DERIVED against the current compiler (2026-07-21, post-`735c253f` /
+> post-`a864f4fb` / codec commits).** All three surfaces reproduce:
+>
+> 1. **Constants — last-wins.** `moda: Thing :: struct { SIZE :: 111; … }`,
+>    `modb: Thing :: struct { SIZE :: 222; … }`; namespaced imports of both;
+>    `a.Thing.SIZE` and `b.Thing.SIZE` BOTH print `222`.
+> 2. **Field defaults — collapse to zero-fill.** Same two `Thing`s carrying
+>    `x: i64 = 10;` / `x: i64 = 99;` (and `extra: i64 = 7;` only in B):
+>    every literal that omits the defaulted fields yields `0` — NEITHER
+>    module's default applies once the display name collides (a
+>    single-module control keeps `x = 10`, so the default machinery itself
+>    is fine).
+> 3. **`#using` — wrong module's base embedded.** `modc: Base { ca, cb };
+>    Holder { #using Base; own }` and `modd: Base { da }; Holder { #using
+>    Base; own }`, imported d-then-c: C's `Holder` embeds D's `Base`, so
+>    C's own `ca`/`cb` fail "field not found" (flip the order and D breaks
+>    instead — global-name last-registered wins).
+>
+> Fix direction unchanged: key struct defaults, struct constants, and
+> `#using` base resolution by concrete `TypeId`/author identity exactly as
+> methods now are.
 
 ## Symptom
 

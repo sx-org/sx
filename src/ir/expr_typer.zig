@@ -154,9 +154,29 @@ pub const ExprTyper = struct {
                 // callers boxed the float into the int slot.
                 if (fa.object.data == .identifier) {
                     const obj_name = fa.object.data.identifier.name;
-                    const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ obj_name, fa.field }) catch fa.field;
-                    if (self.l.struct_const_map.get(qualified)) |info| {
-                        if (info.ty) |t| return t;
+                    // Nominal-authority selection first, mirroring the
+                    // lowerFieldAccess intercept (issue 0320) — the global
+                    // "Struct.CONST" spelling is last-wins across same-name
+                    // authors and stays only as the untracked-head fallback.
+                    var author_tracked = false;
+                    if (self.l.current_source_file orelse self.l.main_file) |from| {
+                        switch (self.l.selectNominalLeaf(obj_name, from, false)) {
+                            .resolved => |head_ty| {
+                                if (!head_ty.isBuiltin() and self.l.plain_struct_authors.contains(head_ty)) {
+                                    author_tracked = true;
+                                    if (self.l.struct_const_by_tid.get(.{ .ty = head_ty, .name = self.l.module.types.internString(fa.field) })) |info| {
+                                        if (info.ty) |t| return t;
+                                    }
+                                }
+                            },
+                            else => {},
+                        }
+                    }
+                    if (!author_tracked) {
+                        const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ obj_name, fa.field }) catch fa.field;
+                        if (self.l.struct_const_map.get(qualified)) |info| {
+                            if (info.ty) |t| return t;
+                        }
                     }
                 }
                 // Numeric-limit accessor: `<Type>.min`/`.max` (int or float) or a

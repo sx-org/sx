@@ -154,7 +154,12 @@ pub fn constStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, ty: Typ
     if (ti != .@"struct") return null;
     const struct_fields = ti.@"struct".fields;
     const struct_name = self.module.types.getString(ti.@"struct".name);
-    const field_defaults: []const ?*const Node = self.struct_defaults_map.get(struct_name) orelse &.{};
+    // TypeId identity first; for an author-tracked type a tid-map miss means
+    // "no defaults" (issue 0320).
+    const field_defaults: []const ?*const Node = self.struct_defaults_by_tid.get(ty) orelse blk: {
+        if (self.plain_struct_authors.contains(ty)) break :blk &.{};
+        break :blk self.struct_defaults_map.get(struct_name) orelse &.{};
+    };
 
     const has_names = sl.field_inits.len > 0 and sl.field_inits[0].name != null;
 

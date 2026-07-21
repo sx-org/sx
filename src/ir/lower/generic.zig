@@ -2204,8 +2204,10 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
     while (field_idx < tmpl.field_names.len or using_idx < tmpl.decl.using_entries.len) {
         while (using_idx < tmpl.decl.using_entries.len and tmpl.decl.using_entries[using_idx].insert_index == field_idx) {
             const ue = tmpl.decl.using_entries[using_idx];
-            const used_name_id = table.internString(ue.type_name);
-            if (table.findByName(used_name_id)) |used_ty| {
+            // current_source_file is the TEMPLATE's file here (set above), so
+            // the base selects from the declaring module's authority, not the
+            // global name table (issue 0320).
+            if (self.resolveUsingBase(ue.type_name, self.current_source_file, tmpl.name)) |used_ty| {
                 const used_info = table.get(used_ty);
                 if (used_info == .@"struct") for (used_info.@"struct".fields) |f| {
                     fields.append(self.alloc, f) catch unreachable;
@@ -2225,8 +2227,7 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
     }
     while (using_idx < tmpl.decl.using_entries.len) : (using_idx += 1) {
         const ue = tmpl.decl.using_entries[using_idx];
-        const used_name_id = table.internString(ue.type_name);
-        if (table.findByName(used_name_id)) |used_ty| {
+        if (self.resolveUsingBase(ue.type_name, self.current_source_file, tmpl.name)) |used_ty| {
             const used_info = table.get(used_ty);
             if (used_info == .@"struct") for (used_info.@"struct".fields) |f| {
                 fields.append(self.alloc, f) catch unreachable;

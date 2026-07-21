@@ -1,0 +1,18 @@
+// The 0921 nominal-identity matrix with the IMPORT ORDER FLIPPED (b before
+// a): the pre-fix global-name maps were order-sensitive (last or first
+// registration won), so both orders must select identically per author.
+// Regression (issue 0320).
+#import "modules/std.sx";
+b :: #import "0922-modules-nominal-identity-import-order/wb.sx";
+a :: #import "0922-modules-nominal-identity-import-order/wa.sx";
+
+main :: () -> i32 {
+    ta := a.mk();
+    tb := b.mk();
+    print("defaults: a.x={} b.x={} b.extra={}\n", ta.x, tb.x, tb.extra);
+    print("consts: a={} b={}\n", a.Thing.SIZE, b.Thing.SIZE);
+    va := a.Thing.{ ca = 3, cb = 4 };
+    vb := b.Thing.{ da = 6 };
+    print("using: a=({},{}) b={}\n", va.ca, va.cb, vb.da);
+    return 0;
+}
