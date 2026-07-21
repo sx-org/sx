@@ -1,0 +1,2 @@
+private inner :: #import "lib.sx";
+use_inner :: () -> i64 { return inner.exposed(); }

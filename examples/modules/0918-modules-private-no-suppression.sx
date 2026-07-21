@@ -1,0 +1,12 @@
+// A private declaration neither suppresses nor ambiguates a public same-name
+// declaration from another module: the flat importer resolves b's public
+// `helper`/`LIMIT` cleanly while a.sx keeps using its own private pair.
+
+#import "modules/std.sx";
+#import "0918-modules-private-no-suppression/a.sx";
+#import "0918-modules-private-no-suppression/b.sx";
+
+main :: () -> i32 {
+    print("{} {} {}\n", helper(), LIMIT, a_probe());
+    return 0;
+}

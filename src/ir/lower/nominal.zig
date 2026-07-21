@@ -46,7 +46,9 @@ fn staticHeadInSource(self: *Lowering, name: []const u8, source: ?[]const u8) St
     return switch (self.selectNominalLeaf(name, from, false)) {
         .resolved => |ty| .{ .resolved = ty },
         .ambiguous => .ambiguous,
-        .not_visible => .not_visible,
+        // A privately-authored-elsewhere head is exactly as unreachable as a
+        // namespaced-only one for static-call purposes.
+        .not_visible, .private_elsewhere => .not_visible,
         .pending, .forward, .undeclared => .none,
     };
 }

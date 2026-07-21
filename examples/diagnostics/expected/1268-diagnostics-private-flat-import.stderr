@@ -1,0 +1,5 @@
+error: 'private' is not allowed on a flat '#import'; only a named import ('name :: #import "…"') can be private
+  --> examples/diagnostics/1268-diagnostics-private-flat-import.sx:4:9
+   |
+ 4 | private #import "modules/std.sx";
+   |         ^^^^^^^

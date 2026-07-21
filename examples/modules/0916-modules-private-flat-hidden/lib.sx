@@ -1,0 +1,4 @@
+private secret :: () -> i64 { return 41; }
+private Hidden :: struct { v: i64; }
+private SECRET_N :: 1;
+exposed :: () -> i64 { return secret() + SECRET_N; }

@@ -155,7 +155,7 @@ test "resolver: collectVisibleAuthors — diamond imports of one author dedup to
     inline for (.{ "p1", "p2" }) |path| {
         var names = std.StringHashMap(resolver.RawDeclRef).init(alloc);
         try names.put("shared", ref);
-        try decls.put(path, .{ .source = path, .names = names });
+        try decls.put(path, .{ .source = path, .names = names, .private_names = std.StringHashMap(void).init(alloc) });
     }
 
     var flat = Graph.init(alloc);
@@ -235,21 +235,24 @@ test "resolver: collectNamespaceAuthors — returns target members, walks no gra
 // flat graph). Walked over the flat set vs the full import_graph, the two agree
 // on own + flat names and differ ONLY on a namespaced-only name — the flat set
 // the bare-name predicate uses, contrasted with the over-permissive full set.
-test "resolver: visibility edge-walk — own + flat visible; namespaced-only only under import_graph" {
+test "resolver: visibility edge-walk — own + flat visible; namespaced-only only under import_graph; private never crosses" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    var scopes = Graph.init(alloc);
+    var scopes = std.StringHashMap(std.StringHashMap(ast.Visibility)).init(alloc);
     inline for (.{
         .{ "main", &[_][]const u8{ "selfauthored", "g" } },
         .{ "a", &[_][]const u8{"dup"} },
         .{ "p", &[_][]const u8{"secret"} },
     }) |entry| {
-        var s = std.StringHashMap(void).init(alloc);
-        for (entry[1]) |n| try s.put(n, {});
+        var s = std.StringHashMap(ast.Visibility).init(alloc);
+        for (entry[1]) |n| try s.put(n, .public);
         try scopes.put(entry[0], s);
     }
+    // `a` also authors a PRIVATE name, and `main` authors a private of its own.
+    try scopes.getPtr("a").?.put("filelocal", .private);
+    try scopes.getPtr("main").?.put("ownpriv", .private);
 
     // Flat graph: main flat-imports a only. Import graph: main reaches a + p.
     var flat = Graph.init(alloc);
@@ -275,6 +278,13 @@ test "resolver: visibility edge-walk — own + flat visible; namespaced-only onl
     // but visible under the full import_graph set.
     try std.testing.expect(!lower.nameVisibleOverEdges(&scopes, &flat, "main", "secret"));
     try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &all, "main", "secret"));
+
+    // Private names: an own private IS visible to its own file, a flat
+    // import's private is NOT carried — under either edge set.
+    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &flat, "main", "ownpriv"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&scopes, &flat, "main", "filelocal"));
+    try std.testing.expect(!lower.nameVisibleOverEdges(&scopes, &all, "main", "filelocal"));
+    try std.testing.expect(lower.nameVisibleOverEdges(&scopes, &flat, "a", "filelocal"));
 
     // Unknown name: not visible.
     try std.testing.expect(!lower.nameVisibleOverEdges(&scopes, &flat, "main", "nope"));

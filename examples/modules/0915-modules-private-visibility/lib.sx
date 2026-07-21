@@ -1,0 +1,16 @@
+// The declaring file: private names are fully usable here, forward
+// references included, and a public alias may deliberately expose one.
+
+exposed :: () -> i64 { return secret() + SECRET_N; }
+
+private secret :: () -> i64 { return 40; }
+private SECRET_N :: 1;
+private Hidden :: struct { v: i64; }
+private Mode :: enum { on; off; }
+private counter : i64 = 100;
+
+Alias :: Hidden;
+make_hidden :: () -> Hidden { return Hidden.{ v = 7 }; }
+bump :: () -> i64 { counter += 1; return counter; }
+pick :: (m: Mode) -> i64 { if m == .on { return 1; } return 0; }
+pick_on :: () -> i64 { return pick(Mode.on); }

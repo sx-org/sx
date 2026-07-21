@@ -2062,7 +2062,12 @@ fn anyRawAuthor(self: *Lowering, name: []const u8) bool {
     const decls = self.program_index.module_decls orelse return false;
     var it = decls.valueIterator();
     while (it.next()) |mod| {
-        if (mod.names.contains(name)) return true;
+        if (mod.names.contains(name)) {
+            // A private-only author must read as undeclared, not as a
+            // not-visible leak: importing its module would not help.
+            if (mod.private_names.contains(name)) continue;
+            return true;
+        }
     }
     return false;
 }

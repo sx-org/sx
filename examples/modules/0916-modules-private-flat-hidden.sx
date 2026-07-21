@@ -1,0 +1,14 @@
+// A flat import never carries a private name: the function gets the
+// dedicated private diagnostic, the type reads as private, and the
+// public surface stays reachable.
+
+#import "modules/std.sx";
+#import "0916-modules-private-flat-hidden/lib.sx";
+
+main :: () -> i32 {
+    ok := exposed();
+    v := secret();
+    h : Hidden = Hidden.{ v = 1 };
+    print("{}\n", ok + v + h.v);
+    return 0;
+}

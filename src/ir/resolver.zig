@@ -277,7 +277,8 @@ pub const Resolver = struct {
         const own: ?RawAuthor = blk: {
             const mod = decls.get(from) orelse break :blk null;
             const ref = mod.names.get(name) orelse break :blk null;
-            break :blk .{ .raw = ref, .source = mod.source };
+            const vis_own: ast.Visibility = if (mod.private_names.contains(name)) .private else .public;
+            break :blk .{ .raw = ref, .source = mod.source, .visibility = vis_own };
         };
 
         const graph = (switch (vis) {
@@ -294,6 +295,9 @@ pub const Resolver = struct {
         while (it.next()) |kv| {
             const dep = decls.get(kv.key_ptr.*) orelse continue;
             const ref = dep.names.get(name) orelse continue;
+            // A flat import never carries a private declaration out of its
+            // declaring file — the author simply does not exist for `from`.
+            if (dep.private_names.contains(name)) continue;
             const cand = RawAuthor{ .raw = ref, .source = dep.source };
             if (sameAuthor(own, cand)) continue;
             if (containsAuthor(flat.items, cand)) continue;
@@ -319,7 +323,15 @@ pub const Resolver = struct {
             const dn = decl.data.declName() orelse continue;
             if (!std.mem.eql(u8, dn, name)) continue;
             const ref = imports.rawDeclRefOf(decl) orelse continue;
-            return .{ .own = .{ .raw = ref, .source = target.target_module_path }, .flat = &.{} };
+            return .{ .own = .{
+                .raw = ref,
+                .source = target.target_module_path,
+                .visibility = decl.visibility,
+                // Privacy authority is the EXACT declaring file — for a
+                // directory-import namespace that is the member file, not the
+                // directory module path.
+                .vis_source = decl.source_file,
+            }, .flat = &.{} };
         }
         return .{ .own = null, .flat = &.{} };
     }
@@ -398,6 +410,10 @@ pub const Resolver = struct {
         var it = decls.valueIterator();
         while (it.next()) |m| {
             if (m.names.get(name)) |ref| {
+                // A private-only author is invisible everywhere but its own
+                // file (which the own/flat walk already served), so it must
+                // not turn "undeclared" into a misleading not-visible leak.
+                if (m.private_names.contains(name)) continue;
                 if (eligibleKind(domain, ref, field)) return true;
             }
         }

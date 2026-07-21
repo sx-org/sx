@@ -1,0 +1,17 @@
+// Namespace access never exposes private members, deep traversal keeps the
+// original requester's authority, and a private named-import alias is not
+// carried to flat importers.
+
+#import "modules/std.sx";
+#import "0917-modules-private-namespace-hidden/facade.sx";
+lib :: #import "0917-modules-private-namespace-hidden/lib.sx";
+fac :: #import "0917-modules-private-namespace-hidden/facade.sx";
+
+main :: () -> i32 {
+    a := lib.secret();
+    b := lib.SECRET_N;
+    c := fac.inner.exposed();
+    d := inner.exposed();
+    print("{}\n", a + b + c + d);
+    return 0;
+}

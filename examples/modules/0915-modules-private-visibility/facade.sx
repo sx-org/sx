@@ -1,0 +1,4 @@
+// A private named-import alias binds only in this file; the public wrapper
+// is the exported surface.
+private inner :: #import "lib.sx";
+use_inner :: () -> i64 { return inner.exposed() + 1; }

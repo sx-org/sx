@@ -436,3 +436,83 @@ test "parser: #context_extend rejected in statement position" {
     try std.testing.expect(parser.err_msg != null);
     try std.testing.expect(std.mem.indexOf(u8, parser.err_msg.?, "top level") != null);
 }
+
+// `private` prefixes an identifier-headed module-scope declaration and stamps
+// the node's visibility; every declaration kind takes it uniformly.
+test "parser: private stamps module-scope declarations" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const src =
+        \\private Helper :: (x: i64) -> i64 { return x; }
+        \\private State :: struct { n: i64; }
+        \\private LIMIT :: 21;
+        \\private counter : i64 = 0;
+        \\private dep :: #import "dep.sx";
+        \\private lifted :: use_me;
+        \\pub_fn :: () -> i64 { return 0; }
+        \\
+    ;
+    var p = Parser.init(alloc, src);
+    const root = try p.parse();
+    const decls = root.data.root.decls;
+    try std.testing.expectEqual(@as(usize, 7), decls.len);
+    for (decls[0..6]) |d| try std.testing.expectEqual(ast.Visibility.private, d.visibility);
+    try std.testing.expectEqual(ast.Visibility.public, decls[6].visibility);
+    // Kind spot checks: the prefix reaches every declaration form.
+    try std.testing.expect(decls[0].data == .const_decl or decls[0].data == .fn_decl);
+    try std.testing.expect(decls[1].data == .struct_decl);
+    try std.testing.expect(decls[4].data == .import_decl);
+}
+
+// `private` is a module-scope modifier only: statements inside function bodies
+// reject it, and non-identifier top-level forms reject it with placement
+// diagnostics.
+test "parser: private rejected on locals and directive forms" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const cases = [_][:0]const u8{
+        "f :: () { private x := 1; }",
+        "private #import \"x.sx\";",
+        "private impl P for T {}",
+        "private inline if true { a :: 1; }",
+        "private #run 1;",
+    };
+    for (cases) |src| {
+        var p = Parser.init(alloc, src);
+        try std.testing.expectError(error.ParseError, p.parse());
+    }
+}
+
+// Top-level `inline if` branches hold module-scope declarations after comptime
+// flattening, so `private` stays legal there — but NOT inside a nested
+// function body within the branch.
+test "parser: private inside top-level inline if" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const ok_src =
+        \\inline if true {
+        \\    private tag :: () -> i64 { return 1; }
+        \\} else {
+        \\    private tag :: () -> i64 { return 2; }
+        \\}
+        \\
+    ;
+    var p = Parser.init(alloc, ok_src);
+    const root = try p.parse();
+    try std.testing.expect(root.data == .root);
+
+    const bad_src =
+        \\inline if true {
+        \\    outer :: () { private x :: 1; }
+        \\}
+        \\
+    ;
+    var p2 = Parser.init(alloc, bad_src);
+    try std.testing.expectError(error.ParseError, p2.parse());
+}

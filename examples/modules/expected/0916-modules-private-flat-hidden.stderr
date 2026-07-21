@@ -1,0 +1,17 @@
+error: 'secret' is private to its declaring module
+  --> examples/modules/0916-modules-private-flat-hidden.sx:10:10
+   |
+10 |     v := secret();
+   |          ^^^^^^
+
+error: type 'Hidden' is private to its declaring module
+  --> examples/modules/0916-modules-private-flat-hidden.sx:11:9
+   |
+11 |     h : Hidden = Hidden.{ v = 1 };
+   |         ^^^^^^
+
+error: type 'Hidden' is private to its declaring module
+  --> examples/modules/0916-modules-private-flat-hidden.sx:11:18
+   |
+11 |     h : Hidden = Hidden.{ v = 1 };
+   |                  ^^^^^^^^^^^^^^^^

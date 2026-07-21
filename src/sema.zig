@@ -46,6 +46,9 @@ pub const Symbol = struct {
     scope_depth: u32,
     /// null = defined in the current file. Non-null = absolute path of the origin file.
     origin: ?[]const u8 = null,
+    /// Module-scope declaration visibility. A `.private` top-level symbol is
+    /// not offered to other files (completion / pre-registration).
+    visibility: ast.Visibility = .public,
 };
 
 pub const Reference = struct {
@@ -122,6 +125,9 @@ pub const Analyzer = struct {
     /// declared after the struct that uses it resolves to "unknown" length).
     const_int_values: std.StringHashMap(i64),
     type_map: TypeMap,
+    /// Visibility of the top-level declaration currently being registered —
+    /// stamped onto its `Symbol` by `addSymbol`. `.public` between decls.
+    pending_visibility: ast.Visibility = .public,
 
     pub fn init(allocator: std.mem.Allocator) Analyzer {
         return .{
@@ -182,6 +188,8 @@ pub const Analyzer = struct {
     }
 
     fn registerTopLevelDeclPrefixed(self: *Analyzer, node: *Node, ns_prefix: ?[]const u8) !void {
+        self.pending_visibility = node.visibility;
+        defer self.pending_visibility = .public;
         switch (node.data) {
             .fn_decl => |fd| {
                 const ret_ty = self.resolveReturnType(fd) orelse
@@ -957,6 +965,7 @@ pub const Analyzer = struct {
             .name = name,
             .kind = kind,
             .ty = ty,
+            .visibility = self.pending_visibility,
             .def_span = span,
             .scope_depth = self.scope_depth,
         });

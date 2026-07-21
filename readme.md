@@ -553,6 +553,25 @@ Thing  :: r.Thing;        // struct re-export
 Box    :: r.Box;          // generic head re-export — same template
 ```
 
+A module-scope declaration prefixed `private` stays usable throughout its own
+source file (forward references included) but is never carried by flat imports
+and never reachable through a namespace — it simply does not exist for other
+files:
+
+```sx
+// lib.sx
+private helper :: (x: i64) -> i64 { return x * 2; }   // file-local
+exposed :: () -> i64 { return helper(21); }           // public API
+
+// main.sx
+#import "lib.sx";
+// exposed() ✓        helper() ✗ "'helper' is private to its declaring module"
+```
+
+`private` applies to any identifier-headed top-level declaration — functions,
+types, constants, globals, aliases, named imports — and is rejected everywhere
+else (locals, fields, methods, impl blocks, flat imports).
+
 The stdlib prelude uses exactly this: `std.sx` is a pure re-export facade, so
 `#import "modules/std.sx"` gives every bare prelude name (`print`, `List`,
 `Context`, …) plus carried namespaces (`mem`, `fs`, `process`, `socket`, `json`,

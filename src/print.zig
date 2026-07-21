@@ -17,6 +17,7 @@ const Writer = *std.Io.Writer;
 /// Print a node back to source text. Routes declarations here, expressions /
 /// statements to `printExpr`, and type expressions to `printType`.
 pub fn printNode(node: *const Node, writer: Writer) anyerror!void {
+    if (node.visibility == .private) try writer.writeAll("private ");
     switch (node.data) {
         .error_set_decl => |d| {
             try writer.writeAll(d.name);

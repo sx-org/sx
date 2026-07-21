@@ -1742,7 +1742,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body (fix-0102
 
     // Per-module visibility scopes + authored-function index, wired exactly as
     // `core.zig` does before `lowerRoot`.
-    var module_scopes = std.StringHashMap(std.StringHashMap(void)).init(alloc);
+    var module_scopes = std.StringHashMap(std.StringHashMap(@import("../ast.zig").Visibility)).init(alloc);
     try module_scopes.put(main_path, mod.scope);
     var cache_it = cache.iterator();
     while (cache_it.next()) |entry| {
@@ -1903,7 +1903,7 @@ test "lower: scan populates source-keyed caches per declaring source (E0)" {
         .{},
     );
 
-    var module_scopes = std.StringHashMap(std.StringHashMap(void)).init(alloc);
+    var module_scopes = std.StringHashMap(std.StringHashMap(@import("../ast.zig").Visibility)).init(alloc);
     try module_scopes.put(main_path, mod.scope);
     var cache_it = cache.iterator();
     while (cache_it.next()) |entry| {

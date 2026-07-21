@@ -472,10 +472,11 @@ pub const ResolvedModule = struct {
     /// (their visibility BFS joins these names in via `import_graph`).
     own_decls: []const *Node,
     /// Names authored in this file (plus namespace aliases this file
-    /// introduces). Used as the per-file leaf in the visibility lookup;
-    /// importers do NOT splice this into their own scope — they walk the
-    /// import graph at query time instead.
-    scope: std.StringHashMap(void),
+    /// introduces), each mapped to its declared visibility. Used as the
+    /// per-file leaf in the visibility lookup; importers do NOT splice this
+    /// into their own scope — they walk the import graph at query time
+    /// instead, and a `.private` entry is visible only to this file itself.
+    scope: std.StringHashMap(ast.Visibility),
 
     /// Add a declaration authored in this file. Updates scope + own_decls +
     /// the global flat decl list; dedups by name through `seen_list` (which
@@ -494,7 +495,7 @@ pub const ResolvedModule = struct {
         var append_to_global = true;
         if (decl.data.declName()) |name| {
             if (self.scope.contains(name)) return false;
-            try self.scope.put(name, {});
+            try self.scope.put(name, decl.visibility);
             if (seen_list.contains(name)) {
                 // A cross-module name collision: drop from the global list
                 // (first-wins) UNLESS this is a per-source decl (a type, alias,
@@ -592,6 +593,7 @@ pub const ResolvedModule = struct {
         other: ResolvedModule,
         span: ast.Span,
         is_raw: bool,
+        visibility: ast.Visibility,
     ) !bool {
         if (self.scope.contains(name)) return false;
         const ns_node = try allocator.create(Node);
@@ -614,8 +616,12 @@ pub const ResolvedModule = struct {
                     .is_raw = is_raw,
                 },
             },
+            // A `private ns :: #import "…"` alias stays usable in this file but
+            // is never carried to flat importers nor selectable through this
+            // module's namespace surface.
+            .visibility = visibility,
         };
-        try self.scope.put(name, {});
+        try self.scope.put(name, visibility);
         try seen_list.put(name, {});
         try list.append(allocator, ns_node);
         try own_list.append(allocator, ns_node);
@@ -665,13 +671,35 @@ pub const RawDeclRef = union(enum) {
 };
 
 /// A raw declaration paired with the source file that authors it.
-pub const RawAuthor = struct { raw: RawDeclRef, source: []const u8 };
+/// `visibility` is the declaration's module-scope visibility; `vis_source` is
+/// the privacy AUTHORITY — the exact declaring source file when it differs
+/// from `source` (a directory-import module aggregates several files). Null
+/// means `source` IS the authority. Only privacy checks read these; every
+/// registration lookup stays keyed by `source`.
+pub const RawAuthor = struct {
+    raw: RawDeclRef,
+    source: []const u8,
+    visibility: ast.Visibility = .public,
+    vis_source: ?[]const u8 = null,
+
+    /// The exact source file whose declarations may use this author when it
+    /// is private.
+    pub fn visAuthority(self: RawAuthor) []const u8 {
+        return self.vis_source orelse self.source;
+    }
+};
 
 /// One module's scalar raw-decl index: `name → ONE RawDeclRef`. Scalar because
 /// `addOwnDecl` refuses a same-module same-name second author (returns false),
 /// so a module's `own_decls` carries at most one author per name. Cross-module
 /// multiplicity lives one level up, keyed by path in `ModuleDecls`.
-pub const ModuleRawDeclIndex = struct { source: []const u8, names: std.StringHashMap(RawDeclRef) };
+/// `private_names` is the subset declared `private` — those never cross a flat
+/// or namespace boundary out of their declaring file.
+pub const ModuleRawDeclIndex = struct {
+    source: []const u8,
+    names: std.StringHashMap(RawDeclRef),
+    private_names: std.StringHashMap(void),
+};
 
 /// `path → ModuleRawDeclIndex`. Two modules each authoring `f` are retained
 /// under their own paths — the cross-module same-name authors the unified
@@ -691,6 +719,11 @@ pub const NamespaceTarget = struct {
     /// `buildDeclTable` (empty until then). Lets a member be addressed by stable
     /// id without re-deriving it from the node pointer.
     member_ids: []const DeclId = &.{},
+    /// The alias declaration's own visibility (`private ns :: #import "…"`).
+    /// A private alias resolves only for its `importer_source` file: it is
+    /// never carried by flat imports and never traversable through the
+    /// importer's namespace surface from another module.
+    visibility: ast.Visibility = .public,
 };
 
 /// `importer_source → alias → NamespaceTarget`.
@@ -728,13 +761,20 @@ fn indexModuleDecls(
     own_decls: []const *Node,
 ) !void {
     const gop = try decls.getOrPut(path);
-    if (!gop.found_existing) gop.value_ptr.* = .{ .source = path, .names = std.StringHashMap(RawDeclRef).init(allocator) };
+    if (!gop.found_existing) gop.value_ptr.* = .{
+        .source = path,
+        .names = std.StringHashMap(RawDeclRef).init(allocator),
+        .private_names = std.StringHashMap(void).init(allocator),
+    };
     const index = gop.value_ptr;
     for (own_decls) |decl| {
         const ref = rawDeclRefOf(decl) orelse continue;
         const name = decl.data.declName() orelse continue;
         const name_gop = try index.names.getOrPut(name);
-        if (!name_gop.found_existing) name_gop.value_ptr.* = ref;
+        if (!name_gop.found_existing) {
+            name_gop.value_ptr.* = ref;
+            if (decl.visibility == .private) try index.private_names.put(name, {});
+        }
 
         if (decl.data == .namespace_decl) {
             const ns = &decl.data.namespace_decl;
@@ -746,6 +786,7 @@ fn indexModuleDecls(
                 .importer_source = path,
                 .target_module_path = ns.target_module_path,
                 .own_decls = ns.own_decls,
+                .visibility = decl.visibility,
             };
         }
     }
@@ -1130,7 +1171,7 @@ pub fn resolveImports(
         .path = file_path,
         .decls = &.{},
         .own_decls = &.{},
-        .scope = std.StringHashMap(void).init(allocator),
+        .scope = std.StringHashMap(ast.Visibility).init(allocator),
     };
 
     if (root.data != .root) {
@@ -1221,10 +1262,12 @@ pub fn resolveImports(
                     },
                 };
                 ns_node.source_file = file_path;
+                // A `private ns :: #import c { … }` namespace stays file-local.
+                ns_node.visibility = decl.visibility;
                 if (mod.scope.contains(ns_name)) {
                     reportDuplicateName(diagnostics, false, ns_name, decl.span);
                 } else {
-                    try mod.scope.put(ns_name, {});
+                    try mod.scope.put(ns_name, decl.visibility);
                     try seen_in_list.put(ns_name, {});
                     try decl_list.append(allocator, ns_node);
                     try own_decl_list.append(allocator, ns_node);
@@ -1341,7 +1384,7 @@ pub fn resolveImports(
         };
 
         if (imp.name) |ns_name| {
-            const added = try mod.addNamespace(allocator, &decl_list, &own_decl_list, &seen_in_list, ns_name, imported_mod, decl.span, imp.is_raw);
+            const added = try mod.addNamespace(allocator, &decl_list, &own_decl_list, &seen_in_list, ns_name, imported_mod, decl.span, imp.is_raw, decl.visibility);
             reportDuplicateName(diagnostics, added, ns_name, decl.span);
         } else {
             try mod.mergeFlat(allocator, &decl_list, &seen_in_list, &seen_nodes, imported_mod);
@@ -1403,7 +1446,7 @@ fn resolveDirectoryImport(
         .path = dir_path,
         .decls = &.{},
         .own_decls = &.{},
-        .scope = std.StringHashMap(void).init(allocator),
+        .scope = std.StringHashMap(ast.Visibility).init(allocator),
     };
     var decl_list = std.ArrayList(*Node).empty;
     var own_decl_list = std.ArrayList(*Node).empty;
@@ -1473,7 +1516,10 @@ fn resolveDirectoryImport(
         for (file_mod.own_decls) |decl| {
             if (decl.data.declName()) |name| {
                 if (combined.scope.contains(name)) continue;
-                try combined.scope.put(name, {});
+                // A private member-file decl stays private through the
+                // directory aggregate: importers of the directory must not
+                // see it, while the member file's own scope keeps it usable.
+                try combined.scope.put(name, decl.visibility);
             }
             try own_decl_list.append(allocator, decl);
         }

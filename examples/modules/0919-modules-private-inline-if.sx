@@ -1,0 +1,18 @@
+// Top-level `inline if` branches are module scope after comptime flattening,
+// so their declarations may be `private`; nested function bodies may not
+// (covered by the diagnostics corpus).
+
+#import "modules/std.sx";
+
+inline if POINTER_SIZE == 8 {
+    private chosen :: () -> i64 { return 1; }
+    private CHOSEN_N :: 41;
+} else {
+    private chosen :: () -> i64 { return 2; }
+    private CHOSEN_N :: 42;
+}
+
+main :: () -> i32 {
+    print("{}\n", chosen() + CHOSEN_N);
+    return 0;
+}

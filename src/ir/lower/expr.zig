@@ -3029,7 +3029,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // scope names and UFCS rewrites are compiler indirections
                 // and stay exempt.
                 if (std.mem.eql(u8, eff_fn_name, id.name) and
-                    self.program_index.ufcs_alias_map.get(id.name) == null and
+                    self.ufcsAliasTarget(id.name) == null and
                     !self.isNameVisible(eff_fn_name))
                 {
                     if (self.diagnostics) |d|
@@ -3071,7 +3071,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // never uses the winner, so its body must not be lowered.
                 const value_fid: ?FuncId = blk_fv: {
                     if (std.mem.eql(u8, eff_fn_name, id.name) and
-                        self.program_index.ufcs_alias_map.get(id.name) == null and
+                        self.ufcsAliasTarget(id.name) == null and
                         (if (self.scope) |scope| scope.lookup(id.name) == null else true))
                     {
                         if (self.current_source_file) |caller_file| {

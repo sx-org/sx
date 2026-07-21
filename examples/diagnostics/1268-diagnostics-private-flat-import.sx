@@ -1,0 +1,6 @@
+// A flat `#import` binds no name, so `private` cannot apply to it; only a
+// named import (`name :: #import "…"`) can be private.
+
+private #import "modules/std.sx";
+
+main :: () -> i32 { return 0; }

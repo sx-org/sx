@@ -25,8 +25,9 @@ test "ProgramIndex.import_flags round-trips imported vs local" {
 }
 
 test "ProgramIndex borrows module_scopes / import_graph without owning them" {
+    const ScopeMap = std.StringHashMap(std.StringHashMap(@import("../ast.zig").Visibility));
     const ScopeSet = std.StringHashMap(std.StringHashMap(void));
-    var scopes = ScopeSet.init(std.testing.allocator);
+    var scopes = ScopeMap.init(std.testing.allocator);
     defer scopes.deinit();
     var graph = ScopeSet.init(std.testing.allocator);
     defer graph.deinit();

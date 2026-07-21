@@ -294,6 +294,9 @@ pub const DocumentStore = struct {
                     } else {
                         for (file_sema.symbols) |sym| {
                             if (sym.scope_depth == 0) {
+                                // Private module-scope symbols never cross a
+                                // flat import into another file.
+                                if (sym.visibility == .private) continue;
                                 try analyzer.preRegisterSymbol(.{
                                     .name = sym.name,
                                     .kind = sym.kind,
@@ -360,6 +363,9 @@ pub const DocumentStore = struct {
                 // Flat import: pre-register all top-level symbols with origin set
                 for (imp_sema.symbols) |sym| {
                     if (sym.scope_depth == 0) {
+                        // Private module-scope symbols never cross a flat
+                        // import into another file.
+                        if (sym.visibility == .private) continue;
                         try analyzer.preRegisterSymbol(.{
                             .name = sym.name,
                             .kind = sym.kind,

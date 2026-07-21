@@ -185,11 +185,15 @@ GLSL;
 ```
 
 ### Keywords
-`if`, `else`, `then`, `while`, `for`, `break`, `continue`, `true`, `false`, `enum`, `struct`, `union`, `case`, `return`, `defer`, `push`, `ufcs`, `in`, `xx`, `and`, `or`, `raise`, `try`, `catch`, `onfail`, `error`
+`if`, `else`, `then`, `while`, `for`, `break`, `continue`, `true`, `false`, `enum`, `struct`, `union`, `case`, `return`, `defer`, `push`, `ufcs`, `in`, `xx`, `and`, `or`, `raise`, `try`, `catch`, `onfail`, `error`, `private`
 
 > Note: `enum` is used for both payload-less and payload-bearing sum types (tagged unions). `union` is reserved for C-style untagged unions (memory overlays).
 
 > Note: `raise`, `try`, `catch`, `onfail`, and `error` are the error-handling keywords. `or` is reused as the failable-fallback / chain operator. See [§12 Error Handling](#12-error-handling).
+
+> Note: `private` is the module-scope declaration visibility modifier — see
+> [§9 Module-Scope Visibility](#9-modules--imports). `` `private `` (backtick
+> raw identifier) and the `.private` member spelling remain legal.
 
 ### Operators
 
@@ -3556,6 +3560,60 @@ Collision rules mirror ordinary declarations:
   does not yet enforce this gate — issue 0114 tracks the tightening.)
 
 `#import c { ... }` aliases (`tc :: #import c { ... }`) carry the same way.
+
+### Module-Scope Visibility: `private`
+
+`private` restricts a module-scope declaration to its declaring **source
+file**. It is a prefix on identifier-headed top-level declarations:
+
+```sx
+private Helper :: (x: i64) -> i64 { return x * 2; }
+private State  :: struct { n: i64; }
+private LIMIT  :: 21;
+private counter : i64 = 0;
+private dep    :: #import "dependency.sx";
+```
+
+It applies to functions and type functions, structs/enums/unions/error sets,
+protocols, constants and globals, aliases (including UFCS aliases), named
+imports, `#library` handles, runtime classes, `extern`/`export` declarations,
+and `main`.
+
+Semantics:
+
+- **Same-file use is unrestricted.** A private name works throughout its
+  declaring file, forward references included, exactly like a public one.
+- **Flat imports do not carry private names.** A flat importer referring to a
+  private name gets a "private to its declaring module" (functions) or
+  undeclared/unknown diagnostic — never the declaration.
+- **Namespaces do not expose private members.** `ns.priv_member` reports
+  "namespace 'ns' has no member 'priv_member'". Deep traversal keeps the
+  ORIGINAL requester's authority: an intermediate private alias is not
+  traversable from another file either.
+- **A private named-import alias is not carried.** It binds only in its author
+  file; flat importers do not receive it (the carry rule skips it).
+- **No suppression, no ambiguity.** A private declaration never shadows or
+  ambiguates a public same-name declaration from another module — for every
+  other file it simply does not exist.
+- **A public same-file alias may deliberately expose a private declaration**
+  (`Public :: PrivateImpl;`) — resolution follows the alias in its author
+  file, where the private name is legal.
+- **Privacy authority is the exact declaring source file**, not a directory
+  import: two files aggregated by a directory import cannot use each other's
+  private names.
+- **Identifier visibility only.** `private` does not make struct fields
+  opaque; a value of a privately-declared type exposed through a public alias
+  still has accessible fields.
+
+Placement rules — `private` is rejected on: locals, parameters, struct/union/
+runtime-class fields, enum cases and error tags, struct/protocol/impl methods
+and requirements, flat `#import`, `impl` blocks, `#context_extend`, `#using`,
+standalone `#run`, global `asm`, and `#framework`. Top-level `inline if`
+branches MAY declare private globals (their statements are module-scope after
+comptime flattening); function and method bodies may not.
+
+`` `private `` (backtick raw identifier) remains a legal name, and the
+`.private` member spelling remains legal after a dot.
 
 ### Import Resolution
 

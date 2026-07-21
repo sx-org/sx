@@ -815,7 +815,7 @@ pub const ProgramIndex = struct {
     /// Declaration name → is the function imported (declared `extern`)?
     import_flags: std.StringHashMap(bool),
     /// Per-module visible names, keyed by source file. Borrowed view.
-    module_scopes: ?*std.StringHashMap(std.StringHashMap(void)) = null,
+    module_scopes: ?*std.StringHashMap(std.StringHashMap(ast.Visibility)) = null,
     /// Module path → set of directly imported paths (param_impl visibility
     /// filter). Borrowed view.
     import_graph: ?*std.StringHashMap(std.StringHashMap(void)) = null,
@@ -869,6 +869,10 @@ pub const ProgramIndex = struct {
     module_const_map: std.StringHashMap(ModuleConstInfo),
     /// UFCS alias name → target function name.
     ufcs_alias_map: std.StringHashMap([]const u8),
+    /// UFCS alias name → declaring source file, for aliases declared
+    /// `private`. Absent = public (dispatches program-wide, the pre-`private`
+    /// behavior). Present = the alias rewrites calls only in that file.
+    private_ufcs_alias_source: std.StringHashMap([]const u8),
 
     // ── Source-keyed semantic caches (R5 §#4) ──
     // The source-partitioned analogues of `type_alias_map` / `module_const_map`
@@ -909,6 +913,7 @@ pub const ProgramIndex = struct {
             .protocol_ast_map = std.StringHashMap(*const ast.ProtocolDecl).init(alloc),
             .module_const_map = std.StringHashMap(ModuleConstInfo).init(alloc),
             .ufcs_alias_map = std.StringHashMap([]const u8).init(alloc),
+            .private_ufcs_alias_source = std.StringHashMap([]const u8).init(alloc),
             .type_aliases_by_source = std.StringHashMap(std.StringHashMap(TypeId)).init(alloc),
             .module_consts_by_source = std.StringHashMap(std.StringHashMap(ModuleConstInfo)).init(alloc),
             .globals_by_source = std.StringHashMap(std.StringHashMap(GlobalInfo)).init(alloc),
@@ -930,6 +935,7 @@ pub const ProgramIndex = struct {
         self.protocol_ast_map.deinit();
         self.module_const_map.deinit();
         self.ufcs_alias_map.deinit();
+        self.private_ufcs_alias_source.deinit();
         deinitBySource(TypeId, &self.type_aliases_by_source);
         deinitBySource(ModuleConstInfo, &self.module_consts_by_source);
         deinitBySource(GlobalInfo, &self.globals_by_source);

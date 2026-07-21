@@ -54,6 +54,11 @@ pub const Parser = struct {
     /// have been kept by dropping it). Null when the statement kept its value or
     /// wasn't a value expression. Read by `parseBlock` into `Block.discarded_semi`.
     last_stmt_semi_loc: ?ast.Span = null,
+    /// True while parsing the branches of a MODULE-SCOPE `inline if`: its
+    /// statements are top-level declarations after comptime flattening, so
+    /// `private` remains legal on them. Function/lambda bodies clear it — a
+    /// nested body's declarations are locals, never module scope.
+    in_module_inline_if: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, source: [:0]const u8) Parser {
         var lexer = Lexer.init(source);
@@ -86,6 +91,32 @@ pub const Parser = struct {
 
     fn parseTopLevel(self: *Parser) anyerror!*Node {
         const start = self.current.loc.start;
+
+        // `private NAME …` — a module-scope declaration restricted to its
+        // declaring source file. Only identifier-headed declarations take the
+        // modifier; every directive/block form is rejected with a placement
+        // diagnostic.
+        if (self.current.tag == .kw_private) {
+            self.advance();
+            switch (self.current.tag) {
+                .hash_import => return self.fail("'private' is not allowed on a flat '#import'; only a named import ('name :: #import \"…\"') can be private"),
+                .kw_asm => return self.fail("'private' is not allowed on global 'asm'"),
+                .hash_run => return self.fail("'private' is not allowed on a standalone '#run'"),
+                .hash_framework => return self.fail("'private' is not allowed on '#framework'"),
+                .kw_impl => return self.fail("'private' is not allowed on an 'impl' block"),
+                .hash_error => return self.fail("'private' is not allowed on '#error'"),
+                .hash_context_extend => return self.fail("'private' is not allowed on '#context_extend'"),
+                .kw_inline => return self.fail("'private' is not allowed on 'inline if'; mark the declarations inside its branches instead"),
+                .kw_private => return self.fail("duplicate 'private'"),
+                else => {},
+            }
+            if (!self.isIdentLike() and self.current.tag != .kw_Self) {
+                return self.fail("expected a declaration name after 'private'");
+            }
+            const node = try self.parseTopLevelNamedDecl();
+            node.visibility = .private;
+            return node;
+        }
 
         // Top-level flat import: #import "path"; or #import c { ... };
         if (self.current.tag == .hash_import) {
@@ -142,6 +173,9 @@ pub const Parser = struct {
         if (self.current.tag == .kw_inline) {
             if (self.peekNext() == .kw_if) {
                 self.advance(); // skip 'inline'
+                const saved_module_if = self.in_module_inline_if;
+                self.in_module_inline_if = true;
+                defer self.in_module_inline_if = saved_module_if;
                 const expr = try self.parseIfExpr();
                 if (expr.data == .if_expr) {
                     expr.data.if_expr.is_comptime = true;
@@ -187,6 +221,15 @@ pub const Parser = struct {
         if (!self.isIdentLike() and self.current.tag != .kw_Self) {
             return self.fail("expected identifier at top level");
         }
+        return self.parseTopLevelNamedDecl();
+    }
+
+    /// The identifier-headed module-scope declaration tail (`NAME :: …`,
+    /// `NAME : T [:|=] …`, `NAME := …`). Shared by the plain and
+    /// `private`-prefixed top-level paths; the caller has already verified an
+    /// identifier-like token is current.
+    fn parseTopLevelNamedDecl(self: *Parser) anyerror!*Node {
+        const start = self.current.loc.start;
         const name = self.tokenSlice(self.current);
         const name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
         const name_is_raw = self.current.is_raw;
@@ -1359,6 +1402,10 @@ pub const Parser = struct {
             // Optional body (default method) or semicolon
             var default_body: ?*Node = null;
             if (self.current.tag == .l_brace) {
+                // A default-method body's declarations are locals.
+                const saved_module_if = self.in_module_inline_if;
+                self.in_module_inline_if = false;
+                defer self.in_module_inline_if = saved_module_if;
                 default_body = try self.parseBlock();
             } else {
                 if (self.current.tag == .semicolon) self.advance();
@@ -1691,6 +1738,10 @@ pub const Parser = struct {
             // (M1.0), lowered as a single-statement block holding `expr`.
             var body_node: ?*Node = null;
             if (self.current.tag == .l_brace) {
+                // A runtime-class method body's declarations are locals.
+                const saved_module_if = self.in_module_inline_if;
+                self.in_module_inline_if = false;
+                defer self.in_module_inline_if = saved_module_if;
                 body_node = try self.parseBlock();
             } else if (self.current.tag == .fat_arrow) {
                 self.advance();
@@ -2150,6 +2201,13 @@ pub const Parser = struct {
         // body placeholder, and lowering routes on the modifier rather than this
         // block (no `*_expr` node — naming-constraint rule). `export` keeps its
         // `{ … }` body and flows through the normal chain below.
+        //
+        // A function body is never module scope — even inside a module-level
+        // `inline if` branch its declarations are locals, so `private` stops
+        // being legal here.
+        const saved_module_if = self.in_module_inline_if;
+        self.in_module_inline_if = false;
+        defer self.in_module_inline_if = saved_module_if;
         var is_arrow = false;
         const body = if (extern_export == .extern_) blk: {
             const semi_start = self.current.loc.start;
@@ -2255,6 +2313,44 @@ pub const Parser = struct {
         // letting it fall through to a generic expression-parse failure.
         if (self.current.tag == .hash_context_extend) {
             return self.fail("'#context_extend' is only allowed at top level (module scope)");
+        }
+        // `private` on a statement: legal only inside a MODULE-SCOPE `inline if`
+        // branch, whose statements become top-level declarations after comptime
+        // flattening. Anywhere else (function/method/lambda bodies) the
+        // declaration is a local — visibility does not apply.
+        if (self.current.tag == .kw_private) {
+            if (!self.in_module_inline_if) {
+                return self.fail("'private' is only allowed on module-scope declarations");
+            }
+            self.advance();
+            if (!self.isIdentLike() and self.current.tag != .kw_Self) {
+                return self.fail("expected a declaration name after 'private'");
+            }
+            const decl_start = self.current.loc.start;
+            const decl_name = self.tokenSlice(self.current);
+            const decl_name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
+            const decl_is_raw = self.current.is_raw;
+            self.advance();
+            const node = switch (self.current.tag) {
+                .colon_colon => blk: {
+                    self.advance();
+                    break :blk try self.parseConstBinding(decl_name, decl_name_span, decl_start, decl_is_raw);
+                },
+                .colon => blk: {
+                    self.advance();
+                    break :blk try self.parseTypedBinding(decl_name, decl_name_span, decl_start, decl_is_raw);
+                },
+                .colon_equal => blk: {
+                    self.advance();
+                    const value = try self.parseExpr();
+                    try self.expectSemicolonAfter(value);
+                    self.last_stmt_produces_value = false;
+                    break :blk try self.createNode(decl_start, .{ .var_decl = .{ .name = decl_name, .name_span = decl_name_span, .type_annotation = null, .value = value, .is_raw = decl_is_raw } });
+                },
+                else => return self.fail("expected '::', ':=', or ':' after the 'private' declaration name"),
+            };
+            node.visibility = .private;
+            return node;
         }
         // Check if this is a declaration (IDENT followed by ::, :=, or : type)
         if (self.isIdentLike()) {
@@ -4128,11 +4224,15 @@ pub const Parser = struct {
         // a `defer` / `onfail` body. Restored after the body.
         const saved_onfail = self.in_onfail_body;
         const saved_defer = self.in_defer_body;
+        const saved_module_if = self.in_module_inline_if;
         self.in_onfail_body = false;
         self.in_defer_body = false;
+        // A closure body's declarations are locals, never module scope.
+        self.in_module_inline_if = false;
         defer {
             self.in_onfail_body = saved_onfail;
             self.in_defer_body = saved_defer;
+            self.in_module_inline_if = saved_module_if;
         }
 
         // Two body forms:

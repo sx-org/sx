@@ -1057,6 +1057,9 @@ pub const Server = struct {
 
     fn collectDeclCompletions(allocator: std.mem.Allocator, items: *std.ArrayList(lsp.CompletionItem), decls: []const *sx.ast.Node) !void {
         for (decls) |decl| {
+            // Namespace-member completion offers ANOTHER file's declarations;
+            // its private names are not part of that surface.
+            if (decl.visibility == .private) continue;
             switch (decl.data) {
                 .fn_decl => |fd| {
                     var detail_buf = std.ArrayList(u8).empty;
@@ -1806,6 +1809,7 @@ pub const Server = struct {
             .kw_export,
             .kw_asm,
             .kw_intrinsic,
+            .kw_private,
             .hash_run,
             .hash_error,
             .hash_import,

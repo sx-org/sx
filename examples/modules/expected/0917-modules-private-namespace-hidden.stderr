@@ -1,0 +1,23 @@
+error: namespace 'lib' has no member 'secret'
+  --> examples/modules/0917-modules-private-namespace-hidden.sx:11:10
+   |
+11 |     a := lib.secret();
+   |          ^^^^^^^^^^
+
+error: namespace 'lib' has no member 'SECRET_N'
+  --> examples/modules/0917-modules-private-namespace-hidden.sx:12:10
+   |
+12 |     b := lib.SECRET_N;
+   |          ^^^^^^^^^^^^
+
+error: namespace 'fac' has no member 'inner'
+  --> examples/modules/0917-modules-private-namespace-hidden.sx:13:10
+   |
+13 |     c := fac.inner.exposed();
+   |          ^^^^^^^^^
+
+error: type 'inner' is not visible; #import the module that declares it
+  --> examples/modules/0917-modules-private-namespace-hidden.sx:14:10
+   |
+14 |     d := inner.exposed();
+   |          ^^^^^

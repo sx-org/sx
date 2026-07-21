@@ -24,7 +24,7 @@ pub const Compilation = struct {
     root: ?*Node = null,
     resolved_root: ?*Node = null,
     import_sources: std.StringHashMap([:0]const u8),
-    module_scopes: std.StringHashMap(std.StringHashMap(void)),
+    module_scopes: std.StringHashMap(std.StringHashMap(ast.Visibility)),
     import_graph: std.StringHashMap(std.StringHashMap(void)),
     /// Flat-only subset of `import_graph` (bare `#import` edges, no namespaced
     /// `ns :: #import`). Borrowed by `ProgramIndex.flat_import_graph`.
@@ -63,7 +63,7 @@ pub const Compilation = struct {
             .source = source,
             .diagnostics = errors.DiagnosticList.init(allocator, source, file_path),
             .import_sources = std.StringHashMap([:0]const u8).init(allocator),
-            .module_scopes = std.StringHashMap(std.StringHashMap(void)).init(allocator),
+            .module_scopes = std.StringHashMap(std.StringHashMap(ast.Visibility)).init(allocator),
             .import_graph = std.StringHashMap(std.StringHashMap(void)).init(allocator),
             .flat_import_graph = std.StringHashMap(std.StringHashMap(void)).init(allocator),
             .module_decls = imports.ModuleDecls.init(allocator),

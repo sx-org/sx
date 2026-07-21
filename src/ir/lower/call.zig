@@ -176,6 +176,11 @@ pub fn selectUfcsGenericByReceiver(self: *Lowering, name: []const u8, args_ast: 
     var it = decls.iterator();
     while (it.next()) |entry| {
         const ref = entry.value_ptr.names.get(name) orelse continue;
+        // A private method is receiver-reachable only from its own file.
+        if (entry.value_ptr.private_names.contains(name)) {
+            const requester = self.current_source_file orelse self.main_file orelse entry.value_ptr.source;
+            if (!std.mem.eql(u8, requester, entry.value_ptr.source)) continue;
+        }
         rankUfcsCand(self, Lowering.fnDeclOfRaw(ref), args_ast, &best, &best_concrete, &tie);
     }
     if (best == null) return null;
@@ -186,6 +191,21 @@ pub fn selectUfcsGenericByReceiver(self: *Lowering, name: []const u8, args_ast: 
         return null;
     }
     return best;
+}
+
+/// True when every module authoring `name` declares it `private` (and at
+/// least one does). Steers the visibility-gate diagnostic: "#import the
+/// module that declares it" is useless advice for a private name.
+fn nameAuthoredOnlyPrivately(self: *Lowering, name: []const u8) bool {
+    const decls = self.program_index.module_decls orelse return false;
+    var any = false;
+    var it = decls.valueIterator();
+    while (it.next()) |m| {
+        if (!m.names.contains(name)) continue;
+        if (!m.private_names.contains(name)) return false;
+        any = true;
+    }
+    return any;
 }
 
 /// True when `name` is bound in the current lexical scope to a CALLABLE
@@ -352,7 +372,7 @@ fn calleeMayHaveVariadicParam(self: *Lowering, c: *const ast.Call, sel_author: ?
                 }
                 // Namespaced / UFCS free fn by bare member name; anything we
                 // can't resolve stays conservative.
-                const eff = self.program_index.ufcs_alias_map.get(fa.field) orelse fa.field;
+                const eff = self.ufcsAliasTarget(fa.field) orelse fa.field;
                 if (self.program_index.fn_ast_map.get(eff)) |fd| break :blk fd;
                 return true;
             },
@@ -532,7 +552,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         const id_name = c.callee.data.identifier.name;
         const eff_name = blk: {
             const scoped = if (self.scope) |scope| scope.lookupFn(id_name) orelse id_name else id_name;
-            if (self.program_index.ufcs_alias_map.get(id_name)) |target| {
+            if (self.ufcsAliasTarget(id_name)) |target| {
                 break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
             }
             break :blk scoped;
@@ -556,14 +576,18 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // services them as ordinary declared calls; exempting them keeps every
         // intrinsic reachable on the same terms.
         if (std.mem.eql(u8, eff_name, id_name) and
-            self.program_index.ufcs_alias_map.get(id_name) == null and
+            self.ufcsAliasTarget(id_name) == null and
             self.program_index.fn_ast_map.contains(eff_name) and
             !callableLocalShadow(self, id_name) and
             intrinsics.findByName(eff_name) == null and
             !self.isNameVisible(eff_name))
         {
-            if (self.diagnostics) |d|
-                d.addFmt(.err, c.callee.span, "'{s}' is not visible; #import the module that declares it", .{eff_name});
+            if (self.diagnostics) |d| {
+                if (nameAuthoredOnlyPrivately(self, eff_name))
+                    d.addFmt(.err, c.callee.span, "'{s}' is private to its declaring module", .{eff_name})
+                else
+                    d.addFmt(.err, c.callee.span, "'{s}' is not visible; #import the module that declares it", .{eff_name});
+            }
             return Ref.none;
         }
     }
@@ -580,7 +604,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // first-wins winner's. Plain bare name only; `.ambiguous`
                 // → loud diagnostic; `.none` → existing first-wins path.
                 const closure_fid: ?FuncId = blk_cl: {
-                    if (self.program_index.ufcs_alias_map.get(fn_name) == null and
+                    if (self.ufcsAliasTarget(fn_name) == null and
                         (if (self.scope) |scope| scope.lookup(fn_name) == null else true))
                     {
                         if (self.current_source_file) |caller_file| {
@@ -630,7 +654,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         const early_name = blk: {
             const id_name = c.callee.data.identifier.name;
             const scoped = if (self.scope) |scope| scope.lookupFn(id_name) orelse id_name else id_name;
-            if (self.program_index.ufcs_alias_map.get(id_name)) |target| {
+            if (self.ufcsAliasTarget(id_name)) |target| {
                 break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
             }
             break :blk scoped;
@@ -1056,7 +1080,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 // First try scope lookup for mangled local fn names
                 const scoped = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
                 // Then try UFCS alias on bare name
-                if (self.program_index.ufcs_alias_map.get(id.name)) |target| {
+                if (self.ufcsAliasTarget(id.name)) |target| {
                     // Resolve the alias target through scope too (target may be mangled)
                     break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
                 }
@@ -1955,7 +1979,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // (`sel_author` / `cplan.ambiguous_collision`, computed once above)
             // rather than re-resolving the field name. `.ambiguous` → loud
             // diagnostic; otherwise the existing first-wins lazy path.
-            const alias_target = self.program_index.ufcs_alias_map.get(fa.field);
+            const alias_target = self.ufcsAliasTarget(fa.field);
             const eff_field = alias_target orelse fa.field;
             const ufcs_fd = self.program_index.fn_ast_map.get(eff_field);
             const ufcs_opted_in = alias_target != null or (ufcs_fd != null and ufcs_fd.?.is_ufcs);
@@ -4030,7 +4054,7 @@ pub fn expandCallDefaults(
             .identifier => |id| {
                 const eff_name = blk2: {
                     const scoped = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
-                    if (self.program_index.ufcs_alias_map.get(id.name)) |target| {
+                    if (self.ufcsAliasTarget(id.name)) |target| {
                         break :blk2 if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
                     }
                     break :blk2 scoped;
@@ -4501,7 +4525,7 @@ pub fn resolveCallParamTypes(
     }
     const name = blk: {
         const scoped = if (self.scope) |scope| scope.lookupFn(bare_name) orelse bare_name else bare_name;
-        if (self.program_index.ufcs_alias_map.get(bare_name)) |target| {
+        if (self.ufcsAliasTarget(bare_name)) |target| {
             break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
         }
         break :blk scoped;

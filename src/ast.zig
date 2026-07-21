@@ -5,10 +5,20 @@ pub const Span = struct {
     end: u32,
 };
 
+/// Module-scope declaration visibility. `.private` restricts the name to its
+/// declaring SOURCE FILE: it stays fully usable throughout that file (forward
+/// references included) but is never carried by flat imports and never
+/// selectable through another module's namespace. Meaningful only on
+/// module-scope declaration nodes; every other node stays `.public`.
+pub const Visibility = enum { public, private };
+
 pub const Node = struct {
     span: Span,
     data: Data,
     source_file: ?[]const u8 = null,
+    /// Declaration visibility (`private NAME :: …`). Defaults to `.public`;
+    /// only the parser's module-scope declaration paths ever set `.private`.
+    visibility: Visibility = .public,
 
     pub const Data = union(enum) {
         root: Root,

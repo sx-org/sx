@@ -1,0 +1,17 @@
+// `private` module-scope visibility, positive surface: same-file use with
+// forward references, every declaration kind, a public alias exposing a
+// private type, and a facade whose private named import stays internal.
+
+#import "modules/std.sx";
+lib :: #import "0915-modules-private-visibility/lib.sx";
+fac :: #import "0915-modules-private-visibility/facade.sx";
+
+main :: () -> i32 {
+    print("{}\n", lib.exposed());
+    h : lib.Alias = lib.make_hidden();
+    print("{}\n", h.v);
+    print("{}\n", lib.bump());
+    print("{}\n", lib.pick_on());
+    print("{}\n", fac.use_inner());
+    return 0;
+}

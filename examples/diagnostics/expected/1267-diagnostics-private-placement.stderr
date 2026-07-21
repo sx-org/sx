@@ -1,0 +1,5 @@
+error: 'private' is only allowed on module-scope declarations
+  --> examples/diagnostics/1267-diagnostics-private-placement.sx:5:5
+   |
+ 5 |     private x := 1;
+   |     ^^^^^^^

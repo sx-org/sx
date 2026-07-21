@@ -48,6 +48,7 @@ pub const Tag = enum {
     kw_export, // export (define + expose: external linkage, C ABI)
     kw_asm, // asm (inline assembly expression / global asm decl)
     kw_intrinsic, // intrinsic (body position: the impl is a compiler intrinsic)
+    kw_private, // private (module-scope declaration visibility modifier)
 
     // Symbols
     colon, // :
@@ -296,6 +297,9 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
     // intrinsic (`size_of :: ($T: Type) -> i64 intrinsic;`). A reserved word:
     // the registry in `ir/intrinsics.zig` binds it by module + declared name.
     .{ "intrinsic", .kw_intrinsic },
+    // `private` restricts a module-scope declaration to its declaring source
+    // file. A reserved word; `` `private `` stays usable as a raw identifier.
+    .{ "private", .kw_private },
 });
 
 pub fn getKeyword(bytes: []const u8) ?Tag {

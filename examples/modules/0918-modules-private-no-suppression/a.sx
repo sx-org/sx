@@ -1,0 +1,3 @@
+private helper :: () -> i64 { return 1; }
+private LIMIT :: 10;
+a_probe :: () -> i64 { return helper() + LIMIT; }

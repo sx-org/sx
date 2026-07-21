@@ -1,0 +1,7 @@
+// `private` is a module-scope modifier: a function-local declaration
+// rejects it at parse time.
+
+main :: () -> i32 {
+    private x := 1;
+    return 0;
+}

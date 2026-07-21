@@ -56,3 +56,18 @@ test "lex hash_context_extend" {
     var lex2 = Lexer.init("#context_extended");
     try std.testing.expectEqual(Tag.invalid, lex2.next().tag);
 }
+
+// `private` is the module-scope visibility keyword; the backtick escape keeps
+// the literal spelling usable as an identifier, and a longer identifier
+// (`privates`) never matches the keyword.
+test "lex private keyword; backtick escape stays identifier" {
+    var lex = Lexer.init("private `private privates");
+    const tok1 = lex.next();
+    try std.testing.expectEqual(Tag.kw_private, tok1.tag);
+    const tok2 = lex.next();
+    try std.testing.expectEqual(Tag.identifier, tok2.tag);
+    try std.testing.expect(tok2.is_raw);
+    const tok3 = lex.next();
+    try std.testing.expectEqual(Tag.identifier, tok3.tag);
+    try std.testing.expect(!tok3.is_raw);
+}

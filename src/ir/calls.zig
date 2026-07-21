@@ -144,7 +144,7 @@ pub const CallResolver = struct {
             // Resolve local function name (bare → mangled) and UFCS aliases
             const name = blk: {
                 const scoped = if (self.l.scope) |scope| scope.lookupFn(bare_name) orelse bare_name else bare_name;
-                if (self.l.program_index.ufcs_alias_map.get(bare_name)) |target| {
+                if (self.l.ufcsAliasTarget(bare_name)) |target| {
                     break :blk if (self.l.scope) |scope| scope.lookupFn(target) orelse target else target;
                 }
                 break :blk scoped;
@@ -435,7 +435,7 @@ pub const CallResolver = struct {
                 // declared `name :: ufcs (...)` classifies as free_fn_ufcs.
                 // A plain fn falls through (lowering emits the tailored
                 // not-a-ufcs-function diagnostic).
-                const alias_target = self.l.program_index.ufcs_alias_map.get(cfa.field);
+                const alias_target = self.l.ufcsAliasTarget(cfa.field);
                 const eff_field = alias_target orelse cfa.field;
                 const ufcs_fd = self.l.program_index.fn_ast_map.get(eff_field);
                 const opted_in = alias_target != null or (ufcs_fd != null and ufcs_fd.?.is_ufcs);
@@ -691,7 +691,7 @@ pub const CallResolver = struct {
                 const bare_name = id.name;
                 if (Lowering.resolveBuiltin(bare_name) != null) return .none;
                 const scoped = if (self.l.scope) |scope| scope.lookupFn(bare_name) orelse bare_name else bare_name;
-                const name = if (self.l.program_index.ufcs_alias_map.get(bare_name)) |target|
+                const name = if (self.l.ufcsAliasTarget(bare_name)) |target|
                     (if (self.l.scope) |scope| scope.lookupFn(target) orelse target else target)
                 else
                     scoped;

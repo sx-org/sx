@@ -884,7 +884,7 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
                                 // `.ambiguous` (same-name RHS authored by ≥2 flat
                                 // imports) leaves A unwritten like `.not_visible`;
                                 // the loud diagnostic fires where A is USED.
-                                .pending, .forward, .undeclared, .not_visible, .ambiguous => {},
+                                .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => {},
                             }
                         }
                     } else if (cd.value.data == .field_access) {
@@ -911,7 +911,7 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
                                         self.putModuleConst(self.current_source_file, cd.name, .{ .value = cd.value, .ty = target.ty });
                                     } else switch (self.selectNominalLeaf(sel.member, sel.target.target_module_path, false)) {
                                         .resolved => |tid| self.putTypeAlias(self.current_source_file, cd.name, tid),
-                                        .pending, .forward, .undeclared, .not_visible, .ambiguous => {},
+                                        .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => {},
                                     }
                                 },
                                 .missing => |m| if (self.diagnostics) |d|
@@ -1081,7 +1081,21 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
                 }
             },
             .ufcs_alias => |ua| {
-                self.program_index.ufcs_alias_map.put(ua.name, ua.target) catch {};
+                if (decl.visibility == .private) {
+                    // A private alias dispatches only in its declaring file
+                    // and must not claim the program-wide slot away from a
+                    // public same-name alias. (Same-name aliases across
+                    // modules already share one last-wins slot; a private
+                    // one only occupies it while no public author exists.)
+                    if (!self.program_index.ufcs_alias_map.contains(ua.name)) {
+                        self.program_index.ufcs_alias_map.put(ua.name, ua.target) catch {};
+                        const authority = decl.source_file orelse self.current_source_file orelse self.main_file;
+                        if (authority) |a| self.program_index.private_ufcs_alias_source.put(ua.name, a) catch {};
+                    }
+                } else {
+                    self.program_index.ufcs_alias_map.put(ua.name, ua.target) catch {};
+                    _ = self.program_index.private_ufcs_alias_source.remove(ua.name);
+                }
             },
             // Top-level globals are registered in a second pass (below),
             // after the forward-alias fixpoint, so a forward identifier
@@ -1722,7 +1736,7 @@ pub fn resolveForwardIdentifierAliases(self: *Lowering, decls: []const *const No
                 // ambiguous same-name shadow (≥2 flat authors). Leave A
                 // unwritten — no global last-wins leak; the ambiguity surfaces
                 // where A is used.
-                .pending, .forward, .undeclared, .not_visible, .ambiguous => {},
+                .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => {},
             }
         }
     }
@@ -1872,7 +1886,7 @@ fn bareTypeLeafReadyBehindPtr(self: *Lowering, name: []const u8, src: []const u8
     if (std.mem.indexOfScalar(u8, name, '.') != null) return true;
     return switch (self.selectNominalLeaf(name, src, raw)) {
         .resolved, .forward => true,
-        .pending, .undeclared, .not_visible, .ambiguous => false,
+        .pending, .undeclared, .not_visible, .private_elsewhere, .ambiguous => false,
     };
 }
 
@@ -1889,7 +1903,7 @@ fn bareTypeLeafReady(self: *Lowering, name: []const u8, src: []const u8, raw: bo
     if (std.mem.indexOfScalar(u8, name, '.') != null) return true;
     return switch (self.selectNominalLeaf(name, src, raw)) {
         .resolved => true,
-        .pending, .forward, .undeclared, .not_visible, .ambiguous => false,
+        .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => false,
     };
 }
 
@@ -2330,6 +2344,12 @@ pub const TypeHeadResolution = union(enum) {
     /// (which would leak the type) and NEVER a silent empty-struct stub (which
     /// would mis-size it).
     not_visible,
+    /// `name` is authored ONLY as `private` declarations in modules other
+    /// than the querying source. Same gating strength as `.not_visible`
+    /// (loud diagnostic + `.unresolved` poison, never the global registration
+    /// leak), with wording that does not suggest an `#import` that would not
+    /// help.
+    private_elsewhere,
     /// ≥2 DISTINCT same-name type authors are flat-visible from the querying
     /// source and none is its own (E2). The selection is genuinely
     /// ambiguous: `resolveNominalLeaf` emits a loud diagnostic and returns the
@@ -2650,10 +2670,32 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     //    import-reachable from `from` → reachable only over a namespace edge.
     if (self.nameAuthoredAsTypeAnywhere(name)) return .not_visible;
 
+    // 3b. Authored ONLY privately in other modules: gate loudly. The global
+    //     type-table registration must not fall open for a name whose every
+    //     author is file-local somewhere else, and the main-file checker
+    //     deferral of `.undeclared` would let the stub adopt the leaked type.
+    if (nameAuthoredAsTypeOnlyPrivatelyElsewhere(self, name, from)) return .private_elsewhere;
+
     // 4. Not a cross-module type author. A registered generic type-param bound
     //    or fabricated empty-struct stub resolves ungated.
     if (registered) |existing| return .{ .resolved = existing };
     return .undeclared;
+}
+
+/// True when at least one module OTHER than `from` authors `name` as a
+/// private declaration and no public author exists anywhere (a public author
+/// would have been served by the earlier own/flat/not-visible steps).
+fn nameAuthoredAsTypeOnlyPrivatelyElsewhere(self: *Lowering, name: []const u8, from: []const u8) bool {
+    const decls = self.program_index.module_decls orelse return false;
+    var any = false;
+    var it = decls.iterator();
+    while (it.next()) |entry| {
+        const m = entry.value_ptr;
+        if (!m.private_names.contains(name)) continue;
+        if (std.mem.eql(u8, entry.key_ptr.*, from)) continue;
+        any = true;
+    }
+    return any;
 }
 
 /// TRUE iff `raw` declares a NAMED TYPE — struct / enum / union / error-set /
@@ -2731,7 +2773,12 @@ pub fn nameAuthoredAsTypeAnywhere(self: *Lowering, name: []const u8) bool {
     if (self.program_index.module_decls) |decls| {
         var it = decls.valueIterator();
         while (it.next()) |m| {
-            if (m.names.get(name)) |ref| if (isNamedTypeKind(ref)) return true;
+            if (m.names.get(name)) |ref| {
+                // A private-only type author must read as undeclared, not as
+                // a not-visible gate: importing its module would not help.
+                if (m.private_names.contains(name)) continue;
+                if (isNamedTypeKind(ref)) return true;
+            }
         }
     }
     var ait = self.program_index.type_aliases_by_source.valueIterator();
@@ -2820,6 +2867,13 @@ pub fn resolveNominalLeaf(self: *Lowering, name: []const u8, raw: bool, span: ?a
         .not_visible => {
             if (self.diagnostics) |d|
                 d.addFmt(.err, span, "type '{s}' is not visible; #import the module that declares it", .{name});
+            return .unresolved;
+        },
+        // Same strength as not_visible; wording that doesn't recommend a
+        // futile #import.
+        .private_elsewhere => {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, span, "type '{s}' is private to its declaring module", .{name});
             return .unresolved;
         },
         // ≥2 distinct same-name type authors flat-visible, none own (issue

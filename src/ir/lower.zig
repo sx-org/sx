@@ -365,12 +365,14 @@ const CleanupEntry = struct {
 };
 
 /// Pure non-transitive visibility walk: `name` is visible from `source` when
-/// it's in `source`'s own scope or in any module reachable over one `graph`
-/// edge. The core of the lowering visibility predicate, exposed so a unit test
-/// can exercise the edge-walk without standing up a whole `Lowering`. Falls open
-/// (true) when `scopes`/`graph` are null (scoping infra unwired).
+/// it's in `source`'s own scope or is a PUBLIC name of any module reachable
+/// over one `graph` edge — a flat import never carries a `private` name out of
+/// its declaring file. The core of the lowering visibility predicate, exposed
+/// so a unit test can exercise the edge-walk without standing up a whole
+/// `Lowering`. Falls open (true) when `scopes`/`graph` are null (scoping infra
+/// unwired).
 pub fn nameVisibleOverEdges(
-    scopes: ?*std.StringHashMap(std.StringHashMap(void)),
+    scopes: ?*std.StringHashMap(std.StringHashMap(ast.Visibility)),
     graph: ?*std.StringHashMap(std.StringHashMap(void)),
     source: []const u8,
     name: []const u8,
@@ -383,7 +385,7 @@ pub fn nameVisibleOverEdges(
     var it = direct.iterator();
     while (it.next()) |kv| {
         const dep = sc.get(kv.key_ptr.*) orelse continue;
-        if (dep.contains(name)) return true;
+        if (dep.get(name)) |vis| if (vis == .public) return true;
     }
     return false;
 }
@@ -1938,6 +1940,9 @@ pub const Lowering = struct {
         while (it.next()) |dep| {
             const dep_edges = edges.getPtr(dep.*) orelse continue;
             const t = dep_edges.get(alias) orelse continue;
+            // A private alias works only in its author file — it is never
+            // carried over a flat hop.
+            if (t.visibility == .private) continue;
             if (found) |f| {
                 if (!std.mem.eql(u8, f.target_module_path, t.target_module_path)) return .ambiguous;
             } else found = t;
@@ -1960,6 +1965,17 @@ pub const Lowering = struct {
         }
     }
 
+    /// Source-aware UFCS alias lookup: a `private` alias rewrites calls only
+    /// in its declaring file; a public alias keeps its program-wide dispatch.
+    pub fn ufcsAliasTarget(self: *Lowering, name: []const u8) ?[]const u8 {
+        const target = self.program_index.ufcs_alias_map.get(name) orelse return null;
+        if (self.program_index.private_ufcs_alias_source.get(name)) |authority| {
+            const requester = self.current_source_file orelse self.main_file orelse authority;
+            if (!std.mem.eql(u8, requester, authority)) return null;
+        }
+        return target;
+    }
+
     /// True when ANY module in the program declares `alias` as a namespace
     /// edge — distinguishes a not-visible alias (gate error) from a name that
     /// was never an alias at all (fall through to other resolution).
@@ -1977,6 +1993,15 @@ pub const Lowering = struct {
     /// registers). Null when the member is absent or not a function.
     pub fn namespaceFnMember(self: *Lowering, target: *const imports_mod.NamespaceTarget, name: []const u8) ?*const ast.FnDecl {
         for (target.own_decls) |decl| {
+            // A private member exists only for its declaring file. The
+            // full-path verdict has already vetted selected members (and may
+            // have legitimately pinned `current_source_file` to the target);
+            // this guards the direct one-hop probes.
+            if (decl.visibility == .private) {
+                const authority = decl.source_file orelse target.target_module_path;
+                const requester = self.current_source_file orelse self.main_file orelse authority;
+                if (!std.mem.eql(u8, requester, authority)) continue;
+            }
             switch (decl.data) {
                 .fn_decl => |*fd| if (std.mem.eql(u8, fd.name, name)) return fd,
                 .const_decl => |*cd| if (std.mem.eql(u8, cd.name, name)) {
@@ -2013,8 +2038,17 @@ pub const Lowering = struct {
     /// must fall back rather than misdiagnose them as a missing namespace
     /// member. In particular stdlib's `libc :: c.libc` re-export is a library
     /// handle alias, not a value/type alias (issue 0325 regression guard).
-    pub fn namespaceOwnSpecialMember(_: *Lowering, target: imports_mod.NamespaceTarget, name: []const u8) bool {
+    pub fn namespaceOwnSpecialMember(self: *Lowering, target: imports_mod.NamespaceTarget, name: []const u8) bool {
         for (target.own_decls) |decl| {
+            // A private special member (library handle, UFCS alias, …) is not
+            // part of the namespace surface for any other source file — the
+            // dotted selector must report the member missing rather than fall
+            // through to the name's process-global resolution domain.
+            if (decl.visibility == .private) {
+                const authority = decl.source_file orelse target.target_module_path;
+                const requester = self.current_source_file orelse self.main_file orelse authority;
+                if (!std.mem.eql(u8, requester, authority)) continue;
+            }
             const own_name: ?[]const u8 = switch (decl.data) {
                 .library_decl => |d| d.name,
                 .framework_decl => |d| d.name,
@@ -2132,6 +2166,13 @@ pub const Lowering = struct {
                 .ambiguous => return .{ .ambiguous = segment },
                 .none => return .{ .missing = .{ .namespace = namespace_name, .member = segment } },
             };
+            // Deep traversal keeps the ORIGINAL requester's authority: a
+            // private intermediate alias belongs to the file that declared it
+            // and is not part of that module's namespace surface for anyone
+            // else.
+            if (target.visibility == .private and !std.mem.eql(u8, from, target.importer_source)) {
+                return .{ .missing = .{ .namespace = namespace_name, .member = segment } };
+            }
             namespace_name = segment;
             segment_start = dot + 1;
             if (segment_start >= path.len) return .not_qualified;
@@ -2143,6 +2184,12 @@ pub const Lowering = struct {
             if (self.namespaceOwnSpecialMember(target, member)) return .not_qualified;
             return .{ .missing = .{ .namespace = namespace_name, .member = member } };
         };
+        // A private member is no member at all from any other source file —
+        // judged against the ORIGINAL requester, and against the member's
+        // exact declaring file (not a directory-import aggregate).
+        if (author.visibility == .private and !std.mem.eql(u8, from, author.visAuthority())) {
+            return .{ .missing = .{ .namespace = namespace_name, .member = member } };
+        }
         return .{ .selected = .{ .target = target, .author = author, .member = member } };
     }
 
