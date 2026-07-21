@@ -1,0 +1,15 @@
+// A namespace-qualified struct-literal head (`t.Civil.{ … }`) resolves in its
+// declaring module's context regardless of how that module is reached: flat,
+// namespaced, or through a facade. Regression (issue 0334): the tagged-union
+// literal pre-pass probed the head's object with a LOUD nominal resolution,
+// blasting "unknown type 't'" for valid qualified literals in non-main modules.
+
+#import "modules/std.sx";
+#import "0920-modules-qualified-struct-literal-namespaced/inner.sx";
+i :: #import "0920-modules-qualified-struct-literal-namespaced/inner.sx";
+f :: #import "0920-modules-qualified-struct-literal-namespaced/facade.sx";
+
+main :: () -> i32 {
+    print("{} {} {}\n", pack(40), i.pack(30), f.use_pack(20));
+    return 0;
+}

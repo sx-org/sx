@@ -1,0 +1,5 @@
+t :: #import "tmod.sx";
+pack :: (y: i64) -> i64 {
+    c := t.Civil.{ y = y, m = 2 };
+    return c.y + c.m;
+}

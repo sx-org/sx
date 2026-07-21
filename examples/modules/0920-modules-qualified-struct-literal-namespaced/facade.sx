@@ -1,0 +1,2 @@
+#import "inner.sx";
+use_pack :: (y: i64) -> i64 { return pack(y); }

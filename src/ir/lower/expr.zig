@@ -66,7 +66,25 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                     .type_expr => |t| t.name,
                     else => null,
                 };
-                if (obj_name) |on| resolved = self.resolveNominalLeaf(on, false, fa.object.span);
+                // Diagnostic-free PROBE: this pass only decides whether the
+                // head is a tagged union (`Ev.key.{...}` variant construction).
+                // The object may equally be a namespace alias (`m.Cfg.{...}`,
+                // issue 0334) — the real head resolution below owns the
+                // diagnostics, so a loud `resolveNominalLeaf` here would blast
+                // "unknown type 'm'" for a perfectly valid qualified literal
+                // lowered in a non-main module.
+                if (obj_name) |on| {
+                    const from = self.current_source_file orelse self.main_file;
+                    if (from) |f| {
+                        resolved = switch (self.selectNominalLeaf(on, f, false)) {
+                            .resolved => |ty| ty,
+                            else => .unresolved,
+                        };
+                    } else {
+                        const sid = self.module.types.internString(on);
+                        resolved = self.module.types.findByName(sid) orelse .unresolved;
+                    }
+                }
             }
             if (!resolved.isBuiltin() and resolved != .unresolved) {
                 const info = self.module.types.get(resolved);
