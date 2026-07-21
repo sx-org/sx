@@ -3151,6 +3151,20 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                                 const tramp_id = self.createBareFnTrampoline(fid, tt_info.closure);
                                 break :blk self.builder.closureCreate(tramp_id, Ref.none, tt);
                             }
+                            // fn → Closure promotion composes with T → ?T
+                            // wrapping (issue 0338): a `?Closure(...)` target
+                            // promotes to the CHILD closure type here, and the
+                            // standard optional_wrap coercion wraps the value —
+                            // call args, struct-literal fields, decl targets,
+                            // and returns all thread target_type through.
+                            if (tt_info == .optional and !tt_info.optional.child.isBuiltin()) {
+                                const child = tt_info.optional.child;
+                                const child_info = self.module.types.get(child);
+                                if (child_info == .closure) {
+                                    const tramp_id = self.createBareFnTrampoline(fid, child_info.closure);
+                                    break :blk self.builder.closureCreate(tramp_id, Ref.none, child);
+                                }
+                            }
                             // Coercing a bare fn name to a fn-pointer
                             // type — the call_conv must match. A
                             // default-conv sx fn assigned to a

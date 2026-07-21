@@ -1,0 +1,17 @@
+// A diagnostic naming a bare-function VALUE must show the function's
+// signature, never the legacy integer word it is carried in ('i64') and
+// never the bare 'function' tag (issue 0338, second defect). Pinned in both
+// coercion error paths: the central unmodeled-coercion guard (call arg) and
+// the return-path guard.
+#import "modules/std.sx";
+
+toolbar :: () { print("t\n"); }
+add1 :: (x: i64) -> i64 { x + 1 }
+
+takes_s :: (s: string) { print("{}\n", s); }
+give_s :: () -> string { return add1; }
+
+main :: () {
+    takes_s(toolbar);
+    _ = give_s();
+}

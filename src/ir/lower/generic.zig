@@ -679,6 +679,24 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
             buf.append(self.alloc, ')') catch break :blk "tuple";
             break :blk buf.toOwnedSlice(self.alloc) catch "tuple";
         },
+        // A function TYPE renders as its signature (same spelling as
+        // `formatFnTypeString` / the TypeTable formatter: `-> void` omitted) —
+        // a diagnostic naming a bare-fn value must show the signature, never
+        // the `function` tag (issue 0338).
+        .function => |f| blk: {
+            var buf = std.ArrayList(u8).empty;
+            buf.append(self.alloc, '(') catch break :blk "function";
+            for (f.params, 0..) |p, i| {
+                if (i > 0) buf.appendSlice(self.alloc, ", ") catch break :blk "function";
+                buf.appendSlice(self.alloc, self.formatTypeName(p)) catch break :blk "function";
+            }
+            buf.append(self.alloc, ')') catch break :blk "function";
+            if (f.ret != .void) {
+                buf.appendSlice(self.alloc, " -> ") catch break :blk "function";
+                buf.appendSlice(self.alloc, self.formatTypeName(f.ret)) catch break :blk "function";
+            }
+            break :blk buf.toOwnedSlice(self.alloc) catch "function";
+        },
         else => @tagName(info),
     };
 }

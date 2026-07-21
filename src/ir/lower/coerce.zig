@@ -1182,6 +1182,24 @@ fn implicitNoneMismatchExempt(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty:
     return false;
 }
 
+/// A bare-function VALUE is carried in the legacy integer-word IR type
+/// (`func_ref` typed `i64`/`isize` — issue 0237), which must never leak into
+/// a user-facing message as the value's type (issue 0338: "cannot coerce a
+/// value of type 'i64'" for a fn name). When `val` is a `func_ref`, recover
+/// the function's real signature type (implicit ctx param excluded — it is
+/// not part of the source-level signature); otherwise return `src_ty`.
+fn diagnosedSrcType(self: *Lowering, val: Ref, src_ty: TypeId) TypeId {
+    if (src_ty != .i64 and src_ty != .isize) return src_ty;
+    const op = self.builder.getRefOp(val) orelse return src_ty;
+    if (op != .func_ref) return src_ty;
+    const f = &self.module.functions.items[op.func_ref.index()];
+    var param_ids = std.ArrayList(TypeId).empty;
+    defer param_ids.deinit(self.alloc);
+    const skip: usize = if (f.has_implicit_ctx) 1 else 0;
+    for (f.params[skip..]) |p| param_ids.append(self.alloc, p.ty) catch return src_ty;
+    return self.module.types.functionType(param_ids.items, f.ret);
+}
+
 /// The central issue-0191 guard: an IMPLICIT coercion classified `.none` with
 /// a byte-width mismatch is a silent weld — the passthrough value would be
 /// bit-reinterpreted into a differently-sized slot (return slot, call arg,
@@ -1192,7 +1210,7 @@ fn diagnoseUnmodeledCoercion(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: 
     if (implicitNoneMismatchExempt(self, val, src_ty, dst_ty)) return;
     if (self.diagnostics) |d| {
         const cs = self.builder.current_span;
-        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot coerce a value of type '{s}' to '{s}': no implicit conversion applies", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
+        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot coerce a value of type '{s}' to '{s}': no implicit conversion applies", .{ self.formatTypeName(diagnosedSrcType(self, val, src_ty)), self.formatTypeName(dst_ty) });
         self.assignability_error_count += 1;
     }
 }
@@ -1206,7 +1224,7 @@ fn diagnoseUnmodeledCoercion(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: 
 pub fn checkReturnable(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
     if (implicitNoneMismatchExempt(self, val, src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "cannot return a value of type '{s}' where '{s}' is expected", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
+        d.addFmt(.err, span, "cannot return a value of type '{s}' where '{s}' is expected", .{ self.formatTypeName(diagnosedSrcType(self, val, src_ty)), self.formatTypeName(dst_ty) });
         self.assignability_error_count += 1;
     }
     return false;

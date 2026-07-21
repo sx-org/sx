@@ -1,0 +1,32 @@
+// Bare fn → `?Closure` (issue 0338): fn → Closure promotion (null-env static
+// thunk) composes with T → ?T wrapping in every position where each step
+// applies individually — call args, struct-literal fields, decl targets, and
+// returns. The point-free slot idiom (`opt_slot(toolbar)`,
+// `B.{ on_tap = toolbar }`) behaves exactly like `opt_slot(() => toolbar())`.
+#import "modules/std.sx";
+
+toolbar :: () { print("toolbar\n"); }
+add1 :: (x: i64) -> i64 { x + 1 }
+
+opt_slot :: (f: ?Closure() = null) { if g := f { g(); } else { print("none\n"); } }
+
+B :: struct { on_tap: ?Closure() = null; }
+
+pick :: (use: bool) -> ?Closure() {
+    if use { return toolbar; }
+    null
+}
+
+main :: () {
+    opt_slot(toolbar);
+    opt_slot();
+    b := B.{ on_tap = toolbar };
+    if g := b.on_tap { g(); }
+    d : ?Closure() = toolbar;
+    if g := d { g(); }
+    r := pick(true);
+    if g := r { g(); }
+    if pick(false) == null { print("absent\n"); }
+    m : ?Closure(i64) -> i64 = add1;
+    if g := m { print("{}\n", g(41)); }
+}
