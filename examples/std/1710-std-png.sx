@@ -1,0 +1,202 @@
+// std.png: idiomatic image/options surface, exact miniz-compatible bytes for
+// every 8-bit pixel format, signed-stride semantics, validation, ownership,
+// and allocation-failure mapping.
+#import "modules/std.sx";
+
+FailingAllocator :: struct {
+    parent: Allocator;
+    fail_at: i64;
+    sequence: i64;
+    failures: i64;
+    live: i64;
+}
+
+impl Allocator for FailingAllocator {
+    alloc_bytes :: (self: *FailingAllocator, size: i64) -> *void {
+        self.sequence += 1;
+        if self.fail_at > 0 and self.sequence == self.fail_at {
+            self.failures += 1;
+            return null;
+        }
+        raw := self.parent.alloc_bytes(size);
+        if raw != null { self.live += 1; }
+        raw
+    }
+
+    dealloc_bytes :: (self: *FailingAllocator, ptr: *void) {
+        if ptr == null { return; }
+        self.live -= 1;
+        self.parent.dealloc_bytes(ptr);
+    }
+}
+
+bytes_equal :: (left: string, right: string) -> bool {
+    if left.len != right.len { return false; }
+    i := 0;
+    while i < left.len {
+        if left[i] != right[i] { return false; }
+        i += 1;
+    }
+    true
+}
+
+check_image :: (image: png.Image, expected: string, alloc: Allocator) -> bool {
+    encoded := png.encode(image, .{ level = 6 }, alloc) catch (e) { return false; };
+    matches := bytes_equal(encoded, expected);
+    alloc.dealloc_bytes(encoded.ptr);
+    matches
+}
+
+check_oracle :: (format: png.PixelFormat, channels: i64, expected: string, bottom_up: bool, alloc: Allocator) -> bool {
+    pixels : [24]u8 = ---;
+    count := 3 * 2 * channels;
+    i := 0;
+    while i < count {
+        pixels[i] = ((i * 37 + channels * 19) & 255).(u8);
+        i += 1;
+    }
+    image : png.Image = .{
+        pixels = string.{ ptr = @pixels[0], len = count },
+        width = 3,
+        height = 2,
+        format = format,
+        stride = if bottom_up then 0 - 3 * channels else 0,
+    };
+    check_image(image, expected, alloc)
+}
+
+raises :: (image: png.Image, options: png.EncodeOptions, want: png.Error, alloc: Allocator) -> bool {
+    encoded, failure := png.encode(image, options, alloc);
+    if !failure {
+        alloc.dealloc_bytes(encoded.ptr);
+        return false;
+    }
+    failure == want
+}
+
+allocation_case :: (fail_at: i64) -> (bool, i64) {
+    gpa := mem.GPA.init();
+    failing : FailingAllocator = .{
+        parent = gpa,
+        fail_at = fail_at,
+        sequence = 0,
+        failures = 0,
+        live = 0,
+    };
+    pixel : [4]u8 = .[1, 2, 3, 4];
+    image : png.Image = .{
+        pixels = string.{ ptr = @pixel[0], len = pixel.len },
+        width = 1,
+        height = 1,
+        format = .rgba,
+    };
+    encoded, failure := png.encode(image, .{}, failing);
+    success := !failure;
+    if !failure { failing.dealloc_bytes(encoded.ptr); }
+    expected := if fail_at == 0 then success and failing.failures == 0
+                else !success and failure == error.AllocationFailed and failing.failures == 1;
+    return expected and failing.live == 0 and gpa.alloc_count == 0, failing.sequence;
+}
+
+main :: () -> i32 {
+    // These fixtures were archived from miniz 3.1.2's
+    // tdefl_write_image_to_png_file_in_memory_ex at level 6. They pin the
+    // complete PNG bytes, including the zlib stream and every chunk CRC.
+    gray : [76]u8 = .[
+        0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00,0x00,0x00,0x0d,0x49,0x48,0x44,0x52,
+        0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x02,0x08,0x00,0x00,0x00,0x00,0xb8,0x1f,0x39,
+        0xc6,0x00,0x00,0x00,0x13,0x49,0x44,0x41,0x54,0x78,0x9c,0x01,0x08,0x00,0xf7,0xff,
+        0x00,0x13,0x38,0x5d,0x00,0x82,0xa7,0xcc,0x07,0x4e,0x02,0x9e,0x98,0x79,0x06,0x6b,
+        0x00,0x00,0x00,0x00,0x49,0x45,0x4e,0x44,0xae,0x42,0x60,0x82,
+    ];
+    gray_bottom_up : [76]u8 = .[
+        0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00,0x00,0x00,0x0d,0x49,0x48,0x44,0x52,
+        0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x02,0x08,0x00,0x00,0x00,0x00,0xb8,0x1f,0x39,
+        0xc6,0x00,0x00,0x00,0x13,0x49,0x44,0x41,0x54,0x78,0x9c,0x01,0x08,0x00,0xf7,0xff,
+        0x00,0x82,0xa7,0xcc,0x00,0x13,0x38,0x5d,0x0c,0x82,0x02,0x9e,0x6b,0xf3,0x92,0x7d,
+        0x00,0x00,0x00,0x00,0x49,0x45,0x4e,0x44,0xae,0x42,0x60,0x82,
+    ];
+    gray_alpha : [82]u8 = .[
+        0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00,0x00,0x00,0x0d,0x49,0x48,0x44,0x52,
+        0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x02,0x08,0x04,0x00,0x00,0x00,0x37,0x7d,0xae,
+        0x91,0x00,0x00,0x00,0x19,0x49,0x44,0x41,0x54,0x78,0x9c,0x01,0x0e,0x00,0xf1,0xff,
+        0x00,0x26,0x4b,0x70,0x95,0xba,0xdf,0x00,0x04,0x29,0x4e,0x73,0x98,0xbd,0x23,0x07,
+        0x05,0x53,0x5b,0x4f,0x51,0x31,0x00,0x00,0x00,0x00,0x49,0x45,0x4e,0x44,0xae,0x42,
+        0x60,0x82,
+    ];
+    rgb : [88]u8 = .[
+        0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00,0x00,0x00,0x0d,0x49,0x48,0x44,0x52,
+        0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x02,0x08,0x02,0x00,0x00,0x00,0x12,0x16,0xf1,
+        0x4d,0x00,0x00,0x00,0x1f,0x49,0x44,0x41,0x54,0x78,0x9c,0x01,0x14,0x00,0xeb,0xff,
+        0x00,0x39,0x5e,0x83,0xa8,0xcd,0xf2,0x17,0x3c,0x61,0x00,0x86,0xab,0xd0,0xf5,0x1a,
+        0x3f,0x64,0x89,0xae,0x59,0x69,0x09,0x20,0x5d,0x29,0xff,0x5c,0x00,0x00,0x00,0x00,
+        0x49,0x45,0x4e,0x44,0xae,0x42,0x60,0x82,
+    ];
+    rgba : [94]u8 = .[
+        0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0x00,0x00,0x00,0x0d,0x49,0x48,0x44,0x52,
+        0x00,0x00,0x00,0x03,0x00,0x00,0x00,0x02,0x08,0x06,0x00,0x00,0x00,0x9d,0x74,0x66,
+        0x1a,0x00,0x00,0x00,0x25,0x49,0x44,0x41,0x54,0x78,0x9c,0x01,0x1a,0x00,0xe5,0xff,
+        0x00,0x4c,0x71,0x96,0xbb,0xe0,0x05,0x2a,0x4f,0x74,0x99,0xbe,0xe3,0x00,0x08,0x2d,
+        0x52,0x77,0x9c,0xc1,0xe6,0x0b,0x30,0x55,0x7a,0x9f,0x90,0xb0,0x0b,0x05,0x17,0xeb,
+        0x25,0xce,0x00,0x00,0x00,0x00,0x49,0x45,0x4e,0x44,0xae,0x42,0x60,0x82,
+    ];
+
+    gray_bytes := string.{ ptr = @gray[0], len = gray.len };
+    gray_bottom_up_bytes := string.{ ptr = @gray_bottom_up[0], len = gray_bottom_up.len };
+    gray_alpha_bytes := string.{ ptr = @gray_alpha[0], len = gray_alpha.len };
+    rgb_bytes := string.{ ptr = @rgb[0], len = rgb.len };
+    rgba_bytes := string.{ ptr = @rgba[0], len = rgba.len };
+
+    gpa := mem.GPA.init();
+    if !check_oracle(.gray, 1, gray_bytes, false, gpa) { return 1; }
+    if !check_oracle(.gray_alpha, 2, gray_alpha_bytes, false, gpa) { return 2; }
+    if !check_oracle(.rgb, 3, rgb_bytes, false, gpa) { return 3; }
+    if !check_oracle(.rgba, 4, rgba_bytes, false, gpa) { return 4; }
+    if !check_oracle(.gray, 1, gray_bottom_up_bytes, true, gpa) { return 5; }
+
+    // Explicit positive stride may include per-row padding without affecting
+    // the encoded logical pixels.
+    padded : [8]u8 = .[0x13,0x38,0x5d,0xee, 0x82,0xa7,0xcc,0xee];
+    padded_image : png.Image = .{
+        pixels = string.{ ptr = @padded[0], len = padded.len },
+        width = 3,
+        height = 2,
+        format = .gray,
+        stride = 4,
+    };
+    if !check_image(padded_image, gray_bytes, gpa) { return 6; }
+
+    tiny : [12]u8 = .[0,1,2,3,4,5,6,7,8,9,10,11];
+    tiny_bytes := string.{ ptr = @tiny[0], len = tiny.len };
+    tiny_short := string.{ ptr = @tiny[0], len = 11 };
+    base : png.Image = .{ pixels = tiny_bytes, width = 1, height = 1, format = .rgba };
+    if !raises(.{ pixels = tiny_bytes, width = 0, height = 1, format = .gray }, .{}, error.InvalidDimensions, gpa) { return 7; }
+    if !raises(.{ pixels = tiny_bytes, width = 1, height = 0x80000000, format = .gray }, .{}, error.InvalidDimensions, gpa) { return 8; }
+    if !raises(.{ pixels = tiny_bytes, width = 2, height = 2, format = .rgb, stride = 5 }, .{}, error.InvalidStride, gpa) { return 9; }
+    if !raises(.{ pixels = tiny_short, width = 2, height = 2, format = .rgb }, .{}, error.PixelDataTooShort, gpa) { return 10; }
+    if !raises(.{ pixels = tiny_bytes, width = 1, height = 2, format = .gray, stride = i64.min }, .{}, error.TooLarge, gpa) { return 11; }
+    if !raises(.{ pixels = tiny_bytes, width = 1, height = 0x7fffffff, format = .gray, stride = i64.max }, .{}, error.TooLarge, gpa) { return 12; }
+    if !raises(.{ pixels = "", width = 0x7fffffff, height = 0x7fffffff, format = .rgba }, .{}, error.TooLarge, gpa) { return 13; }
+    if !raises(base, .{ level = -1 }, error.InvalidCompressionLevel, gpa) { return 14; }
+    if !raises(base, .{ level = 11 }, error.InvalidCompressionLevel, gpa) { return 15; }
+
+    // Dimensions above the obsolete miniz helper ceiling reach pixel-length
+    // validation rather than being rejected solely for exceeding 65,535.
+    if !raises(.{ pixels = "", width = 65536, height = 1, format = .gray }, .{}, error.PixelDataTooShort, gpa) { return 16; }
+    if !raises(.{ pixels = "", width = 0x7fffffff, height = 1, format = .gray }, .{}, error.PixelDataTooShort, gpa) { return 17; }
+
+    // Fail every allocation in the path one at a time. Each failure must map
+    // to png.Error.AllocationFailed and release all earlier allocations.
+    allocation_ok, allocation_count := allocation_case(0);
+    if !allocation_ok { return 18; }
+    fail_at := 1;
+    while fail_at <= allocation_count {
+        allocation_ok, ignored := allocation_case(fail_at);
+        if !allocation_ok { return 18; }
+        fail_at += 1;
+    }
+
+    if gpa.alloc_count != 0 { return 19; }
+    print("std.png ok\n");
+    0
+}

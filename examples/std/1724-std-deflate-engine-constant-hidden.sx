@@ -1,0 +1,5 @@
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    deflate.TDEFL_RAW_BLOCK_LIMIT.(i32)
+}

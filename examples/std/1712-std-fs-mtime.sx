@@ -1,0 +1,75 @@
+#import "modules/std/core.sx";
+#import "modules/std/target.sx";
+
+fs :: #import "modules/std/fs.sx";
+c :: #import "modules/std/c.sx";
+
+inline if OS != .windows {
+    posix_abi :: #import "modules/std/fs/posix_abi.sx";
+
+    read_times :: (file: *fs.File) -> (i64, i64, bool) {
+        raw : [256]u8 = .{};
+        if c.fstat(file.fd.(i32), xx @raw[0]) != 0 { return 0, 0, false; }
+
+        access_offset := 0;
+        modified_offset := 0;
+        inline if OS == .macos or OS == .ios {
+            access_offset = 32;
+            modified_offset = 48;
+        } else if OS == .linux or OS == .android {
+            access_offset = 72;
+            modified_offset = 88;
+        } else {
+            return 0, 0, false;
+        }
+
+        access : i64 = 0;
+        modified : i64 = 0;
+        c.memcpy(@access, @raw[access_offset], size_of(i64));
+        c.memcpy(@modified, @raw[modified_offset], size_of(i64));
+        return access, modified, true;
+    }
+}
+
+main :: () -> i32 {
+    inline if OS == .windows { return 0; }
+    else {
+        path := "/tmp/sx_std_fs_mtime_test";
+        fs.delete_file(path);
+        if !fs.write_file(path, "mtime") { return 1; }
+
+        initial_access : i64 = 1700000001;
+        initial_modified : i64 = 1700000002;
+        target_modified : i64 = 1700000100;
+        initial : [2]posix_abi.FsPosixTimespec = .[
+            .{ sec = initial_access, nsec = 0 },
+            .{ sec = initial_modified, nsec = 0 },
+        ];
+        if posix_abi.fs_posix_utimensat(posix_abi.FS_POSIX_AT_FDCWD, path, xx @initial[0], 0) != 0 {
+            fs.delete_file(path);
+            return 2;
+        }
+        if !fs.set_modified_seconds(path, target_modified) {
+            fs.delete_file(path);
+            return 3;
+        }
+
+        maybe := fs.open_file(path, .read);
+        if maybe == null { fs.delete_file(path); return 4; }
+        file := maybe!;
+        public_modified, public_ok := fs.modified_seconds(@file);
+        access, modified, raw_ok := read_times(@file);
+        close_ok := file.close();
+        delete_ok := fs.delete_file(path);
+
+        if !public_ok or public_modified != target_modified { return 5; }
+        if !raw_ok or access != initial_access { return 6; }
+        if modified != target_modified { return 7; }
+        if !close_ok or !delete_ok { return 8; }
+
+        missing := "/tmp/sx_std_fs_mtime_missing";
+        fs.delete_file(missing);
+        if fs.set_modified_seconds(missing, target_modified) { return 9; }
+        return 0;
+    }
+}

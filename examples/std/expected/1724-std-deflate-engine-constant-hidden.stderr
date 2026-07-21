@@ -1,0 +1,5 @@
+error: namespace 'deflate' has no member 'TDEFL_RAW_BLOCK_LIMIT'
+  --> examples/std/1724-std-deflate-engine-constant-hidden.sx:4:5
+   |
+ 4 |     deflate.TDEFL_RAW_BLOCK_LIMIT.(i32)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

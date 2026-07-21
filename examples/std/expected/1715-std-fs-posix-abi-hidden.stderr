@@ -1,0 +1,5 @@
+error: namespace 'fs' has no member 'fs_posix_c'
+  --> examples/std/1715-std-fs-posix-abi-hidden.sx:4:5
+   |
+ 4 |     fs.fs_posix_c.close(-1)
+   |     ^^^^^^^^^^^^^

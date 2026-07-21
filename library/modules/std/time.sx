@@ -50,3 +50,54 @@ mono_ms :: () -> i64 {
     c.clock_gettime(CLOCK_MONOTONIC, @ts);
     return ts.sec * 1000 + ts.nsec / 1000000;
 }
+
+// ── local civil time ─────────────────────────────────────────────────────
+// Broken-down LOCAL time over libc's `struct tm`. Fields use civil ranges
+// (month 1-12, day 1-31); libc's 1900-based year and 0-based month stay
+// behind this boundary.
+
+CivilTime :: struct {
+    year:   i64;
+    month:  i64;  // 1-12
+    day:    i64;  // 1-31
+    hour:   i64;  // 0-23
+    minute: i64;  // 0-59
+    second: i64;  // 0-60 (leap second)
+}
+
+// Unix epoch seconds -> local civil time. `false` when libc cannot represent
+// the instant in local time.
+local_civil :: (unix_seconds: i64) -> (CivilTime, bool) {
+    value := unix_seconds;
+    broken : c.Tm = .{};
+    valid := false;
+    inline if OS == {
+        case .windows: valid = c.localtime_s(@broken, @value) == 0;
+        else: valid = c.localtime_r(@value, @broken) != null;
+    }
+    if !valid { return CivilTime.{}, false; }
+    civil := CivilTime.{
+        year = broken.year.(i64) + 1900,
+        month = broken.mon.(i64) + 1,
+        day = broken.mday.(i64),
+        hour = broken.hour.(i64),
+        minute = broken.min.(i64),
+        second = broken.sec.(i64),
+    };
+    return civil, true;
+}
+
+// Local civil time -> unix epoch seconds (mktime with DST resolution).
+// `false` when the civil time does not resolve to a representable instant.
+local_epoch :: (civil: CivilTime) -> (i64, bool) {
+    broken : c.Tm = .{};
+    broken.isdst = -1;
+    broken.year = (civil.year - 1900).(i32);
+    broken.mon = (civil.month - 1).(i32);
+    broken.mday = civil.day.(i32);
+    broken.hour = civil.hour.(i32);
+    broken.min = civil.minute.(i32);
+    broken.sec = civil.second.(i32);
+    seconds := c.mktime(@broken);
+    return seconds, seconds != -1;
+}

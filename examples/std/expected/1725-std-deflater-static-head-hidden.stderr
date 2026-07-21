@@ -1,0 +1,5 @@
+error: type 'Deflater' is not visible; #import the module that declares it
+  --> examples/std/1725-std-deflater-static-head-hidden.sx:7:14
+   |
+ 7 |     state := Deflater.init();
+   |              ^^^^^^^^

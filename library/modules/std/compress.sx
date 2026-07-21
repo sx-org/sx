@@ -1,0 +1,52 @@
+// Shared contracts for dependency-free compression codecs.
+//
+// Concrete raw DEFLATE, zlib, and gzip implementations live in
+// modules/std/codecs. This module deliberately contains no codec engine and
+// no C-compatible flags or statuses.
+
+Error :: error {
+    InvalidArgument,
+    InvalidOptions,
+    InvalidData,
+    UnexpectedEnd,
+    ChecksumMismatch,
+    Unsupported,
+    OutputLimit,
+    NotFound,
+    TooLarge,
+    Finished,
+    Io,
+    AllocationFailed,
+}
+
+Strategy :: enum { default; filtered; huffman_only; rle; fixed; }
+Flush :: enum { none; sync; full; finish; }
+Status :: enum { need_input; need_output; done; }
+
+Options :: struct {
+    level: i64 = 6;
+    strategy: Strategy = .default;
+}
+
+Progress :: struct {
+    consumed: i64;
+    produced: i64;
+    status: Status;
+}
+
+DecodeResult :: struct {
+    bytes: string;
+    consumed: i64;
+}
+
+StreamingEncoder :: protocol {
+    write :: (self: *Self, input: string, output: string) -> (Progress, !Error);
+    finish :: (self: *Self, output: string) -> (Progress, !Error);
+    deinit :: (self: *Self);
+}
+
+StreamingDecoder :: protocol {
+    read :: (self: *Self, input: string, output: string) -> (Progress, !Error);
+    finish :: (self: *Self, output: string) -> (Progress, !Error);
+    deinit :: (self: *Self);
+}

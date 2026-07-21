@@ -1,0 +1,11 @@
+error: namespace 'fs' has no member 'fs_file_is_valid'
+  --> examples/std/1714-std-fs-backend-hidden.sx:4:14
+   |
+ 4 |     valid := fs.fs_file_is_valid(-1);
+   |              ^^^^^^^^^^^^^^^^^^^
+
+error: namespace 'fs' has no member 'fs_file_is_valid'
+  --> examples/std/1714-std-fs-backend-hidden.sx:5:17
+   |
+ 5 |     function := fs.fs_file_is_valid;
+   |                 ^^^^^^^^^^^^^^^^^^^

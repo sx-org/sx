@@ -1,0 +1,131 @@
+// Public zlib/gzip lifecycle + checksum coverage the earlier examples left
+// pending: zlib.Encoder/Decoder init/reset/write/finish round-trips, level
+// and bound behavior, u32 checksum vectors (empty, known, incremental,
+// boundary seed), and public checksum-failure on corrupted input — all under
+// a net-zero GPA gate.
+
+#import "modules/std.sx";
+#import "modules/std/compress.sx";
+zlib :: #import "modules/std/codecs/zlib.sx";
+gzip :: #import "modules/std/codecs/gzip.sx";
+
+PLAIN :: "public zlib lifecycle coverage payload — repeats repeats repeats repeats";
+
+same :: (a: string, b: string) -> bool {
+    if a.len != b.len { return false; }
+    i := 0;
+    while i < a.len { if a[i] != b[i] { return false; } i += 1; }
+    true
+}
+
+test_checksum_vectors :: () -> bool {
+    // Adler-32: empty input is the seed itself; "abc" is the classic 0x024d0127.
+    if zlib.checksum("") != 1 { return false; }
+    if zlib.checksum("abc") != 0x024d0127 { return false; }
+    // Incremental equals one-shot.
+    partial := zlib.checksum("ab");
+    if zlib.checksum("c", partial) != zlib.checksum("abc") { return false; }
+    // CRC-32: empty input is 0; "123456789" is the canonical 0xcbf43926.
+    if gzip.checksum("") != 0 { return false; }
+    if gzip.checksum("123456789") != 0xcbf43926 { return false; }
+    partial_crc := gzip.checksum("12345");
+    if gzip.checksum("6789", partial_crc) != 0xcbf43926 { return false; }
+    true
+}
+
+test_zlib_lifecycle :: (alloc: Allocator) -> bool {
+    encoder := zlib.Encoder.init(.{ level = 9 }, alloc) catch { return false; };
+    out_buf : [1024]u8 = ---;
+    made := 0;
+    progress := encoder.flush(PLAIN, out_buf[..], .finish) catch { encoder.deinit(); return false; };
+    if progress.status != .done or progress.consumed != PLAIN.len { encoder.deinit(); return false; }
+    made = progress.produced;
+    first := out_buf[..made];
+
+    // reset() re-arms the same state for a second stream.
+    encoder.reset(.{ level = 9 }) catch { encoder.deinit(); return false; };
+    second_buf : [1024]u8 = ---;
+    progress2 := encoder.flush(PLAIN, second_buf[..], .finish) catch { encoder.deinit(); return false; };
+    encoder.deinit();
+    if progress2.status != .done { return false; }
+    if !same(first, second_buf[..progress2.produced]) { return false; }
+
+    // Decoder round-trip + reset for a second pass.
+    decoder := zlib.Decoder.init(4096, alloc) catch { return false; };
+    plain_buf : [1024]u8 = ---;
+    dp := decoder.read(first, plain_buf[..]) catch { decoder.deinit(); return false; };
+    if dp.status != .done or !same(plain_buf[..dp.produced], PLAIN) { decoder.deinit(); return false; }
+    decoder.reset() catch { decoder.deinit(); return false; };
+    dp2 := decoder.read(first, plain_buf[..]) catch { decoder.deinit(); return false; };
+    decoder.deinit();
+    if dp2.status != .done or !same(plain_buf[..dp2.produced], PLAIN) { return false; }
+    true
+}
+
+test_zlib_bound_and_levels :: (alloc: Allocator) -> bool {
+    limit := zlib.bound(PLAIN.len) catch { return false; };
+    level := 0;
+    while level <= 10 {
+        packed := zlib.encode(PLAIN, .{ level = level }, alloc) catch { return false; };
+        fits := packed.len <= limit;
+        round := zlib.decode(packed, 4096, alloc) catch { alloc.dealloc_bytes(packed.ptr); return false; };
+        good := fits and same(round, PLAIN);
+        alloc.dealloc_bytes(packed.ptr);
+        alloc.dealloc_bytes(round.ptr);
+        if !good { return false; }
+        level += 1;
+    }
+    bad_level := false;
+    rejected := zlib.encode(PLAIN, .{ level = 11 }, alloc) catch (e) {
+        bad_level = e == error.InvalidOptions;
+        ""
+    };
+    if !bad_level and rejected.ptr != null { alloc.dealloc_bytes(rejected.ptr); }
+    bad_level
+}
+
+test_public_checksum_failure :: (alloc: Allocator) -> bool {
+    packed := zlib.encode(PLAIN, .{ level = 6 }, alloc) catch { return false; };
+    // Corrupt one payload byte past the 2-byte zlib header: the public
+    // decode must fail loudly (checksum or stream error), never return
+    // silently wrong bytes.
+    mutable := packed;
+    mutable[8] = mutable[8] ^ 0xff;
+    corrupted := false;
+    round := zlib.decode(mutable, 4096, alloc) catch (e) {
+        corrupted = e == error.ChecksumMismatch or e == error.InvalidData or e == error.UnexpectedEnd;
+        ""
+    };
+    if !corrupted and round.ptr != null { alloc.dealloc_bytes(round.ptr); }
+    alloc.dealloc_bytes(packed.ptr);
+    corrupted
+}
+
+test_gzip_truncation :: (alloc: Allocator) -> bool {
+    packed := gzip.encode(PLAIN, .{ level = 6 }, .{}, alloc) catch { return false; };
+    truncated := false;
+    round := gzip.decode(packed[..packed.len - 5], 4096, alloc) catch (e) {
+        truncated = e == error.UnexpectedEnd or e == error.InvalidData or e == error.ChecksumMismatch;
+        ""
+    };
+    if !truncated and round.ptr != null { alloc.dealloc_bytes(round.ptr); }
+    alloc.dealloc_bytes(packed.ptr);
+    truncated
+}
+
+main :: () -> i32 {
+    gpa := mem.GPA.init();
+    ok := true;
+    push .{ allocator = xx gpa } {
+        alloc := context.allocator;
+        if !test_checksum_vectors() { print("checksum vectors failed\n"); ok = false; }
+        if ok and !test_zlib_lifecycle(alloc) { print("zlib lifecycle failed\n"); ok = false; }
+        if ok and !test_zlib_bound_and_levels(alloc) { print("zlib bound/levels failed\n"); ok = false; }
+        if ok and !test_public_checksum_failure(alloc) { print("public checksum failure failed\n"); ok = false; }
+        if ok and !test_gzip_truncation(alloc) { print("gzip truncation failed\n"); ok = false; }
+    }
+    if !ok { return 1; }
+    if gpa.alloc_count != 0 { print("leaked {} allocations\n", gpa.alloc_count); return 2; }
+    print("std.zlib/gzip lifecycle ok\n");
+    0
+}

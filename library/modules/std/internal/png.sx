@@ -1,0 +1,119 @@
+// Private PNG assembly layered on the native zlib implementation. The public
+// image model and validation live in std/codecs/png.sx; this module owns only
+// filtered-row construction and PNG chunk encoding.
+
+#import "modules/std/core.sx";
+#import "modules/std/compress.sx";
+#import "modules/std/internal/compress.sx";
+
+private PNG_MAX_CHUNK_LEN : i64 = 0x7fffffff;
+
+private png_write_chunk :: (out: *ByteWriter, kind: string, payload: string) {
+    out.put_u32be(payload.len);
+    out.put_bytes(kind);
+    out.put_bytes(payload);
+    checksum := crc32(kind);
+    checksum = crc32(payload, checksum);
+    out.put_u32be(checksum);
+}
+
+png_encode_bytes :: (
+    pixels: string,
+    width: i64,
+    height: i64,
+    row_bytes: i64,
+    step: i64,
+    bottom_up: bool,
+    color_type: i64,
+    filtered_len: i64,
+    level: i64,
+    alloc: Allocator,
+) -> (string, !Error) {
+    filtered_raw := alloc.alloc_bytes(filtered_len);
+    if filtered_raw == null { raise error.AllocationFailed; }
+    filtered := string.{ ptr = xx filtered_raw, len = filtered_len };
+    filtered_row_bytes := row_bytes + 1;
+
+    row := 0;
+    while row < height {
+        source_row := if bottom_up then height - 1 - row else row;
+        source_offset := source_row * step;
+        destination_offset := row * filtered_row_bytes;
+
+        // The pinned miniz helper always writes filter type zero followed by
+        // the source row verbatim. Keeping that layout preserves its exact
+        // compressed bytes while avoiding an image-policy surface internally.
+        filtered.ptr[destination_offset] = 0;
+        col := 0;
+        while col < row_bytes {
+            filtered.ptr[destination_offset + 1 + col] = pixels[source_offset + col];
+            col += 1;
+        }
+        row += 1;
+    }
+
+    compressed := zlib_compress(filtered, level, alloc) catch (e) {
+        alloc.dealloc_bytes(filtered_raw);
+        raise e;
+    };
+    alloc.dealloc_bytes(filtered_raw);
+
+    // PNG limits each chunk to 2^31-1 bytes. Ordinary images use one IDAT;
+    // unusually large streams are split without changing the zlib payload.
+    idat_chunks := compressed.len / PNG_MAX_CHUNK_LEN;
+    if compressed.len % PNG_MAX_CHUNK_LEN != 0 { idat_chunks += 1; }
+    if idat_chunks == 0 { idat_chunks = 1; }
+
+    if compressed.len > i64.max - 45 {
+        alloc.dealloc_bytes(compressed.ptr);
+        raise error.TooLarge;
+    }
+    output_len := compressed.len + 45;
+    if idat_chunks > (i64.max - output_len) / 12 {
+        alloc.dealloc_bytes(compressed.ptr);
+        raise error.TooLarge;
+    }
+    output_len += idat_chunks * 12;
+
+    out := ByteWriter.init(alloc);
+    if !out.ensure_capacity(output_len) {
+        alloc.dealloc_bytes(compressed.ptr);
+        out.deinit();
+        raise error.AllocationFailed;
+    }
+
+    out.put(137); out.put('P'); out.put('N'); out.put('G');
+    out.put(13); out.put(10); out.put(26); out.put(10);
+
+    ihdr : [13]u8 = ---;
+    ihdr[0] = ((width >> 24) & 0xff).(u8);
+    ihdr[1] = ((width >> 16) & 0xff).(u8);
+    ihdr[2] = ((width >> 8) & 0xff).(u8);
+    ihdr[3] = (width & 0xff).(u8);
+    ihdr[4] = ((height >> 24) & 0xff).(u8);
+    ihdr[5] = ((height >> 16) & 0xff).(u8);
+    ihdr[6] = ((height >> 8) & 0xff).(u8);
+    ihdr[7] = (height & 0xff).(u8);
+    ihdr[8] = 8;
+    ihdr[9] = color_type.(u8);
+    ihdr[10] = 0;
+    ihdr[11] = 0;
+    ihdr[12] = 0;
+    png_write_chunk(@out, "IHDR", string.{ ptr = @ihdr[0], len = ihdr.len });
+
+    at := 0;
+    while at < compressed.len {
+        take := compressed.len - at;
+        if take > PNG_MAX_CHUNK_LEN { take = PNG_MAX_CHUNK_LEN; }
+        png_write_chunk(@out, "IDAT", compressed[at..at + take]);
+        at += take;
+    }
+    png_write_chunk(@out, "IEND", "");
+    alloc.dealloc_bytes(compressed.ptr);
+
+    if out.failed {
+        out.deinit();
+        raise error.AllocationFailed;
+    }
+    out.take()
+}

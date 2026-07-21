@@ -1,0 +1,78 @@
+// Public value and I/O contracts shared by std.zip and its private engine.
+//
+// Keeping these declarations in the public codec tree gives diagnostics,
+// reflection, and protocol identity public names without duplicating or
+// translating the shared std.compress error channel.
+
+#import "modules/std/compress.sx";
+
+Method :: enum { store; deflate; unsupported; }
+
+Source :: protocol #identity {
+    size :: (self: *Self) -> i64;
+    read_at :: (self: *Self, offset: i64, output: string) -> (string, !Error);
+}
+
+Sink :: protocol #identity {
+    write :: (self: *Self, data: string) -> !Error;
+}
+
+// Typed factory options. Optionals replace magic sentinels: a null
+// `OpenFileOptions.size` means "to the end of the file".
+WriterOptions :: struct {
+    zip64: bool = false;
+}
+
+FileWriterOptions :: struct {
+    reserve: i64 = 0;
+    zip64: bool = false;
+}
+
+FromReaderOptions :: struct {
+    force_zip64: bool = false;
+}
+
+AppendOptions :: struct {
+    force_zip64: bool = false;
+    max_metadata: i64 = 67108864;
+}
+
+OpenOptions :: struct {
+    max_metadata: i64 = 67108864;
+}
+
+OpenFileOptions :: struct {
+    start: i64 = 0;
+    size: ?i64 = null;
+    max_metadata: i64 = 67108864;
+}
+
+EntryOptions :: struct {
+    method: Method = .deflate;
+    level: i64 = 6;
+    comment: string = "";
+    extra: string = "";
+    central_extra: ?string = null;
+    store_small: bool = true;
+    data_descriptor: bool = true;
+    utf8: bool = true;
+    external_attributes: u32 = 0;
+    modified_seconds: ?i64 = null;
+    use_file_modified_time: bool = false;
+}
+
+Entry :: struct {
+    name: string;
+    comment: string;
+    extra: string;
+    method: Method;
+    size: i64;
+    compressed_size: i64;
+    checksum: u32;
+    modified_seconds: ?i64;
+    external_attributes: u32;
+    encrypted: bool;
+    directory: bool;
+    supported: bool;
+    safe_path: bool;
+}

@@ -1,0 +1,5 @@
+error: namespace 'fs' has no member 'fs_windows_CreateFileW'
+  --> examples/std/1716-std-fs-windows-abi-hidden.sx:4:15
+   |
+ 4 |     handle := fs.fs_windows_CreateFileW(null, 0, 0, null, 0, 0, null);
+   |               ^^^^^^^^^^^^^^^^^^^^^^^^^

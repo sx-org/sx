@@ -1,0 +1,5 @@
+error: namespace 'deflate' has no member 'Deflater'
+  --> examples/std/1721-std-deflate-engine-hidden.sx:4:13
+   |
+ 4 |     state : deflate.Deflater = ---;
+   |             ^^^^^^^^^^^^^^^^

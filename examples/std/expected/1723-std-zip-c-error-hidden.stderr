@@ -1,0 +1,11 @@
+error: namespace 'zip' has no member 'ZipError'
+  --> examples/std/1723-std-zip-c-error-hidden.sx:4:13
+   |
+ 4 |     value : zip.ZipError = ---;
+   |             ^^^^^^^^^^^^
+
+error: namespace 'zip' has no member 'ZipErrorState'
+  --> examples/std/1723-std-zip-c-error-hidden.sx:5:13
+   |
+ 5 |     state : zip.ZipErrorState = ---;
+   |             ^^^^^^^^^^^^^^^^^

@@ -1,0 +1,238 @@
+// Win32 backend for std.fs. Paths are UTF-8 at the sx boundary and converted
+// to UTF-16 for filesystem calls.
+#import "modules/std/core.sx";
+#import "modules/std/fmt.sx";
+#import "modules/std/fs/windows_abi.sx";
+
+// The backend owns only hidden primitive operations. std/fs.sx owns every
+// portable type and method and stores Win32 HANDLE bits in an i64 slot.
+
+fs_windows_wide_path :: (path: [:0]u8) -> FsWindowsWidePath {
+    if path.ptr == null { return .{}; }
+    count := fs_windows_MultiByteToWideChar(FS_WINDOWS_CP_UTF8, 0, path.ptr, -1, null, 0);
+    if count <= 0 { return .{}; }
+    heap := fs_windows_GetProcessHeap(); if heap == null { return .{}; }
+    raw := fs_windows_HeapAlloc(heap, 0, (count.(u64) * 2)); if raw == null { return .{}; }
+    wide : [*]u16 = xx raw;
+    if fs_windows_MultiByteToWideChar(FS_WINDOWS_CP_UTF8, 0, path.ptr, -1, wide, count) != count {
+        fs_windows_HeapFree(heap, 0, raw); return .{};
+    }
+    .{ ptr = wide, heap = heap }
+}
+
+fs_windows_wide_free :: (wide: FsWindowsWidePath) { if wide.ptr != null { fs_windows_HeapFree(wide.heap, 0, wide.ptr); } }
+
+fs_windows_handle :: (handle: i64) -> *void { xx handle }
+fs_file_is_valid :: (handle: i64) -> bool { handle != -1 and handle != 0 }
+
+fs_file_close :: (handle: i64) -> bool {
+    if !fs_file_is_valid(handle) { return false; }
+    fs_windows_CloseHandle(fs_windows_handle(handle)) != 0
+}
+
+fs_file_read :: (handle: i64, output: string) -> i64 {
+    if !fs_file_is_valid(handle) or (output.len > 0 and output.ptr == null) { return -1; }
+    take := output.len; if take > 0xffffffff { take = 0xffffffff; }
+    made : u32 = 0;
+    if fs_windows_ReadFile(fs_windows_handle(handle), output.ptr, take.(u32), @made, null) == 0 { return -1; }
+    made.(i64)
+}
+
+fs_file_write :: (handle: i64, data: string) -> i64 {
+    if !fs_file_is_valid(handle) or (data.len > 0 and data.ptr == null) { return -1; }
+    take := data.len; if take > 0xffffffff { take = 0xffffffff; }
+    made : u32 = 0;
+    if fs_windows_WriteFile(fs_windows_handle(handle), data.ptr, take.(u32), @made, null) == 0 { return -1; }
+    made.(i64)
+}
+
+fs_file_seek :: (handle: i64, offset: i64, from: i32) -> i64 {
+    if !fs_file_is_valid(handle) { return -1; }
+    method := from;
+    if method < 0 or method > 2 { method = 0; }
+    position : i64 = 0;
+    if fs_windows_SetFilePointerEx(fs_windows_handle(handle), offset, @position, method.(u32)) == 0 { return -1; }
+    position
+}
+
+fs_file_truncate :: (handle: i64, len: i64) -> bool {
+    if !fs_file_is_valid(handle) or len < 0 { return false; }
+    position : i64 = 0;
+    if fs_windows_SetFilePointerEx(fs_windows_handle(handle), len, @position, 0) == 0 { return false; }
+    fs_windows_SetEndOfFile(fs_windows_handle(handle)) != 0
+}
+
+fs_open_handle :: (path: [:0]u8, mode: i32) -> i64 {
+    wide := fs_windows_wide_path(path); if wide.ptr == null { return -1; }
+    access := FS_WINDOWS_GENERIC_READ; creation := FS_WINDOWS_OPEN_EXISTING;
+    if mode == 1 { access = FS_WINDOWS_GENERIC_WRITE; creation = FS_WINDOWS_CREATE_ALWAYS; }
+    else if mode == 2 { access = FS_WINDOWS_GENERIC_WRITE; creation = FS_WINDOWS_OPEN_ALWAYS; }
+    else if mode == 3 { access = FS_WINDOWS_GENERIC_READ | FS_WINDOWS_GENERIC_WRITE; creation = FS_WINDOWS_OPEN_EXISTING; }
+    handle := fs_windows_CreateFileW(wide.ptr, access, FS_WINDOWS_FILE_SHARE_ALL, null, creation, FS_WINDOWS_FILE_ATTRIBUTE_NORMAL, null);
+    fs_windows_wide_free(wide);
+    bits : i64 = xx handle;
+    if !fs_file_is_valid(bits) { return -1; }
+    if mode == 2 and fs_file_seek(bits, 0, 2) < 0 { fs_file_close(bits); return -1; }
+    bits
+}
+
+fs_exists :: (path: [:0]u8) -> bool {
+    wide := fs_windows_wide_path(path); if wide.ptr == null { return false; }
+    attributes := fs_windows_GetFileAttributesW(wide.ptr); fs_windows_wide_free(wide); attributes != FS_WINDOWS_INVALID_ATTRIBUTES
+}
+
+fs_delete_file :: (path: [:0]u8) -> bool {
+    wide := fs_windows_wide_path(path); if wide.ptr == null { return false; }
+    ok := fs_windows_DeleteFileW(wide.ptr) != 0; fs_windows_wide_free(wide); ok
+}
+
+fs_write_file :: (path: [:0]u8, data: string) -> bool {
+    handle := fs_open_handle(path, 1); if !fs_file_is_valid(handle) { return false; }
+    at := 0;
+    while at < data.len {
+        made := fs_file_write(handle, data[at..]);
+        if made <= 0 { fs_file_close(handle); return false; }
+        at += made;
+    }
+    fs_file_close(handle)
+}
+
+fs_read_file :: (path: [:0]u8) -> ?string {
+    handle := fs_open_handle(path, 0); if !fs_file_is_valid(handle) { return null; }
+    size := fs_file_seek(handle, 0, 2);
+    if size < 0 or fs_file_seek(handle, 0, 0) < 0 { fs_file_close(handle); return null; }
+    result := alloc_string(size);
+    at := 0;
+    while at < size {
+        made := fs_file_read(handle, result[at..]);
+        if made <= 0 {
+            fs_file_close(handle);
+            context.allocator.dealloc_bytes(result.ptr);
+            return null;
+        }
+        at += made;
+    }
+    if !fs_file_close(handle) {
+        context.allocator.dealloc_bytes(result.ptr);
+        return null;
+    }
+    result
+}
+
+fs_append_file :: (path: [:0]u8, data: string) -> bool {
+    handle := fs_open_handle(path, 2); if !fs_file_is_valid(handle) { return false; }
+    at := 0;
+    while at < data.len {
+        made := fs_file_write(handle, data[at..]);
+        if made <= 0 { fs_file_close(handle); return false; }
+        at += made;
+    }
+    fs_file_close(handle)
+}
+
+fs_delete_dir :: (path: [:0]u8) -> bool {
+    wide := fs_windows_wide_path(path); if wide.ptr == null { return false; }
+    ok := fs_windows_RemoveDirectoryW(wide.ptr) != 0; fs_windows_wide_free(wide); ok
+}
+
+fs_create_dir :: (path: [:0]u8) -> bool {
+    wide := fs_windows_wide_path(path); if wide.ptr == null { return false; }
+    ok := fs_windows_CreateDirectoryW(wide.ptr, null) != 0; fs_windows_wide_free(wide); ok
+}
+
+fs_set_mode :: (path: [:0]u8, mode: u32) -> bool {
+    wide := fs_windows_wide_path(path); if wide.ptr == null { return false; }
+    attributes := fs_windows_GetFileAttributesW(wide.ptr);
+    if attributes == FS_WINDOWS_INVALID_ATTRIBUTES { fs_windows_wide_free(wide); return false; }
+    if (mode & 0x92) == 0 { attributes = attributes | FS_WINDOWS_FILE_ATTRIBUTE_READONLY; }
+    else { attributes = attributes & ~FS_WINDOWS_FILE_ATTRIBUTE_READONLY; }
+    ok := fs_windows_SetFileAttributesW(wide.ptr, attributes) != 0;
+    fs_windows_wide_free(wide);
+    ok
+}
+
+fs_move :: (old_path: [:0]u8, new_path: [:0]u8) -> bool {
+    old_wide := fs_windows_wide_path(old_path); if old_wide.ptr == null { return false; }
+    new_wide := fs_windows_wide_path(new_path);
+    if new_wide.ptr == null { fs_windows_wide_free(old_wide); return false; }
+    ok := fs_windows_MoveFileExW(old_wide.ptr, new_wide.ptr, FS_WINDOWS_MOVEFILE_REPLACE_EXISTING) != 0;
+    fs_windows_wide_free(new_wide); fs_windows_wide_free(old_wide); ok
+}
+
+fs_copy_file :: (source: [:0]u8, destination: [:0]u8) -> bool {
+    source_wide := fs_windows_wide_path(source); if source_wide.ptr == null { return false; }
+    destination_wide := fs_windows_wide_path(destination);
+    if destination_wide.ptr == null { fs_windows_wide_free(source_wide); return false; }
+    ok := fs_windows_CopyFileW(source_wide.ptr, destination_wide.ptr, 0) != 0;
+    fs_windows_wide_free(destination_wide); fs_windows_wide_free(source_wide); ok
+}
+
+fs_windows_separator :: (byte: u8) -> bool { byte == '/' or byte == '\\' }
+
+fs_create_dir_all :: (path: [:0]u8) -> bool {
+    if path.len == 0 or fs_exists(path) { return true; }
+    last := path.len - 1;
+    while last > 0 {
+        if fs_windows_separator(path[last]) { break; }
+        last -= 1;
+    }
+    // Do not recurse below a drive root such as C:\\.
+    if last > 0 and !(last == 2 and path[1] == ':') {
+        parent := alloc_string(last);
+        fs_windows_c.memcpy(parent.ptr, path.ptr, last);
+        parent_ok := fs_create_dir_all(parent);
+        context.allocator.dealloc_bytes(parent.ptr);
+        if !parent_ok { return false; }
+    }
+    fs_create_dir(path) or fs_exists(path)
+}
+
+fs_basename :: (path: string) -> string {
+    if path.len == 0 { return ""; }
+    last := path.len - 1;
+    while last > 0 and fs_windows_separator(path[last]) { last -= 1; }
+    end := last + 1;
+    while last > 0 {
+        if fs_windows_separator(path[last - 1]) { return substr(path, last, end - last); }
+        last -= 1;
+    }
+    substr(path, 0, end)
+}
+
+fs_dirname :: (path: string) -> string {
+    if path.len == 0 { return ""; }
+    last := path.len - 1;
+    while last > 0 and fs_windows_separator(path[last]) { last -= 1; }
+    while last > 0 {
+        if fs_windows_separator(path[last]) {
+            while last > 0 and fs_windows_separator(path[last - 1]) { last -= 1; }
+            if last == 2 and path[1] == ':' { return substr(path, 0, 3); }
+            return substr(path, 0, last);
+        }
+        last -= 1;
+    }
+    if path.len >= 2 and path[1] == ':' { return substr(path, 0, 2); }
+    "."
+}
+
+fs_modified_seconds_handle :: (handle: i64) -> (i64, bool) {
+    if !fs_file_is_valid(handle) { return 0, false; }
+    value : FsWindowsFileTime = ---;
+    if fs_windows_GetFileTime(fs_windows_handle(handle), null, null, @value) == 0 { return 0, false; }
+    ticks := value.low.(u64) | (value.high.(u64) << 32);
+    epoch_ticks : u64 = 116444736000000000;
+    if ticks < epoch_ticks { return 0, false; }
+    return ((ticks - epoch_ticks) / 10000000).(i64), true;
+}
+
+fs_set_modified_seconds :: (path: [:0]u8, seconds: i64) -> bool {
+    if seconds < -11644473600 or seconds > 1833029933770 { return false; }
+    wide := fs_windows_wide_path(path); if wide.ptr == null { return false; }
+    handle := fs_windows_CreateFileW(wide.ptr, FS_WINDOWS_FILE_WRITE_ATTRIBUTES, FS_WINDOWS_FILE_SHARE_ALL, null, FS_WINDOWS_OPEN_EXISTING, FS_WINDOWS_FILE_ATTRIBUTE_NORMAL, null);
+    fs_windows_wide_free(wide); bits : i64 = xx handle;
+    if !fs_file_is_valid(bits) { return false; }
+    ticks := (seconds + 11644473600).(u64) * 10000000;
+    value := FsWindowsFileTime.{ low = ticks.(u32), high = (ticks >> 32).(u32) };
+    ok := fs_windows_SetFileTime(handle, null, null, @value) != 0;
+    close_ok := fs_windows_CloseHandle(handle) != 0; ok and close_ok
+}

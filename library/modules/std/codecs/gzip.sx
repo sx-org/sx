@@ -1,0 +1,186 @@
+// RFC 1952 gzip framing over DEFLATE.
+//
+// Allocating operations return allocator-owned bytes. `_into` operations
+// return the initialized prefix borrowed from the caller's output buffer.
+
+#import "modules/std/core.sx";
+#import "modules/std/compress.sx";
+#import "modules/std/internal/compress.sx";
+
+Header :: struct {
+    modified_seconds: i64 = 0;
+    filename: string = "";
+    comment: string = "";
+    extra: string = "";
+    operating_system: u8 = 255;
+    text: bool = false;
+    header_checksum: bool = false;
+}
+
+bound :: (source_len: i64, header: Header = .{}) -> (i64, !Error) {
+    value := try compress_bound(source_len);
+    overhead := try gzip_header_overhead(GzipOptions.{
+        mtime = header.modified_seconds,
+        filename = header.filename,
+        comment = header.comment,
+        extra = header.extra,
+        os = header.operating_system,
+        text = header.text,
+        header_crc = header.header_checksum,
+    });
+    if value > i64.max - overhead { raise error.TooLarge; }
+    value + overhead
+}
+
+checksum :: (data: string, initial: u32 = 0) -> u32 { crc32(data, initial.(i64)).(u32) }
+
+Encoder :: struct {
+    state: GzipDeflater;
+
+    init :: (options: Options = .{}, header: Header = .{}, alloc: Allocator = context.allocator) -> (Encoder, !Error) {
+        try validate_options(options);
+        state := try GzipDeflater.init_options(options.level, options.strategy, GzipOptions.{
+            mtime = header.modified_seconds,
+            filename = header.filename,
+            comment = header.comment,
+            extra = header.extra,
+            os = header.operating_system,
+            text = header.text,
+            header_crc = header.header_checksum,
+        }, alloc);
+        Encoder.{ state = state }
+    }
+
+    reset :: (self: *Encoder, options: Options = .{}, header: Header = .{}) -> !Error {
+        try validate_options(options);
+        try self.state.reset_options(options.level, options.strategy, GzipOptions.{
+            mtime = header.modified_seconds,
+            filename = header.filename,
+            comment = header.comment,
+            extra = header.extra,
+            os = header.operating_system,
+            text = header.text,
+            header_crc = header.header_checksum,
+        });
+    }
+
+    write :: (self: *Encoder, input: string, output: string) -> (Progress, !Error) {
+        self.state.step(input, output, false)
+    }
+
+    finish :: (self: *Encoder, output: string) -> (Progress, !Error) {
+        self.state.step("", output, true)
+    }
+
+    deinit :: (self: *Encoder) { self.state.deinit(); }
+}
+
+impl StreamingEncoder for Encoder {
+    write :: (self: *Encoder, input: string, output: string) -> (Progress, !Error) {
+        self.write(input, output)
+    }
+
+    finish :: (self: *Encoder, output: string) -> (Progress, !Error) {
+        self.finish(output)
+    }
+
+    deinit :: (self: *Encoder) { self.deinit(); }
+}
+
+Decoder :: struct {
+    state: GzipInflater;
+
+    init :: (max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (Decoder, !Error) {
+        try validate_output_limit(max_output);
+        state := GzipInflater.init(max_output, alloc);
+        if state.raw.window.ptr == null { state.deinit(); raise error.AllocationFailed; }
+        Decoder.{ state = state }
+    }
+
+    reset :: (self: *Decoder, max_output: i64 = 1073741824) -> !Error {
+        try validate_output_limit(max_output);
+        self.state.reset(max_output);
+        if self.state.raw.window.ptr == null { raise error.AllocationFailed; }
+    }
+
+    read :: (self: *Decoder, input: string, output: string) -> (Progress, !Error) {
+        self.state.step(input, output, false)
+    }
+
+    finish :: (self: *Decoder, output: string) -> (Progress, !Error) {
+        progress := try self.state.step("", output, true);
+        if progress.status == .need_input { raise error.UnexpectedEnd; }
+        progress
+    }
+
+    deinit :: (self: *Decoder) { self.state.deinit(); }
+}
+
+impl StreamingDecoder for Decoder {
+    read :: (self: *Decoder, input: string, output: string) -> (Progress, !Error) {
+        self.read(input, output)
+    }
+
+    finish :: (self: *Decoder, output: string) -> (Progress, !Error) {
+        self.finish(output)
+    }
+
+    deinit :: (self: *Decoder) { self.deinit(); }
+}
+
+encode :: (data: string, options: Options = .{}, header: Header = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
+    try validate_options(options);
+    gzip_compress_options_strategy(data, GzipOptions.{
+        mtime = header.modified_seconds,
+        filename = header.filename,
+        comment = header.comment,
+        extra = header.extra,
+        os = header.operating_system,
+        text = header.text,
+        header_crc = header.header_checksum,
+    }, options.level, options.strategy, alloc)
+}
+
+encode_into :: (data: string, output: string, options: Options = .{}, header: Header = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
+    encoder := try Encoder.init(options, header, alloc);
+    defer encoder.deinit();
+    input_at := 0;
+    output_at := 0;
+    while true {
+        input : string = "";
+        if input_at < data.len { input = data[input_at..]; }
+        destination : string = "";
+        if output_at < output.len { destination = output[output_at..]; }
+        progress := try encoder.state.step(input, destination, true);
+        input_at += progress.consumed;
+        output_at += progress.produced;
+        if progress.status == .done { return output[..output_at]; }
+        if progress.status == .need_output and output_at >= output.len { raise error.OutputLimit; }
+    }
+    raise error.InvalidData;
+}
+
+decode :: (data: string, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
+    try validate_output_limit(max_output);
+    gzip_decompress(data, max_output, alloc)
+}
+
+decode_into :: (data: string, output: string, alloc: Allocator = context.allocator) -> (string, !Error) {
+    decoder := try Decoder.init(output.len, alloc);
+    defer decoder.deinit();
+    input_at := 0;
+    output_at := 0;
+    while true {
+        input : string = "";
+        if input_at < data.len { input = data[input_at..]; }
+        destination : string = "";
+        if output_at < output.len { destination = output[output_at..]; }
+        progress := try decoder.state.step(input, destination, true);
+        input_at += progress.consumed;
+        output_at += progress.produced;
+        if progress.status == .done { return output[..output_at]; }
+        if progress.status == .need_output and output_at >= output.len { raise error.OutputLimit; }
+        if progress.status == .need_input and input_at >= data.len { raise error.UnexpectedEnd; }
+    }
+    raise error.InvalidData;
+}

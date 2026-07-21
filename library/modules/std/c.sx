@@ -41,6 +41,7 @@ mkdir  :: (path: [:0]u8, mode: u32) -> i32 extern libc;
 access :: (path: [:0]u8, mode: i32) -> i32 extern libc;
 chmod  :: (path: [:0]u8, mode: u32) -> i32 extern libc;
 rename :: (oldp: [:0]u8, newp: [:0]u8) -> i32 extern libc;
+fstat  :: (fd: i32, output: *void) -> i32 extern libc;
 
 // ── time ────────────────────────────────────────────────────────────────────
 // std/time.sx owns the clock-id policy; this module owns the raw C ABI type.
@@ -60,6 +61,31 @@ inline if POINTER_SIZE == {
 }
 
 clock_gettime :: (clock_id: i32, ts: *Timespec) -> i32 extern libc;
+
+// libc `struct tm` (broken-down civil time). The two trailing POSIX fields
+// exist where the target ABI provides them; Windows/wasm layouts differ only
+// there. std/time.sx owns the civil-time policy; this module owns the ABI.
+inline if OS == {
+    case .windows: Tm :: struct {
+        sec: i32; min: i32; hour: i32; mday: i32; mon: i32; year: i32; wday: i32; yday: i32; isdst: i32;
+    }
+    case .wasm: Tm :: struct {
+        sec: i32; min: i32; hour: i32; mday: i32; mon: i32; year: i32; wday: i32; yday: i32; isdst: i32;
+        gmtoff: i32; zone: *u8;
+    }
+    else: Tm :: struct {
+        sec: i32; min: i32; hour: i32; mday: i32; mon: i32; year: i32; wday: i32; yday: i32; isdst: i32;
+        gmtoff: i64; zone: *u8;
+    }
+}
+inline if OS == {
+    case .windows: localtime_s :: (result: *Tm, source: *i64) -> i32 extern libc "localtime_s";
+    else: localtime_r :: (source: *i64, result: *Tm) -> *Tm extern libc "localtime_r";
+}
+inline if OS == {
+    case .windows: mktime :: (value: *Tm) -> i64 extern libc "_mktime64";
+    else: mktime :: (value: *Tm) -> i64 extern libc "mktime";
+}
 
 // ── Emscripten ──────────────────────────────────────────────────────────────
 // Kept in the canonical C surface but exposed only on the target that supplies

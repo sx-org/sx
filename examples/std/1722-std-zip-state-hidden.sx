@@ -1,0 +1,6 @@
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    state : zip.StdZipReaderState = ---;
+    0
+}

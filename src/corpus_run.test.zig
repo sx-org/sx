@@ -232,6 +232,14 @@ const BuildConfig = struct {
     /// is accepted as an alias for `macos`.
     host_os: ?[]const u8 = null,
 
+    /// Cross-target compile-only mode (requires `target`). The example is
+    /// compiled for the target and asserts exit code + stderr ONLY — no `.ir`
+    /// snapshot exists or is compared. This is the cross-target mode for
+    /// examples whose point is "this compiles (or diagnoses) for the target":
+    /// IR text tracks LLVM's printer, so snapshotting it tests LLVM, not sx
+    /// (AGENTS.md: never snapshot LLVM IR).
+    compile_only: bool = false,
+
     /// Symbols that must NOT appear in the built binary (requires `aot`).
     ///
     /// This is how a compile-time-only function is held to its promise: a build
@@ -642,12 +650,19 @@ fn sweepExpectedDir(
         var act_ir: ?[]const u8 = null;
 
         if (ir_only) {
-            // Cross-target: cannot run on this host. Verify via `sx ir` only —
-            // exit code, the IR snapshot (stdout), and diagnostics (stderr). An
-            // .ir snapshot is REQUIRED: without it an arch-pinned example would
-            // assert nothing. Its absence is a loud failure, never a silent pass.
-            if (ir_raw == null) {
-                try failures.append(fail_gpa, try std.fmt.allocPrint(fail_gpa, "{s}: cross-target example (target={s}) needs an .ir snapshot for ir-only mode", .{ name, cfg.target.? }));
+            // Cross-target: cannot run on this host. Verify via `sx ir` —
+            // exit code and diagnostics (stderr), plus the IR snapshot
+            // (stdout) UNLESS the example opted into `compile_only`, whose
+            // whole assertion is "compiles/diagnoses for the target" with no
+            // IR text pinned (IR snapshots test LLVM's printer, not sx). A
+            // non-compile_only example still REQUIRES its .ir snapshot: its
+            // absence is a loud failure, never a silent pass.
+            if (ir_raw == null and !cfg.compile_only) {
+                try failures.append(fail_gpa, try std.fmt.allocPrint(fail_gpa, "{s}: cross-target example (target={s}) needs an .ir snapshot for ir-only mode (or `compile_only`)", .{ name, cfg.target.? }));
+                continue;
+            }
+            if (ir_raw != null and cfg.compile_only) {
+                try failures.append(fail_gpa, try std.fmt.allocPrint(fail_gpa, "{s}: `compile_only` example must not keep an .ir snapshot (delete expected/{s}.ir)", .{ name, name }));
                 continue;
             }
             const ir_res = std.process.run(a, io, .{
@@ -659,9 +674,9 @@ fn sweepExpectedDir(
                 continue;
             };
             act_exit = termCode(ir_res.term);
-            act_out = ""; // stdout carries IR (asserted via .ir), not a separate stream
+            act_out = ""; // stdout carries IR (asserted via .ir when pinned), not a separate stream
             act_err = trimNl(try normalizeStd(a, ir_res.stderr));
-            act_ir = trimNl(try normalizeIr(a, ir_res.stdout));
+            act_ir = if (cfg.compile_only) null else trimNl(try normalizeIr(a, ir_res.stdout));
         } else if (is_aot) {
             // Build a native executable, then run it. The build's own stderr
             // ("compiled: <path>") is intentionally discarded — only the built

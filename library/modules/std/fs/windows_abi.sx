@@ -1,0 +1,42 @@
+// Private Win32 ABI used by std.fs. windows.sx flat-imports this part so the
+// kernel32 handle, extern declarations, and numeric constants cannot become
+// authored members of the public std.fs facade.
+
+fs_windows_c :: #import "modules/std/c.sx";
+fs_windows_kernel32 :: #library "kernel32";
+
+FsWindowsFileTime :: struct { low: u32; high: u32; }
+FsWindowsWidePath :: struct { ptr: [*]u16 = null; heap: *void = null; }
+
+fs_windows_MultiByteToWideChar :: (code_page: u32, flags: u32, input: [*]u8, input_len: i32, output: [*]u16, output_len: i32) -> i32 extern fs_windows_kernel32 "MultiByteToWideChar";
+fs_windows_GetProcessHeap :: () -> *void extern fs_windows_kernel32 "GetProcessHeap";
+fs_windows_HeapAlloc :: (heap: *void, flags: u32, bytes: u64) -> *void extern fs_windows_kernel32 "HeapAlloc";
+fs_windows_HeapFree :: (heap: *void, flags: u32, memory: *void) -> i32 extern fs_windows_kernel32 "HeapFree";
+fs_windows_CreateFileW :: (name: [*]u16, access: u32, share: u32, security: *void, creation: u32, attributes: u32, template: *void) -> *void extern fs_windows_kernel32 "CreateFileW";
+fs_windows_CloseHandle :: (handle: *void) -> i32 extern fs_windows_kernel32 "CloseHandle";
+fs_windows_ReadFile :: (handle: *void, buffer: *void, bytes: u32, made: *u32, overlapped: *void) -> i32 extern fs_windows_kernel32 "ReadFile";
+fs_windows_WriteFile :: (handle: *void, buffer: *void, bytes: u32, made: *u32, overlapped: *void) -> i32 extern fs_windows_kernel32 "WriteFile";
+fs_windows_SetFilePointerEx :: (handle: *void, distance: i64, position: *i64, method: u32) -> i32 extern fs_windows_kernel32 "SetFilePointerEx";
+fs_windows_SetEndOfFile :: (handle: *void) -> i32 extern fs_windows_kernel32 "SetEndOfFile";
+fs_windows_GetFileAttributesW :: (name: [*]u16) -> u32 extern fs_windows_kernel32 "GetFileAttributesW";
+fs_windows_DeleteFileW :: (name: [*]u16) -> i32 extern fs_windows_kernel32 "DeleteFileW";
+fs_windows_RemoveDirectoryW :: (name: [*]u16) -> i32 extern fs_windows_kernel32 "RemoveDirectoryW";
+fs_windows_CreateDirectoryW :: (name: [*]u16, security: *void) -> i32 extern fs_windows_kernel32 "CreateDirectoryW";
+fs_windows_MoveFileExW :: (old_name: [*]u16, new_name: [*]u16, flags: u32) -> i32 extern fs_windows_kernel32 "MoveFileExW";
+fs_windows_CopyFileW :: (old_name: [*]u16, new_name: [*]u16, fail_if_exists: i32) -> i32 extern fs_windows_kernel32 "CopyFileW";
+fs_windows_SetFileAttributesW :: (name: [*]u16, attributes: u32) -> i32 extern fs_windows_kernel32 "SetFileAttributesW";
+fs_windows_GetFileTime :: (handle: *void, created: *void, accessed: *void, written: *FsWindowsFileTime) -> i32 extern fs_windows_kernel32 "GetFileTime";
+fs_windows_SetFileTime :: (handle: *void, created: *void, accessed: *void, written: *FsWindowsFileTime) -> i32 extern fs_windows_kernel32 "SetFileTime";
+
+FS_WINDOWS_CP_UTF8               :u32: 65001;
+FS_WINDOWS_GENERIC_READ          :u32: 0x80000000;
+FS_WINDOWS_GENERIC_WRITE         :u32: 0x40000000;
+FS_WINDOWS_FILE_WRITE_ATTRIBUTES :u32: 0x00000100;
+FS_WINDOWS_FILE_SHARE_ALL        :u32: 7;
+FS_WINDOWS_CREATE_ALWAYS         :u32: 2;
+FS_WINDOWS_OPEN_EXISTING         :u32: 3;
+FS_WINDOWS_OPEN_ALWAYS           :u32: 4;
+FS_WINDOWS_FILE_ATTRIBUTE_NORMAL :u32: 0x80;
+FS_WINDOWS_FILE_ATTRIBUTE_READONLY :u32: 0x01;
+FS_WINDOWS_INVALID_ATTRIBUTES    :u32: 0xffffffff;
+FS_WINDOWS_MOVEFILE_REPLACE_EXISTING :u32: 0x01;

@@ -1,0 +1,147 @@
+// One-shot std.zlib decoding benchmark.
+//
+// The encode executable writes the inputs consumed here. Every decoded result
+// is checked outside the timed interval so a fast wrong decoder cannot pass.
+
+#import "modules/std.sx";
+
+BENCH_WARMUPS : i64 = 3;
+BENCH_SAMPLES : i64 = 15;
+
+mono_ns :: () -> i64 {
+    ts : time.Timespec = .{};
+    if c.clock_gettime(time.CLOCK_MONOTONIC, @ts) != 0 { return -1; }
+    ts.sec * 1000000000 + ts.nsec
+}
+
+artifact_path :: (label: string, level: i64) -> [:0]u8 {
+    if label[0] == 'r' {
+        if level == 1 { return ".sx-tmp/bench-compress/sx-repeat-1.zlib"; }
+        if level == 6 { return ".sx-tmp/bench-compress/sx-repeat-6.zlib"; }
+        return ".sx-tmp/bench-compress/sx-repeat-9.zlib";
+    }
+    if level == 1 { return ".sx-tmp/bench-compress/sx-random-1.zlib"; }
+    if level == 6 { return ".sx-tmp/bench-compress/sx-random-6.zlib"; }
+    ".sx-tmp/bench-compress/sx-random-9.zlib"
+}
+
+same :: (left: string, right: string) -> bool {
+    if left.len != right.len { return false; }
+    i := 0;
+    while i < left.len {
+        if left[i] != right[i] { return false; }
+        i += 1;
+    }
+    true
+}
+
+median_sample :: (samples: *[15]i64) -> i64 {
+    i := 1;
+    while i < BENCH_SAMPLES {
+        value := samples[i];
+        j := i;
+        while j > 0 and samples[j - 1] > value {
+            samples[j] = samples[j - 1];
+            j -= 1;
+        }
+        samples[j] = value;
+        i += 1;
+    }
+    samples[BENCH_SAMPLES / 2]
+}
+
+run_case :: (label: string, data: string, level: i64, alloc: Allocator) -> bool {
+    maybe_packed := fs.read_file(artifact_path(label, level));
+    if maybe_packed == null { return false; }
+    packed := maybe_packed!;
+
+    warmup := 0;
+    while warmup < BENCH_WARMUPS {
+        plain := zlib.decode(packed, data.len, alloc) catch {
+            context.allocator.dealloc_bytes(packed.ptr);
+            return false;
+        };
+        ok := same(data, plain);
+        alloc.dealloc_bytes(plain.ptr);
+        if !ok {
+            context.allocator.dealloc_bytes(packed.ptr);
+            return false;
+        }
+        warmup += 1;
+    }
+
+    samples : [15]i64 = ---;
+    run := 0;
+    while run < BENCH_SAMPLES {
+        started := mono_ns();
+        if started < 0 {
+            context.allocator.dealloc_bytes(packed.ptr);
+            return false;
+        }
+        plain := zlib.decode(packed, data.len, alloc) catch {
+            context.allocator.dealloc_bytes(packed.ptr);
+            return false;
+        };
+        finished := mono_ns();
+        if finished < started {
+            alloc.dealloc_bytes(plain.ptr);
+            context.allocator.dealloc_bytes(packed.ptr);
+            return false;
+        }
+        samples[run] = finished - started;
+        ok := same(data, plain);
+        alloc.dealloc_bytes(plain.ptr);
+        if !ok {
+            context.allocator.dealloc_bytes(packed.ptr);
+            return false;
+        }
+        run += 1;
+    }
+    decode_ns := median_sample(@samples);
+    if decode_ns <= 0 {
+        context.allocator.dealloc_bytes(packed.ptr);
+        return false;
+    }
+    safe_ns := if decode_ns > 0 then decode_ns else 1;
+    ratio_permille := if data.len > 0 then packed.len * 1000 / data.len else 0;
+    throughput := data.len * 1000000000 / 1024 / safe_ns;
+    print("{} level={} input={} packed={} ratio_permille={} decode_ns={} decode_KiB_s={}\n",
+        label, level, data.len, packed.len, ratio_permille, decode_ns, throughput);
+    context.allocator.dealloc_bytes(packed.ptr);
+    true
+}
+
+run_corpora :: (data: string, alloc: Allocator) -> bool {
+    i := 0;
+    while i < data.len {
+        data.ptr[i] = ('a' + ((i / 97 + i) % 11)).(u8);
+        i += 1;
+    }
+    if !run_case("repetitive", data, 1, alloc) or
+       !run_case("repetitive", data, 6, alloc) or
+       !run_case("repetitive", data, 9, alloc) { return false; }
+
+    state := 0x12345678;
+    i = 0;
+    while i < data.len {
+        state = (state ^ (state << 13)) & 0xffffffff;
+        state = state ^ (state >> 17);
+        state = (state ^ (state << 5)) & 0xffffffff;
+        data.ptr[i] = (state & 0xff).(u8);
+        i += 1;
+    }
+    run_case("incompressible", data, 1, alloc) and
+    run_case("incompressible", data, 6, alloc) and
+    run_case("incompressible", data, 9, alloc)
+}
+
+main :: () -> i32 {
+    gpa := mem.GPA.init();
+    raw := gpa.alloc_bytes(1048576);
+    if raw == null { return 1; }
+    data := string.{ ptr = xx raw, len = 1048576 };
+    ok := run_corpora(data, gpa);
+    gpa.dealloc_bytes(raw);
+    if !ok or gpa.alloc_count != 0 { return 1; }
+    0
+}

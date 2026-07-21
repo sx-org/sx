@@ -1,0 +1,7 @@
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    value : zip.ZipError = ---;
+    state : zip.ZipErrorState = ---;
+    0
+}

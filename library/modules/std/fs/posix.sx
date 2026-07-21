@@ -1,0 +1,275 @@
+#import "modules/std/core.sx";
+#import "modules/std/fmt.sx";
+#import "modules/std/target.sx";
+#import "modules/std/fs/posix_abi.sx";
+
+// =====================================================================
+// fs.sx — file system stdlib (POSIX backend).
+//
+// Allocation contract: every returned `string` or slice is allocated
+// from `context.allocator`. Callers are responsible for releasing it
+// (typically via an arena reset).
+//
+// Handle ownership: `File` is a small value-typed handle wrapping the
+// POSIX file descriptor. Methods are provided for read/write/close;
+// the value is invalid (fd == -1) after `close()`.
+//
+// Scope (Phase 1A): file I/O + directory creation/deletion + path
+// helpers needed for `.app` bundling. Recursive walkers, `stat`, and
+// the full path module land in subsequent phases.
+// =====================================================================
+
+// The backend owns only hidden primitive operations. std/fs.sx owns every
+// portable type and method and stores POSIX descriptors in an i64 handle slot.
+
+fs_file_is_valid :: (handle: i64) -> bool { handle >= 0 and handle <= 0x7fffffff }
+
+fs_file_close :: (handle: i64) -> bool {
+    if !fs_file_is_valid(handle) { return false; }
+    fs_posix_c.close(handle.(i32)) == 0
+}
+
+fs_file_read :: (handle: i64, output: string) -> i64 {
+    if !fs_file_is_valid(handle) { return -1; }
+    fs_posix_c.read(handle.(i32), output.ptr, xx output.len).(i64)
+}
+
+fs_file_write :: (handle: i64, data: string) -> i64 {
+    if !fs_file_is_valid(handle) { return -1; }
+    fs_posix_c.write(handle.(i32), data.ptr, xx data.len).(i64)
+}
+
+fs_file_truncate :: (handle: i64, len: i64) -> bool {
+    if !fs_file_is_valid(handle) or len < 0 { return false; }
+    fs_posix_ftruncate(handle.(i32), len) == 0
+}
+
+fs_file_seek :: (handle: i64, offset: i64, from: i32) -> i64 {
+    if !fs_file_is_valid(handle) { return -1; }
+    whence := FS_POSIX_SEEK_SET;
+    if from == 1 { whence = FS_POSIX_SEEK_CUR; }
+    else if from == 2 { whence = FS_POSIX_SEEK_END; }
+    fs_posix_c.lseek(handle.(i32), offset, whence)
+}
+
+// ── High-level file API ─────────────────────────────────────────────
+// Named `open_file` (not `open`) so they don't shadow libc's `open`
+// symbol; the latter is needed for `extern libc` to resolve. Same
+// idea for `delete_file`/`delete_dir` vs libc's `unlink`/`rmdir`,
+// `set_mode` vs libc's `chmod`, etc.
+
+fs_posix_mode_to_flags :: (mode: i32) -> i32 {
+    if mode == 1 { return FS_POSIX_O_WRONLY | FS_POSIX_O_CREAT | FS_POSIX_O_TRUNC; }
+    if mode == 2 { return FS_POSIX_O_WRONLY | FS_POSIX_O_CREAT | FS_POSIX_O_APPEND; }
+    if mode == 3 { return FS_POSIX_O_RDWR; }
+    FS_POSIX_O_RDONLY
+}
+
+fs_open_handle :: (path: [:0]u8, mode: i32) -> i64 {
+    fd := fs_posix_c.open(path, fs_posix_mode_to_flags(mode), 420); // 0o644 = 420
+    fd.(i64)
+}
+
+// One-shot read: opens, slurps the whole file into a fresh buffer,
+// closes. Returns null on any failure. Uses libc directly (not File
+// methods) so it remains callable from the post-link IR interpreter,
+// which doesn't yet handle `*Self` method dispatch on locally-
+// unwrapped optionals.
+fs_read_file :: (path: [:0]u8) -> ?string {
+    fd := fs_posix_c.open(path, FS_POSIX_O_RDONLY, 0);
+    if fd < 0 { return null; }
+    size := fs_posix_c.lseek(fd, 0, FS_POSIX_SEEK_END);
+    if size < 0 { fs_posix_c.close(fd); return null; }
+    if fs_posix_c.lseek(fd, 0, FS_POSIX_SEEK_SET) < 0 { fs_posix_c.close(fd); return null; }
+    buf := alloc_string(size);
+    at := 0;
+    ok := true;
+    while at < size {
+        made := fs_posix_c.read(fd, @buf.ptr[at], xx (size - at));
+        if made <= 0 { ok = false; break; }
+        at += made;
+    }
+    close_ok := fs_posix_c.close(fd) == 0;
+    if !ok or !close_ok {
+        context.allocator.dealloc_bytes(buf.ptr);
+        return null;
+    }
+    buf
+}
+
+fs_posix_write_all :: (fd: i32, data: string) -> bool {
+    at := 0;
+    while at < data.len {
+        made := fs_posix_c.write(fd, @data.ptr[at], xx (data.len - at));
+        if made <= 0 { return false; }
+        at += made;
+    }
+    true
+}
+
+// One-shot write: creates / truncates and writes the whole buffer.
+fs_write_file :: (path: [:0]u8, data: string) -> bool {
+    fd := fs_posix_c.open(path, FS_POSIX_O_WRONLY | FS_POSIX_O_CREAT | FS_POSIX_O_TRUNC, 420); // 0o644
+    if fd < 0 { return false; }
+    ok := fs_posix_write_all(fd, data);
+    close_ok := fs_posix_c.close(fd) == 0;
+    ok and close_ok
+}
+
+fs_append_file :: (path: [:0]u8, data: string) -> bool {
+    fd := fs_posix_c.open(path, FS_POSIX_O_WRONLY | FS_POSIX_O_CREAT | FS_POSIX_O_APPEND, 420);
+    if fd < 0 { return false; }
+    ok := fs_posix_write_all(fd, data);
+    close_ok := fs_posix_c.close(fd) == 0;
+    ok and close_ok
+}
+
+// ── Single-syscall ops ───────────────────────────────────────────────
+
+fs_exists :: (path: [:0]u8) -> bool {
+    fs_posix_c.access(path, FS_POSIX_F_OK) == 0
+}
+
+fs_delete_file :: (path: [:0]u8) -> bool {
+    fs_posix_c.unlink(path) == 0
+}
+
+fs_delete_dir :: (path: [:0]u8) -> bool {
+    fs_posix_c.rmdir(path) == 0
+}
+
+fs_create_dir :: (path: [:0]u8) -> bool {
+    fs_posix_c.mkdir(path, 493) == 0 // 0o755 = 493
+}
+
+fs_set_mode :: (path: [:0]u8, mode: u32) -> bool {
+    fs_posix_c.chmod(path, mode) == 0
+}
+
+fs_move :: (oldp: [:0]u8, newp: [:0]u8) -> bool {
+    fs_posix_c.rename(oldp, newp) == 0
+}
+
+// Recursive mkdir -p. Walks the path and creates each missing
+// segment. Treats existing directories as success.
+fs_create_dir_all :: (path: [:0]u8) -> bool {
+    if path.len == 0 { return true; }
+    if fs_exists(path) { return true; }
+    last := path.len - 1;
+    while last > 0 {
+        if path[last] == '/' { break; }
+        last -= 1;
+    }
+    if last > 0 {
+        parent := alloc_string(last);
+        fs_posix_c.memcpy(parent.ptr, path.ptr, last);
+        parent_ok := fs_create_dir_all(parent);
+        context.allocator.dealloc_bytes(parent.ptr);
+        if !parent_ok { return false; }
+    }
+    fs_create_dir(path)
+}
+
+// Copy a file by streaming through a 64KB buffer. Uses libc directly
+// (not File methods) — same interpreter-compat reason as read_file.
+// No metadata is preserved beyond what `open` creates (mode 0644).
+// Caller is responsible for setting executable bits with `set_mode`.
+fs_copy_file :: (src: [:0]u8, dst: [:0]u8) -> bool {
+    src_fd := fs_posix_c.open(src, FS_POSIX_O_RDONLY, 0);
+    if src_fd < 0 { return false; }
+    dst_fd := fs_posix_c.open(dst, FS_POSIX_O_WRONLY | FS_POSIX_O_CREAT | FS_POSIX_O_TRUNC, 420);
+    if dst_fd < 0 {
+        fs_posix_c.close(src_fd);
+        return false;
+    }
+    ok := true;
+    buf := alloc_string(65536);
+    loop := true;
+    while loop {
+        n := fs_posix_c.read(src_fd, buf.ptr, 65536);
+        if n < 0 { ok = false; loop = false; }
+        if n == 0 { loop = false; }
+        if n > 0 {
+            at := 0;
+            while at < n.(i64) {
+                made := fs_posix_c.write(dst_fd, @buf.ptr[at], xx (n.(i64) - at));
+                if made <= 0 { ok = false; loop = false; break; }
+                at += made;
+            }
+        }
+    }
+    context.allocator.dealloc_bytes(buf.ptr);
+    src_close_ok := fs_posix_c.close(src_fd) == 0;
+    dst_close_ok := fs_posix_c.close(dst_fd) == 0;
+    ok and src_close_ok and dst_close_ok
+}
+
+// Return only the portable whole-second modification time. The private raw
+// buffer is deliberately oversized; the copied field offset is selected from
+// the target ABI instead of exposing a platform stat layout in std.fs.
+fs_modified_seconds_handle :: (handle: i64) -> (i64, bool) {
+    if !fs_file_is_valid(handle) { return 0, false; }
+    inline if OS == .wasm { return 0, false; }
+    else {
+        raw : [256]u8 = .{};
+        if fs_posix_c.fstat(handle.(i32), xx @raw[0]) != 0 { return 0, false; }
+        offset := 0;
+        inline if OS == .macos or OS == .ios { offset = 48; }
+        else if OS == .linux or OS == .android { offset = 88; }
+        else { #error "std/fs/posix.sx: stat modification-time offset is not defined for this target"; }
+        seconds : i64 = 0;
+        fs_posix_c.memcpy(@seconds, @raw[offset], size_of(i64));
+        return seconds, true;
+    }
+}
+
+fs_set_modified_seconds :: (path: [:0]u8, seconds: i64) -> bool {
+    inline if OS == .wasm { return false; }
+    else {
+        times : [2]FsPosixTimespec = .[
+            .{ sec = 0, nsec = FS_POSIX_UTIME_OMIT },
+            .{ sec = seconds, nsec = 0 },
+        ];
+        return fs_posix_utimensat(FS_POSIX_AT_FDCWD, path, xx @times[0], 0) == 0;
+    }
+}
+
+// ── Path helpers ─────────────────────────────────────────────────────
+// `path_join` is in std.sx (used widely beyond fs). These are the
+// fs-adjacent helpers — basename/dirname operate purely on text.
+
+fs_basename :: (p: string) -> string {
+    if p.len == 0 { return ""; }
+    last := p.len - 1;
+    while last > 0 {
+        if p[last] != '/' { break; }
+        last -= 1;
+    }
+    end := last + 1;
+    while last > 0 {
+        if p[last - 1] == '/' { return substr(p, last, end - last); }
+        last -= 1;
+    }
+    substr(p, 0, end)
+}
+
+fs_dirname :: (p: string) -> string {
+    if p.len == 0 { return ""; }
+    last := p.len - 1;
+    while last > 0 {
+        if p[last] != '/' { break; }
+        last -= 1;
+    }
+    while last > 0 {
+        if p[last] == '/' {
+            while last > 0 {
+                if p[last - 1] != '/' { break; }
+                last -= 1;
+            }
+            return substr(p, 0, last);
+        }
+        last -= 1;
+    }
+    if p[0] == '/' { return "/"; }
+    "."
+}

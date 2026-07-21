@@ -1,0 +1,5 @@
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    compress.MZ_OK.(i32)
+}

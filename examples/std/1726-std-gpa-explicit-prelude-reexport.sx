@@ -1,0 +1,10 @@
+// Positive companion to issue 0324: std intentionally authors a GPA alias, so
+// bare `GPA.init()` remains part of the supported prelude surface.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    gpa := GPA.init();
+    if gpa.alloc_count != 0 { return 1; }
+    0
+}

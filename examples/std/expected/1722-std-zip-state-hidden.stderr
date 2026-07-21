@@ -1,0 +1,5 @@
+error: namespace 'zip' has no member 'StdZipReaderState'
+  --> examples/std/1722-std-zip-state-hidden.sx:4:13
+   |
+ 4 |     state : zip.StdZipReaderState = ---;
+   |             ^^^^^^^^^^^^^^^^^^^^^

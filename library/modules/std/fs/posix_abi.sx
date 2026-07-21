@@ -1,0 +1,67 @@
+// Private POSIX ABI used by std.fs. This file is flat-imported by the POSIX
+// implementation so its libc namespace and ABI constants are not authored by
+// the public std.fs facade.
+
+fs_posix_c :: #import "modules/std/c.sx";
+fs_posix_libc :: #library "c";
+
+FsPosixTimespec :: fs_posix_c.Timespec;
+fs_posix_utimensat :: (directory: i32, path: [:0]u8, times: *void, flags: i32) -> i32 extern fs_posix_libc "utimensat";
+fs_posix_ftruncate :: (fd: i32, len: i64) -> i32 extern fs_posix_libc "ftruncate";
+
+// Linux, Android, and Emscripten use the Linux asm-generic open flag values;
+// Darwin uses the BSD values. Unsupported targets fail closed here.
+inline if OS == {
+    case .linux:
+        FS_POSIX_O_RDONLY :i32: 0x0000;
+        FS_POSIX_O_WRONLY :i32: 0x0001;
+        FS_POSIX_O_RDWR   :i32: 0x0002;
+        FS_POSIX_O_APPEND :i32: 0x0400;
+        FS_POSIX_O_CREAT  :i32: 0x0040;
+        FS_POSIX_O_TRUNC  :i32: 0x0200;
+        FS_POSIX_AT_FDCWD :i32: -100;
+        FS_POSIX_UTIME_OMIT :i32: 1073741822;
+    case .android:
+        FS_POSIX_O_RDONLY :i32: 0x0000;
+        FS_POSIX_O_WRONLY :i32: 0x0001;
+        FS_POSIX_O_RDWR   :i32: 0x0002;
+        FS_POSIX_O_APPEND :i32: 0x0400;
+        FS_POSIX_O_CREAT  :i32: 0x0040;
+        FS_POSIX_O_TRUNC  :i32: 0x0200;
+        FS_POSIX_AT_FDCWD :i32: -100;
+        FS_POSIX_UTIME_OMIT :i32: 1073741822;
+    case .wasm:
+        FS_POSIX_O_RDONLY :i32: 0x0000;
+        FS_POSIX_O_WRONLY :i32: 0x0001;
+        FS_POSIX_O_RDWR   :i32: 0x0002;
+        FS_POSIX_O_APPEND :i32: 0x0400;
+        FS_POSIX_O_CREAT  :i32: 0x0040;
+        FS_POSIX_O_TRUNC  :i32: 0x0200;
+        FS_POSIX_AT_FDCWD :i32: -100;
+        FS_POSIX_UTIME_OMIT :i32: 1073741822;
+    case .macos:
+        FS_POSIX_O_RDONLY :i32: 0x0000;
+        FS_POSIX_O_WRONLY :i32: 0x0001;
+        FS_POSIX_O_RDWR   :i32: 0x0002;
+        FS_POSIX_O_APPEND :i32: 0x0008;
+        FS_POSIX_O_CREAT  :i32: 0x0200;
+        FS_POSIX_O_TRUNC  :i32: 0x0400;
+        FS_POSIX_AT_FDCWD :i32: -2;
+        FS_POSIX_UTIME_OMIT :i32: -2;
+    case .ios:
+        FS_POSIX_O_RDONLY :i32: 0x0000;
+        FS_POSIX_O_WRONLY :i32: 0x0001;
+        FS_POSIX_O_RDWR   :i32: 0x0002;
+        FS_POSIX_O_APPEND :i32: 0x0008;
+        FS_POSIX_O_CREAT  :i32: 0x0200;
+        FS_POSIX_O_TRUNC  :i32: 0x0400;
+        FS_POSIX_AT_FDCWD :i32: -2;
+        FS_POSIX_UTIME_OMIT :i32: -2;
+    else:
+        #error "std/fs/posix_abi.sx: POSIX filesystem ABI is not defined for this target";
+}
+
+FS_POSIX_SEEK_SET :i32: 0;
+FS_POSIX_SEEK_CUR :i32: 1;
+FS_POSIX_SEEK_END :i32: 2;
+FS_POSIX_F_OK     :i32: 0;

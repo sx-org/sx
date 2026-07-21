@@ -1,0 +1,90 @@
+// Untimed deterministic-output matrix for the public std.zlib encoder.
+//
+// The matrix covers every public level and strategy over both benchmark
+// corpora. Each record is a 16-byte little-endian header followed by the exact
+// compressed bytes. The shell harness compares the complete file with miniz C.
+
+#import "modules/std.sx";
+
+EXACT_PATH :: ".sx-tmp/bench-compress/sx-exact.matrix";
+
+strategy_at :: (index: i64) -> compress.Strategy {
+    if index == 1 { return .filtered; }
+    if index == 2 { return .huffman_only; }
+    if index == 3 { return .rle; }
+    if index == 4 { return .fixed; }
+    .default
+}
+
+strategy_name :: (index: i64) -> string {
+    if index == 1 { return "filtered"; }
+    if index == 2 { return "huffman_only"; }
+    if index == 3 { return "rle"; }
+    if index == 4 { return "fixed"; }
+    "default"
+}
+
+append_record :: (corpus: i64, level: i64, strategy: i64, packed: string) -> bool {
+    header : [16]u8 = .[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    header[0] = corpus.(u8);
+    header[1] = level.(u8);
+    header[2] = strategy.(u8);
+    i := 0;
+    while i < 8 {
+        header[8 + i] = ((packed.len >> (i * 8)) & 0xff).(u8);
+        i += 1;
+    }
+    fs.append_file(EXACT_PATH, header[..]) and fs.append_file(EXACT_PATH, packed)
+}
+
+run_corpus :: (label: string, corpus: i64, data: string, alloc: Allocator) -> bool {
+    level := 0;
+    while level <= 10 {
+        strategy := 0;
+        while strategy < 5 {
+            options : compress.Options = .{
+                level = level,
+                strategy = strategy_at(strategy),
+            };
+            packed := zlib.encode(data, options, alloc) catch { return false; };
+            print("exact corpus={} level={} strategy={} packed={}\n",
+                label, level, strategy_name(strategy), packed.len);
+            ok := append_record(corpus, level, strategy, packed);
+            alloc.dealloc_bytes(packed.ptr);
+            if !ok { return false; }
+            strategy += 1;
+        }
+        level += 1;
+    }
+    true
+}
+
+main :: () -> i32 {
+    if !fs.write_file(EXACT_PATH, "") { return 1; }
+    gpa := mem.GPA.init();
+    raw := gpa.alloc_bytes(1048576);
+    if raw == null { return 1; }
+    data := string.{ ptr = xx raw, len = 1048576 };
+
+    i := 0;
+    while i < data.len {
+        data.ptr[i] = ('a' + ((i / 97 + i) % 11)).(u8);
+        i += 1;
+    }
+    ok := run_corpus("repetitive", 0, data, gpa);
+
+    state := 0x12345678;
+    i = 0;
+    while ok and i < data.len {
+        state = (state ^ (state << 13)) & 0xffffffff;
+        state = state ^ (state >> 17);
+        state = (state ^ (state << 5)) & 0xffffffff;
+        data.ptr[i] = (state & 0xff).(u8);
+        i += 1;
+    }
+    if ok { ok = run_corpus("incompressible", 1, data, gpa); }
+
+    gpa.dealloc_bytes(raw);
+    if !ok or gpa.alloc_count != 0 { return 1; }
+    0
+}

@@ -1,0 +1,288 @@
+// Idiomatic std.compress + raw DEFLATE/zlib/gzip facade coverage.
+// The fixtures are byte-for-byte outputs from pinned miniz 3.1.2.
+
+#import "modules/std.sx";
+
+PLAIN :: "fixed fixed fixed fixed fixed fixed!";
+
+RAW : [12]u8 = .[
+    75, 203, 172, 72, 77, 81, 72, 195, 71, 42, 2, 0,
+];
+
+ZLIB : [18]u8 = .[
+    120, 156, 75, 203, 172, 72, 77, 81, 72,
+    195, 71, 42, 2, 0, 247, 117, 13, 34,
+];
+
+GZIP : [30]u8 = .[
+    31, 139, 8, 0, 0, 0, 0, 0, 0, 255,
+    75, 203, 172, 72, 77, 81, 72, 195, 71, 42, 2, 0,
+    103, 66, 48, 97, 36, 0, 0, 0,
+];
+
+// Pinned miniz 3.1.2 MZ_FIXED outputs. The first fixture requires the level-1
+// fast parser; the second requires fixed Huffman to retain tdefl's adaptive
+// stored-block fallback when the compressed block would expand.
+FIXED_FAST_PLAIN :: "abcdefghijkabcde";
+FIXED_FAST_ZLIB : [20]u8 = .[
+    120, 1, 75, 76, 74, 78, 73, 77, 75, 207,
+    200, 204, 202, 6, 51, 1, 53, 155, 6, 82,
+];
+
+FIXED_STORED_PLAIN : [16]u8 = .[
+    0, 17, 34, 51, 68, 85, 102, 119,
+    136, 153, 170, 187, 204, 221, 238, 255,
+];
+FIXED_STORED_ZLIB : [27]u8 = .[
+    120, 94, 1, 16, 0, 239, 255, 0, 17,
+    34, 51, 68, 85, 102, 119, 136, 153,
+    170, 187, 204, 221, 238, 255, 45, 56, 7, 249,
+];
+
+same :: (left: string, right: string) -> bool {
+    if left.len != right.len { return false; }
+    i := 0;
+    while i < left.len {
+        if left[i] != right[i] { return false; }
+        i += 1;
+    }
+    true
+}
+
+raw_fixture :: () -> string { RAW[..] }
+zlib_fixture :: () -> string { ZLIB[..] }
+gzip_fixture :: () -> string { GZIP[..] }
+
+test_fixed_strategy_exact :: (alloc: Allocator) -> bool {
+    fast := zlib.encode(FIXED_FAST_PLAIN, .{ level = 1, strategy = .fixed }, alloc) catch { return false; };
+    stored := zlib.encode(FIXED_STORED_PLAIN[..], .{ level = 2, strategy = .fixed }, alloc) catch {
+        alloc.dealloc_bytes(fast.ptr);
+        return false;
+    };
+    ok := same(fast, FIXED_FAST_ZLIB[..]) and same(stored, FIXED_STORED_ZLIB[..]);
+    alloc.dealloc_bytes(stored.ptr);
+    alloc.dealloc_bytes(fast.ptr);
+    ok
+}
+
+test_exact_and_buffers :: (alloc: Allocator) -> bool {
+    raw := deflate.encode(PLAIN, .{ level = 6 }, alloc) catch { return false; };
+    framed := zlib.encode(PLAIN, .{ level = 6 }, alloc) catch { alloc.dealloc_bytes(raw.ptr); return false; };
+    gz := gzip.encode(PLAIN, .{ level = 6 }, .{}, alloc) catch {
+        alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    };
+    if !same(raw, raw_fixture()) or !same(framed, zlib_fixture()) or !same(gz, gzip_fixture()) {
+        alloc.dealloc_bytes(gz.ptr); alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    }
+
+    raw_storage : [64]u8 = ---;
+    raw_borrowed := deflate.encode_into(PLAIN, raw_storage[..], .{ level = 6 }, alloc) catch {
+        alloc.dealloc_bytes(gz.ptr); alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    };
+    zlib_storage : [64]u8 = ---;
+    zlib_borrowed := zlib.encode_into(PLAIN, zlib_storage[..], .{ level = 6 }, alloc) catch {
+        alloc.dealloc_bytes(gz.ptr); alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    };
+    gzip_storage : [64]u8 = ---;
+    gzip_borrowed := gzip.encode_into(PLAIN, gzip_storage[..], .{ level = 6 }, .{}, alloc) catch {
+        alloc.dealloc_bytes(gz.ptr); alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    };
+    if !same(raw_borrowed, raw) or !same(zlib_borrowed, framed) or !same(gzip_borrowed, gz) {
+        alloc.dealloc_bytes(gz.ptr); alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    }
+
+    plain_storage : [64]u8 = ---;
+    raw_prefix := deflate.decode_into_prefix(raw, plain_storage[..], alloc) catch {
+        alloc.dealloc_bytes(gz.ptr); alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    };
+    if raw_prefix.consumed != raw.len or !same(raw_prefix.bytes, PLAIN) {
+        alloc.dealloc_bytes(gz.ptr); alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    }
+    raw_plain := deflate.decode_into(raw, plain_storage[..], alloc) catch {
+        alloc.dealloc_bytes(gz.ptr); alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    };
+    if !same(raw_plain, PLAIN) {
+        alloc.dealloc_bytes(gz.ptr); alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    }
+    zlib_plain := zlib.decode_into(framed, plain_storage[..], alloc) catch {
+        alloc.dealloc_bytes(gz.ptr); alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    };
+    if !same(zlib_plain, PLAIN) {
+        alloc.dealloc_bytes(gz.ptr); alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    }
+    gzip_plain := gzip.decode_into(gz, plain_storage[..], alloc) catch {
+        alloc.dealloc_bytes(gz.ptr); alloc.dealloc_bytes(framed.ptr); alloc.dealloc_bytes(raw.ptr); return false;
+    };
+    ok := same(gzip_plain, PLAIN);
+    alloc.dealloc_bytes(gz.ptr);
+    alloc.dealloc_bytes(framed.ptr);
+    alloc.dealloc_bytes(raw.ptr);
+    ok
+}
+
+test_prefix_and_errors :: (alloc: Allocator) -> bool {
+    raw_trailing : [13]u8 = ---;
+    raw_at := 0;
+    while raw_at < RAW.len { raw_trailing[raw_at] = RAW[raw_at]; raw_at += 1; }
+    raw_trailing[RAW.len] = 0xaa;
+
+    raw_prefix := deflate.decode_prefix(raw_trailing[..], 128, alloc) catch { return false; };
+    raw_prefix_ok := raw_prefix.consumed == RAW.len and same(raw_prefix.bytes, PLAIN);
+    alloc.dealloc_bytes(raw_prefix.bytes.ptr);
+    if !raw_prefix_ok { return false; }
+
+    raw_strict_failed := false;
+    raw_strict := deflate.decode(raw_trailing[..], 128, alloc) catch (e) {
+        raw_strict_failed = e == error.InvalidData;
+        ""
+    };
+    if !raw_strict_failed {
+        if raw_strict.ptr != null { alloc.dealloc_bytes(raw_strict.ptr); }
+        return false;
+    }
+
+    raw_output : [64]u8 = ---;
+    raw_into_strict_failed := false;
+    raw_into_strict := deflate.decode_into(raw_trailing[..], raw_output[..], alloc) catch (e) {
+        raw_into_strict_failed = e == error.InvalidData;
+        ""
+    };
+    if !raw_into_strict_failed { return false; }
+
+    trailing : [19]u8 = ---;
+    i := 0;
+    while i < ZLIB.len { trailing[i] = ZLIB[i]; i += 1; }
+    trailing[ZLIB.len] = 0xaa;
+
+    prefix := zlib.decode_prefix(trailing[..], 128, alloc) catch { return false; };
+    prefix_ok := prefix.consumed == ZLIB.len and same(prefix.bytes, PLAIN);
+    alloc.dealloc_bytes(prefix.bytes.ptr);
+    if !prefix_ok { return false; }
+
+    strict_failed := false;
+    strict := zlib.decode(trailing[..], 128, alloc) catch (e) {
+        strict_failed = e == error.InvalidData;
+        ""
+    };
+    if !strict_failed {
+        if strict.ptr != null { alloc.dealloc_bytes(strict.ptr); }
+        return false;
+    }
+
+    invalid_level := false;
+    invalid := deflate.encode(PLAIN, .{ level = 11 }, alloc) catch (e) {
+        invalid_level = e == error.InvalidOptions;
+        ""
+    };
+    if !invalid_level {
+        if invalid.ptr != null { alloc.dealloc_bytes(invalid.ptr); }
+        return false;
+    }
+
+    short_failed := false;
+    short_storage : [4]u8 = ---;
+    ignored := gzip.decode_into(gzip_fixture(), short_storage[..], alloc) catch (e) {
+        short_failed = e == error.OutputLimit;
+        ""
+    };
+    short_failed
+}
+
+test_streaming :: (alloc: Allocator) -> bool {
+    encoder := deflate.Encoder.init(.{ level = 6 }, alloc) catch { return false; };
+    encoded : [64]u8 = ---;
+    input_at := 0;
+    output_at := 0;
+    turns := 0;
+    while turns < 256 {
+        input_end := input_at + 2;
+        if input_end > PLAIN.len { input_end = PLAIN.len; }
+        input : string = "";
+        if input_at < input_end { input = PLAIN[input_at..input_end]; }
+        output_end := output_at + 1;
+        if output_end > encoded.len { output_end = encoded.len; }
+        output : string = "";
+        if output_at < output_end { output = encoded[output_at..output_end]; }
+        mode : compress.Flush = if input_end == PLAIN.len then .finish else .none;
+        progress := encoder.flush(input, output, mode) catch { encoder.deinit(); return false; };
+        input_at += progress.consumed;
+        output_at += progress.produced;
+        if progress.status == .done { break; }
+        turns += 1;
+    }
+    if input_at != PLAIN.len or !same(encoded[..output_at], raw_fixture()) { encoder.deinit(); return false; }
+    encoder.deinit();
+
+    decoder := deflate.Decoder.init(PLAIN.len, alloc) catch { return false; };
+    decoded : [64]u8 = ---;
+    input_at = 0;
+    output_at = 0;
+    turns = 0;
+    while turns < 256 {
+        input_end := input_at + 1;
+        if input_end > RAW.len { input_end = RAW.len; }
+        input : string = "";
+        if input_at < input_end { input = raw_fixture()[input_at..input_end]; }
+        output_end := output_at + 2;
+        if output_end > decoded.len { output_end = decoded.len; }
+        output : string = "";
+        if output_at < output_end { output = decoded[output_at..output_end]; }
+        progress := decoder.read(input, output) catch { decoder.deinit(); return false; };
+        input_at += progress.consumed;
+        output_at += progress.produced;
+        if progress.status == .done { break; }
+        turns += 1;
+    }
+    if input_at != RAW.len or !same(decoded[..output_at], PLAIN) { decoder.deinit(); return false; }
+    decoder.deinit();
+
+    protocol_encoder := deflate.Encoder.init(.{}, alloc) catch { return false; };
+    erased : *compress.StreamingEncoder = @protocol_encoder;
+    empty_output : [8]u8 = ---;
+    progress := erased.finish(empty_output[..]) catch { erased.deinit(); return false; };
+    erased.deinit();
+    progress.status == .done
+}
+
+test_gzip_metadata :: (alloc: Allocator) -> bool {
+    header : gzip.Header = .{
+        modified_seconds = 123456,
+        filename = "data.txt",
+        comment = "sx",
+        extra = "ab",
+        operating_system = 3,
+        text = true,
+        header_checksum = true,
+    };
+    owned := gzip.encode(PLAIN, .{ level = 9 }, header, alloc) catch { return false; };
+    capacity := gzip.bound(PLAIN.len, header) catch { alloc.dealloc_bytes(owned.ptr); return false; };
+    storage_raw := alloc.alloc_bytes(capacity);
+    if storage_raw == null { alloc.dealloc_bytes(owned.ptr); return false; }
+    storage := string.{ ptr = xx storage_raw, len = capacity };
+    borrowed := gzip.encode_into(PLAIN, storage, .{ level = 9 }, header, alloc) catch {
+        alloc.dealloc_bytes(storage_raw); alloc.dealloc_bytes(owned.ptr); return false;
+    };
+    if !same(owned, borrowed) {
+        alloc.dealloc_bytes(storage_raw); alloc.dealloc_bytes(owned.ptr); return false;
+    }
+    plain := gzip.decode(owned, 128, alloc) catch {
+        alloc.dealloc_bytes(storage_raw); alloc.dealloc_bytes(owned.ptr); return false;
+    };
+    ok := same(plain, PLAIN);
+    alloc.dealloc_bytes(plain.ptr);
+    alloc.dealloc_bytes(storage_raw);
+    alloc.dealloc_bytes(owned.ptr);
+    ok
+}
+
+main :: () -> i32 {
+    alloc := mem.GPA.init();
+    if !test_exact_and_buffers(alloc) { print("std.compress exact/buffer failure\n"); return 1; }
+    if !test_fixed_strategy_exact(alloc) { print("std.compress fixed-strategy failure\n"); return 1; }
+    if !test_prefix_and_errors(alloc) { print("std.compress error-contract failure\n"); return 1; }
+    if !test_streaming(alloc) { print("std.compress streaming failure\n"); return 1; }
+    if !test_gzip_metadata(alloc) { print("std.compress gzip-metadata failure\n"); return 1; }
+    if alloc.alloc_count != 0 { print("std.compress leaked {} allocations\n", alloc.alloc_count); return 1; }
+    print("std.compress ok\n");
+    0
+}

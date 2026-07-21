@@ -51,6 +51,14 @@ Options:
 -o <path>           output path
 ```
 
+## Standard library guides
+
+- [Compression, PNG, and ZIP](docs/compression.md)
+- [Compression migration coverage](docs/compression-coverage.md)
+
+Third-party attributions for stdlib-derived code are recorded in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Language Overview
 
 ### Types

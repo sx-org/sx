@@ -1,0 +1,6 @@
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    state : deflate.Deflater = ---;
+    0
+}

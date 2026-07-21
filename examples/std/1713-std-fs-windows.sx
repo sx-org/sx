@@ -1,0 +1,24 @@
+#import "modules/std/core.sx";
+#import "modules/std/mem.sx";
+
+fs :: #import "modules/std/fs.sx";
+
+main :: () -> i32 {
+    if fs.basename("C:\\tmp\\file.txt").len != 8 { return 1; }
+    if fs.dirname("C:\\tmp\\file.txt").len != 6 { return 2; }
+    if fs.exists("C:\\definitely-missing") { return 3; }
+    maybe := fs.open_file("C:\\sx-stdlib-fs-definitely-missing", .read);
+    if maybe != null {
+        file := maybe!;
+        file.seek(0, .set);
+        file.read("");
+        file.write("");
+        fs.modified_seconds(@file);
+        file.close();
+        return 4;
+    }
+    empty := fs.File.{};
+    if empty.is_valid() or empty.close() { return 5; }
+    if fs.set_modified_seconds("C:\\sx-stdlib-fs-definitely-missing", 0) { return 6; }
+    0
+}

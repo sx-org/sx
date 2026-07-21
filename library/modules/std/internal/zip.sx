@@ -1,0 +1,2810 @@
+// Dependency-free ZIP32/ZIP64 archive support.
+
+#import "modules/std/core.sx";
+#import "modules/std/list.sx";
+#import "modules/std/fs.sx";
+#import "modules/std/compress.sx";
+#import "modules/std/internal/compress.sx";
+zip_contracts :: #import "modules/std/codecs/zip_contracts.sx";
+time :: #import "modules/std/time.sx";
+
+private le16 :: (data: string, at: i64) -> (i64, !Error) {
+    if at < 0 or at + 2 > data.len { raise error.UnexpectedEnd; }
+    data[at].(i64) | (data[at + 1].(i64) << 8)
+}
+
+private le32 :: (data: string, at: i64) -> (i64, !Error) {
+    if at < 0 or at + 4 > data.len { raise error.UnexpectedEnd; }
+    data[at].(i64) | (data[at + 1].(i64) << 8) | (data[at + 2].(i64) << 16) | (data[at + 3].(i64) << 24)
+}
+
+private le64 :: (data: string, at: i64) -> (i64, !Error) {
+    if at < 0 or at + 8 > data.len { raise error.UnexpectedEnd; }
+    low := try le32(data, at);
+    high := try le32(data, at + 4);
+    if (high & 0x80000000) != 0 { raise error.TooLarge; }
+    low | (high << 32)
+}
+
+private zip_string_equal :: (a: string, b: string) -> bool {
+    if a.len != b.len { return false; }
+    i := 0;
+    while i < a.len {
+        if a[i] != b[i] { return false; }
+        i += 1;
+    }
+    true
+}
+
+ZipMethod :: zip_contracts.Method;
+
+ZipExtractOptions :: struct {
+    compressed_data: bool = false;
+    skip_crc: bool = false;
+}
+
+private ZipEntry :: struct {
+    name: string;
+    extra: string;
+    comment: string;
+    method: ZipMethod;
+    method_value: i64;
+    flags: i64;
+    crc: i64;
+    compressed_size: i64;
+    size: i64;
+    local_offset: i64;
+    dos_time: i64;
+    dos_date: i64;
+    external_attributes: i64;
+    internal_attributes: i64;
+    version_made_by: i64;
+    version_needed: i64;
+    central_offset: i64;
+    has_zip64_extra: bool = false;
+
+    is_dir :: (self: *ZipEntry) -> bool {
+        (self.name.len > 0 and self.name[self.name.len - 1] == '/') or
+        (self.external_attributes & 0x10) != 0
+    }
+
+    is_encrypted :: (self: *ZipEntry) -> bool {
+        (self.flags & (1 | 0x40)) != 0
+    }
+
+    is_supported :: (self: *ZipEntry) -> bool {
+        self.method != .unsupported and !self.is_encrypted() and (self.flags & 0x20) == 0
+    }
+
+    // Purely lexical safety check for callers which choose to materialize an
+    // entry. It deliberately makes no claim about symlinks or the filesystem
+    // beneath the eventual destination directory.
+    is_safe_path :: (self: *ZipEntry) -> bool {
+        if self.name.len == 0 { return false; }
+        if self.name[0] == '/' { return false; }
+        start := 0;
+        i := 0;
+        while i <= self.name.len {
+            boundary := i == self.name.len;
+            if !boundary {
+                byte := self.name[i];
+                // A backslash is a path separator on Windows, colon enables
+                // drive-relative paths and alternate data streams, and NUL
+                // truncates paths at common OS boundaries. Reject all three
+                // rather than interpreting them differently per target.
+                if byte == 0 or byte == '\\' or byte == ':' { return false; }
+                boundary = byte == '/';
+            }
+            if boundary {
+                len := i - start;
+                if len == 2 and self.name[start] == '.' and self.name[start + 1] == '.' { return false; }
+                start = i + 1;
+            }
+            i += 1;
+        }
+        true
+    }
+}
+
+private zip_extra_has_field :: (extra: string, wanted_id: i64) -> bool {
+    at := 0;
+    while at < extra.len {
+        if at + 4 > extra.len { return false; }
+        field_id := le16(extra, at) catch (e) 0;
+        field_size := le16(extra, at + 2) catch (e) 0;
+        end := at + 4 + field_size;
+        if end > extra.len { return false; }
+        if field_id == wanted_id { return true; }
+        at = end;
+    }
+    false
+}
+
+// Validate user-authored extra-field framing before any archive bytes are
+// emitted. Field 0x0001 is owned by the ZIP64 encoder; accepting another copy
+// would make the meaning of sentinel sizes and offsets reader-dependent.
+private zip_validate_user_extra :: (extra: string) -> !Error {
+    at := 0;
+    while at < extra.len {
+        if at + 4 > extra.len { raise error.InvalidOptions; }
+        field_id := try le16(extra, at);
+        field_size := try le16(extra, at + 2);
+        if field_size > extra.len - at - 4 { raise error.InvalidOptions; }
+        if field_id == 1 { raise error.InvalidOptions; }
+        at += 4 + field_size;
+    }
+}
+
+// Return the size of an existing central extra block after removing its ZIP64
+// field. Reader-to-writer conversion regenerates that field from resolved
+// values and preserves every other field byte-for-byte.
+private zip_extra_without_zip64_size :: (extra: string) -> (i64, !Error) {
+    kept := 0;
+    at := 0;
+    while at < extra.len {
+        if at + 4 > extra.len { raise error.InvalidData; }
+        field_id := try le16(extra, at);
+        field_size := try le16(extra, at + 2);
+        field_total := 4 + field_size;
+        if field_total > extra.len - at { raise error.InvalidData; }
+        if field_id != 1 { kept += field_total; }
+        at += field_total;
+    }
+    kept
+}
+
+private zip_copy_extra_without_zip64 :: (output: *ByteWriter, extra: string) -> !Error {
+    at := 0;
+    while at < extra.len {
+        if at + 4 > extra.len { raise error.InvalidData; }
+        field_id := try le16(extra, at);
+        field_size := try le16(extra, at + 2);
+        field_total := 4 + field_size;
+        if field_total > extra.len - at { raise error.InvalidData; }
+        if field_id != 1 { output.put_bytes(extra[at..at + field_total]); }
+        at += field_total;
+    }
+}
+
+private zip64_values :: (extra: string, compressed_size: i64, size: i64, local_offset: i64, disk_start: i64) -> (i64, i64, i64, i64, !Error) {
+    need_size := size == 0xffffffff;
+    need_compressed := compressed_size == 0xffffffff;
+    need_offset := local_offset == 0xffffffff;
+    need_disk := disk_start == 0xffff;
+    if !need_size and !need_compressed and !need_offset and !need_disk {
+        return compressed_size, size, local_offset, disk_start;
+    }
+    at := 0;
+    while at < extra.len {
+        if at + 4 > extra.len { raise error.InvalidData; }
+        field_id := try le16(extra, at);
+        field_size := try le16(extra, at + 2);
+        data_at := at + 4;
+        end := data_at + field_size;
+        if end > extra.len { raise error.InvalidData; }
+        if field_id == 1 {
+            cursor := data_at;
+            if need_size {
+                if cursor + 8 > end { raise error.InvalidData; }
+                size = try le64(extra, cursor); cursor += 8;
+            }
+            if need_compressed {
+                if cursor + 8 > end { raise error.InvalidData; }
+                compressed_size = try le64(extra, cursor); cursor += 8;
+            }
+            if need_offset {
+                if cursor + 8 > end { raise error.InvalidData; }
+                local_offset = try le64(extra, cursor); cursor += 8;
+            }
+            if need_disk {
+                if cursor + 4 > end { raise error.InvalidData; }
+                disk_start = try le32(extra, cursor);
+            }
+            return compressed_size, size, local_offset, disk_start;
+        }
+        at = end;
+    }
+    raise error.InvalidData;
+}
+
+ZipReadSource :: struct {
+    ctx: *void;
+    size: i64;
+    read: (*void, i64, string) -> i64;
+}
+
+private zip_source_read_exact :: (source: ZipReadSource, offset: i64, output: string) -> !Error {
+    if source.read == null or offset < 0 or output.len < 0 or offset > source.size or output.len > source.size - offset {
+        raise error.InvalidData;
+    }
+    if output.len == 0 { return; }
+    made := source.read(source.ctx, offset, output);
+    if made != output.len { raise error.Io; }
+}
+
+ZipReader :: struct {
+    data: string;
+    central_offset: i64;
+    central_relative_offset: i64 = 0;
+    central_size: i64;
+    count: i64;
+    comment: string = "";
+    zip64: bool = false;
+    archive_start: i64 = 0;
+    archive_size: i64 = 0;
+    active: bool = true;
+    source_ctx: *void = null;
+    source_read: (*void, i64, string) -> i64 = null;
+    source_size: i64 = 0;
+
+    init :: (data: string) -> (ZipReader, !Error) {
+        ZipReader.init_mode(data, false)
+    }
+
+    // File/user callback readers in miniz detect an archive appended to a
+    // prefix (for example, a self-extracting executable). Memory readers do
+    // not do this implicitly, so native sx exposes the behavior explicitly.
+    init_embedded :: (data: string) -> (ZipReader, !Error) {
+        ZipReader.init_mode(data, true)
+    }
+
+    init_mode :: (data: string, detect_prefix: bool) -> (ZipReader, !Error) {
+        if data.len < 22 { raise error.InvalidData; }
+        min_pos := data.len - 65557;
+        if min_pos < 0 { min_pos = 0; }
+        pos := data.len - 22;
+        found := -1;
+        while pos >= min_pos {
+            if (try le32(data, pos)) == 0x06054b50 {
+                found = pos; break;
+            }
+            pos -= 1;
+        }
+        if found < 0 { raise error.InvalidData; }
+        disk := try le16(data, found + 4);
+        central_disk := try le16(data, found + 6);
+        disk_count := try le16(data, found + 8);
+        count := try le16(data, found + 10);
+        central_size := try le32(data, found + 12);
+        central_offset := try le32(data, found + 16);
+        is_zip64 := false;
+        if found >= 20 and (try le32(data, found - 20)) == 0x07064b50 {
+            is_zip64 = true;
+            // miniz intentionally ignores the locator's "disk with ZIP64
+            // EOCD" field. Only the total disk count below participates in
+            // its multidisk rejection logic.
+            if data[found - 4] != 1 { raise error.Unsupported; }
+            if data[found - 3] != 0 { raise error.Unsupported; }
+            if data[found - 2] != 0 { raise error.Unsupported; }
+            if data[found - 1] != 0 { raise error.Unsupported; }
+            zip64_at := found - 76;
+            if zip64_at < 0 or (try le32(data, zip64_at)) != 0x06064b50 {
+                zip64_at = try le64(data, found - 12);
+            }
+            if zip64_at < 0 or zip64_at + 56 > found - 20 or (try le32(data, zip64_at)) != 0x06064b50 {
+                raise error.InvalidData;
+            }
+            if (try le64(data, zip64_at + 4)) < 44 { raise error.InvalidData; }
+            disk = try le32(data, zip64_at + 16);
+            central_disk = try le32(data, zip64_at + 20);
+            disk_count = try le64(data, zip64_at + 24);
+            count = try le64(data, zip64_at + 32);
+            central_size = try le64(data, zip64_at + 40);
+            central_offset = try le64(data, zip64_at + 48);
+            if count > 0xffffffff { raise error.TooLarge; }
+            if central_size > 0xffffffff { raise error.TooLarge; }
+        } else if count == 0xffff or central_size == 0xffffffff or central_offset == 0xffffffff {
+            raise error.InvalidData;
+        }
+        if disk != 0 or central_disk != 0 or disk_count != count {
+            raise error.Unsupported;
+        }
+        central_relative_offset := central_offset;
+        archive_start := 0;
+        if detect_prefix {
+            tail_size := if is_zip64 then 76 else 0;
+            relative_end := central_relative_offset + central_size + tail_size;
+            if relative_end > found { raise error.InvalidData; }
+            archive_start = found - relative_end;
+        }
+        central_offset = archive_start + central_relative_offset;
+        if central_size < count * 46 or central_offset < 0 or central_offset > data.len or central_size > data.len - central_offset or central_offset + central_size > found {
+            raise error.InvalidData;
+        }
+
+        // Validate the complete central directory up front. This prevents a
+        // claimed entry count or trailing partial record from being accepted
+        // merely because a caller never indexes far enough to encounter it.
+        central_end := central_offset + central_size;
+        scan := central_offset;
+        n := 0;
+        while n < count {
+            if scan + 46 > central_end or (try le32(data, scan)) != 0x02014b50 {
+                raise error.InvalidData;
+            }
+            flags := try le16(data, scan + 8);
+            method := try le16(data, scan + 10);
+            compressed_size := try le32(data, scan + 20);
+            size := try le32(data, scan + 24);
+            name_len := try le16(data, scan + 28);
+            extra_len := try le16(data, scan + 30);
+            entry_comment_len := try le16(data, scan + 32);
+            disk_start := try le16(data, scan + 34);
+            local_offset := try le32(data, scan + 42);
+            next := scan + 46 + name_len + extra_len + entry_comment_len;
+            if next > central_end {
+                raise error.InvalidData;
+            }
+
+            // During initialization miniz only scans a ZIP64 extra field when
+            // a 32-bit sentinel is present, and merely marks the archive as
+            // ZIP64. Field-value completeness is deferred to file_stat.
+            if compressed_size == 0xffffffff or size == 0xffffffff or local_offset == 0xffffffff {
+                extra := data[scan + 46 + name_len..scan + 46 + name_len + extra_len];
+                extra_at := 0;
+                found_zip64_extra := false;
+                while extra_at < extra.len {
+                    if extra_at + 4 > extra.len {
+                        raise error.InvalidData;
+                    }
+                    field_id := try le16(extra, extra_at);
+                    field_size := try le16(extra, extra_at + 2);
+                    if field_size > extra.len - extra_at - 4 {
+                        raise error.InvalidData;
+                    }
+                    if field_id == 1 { found_zip64_extra = true; break; }
+                    extra_at += 4 + field_size;
+                }
+                if found_zip64_extra { is_zip64 = true; }
+            }
+
+            if compressed_size != 0xffffffff and size != 0xffffffff {
+                if (method == 0 and size != compressed_size) or (size != 0 and compressed_size == 0) {
+                    raise error.InvalidData;
+                }
+            }
+            if disk_start == 0xffff or (disk_start != disk and disk_start != 1) {
+                raise error.Unsupported;
+            }
+            if compressed_size != 0xffffffff and local_offset + 30 + compressed_size > data.len {
+                raise error.InvalidData;
+            }
+            // Miniz indexes encrypted, patched, and unknown-method entries so
+            // callers can inspect them. Masked local headers fail init.
+            if (flags & 0x2000) != 0 {
+                raise error.Unsupported;
+            }
+            scan = next;
+            n += 1;
+        }
+        archive_comment_len := try le16(data, found + 20);
+        available_comment := data.len - (found + 22);
+        if archive_comment_len > available_comment { archive_comment_len = available_comment; }
+        ZipReader.{
+            data = data,
+            central_offset = central_offset,
+            central_relative_offset = central_relative_offset,
+            central_size = central_size,
+            count = count,
+            comment = data[found + 22..found + 22 + archive_comment_len],
+            zip64 = is_zip64,
+            archive_start = archive_start,
+            archive_size = data.len - archive_start,
+            active = true,
+            source_size = data.len,
+        }
+    }
+
+    is_zip64 :: (self: *ZipReader) -> bool { self.active and self.zip64 }
+
+    read_archive_data :: (self: *ZipReader, offset: i64, output: string) -> (i64, !Error) {
+        if !self.active or offset < 0 { raise error.InvalidData; }
+        if offset >= self.archive_size { return 0; }
+        take := self.archive_size - offset;
+        if take > output.len { take = output.len; }
+        source_at := self.archive_start + offset;
+        try self.read_exact_at(source_at, output[..take]);
+        take
+    }
+
+    read_exact_at :: (self: *ZipReader, offset: i64, output: string) -> !Error {
+        if !self.active or offset < 0 or output.len < 0 or offset > self.source_size or output.len > self.source_size - offset {
+            raise error.InvalidData;
+        }
+        if output.len == 0 { return; }
+        if self.source_read != null {
+            made := self.source_read(self.source_ctx, offset, output);
+            if made != output.len { raise error.Io; }
+            return;
+        }
+        if offset > self.data.len or output.len > self.data.len - offset { raise error.InvalidData; }
+        i := 0;
+        while i < output.len { output.ptr[i] = self.data[offset + i]; i += 1; }
+    }
+
+    payload_info :: (self: *ZipReader, index: i64) -> (ZipEntry, i64, !Error) {
+        entry := try self.entry(index);
+        at := self.archive_start + entry.local_offset;
+        header : [30]u8 = ---;
+        self.read_exact_at(at, string.{ ptr = @header[0], len = header.len }) catch (e) {
+            raise e;
+        };
+        header_bytes := string.{ ptr = @header[0], len = header.len };
+        if (try le32(header_bytes, 0)) != 0x04034b50 { raise error.InvalidData; }
+        name_len := try le16(header_bytes, 26);
+        extra_len := try le16(header_bytes, 28);
+        start := at + 30 + name_len + extra_len;
+        if start < at or start > self.source_size or entry.compressed_size > self.source_size - start {
+            raise error.InvalidData;
+        }
+        return entry, start;
+    }
+
+    local_record_bounds :: (self: *ZipReader, entry: ZipEntry) -> (i64, i64, !Error) {
+        at := self.archive_start + entry.local_offset;
+        header : [30]u8 = ---;
+        try self.read_exact_at(at, string.{ ptr = @header[0], len = header.len });
+        bytes := string.{ ptr = @header[0], len = header.len };
+        if (try le32(bytes, 0)) != 0x04034b50 or (try le16(bytes, 6)) != entry.flags or (try le16(bytes, 8)) != entry.method_value {
+            raise error.InvalidData;
+        }
+        name_len := try le16(bytes, 26);
+        extra_len := try le16(bytes, 28);
+        if name_len != entry.name.len { raise error.InvalidData; }
+        name_buf : [4096]u8 = ---;
+        name_at := 0;
+        while name_at < name_len {
+            take := name_len - name_at;
+            if take > name_buf.len { take = name_buf.len; }
+            try self.read_exact_at(at + 30 + name_at, string.{ ptr = @name_buf[0], len = take });
+            i := 0;
+            while i < take {
+                if name_buf[i] != entry.name[name_at + i] { raise error.InvalidData; }
+                i += 1;
+            }
+            name_at += take;
+        }
+        payload_start := at + 30 + name_len + extra_len;
+        if payload_start < at or payload_start > self.source_size or entry.compressed_size > self.source_size - payload_start { raise error.InvalidData; }
+        payload_end := payload_start + entry.compressed_size;
+        if (entry.flags & 8) == 0 { return payload_start, payload_end; }
+
+        local_compressed_raw := try le32(bytes, 18);
+        local_size_raw := try le32(bytes, 22);
+        wide := local_compressed_raw == 0xffffffff or local_size_raw == 0xffffffff or
+                entry.compressed_size >= 0xffffffff or entry.size >= 0xffffffff;
+        first : [4]u8 = ---;
+        try self.read_exact_at(payload_end, string.{ ptr = @first[0], len = first.len });
+        first_bytes := string.{ ptr = @first[0], len = first.len };
+        signed := (try le32(first_bytes, 0)) == 0x08074b50;
+        descriptor_size := if wide then 20 else 12;
+        descriptor_at := payload_end + (if signed then 4 else 0);
+        descriptor : [20]u8 = ---;
+        try self.read_exact_at(descriptor_at, string.{ ptr = @descriptor[0], len = descriptor_size });
+        descriptor_bytes := string.{ ptr = @descriptor[0], len = descriptor_size };
+        actual_crc := try le32(descriptor_bytes, 0);
+        actual_compressed := if wide then try le64(descriptor_bytes, 4) else try le32(descriptor_bytes, 4);
+        actual_size := if wide then try le64(descriptor_bytes, 12) else try le32(descriptor_bytes, 8);
+        if actual_crc != entry.crc or actual_compressed != entry.compressed_size or actual_size != entry.size { raise error.InvalidData; }
+        return payload_start, descriptor_at + descriptor_size;
+    }
+
+    // Checked lifecycle counterpart of mz_zip_reader_end(). A second end is
+    // an invalid-parameter transition, not an idempotent success.
+    end :: (self: *ZipReader) -> bool {
+        if !self.active {
+            return false;
+        }
+        self.active = false;
+        self.data = "";
+        self.central_size = 0;
+        self.source_ctx = null;
+        self.source_read = null;
+        self.source_size = 0;
+        true
+    }
+
+    entry :: (self: *ZipReader, index: i64) -> (ZipEntry, !Error) {
+        self.entry_unchecked(index)
+    }
+
+    entry_unchecked :: (self: *ZipReader, index: i64) -> (ZipEntry, !Error) {
+        if !self.active { raise error.Finished; }
+        if index < 0 or index >= self.count { raise error.NotFound; }
+        pos := self.central_offset;
+        n := 0;
+        while n <= index {
+            if pos + 46 > self.data.len or (try le32(self.data, pos)) != 0x02014b50 { raise error.InvalidData; }
+            name_len := try le16(self.data, pos + 28);
+            extra_len := try le16(self.data, pos + 30);
+            comment_len := try le16(self.data, pos + 32);
+            next := pos + 46 + name_len + extra_len + comment_len;
+            if next > self.data.len or next > self.central_offset + self.central_size { raise error.InvalidData; }
+            if n == index {
+                method_value := try le16(self.data, pos + 10);
+                method : ZipMethod = .unsupported;
+                if method_value == 0 { method = .store; }
+                else if method_value == 8 { method = .deflate; }
+                compressed_size := try le32(self.data, pos + 20);
+                size := try le32(self.data, pos + 24);
+                local_offset := try le32(self.data, pos + 42);
+                disk_start := try le16(self.data, pos + 34);
+                extra := self.data[pos + 46 + name_len..pos + 46 + name_len + extra_len];
+                has_zip64_extra := zip_extra_has_field(extra, 1);
+                // Upstream only resolves sentinels when a 0x0001 field is
+                // actually present. With no extra data at all, file_stat()
+                // succeeds and exposes the raw sentinel; later validation or
+                // extraction reports the resulting bounds/size error.
+                if has_zip64_extra {
+                    resolved_compressed, resolved_size, resolved_offset, resolved_disk := try zip64_values(extra, compressed_size, size, local_offset, disk_start);
+                    compressed_size = resolved_compressed;
+                    size = resolved_size;
+                    local_offset = resolved_offset;
+                    disk_start = resolved_disk;
+                }
+                if disk_start < 0 or disk_start > 1 { raise error.Unsupported; }
+                return ZipEntry.{
+                    name = self.data[pos + 46..pos + 46 + name_len],
+                    extra = extra,
+                    comment = self.data[pos + 46 + name_len + extra_len..pos + 46 + name_len + extra_len + comment_len],
+                    method = method,
+                    method_value = method_value,
+                    flags = try le16(self.data, pos + 8),
+                    crc = try le32(self.data, pos + 16),
+                    compressed_size = compressed_size,
+                    size = size,
+                    local_offset = local_offset,
+                    dos_time = try le16(self.data, pos + 12),
+                    dos_date = try le16(self.data, pos + 14),
+                    external_attributes = try le32(self.data, pos + 38),
+                    internal_attributes = try le16(self.data, pos + 36),
+                    version_made_by = try le16(self.data, pos + 4),
+                    version_needed = try le16(self.data, pos + 6),
+                    central_offset = pos,
+                    has_zip64_extra = has_zip64_extra,
+                };
+            }
+            pos = next;
+            n += 1;
+        }
+        raise error.NotFound;
+    }
+
+    // Exact, case-sensitive, first-match lookup — the single supported
+    // policy. The C-compatible case-folded / comment-filtered / path-ignoring
+    // variants and their sorted-index machinery are gone with the C surface.
+    find :: (self: *ZipReader, name: string) -> (i64, !Error) {
+        if name.len > 65535 { raise error.InvalidData; }
+        i := 0;
+        while i < self.count {
+            entry := try self.entry(i);
+            if zip_string_equal(entry.name, name) { return i; }
+            i += 1;
+        }
+        raise error.NotFound;
+    }
+
+    check_extract_support :: (self: *ZipReader, entry: ZipEntry, compressed_data: bool) -> !Error {
+        if entry.is_encrypted() or (entry.flags & 0x20) != 0 {
+            raise error.Unsupported;
+        }
+        // Raw compressed-data extraction supports unknown compression methods.
+        if !compressed_data and entry.method == .unsupported {
+            raise error.Unsupported;
+        }
+        // Directories and zero-compressed-size entries need no payload work,
+        // but their declared features still have to be supported.
+        if entry.is_dir() or entry.compressed_size == 0 { return; }
+    }
+
+    check_validation_support :: (self: *ZipReader, entry: ZipEntry) -> !Error {
+        if entry.is_encrypted() or (entry.flags & 0x20) != 0 or entry.method == .unsupported {
+            raise error.Unsupported;
+        }
+        if entry.is_dir() or entry.size == 0 { return; }
+    }
+
+    extract :: (self: *ZipReader, index: i64, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
+        self.extract_options(index, ZipExtractOptions.{}, max_output, alloc)
+    }
+
+    extract_options :: (self: *ZipReader, index: i64, options: ZipExtractOptions, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (string, !Error) {
+        entry := try self.entry(index);
+        try self.check_extract_support(entry, options.compressed_data);
+        needed := if options.compressed_data then entry.compressed_size else entry.size;
+        if needed > max_output { raise error.OutputLimit; }
+        raw := alloc.alloc_bytes(needed);
+        if needed > 0 and raw == null { raise error.AllocationFailed; }
+        result := string.{ ptr = xx raw, len = needed };
+        made := self.extract_into(index, result, options, alloc) catch (e) {
+            if raw != null { alloc.dealloc_bytes(raw); }
+            raise e;
+        };
+        if made != needed {
+            if raw != null { alloc.dealloc_bytes(raw); }
+
+            raise error.InvalidData;
+        }
+        result
+    }
+
+    extract_into :: (self: *ZipReader, index: i64, output: string, options: ZipExtractOptions = .{}, alloc: Allocator = context.allocator) -> (i64, !Error) {
+        self.extract_into_with_read_buffer(index, output, options, .{ ptr = null, len = 0 }, alloc)
+    }
+
+    extract_into_with_read_buffer :: (self: *ZipReader, index: i64, output: string, options: ZipExtractOptions, read_buffer: string, alloc: Allocator) -> (i64, !Error) {
+        entry, payload_start := try self.payload_info(index);
+        try self.check_extract_support(entry, options.compressed_data);
+        needed := if options.compressed_data then entry.compressed_size else entry.size;
+        if needed > output.len { raise error.OutputLimit; }
+        if options.compressed_data or entry.method == .store {
+            self.read_exact_at(payload_start, output[..needed]) catch (e) {
+                raise e;
+            };
+        } else {
+            // Non-wrapping tinfl output uses the already-produced bytes as its
+            // history dictionary, so the separate 32 KiB ring is unnecessary.
+            state := Inflater.init_with_window(entry.size, alloc, .{ ptr = null, len = 0 });
+            defer state.deinit();
+            state.direct_output = output[..needed];
+            state.direct_fast = self.source_read == null;
+            input_buf : string = .{ ptr = null, len = 0 };
+            input_owned := false;
+            input_len := entry.compressed_size;
+            input_pos := 0;
+            source_at := entry.compressed_size;
+            if self.source_read != null and entry.compressed_size > 0 {
+                capacity := entry.compressed_size;
+                if capacity > 65536 { capacity = 65536; }
+                if read_buffer.ptr != null {
+                    if read_buffer.len == 0 { raise error.InvalidData; }
+                    if capacity > read_buffer.len { capacity = read_buffer.len; }
+                    input_buf = .{ ptr = read_buffer.ptr, len = capacity };
+                } else {
+                    input_raw := alloc.alloc_bytes(capacity);
+                    if input_raw == null { state.deinit(); raise error.AllocationFailed; }
+                    input_buf = .{ ptr = xx input_raw, len = capacity };
+                    input_owned = true;
+                }
+                input_len = 0;
+                source_at = 0;
+            } else if entry.compressed_size > 0 {
+                input_buf = self.data[payload_start..payload_start + entry.compressed_size];
+            }
+            defer { if input_owned and input_buf.ptr != null { alloc.dealloc_bytes(input_buf.ptr); } }
+            output_at := 0;
+            while true {
+                if input_pos == input_len and source_at < entry.compressed_size {
+                    input_len = entry.compressed_size - source_at;
+                    if input_len > input_buf.len { input_len = input_buf.len; }
+                    self.read_exact_at(payload_start + source_at, string.{ ptr = input_buf.ptr, len = input_len }) catch (e) {
+                        state.deinit(); raise e;
+                    };
+                    source_at += input_len;
+                    input_pos = 0;
+                }
+                input : string = .{ ptr = null, len = 0 };
+                if input_pos < input_len { input = input_buf[input_pos..input_len]; }
+                destination : string = .{ ptr = null, len = 0 };
+                if output_at < needed { destination = output[output_at..needed]; }
+                progress := state.step(input, destination) catch (e) {
+                    state.deinit(); raise e;
+                };
+                input_pos += progress.consumed;
+                output_at += progress.produced;
+                if progress.status == .done {
+                    consumed := source_at - (input_len - input_pos);
+                    if output_at != entry.size { state.deinit(); raise error.InvalidData; }
+                    if consumed != entry.compressed_size { state.deinit(); raise error.InvalidData; }
+                    break;
+                }
+                if progress.status == .need_input and input_pos == input_len and source_at >= entry.compressed_size {
+                    state.deinit(); raise error.UnexpectedEnd;
+                }
+                if progress.status == .need_output and output_at >= needed {
+                    // Permit a zero-output probe to consume the end-of-block
+                    // code, but reject any stream which actually needs more
+                    // destination bytes.
+                    probe_input : string = .{ ptr = null, len = 0 };
+                    if input_pos < input_len { probe_input = input_buf[input_pos..input_len]; }
+                    probe := state.step(probe_input, .{ ptr = null, len = 0 }) catch (e) {
+                        state.deinit(); raise e;
+                    };
+                    input_pos += probe.consumed;
+                    if probe.status != .done { state.deinit(); raise error.OutputLimit; }
+                    consumed := source_at - (input_len - input_pos);
+                    if consumed != entry.compressed_size { state.deinit(); raise error.InvalidData; }
+                    break;
+                }
+            }
+        }
+        if !options.compressed_data and !options.skip_crc and crc32(output[..entry.size]) != entry.crc {
+            raise error.ChecksumMismatch;
+        }
+        needed
+    }
+
+    validate_entry :: (self: *ZipReader, index: i64, headers_only: bool = false, skip_crc: bool = false, alloc: Allocator = context.allocator) -> !Error {
+        entry := try self.entry(index);
+        try self.check_validation_support(entry);
+        at := self.archive_start + entry.local_offset;
+        local_header : [30]u8 = ---;
+        self.read_exact_at(at, string.{ ptr = @local_header[0], len = local_header.len }) catch (e) {
+            raise e;
+        };
+        header := string.{ ptr = @local_header[0], len = local_header.len };
+        if (le32(header, 0) catch (e) 0) != 0x04034b50 {
+            raise error.InvalidData;
+        }
+        local_name_len := le16(header, 26) catch (e) {
+            raise e;
+        };
+        local_extra_len := le16(header, 28) catch (e) {
+            raise e;
+        };
+        payload_start := at + 30 + local_name_len + local_extra_len;
+        if local_name_len != entry.name.len or payload_start < at or payload_start > self.source_size or entry.compressed_size > self.source_size - payload_start {
+            raise error.InvalidData;
+        }
+        name_buf : [4096]u8 = ---;
+        name_at := 0;
+        while name_at < local_name_len {
+            take := local_name_len - name_at;
+            if take > name_buf.len { take = name_buf.len; }
+            self.read_exact_at(at + 30 + name_at, string.{ ptr = @name_buf[0], len = take }) catch (e) {
+                raise e;
+            };
+            i := 0;
+            while i < take {
+                if name_buf[i] != entry.name[name_at + i] { raise error.InvalidData; }
+                i += 1;
+            }
+            name_at += take;
+        }
+
+        local_flags := le16(header, 6) catch (e) 0;
+        local_crc := le32(header, 14) catch (e) 0;
+        local_compressed_raw := le32(header, 18) catch (e) 0;
+        local_size_raw := le32(header, 22) catch (e) 0;
+        local_compressed := local_compressed_raw;
+        local_size := local_size_raw;
+        local_has_zip64 := false;
+        if local_extra_len > 0 and (local_compressed_raw == 0xffffffff or local_size_raw == 0xffffffff) {
+            extra_raw := alloc.alloc_bytes(local_extra_len);
+            if extra_raw == null { raise error.AllocationFailed; }
+            local_extra := string.{ ptr = xx extra_raw, len = local_extra_len };
+            self.read_exact_at(at + 30 + local_name_len, local_extra) catch (e) {
+                alloc.dealloc_bytes(extra_raw); raise e;
+            };
+            resolved_compressed, resolved_size, ignored_offset, ignored_disk := zip64_values(local_extra, local_compressed_raw, local_size_raw, 0, 0) catch (e) {
+                alloc.dealloc_bytes(extra_raw);
+
+                raise e;
+            };
+            local_compressed = resolved_compressed;
+            local_size = resolved_size;
+            local_has_zip64 = zip_extra_has_field(local_extra, 1);
+            alloc.dealloc_bytes(extra_raw);
+        }
+
+        if (local_flags & 8) != 0 and local_compressed == 0 and local_crc == 0 {
+            descriptor_at := payload_start + entry.compressed_size;
+            // ZIP64 is an archive/container property. A forced ZIP32-to-ZIP64
+            // upgrade leaves existing local records and their 32-bit data
+            // descriptors untouched, so descriptor width must come from this
+            // record rather than from the EOCD form.
+            wide := local_compressed_raw == 0xffffffff or local_size_raw == 0xffffffff or
+                    entry.compressed_size >= 0xffffffff or entry.size >= 0xffffffff or
+                    local_has_zip64;
+            descriptor_size := if wide then 20 else 12;
+            descriptor : [24]u8 = ---;
+            first_size := 4;
+            self.read_exact_at(descriptor_at, string.{ ptr = @descriptor[0], len = first_size }) catch (e) {
+                raise e;
+            };
+            descriptor_bytes := string.{ ptr = @descriptor[0], len = descriptor.len };
+            if (le32(descriptor_bytes, 0) catch (e) 0) == 0x08074b50 {
+                descriptor_at += 4;
+            }
+            if descriptor_at < 0 or descriptor_at > self.source_size or descriptor_size > self.source_size - descriptor_at {
+                raise error.Io;
+            }
+            self.read_exact_at(descriptor_at, string.{ ptr = @descriptor[0], len = descriptor_size }) catch (e) {
+                raise e;
+            };
+            descriptor_crc := le32(descriptor_bytes, 0) catch (e) 0;
+            descriptor_compressed := if wide then (le64(descriptor_bytes, 4) catch (e) -1) else (le32(descriptor_bytes, 4) catch (e) -1);
+            descriptor_size_value := if wide then (le64(descriptor_bytes, 12) catch (e) -1) else (le32(descriptor_bytes, 8) catch (e) -1);
+            if descriptor_crc != entry.crc or descriptor_compressed != entry.compressed_size or descriptor_size_value != entry.size {
+                raise error.InvalidData;
+            }
+        } else if local_crc != entry.crc or local_compressed != entry.compressed_size or local_size != entry.size {
+            raise error.InvalidData;
+        }
+        if headers_only { return; }
+        discard := ZipExtractSink.{ ctx = null, write = zip_discard_output };
+        made := try zip_extract_to_output(self, index, discard, ZipExtractOptions.{ skip_crc = skip_crc }, entry.size, alloc);
+        if made != entry.size {
+            raise error.InvalidData;
+        }
+    }
+
+    validate :: (self: *ZipReader, headers_only: bool = false, alloc: Allocator = context.allocator) -> !Error {
+        i := 0;
+        while i < self.count {
+            try self.validate_entry(i, headers_only, false, alloc);
+            i += 1;
+        }
+    }
+}
+
+// Free-function constructor is the canonical module entry point. Keeping the
+// constructor at module scope also reads naturally once this becomes
+// `zip.open(...)` in the stdlib; `ZipReader.init` remains available to flat
+// importers and internal code.
+open_zip :: (data: string) -> (ZipReader, !Error) {
+    ZipReader.init(data)
+}
+
+open_zip_embedded :: (data: string) -> (ZipReader, !Error) {
+    ZipReader.init_embedded(data)
+}
+
+private ZipFileReadState :: struct {
+    file: File;
+    start: i64;
+    owns_file: bool;
+    writable: bool = false;
+    write_base: i64 = 0;
+    write_position: i64 = 0;
+}
+
+private zip_file_source_read :: (ctx: *void, offset: i64, output: string) -> i64 {
+    state : *ZipFileReadState = xx ctx;
+    file := @state.file;
+    absolute := state.start + offset;
+    if absolute < state.start or file.seek(absolute, .set) != absolute { return 0; }
+    file.read(output)
+}
+
+private zip_file_update_truncate :: (ctx: *void, len: i64) -> bool {
+    state : *ZipFileReadState = xx ctx;
+    if len < 0 or len > state.write_position { return false; }
+    file := @state.file;
+    // The tail beyond the rollback point is either the failed record or the
+    // stale original central directory — finish() rewrites the directory at
+    // the new end either way, so cutting the physical tail is safe.
+    if !file.truncate(state.write_base + len) { return false; }
+    state.write_position = len;
+    true
+}
+
+private zip_file_update_write :: (ctx: *void, data: string) -> bool {
+    state : *ZipFileReadState = xx ctx;
+    file := @state.file;
+    absolute := state.write_base + state.write_position;
+    if absolute < state.write_base or file.seek(absolute, .set) != absolute { return false; }
+    at := 0;
+    while at < data.len {
+        made := file.write(data[at..]);
+        if made <= 0 or made > data.len - at { return false; }
+        at += made;
+    }
+    state.write_position += data.len;
+    true
+}
+
+private zip_file_update_write_at :: (ctx: *void, offset: i64, data: string) -> bool {
+    state : *ZipFileReadState = xx ctx;
+    file := @state.file;
+    absolute := state.write_base + offset;
+    if offset < 0 or absolute < state.write_base or file.seek(absolute, .set) != absolute { return false; }
+    at := 0;
+    while at < data.len {
+        made := file.write(data[at..]);
+        if made <= 0 or made > data.len - at { return false; }
+        at += made;
+    }
+    true
+}
+
+private zip_file_update_read_at :: (ctx: *void, offset: i64, output: string) -> i64 {
+    state : *ZipFileReadState = xx ctx;
+    file := @state.file;
+    absolute := state.write_base + offset;
+    if offset < 0 or absolute < state.write_base or file.seek(absolute, .set) != absolute { return -1; }
+    file.read(output)
+}
+
+OwnedZipReader :: struct {
+    reader: ZipReader;
+    bytes: string;
+    alloc: Allocator;
+    file_state: *ZipFileReadState = null;
+
+    end :: (self: *OwnedZipReader) -> bool {
+        reader_ok := self.reader.end();
+        close_ok := true;
+        if self.bytes.ptr != null { self.alloc.dealloc_bytes(self.bytes.ptr); }
+        if self.file_state != null {
+            if self.file_state.owns_file and !self.file_state.file.close() {
+                close_ok = false;
+            }
+            self.alloc.dealloc_bytes(xx self.file_state);
+        }
+        self.bytes.ptr = null;
+        self.bytes.len = 0;
+        self.reader.data = "";
+        self.file_state = null;
+        reader_ok and close_ok
+    }
+
+    deinit :: (self: *OwnedZipReader) {
+        self.end();
+    }
+}
+
+open_zip_source :: (source: ZipReadSource, detect_prefix: bool = true, alloc: Allocator = context.allocator, max_metadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
+    if source.read == null or source.size < 22 or max_metadata < 0 { raise error.InvalidData; }
+
+    // Match upstream's backward EOCD search: overlapping 4 KiB reads, capped
+    // at the format's 65,535-byte comment window.
+    scan_buf : [4096]u8 = ---;
+    current := source.size - scan_buf.len;
+    if current < 0 { current = 0; }
+    found := -1;
+    searching := true;
+    while searching {
+        amount := source.size - current;
+        if amount > scan_buf.len { amount = scan_buf.len; }
+        window := string.{ ptr = @scan_buf[0], len = amount };
+        zip_source_read_exact(source, current, window) catch (e) { raise error.InvalidData; };
+        i := amount - 4;
+        while i >= 0 {
+            if ((le32(window, i) catch (e) 0) == 0x06054b50 and source.size - (current + i) >= 22) {
+                found = current + i;
+                break;
+            }
+            i -= 1;
+        }
+        if found >= 0 { searching = false; }
+        else if current == 0 or source.size - current >= 65557 { searching = false; }
+        else {
+            next := current - (scan_buf.len - 3);
+            if next < 0 { next = 0; }
+            current = next;
+        }
+    }
+    if found < 0 { raise error.InvalidData; }
+    eocd : [22]u8 = ---;
+    try zip_source_read_exact(source, found, string.{ ptr = @eocd[0], len = eocd.len });
+    eocd_bytes := string.{ ptr = @eocd[0], len = eocd.len };
+    if (try le32(eocd_bytes, 0)) != 0x06054b50 { raise error.InvalidData; }
+    disk := try le16(eocd_bytes, 4);
+    central_disk := try le16(eocd_bytes, 6);
+    disk_count := try le16(eocd_bytes, 8);
+    count := try le16(eocd_bytes, 10);
+    central_size := try le32(eocd_bytes, 12);
+    central_relative := try le32(eocd_bytes, 16);
+    comment_len := try le16(eocd_bytes, 20);
+    if found + 22 + comment_len > source.size { raise error.InvalidData; }
+    is_zip64 := false;
+
+    locator : [20]u8 = ---;
+    has_locator := false;
+    if found >= 20 {
+        zip_source_read_exact(source, found - 20, string.{ ptr = @locator[0], len = locator.len }) catch (e) {};
+        has_locator = (le32(string.{ ptr = @locator[0], len = locator.len }, 0) catch (e) 0) == 0x07064b50;
+    }
+    if has_locator {
+        is_zip64 = true;
+        locator_bytes := string.{ ptr = @locator[0], len = locator.len };
+        // The pinned miniz reader does not inspect the locator's
+        // disk-with-EOCD64 field. Preserve that quirk for callback/file
+        // readers as well as memory readers.
+        if (try le32(locator_bytes, 16)) != 1 {
+            raise error.Unsupported;
+        }
+        zip64_at := found - 76;
+        locator_offset := try le64(locator_bytes, 8);
+        zip64_header : [56]u8 = ---;
+        candidate_ok := false;
+        if zip64_at >= 0 {
+            zip_source_read_exact(source, zip64_at, string.{ ptr = @zip64_header[0], len = zip64_header.len }) catch (e) {};
+            candidate_ok = (le32(string.{ ptr = @zip64_header[0], len = zip64_header.len }, 0) catch (e) 0) == 0x06064b50;
+        }
+        if !candidate_ok {
+            zip64_at = locator_offset;
+            zip_source_read_exact(source, zip64_at, string.{ ptr = @zip64_header[0], len = zip64_header.len }) catch (e) {
+                raise e;
+            };
+        }
+        wide := string.{ ptr = @zip64_header[0], len = zip64_header.len };
+        if (try le32(wide, 0)) != 0x06064b50 or (try le64(wide, 4)) < 44 or zip64_at + 56 > found - 20 {
+            raise error.InvalidData;
+        }
+        disk = try le32(wide, 16);
+        central_disk = try le32(wide, 20);
+        disk_count = try le64(wide, 24);
+        count = try le64(wide, 32);
+        central_size = try le64(wide, 40);
+        central_relative = try le64(wide, 48);
+        if count > 0xffffffff { raise error.TooLarge; }
+        if central_size > 0xffffffff { raise error.TooLarge; }
+    } else if count == 0xffff or central_size == 0xffffffff or central_relative == 0xffffffff {
+        raise error.InvalidData;
+    }
+    if disk != 0 or central_disk != 0 or disk_count != count {
+        raise error.Unsupported;
+    }
+
+    archive_start := 0;
+    if detect_prefix {
+        tail_record_size := if is_zip64 then 76 else 0;
+        relative_end := central_relative + central_size + tail_record_size;
+        if central_relative < 0 or central_size < 0 or relative_end < central_relative or relative_end > found {
+            raise error.InvalidData;
+        }
+        archive_start = found - relative_end;
+    }
+    central_absolute := archive_start + central_relative;
+    if central_size < count * 46 or central_absolute < 0 or central_absolute > source.size or
+       central_size > source.size - central_absolute or central_absolute + central_size > found or
+       central_size > i64.max - comment_len {
+        raise error.InvalidData;
+    }
+    metadata_size := central_size + comment_len;
+    if metadata_size > max_metadata { raise error.OutputLimit; }
+
+    raw := alloc.alloc_bytes(metadata_size);
+    if metadata_size > 0 and raw == null { raise error.AllocationFailed; }
+    bytes := string.{ ptr = xx raw, len = metadata_size };
+    zip_source_read_exact(source, central_absolute, bytes[..central_size]) catch (e) {
+        if raw != null { alloc.dealloc_bytes(raw); } raise e;
+    };
+    if comment_len > 0 {
+        zip_source_read_exact(source, found + 22, bytes[central_size..central_size + comment_len]) catch (e) {
+            if raw != null { alloc.dealloc_bytes(raw); } raise e;
+        };
+    }
+
+    scan := 0;
+    n := 0;
+    while n < count {
+        if scan + 46 > central_size or (try le32(bytes, scan)) != 0x02014b50 {
+            alloc.dealloc_bytes(raw); raise error.InvalidData;
+        }
+        flags := try le16(bytes, scan + 8);
+        method := try le16(bytes, scan + 10);
+        compressed_size := try le32(bytes, scan + 20);
+        size := try le32(bytes, scan + 24);
+        name_len := try le16(bytes, scan + 28);
+        extra_len := try le16(bytes, scan + 30);
+        entry_comment_len := try le16(bytes, scan + 32);
+        disk_start := try le16(bytes, scan + 34);
+        local_offset := try le32(bytes, scan + 42);
+        next := scan + 46 + name_len + extra_len + entry_comment_len;
+        if next > central_size { alloc.dealloc_bytes(raw); raise error.InvalidData; }
+        if compressed_size == 0xffffffff or size == 0xffffffff or local_offset == 0xffffffff {
+            extra := bytes[scan + 46 + name_len..scan + 46 + name_len + extra_len];
+            extra_at := 0;
+            while extra_at < extra.len {
+                if extra_at + 4 > extra.len { alloc.dealloc_bytes(raw); raise error.InvalidData; }
+                field_id := try le16(extra, extra_at);
+                field_size := try le16(extra, extra_at + 2);
+                if field_size > extra.len - extra_at - 4 { alloc.dealloc_bytes(raw); raise error.InvalidData; }
+                if field_id == 1 { is_zip64 = true; break; }
+                extra_at += 4 + field_size;
+            }
+        }
+        if compressed_size != 0xffffffff and size != 0xffffffff {
+            if (method == 0 and size != compressed_size) or (size != 0 and compressed_size == 0) {
+                alloc.dealloc_bytes(raw); raise error.InvalidData;
+            }
+        }
+        if disk_start == 0xffff or (disk_start != disk and disk_start != 1) {
+            alloc.dealloc_bytes(raw); raise error.Unsupported;
+        }
+        if compressed_size != 0xffffffff and
+           (local_offset > source.size or archive_start > source.size - local_offset or
+            compressed_size > source.size - archive_start - local_offset or
+            30 > source.size - archive_start - local_offset - compressed_size) {
+            alloc.dealloc_bytes(raw); raise error.InvalidData;
+        }
+        if (flags & 0x2000) != 0 { alloc.dealloc_bytes(raw); raise error.Unsupported; }
+        scan = next;
+        n += 1;
+    }
+
+    reader := ZipReader.{
+        data = bytes,
+        central_offset = 0,
+        central_relative_offset = central_relative,
+        central_size = central_size,
+        count = count,
+        comment = bytes[central_size..central_size + comment_len],
+        zip64 = is_zip64,
+        archive_start = archive_start,
+        archive_size = source.size - archive_start,
+        active = true,
+        source_ctx = source.ctx,
+        source_read = source.read,
+        source_size = source.size,
+    };
+    OwnedZipReader.{ reader = reader, bytes = bytes, alloc = alloc }
+}
+
+open_zip_file :: (path: [:0]u8, start: i64 = 0, size: i64 = 0, alloc: Allocator = context.allocator, max_metadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
+    open_zip_file_mode(path, start, size, false, alloc, max_metadata)
+}
+
+// MZ_ZIP_FLAG_READ_ALLOW_WRITING: open the backing file read/write up front so
+// reader-to-writer conversion does not need to close and reopen it.
+open_zip_file_writable :: (path: [:0]u8, start: i64 = 0, size: i64 = 0, alloc: Allocator = context.allocator, max_metadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
+    open_zip_file_mode(path, start, size, true, alloc, max_metadata)
+}
+
+private open_zip_file_mode :: (path: [:0]u8, start: i64, size: i64, writable: bool, alloc: Allocator, max_metadata: i64 = 67108864) -> (OwnedZipReader, !Error) {
+    if start < 0 or size < 0 or (size > 0 and size < 22) or max_metadata < 0 {
+        raise error.InvalidData;
+    }
+    maybe_file := if writable then open_file(path, .read_write) else open_file(path, .read);
+    if maybe_file == null { raise error.Io; }
+    file := maybe_file!;
+    actual_size := size;
+    if actual_size == 0 {
+        // mz_zip_reader_init_file_v2() uses the complete physical file size
+        // here even when file_start_ofs is nonzero. Reads add `start` later.
+        actual_size = file.seek(0, .end);
+        if actual_size < 0 { file.close(); raise error.Io; }
+        if actual_size < 22 { file.close(); raise error.InvalidData; }
+    }
+    state_raw := alloc.alloc_bytes(size_of(ZipFileReadState));
+    if state_raw == null { file.close(); raise error.AllocationFailed; }
+    state : *ZipFileReadState = xx state_raw;
+    state.* = ZipFileReadState.{ file = file, start = start, owns_file = true, writable = writable };
+    source := ZipReadSource.{ ctx = xx state, size = actual_size, read = zip_file_source_read };
+    owned := open_zip_source(source, start == 0, alloc, max_metadata) catch (e) {
+        state.file.close(); alloc.dealloc_bytes(state_raw); raise e;
+    };
+    owned.file_state = state;
+    state.write_base = start + owned.reader.archive_start;
+    owned
+}
+
+private ZipExtractSink :: struct {
+    ctx: *void;
+    write: (*void, string) -> bool;
+}
+
+private zip_discard_output :: (ctx: *void, data: string) -> bool { true }
+
+zip_extract_to_output :: (reader: *ZipReader, index: i64, sink: ZipExtractSink, options: ZipExtractOptions = .{}, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+    if sink.write == null {
+        raise error.InvalidData;
+    }
+    entry, payload_start := try reader.payload_info(index);
+    try reader.check_extract_support(entry, options.compressed_data);
+    expected := if options.compressed_data then entry.compressed_size else entry.size;
+    if expected > max_output { raise error.OutputLimit; }
+    if options.compressed_data or entry.method == .store {
+        at := 0;
+        checksum := 0;
+        scratch : [65536]u8 = ---;
+        while at < entry.compressed_size {
+            take := entry.compressed_size - at;
+            if take > scratch.len { take = scratch.len; }
+            chunk := string.{ ptr = @scratch[0], len = take };
+            reader.read_exact_at(payload_start + at, chunk) catch (e) {
+                raise e;
+            };
+            if !options.compressed_data and !options.skip_crc { checksum = crc32(chunk, checksum); }
+            if !sink.write(sink.ctx, chunk) { raise error.Io; }
+            at += take;
+        }
+        if !options.compressed_data and !options.skip_crc and checksum != entry.crc { raise error.ChecksumMismatch; }
+        return expected;
+    }
+
+    state := Inflater.init(entry.size, alloc);
+    defer state.deinit();
+    if state.window.ptr == null { raise error.AllocationFailed; }
+    scratch : [32768]u8 = ---;
+    input_buf : string = .{ ptr = null, len = 0 };
+    input_owned := false;
+    input_len := entry.compressed_size;
+    input_pos := 0;
+    source_at := entry.compressed_size;
+    if reader.source_read != null and entry.compressed_size > 0 {
+        capacity := entry.compressed_size;
+        if capacity > 65536 { capacity = 65536; }
+        input_raw := alloc.alloc_bytes(capacity);
+        if input_raw == null { state.deinit(); raise error.AllocationFailed; }
+        input_buf = .{ ptr = xx input_raw, len = capacity };
+        input_owned = true;
+        input_len = 0;
+        source_at = 0;
+    } else if entry.compressed_size > 0 {
+        input_buf = reader.data[payload_start..payload_start + entry.compressed_size];
+    }
+    defer { if input_owned and input_buf.ptr != null { alloc.dealloc_bytes(input_buf.ptr); } }
+    total := 0;
+    checksum := 0;
+    while true {
+        if input_pos == input_len and source_at < entry.compressed_size {
+            input_len = entry.compressed_size - source_at;
+            if input_len > input_buf.len { input_len = input_buf.len; }
+            reader.read_exact_at(payload_start + source_at, string.{ ptr = input_buf.ptr, len = input_len }) catch (e) {
+                state.deinit(); raise e;
+            };
+            source_at += input_len;
+            input_pos = 0;
+        }
+        input : string = .{ ptr = null, len = 0 };
+        if input_pos < input_len { input = input_buf[input_pos..input_len]; }
+        output_capacity := scratch.len - (total & (scratch.len - 1));
+        progress := state.step(input, string.{ ptr = @scratch[0], len = output_capacity }) catch (e) {
+            state.deinit();
+            raise e;
+        };
+        input_pos += progress.consumed;
+        if progress.produced > 0 {
+            made := string.{ ptr = @scratch[0], len = progress.produced };
+            if !options.skip_crc { checksum = crc32(made, checksum); }
+            if !sink.write(sink.ctx, made) { state.deinit(); raise error.Io; }
+            total += progress.produced;
+        }
+        if progress.status == .done {
+            consumed := source_at - (input_len - input_pos);
+            if total != entry.size { state.deinit(); raise error.InvalidData; }
+            if consumed != entry.compressed_size { state.deinit(); raise error.InvalidData; }
+            if !options.skip_crc and checksum != entry.crc { state.deinit(); raise error.ChecksumMismatch; }
+            return total;
+        }
+        if progress.status == .need_input and input_pos == input_len and source_at >= entry.compressed_size { state.deinit(); raise error.UnexpectedEnd; }
+    }
+    raise error.InvalidData;
+}
+
+private ZipFileSinkState :: struct {
+    file: *File;
+}
+
+private zip_file_sink_write :: (ctx: *void, data: string) -> bool {
+    state : *ZipFileSinkState = xx ctx;
+    at := 0;
+    while at < data.len {
+        made := state.file.write(data[at..]);
+        if made <= 0 or made > data.len - at { return false; }
+        at += made;
+    }
+    true
+}
+
+private zip_extract_to_handle :: (reader: *ZipReader, index: i64, file: *File, options: ZipExtractOptions = .{}, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+    if !file.is_valid() { raise error.Io; }
+    entry := reader.entry(index) catch (e) { raise e; };
+    if entry.is_dir() or !entry.is_supported() {
+        raise error.Unsupported;
+    }
+    state := ZipFileSinkState.{ file = file };
+    sink := ZipExtractSink.{ ctx = xx @state, write = zip_file_sink_write };
+    zip_extract_to_output(reader, index, sink, options, max_output, alloc)
+}
+
+zip_extract_to_file :: (reader: *ZipReader, index: i64, path: [:0]u8, options: ZipExtractOptions = .{}, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
+    entry := reader.entry(index) catch (e) { raise e; };
+    if entry.is_dir() or !entry.is_supported() {
+        raise error.Unsupported;
+    }
+    maybe_file := open_file(path, .write);
+    if maybe_file == null { raise error.Io; }
+    file := maybe_file!;
+    made := zip_extract_to_handle(reader, index, @file, options, max_output, alloc) catch (e) {
+        file.close();
+        raise e;
+    };
+    if !file.close() { raise error.Io; }
+    seconds, valid := zip_dos_time_to_unix(entry.dos_time, entry.dos_date);
+    if valid and !zip_set_file_time(path, seconds) {
+        raise error.Io;
+    }
+    made
+}
+
+private ZipExtractIterator :: struct {
+    entry: ZipEntry;
+    reader: *ZipReader;
+    payload_start: i64;
+    inflater: Inflater;
+    options: ZipExtractOptions;
+    input_at: i64;
+    output_at: i64;
+    checksum: i64;
+    done: bool;
+    alloc: Allocator;
+    input_buf: string;
+    owns_input: bool;
+    input_len: i64;
+    input_pos: i64;
+    source_at: i64;
+    eof_read: bool;
+    failed: bool;
+    read_called: bool;
+
+    init :: (reader: *ZipReader, index: i64, options: ZipExtractOptions = .{}, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (ZipExtractIterator, !Error) {
+        entry, payload_start := try reader.payload_info(index);
+        try reader.check_extract_support(entry, options.compressed_data);
+        expected := if options.compressed_data then entry.compressed_size else entry.size;
+        if expected > max_output { raise error.OutputLimit; }
+        needs_inflater := !options.compressed_data and entry.method == .deflate and entry.size > 0;
+        inflater := if needs_inflater then Inflater.init(entry.size, alloc) else Inflater.init_with_window(entry.size, alloc, .{ ptr = null, len = 0 });
+        if needs_inflater and inflater.window.ptr == null {
+            inflater.deinit();
+            raise error.AllocationFailed;
+        }
+        input_buf : string = .{ ptr = null, len = 0 };
+        owns_input := false;
+        input_len := 0;
+        source_at := 0;
+        if needs_inflater and entry.compressed_size > 0 {
+            if reader.source_read != null {
+                capacity := entry.compressed_size;
+                if capacity > 65536 { capacity = 65536; }
+                input_raw := alloc.alloc_bytes(capacity);
+                if input_raw == null {
+                    inflater.deinit();
+                    raise error.AllocationFailed;
+                }
+                input_buf = .{ ptr = xx input_raw, len = capacity };
+                owns_input = true;
+            } else {
+                input_buf = reader.data[payload_start..payload_start + entry.compressed_size];
+                input_len = entry.compressed_size;
+                source_at = entry.compressed_size;
+            }
+        }
+        ZipExtractIterator.{
+            entry = entry,
+            reader = reader,
+            payload_start = payload_start,
+            inflater = inflater,
+            options = options,
+            input_at = 0,
+            output_at = 0,
+            checksum = 0,
+            done = expected == 0,
+            alloc = alloc,
+            input_buf = input_buf,
+            owns_input = owns_input,
+            input_len = input_len,
+            input_pos = 0,
+            source_at = source_at,
+            eof_read = false,
+            failed = false,
+            read_called = false,
+        }
+    }
+
+    read :: (self: *ZipExtractIterator, output: string) -> (i64, !Error) {
+        self.read_called = true;
+        if self.done or output.len == 0 { return 0; }
+        if self.options.compressed_data or self.entry.method == .store {
+            remaining := self.entry.compressed_size - self.output_at;
+            take := if remaining < output.len then remaining else output.len;
+            self.reader.read_exact_at(self.payload_start + self.output_at, output[..take]) catch (e) {
+                self.failed = true; raise e;
+            };
+            if !self.options.compressed_data and !self.options.skip_crc and take > 0 {
+                self.checksum = crc32(output[..take], self.checksum);
+            }
+            self.input_at += take;
+            self.output_at += take;
+            if self.output_at == self.entry.compressed_size {
+                if self.reader.source_read != null and !self.eof_read {
+                    made := self.reader.source_read(self.reader.source_ctx, self.payload_start + self.output_at, .{ ptr = null, len = 0 });
+                    if made != 0 { self.failed = true; raise error.Io; }
+                    self.eof_read = true;
+                }
+                self.done = true;
+            }
+            return take;
+        }
+
+        while true {
+            if self.input_pos == self.input_len and self.source_at < self.entry.compressed_size {
+                self.input_len = self.entry.compressed_size - self.source_at;
+                if self.input_len > self.input_buf.len { self.input_len = self.input_buf.len; }
+                self.reader.read_exact_at(self.payload_start + self.source_at, string.{ ptr = self.input_buf.ptr, len = self.input_len }) catch (e) {
+                    self.failed = true; raise e;
+                };
+                self.source_at += self.input_len;
+                self.input_pos = 0;
+            }
+            if self.reader.source_read != null and !self.eof_read and self.input_pos == self.input_len and self.source_at >= self.entry.compressed_size {
+                made := self.reader.source_read(self.reader.source_ctx, self.payload_start + self.source_at, .{ ptr = null, len = 0 });
+                if made != 0 { self.failed = true; raise error.Io; }
+                self.eof_read = true;
+            }
+            input : string = .{ ptr = null, len = 0 };
+            if self.input_pos < self.input_len { input = self.input_buf[self.input_pos..self.input_len]; }
+            progress := self.inflater.step(input, output) catch (e) {
+                self.failed = true;
+                raise e;
+            };
+            self.input_pos += progress.consumed;
+            self.input_at += progress.consumed;
+            self.output_at += progress.produced;
+            if !self.options.skip_crc and progress.produced > 0 {
+                self.checksum = crc32(output[..progress.produced], self.checksum);
+            }
+            if progress.status == .done {
+                if self.reader.source_read != null and !self.eof_read {
+                    made := self.reader.source_read(self.reader.source_ctx, self.payload_start + self.source_at, .{ ptr = null, len = 0 });
+                    if made != 0 { self.failed = true; raise error.Io; }
+                    self.eof_read = true;
+                }
+                if self.output_at != self.entry.size { self.failed = true; raise error.InvalidData; }
+                if self.input_at != self.entry.compressed_size { self.failed = true; raise error.InvalidData; }
+                self.done = true;
+                return progress.produced;
+            }
+            if progress.status == .need_input and self.input_pos == self.input_len and self.source_at >= self.entry.compressed_size {
+                self.failed = true;
+                raise error.UnexpectedEnd;
+            }
+            if progress.produced > 0 { return progress.produced; }
+        }
+        0
+    }
+
+    deinit :: (self: *ZipExtractIterator) {
+        self.inflater.deinit();
+        if self.owns_input and self.input_buf.ptr != null { self.alloc.dealloc_bytes(self.input_buf.ptr); }
+        self.input_buf = "";
+        self.owns_input = false;
+        self.done = true;
+    }
+
+    finish :: (self: *ZipExtractIterator) -> !Error {
+        failure : ?Error = null;
+        if self.failed or !self.done {
+            failure = error.InvalidData;
+        } else if !self.options.compressed_data {
+            if self.output_at != self.entry.size {
+                failure = error.InvalidData;
+            } else if !self.options.skip_crc and self.checksum != self.entry.crc {
+                failure = error.ChecksumMismatch;
+            }
+        }
+        self.deinit();
+        if failure != null { raise failure!; }
+    }
+}
+
+ZipSeekExtractor :: struct {
+    reader: *ZipReader;
+    index: i64;
+    options: ZipExtractOptions;
+    iterator: ZipExtractIterator;
+    size: i64;
+    alloc: Allocator;
+    active: bool;
+
+    init :: (reader: *ZipReader, index: i64, options: ZipExtractOptions = .{}, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (ZipSeekExtractor, !Error) {
+        iterator := try ZipExtractIterator.init(reader, index, options, max_output, alloc);
+        size := if options.compressed_data then iterator.entry.compressed_size else iterator.entry.size;
+        ZipSeekExtractor.{ reader = reader, index = index, options = options, iterator = iterator, size = size, alloc = alloc, active = true }
+    }
+
+    offset :: (self: *ZipSeekExtractor) -> i64 { self.iterator.output_at }
+
+    seek :: (self: *ZipSeekExtractor, target: i64) -> !Error {
+        if !self.active or target < 0 or target > self.size {
+            raise error.InvalidData;
+        }
+        if target < self.iterator.output_at {
+            self.iterator.deinit();
+            self.iterator = try ZipExtractIterator.init(self.reader, self.index, self.options, self.size, self.alloc);
+        }
+        scratch : [4096]u8 = ---;
+        while self.iterator.output_at < target {
+            take := target - self.iterator.output_at;
+            if take > scratch.len { take = scratch.len; }
+            made := try self.iterator.read(string.{ ptr = @scratch[0], len = take });
+            if made == 0 { raise error.UnexpectedEnd; }
+        }
+    }
+
+    read :: (self: *ZipSeekExtractor, output: string) -> (i64, !Error) {
+        if !self.active { raise error.Finished; }
+        self.iterator.read(output)
+    }
+
+    end :: (self: *ZipSeekExtractor) -> !Error {
+        if !self.active { return; }
+        self.active = false;
+        try self.iterator.finish();
+    }
+
+    deinit :: (self: *ZipSeekExtractor) {
+        if self.active { self.iterator.deinit(); self.active = false; }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// ZIP32/ZIP64 writer
+
+private ZipWriterEntry :: struct {
+    name_offset: i64;
+    name_len: i64;
+    method: ZipMethod;
+    method_value: i64;
+    flags: i64;
+    crc: i64;
+    compressed_size: i64;
+    size: i64;
+    local_offset: i64;
+    extra_offset: i64;
+    extra_len: i64;
+    comment_offset: i64;
+    comment_len: i64;
+    dos_time: i64;
+    dos_date: i64;
+    external_attributes: i64;
+    internal_attributes: i64;
+    version_made_by: i64;
+    version_needed: i64;
+    zip64_size: bool;
+    zip64_compressed: bool;
+    zip64_offset: bool;
+}
+
+private zip_entries_reserve :: (entries: *List(ZipWriterEntry), needed: i64, alloc: Allocator) -> bool {
+    if needed < 0 { return false; }
+    if entries.cap >= needed { return true; }
+    new_cap := if entries.cap == 0 then 4 else entries.cap;
+    while new_cap < needed {
+        if new_cap > i64.max / 2 { return false; }
+        new_cap *= 2;
+    }
+    if new_cap > i64.max / size_of(ZipWriterEntry) { return false; }
+    raw := alloc.alloc_bytes(new_cap * size_of(ZipWriterEntry));
+    if raw == null { return false; }
+    new_ptr : [*]ZipWriterEntry = xx raw;
+    if entries.items.len > 0 {
+        c.memcpy(new_ptr, entries.items.ptr, entries.items.len * size_of(ZipWriterEntry));
+    }
+    if entries.cap > 0 { alloc.dealloc_bytes(entries.items.ptr); }
+    entries.items.ptr = new_ptr;
+    entries.cap = new_cap;
+    true
+}
+
+private zip_entries_append_reserved :: (entries: *List(ZipWriterEntry), entry: ZipWriterEntry) {
+    entries.items.ptr[entries.items.len] = entry;
+    entries.items.len += 1;
+}
+
+private ZipTimeMode :: enum { none; specified; file; }
+
+private zip_file_modified_seconds :: (file: *File) -> (i64, bool) {
+    modified_seconds(file)
+}
+
+// DOS timestamps are LOCAL civil time; std.time owns the libc `struct tm`
+// boundary, this module only packs/unpacks the DOS bitfields. The `.none`
+// mode represents a MINIZ_NO_TIME build.
+zip_unix_time_to_dos :: (seconds: i64) -> (i64, i64, bool) {
+    civil, valid := time.local_civil(seconds);
+    if !valid { return 0, 0, false; }
+    if civil.year < 1980 or civil.year > 2107 or civil.month < 1 or civil.month > 12 or
+       civil.day < 1 or civil.day > 31 or civil.hour < 0 or civil.hour > 23 or
+       civil.minute < 0 or civil.minute > 59 or civil.second < 0 or civil.second > 59 {
+        return 0, 0, false;
+    }
+    dos_time := (civil.hour << 11) + (civil.minute << 5) + (civil.second >> 1);
+    dos_date := ((civil.year - 1980) << 9) + (civil.month << 5) + civil.day;
+    return dos_time, dos_date, true;
+}
+
+zip_dos_time_to_unix :: (dos_time: i64, dos_date: i64) -> (i64, bool) {
+    civil := time.CivilTime.{
+        year = ((dos_date >> 9) & 127) + 1980,
+        month = (dos_date >> 5) & 15,
+        day = dos_date & 31,
+        hour = (dos_time >> 11) & 31,
+        minute = (dos_time >> 5) & 63,
+        second = (dos_time << 1) & 62,
+    };
+    return time.local_epoch(civil);
+}
+
+zip_set_file_time :: (path: [:0]u8, seconds: i64) -> bool {
+    set_modified_seconds(path, seconds)
+}
+
+private zip_resolve_dos_time :: (options: ZipEntryOptions) -> (i64, i64, !Error) {
+    if options.time_mode == .none { return options.dos_time, options.dos_date; }
+    // `.file` is resolved by the file/handle adapters before reaching here.
+    if options.time_mode == .file { raise error.InvalidOptions; }
+    dos_time, dos_date, valid := zip_unix_time_to_dos(options.modified_unix_seconds);
+    if !valid { raise error.InvalidOptions; }
+    return dos_time, dos_date;
+}
+
+ZipEntryOptions :: struct {
+    method: ZipMethod = .deflate;
+    level: i64 = 6;
+    extra: string = "";
+    central_extra: string = "";
+    separate_central_extra: bool = false;
+    comment: string = "";
+    dos_time: i64 = 0;
+    dos_date: i64 = 0;
+    external_attributes: i64 = 0;
+    ascii_filename: bool = false;
+    data_descriptor: bool = true;
+    // The read-callback/CFILE writer emits a descriptor even for an empty
+    // source; the memory writer does not. File adapters set this internally.
+    descriptor_for_empty: bool = false;
+    auto_store_small: bool = true;
+    time_mode: ZipTimeMode = .none;
+    modified_unix_seconds: i64 = 0;
+    // Used only by add_file(). It defaults to upstream's normal stdio build;
+    // set false together with `.none` to model MINIZ_NO_TIME.
+    use_file_time: bool = true;
+}
+
+private zip_alignment_padding :: (offset: i64, alignment: i64) -> i64 {
+    if alignment <= 1 { return 0; }
+    (alignment - (offset & (alignment - 1))) & (alignment - 1)
+}
+
+ZipSink :: struct {
+    ctx: *void;
+    write: (*void, string) -> bool;
+    write_at: (*void, i64, string) -> bool = null;
+    read_at: (*void, i64, string) -> i64 = null;
+    // Stateful stdio writers flush after the EOCD. A failed flush is reported
+    // as FILE_CLOSE_FAILED by upstream, despite the historical error name.
+    flush: (*void) -> bool = null;
+    // Optional physical rollback: shrink accepted output to exactly `len`
+    // writer-logical bytes. Backends that can un-emit (memory, files)
+    // provide it so a failed record transfer truly disappears; a borrowed
+    // streaming sink cannot, and its writer is poisoned instead.
+    truncate: (*void, i64) -> bool = null;
+}
+
+ZipInputSource :: struct {
+    ctx: *void;
+    size: i64;
+    read: (*void, i64, string) -> i64;
+}
+
+private ZipFileInputState :: struct {
+    file: *File;
+    start: i64;
+}
+
+private zip_file_input_read :: (ctx: *void, offset: i64, output: string) -> i64 {
+    state : *ZipFileInputState = xx ctx;
+    if offset < 0 or state.file.seek(state.start + offset, .set) != state.start + offset { return 0; }
+    made := state.file.read(output);
+    if made < 0 then 0 else made
+}
+
+private ZipFileWriteState :: struct {
+    file: File;
+    start: i64;
+    position: i64 = 0;
+    owns_file: bool;
+    buffered: bool = false;
+    buffer: [4096]u8 = .{};
+    buffer_len: i64 = 0;
+}
+
+private zip_file_write_handle :: (state: *ZipFileWriteState) -> *File {
+    @state.file
+}
+
+private zip_writer_file_flush_buffer :: (state: *ZipFileWriteState) -> bool {
+    if state.buffer_len == 0 { return true; }
+    file := zip_file_write_handle(state);
+    desired := state.start + state.position - state.buffer_len;
+    if desired < state.start or file.seek(desired, .set) != desired { return false; }
+    at := 0;
+    while at < state.buffer_len {
+        made := file.write(string.{ ptr = @state.buffer[at], len = state.buffer_len - at });
+        if made <= 0 or made > state.buffer_len - at {
+            if at > 0 {
+                remaining := state.buffer_len - at;
+                i := 0; while i < remaining { state.buffer[i] = state.buffer[at + i]; i += 1; }
+                state.buffer_len = remaining;
+            }
+            return false;
+        }
+        at += made;
+    }
+    state.buffer_len = 0;
+    true
+}
+
+private zip_writer_file_sink_truncate :: (ctx: *void, len: i64) -> bool {
+    state : *ZipFileWriteState = xx ctx;
+    if len < 0 or len > state.position { return false; }
+    cut := state.position - len;
+    if state.buffered and cut <= state.buffer_len {
+        // The excess never reached the disk — drop it from the buffer.
+        state.buffer_len -= cut;
+        state.position = len;
+        return true;
+    }
+    if state.buffered and !zip_writer_file_flush_buffer(state) { return false; }
+    file := zip_file_write_handle(state);
+    if !file.truncate(state.start + len) { return false; }
+    state.position = len;
+    true
+}
+
+private zip_writer_file_sink_write :: (ctx: *void, data: string) -> bool {
+    state : *ZipFileWriteState = xx ctx;
+    if state.buffered {
+        at := 0;
+        while at < data.len {
+            room := state.buffer.len - state.buffer_len;
+            take := data.len - at; if take > room { take = room; }
+            i := 0; while i < take { state.buffer[state.buffer_len + i] = data[at + i]; i += 1; }
+            state.buffer_len += take; state.position += take; at += take;
+            if state.buffer_len == state.buffer.len and !zip_writer_file_flush_buffer(state) { return false; }
+        }
+        return true;
+    }
+    file := zip_file_write_handle(state);
+    absolute := state.start + state.position;
+    if absolute < state.start or file.seek(absolute, .set) != absolute { return false; }
+    at := 0;
+    while at < data.len {
+        made := file.write(data[at..]);
+        if made <= 0 or made > data.len - at { return false; }
+        at += made;
+    }
+    state.position += data.len;
+    true
+}
+
+zip_writer_file_sink_write_at :: (ctx: *void, offset: i64, data: string) -> bool {
+    state : *ZipFileWriteState = xx ctx;
+    if state.buffered and !zip_writer_file_flush_buffer(state) { return false; }
+    if offset < 0 or state.start > i64.max - offset { return false; }
+    file := zip_file_write_handle(state);
+    absolute := state.start + offset;
+    if file.seek(absolute, .set) != absolute { return false; }
+    at := 0;
+    while at < data.len {
+        made := file.write(data[at..]);
+        if made <= 0 or made > data.len - at { return false; }
+        at += made;
+    }
+    true
+}
+
+zip_writer_file_sink_read_at :: (ctx: *void, offset: i64, output: string) -> i64 {
+    state : *ZipFileWriteState = xx ctx;
+    if state.buffered and !zip_writer_file_flush_buffer(state) { return -1; }
+    if offset < 0 or state.start > i64.max - offset { return -1; }
+    file := zip_file_write_handle(state);
+    absolute := state.start + offset;
+    if file.seek(absolute, .set) != absolute { return -1; }
+    at := 0;
+    while at < output.len {
+        made := file.read(output[at..]);
+        if made < 0 or made > output.len - at { return -1; }
+        if made == 0 { break; }
+        at += made;
+    }
+    at
+}
+
+zip_writer_file_sink_flush :: (ctx: *void) -> bool {
+    state : *ZipFileWriteState = xx ctx;
+    zip_writer_file_flush_buffer(state)
+}
+
+// Callback-backed ZIP writer. Entry bytes are emitted immediately using
+// data descriptors, while only names/extras/comments and fixed-size central
+// metadata remain resident until `finish`. A callback failure is non-atomic:
+// bytes already accepted by the sink cannot be recalled.
+ZipStreamWriter :: struct {
+    sink: ZipSink;
+    metadata: ByteWriter;
+    entries: List(ZipWriterEntry);
+    alloc: Allocator;
+    offset: i64;
+    finished: bool;
+    zip64: bool;
+    active: bool;
+    alignment: i64;
+    allow_reading: bool;
+    final_count: i64;
+
+    init :: (sink: ZipSink, alloc: Allocator = context.allocator) -> ZipStreamWriter {
+        ZipStreamWriter.init_mode(sink, false, alloc)
+    }
+
+    init_mode :: (sink: ZipSink, zip64: bool, alloc: Allocator) -> ZipStreamWriter {
+        valid := sink.write != null;
+        writer := ZipStreamWriter.{ sink = sink, metadata = ByteWriter.init(alloc), entries = .{}, alloc = alloc, offset = 0, finished = false, zip64 = zip64, active = valid, alignment = 0, allow_reading = false, final_count = 0 };
+        writer.entries.items.ptr = null;
+        writer.entries.items.len = 0;
+        writer.entries.cap = 0;
+        writer
+    }
+
+    // Stateful user/file writer conversion. Existing local records stay in
+    // place; new output begins at the old central-directory offset while the
+    // retained central metadata remains available for extraction and reads.
+    init_from_reader :: (source: *ZipReader, sink: ZipSink, force_zip64: bool = false, alloc: Allocator = context.allocator) -> (ZipStreamWriter, !Error) {
+        if !source.active or sink.write == null { raise error.InvalidData; }
+        destination_zip64 := source.zip64 or force_zip64;
+        if (!destination_zip64 and source.count >= 65535) or source.count >= 0xffffffff { raise error.TooLarge; }
+        writer := ZipStreamWriter.init_mode(sink, destination_zip64, alloc);
+        writer.offset = source.central_relative_offset;
+        writer.allow_reading = sink.read_at != null;
+        if !zip_entries_reserve(@writer.entries, source.count, alloc) {
+            writer.deinit(); raise error.AllocationFailed;
+        }
+        i := 0;
+        while i < source.count {
+            entry := source.entry(i) catch (e) { writer.deinit(); raise e; };
+            raw_compressed := le32(source.data, entry.central_offset + 20) catch (e) { writer.deinit(); raise e; };
+            raw_size := le32(source.data, entry.central_offset + 24) catch (e) { writer.deinit(); raise e; };
+            raw_offset := le32(source.data, entry.central_offset + 42) catch (e) { writer.deinit(); raise e; };
+            upgrade_entry := force_zip64 and !source.zip64;
+            stored_extra_len := entry.extra.len;
+            if upgrade_entry {
+                kept_extra_len := zip_extra_without_zip64_size(entry.extra) catch (e) { writer.deinit(); raise e; };
+                stored_extra_len = kept_extra_len + 28;
+                if stored_extra_len > 65535 { writer.deinit(); raise error.TooLarge; }
+            }
+            metadata_needed := entry.name.len + stored_extra_len + entry.comment.len;
+            if metadata_needed > i64.max - writer.metadata.bytes.len or
+               !writer.metadata.ensure_capacity(writer.metadata.bytes.len + metadata_needed) {
+                writer.deinit(); raise error.AllocationFailed;
+            }
+            name_offset := writer.metadata.bytes.len; writer.metadata.put_bytes(entry.name);
+            extra_offset := writer.metadata.bytes.len;
+            if upgrade_entry {
+                writer.metadata.put_u16le(1); writer.metadata.put_u16le(24);
+                writer.metadata.put_u64le(entry.size);
+                writer.metadata.put_u64le(entry.compressed_size);
+                writer.metadata.put_u64le(entry.local_offset);
+                zip_copy_extra_without_zip64(@writer.metadata, entry.extra) catch (e) { writer.deinit(); raise e; };
+            } else {
+                writer.metadata.put_bytes(entry.extra);
+            }
+            comment_offset := writer.metadata.bytes.len; writer.metadata.put_bytes(entry.comment);
+            zip_entries_append_reserved(@writer.entries, ZipWriterEntry.{
+                name_offset = name_offset, name_len = entry.name.len,
+                method = entry.method, method_value = entry.method_value,
+                flags = entry.flags, crc = entry.crc,
+                compressed_size = entry.compressed_size, size = entry.size,
+                local_offset = entry.local_offset,
+                extra_offset = extra_offset, extra_len = stored_extra_len,
+                comment_offset = comment_offset, comment_len = entry.comment.len,
+                dos_time = entry.dos_time, dos_date = entry.dos_date,
+                external_attributes = entry.external_attributes,
+                internal_attributes = entry.internal_attributes,
+                version_made_by = entry.version_made_by,
+                version_needed = entry.version_needed,
+                zip64_size = upgrade_entry or raw_size == 0xffffffff,
+                zip64_compressed = upgrade_entry or raw_compressed == 0xffffffff,
+                zip64_offset = upgrade_entry or raw_offset == 0xffffffff,
+            });
+            i += 1;
+        }
+        writer
+    }
+
+    read_archive_data :: (self: *ZipStreamWriter, offset: i64, output: string) -> (i64, !Error) {
+        if !self.active or !self.allow_reading or self.sink.read_at == null or offset < 0 {
+            raise error.InvalidData;
+        }
+        if offset >= self.offset { return 0; }
+        take := self.offset - offset;
+        if take > output.len { take = output.len; }
+        read_at := self.sink.read_at;
+        made := read_at(self.sink.ctx, offset, output[..take]);
+        if made < 0 or made > take { raise error.Io; }
+        made
+    }
+    set_alignment :: (self: *ZipStreamWriter, alignment: i64) -> !Error {
+        if self.finished or alignment < 0 or (alignment > 0 and (alignment & (alignment - 1)) != 0) {
+            raise error.InvalidArgument;
+        }
+        self.alignment = alignment;
+    }
+
+    emit :: (self: *ZipStreamWriter, data: string) -> !Error {
+        if self.sink.write == null {
+            raise error.InvalidData;
+        }
+        if self.offset < 0 or data.len > 0x7fffffffffffffff - self.offset { raise error.TooLarge; }
+        if data.len > 0 and !self.sink.write(self.sink.ctx, data) { raise error.Io; }
+        self.offset += data.len;
+    }
+
+    patch :: (self: *ZipStreamWriter, offset: i64, data: string) -> !Error {
+        if offset < 0 or data.len < 0 or offset > self.offset or data.len > self.offset - offset or self.sink.write_at == null {
+            raise error.InvalidData;
+        }
+        write_at := self.sink.write_at;
+        if data.len > 0 and !write_at(self.sink.ctx, offset, data) {
+            raise error.Io;
+        }
+    }
+
+    emit_zeros :: (self: *ZipStreamWriter, count: i64) -> !Error {
+        zeros : [4096]u8 = ---;
+        i := 0;
+        while i < zeros.len { zeros[i] = 0; i += 1; }
+        remaining := count;
+        while remaining > 0 {
+            take := if remaining < zeros.len then remaining else zeros.len;
+            try self.emit(string.{ ptr = @zeros[0], len = take });
+            remaining -= take;
+        }
+    }
+
+    add_options :: (self: *ZipStreamWriter, name: string, data: string, options: ZipEntryOptions) -> !Error {
+        if !self.active { raise error.Io; }
+        if self.finished { raise error.Finished; }
+        central_extra := if options.separate_central_extra then options.central_extra else options.extra;
+        if self.entries.len >= 0xffffffff { raise error.TooLarge; }
+        if name.len > 65535 or (name.len > 0 and name[0] == '/') { raise error.TooLarge; }
+        if options.comment.len > 65535 or data.len > 0xffffffff { raise error.TooLarge; }
+        if self.entries.len >= 65535 { self.zip64 = true; }
+        if options.method != .store and options.method != .deflate or options.level > 10 { raise error.Unsupported; }
+        dos_time, dos_date := zip_resolve_dos_time(options) catch (e) {
+            raise e;
+        };
+        if dos_time < 0 or dos_time > 0xffff or dos_date < 0 or dos_date > 0xffff { raise error.InvalidData; }
+        if options.external_attributes < 0 or options.external_attributes > 0xffffffff { raise error.InvalidData; }
+        if name.len > 0 and name[name.len - 1] == '/' and data.len != 0 { raise error.InvalidData; }
+        chosen := options.method;
+        if options.auto_store_small and data.len <= 3 { chosen = .store; }
+        has_descriptor := options.data_descriptor and (data.len > 0 or options.descriptor_for_empty);
+        // A sequential sink needs a descriptor when sizes are not known at
+        // header time. The canonical empty stored entry is already fully known
+        // (CRC and both sizes are zero), so it needs neither a descriptor nor
+        // a patch callback.
+        if !has_descriptor and self.sink.write_at == null and (data.len > 0 or chosen != .store) {
+            raise error.InvalidData;
+        }
+        zip_validate_user_extra(options.extra) catch (e) { raise e; };
+        zip_validate_user_extra(central_extra) catch (e) { raise e; };
+        padding := zip_alignment_padding(self.offset, self.alignment);
+        if self.offset > i64.max - padding { raise error.TooLarge; }
+        local_offset := self.offset + padding;
+        offset_zip64 := local_offset >= 0xffffffff;
+        size_zip64 := data.len >= 0xffffffff;
+        max_compressed := data.len;
+        if chosen == .deflate {
+            max_compressed = compress_bound(data.len) catch (e) { raise e; };
+        }
+        may_compressed_zip64 := max_compressed >= 0xffffffff;
+        local_zip64_value_size := (if !has_descriptor and size_zip64 then 16 else 0) + (if offset_zip64 then 8 else 0);
+        local_zip64_extra_size := if local_zip64_value_size > 0 then 4 + local_zip64_value_size else 0;
+        local_extra_size := options.extra.len + local_zip64_extra_size;
+        central_zip64_value_max := (if size_zip64 then 8 else 0) + (if may_compressed_zip64 then 8 else 0) + (if offset_zip64 then 8 else 0);
+        central_zip64_extra_max := if central_zip64_value_max > 0 then 4 + central_zip64_value_max else 0;
+        central_extra_max := central_extra.len + central_zip64_extra_max;
+        if local_extra_size > 65535 or central_extra_max > 65535 {
+            raise error.TooLarge;
+        }
+        metadata_needed := name.len + central_extra_max + options.comment.len;
+        if metadata_needed > i64.max - self.metadata.bytes.len {
+            raise error.TooLarge;
+        }
+        if !self.metadata.ensure_capacity(self.metadata.bytes.len + metadata_needed) or
+           !zip_entries_reserve(@self.entries, self.entries.len + 1, self.alloc) {
+            raise error.AllocationFailed;
+        }
+        entry_start_offset := self.offset;
+        // Bytes emitted from here on (padding, header, payload, descriptor)
+        // are physically at the backend. On failure, truly un-emit them when
+        // the backend can truncate — the writer stays reusable and the final
+        // archive is byte-identical to one that never saw the failure — and
+        // POISON the writer otherwise (a borrowed sink cannot take bytes
+        // back). Either way the ORIGINAL error is re-raised; a target sink
+        // error surfaces at the emit that observed it, before any later
+        // source read, so target failures take precedence over source ones.
+        onfail {
+            rolled_back := false;
+            if self.sink.truncate != null {
+                if self.sink.truncate(self.sink.ctx, entry_start_offset) { rolled_back = true; }
+            }
+            if rolled_back { self.offset = entry_start_offset; }
+            else { self.active = false; }
+        }
+        try self.emit_zeros(padding);
+        if offset_zip64 or size_zip64 { self.zip64 = true; }
+        flags := (if options.ascii_filename then 0 else 0x0800) | (if has_descriptor then 8 else 0);
+        header := ByteWriter.init(self.alloc);
+        header.put_u32le(0x04034b50);
+        header.put_u16le(if chosen == .deflate then 20 else 0);
+        header.put_u16le(flags);
+        header.put_u16le(if chosen == .deflate then 8 else 0);
+        header.put_u16le(dos_time);
+        header.put_u16le(dos_date);
+        header.put_u32le(0); header.put_u32le(0); header.put_u32le(0);
+        header.put_u16le(name.len);
+        header.put_u16le(local_extra_size);
+        header.put_bytes(name);
+        if local_zip64_value_size > 0 {
+            header.put_u16le(1); header.put_u16le(local_zip64_value_size);
+            if !has_descriptor and size_zip64 { header.put_u64le(0); header.put_u64le(0); }
+            if offset_zip64 { header.put_u64le(local_offset); }
+        }
+        header.put_bytes(options.extra);
+        header_bytes := header.take();
+        if header_bytes.ptr == null { raise error.AllocationFailed; }
+        self.emit(header_bytes[..30]) catch (e) { self.alloc.dealloc_bytes(header_bytes.ptr); raise e; };
+        self.emit(header_bytes[30..30 + name.len]) catch (e) { self.alloc.dealloc_bytes(header_bytes.ptr); raise e; };
+        if local_zip64_extra_size > 0 {
+            self.emit(header_bytes[30 + name.len..30 + name.len + local_zip64_extra_size]) catch (e) { self.alloc.dealloc_bytes(header_bytes.ptr); raise e; };
+        }
+        if options.extra.len > 0 {
+            self.emit(header_bytes[30 + name.len + local_zip64_extra_size..30 + name.len + local_zip64_extra_size + options.extra.len]) catch (e) { self.alloc.dealloc_bytes(header_bytes.ptr); raise e; };
+        }
+        self.alloc.dealloc_bytes(header_bytes.ptr);
+
+        compressed_size := 0;
+        if chosen == .store {
+            at := 0;
+            while at < data.len {
+                take := data.len - at;
+                if take > 8192 { take = 8192; }
+                try self.emit(data[at..at + take]);
+                compressed_size += take;
+                at += take;
+            }
+        } else {
+            encoder := Deflater.init(options.level, self.alloc);
+            if encoder.allocation_failed { encoder.deinit(); raise error.AllocationFailed; }
+            input_at := 0;
+            scratch : [8192]u8 = ---;
+            done := false;
+            while !done {
+                input : string = .{ ptr = null, len = 0 };
+                if input_at < data.len { input = data[input_at..]; }
+                progress := encoder.step_unchecked(input, string.{ ptr = @scratch[0], len = scratch.len }, true);
+                if encoder.allocation_failed { encoder.deinit(); raise error.AllocationFailed; }
+                input_at += progress.consumed;
+                if progress.produced > 0 {
+                    self.emit(string.{ ptr = @scratch[0], len = progress.produced }) catch (e) { encoder.deinit(); raise e; };
+                    compressed_size += progress.produced;
+                }
+                if progress.status == .done { done = true; }
+            }
+            encoder.deinit();
+        }
+        compressed_zip64 := compressed_size >= 0xffffffff;
+        if size_zip64 or compressed_zip64 { self.zip64 = true; }
+
+        sum := crc32(data);
+        if has_descriptor {
+            descriptor := ByteWriter.init(self.alloc);
+            descriptor.put_u32le(0x08074b50);
+            descriptor.put_u32le(sum);
+            if offset_zip64 or size_zip64 or compressed_zip64 {
+                descriptor.put_u64le(compressed_size);
+                descriptor.put_u64le(data.len);
+            } else {
+                descriptor.put_u32le(compressed_size);
+                descriptor.put_u32le(data.len);
+            }
+            descriptor_bytes := descriptor.take();
+            if descriptor_bytes.ptr == null { raise error.AllocationFailed; }
+            self.emit(descriptor_bytes) catch (e) {
+                self.alloc.dealloc_bytes(descriptor_bytes.ptr);
+                raise e;
+            };
+            self.alloc.dealloc_bytes(descriptor_bytes.ptr);
+        } else if data.len > 0 or chosen != .store {
+            if compressed_zip64 and !size_zip64 { raise error.TooLarge; }
+            patched := ByteWriter.init(self.alloc);
+            patched.put_u32le(0x04034b50);
+            patched.put_u16le(if chosen == .deflate then 20 else 0);
+            patched.put_u16le(flags);
+            patched.put_u16le(if chosen == .deflate then 8 else 0);
+            patched.put_u16le(dos_time); patched.put_u16le(dos_date);
+            patched.put_u32le(sum);
+            patched.put_u32le(if compressed_zip64 then 0xffffffff else compressed_size);
+            patched.put_u32le(if size_zip64 then 0xffffffff else data.len);
+            patched.put_u16le(name.len); patched.put_u16le(local_extra_size);
+            patched_bytes := patched.take();
+            if patched_bytes.ptr == null { raise error.AllocationFailed; }
+            self.patch(local_offset, patched_bytes) catch (e) { self.alloc.dealloc_bytes(patched_bytes.ptr); raise e; };
+            self.alloc.dealloc_bytes(patched_bytes.ptr);
+            if size_zip64 {
+                wide := ByteWriter.init(self.alloc);
+                wide.put_u64le(data.len); wide.put_u64le(compressed_size);
+                wide_bytes := wide.take();
+                if wide_bytes.ptr == null { raise error.AllocationFailed; }
+                self.patch(local_offset + 30 + name.len + 4, wide_bytes) catch (e) { self.alloc.dealloc_bytes(wide_bytes.ptr); raise e; };
+                self.alloc.dealloc_bytes(wide_bytes.ptr);
+            }
+        }
+
+        name_offset := self.metadata.bytes.len;
+        self.metadata.put_bytes(name);
+        extra_offset := self.metadata.bytes.len;
+        zip64_field_size := (if size_zip64 then 8 else 0) + (if compressed_zip64 then 8 else 0) + (if offset_zip64 then 8 else 0);
+        if zip64_field_size > 0 {
+            self.metadata.put_u16le(1); self.metadata.put_u16le(zip64_field_size);
+            if size_zip64 { self.metadata.put_u64le(data.len); }
+            if compressed_zip64 { self.metadata.put_u64le(compressed_size); }
+            if offset_zip64 { self.metadata.put_u64le(local_offset); }
+        }
+        self.metadata.put_bytes(central_extra);
+        stored_extra_len := self.metadata.bytes.len - extra_offset;
+        comment_offset := self.metadata.bytes.len;
+        self.metadata.put_bytes(options.comment);
+        zip_entries_append_reserved(@self.entries, ZipWriterEntry.{
+            name_offset = name_offset,
+            name_len = name.len,
+            method = chosen,
+            method_value = if chosen == .deflate then 8 else 0,
+            flags = flags,
+            crc = sum,
+            compressed_size = compressed_size,
+            size = data.len,
+            local_offset = local_offset,
+            extra_offset = extra_offset,
+            extra_len = stored_extra_len,
+            comment_offset = comment_offset,
+            comment_len = options.comment.len,
+            dos_time = dos_time,
+            dos_date = dos_date,
+            external_attributes = options.external_attributes | (if name.len > 0 and name[name.len - 1] == '/' then 0x10 else 0),
+            internal_attributes = 0,
+            version_made_by = 0,
+            version_needed = if chosen == .deflate then 20 else 0,
+            zip64_size = size_zip64,
+            zip64_compressed = compressed_zip64,
+            zip64_offset = offset_zip64,
+        });
+    }
+
+    // Stream an entry from an exactly-sized random-read source. A zero-length
+    // read before `size` is an early EOF, and the callback is never asked for
+    // bytes beyond the declared bound. Only fixed input/output windows remain
+    // resident while the payload is processed.
+    add_source :: (self: *ZipStreamWriter, name: string, source: ZipInputSource, options: ZipEntryOptions = .{}) -> !Error {
+        if self.finished { raise error.Finished; }
+        central_extra := if options.separate_central_extra then options.central_extra else options.extra;
+        if self.entries.len >= 0xffffffff { raise error.TooLarge; }
+        if name.len > 65535 or (name.len > 0 and name[0] == '/') { raise error.TooLarge; }
+        // Upstream never invokes the read callback for a declared zero-byte
+        // source, so a null callback is accepted in that one case.
+        if (source.size > 0 and source.read == null) or source.size < 0 or options.comment.len > 65535 { raise error.TooLarge; }
+        if self.entries.len >= 65535 { self.zip64 = true; }
+        if options.method != .store and options.method != .deflate or options.level > 10 { raise error.Unsupported; }
+        dos_time, dos_date := zip_resolve_dos_time(options) catch (e) {
+            raise e;
+        };
+        if dos_time < 0 or dos_time > 0xffff or dos_date < 0 or dos_date > 0xffff { raise error.InvalidData; }
+        if options.external_attributes < 0 or options.external_attributes > 0xffffffff { raise error.InvalidData; }
+        if name.len > 0 and name[name.len - 1] == '/' and source.size != 0 { raise error.InvalidData; }
+
+        chosen := options.method;
+        if options.auto_store_small and source.size <= 3 { chosen = .store; }
+        source_options := options;
+        // Callback/file sources preserve miniz's descriptor for an empty
+        // source; direct in-memory add_options() deliberately suppresses it.
+        source_options.descriptor_for_empty = true;
+        has_descriptor := source_options.data_descriptor and (source.size > 0 or source_options.descriptor_for_empty);
+        if !has_descriptor and self.sink.write_at == null and (source.size > 0 or chosen != .store) {
+            raise error.InvalidData;
+        }
+        zip_validate_user_extra(options.extra) catch (e) { raise e; };
+        zip_validate_user_extra(central_extra) catch (e) { raise e; };
+        padding := zip_alignment_padding(self.offset, self.alignment);
+        if self.offset > i64.max - padding { raise error.TooLarge; }
+        local_offset := self.offset + padding;
+        offset_zip64 := local_offset >= 0xffffffff;
+        max_size_zip64 := source.size >= 0xffffffff;
+        max_compressed := source.size;
+        if chosen == .deflate {
+            max_compressed = compress_bound(source.size) catch (e) { raise e; };
+        }
+        may_compressed_zip64 := max_compressed >= 0xffffffff;
+        local_zip64_value_size := (if !has_descriptor and max_size_zip64 then 16 else 0) + (if offset_zip64 then 8 else 0);
+        local_zip64_extra_size := if local_zip64_value_size > 0 then 4 + local_zip64_value_size else
+            if has_descriptor and max_size_zip64 then 4 else 0;
+        local_extra_size := options.extra.len + local_zip64_extra_size;
+        central_zip64_value_max := (if max_size_zip64 then 8 else 0) + (if may_compressed_zip64 then 8 else 0) + (if offset_zip64 then 8 else 0);
+        central_zip64_extra_max := if central_zip64_value_max > 0 then 4 + central_zip64_value_max else 0;
+        central_extra_max := central_extra.len + central_zip64_extra_max;
+        if local_extra_size > 65535 or central_extra_max > 65535 {
+            raise error.TooLarge;
+        }
+        metadata_needed := name.len + central_extra_max + options.comment.len;
+        if metadata_needed > i64.max - self.metadata.bytes.len {
+            raise error.TooLarge;
+        }
+        if !self.metadata.ensure_capacity(self.metadata.bytes.len + metadata_needed) or
+           !zip_entries_reserve(@self.entries, self.entries.len + 1, self.alloc) {
+            raise error.AllocationFailed;
+        }
+        entry_start_offset := self.offset;
+        // Bytes emitted from here on (padding, header, payload, descriptor)
+        // are physically at the backend. On failure, truly un-emit them when
+        // the backend can truncate — the writer stays reusable and the final
+        // archive is byte-identical to one that never saw the failure — and
+        // POISON the writer otherwise (a borrowed sink cannot take bytes
+        // back). Either way the ORIGINAL error is re-raised; a target sink
+        // error surfaces at the emit that observed it, before any later
+        // source read, so target failures take precedence over source ones.
+        onfail {
+            rolled_back := false;
+            if self.sink.truncate != null {
+                if self.sink.truncate(self.sink.ctx, entry_start_offset) { rolled_back = true; }
+            }
+            if rolled_back { self.offset = entry_start_offset; }
+            else { self.active = false; }
+        }
+        try self.emit_zeros(padding);
+        if offset_zip64 or max_size_zip64 { self.zip64 = true; }
+        flags := (if options.ascii_filename then 0 else 0x0800) | (if has_descriptor then 8 else 0);
+        header := ByteWriter.init(self.alloc);
+        header.put_u32le(0x04034b50);
+        header.put_u16le(if chosen == .deflate then 20 else 0);
+        header.put_u16le(flags);
+        header.put_u16le(if chosen == .deflate then 8 else 0);
+        header.put_u16le(dos_time); header.put_u16le(dos_date);
+        header.put_u32le(0); header.put_u32le(0); header.put_u32le(0);
+        header.put_u16le(name.len); header.put_u16le(local_extra_size);
+        header.put_bytes(name);
+        if local_zip64_extra_size > 0 {
+            header.put_u16le(1); header.put_u16le(local_zip64_value_size);
+            if !has_descriptor and max_size_zip64 { header.put_u64le(0); header.put_u64le(0); }
+            if offset_zip64 { header.put_u64le(local_offset); }
+        }
+        header.put_bytes(options.extra);
+        header_bytes := header.take();
+        if header_bytes.ptr == null { raise error.AllocationFailed; }
+        self.emit(header_bytes[..30]) catch (e) { self.alloc.dealloc_bytes(header_bytes.ptr); raise e; };
+        self.emit(header_bytes[30..30 + name.len]) catch (e) { self.alloc.dealloc_bytes(header_bytes.ptr); raise e; };
+        if local_zip64_extra_size > 0 {
+            self.emit(header_bytes[30 + name.len..30 + name.len + local_zip64_extra_size]) catch (e) { self.alloc.dealloc_bytes(header_bytes.ptr); raise e; };
+        }
+        if options.extra.len > 0 {
+            self.emit(header_bytes[30 + name.len + local_zip64_extra_size..30 + name.len + local_zip64_extra_size + options.extra.len]) catch (e) { self.alloc.dealloc_bytes(header_bytes.ptr); raise e; };
+        }
+        self.alloc.dealloc_bytes(header_bytes.ptr);
+
+        input_buf : [65536]u8 = ---;
+        output_buf : [32768]u8 = ---;
+        source_at := 0;
+        checksum := 0;
+        compressed_size := 0;
+        if chosen == .store {
+            while source_at < source.size {
+                request := source.size - source_at;
+                if request > input_buf.len { request = input_buf.len; }
+                made := source.read(source.ctx, source_at, string.{ ptr = @input_buf[0], len = request });
+                if made <= 0 or made > request {
+                    raise error.Io;
+                }
+                bytes := string.{ ptr = @input_buf[0], len = made };
+                checksum = crc32(bytes, checksum);
+                try self.emit(bytes);
+                source_at += made;
+                compressed_size += made;
+            }
+        } else {
+            encoder := Deflater.init(options.level, self.alloc);
+            if encoder.allocation_failed { encoder.deinit(); raise error.AllocationFailed; }
+            input_len := 0;
+            input_at := 0;
+            source_done := source.size == 0;
+            stream_done := false;
+            while !stream_done {
+                if input_at == input_len and !source_done {
+                    request := source.size - source_at;
+                    if request > input_buf.len { request = input_buf.len; }
+                    made := source.read(source.ctx, source_at, string.{ ptr = @input_buf[0], len = request });
+                    if made <= 0 or made > request {
+                        encoder.deinit(); raise error.Io;
+                    }
+                    input_len = made;
+                    input_at = 0;
+                    checksum = crc32(string.{ ptr = @input_buf[0], len = made }, checksum);
+                    source_at += made;
+                    source_done = source_at == source.size;
+                }
+                input : string = .{ ptr = null, len = 0 };
+                if input_at < input_len { input = input_buf[input_at..input_len]; }
+                progress := encoder.step_unchecked(input, string.{ ptr = @output_buf[0], len = output_buf.len }, source_done);
+                if encoder.allocation_failed { encoder.deinit(); raise error.AllocationFailed; }
+                input_at += progress.consumed;
+                if progress.produced > 0 {
+                    self.emit(string.{ ptr = @output_buf[0], len = progress.produced }) catch (e) { encoder.deinit(); raise e; };
+                    compressed_size += progress.produced;
+                }
+                if progress.status == .done { stream_done = true; }
+            }
+            encoder.deinit();
+        }
+        if source_at != source.size { raise error.Io; }
+        size_zip64 := source_at >= 0xffffffff;
+        compressed_zip64 := compressed_size >= 0xffffffff;
+        if size_zip64 or compressed_zip64 { self.zip64 = true; }
+
+        if has_descriptor {
+            descriptor := ByteWriter.init(self.alloc);
+            descriptor.put_u32le(0x08074b50); descriptor.put_u32le(checksum);
+            if offset_zip64 or max_size_zip64 or size_zip64 or compressed_zip64 {
+                descriptor.put_u64le(compressed_size); descriptor.put_u64le(source_at);
+            } else {
+                descriptor.put_u32le(compressed_size); descriptor.put_u32le(source_at);
+            }
+            descriptor_bytes := descriptor.take();
+            if descriptor_bytes.ptr == null { raise error.AllocationFailed; }
+            self.emit(descriptor_bytes) catch (e) {
+                self.alloc.dealloc_bytes(descriptor_bytes.ptr);
+                raise e;
+            };
+            self.alloc.dealloc_bytes(descriptor_bytes.ptr);
+        } else {
+            if compressed_zip64 and !max_size_zip64 { raise error.TooLarge; }
+            patched := ByteWriter.init(self.alloc);
+            patched.put_u32le(0x04034b50);
+            patched.put_u16le(if chosen == .deflate then 20 else 0);
+            patched.put_u16le(flags);
+            patched.put_u16le(if chosen == .deflate then 8 else 0);
+            patched.put_u16le(dos_time); patched.put_u16le(dos_date);
+            patched.put_u32le(checksum);
+            patched.put_u32le(if max_size_zip64 then 0xffffffff else compressed_size);
+            patched.put_u32le(if max_size_zip64 then 0xffffffff else source_at);
+            patched.put_u16le(name.len); patched.put_u16le(local_extra_size);
+            patched_bytes := patched.take();
+            if patched_bytes.ptr == null { raise error.AllocationFailed; }
+            self.patch(local_offset, patched_bytes) catch (e) { self.alloc.dealloc_bytes(patched_bytes.ptr); raise e; };
+            self.alloc.dealloc_bytes(patched_bytes.ptr);
+            if max_size_zip64 {
+                wide := ByteWriter.init(self.alloc);
+                wide.put_u64le(source_at); wide.put_u64le(compressed_size);
+                wide_bytes := wide.take();
+                if wide_bytes.ptr == null { raise error.AllocationFailed; }
+                self.patch(local_offset + 30 + name.len + 4, wide_bytes) catch (e) { self.alloc.dealloc_bytes(wide_bytes.ptr); raise e; };
+                self.alloc.dealloc_bytes(wide_bytes.ptr);
+            }
+        }
+
+        name_offset := self.metadata.bytes.len;
+        self.metadata.put_bytes(name);
+        extra_offset := self.metadata.bytes.len;
+        zip64_field_size := (if size_zip64 then 8 else 0) + (if compressed_zip64 then 8 else 0) + (if offset_zip64 then 8 else 0);
+        if max_size_zip64 or zip64_field_size > 0 {
+            self.metadata.put_u16le(1); self.metadata.put_u16le(zip64_field_size);
+            if size_zip64 { self.metadata.put_u64le(source_at); }
+            if compressed_zip64 { self.metadata.put_u64le(compressed_size); }
+            if offset_zip64 { self.metadata.put_u64le(local_offset); }
+        }
+        self.metadata.put_bytes(central_extra);
+        stored_extra_len := self.metadata.bytes.len - extra_offset;
+        comment_offset := self.metadata.bytes.len;
+        self.metadata.put_bytes(options.comment);
+        zip_entries_append_reserved(@self.entries, ZipWriterEntry.{
+            name_offset = name_offset, name_len = name.len, method = chosen,
+            method_value = if chosen == .deflate then 8 else 0, flags = flags,
+            crc = checksum, compressed_size = compressed_size, size = source_at,
+            local_offset = local_offset, extra_offset = extra_offset, extra_len = stored_extra_len,
+            comment_offset = comment_offset, comment_len = options.comment.len,
+            dos_time = dos_time, dos_date = dos_date,
+            external_attributes = options.external_attributes | (if name.len > 0 and name[name.len - 1] == '/' then 0x10 else 0), internal_attributes = 0,
+            version_made_by = 0, version_needed = if chosen == .deflate then 20 else 0,
+            zip64_size = size_zip64,
+            zip64_compressed = compressed_zip64,
+            zip64_offset = offset_zip64,
+        });
+    }
+
+    // Streaming/backend-general form of mz_zip_writer_add_from_zip_reader().
+    // Local metadata and descriptors are copied without semantic validation,
+    // exactly like upstream; only framing needed to find the record is parsed.
+    add_from_reader :: (self: *ZipStreamWriter, source: *ZipReader, index: i64) -> !Error {
+        if !self.active { raise error.Io; }
+        if self.finished { raise error.Finished; }
+        if source == null or !source.active or (source.source_read == null and source.data.ptr == null) {
+            raise error.InvalidData;
+        }
+        if source.zip64 and !self.zip64 { raise error.InvalidData; }
+        if index < 0 or index >= source.count { raise error.InvalidData; }
+        if self.entries.len >= 0xffffffff { raise error.TooLarge; }
+        if self.entries.len >= 65535 { self.zip64 = true; }
+        entry := source.entry_unchecked(index) catch (e) {
+            raise e;
+        };
+        record_start := source.archive_start + entry.local_offset;
+        local_header : [30]u8 = ---;
+        source.read_exact_at(record_start, string.{ ptr = @local_header[0], len = local_header.len }) catch (e) {
+            raise e;
+        };
+        header := string.{ ptr = @local_header[0], len = local_header.len };
+        if (le32(header, 0) catch (e) 0) != 0x04034b50 {
+            raise error.InvalidData;
+        }
+        local_flags := try le16(header, 6);
+        local_name_len := try le16(header, 26);
+        local_extra_len := try le16(header, 28);
+        following_len := local_name_len + local_extra_len + entry.compressed_size;
+        following_at := record_start + 30;
+        if following_at < record_start or following_len < 0 or following_at > source.source_size or following_len > source.source_size - following_at {
+            raise error.Io;
+        }
+
+        descriptor : [24]u8 = ---;
+        descriptor_len := 0;
+        descriptor_output_len := 0;
+        upgrade_descriptor := false;
+        if (local_flags & 8) != 0 {
+            found_local_zip64 := false;
+            local_compressed := try le32(header, 18);
+            local_size := try le32(header, 22);
+            if local_extra_len > 0 and (local_compressed == 0xffffffff or local_size == 0xffffffff) {
+                extra_raw := self.alloc.alloc_bytes(local_extra_len);
+                if extra_raw == null { raise error.AllocationFailed; }
+                extra := string.{ ptr = xx extra_raw, len = local_extra_len };
+                source.read_exact_at(record_start + 30 + local_name_len, extra) catch (e) {
+                    self.alloc.dealloc_bytes(extra_raw); raise e;
+                };
+                extra_at := 0;
+                while extra_at < extra.len {
+                    if extra_at + 4 > extra.len {
+                        self.alloc.dealloc_bytes(extra_raw); raise error.InvalidData;
+                    }
+                    field_id := try le16(extra, extra_at);
+                    field_size := try le16(extra, extra_at + 2);
+                    if field_size > extra.len - extra_at - 4 {
+                        self.alloc.dealloc_bytes(extra_raw); raise error.InvalidData;
+                    }
+                    if field_id == 1 {
+                        if field_size < 16 {
+                            self.alloc.dealloc_bytes(extra_raw); raise error.InvalidData;
+                        }
+                        found_local_zip64 = true; break;
+                    }
+                    extra_at += 4 + field_size;
+                }
+                self.alloc.dealloc_bytes(extra_raw);
+            }
+            wide_descriptor := local_compressed == 0xffffffff or local_size == 0xffffffff or
+                               entry.compressed_size >= 0xffffffff or entry.size >= 0xffffffff or
+                               found_local_zip64;
+            descriptor_read_len := if wide_descriptor then 24 else 16;
+            descriptor_at := following_at + following_len;
+            source.read_exact_at(descriptor_at, string.{ ptr = @descriptor[0], len = descriptor_read_len }) catch (e) {
+                raise e;
+            };
+            signed_descriptor := (try le32(string.{ ptr = @descriptor[0], len = descriptor_read_len }, 0)) == 0x08074b50;
+            descriptor_len = if wide_descriptor then (if signed_descriptor then 24 else 20)
+                             else (if signed_descriptor then 16 else 12);
+            upgrade_descriptor = self.zip64 and !source.zip64;
+            descriptor_output_len = if upgrade_descriptor then 24 else descriptor_len;
+        }
+
+        output_record_len := 30 + following_len + descriptor_output_len;
+        padding := zip_alignment_padding(self.offset, self.alignment);
+        if self.offset > 0xffffffff - output_record_len - padding {
+            raise error.TooLarge;
+        }
+        stored_extra_len := entry.extra.len;
+        if self.zip64 {
+            kept_extra_len := zip_extra_without_zip64_size(entry.extra) catch (e) {
+                raise e;
+            };
+            stored_extra_len = kept_extra_len + 28;
+            if stored_extra_len > 65535 { raise error.TooLarge; }
+        }
+        metadata_needed := entry.name.len + stored_extra_len + entry.comment.len;
+        if !self.metadata.ensure_capacity(self.metadata.bytes.len + metadata_needed) or
+           !zip_entries_reserve(@self.entries, self.entries.len + 1, self.alloc) {
+            raise error.AllocationFailed;
+        }
+
+        entry_start_offset := self.offset;
+        // Bytes emitted from here on (padding, header, payload, descriptor)
+        // are physically at the backend. On failure, truly un-emit them when
+        // the backend can truncate — the writer stays reusable and the final
+        // archive is byte-identical to one that never saw the failure — and
+        // POISON the writer otherwise (a borrowed sink cannot take bytes
+        // back). Either way the ORIGINAL error is re-raised; a target sink
+        // error surfaces at the emit that observed it, before any later
+        // source read, so target failures take precedence over source ones.
+        onfail {
+            rolled_back := false;
+            if self.sink.truncate != null {
+                if self.sink.truncate(self.sink.ctx, entry_start_offset) { rolled_back = true; }
+            }
+            if rolled_back { self.offset = entry_start_offset; }
+            else { self.active = false; }
+        }
+        try self.emit_zeros(padding);
+        local_offset := self.offset;
+        try self.emit(header);
+        transfer : [65536]u8 = ---;
+        transferred := 0;
+        while transferred < following_len {
+            take := following_len - transferred;
+            if take > transfer.len { take = transfer.len; }
+            chunk := string.{ ptr = @transfer[0], len = take };
+            source.read_exact_at(following_at + transferred, chunk) catch (e) {
+                raise e;
+            };
+            try self.emit(chunk);
+            transferred += take;
+        }
+        if descriptor_output_len > 0 {
+            if upgrade_descriptor {
+                descriptor_bytes := string.{ ptr = @descriptor[0], len = descriptor_len };
+                has_signature := (try le32(descriptor_bytes, 0)) == 0x08074b50;
+                value_at := if has_signature then 4 else 0;
+                descriptor_crc := try le32(descriptor_bytes, value_at);
+                descriptor_compressed := try le32(descriptor_bytes, value_at + 4);
+                descriptor_size := try le32(descriptor_bytes, value_at + 8);
+                upgraded := ByteWriter.init(self.alloc);
+                upgraded.put_u32le(0x08074b50); upgraded.put_u32le(descriptor_crc);
+                upgraded.put_u64le(descriptor_compressed); upgraded.put_u64le(descriptor_size);
+                upgraded_bytes := upgraded.take();
+                if upgraded_bytes.ptr == null { raise error.AllocationFailed; }
+                self.emit(upgraded_bytes) catch (e) { self.alloc.dealloc_bytes(upgraded_bytes.ptr); raise e; };
+                self.alloc.dealloc_bytes(upgraded_bytes.ptr);
+            } else {
+                try self.emit(string.{ ptr = @descriptor[0], len = descriptor_len });
+            }
+        }
+
+        name_offset := self.metadata.bytes.len; self.metadata.put_bytes(entry.name);
+        extra_offset := self.metadata.bytes.len;
+        if self.zip64 {
+            zip_copy_extra_without_zip64(@self.metadata, entry.extra) catch (e) {
+                raise e;
+            };
+            self.metadata.put_u16le(1); self.metadata.put_u16le(24);
+            self.metadata.put_u64le(entry.size); self.metadata.put_u64le(entry.compressed_size); self.metadata.put_u64le(local_offset);
+        } else { self.metadata.put_bytes(entry.extra); }
+        extra_len := self.metadata.bytes.len - extra_offset;
+        comment_offset := self.metadata.bytes.len; self.metadata.put_bytes(entry.comment);
+        zip_entries_append_reserved(@self.entries, ZipWriterEntry.{
+            name_offset = name_offset, name_len = entry.name.len,
+            method = entry.method, method_value = entry.method_value, flags = entry.flags,
+            crc = entry.crc, compressed_size = entry.compressed_size, size = entry.size,
+            local_offset = local_offset, extra_offset = extra_offset, extra_len = extra_len,
+            comment_offset = comment_offset, comment_len = entry.comment.len,
+            dos_time = entry.dos_time, dos_date = entry.dos_date,
+            external_attributes = entry.external_attributes, internal_attributes = entry.internal_attributes,
+            version_made_by = entry.version_made_by, version_needed = entry.version_needed,
+            zip64_size = self.zip64, zip64_compressed = self.zip64, zip64_offset = self.zip64,
+        });
+    }
+
+    add_handle :: (self: *ZipStreamWriter, name: string, file: *File, max_size: i64, options: ZipEntryOptions = .{}) -> !Error {
+        if file.fd < 0 or max_size < 0 { raise error.InvalidData; }
+        actual_options := options;
+        if actual_options.time_mode == .file {
+            seconds, valid := zip_file_modified_seconds(file);
+            if !valid { raise error.Io; }
+            actual_options.time_mode = .specified;
+            actual_options.modified_unix_seconds = seconds;
+        }
+        actual_options.descriptor_for_empty = true;
+        state := ZipFileInputState.{ file = file, start = 0 };
+        source := ZipInputSource.{ ctx = xx @state, size = max_size, read = zip_file_input_read };
+        try self.add_source(name, source, actual_options);
+    }
+
+    add_file :: (self: *ZipStreamWriter, name: string, path: [:0]u8, options: ZipEntryOptions) -> !Error {
+        if options.use_file_time and !exists(path) {
+            raise error.Io;
+        }
+        maybe_file := open_file(path, .read);
+        if maybe_file == null { raise error.Io; }
+        file := maybe_file!;
+        size := file.seek(0, .end);
+        if size < 0 { file.close(); raise error.Io; }
+        actual_options := options;
+        if actual_options.time_mode == .none and actual_options.use_file_time { actual_options.time_mode = .file; }
+        self.add_handle(name, @file, size, actual_options) catch (e) { file.close(); raise e; };
+        if !file.close() { raise error.Io; }
+    }
+
+    finish :: (self: *ZipStreamWriter) -> !Error { try self.finish_comment(""); }
+
+    finish_comment :: (self: *ZipStreamWriter, archive_comment: string) -> !Error {
+        if !self.active { raise error.Io; }
+        if self.finished { raise error.Finished; }
+        if archive_comment.len > 65535 { raise error.TooLarge; }
+        central_offset := self.offset;
+        central_size := 0;
+        i := 0;
+        while i < self.entries.len {
+            entry := self.entries.items[i];
+            entry_size := 46 + entry.name_len + entry.extra_len + entry.comment_len;
+            if entry_size > i64.max - central_size { raise error.TooLarge; }
+            central_size += entry_size;
+            i += 1;
+        }
+        if central_size >= 0xffffffff { raise error.TooLarge; }
+        if self.entries.len > 0xffff or central_offset > 0xffffffff - (central_size + 22 + archive_comment.len) { self.zip64 = true; }
+        total_tail := central_size + 22 + archive_comment.len + (if self.zip64 then 76 else 0);
+        if central_offset < 0 or total_tail > 0x7fffffffffffffff - central_offset { raise error.TooLarge; }
+        i = 0;
+        while i < self.entries.len {
+            entry := self.entries.items[i];
+            name := string.{ ptr = @self.metadata.bytes.items.ptr[entry.name_offset], len = entry.name_len };
+            extra : string = .{ ptr = null, len = 0 };
+            comment : string = .{ ptr = null, len = 0 };
+            if entry.extra_len > 0 { extra = string.{ ptr = @self.metadata.bytes.items.ptr[entry.extra_offset], len = entry.extra_len }; }
+            if entry.comment_len > 0 { comment = string.{ ptr = @self.metadata.bytes.items.ptr[entry.comment_offset], len = entry.comment_len }; }
+            header := ByteWriter.init(self.alloc);
+            header.put_u32le(0x02014b50);
+            header.put_u16le(entry.version_made_by); header.put_u16le(entry.version_needed); header.put_u16le(entry.flags);
+            header.put_u16le(entry.method_value);
+            header.put_u16le(entry.dos_time); header.put_u16le(entry.dos_date);
+            header.put_u32le(entry.crc);
+            header.put_u32le(if entry.zip64_compressed then 0xffffffff else entry.compressed_size);
+            header.put_u32le(if entry.zip64_size then 0xffffffff else entry.size);
+            header.put_u16le(entry.name_len); header.put_u16le(entry.extra_len); header.put_u16le(entry.comment_len);
+            header.put_u16le(0); header.put_u16le(entry.internal_attributes); header.put_u32le(entry.external_attributes);
+            header.put_u32le(if entry.zip64_offset then 0xffffffff else entry.local_offset);
+            header.put_bytes(name); header.put_bytes(extra); header.put_bytes(comment);
+            bytes := header.take();
+            if bytes.ptr == null { raise error.AllocationFailed; }
+            self.emit(bytes) catch (e) { self.alloc.dealloc_bytes(bytes.ptr); raise e; };
+            self.alloc.dealloc_bytes(bytes.ptr);
+            i += 1;
+        }
+        end := ByteWriter.init(self.alloc);
+        if self.zip64 {
+            zip64_offset := self.offset;
+            end.put_u32le(0x06064b50); end.put_u64le(44);
+            end.put_u16le(0x031e); end.put_u16le(45);
+            end.put_u32le(0); end.put_u32le(0);
+            end.put_u64le(self.entries.len); end.put_u64le(self.entries.len);
+            end.put_u64le(central_size); end.put_u64le(central_offset);
+            end.put_u32le(0x07064b50); end.put_u32le(0);
+            end.put_u64le(zip64_offset); end.put_u32le(1);
+        }
+        end.put_u32le(0x06054b50);
+        end.put_u16le(0); end.put_u16le(0);
+        end.put_u16le(if self.entries.len > 0xffff then 0xffff else self.entries.len);
+        end.put_u16le(if self.entries.len > 0xffff then 0xffff else self.entries.len);
+        end.put_u32le(if central_size > 0xffffffff then 0xffffffff else central_size);
+        end.put_u32le(if central_offset > 0xffffffff then 0xffffffff else central_offset);
+        end.put_u16le(archive_comment.len); end.put_bytes(archive_comment);
+        end_bytes := end.take();
+        if end_bytes.ptr == null { raise error.AllocationFailed; }
+        end_offset := self.offset;
+        self.emit(end_bytes) catch (e) { self.alloc.dealloc_bytes(end_bytes.ptr); raise e; };
+        if self.sink.flush != null {
+            flush := self.sink.flush;
+            if !flush(self.sink.ctx) {
+                // The sink has already accepted the bytes, but miniz does not
+                // advance its logical archive size or finalized mode when
+                // fflush() fails.
+                self.offset = end_offset;
+
+                self.alloc.dealloc_bytes(end_bytes.ptr);
+                raise error.Io;
+            }
+        }
+        self.alloc.dealloc_bytes(end_bytes.ptr);
+        self.entries.deinit(self.alloc);
+        self.metadata.deinit();
+        self.final_count = i;
+        self.finished = true;
+    }
+
+    end :: (self: *ZipStreamWriter) -> bool {
+        if !self.active {
+            return false;
+        }
+        self.deinit();
+        true
+    }
+
+    deinit :: (self: *ZipStreamWriter) {
+        if !self.finished { self.final_count = self.entries.len; }
+        self.entries.deinit(self.alloc);
+        self.metadata.deinit();
+        self.finished = true;
+        self.active = false;
+    }
+}
+
+// Filesystem writer ownership behind the public std.zip path factories.
+OwnedZipWriter :: struct {
+    writer: ZipStreamWriter;
+    file_state: *ZipFileWriteState;
+    alloc: Allocator;
+
+    end :: (self: *OwnedZipWriter) -> bool {
+        flush_ok := true;
+        if self.file_state != null and self.file_state.buffered {
+            flush_ok = zip_writer_file_flush_buffer(self.file_state);
+        }
+        writer_ok := self.writer.end();
+        close_ok := true;
+        if self.file_state != null {
+            if self.file_state.owns_file and !self.file_state.file.close() {
+                close_ok = false;
+            }
+            self.alloc.dealloc_bytes(xx self.file_state);
+            self.file_state = null;
+        }
+        writer_ok and flush_ok and close_ok
+    }
+
+    deinit :: (self: *OwnedZipWriter) { self.end(); }
+}
+
+open_zip_writer_file :: (path: [:0]u8, reserve: i64 = 0, zip64: bool = false, allow_reading: bool = false, alloc: Allocator = context.allocator) -> (OwnedZipWriter, !Error) {
+    open_zip_writer_file_mode(path, reserve, zip64, allow_reading, alloc)
+}
+
+open_zip_writer_file_mode :: (path: [:0]u8, reserve: i64, zip64: bool, allow_reading: bool, alloc: Allocator) -> (OwnedZipWriter, !Error) {
+    if reserve < 0 { raise error.InvalidData; }
+    maybe_created := open_file(path, .write);
+    if maybe_created == null { raise error.Io; }
+    created := maybe_created!;
+    file := created;
+    if allow_reading {
+        if !created.close() { raise error.Io; }
+        maybe_reopened := open_file(path, .read_write);
+        if maybe_reopened == null { raise error.Io; }
+        file = maybe_reopened!;
+    }
+    state_raw := alloc.alloc_bytes(size_of(ZipFileWriteState));
+    if state_raw == null { file.close(); raise error.AllocationFailed; }
+    state : *ZipFileWriteState = xx state_raw;
+    state.* = ZipFileWriteState.{ file = file, start = 0, owns_file = true, buffered = true };
+    sink := ZipSink.{
+        ctx = xx state,
+        write = zip_writer_file_sink_write,
+        write_at = zip_writer_file_sink_write_at,
+        flush = zip_writer_file_sink_flush,
+        truncate = zip_writer_file_sink_truncate,
+    };
+    if allow_reading { sink.read_at = zip_writer_file_sink_read_at; }
+    writer := ZipStreamWriter.init_mode(sink, zip64, alloc);
+    writer.allow_reading = allow_reading;
+    writer.emit_zeros(reserve) catch (e) {
+        writer.deinit(); zip_writer_file_flush_buffer(state); state.file.close(); alloc.dealloc_bytes(state_raw);
+        raise e;
+    };
+    OwnedZipWriter.{ writer = writer, file_state = state, alloc = alloc }
+}
+
+// Convert a reader opened by open_zip_file_writable() into an in-place writer.
+// The returned writer borrows the OwnedZipReader's file state; finalize/end it
+// before deinitializing the owner.
+zip_file_writer_from_reader :: (owned: *OwnedZipReader, force_zip64: bool = false, alloc: Allocator = context.allocator) -> (ZipStreamWriter, !Error) {
+    if owned.file_state == null or !owned.file_state.writable or !owned.reader.active {
+        raise error.InvalidData;
+    }
+    state := owned.file_state;
+    state.write_base = state.start + owned.reader.archive_start;
+    state.write_position = owned.reader.central_relative_offset;
+    sink := ZipSink.{
+        ctx = xx state,
+        write = zip_file_update_write,
+        write_at = zip_file_update_write_at,
+        read_at = zip_file_update_read_at,
+        truncate = zip_file_update_truncate,
+    };
+    ZipStreamWriter.init_from_reader(@owned.reader, sink, force_zip64, alloc)
+}

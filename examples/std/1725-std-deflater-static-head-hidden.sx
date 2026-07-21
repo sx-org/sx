@@ -1,0 +1,9 @@
+// Regression (issue 0324): std's nested codec imports do not expose the
+// internal DEFLATE engine as a bare static-method head.
+
+#import "modules/std.sx";
+
+main :: () -> i32 {
+    state := Deflater.init();
+    0
+}

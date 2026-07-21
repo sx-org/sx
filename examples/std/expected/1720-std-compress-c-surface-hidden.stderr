@@ -1,0 +1,5 @@
+error: namespace 'compress' has no member 'MZ_OK'
+  --> examples/std/1720-std-compress-c-surface-hidden.sx:4:5
+   |
+ 4 |     compress.MZ_OK.(i32)
+   |     ^^^^^^^^^^^^^^

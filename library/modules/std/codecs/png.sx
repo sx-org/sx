@@ -1,0 +1,107 @@
+// PNG encoding for 8-bit grayscale, grayscale-alpha, RGB, and RGBA images.
+//
+// `encode` returns bytes owned by `alloc`. The caller must release
+// `result.ptr` through that same allocator. `Image.pixels` is borrowed only
+// for the duration of the call.
+
+#import "modules/std/core.sx";
+#import "modules/std/internal/png.sx";
+
+Error :: error {
+    InvalidDimensions,
+    InvalidStride,
+    PixelDataTooShort,
+    InvalidCompressionLevel,
+    TooLarge,
+    CompressionFailed,
+    AllocationFailed,
+}
+
+PixelFormat :: enum {
+    gray;
+    gray_alpha;
+    rgb;
+    rgba;
+}
+
+Image :: struct {
+    pixels: string;
+    // PNG stores 31-bit unsigned dimensions; both values must be in
+    // `1..0x7fffffff`.
+    width: i64;
+    height: i64;
+    format: PixelFormat;
+
+    // Zero means tightly packed rows. A positive stride stores logical rows
+    // top-to-bottom. A negative stride describes bottom-up storage: the first
+    // logical row starts at `(height - 1) * abs(stride)` from `pixels.ptr`.
+    // In every case the entire addressed layout must be present in `pixels`.
+    stride: i64 = 0;
+}
+
+EncodeOptions :: struct {
+    // Miniz-compatible compression levels. Unlike the old C-shaped helper,
+    // values outside this range are rejected instead of silently clamped.
+    level: i64 = 6;
+}
+
+encode :: (image: Image, options: EncodeOptions = .{}, alloc: Allocator = context.allocator) -> (string, !Error) {
+    if image.width < 1 or image.width > 0x7fffffff or
+       image.height < 1 or image.height > 0x7fffffff {
+        raise error.InvalidDimensions;
+    }
+    if options.level < 0 or options.level > 10 { raise error.InvalidCompressionLevel; }
+
+    channels := 4;
+    color_type := 6;
+    if image.format == .gray {
+        channels = 1;
+        color_type = 0;
+    } else if image.format == .gray_alpha {
+        channels = 2;
+        color_type = 4;
+    } else if image.format == .rgb {
+        channels = 3;
+        color_type = 2;
+    }
+
+    if image.width > i64.max / channels { raise error.TooLarge; }
+    row_bytes := image.width * channels;
+
+    actual_stride := image.stride;
+    if actual_stride == 0 { actual_stride = row_bytes; }
+    // Negating the minimum signed integer is itself an overflow.
+    if actual_stride == i64.min { raise error.TooLarge; }
+    step := if actual_stride < 0 then 0 - actual_stride else actual_stride;
+    if step < row_bytes { raise error.InvalidStride; }
+
+    rows_after_first := image.height - 1;
+    if rows_after_first > 0 and step > (i64.max - row_bytes) / rows_after_first {
+        raise error.TooLarge;
+    }
+    required_pixels := step * rows_after_first + row_bytes;
+    if image.pixels.len < required_pixels { raise error.PixelDataTooShort; }
+
+    if row_bytes == i64.max { raise error.TooLarge; }
+    filtered_row_bytes := row_bytes + 1;
+    if filtered_row_bytes > i64.max / image.height { raise error.TooLarge; }
+    filtered_len := filtered_row_bytes * image.height;
+
+    result := png_encode_bytes(
+        image.pixels,
+        image.width,
+        image.height,
+        row_bytes,
+        step,
+        actual_stride < 0,
+        color_type,
+        filtered_len,
+        options.level,
+        alloc,
+    ) catch (e) {
+        if e == error.AllocationFailed { raise error.AllocationFailed; }
+        if e == error.TooLarge { raise error.TooLarge; }
+        raise error.CompressionFailed;
+    };
+    result
+}
