@@ -176,7 +176,7 @@ pub const ProtocolResolver = struct {
     }
 
     fn resolvedProtocolAuthor(self: ProtocolResolver, author: @import("resolver.zig").RawAuthor) ?ResolvedProtocol {
-        const terminal = self.l.followAliasChain(author, 16) orelse return null;
+        const terminal = self.l.followAliasChain(author) orelse return null;
         if (terminal.raw != .protocol_decl) return null;
         const pd = terminal.raw.protocol_decl;
         var protocol_ty: ?TypeId = null;

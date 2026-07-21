@@ -1,0 +1,11 @@
+error: alias cycle 'A -> B -> A' can never resolve — point one of these at a real declaration
+  --> examples/diagnostics/1269-diagnostics-alias-cycle.sx:6:1
+   |
+ 6 | A :: B;     // direct cycle
+   | ^
+
+error: alias cycle 'X -> Y -> Z -> X' can never resolve — point one of these at a real declaration
+  --> examples/diagnostics/1269-diagnostics-alias-cycle.sx:9:1
+   |
+ 9 | X :: Y;     // indirect cycle
+   | ^

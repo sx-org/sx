@@ -1,8 +1,22 @@
 # 0331 — alias resolution depth caps silently reject valid chains
 
-> **OPEN (2026-07-21).** Independent adversarial review found fixed traversal
-> limits in compiler-internal alias resolution. No language API change is
-> needed; valid acyclic aliases must not depend on an arbitrary small depth.
+> **RESOLVED (2026-07-21).** `followAliasChain` (src/ir/lower/nominal.zig)
+> now walks iteratively with a visited declaration-identity set — any
+> acyclic chain resolves (bounded by the finite alias-decl set), a revisit
+> is an alias cycle diagnosed exactly once per cycle
+> ("alias cycle 'A -> B -> A' can never resolve — point one of these at a
+> real declaration"). The 8/9/16 depth arguments are gone from all callers
+> (generic template, fn alias, protocol head, pending type alias), and the
+> module-const alias fixpoint in src/ir/lower/decl.zig dropped its 16-round
+> cap (each productive round registers ≥1 new name, so it terminates by
+> decl count). Regression: this file's `.sx` (all four families past the
+> old caps, opt 0/3), examples/basic/0068-basic-alias-chain-depth.sx,
+> examples/generics/0222-generics-alias-chain-depth.sx,
+> examples/protocols/1636-protocols-alias-chain-depth.sx, and
+> examples/diagnostics/1269-diagnostics-alias-cycle.sx (direct + indirect
+> cycles, one diagnostic each, detected even without a use site).
+
+> Original report follows.
 
 ## Symptom
 

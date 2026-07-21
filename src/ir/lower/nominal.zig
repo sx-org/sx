@@ -688,14 +688,14 @@ fn singleVisibleAuthor(self: *Lowering, name: []const u8, from: []const u8) ?res
 pub fn aliasedStructTemplate(self: *Lowering, name: []const u8, from: []const u8) ?StructTemplate {
     const author = singleVisibleAuthor(self, name, from) orelse return null;
     if (constAliasOfRaw(author.raw) == null) return null;
-    return followToTemplate(self, author, 8);
+    return followToTemplate(self, author);
 }
 
 /// One alias hop: a generic-struct author terminates the chain with its
 /// rebuilt source-pinned template; an alias author recurses via
 /// `followAliasChain`.
-fn followToTemplate(self: *Lowering, author: resolver_mod.RawAuthor, depth: u8) ?StructTemplate {
-    const terminal = followAliasChain(self, author, depth) orelse return null;
+fn followToTemplate(self: *Lowering, author: resolver_mod.RawAuthor) ?StructTemplate {
+    const terminal = followAliasChain(self, author) orelse return null;
     const sd = structDeclOfRaw(terminal.raw) orelse return null;
     if (sd.type_params.len == 0) return null;
     return self.buildGenericStructTemplate(sd, terminal.source);
@@ -706,24 +706,57 @@ fn followToTemplate(self: *Lowering, author: resolver_mod.RawAuthor, depth: u8) 
 /// via the visible-author walk, `ns.X` through the author's namespace edge
 /// into the target module's own member. A non-alias author terminates the
 /// chain (callers unwrap it by domain: `structDeclOfRaw` / `fnDeclOfRaw`).
-/// The depth cap breaks alias cycles (`A :: B; B :: A;`).
-pub fn followAliasChain(self: *Lowering, author: resolver_mod.RawAuthor, depth: u8) ?resolver_mod.RawAuthor {
-    if (depth == 0) return null;
-    const cd = constAliasOfRaw(author.raw) orelse return author;
-    const next: ?resolver_mod.RawAuthor = switch (cd.value.data) {
-        .identifier => |id| singleVisibleAuthor(self, id.name, author.source),
-        .field_access => |fa| blk: {
-            _ = fa;
-            const path = self.qualifiedTypeName(cd.value) orelse break :blk null;
-            defer self.alloc.free(path);
-            break :blk switch (self.qualifiedMemberVerdictFrom(path, author.source)) {
-                .selected => |sel| sel.author,
-                .not_qualified, .missing, .ambiguous => null,
-            };
-        },
-        else => null,
-    };
-    return followAliasChain(self, next orelse return null, depth - 1);
+/// Any acyclic chain resolves — the walk is bounded by the finite set of
+/// alias decls; a cycle (`A :: B; B :: A;`) is detected by declaration
+/// identity, diagnosed once, and returns null (issue 0331).
+pub fn followAliasChain(self: *Lowering, author: resolver_mod.RawAuthor) ?resolver_mod.RawAuthor {
+    var visited: std.ArrayList(*const ast.ConstDecl) = .empty;
+    defer visited.deinit(self.alloc);
+    var cur = author;
+    while (true) {
+        const cd = constAliasOfRaw(cur.raw) orelse return cur;
+        for (visited.items, 0..) |seen, i| {
+            if (seen == cd) {
+                diagnoseAliasCycle(self, visited.items[i..]);
+                return null;
+            }
+        }
+        visited.append(self.alloc, cd) catch @panic("out of memory");
+        const next: ?resolver_mod.RawAuthor = switch (cd.value.data) {
+            .identifier => |id| singleVisibleAuthor(self, id.name, cur.source),
+            .field_access => blk: {
+                const path = self.qualifiedTypeName(cd.value) orelse break :blk null;
+                defer self.alloc.free(path);
+                break :blk switch (self.qualifiedMemberVerdictFrom(path, cur.source)) {
+                    .selected => |sel| sel.author,
+                    .not_qualified, .missing, .ambiguous => null,
+                };
+            },
+            else => null,
+        };
+        cur = next orelse return null;
+    }
+}
+
+/// Report a const-alias cycle once. `cycle` is the closed loop's decls in
+/// walk order (first element = re-visited decl). Keyed by the cycle's
+/// minimum decl address so every entry point into the same loop — each
+/// member decl's own registration probe, plus any use-site probe — shares
+/// one diagnostic.
+fn diagnoseAliasCycle(self: *Lowering, cycle: []const *const ast.ConstDecl) void {
+    const diags = self.diagnostics orelse return;
+    var key: usize = std.math.maxInt(usize);
+    for (cycle) |cd| key = @min(key, @intFromPtr(cd));
+    const gop = self.alias_cycle_diagnosed.getOrPut(key) catch return;
+    if (gop.found_existing) return;
+    var names: std.ArrayList(u8) = .empty;
+    defer names.deinit(self.alloc);
+    for (cycle) |cd| {
+        names.appendSlice(self.alloc, cd.name) catch @panic("out of memory");
+        names.appendSlice(self.alloc, " -> ") catch @panic("out of memory");
+    }
+    names.appendSlice(self.alloc, cycle[0].name) catch @panic("out of memory");
+    diags.addFmt(.err, cycle[0].name_span, "alias cycle '{s}' can never resolve — point one of these at a real declaration", .{names.items});
 }
 
 /// The fn decl a const ALIAS chain terminates at, or null when `cd` is not
@@ -731,7 +764,7 @@ pub fn followAliasChain(self: *Lowering, author: resolver_mod.RawAuthor, depth: 
 /// `cd` itself seeds the chain (it IS the first alias hop), `from` is its
 /// declaring source.
 pub fn aliasedFnDecl(self: *Lowering, cd: *const ast.ConstDecl, from: []const u8) ?*const ast.FnDecl {
-    const terminal = followAliasChain(self, .{ .raw = .{ .const_decl = cd }, .source = from }, 9) orelse return null;
+    const terminal = followAliasChain(self, .{ .raw = .{ .const_decl = cd }, .source = from }) orelse return null;
     return Lowering.fnDeclOfRaw(terminal.raw);
 }
 

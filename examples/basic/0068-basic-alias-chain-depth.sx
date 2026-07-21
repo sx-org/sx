@@ -1,0 +1,46 @@
+// Const and function alias chains resolve at ANY acyclic depth — the walk
+// is bounded by the finite declaration set, not a fixed hop budget.
+// Regression (issue 0331): module-const aliases got 16 fixpoint rounds
+// (head-first declaration order burns one round per hop) and fn aliases a
+// 9-hop cap; the chains below exceed both and must fold/dispatch.
+#import "modules/std.sx";
+
+A00 :: A01;
+A01 :: A02;
+A02 :: A03;
+A03 :: A04;
+A04 :: A05;
+A05 :: A06;
+A06 :: A07;
+A07 :: A08;
+A08 :: A09;
+A09 :: A10;
+A10 :: A11;
+A11 :: A12;
+A12 :: A13;
+A13 :: A14;
+A14 :: A15;
+A15 :: A16;
+A16 :: A17;
+A17 :: A18;
+A18 :: A19;
+A19 :: A20;
+A20 :: 37;
+
+f :: () -> i64 { 41 }
+F01 :: f;
+F02 :: F01;
+F03 :: F02;
+F04 :: F03;
+F05 :: F04;
+F06 :: F05;
+F07 :: F06;
+F08 :: F07;
+F09 :: F08;
+F10 :: F09;
+F11 :: F10;
+F12 :: F11;
+
+main :: () {
+    print("{} {}\n", A00, F12());
+}

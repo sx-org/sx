@@ -546,6 +546,11 @@ pub const Lowering = struct {
     /// identifier machinery. First site wins; later sites stay silent-but-
     /// poisoned (they still return placeholders, and hasErrors() aborts).
     diag_enclosing_seen: std.StringHashMap(void) = undefined,
+    /// Dedupe for the issue-0331 const-alias-cycle diagnostic, keyed by the
+    /// cycle's minimum participant decl address: `followAliasChain` is probed
+    /// speculatively from several resolution layers and from EACH member
+    /// decl's registration, all of which close the same loop.
+    alias_cycle_diagnosed: std.AutoHashMap(usize, void) = undefined,
     /// The SSA `Ref`s produced by lowering a narrowed identifier — the bridge
     /// from name-keyed narrowing to the Ref-keyed `coerceMode` unwrap gate.
     /// Cleared per function body (the `Ref` space is per-function).
@@ -931,6 +936,7 @@ pub const Lowering = struct {
             .comptime_constants = std.StringHashMap(ComptimeValue).init(module.alloc),
             .narrowed = std.StringHashMap(void).init(module.alloc),
             .diag_enclosing_seen = std.StringHashMap(void).init(module.alloc),
+            .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
             .narrowed_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .xx_passthrough_refs = std.AutoHashMap(Ref, void).init(module.alloc),
             .xx_reentrancy = std.AutoHashMap(u64, void).init(module.alloc),

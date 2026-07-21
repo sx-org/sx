@@ -1,0 +1,21 @@
+// A generic-struct template alias chain resolves at any acyclic depth.
+// Regression (issue 0331): `aliasedStructTemplate` walked at most 8 alias
+// hops, so the 10-hop chain below failed as "unknown type 'B10'".
+#import "modules/std.sx";
+
+Box :: struct($T: Type) { v: T; }
+B01 :: Box;
+B02 :: B01;
+B03 :: B02;
+B04 :: B03;
+B05 :: B04;
+B06 :: B05;
+B07 :: B06;
+B08 :: B07;
+B09 :: B08;
+B10 :: B09;
+
+main :: () {
+    b : B10(i64) = .{ v = 43 };
+    print("{}\n", b.v);
+}

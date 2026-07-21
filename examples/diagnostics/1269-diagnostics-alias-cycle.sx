@@ -1,0 +1,13 @@
+// A const-alias cycle can never resolve; it is detected by declaration
+// identity (not a hop budget) and reported ONCE per cycle, whether or not
+// any use site touches it (issue 0331).
+#import "modules/std.sx";
+
+A :: B;     // direct cycle
+B :: A;
+
+X :: Y;     // indirect cycle
+Y :: Z;
+Z :: X;
+
+main :: () { print("unreached\n"); }

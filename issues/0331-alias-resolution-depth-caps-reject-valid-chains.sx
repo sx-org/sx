@@ -1,0 +1,90 @@
+// Issue 0331: alias resolution depth caps silently rejected valid chains.
+// Generic template aliases stopped at 8 hops, function aliases at 9,
+// protocol/pending-type aliases at 16, and reverse-order module-constant
+// aliases got only 16 fixpoint rounds. All four families below exceed the
+// old caps and must resolve; cycle detection is by declaration identity
+// (see examples/diagnostics/1269-diagnostics-alias-cycle.sx).
+#import "modules/std.sx";
+
+// 20-hop module-const chain, declared head-first (worst fixpoint order).
+A00 :: A01;
+A01 :: A02;
+A02 :: A03;
+A03 :: A04;
+A04 :: A05;
+A05 :: A06;
+A06 :: A07;
+A07 :: A08;
+A08 :: A09;
+A09 :: A10;
+A10 :: A11;
+A11 :: A12;
+A12 :: A13;
+A13 :: A14;
+A14 :: A15;
+A15 :: A16;
+A16 :: A17;
+A17 :: A18;
+A18 :: A19;
+A19 :: A20;
+A20 :: 37;
+
+// 12-hop function alias chain.
+f :: () -> i64 { 41 }
+F01 :: f;
+F02 :: F01;
+F03 :: F02;
+F04 :: F03;
+F05 :: F04;
+F06 :: F05;
+F07 :: F06;
+F08 :: F07;
+F09 :: F08;
+F10 :: F09;
+F11 :: F10;
+F12 :: F11;
+
+// 10-hop generic-struct template alias chain.
+Box :: struct($T: Type) { v: T; }
+B01 :: Box;
+B02 :: B01;
+B03 :: B02;
+B04 :: B03;
+B05 :: B04;
+B06 :: B05;
+B07 :: B06;
+B08 :: B07;
+B09 :: B08;
+B10 :: B09;
+
+// 18-hop protocol alias chain, impl through the deepest alias.
+Speak :: protocol { say :: (self: *Self) -> i64; }
+P01 :: Speak;
+P02 :: P01;
+P03 :: P02;
+P04 :: P03;
+P05 :: P04;
+P06 :: P05;
+P07 :: P06;
+P08 :: P07;
+P09 :: P08;
+P10 :: P09;
+P11 :: P10;
+P12 :: P11;
+P13 :: P12;
+P14 :: P13;
+P15 :: P14;
+P16 :: P15;
+P17 :: P16;
+P18 :: P17;
+Dog :: struct { n: i64; }
+impl P18 for Dog { say :: (self: *Dog) -> i64 { self.n } }
+
+main :: () {
+    print("{}\n", A00);
+    print("{}\n", F12());
+    b : B10(i64) = .{ v = 43 };
+    print("{}\n", b.v);
+    d : Dog = .{ n = 47 };
+    print("{}\n", d.say());
+}

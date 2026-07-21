@@ -694,12 +694,14 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
     // Only a target that IS a registered module const qualifies; an
     // identifier naming a type / function / global keeps its existing
     // behavior. Fixpoint over the decl list so chain order doesn't matter;
-    // an unresolvable or cyclic alias simply never registers and the use
-    // site diagnoses as before.
+    // each productive round registers at least one new name, so the loop is
+    // bounded by the decl count (issue 0331 — no arbitrary round cap). An
+    // unresolvable or cyclic alias simply never registers; a cycle is
+    // diagnosed by `followAliasChain` during fn-alias registration and the
+    // use site still reports the unresolved name.
     {
         var changed = true;
-        var iters: u32 = 0;
-        while (changed and iters < 16) : (iters += 1) {
+        while (changed) {
             changed = false;
             for (decls) |decl| {
                 if (decl.data != .const_decl) continue;
@@ -2439,7 +2441,7 @@ pub fn selectPlainCallableAuthor(self: *Lowering, name: []const u8, caller_file:
 /// is safe and exactly-once through `registered_protocol_decls`; other named
 /// kinds are used only when their ordinary scan already registered a slot.
 fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alias_name: []const u8) ?TypeId {
-    const terminal = self.followAliasChain(author, 16) orelse return null;
+    const terminal = self.followAliasChain(author) orelse return null;
 
     if (terminal.raw == .protocol_decl) {
         const pd = terminal.raw.protocol_decl;
