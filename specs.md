@@ -1423,9 +1423,19 @@ set_x :: (p: *Vec2, val: f32) {
 set_x(@v, 99.0);
 ```
 
-**Null**: Pointer types are currently nullable by default. `null` is the null pointer literal.
+**Null**: Pointer types are nullable by default — permanently; this is part
+of the pointer contract, not a transitional state. `null` is the null pointer
+literal and any `*T` may hold it. The compiler does not police it: like
+writes, null-ness is unchecked — dereferencing a null pointer is a runtime
+crash, never a compile error. Nullability **checking is opt-in** via the
+optional spelling `?*T`: same bare-pointer representation (see Optional
+Types), but use-sites must prove presence (`!`, `??`, `if v := p`,
+flow-sensitive narrowing) before touching the payload. Pick `*T` when null is
+a normal, locally handled sentinel; pick `?*T` when the type should force
+every consumer to handle absence.
 ```sx
-np : *Vec2 = null;
+np : *Vec2 = null;     // fine — nullable, unchecked
+op : ?*Vec2 = null;    // same layout; deref demands proof of presence
 ```
 
 **Many-pointer**: `[*]T` supports indexing for buffers of unknown size.
@@ -3154,20 +3164,24 @@ Before any `push`, code runs under `__sx_default_context`, a static constant hol
 Any module — stdlib or user — can declare a field the program's Context carries:
 
 ```sx
-#context_extend ui: ?*Ui = null;
+#context_extend ui: *Ui = null;      // bare nullable pointer — the default idiom
 #context_extend frame_stats: FrameStats = .{};
 ```
+
+`?*Ui` works too and opts the field into checked nullability (consumers must
+prove presence before use); the bare spelling keeps null as an unchecked
+sentinel, per the pointer contract.
 
 - **Grammar**: `#context_extend <name> : <type> = <default> ;` at top level only.
 - **Assembly**: the compiler assembles the program's `Context` from every declaration in the compilation — there is no builtin prefix — in a deterministic order (sorted by declaring module path, then field name). Field offsets are program-specific — never rely on them across programs.
 - **Access is global and unconditional**: after assembly, `context.field` works in ANY module of the program with no import requirement. Imports gate existence only (an uncompiled module contributes nothing); there is no per-source scoping of context fields.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.
-- **Defaults are mandatory and comptime-evaluable**: a declaration without a default — or with one that doesn't fold to a compile-time constant — is a compile error; the default context must be constructible before `main` runs. Defaults fold into `__sx_default_context`. `?T = null` is the idiom for handle fields; the root `push` in `main` is the idiom for wiring real values.
+- **Defaults are mandatory and comptime-evaluable**: a declaration without a default — or with one that doesn't fold to a compile-time constant — is a compile error; the default context must be constructible before `main` runs. Defaults fold into `__sx_default_context`. `*T = null` is the idiom for handle fields (`?*T = null` where checked absence is wanted); the root `push` in `main` is the idiom for wiring real values.
 - **`push` semantics unchanged**: added fields patch exactly like builtin ones.
 - **Comptime**: `#run` bodies execute under the same assembled default context, so an added field's default is readable at comptime.
-- **Cost guideline** (not enforced): reads are a constant-offset load and calls share the pusher's slot — the only growth cost is the spread-copy at `push` (and the per-fiber snapshot). Prefer one POINTER per concern (`?*Ui`, `?*Logger`) over fat inline values; a 2 KB inline field makes every push a 2 KB memcpy. Small inline value fields are fine.
+- **Cost guideline** (not enforced): reads are a constant-offset load and calls share the pusher's slot — the only growth cost is the spread-copy at `push` (and the per-fiber snapshot). Prefer one POINTER per concern (`*Ui`, `*Logger`) over fat inline values; a 2 KB inline field makes every push a 2 KB memcpy. Small inline value fields are fine.
 
-There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`#context_extend logger: ?*Logger = null;` replaces the old `data: *void` idiom).
+There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`#context_extend logger: *Logger = null;` replaces the old `data: *void` idiom).
 
 ---
 

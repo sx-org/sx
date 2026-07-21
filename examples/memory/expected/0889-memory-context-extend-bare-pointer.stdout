@@ -1,0 +1,5 @@
+default ui is null = true
+pushed ui.depth = 42
+inner ui is null = true
+outer ui.depth again = 42
+restored ui is null = true
