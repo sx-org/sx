@@ -178,7 +178,10 @@ main :: () -> i32 {
         runner := fs.SchedRunner.init();
         cfg : http.Config = .{
             port = PORT,
-            timeout_request_ms = 1000,   // the stall bound case 4 exercises
+            timeout_request_ms = 400,    // the stall bound case 4 exercises;
+                                         // wide vs. self-driven loopback
+                                         // round-trips, small vs. the 1s
+                                         // corpus run budget it dominates
             timeout_keepalive_ms = 2000,
             request_count = 50,
             max_conn = 4,
@@ -309,7 +312,7 @@ main :: () -> i32 {
         if c4 < 0 { print("dial c4 failed\n"); srv.close(); return 1; }
         send_all(@srv, c4, "POST /stall HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
         send_all(@srv, c4, string.{ ptr = body, len = 1024 });
-        // go silent; the 1000 ms stall bound evicts, faulting the channel —
+        // go silent; the 400 ms stall bound evicts, faulting the channel —
         // the fiber wakes with -1 (same thread: obs is readable directly)
         t : i64 = 0;
         while t < 20000 and obs.stall_rc == -99 {

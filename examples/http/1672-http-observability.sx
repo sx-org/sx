@@ -183,10 +183,16 @@ main :: () -> i32 {
     if !contains(r4, "HTTP/1.1 404 Not Found") { print("case4: expected 404\n"); return 1; }
     socket.close(c1);
 
-    // Tick a few times so the 400-closed and dropped client sockets are
-    // fully reaped (READ_FAULT/CLOSE) before snapshotting.
+    // Tick until the 400-closed and dropped client sockets are fully
+    // reaped (READ_FAULT/CLOSE) before snapshotting — poll the stats the
+    // assertions below consume; the tick cap is the failure bound.
     t := 0;
-    while t < 60 { srv.tick(5) catch {}; t += 1; }
+    while t < 60 {
+        s0 := srv.stats();
+        if s0.closed_total == 2 and s0.active_conns == 0 { break; }
+        srv.tick(5) catch {};
+        t += 1;
+    }
 
     // ── assertions on the counter snapshot ─────────────────────────────
     s := srv.stats();
@@ -247,9 +253,17 @@ main :: () -> i32 {
         socket.write(fds[ci], req.ptr, xx req.len);
         ci += 1;
     }
-    // Pump the loop so the requests get parsed + dispatched + drained.
+    // Pump the loop until every request concluded — served (1 running +
+    // 1 backlogged behind the 40ms worker) or shed with 503. Polling the
+    // stats the assertions consume replaces a fixed 2s tick budget; the
+    // cap is the failure bound.
     pt := 0;
-    while pt < 400 { psrv.tick(5) catch {}; pt += 1; }
+    while pt < 400 {
+        ps0 := psrv.stats();
+        if ps0.requests_served + ps0.rejected_503 >= NCONN { break; }
+        psrv.tick(5) catch {};
+        pt += 1;
+    }
 
     ps := psrv.stats();
     if ps.rejected_503 < 1 { print("pooled: expected at least one 503 shed\n"); return 1; }

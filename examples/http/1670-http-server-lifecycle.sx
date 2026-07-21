@@ -206,7 +206,10 @@ main :: () -> i32 {
     // Scratch + the whole start/stop loop run under the GPA so every
     // server alloc/dealloc moves its counter. The scratch buffer itself
     // is freed before we read the counter.
-    rounds := 4;
+    // Two rounds prove cross-lifetime accumulation (a per-lifetime leak
+    // doubles); more rounds only add wall-clock (the in-flight-close join
+    // costs ~240ms each) against the 1s corpus run budget.
+    rounds := 2;
     leaked : i64 = 0;
     push .{ allocator = gpa } {
         cap : i64 = 50000;

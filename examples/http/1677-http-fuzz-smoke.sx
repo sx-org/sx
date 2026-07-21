@@ -1,6 +1,6 @@
 // std.http S3 (PLAN-HTTPZ): BOUNDED, DETERMINISTIC in-process fuzz SMOKE.
 //
-// A seeded PRNG throws thousands of mutated / malformed / random HTTP
+// A seeded PRNG throws hundreds of mutated / malformed / random HTTP
 // requests at one live server (driven single-thread via Server.tick) and
 // asserts the server never crashes, panics, aborts, or hangs — it only
 // ever (a) sends a syntactically-plausible response ("HTTP/1.1 " + a
@@ -39,11 +39,11 @@ http :: #import "modules/std/http.sx";
 SEED   :: 0x2545F4914F6CDD1D;   // fixed nonzero PRNG state (< i64.max)
 PORT   :: 18977;
 
-// Iteration count. Tuned so the whole run is comfortably < 5s wall-clock
-// on the dev host (~3s) while still exercising over a thousand mutated
-// requests. Bump it (and/or sweep SEED) for a longer out-of-corpus fuzz —
-// see the CI note in the header + tests/fuzz-http.md.
-ITERATIONS :: 1200;
+// Iteration count. Tuned so the run phase fits the corpus 1s post-compile
+// budget on the dev host (~0.9s) while still exercising hundreds of
+// mutated requests. Bump it (and/or sweep SEED) for a longer
+// out-of-corpus fuzz — see the CI note in the header + tests/fuzz-http.md.
+ITERATIONS :: 600;
 
 // Deterministic xorshift PRNG over i64 — NO time, NO Math.random (the corpus
 // has no nondeterministic RNG anyway). The shifts/xors wrap in i64, which is
