@@ -1,0 +1,29 @@
+error: cannot assign to context field 's' — the context is immutable within its scope; override it for a block with `push .{ s = ... }` (writing through a pointer field's pointee is allowed)
+  --> examples/diagnostics/1270-diagnostics-context-field-write.sx:19:9
+   |
+19 |         context.s = @v;
+   |         ^^^^^^^^^
+
+error: cannot assign to context field 'stats' — the context is immutable within its scope; override it for a block with `push .{ stats = ... }` (writing through a pointer field's pointee is allowed)
+  --> examples/diagnostics/1270-diagnostics-context-field-write.sx:20:9
+   |
+20 |         context.stats.count = 1;
+   |         ^^^^^^^^^^^^^^^^^^^
+
+error: cannot assign to context field 'stats' — the context is immutable within its scope; override it for a block with `push .{ stats = ... }` (writing through a pointer field's pointee is allowed)
+  --> examples/diagnostics/1270-diagnostics-context-field-write.sx:21:9
+   |
+21 |         context.stats.count += 1;
+   |         ^^^^^^^^^^^^^^^^^^^
+
+error: cannot assign to context field 'stats' — the context is immutable within its scope; override it for a block with `push .{ stats = ... }` (writing through a pointer field's pointee is allowed)
+  --> examples/diagnostics/1270-diagnostics-context-field-write.sx:22:9
+   |
+22 |         context.stats.buf[0] = 1;
+   |         ^^^^^^^^^^^^^^^^^^^^
+
+error: cannot assign to context field 's' — the context is immutable within its scope; override it for a block with `push .{ s = ... }` (writing through a pointer field's pointee is allowed)
+  --> examples/diagnostics/1270-diagnostics-context-field-write.sx:23:9
+   |
+23 |         context.s, v.n = @v, 4;
+   |         ^^^^^^^^^

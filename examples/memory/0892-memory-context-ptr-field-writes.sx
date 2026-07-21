@@ -1,0 +1,41 @@
+// Writes through a `#context_extend` pointer field's pointee (issue 0337):
+// `context.s.n = 5` mutates the POINTEE, exactly like a named local pointer.
+// Covers 1-hop and 2-hop chains × plain write / compound assign / method-call
+// mutation, and pins that the mutation is visible through every alias of the
+// pointee (the ambient-sink pattern: `#context_extend sink: *Sink` + append
+// through `context.sink`).
+#import "modules/std.sx";
+
+S :: struct { n: i64; list: List(i64); }
+Sink :: struct { target: *S; }
+
+#context_extend s: *S = null;
+#context_extend sink: *Sink = null;
+
+read1 :: () -> i64 { context.s.n }
+read2 :: () -> i64 { context.sink.target.n }
+write1 :: () { context.s.n = 10; }
+write2 :: () { context.sink.target.n = 20; }
+comp1 :: () { context.s.n += 5; }
+comp2 :: () { context.sink.target.n += 7; }
+meth2 :: (v: i64) { context.sink.target.list.append(v); }
+
+main :: () {
+    v := S.{ n = 3, list = .{} };
+    k := Sink.{ target = @v };
+    push .{ s = @v, sink = @k } {
+        print("reads {} {}\n", read1(), read2());
+        write1();
+        print("1-hop write {}\n", read1());
+        comp1();
+        print("1-hop compound {}\n", read1());
+        write2();
+        print("2-hop write {}\n", read2());
+        comp2();
+        print("2-hop compound {}\n", read2());
+        meth2(41);
+        meth2(42);
+        print("method mutation {} {} {}\n", context.sink.target.list.len, context.s.list.items[0], v.list.items[1]);
+    }
+    print("local alias {}\n", v.n);
+}

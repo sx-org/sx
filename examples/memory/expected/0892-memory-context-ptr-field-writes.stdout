@@ -1,0 +1,7 @@
+reads 3 3
+1-hop write 10
+1-hop compound 15
+2-hop write 20
+2-hop compound 27
+method mutation 2 41 42
+local alias 27

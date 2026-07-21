@@ -1,0 +1,25 @@
+// The context is immutable within its scope — only `push` installs new field
+// values (issue 0337 companion). A store whose target chain roots at `context`
+// WITHOUT crossing a pointer hop would write the ambient Context storage
+// itself and leak past `push` scoping: direct field writes, inline nested
+// members, compound assigns, inline array indexing, and multi-assign targets
+// are all rejected. Pointee writes (`context.s.n = 5`) stay legal — see
+// examples/memory/0892-memory-context-ptr-field-writes.sx.
+#import "modules/std.sx";
+
+S :: struct { n: i64; }
+Stats :: struct { count: i64; buf: [4]i64; }
+
+#context_extend s: *S = null;
+#context_extend stats: Stats = .{};
+
+main :: () {
+    v := S.{ n = 3 };
+    push .{ s = @v } {
+        context.s = @v;
+        context.stats.count = 1;
+        context.stats.count += 1;
+        context.stats.buf[0] = 1;
+        context.s, v.n = @v, 4;
+    }
+}

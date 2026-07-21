@@ -1257,6 +1257,55 @@ fn diagConstRootWrite(self: *Lowering, target: *const Node) bool {
     return false;
 }
 
+/// Context-root write guard, shared by lowerAssignment and lowerMultiAssign:
+/// an assignment whose target chain roots at the ambient `context` WITHOUT
+/// crossing a pointer hop writes the Context storage itself — but the context
+/// is immutable within its scope; only `push` installs new field values.
+/// Diagnose and return true (the caller skips the store). A chain that
+/// dereferences into pointee memory stays allowed (issue 0337): a pointer
+/// field along the chain (`context.s.n = 5`), an explicit deref, or indexing
+/// a slice/string field's backing data.
+fn diagContextRootWrite(self: *Lowering, target: *const Node) bool {
+    if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) return false;
+    var node = target;
+    while (true) {
+        const obj = switch (node.data) {
+            .field_access => |fa| fa.object,
+            .index_expr => |ie| ie.object,
+            else => return false,
+        };
+        if (obj.data == .deref_expr) return false;
+        if (obj.data == .identifier) {
+            if (!std.mem.eql(u8, obj.data.identifier.name, "context")) return false;
+            // A local named `context` shadows the builtin — ordinary paths own it.
+            if (self.scope) |s| {
+                if (s.lookup("context") != null) return false;
+            }
+            if (self.diagnostics) |d| {
+                if (node.data == .field_access) {
+                    const f = node.data.field_access.field;
+                    d.addFmt(.err, target.span, "cannot assign to context field '{s}' — the context is immutable within its scope; override it for a block with `push .{{ {s} = ... }}` (writing through a pointer field's pointee is allowed)", .{ f, f });
+                } else {
+                    d.addFmt(.err, target.span, "cannot assign into the context — it is immutable within its scope; override it for a block with `push .{{ ... }}`", .{});
+                }
+            }
+            return true;
+        }
+        // A hop that dereferences into pointee memory ends the context-rooted
+        // walk: a pointer object auto-derefs, and indexing a slice or string
+        // targets its backing data, not the context storage.
+        const ty = self.inferExprType(obj);
+        if (!ty.isBuiltin()) {
+            const info = self.module.types.get(ty);
+            if (info == .pointer) return false;
+            if (info == .slice and node.data == .index_expr) return false;
+        } else if (ty == .string and node.data == .index_expr) {
+            return false;
+        }
+        node = obj;
+    }
+}
+
 /// Shape-aware diagnostic for an assignment whose target is a NON-ALLOCA
 /// scope binding — a name that resolves but has no storable slot. Shared by
 /// lowerAssignment's ident arm and lowerMultiAssign's ident arm (issue 0219
@@ -1925,6 +1974,9 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
     // struct const the store previously compiled and bus-errored at
     // runtime; for scalars it silently misfired.
     if (diagConstRootWrite(self, asgn.target)) return;
+    // Context-root write guard (issue 0337): the context is immutable within
+    // its scope — only pointer-hop chains (pointee writes) may proceed.
+    if (diagContextRootWrite(self, asgn.target)) return;
     // `#set` property accessor: `obj.prop = rhs` (or `OP=`) dispatches to the
     // setter as `obj.prop$set(rhs)`. Must run before the RHS is lowered below
     // (the synthesized call lowers it itself). Falls through for ordinary fields.
@@ -2634,6 +2686,17 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
                     }
                     return binding.ref;
                 }
+            } else if (std.mem.eql(u8, id.name, "context") and
+                self.implicit_ctx_enabled and self.current_ctx_ref != Ref.none)
+            {
+                // `context` roots an lvalue chain through the hidden `*Context`
+                // itself, so a member chain GEPs the live ambient context like
+                // any named pointer local — the fallback below would lower the
+                // VALUE load, whose struct_gep has no pointer base and dies at
+                // LLVM emission (issue 0337). Stores that would land in the
+                // context storage itself are rejected by diagContextRootWrite;
+                // only chains crossing a pointer field reach a store.
+                return self.current_ctx_ref;
             } else if (self.resolveGlobalRef(id.name, null)) |gi| {
                 // Module-global lvalue: address into the global's live storage
                 // so a downstream GEP/store targets the global itself, not a
@@ -3126,6 +3189,9 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
         // below). Diagnose this target and keep going so every bad target in
         // the statement is reported (batched, like consecutive single-assigns).
         if (diagConstRootWrite(self, target)) continue;
+        // Context-root write guard (issue 0337) — same helper single-assign
+        // runs, per target: only pointer-hop chains (pointee writes) proceed.
+        if (diagContextRootWrite(self, target)) continue;
         // Enclosing-local write guard (issue 0250 fold) — same helper single-
         // assign runs, per target: a nested static fn's multi-assign to an
         // enclosing local previously stored into the dead alloca (silent no-op).
