@@ -15,7 +15,7 @@ UI_VERTEX_BYTES  :i64: 48;
 MAX_UI_VERTICES  :i64: 16384;
 
 UIRenderer :: struct {
-    // GL-side handles. Used when `gpu == null` (every non-iOS target today).
+    // GL-side handles. Used when `gpu == null`.
     vao: u32;
     vbo: u32;
     shader: u32;
@@ -68,7 +68,7 @@ UIRenderer :: struct {
             inline if OS == .android {
                 self.mtl_shader = self.gpu.create_shader(UI_VERT_SRC_ES, UI_FRAG_SRC_ES);
             }
-            inline if OS == .ios {
+            inline if OS == .ios or OS == .macos {
                 self.mtl_shader = self.gpu.create_shader(UI_MSL_SRC, "");
             }
             self.mtl_vbuf   = self.gpu.create_buffer(metal_buf_size);

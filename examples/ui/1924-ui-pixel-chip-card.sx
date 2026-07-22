@@ -2,10 +2,15 @@
 // THIS machine's real GPU stack into an offscreen surface, compared
 // against the committed reference PNG with the tolerance budget.
 //
-// Run (SDL3 links explicitly — bare externs):
+// Run — macOS renders through the windowless Metal backend, nothing to
+// link explicitly (Metal + objc resolve in-process):
+//     sx run examples/ui/1924-ui-pixel-chip-card.sx
+// Other desktops go GL over a hidden SDL window (bare externs — link
+// SDL3 explicitly):
 //     sx run --lflags -lSDL3 -L /opt/homebrew/lib examples/ui/1924-ui-pixel-chip-card.sx
-// Regenerate the reference consciously:
-//     SX_UPDATE_PIXELS=1 sx run --lflags -lSDL3 -L /opt/homebrew/lib examples/ui/1924-ui-pixel-chip-card.sx
+// Regenerate the reference consciously (rasterizer/driver switches fail
+// loudly first — revised I9):
+//     SX_UPDATE_PIXELS=1 sx run examples/ui/1924-ui-pixel-chip-card.sx
 //
 // NOT part of the byte-exact corpus (no expected/ files): the test
 // suite stays GPU/host agnostic — where no display or GL exists,

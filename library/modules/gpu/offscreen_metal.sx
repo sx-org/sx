@@ -1,0 +1,78 @@
+// Metal offscreen backend for the ui/surface.sx PixelSurface contract:
+// windowless macOS — no WindowServer, no CAMetalLayer. The render pass
+// targets an offscreen MTLTexture (MetalGPU.init_offscreen); readback
+// blits into a shared texture and reads with getBytes. Metal's texture
+// origin is top-left, so rows come back top-down with no flip.
+#import "modules/std.sx";
+#import "modules/gpu/types.sx";
+#import "modules/gpu/api.sx";
+#import "modules/gpu/metal.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/glyph_cache.sx";
+#import "modules/ui/font.sx";
+#import "modules/ui/renderer.sx";
+#import "modules/ui/surface.sx";
+
+MetalOffscreen :: struct {
+    gpu: MetalGPU;
+    renderer: UIRenderer;
+    font: GlyphCache;
+    w: i32 = 0;
+    h: i32 = 0;
+
+    // Open BEFORE building frames: measure_text must use the same font
+    // metrics the render uses. The font is machine-pinned by design
+    // (revised I9 — the reference shows what THIS machine renders).
+    open :: (self: *MetalOffscreen, w: i32, h: i32,
+             font_path: [:0]u8 = "/System/Library/Fonts/Supplemental/Arial.ttf",
+             font_size: f32 = 14.0) -> bool {
+        self.w = w;
+        self.h = h;
+        if !self.gpu.init_offscreen(w, h) { return false; }
+        // Route shaders + atlas through Metal BEFORE renderer/font init.
+        // GPU is #identity: these borrow THIS storage — `open` runs on a
+        // pre-erasure stack value, so the factory re-borrows through the
+        // owning PixelSurface copy (same reason it rebinds the global
+        // font there).
+        self.renderer.gpu = self.gpu.(GPU);
+        self.font.gpu = self.gpu.(GPU);
+        self.renderer.init();
+        self.font.init(font_path, font_size);
+        true
+    }
+
+    // Re-point the intra-struct GPU borrows at self. Must run on the
+    // OWNING copy after erasure — without this, renderer/font dispatch
+    // into the dead pre-erasure stack value.
+    rebind :: (self: *MetalOffscreen) {
+        self.renderer.gpu = self.gpu.(GPU);
+        self.font.gpu = self.gpu.(GPU);
+    }
+}
+
+impl PixelSurface for MetalOffscreen {
+    render :: (self: *MetalOffscreen, tree: *RenderTree) {
+        if !self.gpu.begin_frame(ClearColor.black()) { return; }
+        self.renderer.begin(xx self.w, xx self.h, self.font.texture_id);
+        self.renderer.process(tree);
+        self.font.upload_atlas_to_gpu();
+        self.renderer.flush();
+        // Offscreen end_frame drains the GPU — the texture is complete
+        // when this returns.
+        self.gpu.end_frame(0.0);
+    }
+
+    read_rgba :: (self: *MetalOffscreen, alloc: Allocator) -> string {
+        n := self.w.(i64) * self.h.(i64) * 4;
+        raw : [*]u8 = xx alloc.alloc_bytes(n);
+        self.gpu.read_offscreen(xx raw);
+        out : string = ---;
+        out.ptr = raw;
+        out.len = n;
+        out
+    }
+
+    width :: (self: *MetalOffscreen) -> i64 { self.w.(i64) }
+    height :: (self: *MetalOffscreen) -> i64 { self.h.(i64) }
+}

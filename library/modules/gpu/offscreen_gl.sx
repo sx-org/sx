@@ -1,8 +1,8 @@
 // GL/SDL offscreen backend for the ui/surface.sx PixelSurface contract:
-// a hidden window's framebuffer is the render target on desktop hosts.
+// a hidden window's framebuffer is the render target on non-Apple
+// desktops (macOS goes through gpu/offscreen_metal.sx — windowless).
 // Readback flips to top-down RGBA so nothing above this module ever
-// learns GL's origin. Superseded per platform as the R-track backends
-// land (Metal at R5 takes macOS per the normative default table).
+// learns GL's origin.
 #import "modules/std.sx";
 #import "modules/ffi/sdl3.sx";
 #import "modules/ffi/opengl.sx";

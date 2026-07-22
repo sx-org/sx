@@ -1,16 +1,30 @@
 // Select-at-bind (I5/I6) for the PixelSurface contract — the G6 stand-in
-// for the R2 owning registry/factory. Desktop hosts render through GL
-// over a hidden SDL window today (macOS's normative default is Metal —
-// it takes over at R5; references stay per-machine either way, revised
-// I9). Returns null where no display/GPU exists — the caller's graceful
-// skip, which is what keeps the wider test suite host-agnostic.
+// for the R2 owning registry/factory. macOS renders through the Metal
+// offscreen backend (the platform's normative default — windowless, no
+// WindowServer); other desktops go GL over a hidden SDL window.
+// References stay per-machine either way (revised I9). Returns null
+// where no display/GPU exists — the caller's graceful skip, which is
+// what keeps the wider test suite host-agnostic.
 #import "modules/std.sx";
 #import "modules/ui/font.sx";
 #import "modules/ui/surface.sx";
 #import "modules/gpu/offscreen_gl.sx";
+#import "modules/gpu/offscreen_metal.sx";
 
 open_pixel_surface :: (w: i32, h: i32) -> ?PixelSurface {
-    inline if OS != .ios {
+    inline if OS == .macos {
+        g := MetalOffscreen.{};
+        if !g.open(w, h) { return null; }
+        s := g.(PixelSurface);
+        // The erasure heap-copied the backend; the intra-struct GPU
+        // borrows and the ambient font must point INTO the owned copy,
+        // not the dead stack value.
+        mp := s.(*MetalOffscreen);
+        mp.rebind();
+        set_global_font(@mp.font);
+        return s;
+    }
+    inline if OS != .ios and OS != .macos {
         g := GlOffscreen.{};
         if !g.open(w, h) { return null; }
         s := g.(PixelSurface);
@@ -20,5 +34,5 @@ open_pixel_surface :: (w: i32, h: i32) -> ?PixelSurface {
         set_global_font(@gp.font);
         return s;
     }
-    null   // Metal offscreen lands with the host gates
+    null   // iOS: Metal offscreen rides the app host, not the test factory
 }
