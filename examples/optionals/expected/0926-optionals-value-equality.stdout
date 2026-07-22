@@ -1,0 +1,8 @@
+bare false true true true
+mixed true false true false
+null true true
+struct true false false true
+field true false true
+union true false
+narrowed true
+nan false

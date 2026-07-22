@@ -4232,6 +4232,11 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
             const lhs_info = self.module.types.get(lhs_ty);
             if (lhs_info == .@"enum" or lhs_info == .@"union" or lhs_info == .tagged_union) {
                 self.target_type = lhs_ty;
+            } else if (lhs_info == .optional and (bop.op == .eq or bop.op == .neq)) {
+                // `?T == <rhs>`: type the RHS at the payload so a literal
+                // (numeric, enum shorthand, struct) lands on T directly —
+                // the mixed compare below needs the concrete side at T.
+                self.target_type = lhs_info.optional.child;
             }
         } else if (lhs_ty == .f32 or lhs_ty == .f64) {
             self.target_type = lhs_ty;
@@ -4240,16 +4245,67 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // In a comparison, an anonymous positional literal on the RHS is typed
     // from the LHS just like an enum shorthand. This also keeps the following
     // `{` available as the if body after the parser's issue-0246 brace fix.
+    // Against a `?T` LHS the literal types at the payload (mixed compare).
     if (bop.rhs.data == .struct_literal and
         bop.rhs.data.struct_literal.struct_name == null and
         bop.rhs.data.struct_literal.type_expr == null)
     {
-        self.target_type = lhs_ty;
+        self.target_type = blk: {
+            if ((bop.op == .eq or bop.op == .neq) and !lhs_ty.isBuiltin()) {
+                const li = self.module.types.get(lhs_ty);
+                if (li == .optional) break :blk li.optional.child;
+            }
+            break :blk lhs_ty;
+        };
     }
     var rhs = self.lowerExpr(bop.rhs);
     const rhs_ref_pointee = self.refCapturePointee(bop.rhs);
     if (rhs_ref_pointee) |p| rhs = self.builder.load(rhs, p);
     self.target_type = saved_tt;
+
+    // Optional value-equality (issue 0344): `?T == ?T` — equal iff both
+    // null or both present with equal payloads — and the mixed `?T == T`,
+    // where a null optional is simply unequal. Equality never reads a
+    // payload without a presence guard, so the no-implicit-unwrap doctrine
+    // (0179/0185) is untouched: arithmetic and ordering on un-narrowed
+    // optionals still reject below. Presence tests (`x == null`) returned
+    // earlier. A guard-narrowed optional operand takes this path too — the
+    // presence branch just folds to the payload compare.
+    if (bop.op == .eq or bop.op == .neq) {
+        const l_actual = if (lhs_ty == .unresolved) self.builder.getRefType(lhs) else lhs_ty;
+        const r_actual = blk: {
+            const it = rhs_ref_pointee orelse self.inferExprType(bop.rhs);
+            break :blk if (it == .unresolved) self.builder.getRefType(rhs) else it;
+        };
+        const l_opt: ?TypeId = if (!l_actual.isBuiltin() and self.module.types.get(l_actual) == .optional)
+            self.module.types.get(l_actual).optional.child
+        else
+            null;
+        const r_opt: ?TypeId = if (!r_actual.isBuiltin() and self.module.types.get(r_actual) == .optional)
+            self.module.types.get(r_actual).optional.child
+        else
+            null;
+        if (l_opt != null and r_opt != null) {
+            if (l_actual != r_actual) {
+                if (self.diagnostics) |d| d.addFmt(.err, bop.rhs.span, "cannot compare values of distinct types '{s}' and '{s}'", .{
+                    self.formatTypeName(l_actual), self.formatTypeName(r_actual),
+                });
+                return self.emitPlaceholder("distinct-optional-equality");
+            }
+            const eq = self.lowerOptionalEquality(lhs, rhs, l_opt.?, bop.lhs.span);
+            return if (bop.op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool) else eq;
+        }
+        if (l_opt != null or r_opt != null) {
+            const inner = l_opt orelse r_opt.?;
+            const opt_ref = if (l_opt != null) lhs else rhs;
+            var conc = if (l_opt != null) rhs else lhs;
+            const conc_ty = if (l_opt != null) r_actual else l_actual;
+            if (conc_ty != inner) conc = self.coerceToType(conc, conc_ty, inner);
+            const eq = self.lowerOptionalMixedEquality(opt_ref, conc, inner, bop.lhs.span);
+            return if (bop.op == .neq) self.builder.emit(.{ .bool_not = .{ .operand = eq } }, .bool) else eq;
+        }
+    }
+
     // Result type follows the shared promotion rule: an int LHS with a
     // float RHS promotes to the float (`i64 * f32` → `f32`); vectors /
     // structs keep the LHS type. `inferExprType` reuses the same helper
@@ -4644,6 +4700,50 @@ pub fn lowerStructEquality(self: *Lowering, bop: *const ast.BinaryOp, lhs: Ref, 
         eq_all;
 }
 
+/// Build a `bool` Ref for `?T == ?T`: equal iff both null, or both present
+/// with `==`-equal payloads (each payload compared by its own type's rule).
+/// The payload compare is branch-guarded so a null payload is never read
+/// (the interpreter errors on unwrapping null). A non-comparable payload
+/// type diagnoses via `lowerFieldEquality` and yields a typed placeholder —
+/// `hasErrors()` aborts before codegen, and the CFG stays well-formed.
+pub fn lowerOptionalEquality(self: *Lowering, l: Ref, r: Ref, inner_ty: TypeId, span: ast.Span) Ref {
+    const ha = self.builder.emit(.{ .optional_has_value = .{ .operand = l } }, .bool);
+    const hb = self.builder.emit(.{ .optional_has_value = .{ .operand = r } }, .bool);
+    const both = self.builder.emit(.{ .bool_and = .{ .lhs = ha, .rhs = hb } }, .bool);
+    const both_bb = self.freshBlock("opteq.both");
+    const none_bb = self.freshBlock("opteq.none");
+    const merge_bb = self.freshBlockWithParams("opteq.merge", &.{.bool});
+    self.builder.condBr(both, both_bb, &.{}, none_bb, &.{});
+    self.builder.switchToBlock(both_bb);
+    const pl = self.builder.optionalUnwrap(l, inner_ty);
+    const pr = self.builder.optionalUnwrap(r, inner_ty);
+    const pe = self.lowerFieldEquality(pl, pr, inner_ty, span) orelse self.builder.constBool(false);
+    self.builder.br(merge_bb, &.{pe});
+    self.builder.switchToBlock(none_bb);
+    // Not both present: equal only when both are null.
+    const same = self.builder.cmpEq(ha, hb);
+    self.builder.br(merge_bb, &.{same});
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, .bool);
+}
+
+/// Build a `bool` Ref for the mixed `?T == T`: a null optional is simply
+/// unequal; a present one compares its payload. `conc` must already carry
+/// the payload type (callers coerce first).
+pub fn lowerOptionalMixedEquality(self: *Lowering, opt: Ref, conc: Ref, inner_ty: TypeId, span: ast.Span) Ref {
+    const has = self.builder.emit(.{ .optional_has_value = .{ .operand = opt } }, .bool);
+    const not_eq = self.builder.constBool(false);
+    const has_bb = self.freshBlock("optmix.has");
+    const merge_bb = self.freshBlockWithParams("optmix.merge", &.{.bool});
+    self.builder.condBr(has, has_bb, &.{}, merge_bb, &.{not_eq});
+    self.builder.switchToBlock(has_bb);
+    const pl = self.builder.optionalUnwrap(opt, inner_ty);
+    const pe = self.lowerFieldEquality(pl, conc, inner_ty, span) orelse self.builder.constBool(false);
+    self.builder.br(merge_bb, &.{pe});
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, .bool);
+}
+
 /// Build a `bool` Ref for `lf == rf` where both are values of `field_ty`, the
 /// per-field step of `lowerStructEquality`. Returns null (after emitting a
 /// located diagnostic) for a field type that has no defined value-equality.
@@ -4709,20 +4809,21 @@ pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, s
         .slice => self.builder.cmpEq(lf, rf),
         // Enum (payload-less, i-backed) and pointers-by-info: scalar identity.
         .@"enum", .pointer, .many_pointer => self.builder.cmpEq(lf, rf),
+        // Optional field: both-null equal, one-null unequal, both-present →
+        // payload compare — the same rule as bare `?T == ?T`.
+        .optional => self.lowerOptionalEquality(lf, rf, fi.optional.child, span),
         // Non-comparable field types — reject with the issue-0233 policy. An
         // untagged union's inactive bytes are unspecified; a fixed array has no
-        // defined value-equality (compare elements); an optional does not
-        // implicitly compare (guard with `!= null` / unwrap first). Each mirrors
-        // how the bare shape is rejected as a top-level `==` operand.
-        .@"union", .array, .optional => blk: {
+        // defined value-equality (compare elements). Each mirrors how the bare
+        // shape is rejected as a top-level `==` operand.
+        .@"union", .array => blk: {
             const hint: []const u8 = switch (fi) {
                 .@"union" => "compare a specific variant sub-field",
                 .array => "compare elements individually, or loop over the elements",
-                .optional => "an optional field does not compare; guard with '!= null' or unwrap first",
                 else => unreachable,
             };
             if (self.diagnostics) |d| {
-                const pid = d.addFmtId(.err, span, "cannot compare struct: field of type '{s}' has no value-equality", .{
+                const pid = d.addFmtId(.err, span, "cannot compare: field of type '{s}' has no value-equality", .{
                     self.formatTypeName(field_ty),
                 });
                 d.addNote(pid, span, hint);
@@ -4737,7 +4838,7 @@ pub fn lowerFieldEquality(self: *Lowering, lf: Ref, rf: Ref, field_ty: TypeId, s
         // ill-defined.)
         else => blk: {
             if (self.diagnostics) |d| {
-                d.addFmt(.err, span, "cannot compare struct: field of type '{s}' has no value-equality", .{
+                d.addFmt(.err, span, "cannot compare: field of type '{s}' has no value-equality", .{
                     self.formatTypeName(field_ty),
                 });
             }

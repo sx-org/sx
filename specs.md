@@ -616,19 +616,19 @@ struct layout). Each field is compared against its own type — an `f64` field u
 the ordered IEEE compare (NaN semantics per §Operators — consequently a struct
 containing a NaN field is NOT equal to itself), a `string` field uses
 content equality (`str_eq`), a nested struct/tuple field recurses, a tagged-union
-field compares by tag only (matching a bare tagged-union `==`), and a slice /
-pointer / cstring field compares by identity. Because the comparison walks named
+field compares by tag only (matching a bare tagged-union `==`), a slice /
+pointer / cstring field compares by identity, and an `?T` field compares by the
+optional value-equality rule (§Optional Types — both-null equal, one-null
+unequal, both-present → payload compare). Because the comparison walks named
 fields, **padding bytes are never read** — a byte-wise compare would be
 non-deterministic for a struct with alignment gaps, which is precisely why the
 compare is field-wise.
 
 A struct is **not comparable** — the whole `==` / `!=` is a compile error — when
 any field has no defined value-equality: an untagged `union` field (inactive-
-variant bytes are unspecified), a fixed `[N]T` array field (compare elements
-individually), or an `?T` optional field (an optional does not implicitly
-compare; guard with `!= null` or unwrap first). These mirror the rejection of the
-same shapes as bare top-level `==` operands. `<`, `<=`, `>`, `>=` are not defined
-on structs.
+variant bytes are unspecified) or a fixed `[N]T` array field (compare elements
+individually). These mirror the rejection of the same shapes as bare top-level
+`==` operands. `<`, `<=`, `>`, `>=` are not defined on structs.
 
 #### `#using` — Struct Composition
 `#using StructName;` inside a struct declaration embeds all fields from `StructName` at that position. The embedded fields are accessed directly, as if declared inline.
@@ -1522,6 +1522,34 @@ a binding (`if v := opt`) / a `case` match, or rely on flow-sensitive narrowing
 after a `!= null` guard (below). Unwrapping a null optional implicitly would
 yield its zero payload with no diagnostic, so the conversion is rejected rather
 than allowed.
+
+#### Value Equality
+
+`==` / `!=` are defined on optionals whenever the payload type has
+value-equality (issue 0344). Equality extracts nothing — null is a legitimate
+comparison value — so this is not an exception to the no-implicit-unwrap rule,
+and arithmetic / ordering on un-narrowed optionals stay rejected.
+
+- `?T == ?T`: equal iff both are null, or both are present with `==`-equal
+  payloads. The payload compares by its own type's rule (a float payload uses
+  the IEEE ordered compare — a present NaN is not equal to itself; a string
+  payload compares by content; a struct payload recurses field-wise; a
+  tagged-union payload compares by tag only). A null payload is never read.
+- `?T == T` (either order): false when the optional is null, otherwise the
+  payload compare. A literal on the concrete side types at the payload
+  (`opt_width == 40.0` against a `?f32`).
+- `?T == null` keeps its meaning as the presence test (subsumed by the
+  general rule).
+- Two distinct optional types (`?f32` vs `?f64`) do not compare, and a payload
+  without value-equality (e.g. a fixed array) keeps the usual rejection.
+
+```sx
+a : ?f32 = 1.5;
+b : ?f32 = null;
+a == b        // false — present vs null
+b == null     // true
+a == 1.5      // true — mixed compare, no unwrap spelling needed
+```
 
 #### Force Unwrap (`!`)
 Extracts the payload, traps at runtime if null:

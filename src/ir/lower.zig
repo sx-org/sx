@@ -3187,6 +3187,8 @@ pub const Lowering = struct {
     pub const lowerTupleMembership = lower_expr.lowerTupleMembership;
     pub const lowerStructEquality = lower_expr.lowerStructEquality;
     pub const lowerFieldEquality = lower_expr.lowerFieldEquality;
+    pub const lowerOptionalEquality = lower_expr.lowerOptionalEquality;
+    pub const lowerOptionalMixedEquality = lower_expr.lowerOptionalMixedEquality;
     pub const lowerChainedComparison = lower_expr.lowerChainedComparison;
     pub const emitCmp = lower_expr.emitCmp;
 

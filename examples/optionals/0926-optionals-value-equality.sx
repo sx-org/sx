@@ -1,0 +1,64 @@
+// Optional value-equality (issue 0344): `?T == ?T` is defined whenever T
+// has value-equality — equal iff both are null, or both are present with
+// `==`-equal payloads (each payload compared by its own type's rule). The
+// mixed `?T == T` compares a present payload and is simply false on null.
+// Equality never reads a payload without a presence guard, and it extracts
+// nothing — the no-implicit-unwrap doctrine (0920/0922) is untouched:
+// arithmetic and ordering on un-narrowed optionals still reject.
+#import "modules/std.sx";
+
+P :: struct { x: i32; tag: string; }
+
+// Struct compare recurses through optional FIELDS with the same rule — a
+// struct holding optionals compares field-wise against a constant.
+Style :: struct {
+    width: ?f32 = null;
+    label: string = "";
+    scale: f32 = 1.0;
+}
+
+STYLE_DEFAULT :: Style.{};
+
+U :: enum { a: i64; b: string; }
+
+main :: () {
+    a : ?f32 = 1.5;
+    b : ?f32 = null;
+    c : ?f32 = 1.5;
+    n : ?f32 = null;
+    print("bare {} {} {} {}\n", a == b, a == c, b == n, a != b);
+
+    // Mixed, both orders; the literal types at the payload.
+    print("mixed {} {} {} {}\n", a == 1.5, b == 1.5, 1.5 == a, a != 1.5);
+
+    // `== null` / `!= null` presence tests are unchanged (and subsumed).
+    print("null {} {}\n", b == null, a != null);
+
+    // Struct payloads compare field-wise; string fields by content.
+    sa : ?P = P.{ x = 4, tag = "hi" };
+    sb : ?P = P.{ x = 4, tag = "hi" };
+    sc : ?P = P.{ x = 4, tag = "yo" };
+    sn : ?P = null;
+    print("struct {} {} {} {}\n", sa == sb, sa == sc, sa == sn, sa == P.{ x = 4, tag = "hi" });
+
+    // Optional fields inside a struct: the Mod-style default probe.
+    s := Style.{ width = 2.0 };
+    print("field {} {} {}\n", Style.{} == STYLE_DEFAULT, s == STYLE_DEFAULT, s != STYLE_DEFAULT);
+
+    // Tagged-union payloads keep the bare rule: tag-only compare.
+    ua : ?U = U.a(1);
+    ub : ?U = U.a(2);
+    uc : ?U = U.b("x");
+    print("union {} {}\n", ua == ub, ua == uc);
+
+    // A guard-narrowed optional operand takes the same path (present ⇒
+    // payload compare); narrowing still works for extraction elsewhere.
+    if a != null {
+        print("narrowed {}\n", a == 1.5);
+    }
+
+    // NaN payloads follow IEEE: both present, NOT equal (the struct-field
+    // NaN rule, unchanged).
+    nanv : ?f64 = 0.0 / 0.0;
+    print("nan {}\n", nanv == nanv);
+}

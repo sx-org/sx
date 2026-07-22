@@ -1,0 +1,17 @@
+error: cannot compare: field of type '[2]i64' has no value-equality
+  --> examples/optionals/0927-optionals-equality-uncomparable.sx:10:11
+   |
+10 |     ok := a == b;          // error: array payload has no value-equality
+   |           ^
+
+note: compare elements individually, or loop over the elements
+  --> examples/optionals/0927-optionals-equality-uncomparable.sx:10:11
+   |
+10 |     ok := a == b;          // error: array payload has no value-equality
+   |           ^
+
+error: cannot compare values of distinct types '?f32' and '?f64'
+  --> examples/optionals/0927-optionals-equality-uncomparable.sx:13:17
+   |
+13 |     ok2 := x == y;         // error: distinct types
+   |                 ^

@@ -1,0 +1,15 @@
+// Optional equality requires the PAYLOAD to have value-equality — `?[2]i64`
+// still rejects (a fixed array has none), and two distinct optional types
+// never compare. The 0344 extension defines `?T == ?T` / `?T == T`; it does
+// not widen what T itself may be.
+#import "modules/std.sx";
+
+main :: () {
+    a : ?[2]i64 = null;
+    b : ?[2]i64 = null;
+    ok := a == b;          // error: array payload has no value-equality
+    x : ?f32 = null;
+    y : ?f64 = null;
+    ok2 := x == y;         // error: distinct types
+    print("{} {}\n", ok, ok2);
+}
