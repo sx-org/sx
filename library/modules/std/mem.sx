@@ -61,7 +61,7 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline if T == {
         case protocol: {
             inline if is_identity(T) {
-                compile_error("free on an '#identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free");
+                #error("free on an '#identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free");
             }
             a.dealloc_bytes(x.(ProtocolRaw).ctx);
         }
@@ -70,7 +70,7 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
             if env != null { a.dealloc_bytes(env); }
         }
         case slice:    a.dealloc_bytes(xx x.ptr);
-        else:          compile_error("free expects a protocol value, a closure, or a slice");
+        else:          #error("free expects a protocol value, a closure, or a slice");
     }
 }
 

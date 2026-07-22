@@ -34,7 +34,7 @@ inline if OS == {
         CLOCK_REALTIME  :i32: 0;
         CLOCK_MONOTONIC :i32: 1;
     else:
-        #error "std/time.sx: clock ids are not defined for this target";
+        #error("std/time.sx: clock ids are not defined for this target");
 }
 
 // Wall clock as unix epoch seconds.

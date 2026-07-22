@@ -23,7 +23,7 @@ main :: () {
 
 - Clean declaration syntax: `name :: value` for constants, `name := value` for variables
 - Compiles to native code via LLVM
-- Compile-time execution with `#run`, code generation with `#insert`, and compile-time diagnostics with `#error`
+- Compile-time execution with `#run`, code generation with `#insert`, and compile-time diagnostics with `#error("msg")`
 - Generics via monomorphization
 - First-class closures with value capture
 - Protocol-based polymorphism (traits) with optional inline dispatch

@@ -23,7 +23,13 @@ error: cannot erase an rvalue to '#identity' protocol 'Allocator' — identity o
    |                         ^^^^^^^^^^^^^
 
 error: free on an '#identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free
+  --> examples/diagnostics/1255-diagnostics-identity-refusals.sx:33:5
+   |
+33 |     free(d);                        // free on identity → refusal
+   |     ^^^^
+
+note: raised by '#error' here
   --> library/modules/std/mem.sx:64:17
    |
-64 |                 compile_error("free on an '#identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free");
-   |                 ^^^^^^^^^^^^^
+64 |                 #error("free on an '#identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free");
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

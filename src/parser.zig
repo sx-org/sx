@@ -3958,12 +3958,17 @@ pub const Parser = struct {
     fn parseErrorDirective(self: *Parser) anyerror!*Node {
         const start = self.current.loc.start;
         self.advance(); // skip '#error'
+        if (self.current.tag == .string_literal) {
+            return self.fail("'#error \"msg\";' is now spelled '#error(\"msg\");'");
+        }
+        try self.expect(.l_paren);
         if (self.current.tag != .string_literal) {
-            return self.fail("expected a string message after '#error'");
+            return self.fail("expected a string message in '#error(...)'");
         }
         const raw = self.tokenSlice(self.current);
         const message = raw[1 .. raw.len - 1];
         self.advance();
+        try self.expect(.r_paren);
         try self.expect(.semicolon);
         return try self.createNode(start, .{ .error_directive = .{ .message = message } });
     }

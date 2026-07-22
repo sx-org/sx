@@ -1,0 +1,21 @@
+// `#error("msg");` in a monomorphization-pruned `inline if T ==` arm
+// (specs: #error Directive): fires ONLY for the instantiation that selects
+// the arm, and the diagnostic anchors at the OUTERMOST instantiation call
+// site — the user call that forced the instantiation — with the directive's
+// own location as a note. The good instantiation on the line above compiles
+// silently; a library-internal anchor would read like a comptime panic.
+#import "modules/std.sx";
+
+pick :: (v: $T) {
+    inline if T == {
+        case i64: { print("int {}\n", v); }
+        case string: { print("str {}\n", v); }
+        else: { #error("pick: unsupported type — add an arm or convert at the call site"); }
+    }
+}
+
+main :: () {
+    pick(5);
+    pick("hi");
+    pick(true);
+}

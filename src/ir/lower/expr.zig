@@ -3786,6 +3786,29 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         .catch_expr => |ce| self.lowerCatch(&ce, node.span),
         .caller_location => self.lowerCallerLocation(node),
         .asm_expr => |ae| self.lowerAsmExpr(&ae, node.span),
+        // `#error("msg");` that survived comptime pruning into live code —
+        // fire at lower time (specs: the directive fires when REACHED; a
+        // pruned `inline if` arm never lowers, so per-monomorphization
+        // rejection works exactly like the module-scope OS-match form).
+        // Inside a monomorphized body the diagnostic anchors at the
+        // OUTERMOST instantiation call site — the user call that forced the
+        // instantiation — with the directive's own location as a note; a
+        // library-internal anchor would read like a comptime panic.
+        .error_directive => |ed| blk: {
+            if (self.diagnostics) |d| {
+                if (self.mono_sites.items.len > 0) {
+                    const site = self.mono_sites.items[0];
+                    const saved_file = d.current_source_file;
+                    d.current_source_file = site.source;
+                    const id = d.addFmtId(.err, site.span, "{s}", .{ed.message});
+                    d.current_source_file = saved_file;
+                    d.addNoteFmt(id, node.span, "raised by '#error' here", .{});
+                } else {
+                    d.addFmt(.err, node.span, "{s}", .{ed.message});
+                }
+            }
+            break :blk self.emitPlaceholder("error_directive");
+        },
         else => self.emitError("unknown_expr", node.span),
     };
 }

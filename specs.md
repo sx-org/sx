@@ -2764,7 +2764,7 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
         case protocol: a.dealloc_bytes(x.(ProtocolRaw).ctx);
         case closure:  { env := x.(ClosureRaw).env; if env != null { a.dealloc_bytes(env); } }
         case slice:    a.dealloc_bytes(xx x.ptr);
-        else:          compile_error("free expects a protocol value, a closure, or a slice");
+        else:          #error("free expects a protocol value, a closure, or a slice");
     }
 }
 ```
@@ -2772,7 +2772,7 @@ free :: ufcs (x: $T, a: Allocator = context.allocator) {
 Arms select in order (a specific type name may precede its category);
 `else:` matches when nothing else does; with no match and no `else:` the
 match lowers to nothing (the runtime form's skip-to-merge, statically). A
-`compile_error(…)` arm fires only when SELECTED — the un-selected case is
+`#error(…)` arm fires only when SELECTED — the un-selected case is
 the OS-match discipline. The static classifier mirrors the runtime tag
 switch arm for arm, **plus the `protocol` category** (default and
 `#inline` protocol values alike), which exists ONLY here: a protocol value
@@ -3378,7 +3378,7 @@ lowers to. A `#run sqrt(x)` fails loudly rather than folding to a wrong value.
 Two categories are deliberately **not** intrinsics. `string` and `Vector` are
 language primitives, resolved by name by the type system like `int` / `bool` /
 `f64`. And a handful of keywords (`type_eq`, `has_impl`, `is_struct`,
-`is_comptime`, `compile_error`) are recognized bare, declared nowhere.
+`is_comptime`) are recognized bare, declared nowhere.
 
 ### Staging: functions belong to no stage
 
@@ -3488,25 +3488,51 @@ Comptime globals are resolved lazily: the JIT executes only when the value is fi
 
 ### `#error` Directive
 
-`#error "message";` emits `message` as a compile-time error and halts
-compilation. It is valid as a top-level item or a statement.
+`#error("message");` emits `message` as a compile-time error and halts
+compilation. It is valid as a top-level item or a statement, and it is THE
+compile-time rejection spelling (the old `compile_error(...)` bare intrinsic
+was consolidated into it).
 
-The directive fires only when it is reached in **live** code. The comptime
-conditional flatten pass drops non-taken `inline if` arms *before* the directive
-can fire, so `#error` is the idiomatic way to reject an unsupported target in an
-exhaustive `inline if OS`/`inline if ARCH` without a silent fallback:
+The directive fires only when it is reached in **live** code, at every
+level where code goes dead:
+
+- The comptime conditional flatten pass drops non-taken module-scope
+  `inline if` arms before the directive can fire — the idiomatic way to
+  reject an unsupported target in an exhaustive `inline if OS`/`inline if
+  ARCH` without a silent fallback:
 
 ```sx
 inline if OS == {
     case .macos: errno_location :: () -> *i32 extern libc "__error";
     case .linux: errno_location :: () -> *i32 extern libc "__errno_location";
-    else:        #error "errno_location: unsupported target — add its libc symbol.";
+    else:        #error("errno_location: unsupported target — add its libc symbol.");
 }
 ```
 
-On macOS/Linux the matching arm is taken and the `else` (with its `#error`) is
-pruned; on any other target the `else` is taken and compilation stops with the
-message. A bare top-level `#error "...";` always fires.
+- Monomorphization prunes non-taken `inline if T ==` arms per instance —
+  the same discipline rejects an unsupported TYPE in generic code, firing
+  only for the instantiations that actually select the arm:
+
+```sx
+free :: ufcs (x: $T, a: Allocator = context.allocator) {
+    inline if T == {
+        case protocol: { ... }
+        case closure:  { ... }
+        case slice:    a.dealloc_bytes(xx x.ptr);
+        else:          #error("free expects a protocol value, a closure, or a slice");
+    }
+}
+```
+
+- A bare top-level `#error("...");` always fires.
+
+When a surviving `#error` fires inside a monomorphized body, the diagnostic
+anchors at the OUTERMOST instantiation call site — the user call that
+forced the instantiation — with the directive's own location attached as a
+note. A library-internal anchor would read like a run-time panic's stack
+bottom; the offending code is the caller's.
+
+The message must be a string literal (it is consumed at compile time).
 
 ### `#insert` Directive
 

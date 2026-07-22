@@ -35,12 +35,12 @@ UiRootId :: struct { scene: SceneId = .{ value = 0 }; value: u64; }
 // nontrivial state goes through `use_state_with` under the entry allocator.
 trivial_state_check :: ($T: Type) {
     inline if T == {
-        case pointer: compile_error("use_state payload may not contain pointers — frame-backed interiors must never enter persistent entries; use use_state_with under the entry allocator");
-        case slice: compile_error("use_state payload may not contain slices — use use_state_with under the entry allocator");
-        case string: compile_error("use_state payload may not contain strings — use use_state_with under the entry allocator");
-        case closure: compile_error("use_state payload may not contain closures — handler envs are frame-transient; use use_state_with under the entry allocator");
-        case protocol: compile_error("use_state payload may not contain protocol values — use use_state_with under the entry allocator");
-        case any: compile_error("use_state payload may not contain 'any' — use use_state_with under the entry allocator");
+        case pointer: #error("use_state payload may not contain pointers — frame-backed interiors must never enter persistent entries; use use_state_with under the entry allocator");
+        case slice: #error("use_state payload may not contain slices — use use_state_with under the entry allocator");
+        case string: #error("use_state payload may not contain strings — use use_state_with under the entry allocator");
+        case closure: #error("use_state payload may not contain closures — handler envs are frame-transient; use use_state_with under the entry allocator");
+        case protocol: #error("use_state payload may not contain protocol values — use use_state_with under the entry allocator");
+        case any: #error("use_state payload may not contain 'any' — use use_state_with under the entry allocator");
         case struct: {
             inline for 0..struct_field_count(T) (i) { trivial_state_check(struct_field_type(T, i)); }
         }

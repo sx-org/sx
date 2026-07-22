@@ -53,7 +53,7 @@ inline if OS == {
         ECONNABORTED :i32: 103;
         ECONNRESET   :i32: 104;
     else:
-        #error "std/posix.sx: errno constants are only defined for Darwin, Linux, Android, and Emscripten — add a case for this target's kernel values.";
+        #error("std/posix.sx: errno constants are only defined for Darwin, Linux, Android, and Emscripten — add a case for this target's kernel values.");
 }
 
 // Errno values that are uniform across Darwin, Linux, Android, and Emscripten.

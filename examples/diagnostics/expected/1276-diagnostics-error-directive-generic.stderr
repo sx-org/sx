@@ -1,0 +1,11 @@
+error: pick: unsupported type — add an arm or convert at the call site
+  --> examples/diagnostics/1276-diagnostics-error-directive-generic.sx:20:5
+   |
+20 |     pick(true);
+   |     ^^^^
+
+note: raised by '#error' here
+  --> examples/diagnostics/1276-diagnostics-error-directive-generic.sx:13:17
+   |
+13 |         else: { #error("pick: unsupported type — add an arm or convert at the call site"); }
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

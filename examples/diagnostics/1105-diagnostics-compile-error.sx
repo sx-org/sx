@@ -1,14 +1,10 @@
-// `compile_error(msg)` raises a build-time diagnostic at the call
-// site. Used by builder fns (e.g. `#insert build_block_convert(...)`)
-// to reject malformed pack shapes with a clear message rather than
-// silently producing wrong code.
-//
-// The diagnostic appears at the source position of the
-// `compile_error` call. Argument must be a string literal — runtime
-// expressions can't be reported as compile errors.
+// `compile_error(...)` was consolidated into the `#error("msg");` directive
+// (fires when reached in live code, anchored at the outermost instantiation
+// site). The removed spelling gets a migration diagnostic, not a silent
+// unknown-name fallthrough.
 
 #import "modules/std.sx";
 
-#run compile_error("intentional compile error from #run");
+#run compile_error("this spelling is gone");
 
 main :: () { }

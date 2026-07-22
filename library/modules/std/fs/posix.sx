@@ -216,7 +216,7 @@ fs_modified_seconds_handle :: (handle: i64) -> (i64, bool) {
         offset := 0;
         inline if OS == .macos or OS == .ios { offset = 48; }
         else if OS == .linux or OS == .android { offset = 88; }
-        else { #error "std/fs/posix.sx: stat modification-time offset is not defined for this target"; }
+        else { #error("std/fs/posix.sx: stat modification-time offset is not defined for this target"); }
         seconds : i64 = 0;
         fs_posix_c.memcpy(@seconds, @raw[offset], size_of(i64));
         return seconds, true;

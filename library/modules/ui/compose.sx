@@ -194,7 +194,7 @@ as_key :: (id: $K) -> Key {
         case i64: { k = Key.int(id); }
         case string: { k = Key.str(id); }
         case Key: { k = id; }
-        else: compile_error("keyed id must be an i64, a string, or a Key — convert explicitly");
+        else: #error("keyed id must be an i64, a string, or a Key — convert explicitly");
     }
     k
 }

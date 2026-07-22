@@ -2549,6 +2549,15 @@ pub fn lowerGenericCall(self: *Lowering, fd: *const ast.FnDecl, base_name: []con
     const mangled_name = self.genericResolver().mangleGenericName(base_name, fd, &bindings);
 
     if (!self.lowered_functions.contains(mangled_name)) {
+        // Record this call as the instantiation site for the mono's body:
+        // a surviving `#error` inside it anchors HERE (outermost frame of
+        // the chain), not at the library-internal directive line.
+        self.mono_sites.append(self.alloc, .{
+            .source = call_node.callee.source_file orelse self.current_source_file,
+            .span = call_node.callee.span,
+            .caller_func = self.builder.func,
+        }) catch {};
+        defer self.mono_sites.items.len -= 1;
         self.monomorphizeFunction(fd, mangled_name, &bindings);
     }
 
@@ -3300,25 +3309,11 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         return self.builder.constBool(self.module.types.get(ty) == .@"struct");
     }
     if (std.mem.eql(u8, name, "compile_error")) {
-        // compile_error(msg) — raise a build-time diagnostic at
-        // the call site. The argument must be a string literal so
-        // the message text is available at lower time. Returns a
-        // void-typed const (the call site is consumed for its
-        // side effect, not its value).
-        if (self.diagnostics) |diags| {
-            if (c.args.len < 1) {
-                diags.addFmt(.err, c.callee.span, "compile_error requires a string argument", .{});
-            } else if (c.args[0].data == .string_literal) {
-                const lit = c.args[0].data.string_literal;
-                const msg = if (lit.is_raw)
-                    lit.raw
-                else
-                    unescape.unescapeString(self.alloc, lit.raw) catch lit.raw;
-                diags.addFmt(.err, c.callee.span, "{s}", .{msg});
-            } else {
-                diags.addFmt(.err, c.callee.span, "compile_error argument must be a string literal", .{});
-            }
-        }
+        // `compile_error(...)` was consolidated into the `#error("msg");`
+        // directive (which fires when reached in live code, anchored at the
+        // outermost instantiation site). Point migrators at the spelling.
+        if (self.diagnostics) |diags|
+            diags.addFmt(.err, c.callee.span, "'compile_error(...)' was removed — use the '#error(\"msg\");' directive (fires when reached in live code, incl. pruned inline-if arms)", .{});
         return self.builder.constInt(0, .void);
     }
     if (std.mem.eql(u8, name, "struct_field_name") or std.mem.eql(u8, name, "variant_name")) {

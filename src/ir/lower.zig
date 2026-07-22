@@ -429,6 +429,12 @@ pub const Lowering = struct {
     /// next mapping of the same call node (per monomorphization), never
     /// consumed across function bodies.
     precomputed_args: std.AutoHashMap(*const Node, Ref),
+    /// The generic-instantiation call-site chain active while a monomorphized
+    /// body lowers (outermost first). A `#error` that survives comptime
+    /// pruning inside a mono anchors its diagnostic at the OUTERMOST site —
+    /// the user call that forced the instantiation — instead of the
+    /// library-internal directive line (the "comptime panic" anchor problem).
+    mono_sites: std.ArrayList(DefaultCallSite),
     active_default_call_site: ?DefaultCallSite = null,
     // Count of diagnostics emitted by the annotated-store assignability guard
     // (`checkAssignable` / the named-return-default guard, issue 0197). Lets the
@@ -914,6 +920,7 @@ pub const Lowering = struct {
             .lowered_functions = std.StringHashMap(void).init(module.alloc),
             .authored_call_defaults = std.AutoHashMap(*const Node, DefaultCallSite).init(module.alloc),
             .precomputed_args = std.AutoHashMap(*const Node, Ref).init(module.alloc),
+            .mono_sites = std.ArrayList(DefaultCallSite).empty,
             .fn_decl_fids = std.AutoHashMap(*const ast.FnDecl, FuncId).init(module.alloc),
             .global_decl_infos = std.AutoHashMap(*const ast.VarDecl, GlobalInfo).init(module.alloc),
             .lowered_fids = std.AutoHashMap(FuncId, void).init(module.alloc),

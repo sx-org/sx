@@ -57,7 +57,7 @@ inline if POINTER_SIZE == {
         sec:  i64;
         nsec: i64;
     }
-    else: #error "std/c.sx: unsupported pointer size for C timespec";
+    else: #error("std/c.sx: unsupported pointer size for C timespec");
 }
 
 clock_gettime :: (clock_id: i32, ts: *Timespec) -> i32 extern libc;
@@ -124,7 +124,7 @@ inline if OS == {
     case .android: errno_location :: () -> *i32 extern libc "__errno";
     case .windows: errno_location :: () -> *i32 extern libc "_errno";
     case .wasm:   errno_location :: () -> *i32 extern libc "__errno_location";
-    else:         #error "std/c.sx: errno_location symbol is only known for Darwin (__error), Linux/Emscripten (__errno_location), Android (__errno), and Windows (_errno) — add a case for this target.";
+    else:         #error("std/c.sx: errno_location symbol is only known for Darwin (__error), Linux/Emscripten (__errno_location), Android (__errno), and Windows (_errno) — add a case for this target.");
 }
 
 // ── pthread ─────────────────────────────────────────────────────────────────

@@ -58,7 +58,7 @@ inline if OS == {
         FS_POSIX_AT_FDCWD :i32: -2;
         FS_POSIX_UTIME_OMIT :i32: -2;
     else:
-        #error "std/fs/posix_abi.sx: POSIX filesystem ABI is not defined for this target";
+        #error("std/fs/posix_abi.sx: POSIX filesystem ABI is not defined for this target");
 }
 
 FS_POSIX_SEEK_SET :i32: 0;

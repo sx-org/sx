@@ -8,7 +8,7 @@
 // plus `protocol`, which exists ONLY in this static form (a protocol value
 // carries no runtime tag; the runtime spelling is a pointed error, and the
 // dedicated diagnostics pin covers it). Specific type names and `else:`
-// select as in any match; a `compile_error(…)` arm fires only when
+// select as in any match; a `#error(…)` arm fires only when
 // SELECTED (the dead-arm case is exactly the OS-match discipline).
 // Value-producing arms use explicit `return` (inline branches lower in
 // statement position, like `inline if OS`).
