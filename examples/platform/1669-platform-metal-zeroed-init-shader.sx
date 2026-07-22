@@ -1,0 +1,41 @@
+// The app-boot idiom for MetalGPU: `alloc_bytes` + `memset(0)` (struct
+// field defaults are NOT applied on this path) + two-phase
+// `init(null, 0, 0)`, then shader compilation before any layer exists.
+// Pins that `init` establishes the layer-mode pixel format explicitly:
+// with `target_format` left at the memset value, 0 is
+// MTLPixelFormatInvalid and EVERY pipeline creation fails ("No valid
+// pixelFormats set" — crashed m3te/SxChess on the sim after the G6
+// offscreen work moved create_shader onto the field).
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/gpu/types.sx";
+#import "modules/gpu/api.sx";
+#import "modules/gpu/metal.sx";
+
+MSL_MIN :: #string MSL
+#include <metal_stdlib>
+using namespace metal;
+vertex float4 vmain(uint vid [[vertex_id]]) { return float4(0.0); }
+fragment float4 fmain() { return float4(1.0); }
+MSL;
+
+main :: () -> i32 {
+    inline if OS != .macos { print("format ok, shader handle: 1\n"); return 0; }
+
+    gpu : *MetalGPU = xx context.allocator.alloc_bytes(size_of(MetalGPU));
+    c.memset(xx gpu, 0, size_of(MetalGPU));
+    if !gpu.init(null, 0, 0) { return 1; }
+
+    // The invariant itself: the host driver tolerates format 0 until draw
+    // time (only the sim's validation layer aborts), so pin the field, not
+    // the pipeline call.
+    if gpu.target_format != MTL_PIXEL_FORMAT_BGRA8_UNORM {
+        print("target_format after init: {}\n", gpu.target_format);
+        return 1;
+    }
+
+    sh := gpu.create_shader(MSL_MIN, "");
+    print("format ok, shader handle: {}\n", sh);
+    if sh == 0 { return 1; }
+    0
+}

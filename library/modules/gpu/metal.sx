@@ -330,6 +330,11 @@ impl GPU for MetalGPU {
             self.pixel_h = pixel_h;
         }
         self.parent_allocator = context.allocator;
+        // Layer mode renders BGRA8 (CAMetalLayer's format). Set explicitly,
+        // not via the field default: apps allocate MetalGPU with
+        // alloc+memset(0) (defaults never apply), and a zero here is
+        // MTLPixelFormatInvalid — pipeline creation fails on every shader.
+        self.target_format = MTL_PIXEL_FORMAT_BGRA8_UNORM;
 
         if self.device == null {
             self.device = MTLCreateSystemDefaultDevice();
