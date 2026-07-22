@@ -1,0 +1,14 @@
+// `inline` is the ONE keyword excluded from bare member naming (issue
+// 0345) — a bare `inline` field rejects with the targeted escape-hint,
+// not the generic "expected field name" that every other keyword no
+// longer triggers.
+#import "modules/std.sx";
+
+Q :: struct {
+    inline: i64 = 0;    // error: backtick-only
+}
+
+main :: () {
+    q := Q.{};
+    print("{}\n", q.inline);
+}

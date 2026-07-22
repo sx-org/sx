@@ -1,0 +1,5 @@
+error: 'inline' cannot name a member bare — escape it with a backtick (`inline) or rename
+  --> examples/diagnostics/1277-diagnostics-inline-member-name.sx:8:5
+   |
+ 8 |     inline: i64 = 0;    // error: backtick-only
+   |     ^^^^^^

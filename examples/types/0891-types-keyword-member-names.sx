@@ -1,0 +1,55 @@
+// Statement keywords are member names (issue 0345): every keyword except
+// `inline` bare-names struct fields, struct methods/constants, and
+// protocol methods — impl definitions included, so a keyword-named
+// protocol method is implementable without ceremony. Access rides every
+// member position: literal init, dot access, optional chaining. In a
+// struct literal a keyword field takes only the `name = value` form, so
+// a positional if-expression element still parses as an expression.
+// Companion to 0158 (the reserved TYPE-spelling exemption).
+#import "modules/std.sx";
+
+P :: protocol {
+    push :: (self: *Self, v: i64) -> i64;
+}
+
+Q :: struct {
+    if: i64 = 0;
+    while, for: f32;
+    f32: f64 = 2.5;
+    case :: 7;
+
+    push :: (self: *Q, v: i64) { self.if += v; }
+    return :: (self: *Q) -> i64 => self.if;
+}
+
+R :: struct { n: i64 = 0; }
+
+impl P for R {
+    push :: (self: *R, v: i64) -> i64 { self.n += v; self.n }
+}
+
+// `inline` is the one exception — backtick-only, everywhere.
+Esc :: struct { `inline: i64 = 5; }
+
+Pair :: struct { a, b: i64; }
+
+main :: () {
+    q := Q.{ if = 10, while = 1.5, for = 2.5, f32 = 9.5 };
+    q.push(5);
+    print("q {} {} {} {} {}\n", q.return(), q.while, q.for, q.f32, Q.case);
+
+    r := R.{};
+    p : P = r.(P);
+    print("impl {}\n", p.push(3));
+
+    o : ?Q = Q.{ if = 4 };
+    print("chain {}\n", o?.if);
+
+    e := Esc.{};
+    print("esc {}\n", e.inline);
+
+    // The keyword-field literal path never eats a positional expression:
+    x := 3;
+    pr := Pair.{ if x > 1 then 10 else 20, 2 };
+    print("pos {} {}\n", pr.a, pr.b);
+}

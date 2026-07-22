@@ -1180,7 +1180,7 @@ pub const Parser = struct {
             }
 
             // Method declaration: name :: (params) -> type { body }
-            if (self.current.tag == .identifier and self.peekNext() == .colon_colon) {
+            if (self.isMemberDeclName() and self.peekNext() == .colon_colon) {
                 const method_start = self.current.loc.start;
                 const method_name = self.tokenSlice(self.current);
                 const method_name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
@@ -1208,8 +1208,8 @@ pub const Parser = struct {
             // Or typed constant: name :Type: value;
             var group_names = std.ArrayList([]const u8).empty;
 
-            if (self.current.tag != .identifier) {
-                return self.fail("expected field name in struct");
+            if (!self.isMemberDeclName()) {
+                return self.failMemberDeclName("expected field name in struct");
             }
             const field_start = self.current.loc.start;
             // Captured for the single-name typed-const path (`name :Type: value`)
@@ -1224,8 +1224,8 @@ pub const Parser = struct {
 
             while (self.current.tag == .comma) {
                 self.advance(); // skip ','
-                if (self.current.tag != .identifier) {
-                    return self.fail("expected field name after ','");
+                if (!self.isMemberDeclName()) {
+                    return self.failMemberDeclName("expected field name after ','");
                 }
                 try group_names.append(self.allocator, self.tokenSlice(self.current));
                 self.advance();
@@ -1344,8 +1344,8 @@ pub const Parser = struct {
 
         while (self.current.tag != .r_brace and self.current.tag != .eof) {
             // Method: name :: (params) -> type;  or  name :: (params) -> type { body }
-            if (self.current.tag != .identifier) {
-                return self.fail("expected method name in protocol body");
+            if (!self.isMemberDeclName()) {
+                return self.failMemberDeclName("expected method name in protocol body");
             }
             const method_name = self.tokenSlice(self.current);
             self.advance();
@@ -1876,8 +1876,8 @@ pub const Parser = struct {
 
         while (self.current.tag != .r_brace and self.current.tag != .eof) {
             // Method: name :: (params) -> type { body }
-            if (self.current.tag != .identifier) {
-                return self.fail("expected method name in impl block");
+            if (!self.isMemberDeclName()) {
+                return self.failMemberDeclName("expected method name in impl block");
             }
             const method_start = self.current.loc.start;
             const method_name = self.tokenSlice(self.current);
@@ -1928,8 +1928,12 @@ pub const Parser = struct {
                 continue;
             }
 
-            // Check if this is a named field: identifier followed by '='
-            if (self.current.tag == .identifier) {
+            // Named field: a member name followed by '='. A keyword name takes
+            // ONLY this path — otherwise it backtracks to a positional
+            // expression (`.{ if x then 1 else 2 }`); shorthand stays
+            // identifier-only (a keyword can never name a local to forward).
+            if (self.isMemberDeclName()) {
+                const was_identifier = self.current.tag == .identifier;
                 const saved_lexer = self.lexer;
                 const saved_current = self.current;
                 const saved_prev_end = self.prev_end;
@@ -1943,7 +1947,7 @@ pub const Parser = struct {
                     const value = try self.parseExpr();
                     try field_inits.append(self.allocator, .{ .name = fname, .value = value });
                     continue;
-                } else if (self.current.tag == .comma or self.current.tag == .r_brace) {
+                } else if (was_identifier and (self.current.tag == .comma or self.current.tag == .r_brace)) {
                     // Shorthand: just an identifier (name = identifier with same name)
                     const ident_node = try self.createNode(ident_start, .{ .identifier = .{ .name = fname } });
                     try field_inits.append(self.allocator, .{ .name = fname, .value = ident_node, .was_shorthand = true });
@@ -2958,7 +2962,7 @@ pub const Parser = struct {
             } else if (self.current.tag == .question_dot) {
                 // Optional chaining: expr?.field
                 self.advance();
-                if (self.current.tag == .identifier) {
+                if (self.current.tag == .identifier or (self.current.tag != .int_literal and self.current.tag != .l_paren and getKeyword(self.tokenSlice(self.current)) != null)) {
                     const field = self.tokenSlice(self.current);
                     self.advance();
                     expr = try self.createNode(expr.span.start, .{ .field_access = .{ .object = expr, .field = field, .is_optional = true } });
@@ -4790,6 +4794,25 @@ pub const Parser = struct {
             return txt;
         }
         return null;
+    }
+
+    /// A token usable as a MEMBER name in declaration position (struct
+    /// field/method/const, protocol method, impl method, literal field):
+    /// identifiers, and every keyword except `inline` — declaration
+    /// position holds only declarations, access is dot-disambiguated.
+    fn isMemberDeclName(self: *Parser) bool {
+        if (self.current.tag == .identifier) return true;
+        if (self.current.tag == .kw_inline) return false;
+        return getKeyword(self.tokenSlice(self.current)) != null;
+    }
+
+    /// Member-name reject: `inline` (the one excluded keyword) gets its
+    /// targeted escape-hint; anything else the site's own message.
+    fn failMemberDeclName(self: *Parser, msg: []const u8) error{ParseError} {
+        if (self.current.tag == .kw_inline) {
+            return self.fail("'inline' cannot name a member bare — escape it with a backtick (`inline) or rename");
+        }
+        return self.fail(msg);
     }
 
     fn fail(self: *Parser, msg: []const u8) error{ParseError} {

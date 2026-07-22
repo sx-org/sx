@@ -38,6 +38,24 @@ and `` obj.`i2 `` both resolve. The exemption covers member *signatures* only: a
 slot), so a reserved-spelled impl method still needs the backtick
 (`` `i2 :: (self) ``), exactly like a free function. See `examples/0158`.
 
+**Statement keywords are member names too (issue 0345, decided 2026-07-22).**
+Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`,
+`f32`, `f64`, `try`, `defer`, … — may bare-name a struct **field**, a struct
+**method or constant**, and a protocol **method**, and is reachable through
+every member position: literal init (`.{ push = 1, if = 2 }`), field access
+(`q.push(…)`, `q.for`), and optional chaining (`o?.if`). Declaration position
+is unambiguous — struct, protocol, and `impl` bodies hold only declarations —
+and access is dot-disambiguated. Unlike the type-spelling rule above, keyword
+names are bare-legal in `impl` method **definitions** as well: a keyword-named
+protocol method must be implementable without ceremony, and a keyword has no
+builtin to shadow. The one exception is **`inline`**, which stays
+backtick-only (`` `inline ``); a bare `inline` in member position rejects with
+a targeted escape-hint. In a struct literal, a keyword field name takes only
+the `name = value` form — without the `=`, the token reads as a positional
+expression head, so `.{ if x > 1 then 10 else 20, 2 }` stays an if-expression
+element. Value-binding positions (locals, params, function names) are
+unchanged: keywords stay rejected there.
+
 **`Tuple(` and `Closure(` are reserved in expression head position.** The
 type constructors `Tuple(...)` and `Closure(...) -> R` parse as TYPE
 expressions wherever the exact token pair `Tuple`+`(` / `Closure`+`(`
