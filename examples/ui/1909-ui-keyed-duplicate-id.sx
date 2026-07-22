@@ -1,0 +1,22 @@
+// K2a in the LIST spelling (modules/ui/compose.sx): duplicate ids in a
+// keyed list loop are a data bug in the items — frame-1 panic, never a
+// silent identity merge.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+
+Chat :: struct { id: i64; }
+
+main :: () {
+    u := Ui.{};
+    store := StateStore.init(.{ value = 1 });
+    push .{ ui = @u, ui_store = @store } {
+        store.begin_build(); u.begin_build();
+        a := Chat.{ id = 7 }; b := Chat.{ id = 7 };
+        chats : []Chat = .[a, b];
+        for chats (c) {
+            keyed(c.id) { print("row {}\n", c.id); }
+        }
+        store.commit_build();
+    }
+}

@@ -1,0 +1,41 @@
+// `keyed` (modules/ui/compose.sx, G4 Step 3): THE dynamic-identity spelling.
+// The list form is a plain loop — one keyed row per element — and state
+// FOLLOWS THE KEY across reorders and removals, not the position. Id kinds:
+// i64, string, and a prebuilt Key (comptime kind-match; anything else is a
+// compile error).
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+
+Chat :: struct { id: i64; }
+
+row_state :: () -> i64 {
+    n := use_state(i64, 0);
+    n.set(n.get() + 1);
+    n.get()
+}
+
+build :: (chats: []Chat, u: *Ui, store: *StateStore) {
+    store.begin_build(); u.begin_build();
+    for chats (c) {
+        keyed(c.id) { print("chat {} -> {}\n", c.id, row_state()); }
+    }
+    keyed("footer") { print("footer {}\n", row_state()); }
+    k := Key.int(99);
+    keyed(k) { print("k99 {}\n", row_state()); }
+    store.commit_build();
+}
+
+main :: () {
+    u := Ui.{};
+    store := StateStore.init(.{ value = 1 });
+    push .{ ui = @u, ui_store = @store } {
+        a := Chat.{ id = 10 }; b := Chat.{ id = 20 }; z := Chat.{ id = 30 };
+        l1 : []Chat = .[a, b, z];
+        build(l1, @u, @store);
+        // Reorder + remove: 30 and 10 keep their state; 20's entry sweeps.
+        l2 : []Chat = .[z, a];
+        build(l2, @u, @store);
+        print("entries {}\n", store.entries.len);
+    }
+}

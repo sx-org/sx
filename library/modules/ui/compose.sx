@@ -183,6 +183,39 @@ Ui :: struct {
     }
 }
 
+// --- keyed — THE dynamic-identity spelling ---
+
+// Comptime kind-match: an i64, a string, or an already-built Key. Anything
+// else must convert explicitly — silent key coercion would invite identity
+// collisions.
+as_key :: (id: $K) -> Key {
+    k : Key = .int(0);
+    inline if K == {
+        case i64: { k = Key.int(id); }
+        case string: { k = Key.str(id); }
+        case Key: { k = id; }
+        else: compile_error("keyed id must be an i64, a string, or a Key — convert explicitly");
+    }
+    k
+}
+
+// Open a keyed identity scope for `body` (K1 dynamic identity: list items,
+// conditionally-present instances, K3 discriminators). The LIST spelling is
+// a plain loop — one keyed row per element:
+//
+//     for chats (c) { keyed(c.id) { chat_row(c); } }
+//
+// Duplicate keys under one scope are a data bug and panic frame-1 (K2a).
+// State-driven in-place swaps (route, tab, wizard step) MUST key by the
+// driving value (K3) — K2 cannot catch cross-frame bleed at one site.
+keyed :: (id: $K, body: Closure()) {
+    if context.ui == null {
+        print("panic: keyed used outside a frame build\n");
+        process.exit(1);
+    }
+    context.ui.key_scope(as_key(id), body);
+}
+
 print_key :: (k: Key) {
     if k == {
         case .int: (x) { print("{}", x); }
@@ -212,7 +245,13 @@ print_chain :: (ui: *Ui) {
 // callback) → hard stop; `ui` set + `ui_sink == null` → root / value
 // position → return only; both set → emit into the parent + return.
 place :: (v: View) -> View {
-    process.assert(context.ui != null, "UI element used outside a frame build");
+    if context.ui == null {
+        // The S2 contract message, line-stable on purpose: a module-internal
+        // line number tells the user nothing (the failure is at THEIR call
+        // site) and shifts with every edit to this file.
+        print("panic: UI element used outside a frame build\n");
+        process.exit(1);
+    }
     if context.ui_sink != null { context.ui_sink.emit(v); }
     v
 }

@@ -1,0 +1,51 @@
+// K3 (contracts, STATE.md §9): a state-driven in-place swap (route, tab,
+// wizard step) MUST key by the discriminator. K2 cannot catch cross-frame
+// bleed — an unkeyed swap reuses the same identity tuple, so the editor's
+// state leaks from route A into route B. With `keyed(route)` each route
+// owns its identity, and the hidden route's state SWEEPS (product-visible
+// by design: leaving a screen resets its transient state).
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+
+editor :: () -> i64 {
+    draft := use_state(i64, 0);
+    draft.set(draft.get() + 1);
+    draft.get()
+}
+
+screen_unkeyed :: (route: i64) -> i64 { editor() }
+
+sk_result : i64 = 0;
+screen_keyed :: (route: i64) {
+    keyed(route) { sk_result = editor(); }
+}
+
+main :: () {
+    u := Ui.{};
+    store := StateStore.init(.{ value = 1 });
+    push .{ ui = @u, ui_store = @store } {
+        store.begin_build(); u.begin_build();
+        print("unkeyed A {}\n", screen_unkeyed(0));
+        store.commit_build();
+        store.begin_build(); u.begin_build();
+        print("unkeyed B {}\n", screen_unkeyed(1));
+        store.commit_build();
+    }
+    ub := Ui.{};
+    storeb := StateStore.init(.{ value = 2 });
+    push .{ ui = @ub, ui_store = @storeb } {
+        storeb.begin_build(); ub.begin_build();
+        screen_keyed(0);
+        print("keyed A {}\n", sk_result);
+        storeb.commit_build();
+        storeb.begin_build(); ub.begin_build();
+        screen_keyed(1);
+        print("keyed B {}\n", sk_result);
+        storeb.commit_build();
+        storeb.begin_build(); ub.begin_build();
+        screen_keyed(0);
+        print("keyed A again {}\n", sk_result);
+        storeb.commit_build();
+    }
+}

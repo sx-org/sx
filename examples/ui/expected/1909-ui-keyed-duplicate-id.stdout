@@ -1,0 +1,4 @@
+row 7
+K2: duplicate explicit key 7 under one scope — sibling identities would merge silently. Scope chain:
+  (root scope)
+fix-it: give each sibling a distinct key; duplicate ids in a keyed list are a data bug in the items

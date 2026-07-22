@@ -1,1 +1,1 @@
-ASSERTION FAILED at library/modules/ui/compose.sx:136: UI element used outside a frame build
+panic: UI element used outside a frame build
