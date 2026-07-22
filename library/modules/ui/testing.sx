@@ -13,6 +13,8 @@
 #import "modules/ui/view.sx";
 #import "modules/ui/stacks.sx";
 #import "modules/ui/modifier.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/frame.sx";
 
 ComposeTest :: struct {
     root: UiRoot;
@@ -77,4 +79,62 @@ mod_child :: (v: View) -> View {
     print("panic: mod_child on a view that is not a ModBox\n");
     process.exit(1);
     v
+}
+
+// --- Structural scene goldens (I9) ---
+
+// A canonical, line-stable dump of a committed frame: every render
+// node with its frame, colors, and depth; clip/opacity markers in
+// paint order; then the hit list. Byte-exact by construction — pin it
+// as an expected/*.stdout golden and regenerate via -Dupdate-goldens.
+dump_snapshot :: (s: *CommittedUiSnapshot) {
+    print("snapshot rev {} gen {} nodes {} hits {}\n",
+        s.revision, s.generation, s.scene.nodes.len, s.hit_list.len);
+    i := 0;
+    while i < s.scene.nodes.len {
+        n := @s.scene.nodes.items[i];
+        f := n.frame;
+        if n.type == {
+            case .rect: {
+                print("rect {} {} {} {} c{},{},{},{} o{} d{}\n",
+                    f.origin.x, f.origin.y, f.size.width, f.size.height,
+                    n.fill_color.r, n.fill_color.g, n.fill_color.b, n.fill_color.a,
+                    n.opacity, n.depth);
+            }
+            case .rounded_rect: {
+                print("rrect {} {} {} {} c{},{},{},{} r{} s{},{},{},{} w{} o{} d{}\n",
+                    f.origin.x, f.origin.y, f.size.width, f.size.height,
+                    n.fill_color.r, n.fill_color.g, n.fill_color.b, n.fill_color.a,
+                    n.corner_radius,
+                    n.stroke_color.r, n.stroke_color.g, n.stroke_color.b, n.stroke_color.a,
+                    n.stroke_width, n.opacity, n.depth);
+            }
+            case .text: {
+                print("text {} {} {} {} '{}' fs{} c{},{},{},{} o{} d{}\n",
+                    f.origin.x, f.origin.y, f.size.width, f.size.height,
+                    n.text, n.font_size,
+                    n.text_color.r, n.text_color.g, n.text_color.b, n.text_color.a,
+                    n.opacity, n.depth);
+            }
+            case .image: {
+                print("img {} {} {} {} t{} d{}\n",
+                    f.origin.x, f.origin.y, f.size.width, f.size.height,
+                    n.texture_id, n.depth);
+            }
+            case .clip_push: {
+                print("clip+ {} {} {} {}\n", f.origin.x, f.origin.y, f.size.width, f.size.height);
+            }
+            case .clip_pop: { print("clip-\n"); }
+            case .opacity_push: { print("op+ {}\n", n.opacity); }
+            case .opacity_pop: { print("op-\n"); }
+        }
+        i += 1;
+    }
+    i = 0;
+    while i < s.hit_list.len {
+        h := @s.hit_list.items[i];
+        print("hit {} {} {} {} {}\n", h.id,
+            h.frame.origin.x, h.frame.origin.y, h.frame.size.width, h.frame.size.height);
+        i += 1;
+    }
 }

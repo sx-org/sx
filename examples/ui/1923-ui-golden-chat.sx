@@ -1,0 +1,56 @@
+// Structural scene golden (I9): the chat target-spelling screen —
+// toolbar, keyed rows with per-row strict state, occurrence-counted
+// buttons — built twice so the golden captures a STEADY frame (state
+// at 2, revision 2). Layout drift, row identity churn, or paint-order
+// changes surface as line diffs against the expected stdout.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/stacks.sx";
+#import "modules/ui/label.sx";
+#import "modules/ui/button.sx";
+#import "modules/ui/modifier.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/runtime.sx";
+#import "modules/ui/frame.sx";
+#import "modules/ui/testing.sx";
+
+g_chats : [3]string = .["alice", "bob", "carol"];
+
+chat_row :: (name: string) {
+    opens := use_state(i64, 0);
+    opens.set(opens.get() + 1);
+    hstack(8.0) {
+        text(name);
+        spacer();
+        button("Open");
+    }
+}
+
+screen :: () -> View {
+    vstack(4.0) {
+        hstack(8.0, m = .{ padding = EdgeInsets.symmetric(8.0, 4.0), bg = COLOR_DARK_GRAY }) {
+            text("Chats");
+            spacer();
+            button("New");
+        }
+        for g_chats (name) {
+            keyed(name) { chat_row(name); }
+        }
+    }
+}
+
+main :: () {
+    loop := FrameLoop.init();
+    root := UiRoot.init(.{ value = 2 });
+    loop.tick(@root, screen, 320.0, 240.0);
+    s := loop.tick(@root, screen, 320.0, 240.0);
+    print("entries {}\n", root.store.entries.len);
+    dump_snapshot(s);
+    loop.deinit();
+    root.teardown();
+}

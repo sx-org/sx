@@ -1,0 +1,41 @@
+// Structural scene golden (I9): a chip/card screen driven headless
+// through the G3 frame core, dumped canonically — the expected stdout
+// IS the golden. Any change to layout math, Mod application order,
+// clip/opacity marker placement, or paint order shows up as a line
+// diff here; regenerate consciously with -Dupdate-goldens.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/stacks.sx";
+#import "modules/ui/label.sx";
+#import "modules/ui/modifier.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/runtime.sx";
+#import "modules/ui/frame.sx";
+#import "modules/ui/testing.sx";
+
+screen :: () -> View {
+    vstack(8.0) {
+        // chip — call-site-composed box: padding INSIDE the bg
+        text("chip", .{ padding = EdgeInsets.all(4.0), bg = COLOR_BLUE, corner = 3.0 });
+        // card — margin OUTSIDE the surface, content inset inside
+        vstack(4.0, m = .{ margin = EdgeInsets.all(6.0), bg = COLOR_DARK_GRAY, corner = 8.0, padding = EdgeInsets.all(10.0) }) {
+            text("card body");
+        }
+        // clip + opacity exercise the marker nodes
+        text("faded", .{ bg = COLOR_GRAY, opacity = 0.5, clip = true, corner = 2.0 });
+    }
+}
+
+main :: () {
+    loop := FrameLoop.init();
+    root := UiRoot.init(.{ value = 1 });
+    s := loop.tick(@root, screen, 200.0, 120.0);
+    dump_snapshot(s);
+    loop.deinit();
+    root.teardown();
+}
