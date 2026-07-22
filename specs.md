@@ -2917,8 +2917,6 @@ iterate a call result without one, parenthesize (`for (f(n)) { }`) or bind
 it to a local first. A leading paren group is a normal grouped expression
 (`for (a ++ b) (x)` iterates the grouped value).
 
-The element capture is a direct alias — reads and field writes go to the original array element. Direct reassignment of the capture (`elem = x`) is a compile error.
-
 **By-value captures are immutable** (issue 0219). This rule is not
 specific to for-loop element captures — it holds for *every* by-value
 capture binding: the for-loop element and the paired range index
