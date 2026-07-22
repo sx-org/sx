@@ -1,0 +1,221 @@
+// The C7 normalized input surface (G2 first half) — host-independent:
+// no ffi, no SDL; each backend translates its native events into these
+// and pushes them through an InputQueue. The DECIDED §6.9 router (G2's
+// second half, after G3) consumes the drained stream against the
+// committed snapshot's hit list; until it lands, v1 events.sx keeps the
+// retained tree working.
+//
+// Separations the contract pins:
+// - physical key (position on the board) / logical key (meaning) / TEXT
+//   are three different things; text is never synthesized from key
+//   events, and IME rides TextInputSession when the text gates land —
+//   never key events.
+// - hover (no button/contact) is not a move.
+// - every pointer arm carries its pointer id — that continuity is what
+//   the router's capture routes by.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+
+InputModifiers :: struct {
+    shift: bool = false;
+    control: bool = false;
+    alt: bool = false;
+    meta: bool = false;
+}
+
+InputDeviceId :: struct { value: u64; }
+PointerId :: struct { value: u64; }
+
+PointerKind :: enum {
+    mouse;
+    touch;
+    pen;
+}
+
+PointerButton :: enum {
+    none;       // touch contacts and moves carry no button
+    primary;
+    secondary;
+    middle;
+}
+
+// Position on the physical board — a platform scancode, untranslated.
+PhysicalKey :: struct { code: u32; }
+
+// The neutral meaning of a key. Supersedes v1 events.sx `Keycode` when
+// the router lands and events.sx retires; letters/digits arrive as TEXT,
+// not keys.
+LogicalKey :: enum {
+    unknown;
+    escape;
+    enter;
+    space;
+    tab;
+    backspace;
+    delete;
+    left;
+    right;
+    up;
+    down;
+}
+
+// The shared header: which root, when, from what device, under which
+// modifiers.
+InputHeader :: struct {
+    root: UiRootId = .{ value = 0 };
+    time_ns: u64 = 0;
+    device: InputDeviceId = .{ value = 0 };
+    modifiers: InputModifiers = .{};
+}
+
+PointerEvent :: struct {
+    header: InputHeader = .{};
+    pointer: PointerId = .{ value = 0 };
+    kind: PointerKind = .mouse;
+    button: PointerButton = .none;
+    position: Point = .{ x = 0.0, y = 0.0 };
+}
+
+ScrollEvent :: struct {
+    header: InputHeader = .{};
+    pointer: PointerId = .{ value = 0 };
+    position: Point = .{ x = 0.0, y = 0.0 };
+    delta: Point = .{ x = 0.0, y = 0.0 };
+    precise: bool = false;   // pixel-precise (trackpad) vs line-stepped (wheel)
+}
+
+KeyEvent :: struct {
+    header: InputHeader = .{};
+    physical: PhysicalKey = .{ code = 0 };
+    logical: LogicalKey = .unknown;
+    repeat: bool = false;
+}
+
+TextEvent :: struct {
+    header: InputHeader = .{};
+    // Owned by the queue from push to drain (deep-copied; borrowed by
+    // the drain callback for the call only).
+    text: string;
+}
+
+InputEvent :: enum {
+    pointer_down: PointerEvent;
+    pointer_move: PointerEvent;
+    pointer_up: PointerEvent;
+    pointer_cancel: PointerEvent;
+    pointer_hover: PointerEvent;    // no contact — never coalesces with moves
+    scroll: ScrollEvent;
+    key_down: KeyEvent;
+    key_up: KeyEvent;
+    text: TextEvent;
+}
+
+// --- InputQueue — per UiRoot, persistent; push-side normalization ---
+//
+// Coalescing touches ONLY the immediately-last queued event, so any
+// other event is an ordering barrier by construction: move·down·move
+// never merges, and terminal-class events (down/up/cancel/key/text) are
+// never coalesced and never dropped. Moves and hovers replace a
+// same-arm/same-pointer/same-root predecessor (latest position wins);
+// scrolls additionally ACCUMULATE their deltas.
+InputQueue :: struct {
+    events: List(InputEvent) = .{};
+    gpa: Allocator;
+
+    init :: (gpa: Allocator = context.allocator) -> InputQueue {
+        InputQueue.{ gpa = gpa }
+    }
+
+    len :: (self: *InputQueue) -> i64 #get => self.events.len;
+
+    push :: (self: *InputQueue, ev: InputEvent) {
+        // Owned payloads: copy on entry, before any queue placement.
+        if ev == {
+            case .text: (t) {
+                self.events.append(.text(self.copy_text(t)), self.gpa);
+                return;
+            }
+            else: {}
+        }
+        if self.events.len > 0 {
+            last := @self.events.items[self.events.len - 1];
+            if ev == {
+                case .pointer_move: (p) {
+                    if last == {
+                        case .pointer_move: (lp) {
+                            if lp.pointer.value == p.pointer.value and lp.header.root == p.header.root {
+                                self.events.items[self.events.len - 1] = ev;
+                                return;
+                            }
+                        }
+                    }
+                }
+                case .pointer_hover: (p) {
+                    if last == {
+                        case .pointer_hover: (lp) {
+                            if lp.pointer.value == p.pointer.value and lp.header.root == p.header.root {
+                                self.events.items[self.events.len - 1] = ev;
+                                return;
+                            }
+                        }
+                    }
+                }
+                case .scroll: (s) {
+                    if last == {
+                        case .scroll: (ls) {
+                            if ls.pointer.value == s.pointer.value and ls.header.root == s.header.root {
+                                merged := s;
+                                merged.delta = ls.delta.add(s.delta);
+                                self.events.items[self.events.len - 1] = .scroll(merged);
+                                return;
+                            }
+                        }
+                    }
+                }
+                else: {}
+            }
+        }
+        self.events.append(ev, self.gpa);
+    }
+
+    copy_text :: (self: *InputQueue, t: TextEvent) -> TextEvent {
+        raw : [*]u8 = xx self.gpa.alloc_bytes(t.text.len);
+        c.memcpy(raw, t.text.ptr, t.text.len);
+        owned : string = ---;
+        owned.ptr = raw;
+        owned.len = t.text.len;
+        te := t;
+        te.text = owned;
+        te
+    }
+
+    // Deliver every queued event in order — payloads are borrowed for
+    // the call — then clear, releasing owned text.
+    drain :: (self: *InputQueue, f: Closure(*InputEvent)) {
+        i := 0;
+        while i < self.events.len {
+            f(@self.events.items[i]);
+            i += 1;
+        }
+        self.clear();
+    }
+
+    clear :: (self: *InputQueue) {
+        i := 0;
+        while i < self.events.len {
+            if self.events.items[i] == {
+                case .text: (t) { self.gpa.dealloc_bytes(xx t.text.ptr); true }
+                else: false
+            } { }
+            i += 1;
+        }
+        self.events.len = 0;
+    }
+
+    deinit :: (self: *InputQueue) {
+        self.clear();
+        self.events.deinit(self.gpa);
+    }
+}

@@ -1,0 +1,92 @@
+// The C7 normalized input surface (modules/ui/input.sx): push-side
+// queue normalization — moves/hovers coalesce with the IMMEDIATELY last
+// same-arm/same-pointer event only (latest position wins), any other
+// event is an ordering barrier, scrolls accumulate their deltas,
+// terminal-class events (down/up/cancel/key/text) are never coalesced
+// or dropped, and text payloads are queue-OWNED from push to drain (a
+// mutated source buffer cannot reach the consumer).
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+
+mv :: (pid: u64, x: f32) -> InputEvent {
+    .pointer_move(.{ pointer = .{ value = pid }, position = .{ x = x, y = 0.0 } })
+}
+
+g_seen : i64 = 0;
+g_last_x : f32 = 0.0;
+g_text : [8]u8 = .[0, 0, 0, 0, 0, 0, 0, 0];
+g_text_len : i64 = 0;
+
+main :: () {
+    q := InputQueue.init();
+
+    // Coalescing: three moves of one pointer are ONE event, last wins.
+    q.push(mv(1, 10.0));
+    q.push(mv(1, 20.0));
+    q.push(mv(1, 30.0));
+    process.assert(q.len == 1, "moves coalesce");
+
+    // A terminal event is a barrier: move·down·move stays three.
+    q.push(.pointer_down(.{ pointer = .{ value = 1 }, button = .primary, position = .{ x = 31.0, y = 0.0 } }));
+    q.push(mv(1, 40.0));
+    process.assert(q.len == 3, "a down is an ordering barrier");
+
+    // Another pointer's move never merges with pointer 1's.
+    q.push(mv(2, 100.0));
+    q.push(mv(1, 50.0));
+    process.assert(q.len == 5, "coalescing is per pointer, immediate-last only");
+
+    // Terminal no-drop: up/down pairs all survive.
+    q.push(.pointer_up(.{ pointer = .{ value = 1 }, button = .primary, position = .{ x = 50.0, y = 0.0 } }));
+    q.push(.pointer_down(.{ pointer = .{ value = 1 }, button = .primary, position = .{ x = 50.0, y = 0.0 } }));
+    q.push(.pointer_up(.{ pointer = .{ value = 1 }, button = .primary, position = .{ x = 50.0, y = 0.0 } }));
+    process.assert(q.len == 8, "terminal events never coalesce");
+
+    // Hover is not a move: the arms never merge with each other.
+    q.push(.pointer_hover(.{ pointer = .{ value = 1 }, position = .{ x = 60.0, y = 0.0 } }));
+    q.push(mv(1, 61.0));
+    process.assert(q.len == 10, "hover and move are distinct arms");
+
+    // Scrolls accumulate their deltas.
+    q.push(.scroll(.{ pointer = .{ value = 1 }, delta = .{ x = 0.0, y = -3.0 } }));
+    q.push(.scroll(.{ pointer = .{ value = 1 }, delta = .{ x = 0.0, y = -4.0 } }));
+    process.assert(q.len == 11, "scrolls coalesce");
+
+    // Owned text: mutate the source buffer AFTER pushing — the queue's
+    // copy is what the consumer sees.
+    buf : [2]u8 = .[104, 105];               // "hi"
+    s : string = ---;
+    s.ptr = xx @buf;
+    s.len = 2;
+    q.push(.text(.{ text = s }));
+    buf[0] = 120;                            // "xi" — must not reach the drain
+    process.assert(q.len == 12, "text is terminal");
+
+    // Keys carry the three-way separation.
+    q.push(.key_down(.{ physical = .{ code = 44 }, logical = .space, repeat = false }));
+
+    q.drain((ev: *InputEvent) {
+        g_seen += 1;
+        if ev == {
+            case .pointer_move: (p) { g_last_x = p.position.x; }
+            case .scroll: (sc) {
+                process.assert(sc.delta.y == -7.0, "accumulated scroll delta");
+            }
+            case .text: (t) {
+                i := 0;
+                while i < t.text.len { g_text[i] = t.text.ptr[i]; i += 1; }
+                g_text_len = t.text.len;
+            }
+            case .key_down: (k) {
+                process.assert(k.logical == .space and k.physical.code == 44, "physical/logical separation");
+            }
+            else: {}
+        }
+    });
+    process.assert(q.len == 0, "drain clears");
+    process.assert(g_text_len == 2 and g_text[0] == 104 and g_text[1] == 105, "queue-owned text survived source mutation");
+    print("seen {} last_x {} text {}{}\n", g_seen, g_last_x, g_text[0], g_text[1]);
+}
