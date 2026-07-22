@@ -1,0 +1,101 @@
+// Issue 0352: guard-narrowing (0179) covers MEMBER positions with the
+// same proof it always gave coercion sites. After `if p == null
+// { return; }`:
+//   - plain field reads through `?*T` and `?Struct`, including
+//     AGGREGATE fields and nested chains (the first fix attempt
+//     miscompiled these — address-as-value — so they are pinned);
+//   - field writes through a narrowed `?*T`;
+//   - method calls on a narrowed receiver;
+//   - inference agrees with lowering (a local declared from a
+//     narrowed read gets the field's type).
+// `?.` keeps the optional; `q := p` keeps the static optional type
+// (only guarded locals narrow — spell `q := p!`).
+#import "modules/std.sx";
+
+U :: struct { m: i64 = 3; }
+T :: struct {
+    n: i64 = 7;
+    inner: U = .{};
+    bump :: (self: *T) { self.n += 1; }
+}
+V :: struct { k: i64 = 9; }
+
+read_scalar :: (p: ?*T) -> i64 {
+    if p == null { return 0; }
+    return p.n;
+}
+read_nested :: (p: ?*T) -> i64 {
+    if p == null { return 0; }
+    return p.inner.m;
+}
+read_two_step :: (p: ?*T) -> i64 {
+    if p == null { return 0; }
+    u := p.inner;         // aggregate copy via narrowed access; u: U
+    return u.m;
+}
+write_through :: (p: ?*T) {
+    if p == null { return; }
+    p.n = 42;
+}
+call_method :: (p: ?*T) {
+    if p == null { return; }
+    p.bump();
+}
+value_optional :: (v: ?V) -> i64 {
+    if v == null { return 0; }
+    return v.k;
+}
+still_chains :: (p: ?*T) -> ?i64 {
+    if p == null { return null; }
+    return p?.n;          // `?.` on a narrowed local keeps the optional shape
+}
+guard_or :: (a: ?*T, b: ?*V) -> i64 {
+    if a == null or b == null { return 0; }
+    return a.n + b.k;     // the `or` guard proves BOTH present
+}
+
+// The lvalue/receiver route (lowerExprAsPtr): a #get accessor chain
+// (`List.len`) and an address-of chain both root through the narrowed
+// pointer — the resolver that surfaced last in the fix.
+W :: struct { xs: List(i64) = .{}; }
+mkw :: (w: *W) -> ?*W { w }
+accessor_chain :: (w: *W) -> i64 {
+    s := mkw(w);
+    if s == null { return 0; }
+    return s.xs.len;      // #get accessor through the narrowed root
+}
+addr_chain :: (w: *W) -> *i64 {
+    s := mkw(w);
+    if s == null { return null; }
+    return *s.xs.items[0];   // address-of chain through the narrowed root
+}
+
+main :: () {
+    t := T.{};
+    process.assert(read_scalar(*t) == 7 and read_scalar(null) == 0, "scalar");
+    process.assert(read_nested(*t) == 3, "nested aggregate");
+    process.assert(read_two_step(*t) == 3, "aggregate copy");
+
+    write_through(*t);
+    process.assert(t.n == 42, "write through narrowed pointer");
+    call_method(*t);
+    process.assert(t.n == 43, "method on narrowed receiver");
+
+    process.assert(value_optional(V.{}) == 9 and value_optional(null) == 0, "value optional");
+
+    c := still_chains(*t);
+    process.assert(c != null and c! == 43, "?. chain preserved");
+
+    v := V.{};
+    process.assert(guard_or(*t, *v) == 52, "or-guard narrows both");
+    process.assert(guard_or(null, *v) == 0, "or-guard rejects null");
+
+    w := W.{};
+    w.xs.append(11);
+    process.assert(accessor_chain(*w) == 1, "accessor chain");
+    pp := addr_chain(*w);
+    pp.* = 12;
+    process.assert(w.xs.items[0] == 12, "address-of chain writes through");
+
+    print("ok\n");
+}

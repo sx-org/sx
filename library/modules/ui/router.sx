@@ -285,9 +285,8 @@ Router :: struct {
     // (handlers fire from the current committed tree only — C8).
     refresh :: (self: *Router) {
         if self.loop == null or self.root == null { return; }
-        snap_opt := self.loop.snapshot();
-        if snap_opt == null { return; }
-        snap := snap_opt!;
+        snap := self.loop.snapshot();
+        if snap == null { return; }
         for self.sequences, 0.. (*seq, i) {
             if !seq.dead {
                 if seq.capture.generation != self.root.surface_gen.(i64) or
@@ -392,9 +391,8 @@ Router :: struct {
 // (I11). Last matching region in paint order, same as hit testing.
 router_fire_tap :: (rt: *Router, element: ElementId) {
     if rt.loop == null { return; }
-    snap_opt := rt.loop.snapshot();
-    if snap_opt == null { return; }
-    snap := snap_opt!;
+    snap := rt.loop.snapshot();
+    if snap == null { return; }
     i := snap.hit_list.len - 1;
     while i >= 0 {
         r := snap.hit_list.items[i];
@@ -413,9 +411,8 @@ router_fire_tap :: (rt: *Router, element: ElementId) {
 router_dispatch :: (r: *Router, ev: *InputEvent) {
     root := r.root;
     if r.loop == null or root == null { return; }
-    snap_opt := r.loop.snapshot();
-    if snap_opt == null { return; }
-    snap := snap_opt!;
+    snap := r.loop.snapshot();
+    if snap == null { return; }
 
     if ev.* == {
         case .pointer_down: (pd) {

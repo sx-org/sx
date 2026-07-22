@@ -1635,6 +1635,17 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 obj = self.lowerExpr(fa.object);
             }
 
+            // A guard-narrowed optional receiver dispatches through its
+            // child implicitly — parity with field reads and the
+            // coercion sites (issue 0352).
+            if (!obj_ty.isBuiltin()) {
+                const oinfo_nrw = self.module.types.get(obj_ty);
+                if (oinfo_nrw == .optional and self.narrowed_refs.contains(obj)) {
+                    obj_ty = oinfo_nrw.optional.child;
+                    obj = self.builder.emit(.{ .optional_unwrap = .{ .operand = obj } }, obj_ty);
+                }
+            }
+
             // Check if field is a closure type — call as closure, not method
             if (!obj_ty.isBuiltin()) {
                 const field_name_id = self.module.types.internString(fa.field);

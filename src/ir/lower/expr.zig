@@ -1104,6 +1104,20 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     var obj = self.lowerExpr(fa.object);
     var obj_ty = self.inferExprType(fa.object);
 
+    // A guard-narrowed optional local reads through implicitly: the
+    // guard proved presence, so plain field access unwraps exactly as
+    // the coercion sites do (issue 0352 — narrowing parity for member
+    // access), BEFORE the pointer auto-deref so a `?*T` takes the
+    // ordinary load-through route. `?.` below keeps the optional;
+    // explicit spellings stay.
+    if (!fa.is_optional and !obj_ty.isBuiltin()) {
+        const nrw_info = self.module.types.get(obj_ty);
+        if (nrw_info == .optional and self.narrowed_refs.contains(obj)) {
+            obj_ty = nrw_info.optional.child;
+            obj = self.builder.emit(.{ .optional_unwrap = .{ .operand = obj } }, obj_ty);
+        }
+    }
+
     // Auto-deref: if the object is a pointer to a struct, load through it
     if (!obj_ty.isBuiltin()) {
         const ptr_info = self.module.types.get(obj_ty);

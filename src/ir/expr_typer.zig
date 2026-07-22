@@ -225,6 +225,18 @@ pub const ExprTyper = struct {
                 }
 
                 var obj_ty = self.l.inferExprType(fa.object);
+                // A guard-narrowed optional local resolves through its
+                // child for PLAIN access — mirrors the lowerFieldAccess
+                // narrowing unwrap (issue 0352; two-resolver lockstep).
+                // `?.` keeps the optional (the chain arm below).
+                if (!fa.is_optional and !obj_ty.isBuiltin() and fa.object.data == .identifier) {
+                    const nrw_info = self.l.module.types.get(obj_ty);
+                    if (nrw_info == .optional and self.l.narrowed.count() > 0 and
+                        self.l.narrowed.contains(fa.object.data.identifier.name))
+                    {
+                        obj_ty = nrw_info.optional.child;
+                    }
+                }
                 // Auto-deref: if object is a pointer, resolve through it (matches lowerFieldAccess behavior)
                 if (!obj_ty.isBuiltin()) {
                     const ptr_info = self.l.module.types.get(obj_ty);

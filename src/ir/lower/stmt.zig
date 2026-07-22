@@ -2244,6 +2244,25 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
 
             var obj_ptr = self.lowerExprAsPtr(fa.object);
             var obj_ty = self.inferExprType(fa.object);
+            // A guard-narrowed `?*T` local writes through implicitly:
+            // load the optional, unwrap to the pointer, store through it
+            // — parity with reads/receivers (issue 0352). A narrowed
+            // `?Struct` VALUE keeps the explicit spelling (an in-place
+            // payload write is a different lvalue).
+            if (fa.object.data == .identifier and !obj_ty.isBuiltin()) {
+                const ninfo = self.module.types.get(obj_ty);
+                if (ninfo == .optional and self.narrowed.count() > 0 and
+                    self.narrowed.contains(fa.object.data.identifier.name))
+                {
+                    const child = ninfo.optional.child;
+                    if (!child.isBuiltin() and self.module.types.get(child) == .pointer) {
+                        const opt_val = self.builder.load(obj_ptr, obj_ty);
+                        const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = opt_val } }, child);
+                        obj_ptr = unwrapped;
+                        obj_ty = self.module.types.get(child).pointer.pointee;
+                    }
+                }
+            }
             // Auto-deref: if the object is a pointer field from a non-identifier
             // (i.e., result of structGep on a pointer slot), load the pointer value.
             if (fa.object.data != .identifier and !obj_ty.isBuiltin()) {
@@ -2735,6 +2754,25 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             }
             var obj_ptr = self.lowerExprAsPtr(fa.object);
             var obj_ty = self.inferExprType(fa.object);
+            // A guard-narrowed `?*T` local roots the lvalue chain through
+            // its pointer: load the optional, unwrap, GEP through the
+            // pointee — narrowing parity for address-of chains (issue
+            // 0352; the getter-receiver and address-of routes both land
+            // here). A narrowed `?Struct` VALUE keeps the explicit
+            // spelling, same as the store path.
+            if (fa.object.data == .identifier and !obj_ty.isBuiltin()) {
+                const ninfo = self.module.types.get(obj_ty);
+                if (ninfo == .optional and self.narrowed.count() > 0 and
+                    self.narrowed.contains(fa.object.data.identifier.name))
+                {
+                    const child = ninfo.optional.child;
+                    if (!child.isBuiltin() and self.module.types.get(child) == .pointer) {
+                        const opt_val = self.builder.load(obj_ptr, obj_ty);
+                        obj_ptr = self.builder.emit(.{ .optional_unwrap = .{ .operand = opt_val } }, child);
+                        obj_ty = self.module.types.get(child).pointer.pointee;
+                    }
+                }
+            }
             // Auto-deref for chained pointer field access:
             // When fa.object is a field_access or index_expr, lowerExprAsPtr returns
             // a structGep/pointer to the slot. If the slot holds a pointer type,
