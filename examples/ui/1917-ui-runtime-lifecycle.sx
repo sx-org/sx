@@ -1,0 +1,75 @@
+// G1 lifecycle (modules/ui/runtime.sx): runtime → scene → UiRoot, the
+// store per root STRUCTURALLY. Teardown invalidates and releases every
+// entry immediately — no further frame, no present — and cascades from
+// the scene; ids allocate monotonically and are never reused within a
+// runtime, so a fresh root can never alias a torn-down root's identity.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/runtime.sx";
+
+g_last : i64 = 0;
+g_buf : i64 = 0;
+
+bump :: () {
+    n := use_state(i64, 0);
+    n.set(n.get() + 1);
+    g_last = n.get();
+}
+
+Buf :: struct { data: []u8; }
+
+with_buf :: () {
+    b := use_state_with(Buf, (a: Allocator) -> Buf {
+        d := a.alloc(u8, 3);
+        d[0] = 42;
+        Buf.{ data = d }
+    });
+    g_buf = xx b.get().data[0];
+}
+
+// One committed build against a root: strict counter + an arena entry.
+build_in :: (r: *UiRoot) {
+    r.begin_build();
+    push .{ ui = @r.ui, ui_store = @r.store } {
+        bump();
+        with_buf();
+    }
+    r.commit_build();
+}
+
+main :: () {
+    rt := AppRuntime.init();
+    sc := rt.create_scene();
+    a := sc.create_root();
+    b := sc.create_root();
+    process.assert(a.id != b.id, "roots get distinct ids");
+
+    build_in(a);
+    build_in(a);
+    va := g_last;
+    build_in(b);
+    vb := g_last;
+    print("a {} b {} entries {} {}\n", va, vb, a.store.entries.len, b.store.entries.len);
+    process.assert(va == 2 and vb == 1, "stores are per root");
+    process.assert(g_buf == 42, "arena entry lives");
+
+    // Teardown root b RIGHT NOW — no frame, no present; the sibling and
+    // its state are untouched.
+    bid := b.id;
+    sc.teardown_root(bid);
+    process.assert(sc.roots.len == 1, "the root's slot is released");
+    build_in(a);
+    process.assert(g_last == 3, "sibling state survives a teardown");
+
+    // A fresh root never aliases the torn-down identity.
+    c := sc.create_root();
+    process.assert(c.id != bid, "ids are never reused within a runtime");
+
+    // Scene teardown cascades to every root — including one that never
+    // built a frame (empty-store teardown is safe).
+    sid := sc.id;
+    rt.teardown_scene(sid);
+    process.assert(rt.scenes.len == 0, "the scene's slot is released");
+    print("ok {} {}\n", g_last, rt.scenes.len);
+}

@@ -9,16 +9,16 @@
 #import "modules/std.sx";
 #import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";
+#import "modules/ui/runtime.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/stacks.sx";
 #import "modules/ui/modifier.sx";
 
 ComposeTest :: struct {
-    ui: Ui = .{};
-    store: StateStore;
+    root: UiRoot;
 
     init :: (root: u64 = 1, gpa: Allocator = context.allocator) -> ComposeTest {
-        ComposeTest.{ store = StateStore.init(.{ value = root }, gpa) }
+        ComposeTest.{ root = UiRoot.init(.{ value = root }, gpa) }
     }
 
     // One headless build transaction: begin (store + identity state) →
@@ -26,28 +26,26 @@ ComposeTest :: struct {
     // sink — S2) → commit (K2b validation, then sweep). The returned
     // View is the built tree, ready for downcast assertions.
     build :: (self: *ComposeTest, body: Closure() -> View) -> View {
-        self.store.begin_build();
-        self.ui.begin_build();
+        self.root.begin_build();
         v : View = ---;
-        push .{ ui = @self.ui, ui_store = @self.store } {
+        push .{ ui = @self.root.ui, ui_store = @self.root.store } {
             v = body();
         }
-        self.store.commit_build();
+        self.root.commit_build();
         v
     }
 
     // A build whose root emits nothing the test wants back (void body);
     // store/identity semantics still run in full.
     build_void :: (self: *ComposeTest, body: Closure()) {
-        self.store.begin_build();
-        self.ui.begin_build();
-        push .{ ui = @self.ui, ui_store = @self.store } {
+        self.root.begin_build();
+        push .{ ui = @self.root.ui, ui_store = @self.root.store } {
             body();
         }
-        self.store.commit_build();
+        self.root.commit_build();
     }
 
-    entry_count :: (self: *ComposeTest) -> i64 #get => self.store.entries.len;
+    entry_count :: (self: *ComposeTest) -> i64 #get => self.root.store.entries.len;
 }
 
 // --- Tree assertions (downcast-based) ---

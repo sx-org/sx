@@ -1,0 +1,174 @@
+// The G1 lifecycle core: runtime → scene → UiRoot, with the store PER
+// UiRoot as structure rather than convention. Host-independent — G1
+// models lifecycle, not surfaces: SurfaceGeneration records native
+// surface recreation, no windowing call exists here.
+//
+// The two lifecycle contracts (§4):
+// - A LOGICAL root outlives native surface recreation: losing and
+//   regaining a surface bumps the root's generation and touches nothing
+//   else — identity, store, and state persist.
+// - Root/scene teardown invalidates and releases ALL entries immediately
+//   — no further frame, no present.
+//
+// Ids are allocated monotonically per parent and never reused within a
+// runtime: a fresh root can never alias a torn-down root's identity (its
+// registrations, captures, and handles die with the id).
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+
+// §4 completes: the surface identity, and the host-registration identity.
+
+SurfaceGeneration :: struct {
+    root: UiRootId = .{ value = 0 };
+    gen: u64 = 0;
+}
+
+// What a native adapter records for a callback registration (IME, timers,
+// observers): NEVER a key hash, never a closure, never a tree pointer —
+// resolved against persistent structures at fire time, refused on a stale
+// incarnation. G1 ships the TYPE; the resolution machinery is host-gate
+// work (§7).
+OwnerId :: struct {
+    root: UiRootId = .{ value = 0 };
+    slot: u64;
+    incarnation: u64;
+}
+
+// --- UiRoot — the logical window; owns its Ui and its StateStore ---
+
+UiRoot :: struct {
+    id: UiRootId = .{ value = 0 };
+    ui: Ui = .{};
+    store: StateStore;
+    surface_gen: u64 = 0;
+
+    init :: (id: UiRootId, gpa: Allocator = context.allocator) -> UiRoot {
+        UiRoot.{ id = id, store = StateStore.init(id, gpa) }
+    }
+
+    // One build transaction against this root's identity + store.
+    begin_build :: (self: *UiRoot) {
+        self.store.begin_build();
+        self.ui.begin_build();
+    }
+
+    commit_build :: (self: *UiRoot) {
+        self.store.commit_build();
+    }
+
+    surface :: (self: *UiRoot) -> SurfaceGeneration {
+        SurfaceGeneration.{ root = self.id, gen = self.surface_gen }
+    }
+
+    // The native surface died and came back. Only the generation moves —
+    // the logical root, its store, and every entry are untouched; anything
+    // holding the OLD SurfaceGeneration is stale by value.
+    surface_recreated :: (self: *UiRoot) -> SurfaceGeneration {
+        self.surface_gen += 1;
+        self.surface()
+    }
+
+    // Invalidate + release every entry now; no frame, no present. The Ui
+    // identity scratch is frame-owned (allocated from the ambient build
+    // allocator at append time) and is not the root's to free — the
+    // STORE is the owned resource.
+    teardown :: (self: *UiRoot) {
+        self.store.teardown();
+    }
+}
+
+// --- Scene — a host window/scene; owns its roots ---
+
+Scene :: struct {
+    id: SceneId = .{ value = 0 };
+    roots: List(*UiRoot) = .{};
+    next_root: u64 = 1;
+    gpa: Allocator;
+
+    create_root :: (self: *Scene) -> *UiRoot {
+        r : *UiRoot = xx self.gpa.alloc_bytes(size_of(UiRoot));
+        r.* = UiRoot.init(.{ scene = self.id, value = self.next_root }, self.gpa);
+        self.next_root += 1;
+        self.roots.append(r, self.gpa);
+        r
+    }
+
+    // Tear down one root and release its slot. The id is not reused.
+    teardown_root :: (self: *Scene, id: UiRootId) {
+        i := 0;
+        while i < self.roots.len {
+            r := self.roots.items[i];
+            if r.id == id {
+                r.teardown();
+                self.gpa.dealloc_bytes(xx r);
+                self.roots.items[i] = self.roots.items[self.roots.len - 1];
+                self.roots.len = self.roots.len - 1;
+                return;
+            }
+            i += 1;
+        }
+    }
+
+    // Cascade: every root releases immediately.
+    teardown :: (self: *Scene) {
+        i := 0;
+        while i < self.roots.len {
+            self.roots.items[i].teardown();
+            self.gpa.dealloc_bytes(xx self.roots.items[i]);
+            i += 1;
+        }
+        self.roots.len = 0;
+        self.roots.deinit(self.gpa);
+    }
+}
+
+// --- AppRuntime — the process-level anchor ---
+
+AppRuntime :: struct {
+    id: AppRuntimeId = .{ value = 1 };
+    scenes: List(*Scene) = .{};
+    next_scene: u64 = 1;
+    gpa: Allocator;
+
+    init :: (gpa: Allocator = context.allocator) -> AppRuntime {
+        AppRuntime.{ gpa = gpa }
+    }
+
+    create_scene :: (self: *AppRuntime) -> *Scene {
+        s : *Scene = xx self.gpa.alloc_bytes(size_of(Scene));
+        s.* = Scene.{
+            id = .{ runtime = self.id, value = self.next_scene },
+            gpa = self.gpa,
+        };
+        self.next_scene += 1;
+        self.scenes.append(s, self.gpa);
+        s
+    }
+
+    teardown_scene :: (self: *AppRuntime, id: SceneId) {
+        i := 0;
+        while i < self.scenes.len {
+            s := self.scenes.items[i];
+            if s.id == id {
+                s.teardown();
+                self.gpa.dealloc_bytes(xx s);
+                self.scenes.items[i] = self.scenes.items[self.scenes.len - 1];
+                self.scenes.len = self.scenes.len - 1;
+                return;
+            }
+            i += 1;
+        }
+    }
+
+    teardown :: (self: *AppRuntime) {
+        i := 0;
+        while i < self.scenes.len {
+            self.scenes.items[i].teardown();
+            self.gpa.dealloc_bytes(xx self.scenes.items[i]);
+            i += 1;
+        }
+        self.scenes.len = 0;
+        self.scenes.deinit(self.gpa);
+    }
+}

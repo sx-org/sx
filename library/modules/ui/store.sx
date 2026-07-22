@@ -180,6 +180,24 @@ StateStore :: struct {
         }
     }
 
+    // Root/scene teardown: invalidate and release EVERY entry immediately,
+    // in the same eviction order the sweep uses — no build transaction, no
+    // frame, no present required (GPU loss must never block the state
+    // lifecycle). The store is empty afterwards; its bookkeeping backings
+    // are returned to the allocator.
+    teardown :: (self: *StateStore) {
+        process.assert(!self.in_build, "StateStore.teardown during a build transaction — commit or abandon the build first");
+        i := 0;
+        while i < self.entries.len {
+            self.release_entry(self.entries.items[i]);
+            i += 1;
+        }
+        self.entries.len = 0;
+        self.groups.len = 0;
+        self.entries.deinit(self.gpa);
+        self.groups.deinit(self.gpa);
+    }
+
     release_entry :: (self: *StateStore, e: *StateEntry) {
         e.incarnation += 1;
         if e.arena != null {
