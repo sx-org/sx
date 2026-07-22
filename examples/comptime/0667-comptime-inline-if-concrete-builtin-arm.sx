@@ -1,0 +1,38 @@
+// A CONCRETE builtin arm (`case i64:`, `case u8:`, `case f32:`) matches in
+// an `inline if T ==` static type dispatch (issue 0342): the static fold
+// resolves the primitive spelling exactly like the runtime type switch —
+// previously these arms were unreachable and silently fell to `else:`
+// (`case string:` only worked by doubling as a category name). Both the
+// inline-constraint form and the leading `$T: Type` form.
+#import "modules/std.sx";
+
+by_inline :: (v: $K) -> i64 {
+    n := 0;
+    inline if K == {
+        case i64: { n = 1; }
+        case u8: { n = 2; }
+        case f32: { n = 3; }
+        case string: { n = 4; }
+        else: { n = 5; }
+    }
+    n
+}
+
+by_type :: ($T: Type) -> i64 {
+    n := 0;
+    inline if T == {
+        case i64: { n = 1; }
+        case u8: { n = 2; }
+        case f32: { n = 3; }
+        else: { n = 5; }
+    }
+    n
+}
+
+main :: () {
+    x : i64 = 7;
+    b : u8 = 1;
+    f : f32 = 1.5;
+    print("{} {} {} {} {}\n", by_inline(x), by_inline(b), by_inline(f), by_inline("s"), by_inline(true));
+    print("{} {} {} {}\n", by_type(i64), by_type(u8), by_type(f32), by_type(bool));
+}

@@ -8,6 +8,7 @@ const unescape = @import("../../unescape.zig");
 const parser_mod = @import("../../parser.zig");
 const comptime_vm = @import("../comptime_vm.zig");
 const program_index_mod = @import("../program_index.zig");
+const type_bridge = @import("../type_bridge.zig");
 const resolver_mod = @import("../resolver.zig");
 const ModuleConstInfo = program_index_mod.ModuleConstInfo;
 
@@ -327,7 +328,12 @@ pub fn staticTypeMatchesCategory(self: *Lowering, tid: TypeId, name: []const u8)
     if (std.mem.eql(u8, name, "void")) return tid == .void;
     if (std.mem.eql(u8, name, "type") or std.mem.eql(u8, name, "Type")) return tid == .type_value;
     if (tid.isBuiltin()) {
-        // Builtins beyond the fixed categories match only a specific name.
+        // A concrete builtin ARM (`case i64:`, `case u8:`, `case f32:`):
+        // resolve the primitive spelling and compare (issue 0342 — this
+        // returned false unconditionally, making concrete builtin arms
+        // unreachable in the static fold; `case string:` only worked by
+        // doubling as a category name).
+        if (type_bridge.resolveTypePrimitive(name)) |prim| return tid == prim;
         return false;
     }
     const info = tt.get(tid);
