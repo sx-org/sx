@@ -1,0 +1,378 @@
+// StateStore v2 (experiment/ui gate G4 Step 2): per-UiRoot persistent state
+// behind the emit core. Identity of a claim (K1) = the ambient Ui chain
+// (scope sites ++ explicit keys) ++ the use_state CALL SITE ++ an occurrence
+// counter per (chain, site) group. Entries are STABLE pointers (C2) with a
+// FULL key-tuple compare on hash hit — silent aliasing is unacceptable.
+//
+// Two tiers (K4): `use_state` (strict — K2b count-change detection; for
+// state whose mid-interaction swap would be a visible bug) and
+// `use_transient` (chrome — occurrence identity, no count check; for state
+// whose misbinding is imperceptible: pressed, hover, ripple). Nontrivial
+// payloads go through `use_state_with` under a lazy per-entry arena (C3).
+//
+// `State(T)` handles are FRAME-TRANSIENT (G0 pointer doctrine): valid during
+// the build that claimed the entry and through handler dispatch before the
+// next build. Storing a handle beyond that — globals, app state, spawned
+// tasks — is UB exactly like storing any sx pointer past its pointee: the
+// store may evict and reuse the memory.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/std/meta.sx";
+#import "modules/ui/compose.sx";
+
+// --- Identity hierarchy (minimal G4 slice; §4) ---
+
+AppRuntimeId :: struct { value: u64; }
+SceneId :: struct { runtime: AppRuntimeId = .{ value = 0 }; value: u64; }
+UiRootId :: struct { scene: SceneId = .{ value = 0 }; value: u64; }
+
+// --- TrivialState (C2): comptime kind check ---
+
+// Plain `use_state` / `use_transient` accept only trivially-copyable
+// payloads: no pointers, slices, strings, closures, protocol values or
+// `any` — recursively through structs, enum payloads, arrays, optionals,
+// and tuples. Frame-backed interiors must never enter persistent entries;
+// nontrivial state goes through `use_state_with` under the entry allocator.
+trivial_state_check :: ($T: Type) {
+    inline if T == {
+        case pointer: compile_error("use_state payload may not contain pointers — frame-backed interiors must never enter persistent entries; use use_state_with under the entry allocator");
+        case slice: compile_error("use_state payload may not contain slices — use use_state_with under the entry allocator");
+        case string: compile_error("use_state payload may not contain strings — use use_state_with under the entry allocator");
+        case closure: compile_error("use_state payload may not contain closures — handler envs are frame-transient; use use_state_with under the entry allocator");
+        case protocol: compile_error("use_state payload may not contain protocol values — use use_state_with under the entry allocator");
+        case any: compile_error("use_state payload may not contain 'any' — use use_state_with under the entry allocator");
+        case struct: {
+            inline for 0..struct_field_count(T) (i) { trivial_state_check(struct_field_type(T, i)); }
+        }
+        case enum: {
+            inline for 0..struct_field_count(T) (i) { trivial_state_check(struct_field_type(T, i)); }
+        }
+        case tuple: {
+            inline for 0..struct_field_count(T) (i) { trivial_state_check(struct_field_type(T, i)); }
+        }
+        case array: trivial_state_check(struct_field_type(T, 0));
+        case optional: trivial_state_check(struct_field_type(T, 0));
+        else: {}
+    }
+}
+
+// --- State(T) — the thin frame-transient handle ---
+
+State :: struct ($T: Type) {
+    ptr: *T;
+
+    get :: (self: State(T)) -> T { self.ptr.* }
+    set :: (self: State(T), val: T) { self.ptr.* = val; }
+}
+
+// --- Entries and occurrence groups ---
+
+StateTier :: enum {
+    strict;
+    transient;
+}
+
+StateEntry :: struct {
+    id_hash: u64;
+    // The FULL identity tuple, store-owned: chain segments (Key.str payloads
+    // deep-copied — they may be frame data; site/loc file strings are
+    // compile-time literals with static lifetime and stay borrowed), the
+    // use_state call site, the occurrence index, and the tier.
+    chain: []ChainSegment;
+    loc_file: string;
+    loc_line: i32;
+    occurrence: i32;
+    tier: StateTier;
+    // Payload: type identity checked on every rebind hit.
+    ty: Type;
+    size: i64;
+    data: [*]u8;
+    claimed_this_build: bool;
+    // Bumped on eviction: a stale handle's incarnation no longer matches.
+    incarnation: i64;
+    // Lazy (C3): only use_state_with creates one; the init runs under it.
+    arena: *Arena = null;
+}
+
+OccurrenceGroup :: struct {
+    id: u64;                 // hash(chain, use_state loc)
+    tier: StateTier;
+    loc_file: string;
+    loc_line: i32;
+    prev_count: i32;
+    cur_count: i32;
+}
+
+// --- StateStore (per UiRoot; C6) ---
+
+#context_extend ui_store: *StateStore = null;
+
+StateStore :: struct {
+    root: UiRootId = .{ value = 0 };
+    entries: List(*StateEntry) = .{};
+    groups: List(OccurrenceGroup) = .{};
+    gpa: Allocator;
+    in_build: bool = false;
+
+    init :: (root: UiRootId, gpa: Allocator = context.allocator) -> StateStore {
+        StateStore.{ root = root, gpa = gpa }
+    }
+
+    // Open a build transaction: nothing is claimed yet; every group's
+    // count starts fresh against the previous build's.
+    begin_build :: (self: *StateStore) {
+        i := 0;
+        while i < self.entries.len {
+            self.entries.items[i].claimed_this_build = false;
+            i += 1;
+        }
+        i = 0;
+        while i < self.groups.len {
+            self.groups.items[i].prev_count = self.groups.items[i].cur_count;
+            self.groups.items[i].cur_count = 0;
+            i += 1;
+        }
+        self.in_build = true;
+    }
+
+    // Commit: K2b occurrence-group validation (flip-time, strict tier only),
+    // then SWEEP — an entry not claimed by the committed build evicts, in
+    // the contractual order: invalidate incarnation → (native-registration
+    // detach hook lands with the host gates; nothing to detach in G4) →
+    // release the entry arena → release owned identity + payload → release
+    // the entry. Sweep runs after a COMMITTED build only — never mid-build.
+    commit_build :: (self: *StateStore) {
+        self.in_build = false;
+        // K2b: a strict-tier group whose instance count CHANGED between two
+        // live builds means unkeyed conditionally-present instances just
+        // misbound — panic at the flip, naming the site.
+        gi := 0;
+        while gi < self.groups.len {
+            g := @self.groups.items[gi];
+            if g.tier == .strict and g.prev_count > 0 and g.cur_count > 0 and g.prev_count != g.cur_count {
+                print("K2: unkeyed instance count changed for use_state at {}:{} — {} -> {} instances under one scope; conditionally-present instances must be keyed (wrap each in keyed(id), or use for_each for lists)\n",
+                    g.loc_file, g.loc_line, g.prev_count, g.cur_count);
+                process.exit(1);
+            }
+            gi += 1;
+        }
+        // Sweep unclaimed entries.
+        i := 0;
+        while i < self.entries.len {
+            e := self.entries.items[i];
+            if !e.claimed_this_build {
+                self.release_entry(e);
+                self.entries.items[i] = self.entries.items[self.entries.len - 1];
+                self.entries.len = self.entries.len - 1;
+            } else {
+                i += 1;
+            }
+        }
+        // Groups that went silent this build reset with their entries.
+        gi = 0;
+        while gi < self.groups.len {
+            if self.groups.items[gi].cur_count == 0 {
+                self.groups.items[gi] = self.groups.items[self.groups.len - 1];
+                self.groups.len = self.groups.len - 1;
+            } else {
+                gi += 1;
+            }
+        }
+    }
+
+    release_entry :: (self: *StateStore, e: *StateEntry) {
+        e.incarnation += 1;
+        if e.arena != null {
+            e.arena.deinit();
+            self.gpa.dealloc_bytes(xx e.arena);
+        }
+        // Free deep-copied Key.str payloads, then the segment array.
+        i := 0;
+        while i < e.chain.len {
+            seg := @e.chain[i];
+            if seg.kind == .key {
+                if seg.key == { case .str: (s) { self.gpa.dealloc_bytes(xx s.ptr); true } else: false } { }
+            }
+            i += 1;
+        }
+        if e.chain.len > 0 { self.gpa.dealloc_bytes(xx e.chain.ptr); }
+        self.gpa.dealloc_bytes(e.data);
+        self.gpa.dealloc_bytes(xx e);
+    }
+
+    // Count this claim in its (chain, loc) occurrence group.
+    bump_group :: (self: *StateStore, gid: u64, tier: StateTier, loc: Source_Location) {
+        i := 0;
+        while i < self.groups.len {
+            if self.groups.items[i].id == gid and self.groups.items[i].tier == tier {
+                self.groups.items[i].cur_count += 1;
+                return;
+            }
+            i += 1;
+        }
+        self.groups.append(.{
+            id = gid, tier = tier,
+            loc_file = loc.file, loc_line = loc.line,
+            prev_count = 0, cur_count = 1,
+        }, self.gpa);
+    }
+}
+
+// --- Identity plumbing ---
+
+hash_loc :: (h: u64, loc: Source_Location) -> u64 {
+    h2 := hash.fnv1a_fold(h, loc.file.ptr, loc.file.len);
+    line := loc.line;
+    hash.fnv1a_fold(h2, xx @line, size_of(i32))
+}
+
+// Deep-equal of the live frame chain against an entry's owned copy — the
+// C2 full-compare arm behind the id-hash fast path.
+chains_equal :: (live: []ChainSegment, own: []ChainSegment) -> bool {
+    if live.len != own.len { return false; }
+    i := 0;
+    while i < live.len {
+        a := @live[i];
+        b := @own[i];
+        if a.kind != b.kind { return false; }
+        if a.kind == .site {
+            if a.site.line != b.site.line { return false; }
+            if a.site.file != b.site.file { return false; }
+        } else {
+            if !a.key.eq(b.key) { return false; }
+        }
+        i += 1;
+    }
+    true
+}
+
+// Store-owned deep copy of the live chain (Key.str payloads duplicated).
+copy_chain :: (live: []ChainSegment, gpa: Allocator) -> []ChainSegment {
+    if live.len == 0 {
+        empty : []ChainSegment = ---;
+        empty.len = 0;
+        return empty;
+    }
+    owned := gpa.alloc(ChainSegment, live.len);
+    i := 0;
+    while i < live.len {
+        seg := live[i];
+        if seg.kind == .key {
+            if seg.key == {
+                case .str: (s) {
+                    raw : [*]u8 = xx gpa.alloc_bytes(s.len);
+                    c.memcpy(raw, s.ptr, s.len);
+                    copied : string = ---;
+                    copied.ptr = raw;
+                    copied.len = s.len;
+                    seg.key = .str(copied);
+                    true
+                }
+                else: false
+            } { }
+        }
+        owned[i] = seg;
+        i += 1;
+    }
+    owned
+}
+
+// --- The claim core shared by all three tiers ---
+
+claim_entry :: (store: *StateStore, ui: *Ui, $T: Type, tier: StateTier, loc: Source_Location) -> (e: *StateEntry, fresh: bool) {
+    process.assert(store.in_build, "use_state outside a build transaction — call store.begin_build() first (state claims are build-scoped)");
+    gid := hash_loc(ui.chain_hash, loc);
+    occurrence := ui.next_occurrence(gid);
+    // Fold occurrence + tier into the entry hash.
+    occ := occurrence;
+    h := hash.fnv1a_fold(gid, xx @occ, size_of(i32));
+    tier_tag : u8 = if tier == .strict then 1 else 2;
+    h = hash.fnv1a_fold(h, @tier_tag, 1);
+
+    store.bump_group(gid, tier, loc);
+
+    i := 0;
+    while i < store.entries.len {
+        e := store.entries.items[i];
+        if e.id_hash == h {
+            // Hash hit → FULL tuple compare (C2).
+            if e.occurrence == occurrence and e.tier == tier and
+                e.loc_line == loc.line and e.loc_file == loc.file and
+                chains_equal(ui.chain.items, e.chain)
+            {
+                if e.ty != T or e.size != size_of(T) {
+                    print("state entry at {}:{} changed type between builds — the store cannot rebind storage of a different shape\n", loc.file, loc.line);
+                    process.exit(1);
+                }
+                e.claimed_this_build = true;
+                return e = e, fresh = false;
+            }
+        }
+        i += 1;
+    }
+
+    // New entry: stable pointer, store-owned identity copy; the caller
+    // initialises the payload exactly once (fresh == true).
+    ne : *StateEntry = xx store.gpa.alloc_bytes(size_of(StateEntry));
+    ne.* = StateEntry.{
+        id_hash = h,
+        chain = copy_chain(ui.chain.items, store.gpa),
+        loc_file = loc.file,
+        loc_line = loc.line,
+        occurrence = occurrence,
+        tier = tier,
+        ty = T,
+        size = size_of(T),
+        data = xx store.gpa.alloc_bytes(size_of(T)),
+        claimed_this_build = true,
+        incarnation = 0,
+        arena = null,
+    };
+    store.entries.append(ne, store.gpa);
+    return e = ne, fresh = true;
+}
+
+// --- The three tiers ---
+
+// Strict tier (K4): trivially-copyable payloads; K2b count-change
+// detection. `default` initialises the payload on first claim.
+use_state :: ($T: Type, default: T, loc: Source_Location = #caller_location) -> State(T) {
+    trivial_state_check(T);
+    process.assert(context.ui != null and context.ui_store != null, "use_state outside a frame build — no ambient Ui/StateStore");
+    e, fresh := claim_entry(context.ui_store, context.ui, T, .strict, loc);
+    if fresh {
+        d := default;
+        c.memcpy(e.data, xx @d, size_of(T));
+    }
+    State(T).{ ptr = xx e.data }
+}
+
+// Chrome tier (K4): occurrence identity, NO count-change detection — for
+// state whose misbinding is imperceptible by definition.
+use_transient :: ($T: Type, default: T, loc: Source_Location = #caller_location) -> State(T) {
+    trivial_state_check(T);
+    process.assert(context.ui != null and context.ui_store != null, "use_transient outside a frame build — no ambient Ui/StateStore");
+    e, fresh := claim_entry(context.ui_store, context.ui, T, .transient, loc);
+    if fresh {
+        d := default;
+        c.memcpy(e.data, xx @d, size_of(T));
+    }
+    State(T).{ ptr = xx e.data }
+}
+
+// Nontrivial tier (C3): the initializer runs under a LAZY per-entry arena
+// and must build every retained pointer/slice/string with the supplied
+// allocator — initializer captures are borrowed for the call only. The
+// arena releases as one unit when the entry evicts.
+use_state_with :: ($T: Type, init: Closure(Allocator) -> T, loc: Source_Location = #caller_location) -> State(T) {
+    process.assert(context.ui != null and context.ui_store != null, "use_state_with outside a frame build — no ambient Ui/StateStore");
+    store := context.ui_store;
+    e, fresh := claim_entry(store, context.ui, T, .strict, loc);
+    if fresh {
+        e.arena = xx store.gpa.alloc_bytes(size_of(Arena));
+        e.arena.* = Arena.init(store.gpa, 1024);
+        v := init(e.arena.(Allocator));
+        c.memcpy(e.data, xx @v, size_of(T));
+    }
+    State(T).{ ptr = xx e.data }
+}

@@ -1,0 +1,2 @@
+build 0 done
+state entry at examples/ui/1907-ui-state-type-change.sx:20 changed type between builds — the store cannot rebind storage of a different shape

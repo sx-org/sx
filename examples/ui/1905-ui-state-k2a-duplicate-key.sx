@@ -1,0 +1,20 @@
+// K2a (modules/ui/compose.sx): the same explicit key twice under one scope
+// is a DATA BUG surfaced as a frame-1 panic — sibling identities would
+// merge silently. The message carries the key, the scope chain, and a
+// fix-it.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+
+main :: () {
+    u := Ui.{};
+    store := StateStore.init(.{ value = 1 });
+    push .{ ui = @u, ui_store = @store } {
+        store.begin_build(); u.begin_build();
+        u.key_scope(Key.str("row"), () => {
+            u.key_scope(Key.int(7), () => {});
+            u.key_scope(Key.int(7), () => {});
+        });
+        store.commit_build();
+    }
+}

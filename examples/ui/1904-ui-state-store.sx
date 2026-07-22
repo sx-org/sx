@@ -1,0 +1,68 @@
+// StateStore v2 (modules/ui/store.sx, G4 Step 2): claims persist across
+// build transactions; occurrence counters disambiguate same-site claims;
+// keyed scopes give rows independent identity; an unclaimed entry SWEEPS at
+// commit and is reborn fresh (product-visible by design); `use_state_with`
+// runs its initializer under the lazy per-entry arena and the payload
+// survives across builds.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+
+bump :: () -> i64 {
+    n := use_state(i64, 100);
+    n.set(n.get() + 1);
+    n.get()
+}
+
+trans :: () -> i64 {
+    t := use_transient(i64, 7);
+    t.set(t.get() + 1);
+    t.get()
+}
+
+Buf :: struct { data: []u8; }
+
+with_buf :: () -> i64 {
+    b := use_state_with(Buf, (a: Allocator) -> Buf {
+        d := a.alloc(u8, 3);
+        d[0] = 42;
+        Buf.{ data = d }
+    });
+    v := b.get();
+    n : i64 = xx v.data[0];
+    n
+}
+
+main :: () {
+    u := Ui.{};
+    store := StateStore.init(.{ value = 1 });
+    push .{ ui = @u, ui_store = @store } {
+        // Build 1: two keyed rows + two same-site occurrences + transient + arena entry.
+        store.begin_build(); u.begin_build();
+        u.key_scope(Key.str("a"), () => { print("a1 {}\n", bump()); });
+        u.key_scope(Key.str("b"), () => { print("b1 {}\n", bump()); });
+        print("occ {} {}\n", bump(), bump());
+        print("t1 {}\n", trans());
+        print("w1 {}\n", with_buf());
+        store.commit_build();
+        print("entries {}\n", store.entries.len);
+
+        // Build 2: row b unmounts (keyed → legal); transient not claimed → sweeps.
+        store.begin_build(); u.begin_build();
+        u.key_scope(Key.str("a"), () => { print("a2 {}\n", bump()); });
+        print("occ {} {}\n", bump(), bump());
+        print("w2 {}\n", with_buf());
+        store.commit_build();
+        print("entries {}\n", store.entries.len);
+
+        // Build 3: b returns FRESH (swept), transient reborn at its default.
+        store.begin_build(); u.begin_build();
+        u.key_scope(Key.str("a"), () => { print("a3 {}\n", bump()); });
+        u.key_scope(Key.str("b"), () => { print("b3 {}\n", bump()); });
+        print("occ {} {}\n", bump(), bump());
+        print("t3 {}\n", trans());
+        print("w3 {}\n", with_buf());
+        store.commit_build();
+        print("entries {}\n", store.entries.len);
+    }
+}

@@ -1,0 +1,26 @@
+// C2 type identity (modules/ui/store.sx): rebinding a state entry whose
+// payload TYPE changed between builds panics — the store never reinterprets
+// storage of a different shape at the same identity.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+
+either :: (first: bool, loc: Source_Location = #caller_location) {
+    if first { _ = use_state(i64, 0, loc); }
+    else { _ = use_state(f64, 0.0, loc); }
+}
+
+main :: () {
+    u := Ui.{};
+    store := StateStore.init(.{ value = 1 });
+    push .{ ui = @u, ui_store = @store } {
+        b := 0;
+        while b < 2 {
+            store.begin_build(); u.begin_build();
+            either(b == 0);
+            store.commit_build();
+            print("build {} done\n", b);
+            b += 1;
+        }
+    }
+}

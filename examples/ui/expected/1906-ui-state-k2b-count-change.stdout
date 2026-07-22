@@ -1,0 +1,2 @@
+build1 ok
+K2: unkeyed instance count changed for use_state at examples/ui/1906-ui-state-k2b-count-change.sx:9 — 2 -> 3 instances under one scope; conditionally-present instances must be keyed (wrap each in keyed(id), or use for_each for lists)

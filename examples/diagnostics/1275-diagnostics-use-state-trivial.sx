@@ -1,0 +1,19 @@
+// TrivialState (C2, modules/ui/store.sx): plain `use_state` accepts only
+// trivially-copyable payloads — a slice nested inside the struct is caught
+// by the recursive comptime kind check at COMPILE time, pointing at
+// `use_state_with` as the escape hatch for owned interiors.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+
+Held :: struct { name_bytes: []u8; n: i64; }
+
+main :: () {
+    u := Ui.{};
+    store := StateStore.init(.{ value = 1 });
+    push .{ ui = @u, ui_store = @store } {
+        store.begin_build(); u.begin_build();
+        _ = use_state(Held, Held.{ name_bytes = .[], n = 0 });
+        store.commit_build();
+    }
+}

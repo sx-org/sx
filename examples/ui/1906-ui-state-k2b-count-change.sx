@@ -1,0 +1,27 @@
+// K2b (modules/ui/store.sx): a strict-tier occurrence group whose unkeyed
+// instance count CHANGES between two live builds panics at the flip —
+// conditionally-present instances must be keyed. Detection is O(groups),
+// one integer per group at commit.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+
+row :: () { _ = use_state(i64, 0); }
+
+build :: (n: i64, u: *Ui, store: *StateStore) {
+    store.begin_build(); u.begin_build();
+    i := 0;
+    while i < n { row(); i += 1; }
+    store.commit_build();
+}
+
+main :: () {
+    u := Ui.{};
+    store := StateStore.init(.{ value = 1 });
+    push .{ ui = @u, ui_store = @store } {
+        build(2, @u, @store);
+        print("build1 ok\n");
+        build(3, @u, @store);
+        print("unreachable\n");
+    }
+}

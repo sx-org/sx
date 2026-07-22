@@ -97,13 +97,54 @@ hash_key :: (h: u64, k: Key) -> u64 {
     }
 }
 
-// --- Ui — the per-build identity carrier (store lands in Step 2) ---
+// --- Ui — the per-build identity carrier ---
+
+// One occurrence-counter group: the n-th claim from the same (chain, site)
+// group within one build gets occurrence n (K1's last tuple element).
+OccCounter :: struct {
+    id: u64;
+    count: i32;
+}
+
+// K2a bookkeeping: explicit keys seen under one parent scope this build.
+SeenKey :: struct {
+    parent: u64;
+    key: Key;
+}
 
 Ui :: struct {
     chain: List(ChainSegment) = .{};
     chain_hash: u64 = FNV_OFFSET;
+    // Per-build state, reset by begin_build; allocated from the ambient
+    // (frame) allocator — never retained across builds.
+    occ: List(OccCounter) = .{};
+    seen_keys: List(SeenKey) = .{};
 
     depth :: (self: *Ui) -> i64 #get => self.chain.len;
+
+    // Reset the per-build identity state. Pairs with the store's
+    // begin_build/commit_build transaction.
+    begin_build :: (self: *Ui) {
+        self.chain.len = 0;
+        self.chain_hash = FNV_OFFSET;
+        self.occ.len = 0;
+        self.seen_keys.len = 0;
+    }
+
+    // Occurrence within a (chain, use_state-site) group, advancing per call.
+    next_occurrence :: (self: *Ui, gid: u64) -> i32 {
+        i := 0;
+        while i < self.occ.len {
+            if self.occ.items[i].id == gid {
+                n := self.occ.items[i].count;
+                self.occ.items[i].count = n + 1;
+                return n;
+            }
+            i += 1;
+        }
+        self.occ.append(.{ id = gid, count = 1 });
+        0
+    }
 
     // Open one comptime scope-site segment for the duration of `content`.
     scope_at :: (self: *Ui, site: SiteId, content: Closure()) {
@@ -116,15 +157,53 @@ Ui :: struct {
     }
 
     // Open one explicit-key segment (dynamic identity: list items,
-    // conditional presence, K3 discriminators).
+    // conditional presence, K3 discriminators). K2a: the same explicit key
+    // twice under one scope — including duplicate ids in a keyed list — is
+    // a DATA BUG surfaced as a frame-1 panic, never a silent merge.
     key_scope :: (self: *Ui, k: Key, content: Closure()) {
         prev := self.chain_hash;
+        i := 0;
+        while i < self.seen_keys.len {
+            if self.seen_keys.items[i].parent == prev and self.seen_keys.items[i].key.eq(k) {
+                print("K2: duplicate explicit key ");
+                print_key(k);
+                print(" under one scope — sibling identities would merge silently. Scope chain:\n");
+                print_chain(self);
+                print("fix-it: give each sibling a distinct key; duplicate ids in a keyed list are a data bug in the items\n");
+                process.exit(1);
+            }
+            i += 1;
+        }
+        self.seen_keys.append(.{ parent = prev, key = k });
         self.chain.append(.{ kind = .key, key = k, prev_hash = prev });
         self.chain_hash = hash_key(prev, k);
         content();
         self.chain_hash = prev;
         self.chain.len = self.chain.len - 1;
     }
+}
+
+print_key :: (k: Key) {
+    if k == {
+        case .int: (x) { print("{}", x); }
+        case .str: (s) { print("\"{}\"", s); }
+    }
+}
+
+print_chain :: (ui: *Ui) {
+    i := 0;
+    while i < ui.chain.len {
+        seg := @ui.chain.items[i];
+        if seg.kind == .site {
+            print("  site {}:{}\n", seg.site.file, seg.site.line);
+        } else {
+            print("  key ");
+            print_key(seg.key);
+            print("\n");
+        }
+        i += 1;
+    }
+    if ui.chain.len == 0 { print("  (root scope)\n"); }
 }
 
 // --- place — THE single placement helper (S2) ---
