@@ -1,0 +1,68 @@
+// The Mod signature convention across the scope fns (compose.sx):
+// `required…, m: Mod = .{}, site, closure-param last` — a trailing block
+// still binds to the closure param, named args reach the middle-defaulted
+// `m`; leaves without closures put `m` last. Public components accept and
+// forward `m` to their root container, which makes them externally
+// styleable without any wrapper API of their own.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/stacks.sx";
+#import "modules/ui/label.sx";
+#import "modules/ui/modifier.sx";
+#import "modules/ui/compose.sx";
+
+// A public component under the surface doctrine: the chip owns its look —
+// a call-site-composed box (text padded inside its bg, the Mod.padding
+// case). The caller's `m` forwards to the root container and styles
+// OUTSIDE that surface (margin, size, opacity) — the same split Compose
+// spells as `modifier` vs `contentPadding`.
+chip :: (label: string, m: Mod = .{}) -> View {
+    hstack(4.0, m = m) {
+        text(label, .{ padding = EdgeInsets.symmetric(6.0, 2.0), bg = COLOR_BLUE, corner = 3.0 });
+    }
+}
+
+main :: () {
+    u := Ui.{};
+    root := Sink(View).{};
+    push .{ ui = @u, ui_sink = @root } {
+        // Container: named `m` + trailing block bind together — m is a
+        // middle default, the block is the last param.
+        vstack(8.0, m = .{ padding = EdgeInsets.all(10.0), bg = COLOR_DARK_GRAY }) {
+            text("plain");                                  // leaf, default m — no wrapper
+            text("styled", .{ bg = COLOR_GRAY });           // leaf, positional m
+            spacer(.{ height = 4.0, bg = COLOR_GRAY });     // a spacer with a Mod = a divider
+            button("go", m = .{ margin = EdgeInsets.all(2.0) }) { print("tapped\n"); };
+            chip("unstyled");
+            chip("spaced", m = .{ margin = EdgeInsets.all(4.0) });
+        }
+    }
+
+    process.assert(root.items.len == 1, "one root emitted");
+    outer := root.items.items[0].(?ModBox);
+    process.assert(outer != null, "modified vstack wraps in one ModBox");
+    if ob := outer {
+        vs := ob.child.view.(?VStack);
+        process.assert(vs != null, "the ModBox child is the VStack itself");
+        if v := vs {
+            process.assert(v.children.len == 6, "six children emitted");
+            process.assert(v.children.items[0].view.(?Label) != null, "default m: bare Label, no wrapper");
+            process.assert(v.children.items[1].view.(?ModBox) != null, "leaf m: one ModBox");
+            process.assert(v.children.items[2].view.(?ModBox) != null, "spacer m: one ModBox");
+            process.assert(v.children.items[3].view.(?ModBox) != null, "button m: one ModBox");
+            // chip("unstyled"): forwarded m is default → the component's
+            // root hstack passes through bare.
+            process.assert(v.children.items[4].view.(?HStack) != null, "unstyled chip: bare HStack root");
+            // chip with m: the forwarded Mod wraps the component's ROOT.
+            styled := v.children.items[5].view.(?ModBox);
+            process.assert(styled != null, "styled chip: forwarded m wraps the root");
+            if sb := styled {
+                process.assert(sb.child.view.(?HStack) != null, "…and the root is the chip's hstack");
+            }
+        }
+    }
+    print("ok\n");
+}

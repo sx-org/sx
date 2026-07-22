@@ -1,0 +1,110 @@
+// Mod + ModBox (modules/ui/modifier.sx, applied by compose.sx `place`):
+// ONE canonical application order — margin → size → bg/border/corner →
+// padding → content. The margin/padding split expresses both
+// background-relative orders: a chip pads INSIDE the background, a card
+// margins OUTSIDE it. Cost pins: default Mod = 0 wrappers (place returns
+// the view untouched); non-default = exactly ONE ModBox regardless of how
+// many fields are set.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/modifier.sx";
+#import "modules/ui/compose.sx";
+
+// A fixed-size leaf that renders its own frame as a rect — the numbers
+// below stay independent of font metrics.
+Leaf :: struct { w, h: f32; fill: Color; }
+impl View for Leaf {
+    size_that_fits :: (self: *Leaf, proposal: ProposedSize) -> Size {
+        Size.{ width = self.w, height = self.h }
+    }
+    layout :: (self: *Leaf, bounds: Frame) {}
+    render :: (self: *Leaf, ctx: *RenderContext, frame: Frame) {
+        ctx.add_rect(frame, self.fill);
+    }
+    handle_event :: (self: *Leaf, event: *Event, frame: Frame) -> bool { false }
+}
+
+leaf :: () -> View { Leaf.{ w = 10.0, h = 20.0, fill = COLOR_RED }.(View) }
+
+print_frame :: (tag: string, f: Frame) {
+    print("{} {} {} {} {}\n", tag, f.origin.x, f.origin.y, f.size.width, f.size.height);
+}
+
+// Lay out at the measured size and print every render node's frame.
+show :: (v: View, tag: string) {
+    sz := v.size_that_fits(ProposedSize.flexible());
+    bounds := Frame.make(0.0, 0.0, sz.width, sz.height);
+    v.layout(bounds);
+    tree := RenderTree.init();
+    ctx := RenderContext.init(@tree);
+    v.render(@ctx, bounds);
+    print("{} {}x{} nodes {}\n", tag, sz.width, sz.height, tree.nodes.len);
+    i := 0;
+    while i < tree.nodes.len {
+        print_frame(tag, tree.nodes.items[i].frame);
+        i += 1;
+    }
+}
+
+main :: () {
+    u := Ui.{};
+
+    // Everything below runs in S2 value mode: ui set, no sink.
+    push .{ ui = @u } {
+        // Zero-wrapper pin: a default Mod adds nothing — the returned View
+        // IS the leaf, not a pass-through wrapper.
+        plain := place(leaf());
+        process.assert(plain.(?ModBox) == null, "default Mod must add no wrapper");
+        process.assert(plain.(?Leaf) != null, "default Mod returns the view itself");
+
+        // One-wrapper pin: every set field acts at a single dispatch level.
+        full := place(leaf(), .{
+            margin = EdgeInsets.all(6.0),
+            padding = EdgeInsets.all(4.0),
+            bg = COLOR_BLUE,
+            corner = 3.0,
+            opacity = 0.5,
+            clip = true,
+        });
+        boxed := full.(?ModBox);
+        process.assert(boxed != null, "non-default Mod wraps in a ModBox");
+        if b := boxed {
+            process.assert(b.child.view.(?Leaf) != null, "ONE level: the child is the leaf itself");
+        }
+
+        // Chip order — padding INSIDE the background: the bg box encloses
+        // the padded content (18x28 around a 10x20 leaf at +4,+4).
+        chip := place(leaf(), .{ padding = EdgeInsets.all(4.0), bg = COLOR_BLUE, corner = 3.0 });
+        show(chip, "chip");
+
+        // Card order — margin OUTSIDE the background: the total grows to
+        // 22x32 but the bg box stays 10x20, inset by the 6pt margin.
+        card := place(leaf(), .{ margin = EdgeInsets.all(6.0), bg = COLOR_GRAY });
+        show(card, "card");
+
+        // Both at once, canonical order: margin(6) → bg → padding(4) →
+        // content. Total 30x40; bg box 18x28 at +6,+6; leaf at +10,+10.
+        both := place(leaf(), .{
+            margin = EdgeInsets.all(6.0),
+            padding = EdgeInsets.all(4.0),
+            bg = COLOR_BLUE,
+        });
+        show(both, "both");
+
+        // Fixed size overrides the content-derived box: width/height pin
+        // the bg box, padding still insets the child proposal within it.
+        sized := place(leaf(), .{ width = 40.0, height = 50.0, bg = COLOR_GRAY });
+        show(sized, "sized");
+
+        // A border renders even without a fill; the stroke sits on the box.
+        stroked := place(leaf(), .{ border = Stroke.{ color = COLOR_WHITE, width = 2.0 } });
+        show(stroked, "stroked");
+    }
+
+    process.assert(Mod.{} == MOD_DEFAULT, "empty literal is the default Mod");
+    process.assert(Mod.{ padding = EdgeInsets.all(1.0) } != MOD_DEFAULT, "any set field is non-default");
+    print("ok\n");
+}

@@ -101,6 +101,11 @@ EdgeInsets :: struct {
     vertical :: (self: EdgeInsets) -> f32 { self.top + self.bottom }
 }
 
+Stroke :: struct {
+    color: Color;
+    width: f32 = 1.0;
+}
+
 Color :: struct {
     r, g, b, a: u8;
 

@@ -298,3 +298,103 @@ on_drag :: ufcs (view: View, on_changed: ?Closure(DragValue), on_ended: ?Closure
         gesture = DragGesture.{ min_distance = 10.0, on_changed = on_changed, on_ended = on_ended }
     }
 }
+
+// --- Mod + ModBox — the POD modifier surface of the emit core ---
+//
+// ONE canonical application order: margin → size → bg/border/corner →
+// padding → content. The margin/padding split expresses both
+// background-relative orders (chip: padding inside the bg; card: margin
+// outside it) without a chain or an ordering DSL. Exotic ordered
+// composition (transforms, stacked effects) stays a value pipeline over
+// the wrapper views above: `place(v |> clip(r) |> with_opacity(a))`.
+// Inherited style (font, colors, theme) is ambient — `context`, not Mod.
+//
+// Surface doctrine: a component that owns a surface owns its content
+// padding via style/params (ButtonStyle.padding); the caller's forwarded
+// Mod styles OUTSIDE that surface (margin, size, opacity, clip).
+// Mod.padding is for call-site-composed boxes — content padded inside a
+// bg that is built right at the call site.
+
+Mod :: struct {
+    margin:  EdgeInsets = .{};    // outside the background
+    width:   ?f32 = null;
+    height:  ?f32 = null;
+    bg:      ?Color = null;
+    corner:  f32 = 0.0;
+    border:  ?Stroke = null;
+    padding: EdgeInsets = .{};    // inside the background
+    opacity: f32 = 1.0;
+    clip:    bool = false;
+}
+
+// The no-op Mod — `place` compares against it field-wise (`==`) to decide
+// whether a ModBox is needed at all.
+MOD_DEFAULT :: Mod.{};
+
+// The single wrapper `place` applies for a non-default Mod: every set
+// field acts at ONE dispatch level, regardless of how many are set.
+ModBox :: struct {
+    child: ViewChild;
+    m: Mod;
+    // The background box (margin removed), set during layout — bg, border,
+    // and clip act on this frame; padding insets the child within it.
+    box_frame: Frame = .zero();
+}
+
+impl View for ModBox {
+    size_that_fits :: (self: *ModBox, proposal: ProposedSize) -> Size {
+        // Margin comes off the proposal; a fixed dimension overrides both.
+        bw : ?f32 = self.m.width;
+        bh : ?f32 = self.m.height;
+        if bw == null { if w := proposal.width { bw = w - self.m.margin.horizontal(); } }
+        if bh == null { if h := proposal.height { bh = h - self.m.margin.vertical(); } }
+        // Padding comes off the box for the content proposal.
+        cw : ?f32 = null;
+        ch : ?f32 = null;
+        if w := bw { cw = w - self.m.padding.horizontal(); }
+        if h := bh { ch = h - self.m.padding.vertical(); }
+        child_size := self.child.view.size_that_fits(ProposedSize.{ width = cw, height = ch });
+        box_w := self.m.width ?? (child_size.width + self.m.padding.horizontal());
+        box_h := self.m.height ?? (child_size.height + self.m.padding.vertical());
+        Size.{
+            width = box_w + self.m.margin.horizontal(),
+            height = box_h + self.m.margin.vertical()
+        }
+    }
+
+    layout :: (self: *ModBox, bounds: Frame) {
+        inner := bounds.inset(self.m.margin);
+        bw := self.m.width ?? inner.size.width;
+        bh := self.m.height ?? inner.size.height;
+        // A fixed dimension centers within the margin box (FrameModifier rule).
+        bx := inner.origin.x + (inner.size.width - bw) * 0.5;
+        by := inner.origin.y + (inner.size.height - bh) * 0.5;
+        self.box_frame = Frame.make(bx, by, bw, bh);
+        self.child.computed_frame = self.box_frame.inset(self.m.padding);
+        self.child.view.layout(self.child.computed_frame);
+    }
+
+    render :: (self: *ModBox, ctx: *RenderContext, frame: Frame) {
+        prev := ctx.opacity;
+        if self.m.opacity < 1.0 { ctx.push_opacity(self.m.opacity); }
+        if s := self.m.border {
+            ctx.add_stroked_rect(self.box_frame, self.m.bg ?? COLOR_TRANSPARENT, s.color, s.width, self.m.corner);
+        } else {
+            if c := self.m.bg {
+                if self.m.corner > 0.0 {
+                    ctx.add_rounded_rect(self.box_frame, c, self.m.corner);
+                } else {
+                    ctx.add_rect(self.box_frame, c);
+                }
+            }
+        }
+        if self.m.clip { ctx.push_clip(self.box_frame); }
+        self.child.view.render(ctx, self.child.computed_frame);
+        if self.m.clip { ctx.pop_clip(); }
+        if self.m.opacity < 1.0 { ctx.pop_opacity(prev); }
+    }
+
+    handle_event :: (self: *ModBox, event: *Event, frame: Frame) -> bool {
+        self.child.view.handle_event(event, self.child.computed_frame)
+    }
+}

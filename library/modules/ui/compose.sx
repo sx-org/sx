@@ -14,6 +14,7 @@
 #import "modules/ui/stacks.sx";
 #import "modules/ui/label.sx";
 #import "modules/ui/button.sx";
+#import "modules/ui/modifier.sx";
 
 // --- Sink — the append-only emission target (frame-local) ---
 
@@ -244,7 +245,11 @@ print_chain :: (ui: *Ui) {
 // Three states: `ui == null` → outside a frame build (handler, layout,
 // callback) → hard stop; `ui` set + `ui_sink == null` → root / value
 // position → return only; both set → emit into the parent + return.
-place :: (v: View) -> View {
+//
+// Modifier application: a default `m` adds NOTHING — the view passes
+// through untouched (0 wrappers); a non-default `m` wraps in exactly ONE
+// ModBox (single dispatch level) no matter how many fields are set.
+place :: (v: View, m: Mod = .{}) -> View {
     if context.ui == null {
         // The S2 contract message, line-stable on purpose: a module-internal
         // line number tells the user nothing (the failure is at THEIR call
@@ -252,8 +257,9 @@ place :: (v: View) -> View {
         print("panic: UI element used outside a frame build\n");
         process.exit(1);
     }
-    if context.ui_sink != null { context.ui_sink.emit(v); }
-    v
+    w := if m == MOD_DEFAULT then v else ModBox.{ child = .{ view = v }, m = m }.(View);
+    if context.ui_sink != null { context.ui_sink.emit(w); }
+    w
 }
 
 // --- Scope containers and leaf elements (target spelling) ---
@@ -270,27 +276,35 @@ fold_hstack :: (items: []View, spacing: f32) -> View {
     hs.(View)
 }
 
-vstack :: (spacing: f32, site: SiteId = site_of(#caller_location), content: Closure()) -> View {
+// Signature convention: `required…, m: Mod = .{}, site, closure-param
+// last` (T1 binds a trailing block to the LAST param; named args reach
+// the middle defaults). Leaves without closures put `m` last. Public
+// components accept and forward `m` to their root container — the one
+// pass-through that makes any component externally styleable; the
+// forwarded Mod styles OUTSIDE the component's surface (doctrine in
+// modifier.sx — content padding belongs to the component's style).
+
+vstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location), content: Closure()) -> View {
     s := Sink(View).{};
     push .{ ui_sink = @s } {
         context.ui.scope_at(site, content);
     }
-    place(fold_vstack(s.items.items, spacing))
+    place(fold_vstack(s.items.items, spacing), m)
 }
 
-hstack :: (spacing: f32, site: SiteId = site_of(#caller_location), content: Closure()) -> View {
+hstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location), content: Closure()) -> View {
     s := Sink(View).{};
     push .{ ui_sink = @s } {
         context.ui.scope_at(site, content);
     }
-    place(fold_hstack(s.items.items, spacing))
+    place(fold_hstack(s.items.items, spacing), m)
 }
 
-text :: (s: string) -> View { place(Label.make(s).(View)) }
+text :: (s: string, m: Mod = .{}) -> View { place(Label.make(s).(View), m) }
 
-spacer :: () -> View { place(Spacer.{ min_length = 0.0 }.(View)) }
+spacer :: (m: Mod = .{}) -> View { place(Spacer.{ min_length = 0.0 }.(View), m) }
 
-button :: (label: string, on_tap: ?Closure() = null) -> View {
+button :: (label: string, m: Mod = .{}, on_tap: ?Closure() = null) -> View {
     place(Button.{
         label = label,
         font_size = 14.0,
@@ -298,5 +312,5 @@ button :: (label: string, on_tap: ?Closure() = null) -> View {
         on_tap = on_tap,
         hovered = false,
         pressed = false,
-    }.(View))
+    }.(View), m)
 }
