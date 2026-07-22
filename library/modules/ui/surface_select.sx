@@ -1,0 +1,24 @@
+// Select-at-bind (I5/I6) for the PixelSurface contract — the G6 stand-in
+// for the R2 owning registry/factory. Desktop hosts render through GL
+// over a hidden SDL window today (macOS's normative default is Metal —
+// it takes over at R5; references stay per-machine either way, revised
+// I9). Returns null where no display/GPU exists — the caller's graceful
+// skip, which is what keeps the wider test suite host-agnostic.
+#import "modules/std.sx";
+#import "modules/ui/font.sx";
+#import "modules/ui/surface.sx";
+#import "modules/gpu/offscreen_gl.sx";
+
+open_pixel_surface :: (w: i32, h: i32) -> ?PixelSurface {
+    inline if OS != .ios {
+        g := GlOffscreen.{};
+        if !g.open(w, h) { return null; }
+        s := g.(PixelSurface);
+        // The erasure heap-copied the backend; the ambient font must
+        // point INTO the owned copy, not the dead stack value.
+        gp := s.(*GlOffscreen);
+        set_global_font(@gp.font);
+        return s;
+    }
+    null   // Metal offscreen lands with the host gates
+}

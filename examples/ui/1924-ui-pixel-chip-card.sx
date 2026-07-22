@@ -1,0 +1,63 @@
+// Host-GPU pixel golden (revised I9): the chip/card scene rendered by
+// THIS machine's real GPU stack into an offscreen surface, compared
+// against the committed reference PNG with the tolerance budget.
+//
+// Run (SDL3 links explicitly — bare externs):
+//     sx run --lflags -lSDL3 -L /opt/homebrew/lib examples/ui/1924-ui-pixel-chip-card.sx
+// Regenerate the reference consciously:
+//     SX_UPDATE_PIXELS=1 sx run --lflags -lSDL3 -L /opt/homebrew/lib examples/ui/1924-ui-pixel-chip-card.sx
+//
+// NOT part of the byte-exact corpus (no expected/ files): the test
+// suite stays GPU/host agnostic — where no display or GL exists,
+// open_pixel_surface returns null and this reports a clean skip. The
+// example talks ONLY to the PixelSurface contract; backends live
+// behind ui/surface_select.sx.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/stacks.sx";
+#import "modules/ui/label.sx";
+#import "modules/ui/modifier.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/runtime.sx";
+#import "modules/ui/frame.sx";
+#import "modules/ui/surface.sx";
+#import "modules/ui/surface_select.sx";
+#import "modules/ui/pixeltest.sx";
+
+screen :: () -> View {
+    vstack(8.0) {
+        text("chip", .{ padding = EdgeInsets.all(4.0), bg = COLOR_BLUE, corner = 3.0 });
+        vstack(4.0, m = .{ margin = EdgeInsets.all(6.0), bg = COLOR_DARK_GRAY, corner = 8.0, padding = EdgeInsets.all(10.0) }) {
+            text("card body");
+        }
+        text("faded", .{ bg = COLOR_GRAY, opacity = 0.5, clip = true, corner = 2.0 });
+    }
+}
+
+main :: () {
+    surface := open_pixel_surface(200, 120);
+    if surface == null {
+        print("pixels skipped: no display/GPU on this host\n");
+        return;
+    }
+    s := surface!;
+
+    // Surface first, THEN the frame: text measures with the same font
+    // metrics the render uses.
+    loop := FrameLoop.init();
+    root := UiRoot.init(.{ value = 1 });
+    snap := loop.tick(@root, screen, 200.0, 120.0);
+
+    s.render(@snap.scene);
+    pixels := s.read_rgba(context.allocator);
+    ok := pixel_golden(pixels, s.width(), s.height(), "examples/ui/pixels/1924-chip-card.png");
+
+    loop.deinit();
+    root.teardown();
+    if !ok { process.exit(1); }
+}

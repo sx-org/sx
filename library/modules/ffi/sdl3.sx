@@ -5,6 +5,7 @@ SDL_INIT_VIDEO :u32: 0x20;
 
 // SDL_WindowFlags
 SDL_WINDOW_OPENGL              :u64: 0x2;
+SDL_WINDOW_HIDDEN              :u64: 0x8;
 SDL_WINDOW_RESIZABLE           :u64: 0x20;
 SDL_WINDOW_HIGH_PIXEL_DENSITY  :u64: 0x2000;
 

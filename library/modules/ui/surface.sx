@@ -1,0 +1,20 @@
+// The pixel-golden surface CONTRACT (G6 slice of the R-track's
+// Host → SurfaceSource → RenderDevice chain): tests talk to this
+// protocol and the select-at-bind factory (ui/surface_select.sx) —
+// never to a backend. The contract deliberately fuses surface +
+// renderer for the G6 gate; the R-track unbundles it (R0 contracts,
+// R1 SurfaceSource, R2 owning factories) and this seam folds into
+// those when they land.
+#import "modules/std.sx";
+#import "modules/ui/render.sx";
+
+// One offscreen render target on the machine's real GPU stack.
+PixelSurface :: protocol {
+    // Render one committed scene into the target.
+    render :: (self: *Self, tree: *RenderTree);
+    // Tightly packed TOP-DOWN RGBA of the last render, owned by `alloc`
+    // (backends normalize their native origin before handing over).
+    read_rgba :: (self: *Self, alloc: Allocator) -> string;
+    width :: (self: *Self) -> i64;
+    height :: (self: *Self) -> i64;
+}

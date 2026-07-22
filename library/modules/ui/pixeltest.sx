@@ -1,0 +1,76 @@
+// Host/GPU-agnostic pixel-golden core (G6, revised I9): compares a
+// rendered RGBA buffer against a repo-stored reference PNG, or rewrites
+// the reference when SX_UPDATE_PIXELS is set. Rendering is a BACKEND
+// concern — this module never touches SDL/GL/Metal; backends
+// (ui/pixelhost_gl.sx on desktop today, Metal offscreen when the host
+// gates land) produce the buffer and hand it here.
+//
+// Pixel examples live OUTSIDE the byte-exact corpus: the test suite
+// must pass on hosts with no GPU or display, so pixel goldens run as
+// their own explicit gate on machines that render.
+#import "modules/std.sx";
+#import "modules/std/fs.sx";
+
+// `actual` is tightly packed RGBA, TOP-DOWN rows (backends normalize
+// their origin before handing pixels over). A pixel counts as differing
+// when ANY channel exceeds max_channel_delta; the run fails when more
+// than max_diff_pct percent of pixels differ — AA drift on a driver
+// update stays within budget, real regressions do not.
+pixel_golden :: (actual: string, w: i64, h: i64, ref_path: [:0]u8,
+                max_channel_delta: i64 = 12, max_diff_pct: i64 = 1) -> bool {
+    process.assert(actual.len == w * h * 4, "pixel buffer size matches dimensions");
+
+    if process.env("SX_UPDATE_PIXELS") != null {
+        img : png.Image = .{ pixels = actual, width = w, height = h, format = .rgba };
+        data := png.encode(img) catch (e) {
+            print("pixels FAIL {}: reference encode error\n", ref_path);
+            return false;
+        };
+        if !fs.write_file(ref_path, data) {
+            print("pixels FAIL {}: cannot write reference\n", ref_path);
+            return false;
+        }
+        print("pixels updated {} {}x{}\n", ref_path, w, h);
+        return true;
+    }
+
+    refd := fs.read_file(ref_path);
+    if refd == null {
+        print("pixels FAIL {}: no reference — rerun with SX_UPDATE_PIXELS=1\n", ref_path);
+        return false;
+    }
+    ref := png.decode(refd!) catch (e) {
+        print("pixels FAIL {}: reference does not decode\n", ref_path);
+        return false;
+    };
+    if ref.width != w or ref.height != h or ref.format != .rgba {
+        print("pixels FAIL {}: reference {}x{} vs run {}x{}\n", ref_path, ref.width, ref.height, w, h);
+        return false;
+    }
+
+    total := w * h;
+    diff := 0;
+    maxd := 0;
+    i := 0;
+    while i < total {
+        c := 0;
+        differs := false;
+        while c < 4 {
+            av := actual[i * 4 + c].(i64);
+            rv := ref.pixels[i * 4 + c].(i64);
+            d := if av >= rv then av - rv else rv - av;
+            if d > maxd { maxd = d; }
+            if d > max_channel_delta { differs = true; }
+            c += 1;
+        }
+        if differs { diff += 1; }
+        i += 1;
+    }
+    if diff * 100 > total * max_diff_pct {
+        print("pixels FAIL {}: {} of {} pixels beyond tolerance, max channel delta {}\n",
+            ref_path, diff, total, maxd);
+        return false;
+    }
+    print("pixels ok {}x{}\n", w, h);
+    true
+}

@@ -1,0 +1,100 @@
+// GL/SDL offscreen backend for the ui/surface.sx PixelSurface contract:
+// a hidden window's framebuffer is the render target on desktop hosts.
+// Readback flips to top-down RGBA so nothing above this module ever
+// learns GL's origin. Superseded per platform as the R-track backends
+// land (Metal at R5 takes macOS per the normative default table).
+#import "modules/std.sx";
+#import "modules/ffi/sdl3.sx";
+#import "modules/ffi/opengl.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/glyph_cache.sx";
+#import "modules/ui/font.sx";
+#import "modules/ui/renderer.sx";
+#import "modules/ui/surface.sx";
+
+GlOffscreen :: struct {
+    window: *void = null;
+    renderer: UIRenderer;
+    font: GlyphCache;
+    w: i32 = 0;
+    h: i32 = 0;
+
+    // Open BEFORE building frames: measure_text must use the same font
+    // metrics the render uses. The font is machine-pinned by design
+    // (revised I9 — the reference shows what THIS machine renders).
+    open :: (self: *GlOffscreen, w: i32, h: i32,
+             font_path: [:0]u8 = "/System/Library/Fonts/Supplemental/Arial.ttf",
+             font_size: f32 = 14.0) -> bool {
+        self.w = w;
+        self.h = h;
+        if !SDL_Init(SDL_INIT_VIDEO) { return false; }
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        self.window = SDL_CreateWindow("sx-pixel-golden", w, h, SDL_WINDOW_OPENGL | SDL_WINDOW_HIDDEN);
+        if self.window == null { return false; }
+        ctx := SDL_GL_CreateContext(self.window);
+        if ctx == null { return false; }
+        SDL_GL_MakeCurrent(self.window, ctx);
+        SDL_GL_SetSwapInterval(0);
+        load_gl(SDL_GL_GetProcAddress);
+        self.renderer.init();
+        self.font.init(font_path, font_size);
+        // The global font is NOT set here: `open` runs on a pre-erasure
+        // stack value, and the owning PixelSurface copy is the one that
+        // lives — the factory rebinds the global to that copy.
+        true
+    }
+}
+
+impl PixelSurface for GlOffscreen {
+    render :: (self: *GlOffscreen, tree: *RenderTree) {
+        glViewport(0, 0, self.w, self.h);
+        glClearColor(0.0, 0.0, 0.0, 1.0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDisable(GL_DEPTH_TEST);
+
+        self.renderer.begin(xx self.w, xx self.h, self.font.texture_id);
+        self.renderer.process(tree);
+        self.font.upload_atlas_to_gpu();
+        self.renderer.flush();
+    }
+
+    read_rgba :: (self: *GlOffscreen, alloc: Allocator) -> string {
+        wl := self.w.(i64);
+        hl := self.h.(i64);
+        n := wl * hl * 4;
+        raw : [*]u8 = xx alloc.alloc_bytes(n);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, self.w, self.h, GL_RGBA, GL_UNSIGNED_BYTE, xx raw);
+
+        // GL reads bottom-up — flip rows to top-down in place.
+        row_bytes := wl * 4;
+        top := 0;
+        bot := hl - 1;
+        while top < bot {
+            i := 0;
+            while i < row_bytes {
+                t := raw[top * row_bytes + i];
+                raw[top * row_bytes + i] = raw[bot * row_bytes + i];
+                raw[bot * row_bytes + i] = t;
+                i += 1;
+            }
+            top += 1;
+            bot -= 1;
+        }
+
+        out : string = ---;
+        out.ptr = raw;
+        out.len = n;
+        out
+    }
+
+    width :: (self: *GlOffscreen) -> i64 { self.w.(i64) }
+    height :: (self: *GlOffscreen) -> i64 { self.h.(i64) }
+}
