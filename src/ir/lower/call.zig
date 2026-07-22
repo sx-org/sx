@@ -776,18 +776,23 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // Try to resolve param types for target_type context
     const param_types = self.resolveCallParamTypes(c, sel_author, qualified_author != null, if (qualified_callable) |cv| cv.global else null);
     // For enum_literal callees (.Variant(payload)), resolve the payload target type
-    // from the union field type so struct literal fields get proper coercion
+    // from the union field type so struct literal fields get proper coercion.
+    // Resolve through optional layers — a `?E` destination constructs the E
+    // and wraps at the coercion site (issue 0351).
     var enum_payload_ty: ?TypeId = null;
     if (c.callee.data == .enum_literal) {
-        const target = self.target_type orelse .unresolved;
-        if (!target.isBuiltin()) {
+        var target = self.target_type orelse .unresolved;
+        while (!target.isBuiltin()) {
             const info = self.module.types.get(target);
             if (info == .tagged_union) {
                 const tag = self.resolveVariantIndex(target, c.callee.data.enum_literal.name);
                 if (tag < info.tagged_union.fields.len) {
                     enum_payload_ty = info.tagged_union.fields[tag].ty;
                 }
+                break;
             }
+            if (info != .optional) break;
+            target = info.optional.child;
         }
     }
     // Running PARAMETER index (issue 0239 review F1): a spread expands one
@@ -2124,7 +2129,16 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // .Variant(payload) — tagged enum construction. Requires target to be a tagged union.
             const target = blk: {
                 if (target_opt) |tgt| {
-                    if (!tgt.isBuiltin() and self.module.types.get(tgt) == .tagged_union) break :blk tgt;
+                    // A `?E` destination constructs the E and wraps at the
+                    // coercion site — resolve through optional layers, same
+                    // as the bare-literal path (issue 0351).
+                    var t = tgt;
+                    while (!t.isBuiltin()) {
+                        const info = self.module.types.get(t);
+                        if (info == .tagged_union) break :blk t;
+                        if (info != .optional) break;
+                        t = info.optional.child;
+                    }
                 }
                 if (self.diagnostics) |diags| {
                     diags.addFmt(.err, c.callee.span, "cannot infer enum type for '.{s}' \u{2014} use an explicit type or assign to a typed variable", .{el.name});

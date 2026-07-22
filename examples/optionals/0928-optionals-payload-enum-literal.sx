@@ -1,0 +1,54 @@
+// Issue 0351: a payload-carrying enum literal resolves against an
+// OPTIONAL destination exactly like a bare one — the literal
+// constructs the union's child type and wraps at the coercion site.
+// Pinned in every destination position (return, typed local, call
+// argument), with plain, struct-literal, and
+// nested-union payloads; the platform stream's real shape
+// (`-> ?PlatformEvent { return .input(.key_up(.{ ... })); }`) is the
+// motivating case.
+#import "modules/std.sx";
+
+P :: struct { a: f32 = 0.0; b: f32 = 0.0; }
+Inner :: enum { one; two: i64; }
+
+E :: enum {
+    quit;
+    resize: f32;
+    pair: P;
+    wrap: Inner;
+}
+
+ret_bare :: () -> ?E { return .quit; }
+ret_plain :: () -> ?E { return .resize(1.5); }
+ret_struct :: () -> ?E { return .pair(.{ a = 1.0, b = 2.0 }); }
+ret_nested :: () -> ?E { return .wrap(.two(7)); }
+
+take :: (e: ?E = null) -> ?E { e }
+
+main :: () {
+    process.assert(ret_bare() != null, "bare arm");
+
+    if e := ret_plain() {
+        n := if e == { case .resize: (v) { v } else: 0.0 };
+        process.assert(n == 1.5, "plain payload intact");
+    } else { process.assert(false, "plain present"); }
+
+    if e := ret_struct() {
+        s := if e == { case .pair: (p) { p.a + p.b } else: 0.0 };
+        process.assert(s == 3.0, "struct payload intact");
+    } else { process.assert(false, "struct present"); }
+
+    if e := ret_nested() {
+        n := if e == { case .wrap: (i) {
+            if i == { case .two: (v) { v } else: 0 }
+        } else: 0 };
+        process.assert(n == 7, "nested union payload intact");
+    } else { process.assert(false, "nested present"); }
+
+    // Typed optional local + call argument.
+    x : ?E = .resize(2.5);
+    process.assert(x != null, "typed local");
+    process.assert(take(.pair(.{ a = 9.0 })) != null, "call argument");
+
+    print("ok\n");
+}
