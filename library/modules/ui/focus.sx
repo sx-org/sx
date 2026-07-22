@@ -7,7 +7,10 @@
 // capture. Traversal order IS declaration order. Tap-to-focus is
 // component policy (wire on_tap → request_focus), not core behavior;
 // the platform shell polls keyboard_wanted to drive the soft
-// keyboard. Key/text ROUTING to the focused region is Step 2.
+// keyboard. Attached with a router, the loop's on_input becomes the
+// combined dispatch: pointers to the router, tab/shift+tab consumed
+// as traversal, other key_downs and text to the focused region's
+// on_key/on_text (fire-time, C8).
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/input.sx";
@@ -15,6 +18,7 @@
 #import "modules/ui/render.sx";
 #import "modules/ui/frame.sx";
 #import "modules/ui/runtime.sx";
+#import "modules/ui/router.sx";
 
 FocusTable :: struct {
     // The attached surfaces (set by `attach`): the loop's snapshot is
@@ -26,12 +30,21 @@ FocusTable :: struct {
 
     // Bind the table to its surfaces and install the per-root build
     // bridge (compose.ui_is_focused reads it, like pressed fills).
-    attach :: (self: *FocusTable, loop: *FrameLoop, root: *UiRoot) {
+    // With a router, the loop's on_input becomes the combined dispatch
+    // — pointers to the router, keys/text to the focus half (the
+    // documented composition point; the router itself is unchanged).
+    attach :: (self: *FocusTable, loop: *FrameLoop, root: *UiRoot, router: *Router = null) {
         self.loop = loop;
         self.root = root;
         root.ui.focus_query = (id: u64) -> bool {
             return self.is_focused(.{ value = id });
         };
+        if router != null {
+            loop.on_input = (ev: *InputEvent) {
+                router_dispatch(router, ev);
+                focus_dispatch(self, ev);
+            };
+        }
     }
 
     has_focus :: (self: *FocusTable) -> bool #get => self.current.id.value != 0;
@@ -115,5 +128,35 @@ FocusTable :: struct {
             if r.id == id { return i; }
         }
         -1
+    }
+}
+
+// The focus half of the combined on_input: tab/shift+tab traverse and
+// are CONSUMED at the table; every other key_down fires the FOCUSED
+// region's on_key, text its on_text — resolved fire-time from the
+// LATEST committed snapshot (C8), never retained. key_up is not
+// delivered (components act on downs; G7's TextInputSession owns the
+// full editing stream). No focus → keys and text drop.
+focus_dispatch :: (t: *FocusTable, ev: *InputEvent) {
+    if ev.* == {
+        case .key_down: (k) {
+            if k.logical == .tab {
+                if k.header.modifiers.shift { t.focus_prev(); }
+                else { t.focus_next(); }
+                return;
+            }
+            if r := t.focused_region() {
+                if h := r.on_key {
+                    kv := k;      // the case capture is storage-less
+                    h(*kv);
+                }
+            }
+        }
+        case .text: (tx) {
+            if r := t.focused_region() {
+                if h := r.on_text { h(tx.text); }
+            }
+        }
+        else: {}
     }
 }
