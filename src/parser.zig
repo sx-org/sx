@@ -2814,6 +2814,16 @@ pub const Parser = struct {
                         self.advance();
                         const operand = try self.parseExpr();
                         try args.append(self.allocator, try self.createNode(spread_start, .{ .spread_expr = .{ .operand = operand } }));
+                    } else if (self.isIdentLike() and self.peekNext() == .equal) {
+                        // Named argument: `name = value` (specs: Named
+                        // Arguments). Unambiguous — assignment is statement-
+                        // only, and `==` lexes as one token.
+                        const named_start = self.current.loc.start;
+                        const arg_name = self.tokenSlice(self.current);
+                        self.advance(); // name
+                        self.advance(); // '='
+                        const value = try self.parseExpr();
+                        try args.append(self.allocator, try self.createNode(named_start, .{ .named_arg = .{ .name = arg_name, .value = value } }));
                     } else {
                         try args.append(self.allocator, try self.parseExpr());
                     }

@@ -794,6 +794,7 @@ pub const Analyzer = struct {
             .while_expr => .void_type,
             .for_expr => .void_type,
             .spread_expr => .void_type,
+            .named_arg => |na| return self.inferExprType(na.value),
             .break_expr => .void_type,
             .continue_expr => .void_type,
             .enum_literal => .{ .enum_type = "" },
@@ -1256,6 +1257,7 @@ pub const Analyzer = struct {
                 self.popScope();
             },
             .spread_expr => |se| try self.analyzeNode(se.operand),
+            .named_arg => |na| try self.analyzeNode(na.value),
             .break_expr, .continue_expr => {},
             .assignment => |asgn| {
                 try self.analyzeNode(asgn.target);
@@ -1778,6 +1780,9 @@ pub fn findNodeAtOffset(node: *Node, offset: u32) ?*Node {
         },
         .spread_expr => |se| {
             if (findNodeAtOffset(se.operand, offset)) |found| return found;
+        },
+        .named_arg => |na| {
+            if (findNodeAtOffset(na.value, offset)) |found| return found;
         },
         .break_expr, .continue_expr => {},
         .caller_location => {},

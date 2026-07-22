@@ -526,6 +526,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         },
         .never_qualified, .value_receiver, .type_prefix, .func, .callable_value => {},
     }
+    // Named-argument mapping (specs: Named Arguments) — rewrite
+    // `f(a, name = v)` into declaration order with defaults filled, BEFORE
+    // positional default expansion (a named call never reaches it: mapping
+    // fills every default itself, middle holes included).
+    if (mapNamedArgs(self, c, sel_author, qualified_author != null, author_ambiguous)) |mapped| c = mapped;
     // Expand default parameter values for bare identifier callees:
     // when the caller omits trailing positional args, fill them in
     // from the callee's `param: T = expr` declarations.
@@ -4042,6 +4047,369 @@ fn fnDeclHasVariadicParam(fd: *const ast.FnDecl) bool {
 /// callee's signature provides defaults for them, return a fresh Call
 /// node with the defaults filled in. Returns null when no expansion is
 /// needed (callee unknown, all args provided, or no defaults available).
+/// The callee declaration a named-argument call maps against, plus how many
+/// leading params the call shape binds implicitly (1 for a value-receiver
+/// method/ufcs dot-call, else 0).
+const NamedCallee = struct {
+    fd: *const ast.FnDecl,
+    source: ?[]const u8,
+    receiver_params: usize,
+};
+
+/// Resolve the declaration whose parameter NAMES a named-argument call binds
+/// against. Mirrors `expandCallDefaults`' author resolution (bare/qualified/
+/// static-struct/enum-literal callees) and adds the value-receiver dot-call
+/// shapes (plain-struct method, ufcs fn — an alias resolves names against the
+/// TARGET's declared params). Null when no declaration is known (closure /
+/// fn-pointer values, builtins, protocol methods) — those bind positionally
+/// only.
+fn namedCalleeDecl(
+    self: *Lowering,
+    c: *const ast.Call,
+    sel_author: ?*const SelectedFunc,
+    qualified_selected: bool,
+    author_ambiguous: bool,
+) ?NamedCallee {
+    switch (c.callee.data) {
+        .identifier => |id| {
+            if (author_ambiguous) return null;
+            if (sel_author) |sf| return .{ .fd = sf.decl, .source = sf.source, .receiver_params = 0 };
+            if (callableLocalShadow(self, id.name)) return null;
+            const eff_name = blk: {
+                const scoped = if (self.scope) |scope| scope.lookupFn(id.name) orelse id.name else id.name;
+                if (self.ufcsAliasTarget(id.name)) |target| {
+                    break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
+                }
+                break :blk scoped;
+            };
+            const fd = self.program_index.fn_ast_map.get(eff_name) orelse return null;
+            return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 0 };
+        },
+        .field_access => |fa| {
+            if (qualified_selected) return .{ .fd = sel_author.?.decl, .source = sel_author.?.source, .receiver_params = 0 };
+            if (!self.callResolver().objectIsValue(fa.object)) {
+                switch (self.staticStructHead(fa.object)) {
+                    .resolved => |owner_ty| {
+                        if (self.plainStructMethod(owner_ty, fa.field)) |method| {
+                            return .{ .fd = method.fd, .source = method.fd.body.source_file, .receiver_params = 0 };
+                        }
+                        return null;
+                    },
+                    .ambiguous, .not_visible => return null,
+                    .none => {},
+                }
+                const obj_name: ?[]const u8 = switch (fa.object.data) {
+                    .identifier => |oid| oid.name,
+                    .type_expr => |te| te.name,
+                    else => null,
+                };
+                if (obj_name) |name| {
+                    if (!self.identifierBindsVisibleValue(name)) {
+                        const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ name, fa.field }) catch fa.field;
+                        if (self.program_index.fn_ast_map.get(qualified) orelse self.program_index.fn_ast_map.get(fa.field)) |fd| {
+                            return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 0 };
+                        }
+                        return null;
+                    }
+                }
+            }
+            // Value receiver: `obj.m(args)` binds the first param to `obj`.
+            var obj_ty = self.inferExprType(fa.object);
+            if (!obj_ty.isBuiltin()) {
+                const oi = self.module.types.get(obj_ty);
+                if (oi == .pointer) obj_ty = oi.pointer.pointee;
+            }
+            if (self.plainStructMethod(obj_ty, fa.field)) |method| {
+                return .{ .fd = method.fd, .source = method.fd.body.source_file, .receiver_params = 1 };
+            }
+            const eff = blk: {
+                if (self.ufcsAliasTarget(fa.field)) |target| {
+                    break :blk if (self.scope) |scope| scope.lookupFn(target) orelse target else target;
+                }
+                break :blk if (self.scope) |scope| scope.lookupFn(fa.field) orelse fa.field else fa.field;
+            };
+            if (self.program_index.fn_ast_map.get(eff)) |fd| {
+                if (fd.is_ufcs or self.ufcsAliasTarget(fa.field) != null) {
+                    return .{ .fd = fd, .source = fd.body.source_file, .receiver_params = 1 };
+                }
+            }
+            return null;
+        },
+        .enum_literal => |el| {
+            const tgt = self.target_type orelse return null;
+            const method = self.plainStructMethod(tgt, el.name) orelse return null;
+            return .{ .fd = method.fd, .source = method.fd.body.source_file, .receiver_params = 0 };
+        },
+        else => return null,
+    }
+}
+
+/// Strip `named_arg` wrappers in place of a failed mapping: downstream
+/// lowering sees each value as a plain positional node (the build aborts on
+/// the mapping diagnostic before codegen; this only prevents an
+/// unknown-node cascade).
+fn stripNamedArgs(self: *Lowering, c: *const ast.Call) *ast.Call {
+    const new_args = self.alloc.alloc(*Node, c.args.len) catch unreachable;
+    for (c.args, 0..) |a, i| new_args[i] = if (a.data == .named_arg) a.data.named_arg.value else a;
+    const new_call = self.alloc.create(ast.Call) catch unreachable;
+    new_call.* = .{ .callee = c.callee, .args = new_args };
+    return new_call;
+}
+
+/// Levenshtein distance for the unknown-name did-you-mean suggestion.
+fn editDistance(alloc: std.mem.Allocator, a: []const u8, b: []const u8) usize {
+    var prev = alloc.alloc(usize, b.len + 1) catch return a.len + b.len;
+    defer alloc.free(prev);
+    var cur = alloc.alloc(usize, b.len + 1) catch return a.len + b.len;
+    defer alloc.free(cur);
+    for (prev, 0..) |*p, j| p.* = j;
+    for (a, 0..) |ca, i| {
+        cur[0] = i + 1;
+        for (b, 0..) |cb, j| {
+            const cost: usize = if (ca == cb) 0 else 1;
+            cur[j + 1] = @min(@min(cur[j] + 1, prev[j + 1] + 1), prev[j] + cost);
+        }
+        std.mem.swap([]usize, &prev, &cur);
+    }
+    return prev[b.len];
+}
+
+/// Named-argument mapping pass (specs: Named Arguments). Runs at `lowerCall`
+/// entry BEFORE default expansion: rewrites a call carrying `name = value`
+/// args into a purely positional call in declaration order, filling skipped
+/// defaulted params from their declarations (same authored-default mechanics
+/// as `expandCallDefaults`). Returns null when the call has no named args.
+/// Every mapping error diagnoses here and returns the call with the named
+/// wrappers stripped, so downstream lowering never sees a `named_arg` node.
+///
+/// Rules enforced: positional-then-named; per-param at-most-once (positional
+/// overlap and receiver overlap included); unknown name with did-you-mean;
+/// positional-only zones (variadic tails, packs, comptime `$` params);
+/// missing required params reported by name. A positional overflow past a
+/// variadic param keeps flowing into the tail as before.
+pub fn mapNamedArgs(
+    self: *Lowering,
+    c: *const ast.Call,
+    sel_author: ?*const SelectedFunc,
+    qualified_selected: bool,
+    author_ambiguous: bool,
+) ?*ast.Call {
+    var any_named = false;
+    for (c.args) |a| {
+        if (a.data == .named_arg) {
+            any_named = true;
+            break;
+        }
+    }
+    if (!any_named) return null;
+
+    const callee_name: []const u8 = switch (c.callee.data) {
+        .identifier => |id| id.name,
+        .field_access => |fa| fa.field,
+        .enum_literal => |el| el.name,
+        else => "callee",
+    };
+    const callee = namedCalleeDecl(self, c, sel_author, qualified_selected, author_ambiguous) orelse {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, c.callee.span, "cannot use named arguments here — '{s}' has no known parameter names (closure and function-pointer values, builtins, and protocol methods bind positionally)", .{callee_name});
+        return stripNamedArgs(self, c);
+    };
+    const fd = callee.fd;
+    const off = callee.receiver_params;
+    const nparams = fd.params.len;
+
+    const slots = self.alloc.alloc(?*Node, nparams) catch return stripNamedArgs(self, c);
+    for (slots) |*s| s.* = null;
+    var tail = std.ArrayList(*Node).empty;
+    var variadic_idx: ?usize = null;
+    for (fd.params, 0..) |p, i| {
+        if (p.is_variadic) {
+            variadic_idx = i;
+            break;
+        }
+    }
+
+    var pos: usize = off;
+    var seen_named = false;
+    var errored = false;
+    // Named bindings in WRITTEN order (param index + value) — consumed by
+    // the N3 displacement check below.
+    var named_seq = std.ArrayList(struct { i: usize, v: *Node }).empty;
+    defer named_seq.deinit(self.alloc);
+    for (c.args) |a| {
+        switch (a.data) {
+            .named_arg => |na| {
+                seen_named = true;
+                var idx: ?usize = null;
+                for (fd.params, 0..) |p, i| {
+                    if (std.mem.eql(u8, p.name, na.name)) {
+                        idx = i;
+                        break;
+                    }
+                }
+                const i = idx orelse {
+                    errored = true;
+                    if (self.diagnostics) |d| {
+                        var best: ?[]const u8 = null;
+                        // Suggest only near-misses; scale with name length so a
+                        // short name never matches a distant one.
+                        var best_dist: usize = @max(1, na.name.len / 3) + 1;
+                        for (fd.params) |p| {
+                            const dist = editDistance(self.alloc, p.name, na.name);
+                            if (dist < best_dist) {
+                                best_dist = dist;
+                                best = p.name;
+                            }
+                        }
+                        if (best) |b| {
+                            d.addFmt(.err, a.span, "'{s}' has no parameter named '{s}' — did you mean '{s}'?", .{ callee_name, na.name, b });
+                        } else {
+                            d.addFmt(.err, a.span, "'{s}' has no parameter named '{s}'", .{ callee_name, na.name });
+                        }
+                    }
+                    continue;
+                };
+                const p = fd.params[i];
+                if (p.is_variadic or p.is_pack) {
+                    errored = true;
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, a.span, "variadic parameter '{s}' cannot be bound by name — a variadic tail is positional-only", .{p.name});
+                    continue;
+                }
+                if (p.is_comptime) {
+                    errored = true;
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, a.span, "comptime parameter '${s}' cannot be bound by name — comptime `$` parameters bind through the type/value argument machinery", .{p.name});
+                    continue;
+                }
+                if (i < off) {
+                    errored = true;
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, a.span, "parameter '{s}' is already bound by the receiver of this call", .{p.name});
+                    continue;
+                }
+                if (slots[i] != null or i < pos) {
+                    errored = true;
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, a.span, "parameter '{s}' is bound more than once", .{p.name});
+                    continue;
+                }
+                slots[i] = na.value;
+                named_seq.append(self.alloc, .{ .i = i, .v = na.value }) catch {};
+            },
+            .spread_expr => {
+                errored = true;
+                if (self.diagnostics) |d|
+                    d.addFmt(.err, a.span, "a spread argument cannot be combined with named arguments — pass the call positionally", .{});
+            },
+            else => {
+                if (seen_named) {
+                    errored = true;
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, a.span, "positional argument after a named argument — name it or move it before the named arguments", .{});
+                    continue;
+                }
+                if (variadic_idx != null and pos >= variadic_idx.?) {
+                    tail.append(self.alloc, a) catch {};
+                    continue;
+                }
+                if (pos >= nparams) {
+                    // Over-supplied positionally: no diagnostic here — the
+                    // stripped call reaches checkCallArity, which owns the
+                    // count message.
+                    errored = true;
+                    continue;
+                }
+                slots[pos] = a;
+                pos += 1;
+            },
+        }
+    }
+    if (errored) return stripNamedArgs(self, c);
+
+    // N3: evaluation order is written order. The rewrite hands the call
+    // machinery param-ordered nodes, so when the named values' param indices
+    // are not already ascending, evaluate EVERY argument now — positional
+    // and named, in written order, each typed by its param's declaration —
+    // and record node → ref; `lowerExpr` returns the recorded ref when the
+    // machinery reaches the node. Exempt shapes keep declaration-order
+    // evaluation: value-receiver calls (the receiver must evaluate first
+    // and lowers inside dispatch), and generic / comptime / pack / variadic
+    // callees (their args bind through their own dispatch machinery).
+    var displaced = false;
+    for (named_seq.items, 0..) |e, k| {
+        if (k > 0 and e.i < named_seq.items[k - 1].i) displaced = true;
+    }
+    if (displaced and off == 0 and variadic_idx == null and
+        fd.type_params.len == 0 and !hasComptimeParams(fd) and !isPackFn(fd))
+    {
+        var hoist_pos: usize = 0;
+        for (c.args) |a| {
+            const bind: struct { i: usize, v: *Node } = switch (a.data) {
+                .named_arg => |na| blk: {
+                    for (fd.params, 0..) |p, i| {
+                        if (std.mem.eql(u8, p.name, na.name)) break :blk .{ .i = i, .v = na.value };
+                    }
+                    unreachable; // unknown names errored above
+                },
+                else => blk: {
+                    defer hoist_pos += 1;
+                    break :blk .{ .i = hoist_pos, .v = a };
+                },
+            };
+            const saved_target = self.target_type;
+            const pty = self.resolveDeclParamType(fd, bind.i);
+            self.target_type = if (pty == .unresolved or pty == .void) null else pty;
+            const ref = self.lowerExpr(bind.v);
+            self.target_type = saved_target;
+            self.precomputed_args.put(bind.v, ref) catch {};
+        }
+    }
+
+    // Fill skipped defaulted params; report missing required ones BY NAME.
+    var missing = std.ArrayList([]const u8).empty;
+    defer missing.deinit(self.alloc);
+    for (fd.params[off..], off..) |p, i| {
+        if (slots[i] != null) continue;
+        if (p.is_variadic or p.is_pack) continue; // an empty tail is legal
+        if (p.default_expr) |def| {
+            slots[i] = defaultArgAtCall(self, def, callee.source, c.callee) orelse return stripNamedArgs(self, c);
+        } else {
+            missing.append(self.alloc, p.name) catch {};
+            // Fill the hole with an undef node so the rewritten call stays
+            // arity-complete — the named diagnostic below is the only error
+            // (no checkCallArity cascade); the build aborts before codegen.
+            const undef = self.alloc.create(Node) catch unreachable;
+            undef.* = .{ .span = c.callee.span, .data = .undef_literal };
+            slots[i] = undef;
+        }
+    }
+    if (missing.items.len > 0) {
+        if (self.diagnostics) |d| {
+            var buf = std.ArrayList(u8).empty;
+            defer buf.deinit(self.alloc);
+            for (missing.items, 0..) |name, i| {
+                if (i > 0) buf.appendSlice(self.alloc, ", ") catch {};
+                buf.append(self.alloc, '\'') catch {};
+                buf.appendSlice(self.alloc, name) catch {};
+                buf.append(self.alloc, '\'') catch {};
+            }
+            const s: []const u8 = if (missing.items.len == 1) "" else "s";
+            d.addFmt(.err, c.callee.span, "call to '{s}' is missing required parameter{s} {s}", .{ callee_name, s, buf.items });
+        }
+    }
+
+    var new_args = std.ArrayList(*Node).empty;
+    for (fd.params[off..], off..) |p, i| {
+        if (p.is_variadic) break;
+        new_args.append(self.alloc, slots[i].?) catch return stripNamedArgs(self, c);
+    }
+    for (tail.items) |a| new_args.append(self.alloc, a) catch {};
+    const new_call = self.alloc.create(ast.Call) catch return stripNamedArgs(self, c);
+    new_call.* = .{ .callee = c.callee, .args = new_args.toOwnedSlice(self.alloc) catch return stripNamedArgs(self, c) };
+    return new_call;
+}
+
 pub fn expandCallDefaults(
     self: *Lowering,
     c: *const ast.Call,

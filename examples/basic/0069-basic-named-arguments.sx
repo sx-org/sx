@@ -1,0 +1,36 @@
+// Named arguments (specs: Named Arguments): call-site sugar over positional
+// params — positional first then named (N1), bind-by-name any order among
+// named (N2), written-order evaluation with mapping after (N3), named reach
+// into MIDDLE defaults (N6), ufcs receiver + alias resolution, and the
+// composition with bare-fn → ?Closure promotion (issue 0338 slots).
+#import "modules/std.sx";
+
+f :: (a: i64, b: i64 = 7, c: string = "x") -> i64 { print("{} {} {}\n", a, b, c); a + b }
+
+P :: struct {
+    x: i64;
+    scale :: (self: *P, by: i64 = 2, add: i64 = 0) -> i64 { self.x * by + add }
+    make :: (x: i64 = 5) -> P { P.{ x = x } }
+}
+
+pad :: ufcs (s: string, width: i64, fill: string = " ") -> i64 { s.len + width + fill.len }
+wide :: ufcs pad;
+
+opt_slot :: (f2: ?Closure() = null, tag: string = "-") { if g := f2 { g(); } print("{}\n", tag); }
+hello :: () { print("hi\n"); }
+
+ev :: (tag: string, v: i64) -> i64 { print("eval {}\n", tag); v }
+sum3 :: (a: i64 = 0, b: i64 = 0, c: i64 = 0) -> i64 { a * 100 + b * 10 + c }
+
+main :: () {
+    _ = f(1, b = 2, c = "y");            // positional + named
+    _ = f(1, c = "z");                    // middle default reached by name
+    p := P.make(x = 9);                   // static method
+    print("{}\n", p.scale(add = 1));      // method: skip 'by' default
+    print("{}\n", "ab".pad(4, fill = "--")); // ufcs
+    print("{}\n", "ab".wide(width = 4));  // ufcs alias resolves TARGET names
+    opt_slot(f2 = hello, tag = "T");      // named + fn→?Closure promotion
+    opt_slot(tag = "z", f2 = hello);      // any order among named
+    // N3: written order c, a, b evaluates c-first — mapping happens after.
+    print("{}\n", sum3(c = ev("c", 1), a = ev("a", 2), b = ev("b", 3)));
+}

@@ -252,6 +252,24 @@ A named slot that is **not assigned on every path** and has no default is a
 compile error (definite-assignment) — rather than returning an uninitialized
 value.
 
+### Named arguments
+
+Call-site sugar over positional parameters — positional args first, then
+`name = value` in any order. Named arguments reach defaults **anywhere** in
+the list (positional skipping stays end-only), and arguments always evaluate
+in written order:
+
+```sx
+scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: Closure()) { … }
+
+scaffold(content = chat_list);                    // skip middle defaults by name
+scaffold(top_bar = toolbar, content = chat_list); // bare fns promote into ?Closure slots
+"ab".pad(4, fill = "--");                         // composes with ufcs
+```
+
+Names are not part of a function's identity (no overloading) — but they are
+public API: renaming a parameter breaks named call sites.
+
 ### Structs
 
 ```sx

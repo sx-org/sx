@@ -1,0 +1,47 @@
+error: positional argument after a named argument — name it or move it before the named arguments
+  --> examples/diagnostics/1272-diagnostics-named-arguments.sx:14:21
+   |
+14 |     _ = f(beta = 2, 1);
+   |                     ^
+
+error: parameter 'alpha' is bound more than once
+  --> examples/diagnostics/1272-diagnostics-named-arguments.sx:15:14
+   |
+15 |     _ = f(1, alpha = 2);
+   |              ^^^^^^^^^
+
+error: parameter 'beta' is bound more than once
+  --> examples/diagnostics/1272-diagnostics-named-arguments.sx:16:24
+   |
+16 |     _ = f(1, beta = 2, beta = 3);
+   |                        ^^^^^^^^
+
+error: 'f' has no parameter named 'betta' — did you mean 'beta'?
+  --> examples/diagnostics/1272-diagnostics-named-arguments.sx:17:14
+   |
+17 |     _ = f(1, betta = 2);
+   |              ^^^^^^^^^
+
+error: 'f' has no parameter named 'delta'
+  --> examples/diagnostics/1272-diagnostics-named-arguments.sx:18:14
+   |
+18 |     _ = f(1, delta = 2);
+   |              ^^^^^^^^^
+
+error: variadic parameter 'rest' cannot be bound by name — a variadic tail is positional-only
+  --> examples/diagnostics/1272-diagnostics-named-arguments.sx:19:14
+   |
+19 |     _ = v(1, rest = 2);
+   |              ^^^^^^^^
+
+error: call to 'need' is missing required parameters 'a', 'b'
+  --> examples/diagnostics/1272-diagnostics-named-arguments.sx:20:9
+   |
+20 |     _ = need(c = true);
+   |         ^^^^
+
+error: cannot use named arguments here — 'q' has no known parameter names (closure and function-pointer values, builtins, and protocol methods bind positionally)
+  --> examples/diagnostics/1272-diagnostics-named-arguments.sx:22:9
+   |
+22 |     _ = q(a = 1);
+   |         ^

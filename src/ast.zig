@@ -89,6 +89,7 @@ pub const Node = struct {
         while_expr: WhileExpr,
         for_expr: ForExpr,
         spread_expr: SpreadExpr,
+        named_arg: NamedArg,
         break_expr: void,
         continue_expr: void,
         undef_literal: void,
@@ -877,6 +878,14 @@ pub const ForExpr = struct {
 
 pub const SpreadExpr = struct {
     operand: *Node,
+};
+
+/// `name = value` in call-argument position (named argument, specs: Named
+/// Arguments). Exists only inside `Call.args`; the mapping pass rewrites the
+/// call to positional order before general lowering.
+pub const NamedArg = struct {
+    name: []const u8,
+    value: *Node,
 };
 
 pub const NamespaceDecl = struct {

@@ -2812,6 +2812,12 @@ pub fn resolveOptionalInner(self: *Lowering, ty: TypeId) TypeId {
 // ── Core expression dispatch ───────────────────────────────────
 
 pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
+    // A named-argument value pre-lowered in written order (N3 pin,
+    // `mapNamedArgs`) already produced its ref — return it; re-lowering
+    // would evaluate the value's side effects a second time.
+    if (self.precomputed_args.count() > 0) {
+        if (self.precomputed_args.get(node)) |pre| return pre;
+    }
     // A synthetic declared-default root evaluates with the callee declaration's
     // lexical authority, not the caller's local scope. Keep this override for
     // the entire recursive lowering of the default expression. Caller-provided
