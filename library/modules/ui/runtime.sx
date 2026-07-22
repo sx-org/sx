@@ -105,8 +105,7 @@ Scene :: struct {
             if r.id == id {
                 r.teardown();
                 self.gpa.dealloc_bytes(xx r);
-                self.roots.items[i] = self.roots.items[self.roots.len - 1];
-                self.roots.len = self.roots.len - 1;
+                self.roots.swap_remove(i);
                 return;
             }
             i += 1;
@@ -156,8 +155,7 @@ AppRuntime :: struct {
             if s.id == id {
                 s.teardown();
                 self.gpa.dealloc_bytes(xx s);
-                self.scenes.items[i] = self.scenes.items[self.scenes.len - 1];
-                self.scenes.len = self.scenes.len - 1;
+                self.scenes.swap_remove(i);
                 return;
             }
             i += 1;

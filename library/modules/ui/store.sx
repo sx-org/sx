@@ -162,8 +162,7 @@ StateStore :: struct {
             e := self.entries.items[i];
             if !e.claimed_this_build {
                 self.release_entry(e);
-                self.entries.items[i] = self.entries.items[self.entries.len - 1];
-                self.entries.len = self.entries.len - 1;
+                self.entries.swap_remove(i);
             } else {
                 i += 1;
             }
@@ -172,8 +171,7 @@ StateStore :: struct {
         gi = 0;
         while gi < self.groups.len {
             if self.groups.items[gi].cur_count == 0 {
-                self.groups.items[gi] = self.groups.items[self.groups.len - 1];
-                self.groups.len = self.groups.len - 1;
+                self.groups.swap_remove(gi);
             } else {
                 gi += 1;
             }

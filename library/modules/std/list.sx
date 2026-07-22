@@ -36,6 +36,13 @@ List :: struct ($T: Type) {
         list.items.len += 1;
     }
 
+    // O(1) unordered remove: the last element moves into slot `i`.
+    // Order is NOT preserved — for order-keeping removal, shift manually.
+    swap_remove :: (list: *List(T), i: i64) {
+        list.items.ptr[i] = list.items.ptr[list.items.len - 1];
+        list.items.len -= 1;
+    }
+
     ensure_capacity :: (list: *List(T), n: i64, alloc: Allocator = context.allocator) {
         if list.cap >= n { return; }
         new_cap := if list.cap == 0 then 4 else list.cap;
