@@ -1,6 +1,16 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
-#import "modules/ui/events.sx";
+#import "modules/ui/input.sx";
+
+// The one host event stream. INPUT is the C7-normalized InputEvent —
+// consumers push `.input` payloads into their root's InputQueue for
+// the §6.9 router. quit/window_resize are lifecycle, deliberately
+// outside C7.
+PlatformEvent :: enum {
+    quit;
+    window_resize: Size;
+    input: InputEvent;
+}
 
 FrameContext :: struct {
     viewport_w: f32;

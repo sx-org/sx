@@ -1,9 +1,8 @@
-// The C7 normalized input surface (G2 first half) — host-independent:
-// no ffi, no SDL; each backend translates its native events into these
-// and pushes them through an InputQueue. The DECIDED §6.9 router (G2's
-// second half, after G3) consumes the drained stream against the
-// committed snapshot's hit list; until it lands, v1 events.sx keeps the
-// retained tree working.
+// The C7 normalized input surface — host-independent: no ffi, no SDL;
+// each backend translates its native events into these (through the
+// platform layer's PlatformEvent stream) and pushes them into a
+// per-root InputQueue. The §6.9 router consumes the drained stream
+// against the committed snapshot's hit list — the only dispatch path.
 //
 // Separations the contract pins:
 // - physical key (position on the board) / logical key (meaning) / TEXT
@@ -44,9 +43,8 @@ PointerButton :: enum {
 // Position on the physical board — a platform scancode, untranslated.
 PhysicalKey :: struct { code: u32; }
 
-// The neutral meaning of a key. Supersedes v1 events.sx `Keycode` when
-// the router lands and events.sx retires; letters/digits arrive as TEXT,
-// not keys.
+// The neutral meaning of a key. Letters/digits arrive as TEXT, not
+// keys.
 LogicalKey :: enum {
     unknown;
     escape;

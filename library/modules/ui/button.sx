@@ -1,7 +1,6 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/label.sx";
 #import "modules/ui/font.sx";
@@ -31,9 +30,13 @@ Button :: struct {
     font_size: f32;
     style: ButtonStyle;
     on_tap: ?Closure();
+    // Emit-model identity (compose.button supplies it): the render
+    // declares the hit region carrying on_tap; the pressed fill is
+    // read from the router at build. 0 = no identity (a retained v1
+    // Button renders but is inert).
+    eid: u64 = 0;
     hovered: bool;
     pressed: bool;
-
 }
 
 impl View for Button {
@@ -60,32 +63,9 @@ impl View for Button {
         text_y := frame.origin.y + (frame.size.height - text_size.height) * 0.5;
         text_frame := Frame.make(text_x, text_y, text_size.width, text_size.height);
         ctx.add_text(text_frame, self.label, self.font_size, self.style.foreground);
-    }
 
-    handle_event :: (self: *Button, event: *Event, frame: Frame) -> bool {
-        if event.* == {
-            case .mouse_moved: (d) {
-                self.hovered = frame.contains(d.position);
-                return false;
-            }
-            case .mouse_down: (d) {
-                if frame.contains(d.position) {
-                    self.pressed = true;
-                    return true;
-                }
-            }
-            case .mouse_up: (d) {
-                if self.pressed {
-                    self.pressed = false;
-                    if frame.contains(d.position) {
-                        if handler := self.on_tap {
-                            handler();
-                        }
-                    }
-                    return true;
-                }
-            }
+        if self.eid != 0 {
+            ctx.hit_region(self.eid, frame, on_tap = self.on_tap);
         }
-        false
     }
 }

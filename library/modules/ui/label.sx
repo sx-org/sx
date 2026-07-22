@@ -1,7 +1,6 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/font.sx";
 
@@ -30,9 +29,5 @@ impl View for Label {
 
     render :: (self: *Label, ctx: *RenderContext, frame: Frame) {
         ctx.add_text(frame, self.text, self.font_size, self.color);
-    }
-
-    handle_event :: (self: *Label, event: *Event, frame: Frame) -> bool {
-        false
     }
 }

@@ -9,7 +9,6 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";
@@ -41,7 +40,6 @@ impl View for Tappable {
         ctx.add_rect(frame, COLOR_BLUE);
         ctx.hit_region(self.eid, frame);
     }
-    handle_event :: (self: *Tappable, event: *Event, frame: Frame) -> bool { false }
 }
 
 home :: () -> View {

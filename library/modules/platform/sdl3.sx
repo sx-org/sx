@@ -4,7 +4,7 @@
 #import "modules/ffi/opengl.sx";
 #import "modules/ffi/sdl3.sx";
 #import "modules/ui/types.sx";
-#import "modules/ui/events.sx";
+#import "modules/ui/input.sx";
 #import "modules/platform/types.sx";
 #import "modules/platform/api.sx";
 
@@ -54,7 +54,106 @@ SdlPlatform :: struct {
     frame_closure: Closure() = ---;
     has_frame_closure: bool = false;
 
-    events: List(Event) = .{};
+    events: List(PlatformEvent) = .{};
+}
+
+// Map an SDL keycode to the neutral LogicalKey. Only the keys apps
+// consume are mapped; everything else is `.unknown`. Letters/digits
+// arrive as TEXT, not keys.
+logical_key_from_sdl :: (k: SDL_Keycode) -> LogicalKey {
+    if k == {
+        case .escape:     return .escape;
+        case .return_key: return .enter;
+        case .space:      return .space;
+        case .tab:        return .tab;
+        case .backspace:  return .backspace;
+        case .delete_key: return .delete;
+        case .left:       return .left;
+        case .right:      return .right;
+        case .up:         return .up;
+        case .down:       return .down;
+    }
+    .unknown
+}
+
+sdl_modifiers :: (m: SDL_Keymod) -> InputModifiers {
+    InputModifiers.{
+        shift   = (m & (SDL_Keymod.lshift | SDL_Keymod.rshift)) != 0,
+        control = (m & (SDL_Keymod.lctrl | SDL_Keymod.rctrl)) != 0,
+        alt     = (m & (SDL_Keymod.lalt | SDL_Keymod.ralt)) != 0,
+        meta    = (m & (SDL_Keymod.lgui | SDL_Keymod.rgui)) != 0,
+    }
+}
+
+// Translate one SDL event into the platform stream — C7-faithful:
+// buttonless motion is a HOVER, not a move; wheel deltas normalize the
+// flipped direction; timestamps are SDL's nanosecond event times.
+translate_sdl_event :: (sdl: *SDL_Event) -> ?PlatformEvent {
+    if sdl == {
+        case .quit: {
+            return .quit;
+        }
+        case .window_resized: (data) {
+            return .window_resize(.{ width = xx data.data1, height = xx data.data2 });
+        }
+        case .key_down: (data) {
+            return .input(.key_down(.{
+                header = .{ time_ns = data.timestamp, modifiers = sdl_modifiers(data.mod) },
+                physical = .{ code = data.scancode },
+                logical = logical_key_from_sdl(data.key),
+                repeat = data.repeat != 0,
+            }));
+        }
+        case .key_up: (data) {
+            return .input(.key_up(.{
+                header = .{ time_ns = data.timestamp, modifiers = sdl_modifiers(data.mod) },
+                physical = .{ code = data.scancode },
+                logical = logical_key_from_sdl(data.key),
+            }));
+        }
+        case .mouse_motion: (data) {
+            pe : PointerEvent = .{
+                header = .{ time_ns = data.timestamp },
+                pointer = .{ value = data.which.(u64) },
+                kind = .mouse,
+                position = .{ x = data.x, y = data.y },
+            };
+            if data.state == 0 { return .input(.pointer_hover(pe)); }
+            return .input(.pointer_move(pe));
+        }
+        case .mouse_button_down: (data) {
+            return .input(.pointer_down(sdl_pointer_button(data)));
+        }
+        case .mouse_button_up: (data) {
+            return .input(.pointer_up(sdl_pointer_button(data)));
+        }
+        case .mouse_wheel: (data) {
+            flip : f32 = if data.direction == 1 then -1.0 else 1.0;
+            return .input(.scroll(.{
+                header = .{ time_ns = data.timestamp },
+                pointer = .{ value = data.which.(u64) },
+                position = .{ x = data.mouse_x, y = data.mouse_y },
+                delta = .{ x = data.x * flip, y = data.y * flip },
+            }));
+        }
+    }
+    null
+}
+
+sdl_pointer_button :: (data: SDL_MouseButtonData) -> PointerEvent {
+    btn : PointerButton = if data.button == {
+        case 1: .primary;
+        case 2: .middle;
+        case 3: .secondary;
+        else: .none;
+    };
+    PointerEvent.{
+        header = .{ time_ns = data.timestamp },
+        pointer = .{ value = data.which.(u64) },
+        kind = .mouse,
+        button = btn,
+        position = .{ x = data.x, y = data.y },
+    }
 }
 
 impl Platform for SdlPlatform {
@@ -150,7 +249,7 @@ impl Platform for SdlPlatform {
         }
     }
 
-    poll_events :: (self: *SdlPlatform) -> []Event {
+    poll_events :: (self: *SdlPlatform) -> []PlatformEvent {
         self.events.len = 0;
         sdl_event : SDL_Event = .none;
         while SDL_PollEvent(*sdl_event) {
@@ -162,13 +261,12 @@ impl Platform for SdlPlatform {
                     SDL_GetWindowSizeInPixels(self.window, *self.pixel_w, *self.pixel_h);
                 }
             }
-            ui_event := translate_sdl_event(*sdl_event);
-            if ui_event != .none {
-                self.events.append(ui_event);
+            if pe := translate_sdl_event(*sdl_event) {
+                self.events.append(pe);
             }
         }
 
-        result : []Event = ---;
+        result : []PlatformEvent = ---;
         result.ptr = self.events.items.ptr;
         result.len = self.events.len;
         result

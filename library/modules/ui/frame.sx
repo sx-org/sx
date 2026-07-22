@@ -16,7 +16,6 @@
 #import "modules/std/mem.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";

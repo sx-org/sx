@@ -12,8 +12,10 @@
 // falls through the paint-ordered stack), captured raw-continuation
 // streams to the claim holder, declared simultaneity sets consulted by
 // the claim referee, and the `cancel` escape hatch that kills one
-// sequence THROUGH the referee. handle_event stays on the View
-// protocol until 2d.
+// sequence THROUGH the referee. Since 2d this is the ONLY dispatch
+// path: tap registration is the hit-region declaration (on_tap fires
+// at recognition against the LATEST committed snapshot), and the View
+// protocol has no event method.
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/input.sx";
@@ -128,6 +130,12 @@ SimultaneityPair :: struct {
 
 Router :: struct {
     gpa: Allocator;
+    // The attached frame loop + root (set by `attach`): the loop's
+    // snapshot is the hit surface, the root supplies the surface
+    // generation. Per-router, so multiple roots coexist in one
+    // process.
+    loop: *FrameLoop = null;
+    root: *UiRoot = null;
     sequences: List(PointerSequence) = .{};
     gestures: List(GestureEvent) = .{};
     pending: List(PendingTap) = .{};
@@ -251,6 +259,7 @@ Router :: struct {
                     pointer = p.pointer,
                     position = p.position,
                 }, self.gpa);
+                router_fire_tap(self, p.element);
                 self.pending.swap_remove(i);
             } else {
                 i += 1;
@@ -260,14 +269,18 @@ Router :: struct {
 
     // Per committed frame: re-resolve every live capture against the
     // NEW hit list (§6.9 — capture is identity, not geometry or tree
-    // pointers). A vanished element or a bumped surface generation
-    // cancels the whole sequence cleanly; a pending tap whose element
-    // left dissolves without firing (handlers fire from the current
-    // committed tree only — C8).
-    refresh :: (self: *Router, root: *UiRoot, snap: *CommittedUiSnapshot) {
+    // pointers), read from the attached loop. A vanished element or a
+    // bumped surface generation cancels the whole sequence cleanly; a
+    // pending tap whose element left dissolves without firing
+    // (handlers fire from the current committed tree only — C8).
+    refresh :: (self: *Router) {
+        if self.loop == null or self.root == null { return; }
+        snap_opt := self.loop.snapshot();
+        if snap_opt == null { return; }
+        snap := snap_opt!;
         for self.sequences, 0.. (*seq, i) {
             if !seq.dead {
-                if seq.capture.generation != root.surface_gen.(i64) or
+                if seq.capture.generation != self.root.surface_gen.(i64) or
                    !Router.contains(snap, seq.capture.id.value) {
                     self.cancel_sequence(i);
                 }
@@ -276,7 +289,7 @@ Router :: struct {
         i := 0;
         while i < self.pending.len {
             p := self.pending.items[i];
-            if p.generation != root.surface_gen.(i64) or
+            if p.generation != self.root.surface_gen.(i64) or
                !Router.contains(snap, p.element.value) {
                 self.pending.swap_remove(i);
             } else {
@@ -334,12 +347,18 @@ Router :: struct {
     // against the PREVIOUS committed snapshot by construction; before
     // the first commit there is nothing hittable and pointer events
     // drop. Call `refresh` after each tick and `advance` with frame
-    // time to run timers.
+    // time to run timers. An app wanting its own input filtering
+    // installs its own on_input closure and calls `dispatch` from it.
     attach :: (self: *Router, loop: *FrameLoop, root: *UiRoot) {
-        g_router_active = self;
-        g_router_loop = loop;
-        g_router_root = root;
-        loop.on_input = closure(router_dispatch_one);
+        self.loop = loop;
+        self.root = root;
+        loop.on_input = closure((ev: *InputEvent) { router_dispatch(self, ev); });
+        // Build-side pressed fills (compose.button) read the router
+        // through the per-root Ui hook — compose sits below this
+        // module.
+        root.ui.pressed_query = closure((id: u64) -> bool {
+            return self.is_pressed(.{ value = id });
+        });
     }
 
     drain_gestures :: (self: *Router, f: Closure(*GestureEvent)) {
@@ -355,18 +374,35 @@ Router :: struct {
     }
 }
 
-// The loop's on_input hook is a plain closure; the routing context
-// rides module globals installed by `attach` (single-threaded per
-// root — the UI thread doctrine).
-g_router_active : *Router = null;
-g_router_loop : *FrameLoop = null;
-g_router_root : *UiRoot = null;
+// §6.9 action delivery: tap registration IS the hit-region
+// declaration, so a recognized tap runs the handler of the element's
+// region in the LATEST committed snapshot — resolved at fire time,
+// never retained (C8). ApplyInputs/advance are mutation-legal slots
+// (I11). Last matching region in paint order, same as hit testing.
+router_fire_tap :: (rt: *Router, element: ElementId) {
+    if rt.loop == null { return; }
+    snap_opt := rt.loop.snapshot();
+    if snap_opt == null { return; }
+    snap := snap_opt!;
+    i := snap.hit_list.len - 1;
+    while i >= 0 {
+        r := snap.hit_list.items[i];
+        if r.id == element.value {
+            if h := r.on_tap { h(); }
+            return;
+        }
+        i -= 1;
+    }
+}
 
-router_dispatch_one :: (ev: *InputEvent) {
-    r := g_router_active;
-    root := g_router_root;
-    if r == null or g_router_loop == null or root == null { return; }
-    snap_opt := g_router_loop.snapshot();
+// One C7 event against the attached surfaces. Public: an app that
+// wants its own input handling (keys before the focus system lands,
+// filtering, logging) installs its own on_input closure and forwards
+// here.
+router_dispatch :: (r: *Router, ev: *InputEvent) {
+    root := r.root;
+    if r.loop == null or root == null { return; }
+    snap_opt := r.loop.snapshot();
     if snap_opt == null { return; }
     snap := snap_opt!;
 
@@ -507,6 +543,7 @@ router_dispatch_one :: (ev: *InputEvent) {
                                 pointer = pu.pointer,
                                 position = pu.position,
                             }, r.gpa);
+                            router_fire_tap(r, seq.capture.id);
                         } else {
                             r.pending.append(.{
                                 element = seq.capture.id,
@@ -524,6 +561,7 @@ router_dispatch_one :: (ev: *InputEvent) {
                             pointer = pu.pointer,
                             position = pu.position,
                         }, r.gpa);
+                        router_fire_tap(r, seq.capture.id);
                     }
                 }
             }

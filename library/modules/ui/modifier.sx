@@ -2,9 +2,7 @@
 #import "modules/math";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
-#import "modules/ui/gesture.sx";
 
 // --- PaddingModifier ---
 
@@ -34,10 +32,6 @@ impl View for PaddingModifier {
 
     render :: (self: *PaddingModifier, ctx: *RenderContext, frame: Frame) {
         self.child.view.render(ctx, self.child.computed_frame);
-    }
-
-    handle_event :: (self: *PaddingModifier, event: *Event, frame: Frame) -> bool {
-        self.child.view.handle_event(event, self.child.computed_frame)
     }
 }
 
@@ -76,10 +70,6 @@ impl View for FrameModifier {
     render :: (self: *FrameModifier, ctx: *RenderContext, frame: Frame) {
         self.child.view.render(ctx, self.child.computed_frame);
     }
-
-    handle_event :: (self: *FrameModifier, event: *Event, frame: Frame) -> bool {
-        self.child.view.handle_event(event, self.child.computed_frame)
-    }
 }
 
 // --- BackgroundModifier ---
@@ -108,10 +98,6 @@ impl View for BackgroundModifier {
         }
         self.child.view.render(ctx, self.child.computed_frame);
     }
-
-    handle_event :: (self: *BackgroundModifier, event: *Event, frame: Frame) -> bool {
-        self.child.view.handle_event(event, self.child.computed_frame)
-    }
 }
 
 // --- OpacityModifier ---
@@ -137,10 +123,6 @@ impl View for OpacityModifier {
         self.child.view.render(ctx, self.child.computed_frame);
         ctx.pop_opacity(prev);
     }
-
-    handle_event :: (self: *OpacityModifier, event: *Event, frame: Frame) -> bool {
-        self.child.view.handle_event(event, self.child.computed_frame)
-    }
 }
 
 // --- ClipModifier ---
@@ -164,10 +146,6 @@ impl View for ClipModifier {
         ctx.push_clip(frame);
         self.child.view.render(ctx, self.child.computed_frame);
         ctx.pop_clip();
-    }
-
-    handle_event :: (self: *ClipModifier, event: *Event, frame: Frame) -> bool {
-        self.child.view.handle_event(event, self.child.computed_frame)
     }
 }
 
@@ -193,65 +171,6 @@ impl View for HiddenModifier {
     render :: (self: *HiddenModifier, ctx: *RenderContext, frame: Frame) {
         if self.is_hidden { return; }
         self.child.view.render(ctx, self.child.computed_frame);
-    }
-
-    handle_event :: (self: *HiddenModifier, event: *Event, frame: Frame) -> bool {
-        if self.is_hidden { return false; }
-        self.child.view.handle_event(event, self.child.computed_frame)
-    }
-}
-
-// --- TapGestureModifier ---
-
-TapGestureModifier :: struct {
-    child: ViewChild;
-    gesture: TapGesture;
-}
-
-impl View for TapGestureModifier {
-    size_that_fits :: (self: *TapGestureModifier, proposal: ProposedSize) -> Size {
-        self.child.view.size_that_fits(proposal)
-    }
-
-    layout :: (self: *TapGestureModifier, bounds: Frame) {
-        self.child.computed_frame = bounds;
-        self.child.view.layout(bounds);
-    }
-
-    render :: (self: *TapGestureModifier, ctx: *RenderContext, frame: Frame) {
-        self.child.view.render(ctx, self.child.computed_frame);
-    }
-
-    handle_event :: (self: *TapGestureModifier, event: *Event, frame: Frame) -> bool {
-        if self.gesture.handle_event(event, frame) { return true; }
-        self.child.view.handle_event(event, self.child.computed_frame)
-    }
-}
-
-// --- DragGestureModifier ---
-
-DragGestureModifier :: struct {
-    child: ViewChild;
-    gesture: DragGesture;
-}
-
-impl View for DragGestureModifier {
-    size_that_fits :: (self: *DragGestureModifier, proposal: ProposedSize) -> Size {
-        self.child.view.size_that_fits(proposal)
-    }
-
-    layout :: (self: *DragGestureModifier, bounds: Frame) {
-        self.child.computed_frame = bounds;
-        self.child.view.layout(bounds);
-    }
-
-    render :: (self: *DragGestureModifier, ctx: *RenderContext, frame: Frame) {
-        self.child.view.render(ctx, self.child.computed_frame);
-    }
-
-    handle_event :: (self: *DragGestureModifier, event: *Event, frame: Frame) -> bool {
-        if self.gesture.handle_event(event, frame) { return true; }
-        self.child.view.handle_event(event, self.child.computed_frame)
     }
 }
 
@@ -283,20 +202,6 @@ clip :: ufcs (view: View, corner_radius: f32) -> ClipModifier {
 
 hidden :: ufcs (view: View, is_hidden: bool) -> HiddenModifier {
     HiddenModifier.{ child = .{ view = view }, is_hidden = is_hidden }
-}
-
-on_tap :: ufcs (view: View, handler: Closure()) -> TapGestureModifier {
-    TapGestureModifier.{
-        child = .{ view = view },
-        gesture = TapGesture.{ count = 1, on_tap = handler }
-    }
-}
-
-on_drag :: ufcs (view: View, on_changed: ?Closure(DragValue), on_ended: ?Closure(DragValue)) -> DragGestureModifier {
-    DragGestureModifier.{
-        child = .{ view = view },
-        gesture = DragGesture.{ min_distance = 10.0, on_changed = on_changed, on_ended = on_ended }
-    }
 }
 
 // --- Mod + ModBox — the POD modifier surface of the emit core ---
@@ -392,9 +297,5 @@ impl View for ModBox {
         self.child.view.render(ctx, self.child.computed_frame);
         if self.m.clip { ctx.pop_clip(); }
         if self.m.opacity < 1.0 { ctx.pop_opacity(prev); }
-    }
-
-    handle_event :: (self: *ModBox, event: *Event, frame: Frame) -> bool {
-        self.child.view.handle_event(event, self.child.computed_frame)
     }
 }

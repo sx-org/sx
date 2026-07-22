@@ -12,7 +12,7 @@
 #import "modules/build.sx";
 #import "modules/ffi/opengl.sx";
 #import "modules/ui/types.sx";
-#import "modules/ui/events.sx";
+#import "modules/ui/input.sx";
 #import "modules/platform/types.sx";
 #import "modules/platform/api.sx";
 
@@ -248,7 +248,7 @@ UIKitPlatform :: struct {
     frame_closure: Closure() = ---;
     has_frame_closure: bool = false;
 
-    events: List(Event) = .{};
+    events: List(PlatformEvent) = .{};
 
     safe_top: f32 = 0.0;
     safe_left: f32 = 0.0;
@@ -321,8 +321,8 @@ impl Platform for UIKitPlatform {
         UIApplicationMain(0, xx 0, xx 0, xx self.delegate_class_name);
     }
 
-    poll_events :: (self: *UIKitPlatform) -> []Event {
-        result : []Event = ---;
+    poll_events :: (self: *UIKitPlatform) -> []PlatformEvent {
+        result : []PlatformEvent = ---;
         result.ptr = self.events.items.ptr;
         result.len = self.events.len;
         self.events.len = 0;
@@ -686,21 +686,38 @@ impl Platform for UIKitPlatform {
         touch := uikit_first_touch(touches);
         if touch == null { return; }
         pos := uikit_touch_location(touch, view);
-        self.events.append(.mouse_down(.{ position = pos, button = .left }));
+        self.events.append(.input(.pointer_down(uikit_pointer(pos))));
     }
 
     push_touch_moved :: (self: *UIKitPlatform, view: *void, touches: *void) {
         touch := uikit_first_touch(touches);
         if touch == null { return; }
         pos := uikit_touch_location(touch, view);
-        self.events.append(.mouse_moved(.{ position = pos, delta = Point.zero() }));
+        self.events.append(.input(.pointer_move(uikit_pointer(pos))));
     }
 
     push_touch_up :: (self: *UIKitPlatform, view: *void, touches: *void) {
         touch := uikit_first_touch(touches);
         if touch == null { return; }
         pos := uikit_touch_location(touch, view);
-        self.events.append(.mouse_up(.{ position = pos, button = .left }));
+        self.events.append(.input(.pointer_up(uikit_pointer(pos))));
+    }
+
+    push_touch_cancel :: (self: *UIKitPlatform, view: *void, touches: *void) {
+        touch := uikit_first_touch(touches);
+        if touch == null { return; }
+        pos := uikit_touch_location(touch, view);
+        self.events.append(.input(.pointer_cancel(uikit_pointer(pos))));
+    }
+}
+
+// Single-touch model: one contact, pointer id 0; timestamps ride the
+// process monotonic clock.
+uikit_pointer :: (pos: Point) -> PointerEvent {
+    PointerEvent.{
+        header = .{ time_ns = time.mono_ns().(u64) },
+        kind = .touch,
+        position = pos,
     }
 }
 

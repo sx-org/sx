@@ -13,7 +13,6 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";
@@ -46,7 +45,6 @@ impl View for Pad {
         ctx.add_rect(frame, COLOR_BLUE);
         ctx.hit_region(self.eid, frame);
     }
-    handle_event :: (self: *Pad, event: *Event, frame: Frame) -> bool { false }
 }
 
 home :: () -> View {
@@ -73,7 +71,7 @@ g_router : *Router = null;
 
 tick :: () -> *CommittedUiSnapshot {
     s := g_loop.tick(g_root, home, 100.0, 50.0);
-    g_router.refresh(g_root, s);
+    g_router.refresh();
     s
 }
 

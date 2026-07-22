@@ -1,7 +1,9 @@
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 
+// Events do not dispatch through the tree (§6.9): interactive
+// elements declare hit regions during render; the router consumes
+// input against the committed snapshot's hit list.
 View :: protocol {
     // Measure: given a size proposal, return desired size
     size_that_fits :: (self: *Self, proposal: ProposedSize) -> Size;
@@ -9,11 +11,8 @@ View :: protocol {
     // Place: position children within the given bounds
     layout :: (self: *Self, bounds: Frame);
 
-    // Render: emit render nodes
+    // Render: emit render nodes (and hit regions)
     render :: (self: *Self, ctx: *RenderContext, frame: Frame);
-
-    // Event handling: return true if the event was consumed
-    handle_event :: (self: *Self, event: *Event, frame: Frame) -> bool;
 }
 
 // A child view with its computed frame (set during layout)

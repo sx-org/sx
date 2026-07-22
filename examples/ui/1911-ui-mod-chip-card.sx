@@ -8,7 +8,6 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/modifier.sx";
 #import "modules/ui/compose.sx";
@@ -24,7 +23,6 @@ impl View for Leaf {
     render :: (self: *Leaf, ctx: *RenderContext, frame: Frame) {
         ctx.add_rect(frame, self.fill);
     }
-    handle_event :: (self: *Leaf, event: *Event, frame: Frame) -> bool { false }
 }
 
 leaf :: () -> View { Leaf.{ w = 10.0, h = 20.0, fill = COLOR_RED }.(View) }

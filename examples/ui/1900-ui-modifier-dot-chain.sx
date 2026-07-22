@@ -6,7 +6,6 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/modifier.sx";
 
@@ -18,21 +17,18 @@ impl View for Leaf {
     }
     layout :: (self: *Leaf, bounds: Frame) {}
     render :: (self: *Leaf, ctx: *RenderContext, frame: Frame) {}
-    handle_event :: (self: *Leaf, event: *Event, frame: Frame) -> bool { false }
 }
 
 main :: () {
     flexible := ProposedSize.{ width = null, height = null };
 
-    // Dot-chain through five combinators; the fixed frame pins the
+    // Dot-chain through four combinators; the fixed frame pins the
     // chain's measured size, the padding grows it by its insets.
-    tapped := 0;
     tree := Leaf.{ w = 10.0, h = 20.0 }
         .with_opacity(0.5)
         .clip(2.0)
         .fixed_frame(30.0, 40.0)
-        .padding(EdgeInsets.all(8.0))
-        .on_tap(() { tapped += 1; });
+        .padding(EdgeInsets.all(8.0));
     sz := tree.size_that_fits(flexible);
     print("chain: {}x{}\n", sz.width, sz.height);
 

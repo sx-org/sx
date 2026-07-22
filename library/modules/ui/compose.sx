@@ -120,6 +120,10 @@ Ui :: struct {
     // (frame) allocator — never retained across builds.
     occ: List(OccCounter) = .{};
     seen_keys: List(SeenKey) = .{};
+    // Router bridge, installed per root by Router.attach (compose sits
+    // below the router). Build-side pressed fills read it until the
+    // use_transient record bridge lands with the K4/K5 dissolution.
+    pressed_query: ?Closure(u64) -> bool = null;
 
     depth :: (self: *Ui) -> i64 #get => self.chain.len;
 
@@ -188,9 +192,9 @@ Ui :: struct {
 
 // ElementId = hash of the K1 identity tuple (ambient chain ++ element
 // site ++ occurrence). The identity is dispatch-neutral and STANDS;
-// how events reach an element (handle_event today; a router/hit-list
-// model is a separate open decision) does not change it. Focus and
-// a11y ride the same identity when those gates land.
+// events reach an element through the §6.9 router against the
+// committed snapshot's hit list. Focus and a11y ride the same
+// identity when those gates land.
 ElementId :: struct {
     value: u64;
 }
@@ -339,13 +343,21 @@ text :: (s: string, m: Mod = .{}) -> View { place(Label.make(s).(View), m) }
 
 spacer :: (m: Mod = .{}) -> View { place(Spacer.{ min_length = 0.0 }.(View), m) }
 
-button :: (label: string, m: Mod = .{}, on_tap: ?Closure() = null) -> View {
+ui_is_pressed :: (id: u64) -> bool {
+    if context.ui == null { return false; }
+    if q := context.ui.pressed_query { return q(id); }
+    false
+}
+
+button :: (label: string, m: Mod = .{}, site: SiteId = site_of(#caller_location), on_tap: ?Closure() = null) -> View {
+    eid := element_id(site);
     place(Button.{
         label = label,
         font_size = 14.0,
         style = ButtonStyle.default(),
         on_tap = on_tap,
+        eid = eid.value,
         hovered = false,
-        pressed = false,
+        pressed = ui_is_pressed(eid.value),
     }.(View), m)
 }

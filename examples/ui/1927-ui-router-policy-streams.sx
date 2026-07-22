@@ -22,7 +22,6 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";
@@ -75,7 +74,6 @@ impl View for Overlay {
         ctx.hit_region(self.bottom, frame);
         ctx.hit_region(self.top, frame, right_half_fails);
     }
-    handle_event :: (self: *Overlay, event: *Event, frame: Frame) -> bool { false }
 }
 
 // B: wait_double left of the split, plain tap right of it — one
@@ -99,7 +97,6 @@ impl View for DoubleZone {
             return .tap;
         }));
     }
-    handle_event :: (self: *DoubleZone, event: *Event, frame: Frame) -> bool { false }
 }
 
 Pad :: struct {
@@ -117,7 +114,6 @@ impl View for Pad {
         if self.hold { ctx.hit_region(self.eid, frame, always_hold); }
         else { ctx.hit_region(self.eid, frame); }
     }
-    handle_event :: (self: *Pad, event: *Event, frame: Frame) -> bool { false }
 }
 
 // Rows of 100x30: A at y 0..30, B 30..60, C (hold) 60..90, D 90..120.
@@ -167,7 +163,7 @@ g_router : *Router = null;
 
 tick :: () -> *CommittedUiSnapshot {
     s := g_loop.tick(g_root, home, 100.0, 120.0);
-    g_router.refresh(g_root, s);
+    g_router.refresh();
     s
 }
 

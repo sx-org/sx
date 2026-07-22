@@ -1,6 +1,5 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
-#import "modules/ui/events.sx";
 #import "modules/platform/types.sx";
 
 // #identity: a Platform is a named long-lived singleton (an SDL window,
@@ -13,7 +12,7 @@ Platform :: protocol #identity {
 
     run_frame_loop :: (self: *Self, frame_fn: Closure());
 
-    poll_events :: (self: *Self) -> []Event;
+    poll_events :: (self: *Self) -> []PlatformEvent;
 
     begin_frame :: (self: *Self) -> FrameContext;
     end_frame :: (self: *Self);

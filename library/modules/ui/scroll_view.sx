@@ -2,7 +2,6 @@
 #import "modules/math";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 
 ScrollAxes :: enum { vertical; horizontal; both; }
@@ -80,70 +79,5 @@ impl View for ScrollView {
         ctx.push_clip(frame);
         self.child.view.render(ctx, self.child.computed_frame);
         ctx.pop_clip();
-    }
-
-    handle_event :: (self: *ScrollView, event: *Event, frame: Frame) -> bool {
-        s := self.state;
-
-        if pos := event_position(event) {
-            if !frame.contains(pos) { return false; }
-        }
-
-        if event.* == {
-            case .mouse_wheel: (d) {
-                if self.axes == .vertical or self.axes == .both {
-                    s.offset.y -= d.delta.y * ScrollView.SCROLL_SPEED;
-                }
-                if self.axes == .horizontal or self.axes == .both {
-                    s.offset.x -= d.delta.x * ScrollView.SCROLL_SPEED;
-                }
-                self.clamp_offset();
-                return true;
-            }
-            case .mouse_down: (d) {
-                s.drag_pending = true;
-                s.drag_start = d.position;
-                s.drag_offset = s.offset;
-                self.child.view.handle_event(event, self.child.computed_frame);
-                return true;
-            }
-            case .mouse_moved: (d) {
-                if s.drag_pending and !s.dragging {
-                    dx := d.position.x - s.drag_start.x;
-                    dy := d.position.y - s.drag_start.y;
-                    dist := sqrt(dx * dx + dy * dy);
-                    if dist >= ScrollView.DRAG_THRESHOLD {
-                        s.dragging = true;
-                        s.drag_pending = false;
-                        cancel :Event = .mouse_up(.{
-                            position = .{ x = 0.0 - 10000.0, y = 0.0 - 10000.0 },
-                            button = .none
-                        });
-                        self.child.view.handle_event(*cancel, self.child.computed_frame);
-                    }
-                }
-                if s.dragging {
-                    if self.axes == .vertical or self.axes == .both {
-                        s.offset.y = s.drag_offset.y - (d.position.y - s.drag_start.y);
-                    }
-                    if self.axes == .horizontal or self.axes == .both {
-                        s.offset.x = s.drag_offset.x - (d.position.x - s.drag_start.x);
-                    }
-                    self.clamp_offset();
-                    return true;
-                }
-                return self.child.view.handle_event(event, self.child.computed_frame);
-            }
-            case .mouse_up: {
-                was_dragging := s.dragging;
-                s.dragging = false;
-                s.drag_pending = false;
-                if was_dragging {
-                    return true;
-                }
-                return self.child.view.handle_event(event, self.child.computed_frame);
-            }
-        }
-        self.child.view.handle_event(event, self.child.computed_frame)
     }
 }

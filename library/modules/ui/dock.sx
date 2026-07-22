@@ -3,7 +3,6 @@
 #import "modules/math";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/animation.sx";
 #import "modules/ui/font.sx";
@@ -426,29 +425,6 @@ impl View for DockPanel {
         // Child content
         self.child.view.render(ctx, self.child.computed_frame);
     }
-
-    handle_event :: (self: *DockPanel, event: *Event, frame: Frame) -> bool {
-        header_frame := Frame.make(frame.origin.x, frame.origin.y, frame.size.width, self.header_height);
-        idx := self.panel_index;
-
-        if event.* == {
-            case .mouse_down: (d) {
-                if header_frame.contains(d.position) {
-                    self.dock_interaction.header_pressed.items[idx] = true;
-                    start_dragging(self.dock_interaction, idx, d.position, frame);
-                    return true;
-                }
-            }
-            case .mouse_up: (d) {
-                if self.dock_interaction.header_pressed.items[idx] {
-                    self.dock_interaction.header_pressed.items[idx] = false;
-                }
-            }
-        }
-
-        // Forward to child content
-        self.child.view.handle_event(event, self.child.computed_frame)
-    }
 }
 
 // =============================================================================
@@ -631,63 +607,5 @@ impl View for Dock {
                 j += 1;
             }
         }
-    }
-
-    handle_event :: (self: *Dock, event: *Event, frame: Frame) -> bool {
-        interaction := self.interaction;
-
-        // Pre-handle: intercept drag events when actively dragging
-        if interaction.dragging_child >= 0 {
-            if event.* == {
-                case .mouse_moved: (d) {
-                    interaction.drag_offset = d.position.sub(interaction.drag_start_pos);
-                    // Update hovered zone
-                    zone := find_hovered_zone(frame, d.position, self.hint_size, self.enable_corners);
-                    interaction.set_hovered_dock_zone(zone);
-                    return true;
-                }
-                case .mouse_up: (d) {
-                    child_idx := interaction.dragging_child;
-                    if child_idx >= 0 and child_idx < self.children.len {
-                        if zone := interaction.get_hovered_dock_zone() {
-                            // Dock to zone
-                            if alignment := dock_zone_to_alignment(zone) {
-                                interaction.alignment_overrides.items[child_idx] = alignment;
-                                interaction.has_alignment_override.items[child_idx] = true;
-                            }
-                            interaction.is_floating.items[child_idx] = false;
-                            interaction.is_fill.items[child_idx] = dock_zone_should_fill(zone);
-                        } else {
-                            // Float: compute floating position from current cursor
-                            natural_size := interaction.natural_sizes.items[child_idx];
-                            fp_x := d.position.x - interaction.click_fraction_x * natural_size.width - frame.origin.x;
-                            fp_y := d.position.y - interaction.click_fraction_y * natural_size.height - frame.origin.y;
-                            interaction.floating_positions.items[child_idx] = Point.{ x = fp_x, y = fp_y };
-                            interaction.is_floating.items[child_idx] = true;
-                            interaction.is_fill.items[child_idx] = false;
-                        }
-                    }
-
-                    // Reset drag state
-                    interaction.dragging_child = -1;
-                    interaction.drag_offset = Point.zero();
-                    interaction.click_fraction_x = 0.0;
-                    interaction.click_fraction_y = 0.0;
-                    interaction.hovered_zone = -1;
-                    return true;
-                }
-            }
-        }
-
-        // Forward to children (reverse order: last drawn = top = first to handle)
-        i := self.children.len - 1;
-        while i >= 0 {
-            child := *self.children.items[i];
-            if child.view.handle_event(event, child.computed_frame) {
-                return true;
-            }
-            i -= 1;
-        }
-        false
     }
 }

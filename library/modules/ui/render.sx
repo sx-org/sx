@@ -79,6 +79,10 @@ HitRegion :: struct {
     id: u64;
     frame: Frame;
     policy: ?Closure(Point) -> HitPolicy = null;   // null = .tap everywhere
+    // Tap registration IS the region declaration (§6.9): the router
+    // runs the CURRENT committed snapshot's handler at recognition —
+    // fire-time resolution, never a retained callback (C8).
+    on_tap: ?Closure() = null;
 }
 
 // Stateful builder — views use this to emit render nodes
@@ -101,9 +105,9 @@ RenderContext :: struct {
         }
     }
 
-    hit_region :: (self: *RenderContext, id: u64, frame: Frame, policy: ?Closure(Point) -> HitPolicy = null) {
+    hit_region :: (self: *RenderContext, id: u64, frame: Frame, policy: ?Closure(Point) -> HitPolicy = null, on_tap: ?Closure() = null) {
         if self.hits != null {
-            self.hits.append(.{ id = id, frame = frame, policy = policy });
+            self.hits.append(.{ id = id, frame = frame, policy = policy, on_tap = on_tap });
         }
     }
 

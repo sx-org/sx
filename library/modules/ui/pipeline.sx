@@ -5,7 +5,6 @@
 #import "modules/gpu/api.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/font.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/renderer.sx";
@@ -104,11 +103,6 @@ UIPipeline :: struct {
         self.commit_gpu();
     }
 
-    // Process a single event through the view tree
-    dispatch_event :: (self: *UIPipeline, event: *Event) -> bool {
-        if self.has_root == false { return false; }
-        self.root.view.handle_event(event, self.root.computed_frame)
-    }
 
     // Run one frame: layout → render → commit
     tick :: (self: *UIPipeline) {

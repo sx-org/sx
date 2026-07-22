@@ -8,7 +8,6 @@
 #import "modules/ffi/opengl.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/glyph_cache.sx";
 #import "modules/ui/font.sx";

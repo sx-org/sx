@@ -1,6 +1,7 @@
 // UIKitPlatform end-to-end smoke: boots the AppDelegate, installs an
 // SxGLView with a CAEAGLLayer + GLES3 context + CADisplayLink, polls
-// UITouch events into ui.Event, and on every vsync clears the screen
+// UITouch events into the platform stream, and on every vsync clears
+// the screen
 // to a color that advances on each tap. Each tap also toggles the
 // on-screen keyboard so safe_insets.bottom can be observed growing /
 // shrinking under it.
@@ -24,7 +25,7 @@
 #framework "QuartzCore";
 #import "modules/ffi/opengl.sx";
 #import "modules/ui/types.sx";
-#import "modules/ui/events.sx";
+#import "modules/ui/input.sx";
 #import "modules/platform/uikit.sx";
 #import "modules/platform/uikit_app.sx";
 
@@ -53,7 +54,7 @@ tap_frame :: () {
     while i < events.len {
         ev := events.ptr[i];
         if ev == {
-            case .mouse_down: {
+            case .input: (ie) { if ie == { case .pointer_down: {
                 g_color_index += 1;
                 if g_keyboard_up {
                     g_uikit_plat.hide_keyboard();
@@ -62,7 +63,7 @@ tap_frame :: () {
                     g_uikit_plat.show_keyboard();
                     g_keyboard_up = true;
                 }
-            }
+            } } }
         }
         i += 1;
     }

@@ -129,7 +129,7 @@ SxGLView :: #objc_class("SxGLView") export {
 
     touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
         if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_up(xx self, touches);
+        g_uikit_plat.push_touch_cancel(xx self, touches);
     }
 }
 
@@ -172,6 +172,6 @@ SxMetalView :: #objc_class("SxMetalView") export {
 
     touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
         if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_up(xx self, touches);
+        g_uikit_plat.push_touch_cancel(xx self, touches);
     }
 }

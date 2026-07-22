@@ -51,6 +51,14 @@ mono_ms :: () -> i64 {
     return ts.sec * 1000 + ts.nsec / 1000000;
 }
 
+// Monotonic nanoseconds since an arbitrary process-local origin —
+// input timestamps, frame timing.
+mono_ns :: () -> i64 {
+    ts : Timespec = .{};
+    c.clock_gettime(CLOCK_MONOTONIC, *ts);
+    return ts.sec * 1_000_000_000 + ts.nsec;
+}
+
 // ── local civil time ─────────────────────────────────────────────────────
 // Broken-down LOCAL time over libc's `struct tm`. Fields use civil ranges
 // (month 1-12, day 1-31); libc's 1900-based year and 0-based month stay

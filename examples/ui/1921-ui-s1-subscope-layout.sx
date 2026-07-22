@@ -10,7 +10,6 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/stacks.sx";
 #import "modules/ui/label.sx";
@@ -70,7 +69,6 @@ impl View for LazyHost {
             i += 1;
         }
     }
-    handle_event :: (self: *LazyHost, event: *Event, frame: Frame) -> bool { false }
 }
 
 home :: () -> View {

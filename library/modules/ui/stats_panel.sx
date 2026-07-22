@@ -2,7 +2,6 @@
 #import "modules/math";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/font.sx";
 
@@ -55,9 +54,5 @@ impl View for StatsPanel {
             fps_size.height
         );
         ctx.add_text(fps_frame, fps_text, StatsPanel.VALUE_SIZE, Color.rgba(180, 180, 190, 255));
-    }
-
-    handle_event :: (self: *StatsPanel, event: *Event, frame: Frame) -> bool {
-        false
     }
 }

@@ -1,7 +1,6 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 
 ImageView :: struct {
@@ -28,9 +27,5 @@ impl View for ImageView {
 
     render :: (self: *ImageView, ctx: *RenderContext, frame: Frame) {
         ctx.add_image(frame, self.texture_id);
-    }
-
-    handle_event :: (self: *ImageView, event: *Event, frame: Frame) -> bool {
-        false
     }
 }

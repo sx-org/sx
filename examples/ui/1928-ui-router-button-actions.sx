@@ -1,0 +1,155 @@
+// §6.9 action delivery (2d): tap registration IS the hit-region
+// declaration — the View protocol has no event method. Pins:
+//   - compose `button(on_tap = ...)` declares its region; a recognized
+//     tap runs the closure straight from the CURRENT committed
+//     snapshot (no drain, no dispatch walk);
+//   - two buttons resolve independently by region;
+//   - the pressed fill flows through the compose-level router bridge
+//     (ui_is_pressed) at build;
+//   - a claim eats the action: long-press holding the sequence means
+//     the release runs nothing;
+//   - a `.wait_double` region's on_tap fires from the deadline path
+//     (advance) for the single, and once — at recognition — for the
+//     double.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/button.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/runtime.sx";
+#import "modules/ui/frame.sx";
+#import "modules/ui/router.sx";
+
+g_a : i64 = 0;
+g_b : i64 = 0;
+g_pad : i64 = 0;
+g_pad_eid : u64 = 0;
+
+wait_double_everywhere :: (p: Point) -> HitPolicy { .wait_double }
+
+DoubleTapPad :: struct {
+    eid: u64;
+    w, h: f32;
+}
+impl View for DoubleTapPad {
+    size_that_fits :: (self: *DoubleTapPad, proposal: ProposedSize) -> Size {
+        Size.{ width = self.w, height = self.h }
+    }
+    layout :: (self: *DoubleTapPad, bounds: Frame) {}
+    render :: (self: *DoubleTapPad, ctx: *RenderContext, frame: Frame) {
+        ctx.add_rect(frame, COLOR_BLUE);
+        ctx.hit_region(self.eid, frame, wait_double_everywhere, closure(pad_tapped));
+    }
+}
+
+pad_tapped :: () { g_pad += 1; }
+
+home :: () -> View {
+    vstack(4.0) {
+        button("Alpha", on_tap = closure(() { g_a += 1; }));
+        button("Beta", on_tap = closure(() { g_b += 1; }));
+        e := element_id().value;
+        g_pad_eid = e;
+        place(DoubleTapPad.{ eid = e, w = 80.0, h = 30.0 }.(View));
+    }
+}
+
+g_loop : *FrameLoop = null;
+g_root : *UiRoot = null;
+g_router : *Router = null;
+
+tick :: () -> *CommittedUiSnapshot {
+    s := g_loop.tick(g_root, home, 200.0, 200.0);
+    g_router.refresh();
+    s
+}
+
+MS :: 1_000_000;   // ns per millisecond
+
+down :: (x: f32, y: f32, t_ms: u64) {
+    g_root.input.push(.pointer_down(.{ header = .{ time_ns = t_ms * MS.(u64) },
+        pointer = .{ value = 1 }, position = .{ x = x, y = y } }));
+}
+up :: (x: f32, y: f32, t_ms: u64) {
+    g_root.input.push(.pointer_up(.{ header = .{ time_ns = t_ms * MS.(u64) },
+        pointer = .{ value = 1 }, position = .{ x = x, y = y } }));
+}
+
+center :: (f: Frame) -> Point {
+    Point.{ x = f.origin.x + f.size.width * 0.5, y = f.origin.y + f.size.height * 0.5 }
+}
+
+main :: () {
+    loop := FrameLoop.init();
+    root := UiRoot.init(.{ value = 13 });
+    router := Router.init();
+    g_loop = *loop;
+    g_root = *root;
+    g_router = *router;
+    router.attach(*loop, *root);
+
+    s := tick();
+    process.assert(s.hit_list.len == 3, "two buttons + pad declared regions");
+    a_region := s.hit_list.items[0];
+    b_region := s.hit_list.items[1];
+    pad_region := s.hit_list.items[2];
+    process.assert(a_region.on_tap != null and b_region.on_tap != null, "button regions carry their actions");
+    process.assert(pad_region.id == g_pad_eid, "paint order: pad last");
+    a_at := center(a_region.frame);
+    b_at := center(b_region.frame);
+    pad_at := center(pad_region.frame);
+
+    // A recognized tap runs the region's closure — no drain, no walk.
+    down(a_at.x, a_at.y, 100); up(a_at.x, a_at.y, 150);
+    tick();
+    process.assert(g_a == 1 and g_b == 0, "Alpha's action fired through its region");
+    down(b_at.x, b_at.y, 300); up(b_at.x, b_at.y, 350);
+    tick();
+    process.assert(g_a == 1 and g_b == 1, "Beta resolves independently");
+
+    // The pressed fill: the held press flows through the per-root Ui
+    // bridge into the build — Button renders its pressed background.
+    down(a_at.x, a_at.y, 1000);
+    s2 := tick();
+    process.assert(router.is_pressed(.{ value = a_region.id }), "held press tracked");
+    pressed_bg := ButtonStyle.default().pressed_bg;
+    found := false;
+    for s2.scene.nodes (nd) {
+        if nd.type == .rounded_rect and nd.fill_color == pressed_bg { found = true; }
+    }
+    process.assert(found, "the pressed fill reached the scene through the bridge");
+    up(a_at.x, a_at.y, 1100);
+    tick();
+    process.assert(g_a == 2, "release before any claim still taps");
+
+    // A claim eats the action: long-press holds the sequence.
+    down(a_at.x, a_at.y, 2000);
+    tick();
+    router.advance(2600 * MS.(u64));
+    up(a_at.x, a_at.y, 2650);
+    tick();
+    process.assert(g_a == 2, "the claimed release runs nothing");
+
+    // wait_double: the single fires from the deadline path...
+    down(pad_at.x, pad_at.y, 3000); up(pad_at.x, pad_at.y, 3010);
+    tick();
+    process.assert(g_pad == 0, "pending — nothing yet");
+    router.advance(3400 * MS.(u64));
+    process.assert(g_pad == 1, "the window's end ran the action");
+    // ...and the double fires once, at recognition.
+    down(pad_at.x, pad_at.y, 4000); up(pad_at.x, pad_at.y, 4010);
+    tick();
+    down(pad_at.x, pad_at.y, 4100); up(pad_at.x, pad_at.y, 4110);
+    tick();
+    process.assert(g_pad == 2, "the double ran the action once");
+    router.advance(5000 * MS.(u64));
+    process.assert(g_pad == 2, "no ghost single after the double");
+
+    print("ok a={} b={} pad={}\n", g_a, g_b, g_pad);
+    router.deinit();
+    loop.deinit();
+    root.teardown();
+}

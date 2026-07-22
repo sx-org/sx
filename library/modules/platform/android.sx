@@ -17,7 +17,7 @@
 //      invoke `frame_fn`, `eglSwapBuffers`, sleep ~1ms.
 //   5. Java `onTouchEvent` → native `sx_onTouchEvent`: push the
 //      (action,x,y) tuple onto a mutex-guarded queue. `poll_events`
-//      drains the queue into the platform's standard `Event` shape.
+//      drains the queue into the platform's standard event shape.
 //
 // State model: every piece of mutable Android-backend state lives on
 // `AndroidPlatform` (the EGL handles, the ANativeWindow, the render
@@ -32,7 +32,7 @@
 #import "modules/std.sx";
 #import "modules/build.sx";
 #import "modules/ui/types.sx";
-#import "modules/ui/events.sx";
+#import "modules/ui/input.sx";
 #import "modules/platform/types.sx";
 #import "modules/platform/api.sx";
 
@@ -192,7 +192,7 @@ AndroidPlatform :: struct {
     should_stop:           bool = false;
     frame_closure:         ?Closure() = null;
 
-    events: List(Event) = .{};
+    events: List(PlatformEvent) = .{};
 
     // Touch ring: single-producer (Java UI thread via sx_android_push_touch)
     // / single-consumer (render thread via sx_android_drain_touches).
@@ -376,25 +376,30 @@ sx_android_push_touch :: (plat: *AndroidPlatform, action: i32, x: f32, y: f32) {
     c.pthread_mutex_unlock(*plat.touch_mutex);
 }
 
-sx_android_drain_touches :: (plat: *AndroidPlatform, out: *List(Event)) {
+sx_android_drain_touches :: (plat: *AndroidPlatform, out: *List(PlatformEvent)) {
     sx_android_ensure_touch_mutex(plat);
     c.pthread_mutex_lock(*plat.touch_mutex);
     inv : f32 = if plat.dpi_scale > 0.0 then 1.0 / plat.dpi_scale else 1.0;
+    now : u64 = android_now_ns().(u64);
     while plat.touch_head != plat.touch_tail {
         t := plat.touch_queue[plat.touch_head];
         plat.touch_head = (plat.touch_head + 1) % 64;
-        // MotionEvent actions: 0=DOWN, 1=UP, 2=MOVE. Map onto chess's
-        // existing mouse Event variants — touch becomes a left-button
-        // mouse on the same screen coords. Coords come in as physical
-        // pixels; divide by dpi_scale so layout-side hit-testing
-        // matches its own logical-coord frames.
-        pos : Point = .{ x = t.x * inv, y = t.y * inv };
+        // MotionEvent actions: 0=DOWN, 1=UP, 2=MOVE, 3=CANCEL. Coords
+        // come in as physical pixels; divide by dpi_scale so hit
+        // testing matches the logical-coord frames.
+        pe := PointerEvent.{
+            header = .{ time_ns = now },
+            kind = .touch,
+            position = .{ x = t.x * inv, y = t.y * inv },
+        };
         if t.action == 0 {
-            out.append(.mouse_down(.{ position = pos, button = .left }));
+            out.append(.input(.pointer_down(pe)));
         } else if t.action == 1 {
-            out.append(.mouse_up(.{ position = pos, button = .left }));
+            out.append(.input(.pointer_up(pe)));
         } else if t.action == 2 {
-            out.append(.mouse_moved(.{ position = pos, delta = .{ x = 0, y = 0 } }));
+            out.append(.input(.pointer_move(pe)));
+        } else if t.action == 3 {
+            out.append(.input(.pointer_cancel(pe)));
         }
     }
     c.pthread_mutex_unlock(*plat.touch_mutex);
@@ -446,10 +451,10 @@ impl Platform for AndroidPlatform {
         }
     }
 
-    poll_events :: (self: *AndroidPlatform) -> []Event {
+    poll_events :: (self: *AndroidPlatform) -> []PlatformEvent {
         self.events.len = 0;
         sx_android_drain_touches(self, *self.events);
-        result : []Event = ---;
+        result : []PlatformEvent = ---;
         result.ptr = self.events.items.ptr;
         result.len = self.events.len;
         result

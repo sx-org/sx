@@ -2,7 +2,6 @@
 #import "modules/math";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
-#import "modules/ui/events.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/layout.sx";
 
@@ -33,19 +32,6 @@ impl View for VStack {
             i += 1;
         }
     }
-
-    handle_event :: (self: *VStack, event: *Event, frame: Frame) -> bool {
-        // Iterate children in reverse (front-to-back for overlapping)
-        i := self.children.len - 1;
-        while i >= 0 {
-            child := *self.children.items[i];
-            if child.view.handle_event(event, child.computed_frame) {
-                return true;
-            }
-            i -= 1;
-        }
-        false
-    }
 }
 
 HStack :: struct {
@@ -74,18 +60,6 @@ impl View for HStack {
             child.view.render(ctx, child.computed_frame);
             i += 1;
         }
-    }
-
-    handle_event :: (self: *HStack, event: *Event, frame: Frame) -> bool {
-        i := self.children.len - 1;
-        while i >= 0 {
-            child := *self.children.items[i];
-            if child.view.handle_event(event, child.computed_frame) {
-                return true;
-            }
-            i -= 1;
-        }
-        false
     }
 }
 
@@ -116,26 +90,12 @@ impl View for ZStack {
             i += 1;
         }
     }
-
-    handle_event :: (self: *ZStack, event: *Event, frame: Frame) -> bool {
-        // Handle front-to-back (last child is topmost)
-        i := self.children.len - 1;
-        while i >= 0 {
-            child := *self.children.items[i];
-            if child.view.handle_event(event, child.computed_frame) {
-                return true;
-            }
-            i -= 1;
-        }
-        false
-    }
 }
 
 // Spacer — fills available space
 
 Spacer :: struct {
     min_length: f32;
-
 }
 
 impl View for Spacer {
@@ -147,7 +107,6 @@ impl View for Spacer {
 
     layout :: (self: *Spacer, bounds: Frame) {}
     render :: (self: *Spacer, ctx: *RenderContext, frame: Frame) {}
-    handle_event :: (self: *Spacer, event: *Event, frame: Frame) -> bool { false }
 }
 
 // Rect — simple colored rectangle view
@@ -157,7 +116,6 @@ RectView :: struct {
     corner_radius: f32;
     preferred_width: f32;
     preferred_height: f32;
-
 }
 
 impl View for RectView {
@@ -176,6 +134,4 @@ impl View for RectView {
             ctx.add_rect(frame, self.color);
         }
     }
-
-    handle_event :: (self: *RectView, event: *Event, frame: Frame) -> bool { false }
 }
