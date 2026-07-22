@@ -1,0 +1,66 @@
+// The experiment/ui target spelling compiles as written (PLAN-LANG-EXT
+// Step 5): trailing blocks + named arguments over the ambient-sink emit
+// model — scope fns, slots, handlers, `place` writing through
+// `context.<field>` directly (issue 0337), and point-free `?Closure` slots
+// (issue 0338). Stubbed View/Ui types; the pin is the SPELLING, end to end.
+#import "modules/std.sx";
+
+View :: struct { tag: string; }
+
+Sink :: struct ($T: Type) {
+    items: List(T) = .{};
+    emit :: (self: *Sink(T), v: T) { self.items.append(v); }
+}
+
+#context_extend ui_sink: *Sink(View) = null;
+
+place :: (v: View) -> View {
+    if context.ui_sink != null { context.ui_sink.emit(v); }
+    v
+}
+
+text :: (s: string) -> View { place(View.{ tag = s }) }
+spacer :: () -> View { place(View.{ tag = "spacer" }) }
+
+vstack :: (spacing: f32, content: Closure()) -> View {
+    s := Sink(View).{};
+    push .{ ui_sink = @s } { content(); }
+    place(View.{ tag = "vstack" })
+}
+
+hstack :: (spacing: f32, content: Closure()) -> View {
+    s := Sink(View).{};
+    push .{ ui_sink = @s } { content(); }
+    place(View.{ tag = "hstack" })
+}
+
+button :: (label: string, on_tap: Closure()) -> View {
+    place(View.{ tag = label })
+}
+
+scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: Closure()) -> View {
+    vstack(0.0) {
+        if tb := top_bar { tb(); }
+        content();
+        if fb := fab { fb(); }
+    }
+}
+
+toolbar :: () { _ = text("toolbar"); }
+
+home_screen :: () -> View {
+    vstack(0.0) {
+        hstack(8.0) { _ = text("Chats"); _ = spacer(); }
+        _ = button("New chat") { print("tapped\n"); };
+    }
+}
+
+main :: () {
+    root := Sink(View).{};
+    push .{ ui_sink = @root } {
+        _ = home_screen();
+        _ = scaffold(top_bar = toolbar) { _ = text("content"); };
+    }
+    print("emitted {}\n", root.items.len);
+    print("{} {}\n", root.items.items[0].tag, root.items.items[1].tag);
+}

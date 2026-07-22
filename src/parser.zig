@@ -2260,6 +2260,13 @@ pub const Parser = struct {
     fn parseBlock(self: *Parser) anyerror!*Node {
         const start = self.current.loc.start;
         try self.expect(.l_brace);
+        // The header ambiguity `no_trailing_block` guards against ends at
+        // this `{` — statements inside any braced block may take trailing
+        // blocks again (e.g. the stolen struct-literal init block that
+        // becomes a `push` body, or a lambda body inside a while condition).
+        const saved_ntb_blk = self.no_trailing_block;
+        self.no_trailing_block = false;
+        defer self.no_trailing_block = saved_ntb_blk;
         var stmts = std.ArrayList(*Node).empty;
         var produces_value = false;
         var discarded_semi: ?ast.Span = null;
