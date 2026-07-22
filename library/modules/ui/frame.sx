@@ -31,6 +31,9 @@ CommittedUiSnapshot :: struct {
     root: UiRootId = .{ value = 0 };
     generation: i64 = 0;
     hit_list: List(HitRegion) = .{};
+    // Focus declarations in traversal (declaration) order — the G5
+    // FocusTable's surface, same C8 arena story as the hit list.
+    focus_list: List(FocusRegion) = .{};
     scene: RenderTree = .{};
 }
 
@@ -113,6 +116,9 @@ FrameLoop :: struct {
         snap.hit_list.items = null;
         snap.hit_list.len = 0;
         snap.hit_list.cap = 0;
+        snap.focus_list.items = null;
+        snap.focus_list.len = 0;
+        snap.focus_list.cap = 0;
 
         bounds := Frame.make(0.0, 0.0, width, height);
         push .{ allocator = arena } {
@@ -127,6 +133,7 @@ FrameLoop :: struct {
             // Project — scene + paint-ordered hit list.
             ctx := RenderContext.init(*snap.scene);
             ctx.hits = *snap.hit_list;
+            ctx.focuses = *snap.focus_list;
             v.render(*ctx, bounds);
         }
 

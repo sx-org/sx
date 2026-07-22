@@ -1,0 +1,136 @@
+// G5 Step 1 — the focus core (ui/focus.sx). Pins:
+//   - focus declarations ride render beside hit regions; DECLARATION
+//     order is the traversal order;
+//   - request_focus validates against the CURRENT committed snapshot
+//     (an undeclared id refuses; a declared one takes);
+//   - focus_next/prev walk declaration order and WRAP; from nothing,
+//     next = first, prev = last;
+//   - the focused element vanishing from the tree clears focus on
+//     refresh (fire-time doctrine — same as input capture);
+//   - a surface-generation bump refuses the stale focus;
+//   - builds read the focused fill through the per-root Ui bridge
+//     (ui_is_focused), like pressed fills;
+//   - keyboard_wanted follows the FOCUSED region's declaration.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/runtime.sx";
+#import "modules/ui/frame.sx";
+#import "modules/ui/focus.sx";
+
+g_a : u64 = 0;
+g_b : u64 = 0;
+g_c : u64 = 0;
+g_show_c : bool = true;
+g_b_focused_at_build : bool = false;
+
+Field :: struct {
+    eid: u64;
+    keyboard: bool;
+    w, h: f32;
+}
+impl View for Field {
+    size_that_fits :: (self: *Field, proposal: ProposedSize) -> Size {
+        Size.{ width = self.w, height = self.h }
+    }
+    layout :: (self: *Field, bounds: Frame) {}
+    render :: (self: *Field, ctx: *RenderContext, frame: Frame) {
+        ctx.add_rect(frame, COLOR_BLUE);
+        ctx.focus_region(self.eid, frame, wants_keyboard = self.keyboard);
+    }
+}
+
+home :: () -> View {
+    vstack(0.0) {
+        a := element_id().value;
+        g_a = a;
+        place(Field.{ eid = a, keyboard = false, w = 100.0, h = 20.0 }.(View));
+        b := element_id().value;
+        g_b = b;
+        g_b_focused_at_build = ui_is_focused(b);
+        place(Field.{ eid = b, keyboard = true, w = 100.0, h = 20.0 }.(View));
+        if g_show_c {
+            cid := element_id().value;
+            g_c = cid;
+            place(Field.{ eid = cid, keyboard = false, w = 100.0, h = 20.0 }.(View));
+        }
+    }
+}
+
+g_loop : *FrameLoop = null;
+g_root : *UiRoot = null;
+g_focus : *FocusTable = null;
+
+tick :: () -> *CommittedUiSnapshot {
+    s := g_loop.tick(g_root, home, 100.0, 100.0);
+    g_focus.refresh();
+    s
+}
+
+main :: () {
+    loop := FrameLoop.init();
+    root := UiRoot.init(.{ value = 15 });
+    focus : FocusTable = .{};
+    g_loop = *loop;
+    g_root = *root;
+    g_focus = *focus;
+    focus.attach(*loop, *root);
+
+    s := tick();
+    process.assert(s.focus_list.len == 3, "three focus declarations");
+    process.assert(s.focus_list.items[0].id == g_a and s.focus_list.items[2].id == g_c,
+        "declaration order is traversal order");
+    process.assert(!focus.has_focus, "nothing focused initially");
+
+    // request_focus validates against the committed snapshot.
+    process.assert(!focus.request_focus(.{ value = 424242 }), "undeclared id refuses");
+    process.assert(focus.request_focus(.{ value = g_b }), "declared id takes");
+    process.assert(focus.is_focused(.{ value = g_b }), "B holds focus");
+
+    // The build-side bridge reads the focused fill.
+    tick();
+    process.assert(g_b_focused_at_build, "ui_is_focused answered in the build");
+
+    // keyboard_wanted follows the focused region's declaration.
+    process.assert(focus.keyboard_wanted(), "B wants the keyboard");
+    focus.request_focus(.{ value = g_a });
+    process.assert(!focus.keyboard_wanted(), "A does not");
+
+    // Traversal: declaration order with wrap.
+    focus.focus_next();
+    process.assert(focus.is_focused(.{ value = g_b }), "next: A → B");
+    focus.focus_next();
+    process.assert(focus.is_focused(.{ value = g_c }), "next: B → C");
+    focus.focus_next();
+    process.assert(focus.is_focused(.{ value = g_a }), "next wraps: C → A");
+    focus.focus_prev();
+    process.assert(focus.is_focused(.{ value = g_c }), "prev wraps: A → C");
+    focus.clear();
+    focus.focus_prev();
+    process.assert(focus.is_focused(.{ value = g_c }), "prev from nothing = last");
+    focus.clear();
+    focus.focus_next();
+    process.assert(focus.is_focused(.{ value = g_a }), "next from nothing = first");
+
+    // Vanish clears on refresh.
+    focus.request_focus(.{ value = g_c });
+    g_show_c = false;
+    tick();
+    process.assert(!focus.has_focus, "vanished element cleared focus");
+    g_show_c = true;
+    tick();
+
+    // A surface-generation bump refuses the stale focus.
+    focus.request_focus(.{ value = g_a });
+    root.surface_recreated();
+    tick();
+    process.assert(!focus.has_focus, "surface bump cleared focus");
+
+    print("ok focus core\n");
+    loop.deinit();
+    root.teardown();
+}

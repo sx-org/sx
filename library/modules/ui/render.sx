@@ -1,5 +1,6 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
+#import "modules/ui/input.sx";
 
 RenderNodeType :: enum {
     rect;
@@ -71,6 +72,20 @@ HitPolicy :: enum {
                   // the region below in paint order
 }
 
+// A focus declaration (G5): focusable elements declare beside their
+// hit regions; DECLARATION order is the tab-traversal order — no
+// registry. on_key/on_text fire at delivery from the CURRENT
+// committed snapshot (C8), re-supplied each frame like hit-region
+// closures; wants_keyboard is what the platform shell polls to drive
+// the soft keyboard.
+FocusRegion :: struct {
+    id: u64;
+    frame: Frame;
+    on_key: ?Closure(*KeyEvent) = null;
+    on_text: ?Closure(string) = null;
+    wants_keyboard: bool = false;
+}
+
 // An interactive region declared during render (§6.9): paint order =
 // emission order, so the last containing region whose policy does not
 // fail the point is the top hit. The id is the raw ElementId hash —
@@ -92,9 +107,11 @@ RenderContext :: struct {
     clip_depth: i64;
     opacity: f32;
     depth: i64;
-    // Optional hit sink: the frame loop points this at the committed
-    // snapshot's list; null (the default) makes declarations no-ops.
+    // Optional hit/focus sinks: the frame loop points these at the
+    // committed snapshot's lists; null (the default) makes
+    // declarations no-ops.
     hits: *List(HitRegion) = null;
+    focuses: *List(FocusRegion) = null;
 
     init :: (tree: *RenderTree) -> RenderContext {
         RenderContext.{
@@ -108,6 +125,12 @@ RenderContext :: struct {
     hit_region :: (self: *RenderContext, id: u64, frame: Frame, policy: ?Closure(Point) -> HitPolicy = null, on_tap: ?Closure() = null) {
         if self.hits != null {
             self.hits.append(.{ id = id, frame = frame, policy = policy, on_tap = on_tap });
+        }
+    }
+
+    focus_region :: (self: *RenderContext, id: u64, frame: Frame, on_key: ?Closure(*KeyEvent) = null, on_text: ?Closure(string) = null, wants_keyboard: bool = false) {
+        if self.focuses != null {
+            self.focuses.append(.{ id = id, frame = frame, on_key = on_key, on_text = on_text, wants_keyboard = wants_keyboard });
         }
     }
 

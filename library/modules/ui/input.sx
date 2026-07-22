@@ -14,7 +14,6 @@
 //   the router's capture routes by.
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
-#import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";
 
 InputModifiers :: struct {

@@ -1,0 +1,121 @@
+// G5 focus — one focused identity per root, on bare ElementId (the
+// G3.5 deferral: focus MIGRATES onto the semantics tree when it
+// lands). The table holds an ElementCapture — id + surface
+// generation — resolved against the LATEST committed snapshot's
+// focus_list at every use (§7 fire-time doctrine, C8): a vanished
+// element or a bumped generation clears focus exactly like input
+// capture. Traversal order IS declaration order. Tap-to-focus is
+// component policy (wire on_tap → request_focus), not core behavior;
+// the platform shell polls keyboard_wanted to drive the soft
+// keyboard. Key/text ROUTING to the focused region is Step 2.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/frame.sx";
+#import "modules/ui/runtime.sx";
+
+FocusTable :: struct {
+    // The attached surfaces (set by `attach`): the loop's snapshot is
+    // the focus surface, the root supplies the surface generation.
+    // Per-table — multiple roots coexist in one process.
+    loop: *FrameLoop = null;
+    root: *UiRoot = null;
+    current: ElementCapture = .{ id = .{ value = 0 }, generation = 0 };
+
+    // Bind the table to its surfaces and install the per-root build
+    // bridge (compose.ui_is_focused reads it, like pressed fills).
+    attach :: (self: *FocusTable, loop: *FrameLoop, root: *UiRoot) {
+        self.loop = loop;
+        self.root = root;
+        root.ui.focus_query = (id: u64) -> bool {
+            return self.is_focused(.{ value = id });
+        };
+    }
+
+    has_focus :: (self: *FocusTable) -> bool #get => self.current.id.value != 0;
+
+    is_focused :: (self: *FocusTable, id: ElementId) -> bool {
+        self.current.id.value != 0 and self.current.id.value == id.value
+    }
+
+    // The focused region in the LATEST committed snapshot — null when
+    // nothing holds focus or the element is gone this frame.
+    focused_region :: (self: *FocusTable) -> ?*FocusRegion {
+        if self.current.id.value == 0 or self.loop == null { return null; }
+        snap_opt := self.loop.snapshot();
+        if snap_opt == null { return null; }
+        snap := snap_opt!;
+        idx := FocusTable.find(snap, self.current.id.value);
+        if idx < 0 { return null; }
+        *snap.focus_list.items[idx]
+    }
+
+    keyboard_wanted :: (self: *FocusTable) -> bool {
+        if r := self.focused_region() { return r.wants_keyboard; }
+        false
+    }
+
+    // Focus moves EXPLICITLY. The id must be declared focusable in the
+    // current committed snapshot — an undeclared id refuses.
+    request_focus :: (self: *FocusTable, id: ElementId) -> bool {
+        if self.loop == null or self.root == null { return false; }
+        snap_opt := self.loop.snapshot();
+        if snap_opt == null { return false; }
+        if FocusTable.find(snap_opt!, id.value) < 0 { return false; }
+        self.current = .{ id = id, generation = self.root.surface_gen.(i64) };
+        true
+    }
+
+    clear :: (self: *FocusTable) {
+        self.current = .{ id = .{ value = 0 }, generation = 0 };
+    }
+
+    // Walk declaration order with wrap; from nothing, next = first and
+    // prev = last. No declared regions → focus clears.
+    focus_next :: (self: *FocusTable) { self.step(1); }
+    focus_prev :: (self: *FocusTable) { self.step(-1); }
+
+    step :: (self: *FocusTable, dir: i64) {
+        if self.loop == null or self.root == null { return; }
+        snap_opt := self.loop.snapshot();
+        if snap_opt == null { return; }
+        snap := snap_opt!;
+        n := snap.focus_list.len;
+        if n == 0 {
+            self.clear();
+            return;
+        }
+        cur := FocusTable.find(snap, self.current.id.value);
+        idx := if cur < 0 {
+            if dir > 0 then 0 else n - 1
+        } else {
+            (cur + dir + n) % n
+        };
+        self.current = .{
+            id = .{ value = snap.focus_list.items[idx].id },
+            generation = self.root.surface_gen.(i64),
+        };
+    }
+
+    // Per committed frame: re-resolve the capture against the NEW
+    // focus list. Vanish or a surface bump clears cleanly.
+    refresh :: (self: *FocusTable) {
+        if self.current.id.value == 0 { return; }
+        if self.loop == null or self.root == null { return; }
+        snap_opt := self.loop.snapshot();
+        if snap_opt == null { return; }
+        if self.current.generation != self.root.surface_gen.(i64) or
+           FocusTable.find(snap_opt!, self.current.id.value) < 0 {
+            self.clear();
+        }
+    }
+
+    find :: (snap: *CommittedUiSnapshot, id: u64) -> i64 {
+        for snap.focus_list, 0.. (r, i) {
+            if r.id == id { return i; }
+        }
+        -1
+    }
+}

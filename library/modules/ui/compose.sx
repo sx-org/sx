@@ -120,10 +120,12 @@ Ui :: struct {
     // (frame) allocator — never retained across builds.
     occ: List(OccCounter) = .{};
     seen_keys: List(SeenKey) = .{};
-    // Router bridge, installed per root by Router.attach (compose sits
-    // below the router). Build-side pressed fills read it until the
-    // use_transient record bridge lands with the K4/K5 dissolution.
+    // Router/focus bridges, installed per root by Router.attach /
+    // FocusTable.attach (compose sits below both). Build-side
+    // pressed/focused fills read them until the use_transient record
+    // bridge lands with the K4/K5 dissolution.
     pressed_query: ?Closure(u64) -> bool = null;
+    focus_query: ?Closure(u64) -> bool = null;
 
     depth :: (self: *Ui) -> i64 #get => self.chain.len;
 
@@ -346,6 +348,12 @@ spacer :: (m: Mod = .{}) -> View { place(Spacer.{ min_length = 0.0 }.(View), m) 
 ui_is_pressed :: (id: u64) -> bool {
     if context.ui == null { return false; }
     if q := context.ui.pressed_query { return q(id); }
+    false
+}
+
+ui_is_focused :: (id: u64) -> bool {
+    if context.ui == null { return false; }
+    if q := context.ui.focus_query { return q(id); }
     false
 }
 
