@@ -3078,6 +3078,53 @@ Parameter names are **public API** under this feature: renaming a parameter
 breaks named call sites. Treat parameter renames in published modules as
 breaking changes.
 
+### Trailing Blocks
+```sx
+callee(args) { body }
+```
+A block after a call's closing `)` passes the block as a **zero-param closure
+literal bound to the callee's last declared parameter**. The equivalence is
+definitional — every other rule (duplicates, defaults, evaluation order)
+follows from it; the block is not a special argument kind:
+
+```sx
+vstack(8.0) { text("a"); text("b"); }
+// ≡
+vstack(8.0, content = () => { text("a"); text("b"); });
+
+scaffold(top_bar = toolbar) { chat_list(); }   // named slots + trailing block
+scaffold() { chat_list(); }                    // defaults skipped, block binds `content`
+```
+
+- **Binding**: the block binds the last declared parameter, which must be a
+  non-variadic `Closure` type — otherwise a targeted error names the
+  parameter ("'f' cannot take a trailing block — its last parameter 'x' is
+  not a `Closure`", or "… its last parameter '..xs' is variadic").
+- **One block**: at most one trailing block per call. Other closure
+  arguments are named args or ordinary positional slots.
+- **Zero-param only**: the block is a `Closure()` literal; a parameterized
+  closure argument is spelled explicitly (`f(x, (a) => { … })`).
+- **Same line**: the `{` must sit on the same line as the call's `)`. A `{`
+  on the next line is an ordinary scope block statement, never a trailing
+  block.
+- **Header position**: inside an `if`/`while`/`for` header the form is
+  disabled — `{` terminates the condition and opens the statement body;
+  bind the closure explicitly there.
+- **`return` is local**: a `return` inside the block returns from the
+  closure, never from the enclosing function (no non-local return).
+- **Chain termination**: a trailing block ENDS the postfix chain —
+  `f(x) { … }.modifier()` is a parse error ("a trailing block ends the call
+  chain — pass the modifier inside the call: `f(x, m = .{ … }) { … }`").
+  Chaining onto the emitted result would silently modify a discarded copy.
+- **Duplicate with a named argument**: a trailing block binds the last
+  parameter, so also naming that parameter is the duplicate-binding error
+  ("parameter 'content' is bound both by a named argument and by the
+  trailing block").
+
+No `inline` keyword exists or is needed: a capture-free block promotes to a
+null-env static thunk (zero allocation); a capturing block allocates its
+environment through `context.allocator` like any closure literal.
+
 ### UFCS (Uniform Function Call Syntax)
 ```sx
 object.func(args)    // equivalent to func(object, args) — for OPT-IN functions
