@@ -1,0 +1,213 @@
+// §6.9 input router — 2a slice: the persistent per-UiRoot dispatcher
+// that consumes C7 events (ui/input.sx) against the committed
+// snapshot's paint-ordered hit list (ui/frame.sx). This slice lands the
+// spine the arena builds on: (ElementId, generation) capture recorded
+// at down and re-resolved against EACH frame's hit list — press
+// survives rebuild (the P0.3 pin), the element vanishing from the hit
+// list is a clean cancel, a surface-generation bump refuses the stale
+// capture — plus the tap recognizer's release rule and press records
+// for build-side styling. Claims/arena/recognizer objects are the 2b+
+// slices; handle_event stays on the View protocol until 2d.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/frame.sx";
+#import "modules/ui/runtime.sx";
+
+// Baseline slop (§6.9 arena math): a pointer wandering past this
+// distance from its down point stops being a tap.
+ROUTER_TAP_SLOP :: 10.0;
+
+GestureKind :: enum {
+    tap;
+}
+
+GestureEvent :: struct {
+    kind: GestureKind = .tap;
+    element: ElementId = .{ value = 0 };
+    pointer: PointerId = .{ value = 0 };
+    position: Point = .{ x = 0.0, y = 0.0 };
+}
+
+// One live pointer sequence: captured element + where it went down.
+// `tap_alive` survives only while the pointer stays within slop AND the
+// captured element keeps resolving against each frame's hit list.
+PointerSequence :: struct {
+    pointer: PointerId = .{ value = 0 };
+    capture: ElementCapture = .{ id = .{ value = 0 }, generation = 0 };
+    down_position: Point = .{ x = 0.0, y = 0.0 };
+    tap_alive: bool = false;
+}
+
+Router :: struct {
+    gpa: Allocator;
+    sequences: List(PointerSequence) = .{};
+    gestures: List(GestureEvent) = .{};
+
+    init :: (gpa: Allocator = context.allocator) -> Router {
+        Router.{ gpa = gpa }
+    }
+
+    // Top-most hit at a point = the LAST containing region in paint
+    // order (the list is emitted back-to-front).
+    hit_top :: (self: *Router, snap: *CommittedUiSnapshot, p: Point) -> u64 {
+        i := snap.hit_list.len - 1;
+        while i >= 0 {
+            r := snap.hit_list.items[i];
+            if p.x >= r.frame.origin.x and p.x < r.frame.origin.x + r.frame.size.width and
+               p.y >= r.frame.origin.y and p.y < r.frame.origin.y + r.frame.size.height {
+                return r.id;
+            }
+            i -= 1;
+        }
+        0
+    }
+
+    contains :: (snap: *CommittedUiSnapshot, id: u64) -> bool {
+        i : i64 = 0;
+        while i < snap.hit_list.len {
+            if snap.hit_list.items[i].id == id { return true; }
+            i += 1;
+        }
+        false
+    }
+
+    find_sequence :: (self: *Router, pointer: PointerId) -> i64 {
+        i : i64 = 0;
+        while i < self.sequences.len {
+            if self.sequences.items[i].pointer.value == pointer.value { return i; }
+            i += 1;
+        }
+        -1
+    }
+
+    // Build-side styling query (press/highlight chrome). The
+    // use_transient record bridge rides the claim work (2b); reading
+    // the router directly is the 2a spelling.
+    is_pressed :: (self: *Router, id: ElementId) -> bool {
+        i : i64 = 0;
+        while i < self.sequences.len {
+            s := self.sequences.items[i];
+            if s.capture.id.value == id.value and s.tap_alive { return true; }
+            i += 1;
+        }
+        false
+    }
+
+    // Per committed frame: re-resolve every live capture against the
+    // NEW hit list (§6.9 — capture is identity, not geometry or tree
+    // pointers). A vanished element or a bumped surface generation
+    // cancels cleanly.
+    refresh :: (self: *Router, root: *UiRoot, snap: *CommittedUiSnapshot) {
+        i : i64 = 0;
+        while i < self.sequences.len {
+            seq := @self.sequences.items[i];
+            if seq.tap_alive {
+                if seq.capture.generation != root.surface_gen.(i64) or
+                   !Router.contains(snap, seq.capture.id.value) {
+                    seq.tap_alive = false;
+                }
+            }
+            i += 1;
+        }
+    }
+
+    // Install this router as the loop's ApplyInputs consumer. The loop
+    // drains the root's queue in its phase slot (§6.7) — events resolve
+    // against the PREVIOUS committed snapshot by construction; before
+    // the first commit there is nothing hittable and pointer events
+    // drop. Call `refresh` after each tick to re-resolve captures
+    // against the NEW commit.
+    attach :: (self: *Router, loop: *FrameLoop, root: *UiRoot) {
+        g_router_active = self;
+        g_router_loop = loop;
+        g_router_root = root;
+        loop.on_input = closure(router_dispatch_one);
+    }
+
+    drain_gestures :: (self: *Router, f: Closure(*GestureEvent)) {
+        i : i64 = 0;
+        while i < self.gestures.len {
+            f(@self.gestures.items[i]);
+            i += 1;
+        }
+        self.gestures.len = 0;
+    }
+
+    deinit :: (self: *Router) {
+        self.sequences.deinit(self.gpa);
+        self.gestures.deinit(self.gpa);
+    }
+}
+
+// The loop's on_input hook is a plain closure; the routing context
+// rides module globals installed by `attach` (single-threaded per
+// root — the UI thread doctrine).
+g_router_active : *Router = null;
+g_router_loop : *FrameLoop = null;
+g_router_root : *UiRoot = null;
+
+router_dispatch_one :: (ev: *InputEvent) {
+    r := g_router_active;
+    root := g_router_root;
+    if r == null or g_router_loop == null or root == null { return; }
+    snap_opt := g_router_loop.snapshot();
+    if snap_opt == null { return; }
+    snap := snap_opt!;
+
+    if ev.* == {
+        case .pointer_down: (pd) {
+            target := r.hit_top(snap, pd.position);
+            if target == 0 { return; }
+            idx := r.find_sequence(pd.pointer);
+            seq : PointerSequence = .{
+                pointer = pd.pointer,
+                capture = .{ id = .{ value = target }, generation = root.surface_gen.(i64) },
+                down_position = pd.position,
+                tap_alive = true,
+            };
+            if idx >= 0 { r.sequences.items[idx] = seq; }
+            else { r.sequences.append(seq, r.gpa); }
+        }
+        case .pointer_move: (pm) {
+            idx := r.find_sequence(pm.pointer);
+            if idx < 0 { return; }
+            seq := @r.sequences.items[idx];
+            if !seq.tap_alive { return; }
+            dx := pm.position.x - seq.down_position.x;
+            dy := pm.position.y - seq.down_position.y;
+            if dx * dx + dy * dy > ROUTER_TAP_SLOP * ROUTER_TAP_SLOP {
+                seq.tap_alive = false;
+            }
+        }
+        case .pointer_up: (pu) {
+            idx := r.find_sequence(pu.pointer);
+            if idx < 0 { return; }
+            seq := r.sequences.items[idx];
+            // Release rule: an un-cancelled, still-resolving capture
+            // taps. (Pre-claim is implicit in 2a — claims arrive with
+            // the arena.)
+            if seq.tap_alive and Router.contains(snap, seq.capture.id.value) and
+               seq.capture.generation == root.surface_gen.(i64) {
+                r.gestures.append(.{
+                    kind = .tap,
+                    element = seq.capture.id,
+                    pointer = pu.pointer,
+                    position = pu.position,
+                }, r.gpa);
+            }
+            r.sequences.items[idx] = r.sequences.items[r.sequences.len - 1];
+            r.sequences.len -= 1;
+        }
+        case .pointer_cancel: (pc) {
+            idx := r.find_sequence(pc.pointer);
+            if idx < 0 { return; }
+            r.sequences.items[idx] = r.sequences.items[r.sequences.len - 1];
+            r.sequences.len -= 1;
+        }
+        // scroll/key/text/hover: the 2b+ recognizers' food.
+        else: {}
+    }
+}

@@ -1,0 +1,179 @@
+// §6.9 router, 2a slice (modules/ui/router.sx): the persistent router
+// consumes C7 events in the loop's ApplyInputs slot against the
+// PREVIOUS committed snapshot's paint-ordered hit list. Pins:
+//   - top-most wins: overlapping regions resolve to the LAST in paint
+//     order;
+//   - capture = (ElementId, generation) at down, re-resolved per
+//     commit: press SURVIVES rebuild (P0.3) and the release still taps;
+//   - slop: wandering past ROUTER_TAP_SLOP kills the pending tap;
+//   - vanish: the captured element leaving the hit list is a clean
+//     cancel (is_pressed clears, release does not tap);
+//   - a surface-generation bump refuses the stale capture;
+//   - pointer_cancel ends the sequence without a tap.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/runtime.sx";
+#import "modules/ui/frame.sx";
+#import "modules/ui/router.sx";
+
+g_eid_bottom : u64 = 0;
+g_eid_top    : u64 = 0;
+g_eid_c      : u64 = 0;
+g_show_c : bool = true;
+
+g_taps : i64 = 0;
+g_last_tap : u64 = 0;
+
+// Two hit regions over ONE frame — paint order makes the second the
+// top-most, without needing a z-container.
+Stacked :: struct {
+    bottom: u64;
+    top: u64;
+    w, h: f32;
+}
+impl View for Stacked {
+    size_that_fits :: (self: *Stacked, proposal: ProposedSize) -> Size {
+        Size.{ width = self.w, height = self.h }
+    }
+    layout :: (self: *Stacked, bounds: Frame) {}
+    render :: (self: *Stacked, ctx: *RenderContext, frame: Frame) {
+        ctx.add_rect(frame, COLOR_BLUE);
+        ctx.hit_region(self.bottom, frame);
+        ctx.hit_region(self.top, frame);
+    }
+    handle_event :: (self: *Stacked, event: *Event, frame: Frame) -> bool { false }
+}
+
+Tappable :: struct {
+    eid: u64;
+    w, h: f32;
+}
+impl View for Tappable {
+    size_that_fits :: (self: *Tappable, proposal: ProposedSize) -> Size {
+        Size.{ width = self.w, height = self.h }
+    }
+    layout :: (self: *Tappable, bounds: Frame) {}
+    render :: (self: *Tappable, ctx: *RenderContext, frame: Frame) {
+        ctx.add_rect(frame, COLOR_BLUE);
+        ctx.hit_region(self.eid, frame);
+    }
+    handle_event :: (self: *Tappable, event: *Event, frame: Frame) -> bool { false }
+}
+
+home :: () -> View {
+    vstack(0.0) {
+        b := element_id().value;
+        t := element_id().value;
+        g_eid_bottom = b;
+        g_eid_top = t;
+        place(Stacked.{ bottom = b, top = t, w = 40.0, h = 20.0 }.(View));
+        if g_show_c {
+            cid := element_id().value;
+            g_eid_c = cid;
+            place(Tappable.{ eid = cid, w = 40.0, h = 20.0 }.(View));
+        }
+    }
+}
+
+on_tap :: (g: *GestureEvent) {
+    g_taps += 1;
+    g_last_tap = g.element.value;
+}
+
+g_loop : *FrameLoop = null;
+g_root : *UiRoot = null;
+g_router : *Router = null;
+
+tick :: () -> *CommittedUiSnapshot {
+    s := g_loop.tick(g_root, home, 100.0, 50.0);
+    g_router.refresh(g_root, s);
+    s
+}
+
+main :: () {
+    loop := FrameLoop.init();
+    root := UiRoot.init(.{ value = 9 });
+    router := Router.init();
+    g_loop = @loop;
+    g_root = @root;
+    g_router = @router;
+    router.attach(@loop, @root);
+
+    // Frame 1: nothing committed yet when inputs would apply — establish
+    // the first snapshot (Stacked rows at y 0..20, Tappable C at 20..40).
+    s1 := tick();
+    process.assert(s1.hit_list.len == 3, "three regions declared");
+
+    // Top-most wins: down+up inside the Stacked frame → ONE tap, for the
+    // LAST-declared (top) region.
+    root.input.push(.pointer_down(.{ pointer = .{ value = 1 }, position = .{ x = 5.0, y = 5.0 } }));
+    root.input.push(.pointer_up(.{ pointer = .{ value = 1 }, position = .{ x = 6.0, y = 5.0 } }));
+    _ = tick();
+    router.drain_gestures(on_tap);
+    process.assert(g_taps == 1 and g_last_tap == g_eid_top, "top-most region tapped");
+
+    // P0.3 — press survives rebuild: down this frame, three rebuilds,
+    // still pressed; the release AFTER the rebuilds taps.
+    root.input.push(.pointer_down(.{ pointer = .{ value = 2 }, position = .{ x = 5.0, y = 5.0 } }));
+    _ = tick();
+    _ = tick();
+    _ = tick();
+    process.assert(router.is_pressed(.{ value = g_eid_top }), "press survives rebuild");
+    root.input.push(.pointer_up(.{ pointer = .{ value = 2 }, position = .{ x = 5.0, y = 5.0 } }));
+    _ = tick();
+    router.drain_gestures(on_tap);
+    process.assert(g_taps == 2 and g_last_tap == g_eid_top, "release after rebuilds taps");
+
+    // Slop: wander past ROUTER_TAP_SLOP → the release yields nothing.
+    root.input.push(.pointer_down(.{ pointer = .{ value = 3 }, position = .{ x = 5.0, y = 5.0 } }));
+    root.input.push(.pointer_move(.{ pointer = .{ value = 3 }, position = .{ x = 30.0, y = 5.0 } }));
+    root.input.push(.pointer_up(.{ pointer = .{ value = 3 }, position = .{ x = 30.0, y = 5.0 } }));
+    _ = tick();
+    router.drain_gestures(on_tap);
+    process.assert(g_taps == 2, "slop crossing killed the tap");
+
+    // Vanish: press C, rebuild WITHOUT C — the capture cancels cleanly.
+    root.input.push(.pointer_down(.{ pointer = .{ value = 4 }, position = .{ x = 5.0, y = 25.0 } }));
+    _ = tick();
+    process.assert(router.is_pressed(.{ value = g_eid_c }), "C pressed");
+    g_show_c = false;
+    _ = tick();
+    process.assert(!router.is_pressed(.{ value = g_eid_c }), "vanished element cancelled the press");
+    root.input.push(.pointer_up(.{ pointer = .{ value = 4 }, position = .{ x = 5.0, y = 25.0 } }));
+    _ = tick();
+    router.drain_gestures(on_tap);
+    process.assert(g_taps == 2, "release of a vanished capture does not tap");
+
+    // Surface generation: a mid-press surface recreation refuses the
+    // stale capture.
+    root.input.push(.pointer_down(.{ pointer = .{ value = 5 }, position = .{ x = 5.0, y = 5.0 } }));
+    _ = tick();
+    process.assert(router.is_pressed(.{ value = g_eid_top }), "pressed before surface loss");
+    _ = root.surface_recreated();
+    _ = tick();
+    process.assert(!router.is_pressed(.{ value = g_eid_top }), "surface bump refused the capture");
+    root.input.push(.pointer_up(.{ pointer = .{ value = 5 }, position = .{ x = 5.0, y = 5.0 } }));
+    _ = tick();
+    router.drain_gestures(on_tap);
+    process.assert(g_taps == 2, "stale-generation release does not tap");
+
+    // pointer_cancel ends the sequence silently.
+    root.input.push(.pointer_down(.{ pointer = .{ value = 6 }, position = .{ x = 5.0, y = 5.0 } }));
+    _ = tick();
+    root.input.push(.pointer_cancel(.{ pointer = .{ value = 6 }, position = .{ x = 5.0, y = 5.0 } }));
+    root.input.push(.pointer_up(.{ pointer = .{ value = 6 }, position = .{ x = 5.0, y = 5.0 } }));
+    _ = tick();
+    router.drain_gestures(on_tap);
+    process.assert(g_taps == 2, "cancelled sequence does not tap");
+
+    print("ok taps={} top={}\n", g_taps, g_last_tap == g_eid_top);
+    router.deinit();
+    loop.deinit();
+    root.teardown();
+}
