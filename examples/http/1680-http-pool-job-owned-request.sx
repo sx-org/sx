@@ -79,7 +79,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -101,7 +101,7 @@ contains :: (hay: string, needle: string) -> bool {
 send_all :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
-        n, we := socket.write_nb(fd, @s.ptr[sent], xx (s.len - sent));
+        n, we := socket.write_nb(fd, *s.ptr[sent], xx (s.len - sent));
         if !we { sent += n; }
         srv.tick(1) catch {};
     }
@@ -128,7 +128,7 @@ main :: () -> i32 {
             thread_pool_backlog = 16,
             handler_timeout_ms = HANDLER_TIMEOUT_MS,
         };
-        srv, se := http.Server.init(cfg, route, xx @obs);
+        srv, se := http.Server.init(cfg, route, xx *obs);
         if se { print("init failed\n"); return 1; }
 
         // ── connection A: POST /slow with a known body ────────────────
@@ -143,8 +143,8 @@ main :: () -> i32 {
         // Content-Length literals match A_BODY_LEN / B_BODY_LEN (no concat —
         // it would allocate under the GPA leak gate).
         a_head := "POST /slow HTTP/1.1\r\nHost: t\r\nContent-Length: 512\r\n\r\n";
-        send_all(@srv, ca, a_head);
-        send_all(@srv, ca, a_body_s);
+        send_all(*srv, ca, a_head);
+        send_all(*srv, ca, a_body_s);
 
         // Tick past the 40 ms handler deadline: the loop 504s A and FREES
         // its slot while the worker still sleeps (200 ms).
@@ -153,7 +153,7 @@ main :: () -> i32 {
         t : i64 = 0;
         while t < 120 and !got_504 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(ca, @rbuf[a_total], xx (cap - a_total));
+            n, re := socket.read_nb(ca, *rbuf[a_total], xx (cap - a_total));
             if !re { a_total += n; }
             a_resp := string.{ ptr = rbuf, len = xx a_total };
             if contains(a_resp, "HTTP/1.1 504") { got_504 = true; }
@@ -173,15 +173,15 @@ main :: () -> i32 {
         cb := dial_port(PORT);
         if cb < 0 { print("dial B failed\n"); srv.close(); return 1; }
         b_head := "POST /b HTTP/1.1\r\nHost: t\r\nConnection: close\r\nContent-Length: 24576\r\n\r\n";
-        send_all(@srv, cb, b_head);
-        send_all(@srv, cb, string.{ ptr = b_body, len = B_BODY_LEN });
+        send_all(*srv, cb, b_head);
+        send_all(*srv, cb, string.{ ptr = b_body, len = B_BODY_LEN });
 
         b_total : i64 = 0;
         got_b := false;
         t = 0;
         while t < 300 and !got_b {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(cb, @rbuf[b_total], xx (cap - b_total));
+            n, re := socket.read_nb(cb, *rbuf[b_total], xx (cap - b_total));
             if !re { b_total += n; }
             else if re == error.Closed { got_b = true; }
             b_resp := string.{ ptr = rbuf, len = xx b_total };

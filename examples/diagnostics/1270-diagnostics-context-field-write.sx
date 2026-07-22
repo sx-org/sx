@@ -15,11 +15,11 @@ Stats :: struct { count: i64; buf: [4]i64; }
 
 main :: () {
     v := S.{ n = 3 };
-    push .{ s = @v } {
-        context.s = @v;
+    push .{ s = *v } {
+        context.s = *v;
         context.stats.count = 1;
         context.stats.count += 1;
         context.stats.buf[0] = 1;
-        context.s, v.n = @v, 4;
+        context.s, v.n = *v, 4;
     }
 }

@@ -33,7 +33,7 @@ impl Named for Widget {
 
 main :: () -> i32 {
     w : Widget = .{ base = 5 };
-    p : *Widget = @w;
+    p : *Widget = *w;
 
     m := p.(Measurable);   // snapshot of the pointee
     s := m.measure();          // 0 extra args

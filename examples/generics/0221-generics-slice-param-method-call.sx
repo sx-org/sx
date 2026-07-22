@@ -38,7 +38,7 @@ main :: () -> i64 {
     b := Box.{ n = 1 };
     a : [4]i64 = .[10, 20, 30, 40];
 
-    print("{}\n", Box.take(@b, a));   // explicit form
+    print("{}\n", Box.take(*b, a));   // explicit form
     print("{}\n", b.take(a));         // method syntax — used to panic
 
     // `T` binds to the element type, not just to the slice's length.
@@ -49,7 +49,7 @@ main :: () -> i64 {
     print("{}\n", b.first(f));        // 1.5
 
     v : i64 = 0;
-    print("{}\n", free_take(@v, a));
+    print("{}\n", free_take(*v, a));
 
     // Printing a real slice still formats through `slice_to_string`.
     s : []i64 = a;

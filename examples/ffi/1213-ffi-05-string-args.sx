@@ -32,7 +32,7 @@ main :: () -> i32 {
 
     // ── [*]u8 raw buffer + length ──────────────────────────────────
     bytes : [4]u8 = .[10, 20, 30, 40];
-    bp : [*]u8 = xx @bytes[0];
+    bp : [*]u8 = xx *bytes[0];
     print("sum_bytes([10,20,30,40]) = {}\n", ffi_sum_bytes(bp, 4));
 
     // ── Mutate buffer via C, read back from sx ─────────────────────

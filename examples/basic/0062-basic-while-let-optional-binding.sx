@@ -13,5 +13,5 @@ next3 :: (n: *i64) -> ?i64 {
 
 main :: () {
     n := 0;
-    while v := next3(@n) { print("v={}\n", v); }
+    while v := next3(*n) { print("v={}\n", v); }
 }

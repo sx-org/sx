@@ -2789,7 +2789,12 @@ pub const Parser = struct {
             const operand = try self.parseUnary();
             return try self.createNode(start, .{ .unary_op = .{ .op = .xx, .operand = operand } });
         }
-        if (self.current.tag == .at) {
+        // Prefix `*` — address-of. One glyph, two sides of the same coin:
+        // prefix `*` TAKES a pointer, postfix `.*` FOLLOWS one, and `*T` in
+        // a type position is the pointer TYPE. On a Type-valued operand the
+        // lowering resolves `*T` to the pointer type (so `size_of(*T)` and
+        // Type-arg positions keep working); on a value it is address-of.
+        if (self.current.tag == .star) {
             const start = self.current.loc.start;
             self.advance();
             const operand = try self.parseUnary();
@@ -3169,11 +3174,12 @@ pub const Parser = struct {
             var payload: *Node = undefined;
             if (self.current.tag == .arrow) {
                 self.advance();
-                if (self.current.tag == .at) {
-                    // `-> @place`: write-through output. `@place` is parsed as an
-                    // ordinary address-of expression (a pointer); lowering stores
-                    // the asm result through it. The output does NOT join the
-                    // result tuple.
+                if (self.current.tag == .star) {
+                    // `-> *place`: write-through output — an ordinary
+                    // address-of expression (a pointer); lowering stores
+                    // the asm result through it. The output does NOT join
+                    // the result tuple. (A pointer-TYPED value output is
+                    // not expressible here — spell it `-> usize` and cast.)
                     role = .out_place;
                     payload = try self.parseUnary();
                 } else {
@@ -3492,7 +3498,7 @@ pub const Parser = struct {
                     null;
                 return try self.createNode(start, .{ .return_stmt = .{ .value = value } });
             },
-            .l_bracket, .star, .question => {
+            .l_bracket, .question => {
                 return try self.parseTypeExpr();
             },
             .l_brace => {

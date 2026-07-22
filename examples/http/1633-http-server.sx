@@ -44,7 +44,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1, per-OS layout
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -92,7 +92,7 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8) -> st
     tries := 0;
     while tries < 400 {
         srv.tick(5) catch {};
-        n, re := socket.read_nb(fd, @scratch[total], xx (4096 - total));
+        n, re := socket.read_nb(fd, *scratch[total], xx (4096 - total));
         if !re { total += n; }
         else if re == error.Closed { return string.{ ptr = scratch, len = xx total }; }
         if resp_complete(scratch, total) { return string.{ ptr = scratch, len = xx total }; }
@@ -117,25 +117,25 @@ main :: () -> i32 {
     // ── 1. GET, keep-alive default ────────────────────────────────────
     c1 := dial();
     if c1 < 0 { print("dial failed\n"); return 1; }
-    r1 := roundtrip(@srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    r1 := roundtrip(*srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r1, "HTTP/1.1 200 OK") { print("case1: bad status\n"); return 1; }
     if !contains(r1, "hello GET") { print("case1: bad body\n"); return 1; }
     if !contains(r1, "Connection: keep-alive") { print("case1: expected keep-alive\n"); return 1; }
     print("GET 200, keep-alive\n");
 
     // ── 2. same socket again: the connection was actually reused ─────
-    r2 := roundtrip(@srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    r2 := roundtrip(*srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r2, "hello GET") { print("case2: keep-alive reuse failed\n"); return 1; }
     print("keep-alive reuse ok\n");
 
     // ── 3. third request hits request_count: Connection: close + EOF ─
-    r3 := roundtrip(@srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    r3 := roundtrip(*srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r3, "Connection: close") { print("case3: expected close at cap\n"); return 1; }
     drained := false;
     tries := 0;
     while !drained and tries < 200 {
         srv.tick(5) catch {};
-        zq, ze := socket.read_nb(c1, @buf[0], 64);
+        zq, ze := socket.read_nb(c1, *buf[0], 64);
         if ze == error.Closed { drained = true; }
         if !ze and zq == 0 { drained = true; }
         tries += 1;
@@ -147,12 +147,12 @@ main :: () -> i32 {
     // ── 4. POST body echo ─────────────────────────────────────────────
     c2 := dial();
     if c2 < 0 { print("dial2 failed\n"); return 1; }
-    r4 := roundtrip(@srv, c2, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 9\r\n\r\nping-pong", @buf[0]);
+    r4 := roundtrip(*srv, c2, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 9\r\n\r\nping-pong", *buf[0]);
     if !contains(r4, "ping-pong") { print("case4: body not echoed\n"); return 1; }
     print("POST echo ok\n");
 
     // ── 5. unknown path routes 404 ────────────────────────────────────
-    r5 := roundtrip(@srv, c2, "GET /missing HTTP/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    r5 := roundtrip(*srv, c2, "GET /missing HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r5, "HTTP/1.1 404 Not Found") { print("case5: expected 404\n"); return 1; }
     socket.close(c2);
     print("404 routing ok\n");
@@ -172,7 +172,7 @@ main :: () -> i32 {
     btries := 0;
     while btries < 2000 {
         srv.tick(5) catch {};
-        bn, bre := socket.read_nb(c2b, @bigbuf[btotal], xx (big_n + 4096 - btotal));
+        bn, bre := socket.read_nb(c2b, *bigbuf[btotal], xx (big_n + 4096 - btotal));
         if !bre { btotal += bn; }
         else if bre == error.Closed { break; }
         if resp_complete(bigbuf, btotal) { break; }
@@ -195,13 +195,13 @@ main :: () -> i32 {
     while !event.expired(gone) { srv.tick(5) catch {}; }
     c4 := dial();
     if c4 < 0 { print("dial4 failed\n"); return 1; }
-    r6 := roundtrip(@srv, c4, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    r6 := roundtrip(*srv, c4, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r6, "hello GET") { print("case6: healthy client starved\n"); return 1; }
     evicted := false;
     tries = 0;
     while !evicted and tries < 200 {
         srv.tick(5) catch {};
-        zq2, ze2 := socket.read_nb(c3, @buf[0], 64);
+        zq2, ze2 := socket.read_nb(c3, *buf[0], 64);
         if ze2 == error.Closed { evicted = true; }
         if !ze2 and zq2 == 0 { evicted = true; }
         tries += 1;
@@ -231,12 +231,12 @@ main :: () -> i32 {
 
     c5 := dial_port(PORT + 1);
     if c5 < 0 { print("dial5 failed\n"); return 1; }
-    r7 := roundtrip(@psrv, c5, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    r7 := roundtrip(*psrv, c5, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r7, "HTTP/1.1 200 OK") { print("pooled: bad status\n"); return 1; }
     if !contains(r7, "hello GET") { print("pooled: bad body\n"); return 1; }
-    r8 := roundtrip(@psrv, c5, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 9\r\n\r\nping-pong", @buf[0]);
+    r8 := roundtrip(*psrv, c5, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 9\r\n\r\nping-pong", *buf[0]);
     if !contains(r8, "ping-pong") { print("pooled: echo failed\n"); return 1; }
-    r9 := roundtrip(@psrv, c5, "GET /missing HTTP/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    r9 := roundtrip(*psrv, c5, "GET /missing HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r9, "HTTP/1.1 404 Not Found") { print("pooled: expected 404\n"); return 1; }
     socket.close(c5);
     psrv.close();

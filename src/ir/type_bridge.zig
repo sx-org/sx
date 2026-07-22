@@ -367,6 +367,9 @@ pub fn isTypeShapedAstNode(node: *const Node, table: *TypeTable) bool {
         .comptime_pack_ref,
         => true,
         .identifier => |id| table.findByName(table.internString(id.name)) != null,
+        // Prefix `*` parses as address_of in the value grammar; over a
+        // type-shaped operand it IS the pointer type (`describe(*Padded)`).
+        .unary_op => |uop| uop.op == .address_of and isTypeShapedAstNode(uop.operand, table),
         // A call to a comptime type-query / projection builtin whose RESULT is a
         // Type — `field_type(T, i)`, `pointee(P)`, `type_of(x)`. These are
         // type-shaped, so an arg / initializer like `field_type(T, i)` resolves

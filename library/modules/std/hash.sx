@@ -275,10 +275,10 @@ sha256_file :: (path: [:0]u8) -> ?[64]u8 {
     chunk : [65536]u8 = ---;
     reading := true;
     while reading {
-        n := file.read(string.{ ptr = @chunk[0], len = 65536 });
+        n := file.read(string.{ ptr = *chunk[0], len = 65536 });
         if n < 0 { return null; }
         if n == 0 { reading = false; }
-        if n > 0 { h.update(string.{ ptr = @chunk[0], len = n }); }
+        if n > 0 { h.update(string.{ ptr = *chunk[0], len = n }); }
     }
     h.final()
 }

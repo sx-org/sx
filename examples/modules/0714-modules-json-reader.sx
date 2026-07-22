@@ -49,7 +49,7 @@ raises :: (src: string, want: JsonParseError, alloc: Allocator) -> bool {
 ctrl_raises :: (b: u8, alloc: Allocator) -> bool {
     raw : [5]u8 = ---;
     raw[0] = 34; raw[1] = 97; raw[2] = b; raw[3] = 98; raw[4] = 34;   // "a<b>b"
-    return raises(string.{ ptr = @raw[0], len = 5 }, error.BadControlChar, alloc);
+    return raises(string.{ ptr = *raw[0], len = 5 }, error.BadControlChar, alloc);
 }
 
 main :: () -> ! {
@@ -95,8 +95,8 @@ main :: () -> ! {
 
     // ── 3. Round-trip back through the writer ────────────────────────
     buf : [256]u8 = ---;
-    n := try write_to_buffer(root, string.{ ptr = @buf[0], len = 256 });
-    rt := string.{ ptr = @buf[0], len = n };
+    n := try write_to_buffer(root, string.{ ptr = *buf[0], len = 256 });
+    rt := string.{ ptr = *buf[0], len = n };
     report("round-trip", rt == src);
 
     // ── 4. Leading/trailing/inner whitespace is insignificant ────────

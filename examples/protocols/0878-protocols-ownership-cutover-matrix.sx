@@ -40,7 +40,7 @@ main :: () {
     free(s);
 
     // postfix *Concrete → snapshot of the pointee.
-    pw : *W = @w;
+    pw : *W = *w;
     snap := pw.(Sizable);
     snap.bump();
     print("snapshot: {} {}\n", w.v, snap.size());
@@ -48,7 +48,7 @@ main :: () {
 
     // postfix *P → promotion (view becomes an owned, independent value).
     o := w.(Sizable);
-    pv : *Sizable = @o;
+    pv : *Sizable = *o;
     prom := pv.(Sizable);
     prom.bump();
     print("promote:  {} {}\n", o.size(), prom.size());

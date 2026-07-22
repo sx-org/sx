@@ -39,7 +39,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -87,7 +87,7 @@ main :: () -> i32 {
         t : i64 = 0;
         wb : i64 = 0;
         while fsent < JUNK_LEN and t < 400 {
-            n, we := socket.write_nb(ca, @junk[fsent], xx (JUNK_LEN - fsent));
+            n, we := socket.write_nb(ca, *junk[fsent], xx (JUNK_LEN - fsent));
             if !we { fsent += n; wb = 0; }
             else if we == error.WouldBlock {
                 // Post-fix the server drains + discards, so the burst always
@@ -112,7 +112,7 @@ main :: () -> i32 {
             srv.tick(1) catch {};
             got : i64 = 0;
             while true {
-                rn := socket.read(ca, @rbuf[total], xx (cap - total));
+                rn := socket.read(ca, *rbuf[total], xx (cap - total));
                 if rn > 0 { total += rn; got += rn; continue; }
                 if rn == 0 { got_fin = true; break; }
                 e := socket.errno();
@@ -164,7 +164,7 @@ main :: () -> i32 {
             srv.tick(1) catch {};
             got : i64 = 0;
             while true {
-                n, re := socket.read_nb(cb, @rbuf[btotal], xx (cap - btotal));
+                n, re := socket.read_nb(cb, *rbuf[btotal], xx (cap - btotal));
                 if !re { btotal += n; got += n; continue; }
                 if re == error.Closed { bdone = true; }
                 break;

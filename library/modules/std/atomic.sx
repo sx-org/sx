@@ -64,29 +64,29 @@ Atomic :: struct ($T: Type) {
     }
 
     load :: (self: *Atomic(T), $o: Ordering) -> T {
-        return atomic_load(T, @self.value, o);
+        return atomic_load(T, *self.value, o);
     }
 
     store :: (self: *Atomic(T), v: T, $o: Ordering) {
-        atomic_store(T, @self.value, v, o);
+        atomic_store(T, *self.value, v, o);
     }
 
     // Read-modify-write (integer T). Each returns the value BEFORE the update.
-    fetch_add :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_add(T, @self.value, v, o); }
-    fetch_sub :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_sub(T, @self.value, v, o); }
-    fetch_and :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_and(T, @self.value, v, o); }
-    fetch_or  :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_or(T, @self.value, v, o); }
-    fetch_xor :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_xor(T, @self.value, v, o); }
-    fetch_min :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_min(T, @self.value, v, o); }
-    fetch_max :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_max(T, @self.value, v, o); }
+    fetch_add :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_add(T, *self.value, v, o); }
+    fetch_sub :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_sub(T, *self.value, v, o); }
+    fetch_and :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_and(T, *self.value, v, o); }
+    fetch_or  :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_or(T, *self.value, v, o); }
+    fetch_xor :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_xor(T, *self.value, v, o); }
+    fetch_min :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_min(T, *self.value, v, o); }
+    fetch_max :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_fetch_max(T, *self.value, v, o); }
 
     // Swap: store `v`, return the value BEFORE the swap (integer T).
-    swap :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_swap(T, @self.value, v, o); }
+    swap :: (self: *Atomic(T), v: T, $o: Ordering) -> T { return atomic_swap(T, *self.value, v, o); }
 
     // Compare-exchange (integer T). Returns `?T`: `null` on success (the value
     // equalled `expected` and is now `desired`); on failure the ACTUAL current
     // value (retry with it). `compare_exchange_weak` may fail spuriously — use it
     // inside a retry loop. `$success` / `$failure` are comptime ordering params.
-    compare_exchange      :: (self: *Atomic(T), expected: T, desired: T, $success: Ordering, $failure: Ordering) -> ?T { return atomic_cmpxchg(T, @self.value, expected, desired, success, failure); }
-    compare_exchange_weak :: (self: *Atomic(T), expected: T, desired: T, $success: Ordering, $failure: Ordering) -> ?T { return atomic_cmpxchg_weak(T, @self.value, expected, desired, success, failure); }
+    compare_exchange      :: (self: *Atomic(T), expected: T, desired: T, $success: Ordering, $failure: Ordering) -> ?T { return atomic_cmpxchg(T, *self.value, expected, desired, success, failure); }
+    compare_exchange_weak :: (self: *Atomic(T), expected: T, desired: T, $success: Ordering, $failure: Ordering) -> ?T { return atomic_cmpxchg_weak(T, *self.value, expected, desired, success, failure); }
 }

@@ -1333,6 +1333,15 @@ pub const Lowering = struct {
 
     /// Resolve a type node, checking type_bindings first for generic type params.
     pub fn resolveTypeWithBindings(self: *Lowering, node: *const Node) TypeId {
+        // Prefix `*` in a type position: the value grammar parses `*T` as an
+        // address_of unary (one glyph, kind-resolved), so type-position
+        // consumers (size_of, Type args, typed-literal heads) unwrap it here:
+        // `*T` → ptrTo(T), recursively for `**T`.
+        if (node.data == .unary_op and node.data.unary_op.op == .address_of) {
+            const inner = self.resolveTypeWithBindings(node.data.unary_op.operand);
+            if (inner == .unresolved) return .unresolved;
+            return self.module.types.ptrTo(inner);
+        }
         // Pack-index in a type position: `$<pack>[<lit>]` resolves to the
         // i-th element type of the active pack binding (step 3 of the
         // variadic heterogeneous type packs feature). Unblocks parametric

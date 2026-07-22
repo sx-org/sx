@@ -21,22 +21,22 @@ Holder :: struct { pr: *Pair; sentinel: i64; }
 main :: () {
     x : i64 = 7;
     y : i64 = 9;
-    pair  : Pair = .{ a = @x, b = @y };
-    other : Pair = .{ a = @y, b = @x };
+    pair  : Pair = .{ a = *x, b = *y };
+    other : Pair = .{ a = *y, b = *x };
 
-    h : Holder = .{ pr = @pair, sentinel = 99 };
+    h : Holder = .{ pr = *pair, sentinel = 99 };
 
     // single-assign: store a *Pair into h.pr; sentinel must stay 99.
-    h.pr = @other;
+    h.pr = *other;
     print("single: a={} b={} sentinel={}\n", h.pr.a.*, h.pr.b.*, h.sentinel);
 
     // multi-assign: store into h.pr alongside a plain local; sentinel untouched.
     dummy : i64 = 0;
-    h.pr, dummy = @pair, 1;
+    h.pr, dummy = *pair, 1;
     print("multi: a={} b={} sentinel={}\n", h.pr.a.*, h.pr.b.*, h.sentinel);
 
     // address-of the *Pair field, store through it; sentinel untouched.
-    ppr := @h.pr;
-    ppr.* = @other;
+    ppr := *h.pr;
+    ppr.* = *other;
     print("addr: a={} b={} sentinel={}\n", h.pr.a.*, h.pr.b.*, h.sentinel);
 }

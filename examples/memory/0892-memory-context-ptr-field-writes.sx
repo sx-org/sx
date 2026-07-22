@@ -22,8 +22,8 @@ meth2 :: (v: i64) { context.sink.target.list.append(v); }
 
 main :: () {
     v := S.{ n = 3, list = .{} };
-    k := Sink.{ target = @v };
-    push .{ s = @v, sink = @k } {
+    k := Sink.{ target = *v };
+    push .{ s = *v, sink = *k } {
         print("reads {} {}\n", read1(), read2());
         write1();
         print("1-hop write {}\n", read1());

@@ -6,5 +6,5 @@ read :: (s: *S) -> *void {
 
 main :: () -> i32 abi(.c) {
     s := S.{ p = null };
-    if read(@s) == null then 0 else 1
+    if read(*s) == null then 0 else 1
 }

@@ -8,5 +8,5 @@
 
 main :: () {
     n : i64 = 0;
-    _ := atomic_cmpxchg(i64, @n, 0, 1, .relaxed, .seq_cst);
+    _ := atomic_cmpxchg(i64, *n, 0, 1, .relaxed, .seq_cst);
 }

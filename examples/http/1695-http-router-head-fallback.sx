@@ -54,7 +54,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -95,7 +95,7 @@ roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
             if !re { total += n; got += n; continue; }
             if re == error.Closed { done = true; }
             break;
@@ -131,17 +131,17 @@ main :: () -> i32 {
         router.set_not_found(nf);
 
         cfg : http.Config = .{ port = PORT, max_conn = 4, request_count = 10 };
-        srv, se := http.Server.init(cfg, http.dispatch, xx @router);
+        srv, se := http.Server.init(cfg, http.dispatch, xx *router);
         if se { print("init failed\n"); return 1; }
 
         // (a) GET control
-        r := roundtrip(@srv, "GET /hello HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "GET status", @failed);
-        check(r, "hello world", "GET body", @failed);
+        r := roundtrip(*srv, "GET /hello HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "GET status", *failed);
+        check(r, "hello world", "GET body", *failed);
 
         // (b) HEAD with NO registered HEAD route dispatches the GET route;
         // the pipelined GET behind it proves nothing leaked onto the wire
-        r = roundtrip(@srv,
+        r = roundtrip(*srv,
             "HEAD /hello HTTP/1.1\r\nHost: t\r\n\r\nGET /hello HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n",
             rbuf, cap);
         if count_occurrences(r, "HTTP/1.1 200 OK") != 2 {
@@ -152,40 +152,40 @@ main :: () -> i32 {
             print("HEAD fallback: expected CL 11 on BOTH responses\n");
             failed = 1;
         }
-        check(r, "\r\n\r\nHTTP/1.1 200 OK", "HEAD fallback framing", @failed);
+        check(r, "\r\n\r\nHTTP/1.1 200 OK", "HEAD fallback framing", *failed);
         if count_occurrences(r, "hello world") != 1 {
             print("HEAD fallback: expected exactly one body\n");
             failed = 1;
         }
 
         // (c) HEAD on a POST-only path stays 405 + Allow
-        r = roundtrip(@srv, "HEAD /submit HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 405", "HEAD 405 status", @failed);
-        check(r, "Allow: POST", "HEAD 405 Allow", @failed);
+        r = roundtrip(*srv, "HEAD /submit HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 405", "HEAD 405 status", *failed);
+        check(r, "Allow: POST", "HEAD 405 Allow", *failed);
 
         // (d) HEAD on an unregistered path reaches the CUSTOM not_found
-        r = roundtrip(@srv, "HEAD /nope HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 404", "HEAD 404", @failed);
-        check(r, "X-NF: 1", "HEAD custom not_found", @failed);
+        r = roundtrip(*srv, "HEAD /nope HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 404", "HEAD 404", *failed);
+        check(r, "X-NF: 1", "HEAD custom not_found", *failed);
 
         // (e) fallback through a PARAM route: match_pattern must fill the
         // params in the second pass (value surfaced via header)
-        r = roundtrip(@srv, "HEAD /users/42 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "HEAD param status", @failed);
-        check(r, "X-Id: 42", "HEAD param value", @failed);
-        check(r, "Content-Length: 6", "HEAD param length", @failed);
+        r = roundtrip(*srv, "HEAD /users/42 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "HEAD param status", *failed);
+        check(r, "X-Id: 42", "HEAD param value", *failed);
+        check(r, "Content-Length: 6", "HEAD param length", *failed);
 
         // (f) an EXPLICITLY registered HEAD route wins over the GET
         // fallback, even registered after the GET route
-        r = roundtrip(@srv, "HEAD /hd HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "X-Via: head-route", "explicit HEAD wins", @failed);
-        check(r, "Content-Length: 0", "explicit HEAD length", @failed);
+        r = roundtrip(*srv, "HEAD /hd HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "X-Via: head-route", "explicit HEAD wins", *failed);
+        check(r, "Content-Length: 0", "explicit HEAD length", *failed);
 
         // (g) Allow on 405 advertises the implicit HEAD alongside GET:
         // DELETE on a GET-only path → "Allow: GET, HEAD"
-        r = roundtrip(@srv, "DELETE /hello HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 405", "DELETE 405", @failed);
-        check(r, "Allow: GET, HEAD", "implicit HEAD in Allow", @failed);
+        r = roundtrip(*srv, "DELETE /hello HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 405", "DELETE 405", *failed);
+        check(r, "Allow: GET, HEAD", "implicit HEAD in Allow", *failed);
 
         srv.close();
         context.allocator.dealloc_bytes(xx rbuf);

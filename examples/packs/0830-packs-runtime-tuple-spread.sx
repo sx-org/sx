@@ -70,12 +70,12 @@ main :: () -> i32 {
 
     // heterogeneous pack captured + spread inside the closure
     s := "";
-    capture_both(@s, "id", 7);
+    capture_both(*s, "id", 7);
     print("captured: {}\n", s);                      // id-7
 
     // pack captured + comptime-indexed inside the closure
     n : i64 = 0;
-    capture_index(@n, 40, 2);
+    capture_index(*n, 40, 2);
     print("indexed: {}\n", n);                       // 42
 
     0

@@ -18,7 +18,7 @@ main :: () {
     r := if s == { case .circle: (v) { v } case .rect: (v) { v * 2 } };
     print("{}\n", r);
 
-    p := @s;
+    p := *s;
     q := if p == { case .circle: (v) { v } else: { 0 } };
     print("{}\n", q);
 

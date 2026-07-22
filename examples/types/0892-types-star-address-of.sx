@@ -1,0 +1,34 @@
+// Prefix `*` — address-of, and the kind-resolution rule (the `@`
+// spelling is REMOVED; a leftover `@` is a plain unexpected-token
+// error). Pins:
+//   - `*x` takes a pointer; postfix `.*` follows it;
+//   - `*T` over a TYPE operand is the pointer type as a Type value —
+//     size_of/type args, `**T` nested inside-out;
+//   - a VALUE shadowing nothing: `*arr[i]` / `*s.field` address
+//     elements and fields (postfix binds tighter than prefix);
+//   - infix `*` stays multiplication; `a * *b` mixes both.
+#import "modules/std.sx";
+
+Pair :: struct { a: i64 = 0; b: i64 = 0; }
+
+bump :: (p: *i64) { p.* += 1; }
+
+main :: () {
+    x := 41;
+    bump(*x);
+    print("value: {}\n", x);
+
+    print("types: {} {} {}\n", size_of(*i64), size_of(**i64), type_name(*Pair));
+
+    pr := Pair.{ a = 5, b = 6 };
+    fp := *pr.b;
+    fp.* = 60;
+    arr : [3]i64 = .[1, 2, 3];
+    ep := *arr[2];
+    ep.* = 30;
+    print("places: {} {}\n", pr.b, arr[2]);
+
+    m := 6;
+    pm := *m;
+    print("mult: {}\n", 7 * pm.*);
+}

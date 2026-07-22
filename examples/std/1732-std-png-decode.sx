@@ -13,7 +13,7 @@ roundtrip :: (fmt: png.PixelFormat, channels: i64) {
     i := 0;
     while i < n { src[i] = ((i * 7 + channels * 13) % 256).(u8); i += 1; }
 
-    img : png.Image = .{ pixels = string.{ ptr = @src[0], len = n }, width = w, height = h, format = fmt };
+    img : png.Image = .{ pixels = string.{ ptr = *src[0], len = n }, width = w, height = h, format = fmt };
     data := png.encode(img) catch (e) { print("encode failed\n"); process.exit(1); "" };
     back := png.decode(data) catch (e) { print("decode failed\n"); process.exit(1); png.Image.{ pixels = "", width = 0, height = 0, format = .rgba } };
 
@@ -41,7 +41,7 @@ main :: () {
     i := 0;
     while i < w * h * 4 { src[i] = i.(u8); i += 1; }
     img : png.Image = .{
-        pixels = string.{ ptr = @src[0], len = w * h * 4 },
+        pixels = string.{ ptr = *src[0], len = w * h * 4 },
         width = w, height = h, format = .rgba,
         stride = 0 - (w * 4),
     };
@@ -66,7 +66,7 @@ main :: () {
     i = 0;
     while i < data.len { corrupt[i] = data[i]; i += 1; }
     corrupt[16] = corrupt[16] ^ 0xff;
-    cstr := string.{ ptr = @corrupt[0], len = data.len };
+    cstr := string.{ ptr = *corrupt[0], len = data.len };
     crc := png.decode(cstr) catch (e) {
         process.assert(e == error.ChecksumMismatch, "crc reject");
         print("crc reject ok\n");

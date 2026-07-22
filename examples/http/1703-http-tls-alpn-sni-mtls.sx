@@ -134,27 +134,27 @@ CliOpt :: struct {
 
 client_init :: (c: *TlsClient, fd: i32, opt: CliOpt) -> bool {
     c.fd = fd;
-    mbedtls.mbedtls_ssl_config_init(@c.cfg);
-    mbedtls.mbedtls_ssl_init(@c.ssl);
-    mbedtls.mbedtls_ctr_drbg_init(@c.drbg);
-    mbedtls.mbedtls_entropy_init(@c.ent);
-    mbedtls.mbedtls_x509_crt_init(@c.ca);
-    mbedtls.mbedtls_x509_crt_init(@c.own);
-    mbedtls.mbedtls_pk_init(@c.pk);
-    if mbedtls.mbedtls_ctr_drbg_seed(@c.drbg, mbedtls.mbedtls_entropy_func, xx @c.ent, null, 0) != 0 { return false; }
-    if mbedtls.mbedtls_ssl_config_defaults(@c.cfg, mbedtls.MBEDTLS_SSL_IS_CLIENT, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 { return false; }
-    mbedtls.mbedtls_ssl_conf_rng(@c.cfg, mbedtls.mbedtls_ctr_drbg_random, xx @c.drbg);
+    mbedtls.mbedtls_ssl_config_init(*c.cfg);
+    mbedtls.mbedtls_ssl_init(*c.ssl);
+    mbedtls.mbedtls_ctr_drbg_init(*c.drbg);
+    mbedtls.mbedtls_entropy_init(*c.ent);
+    mbedtls.mbedtls_x509_crt_init(*c.ca);
+    mbedtls.mbedtls_x509_crt_init(*c.own);
+    mbedtls.mbedtls_pk_init(*c.pk);
+    if mbedtls.mbedtls_ctr_drbg_seed(*c.drbg, mbedtls.mbedtls_entropy_func, xx *c.ent, null, 0) != 0 { return false; }
+    if mbedtls.mbedtls_ssl_config_defaults(*c.cfg, mbedtls.MBEDTLS_SSL_IS_CLIENT, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 { return false; }
+    mbedtls.mbedtls_ssl_conf_rng(*c.cfg, mbedtls.mbedtls_ctr_drbg_random, xx *c.drbg);
 
     // Trust anchor + strict verification of the server cert.
-    if !load_crt(@c.ca, opt.ca_path) { return false; }
-    mbedtls.mbedtls_ssl_conf_ca_chain(@c.cfg, @c.ca, null);
-    mbedtls.mbedtls_ssl_conf_authmode(@c.cfg, mbedtls.MBEDTLS_SSL_VERIFY_REQUIRED);
+    if !load_crt(*c.ca, opt.ca_path) { return false; }
+    mbedtls.mbedtls_ssl_conf_ca_chain(*c.cfg, *c.ca, null);
+    mbedtls.mbedtls_ssl_conf_authmode(*c.cfg, mbedtls.MBEDTLS_SSL_VERIFY_REQUIRED);
 
     // mTLS identity.
     if opt.send_cert {
-        if !load_crt(@c.own, "examples/http/1703-http-tls-alpn-sni-mtls/client-cert.pem") { return false; }
-        if !load_key(@c.pk, "examples/http/1703-http-tls-alpn-sni-mtls/client-key.pem", @c.drbg) { return false; }
-        if mbedtls.mbedtls_ssl_conf_own_cert(@c.cfg, @c.own, @c.pk) != 0 { return false; }
+        if !load_crt(*c.own, "examples/http/1703-http-tls-alpn-sni-mtls/client-cert.pem") { return false; }
+        if !load_key(*c.pk, "examples/http/1703-http-tls-alpn-sni-mtls/client-key.pem", *c.drbg) { return false; }
+        if mbedtls.mbedtls_ssl_conf_own_cert(*c.cfg, *c.own, *c.pk) != 0 { return false; }
     }
 
     // ALPN offer (the array must outlive the config — it lives on c).
@@ -164,36 +164,36 @@ client_init :: (c: *TlsClient, fd: i32, opt: CliOpt) -> bool {
         c.alpn[0] = h2.ptr;
         c.alpn[1] = h1.ptr;
         c.alpn[2] = null;
-        if mbedtls.mbedtls_ssl_conf_alpn_protocols(@c.cfg, xx @c.alpn[0]) != 0 { return false; }
+        if mbedtls.mbedtls_ssl_conf_alpn_protocols(*c.cfg, xx *c.alpn[0]) != 0 { return false; }
     }
     if opt.alpn == 2 {
         bogus : [:0]u8 = "bogus/9";
         c.alpn[0] = bogus.ptr;
         c.alpn[1] = null;
-        if mbedtls.mbedtls_ssl_conf_alpn_protocols(@c.cfg, xx @c.alpn[0]) != 0 { return false; }
+        if mbedtls.mbedtls_ssl_conf_alpn_protocols(*c.cfg, xx *c.alpn[0]) != 0 { return false; }
     }
 
-    if mbedtls.mbedtls_ssl_setup(@c.ssl, @c.cfg) != 0 { return false; }
-    if mbedtls.mbedtls_ssl_set_hostname(@c.ssl, opt.hostname.ptr) != 0 { return false; }
-    mbedtls.mbedtls_ssl_set_bio(@c.ssl, xx @c.fd, cli_send, cli_recv, null);
+    if mbedtls.mbedtls_ssl_setup(*c.ssl, *c.cfg) != 0 { return false; }
+    if mbedtls.mbedtls_ssl_set_hostname(*c.ssl, opt.hostname.ptr) != 0 { return false; }
+    mbedtls.mbedtls_ssl_set_bio(*c.ssl, xx *c.fd, cli_send, cli_recv, null);
     return true;
 }
 
 client_free :: (c: *TlsClient) {
-    mbedtls.mbedtls_ssl_free(@c.ssl);
-    mbedtls.mbedtls_ssl_config_free(@c.cfg);
-    mbedtls.mbedtls_ctr_drbg_free(@c.drbg);
-    mbedtls.mbedtls_entropy_free(@c.ent);
-    mbedtls.mbedtls_x509_crt_free(@c.ca);
-    mbedtls.mbedtls_x509_crt_free(@c.own);
-    mbedtls.mbedtls_pk_free(@c.pk);
+    mbedtls.mbedtls_ssl_free(*c.ssl);
+    mbedtls.mbedtls_ssl_config_free(*c.cfg);
+    mbedtls.mbedtls_ctr_drbg_free(*c.drbg);
+    mbedtls.mbedtls_entropy_free(*c.ent);
+    mbedtls.mbedtls_x509_crt_free(*c.ca);
+    mbedtls.mbedtls_x509_crt_free(*c.own);
+    mbedtls.mbedtls_pk_free(*c.pk);
 }
 
 dial :: () -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(PORT, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -204,7 +204,7 @@ drive_handshake :: (srv: *http.Server, cl: *TlsClient) -> i64 {
     i : i64 = 0;
     while i < 1000 {
         srv.tick(5) catch {};
-        r := mbedtls.mbedtls_ssl_handshake(@cl.ssl);
+        r := mbedtls.mbedtls_ssl_handshake(*cl.ssl);
         if r == 0 { return 1; }
         if r != mbedtls.MBEDTLS_ERR_SSL_WANT_READ and r != mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0; }
         i += 1;
@@ -219,7 +219,7 @@ one_get :: (srv: *http.Server, cl: *TlsClient) -> i32 {
     sent := false; j : i64 = 0;
     while j < 200 and !sent {
         srv.tick(5) catch {};
-        w := mbedtls.mbedtls_ssl_write(@cl.ssl, xx req.ptr, xx req.len);
+        w := mbedtls.mbedtls_ssl_write(*cl.ssl, xx req.ptr, xx req.len);
         if w > 0 { sent = true; }
         else if w != mbedtls.MBEDTLS_ERR_SSL_WANT_READ and w != mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 1; }
         j += 1;
@@ -229,10 +229,10 @@ one_get :: (srv: *http.Server, cl: *TlsClient) -> i32 {
     total : i64 = 0; k : i64 = 0; got := false;
     while k < 1000 and !got {
         srv.tick(5) catch {};
-        r := mbedtls.mbedtls_ssl_read(@cl.ssl, xx @rbuf[total], xx (4096 - total));
+        r := mbedtls.mbedtls_ssl_read(*cl.ssl, xx *rbuf[total], xx (4096 - total));
         if r > 0 {
             total += r;
-            s := string.{ ptr = xx @rbuf[0], len = xx total };
+            s := string.{ ptr = xx *rbuf[0], len = xx total };
             if contains(s, "secure-ok") { got = true; }
         } else if r == mbedtls.MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY or r == 0 {
             got = true;
@@ -241,7 +241,7 @@ one_get :: (srv: *http.Server, cl: *TlsClient) -> i32 {
         }
         k += 1;
     }
-    resp := string.{ ptr = xx @rbuf[0], len = xx total };
+    resp := string.{ ptr = xx *rbuf[0], len = xx total };
     if !contains(resp, "HTTP/1.1 200 OK") { return 4; }
     if !contains(resp, "secure-ok")       { return 5; }
     return 0;
@@ -265,14 +265,14 @@ run :: () -> i32 {
                        "examples/http/1703-http-tls-alpn-sni-mtls/default-key.pem",
                        context.allocator) { return 2; }
     protos : [1]string = .{ "http/1.1" };
-    if !ts.set_alpn(.{ ptr = @protos[0], len = 1 }) { return 3; }
+    if !ts.set_alpn(.{ ptr = *protos[0], len = 1 }) { return 3; }
     if !ts.add_sni_cert_files("alt.test",
                               "examples/http/1703-http-tls-alpn-sni-mtls/alt-cert.pem",
                               "examples/http/1703-http-tls-alpn-sni-mtls/alt-key.pem") { return 4; }
     if !ts.require_client_cert_files("examples/http/1703-http-tls-alpn-sni-mtls/client-cert.pem") { return 5; }
 
     cfg : http.Config = .{ port = PORT, timeout_request_ms = 3000, max_conn = 8 };
-    cfg.tls = xx @ts;
+    cfg.tls = xx *ts;
     srv, se := http.Server.init(cfg, handler, 0);
     if se { return 6; }
 
@@ -280,11 +280,11 @@ run :: () -> i32 {
     fd_c := dial();
     if fd_c < 0 { srv.close(); ts.deinit(); return 10; }
     cl_c : TlsClient = .{};
-    if !client_init(@cl_c, fd_c, .{ hostname = "default.test",
+    if !client_init(*cl_c, fd_c, .{ hostname = "default.test",
                                     ca_path = "examples/http/1703-http-tls-alpn-sni-mtls/default-cert.pem",
                                     alpn = 2 }) { srv.close(); ts.deinit(); return 11; }
-    hc := drive_handshake(@srv, @cl_c);
-    client_free(@cl_c);
+    hc := drive_handshake(*srv, *cl_c);
+    client_free(*cl_c);
     socket.close(fd_c);
     if hc != 0 { srv.close(); ts.deinit(); return 12; }   // must FAIL, not complete/hang
 
@@ -296,13 +296,13 @@ run :: () -> i32 {
     fd_d := dial();
     if fd_d < 0 { srv.close(); ts.deinit(); return 13; }
     cl_d : TlsClient = .{};
-    if !client_init(@cl_d, fd_d, .{ hostname = "default.test",
+    if !client_init(*cl_d, fd_d, .{ hostname = "default.test",
                                     ca_path = "examples/http/1703-http-tls-alpn-sni-mtls/default-cert.pem",
                                     send_cert = false }) { srv.close(); ts.deinit(); return 14; }
-    hd := drive_handshake(@srv, @cl_d);
+    hd := drive_handshake(*srv, *cl_d);
     refused := hd == 0;
-    if hd == 1 { refused = one_get(@srv, @cl_d) != 0; }
-    client_free(@cl_d);
+    if hd == 1 { refused = one_get(*srv, *cl_d) != 0; }
+    client_free(*cl_d);
     socket.close(fd_d);
     if !refused { srv.close(); ts.deinit(); return 15; }
 
@@ -310,22 +310,22 @@ run :: () -> i32 {
     fd_a := dial();
     if fd_a < 0 { srv.close(); ts.deinit(); return 16; }
     cl_a : TlsClient = .{};
-    if !client_init(@cl_a, fd_a, .{ hostname = "default.test",
+    if !client_init(*cl_a, fd_a, .{ hostname = "default.test",
                                     ca_path = "examples/http/1703-http-tls-alpn-sni-mtls/default-cert.pem",
                                     alpn = 1 }) { srv.close(); ts.deinit(); return 17; }
-    ha := drive_handshake(@srv, @cl_a);
+    ha := drive_handshake(*srv, *cl_a);
     if ha != 1 {
-        client_free(@cl_a); socket.close(fd_a); srv.close(); ts.deinit();
+        client_free(*cl_a); socket.close(fd_a); srv.close(); ts.deinit();
         return 18;
     }
-    neg := mbedtls.mbedtls_ssl_get_alpn_protocol(@cl_a.ssl);
+    neg := mbedtls.mbedtls_ssl_get_alpn_protocol(*cl_a.ssl);
     if !cstr_eq(neg, "http/1.1") {
-        client_free(@cl_a); socket.close(fd_a); srv.close(); ts.deinit();
+        client_free(*cl_a); socket.close(fd_a); srv.close(); ts.deinit();
         return 19;
     }
-    ga := one_get(@srv, @cl_a);
-    mbedtls.mbedtls_ssl_close_notify(@cl_a.ssl);
-    client_free(@cl_a);
+    ga := one_get(*srv, *cl_a);
+    mbedtls.mbedtls_ssl_close_notify(*cl_a.ssl);
+    client_free(*cl_a);
     socket.close(fd_a);
     if ga != 0 { srv.close(); ts.deinit(); return 20; }
 
@@ -333,18 +333,18 @@ run :: () -> i32 {
     fd_b := dial();
     if fd_b < 0 { srv.close(); ts.deinit(); return 21; }
     cl_b : TlsClient = .{};
-    if !client_init(@cl_b, fd_b, .{ hostname = "alt.test",
+    if !client_init(*cl_b, fd_b, .{ hostname = "alt.test",
                                     ca_path = "examples/http/1703-http-tls-alpn-sni-mtls/alt-cert.pem" }) {
         srv.close(); ts.deinit(); return 22;
     }
-    hb := drive_handshake(@srv, @cl_b);
+    hb := drive_handshake(*srv, *cl_b);
     if hb != 1 {
-        client_free(@cl_b); socket.close(fd_b); srv.close(); ts.deinit();
+        client_free(*cl_b); socket.close(fd_b); srv.close(); ts.deinit();
         return 23;
     }
-    gb := one_get(@srv, @cl_b);
-    mbedtls.mbedtls_ssl_close_notify(@cl_b.ssl);
-    client_free(@cl_b);
+    gb := one_get(*srv, *cl_b);
+    mbedtls.mbedtls_ssl_close_notify(*cl_b.ssl);
+    client_free(*cl_b);
     socket.close(fd_b);
     if gb != 0 { srv.close(); ts.deinit(); return 24; }
 

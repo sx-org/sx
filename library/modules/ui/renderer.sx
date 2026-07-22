@@ -74,7 +74,7 @@ UIRenderer :: struct {
             self.mtl_vbuf   = self.gpu.create_buffer(metal_buf_size);
             self.mtl_buf_capacity = metal_buf_size;
             white_px : [4]u8 = .[255, 255, 255, 255];
-            self.white_texture = self.gpu.create_texture(1, 1, .rgba8, xx @white_px[0]);
+            self.white_texture = self.gpu.create_texture(1, 1, .rgba8, xx *white_px[0]);
         } else {
             // ── GL backend ─────────────────────────────────────────────
             // Create shader (ES for WASM/WebGL2 + iOS GLES3, Core for desktop GL 3.3)
@@ -87,8 +87,8 @@ UIRenderer :: struct {
             self.tex_loc = glGetUniformLocation(self.shader, "uTex");
 
             // Create VAO/VBO
-            glGenVertexArrays(1, @self.vao);
-            glGenBuffers(1, @self.vbo);
+            glGenVertexArrays(1, *self.vao);
+            glGenBuffers(1, *self.vbo);
             glBindVertexArray(self.vao);
             glBindBuffer(GL_ARRAY_BUFFER, self.vbo);
             glBufferData(GL_ARRAY_BUFFER, xx buf_size, null, GL_DYNAMIC_DRAW);
@@ -130,12 +130,12 @@ UIRenderer :: struct {
             // the pipeline state, so no per-frame glEnable/glDisable.
             self.gpu.set_shader(self.mtl_shader);
             self.gpu.set_vertex_buffer(self.mtl_vbuf);
-            self.gpu.set_vertex_constants(1, xx @proj.data[0], 64);
+            self.gpu.set_vertex_constants(1, xx *proj.data[0], 64);
             self.gpu.set_texture(0, font_texture);
         } else {
             // GL: bind everything for the frame.
             glUseProgram(self.shader);
-            glUniformMatrix4fv(self.proj_loc, 1, 0, @proj.data[0]);
+            glUniformMatrix4fv(self.proj_loc, 1, 0, *proj.data[0]);
             glUniform1i(self.tex_loc, 0);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, font_texture);
@@ -407,10 +407,10 @@ UIRenderer :: struct {
 
 create_white_texture :: () -> u32 {
     tex : u32 = 0;
-    glGenTextures(1, @tex);
+    glGenTextures(1, *tex);
     glBindTexture(GL_TEXTURE_2D, tex);
     pixel : [4]u8 = .[255, 255, 255, 255];
-    glTexImage2D(GL_TEXTURE_2D, 0, xx GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, @pixel);
+    glTexImage2D(GL_TEXTURE_2D, 0, xx GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, *pixel);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, xx GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, xx GL_NEAREST);
     tex

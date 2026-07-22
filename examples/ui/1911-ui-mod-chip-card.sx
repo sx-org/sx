@@ -39,8 +39,8 @@ show :: (v: View, tag: string) {
     bounds := Frame.make(0.0, 0.0, sz.width, sz.height);
     v.layout(bounds);
     tree := RenderTree.init();
-    ctx := RenderContext.init(@tree);
-    v.render(@ctx, bounds);
+    ctx := RenderContext.init(*tree);
+    v.render(*ctx, bounds);
     print("{} {}x{} nodes {}\n", tag, sz.width, sz.height, tree.nodes.len);
     i := 0;
     while i < tree.nodes.len {
@@ -53,7 +53,7 @@ main :: () {
     u := Ui.{};
 
     // Everything below runs in S2 value mode: ui set, no sink.
-    push .{ ui = @u } {
+    push .{ ui = *u } {
         // Zero-wrapper pin: a default Mod adds nothing — the returned View
         // IS the leaf, not a pass-through wrapper.
         plain := place(leaf());

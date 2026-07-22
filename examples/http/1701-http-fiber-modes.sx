@@ -56,7 +56,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         total : i64 = 0;
         h : i64 = 0;
         while true {
-            n := req.read_body(@scratch[0], 8192);
+            n := req.read_body(*scratch[0], 8192);
             if n <= 0 { break; }
             i : i64 = 0;
             while i < n { h = (h * 31 + scratch[i]) % 1000000007; i += 1; }
@@ -77,7 +77,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -121,7 +121,7 @@ num_after :: (hay: string, key: string) -> i64 {
 send_all :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
-        n, we := socket.write_nb(fd, @s.ptr[sent], xx (s.len - sent));
+        n, we := socket.write_nb(fd, *s.ptr[sent], xx (s.len - sent));
         if !we { sent += n; }
         srv.tick(1) catch {};
     }
@@ -132,7 +132,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     t : i64 = 0;
     while t < 20000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *rbuf[total], xx (cap - total));
         if !re { total += n; }
         else if re == error.Closed { return total; }
         resp := string.{ ptr = rbuf, len = xx total };
@@ -159,7 +159,7 @@ read_chunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     t : i64 = 0;
     while t < 200000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *rbuf[total], xx (cap - total));
         if !re { total += n; }
         else if re == error.Closed { return total; }
         if total >= 5
@@ -227,7 +227,7 @@ main :: () -> i32 {
             max_conn = 4,
             fibers = xx runner,          // fiber mode, ACCUMULATE bodies
         };
-        srv, se := http.Server.init(cfg, route, xx @chunky);
+        srv, se := http.Server.init(cfg, route, xx *chunky);
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: accumulate-fiber body + read_body cursor ──────────
@@ -241,16 +241,16 @@ main :: () -> i32 {
         }
         c1 := dial_port(PORT);
         if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 50000\r\n\r\n");
-        send_all(@srv, c1, string.{ ptr = body, len = SUM_LEN });
-        r1 := read_response(@srv, c1, rbuf, cap);
+        send_all(*srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 50000\r\n\r\n");
+        send_all(*srv, c1, string.{ ptr = body, len = SUM_LEN });
+        r1 := read_response(*srv, c1, rbuf, cap);
         resp1 := string.{ ptr = rbuf, len = xx r1 };
         if !contains(resp1, "HTTP/1.1 200 OK") { print("case1: no 200\n"); failed = 1; }
         if num_after(resp1, "len=") != SUM_LEN { print("case1: bad len {}\n", num_after(resp1, "len=")); failed = 1; }
         if num_after(resp1, "sum=") != sum { print("case1: bad sum\n"); failed = 1; }
 
         // ── case 2: HEAD through the fiber path — headers only ────────
-        send_all(@srv, c1, "HEAD /hello HTTP/1.1\r\nHost: t\r\n\r\n");
+        send_all(*srv, c1, "HEAD /hello HTTP/1.1\r\nHost: t\r\n\r\n");
         // a HEAD response is the header block alone: read until \r\n\r\n,
         // then a few extra ticks must produce NOTHING further
         h_total : i64 = 0;
@@ -258,7 +258,7 @@ main :: () -> i32 {
         t : i64 = 0;
         while t < 20000 and he < 0 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(c1, @rbuf[h_total], xx (cap - h_total));
+            n, re := socket.read_nb(c1, *rbuf[h_total], xx (cap - h_total));
             if !re { h_total += n; }
             k : i64 = 0;
             while k + 3 < h_total {
@@ -270,7 +270,7 @@ main :: () -> i32 {
         t = 0;
         while t < 50 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(c1, @rbuf[h_total], xx (cap - h_total));
+            n, re := socket.read_nb(c1, *rbuf[h_total], xx (cap - h_total));
             if !re { h_total += n; }
             t += 1;
         }
@@ -280,8 +280,8 @@ main :: () -> i32 {
         if he < 0 or h_total != he { print("case2: body bytes on a HEAD ({} past headers)\n", h_total - he); failed = 1; }
 
         // ── case 3: resp.stream from a fiber (inline producer contract) ──
-        send_all(@srv, c1, "GET /chunky HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
-        r3 := read_chunked(@srv, c1, rbuf, cap);
+        send_all(*srv, c1, "GET /chunky HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r3 := read_chunked(*srv, c1, rbuf, cap);
         resp3 := string.{ ptr = rbuf, len = xx r3 };
         if !contains(resp3, "HTTP/1.1 200 OK") { print("case3: no 200\n"); failed = 1; }
         if !contains(resp3, "Transfer-Encoding: chunked") { print("case3: not chunked\n"); failed = 1; }
@@ -292,7 +292,7 @@ main :: () -> i32 {
             i += 1;
         }
         if che < 0 { print("case3: no header end\n"); failed = 1; }
-        else if !dechunk_check(string.{ ptr = @rbuf[che], len = xx (r3 - che) }, 4242, CHUNKY_LEN) {
+        else if !dechunk_check(string.{ ptr = *rbuf[che], len = xx (r3 - che) }, 4242, CHUNKY_LEN) {
             print("case3: stream bytes wrong\n");
             failed = 1;
         }

@@ -47,7 +47,7 @@ callback_wrapper :: (userdata: *void, code: i64) -> bool abi(.c) {
 
 main :: () {
     pipe := Pipe.{ pw = 0, ph = 0, frame = 0 };
-    g_pipe = @pipe;
+    g_pipe = *pipe;
 
     callback_inline(xx 0, 320);
     callback_wrapper(xx 0, 640);

@@ -36,7 +36,7 @@ main :: () -> i32 {
     }
 
     // Dynamic index through an array field on a pointer receiver.
-    if lookup(@t, 17) != 17 { return 1; }
+    if lookup(*t, 17) != 17 { return 1; }
 
     // A side-effecting index expression runs exactly once per read.
     calls = 0;

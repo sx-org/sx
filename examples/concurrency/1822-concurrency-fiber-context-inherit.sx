@@ -23,9 +23,9 @@ Marker :: struct { id: i64; }
 main :: () -> i64 {
     mk := Marker.{ id = 7 };
     s := sched.Scheduler.init();
-    ps := @s;
+    ps := *s;
     print("outside: marker id = {}\n", mk.id);
-    push .{ marker = @mk } {
+    push .{ marker = *mk } {
         ps.spawn(() {
             m := context.marker!;                 // inherited from the spawn-time context
             print("inside fiber: context.marker id = {}\n", m.id);

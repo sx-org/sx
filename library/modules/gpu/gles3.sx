@@ -89,7 +89,7 @@ impl GPU for Gles3Gpu {
         self.parent_allocator = context.allocator;
 
         if !self.gl_loaded {
-            load_gl(@eglGetProcAddress);
+            load_gl(*eglGetProcAddress);
             self.gl_loaded = true;
         }
 
@@ -97,7 +97,7 @@ impl GPU for Gles3Gpu {
         // because `glVertexAttribPointer` captures the currently-bound
         // GL_ARRAY_BUFFER into the VAO state — we don't know which VBO
         // the renderer wants until it tells us via set_vertex_buffer.
-        glGenVertexArrays(1, @self.vao);
+        glGenVertexArrays(1, *self.vao);
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -149,7 +149,7 @@ impl GPU for Gles3Gpu {
         inline if OS != .android { return 0; }
         if size_bytes <= 0 { return 0; }
         b : u32 = 0;
-        glGenBuffers(1, @b);
+        glGenBuffers(1, *b);
         glBindBuffer(GL_ARRAY_BUFFER, b);
         glBufferData(GL_ARRAY_BUFFER, xx size_bytes, null, GL_DYNAMIC_DRAW);
         self.buffers.append(b, self.parent_allocator);
@@ -196,7 +196,7 @@ impl GPU for Gles3Gpu {
         }
 
         t : u32 = 0;
-        glGenTextures(1, @t);
+        glGenTextures(1, *t);
         glBindTexture(GL_TEXTURE_2D, t);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         glTexImage2D(GL_TEXTURE_2D, 0, internal_fmt, w, h, 0, ext_fmt, GL_UNSIGNED_BYTE, pixels);
@@ -239,7 +239,7 @@ impl GPU for Gles3Gpu {
         if h64 > self.textures.len { return; }
         t := self.textures.items[tex - 1].tex;
         if t == 0 { return; }
-        glDeleteTextures(1, @t);
+        glDeleteTextures(1, *t);
         self.textures.items[tex - 1].tex = 0;
     }
 

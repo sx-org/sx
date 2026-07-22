@@ -31,10 +31,10 @@ main :: () -> i32 {
     ba : Box(i64)  = .{ value = 7 };
     bb : Box(bool) = .{ value = true };
     bc : Box(f64)  = .{ value = 2.5 };
-    show_all(.{a = @ba, b = @bb, c = @bc});   // named tuple of *Box(..)
+    show_all(.{a = *ba, b = *bb, c = *bc});   // named tuple of *Box(..)
 
     p0 : Box(i64) = .{ value = 10 };
     p1 : Box(i64) = .{ value = 32 };
-    print("sum = {}\n", first_two(.{@p0, @p1}));  // positional, literal index
+    print("sum = {}\n", first_two(.{*p0, *p1}));  // positional, literal index
     return 0;
 }

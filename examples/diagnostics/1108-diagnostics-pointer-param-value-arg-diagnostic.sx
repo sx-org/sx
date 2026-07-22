@@ -14,5 +14,5 @@ forward :: (m: *Move) -> i64 { return take(m); }
 
 main :: () -> i32 {
     mv : Move = .{ flag = 7 };
-    return xx forward(@mv);
+    return xx forward(*mv);
 }

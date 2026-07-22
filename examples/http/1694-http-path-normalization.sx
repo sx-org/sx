@@ -36,7 +36,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -65,7 +65,7 @@ roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
             if !re { total += n; got += n; continue; }
             if re == error.Closed { done = true; }
             break;
@@ -131,37 +131,37 @@ main :: () -> i32 {
         req_arena := mem.Arena.init(gpa, 65536);
         push .{ allocator = req_arena } {
             // (a) percent-decode in the path
-            expect_path(@srv, "/a%20b", "/a b", "pct-decode", rbuf, cap, @failed);
+            expect_path(*srv, "/a%20b", "/a b", "pct-decode", rbuf, cap, *failed);
 
             // (b) dot segments collapse; the query survives UNdecoded
-            expect_path(@srv, "/a/./b/../c?x=%2F", "/a/c?x=%2F", "dots+query", rbuf, cap, @failed);
+            expect_path(*srv, "/a/./b/../c?x=%2F", "/a/c?x=%2F", "dots+query", rbuf, cap, *failed);
 
             // (c) %2e%2e must not smuggle a ".." past the normalizer
-            expect_400(@srv, "/%2e%2e/etc", "encoded traversal", rbuf, cap, @failed);
+            expect_400(*srv, "/%2e%2e/etc", "encoded traversal", rbuf, cap, *failed);
 
             // (d) ".." climbing above the root
-            expect_400(@srv, "/a/../../b", "above-root", rbuf, cap, @failed);
+            expect_400(*srv, "/a/../../b", "above-root", rbuf, cap, *failed);
 
             // (e) NUL
-            expect_400(@srv, "/a%00b", "pct-nul", rbuf, cap, @failed);
+            expect_400(*srv, "/a%00b", "pct-nul", rbuf, cap, *failed);
 
             // (f) encoded slash changes segmentation
-            expect_400(@srv, "/a%2Fb", "pct-slash", rbuf, cap, @failed);
+            expect_400(*srv, "/a%2Fb", "pct-slash", rbuf, cap, *failed);
 
             // (g) malformed escape
-            expect_400(@srv, "/a%zzb", "bad escape", rbuf, cap, @failed);
+            expect_400(*srv, "/a%zzb", "bad escape", rbuf, cap, *failed);
 
             // (h) decoded CRLF
-            expect_400(@srv, "/a%0D%0Ab", "pct-crlf", rbuf, cap, @failed);
+            expect_400(*srv, "/a%0D%0Ab", "pct-crlf", rbuf, cap, *failed);
 
             // (i) clean fast path is untouched
-            expect_path(@srv, "/plain", "/plain", "clean", rbuf, cap, @failed);
+            expect_path(*srv, "/plain", "/plain", "clean", rbuf, cap, *failed);
 
             // (j) "/a/.." is the root
-            expect_path(@srv, "/a/..", "/", "pop-to-root", rbuf, cap, @failed);
+            expect_path(*srv, "/a/..", "/", "pop-to-root", rbuf, cap, *failed);
 
             // (k) trailing "/." keeps the directory shape
-            expect_path(@srv, "/a/.", "/a/", "trailing-dot", rbuf, cap, @failed);
+            expect_path(*srv, "/a/.", "/a/", "trailing-dot", rbuf, cap, *failed);
         }
         req_arena.deinit();
 
@@ -172,8 +172,8 @@ main :: () -> i32 {
         cfgp : http.Config = .{ port = PORT_B, max_conn = 4, request_count = 10, thread_pool_count = 1 };
         srvp, spe := http.Server.init(cfgp, route, 0);
         if spe { print("pool init failed\n"); return 1; }
-        r := roundtrip(@srvp, PORT_B, "GET /x/%41/../y?k=%20 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "pooled status", @failed);
+        r := roundtrip(*srvp, PORT_B, "GET /x/%41/../y?k=%20 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "pooled status", *failed);
         // end-anchored: a rebuild that kept the OLD (pre-shrink) length
         // would leave a stale tail after the echo and fail this
         if !ends_with(r, "\r\n\r\np:/x/y?k=%20") {
@@ -184,8 +184,8 @@ main :: () -> i32 {
         // (m) absolute-form + encoded/dot path: path_off points into the
         // MIDDLE of the target; the rewrite must leave the authority (and
         // everything after the target) intact
-        r = roundtrip(@srvp, PORT_B, "GET http://h:8080/a%20b/./z/../c?q=%2F HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "absolute-form status", @failed);
+        r = roundtrip(*srvp, PORT_B, "GET http://h:8080/a%20b/./z/../c?q=%2F HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "absolute-form status", *failed);
         if !ends_with(r, "\r\n\r\np:/a b/c?q=%2F") {
             print("absolute-form canonical path: body mismatch\n");
             failed = 1;

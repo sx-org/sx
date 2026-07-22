@@ -18,7 +18,7 @@ main :: () -> i32 {
     print("t = ({}, {}, {})\n", t.a, t.b, t.c);
 
     // Address-of an element, write through the pointer.
-    p := @t[1];
+    p := *t[1];
     p.* = 200;
     print("t.b via @t[1] = {}\n", t.b);
 
@@ -27,7 +27,7 @@ main :: () -> i32 {
     // i-th element is a `*Box`, and `.value` writes through it to the pointee.
     ba : Box(i64)  = .{ value = 0 };
     bb : Box(bool) = .{ value = false };
-    handles := .{x = @ba, y = @bb};
+    handles := .{x = *ba, y = *bb};
     handles[0].value = 7;
     handles[1].value = true;
     print("ba.value = {}, bb.value = {}\n", ba.value, bb.value);

@@ -43,9 +43,9 @@ main :: () -> i64 {
     // Atomics — lowered to atomic ops. `.seq_cst` is an enum literal inferred
     // from the intrinsic's own signature, so even `Ordering` needs no import.
     x : i64 = 5;
-    atomic_store(i64, @x, 7, .seq_cst);
-    bad = bad + check("atomic_load", atomic_load(i64, @x, .seq_cst), 7);
-    bad = bad + check("atomic_fetch_add", atomic_fetch_add(i64, @x, 3, .seq_cst), 7);
+    atomic_store(i64, *x, 7, .seq_cst);
+    bad = bad + check("atomic_load", atomic_load(i64, *x, .seq_cst), 7);
+    bad = bad + check("atomic_fetch_add", atomic_fetch_add(i64, *x, 3, .seq_cst), 7);
     bad = bad + check("after fetch_add", x, 10);
 
     // A non-zero exit means some intrinsic did not resolve or answered wrong.

@@ -252,7 +252,7 @@ sx_android_detach_window :: (plat: *AndroidPlatform) {
 // Monotonic clock for frame pacing (CLOCK_MONOTONIC = 1).
 android_now_ns :: () -> i64 {
     ts : c.Timespec = ---;
-    c.clock_gettime(1, @ts);
+    c.clock_gettime(1, *ts);
     ts.sec * 1000000000 + ts.nsec
 }
 
@@ -282,7 +282,7 @@ sx_android_refresh_rate :: (env: *void, activity: *JContext) -> f32 {
 sx_android_start_render_thread :: (plat: *AndroidPlatform, entry_fn: () -> void) {
     if plat.render_thread_started { return; }
     plat.user_main_fn = entry_fn;
-    c.pthread_create(@plat.render_thread, null, sx_android_render_thread_entry, xx plat);
+    c.pthread_create(*plat.render_thread, null, sx_android_render_thread_entry, xx plat);
     plat.render_thread_started = true;
 }
 
@@ -314,7 +314,7 @@ sx_android_egl_init :: (plat: *AndroidPlatform) -> bool {
 
     major : i32 = 0;
     minor : i32 = 0;
-    if eglInitialize(plat.egl_display, @major, @minor) == EGL_FALSE { return false; }
+    if eglInitialize(plat.egl_display, *major, *minor) == EGL_FALSE { return false; }
 
     cfg_attrs : [13]i32 = .{
         EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
@@ -326,15 +326,15 @@ sx_android_egl_init :: (plat: *AndroidPlatform) -> bool {
         EGL_NONE,
     };
     num_cfg : i32 = 0;
-    if eglChooseConfig(plat.egl_display, @cfg_attrs[0], @plat.egl_config, 1, @num_cfg) == EGL_FALSE { return false; }
+    if eglChooseConfig(plat.egl_display, *cfg_attrs[0], *plat.egl_config, 1, *num_cfg) == EGL_FALSE { return false; }
     if num_cfg < 1 { return false; }
 
     visual_id : i32 = 0;
-    eglGetConfigAttrib(plat.egl_display, plat.egl_config, EGL_NATIVE_VISUAL_ID, @visual_id);
+    eglGetConfigAttrib(plat.egl_display, plat.egl_config, EGL_NATIVE_VISUAL_ID, *visual_id);
     ANativeWindow_setBuffersGeometry(plat.app_window, 0, 0, visual_id);
 
     ctx_attrs : [3]i32 = .{ EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE };
-    plat.egl_context = eglCreateContext(plat.egl_display, plat.egl_config, EGL_NO_CONTEXT, @ctx_attrs[0]);
+    plat.egl_context = eglCreateContext(plat.egl_display, plat.egl_config, EGL_NO_CONTEXT, *ctx_attrs[0]);
     if plat.egl_context == EGL_NO_CONTEXT { return false; }
 
     plat.egl_surface = eglCreateWindowSurface(plat.egl_display, plat.egl_config, plat.app_window, null);
@@ -367,18 +367,18 @@ sx_android_recompute_scale :: (plat: *AndroidPlatform) {
 
 sx_android_push_touch :: (plat: *AndroidPlatform, action: i32, x: f32, y: f32) {
     sx_android_ensure_touch_mutex(plat);
-    c.pthread_mutex_lock(@plat.touch_mutex);
+    c.pthread_mutex_lock(*plat.touch_mutex);
     next := (plat.touch_tail + 1) % 64;
     if next != plat.touch_head { // drop on full
         plat.touch_queue[plat.touch_tail] = TouchEvent.{ action = action, x = x, y = y };
         plat.touch_tail = next;
     }
-    c.pthread_mutex_unlock(@plat.touch_mutex);
+    c.pthread_mutex_unlock(*plat.touch_mutex);
 }
 
 sx_android_drain_touches :: (plat: *AndroidPlatform, out: *List(Event)) {
     sx_android_ensure_touch_mutex(plat);
-    c.pthread_mutex_lock(@plat.touch_mutex);
+    c.pthread_mutex_lock(*plat.touch_mutex);
     inv : f32 = if plat.dpi_scale > 0.0 then 1.0 / plat.dpi_scale else 1.0;
     while plat.touch_head != plat.touch_tail {
         t := plat.touch_queue[plat.touch_head];
@@ -397,12 +397,12 @@ sx_android_drain_touches :: (plat: *AndroidPlatform, out: *List(Event)) {
             out.append(.mouse_moved(.{ position = pos, delta = .{ x = 0, y = 0 } }));
         }
     }
-    c.pthread_mutex_unlock(@plat.touch_mutex);
+    c.pthread_mutex_unlock(*plat.touch_mutex);
 }
 
 sx_android_ensure_touch_mutex :: (plat: *AndroidPlatform) {
     if plat.touch_mutex_inited { return; }
-    c.pthread_mutex_init(@plat.touch_mutex, null);
+    c.pthread_mutex_init(*plat.touch_mutex, null);
     plat.touch_mutex_inited = true;
 }
 
@@ -448,7 +448,7 @@ impl Platform for AndroidPlatform {
 
     poll_events :: (self: *AndroidPlatform) -> []Event {
         self.events.len = 0;
-        sx_android_drain_touches(self, @self.events);
+        sx_android_drain_touches(self, *self.events);
         result : []Event = ---;
         result.ptr = self.events.items.ptr;
         result.len = self.events.len;

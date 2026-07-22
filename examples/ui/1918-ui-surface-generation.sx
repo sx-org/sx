@@ -20,7 +20,7 @@ bump :: () {
 
 build_in :: (r: *UiRoot) {
     r.begin_build();
-    push .{ ui = @r.ui, ui_store = @r.store } {
+    push .{ ui = *r.ui, ui_store = *r.store } {
         bump();
     }
     r.commit_build();

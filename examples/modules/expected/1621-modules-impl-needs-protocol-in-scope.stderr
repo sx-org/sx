@@ -3,7 +3,7 @@ error: unknown protocol 'Into' in impl — not declared or imported in this modu
    |
  9 | impl Into(*DeadBox) for string {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-10 |     convert :: (self: string) -> *DeadBox { return @g_dead; }
+10 |     convert :: (self: string) -> *DeadBox { return *g_dead; }
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 11 | }
    | ^

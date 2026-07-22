@@ -31,8 +31,8 @@ count :: (n: *List) -> i64 {
 
 main :: () -> i32 {
     a : List = .nil;
-    b : List = .cons(@a);
-    c : List = .cons(@b);
+    b : List = .cons(*a);
+    c : List = .cons(*b);
 
     // Match the payload pointer directly (match auto-derefs).
     if c == {
@@ -45,6 +45,6 @@ main :: () -> i32 {
         case .nil: { print("c is nil\n"); }
     }
 
-    print("len = {}\n", count(@c));
+    print("len = {}\n", count(*c));
     return 0;
 }

@@ -39,7 +39,7 @@ main :: () {
     print("aliased       = {}\n", p.v);
 
     lv : *P = null;
-    lv = @c;                           // address-of a local — view assignment
+    lv = *c;                           // address-of a local — view assignment
     print("lvalue assign = {}\n", lv.n());
 
     context.allocator.dealloc_bytes(xx p);

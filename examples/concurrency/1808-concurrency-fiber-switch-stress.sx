@@ -221,8 +221,8 @@ T,
 fib_tramp :: () extern;
 
 fib_body :: (self: *Fiber) export "fib_body" {
-    self.mismatches = scribble_verify(@self.ctx, self.peer, self.base);
-    swap_context(@self.ctx, self.next);
+    self.mismatches = scribble_verify(*self.ctx, self.peer, self.base);
+    swap_context(*self.ctx, self.next);
 }
 
 STACK :: 131072;
@@ -246,10 +246,10 @@ main :: () -> i64 {
     main_ctx : FiberCtx = ---;
     a : Fiber = ---;  a.base = 0x5000;
     b : Fiber = ---;  b.base = 0x6000;
-    a.peer = @b.ctx;  a.next = @b.ctx;     // A yields to B, then hands B the baton
-    b.peer = @a.ctx;  b.next = @main_ctx;  // B yields to A, then returns to main
-    boot(@a);  boot(@b);
-    swap_context(@main_ctx, @a.ctx);
+    a.peer = *b.ctx;  a.next = *b.ctx;     // A yields to B, then hands B the baton
+    b.peer = *a.ctx;  b.next = *main_ctx;  // B yields to A, then returns to main
+    boot(*a);  boot(*b);
+    swap_context(*main_ctx, *a.ctx);
     print("A mismatches: {}\n", a.mismatches);   // 0 — every callee-saved survived
     print("B mismatches: {}\n", b.mismatches);   // 0
     return 0;

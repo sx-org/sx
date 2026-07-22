@@ -31,7 +31,7 @@ main :: () {
     _ = use_val(w);             // implicit lvalue call arg → demand
     h : Holder = .{ s = w };    // implicit lvalue struct field → demand
     _ = h;
-    pw : *W = @w;
+    pw : *W = *w;
     c : Sizable = xx pw;        // pointer-to-concrete at a P target → demand
     _ = c;
 

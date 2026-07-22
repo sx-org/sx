@@ -34,7 +34,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1, per-OS layout
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -80,7 +80,7 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
     out : string = "";
     while tries < 400 {
         srv.tick(5) catch {};
-        n, re := socket.read_nb(fd, @scratch[total], xx (4096 - total));
+        n, re := socket.read_nb(fd, *scratch[total], xx (4096 - total));
         if !re { total += n; }
         else if re == error.Closed { out = string.{ ptr = scratch, len = xx total }; break; }
         if resp_complete(scratch, total) { out = string.{ ptr = scratch, len = xx total }; break; }
@@ -106,28 +106,28 @@ main :: () -> i32 {
     buf : [4096]u8 = ---;
 
     // ── valid request still 200 (no false positives) ──────────────────
-    r := roundtrip(@srv, "GET /ok HTTP/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    r := roundtrip(*srv, "GET /ok HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r, "HTTP/1.1 200 OK") { print("valid: expected 200\n"); return 1; }
     print("valid GET -> 200\n");
 
     // ── overflowing Content-Length → 400 (would wrap i64) ─────────────
-    r = roundtrip(@srv, "POST /ok HTTP/1.1\r\nHost: t\r\nContent-Length: 99999999999999999999\r\n\r\n", @buf[0]);
+    r = roundtrip(*srv, "POST /ok HTTP/1.1\r\nHost: t\r\nContent-Length: 99999999999999999999\r\n\r\n", *buf[0]);
     if !contains(r, "HTTP/1.1 400 Bad Request") { print("overflow CL: expected 400\n"); return 1; }
     print("overflow Content-Length -> 400\n");
 
     // ── duplicate / conflicting Content-Length → 400 ──────────────────
-    r = roundtrip(@srv, "POST /ok HTTP/1.1\r\nHost: t\r\nContent-Length: 3\r\nContent-Length: 5\r\n\r\nabc", @buf[0]);
+    r = roundtrip(*srv, "POST /ok HTTP/1.1\r\nHost: t\r\nContent-Length: 3\r\nContent-Length: 5\r\n\r\nabc", *buf[0]);
     if !contains(r, "HTTP/1.1 400 Bad Request") { print("dup CL: expected 400\n"); return 1; }
     print("duplicate Content-Length -> 400\n");
 
     // ── valid Transfer-Encoding: chunked → 200 (S2: chunked is DECODED) ─
     //    "5\r\nhello\r\n0\r\n\r\n" → body "hello"; handler returns 200.
-    r = roundtrip(@srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n", @buf[0]);
+    r = roundtrip(*srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n", *buf[0]);
     if !contains(r, "HTTP/1.1 200 OK") { print("TE chunked: expected 200\n"); return 1; }
     print("Transfer-Encoding: chunked -> 200 (decoded)\n");
 
     // ── CL + TE together → 400 (classic CL.TE / TE.CL smuggling pair) ───
-    r = roundtrip(@srv, "POST /ok HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n", @buf[0]);
+    r = roundtrip(*srv, "POST /ok HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n", *buf[0]);
     if !contains(r, "HTTP/1.1 400 Bad Request") { print("CL+TE: expected 400\n"); return 1; }
     print("Content-Length + Transfer-Encoding -> 400\n");
 
@@ -136,45 +136,45 @@ main :: () -> i32 {
     //    gzip` (RFC 7230 §3.3.1) — chunked is no longer final. find_header
     //    sees only the first (`chunked`); honoring the second would reframe
     //    the body → request smuggling, so reject outright.
-    r = roundtrip(@srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: gzip\r\n\r\n0\r\n\r\n", @buf[0]);
+    r = roundtrip(*srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: gzip\r\n\r\n0\r\n\r\n", *buf[0]);
     if !contains(r, "HTTP/1.1 400 Bad Request") { print("dup TE: expected 400\n"); return 1; }
     print("duplicate Transfer-Encoding -> 400\n");
 
     // ── non-chunked TE (gzip) → 501 (still unimplemented; not bodyless) ─
-    r = roundtrip(@srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: gzip\r\n\r\n", @buf[0]);
+    r = roundtrip(*srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: gzip\r\n\r\n", *buf[0]);
     if !contains(r, "HTTP/1.1 501 Not Implemented") { print("TE gzip: expected 501\n"); return 1; }
     print("Transfer-Encoding: gzip -> 501\n");
 
     // ── TE with EMPTY value → 501 (presence, not value length: an empty
     //    coding is not `chunked`, so it is unimplemented, never bodyless). ─
-    r = roundtrip(@srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding:\r\n\r\n", @buf[0]);
+    r = roundtrip(*srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding:\r\n\r\n", *buf[0]);
     if !contains(r, "HTTP/1.1 501 Not Implemented") { print("TE empty: expected 501\n"); return 1; }
     print("Transfer-Encoding empty value -> 501\n");
 
     // ── TE with SPACES-ONLY value → 501 (same rule) ─────────────────────
-    r = roundtrip(@srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding:   \r\n\r\n", @buf[0]);
+    r = roundtrip(*srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding:   \r\n\r\n", *buf[0]);
     if !contains(r, "HTTP/1.1 501 Not Implemented") { print("TE spaces: expected 501\n"); return 1; }
     print("Transfer-Encoding spaces-only value -> 501\n");
 
     // ── whitespace BEFORE the colon → 400 (RFC 7230 §3.2.4). Closes the
     //    "Transfer-Encoding : chunked" bypass generally, for ALL headers. ─
-    r = roundtrip(@srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding : chunked\r\nContent-Length: 5\r\n\r\nhello", @buf[0]);
+    r = roundtrip(*srv, "POST /ok HTTP/1.1\r\nHost: t\r\nTransfer-Encoding : chunked\r\nContent-Length: 5\r\n\r\nhello", *buf[0]);
     if !contains(r, "HTTP/1.1 400 Bad Request") { print("TE WS-before-colon: expected 400\n"); return 1; }
     print("whitespace before colon -> 400\n");
 
     // ── valid header VALUE with colons / spaces still 200 (no WS-before-
     //    colon false positive: only field-name -> ':' is inspected). ──────
-    r = roundtrip(@srv, "GET /ok HTTP/1.1\r\nHost: example.com:8080\r\nDate: Mon, 01 Jan 2024 00:00:00 GMT\r\n\r\n", @buf[0]);
+    r = roundtrip(*srv, "GET /ok HTTP/1.1\r\nHost: example.com:8080\r\nDate: Mon, 01 Jan 2024 00:00:00 GMT\r\n\r\n", *buf[0]);
     if !contains(r, "HTTP/1.1 200 OK") { print("value-with-colon: expected 200\n"); return 1; }
     print("header value with colon/spaces -> 200\n");
 
     // ── unsupported (well-formed) HTTP version → 505 (Q0.7) ───────────
-    r = roundtrip(@srv, "GET /ok HTTP/2.0\r\nHost: t\r\n\r\n", @buf[0]);
+    r = roundtrip(*srv, "GET /ok HTTP/2.0\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r, "HTTP/1.1 505 HTTP Version Not Supported") { print("unsupported version: expected 505\n"); return 1; }
     print("unsupported HTTP version -> 505\n");
 
     // ── malformed version token → 400 ─────────────────────────────────
-    r = roundtrip(@srv, "GET /ok FOO/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    r = roundtrip(*srv, "GET /ok FOO/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r, "HTTP/1.1 400 Bad Request") { print("garbage version: expected 400\n"); return 1; }
     print("malformed HTTP version -> 400\n");
 
@@ -183,7 +183,7 @@ main :: () -> i32 {
     f := 0;
     while f < 700 { big[f] = 120; f += 1; }   // 'x'
     longline := concat("GET /ok HTTP/1.1\r\nX-Big: ", concat(string.{ ptr = big, len = 700 }, "\r\n\r\n"));
-    r = roundtrip(@srv, longline, @buf[0]);
+    r = roundtrip(*srv, longline, *buf[0]);
     if !contains(r, "HTTP/1.1 431 Request Header Fields Too Large") { print("long header: expected 431\n"); return 1; }
     print("over-long header line -> 431\n");
 
@@ -192,7 +192,7 @@ main :: () -> i32 {
     g := 0;
     while g < 40 { many = concat(many, "X-H: v\r\n"); g += 1; }
     many = concat(many, "\r\n");
-    r = roundtrip(@srv, many, @buf[0]);
+    r = roundtrip(*srv, many, *buf[0]);
     if !contains(r, "HTTP/1.1 431 Request Header Fields Too Large") { print("many headers: expected 431\n"); return 1; }
     print("too many headers -> 431\n");
 

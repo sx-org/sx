@@ -11,7 +11,7 @@ poke :: () -> i64 {
         mov x9, #42
         str x9, %[out]
 ASM,
-        [out] "=*m" -> @x,
+        [out] "=*m" -> *x,
         clobbers(.x9),
     };
     return x;   // 42 — written through the pointer

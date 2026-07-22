@@ -226,7 +226,7 @@ Scheduler :: struct {
             c.abort();
         }
         cur.state = .ready;
-        swap_context(@cur.ctx, @self.sched_ctx);
+        swap_context(*cur.ctx, *self.sched_ctx);
     }
 
     // The running fiber parks itself: mark suspended, switch back to the
@@ -243,7 +243,7 @@ Scheduler :: struct {
         }
         cur.state = .suspended;
         self.n_suspended = self.n_suspended + 1;
-        swap_context(@cur.ctx, @self.sched_ctx);
+        swap_context(*cur.ctx, *self.sched_ctx);
     }
 
     // Re-ready a parked (suspended) fiber and enqueue it. Called from outside
@@ -423,7 +423,7 @@ Scheduler :: struct {
                 f := dequeue(self);
                 self.current = f;
                 f.state = .running;
-                swap_context(@self.sched_ctx, @f.ctx);   // returns here when f yields / suspends / finishes
+                swap_context(*self.sched_ctx, *f.ctx);   // returns here when f yields / suspends / finishes
                 self.current = null;
                 if f.state == .done {
                     // We've switched OFF f's stack already (the final swap landed
@@ -464,7 +464,7 @@ Scheduler :: struct {
                 inline if OS == {
                     case .linux: {
                         evbuf : [MAXEV]ep.EpollEvent = ---;
-                        n := ep.ep_wait(self.kq, .{ ptr = @evbuf[0], len = MAXEV }, MAXEV, -1);
+                        n := ep.ep_wait(self.kq, .{ ptr = *evbuf[0], len = MAXEV }, MAXEV, -1);
                         if n < 0 {
                             print("sched: epoll_wait() failed while blocking on fd readiness\n");
                             c.abort();
@@ -482,7 +482,7 @@ Scheduler :: struct {
                     }
                     case .macos: {
                         evbuf : [MAXEV]kqb.Kevent = ---;
-                        n := kqb.kq_wait(self.kq, @evbuf[0], MAXEV, -1);
+                        n := kqb.kq_wait(self.kq, *evbuf[0], MAXEV, -1);
                         if n < 0 {
                             print("sched: kevent() wait failed while blocking on fd readiness\n");
                             c.abort();
@@ -696,7 +696,7 @@ impl Io for Scheduler {
             f := dequeue(self);
             self.current = f;
             f.state = .running;
-            swap_context(@self.sched_ctx, @f.ctx);
+            swap_context(*self.sched_ctx, *f.ctx);
             self.current = null;
             if f.state == .done {
                 reap_fiber(self, f);
@@ -844,7 +844,7 @@ fib_dispatch :: (self: *Fiber) abi(.c) {
     // `__sx_default_context` this `abi(.c)` frame would otherwise leave in force.
     push self.dctx { self.body(); }
     self.state = .done;
-    swap_context(@self.ctx, @self.sched.sched_ctx);
+    swap_context(*self.ctx, *self.sched.sched_ctx);
 }
 
 // --- guarded stack bootstrap ----------------------------------------------
@@ -1122,7 +1122,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
         // The coordinator is the user's fiber (no cancel flag), so `suspend_raw`
         // never raises here; the `catch {}` just discards the `!` for the type.
         pk : ParkToken = .{ handle = null };
-        io.suspend_raw(@pk) catch {};
+        io.suspend_raw(*pk) catch {};
         inline for 0..struct_field_count(T) (i) {
             if futures[i].park.handle == me.handle { futures[i].park.handle = null; }
         }

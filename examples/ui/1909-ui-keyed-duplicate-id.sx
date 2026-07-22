@@ -10,7 +10,7 @@ Chat :: struct { id: i64; }
 main :: () {
     u := Ui.{};
     store := StateStore.init(.{ value = 1 });
-    push .{ ui = @u, ui_store = @store } {
+    push .{ ui = *u, ui_store = *store } {
         store.begin_build(); u.begin_build();
         a := Chat.{ id = 7 }; b := Chat.{ id = 7 };
         chats : []Chat = .[a, b];

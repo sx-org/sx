@@ -33,14 +33,14 @@ make_box :: (parent_alloc: Allocator, size: i64) -> *Box {
 main :: () -> i32 {
     g_gpa : GPA = .{ alloc_count = 0 };
 
-    a : Allocator = xx @g_gpa;
+    a : Allocator = xx *g_gpa;
     b1 := Box.init(a, 64);
     print("Box.init (named-var):  ok\n");
 
-    b2 := make_box(xx @g_gpa, 64);
+    b2 := make_box(xx *g_gpa, 64);
     print("make_box (inline-xx):  ok\n");
 
-    b3 := Box.init(xx @g_gpa, 64);
+    b3 := Box.init(xx *g_gpa, 64);
     print("Box.init (inline-xx):  ok\n");
 
     0

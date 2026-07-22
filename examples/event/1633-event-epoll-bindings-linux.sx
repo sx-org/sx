@@ -19,7 +19,7 @@ main :: () -> i32 {
     ep.ep_ctl(epfd, ep.EPOLL_CTL_MOD, 1, ep.EPOLLIN | ep.EPOLLOUT);
 
     evs : [8]ep.EpollEvent = ---;
-    sl : []ep.EpollEvent = .{ ptr = @evs[0], len = 8 };
+    sl : []ep.EpollEvent = .{ ptr = *evs[0], len = 8 };
     n := ep.ep_wait(epfd, sl, 8, 100);
     if n > 0 {
         if ep.ev_readable(evs[0]) { return ep.ev_fd(evs[0]); }

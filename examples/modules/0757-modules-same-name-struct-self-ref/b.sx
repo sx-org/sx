@@ -6,7 +6,7 @@
 Box :: struct { y: i64; next: *Box; }
 b_chain :: () -> i64 {
     tail := Box.{ y = 42, next = null };
-    head := Box.{ y = 1, next = @tail };
+    head := Box.{ y = 1, next = *tail };
     // Walk the self-referential link; reads B's own `y`, not A's `x`.
     return head.next.*.y;
 }

@@ -76,7 +76,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -182,7 +182,7 @@ main :: () -> i32 {
                 done := false;
                 while tries < 200000 and !done {
                     srv.tick(2) catch {};
-                    n, re := socket.read_nb(c1, @rbuf[total], xx (cap - total));
+                    n, re := socket.read_nb(c1, *rbuf[total], xx (cap - total));
                     if !re { total += n; }
                     else if re == error.Closed { break; }
                     if chunked_complete(rbuf, total) { done = true; }
@@ -221,7 +221,7 @@ main :: () -> i32 {
                     got := false;
                     while tries < 4000 and !got {
                         srv.tick(2) catch {};
-                        n, re := socket.read_nb(c2, @rbuf[total], xx (cap - total));
+                        n, re := socket.read_nb(c2, *rbuf[total], xx (cap - total));
                         if !re { total += n; }
                         else if re == error.Closed { break; }
                         s := string.{ ptr = rbuf, len = xx total };
@@ -250,7 +250,7 @@ main :: () -> i32 {
                     done := false;
                     while tries < 200000 and !done {
                         srv.tick(2) catch {};
-                        n, re := socket.read_nb(c3, @rbuf[total], xx (cap - total));
+                        n, re := socket.read_nb(c3, *rbuf[total], xx (cap - total));
                         if !re { total += n; }
                         else if re == error.Closed { break; }
                         if chunked_complete(rbuf, total) { done = true; }
@@ -271,7 +271,7 @@ main :: () -> i32 {
                         got := false;
                         while tries < 4000 and !got {
                             srv.tick(2) catch {};
-                            n, re := socket.read_nb(c3, @rbuf[total], xx (cap - total));
+                            n, re := socket.read_nb(c3, *rbuf[total], xx (cap - total));
                             if !re { total += n; }
                             else if re == error.Closed { break; }
                             s := string.{ ptr = rbuf, len = xx total };

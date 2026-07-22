@@ -15,7 +15,7 @@ sched :: #import "modules/std/sched.sx";
 
 main :: () -> i64 {
     s := sched.Scheduler.init();
-    ps := @s;
+    ps := *s;
     push .{ io = xx s } {
         ps.spawn(() {
             a := context.io.async(() -> (i64, !) { try context.io.sleep(5);  raise error.Boom; });

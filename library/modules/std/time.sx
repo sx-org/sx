@@ -40,14 +40,14 @@ inline if OS == {
 // Wall clock as unix epoch seconds.
 now_secs :: () -> i64 {
     ts : Timespec = .{};
-    c.clock_gettime(CLOCK_REALTIME, @ts);
+    c.clock_gettime(CLOCK_REALTIME, *ts);
     return ts.sec;
 }
 
 // Monotonic milliseconds since an arbitrary process-local origin.
 mono_ms :: () -> i64 {
     ts : Timespec = .{};
-    c.clock_gettime(CLOCK_MONOTONIC, @ts);
+    c.clock_gettime(CLOCK_MONOTONIC, *ts);
     return ts.sec * 1000 + ts.nsec / 1000000;
 }
 
@@ -72,8 +72,8 @@ local_civil :: (unix_seconds: i64) -> (CivilTime, bool) {
     broken : c.Tm = .{};
     valid := false;
     inline if OS == {
-        case .windows: valid = c.localtime_s(@broken, @value) == 0;
-        else: valid = c.localtime_r(@value, @broken) != null;
+        case .windows: valid = c.localtime_s(*broken, *value) == 0;
+        else: valid = c.localtime_r(*value, *broken) != null;
     }
     if !valid { return CivilTime.{}, false; }
     civil := CivilTime.{
@@ -98,6 +98,6 @@ local_epoch :: (civil: CivilTime) -> (i64, bool) {
     broken.hour = civil.hour.(i32);
     broken.min = civil.minute.(i32);
     broken.sec = civil.second.(i32);
-    seconds := c.mktime(@broken);
+    seconds := c.mktime(*broken);
     return seconds, seconds != -1;
 }

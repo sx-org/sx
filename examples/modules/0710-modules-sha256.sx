@@ -11,7 +11,7 @@
 #import "modules/std/hash.sx";
 
 check :: (label: string, got: [64]u8, want: string) {
-    view := string.{ ptr = @got[0], len = 64 };
+    view := string.{ ptr = *got[0], len = 64 };
     if view == want {
         print("{}: ok\n", label);
     } else {

@@ -12,7 +12,7 @@ main :: () -> i64 {
     a : [4]i64 = .[5, 6, 7, 8];
 
     // Slice a many-pointer with explicit bounds.
-    mp : [*]i64 = xx @a[0];
+    mp : [*]i64 = xx *a[0];
     s := mp[1..4];                       // { &a[1], len 3 }
     print("mp[1..4]: len={} [{} {} {}]\n", s.len, s[0], s[1], s[2]);  // 3 [6 7 8]
 

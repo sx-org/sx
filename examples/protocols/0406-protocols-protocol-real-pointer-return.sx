@@ -16,7 +16,7 @@ Impl :: struct {
 
 impl Proto for Impl {
   get :: (self: *Impl) -> *u8 {
-    @self.val
+    *self.val
   }
 }
 

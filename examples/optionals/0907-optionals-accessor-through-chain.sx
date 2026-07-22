@@ -31,7 +31,7 @@ main :: () -> i64 {
     print("?T getter: {}\n", ot?.doubled ?? -1);     // 8
 
     // pointer optional ?*T — getter through chain
-    pt : ?*Temp = @t;
+    pt : ?*Temp = *t;
     print("?*T getter: {}\n", pt?.doubled ?? -1);     // 8
 
     // null receiver short-circuits
@@ -44,13 +44,13 @@ main :: () -> i64 {
     // generic-instance getter (List.len) through chain
     xs : List(i64) = .{};
     xs.append(10); xs.append(20); xs.append(30);
-    pxs : ?*List(i64) = @xs;
+    pxs : ?*List(i64) = *xs;
     print("?*List len: {}\n", pxs?.len ?? -1);        // 3
 
     // COLD user generic getter through chain (no direct call first): concrete
     // return and type-parameter return, via ?*Cell and ?Cell.
     c := Cell(i64).{ slot = 99, n = 5 };
-    pc : ?*Cell(i64) = @c;
+    pc : ?*Cell(i64) = *c;
     print("cold ?*Cell count: {}\n", pc?.count ?? -1);  // 5
     print("cold ?*Cell head: {}\n", pc?.head ?? -1);    // 99
     oc : ?Cell(i64) = c;

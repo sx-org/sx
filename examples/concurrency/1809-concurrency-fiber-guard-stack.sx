@@ -74,7 +74,7 @@ sum_to :: (n: i64) -> i64 {
 
 fib_body :: (self: *Fiber) export "fib_body" {
     self.out = sum_to(200);     // 200*201/2 = 20100
-    swap_context(@self.ctx, self.finish);
+    swap_context(*self.ctx, self.finish);
 }
 
 // mmap a [guard | usable-stack] region and mprotect the low guard page
@@ -91,13 +91,13 @@ guarded_stack :: (f: *Fiber, size: i64) -> u64 {
 
 main :: () -> i64 {
     main_ctx : FiberCtx = ---;
-    f : Fiber = ---;  f.finish = @main_ctx;  f.out = -1;  f.guard_ok = 0;
-    top := guarded_stack(@f, STACK);
-    f.ctx.regs[0]  = xx @f;
+    f : Fiber = ---;  f.finish = *main_ctx;  f.out = -1;  f.guard_ok = 0;
+    top := guarded_stack(*f, STACK);
+    f.ctx.regs[0]  = xx *f;
     f.ctx.regs[10] = 0;
     f.ctx.regs[11] = xx fib_tramp;
     f.ctx.regs[12] = top;
-    swap_context(@main_ctx, @f.ctx);
+    swap_context(*main_ctx, *f.ctx);
     print("guard armed: {}\n", f.guard_ok);   // 1 — mprotect(PROT_NONE) succeeded
     print("sum: {}\n", f.out);                // 20100 — fiber ran on the guarded stack
     return 0;

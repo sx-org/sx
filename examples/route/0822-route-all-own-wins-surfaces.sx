@@ -20,7 +20,7 @@ main :: () -> i32 {
     own.m = 10;
 
     // *Named wrapper-alias element own-wins
-    bp : BoxPtr = @own;
+    bp : BoxPtr = *own;
 
     // tuple element own-wins
     t : Tuple(Box, i32) = ---;

@@ -19,7 +19,7 @@ main :: () -> i32 {
     a.items[1].set();                          // direct: must mutate the slot
     print("direct = {}\n", a.items[1].flag);   // true
 
-    p := @a.items[1];
+    p := *a.items[1];
     p.set();                                   // via explicit pointer
     print("ptr    = {}\n", a.items[1].flag);   // true
     0

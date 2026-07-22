@@ -30,7 +30,7 @@ main :: () -> i32 {
     ascent : i32 = 0;
     descent : i32 = 0;
     linegap : i32 = 0;
-    tt.stbtt_GetFontVMetrics(info, @ascent, @descent, @linegap);
+    tt.stbtt_GetFontVMetrics(info, *ascent, *descent, *linegap);
     print("ascent > 0, descent < 0: {} {}\n", ascent > 0, descent < 0);
     0
 }

@@ -47,8 +47,8 @@ screen :: () -> View {
 main :: () {
     loop := FrameLoop.init();
     root := UiRoot.init(.{ value = 2 });
-    loop.tick(@root, screen, 320.0, 240.0);
-    s := loop.tick(@root, screen, 320.0, 240.0);
+    loop.tick(*root, screen, 320.0, 240.0);
+    s := loop.tick(*root, screen, 320.0, 240.0);
     print("entries {}\n", root.store.entries.len);
     dump_snapshot(s);
     loop.deinit();

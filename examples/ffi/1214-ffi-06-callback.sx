@@ -51,7 +51,7 @@ main :: () -> i32 {
 
     // ── Two-arg callback with opaque ctx pointer ───────────────────
     ctx_val : i32 = 100;
-    r2 := ffi_apply_callback2(add_with_ctx, xx @ctx_val, 42);
+    r2 := ffi_apply_callback2(add_with_ctx, xx *ctx_val, 42);
     print("ctx + value              = {}\n", r2);
     print("hits after ctx callback  = {}\n", g_callback_hits);
 

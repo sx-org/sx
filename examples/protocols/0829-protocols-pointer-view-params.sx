@@ -33,7 +33,7 @@ main :: () {
     print("aliased: {}\n", w.value);
 
     // pointer-to-concrete → *P: view of the pointee
-    pw := @w;
+    pw := *w;
     print("ptr: {}\n", measure(pw));
 
     // field lvalue → *P
@@ -44,7 +44,7 @@ main :: () {
 
     // owned protocol value lends a view via plain @
     s := w.(Sizable);
-    print("owned-view: {}\n", measure(@s));
+    print("owned-view: {}\n", measure(*s));
 
     // #inline layout dispatches through *P too, mutating the original
     c := Clock.{ n = 0 };

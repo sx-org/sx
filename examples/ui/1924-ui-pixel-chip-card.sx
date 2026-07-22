@@ -56,9 +56,9 @@ main :: () {
     // metrics the render uses.
     loop := FrameLoop.init();
     root := UiRoot.init(.{ value = 1 });
-    snap := loop.tick(@root, screen, 200.0, 120.0);
+    snap := loop.tick(*root, screen, 200.0, 120.0);
 
-    s.render(@snap.scene);
+    s.render(*snap.scene);
     pixels := s.read_rgba(context.allocator);
     ok := pixel_golden(pixels, s.width(), s.height(), "examples/ui/pixels/1924-chip-card.png");
 

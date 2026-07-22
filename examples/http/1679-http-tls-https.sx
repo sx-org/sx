@@ -74,24 +74,24 @@ TlsClient :: struct {
 
 client_init :: (c: *TlsClient, fd: i32) -> bool {
     c.fd = fd;
-    mbedtls.mbedtls_ssl_config_init(@c.cfg);
-    mbedtls.mbedtls_ssl_init(@c.ssl);
-    mbedtls.mbedtls_ctr_drbg_init(@c.drbg);
-    mbedtls.mbedtls_entropy_init(@c.ent);
-    if mbedtls.mbedtls_ctr_drbg_seed(@c.drbg, mbedtls.mbedtls_entropy_func, xx @c.ent, null, 0) != 0 { return false; }
-    if mbedtls.mbedtls_ssl_config_defaults(@c.cfg, mbedtls.MBEDTLS_SSL_IS_CLIENT, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 { return false; }
-    mbedtls.mbedtls_ssl_conf_authmode(@c.cfg, mbedtls.MBEDTLS_SSL_VERIFY_NONE);
-    mbedtls.mbedtls_ssl_conf_rng(@c.cfg, mbedtls.mbedtls_ctr_drbg_random, xx @c.drbg);
-    if mbedtls.mbedtls_ssl_setup(@c.ssl, @c.cfg) != 0 { return false; }
-    mbedtls.mbedtls_ssl_set_bio(@c.ssl, xx @c.fd, cli_send, cli_recv, null);
+    mbedtls.mbedtls_ssl_config_init(*c.cfg);
+    mbedtls.mbedtls_ssl_init(*c.ssl);
+    mbedtls.mbedtls_ctr_drbg_init(*c.drbg);
+    mbedtls.mbedtls_entropy_init(*c.ent);
+    if mbedtls.mbedtls_ctr_drbg_seed(*c.drbg, mbedtls.mbedtls_entropy_func, xx *c.ent, null, 0) != 0 { return false; }
+    if mbedtls.mbedtls_ssl_config_defaults(*c.cfg, mbedtls.MBEDTLS_SSL_IS_CLIENT, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 { return false; }
+    mbedtls.mbedtls_ssl_conf_authmode(*c.cfg, mbedtls.MBEDTLS_SSL_VERIFY_NONE);
+    mbedtls.mbedtls_ssl_conf_rng(*c.cfg, mbedtls.mbedtls_ctr_drbg_random, xx *c.drbg);
+    if mbedtls.mbedtls_ssl_setup(*c.ssl, *c.cfg) != 0 { return false; }
+    mbedtls.mbedtls_ssl_set_bio(*c.ssl, xx *c.fd, cli_send, cli_recv, null);
     return true;
 }
 
 client_free :: (c: *TlsClient) {
-    mbedtls.mbedtls_ssl_free(@c.ssl);
-    mbedtls.mbedtls_ssl_config_free(@c.cfg);
-    mbedtls.mbedtls_ctr_drbg_free(@c.drbg);
-    mbedtls.mbedtls_entropy_free(@c.ent);
+    mbedtls.mbedtls_ssl_free(*c.ssl);
+    mbedtls.mbedtls_ssl_config_free(*c.cfg);
+    mbedtls.mbedtls_ctr_drbg_free(*c.drbg);
+    mbedtls.mbedtls_entropy_free(*c.ent);
 }
 
 // Blocking connect to the loopback server, then nonblocking.
@@ -99,7 +99,7 @@ dial :: () -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(PORT, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -133,7 +133,7 @@ run :: () -> i32 {
         return 2;
     }
     cfg : http.Config = .{ port = PORT, timeout_request_ms = 3000, max_conn = 8 };
-    cfg.tls = xx @ts;
+    cfg.tls = xx *ts;
     srv, se := http.Server.init(cfg, handler, 0);
     if se { return 3; }
 
@@ -153,12 +153,12 @@ run :: () -> i32 {
     fd := dial();
     if fd < 0 { return 5; }
     cl : TlsClient = .{};
-    if !client_init(@cl, fd) { return 6; }
+    if !client_init(*cl, fd) { return 6; }
 
-    rc := https_roundtrip(@srv, @cl);
+    rc := https_roundtrip(*srv, *cl);
 
-    mbedtls.mbedtls_ssl_close_notify(@cl.ssl);
-    client_free(@cl);
+    mbedtls.mbedtls_ssl_close_notify(*cl.ssl);
+    client_free(*cl);
     socket.close(fd);
     srv.close();
     ts.deinit();
@@ -172,7 +172,7 @@ https_roundtrip :: (srv: *http.Server, cl: *TlsClient) -> i32 {
     i : i64 = 0;
     while i < 1000 and !done {
         srv.tick(5) catch {};
-        r := mbedtls.mbedtls_ssl_handshake(@cl.ssl);
+        r := mbedtls.mbedtls_ssl_handshake(*cl.ssl);
         if r == 0 { done = true; }
         else if r != mbedtls.MBEDTLS_ERR_SSL_WANT_READ and r != mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 10; }
         i += 1;
@@ -183,7 +183,7 @@ https_roundtrip :: (srv: *http.Server, cl: *TlsClient) -> i32 {
     sent := false; j : i64 = 0;
     while j < 200 and !sent {
         srv.tick(5) catch {};
-        w := mbedtls.mbedtls_ssl_write(@cl.ssl, xx req.ptr, xx req.len);
+        w := mbedtls.mbedtls_ssl_write(*cl.ssl, xx req.ptr, xx req.len);
         if w > 0 { sent = true; }
         else if w != mbedtls.MBEDTLS_ERR_SSL_WANT_READ and w != mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 12; }
         j += 1;
@@ -194,10 +194,10 @@ https_roundtrip :: (srv: *http.Server, cl: *TlsClient) -> i32 {
     total : i64 = 0; k : i64 = 0; got := false;
     while k < 1000 and !got {
         srv.tick(5) catch {};
-        r := mbedtls.mbedtls_ssl_read(@cl.ssl, xx @rbuf[total], xx (4096 - total));
+        r := mbedtls.mbedtls_ssl_read(*cl.ssl, xx *rbuf[total], xx (4096 - total));
         if r > 0 {
             total += r;
-            s := string.{ ptr = xx @rbuf[0], len = xx total };
+            s := string.{ ptr = xx *rbuf[0], len = xx total };
             if contains(s, "\r\n\r\n") { got = true; }
         } else if r == mbedtls.MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY or r == 0 {
             got = true;
@@ -206,7 +206,7 @@ https_roundtrip :: (srv: *http.Server, cl: *TlsClient) -> i32 {
         }
         k += 1;
     }
-    resp := string.{ ptr = xx @rbuf[0], len = xx total };
+    resp := string.{ ptr = xx *rbuf[0], len = xx total };
     if !contains(resp, "HTTP/1.1 200 OK") { return 15; }
     if !contains(resp, "secure-ok")       { return 16; }
     return 0;

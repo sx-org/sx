@@ -41,8 +41,8 @@ main :: () -> ! {
     d : Diag = .{};
     with_json    : []string = .["ci", "publish", "--out", "dist", "--json"];
     without_json : []string = .["ci", "publish", "--out", "dist"];
-    pj := try parse(with_json,    cmds, @d);
-    pn := try parse(without_json, cmds, @d);
+    pj := try parse(with_json,    cmds, *d);
+    pn := try parse(without_json, cmds, *d);
     report("json-set-true",  pj.json);
     report("json-set-false", !pn.json);
 
@@ -62,7 +62,7 @@ main :: () -> ! {
     // stays machine-clean) and terminates with the usage code via the
     // canonical `process.exit`.
     bad : []string = .["ci", "deploy", "--out", "x"];   // unknown command
-    _, e := parse(bad, cmds, @d);
+    _, e := parse(bad, cmds, *d);
     report("usage-error-raised", e == error.UnknownCommand);
     log.err("unknown command '{}' (argv index {})", d.token, d.index);
     exit_usage();                                       // -> _exit(EX_USAGE = 64)

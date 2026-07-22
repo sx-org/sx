@@ -140,7 +140,7 @@ InputQueue :: struct {
             else: {}
         }
         if self.events.len > 0 {
-            last := @self.events.items[self.events.len - 1];
+            last := *self.events.items[self.events.len - 1];
             if ev == {
                 case .pointer_move: (p) {
                     if last == {

@@ -77,7 +77,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -246,13 +246,13 @@ fuzz_once :: (rng: *Rng, srv: *http.Server, bytes: [*]u8, blen: i64, scratch: [*
         if sent < blen {
             piece := 1 + rng.upto(64);
             if sent + piece > blen { piece = blen - sent; }
-            wn, we := socket.write_nb(fd, @bytes[sent], xx piece);
+            wn, we := socket.write_nb(fd, *bytes[sent], xx piece);
             if !we { sent += wn; }
             // WouldBlock / fault: just keep ticking; the server reads what it can
         }
         srv.tick(1) catch {};
         if total < scap {
-            n, re := socket.read_nb(fd, @scratch[total], xx (scap - total));
+            n, re := socket.read_nb(fd, *scratch[total], xx (scap - total));
             if !re { total += n; }
             else if re == error.Closed { closed = true; break; }
         }
@@ -292,7 +292,7 @@ liveness_ok :: (srv: *http.Server, scratch: [*]u8, scap: i64) -> bool {
     out := false;
     while tries < 600 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, @scratch[total], xx (scap - total));
+        n, re := socket.read_nb(fd, *scratch[total], xx (scap - total));
         if !re { total += n; }
         else if re == error.Closed { break; }
         s := string.{ ptr = scratch, len = xx total };
@@ -345,14 +345,14 @@ main :: () -> i32 {
         while it < ITERATIONS {
             // pick a template, mutate it
             tidx := rng.upto(TEMPLATES);
-            blen := mutate(@rng, template(tidx), mutbuf, MUTBUF);
-            r := fuzz_once(@rng, @srv, mutbuf, blen, scratch, 8192);
+            blen := mutate(*rng, template(tidx), mutbuf, MUTBUF);
+            r := fuzz_once(*rng, *srv, mutbuf, blen, scratch, 8192);
             if r == 1 { hangs += 1; failed = true; detail = "HANG"; crash_iter = it; break; }
             if r == 2 { garbage += 1; failed = true; detail = "GARBAGE RESPONSE"; crash_iter = it; break; }
 
             // every 250 iterations, prove the server still serves a clean GET
             if it % 250 == 0 {
-                if !liveness_ok(@srv, scratch, 8192) {
+                if !liveness_ok(*srv, scratch, 8192) {
                     live_fail += 1; failed = true; detail = "LIVENESS"; crash_iter = it; break;
                 }
             }

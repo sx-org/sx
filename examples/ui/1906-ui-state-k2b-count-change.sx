@@ -18,10 +18,10 @@ build :: (n: i64, u: *Ui, store: *StateStore) {
 main :: () {
     u := Ui.{};
     store := StateStore.init(.{ value = 1 });
-    push .{ ui = @u, ui_store = @store } {
-        build(2, @u, @store);
+    push .{ ui = *u, ui_store = *store } {
+        build(2, *u, *store);
         print("build1 ok\n");
-        build(3, @u, @store);
+        build(3, *u, *store);
         print("unreachable\n");
     }
 }

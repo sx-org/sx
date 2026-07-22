@@ -56,7 +56,7 @@ check_oracle :: (format: png.PixelFormat, channels: i64, expected: string, botto
         i += 1;
     }
     image : png.Image = .{
-        pixels = string.{ ptr = @pixels[0], len = count },
+        pixels = string.{ ptr = *pixels[0], len = count },
         width = 3,
         height = 2,
         format = format,
@@ -85,7 +85,7 @@ allocation_case :: (fail_at: i64) -> (bool, i64) {
     };
     pixel : [4]u8 = .[1, 2, 3, 4];
     image : png.Image = .{
-        pixels = string.{ ptr = @pixel[0], len = pixel.len },
+        pixels = string.{ ptr = *pixel[0], len = pixel.len },
         width = 1,
         height = 1,
         format = .rgba,
@@ -141,11 +141,11 @@ main :: () -> i32 {
         0x25,0xce,0x00,0x00,0x00,0x00,0x49,0x45,0x4e,0x44,0xae,0x42,0x60,0x82,
     ];
 
-    gray_bytes := string.{ ptr = @gray[0], len = gray.len };
-    gray_bottom_up_bytes := string.{ ptr = @gray_bottom_up[0], len = gray_bottom_up.len };
-    gray_alpha_bytes := string.{ ptr = @gray_alpha[0], len = gray_alpha.len };
-    rgb_bytes := string.{ ptr = @rgb[0], len = rgb.len };
-    rgba_bytes := string.{ ptr = @rgba[0], len = rgba.len };
+    gray_bytes := string.{ ptr = *gray[0], len = gray.len };
+    gray_bottom_up_bytes := string.{ ptr = *gray_bottom_up[0], len = gray_bottom_up.len };
+    gray_alpha_bytes := string.{ ptr = *gray_alpha[0], len = gray_alpha.len };
+    rgb_bytes := string.{ ptr = *rgb[0], len = rgb.len };
+    rgba_bytes := string.{ ptr = *rgba[0], len = rgba.len };
 
     gpa := mem.GPA.init();
     if !check_oracle(.gray, 1, gray_bytes, false, gpa) { return 1; }
@@ -158,7 +158,7 @@ main :: () -> i32 {
     // the encoded logical pixels.
     padded : [8]u8 = .[0x13,0x38,0x5d,0xee, 0x82,0xa7,0xcc,0xee];
     padded_image : png.Image = .{
-        pixels = string.{ ptr = @padded[0], len = padded.len },
+        pixels = string.{ ptr = *padded[0], len = padded.len },
         width = 3,
         height = 2,
         format = .gray,
@@ -167,8 +167,8 @@ main :: () -> i32 {
     if !check_image(padded_image, gray_bytes, gpa) { return 6; }
 
     tiny : [12]u8 = .[0,1,2,3,4,5,6,7,8,9,10,11];
-    tiny_bytes := string.{ ptr = @tiny[0], len = tiny.len };
-    tiny_short := string.{ ptr = @tiny[0], len = 11 };
+    tiny_bytes := string.{ ptr = *tiny[0], len = tiny.len };
+    tiny_short := string.{ ptr = *tiny[0], len = 11 };
     base : png.Image = .{ pixels = tiny_bytes, width = 1, height = 1, format = .rgba };
     if !raises(.{ pixels = tiny_bytes, width = 0, height = 1, format = .gray }, .{}, error.InvalidDimensions, gpa) { return 7; }
     if !raises(.{ pixels = tiny_bytes, width = 1, height = 0x80000000, format = .gray }, .{}, error.InvalidDimensions, gpa) { return 8; }

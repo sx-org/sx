@@ -45,11 +45,11 @@ main :: () -> i32 {
     // sockaddr). The pointer arithmetic bakes the true offsets into the
     // pinned IR.
     ai : socket.AddrInfo = .{};
-    base : usize = xx @ai;
-    off_len   : usize = xx @ai.ai_addrlen;
-    off_addr  : usize = xx @ai.ai_addr;
-    off_canon : usize = xx @ai.ai_canonname;
-    off_next  : usize = xx @ai.ai_next;
+    base : usize = xx *ai;
+    off_len   : usize = xx *ai.ai_addrlen;
+    off_addr  : usize = xx *ai.ai_addr;
+    off_canon : usize = xx *ai.ai_canonname;
+    off_next  : usize = xx *ai.ai_next;
     if off_len   - base != 16 { return 18; }
     if off_addr  - base != 24 { return 19; }
     if off_canon - base != 32 { return 20; }
@@ -57,14 +57,14 @@ main :: () -> i32 {
 
     // linux sockaddr_in6: family is the 2-byte sa_family_t at offset 0.
     ip6 : [16]u8 = .{};
-    a6 := socket.sockaddr_in6(8080, @ip6);
+    a6 := socket.sockaddr_in6(8080, *ip6);
     if a6.sin6_family != 10     { return 22; }
     if a6.sin6_port   != 0x901F { return 23; }
 
     // AF_UNIX header shape: family as LE u16 at offset 0 (no sun_len).
     ua, uok := socket.addr_unix("/tmp/x.sock");
     if !uok { return 24; }
-    if socket.addr_family(@ua) != 1 { return 25; }
+    if socket.addr_family(*ua) != 1 { return 25; }
     if ua.len != 2 + 11 + 1 { return 26; }
     return 0;
 }

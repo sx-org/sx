@@ -7,5 +7,5 @@ Document :: struct {
 }
 
 layer_at :: (d: *Document, i: i64) -> *Layer {
-    @d.layers.items[i]
+    *d.layers.items[i]
 }

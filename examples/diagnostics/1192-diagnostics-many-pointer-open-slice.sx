@@ -6,7 +6,7 @@
 
 main :: () -> i64 {
     a : [4]i64 = .[5, 6, 7, 8];
-    mp : [*]i64 = xx @a[0];
+    mp : [*]i64 = xx *a[0];
     s := mp[1..];          // ERROR: many-pointer slice needs an explicit hi
     return s.len;
 }

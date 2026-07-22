@@ -247,7 +247,7 @@ async :: ufcs (io: Io, worker: Closure() -> ($R, !)) -> *Future($R) {
     };
     // Pass the cancel-flag back-ref so the worker fiber's `suspend_raw` can consult
     // it (Phase 3). `xx @f.canceled` erases the `*Atomic(bool)` to `*void`.
-    f.task = io.spawn_raw(xx sx_run_boxed_closure, xx b, .{ cancel_flag = xx @f.canceled });
+    f.task = io.spawn_raw(xx sx_run_boxed_closure, xx b, .{ cancel_flag = xx *f.canceled });
     return f;
 }
 
@@ -277,7 +277,7 @@ await :: ufcs (f: *Future($R)) -> ($R, !IoErr) {
             out("io: await — future already has an awaiter (one awaiter per future in the M:1 model)\n");
             c.abort();
         }
-        context.io.suspend_raw(@f.park) catch {};   // Phase 3 propagates Canceled
+        context.io.suspend_raw(*f.park) catch {};   // Phase 3 propagates Canceled
     }
     // Settle the outcome and COPY the value out BEFORE releasing — `fut_release`
     // may free `f`, after which only the locals below are safe to touch.
@@ -332,5 +332,5 @@ cancel :: ufcs (f: *Future($R)) {
 sleep :: ufcs (io: Io, ms: i64) -> ! {
     pk : ParkToken = .{ handle = null };
     io.arm_timer(io.now_ms() + ms, pk);
-    try io.suspend_raw(@pk);
+    try io.suspend_raw(*pk);
 }

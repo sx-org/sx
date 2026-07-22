@@ -49,7 +49,7 @@ main :: () -> i32 {
             port = PORT,
             max_conn = 4,
             on_event = on_event,
-            on_event_ctx = xx @counter,
+            on_event_ctx = xx *counter,
         };
         srv, se := http.Server.init(cfg, route, 0);
         if se { print("init failed\n"); return 1; }

@@ -18,17 +18,17 @@ VStack :: struct {
 
 impl View for VStack {
     size_that_fits :: (self: *VStack, proposal: ProposedSize) -> Size {
-        measure_vstack(@self.children, proposal, self.spacing)
+        measure_vstack(*self.children, proposal, self.spacing)
     }
 
     layout :: (self: *VStack, bounds: Frame) {
-        layout_vstack(@self.children, bounds, self.spacing, self.alignment);
+        layout_vstack(*self.children, bounds, self.spacing, self.alignment);
     }
 
     render :: (self: *VStack, ctx: *RenderContext, frame: Frame) {
         i := 0;
         while i < self.children.len {
-            child := @self.children.items[i];
+            child := *self.children.items[i];
             child.view.render(ctx, child.computed_frame);
             i += 1;
         }
@@ -38,7 +38,7 @@ impl View for VStack {
         // Iterate children in reverse (front-to-back for overlapping)
         i := self.children.len - 1;
         while i >= 0 {
-            child := @self.children.items[i];
+            child := *self.children.items[i];
             if child.view.handle_event(event, child.computed_frame) {
                 return true;
             }
@@ -60,17 +60,17 @@ HStack :: struct {
 
 impl View for HStack {
     size_that_fits :: (self: *HStack, proposal: ProposedSize) -> Size {
-        measure_hstack(@self.children, proposal, self.spacing)
+        measure_hstack(*self.children, proposal, self.spacing)
     }
 
     layout :: (self: *HStack, bounds: Frame) {
-        layout_hstack(@self.children, bounds, self.spacing, self.alignment);
+        layout_hstack(*self.children, bounds, self.spacing, self.alignment);
     }
 
     render :: (self: *HStack, ctx: *RenderContext, frame: Frame) {
         i := 0;
         while i < self.children.len {
-            child := @self.children.items[i];
+            child := *self.children.items[i];
             child.view.render(ctx, child.computed_frame);
             i += 1;
         }
@@ -79,7 +79,7 @@ impl View for HStack {
     handle_event :: (self: *HStack, event: *Event, frame: Frame) -> bool {
         i := self.children.len - 1;
         while i >= 0 {
-            child := @self.children.items[i];
+            child := *self.children.items[i];
             if child.view.handle_event(event, child.computed_frame) {
                 return true;
             }
@@ -100,18 +100,18 @@ ZStack :: struct {
 
 impl View for ZStack {
     size_that_fits :: (self: *ZStack, proposal: ProposedSize) -> Size {
-        measure_zstack(@self.children, proposal)
+        measure_zstack(*self.children, proposal)
     }
 
     layout :: (self: *ZStack, bounds: Frame) {
-        layout_zstack(@self.children, bounds, self.alignment);
+        layout_zstack(*self.children, bounds, self.alignment);
     }
 
     render :: (self: *ZStack, ctx: *RenderContext, frame: Frame) {
         // Render back-to-front (first child is bottommost)
         i := 0;
         while i < self.children.len {
-            child := @self.children.items[i];
+            child := *self.children.items[i];
             child.view.render(ctx, child.computed_frame);
             i += 1;
         }
@@ -121,7 +121,7 @@ impl View for ZStack {
         // Handle front-to-back (last child is topmost)
         i := self.children.len - 1;
         while i >= 0 {
-            child := @self.children.items[i];
+            child := *self.children.items[i];
             if child.view.handle_event(event, child.computed_frame) {
                 return true;
             }

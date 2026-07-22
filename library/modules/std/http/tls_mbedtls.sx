@@ -72,7 +72,7 @@ TlsSession :: struct {
 
 impl TlsConn for TlsSession {
     handshake :: (self: *TlsSession) -> TlsStep {
-        r := mbedtls.mbedtls_ssl_handshake(@self.ssl);
+        r := mbedtls.mbedtls_ssl_handshake(*self.ssl);
         if r == 0 { return TlsStep.Done; }
         if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return TlsStep.WantRead; }
         if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return TlsStep.WantWrite; }
@@ -81,7 +81,7 @@ impl TlsConn for TlsSession {
 
     read :: (self: *TlsSession, buf: [*]u8, cap: usize) -> (i64, TlsStep) {
         while true {
-            r := mbedtls.mbedtls_ssl_read(@self.ssl, buf, cap);
+            r := mbedtls.mbedtls_ssl_read(*self.ssl, buf, cap);
             if r > 0 { return xx r, TlsStep.Done; }
             if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, TlsStep.WantRead; }
             if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, TlsStep.WantWrite; }
@@ -98,7 +98,7 @@ impl TlsConn for TlsSession {
     }
 
     write :: (self: *TlsSession, buf: [*]u8, len: usize) -> (i64, TlsStep) {
-        r := mbedtls.mbedtls_ssl_write(@self.ssl, buf, len);
+        r := mbedtls.mbedtls_ssl_write(*self.ssl, buf, len);
         if r > 0 { return xx r, TlsStep.Done; }
         if r == mbedtls.MBEDTLS_ERR_SSL_WANT_READ  { return 0, TlsStep.WantRead; }
         if r == mbedtls.MBEDTLS_ERR_SSL_WANT_WRITE { return 0, TlsStep.WantWrite; }
@@ -108,8 +108,8 @@ impl TlsConn for TlsSession {
     close :: (self: *TlsSession) {
         // Best-effort close_notify (ignore WANT_*/error — the fd is going away),
         // free the mbedTLS session, then free our own heap storage.
-        _ := mbedtls.mbedtls_ssl_close_notify(@self.ssl);
-        mbedtls.mbedtls_ssl_free(@self.ssl);
+        _ := mbedtls.mbedtls_ssl_close_notify(*self.ssl);
+        mbedtls.mbedtls_ssl_free(*self.ssl);
         a := self.a;
         a.destroy(self);
     }
@@ -171,42 +171,42 @@ TlsServer :: struct {
     setup :: (self: *TlsServer, cert_pem: []u8, key_pem: []u8, a: Allocator) -> bool {
         self.a  = a;
         self.ok = false;
-        mbedtls.mbedtls_ssl_config_init(@self.conf);
-        mbedtls.mbedtls_x509_crt_init(@self.cert);
-        mbedtls.mbedtls_pk_init(@self.pkey);
-        mbedtls.mbedtls_ctr_drbg_init(@self.drbg);
-        mbedtls.mbedtls_entropy_init(@self.entropy);
-        mbedtls.mbedtls_x509_crt_init(@self.ca);   // parsed by require_client_cert; freed by deinit either way
+        mbedtls.mbedtls_ssl_config_init(*self.conf);
+        mbedtls.mbedtls_x509_crt_init(*self.cert);
+        mbedtls.mbedtls_pk_init(*self.pkey);
+        mbedtls.mbedtls_ctr_drbg_init(*self.drbg);
+        mbedtls.mbedtls_entropy_init(*self.entropy);
+        mbedtls.mbedtls_x509_crt_init(*self.ca);   // parsed by require_client_cert; freed by deinit either way
 
         // Seed the DRBG from the platform entropy source.
-        if mbedtls.mbedtls_ctr_drbg_seed(@self.drbg, mbedtls.mbedtls_entropy_func, xx @self.entropy, null, 0) != 0 {
+        if mbedtls.mbedtls_ctr_drbg_seed(*self.drbg, mbedtls.mbedtls_entropy_func, xx *self.entropy, null, 0) != 0 {
             return false;
         }
 
         // Parse the cert chain (PEM: buflen must include the trailing NUL).
         cbuf, cn := nul_dup(a, cert_pem);
-        rc := mbedtls.mbedtls_x509_crt_parse(@self.cert, cbuf, cn);
+        rc := mbedtls.mbedtls_x509_crt_parse(*self.cert, cbuf, cn);
         a.dealloc_bytes(xx cbuf);
         if rc != 0 {
             // Partial-parse hygiene, same as require_client_cert: a retried
             // setup must not append onto leftovers from the failed call.
-            mbedtls.mbedtls_x509_crt_free(@self.cert);
-            mbedtls.mbedtls_x509_crt_init(@self.cert);
+            mbedtls.mbedtls_x509_crt_free(*self.cert);
+            mbedtls.mbedtls_x509_crt_init(*self.cert);
             return false;
         }
 
         // Parse the private key (the DRBG seeds any PEM-decryption RNG).
         kbuf, kn := nul_dup(a, key_pem);
-        rk := mbedtls.mbedtls_pk_parse_key(@self.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, xx @self.drbg);
+        rk := mbedtls.mbedtls_pk_parse_key(*self.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, xx *self.drbg);
         a.dealloc_bytes(xx kbuf);
         if rk != 0 { return false; }
 
         // Server-side stream config; wire the RNG + own cert/key.
-        if mbedtls.mbedtls_ssl_config_defaults(@self.conf, mbedtls.MBEDTLS_SSL_IS_SERVER, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 {
+        if mbedtls.mbedtls_ssl_config_defaults(*self.conf, mbedtls.MBEDTLS_SSL_IS_SERVER, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 {
             return false;
         }
-        mbedtls.mbedtls_ssl_conf_rng(@self.conf, mbedtls.mbedtls_ctr_drbg_random, xx @self.drbg);
-        if mbedtls.mbedtls_ssl_conf_own_cert(@self.conf, @self.cert, @self.pkey) != 0 {
+        mbedtls.mbedtls_ssl_conf_rng(*self.conf, mbedtls.mbedtls_ctr_drbg_random, xx *self.drbg);
+        if mbedtls.mbedtls_ssl_conf_own_cert(*self.conf, *self.cert, *self.pkey) != 0 {
             return false;
         }
 
@@ -263,7 +263,7 @@ TlsServer :: struct {
             i += 1;
         }
         vec[n] = null;
-        if mbedtls.mbedtls_ssl_conf_alpn_protocols(@self.conf, vec) != 0 {
+        if mbedtls.mbedtls_ssl_conf_alpn_protocols(*self.conf, vec) != 0 {
             free_alpn(self.a, vec, n);
             return false;
         }
@@ -287,24 +287,24 @@ TlsServer :: struct {
         if name.len == 0 { return false; }
         e := self.a.create(SniEntry);
         // create() memory is uninitialised — set every field before use.
-        mbedtls.mbedtls_x509_crt_init(@e.cert);
-        mbedtls.mbedtls_pk_init(@e.pkey);
+        mbedtls.mbedtls_x509_crt_init(*e.cert);
+        mbedtls.mbedtls_pk_init(*e.pkey);
         e.name = null;
         e.name_len = 0;
 
         ok := false;
         cbuf, cn := nul_dup(self.a, cert_pem);
-        if mbedtls.mbedtls_x509_crt_parse(@e.cert, cbuf, cn) == 0 {
+        if mbedtls.mbedtls_x509_crt_parse(*e.cert, cbuf, cn) == 0 {
             kbuf, kn := nul_dup(self.a, key_pem);
-            if mbedtls.mbedtls_pk_parse_key(@e.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, xx @self.drbg) == 0 {
+            if mbedtls.mbedtls_pk_parse_key(*e.pkey, kbuf, kn, null, 0, mbedtls.mbedtls_ctr_drbg_random, xx *self.drbg) == 0 {
                 ok = true;
             }
             self.a.dealloc_bytes(xx kbuf);
         }
         self.a.dealloc_bytes(xx cbuf);
         if !ok {
-            mbedtls.mbedtls_x509_crt_free(@e.cert);
-            mbedtls.mbedtls_pk_free(@e.pkey);
+            mbedtls.mbedtls_x509_crt_free(*e.cert);
+            mbedtls.mbedtls_pk_free(*e.pkey);
             self.a.destroy(e);
             return false;
         }
@@ -322,7 +322,7 @@ TlsServer :: struct {
         e.name_len = name.len;
 
         if !self.sni_registered {
-            mbedtls.mbedtls_ssl_conf_sni(@self.conf, tls_sni_select, xx self);
+            mbedtls.mbedtls_ssl_conf_sni(*self.conf, tls_sni_select, xx self);
             self.sni_registered = true;
         }
         self.sni.append(e, self.a);
@@ -355,19 +355,19 @@ TlsServer :: struct {
         if !self.ok { return false; }
         if self.ca_set { return false; }
         buf, n := nul_dup(self.a, ca_pem);
-        rc := mbedtls.mbedtls_x509_crt_parse(@self.ca, buf, n);
+        rc := mbedtls.mbedtls_x509_crt_parse(*self.ca, buf, n);
         self.a.dealloc_bytes(xx buf);
         if rc != 0 {
             // x509_crt_parse APPENDS and can partially succeed (positive rc
             // = some certs parsed). Reset the chain so a retried call can't
             // silently trust anchors from a call that reported failure
             // (review P1).
-            mbedtls.mbedtls_x509_crt_free(@self.ca);
-            mbedtls.mbedtls_x509_crt_init(@self.ca);
+            mbedtls.mbedtls_x509_crt_free(*self.ca);
+            mbedtls.mbedtls_x509_crt_init(*self.ca);
             return false;
         }
-        mbedtls.mbedtls_ssl_conf_ca_chain(@self.conf, @self.ca, null);
-        mbedtls.mbedtls_ssl_conf_authmode(@self.conf, mbedtls.MBEDTLS_SSL_VERIFY_REQUIRED);
+        mbedtls.mbedtls_ssl_conf_ca_chain(*self.conf, *self.ca, null);
+        mbedtls.mbedtls_ssl_conf_authmode(*self.conf, mbedtls.MBEDTLS_SSL_VERIFY_REQUIRED);
         self.ca_set = true;
         return true;
     }
@@ -387,11 +387,11 @@ TlsServer :: struct {
     // each TlsConn.close; this releases the shared config/cert/key/RNG plus
     // the Q3.4 ALPN list, SNI table, and client-cert trust anchor.
     deinit :: (self: *TlsServer) {
-        mbedtls.mbedtls_ssl_config_free(@self.conf);
-        mbedtls.mbedtls_x509_crt_free(@self.cert);
-        mbedtls.mbedtls_pk_free(@self.pkey);
-        mbedtls.mbedtls_ctr_drbg_free(@self.drbg);
-        mbedtls.mbedtls_entropy_free(@self.entropy);
+        mbedtls.mbedtls_ssl_config_free(*self.conf);
+        mbedtls.mbedtls_x509_crt_free(*self.cert);
+        mbedtls.mbedtls_pk_free(*self.pkey);
+        mbedtls.mbedtls_ctr_drbg_free(*self.drbg);
+        mbedtls.mbedtls_entropy_free(*self.entropy);
         if self.alpn_vec != null {
             free_alpn(self.a, self.alpn_vec, self.alpn_n);
             self.alpn_vec = null;
@@ -407,15 +407,15 @@ TlsServer :: struct {
         i : i64 = 0;
         while i < self.sni.len {
             e := self.sni.items[i];
-            mbedtls.mbedtls_x509_crt_free(@e.cert);
-            mbedtls.mbedtls_pk_free(@e.pkey);
+            mbedtls.mbedtls_x509_crt_free(*e.cert);
+            mbedtls.mbedtls_pk_free(*e.pkey);
             self.a.dealloc_bytes(xx e.name);
             self.a.destroy(e);
             i += 1;
         }
         self.sni.deinit(self.a);
         self.sni_registered = false;
-        mbedtls.mbedtls_x509_crt_free(@self.ca);
+        mbedtls.mbedtls_x509_crt_free(*self.ca);
         self.ca_set = false;
         self.ok = false;
     }
@@ -455,7 +455,7 @@ tls_sni_select :: (ctx: *void, ssl: *mbedtls.SslContext, name: [*]u8, name_len: 
                 m += 1;
             }
             if eq {
-                if mbedtls.mbedtls_ssl_set_hs_own_cert(ssl, @e.cert, @e.pkey) != 0 { return -1; }
+                if mbedtls.mbedtls_ssl_set_hs_own_cert(ssl, *e.cert, *e.pkey) != 0 { return -1; }
                 return 0;
             }
         }
@@ -482,15 +482,15 @@ impl TlsAcceptor for TlsServer {
     accept :: (self: *TlsServer, fd: i32) -> ?TlsConn {
         if !self.ok { return null; }
         s := self.a.create(TlsSession);
-        mbedtls.mbedtls_ssl_init(@s.ssl);
-        if mbedtls.mbedtls_ssl_setup(@s.ssl, @self.conf) != 0 {
-            mbedtls.mbedtls_ssl_free(@s.ssl);
+        mbedtls.mbedtls_ssl_init(*s.ssl);
+        if mbedtls.mbedtls_ssl_setup(*s.ssl, *self.conf) != 0 {
+            mbedtls.mbedtls_ssl_free(*s.ssl);
             self.a.destroy(s);
             return null;
         }
         s.fd = fd;
         s.a  = self.a;
-        mbedtls.mbedtls_ssl_set_bio(@s.ssl, xx s, tls_bio_send, tls_bio_recv, null);
+        mbedtls.mbedtls_ssl_set_bio(*s.ssl, xx s, tls_bio_send, tls_bio_recv, null);
         return xx s;
     }
 }
@@ -518,33 +518,33 @@ TlsClientConfig :: struct {
     setup_base :: (self: *TlsClientConfig, a: Allocator) -> bool {
         self.a  = a;
         self.ok = false;
-        mbedtls.mbedtls_ssl_config_init(@self.conf);
-        mbedtls.mbedtls_x509_crt_init(@self.ca);
-        mbedtls.mbedtls_ctr_drbg_init(@self.drbg);
-        mbedtls.mbedtls_entropy_init(@self.entropy);
-        if mbedtls.mbedtls_ctr_drbg_seed(@self.drbg, mbedtls.mbedtls_entropy_func, xx @self.entropy, null, 0) != 0 {
+        mbedtls.mbedtls_ssl_config_init(*self.conf);
+        mbedtls.mbedtls_x509_crt_init(*self.ca);
+        mbedtls.mbedtls_ctr_drbg_init(*self.drbg);
+        mbedtls.mbedtls_entropy_init(*self.entropy);
+        if mbedtls.mbedtls_ctr_drbg_seed(*self.drbg, mbedtls.mbedtls_entropy_func, xx *self.entropy, null, 0) != 0 {
             return false;
         }
-        if mbedtls.mbedtls_ssl_config_defaults(@self.conf, mbedtls.MBEDTLS_SSL_IS_CLIENT, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 {
+        if mbedtls.mbedtls_ssl_config_defaults(*self.conf, mbedtls.MBEDTLS_SSL_IS_CLIENT, mbedtls.MBEDTLS_SSL_TRANSPORT_STREAM, mbedtls.MBEDTLS_SSL_PRESET_DEFAULT) != 0 {
             return false;
         }
-        mbedtls.mbedtls_ssl_conf_rng(@self.conf, mbedtls.mbedtls_ctr_drbg_random, xx @self.drbg);
+        mbedtls.mbedtls_ssl_conf_rng(*self.conf, mbedtls.mbedtls_ctr_drbg_random, xx *self.drbg);
         return true;
     }
 
     setup :: (self: *TlsClientConfig, ca_pem: []u8, a: Allocator) -> bool {
         if !self.setup_base(a) { return false; }
         buf, n := nul_dup(a, ca_pem);
-        rc := mbedtls.mbedtls_x509_crt_parse(@self.ca, buf, n);
+        rc := mbedtls.mbedtls_x509_crt_parse(*self.ca, buf, n);
         a.dealloc_bytes(xx buf);
         if rc != 0 {
             // partial-parse hygiene (same as the server's trust paths)
-            mbedtls.mbedtls_x509_crt_free(@self.ca);
-            mbedtls.mbedtls_x509_crt_init(@self.ca);
+            mbedtls.mbedtls_x509_crt_free(*self.ca);
+            mbedtls.mbedtls_x509_crt_init(*self.ca);
             return false;
         }
-        mbedtls.mbedtls_ssl_conf_ca_chain(@self.conf, @self.ca, null);
-        mbedtls.mbedtls_ssl_conf_authmode(@self.conf, mbedtls.MBEDTLS_SSL_VERIFY_REQUIRED);
+        mbedtls.mbedtls_ssl_conf_ca_chain(*self.conf, *self.ca, null);
+        mbedtls.mbedtls_ssl_conf_authmode(*self.conf, mbedtls.MBEDTLS_SSL_VERIFY_REQUIRED);
         self.ok = true;
         return true;
     }
@@ -561,16 +561,16 @@ TlsClientConfig :: struct {
 
     insecure :: (self: *TlsClientConfig, a: Allocator = context.allocator) -> bool {
         if !self.setup_base(a) { return false; }
-        mbedtls.mbedtls_ssl_conf_authmode(@self.conf, mbedtls.MBEDTLS_SSL_VERIFY_NONE);
+        mbedtls.mbedtls_ssl_conf_authmode(*self.conf, mbedtls.MBEDTLS_SSL_VERIFY_NONE);
         self.ok = true;
         return true;
     }
 
     deinit :: (self: *TlsClientConfig) {
-        mbedtls.mbedtls_ssl_config_free(@self.conf);
-        mbedtls.mbedtls_x509_crt_free(@self.ca);
-        mbedtls.mbedtls_ctr_drbg_free(@self.drbg);
-        mbedtls.mbedtls_entropy_free(@self.entropy);
+        mbedtls.mbedtls_ssl_config_free(*self.conf);
+        mbedtls.mbedtls_x509_crt_free(*self.ca);
+        mbedtls.mbedtls_ctr_drbg_free(*self.drbg);
+        mbedtls.mbedtls_entropy_free(*self.entropy);
         self.ok = false;
     }
 }
@@ -593,26 +593,26 @@ impl TlsDialer for TlsClientConfig {
         }
         hb[host.len] = 0;
         s := self.a.create(TlsSession);
-        mbedtls.mbedtls_ssl_init(@s.ssl);
-        if mbedtls.mbedtls_ssl_setup(@s.ssl, @self.conf) != 0 {
-            mbedtls.mbedtls_ssl_free(@s.ssl);
+        mbedtls.mbedtls_ssl_init(*s.ssl);
+        if mbedtls.mbedtls_ssl_setup(*s.ssl, *self.conf) != 0 {
+            mbedtls.mbedtls_ssl_free(*s.ssl);
             self.a.destroy(s);
             return null;
         }
-        if mbedtls.mbedtls_ssl_set_hostname(@s.ssl, @hb[0]) != 0 {
-            mbedtls.mbedtls_ssl_free(@s.ssl);
+        if mbedtls.mbedtls_ssl_set_hostname(*s.ssl, *hb[0]) != 0 {
+            mbedtls.mbedtls_ssl_free(*s.ssl);
             self.a.destroy(s);
             return null;
         }
         s.fd = fd;
         s.a  = self.a;
-        mbedtls.mbedtls_ssl_set_bio(@s.ssl, xx s, tls_bio_send, tls_bio_recv, null);
+        mbedtls.mbedtls_ssl_set_bio(*s.ssl, xx s, tls_bio_send, tls_bio_recv, null);
         // Blocking fd: the BIO parks until bytes move, so a WANT_* can only
         // mean an SO_RCVTIMEO/SNDTIMEO expiry surfaced as EAGAIN — retrying
         // would wait the timeout again forever. Any non-zero result fails
         // the dial (timeout, refusal, verification).
-        if mbedtls.mbedtls_ssl_handshake(@s.ssl) != 0 {
-            mbedtls.mbedtls_ssl_free(@s.ssl);
+        if mbedtls.mbedtls_ssl_handshake(*s.ssl) != 0 {
+            mbedtls.mbedtls_ssl_free(*s.ssl);
             self.a.destroy(s);
             return null;
         }

@@ -36,7 +36,7 @@ main :: () {
     print("chain: {}\n", x.(u8).(i64));
     // Pointer bitcasts through composite targets.
     p := Point.{ x = 7, y = 8 };
-    pp := @p;
+    pp := *p;
     vp := pp.(*void);
     back := vp.(*Point);
     print("ptr: {}\n", back.y);

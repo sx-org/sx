@@ -20,7 +20,7 @@ main :: () {
     print("default allocator present = {}\n", maybe_alloc != null);
 
     recv : *CBlockingIo = xx context.io;
-    print("io borrows c_blocking_io = {}\n", recv == @c_blocking_io);
+    print("io borrows c_blocking_io = {}\n", recv == *c_blocking_io);
 
     p := fallback.alloc_bytes(32);
     print("global-erasure allocator works = {}\n", p != null);

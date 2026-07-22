@@ -35,9 +35,9 @@ mk_opt :: (p: *T) -> ?i64 {
 }
 
 main :: () -> i32 {
-    t1 : T = .{}; mk_void(@t1);       print("{} {}\n", t1.x, t1.y);
-    t2 : T = .{}; _ := mk_i64(@t2);   print("{} {}\n", t2.x, t2.y);
-    t3 : T = .{}; _ := mk_u(@t3);     print("{} {}\n", t3.x, t3.y);
-    t4 : T = .{}; _ := mk_opt(@t4);   print("{} {}\n", t4.x, t4.y);
+    t1 : T = .{}; mk_void(*t1);       print("{} {}\n", t1.x, t1.y);
+    t2 : T = .{}; _ := mk_i64(*t2);   print("{} {}\n", t2.x, t2.y);
+    t3 : T = .{}; _ := mk_u(*t3);     print("{} {}\n", t3.x, t3.y);
+    t4 : T = .{}; _ := mk_opt(*t4);   print("{} {}\n", t4.x, t4.y);
     0
 }

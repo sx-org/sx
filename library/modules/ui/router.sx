@@ -205,7 +205,7 @@ Router :: struct {
     // deceleration with current velocity at the consumer), pending
     // recognizers fail, records clear.
     cancel_sequence :: (self: *Router, idx: i64) {
-        seq := @self.sequences.items[idx];
+        seq := *self.sequences.items[idx];
         if seq.claimed_by == .pan {
             self.gestures.append(.{
                 kind = .pan_ended,
@@ -281,7 +281,7 @@ router_dispatch_one :: (ev: *InputEvent) {
         case .pointer_move: (pm) {
             idx := r.find_sequence(pm.pointer);
             if idx < 0 { return; }
-            seq := @r.sequences.items[idx];
+            seq := *r.sequences.items[idx];
             if seq.dead { return; }
 
             dx_step := pm.position.x - seq.last_position.x;

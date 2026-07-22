@@ -25,5 +25,5 @@ main :: () {
     d : []u8 = context.allocator.alloc(u8, 3);
     d[0] = 42;
     v := Buf.{ data = d };
-    print("{}\n", f1(@v));
+    print("{}\n", f1(*v));
 }

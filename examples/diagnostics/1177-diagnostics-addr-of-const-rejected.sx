@@ -11,8 +11,8 @@ takes :: (p: *i64) {}
 N :: 40;
 
 main :: () {
-    takes(@N);          // module scalar const — no storage
+    takes(*N);          // module scalar const — no storage
     x :: 7;
-    takes(@x);          // local scalar const — no storage
-    asm volatile { "mov %[c], #99", [c] "=r" -> @N };   // write-through to a const
+    takes(*x);          // local scalar const — no storage
+    asm volatile { "mov %[c], #99", [c] "=r" -> *N };   // write-through to a const
 }

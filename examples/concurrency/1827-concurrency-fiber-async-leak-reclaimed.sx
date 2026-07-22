@@ -18,14 +18,14 @@
 sched :: #import "modules/std/sched.sx";
 
 main :: () -> i64 {
-    sum   : i64 = 0; psum  := @sum;
-    base  : i64 = 0; pbase := @base;
-    after : i64 = 0; pafter := @after;
+    sum   : i64 = 0; psum  := *sum;
+    base  : i64 = 0; pbase := *base;
+    after : i64 = 0; pafter := *after;
 
     gpa := mem.GPA.init();
     push .{ allocator = gpa } {
         s := sched.Scheduler.init();
-        ps := @s;
+        ps := *s;
         pbase.* = gpa.alloc_count;            // baseline: scheduler is live, no tasks yet
         push .{ io = xx s, allocator = xx gpa } {
             ps.spawn(() {

@@ -58,7 +58,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -84,7 +84,7 @@ send_split :: (srv: *http.Server, fd: i32, s: string, piece: i64) {
         if sent + want > s.len { want = s.len - sent; }
         off : i64 = 0;
         while off < want {
-            n, we := socket.write_nb(fd, @s.ptr[sent + off], xx (want - off));
+            n, we := socket.write_nb(fd, *s.ptr[sent + off], xx (want - off));
             if !we { off += n; }
             srv.tick(1) catch {};
         }
@@ -102,7 +102,7 @@ read_response :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
             if !re { total += n; got += n; continue; }
             break;
         }
@@ -170,9 +170,9 @@ main :: () -> i32 {
                 i += 1;
             }
             r1 = concat(r1, "\r\n");
-            send_split(@srv, ca, r1, 7);
+            send_split(*srv, ca, r1, 7);
         }
-        resp1 := read_response(@srv, ca, rbuf, cap);
+        resp1 := read_response(*srv, ca, rbuf, cap);
         if !contains(resp1, "HTTP/1.1 200 OK") or !contains(resp1, "val-23") {
             print("split-header request failed\n");
             failed = 1;
@@ -193,14 +193,14 @@ main :: () -> i32 {
             while c < N_CHUNKS {
                 // "64;ext=1\r\n" + 100 data bytes + "\r\n"  (0x64 = 100)
                 r2 = concat(r2, "64;ext=1\r\n");
-                r2 = concat(r2, string.{ ptr = @full[c * CHUNK_DATA], len = CHUNK_DATA });
+                r2 = concat(r2, string.{ ptr = *full[c * CHUNK_DATA], len = CHUNK_DATA });
                 r2 = concat(r2, "\r\n");
                 c += 1;
             }
             r2 = concat(r2, "0\r\nX-Trailer: ignored\r\n\r\n");
-            send_split(@srv, ca, r2, 13);
+            send_split(*srv, ca, r2, 13);
         }
-        resp2 := read_response(@srv, ca, rbuf, cap);
+        resp2 := read_response(*srv, ca, rbuf, cap);
         expect2 : string = "";
         push .{ allocator = req_arena } {   // arena-owned, freed at deinit
             expect2 = concat(int_to_string(body_want), concat(":", int_to_string(chk)));
@@ -214,7 +214,7 @@ main :: () -> i32 {
         // ── 3. pipelined plain request on the same connection ─────────
         r3 := "GET /plain HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
         socket.write(ca, r3.ptr, xx r3.len);
-        resp3 := read_response(@srv, ca, rbuf, cap);
+        resp3 := read_response(*srv, ca, rbuf, cap);
         if !contains(resp3, "HTTP/1.1 200 OK") or !contains(resp3, "plain-ok") {
             print("follow-up plain request failed\n");
             failed = 1;

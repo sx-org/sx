@@ -49,7 +49,7 @@ impl View for LazyHost {
         // The S1 subscope: an append-only emission scope, opened inside
         // layout, claiming state in the same build transaction.
         s := Sink(View).{};
-        push .{ ui = self.ui, ui_store = self.store, ui_sink = @s } {
+        push .{ ui = self.ui, ui_store = self.store, ui_sink = *s } {
             i := 0;
             while i < self.count {
                 keyed(i) { row(i); }
@@ -82,24 +82,24 @@ home :: () -> View {
         g_mid_build_rev = -1;
     }
     vstack(0.0) {
-        place(LazyHost.{ ui = @g_root.ui, store = @g_root.store, count = 3 }.(View));
+        place(LazyHost.{ ui = *g_root.ui, store = *g_root.store, count = 3 }.(View));
     }
 }
 
 main :: () {
     loop := FrameLoop.init();
     root := UiRoot.init(.{ value = 3 });
-    g_loop = @loop;
-    g_root = @root;
+    g_loop = *loop;
+    g_root = *root;
 
-    s1 := loop.tick(@root, home, 100.0, 60.0);
+    s1 := loop.tick(*root, home, 100.0, 60.0);
     process.assert(g_mid_build_rev == -1, "mid-build: no committed frame yet");
     process.assert(g_realized == 3, "layout realized the subscope rows");
     process.assert(g_row_state == 1, "subscope claims initialized");
     process.assert(root.store.entries.len == 3, "layout-time claims survived the sweep");
     process.assert(s1.scene.nodes.len == 3, "realized rows rendered into the scene");
 
-    s2 := loop.tick(@root, home, 100.0, 60.0);
+    s2 := loop.tick(*root, home, 100.0, 60.0);
     process.assert(g_mid_build_rev == 1, "mid-build: snapshot() still shows the PREVIOUS frame");
     process.assert(g_row_state == 2, "subscope state persists across frames");
     process.assert(s2.revision == 2, "commit advanced after the build");

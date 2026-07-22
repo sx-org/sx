@@ -12,14 +12,14 @@ main :: () -> i32 {
 
     // Recover BEFORE first dispatch.
     recovered : *GPA = xx a;
-    print("recovered == gpa? {}\n", recovered == @gpa);
+    print("recovered == gpa? {}\n", recovered == *gpa);
 
     p := a.alloc_bytes(64);
     print("alloc count after first alloc: {}\n", gpa.alloc_count);
 
     // Recover AFTER dispatch — still works.
     recovered2 : *GPA = xx a;
-    print("recovered2 == gpa? {}\n", recovered2 == @gpa);
+    print("recovered2 == gpa? {}\n", recovered2 == *gpa);
 
     a.dealloc_bytes(p);
     print("alloc count after dealloc: {}\n", gpa.alloc_count);

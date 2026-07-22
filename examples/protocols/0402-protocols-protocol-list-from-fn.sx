@@ -32,7 +32,7 @@ main :: () -> void {
     // BUG: protocol value created in add(), first dispatch works, second crashes
     out("=== Created in add() ===\n");
     list_b : List(Sizable) = .{};
-    add(@list_b, Leaf.{ value = 99 });
+    add(*list_b, Leaf.{ value = 99 });
     r3 := list_b.items[0].size();
     print("first:  {} (expected 99)\n", r3);   // works (stack not yet clobbered)
     r4 := list_b.items[0].size();

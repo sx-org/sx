@@ -1,4 +1,4 @@
-error: the ctx recovery yields a pointer to the CONCRETE value, so its target must be the concrete pointee type (e.g. `p.(*YourConcrete)` or `p.(*void)`); to point at the protocol value itself, take its address with `@`
+error: the ctx recovery yields a pointer to the CONCRETE value, so its target must be the concrete pointee type (e.g. `p.(*YourConcrete)` or `p.(*void)`); to point at the protocol value itself, take its address with prefix `*`
   --> examples/diagnostics/1252-diagnostics-reinterpret-refusals.sx:15:11
    |
 15 |     pq := s.(*Sizable);          // 0306: ctx recovery must target the CONCRETE type

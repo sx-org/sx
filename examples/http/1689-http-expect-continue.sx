@@ -33,7 +33,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -67,7 +67,7 @@ count_occurrences :: (hay: string, needle: string) -> i64 {
 drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool {
     srv.tick(1) catch {};
     while true {
-        n, re := socket.read_nb(fd, @buf[total.*], xx (cap - total.*));
+        n, re := socket.read_nb(fd, *buf[total.*], xx (cap - total.*));
         if !re { total.* += n; continue; }
         if re == error.Closed { return true; }
         return false;
@@ -90,14 +90,14 @@ staged :: (srv: *http.Server, first: string, second: string, third: string, wait
     if wait_for.len > 0 {
         spins : i64 = 0;
         while spins < 400 {
-            if drain(srv, fd, buf, cap, @total) { break; }   // early EOF (a reject)
+            if drain(srv, fd, buf, cap, *total) { break; }   // early EOF (a reject)
             if contains(string.{ ptr = buf, len = xx total }, wait_for) { break; }
             spins += 1;
         }
     } else {
         settle : i64 = 0;
         while settle < 50 {
-            if drain(srv, fd, buf, cap, @total) { break; }
+            if drain(srv, fd, buf, cap, *total) { break; }
             settle += 1;
         }
     }
@@ -108,7 +108,7 @@ staged :: (srv: *http.Server, first: string, second: string, third: string, wait
         if third.len > 0 {
             mid : i64 = 0;
             while mid < 20 {
-                if drain(srv, fd, buf, cap, @total) { break; }
+                if drain(srv, fd, buf, cap, *total) { break; }
                 mid += 1;
             }
         }
@@ -119,7 +119,7 @@ staged :: (srv: *http.Server, first: string, second: string, third: string, wait
     done := false;
     prev := total;
     while !done and stall < 400 {
-        done = drain(srv, fd, buf, cap, @total);
+        done = drain(srv, fd, buf, cap, *total);
         if total > prev { stall = 0; prev = total; } else { stall += 1; }
     }
     socket.close(fd);
@@ -156,52 +156,52 @@ main :: () -> i32 {
         // (a) staged CL POST: headers first → exactly one 100, then the
         // body IN TWO PIECES (the second need-more cycle must not re-emit
         // the interim), then the final 200 echo.
-        r := staged(@srv,
+        r := staged(*srv,
             "POST /e HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nContent-Length: 10\r\nConnection: close\r\n\r\n",
             "hello", "world", "HTTP/1.1 100 Continue\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 100 Continue", "CL staged interim", @failed);
-        check(r, "got:helloworld", "CL staged echo", @failed);
+        check(r, "HTTP/1.1 100 Continue", "CL staged interim", *failed);
+        check(r, "got:helloworld", "CL staged echo", *failed);
         if count_occurrences(r, "100 Continue") != 1 {
             print("CL staged: expected exactly one 100\n");
             failed = 1;
         }
 
         // (b) over-max declared length → final 413 directly, never a 100
-        r = staged(@srv,
+        r = staged(*srv,
             "POST /e HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nContent-Length: 2048\r\nConnection: close\r\n\r\n",
             "", "", "", rbuf, cap);
-        check(r, "HTTP/1.1 413", "over-max final status", @failed);
-        check_no_100(r, "over-max", @failed);
+        check(r, "HTTP/1.1 413", "over-max final status", *failed);
+        check_no_100(r, "over-max", *failed);
 
         // (c) body already complete in one shot → no 100, straight to 200
-        r = staged(@srv,
+        r = staged(*srv,
             "POST /e HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nContent-Length: 3\r\nConnection: close\r\n\r\nabc",
             "", "", "", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "one-shot status", @failed);
-        check(r, "got:abc", "one-shot echo", @failed);
-        check_no_100(r, "one-shot", @failed);
+        check(r, "HTTP/1.1 200 OK", "one-shot status", *failed);
+        check(r, "got:abc", "one-shot echo", *failed);
+        check_no_100(r, "one-shot", *failed);
 
         // (d) HTTP/1.0: the expectation is ignored — no 100, still served
-        r = staged(@srv,
+        r = staged(*srv,
             "POST /e HTTP/1.0\r\nExpect: 100-continue\r\nContent-Length: 2\r\n\r\n",
             "hi", "", "", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "1.0 status", @failed);
-        check(r, "got:hi", "1.0 echo", @failed);
-        check_no_100(r, "1.0", @failed);
+        check(r, "HTTP/1.1 200 OK", "1.0 status", *failed);
+        check(r, "got:hi", "1.0 echo", *failed);
+        check_no_100(r, "1.0", *failed);
 
         // (e) an unsupported expectation on 1.1 → 417
-        r = staged(@srv,
+        r = staged(*srv,
             "POST /e HTTP/1.1\r\nHost: t\r\nExpect: whatever\r\nContent-Length: 2\r\nConnection: close\r\n\r\n",
             "", "", "", rbuf, cap);
-        check(r, "HTTP/1.1 417", "unsupported expectation", @failed);
-        check_no_100(r, "unsupported expectation", @failed);
+        check(r, "HTTP/1.1 417", "unsupported expectation", *failed);
+        check_no_100(r, "unsupported expectation", *failed);
 
         // (f) chunked framing: headers → one 100 → chunked body → 200 echo
-        r = staged(@srv,
+        r = staged(*srv,
             "POST /e HTTP/1.1\r\nHost: t\r\nExpect: 100-continue\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n",
             "3\r\nabc\r\n", "0\r\n\r\n", "HTTP/1.1 100 Continue\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 100 Continue", "chunked interim", @failed);
-        check(r, "got:abc", "chunked echo", @failed);
+        check(r, "HTTP/1.1 100 Continue", "chunked interim", *failed);
+        check(r, "got:abc", "chunked echo", *failed);
         if count_occurrences(r, "100 Continue") != 1 {
             print("chunked: expected exactly one 100\n");
             failed = 1;

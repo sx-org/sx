@@ -21,7 +21,7 @@ entry :: (arg: *void) -> *void abi(.c) {
 main :: () -> i32 {
     v : i64 = 21;
     th : usize = 0;
-    if pthread_create(@th, null, entry, xx @v) != 0 { print("create failed\n"); return 1; }
+    if pthread_create(*th, null, entry, xx *v) != 0 { print("create failed\n"); return 1; }
     pthread_join(th, null);
     if v != 42 { print("wrong result: {}\n", v); return 1; }
     print("pthread into sx ok: {}\n", v);

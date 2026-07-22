@@ -2117,6 +2117,44 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
 
 /// Resolve the type annotation on an array literal (e.g. Vector(3,f32).[...]).
 /// Handles call nodes (Vector(3,f32)), parameterized_type_expr, and identifier/type_expr.
+/// `*<operand>` where the operand denotes a TYPE resolves to the pointer
+/// type's Type value (`*i64` → the TypeId of `*i64`). Returns null when the
+/// operand is a value — the caller falls through to ordinary address-of.
+/// A scope local or a module global wins over a same-named type: taking a
+/// value's address must never silently become a type. Nested address_of
+/// recurses so `**T` / `***T` resolve inside-out.
+fn addrOfTypeOperand(self: *Lowering, node: *const Node) ?TypeId {
+    switch (node.data) {
+        .identifier => |id| {
+            if (self.scope) |sc| {
+                if (sc.lookup(id.name) != null) return null;
+            }
+            if (self.program_index.global_names.contains(id.name)) return null;
+            const tid = self.resolveArrayLiteralType(node);
+            if (tid == .unresolved) return null;
+            return self.module.types.ptrTo(tid);
+        },
+        .type_expr,
+        .slice_type_expr,
+        .array_type_expr,
+        .pointer_type_expr,
+        .many_pointer_type_expr,
+        .optional_type_expr,
+        .parameterized_type_expr,
+        => {
+            const tid = self.resolveTypeWithBindings(node);
+            if (tid == .unresolved) return null;
+            return self.module.types.ptrTo(tid);
+        },
+        .unary_op => |inner_uop| {
+            if (inner_uop.op != .address_of) return null;
+            const inner = addrOfTypeOperand(self, inner_uop.operand) orelse return null;
+            return self.module.types.ptrTo(inner);
+        },
+        else => return null,
+    }
+}
+
 pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
     switch (te.data) {
         .call => |cl| {
@@ -3397,6 +3435,17 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 const nty = if (self.target_type) |tt| (if (self.isIntEx(tt)) tt else TypeId.i64) else TypeId.i64;
                 self.checkIntLiteralFits(v, nty, node.span);
                 break :blk self.builder.constInt(v, nty);
+            }
+            // Prefix `*` on a TYPE-valued operand is the pointer TYPE, not
+            // address-of: `size_of(*T)`, Type-arg positions, and nested
+            // `**T` (address_of over address_of resolves inside-out). Must
+            // run before the operand lowers as a value — a bare type name
+            // has no value to take the address of. A local/global VALUE
+            // shadowing a type name stays a value (address-of wins).
+            if (uop.op == .address_of) {
+                if (addrOfTypeOperand(self, uop.operand)) |ptid| {
+                    break :blk self.builder.emit(.{ .const_type = ptid }, .type_value);
+                }
             }
             // An explicit `xx` cast requests the conversion, truncation
             // included — literal operands skip the fits-check.

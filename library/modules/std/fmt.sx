@@ -93,14 +93,14 @@ float_to_string :: (f: f64) -> string {
     buf := alloc_string(total);
     pos := 0;
     if neg { buf[0] = '-'; pos = 1; }
-    c.memcpy(@buf[pos], istr.ptr, il);
+    c.memcpy(*buf[pos], istr.ptr, il);
     pos = pos + il;
     buf[pos] = '.';
     pos += 1;
     pad := 6 - fl;
-    c.memset(@buf[pos], '0', pad);
+    c.memset(*buf[pos], '0', pad);
     pos = pos + pad;
-    c.memcpy(@buf[pos], fstr.ptr, fl);
+    c.memcpy(*buf[pos], fstr.ptr, fl);
     buf
 }
 
@@ -165,13 +165,13 @@ concat :: (a: string, b: string) -> string {
     bl := b.len;
     buf := alloc_string(al + bl);
     c.memcpy(buf.ptr, a.ptr, al);
-    c.memcpy(@buf[al], b.ptr, bl);
+    c.memcpy(*buf[al], b.ptr, bl);
     buf
 }
 
 substr :: (s: string, start: i64, len: i64) -> string {
     buf := alloc_string(len);
-    c.memcpy(buf.ptr, @s[start], len);
+    c.memcpy(buf.ptr, *s[start], len);
     buf
 }
 

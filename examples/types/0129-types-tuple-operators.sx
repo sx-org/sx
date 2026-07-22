@@ -186,7 +186,7 @@ main :: () {
     // ── BufAlloc from stack array ───────────────────────────
     {
         stack_buf : [128]u8 = ---;
-        buf := BufAlloc.init(@stack_buf[0], 128);
+        buf := BufAlloc.init(*stack_buf[0], 128);
         a : Allocator = xx buf;
         b1 := a.alloc_bytes(24);
         b2 := a.alloc_bytes(24);
@@ -486,7 +486,7 @@ main :: () {
         // xx cast: (*MyEnv, i32) -> i32  →  (*void, i32) -> i32
         f : (*void, i32) -> i32 = xx typed_fn;
         env := MyEnv.{ n = 100 };
-        print("xx-fnptr: {}\n", f(xx @env, 42));  // xx-fnptr: 142
+        print("xx-fnptr: {}\n", f(xx *env, 42));  // xx-fnptr: 142
     }
 
     // --- closure type: construct and access fields ---
@@ -510,7 +510,7 @@ main :: () {
         }
         env := Env.{ n = 5 };
         fn_ptr : *void = xx impl_fn;
-        env_ptr : *void = xx @env;
+        env_ptr : *void = xx *env;
         c : Closure(i32) -> i32 = .{ fn_ptr = fn_ptr, env = env_ptr };
         print("closure-call: {}\n", c(10));
     }
@@ -681,7 +681,7 @@ main :: () {
 
         // C5.A6: capture pointer (shared mutable state)
         count_a6 : i32 = 0;
-        p_a6 := @count_a6;
+        p_a6 := *count_a6;
         inc_fn := closure(() { p_a6.* += 1; });
         inc_fn(); inc_fn(); inc_fn();
         print("closure-ptr: {}\n", count_a6);
@@ -751,7 +751,7 @@ main :: () {
         map_src : [5]i32 = .[1, 2, 3, 4, 5];
         map_dst : [5]i32 = .[0, 0, 0, 0, 0];
         factor_d1 : i32 = 3;
-        map_cl(xx @map_src, 5, closure((x: i32) -> i32 => x * factor_d1), xx @map_dst);
+        map_cl(xx *map_src, 5, closure((x: i32) -> i32 => x * factor_d1), xx *map_dst);
         print("closure-map: {} {} {} {} {}\n", map_dst[0], map_dst[1], map_dst[2], map_dst[3], map_dst[4]);
 
         // C5.D2: filter
@@ -766,7 +766,7 @@ main :: () {
         }
         min_val : i32 = 3;
         filt_dst : [5]i32 = .[0, 0, 0, 0, 0];
-        kept := filter_cl(xx @map_src, 5, closure((x: i32) -> bool => x >= min_val), xx @filt_dst);
+        kept := filter_cl(xx *map_src, 5, closure((x: i32) -> bool => x >= min_val), xx *filt_dst);
         print("closure-filter: {} [{} {} {}]\n", kept, filt_dst[0], filt_dst[1], filt_dst[2]);
 
         // C5.D4: sort comparator (bubble sort)
@@ -787,7 +787,7 @@ main :: () {
         }
         sort_arr : [5]i32 = .[5, 3, 1, 4, 2];
         descending := true;
-        sort_cl(xx @sort_arr, 5, closure((a: i32, b: i32) -> bool {
+        sort_cl(xx *sort_arr, 5, closure((a: i32, b: i32) -> bool {
             if descending { return a > b; }
             return a < b;
         }));
@@ -800,7 +800,7 @@ main :: () {
         }
         fe_label := "item";
         fe_arr : [3]i32 = .[10, 20, 30];
-        for_each_cl(xx @fe_arr, 3, closure((val: i32, idx: i64) {
+        for_each_cl(xx *fe_arr, 3, closure((val: i32, idx: i64) {
             print("closure-fe: {} {}={}\n", fe_label, idx, val);
         }));
 
@@ -814,7 +814,7 @@ main :: () {
             return -1;
         }
         target : i32 = 30;
-        found_idx := find_cl(xx @fe_arr, 3, closure((x: i32) -> bool => x == target));
+        found_idx := find_cl(xx *fe_arr, 3, closure((x: i32) -> bool => x == target));
         print("closure-find: {}\n", found_idx);
 
         // C5.D7: any
@@ -826,8 +826,8 @@ main :: () {
             }
             return false;
         }
-        has_big := any_cl(xx @fe_arr, 3, closure((x: i32) -> bool => x > 100));
-        has_20 := any_cl(xx @fe_arr, 3, closure((x: i32) -> bool => x == 20));
+        has_big := any_cl(xx *fe_arr, 3, closure((x: i32) -> bool => x > 100));
+        has_20 := any_cl(xx *fe_arr, 3, closure((x: i32) -> bool => x == 20));
         print("closure-any: {} {}\n", has_big, has_20);
 
         // C5.E4: auto-promotion in struct field assignment
@@ -850,13 +850,13 @@ main :: () {
 
         // C5.J1: stateful counter via pointer capture
         state_j1 : i32 = 0;
-        p_j1 := @state_j1;
+        p_j1 := *state_j1;
         inc_j1 := closure(() -> i32 { p_j1.* += 1; return p_j1.*; });
         print("closure-counter: {} {} {}\n", inc_j1(), inc_j1(), inc_j1());
 
         // C5.J2: stateful accumulator
         state_j2 : i32 = 100;
-        p_j2 := @state_j2;
+        p_j2 := *state_j2;
         acc_j2 := closure((x: i32) -> i32 { p_j2.* += x; return p_j2.*; });
         print("closure-acc: {} {}\n", acc_j2(5), acc_j2(10));
 
@@ -872,7 +872,7 @@ main :: () {
             return total + base_k2;
         });
         k2_arr : [5]i32 = .[1, 2, 3, 4, 5];
-        print("closure-loop: {}\n", sum_fn(xx @k2_arr, 5));
+        print("closure-loop: {}\n", sum_fn(xx *k2_arr, 5));
 
         // C5.M3: reassigning a closure variable
         n_m3 : i32 = 1;
@@ -973,7 +973,7 @@ main :: () {
 
         // C5.A7: capture slice (fat pointer like string)
         sl_a7 : [3]i32 = .[10, 20, 30];
-        ptr_a7 : [*]i32 = xx @sl_a7;
+        ptr_a7 : [*]i32 = xx *sl_a7;
         f_a7 := closure((i: i64) -> i32 => ptr_a7[i]);
         print("closure-slice: {} {} {}\n", f_a7(0), f_a7(1), f_a7(2));
 
@@ -1066,7 +1066,7 @@ main :: () {
 
         // C5.E7: two closures sharing the same captured pointer
         shared : i32 = 0;
-        shared_p := @shared;
+        shared_p := *shared;
         inc_shared := closure(() { shared_p.* += 1; });
         add5_shared := closure(() { shared_p.* += 5; });
         inc_shared();
@@ -1086,7 +1086,7 @@ main :: () {
 
         // C5.E10: closure capturing and calling struct method
         pt_e10 := Point.{ x = 3, y = 4 };
-        p_e10 := @pt_e10;
+        p_e10 := *pt_e10;
         get_xy := closure(() -> i32 => p_e10.x + p_e10.y);
         print("closure-struct-method: {}\n", get_xy());
 
@@ -1125,7 +1125,7 @@ main :: () {
 
         // C5.E15: reassigning shared pointer target between closure calls
         val_e15 : i32 = 10;
-        p_e15 := @val_e15;
+        p_e15 := *val_e15;
         read_fn := closure(() -> i32 => p_e15.*);
         print("closure-ptr-before: {}\n", read_fn());
         val_e15 = 42;

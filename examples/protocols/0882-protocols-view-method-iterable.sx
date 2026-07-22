@@ -17,7 +17,7 @@ C :: struct { a : [3]i32 = .[1, 2, 3]; }
 impl P for C {
     items :: (self: *C) -> []i32 {
         r : []i32 = ---;
-        r.ptr = @self.a[0];
+        r.ptr = *self.a[0];
         r.len = 3;
         r
     }

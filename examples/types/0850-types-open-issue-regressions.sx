@@ -16,8 +16,8 @@ f_diverge_0850 :: (c: bool) -> i64 { x := if c { 1 } else { return 7; }; return 
 Color0850 :: enum { red; green; }
 ident_0850 :: (x: $T) -> T { return x; }
 out_0850 :: () -> void {}
-gptr_0850 : *i64 = @target_0850;
-goptptr_0850 : ?*i64 = @target_0850;
+gptr_0850 : *i64 = *target_0850;
+goptptr_0850 : ?*i64 = *target_0850;
 target_0850 : i64 = 42;
 
 main :: () -> i32 {
@@ -27,7 +27,7 @@ main :: () -> i32 {
     list.append(.{a = 1, b = true});
     a : [3]i64 = .[ 10, 20, 30 ];
     sl : []i64 = a[0..3];
-    psl := @sl;
+    psl := *sl;
     psl[1] = 99;
     box : Box0850(i64) = .{ item = 5, bx = 1 };
     tup : Tuple(i64, i64) = .{1, 2};

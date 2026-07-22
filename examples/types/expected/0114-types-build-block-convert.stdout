@@ -1,10 +1,10 @@
 --- void / 0 args ---
-__invoke :: (block_self: *Block) -> void abi(.c) { typed_fn : (*void) -> void = xx block_self.sx_fn; typed_fn(block_self.sx_env); } return .{ isa = @_NSConcreteStackBlock, flags = 0, reserved = 0, invoke = xx @__invoke, descriptor = xx @__sx_block_descriptor, sx_env = self.env, sx_fn = self.fn_ptr, };
+__invoke :: (block_self: *Block) -> void abi(.c) { typed_fn : (*void) -> void = xx block_self.sx_fn; typed_fn(block_self.sx_env); } return .{ isa = *_NSConcreteStackBlock, flags = 0, reserved = 0, invoke = xx *__invoke, descriptor = xx *__sx_block_descriptor, sx_env = self.env, sx_fn = self.fn_ptr, };
 --- void / bool ---
-__invoke :: (block_self: *Block, arg0: bool) -> void abi(.c) { typed_fn : (*void, bool) -> void = xx block_self.sx_fn; typed_fn(block_self.sx_env, arg0); } return .{ isa = @_NSConcreteStackBlock, flags = 0, reserved = 0, invoke = xx @__invoke, descriptor = xx @__sx_block_descriptor, sx_env = self.env, sx_fn = self.fn_ptr, };
+__invoke :: (block_self: *Block, arg0: bool) -> void abi(.c) { typed_fn : (*void, bool) -> void = xx block_self.sx_fn; typed_fn(block_self.sx_env, arg0); } return .{ isa = *_NSConcreteStackBlock, flags = 0, reserved = 0, invoke = xx *__invoke, descriptor = xx *__sx_block_descriptor, sx_env = self.env, sx_fn = self.fn_ptr, };
 --- void / i64, string ---
-__invoke :: (block_self: *Block, arg0: i64, arg1: string) -> void abi(.c) { typed_fn : (*void, i64, string) -> void = xx block_self.sx_fn; typed_fn(block_self.sx_env, arg0, arg1); } return .{ isa = @_NSConcreteStackBlock, flags = 0, reserved = 0, invoke = xx @__invoke, descriptor = xx @__sx_block_descriptor, sx_env = self.env, sx_fn = self.fn_ptr, };
+__invoke :: (block_self: *Block, arg0: i64, arg1: string) -> void abi(.c) { typed_fn : (*void, i64, string) -> void = xx block_self.sx_fn; typed_fn(block_self.sx_env, arg0, arg1); } return .{ isa = *_NSConcreteStackBlock, flags = 0, reserved = 0, invoke = xx *__invoke, descriptor = xx *__sx_block_descriptor, sx_env = self.env, sx_fn = self.fn_ptr, };
 --- i32 / f64 ---
-__invoke :: (block_self: *Block, arg0: f64) -> i32 abi(.c) { typed_fn : (*void, f64) -> i32 = xx block_self.sx_fn; return typed_fn(block_self.sx_env, arg0); } return .{ isa = @_NSConcreteStackBlock, flags = 0, reserved = 0, invoke = xx @__invoke, descriptor = xx @__sx_block_descriptor, sx_env = self.env, sx_fn = self.fn_ptr, };
+__invoke :: (block_self: *Block, arg0: f64) -> i32 abi(.c) { typed_fn : (*void, f64) -> i32 = xx block_self.sx_fn; return typed_fn(block_self.sx_env, arg0); } return .{ isa = *_NSConcreteStackBlock, flags = 0, reserved = 0, invoke = xx *__invoke, descriptor = xx *__sx_block_descriptor, sx_env = self.env, sx_fn = self.fn_ptr, };
 --- build done ---
 rt

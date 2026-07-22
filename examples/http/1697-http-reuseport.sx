@@ -26,7 +26,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -57,7 +57,7 @@ roundtrip2 :: (s1: *http.Server, s2: *http.Server, req: string, buf: [*]u8, cap:
         s2.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
             if !re { total += n; got += n; continue; }
             if re == error.Closed { done = true; }
             break;
@@ -99,7 +99,7 @@ main :: () -> i32 {
             served : i64 = 0;
             k : i64 = 0;
             while k < 8 {
-                r := roundtrip2(@srv1, @srv2, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+                r := roundtrip2(*srv1, *srv2, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
                 hit_one := contains(r, "HTTP/1.1 200 OK") and contains(r, "one");
                 hit_two := contains(r, "HTTP/1.1 200 OK") and contains(r, "two");
                 if hit_one or hit_two { served += 1; }

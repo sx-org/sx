@@ -35,7 +35,7 @@ in_range :: (x: i64, lo: i64, hi: i64) -> bool {
 // the failing token is captured in the caller-owned `Diag`.
 raises :: (args: []string, cmds: []Command, want: CliError) -> bool {
     d : Diag = .{};
-    _, e := parse(args, cmds, @d);
+    _, e := parse(args, cmds, *d);
     return e == want;
 }
 
@@ -56,7 +56,7 @@ main :: () -> ! {
     // ── 1. Valid: <group> <command> --flag v --bool --json ───────────
     d : Diag = .{};
     argv : []string = .["ci", "publish", "--out", "dist", "--verbose", "--json"];
-    p := try parse(argv, cmds, @d);
+    p := try parse(argv, cmds, *d);
 
     report("dispatch-group",   p.group == "ci");
     report("dispatch-command", p.command == "publish");
@@ -80,14 +80,14 @@ main :: () -> ! {
 
     // ── 3. Dispatch to a different command in the table ──────────────
     s_argv : []string = .["ci", "status", "--verbose"];
-    sp := try parse(s_argv, cmds, @d);
+    sp := try parse(s_argv, cmds, *d);
     report("dispatch-2nd",   sp.command == "status" and sp.cmd_index == 1);
     report("2nd-bool",       sp.is_set("verbose"));
     report("2nd-json-unset", !sp.json);
 
     // ── 4. `--` separator: rest are operand views, flags stop there ──
     sep_argv : []string = .["ci", "publish", "--out", "dist", "--", "--raw", "x"];
-    spv := try parse(sep_argv, cmds, @d);
+    spv := try parse(sep_argv, cmds, *d);
     report("sep-value",   spv.value_of("out") == "dist");
     report("sep-rest-len", spv.rest.len == 2);
     report("sep-rest-0",  spv.rest.len == 2 and spv.rest[0] == "--raw");
@@ -96,13 +96,13 @@ main :: () -> ! {
 
     // ── 5. First bare operand also stops flag parsing ────────────────
     bare_argv : []string = .["ci", "publish", "--out", "dist", "extra", "tail"];
-    bpv := try parse(bare_argv, cmds, @d);
+    bpv := try parse(bare_argv, cmds, *d);
     report("bare-rest-len", bpv.rest.len == 2);
     report("bare-rest-0",  bpv.rest.len == 2 and bpv.rest[0] == "extra");
 
     // ── 6. Value-flag accepts a single-dash value (not a long flag) ──
     dash_argv : []string = .["ci", "publish", "--out", "-5", "--verbose"];
-    dpv := try parse(dash_argv, cmds, @d);
+    dpv := try parse(dash_argv, cmds, *d);
     report("dash-value", dpv.value_of("out") == "-5" and dpv.is_set("verbose"));
 
     // ── 7. Failures: each surfaces the specific variant ──────────────
@@ -169,48 +169,48 @@ main :: () -> ! {
     // seeded with a sentinel first: the assertion then proves `parse`
     // actually WROTE the value, not that it merely left the default.
     de : Diag = .{};
-    _, ue := parse(a_unknown_flag, cmds, @de);
+    _, ue := parse(a_unknown_flag, cmds, *de);
     report("diag-flag-tag",     ue == error.UnknownFlag);
     report("diag-flag-token",   de.token == "--nope" and de.index == 4);
 
     dc : Diag = .{};
-    _, ce := parse(a_unknown_cmd, cmds, @dc);
+    _, ce := parse(a_unknown_cmd, cmds, *dc);
     report("diag-cmd-tag",      ce == error.UnknownCommand);
     report("diag-cmd-token",    dc.token == "deploy" and dc.index == 1);
 
     dg : Diag = .{};
-    _, ge := parse(a_unknown_group, cmds, @dg);
+    _, ge := parse(a_unknown_group, cmds, *dg);
     report("diag-group-tag",    ge == error.UnknownCommand);
     report("diag-group-token",  dg.token == "publish" and dg.index == 1);
 
     df : Diag = .{};
-    _, fe := parse(a_too_few, cmds, @df);
+    _, fe := parse(a_too_few, cmds, *df);
     report("diag-too-few-tag",   fe == error.UnknownCommand);
     report("diag-too-few-token", df.token == "ci" and df.index == 0);
 
     d0 : Diag = .{ index = 999, token = "<unset>" };           // sentinel: -1/"" are defaults
-    _, z0e := parse(a_zero_args, cmds, @d0);
+    _, z0e := parse(a_zero_args, cmds, *d0);
     report("diag-zero-args-tag",   z0e == error.UnknownCommand);
     report("diag-zero-args-token", d0.token == "" and d0.index == -1);
 
     dv : Diag = .{};
-    _, ve := parse(a_missing_value, cmds, @dv);
+    _, ve := parse(a_missing_value, cmds, *dv);
     report("diag-missing-value-tag",   ve == error.MissingValue);
     report("diag-missing-value-token", dv.token == "--out" and dv.index == 2);
 
     dz : Diag = .{};
-    _, ze := parse(a_value_eats, cmds, @dz);
+    _, ze := parse(a_value_eats, cmds, *dz);
     report("diag-value-eats-tag",   ze == error.MissingValue);
     report("diag-value-eats-token", dz.token == "--out" and dz.index == 2);
 
     dm : Diag = .{ index = 999, token = "<unset>" };           // sentinel: -1 is the default
-    _, me := parse(a_missing_req, cmds, @dm);
+    _, me := parse(a_missing_req, cmds, *dm);
     report("diag-req-tag",    me == error.MissingRequired);
     report("diag-req-token",  dm.token == "out");
     report("diag-req-index",  dm.index == -1);
 
     dt : Diag = .{ index = 999, token = "<unset>" };           // sentinel: -1 is the default
-    _, te := parse(over_args, over_cmds, @dt);
+    _, te := parse(over_args, over_cmds, *dt);
     report("diag-too-many-tag",   te == error.TooManyFlags);
     report("diag-too-many-token", dt.token == "cmd" and dt.index == -1);
 

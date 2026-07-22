@@ -22,7 +22,7 @@ Store :: struct {
 
     put :: (self: *Store, v: any) {
         n := size_of(type_of(v));
-        c.memcpy(xx @self.buf[self.used], raw_any_data(v), n);
+        c.memcpy(xx *self.buf[self.used], raw_any_data(v), n);
         self.tags[self.count] = type_of(v);
         self.offs[self.count] = self.used;
         self.lens[self.count] = n;
@@ -31,7 +31,7 @@ Store :: struct {
     }
 
     get :: (self: *Store, i: i64) -> any {
-        raw_make_any(self.tags[i], xx @self.buf[self.offs[i]])
+        raw_make_any(self.tags[i], xx *self.buf[self.offs[i]])
     }
 }
 
@@ -56,8 +56,8 @@ main :: () -> i64 {
     // buffer and re-view them under the same tag.
     wire : [16]u8 = .[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
     pv := s.get(2);
-    c.memcpy(xx @wire[0], raw_any_data(pv), size_of(type_of(pv)));
-    restored := raw_make_any(type_of(pv), xx @wire[0]);
+    c.memcpy(xx *wire[0], raw_any_data(pv), size_of(type_of(pv)));
+    restored := raw_make_any(type_of(pv), xx *wire[0]);
     print("{}\n", restored.(Point).y);           // 9
 
     // Field views compose over the reassembled view too.

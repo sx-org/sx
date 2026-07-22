@@ -44,7 +44,7 @@ main :: () {
     other.sentinel = 99;          // a DIFFERENT ambient context
     push other {
         // Ambient is 99 here; the trampoline must install f.root (42).
-        print("fiber root: {}\n", run_fiber(@f));
+        print("fiber root: {}\n", run_fiber(*f));
         // After run_fiber returns, this scope's ambient context is intact.
         print("ambient after: {}\n", sentinel());
     }

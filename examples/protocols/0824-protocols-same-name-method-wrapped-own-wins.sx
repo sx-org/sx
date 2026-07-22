@@ -35,7 +35,7 @@ Provider :: protocol {
 }
 
 impl Provider for Holder {
-    getp :: (self: *Holder) -> *Box { @self.b }
+    getp :: (self: *Holder) -> *Box { *self.b }
     geto :: (self: *Holder) -> ?Box { self.b }
     gett :: (self: *Holder) -> Tuple(Box, Box) { .{self.b, self.b} }
     geta :: (self: *Holder) -> [2]Box { r : [2]Box = ---; r[0] = self.b; r[1] = self.b; r }
@@ -65,12 +65,12 @@ main :: () -> i32 {
     osl : ?[]Box = sl;
     tup : Tuple(Box, Box) = .{one, one};
 
-    sp := p.sump(@one);
+    sp := p.sump(*one);
     so := p.sumo(one);
     ss := p.sums(sl);
     sa := p.suma(arr);
     st := p.sumt(tup);
-    sn := p.sumn(@osl);
+    sn := p.sumn(*osl);
 
     print("p={} o={} t={} a={} | sp={} so={} ss={} sa={} st={} sn={} dep={}\n",
         bp.m, bo!.m, bt.0.m, ba[0].m, sp, so, ss, sa, st, sn, dep_box());

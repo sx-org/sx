@@ -252,7 +252,6 @@ pub const Lexer = struct {
                 }
                 return self.makeToken(.ampersand, start, self.index);
             },
-            '@' => return self.makeToken(.at, start, self.index),
             '|' => {
                 if (self.peek() == '=') {
                     self.index += 1;

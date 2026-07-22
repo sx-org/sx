@@ -20,7 +20,7 @@ Holder :: struct ($T: Type) {
     data: []T;
     n     :: (self: *Holder(T)) -> i64 #get => self.data.len;  // i64
     head  :: (self: *Holder(T)) -> T   #get => self.data[0];   // type param T
-    tailp :: (self: *Holder(T)) -> *T  #get => @self.data[self.data.len - 1]; // pointer
+    tailp :: (self: *Holder(T)) -> *T  #get => *self.data[self.data.len - 1]; // pointer
 }
 
 main :: () -> i64 {
@@ -44,7 +44,7 @@ main :: () -> i64 {
     print("loop-bound total={}\n", total);                 // 1000
 
     // via a pointer receiver (auto-deref) and an explicit postfix deref
-    pb := @b;
+    pb := *b;
     print("via ptr is_pos={}\n", pb.is_pos);               // true
     print("via deref is_pos={}\n", pb.*.is_pos);           // true (p.*.getter)
     return 0;

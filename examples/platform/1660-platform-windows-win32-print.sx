@@ -24,6 +24,6 @@ main :: () {
     out := GetStdHandle(0xFFFFFFF5);
     msg : [3]u8 = .[52, 50, 10];    // "42\n"
     written : u32 = 0;
-    WriteFile(out, @msg[0], 3, @written, null);
+    WriteFile(out, *msg[0], 3, *written, null);
     ExitProcess(0);
 }

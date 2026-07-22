@@ -1777,8 +1777,25 @@ fn isCompositeAliasRhs(kind: std.meta.Tag(ast.Node.Data)) bool {
 fn compositeAliasConstDecl(decl: *const Node) ?*const ast.ConstDecl {
     if (decl.data != .const_decl) return null;
     const cd = &decl.data.const_decl;
-    if (!isCompositeAliasRhs(cd.value.data)) return null;
+    if (!isCompositeAliasRhs(cd.value.data) and !addrOfAliasRhs(cd.value)) return null;
     return cd;
+}
+
+/// `P :: *T` — the value grammar parses the RHS as address_of, so a
+/// pointer-type alias arrives as a unary chain. It is an alias candidate
+/// when the chain bottoms out in a name or a composite type shape; the
+/// fixpoint resolves or diagnoses it like any other composite alias.
+/// (A module `::` const can NOT be a pointer to a value — there is no
+/// comptime address — so the type reading is the only valid one.)
+fn addrOfAliasRhs(node: *const Node) bool {
+    if (node.data != .unary_op) return false;
+    const uop = node.data.unary_op;
+    if (uop.op != .address_of) return false;
+    return switch (uop.operand.data) {
+        .identifier, .type_expr, .field_access => true,
+        .unary_op => addrOfAliasRhs(uop.operand),
+        else => isCompositeAliasRhs(uop.operand.data),
+    };
 }
 
 /// Registration-time READINESS probe for a tuple-alias RHS (issue 0196): TRUE
@@ -1799,6 +1816,12 @@ pub fn typeNodeLeavesReady(self: *Lowering, node: *const Node, source: ?[]const 
         // binding exists) — never ready; `registerCompositeAlias` emits the
         // precise message in the final round.
         .spread_expr => return false,
+        // Prefix `*` (parsed address_of) in a type position: probe the
+        // pointee in behind-ptr mode, same as pointer_type_expr.
+        .unary_op => |uop| {
+            if (uop.op != .address_of) return true;
+            return typeNodeLeavesReadyBehindPtr(self, uop.operand, source);
+        },
         .type_expr => |te| return bareTypeLeafReady(self, te.name, src, te.is_raw),
         .identifier => |id| return bareTypeLeafReady(self, id.name, src, id.is_raw),
         // A pointer / many-pointer POINTEE tolerates a forward NOMINAL leaf:

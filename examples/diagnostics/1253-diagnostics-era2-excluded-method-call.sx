@@ -41,7 +41,7 @@ main :: () {
     print("{}\n", e.id());          // dispatchable — fine
     print("{}\n", e.eq(q));         // excluded through P → refusal + fixit
 
-    pv : *Eq = @e;
+    pv : *Eq = *e;
     print("{}\n", pv.eq(q));        // excluded through *P → same refusal
 
     c := p.(Cloneable);

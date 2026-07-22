@@ -29,10 +29,10 @@ g_i64 : [3]i64 = ---;
 g_u8  : [4]u8  = ---;
 
 mk_parr :: (present: bool) -> ?PArr {
-    if present { return PArr.{ p = @g_i64 }; }
+    if present { return PArr.{ p = *g_i64 }; }
     return null;
 }
-mk_pu8 :: () -> ?PU8 { return PU8.{ p = @g_u8 }; }
+mk_pu8 :: () -> ?PU8 { return PU8.{ p = *g_u8 }; }
 
 mk_arr :: (present: bool) -> ?Arr3 {
     if present {

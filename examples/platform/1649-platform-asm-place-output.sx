@@ -12,7 +12,7 @@ compute :: () -> i64 {
         mov %[o], #37
 ASM,
         [m] "=r" -> i64,        // value output → returned
-        [o] "=r" -> @other,     // place output → stored through @other
+        [o] "=r" -> *other,     // place output → stored through @other
     };
     return main_val + other;    // 5 + 37 = 42
 }

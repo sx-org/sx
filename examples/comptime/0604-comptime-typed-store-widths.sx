@@ -41,7 +41,7 @@ sum_bytes :: (buf: [*]u8) -> i64 {
 run_u8 :: () -> i64 {
     buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
     fill(buf);
-    p : *u8 = xx @buf[TARGET];
+    p : *u8 = xx *buf[TARGET];
     p.* = 0x42;
     s := sum_bytes(buf);
     c.libc_free(xx buf);
@@ -51,7 +51,7 @@ run_u8 :: () -> i64 {
 run_u16 :: () -> i64 {
     buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
     fill(buf);
-    p : *u16 = xx @buf[TARGET];
+    p : *u16 = xx *buf[TARGET];
     p.* = 0x0102;
     s := sum_bytes(buf);
     c.libc_free(xx buf);
@@ -61,7 +61,7 @@ run_u16 :: () -> i64 {
 run_u32 :: () -> i64 {
     buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
     fill(buf);
-    p : *u32 = xx @buf[TARGET];
+    p : *u32 = xx *buf[TARGET];
     p.* = 0x01020304;
     s := sum_bytes(buf);
     c.libc_free(xx buf);
@@ -71,7 +71,7 @@ run_u32 :: () -> i64 {
 run_u64 :: () -> i64 {
     buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
     fill(buf);
-    p : *u64 = xx @buf[TARGET];
+    p : *u64 = xx *buf[TARGET];
     p.* = 0x0102030405060708;
     s := sum_bytes(buf);
     c.libc_free(xx buf);
@@ -81,7 +81,7 @@ run_u64 :: () -> i64 {
 run_i8 :: () -> i64 {
     buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
     fill(buf);
-    p : *i8 = xx @buf[TARGET];
+    p : *i8 = xx *buf[TARGET];
     p.* = 0x42;
     s := sum_bytes(buf);
     c.libc_free(xx buf);
@@ -91,7 +91,7 @@ run_i8 :: () -> i64 {
 run_i16 :: () -> i64 {
     buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
     fill(buf);
-    p : *i16 = xx @buf[TARGET];
+    p : *i16 = xx *buf[TARGET];
     p.* = 0x0102;
     s := sum_bytes(buf);
     c.libc_free(xx buf);
@@ -101,7 +101,7 @@ run_i16 :: () -> i64 {
 run_i32 :: () -> i64 {
     buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
     fill(buf);
-    p : *i32 = xx @buf[TARGET];
+    p : *i32 = xx *buf[TARGET];
     p.* = 0x01020304;
     s := sum_bytes(buf);
     c.libc_free(xx buf);
@@ -111,7 +111,7 @@ run_i32 :: () -> i64 {
 run_i64 :: () -> i64 {
     buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
     fill(buf);
-    p : *i64 = xx @buf[TARGET];
+    p : *i64 = xx *buf[TARGET];
     p.* = 0x0102030405060708;
     s := sum_bytes(buf);
     c.libc_free(xx buf);
@@ -121,7 +121,7 @@ run_i64 :: () -> i64 {
 run_bool :: () -> i64 {
     buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
     fill(buf);
-    p : *bool = xx @buf[TARGET];
+    p : *bool = xx *buf[TARGET];
     p.* = true;
     s := sum_bytes(buf);
     c.libc_free(xx buf);
@@ -131,7 +131,7 @@ run_bool :: () -> i64 {
 run_f32 :: () -> i64 {
     buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
     fill(buf);
-    p : *f32 = xx @buf[TARGET];
+    p : *f32 = xx *buf[TARGET];
     p.* = 1.0;
     s := sum_bytes(buf);
     c.libc_free(xx buf);
@@ -141,7 +141,7 @@ run_f32 :: () -> i64 {
 run_f64 :: () -> i64 {
     buf : [*]u8 = xx c.libc_malloc(BUF_SIZE);
     fill(buf);
-    p : *f64 = xx @buf[TARGET];
+    p : *f64 = xx *buf[TARGET];
     p.* = 1.0;
     s := sum_bytes(buf);
     c.libc_free(xx buf);

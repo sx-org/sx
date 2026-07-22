@@ -99,7 +99,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -143,7 +143,7 @@ num_after :: (hay: string, key: string) -> i64 {
 send_all :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
-        n, we := socket.write_nb(fd, @s.ptr[sent], xx (s.len - sent));
+        n, we := socket.write_nb(fd, *s.ptr[sent], xx (s.len - sent));
         if !we { sent += n; }
         srv.tick(1) catch {};
     }
@@ -155,7 +155,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     t : i64 = 0;
     while t < 20000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *rbuf[total], xx (cap - total));
         if !re { total += n; }
         else if re == error.Closed { return total; }
         resp := string.{ ptr = rbuf, len = xx total };
@@ -182,7 +182,7 @@ read_chunked :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     t : i64 = 0;
     while t < 200000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *rbuf[total], xx (cap - total));
         if !re { total += n; }
         else if re == error.Closed { return total; }
         if total >= 5
@@ -255,15 +255,15 @@ main :: () -> i32 {
             thread_pool_backlog = 16,
             handler_timeout_ms = 5000,
         };
-        srv, se := http.Server.init(cfg, route, xx @obs);
+        srv, se := http.Server.init(cfg, route, xx *obs);
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: 1 MB worker-fed chunked stream, arena-owned ctx ───
         seed := checksum("seed-abc");
         c1 := dial_port(PORT);
         if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c1, "POST /stream HTTP/1.1\r\nHost: t\r\nContent-Length: 8\r\n\r\nseed-abc");
-        r1 := read_chunked(@srv, c1, rbuf, cap);
+        send_all(*srv, c1, "POST /stream HTTP/1.1\r\nHost: t\r\nContent-Length: 8\r\n\r\nseed-abc");
+        r1 := read_chunked(*srv, c1, rbuf, cap);
         resp1 := string.{ ptr = rbuf, len = xx r1 };
         if !contains(resp1, "HTTP/1.1 200 OK") { print("case1: no 200\n"); failed = 1; }
         if !contains(resp1, "Transfer-Encoding: chunked") { print("case1: not chunked\n"); failed = 1; }
@@ -274,14 +274,14 @@ main :: () -> i32 {
             i += 1;
         }
         if he < 0 { print("case1: no header end\n"); failed = 1; }
-        else if !dechunk_check(string.{ ptr = @rbuf[he], len = xx (r1 - he) }, seed, STREAM_TOTAL) {
+        else if !dechunk_check(string.{ ptr = *rbuf[he], len = xx (r1 - he) }, seed, STREAM_TOTAL) {
             print("case1: stream bytes wrong\n");
             failed = 1;
         }
 
         // ── case 2: keep-alive after the worker-fed stream ────────────
-        send_all(@srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
-        r2 := read_response(@srv, c1, rbuf, cap);
+        send_all(*srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r2 := read_response(*srv, c1, rbuf, cap);
         resp2 := string.{ ptr = rbuf, len = xx r2 };
         if !contains(resp2, "pong") { print("case2: no pong\n"); failed = 1; }
         socket.close(c1);
@@ -289,12 +289,12 @@ main :: () -> i32 {
         // ── case 3: mid-stream disconnect aborts the feeder ───────────
         c2 := dial_port(PORT);
         if c2 < 0 { print("dial c2 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c2, "GET /big HTTP/1.1\r\nHost: t\r\n\r\n");
+        send_all(*srv, c2, "GET /big HTTP/1.1\r\nHost: t\r\n\r\n");
         got : i64 = 0;
         t : i64 = 0;
         while t < 20000 and got < 65536 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(c2, @rbuf[0], 16384);
+            n, re := socket.read_nb(c2, *rbuf[0], 16384);
             if !re { got += n; }
             else if re == error.Closed { break; }
             t += 1;
@@ -309,8 +309,8 @@ main :: () -> i32 {
         // ── case 4: the single worker survived the aborted stream ─────
         c3 := dial_port(PORT);
         if c3 < 0 { print("dial c3 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c3, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
-        r4 := read_response(@srv, c3, rbuf, cap);
+        send_all(*srv, c3, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r4 := read_response(*srv, c3, rbuf, cap);
         resp4 := string.{ ptr = rbuf, len = xx r4 };
         if !contains(resp4, "pong") { print("case4: worker pinned — no pong\n"); failed = 1; }
         socket.close(c3);
@@ -324,7 +324,7 @@ main :: () -> i32 {
         // full channel).
         c5 := dial_port(PORT);
         if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c5, "GET /slowbig HTTP/1.1\r\nHost: t\r\n\r\n");
+        send_all(*srv, c5, "GET /slowbig HTTP/1.1\r\nHost: t\r\n\r\n");
         t = 0;
         while t < 50 {   // dispatch lands; the worker sleeps 300 ms
             srv.tick(1) catch {};

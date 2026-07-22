@@ -22,7 +22,7 @@ main :: () -> i32 {
     w : i32 = 0;
     h : i32 = 0;
     ch : i32 = 0;
-    img := stb.stbi_load_from_memory(@bmp[0], 70, @w, @h, @ch, 3);
+    img := stb.stbi_load_from_memory(*bmp[0], 70, *w, *h, *ch, 3);
     if xx img == 0 {
         print("decode failed\n");
         return 1;

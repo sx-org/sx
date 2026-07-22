@@ -97,8 +97,8 @@ serialization_case :: (chunked: bool, fail: bool) -> bool {
     resp : types.Response = .{ body = "body" };
     date := "Thu, 01 Jan 1970 00:00:00 GMT";
     output := if chunked
-        then server_impl.serialize_chunked_head(@resp, true, failing, date, "")
-        else server_impl.serialize_bytes(@resp, true, failing, false, date, "");
+        then server_impl.serialize_chunked_head(*resp, true, failing, date, "")
+        else server_impl.serialize_bytes(*resp, true, failing, false, date, "");
     success := output.buf != null;
     if output.buf != null { failing.dealloc_bytes(xx output.buf); }
     expected := if fail then !success and failing.failures == 1 else success;
@@ -108,7 +108,7 @@ serialization_case :: (chunked: bool, fail: bool) -> bool {
 write_all :: (fd: i32, data: string) -> bool {
     at : i64 = 0;
     while at < data.len {
-        n := socket.write(fd, @data.ptr[at], xx (data.len - at));
+        n := socket.write(fd, *data.ptr[at], xx (data.len - at));
         if n <= 0 { return false; }
         at += n;
     }
@@ -119,14 +119,14 @@ client_decoder_allocation :: (packed: string) -> bool {
     gpa := GPA.init();
     failing : FailingAllocator = .{ parent = gpa, fail_at = 1 };
     pair : [2]i32 = ---;
-    if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, @pair[0]) != 0 { return false; }
+    if socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM, 0, *pair[0]) != 0 { return false; }
     head := "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nConnection: close\r\n\r\n";
     sent := write_all(pair[1], head) and write_all(pair[1], packed);
     socket.close(pair[1]);
     storage : [4096]u8 = ---;
     failure := false;
     push .{ allocator = failing } {
-        _, e := http.Client.recv(pair[0], @storage[0], storage.len);
+        _, e := http.Client.recv(pair[0], *storage[0], storage.len);
         failure = e == error.Allocation;
     }
     socket.close(pair[0]);

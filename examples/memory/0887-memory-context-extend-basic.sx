@@ -18,7 +18,7 @@ main :: () {
     print("reader (no import of decl_mod) sees {}\n", read_depth());
 
     m : i64 = 5;
-    push .{ trace_depth = 7, marker = @m } {
+    push .{ trace_depth = 7, marker = *m } {
         print("pushed trace_depth = {}\n", context.trace_depth);
         print("pushed marker = {}\n", context.marker!.*);
         print("reader inside push sees {}\n", read_depth());

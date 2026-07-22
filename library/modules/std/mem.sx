@@ -163,11 +163,11 @@ impl Allocator for GPA {
     // these from multiple threads. Relaxed is fine for a pure counter —
     // readers only observe it after all threads have joined.
     alloc_bytes :: (self: *GPA, size: i64) -> *void {
-        atomic_fetch_add(i64, @self.alloc_count, 1, .relaxed);
+        atomic_fetch_add(i64, *self.alloc_count, 1, .relaxed);
         return c.libc_malloc(size);
     }
     dealloc_bytes :: (self: *GPA, ptr: *void) {
-        atomic_fetch_sub(i64, @self.alloc_count, 1, .relaxed);
+        atomic_fetch_sub(i64, *self.alloc_count, 1, .relaxed);
         c.libc_free(ptr);
     }
 }
@@ -246,14 +246,14 @@ impl Allocator for Arena {
             usable := self.first.cap - 16;
             if self.end_index + aligned <= usable {
                 buf : [*]u8 = xx self.first;
-                ptr := @buf[16 + self.end_index];
+                ptr := *buf[16 + self.end_index];
                 self.end_index = self.end_index + aligned;
                 return ptr;
             }
         }
         self.add_chunk(aligned);
         buf : [*]u8 = xx self.first;
-        ptr := @buf[16 + self.end_index];
+        ptr := *buf[16 + self.end_index];
         self.end_index = self.end_index + aligned;
         ptr
     }
@@ -292,7 +292,7 @@ impl Allocator for BufAlloc {
         if self.pos + aligned > self.len {
             return null;
         }
-        ptr := @self.buf[self.pos];
+        ptr := *self.buf[self.pos];
         self.pos = self.pos + aligned;
         ptr
     }

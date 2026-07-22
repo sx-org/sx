@@ -87,7 +87,7 @@ main :: () {
     {
         use_adder :: (a: *Adder) { a.add(10); }
         acc := Accumulator.{ total = 5 };
-        p := @acc;
+        p := *acc;
         use_adder(p);
         print("AE5: {}\n", acc.total);
     }

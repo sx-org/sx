@@ -26,11 +26,11 @@ __block_invoke_void_i32_p :: (block_self: *Block, arg0: i32, arg1: *void) abi(.c
 impl Into(Block) for Closure(i32, *void) -> void {
     convert :: (self: Closure(i32, *void) -> void) -> Block {
         .{
-            isa = @_NSConcreteStackBlock,
+            isa = *_NSConcreteStackBlock,
             flags = 0,
             reserved = 0,
-            invoke = xx @__block_invoke_void_i32_p,
-            descriptor = xx @__sx_block_descriptor,
+            invoke = xx *__block_invoke_void_i32_p,
+            descriptor = xx *__sx_block_descriptor,
             sx_env = self.env,
             sx_fn = self.fn_ptr,
         }
@@ -51,7 +51,7 @@ main :: () -> i32 {
 
     invoke_fn : (*Block, i32, *void) -> void abi(.c) = xx b.invoke;
     sentinel: i32 = 42;
-    invoke_fn(@b, 41, xx @sentinel);
+    invoke_fn(*b, 41, xx *sentinel);
 
     if g_sum != 42 { print("FAIL: g_sum expected 42, got {}\n", g_sum); return 1; }
     if g_tag == null { print("FAIL: g_tag null\n"); return 1; }

@@ -659,7 +659,7 @@ work in any module with no import required:
 ```sx
 #context_extend logger: ?*Logger = null;   // declared by the logging module
 
-push .{ logger = @my_logger } {
+push .{ logger = *my_logger } {
     serve();          // anything below reads context.logger
 }
 ```
@@ -833,7 +833,7 @@ sched :: #import "modules/std/sched.sx";
 
 main :: () {
     s := sched.Scheduler.init();
-    ps := @s;   // closures capture by value — capture a pointer to the scheduler
+    ps := *s;   // closures capture by value — capture a pointer to the scheduler
 
     // Install the fiber scheduler as `context.io`; the coordinator runs as a
     // fiber so `await` has a fiber to park.

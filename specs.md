@@ -112,7 +112,7 @@ composes under the pointer / optional / slice wrappers (`` *`i2 ``, `` ?`i2 ``).
 `i2 :: struct($T: Type) { x: $T; }   // generic template with a reserved-spelled name
 v : `i2(i64) = ---;                  // parameterized raw type reference
 v.x = 7;
-p : *`i2(i64) = @v;                  // wrappers compose over a raw type
+p : *`i2(i64) = *v;                  // wrappers compose over a raw type
 x : i2 = 3;                          // bare `i2` is still the 2-bit signed int
 ```
 
@@ -783,7 +783,7 @@ decided by the spelling and the receiver shape:
 | `expr.(P)` | `*Concrete` | **Owns** — SNAPSHOT of the pointee |
 | `expr.(P)` | `*P` (same protocol) | **Owns** — PROMOTION: the view's value with a fresh ctx copy (`rt_size_of(type_id)` bytes; vtable/fn words reused) |
 | `expr.(P, alloc)` | any owning shape above | **Owns** — the copy allocates through `alloc` (an LVALUE naming an allocator); pairs with `free(p, alloc)` |
-| `xx <lvalue>` / implicit lvalue / `xx @ptr` | at a `P` target | **Compile error** — the DEMAND diagnostic (below) |
+| `xx <lvalue>` / implicit lvalue / `xx *ptr` | at a `P` target | **Compile error** — the DEMAND diagnostic (below) |
 | any lvalue / pointer | at a `*P` target | **View** — borrows storage (see Borrowed Views) |
 
 An **implicit (or `xx`) erasure of an lvalue or pointer** to a value/own
@@ -903,7 +903,7 @@ locals):
 - a concrete **lvalue** builds the view in place — `ctx` is the lvalue's
   own address, so mutations through the view reach the original;
 - a **pointer-to-concrete** views its pointee;
-- an owned protocol value lends a view by plain address-of (`@s`).
+- an owned protocol value lends a view by plain address-of (`*s`).
 
 An **rvalue** has no durable storage to borrow — both the annotated-local
 and the argument form are compile errors (never a silent reinterpretation
@@ -1422,10 +1422,19 @@ are arbitrary expressions (`arr[x-1..=x+1]`).
 | `*[N]T` | pointer to array of N T | yes | yes |
 | `*[]T` | pointer to slice | yes | yes |
 
-**Address-of**: `@x` returns a pointer to the variable.
+**Address-of**: `*x` returns a pointer to the variable. One glyph, three
+positions: prefix `*` TAKES a pointer, postfix `.*` FOLLOWS one, and in a
+type position `*T` is the pointer type. In the value grammar a prefix `*`
+resolves by the KIND of its operand: a value operand is address-of; an
+operand that denotes a type yields the pointer TYPE as a Type value
+(`size_of(*T)`, generic `Type` arguments, `**T` nested inside-out). A
+local or global VALUE shadowing a type name stays a value — taking an
+address never silently becomes a type. Infix `*` (multiplication) is
+untouched: after an operand `*` is binary, at expression head it is
+address-of (`a * *b` multiplies `a` by the address of `b`).
 ```sx
 v := Vec2.{ 1.0, 2.0 };
-ptr := @v;             // *Vec2
+ptr := *v;             // *Vec2
 ```
 
 **Dereference**: `p.*` loads the value through the pointer.
@@ -1438,7 +1447,7 @@ copy := ptr.*;          // Vec2
 set_x :: (p: *Vec2, val: f32) {
     p.x = val;          // auto-deref: p.*.x = val
 }
-set_x(@v, 99.0);
+set_x(*v, 99.0);
 ```
 
 **Null**: Pointer types are nullable by default — permanently; this is part
@@ -1459,7 +1468,7 @@ op : ?*Vec2 = null;    // same layout; deref demands proof of presence
 **Many-pointer**: `[*]T` supports indexing for buffers of unknown size.
 ```sx
 arr : [5]i32 = .[10, 20, 30, 40, 50];
-mp : [*]i32 = @arr[0];   // *i32 → [*]i32 implicit
+mp : [*]i32 = *arr[0];   // *i32 → [*]i32 implicit
 val := mp[2];             // 30
 ```
 
@@ -1474,7 +1483,7 @@ val := mp[2];             // 30
 **Unchecked writes (the pointer contract)**: pointers carry no
 read-only qualifier — there is no `const` pointer type in sx (`const` is
 not a keyword). Taking the address of constant storage yields a plain
-pointer: `@K` on an array constant `K : [4]i64 : .[...]` is `*[4]i64`.
+pointer: `*K` on an array constant `K : [4]i64 : .[...]` is `*[4]i64`.
 Reads through it are fine; **writes through any pointer are unchecked**,
 and writing into constant storage through a pointer is undefined behavior
 (the storage is marked constant in the emitted binary). The compile-time
@@ -2143,7 +2152,7 @@ temperaments — the receiver reads as its `{ctx, type_id}` prefix view);
 the recovery targets — a pointer type (`p.(*T)`, the typed ctx read; `T`
 must be a CONCRETE type or `void` — a pointer-to-protocol target is refused,
 since ctx addresses the concrete value: lend a view of the protocol value
-itself with `@p` instead),
+itself with `*p` instead),
 `ProtocolRaw`, `any` (the explicit concrete view `xx p : any`), and
 another protocol (re-erasure) — are conversions and pass through.
 
@@ -2260,7 +2269,7 @@ x := K[i];      // GEP into the global — no copy
 y := K;         // by-value copy (normal array-value semantics);
                 // mutating y does not touch K
 f(K);           // by-value param — copy at the call
-p := @K;        // *[4]i64 — address of the const storage (reads)
+p := *K;        // *[4]i64 — address of the const storage (reads)
 ```
 
 Untyped inference unifies the element types: all ints → `i64`; any float
@@ -2284,7 +2293,7 @@ A struct-typed constant whose every field **serializes** — literals, enum
 literals, bools, strings, nested aggregates, named-const leaves, constant
 expressions (`K + 1`), another constant's field (`LIT.r`), a const array's
 element (`A[1]`) — becomes an immutable global exactly like an array
-constant: one storage, field reads GEP it, `@LIT` is addressable, copies
+constant: one storage, field reads GEP it, `*LIT` is addressable, copies
 are independent. The same constant-expression forms are accepted as
 elements of array constants.
 
@@ -2296,7 +2305,7 @@ W : Color : Color.{ r = 1, g = 2, b = 3 };      // typed form, same storage
 ```
 
 A struct constant with a **non-serializable** initializer field (a call, a
-runtime-global read, `@x`, `context`) keeps **inline re-lowering**
+runtime-global read, `*x`, `context`) keeps **inline re-lowering**
 semantics: the initializer is evaluated **at each use**. This is the
 documented contract for this class — side effects run per use and the
 value may differ between reads:
@@ -2629,7 +2638,7 @@ Everything in `sx` is expression-oriented where possible.
 | 2 | `and` | logical AND (short-circuit) |
 | 1 (lowest) | `or` | logical OR (short-circuit) / failable fallback (§12) |
 
-`try` is a unary prefix in the same tier as `xx` / `@` / `-` / `!` / `~`
+`try` is a unary prefix in the same tier as `xx` / `*` / `-` / `!` / `~`
 (tighter than every binary operator, including `or`); `catch` is a postfix
 attached to a failable expression. So `try foo() or try boo()` parses as
 `(try foo()) or (try boo())`. See [§12 Error Handling](#12-error-handling).
@@ -3278,7 +3287,7 @@ Statements are terminated by `;`.
 The `push` statement installs a new implicit context for the duration of a block. The context is CALL-CARRIED (a hidden `*Context` parameter threaded through every sx call, never a global): `push` allocates the new Context on the pushing frame's stack, and the body — including every function it calls — reads through it. On exit the previous context is back in force.
 
 ```sx
-push .{ allocator = arena.allocator(), logger = @my_logger } {
+push .{ allocator = arena.allocator(), logger = *my_logger } {
     handle(client);   // inside here, `context` has the new value
 }
 // context is restored to its previous value here

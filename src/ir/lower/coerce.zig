@@ -119,7 +119,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
                 if (dinfo == .pointer and self.getProtocolInfo(dinfo.pointer.pointee) != null) {
                     if (self.diagnostics) |d| {
                         const cs = self.builder.current_span;
-                        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "the ctx recovery yields a pointer to the CONCRETE value, so its target must be the concrete pointee type (e.g. `p.(*YourConcrete)` or `p.(*void)`); to point at the protocol value itself, take its address with `@`", .{});
+                        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "the ctx recovery yields a pointer to the CONCRETE value, so its target must be the concrete pointee type (e.g. `p.(*YourConcrete)` or `p.(*void)`); to point at the protocol value itself, take its address with prefix `*`", .{});
                     }
                     return self.builder.emit(.{ .placeholder = self.module.types.internString("protocol-ptr-recovery") }, dst_ty);
                 }

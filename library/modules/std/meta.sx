@@ -271,7 +271,7 @@ TryResult :: ($T: Type) -> Type {
 // no value to carry — match it by tag).
 make_variant :: ($E: Type, idx: i64, payload: $P) -> E {
     out : E = ---;
-    base : i64 = xx @out;
+    base : i64 = xx *out;
     c.memset(xx base, 0, size_of(E));             // clear tag padding + unused payload bytes
     tag_ptr : *i64 = xx base;
     tag_ptr.* = idx;                            // tag @ offset 0 (i64)

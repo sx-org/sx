@@ -61,7 +61,7 @@ UIPipeline :: struct {
         self.font.init(path, size);
         self.font.set_dpi_scale(dpi_scale);
         self.renderer.dpi_scale = dpi_scale;
-        set_global_font(@self.font);
+        set_global_font(*self.font);
     }
 
     set_root :: (self: *UIPipeline, view: View) {
@@ -98,8 +98,8 @@ UIPipeline :: struct {
         self.root.view.layout(self.root.computed_frame);
 
         self.render_tree.clear();
-        ctx := RenderContext.init(@self.render_tree);
-        self.root.view.render(@ctx, self.root.computed_frame);
+        ctx := RenderContext.init(*self.render_tree);
+        self.root.view.render(*ctx, self.root.computed_frame);
 
         self.commit_gpu();
     }
@@ -130,15 +130,15 @@ UIPipeline :: struct {
 
         // Render to tree
         self.render_tree.clear();
-        ctx := RenderContext.init(@self.render_tree);
-        self.root.view.render(@ctx, self.root.computed_frame);
+        ctx := RenderContext.init(*self.render_tree);
+        self.root.view.render(*ctx, self.root.computed_frame);
 
         // Commit to GPU
         self.commit_gpu();
     }
 
     tick_with_body :: (self: *UIPipeline) {
-        build_arena : *Arena = if (self.frame_index & 1) == 0 then @self.arena_a else @self.arena_b;
+        build_arena : *Arena = if (self.frame_index & 1) == 0 then *self.arena_a else *self.arena_b;
         build_arena.reset();
 
         // Reset render_tree nodes (backing is stale after arena reset)
@@ -162,8 +162,8 @@ UIPipeline :: struct {
             self.root.view.layout(self.root.computed_frame);
 
             self.render_tree.clear();
-            ctx := RenderContext.init(@self.render_tree);
-            self.root.view.render(@ctx, self.root.computed_frame);
+            ctx := RenderContext.init(*self.render_tree);
+            self.root.view.render(*ctx, self.root.computed_frame);
 
             self.commit_gpu();
         }
@@ -179,7 +179,7 @@ UIPipeline :: struct {
         }
 
         self.renderer.begin(self.screen_width, self.screen_height, self.font.texture_id);
-        self.renderer.process(@self.render_tree);
+        self.renderer.process(*self.render_tree);
         // Push any glyphs rasterized during process() to the GPU atlas BEFORE
         // the final draw is recorded. On Metal we deferred per-render_text
         // uploads so this is the single point where the atlas reaches the

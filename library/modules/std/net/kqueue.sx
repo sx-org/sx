@@ -65,7 +65,7 @@ kev_change :: (fd: i32, filter: i16, flags: u16, udata: usize) -> Kevent {
 // True on success.
 kq_apply :: (kq: i32, change: Kevent) -> bool {
     ch := change;
-    return kevent(kq, @ch, 1, null, 0, null) >= 0;
+    return kevent(kq, *ch, 1, null, 0, null) >= 0;
 }
 
 // Drain ready events into `events` (capacity `cap`), waiting at most
@@ -76,7 +76,7 @@ kq_wait :: (kq: i32, events: *Kevent, cap: i32, timeout_ms: i64) -> i32 {
     while true {
         n := if timeout_ms < 0
             then kevent(kq, null, 0, events, cap, null)
-            else kevent(kq, null, 0, events, cap, @ts);
+            else kevent(kq, null, 0, events, cap, *ts);
         if n >= 0 { return n; }
         if posix.errno() != posix.EINTR { return -1; }   // EINTR: reissue
     }

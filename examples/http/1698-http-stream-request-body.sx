@@ -59,7 +59,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         total : i64 = 0;
         h : i64 = 0;
         while true {
-            n := req.read_body(@scratch[0], 8192);
+            n := req.read_body(*scratch[0], 8192);
             if n <= 0 { break; }
             i : i64 = 0;
             while i < n { h = (h * 31 + scratch[i]) % 1000000007; i += 1; }
@@ -70,7 +70,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     }
     if req.path == "/reject" {
         scratch : [4096]u8 = ---;
-        req.read_body(@scratch[0], 4096);   // one piece, then bail without draining
+        req.read_body(*scratch[0], 4096);   // one piece, then bail without draining
         obs.reject_ran = 1;
         resp.status = 413;
         resp.body = "too big";
@@ -81,7 +81,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         got : i64 = 0;
         rc : i64 = 0;
         while true {
-            rc = req.read_body(@scratch[0], 4096);
+            rc = req.read_body(*scratch[0], 4096);
             if rc <= 0 { break; }
             got += rc;
         }
@@ -95,7 +95,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         got : i64 = 0;
         rc : i64 = 0;
         while true {
-            rc = req.read_body(@scratch[0], 4096);
+            rc = req.read_body(*scratch[0], 4096);
             if rc <= 0 { break; }
             got += rc;
         }
@@ -111,7 +111,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -158,7 +158,7 @@ num_after :: (hay: string, key: string) -> i64 {
 send_all :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
-        n, we := socket.write_nb(fd, @s.ptr[sent], xx (s.len - sent));
+        n, we := socket.write_nb(fd, *s.ptr[sent], xx (s.len - sent));
         if !we { sent += n; }
         srv.tick(1) catch {};
     }
@@ -172,7 +172,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     t : i64 = 0;
     while t < 20000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *rbuf[total], xx (cap - total));
         if !re { total += n; }
         else if re == error.Closed { return total; }
         resp := string.{ ptr = rbuf, len = xx total };
@@ -213,7 +213,7 @@ main :: () -> i32 {
             handler_timeout_ms = 5000,
             stream_request_body = true,
         };
-        srv, se := http.Server.init(cfg, route, xx @obs);
+        srv, se := http.Server.init(cfg, route, xx *obs);
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: Content-Length 200000 streamed, split delivery ────
@@ -229,12 +229,12 @@ main :: () -> i32 {
 
         c1 := dial_port(PORT);
         if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 200000\r\n\r\n");
+        send_all(*srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 200000\r\n\r\n");
         // three slices so body bytes straddle read cycles
-        send_all(@srv, c1, string.{ ptr = body, len = 70001 });
-        send_all(@srv, c1, string.{ ptr = @body[70001], len = 59999 });
-        send_all(@srv, c1, string.{ ptr = @body[130000], len = CL_BODY_LEN - 130000 });
-        r1 := read_response(@srv, c1, rbuf, cap);
+        send_all(*srv, c1, string.{ ptr = body, len = 70001 });
+        send_all(*srv, c1, string.{ ptr = *body[70001], len = 59999 });
+        send_all(*srv, c1, string.{ ptr = *body[130000], len = CL_BODY_LEN - 130000 });
+        r1 := read_response(*srv, c1, rbuf, cap);
         resp1 := string.{ ptr = rbuf, len = xx r1 };
         if !contains(resp1, "HTTP/1.1 200 OK") { print("case1: no 200\n"); failed = 1; }
         if num_after(resp1, "len=") != CL_BODY_LEN { print("case1: bad len {}\n", num_after(resp1, "len=")); failed = 1; }
@@ -252,16 +252,16 @@ main :: () -> i32 {
         i = 0;
         while i < CH3 { ch3[i] = xx ((i * 11 + 5) % 251); sum2 = (sum2 * 31 + ch3[i]) % 1000000007; i += 1; }
 
-        send_all(@srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n");
-        send_all(@srv, c1, "c350\r\n");                                   // 50000
-        send_all(@srv, c1, string.{ ptr = ch1, len = 30000 });            // split mid-chunk
-        send_all(@srv, c1, string.{ ptr = @ch1[30000], len = CH1 - 30000 });
-        send_all(@srv, c1, "\r\n64;n=2\r\n");                             // CRLF + 100 w/ chunk-ext
-        send_all(@srv, c1, string.{ ptr = ch2, len = CH2 });
-        send_all(@srv, c1, "\r\n11170\r\n");                              // CRLF + 70000
-        send_all(@srv, c1, string.{ ptr = ch3, len = CH3 });
-        send_all(@srv, c1, "\r\n0\r\nX-Trail: yes\r\n\r\n");              // terminator + trailer
-        r2 := read_response(@srv, c1, rbuf, cap);
+        send_all(*srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n");
+        send_all(*srv, c1, "c350\r\n");                                   // 50000
+        send_all(*srv, c1, string.{ ptr = ch1, len = 30000 });            // split mid-chunk
+        send_all(*srv, c1, string.{ ptr = *ch1[30000], len = CH1 - 30000 });
+        send_all(*srv, c1, "\r\n64;n=2\r\n");                             // CRLF + 100 w/ chunk-ext
+        send_all(*srv, c1, string.{ ptr = ch2, len = CH2 });
+        send_all(*srv, c1, "\r\n11170\r\n");                              // CRLF + 70000
+        send_all(*srv, c1, string.{ ptr = ch3, len = CH3 });
+        send_all(*srv, c1, "\r\n0\r\nX-Trail: yes\r\n\r\n");              // terminator + trailer
+        r2 := read_response(*srv, c1, rbuf, cap);
         resp2 := string.{ ptr = rbuf, len = xx r2 };
         if !contains(resp2, "HTTP/1.1 200 OK") { print("case2: no 200\n"); failed = 1; }
         if num_after(resp2, "len=") != CH1 + CH2 + CH3 { print("case2: bad len {}\n", num_after(resp2, "len=")); failed = 1; }
@@ -271,9 +271,9 @@ main :: () -> i32 {
         // ── case 3: backpressure — worker sleeps, channel fills, park+wake ──
         c3 := dial_port(PORT);
         if c3 < 0 { print("dial c3 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c3, "POST /slowsum HTTP/1.1\r\nHost: t\r\nContent-Length: 200000\r\n\r\n");
-        send_all(@srv, c3, body_s);
-        r3 := read_response(@srv, c3, rbuf, cap);
+        send_all(*srv, c3, "POST /slowsum HTTP/1.1\r\nHost: t\r\nContent-Length: 200000\r\n\r\n");
+        send_all(*srv, c3, body_s);
+        r3 := read_response(*srv, c3, rbuf, cap);
         resp3 := string.{ ptr = rbuf, len = xx r3 };
         if !contains(resp3, "HTTP/1.1 200 OK") { print("case3: no 200\n"); failed = 1; }
         if num_after(resp3, "len=") != CL_BODY_LEN { print("case3: bad len {}\n", num_after(resp3, "len=")); failed = 1; }
@@ -283,9 +283,9 @@ main :: () -> i32 {
         // ── case 4: early response without draining → 413 + close ────
         c4 := dial_port(PORT);
         if c4 < 0 { print("dial c4 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c4, "POST /reject HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
-        send_all(@srv, c4, string.{ ptr = body, len = 8192 });   // partial body only
-        r4 := read_response(@srv, c4, rbuf, cap);
+        send_all(*srv, c4, "POST /reject HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
+        send_all(*srv, c4, string.{ ptr = body, len = 8192 });   // partial body only
+        r4 := read_response(*srv, c4, rbuf, cap);
         resp4 := string.{ ptr = rbuf, len = xx r4 };
         if !contains(resp4, "HTTP/1.1 413") { print("case4: no 413\n"); failed = 1; }
         if !contains(resp4, "Connection: close") { print("case4: no close\n"); failed = 1; }
@@ -298,10 +298,10 @@ main :: () -> i32 {
         // gets -1, and the worker's response ships with Connection: close.
         c4b := dial_port(PORT);
         if c4b < 0 { print("dial c4b failed\n"); srv.close(); return 1; }
-        send_all(@srv, c4b, "POST /countb HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n");
-        send_all(@srv, c4b, "3\r\nabc\r\n");
-        send_all(@srv, c4b, "5;a\rb\r\n");   // bare CR inside the chunk-ext
-        r4b := read_response(@srv, c4b, rbuf, cap);
+        send_all(*srv, c4b, "POST /countb HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n");
+        send_all(*srv, c4b, "3\r\nabc\r\n");
+        send_all(*srv, c4b, "5;a\rb\r\n");   // bare CR inside the chunk-ext
+        r4b := read_response(*srv, c4b, rbuf, cap);
         resp4b := string.{ ptr = rbuf, len = xx r4b };
         if !contains(resp4b, "counted-b") { print("case4b: no response\n"); failed = 1; }
         if !contains(resp4b, "Connection: close") { print("case4b: no close\n"); failed = 1; }
@@ -310,8 +310,8 @@ main :: () -> i32 {
         // ── case 5: client disconnect mid-body → read_body faults ─────
         c5 := dial_port(PORT);
         if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c5, "POST /count HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
-        send_all(@srv, c5, string.{ ptr = body, len = COUNT_SENT });
+        send_all(*srv, c5, "POST /count HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
+        send_all(*srv, c5, string.{ ptr = body, len = COUNT_SENT });
         socket.close(c5);   // mid-body disconnect
         // drain: tick until nothing is in flight (fault propagated, late
         // completion discarded), with a generous stall-based cap
@@ -324,8 +324,8 @@ main :: () -> i32 {
         // ── server still healthy ──────────────────────────────────────
         c6 := dial_port(PORT);
         if c6 < 0 { print("dial c6 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c6, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
-        r6 := read_response(@srv, c6, rbuf, cap);
+        send_all(*srv, c6, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r6 := read_response(*srv, c6, rbuf, cap);
         resp6 := string.{ ptr = rbuf, len = xx r6 };
         if !contains(resp6, "HTTP/1.1 200 OK") or !contains(resp6, "pong") {
             print("health check failed\n");

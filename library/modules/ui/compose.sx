@@ -80,19 +80,19 @@ FNV_OFFSET : u64 : 14695981039346656037;
 hash_site :: (h: u64, site: SiteId) -> u64 {
     h2 := hash.fnv1a_fold(h, site.file.ptr, site.file.len);
     line := site.line;
-    hash.fnv1a_fold(h2, xx @line, size_of(i32))
+    hash.fnv1a_fold(h2, xx *line, size_of(i32))
 }
 
 hash_key :: (h: u64, k: Key) -> u64 {
     if k == {
         case .int: (x) {
             v := x;
-            hash.fnv1a_fold(h, xx @v, size_of(i64))
+            hash.fnv1a_fold(h, xx *v, size_of(i64))
         }
         case .str: (s) {
             // A tag byte separates .str("1") from .int(1)'s bytes.
             tag : u8 = 0xFF;
-            h2 := hash.fnv1a_fold(h, @tag, 1);
+            h2 := hash.fnv1a_fold(h, *tag, 1);
             hash.fnv1a_fold(h2, s.ptr, s.len)
         }
     }
@@ -216,7 +216,7 @@ element_id :: (site: SiteId = site_of(#caller_location)) -> ElementId {
     gid := hash_site(ui.chain_hash, site);
     occurrence := ui.next_occurrence(gid);
     occ := occurrence;
-    ElementId.{ value = hash.fnv1a_fold(gid, xx @occ, size_of(i32)) }
+    ElementId.{ value = hash.fnv1a_fold(gid, xx *occ, size_of(i32)) }
 }
 
 // --- keyed — THE dynamic-identity spelling ---
@@ -262,7 +262,7 @@ print_key :: (k: Key) {
 print_chain :: (ui: *Ui) {
     i := 0;
     while i < ui.chain.len {
-        seg := @ui.chain.items[i];
+        seg := *ui.chain.items[i];
         if seg.kind == .site {
             print("  site {}:{}\n", seg.site.file, seg.site.line);
         } else {
@@ -321,7 +321,7 @@ fold_hstack :: (items: []View, spacing: f32) -> View {
 
 vstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location), content: Closure()) -> View {
     s := Sink(View).{};
-    push .{ ui_sink = @s } {
+    push .{ ui_sink = *s } {
         context.ui.scope_at(site, content);
     }
     place(fold_vstack(s.items.items, spacing), m)
@@ -329,7 +329,7 @@ vstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location),
 
 hstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location), content: Closure()) -> View {
     s := Sink(View).{};
-    push .{ ui_sink = @s } {
+    push .{ ui_sink = *s } {
         context.ui.scope_at(site, content);
     }
     place(fold_hstack(s.items.items, spacing), m)

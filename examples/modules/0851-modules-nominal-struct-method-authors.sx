@@ -24,7 +24,7 @@ main :: () -> i32 {
     if ashort.value != 10 { return 10; }
     if av.mix(.{ amount = 2 }, .one) != 23 { return 18; }
     aother := a.Thing.from(.{ amount = 1 });
-    if av.after_pick(@aother) != 21 { return 19; }
+    if av.after_pick(*aother) != 21 { return 19; }
 
     bv := b.Thing.from(.{ enabled = true });
     if !bv.value { return 11; }
@@ -38,6 +38,6 @@ main :: () -> i32 {
     if bshort.value { return 17; }
     if !bv.mix(.{ enabled = true }, .one) { return 20; }
     bother := b.Thing.from(.{ enabled = false });
-    if !bv.after_pick(@bother) { return 21; }
+    if !bv.after_pick(*bother) { return 21; }
     0
 }

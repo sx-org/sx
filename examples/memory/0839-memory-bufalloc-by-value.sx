@@ -9,7 +9,7 @@
 
 main :: () {
     stack_buf : [128]u8 = ---;
-    buf := BufAlloc.init(@stack_buf[0], 128);
+    buf := BufAlloc.init(*stack_buf[0], 128);
     a : Allocator = xx buf;
 
     b1 := a.alloc_bytes(64);

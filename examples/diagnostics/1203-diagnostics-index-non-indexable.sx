@@ -24,7 +24,7 @@ S :: struct { a: i64; }
 
 main :: () {
     x := 5;
-    p : *i64 = @x;
+    p : *i64 = *x;
     print("{}\n", p[0]);    // error: '*i64' is not indexable (hint form)
 
     s := S.{ a = 1 };

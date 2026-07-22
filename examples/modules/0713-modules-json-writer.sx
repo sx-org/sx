@@ -75,14 +75,14 @@ main :: () -> ! {
 
     // 1. Write into a caller buffer; assert exact bytes + byte count.
     buf : [512]u8 = ---;
-    n := try write_to_buffer(root, string.{ ptr = @buf[0], len = 512 });
-    view := string.{ ptr = @buf[0], len = n };
+    n := try write_to_buffer(root, string.{ ptr = *buf[0], len = 512 });
+    view := string.{ ptr = *buf[0], len = n };
     print("doc: {}\n", view);
     report("buffer-exact", view == EXPECT);
     report("buffer-len",   n == EXPECT.len);
 
     // 2. A buffer that is one byte too small must raise Overflow.
-    tight : []u8 = string.{ ptr = @buf[256], len = EXPECT.len - 1 };
+    tight : []u8 = string.{ ptr = *buf[256], len = EXPECT.len - 1 };
     _, oerr := write_to_buffer(root, tight);
     report("overflow-raised", oerr == error.Overflow);
 
@@ -96,7 +96,7 @@ main :: () -> ! {
     if fh == null { print("open: FAIL\n"); return; }
     f := fh!;
     stage : [8]u8 = ---;
-    try write_to_file(root, @f, string.{ ptr = @stage[0], len = 8 });
+    try write_to_file(root, *f, string.{ ptr = *stage[0], len = 8 });
     f.close();
 
     back := read_file(path);

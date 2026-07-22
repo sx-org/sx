@@ -15,7 +15,7 @@
 #import "modules/std/hash.sx";
 
 check :: (label: string, got: [64]u8, want: string) {
-    view := string.{ ptr = @got[0], len = 64 };
+    view := string.{ ptr = *got[0], len = 64 };
     if view == want {
         print("{}: ok\n", label);
     } else {
@@ -35,7 +35,7 @@ hash_a :: (total: i64) -> [64]u8 {
     remaining := total;
     while remaining > 0 {
         take := if remaining < 1000 then remaining else 1000;
-        h.update(string.{ ptr = @chunk[0], len = take });
+        h.update(string.{ ptr = *chunk[0], len = take });
         remaining -= take;
     }
     h.final()

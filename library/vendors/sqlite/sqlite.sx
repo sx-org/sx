@@ -566,7 +566,7 @@ Sqlite :: struct {
 
     open :: (path: string) -> (Sqlite, !SqliteErr) {
         h : usize = 0;
-        rc := sqlite3_open(to_cstring(path), @h);
+        rc := sqlite3_open(to_cstring(path), *h);
         if rc != SQLITE_OK {
             if h != 0 { sqlite3_close(h); }
             raise error.Open;
@@ -576,7 +576,7 @@ Sqlite :: struct {
 
     open_v2 :: (path: string, flags: i32) -> (Sqlite, !SqliteErr) {
         h : usize = 0;
-        rc := sqlite3_open_v2(to_cstring(path), @h, flags, 0);
+        rc := sqlite3_open_v2(to_cstring(path), *h, flags, 0);
         if rc != SQLITE_OK {
             if h != 0 { sqlite3_close(h); }
             raise error.Open;
@@ -605,7 +605,7 @@ Sqlite :: struct {
 
     prepare :: (self: *Sqlite, sql: string) -> (SqliteStmt, !SqliteErr) {
         sh : usize = 0;
-        rc := sqlite3_prepare_v2(self.handle, sql.ptr, xx sql.len, @sh, 0);
+        rc := sqlite3_prepare_v2(self.handle, sql.ptr, xx sql.len, *sh, 0);
         if rc != SQLITE_OK { raise error.Prepare; }
         return SqliteStmt.{ handle = sh, db = self.handle };
     }
@@ -613,7 +613,7 @@ Sqlite :: struct {
     // statement cache a storage layer keeps hot).
     prepare_v3 :: (self: *Sqlite, sql: string, flags: u32) -> (SqliteStmt, !SqliteErr) {
         sh : usize = 0;
-        rc := sqlite3_prepare_v3(self.handle, sql.ptr, xx sql.len, flags, @sh, 0);
+        rc := sqlite3_prepare_v3(self.handle, sql.ptr, xx sql.len, flags, *sh, 0);
         if rc != SQLITE_OK { raise error.Prepare; }
         return SqliteStmt.{ handle = sh, db = self.handle };
     }
@@ -691,7 +691,7 @@ Sqlite :: struct {
         nn : i32 = 0;
         pk : i32 = 0;
         ai : i32 = 0;
-        rc := sqlite3_table_column_metadata(self.handle, to_cstring("main"), to_cstring(table), to_cstring(column), @dt, @cs, @nn, @pk, @ai);
+        rc := sqlite3_table_column_metadata(self.handle, to_cstring("main"), to_cstring(table), to_cstring(column), *dt, *cs, *nn, *pk, *ai);
         if rc != SQLITE_OK { raise error.Metadata; }
         dtp : ?*u8 = if dt != 0 then dt.(*u8).(?*u8) else null;
         csp : ?*u8 = if cs != 0 then cs.(*u8).(?*u8) else null;
@@ -705,7 +705,7 @@ Sqlite :: struct {
     // The whole "main" database as bytes (a valid database image).
     serialize :: (self: *Sqlite) -> (string, !SqliteErr) {
         size : i64 = 0;
-        p := sqlite3_serialize(self.handle, to_cstring("main"), @size, 0);
+        p := sqlite3_serialize(self.handle, to_cstring("main"), *size, 0);
         if p == null { raise error.Serialize; }
         out := sq_copy_bytes(p, size);
         sqlite3_free(xx p!);
@@ -737,7 +737,7 @@ SqliteBlob :: struct {
     open :: (db: *Sqlite, table: string, column: string, rowid: i64, writable: bool) -> (SqliteBlob, !SqliteErr) {
         h : usize = 0;
         rc := sqlite3_blob_open(db.handle, to_cstring("main"), to_cstring(table), to_cstring(column),
-                                rowid, if writable then 1 else 0, @h);
+                                rowid, if writable then 1 else 0, *h);
         if rc != SQLITE_OK { raise error.Blob; }
         return SqliteBlob.{ handle = h };
     }

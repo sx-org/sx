@@ -26,7 +26,7 @@ rec :: (l: *Log, id: i64, at: i64) { l.id[l.n] = id; l.at[l.n] = at; l.n = l.n +
 main :: () -> i64 {
     lg : Log = ---; lg.n = 0;
     s := sched.Scheduler.init();
-    ps := @s; pl := @lg;
+    ps := *s; pl := *lg;
 
     // The coordinator runs as a fiber so `race` has a `current` to park.
     push .{ io = xx s } {

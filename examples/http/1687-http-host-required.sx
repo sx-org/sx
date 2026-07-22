@@ -22,7 +22,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -53,7 +53,7 @@ roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
             if !re { total += n; got += n; continue; }
             if re == error.Closed { done = true; }
             break;
@@ -78,21 +78,21 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // (a) 1.1 without Host → 400
-        r := roundtrip(@srv, "GET / HTTP/1.1\r\nX-Other: 1\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r := roundtrip(*srv, "GET / HTTP/1.1\r\nX-Other: 1\r\nConnection: close\r\n\r\n", rbuf, cap);
         if !contains(r, "HTTP/1.1 400") { print("missing Host: expected 400\n"); failed = 1; }
 
         // (b) 1.1 with duplicate Host → 400
-        r = roundtrip(@srv, "GET / HTTP/1.1\r\nHost: a\r\nHost: b\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srv, "GET / HTTP/1.1\r\nHost: a\r\nHost: b\r\nConnection: close\r\n\r\n", rbuf, cap);
         if !contains(r, "HTTP/1.1 400") { print("duplicate Host: expected 400\n"); failed = 1; }
 
         // (c) normal 1.1 with one Host → 200
-        r = roundtrip(@srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         if !contains(r, "HTTP/1.1 200 OK") or !contains(r, "served") {
             print("single Host: expected 200\n"); failed = 1;
         }
 
         // (d) Host-less 1.0 stays served (Host predates 1.1)
-        r = roundtrip(@srv, "GET / HTTP/1.0\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srv, "GET / HTTP/1.0\r\n\r\n", rbuf, cap);
         if !contains(r, "HTTP/1.1 200 OK") or !contains(r, "served") {
             print("1.0 without Host: expected 200\n"); failed = 1;
         }

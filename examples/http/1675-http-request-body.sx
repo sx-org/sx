@@ -54,7 +54,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1, per-OS layout
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -100,7 +100,7 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
     out : string = "";
     while tries < 4000 {
         srv.tick(2) catch {};
-        n, re := socket.read_nb(fd, @scratch[total], xx (8192 - total));
+        n, re := socket.read_nb(fd, *scratch[total], xx (8192 - total));
         if !re { total += n; }
         else if re == error.Closed { out = string.{ ptr = scratch, len = xx total }; break; }
         if resp_complete(scratch, total) { out = string.{ ptr = scratch, len = xx total }; break; }
@@ -127,11 +127,11 @@ roundtrip_split :: (srv: *http.Server, reqtext: string, pieces: i64, scratch: [*
         if sent < reqtext.len {
             n := piece;
             if sent + n > reqtext.len { n = reqtext.len - sent; }
-            socket.write(fd, @reqtext.ptr[sent], xx n);
+            socket.write(fd, *reqtext.ptr[sent], xx n);
             sent += n;
         }
         srv.tick(2) catch {};
-        rn, re := socket.read_nb(fd, @scratch[total], xx (8192 - total));
+        rn, re := socket.read_nb(fd, *scratch[total], xx (8192 - total));
         if !re { total += rn; }
         else if re == error.Closed { out = string.{ ptr = scratch, len = xx total }; break; }
         if resp_complete(scratch, total) { out = string.{ ptr = scratch, len = xx total }; break; }
@@ -150,7 +150,7 @@ body_of :: (r: string) -> string {
         i += 1;
     }
     if he < 0 { return ""; }
-    return string.{ ptr = @r.ptr[he + 4], len = r.len - (he + 4) };
+    return string.{ ptr = *r.ptr[he + 4], len = r.len - (he + 4) };
 }
 
 str_eq :: (a: string, b: string) -> bool {
@@ -187,7 +187,7 @@ main :: () -> i32 {
 
         // ── 1. fixed Content-Length body still works (200, exact body) ──
         if rc == 0 {
-            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\n\r\nhello", scratch);
+            r := roundtrip(*srv, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\n\r\nhello", scratch);
             if !contains(r, "HTTP/1.1 200 OK") or !str_eq(body_of(r), "hello") {
                 print("fixed body: expected 200 'hello'\n"); rc = 1;
             }
@@ -210,7 +210,7 @@ main :: () -> i32 {
                     concat("B\r\n in chunks.\r\n",
                     "0\r\nX-Trailer: ignored\r\n\r\n"))));
             }
-            r := roundtrip_split(@srv, req, 7, scratch);
+            r := roundtrip_split(*srv, req, 7, scratch);
             if !contains(r, "HTTP/1.1 200 OK") or !str_eq(body_of(r), "Wikipedia in chunks.") {
                 print("chunked decode: expected 200 'Wikipedia in chunks.', got body len {}\n", body_of(r).len);
                 rc = 1;
@@ -221,7 +221,7 @@ main :: () -> i32 {
         // ── 3. chunked with NO trailers, single chunk → 200 exact ──
         if rc == 0 {
             req := "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n";
-            r := roundtrip(@srv, req, scratch);
+            r := roundtrip(*srv, req, scratch);
             if !contains(r, "HTTP/1.1 200 OK") or !str_eq(body_of(r), "hello") {
                 print("chunked single: expected 200 'hello'\n"); rc = 1;
             }
@@ -230,7 +230,7 @@ main :: () -> i32 {
         // ── 4. max_body: Content-Length over max (64) → early 413 ──
         if rc == 0 {
             // 100 bytes declared; never buffered — rejected on the CL alone.
-            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 100\r\n\r\n", scratch);
+            r := roundtrip(*srv, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 100\r\n\r\n", scratch);
             if !contains(r, "HTTP/1.1 413") {
                 print("CL over max: expected 413\n"); rc = 1;
             }
@@ -241,7 +241,7 @@ main :: () -> i32 {
             // a single 0x50 (80) byte chunk > 64; rejected the instant the
             // size header crosses max_body (the 80 data bytes aren't sent).
             req := "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n50\r\n";
-            r := roundtrip(@srv, req, scratch);
+            r := roundtrip(*srv, req, scratch);
             if !contains(r, "HTTP/1.1 413") {
                 print("chunked over max: expected 413\n"); rc = 1;
             }
@@ -249,26 +249,26 @@ main :: () -> i32 {
 
         // ── 6. CL + TE together → 400 (smuggling pair) ──
         if rc == 0 {
-            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n", scratch);
+            r := roundtrip(*srv, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n", scratch);
             if !contains(r, "HTTP/1.1 400") { print("CL+TE: expected 400\n"); rc = 1; }
         }
 
         // ── 7. non-chunked TE (gzip) → 501 ──
         if rc == 0 {
-            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: gzip\r\n\r\n", scratch);
+            r := roundtrip(*srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: gzip\r\n\r\n", scratch);
             if !contains(r, "HTTP/1.1 501") { print("TE gzip: expected 501\n"); rc = 1; }
         }
 
         // ── 8. malformed chunk: bad hex size → 400 ──
         if rc == 0 {
-            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\nZZ\r\nhello\r\n0\r\n\r\n", scratch);
+            r := roundtrip(*srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\nZZ\r\nhello\r\n0\r\n\r\n", scratch);
             if !contains(r, "HTTP/1.1 400") { print("bad hex: expected 400\n"); rc = 1; }
         }
 
         // ── 9. malformed chunk: missing CRLF after data → 400 ──
         if rc == 0 {
             // "5\r\nhelloXX..." — the byte after the 5 data bytes is not CR.
-            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhelloZZ0\r\n\r\n", scratch);
+            r := roundtrip(*srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhelloZZ0\r\n\r\n", scratch);
             if !contains(r, "HTTP/1.1 400") { print("bad data CRLF: expected 400\n"); rc = 1; }
         }
 
@@ -276,7 +276,7 @@ main :: () -> i32 {
         //    The `0` parses as a hex digit, then `x5` is junk after the size.
         //    Must NOT be swallowed as a 0-size (last) chunk → 400.
         if rc == 0 {
-            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n0x5\r\nhello\r\n0\r\n\r\n", scratch);
+            r := roundtrip(*srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n0x5\r\nhello\r\n0\r\n\r\n", scratch);
             if !contains(r, "HTTP/1.1 400") { print("0x-prefix size: expected 400\n"); rc = 1; }
         }
 
@@ -284,7 +284,7 @@ main :: () -> i32 {
         //    `100` hex = 256 > max_body (64). Must be 413 (over-limit), NOT a
         //    400 (overflow) — and the 256 data bytes are never buffered.
         if rc == 0 {
-            r := roundtrip(@srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n100\r\n", scratch);
+            r := roundtrip(*srv, "POST /echo HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked\r\n\r\n100\r\n", scratch);
             if !contains(r, "HTTP/1.1 413") { print("over-max chunk size: expected 413\n"); rc = 1; }
         }
 
@@ -301,8 +301,8 @@ main :: () -> i32 {
                 socket.close(fd);                                 // disconnect mid-body
                 t = 0;
                 while t < 200 { srv.tick(1) catch {}; t += 1; }   // let the server notice + close
-                if active_slots(@srv) != 0 {
-                    print("mid-body disconnect: slot not freed ({} active)\n", active_slots(@srv));
+                if active_slots(*srv) != 0 {
+                    print("mid-body disconnect: slot not freed ({} active)\n", active_slots(*srv));
                     rc = 1;
                 }
             }
@@ -310,7 +310,7 @@ main :: () -> i32 {
 
         // ── 11. server still healthy after all of the above ──
         if rc == 0 {
-            r := roundtrip(@srv, "GET /len HTTP/1.1\r\nHost: t\r\nContent-Length: 3\r\n\r\nabc", scratch);
+            r := roundtrip(*srv, "GET /len HTTP/1.1\r\nHost: t\r\nContent-Length: 3\r\n\r\nabc", scratch);
             if !contains(r, "HTTP/1.1 200 OK") or !str_eq(body_of(r), "3") {
                 print("post-run health: expected 200 '3'\n"); rc = 1;
             }

@@ -21,7 +21,7 @@ MSG :: "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnop
 PIN :: "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1";
 
 check :: (label: string, got: [64]u8, want: string) {
-    view := string.{ ptr = @got[0], len = 64 };
+    view := string.{ ptr = *got[0], len = 64 };
     if view == want {
         print("{}: ok\n", label);
     } else {
@@ -38,7 +38,7 @@ stream_by_byte :: (data: string) -> [64]u8 {
     h := init();
     i := 0;
     while i < data.len {
-        h.update(string.{ ptr = @data[i], len = 1 });
+        h.update(string.{ ptr = *data[i], len = 1 });
         i += 1;
     }
     h.final()
@@ -47,8 +47,8 @@ stream_by_byte :: (data: string) -> [64]u8 {
 // Absorb `data` as two updates split at `at` (views into the buffer).
 stream_split :: (data: string, at: i64) -> [64]u8 {
     h := init();
-    h.update(string.{ ptr = @data[0],  len = at });
-    h.update(string.{ ptr = @data[at], len = data.len - at });
+    h.update(string.{ ptr = *data[0],  len = at });
+    h.update(string.{ ptr = *data[at], len = data.len - at });
     h.final()
 }
 
@@ -68,8 +68,8 @@ main :: () {
     file_digest := maybe!;
     mem_digest := sha256_hex(MSG);
 
-    fv := string.{ ptr = @file_digest[0], len = 64 };
-    mv := string.{ ptr = @mem_digest[0],  len = 64 };
+    fv := string.{ ptr = *file_digest[0], len = 64 };
+    mv := string.{ ptr = *mem_digest[0],  len = 64 };
     report("file-eq-memory", fv == mv);
     check("file-pinned", file_digest, PIN);
 

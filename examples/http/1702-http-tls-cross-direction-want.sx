@@ -81,7 +81,7 @@ FakeConn :: struct {
 drain_fd :: (c: *FakeConn) -> i64 {
     got : i64 = 0;
     while c.pend_len < PEND_CAP {
-        n, re := socket.read_nb(c.fd, @c.pend[c.pend_len], xx (PEND_CAP - c.pend_len));
+        n, re := socket.read_nb(c.fd, *c.pend[c.pend_len], xx (PEND_CAP - c.pend_len));
         if re == error.WouldBlock { break; }
         if re { if got > 0 { break; } return -1; }
         c.pend_len += n;
@@ -100,7 +100,7 @@ impl TlsConn for FakeConn {
         if self.pend_off < self.pend_len {
             n := self.pend_len - self.pend_off;
             if n > xx cap { n = xx cap; }
-            cstd.memcpy(buf, @self.pend[self.pend_off], xx n);
+            cstd.memcpy(buf, *self.pend[self.pend_off], xx n);
             self.pend_off += n;
             if self.pend_off == self.pend_len { self.pend_off = 0; self.pend_len = 0; }
             return n, TlsStep.Done;
@@ -150,7 +150,7 @@ impl TlsConn for FakeConn {
                 // the futile retry: a correct server only re-calls this on
                 // READ readiness, i.e. when the byte is actually there.
                 tick : [8]u8 = ---;
-                n, re := socket.read_nb(self.fd, @tick[0], 8);
+                n, re := socket.read_nb(self.fd, *tick[0], 8);
                 if re == error.WouldBlock {
                     self.acc.wr_extra_retries += 1;
                     return 0, TlsStep.WantRead;
@@ -209,7 +209,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         scratch : [64]u8 = ---;
         total : i64 = 0;
         while true {
-            n := req.read_body(@scratch[0], 64);
+            n := req.read_body(*scratch[0], 64);
             if n <= 0 { break; }
             total += n;
         }
@@ -235,7 +235,7 @@ dial :: () -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(PORT, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -260,7 +260,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64, needle: str
     t : i64 = 0;
     while t < 2500 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *rbuf[total], xx (cap - total));
         if !re { total += n; }
         else if re == error.Closed { break; }
         s := string.{ ptr = rbuf, len = xx total };
@@ -275,7 +275,7 @@ main :: () -> i32 {
     acc : FakeAcceptor = .{ a = xx gpa };
     rc : i32 = 1;
     push .{ allocator = gpa } {
-        rc = run(@acc);
+        rc = run(*acc);
     }
     leaked := gpa.alloc_count;
     if rc != 0 { print("FAIL: case rc={}\n", rc); return rc; }
@@ -308,7 +308,7 @@ run :: (acc: *FakeAcceptor) -> i32 {
     if c1 < 0 { return 3; }
     req_a := "GET /a HTTP/1.1\r\nHost: t\r\n\r\n";
     socket.write(c1, req_a.ptr, xx req_a.len);
-    if !read_response(@srv, c1, @rbuf[0], 4096, "ok-a") { srv.close(); return 10; }
+    if !read_response(*srv, c1, *rbuf[0], 4096, "ok-a") { srv.close(); return 10; }
     socket.close(c1);
 
     // ── W: write-want-read. Wait for the want to surface (the acceptor's
@@ -329,12 +329,12 @@ run :: (acc: *FakeAcceptor) -> i32 {
     while t < 20 { srv.tick(1) catch {}; t += 1; }
     tickle := "\n";
     socket.write(c2, tickle.ptr, 1);
-    if !read_response(@srv, c2, @rbuf[0], 4096, "ok-b") { srv.close(); return 12; }
+    if !read_response(*srv, c2, *rbuf[0], 4096, "ok-b") { srv.close(); return 12; }
     if acc.wr_extra_retries != 0 { srv.close(); return 13; }
     // keep-alive on the same conn: the watch state healed.
     req_b2 := "GET /b2 HTTP/1.1\r\nHost: t\r\n\r\n";
     socket.write(c2, req_b2.ptr, xx req_b2.len);
-    if !read_response(@srv, c2, @rbuf[0], 4096, "pong") { srv.close(); return 14; }
+    if !read_response(*srv, c2, *rbuf[0], 4096, "pong") { srv.close(); return 14; }
     socket.close(c2);
 
     // ── B: body-cross on the CONN_BODY pump. Headers + 4 body bytes first
@@ -348,7 +348,7 @@ run :: (acc: *FakeAcceptor) -> i32 {
     while t < 30 { srv.tick(1) catch {}; t += 1; }   // headers dispatched, pump waiting
     tail := "efghijkl";
     socket.write(c3, tail.ptr, xx tail.len);
-    if !read_response(@srv, c3, @rbuf[0], 4096, "got-12") { srv.close(); return 15; }
+    if !read_response(*srv, c3, *rbuf[0], 4096, "got-12") { srv.close(); return 15; }
     socket.close(c3);
 
     // ── H (review F1): the want is UNRESOLVED at dispatch. The server
@@ -359,7 +359,7 @@ run :: (acc: *FakeAcceptor) -> i32 {
     if c4 < 0 { return 6; }
     req_h := "GET /h HTTP/1.1\r\nHost: t\r\n\r\n";
     socket.write(c4, req_h.ptr, xx req_h.len);
-    if !read_response(@srv, c4, @rbuf[0], 4096, "ok-h") { srv.close(); return 17; }
+    if !read_response(*srv, c4, *rbuf[0], 4096, "ok-h") { srv.close(); return 17; }
     socket.close(c4);
 
     // sanity: both read-cross injections fired (R and B) + the dispatch-

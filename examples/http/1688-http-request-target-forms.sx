@@ -36,7 +36,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -67,7 +67,7 @@ roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
             if !re { total += n; got += n; continue; }
             if re == error.Closed { done = true; }
             break;
@@ -99,53 +99,53 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // (a) origin-form control: empty authority, path routed as-is
-        r := roundtrip(@srv, PORT_A, "GET /hello HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "origin-form status", @failed);
-        check(r, "|/hello", "origin-form echo", @failed);
+        r := roundtrip(*srv, PORT_A, "GET /hello HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "origin-form status", *failed);
+        check(r, "|/hello", "origin-form echo", *failed);
 
         // (b) absolute-form: authority extracted, embedded path (with its
         // query) is what routing sees
-        r = roundtrip(@srv, PORT_A, "GET http://example.com:8080/hello?x=1 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "absolute-form status", @failed);
-        check(r, "example.com:8080|/hello?x=1", "absolute-form echo", @failed);
+        r = roundtrip(*srv, PORT_A, "GET http://example.com:8080/hello?x=1 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "absolute-form status", *failed);
+        check(r, "example.com:8080|/hello?x=1", "absolute-form echo", *failed);
 
         // (c) absolute-form with empty path → path "/"
-        r = roundtrip(@srv, PORT_A, "GET http://example.com HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "empty-path absolute status", @failed);
-        check(r, "example.com|/", "empty-path absolute echo", @failed);
+        r = roundtrip(*srv, PORT_A, "GET http://example.com HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "empty-path absolute status", *failed);
+        check(r, "example.com|/", "empty-path absolute echo", *failed);
 
         // (d) https scheme is accepted in absolute-form (the target scheme
         // need not match the transport)
-        r = roundtrip(@srv, PORT_A, "GET https://h/p HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "https absolute status", @failed);
-        check(r, "h|/p", "https absolute echo", @failed);
+        r = roundtrip(*srv, PORT_A, "GET https://h/p HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "https absolute status", *failed);
+        check(r, "h|/p", "https absolute echo", *failed);
 
         // (e) OPTIONS * — asterisk-form is legal for OPTIONS only
-        r = roundtrip(@srv, PORT_A, "OPTIONS * HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "OPTIONS * status", @failed);
-        check(r, "|*", "OPTIONS * echo", @failed);
+        r = roundtrip(*srv, PORT_A, "OPTIONS * HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "OPTIONS * status", *failed);
+        check(r, "|*", "OPTIONS * echo", *failed);
 
         // (f) "*" with any other method is malformed
-        r = roundtrip(@srv, PORT_A, "GET * HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 400", "GET * rejected", @failed);
+        r = roundtrip(*srv, PORT_A, "GET * HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 400", "GET * rejected", *failed);
 
         // (g) authority-form on a non-CONNECT method is malformed
-        r = roundtrip(@srv, PORT_A, "GET example.com:80 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 400", "authority-form GET rejected", @failed);
+        r = roundtrip(*srv, PORT_A, "GET example.com:80 HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 400", "authority-form GET rejected", *failed);
 
         // (h) CONNECT is not implemented — 501 for EVERY target form (an
         // origin- or absolute-form CONNECT must never reach the handler
         // as if it were a GET)
-        r = roundtrip(@srv, PORT_A, "CONNECT example.com:443 HTTP/1.1\r\nHost: t\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 501", "CONNECT authority-form 501", @failed);
-        r = roundtrip(@srv, PORT_A, "CONNECT / HTTP/1.1\r\nHost: t\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 501", "CONNECT origin-form 501", @failed);
-        r = roundtrip(@srv, PORT_A, "CONNECT http://example.com/ HTTP/1.1\r\nHost: t\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 501", "CONNECT absolute-form 501", @failed);
+        r = roundtrip(*srv, PORT_A, "CONNECT example.com:443 HTTP/1.1\r\nHost: t\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 501", "CONNECT authority-form 501", *failed);
+        r = roundtrip(*srv, PORT_A, "CONNECT / HTTP/1.1\r\nHost: t\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 501", "CONNECT origin-form 501", *failed);
+        r = roundtrip(*srv, PORT_A, "CONNECT http://example.com/ HTTP/1.1\r\nHost: t\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 501", "CONNECT absolute-form 501", *failed);
 
         // (i) non-http(s) scheme in absolute-form is rejected
-        r = roundtrip(@srv, PORT_A, "GET ftp://example.com/ HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 400", "ftp scheme rejected", @failed);
+        r = roundtrip(*srv, PORT_A, "GET ftp://example.com/ HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 400", "ftp scheme rejected", *failed);
 
         srv.close();
 
@@ -155,16 +155,16 @@ main :: () -> i32 {
         cfgp : http.Config = .{ port = PORT_B, max_conn = 4, request_count = 10, thread_pool_count = 1 };
         srvp, spe := http.Server.init(cfgp, route, 0);
         if spe { print("pool init failed\n"); return 1; }
-        r = roundtrip(@srvp, PORT_B, "GET http://pool.example:9/deep?a=b HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "pooled absolute status", @failed);
-        check(r, "pool.example:9|/deep?a=b", "pooled absolute echo", @failed);
+        r = roundtrip(*srvp, PORT_B, "GET http://pool.example:9/deep?a=b HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "pooled absolute status", *failed);
+        check(r, "pool.example:9|/deep?a=b", "pooled absolute echo", *failed);
         // ...and the two pooled shapes with NON-rebuilt views: the static
         // "/" (empty-path absolute-form skips the path rebuild — an
         // inverted skip flag would ship a dangling view) and OPTIONS *
-        r = roundtrip(@srvp, PORT_B, "GET http://root.example HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "root.example|/", "pooled static-root echo", @failed);
-        r = roundtrip(@srvp, PORT_B, "OPTIONS * HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "|*", "pooled OPTIONS * echo", @failed);
+        r = roundtrip(*srvp, PORT_B, "GET http://root.example HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "root.example|/", "pooled static-root echo", *failed);
+        r = roundtrip(*srvp, PORT_B, "OPTIONS * HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "|*", "pooled OPTIONS * echo", *failed);
         srvp.close();
 
         context.allocator.dealloc_bytes(xx rbuf);

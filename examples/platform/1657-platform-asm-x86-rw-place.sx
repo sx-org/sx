@@ -6,7 +6,7 @@
 // natively on x86_64-linux (main returns 0 on success, 1 if the asm misbehaved).
 bump :: () -> i64 {
     x : i64 = 41;
-    asm volatile { "incq %[v]", [v] "+r" -> @x };
+    asm volatile { "incq %[v]", [v] "+r" -> *x };
     return x;   // 42
 }
 main :: () -> i64 { if bump() != 42 { return 1; } return 0; }

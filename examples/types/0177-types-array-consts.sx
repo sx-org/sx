@@ -29,6 +29,6 @@ main :: () {
     k[0] = 99;
     print("copy={} const={}\n", k[0], K[0]);
     print("sum={}\n", sum(K));
-    p := @K;
+    p := *K;
     print("via-ptr={}\n", p[2]);
 }

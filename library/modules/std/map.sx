@@ -89,7 +89,7 @@ map_hash_key :: (key: $K) -> u64 {
 // bools, pointers and integers are non-struct, so they take the raw-byte leaf.
 map_hash_into :: (v: $T, h: u64) -> u64 {
     inline if type_eq(T, string) {
-        sv : *string = xx @v;
+        sv : *string = xx *v;
         return fnv1a_fold(h, sv.ptr, sv.len);
     }
     inline if is_struct(T) {
@@ -99,7 +99,7 @@ map_hash_into :: (v: $T, h: u64) -> u64 {
         }
         return hh;
     }
-    return fnv1a_fold(h, xx @v, size_of(T));   // scalar/enum/bool/pointer leaf
+    return fnv1a_fold(h, xx *v, size_of(T));   // scalar/enum/bool/pointer leaf
 }
 
 // Loud tripwire for the "no free bucket after a full probe walk" terminal —
@@ -246,13 +246,13 @@ HashMap :: struct ($K: Type, $V: Type) {
                 self.metadata[dst] = used_byte;
                 self.keys[dst]     = key;
                 self.count += 1;
-                return .{ key_ptr = @self.keys[dst], value_ptr = @self.values[dst], found_existing = false };
+                return .{ key_ptr = *self.keys[dst], value_ptr = *self.values[dst], found_existing = false };
             }
             if m == META_TOMBSTONE {
                 if first_tomb < 0 { first_tomb = idx; }
             } else if m == used_byte {
                 if self.keys[idx] == key {
-                    return .{ key_ptr = @self.keys[idx], value_ptr = @self.values[idx], found_existing = true };
+                    return .{ key_ptr = *self.keys[idx], value_ptr = *self.values[idx], found_existing = true };
                 }
             }
             limit -= 1;
@@ -264,7 +264,7 @@ HashMap :: struct ($K: Type, $V: Type) {
             self.keys[first_tomb]     = key;
             self.count += 1;
             self.tombstones -= 1;
-            return .{ key_ptr = @self.keys[first_tomb], value_ptr = @self.values[first_tomb], found_existing = false };
+            return .{ key_ptr = *self.keys[first_tomb], value_ptr = *self.values[first_tomb], found_existing = false };
         }
         // No free bucket and no tombstone across the whole table — impossible
         // at ≤ 80% load. Broken capacity accounting; fail loud, never corrupt.
@@ -345,7 +345,7 @@ HashMap :: struct ($K: Type, $V: Type) {
     get_ptr :: (self: *HashMap(K, V), key: K) -> ?*V {
         i := self.find_index(key);
         if i < 0 { return null; }
-        @self.values[i]
+        *self.values[i]
     }
 
     contains :: (self: *HashMap(K, V), key: K) -> bool {
@@ -457,7 +457,7 @@ HashIter :: struct ($K: Type, $V: Type) {
         i := self.map.next_used(self.pos);
         if i >= self.map.cap { return null; }
         self.pos = i + 1;
-        return HashKV(K, V).{ key_ptr = @self.map.keys[i], value_ptr = @self.map.values[i] };
+        return HashKV(K, V).{ key_ptr = *self.map.keys[i], value_ptr = *self.map.values[i] };
     }
 
     // Restart from the first live bucket.
@@ -680,7 +680,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     get_or_put :: (self: *IndexMap(K, V), key: K, alloc: Allocator = context.allocator) -> IndexEntryPtr(K, V) {
         existing := self.find_index(key);
         if existing >= 0 {
-            return .{ key_ptr = @self.entries[existing].key, value_ptr = @self.entries[existing].value,
+            return .{ key_ptr = *self.entries[existing].key, value_ptr = *self.entries[existing].value,
                       found_existing = true, index = existing };
         }
         self.ensure_entry_cap(self.ecount + 1, alloc);
@@ -695,7 +695,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         } else {
             self.index_insert(h, e);
         }
-        return .{ key_ptr = @self.entries[e].key, value_ptr = @self.entries[e].value,
+        return .{ key_ptr = *self.entries[e].key, value_ptr = *self.entries[e].value,
                   found_existing = false, index = e };
     }
 
@@ -762,7 +762,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     get_ptr :: (self: *IndexMap(K, V), key: K) -> ?*V {
         i := self.find_index(key);
         if i < 0 { return null; }
-        @self.entries[i].value
+        *self.entries[i].value
     }
 
     contains :: (self: *IndexMap(K, V), key: K) -> bool {
@@ -884,7 +884,7 @@ IndexIter :: struct ($K: Type, $V: Type) {
         if self.pos >= self.map.ecount { return null; }
         i := self.pos;
         self.pos = i + 1;
-        return HashKV(K, V).{ key_ptr = @self.map.entries[i].key, value_ptr = @self.map.entries[i].value };
+        return HashKV(K, V).{ key_ptr = *self.map.entries[i].key, value_ptr = *self.map.entries[i].value };
     }
 
     reset :: (self: *IndexIter(K, V)) { self.pos = 0; }

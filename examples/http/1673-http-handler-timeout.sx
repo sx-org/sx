@@ -58,7 +58,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -142,7 +142,7 @@ main :: () -> i32 {
         t : i64 = 0;
         while t < 120 {   // ~120 ms of 1 ms ticks — past the 40 ms deadline
             srv.tick(1) catch {};
-            n, re := socket.read_nb(ca, @sbuf[sa_total], xx (cap - sa_total));
+            n, re := socket.read_nb(ca, *sbuf[sa_total], xx (cap - sa_total));
             if !re { sa_total += n; }
             else if re == error.Closed {
                 slow_resp = string.{ ptr = sbuf, len = xx sa_total };
@@ -175,7 +175,7 @@ main :: () -> i32 {
         t = 0;
         while t < 200 {
             srv.tick(1) catch {};
-            n, re := socket.read_nb(cb, @fbuf[fb_total], xx (cap - fb_total));
+            n, re := socket.read_nb(cb, *fbuf[fb_total], xx (cap - fb_total));
             if !re { fb_total += n; }
             else if re == error.Closed {
                 fast_resp = string.{ ptr = fbuf, len = xx fb_total };

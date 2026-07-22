@@ -11,7 +11,7 @@ Held :: struct { name_bytes: []u8; n: i64; }
 main :: () {
     u := Ui.{};
     store := StateStore.init(.{ value = 1 });
-    push .{ ui = @u, ui_store = @store } {
+    push .{ ui = *u, ui_store = *store } {
         store.begin_build(); u.begin_build();
         _ = use_state(Held, Held.{ name_bytes = .[], n = 0 });
         store.commit_build();

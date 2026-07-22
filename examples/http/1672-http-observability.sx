@@ -91,7 +91,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -134,7 +134,7 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8) -> st
     tries := 0;
     while tries < 400 {
         srv.tick(5) catch {};
-        n, re := socket.read_nb(fd, @scratch[total], xx (4096 - total));
+        n, re := socket.read_nb(fd, *scratch[total], xx (4096 - total));
         if !re { total += n; }
         else if re == error.Closed { return string.{ ptr = scratch, len = xx total }; }
         if resp_complete(scratch, total) { return string.{ ptr = scratch, len = xx total }; }
@@ -153,7 +153,7 @@ main :: () -> i32 {
         request_count = 50,
         max_conn = 8,
         on_event = on_event,
-        on_event_ctx = xx @elog,
+        on_event_ctx = xx *elog,
     };
     srv, se := http.Server.init(cfg, handler, 0);
     if se { print("server init failed\n"); return 1; }
@@ -163,9 +163,9 @@ main :: () -> i32 {
     // ── 1. three successful requests (200) over one keep-alive conn ────
     c1 := dial();
     if c1 < 0 { print("dial failed\n"); return 1; }
-    r1 := roundtrip(@srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    r1 := roundtrip(*srv, c1, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r1, "HTTP/1.1 200 OK") { print("case1: bad status\n"); return 1; }
-    r2 := roundtrip(@srv, c1, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 4\r\n\r\npong", @buf[0]);
+    r2 := roundtrip(*srv, c1, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 4\r\n\r\npong", *buf[0]);
     if !contains(r2, "pong") { print("case2: echo failed\n"); return 1; }
 
     // ── 2. parser error: a malformed version token → 400 ───────────────
@@ -173,13 +173,13 @@ main :: () -> i32 {
     // a garbage token keeps this case a 400 PARSE_ERROR for the counters)
     c2 := dial();
     if c2 < 0 { print("dial2 failed\n"); return 1; }
-    r3 := roundtrip(@srv, c2, "GET /hello FOO/9.9\r\nHost: t\r\n\r\n", @buf[0]);
+    r3 := roundtrip(*srv, c2, "GET /hello FOO/9.9\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r3, "HTTP/1.1 400 Bad Request") { print("case3: expected 400\n"); return 1; }
     socket.close(c2);
 
     // ── 3. unknown path → 404 (a 4xx too, but NOT a parser error: the
     //       handler produced it, so it counts as a served request) ──────
-    r4 := roundtrip(@srv, c1, "GET /missing HTTP/1.1\r\nHost: t\r\n\r\n", @buf[0]);
+    r4 := roundtrip(*srv, c1, "GET /missing HTTP/1.1\r\nHost: t\r\n\r\n", *buf[0]);
     if !contains(r4, "HTTP/1.1 404 Not Found") { print("case4: expected 404\n"); return 1; }
     socket.close(c1);
 
@@ -216,10 +216,10 @@ main :: () -> i32 {
 
     // ── assertions on the hook firings ─────────────────────────────────
     // ACCEPT fired twice, CLOSE fired for every closed slot.
-    if count_kind(@elog, http.EventKind.ACCEPT) != 2 { print("hook: ACCEPT count wrong\n"); return 1; }
-    if count_kind(@elog, http.EventKind.CLOSE)  != 2 { print("hook: CLOSE count wrong\n"); return 1; }
+    if count_kind(*elog, http.EventKind.ACCEPT) != 2 { print("hook: ACCEPT count wrong\n"); return 1; }
+    if count_kind(*elog, http.EventKind.CLOSE)  != 2 { print("hook: CLOSE count wrong\n"); return 1; }
     // the 400 surfaced as a PARSE_ERROR carrying status 400 in `detail`.
-    if count_parse_status(@elog, 400) != 1 { print("hook: missing PARSE_ERROR(400)\n"); return 1; }
+    if count_parse_status(*elog, 400) != 1 { print("hook: missing PARSE_ERROR(400)\n"); return 1; }
 
     srv.close();
 
@@ -236,7 +236,7 @@ main :: () -> i32 {
         thread_pool_count = 1,
         thread_pool_backlog = 1,
         on_event = on_event,
-        on_event_ctx = xx @plog,
+        on_event_ctx = xx *plog,
     };
     psrv, pse := http.Server.init(pcfg, slow_handler, 0);
     if pse { print("pooled init failed\n"); return 1; }
@@ -268,7 +268,7 @@ main :: () -> i32 {
     ps := psrv.stats();
     if ps.rejected_503 < 1 { print("pooled: expected at least one 503 shed\n"); return 1; }
     if ps.errors_5xx < ps.rejected_503 { print("pooled: 5xx must include the sheds\n"); return 1; }
-    if count_kind(@plog, http.EventKind.REJECTED_503) < 1 { print("pooled: missing REJECTED_503 hook\n"); return 1; }
+    if count_kind(*plog, http.EventKind.REJECTED_503) < 1 { print("pooled: missing REJECTED_503 hook\n"); return 1; }
 
     ci = 0;
     while ci < NCONN { socket.close(fds[ci]); ci += 1; }

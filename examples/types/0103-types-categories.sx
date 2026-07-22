@@ -11,12 +11,12 @@ Color :: struct {
 main :: () {
     p := Point.{10, 20};
     c := Color.{255, 128, 0};
-    pc := @p;
+    pc := *p;
     print("p: {}\n", p);
     print("c: {}\n", c);
     print("n: {}\n", 42);
     print("s: {}\n", "hello");
     print("b: {}\n", true);
     print("&p: {}\n", pc);
-    print("&p: {}\n", @p);
+    print("&p: {}\n", *p);
 }

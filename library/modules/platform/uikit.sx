@@ -412,7 +412,7 @@ impl Platform for UIKitPlatform {
         self.gl_ctx = ctx;
         EAGLContext.setCurrentContext(ctx);
 
-        load_gl(@ios_gl_proc);
+        load_gl(*ios_gl_proc);
     }
 
     // Allocate the color renderbuffer + framebuffer and bind them. The
@@ -421,8 +421,8 @@ impl Platform for UIKitPlatform {
     // layer must already be in the view hierarchy at the right size.
     setup_renderbuffer :: (self: *UIKitPlatform) {
 
-        glGenFramebuffers(1, @self.framebuffer);
-        glGenRenderbuffers(1, @self.color_renderbuffer);
+        glGenFramebuffers(1, *self.framebuffer);
+        glGenRenderbuffers(1, *self.color_renderbuffer);
 
         glBindRenderbuffer(GL_RENDERBUFFER, self.color_renderbuffer);
 
@@ -437,8 +437,8 @@ impl Platform for UIKitPlatform {
         ph : i32 = 0;
         GL_RENDERBUFFER_WIDTH  :u32: 0x8D42;
         GL_RENDERBUFFER_HEIGHT :u32: 0x8D43;
-        glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH,  @pw);
-        glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, @ph);
+        glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_WIDTH,  *pw);
+        glGetRenderbufferParameteriv(GL_RENDERBUFFER, GL_RENDERBUFFER_HEIGHT, *ph);
         self.pixel_w = pw;
         self.pixel_h = ph;
         self.viewport_w = xx pw;

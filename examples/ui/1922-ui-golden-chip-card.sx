@@ -34,7 +34,7 @@ screen :: () -> View {
 main :: () {
     loop := FrameLoop.init();
     root := UiRoot.init(.{ value = 1 });
-    s := loop.tick(@root, screen, 200.0, 120.0);
+    s := loop.tick(*root, screen, 200.0, 120.0);
     dump_snapshot(s);
     loop.deinit();
     root.teardown();

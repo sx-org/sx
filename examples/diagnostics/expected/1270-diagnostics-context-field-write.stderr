@@ -1,7 +1,7 @@
 error: cannot assign to context field 's' — the context is immutable within its scope; override it for a block with `push .{ s = ... }` (writing through a pointer field's pointee is allowed)
   --> examples/diagnostics/1270-diagnostics-context-field-write.sx:19:9
    |
-19 |         context.s = @v;
+19 |         context.s = *v;
    |         ^^^^^^^^^
 
 error: cannot assign to context field 'stats' — the context is immutable within its scope; override it for a block with `push .{ stats = ... }` (writing through a pointer field's pointee is allowed)
@@ -25,5 +25,5 @@ error: cannot assign to context field 'stats' — the context is immutable withi
 error: cannot assign to context field 's' — the context is immutable within its scope; override it for a block with `push .{ s = ... }` (writing through a pointer field's pointee is allowed)
   --> examples/diagnostics/1270-diagnostics-context-field-write.sx:23:9
    |
-23 |         context.s, v.n = @v, 4;
+23 |         context.s, v.n = *v, 4;
    |         ^^^^^^^^^

@@ -27,11 +27,11 @@
 impl Into(Block) for Closure(..$args) -> $R {
     convert :: (self: Closure(..$args) -> $R) -> Block {
         .{
-            isa = @_NSConcreteStackBlock,
+            isa = *_NSConcreteStackBlock,
             flags = 0,
             reserved = 0,
             invoke = null,
-            descriptor = xx @__sx_block_descriptor,
+            descriptor = xx *__sx_block_descriptor,
             sx_env = self.env,
             sx_fn = self.fn_ptr,
         }

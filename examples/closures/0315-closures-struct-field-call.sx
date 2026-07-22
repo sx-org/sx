@@ -35,7 +35,7 @@ main :: () -> i64 {
 
     print("{}\n", b.add(3, 4));      // 7
     print("{}\n", b.fp(5));          // 15
-    print("{}\n", run_work(@b, 6));  // 60
-    print("{}\n", run_work(@b, -1)); // -1 (error path)
+    print("{}\n", run_work(*b, 6));  // 60
+    print("{}\n", run_work(*b, -1)); // -1 (error path)
     return 0;
 }

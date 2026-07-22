@@ -175,10 +175,10 @@ create_program :: (vert_src: [:0]u8, frag_src: [:0]u8) -> u32 {
     glLinkProgram(prog);
 
     status : i32 = 0;
-    glGetProgramiv(prog, GL_LINK_STATUS, @status);
+    glGetProgramiv(prog, GL_LINK_STATUS, *status);
     if status == GL_FALSE {
         log_buf: [512]u8 = ---;
-        glGetProgramInfoLog(prog, 512, null, @log_buf[0]);
+        glGetProgramInfoLog(prog, 512, null, *log_buf[0]);
     }
 
     glDeleteShader(vs);
@@ -192,10 +192,10 @@ compile_shader :: (shader_type : u32, source: [:0]u8) -> u32 {
     glCompileShader(shader);
 
     status : i32 = 0;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, @status);
+    glGetShaderiv(shader, GL_COMPILE_STATUS, *status);
     if status == GL_FALSE {
         log_buf : [512]u8 = ---;
-        glGetShaderInfoLog(shader, 512, null, @log_buf[0]);
+        glGetShaderInfoLog(shader, 512, null, *log_buf[0]);
     }
     return shader;
 }

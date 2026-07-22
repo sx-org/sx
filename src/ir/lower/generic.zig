@@ -294,6 +294,12 @@ pub fn isStaticTypeArg(self: *Lowering, node: *const Node) bool {
         .tuple_literal,
         .tuple_type_expr,
         => return true,
+        // Prefix `*` parses as address_of in the value grammar; over a
+        // static type operand it IS the pointer type (`size_of(*T)`).
+        .unary_op => |uop| {
+            if (uop.op != .address_of) return false;
+            return self.isStaticTypeArg(uop.operand);
+        },
         .call => |cl| {
             // Type-returning REFLECTION calls are static only when their own
             // type argument is: `type_of(x)` with an `any`-typed operand
@@ -430,6 +436,14 @@ pub fn isTypeReturningCallNode(self: *Lowering, node: *const Node) bool {
 }
 
 pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
+    // Prefix `*` (parsed address_of) over a type operand IS the pointer
+    // type — `describe(*Padded)`, `List(*T)`-style args, recursively for
+    // `**T` (mirrors the resolveTypeWithBindings arm).
+    if (node.data == .unary_op and node.data.unary_op.op == .address_of) {
+        const inner = self.resolveTypeArg(node.data.unary_op.operand);
+        if (inner == .unresolved) return .unresolved;
+        return self.module.types.ptrTo(inner);
+    }
     // A bare-paren `(A, B)` is a MULTI-RETURN signature — valid only as a
     // function/closure return type, never as a generic type argument (a
     // tuple-valued arg uses `Tuple(…)`). Without this it silently resolved to a

@@ -29,7 +29,7 @@ main :: () -> i32 {
     for xs (n) { s = s + n; }
     print("sum2 {}\n", s);                     // 360
 
-    print("via ptr {}\n", sum_ptr(@xs));       // 360
+    print("via ptr {}\n", sum_ptr(*xs));       // 360
 
     bs := List(Box).{};
     bs.append(.{ v = 7 });

@@ -16,7 +16,7 @@
 // 1. Local pointer shadow, mutated THROUGH the closure — result visible.
 mutate :: () -> i64 {
     result : i64 = 0;
-    out := @result;              // local named like the prelude fn `out`
+    out := *result;              // local named like the prelude fn `out`
     c := () => { out.* = 42; };  // must capture `out`, not skip it
     c();
     result

@@ -22,13 +22,13 @@
 main :: () -> i32 {
     d := Document.{ layers = List(Layer).{}, active = 0 };
     d.layers.append(make_layer(7));
-    t := Toolbar.{ doc = @d, hover_tool = -1 };
-    c := CanvasView.{ doc = @d };
-    print("toolbar: {}\n", tb_active_id(@t));
-    print("canvas: {}\n", cv_active_id(@c));
+    t := Toolbar.{ doc = *d, hover_tool = -1 };
+    c := CanvasView.{ doc = *d };
+    print("toolbar: {}\n", tb_active_id(*t));
+    print("canvas: {}\n", cv_active_id(*c));
     // Cross-chain identity: `layer_at` (document chain) feeds `cv_id_of`
     // (canvas chain) — compiles only if both chains share ONE `Layer`.
-    print("cross: {}\n", cv_id_of(layer_at(@d, 0)));
+    print("cross: {}\n", cv_id_of(layer_at(*d, 0)));
     w := Widget.{ w = 3 };
     print("widget: {}\n", w.w);
     0

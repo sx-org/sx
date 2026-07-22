@@ -34,7 +34,7 @@ fs_file_read :: (handle: i64, output: string) -> i64 {
     if !fs_file_is_valid(handle) or (output.len > 0 and output.ptr == null) { return -1; }
     take := output.len; if take > 0xffffffff { take = 0xffffffff; }
     made : u32 = 0;
-    if fs_windows_ReadFile(fs_windows_handle(handle), output.ptr, take.(u32), @made, null) == 0 { return -1; }
+    if fs_windows_ReadFile(fs_windows_handle(handle), output.ptr, take.(u32), *made, null) == 0 { return -1; }
     made.(i64)
 }
 
@@ -42,7 +42,7 @@ fs_file_write :: (handle: i64, data: string) -> i64 {
     if !fs_file_is_valid(handle) or (data.len > 0 and data.ptr == null) { return -1; }
     take := data.len; if take > 0xffffffff { take = 0xffffffff; }
     made : u32 = 0;
-    if fs_windows_WriteFile(fs_windows_handle(handle), data.ptr, take.(u32), @made, null) == 0 { return -1; }
+    if fs_windows_WriteFile(fs_windows_handle(handle), data.ptr, take.(u32), *made, null) == 0 { return -1; }
     made.(i64)
 }
 
@@ -51,14 +51,14 @@ fs_file_seek :: (handle: i64, offset: i64, from: i32) -> i64 {
     method := from;
     if method < 0 or method > 2 { method = 0; }
     position : i64 = 0;
-    if fs_windows_SetFilePointerEx(fs_windows_handle(handle), offset, @position, method.(u32)) == 0 { return -1; }
+    if fs_windows_SetFilePointerEx(fs_windows_handle(handle), offset, *position, method.(u32)) == 0 { return -1; }
     position
 }
 
 fs_file_truncate :: (handle: i64, len: i64) -> bool {
     if !fs_file_is_valid(handle) or len < 0 { return false; }
     position : i64 = 0;
-    if fs_windows_SetFilePointerEx(fs_windows_handle(handle), len, @position, 0) == 0 { return false; }
+    if fs_windows_SetFilePointerEx(fs_windows_handle(handle), len, *position, 0) == 0 { return false; }
     fs_windows_SetEndOfFile(fs_windows_handle(handle)) != 0
 }
 
@@ -218,7 +218,7 @@ fs_dirname :: (path: string) -> string {
 fs_modified_seconds_handle :: (handle: i64) -> (i64, bool) {
     if !fs_file_is_valid(handle) { return 0, false; }
     value : FsWindowsFileTime = ---;
-    if fs_windows_GetFileTime(fs_windows_handle(handle), null, null, @value) == 0 { return 0, false; }
+    if fs_windows_GetFileTime(fs_windows_handle(handle), null, null, *value) == 0 { return 0, false; }
     ticks := value.low.(u64) | (value.high.(u64) << 32);
     epoch_ticks : u64 = 116444736000000000;
     if ticks < epoch_ticks { return 0, false; }
@@ -233,6 +233,6 @@ fs_set_modified_seconds :: (path: [:0]u8, seconds: i64) -> bool {
     if !fs_file_is_valid(bits) { return false; }
     ticks := (seconds + 11644473600).(u64) * 10000000;
     value := FsWindowsFileTime.{ low = ticks.(u32), high = (ticks >> 32).(u32) };
-    ok := fs_windows_SetFileTime(handle, null, null, @value) != 0;
+    ok := fs_windows_SetFileTime(handle, null, null, *value) != 0;
     close_ok := fs_windows_CloseHandle(handle) != 0; ok and close_ok
 }

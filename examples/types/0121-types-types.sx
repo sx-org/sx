@@ -278,24 +278,24 @@ main :: () {
 
     // --- Pointers ---
     // Address-of global variable
-    write_to_ptr(@g_smoke_val);
+    write_to_ptr(*g_smoke_val);
     print("global-addr-of: {}\n", g_smoke_val);
 
     pv := Point.{ 10, 20 };
-    ptr := @pv;
+    ptr := *pv;
     print("deref: {}\n", ptr.*);
 
     // Auto-deref
     print("auto-deref: {}\n", ptr.x);
 
     // Many-pointer
-    mp : [*]i32 = @arr[0];
+    mp : [*]i32 = *arr[0];
     print("mp[0]: {}\n", mp[0]);
     print("mp[3]: {}\n", mp[3]);
 
     // Many-pointer write
     mpw : [5]i32 = .[10, 20, 30, 40, 50];
-    mpw_ptr : [*]i32 = @mpw[0];
+    mpw_ptr : [*]i32 = *mpw[0];
     mpw_ptr[2] = 99;
     print("mp-write: {}\n", mpw[2]);
 
@@ -303,7 +303,7 @@ main :: () {
     np : *i32 = null;
     print("ptr==null: {}\n", np == null);
     print("ptr!=null: {}\n", np != null);
-    np2 := @pv.x;
+    np2 := *pv.x;
     print("ptr2==null: {}\n", np2 == null);
     print("ptr2!=null: {}\n", np2 != null);
 
@@ -311,7 +311,7 @@ main :: () {
     Inner3 :: struct { a: f32; b: f32; c: f32; }
     Outer3 :: struct { key: i32; inner: Inner3; }
     out3 := Outer3.{ key = 42, inner = Inner3.{ a = 1.0, b = 2.0, c = 3.0 } };
-    ip3 := @out3.inner;
+    ip3 := *out3.inner;
     print("ptr-nested-field: {} {} {}\n", ip3.a, ip3.b, ip3.c);
 
     // Store to many-pointer field must not corrupt adjacent memory

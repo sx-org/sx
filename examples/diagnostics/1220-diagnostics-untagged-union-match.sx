@@ -23,7 +23,7 @@ main :: () {
     if s == { case .circle: { print("c\n"); } case .rect: { print("r\n"); } }
 
     // Pointer-to-untagged-union subject (never auto-derefs — same rejection).
-    p := @s;
+    p := *s;
     q := if p == { case .circle: { 1 } else: { 0 } };
     print("{}\n", q);
 

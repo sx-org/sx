@@ -94,7 +94,7 @@ frame :: () {
     if g_vbuf == 0 {
         g_vbuf = g_gpu.create_buffer(72);  // 3 verts × 24 bytes
         if g_vbuf == 0 { return; }
-        g_gpu.update_buffer(g_vbuf, xx @TRI_VERTS, 72);
+        g_gpu.update_buffer(g_vbuf, xx *TRI_VERTS, 72);
     }
 
     bg : ClearColor = .{ r = 0.07, g = 0.10, b = 0.18, a = 1.0 };

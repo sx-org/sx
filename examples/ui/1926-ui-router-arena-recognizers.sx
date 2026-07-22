@@ -96,10 +96,10 @@ main :: () {
     loop := FrameLoop.init();
     root := UiRoot.init(.{ value = 11 });
     router := Router.init();
-    g_loop = @loop;
-    g_root = @root;
-    g_router = @router;
-    router.attach(@loop, @root);
+    g_loop = *loop;
+    g_root = *root;
+    g_router = *router;
+    router.attach(*loop, *root);
 
     tick();   // first commit — the hit list exists
 

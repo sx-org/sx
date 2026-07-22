@@ -12,7 +12,7 @@ home :: () -> View {
 
 main :: () {
     u := Ui.{};
-    push .{ ui = @u } {
+    push .{ ui = *u } {
         home();
     }
 }

@@ -148,7 +148,7 @@ StateStore :: struct {
         // misbound — panic at the flip, naming the site.
         gi := 0;
         while gi < self.groups.len {
-            g := @self.groups.items[gi];
+            g := *self.groups.items[gi];
             if g.tier == .strict and g.prev_count > 0 and g.cur_count > 0 and g.prev_count != g.cur_count {
                 print("K2: unkeyed instance count changed for use_state at {}:{} — {} -> {} instances under one scope; conditionally-present instances must be keyed (wrap each row in keyed(id)), or give the enclosing wrapper its own scope per call site (site: SiteId = site_of(#caller_location))\n",
                     g.loc_file, g.loc_line, g.prev_count, g.cur_count);
@@ -205,7 +205,7 @@ StateStore :: struct {
         // Free deep-copied Key.str payloads, then the segment array.
         i := 0;
         while i < e.chain.len {
-            seg := @e.chain[i];
+            seg := *e.chain[i];
             if seg.kind == .key {
                 if seg.key == { case .str: (s) { self.gpa.dealloc_bytes(xx s.ptr); true } else: false } { }
             }
@@ -239,7 +239,7 @@ StateStore :: struct {
 hash_loc :: (h: u64, loc: Source_Location) -> u64 {
     h2 := hash.fnv1a_fold(h, loc.file.ptr, loc.file.len);
     line := loc.line;
-    hash.fnv1a_fold(h2, xx @line, size_of(i32))
+    hash.fnv1a_fold(h2, xx *line, size_of(i32))
 }
 
 // Deep-equal of the live frame chain against an entry's owned copy — the
@@ -248,8 +248,8 @@ chains_equal :: (live: []ChainSegment, own: []ChainSegment) -> bool {
     if live.len != own.len { return false; }
     i := 0;
     while i < live.len {
-        a := @live[i];
-        b := @own[i];
+        a := *live[i];
+        b := *own[i];
         if a.kind != b.kind { return false; }
         if a.kind == .site {
             if a.site.line != b.site.line { return false; }
@@ -301,9 +301,9 @@ claim_entry :: (store: *StateStore, ui: *Ui, $T: Type, tier: StateTier, loc: Sou
     occurrence := ui.next_occurrence(gid);
     // Fold occurrence + tier into the entry hash.
     occ := occurrence;
-    h := hash.fnv1a_fold(gid, xx @occ, size_of(i32));
+    h := hash.fnv1a_fold(gid, xx *occ, size_of(i32));
     tier_tag : u8 = if tier == .strict then 1 else 2;
-    h = hash.fnv1a_fold(h, @tier_tag, 1);
+    h = hash.fnv1a_fold(h, *tier_tag, 1);
 
     store.bump_group(gid, tier, loc);
 
@@ -358,7 +358,7 @@ use_state :: ($T: Type, default: T, loc: Source_Location = #caller_location) -> 
     e, fresh := claim_entry(context.ui_store, context.ui, T, .strict, loc);
     if fresh {
         d := default;
-        c.memcpy(e.data, xx @d, size_of(T));
+        c.memcpy(e.data, xx *d, size_of(T));
     }
     State(T).{ ptr = xx e.data }
 }
@@ -371,7 +371,7 @@ use_transient :: ($T: Type, default: T, loc: Source_Location = #caller_location)
     e, fresh := claim_entry(context.ui_store, context.ui, T, .transient, loc);
     if fresh {
         d := default;
-        c.memcpy(e.data, xx @d, size_of(T));
+        c.memcpy(e.data, xx *d, size_of(T));
     }
     State(T).{ ptr = xx e.data }
 }
@@ -388,7 +388,7 @@ use_state_with :: ($T: Type, init: Closure(Allocator) -> T, loc: Source_Location
         e.arena = xx store.gpa.alloc_bytes(size_of(Arena));
         e.arena.* = Arena.init(store.gpa, 1024);
         v := init(e.arena.(Allocator));
-        c.memcpy(e.data, xx @v, size_of(T));
+        c.memcpy(e.data, xx *v, size_of(T));
     }
     State(T).{ ptr = xx e.data }
 }

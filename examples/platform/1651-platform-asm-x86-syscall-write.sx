@@ -23,5 +23,5 @@ sys_write :: (fd: i64, buf: *u8, count: i64) -> i64 {
 
 main :: () {
     msg : [3]u8 = .[111, 107, 10];      // "ok\n"
-    n := sys_write(1, @msg[0], 3);
+    n := sys_write(1, *msg[0], 3);
 }

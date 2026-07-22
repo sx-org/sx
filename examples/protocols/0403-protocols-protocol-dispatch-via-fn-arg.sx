@@ -26,7 +26,7 @@ dispatch_fn :: (items: *List(Sizable)) {
 
 main :: () -> void {
     items : List(Sizable) = .{};
-    add(@items, Leaf.{ value = 42 });
+    add(*items, Leaf.{ value = 42 });
 
     // Direct dispatch twice
     out("=== Direct 1 ===\n");
@@ -39,6 +39,6 @@ main :: () -> void {
 
     // Then from function
     out("=== From function ===\n");
-    dispatch_fn(@items);
+    dispatch_fn(*items);
     out("=== OK ===\n");
 }

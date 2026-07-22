@@ -124,7 +124,7 @@ ep_create :: () -> i32 {
 // on success. For EPOLL_CTL_DEL the kernel ignores the event payload.
 ep_ctl :: (epfd: i32, op: i32, fd: i32, events: u32) -> bool {
     ev : EpollEvent = .{ events = events, data_lo = xx fd };
-    return epoll_ctl(epfd, op, fd, @ev) == 0;
+    return epoll_ctl(epfd, op, fd, *ev) == 0;
 }
 
 // Drain ready events into `events` (room for `maxev` entries), waiting at most
@@ -132,7 +132,7 @@ ep_ctl :: (epfd: i32, op: i32, fd: i32, events: u32) -> bool {
 // only on a real failure — EINTR is retried (mirror of kqueue's kq_wait).
 ep_wait :: (epfd: i32, events: []EpollEvent, maxev: i32, timeout_ms: i32) -> i32 {
     while true {
-        n := epoll_wait(epfd, @events[0], maxev, timeout_ms);
+        n := epoll_wait(epfd, *events[0], maxev, timeout_ms);
         if n >= 0 { return n; }
         if posix.errno() != EINTR_EP { return -1; }   // EINTR: reissue
     }

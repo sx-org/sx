@@ -25,8 +25,8 @@ main :: () {
     v : Vec2 = ---;
     v.x = 41;
     v.y = 100;
-    bump(@v.x);          // promoted member at offset 0 → 42
-    bump(@v.y);          // promoted member at offset 8 → 101 (its own slot)
+    bump(*v.x);          // promoted member at offset 0 → 42
+    bump(*v.y);          // promoted member at offset 8 → 101 (its own slot)
     print("x={}\n", v.x);
     print("y={}\n", v.y);
 }

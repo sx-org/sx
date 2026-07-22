@@ -40,8 +40,8 @@ main :: () -> i64 {
     sh : Shared = .{ n = 0 };   // seq[] + done[] zero-filled
 
     s := sched.Scheduler.init();
-    ps := @s;
-    psh := @sh;
+    ps := *s;
+    psh := *sh;
 
     // Three DIFFERENT fiber bodies (distinct captured ids), interleaving via
     // yield_now. Each appends its id once per round for 3 rounds.

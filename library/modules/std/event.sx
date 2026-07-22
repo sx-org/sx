@@ -213,7 +213,7 @@ Loop :: struct {
     wake :: (self: *Loop) {
         if self.wake_fd < 0 { return; }
         one : u64 = 1;
-        socket.write(self.wake_fd, xx @one, 8);
+        socket.write(self.wake_fd, xx *one, 8);
     }
 
     // Fill `out` with ready events, waiting at most `timeout_ms`
@@ -222,7 +222,7 @@ Loop :: struct {
         raw : [64]ep.EpollEvent = ---;
         cap : i64 = 64;
         if xx out.len < cap { cap = xx out.len; }
-        n := ep.ep_wait(self.epfd, .{ ptr = @raw[0], len = cap }, xx cap, xx timeout_ms);
+        n := ep.ep_wait(self.epfd, .{ ptr = *raw[0], len = cap }, xx cap, xx timeout_ms);
         if n < 0 { raise error.Wait; }
         i := 0;
         while i < n {
@@ -232,7 +232,7 @@ Loop :: struct {
             if self.wake_fd >= 0 and fd == self.wake_fd {
                 // Drain the eventfd counter so it doesn't re-fire immediately.
                 drain : u64 = 0;
-                socket.read(self.wake_fd, xx @drain, 8);
+                socket.read(self.wake_fd, xx *drain, 8);
                 e.user = true;
                 e.udata = self.wake_udata;
             } else {
@@ -304,7 +304,7 @@ Loop :: struct {
         raw : [64]kqb.Kevent = ---;
         cap : i64 = 64;
         if xx out.len < cap { cap = xx out.len; }
-        n := kqb.kq_wait(self.kq, @raw[0], xx cap, timeout_ms);
+        n := kqb.kq_wait(self.kq, *raw[0], xx cap, timeout_ms);
         if n < 0 { raise error.Wait; }
         i := 0;
         while i < n {

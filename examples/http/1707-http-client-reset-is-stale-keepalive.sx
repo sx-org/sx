@@ -24,9 +24,9 @@ main :: () -> i32 {
     lfd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if lfd < 0 { print("listener socket failed\n"); return 1; }
     one : i32 = 1;
-    socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEADDR, @one, 4);
+    socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEADDR, *one, 4);
     addr := socket.sockaddr_in(PORT, 0x0100007F);
-    if socket.bind(lfd, @addr, 16) != 0 { print("bind failed\n"); return 1; }
+    if socket.bind(lfd, *addr, 16) != 0 { print("bind failed\n"); return 1; }
     if socket.listen(lfd, 4) != 0 { print("listen failed\n"); return 1; }
 
     // Blocking loopback connect completes against the listen queue with no
@@ -39,7 +39,7 @@ main :: () -> i32 {
     if afd < 0 { print("accept failed\n"); return 3; }
 
     // The request lands in afd's receive queue and is deliberately never read.
-    se := http.Client.send_on(@c, "GET", "/hello", "127.0.0.1", "", "");
+    se := http.Client.send_on(*c, "GET", "/hello", "127.0.0.1", "", "");
     if se { print("send_on failed\n"); return 4; }
 
     // Let it arrive, then close with it unread → RST rather than FIN.
@@ -48,7 +48,7 @@ main :: () -> i32 {
     sleep_ms(100);
 
     buf : [4096]u8 = ---;
-    r, re := http.Client.recv_on(@c, @buf[0], 4096);
+    r, re := http.Client.recv_on(*c, *buf[0], 4096);
     _ := r;
     if !re {
         print("FAIL: recv_on returned a response from a reset conn\n");
@@ -61,7 +61,7 @@ main :: () -> i32 {
         return 6;
     }
 
-    http.Client.close_conn(@c);
+    http.Client.close_conn(*c);
     socket.close(lfd);
     print("reset before any byte classified as Closed (retryable)\n");
     return 0;

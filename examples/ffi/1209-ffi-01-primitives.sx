@@ -35,7 +35,7 @@ main :: () -> i32 {
 
     // Pointer roundtrip — proves *void survives the boundary
     sentinel : i32 = 42;
-    p_in : *void = xx @sentinel;
+    p_in : *void = xx *sentinel;
     p_out := ffi_id_ptr(p_in);
     addr_in  : u64 = xx p_in;
     addr_out : u64 = xx p_out;

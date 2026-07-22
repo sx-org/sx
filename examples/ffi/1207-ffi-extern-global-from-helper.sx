@@ -15,11 +15,11 @@
 __stdinp : *void extern;
 
 stdinp_addr_via_helper :: () -> u64 {
-    xx @__stdinp
+    xx *__stdinp
 }
 
 main :: () -> i32 {
-    direct  : u64 = xx @__stdinp;
+    direct  : u64 = xx *__stdinp;
     via_helper := stdinp_addr_via_helper();
     print("direct non-null = {}\n", direct != 0);
     print("helper non-null = {}\n", via_helper != 0);

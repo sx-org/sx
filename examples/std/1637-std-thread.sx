@@ -58,7 +58,7 @@ main :: () -> i32 {
     ths : [4]thread.Thread = ---;
     i := 0;
     while i < 4 {
-        t, te := thread.Thread.spawn(bump_entry, xx @sh);
+        t, te := thread.Thread.spawn(bump_entry, xx *sh);
         if te { print("spawn failed\n"); return 1; }
         ths[i] = t;
         i += 1;
@@ -78,8 +78,8 @@ main :: () -> i32 {
     args : [*]AddArg = xx context.allocator.alloc_bytes(100 * size_of(AddArg));
     n := 0;
     while n < 100 {
-        args[n] = AddArg.{ sh = @sh, v = xx (n + 1) };
-        if !pool.submit(add_task, xx @args[n]) { print("submit unexpectedly refused\n"); return 1; }
+        args[n] = AddArg.{ sh = *sh, v = xx (n + 1) };
+        if !pool.submit(add_task, xx *args[n]) { print("submit unexpectedly refused\n"); return 1; }
         n += 1;
     }
     pool.shutdown();   // queued tasks finish before workers exit
@@ -90,7 +90,7 @@ main :: () -> i32 {
     sh.gate = 0;
     p2, pe2 := thread.Pool.create(1, 2);
     if pe2 { print("pool2 create failed\n"); return 1; }
-    if !p2.submit(gate_task, xx @sh) { print("gate submit refused\n"); return 1; }
+    if !p2.submit(gate_task, xx *sh) { print("gate submit refused\n"); return 1; }
     // give the worker a beat to take the gate task off the queue
     spins := 0;
     taken := false;

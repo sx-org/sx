@@ -6,7 +6,7 @@
 // ir-only here, runs on x86_64-linux.
 poke :: () -> i64 {
     x : i64 = 0;
-    asm volatile { "movq $42, %[out]", [out] "=*m" -> @x };
+    asm volatile { "movq $42, %[out]", [out] "=*m" -> *x };
     return x;   // 42
 }
 main :: () -> i64 { if poke() != 42 { return 1; } return 0; }

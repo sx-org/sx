@@ -3507,7 +3507,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         });
         if (!data_is_ptr) {
             if (self.diagnostics) |d| {
-                d.addFmt(.err, c.args[1].span, "raw_make_any expects a pointer for 'data' (got '{s}') — pass the value's address (`@v`, or a raw_any_data result)", .{self.formatTypeName(data_ty)});
+                d.addFmt(.err, c.args[1].span, "raw_make_any expects a pointer for 'data' (got '{s}') — pass the value's address (`*v`, or a raw_any_data result)", .{self.formatTypeName(data_ty)});
             }
             return self.builder.constInt(0, .any);
         }

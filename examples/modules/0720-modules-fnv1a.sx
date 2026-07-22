@@ -15,7 +15,7 @@ main :: () {
     b1 := "hello";
     tmp : [5]u8 = ---;
     tmp[0] = 'h'; tmp[1] = 'e'; tmp[2] = 'l'; tmp[3] = 'l'; tmp[4] = 'o';
-    b2 := string.{ ptr = @tmp[0], len = 5 };
+    b2 := string.{ ptr = *tmp[0], len = 5 };
     print("content-eq {}\n", hash.fnv1a(b1) == hash.fnv1a(b2));   // true
 
     // Distinct content → (almost surely) distinct hash.

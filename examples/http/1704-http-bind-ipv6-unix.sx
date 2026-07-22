@@ -76,14 +76,14 @@ roundtrip :: (srv: *http.Server, fd: i32) -> bool {
     t : i64 = 0;
     while t < 2000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, @rbuf[total], xx (2048 - total));
+        n, re := socket.read_nb(fd, *rbuf[total], xx (2048 - total));
         if !re { total += n; }
         else if re == error.Closed { break; }
-        s := string.{ ptr = @rbuf[0], len = xx total };
+        s := string.{ ptr = *rbuf[0], len = xx total };
         if contains(s, "HTTP/1.1 200 OK") and contains(s, "pong") { return true; }
         t += 1;
     }
-    s := string.{ ptr = @rbuf[0], len = xx total };
+    s := string.{ ptr = *rbuf[0], len = xx total };
     return contains(s, "HTTP/1.1 200 OK") and contains(s, "pong");
 }
 
@@ -94,7 +94,7 @@ serve_one :: (cfg: http.Config, a: *socket.Addr, code: i32) -> i32 {
     if se { return code; }
     fd := dial_addr(a);
     if fd < 0 { srv.close(); return code + 1; }
-    ok := roundtrip(@srv, fd);
+    ok := roundtrip(*srv, fd);
     socket.close(fd);
     srv.close();
     if !ok { return code + 2; }
@@ -117,14 +117,14 @@ run :: () -> i32 {
     a6, ok6 := socket.parse_addr("::1", PORT_A);
     if !ok6 { return 10; }
     cfg_a : http.Config = .{ port = PORT_A, bind_addr = "::1", timeout_request_ms = 3000, max_conn = 8 };
-    ra := serve_one_with_v4_refusal(cfg_a, @a6, PORT_A, 11);
+    ra := serve_one_with_v4_refusal(cfg_a, *a6, PORT_A, 11);
     if ra != 0 { return ra; }
 
     // ── B. 127.0.0.1 ──
     a4, ok4 := socket.parse_addr("127.0.0.1", PORT_B);
     if !ok4 { return 20; }
     cfg_b : http.Config = .{ port = PORT_B, bind_addr = "127.0.0.1", timeout_request_ms = 3000, max_conn = 8 };
-    rb := serve_one(cfg_b, @a4, 21);
+    rb := serve_one(cfg_b, *a4, 21);
     if rb != 0 { return rb; }
 
     // ── C. dual-stack "::": BOTH families + resolve("localhost") ──
@@ -133,23 +133,23 @@ run :: () -> i32 {
     if se_c { return 30; }
     c6, cok6 := socket.parse_addr("::1", PORT_C);
     if !cok6 { srv_c.close(); return 31; }
-    fd6 := dial_addr(@c6);
+    fd6 := dial_addr(*c6);
     if fd6 < 0 { srv_c.close(); return 32; }
-    if !roundtrip(@srv_c, fd6) { socket.close(fd6); srv_c.close(); return 33; }
+    if !roundtrip(*srv_c, fd6) { socket.close(fd6); srv_c.close(); return 33; }
     socket.close(fd6);
     c4, cok4 := socket.parse_addr("127.0.0.1", PORT_C);
     if !cok4 { srv_c.close(); return 34; }
-    fd4 := dial_addr(@c4);
+    fd4 := dial_addr(*c4);
     if fd4 < 0 { srv_c.close(); return 35; }
-    if !roundtrip(@srv_c, fd4) { socket.close(fd4); srv_c.close(); return 36; }
+    if !roundtrip(*srv_c, fd4) { socket.close(fd4); srv_c.close(); return 36; }
     socket.close(fd4);
     // resolve("localhost") → whichever family comes back, the dual-stack
     // listener answers.
     lh, lok := socket.resolve("localhost", PORT_C);
     if !lok { srv_c.close(); return 37; }
-    fdl := dial_addr(@lh);
+    fdl := dial_addr(*lh);
     if fdl < 0 { srv_c.close(); return 38; }
-    if !roundtrip(@srv_c, fdl) { socket.close(fdl); srv_c.close(); return 39; }
+    if !roundtrip(*srv_c, fdl) { socket.close(fdl); srv_c.close(); return 39; }
     socket.close(fdl);
     srv_c.close();
 
@@ -157,7 +157,7 @@ run :: () -> i32 {
     d6, dok6 := socket.parse_addr("::1", PORT_D);
     if !dok6 { return 40; }
     cfg_d : http.Config = .{ port = PORT_D, bind_addr = "::", ipv6_only = true, timeout_request_ms = 3000, max_conn = 8 };
-    rd := serve_one_with_v4_refusal(cfg_d, @d6, PORT_D, 41);
+    rd := serve_one_with_v4_refusal(cfg_d, *d6, PORT_D, 41);
     if rd != 0 { return rd; }
 
     // ── E. Unix-domain socket: serve + unlink on close ──
@@ -168,9 +168,9 @@ run :: () -> i32 {
     if !fs.exists(SOCK_PATH) { srv_e.close(); return 51; }
     ua, uok := socket.addr_unix(SOCK_PATH);
     if !uok { srv_e.close(); return 52; }
-    fdu := dial_addr(@ua);
+    fdu := dial_addr(*ua);
     if fdu < 0 { srv_e.close(); return 53; }
-    if !roundtrip(@srv_e, fdu) { socket.close(fdu); srv_e.close(); return 54; }
+    if !roundtrip(*srv_e, fdu) { socket.close(fdu); srv_e.close(); return 54; }
     socket.close(fdu);
     srv_e.close();
     if fs.exists(SOCK_PATH) { return 55; }   // close() must remove the file
@@ -202,15 +202,15 @@ serve_one_with_v4_refusal :: (cfg: http.Config, a: *socket.Addr, port: i64, code
     if se { return code; }
     fd := dial_addr(a);
     if fd < 0 { srv.close(); return code + 1; }
-    ok := roundtrip(@srv, fd);
+    ok := roundtrip(*srv, fd);
     socket.close(fd);
     if !ok { srv.close(); return code + 2; }
     // v4 loopback must be REFUSED (nothing bound on the v4 side).
     v4, vok := socket.parse_addr("127.0.0.1", port);
     if !vok { srv.close(); return code + 3; }
-    fdr := socket.socket(socket.addr_family(@v4), socket.SOCK_STREAM, 0);
+    fdr := socket.socket(socket.addr_family(*v4), socket.SOCK_STREAM, 0);
     if fdr < 0 { srv.close(); return code + 4; }
-    refused := socket.connect_to(fdr, @v4) != 0;
+    refused := socket.connect_to(fdr, *v4) != 0;
     socket.close(fdr);
     srv.close();
     if !refused { return code + 5; }

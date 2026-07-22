@@ -16,6 +16,6 @@ main :: () {
     o.tag = 33;              // direct struct field store
     print("a={} b={} tag={}\n", o.inner.a, o.inner.b, o.tag);
 
-    bump(@o.inner.a);        // address-of a matched nested field
+    bump(*o.inner.a);        // address-of a matched nested field
     print("a2={}\n", o.inner.a);
 }

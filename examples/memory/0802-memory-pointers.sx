@@ -10,10 +10,10 @@ main :: () {
     v := Vec2.{ 1.0, 2.0 };
     print("before: {}\n", v);
 
-    set_x(@v, 99.0);
+    set_x(*v, 99.0);
     print("after: {}\n", v);
 
-    ptr := @v;
+    ptr := *v;
     copy := ptr.*;
     print("copy: {}\n", copy);
     
@@ -22,7 +22,7 @@ main :: () {
 
     // many-pointer indexing
     arr : [5]i32 = .[10, 20, 30, 40, 50];
-    mp : [*]i32 = @arr[0];
+    mp : [*]i32 = *arr[0];
     print("mp[0] = {}\n", mp[0]);
     print("mp[2] = {}\n", mp[2]);
 }

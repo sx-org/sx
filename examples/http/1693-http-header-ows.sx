@@ -36,7 +36,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -69,7 +69,7 @@ count_occurrences :: (hay: string, needle: string) -> i64 {
 drain :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64, total: *i64) -> bool {
     srv.tick(1) catch {};
     while true {
-        n, re := socket.read_nb(fd, @buf[total.*], xx (cap - total.*));
+        n, re := socket.read_nb(fd, *buf[total.*], xx (cap - total.*));
         if !re { total.* += n; continue; }
         if re == error.Closed { return true; }
         return false;
@@ -87,7 +87,7 @@ staged :: (srv: *http.Server, first: string, second: string, wait_for: string, b
     if wait_for.len > 0 {
         spins : i64 = 0;
         while spins < 400 {
-            if drain(srv, fd, buf, cap, @total) { break; }
+            if drain(srv, fd, buf, cap, *total) { break; }
             if contains(string.{ ptr = buf, len = xx total }, wait_for) { break; }
             spins += 1;
         }
@@ -97,7 +97,7 @@ staged :: (srv: *http.Server, first: string, second: string, wait_for: string, b
     done := false;
     prev := total;
     while !done and stall < 400 {
-        done = drain(srv, fd, buf, cap, @total);
+        done = drain(srv, fd, buf, cap, *total);
         if total > prev { stall = 0; prev = total; } else { stall += 1; }
     }
     socket.close(fd);
@@ -125,26 +125,26 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // (a) tab after the colon on Content-Length
-        r := staged(@srv,
+        r := staged(*srv,
             "POST / HTTP/1.1\r\nHost: t\r\nContent-Length:\t5\r\nConnection: close\r\n\r\nhello",
             "", "", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "CL-tab status", @failed);
-        check(r, "got:hello", "CL-tab echo", @failed);
+        check(r, "HTTP/1.1 200 OK", "CL-tab status", *failed);
+        check(r, "got:hello", "CL-tab echo", *failed);
 
         // (b) trailing OWS on Transfer-Encoding — still exactly "chunked"
-        r = staged(@srv,
+        r = staged(*srv,
             "POST / HTTP/1.1\r\nHost: t\r\nTransfer-Encoding: chunked \r\nConnection: close\r\n\r\n3\r\nabc\r\n0\r\n\r\n",
             "", "", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "TE-ows status", @failed);
-        check(r, "got:abc", "TE-ows echo", @failed);
+        check(r, "HTTP/1.1 200 OK", "TE-ows status", *failed);
+        check(r, "got:abc", "TE-ows echo", *failed);
 
         // (c) tab + trailing OWS around Expect: 100-continue — the interim
         // must fire (not 417), exactly once, then the final 200
-        r = staged(@srv,
+        r = staged(*srv,
             "POST / HTTP/1.1\r\nHost: t\r\nExpect:\t100-continue \r\nContent-Length: 4\r\nConnection: close\r\n\r\n",
             "body", "HTTP/1.1 100 Continue\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 100 Continue", "Expect-ows interim", @failed);
-        check(r, "got:body", "Expect-ows echo", @failed);
+        check(r, "HTTP/1.1 100 Continue", "Expect-ows interim", *failed);
+        check(r, "got:body", "Expect-ows echo", *failed);
         if count_occurrences(r, "100 Continue") != 1 {
             print("Expect-ows: expected exactly one 100\n");
             failed = 1;
@@ -153,16 +153,16 @@ main :: () -> i32 {
         // (d2) a PRESENT-but-empty Content-Length (value all OWS) is not
         // "0" — it must 400, never serve with the payload left buffered
         // (Q1.6/Q1.7 adversarial review MED)
-        r = staged(@srv,
+        r = staged(*srv,
             "POST / HTTP/1.1\r\nHost: t\r\nContent-Length: \t \r\nConnection: close\r\n\r\nhello",
             "", "", rbuf, cap);
-        check(r, "HTTP/1.1 400", "empty-CL rejected", @failed);
+        check(r, "HTTP/1.1 400", "empty-CL rejected", *failed);
 
         // (d) edges trimmed, interior preserved — byte-observable via echo
-        r = staged(@srv,
+        r = staged(*srv,
             "GET / HTTP/1.1\r\nHost: t\r\nX-Echo:  a b\t c  \r\nConnection: close\r\n\r\n",
             "", "", rbuf, cap);
-        check(r, "[a b\t c]", "echo trim", @failed);
+        check(r, "[a b\t c]", "echo trim", *failed);
 
         srv.close();
         context.allocator.dealloc_bytes(xx rbuf);

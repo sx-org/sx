@@ -60,7 +60,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         total : i64 = 0;
         h : i64 = 0;
         while true {
-            n := req.read_body(@scratch[0], 8192);
+            n := req.read_body(*scratch[0], 8192);
             if n <= 0 { break; }
             i : i64 = 0;
             while i < n { h = (h * 31 + scratch[i]) % 1000000007; i += 1; }
@@ -74,7 +74,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
         got : i64 = 0;
         rc : i64 = 0;
         while true {
-            rc = req.read_body(@scratch[0], 4096);
+            rc = req.read_body(*scratch[0], 4096);
             if rc <= 0 { break; }
             got += rc;
         }
@@ -90,7 +90,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -134,7 +134,7 @@ num_after :: (hay: string, key: string) -> i64 {
 send_all :: (srv: *http.Server, fd: i32, s: string) {
     sent : i64 = 0;
     while sent < s.len {
-        n, we := socket.write_nb(fd, @s.ptr[sent], xx (s.len - sent));
+        n, we := socket.write_nb(fd, *s.ptr[sent], xx (s.len - sent));
         if !we { sent += n; }
         srv.tick(1) catch {};
     }
@@ -145,7 +145,7 @@ read_response :: (srv: *http.Server, fd: i32, rbuf: [*]u8, cap: i64) -> i64 {
     t : i64 = 0;
     while t < 20000 {
         srv.tick(1) catch {};
-        n, re := socket.read_nb(fd, @rbuf[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *rbuf[total], xx (cap - total));
         if !re { total += n; }
         else if re == error.Closed { return total; }
         resp := string.{ ptr = rbuf, len = xx total };
@@ -189,14 +189,14 @@ main :: () -> i32 {
             stream_request_body = true,  // no pool: REQUIRES fibers (Q3.3)
             fibers = xx runner,
         };
-        srv, se := http.Server.init(cfg, route, xx @obs);
+        srv, se := http.Server.init(cfg, route, xx *obs);
         if se { print("init failed\n"); return 1; }
 
         // ── case 1: bodyless fiber dispatch ───────────────────────────
         c1 := dial_port(PORT);
         if c1 < 0 { print("dial c1 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\n\r\n");
-        r1 := read_response(@srv, c1, rbuf, cap);
+        send_all(*srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\n\r\n");
+        r1 := read_response(*srv, c1, rbuf, cap);
         resp1 := string.{ ptr = rbuf, len = xx r1 };
         if !contains(resp1, "HTTP/1.1 200 OK") or !contains(resp1, "pong") {
             print("case1: no pong\n");
@@ -230,7 +230,7 @@ main :: () -> i32 {
             served_before := srv.stats().requests_served;
             psent : i64 = 0;
             while psent < preq.len {
-                n, we := socket.write_nb(cp, @preq.ptr[psent], xx (preq.len - psent));
+                n, we := socket.write_nb(cp, *preq.ptr[psent], xx (preq.len - psent));
                 if !we { psent += n; }
             }
             srv.tick(50) catch {};
@@ -258,7 +258,7 @@ main :: () -> i32 {
             pongs = 0;
             pr : i64 = 0;
             while pr < 200 and pongs < 2 {
-                n, re := socket.read_nb(cp, @rbuf[ptotal], xx (cap - ptotal));
+                n, re := socket.read_nb(cp, *rbuf[ptotal], xx (cap - ptotal));
                 if !re { ptotal += n; }
                 else if re == error.Closed { break; }
                 presp := string.{ ptr = rbuf, len = xx ptotal };
@@ -288,11 +288,11 @@ main :: () -> i32 {
             sum = (sum * 31 + body[i]) % 1000000007;
             i += 1;
         }
-        send_all(@srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 200000\r\n\r\n");
-        send_all(@srv, c1, string.{ ptr = body, len = 70001 });
-        send_all(@srv, c1, string.{ ptr = @body[70001], len = 59999 });
-        send_all(@srv, c1, string.{ ptr = @body[130000], len = SUM_LEN - 130000 });
-        r2 := read_response(@srv, c1, rbuf, cap);
+        send_all(*srv, c1, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 200000\r\n\r\n");
+        send_all(*srv, c1, string.{ ptr = body, len = 70001 });
+        send_all(*srv, c1, string.{ ptr = *body[70001], len = 59999 });
+        send_all(*srv, c1, string.{ ptr = *body[130000], len = SUM_LEN - 130000 });
+        r2 := read_response(*srv, c1, rbuf, cap);
         resp2 := string.{ ptr = rbuf, len = xx r2 };
         if !contains(resp2, "HTTP/1.1 200 OK") { print("case2: no 200\n"); failed = 1; }
         if num_after(resp2, "len=") != SUM_LEN { print("case2: bad len {}\n", num_after(resp2, "len=")); failed = 1; }
@@ -301,8 +301,8 @@ main :: () -> i32 {
         if obs.handler_tid != main_tid { print("case2: handler ran OFF the loop thread\n"); failed = 1; }
 
         // ── case 3: keep-alive after the fiber-served stream ──────────
-        send_all(@srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
-        r3 := read_response(@srv, c1, rbuf, cap);
+        send_all(*srv, c1, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r3 := read_response(*srv, c1, rbuf, cap);
         resp3 := string.{ ptr = rbuf, len = xx r3 };
         if !contains(resp3, "pong") { print("case3: no pong\n"); failed = 1; }
         socket.close(c1);
@@ -310,8 +310,8 @@ main :: () -> i32 {
         // ── case 4: stalled body → eviction wakes the parked fiber ────
         c4 := dial_port(PORT);
         if c4 < 0 { print("dial c4 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c4, "POST /stall HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
-        send_all(@srv, c4, string.{ ptr = body, len = 1024 });
+        send_all(*srv, c4, "POST /stall HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
+        send_all(*srv, c4, string.{ ptr = body, len = 1024 });
         // go silent; the 400 ms stall bound evicts, faulting the channel —
         // the fiber wakes with -1 (same thread: obs is readable directly)
         t : i64 = 0;
@@ -326,8 +326,8 @@ main :: () -> i32 {
         // ── case 5: server healthy after the eviction ─────────────────
         c5 := dial_port(PORT);
         if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c5, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
-        r5 := read_response(@srv, c5, rbuf, cap);
+        send_all(*srv, c5, "GET /ping HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n");
+        r5 := read_response(*srv, c5, rbuf, cap);
         resp5 := string.{ ptr = rbuf, len = xx r5 };
         if !contains(resp5, "pong") { print("case5: no pong\n"); failed = 1; }
         socket.close(c5);
@@ -335,8 +335,8 @@ main :: () -> i32 {
         // ── case 6: close() with a fiber parked mid-body must return ──
         c6 := dial_port(PORT);
         if c6 < 0 { print("dial c6 failed\n"); srv.close(); return 1; }
-        send_all(@srv, c6, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
-        send_all(@srv, c6, string.{ ptr = body, len = 2048 });
+        send_all(*srv, c6, "POST /sum HTTP/1.1\r\nHost: t\r\nContent-Length: 100000\r\n\r\n");
+        send_all(*srv, c6, string.{ ptr = body, len = 2048 });
         t = 0;
         while t < 5 { srv.tick(1) catch {}; t += 1; }   // fiber parked in read_body
 

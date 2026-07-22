@@ -14,7 +14,7 @@ layout_vstack :: (children: *List(ViewChild), bounds: Frame, spacing: f32, align
     y := bounds.origin.y;
     i := 0;
     while i < n {
-        child := @children.items[i];
+        child := *children.items[i];
         child_size := child.view.size_that_fits(ProposedSize.{
             width = content_width,
             height = null
@@ -41,7 +41,7 @@ layout_hstack :: (children: *List(ViewChild), bounds: Frame, spacing: f32, align
     x := bounds.origin.x;
     i := 0;
     while i < n {
-        child := @children.items[i];
+        child := *children.items[i];
         child_size := child.view.size_that_fits(ProposedSize.{
             width = null,
             height = content_height
@@ -69,7 +69,7 @@ layout_zstack :: (children: *List(ViewChild), bounds: Frame, alignment: Alignmen
 
     i := 0;
     while i < n {
-        child := @children.items[i];
+        child := *children.items[i];
         child_size := child.view.size_that_fits(proposal);
         x_offset := align_h(alignment.h, child_size.width, bounds.size.width);
         y_offset := align_v(alignment.v, child_size.height, bounds.size.height);

@@ -51,7 +51,7 @@ main :: () -> i64 {
     st : S = .{ read_n = 0, read_done = false };   // bytes[] zero-filled; read() fills it
 
     fds : [2]i32 = ---;
-    if pipe(@fds[0]) != 0 {
+    if pipe(*fds[0]) != 0 {
         print("1820: pipe() failed\n");
         return 1;
     }
@@ -67,7 +67,7 @@ main :: () -> i64 {
     gpa := mem.GPA.init();
     push .{ allocator = gpa } {
         s := sched.Scheduler.init();
-        ps := @s; pst := @st;
+        ps := *s; pst := *st;
 
         // SLEEPER — arms a virtual-time timer, then parks.
         ps.spawn(() { ps.sleep(5); });
@@ -76,7 +76,7 @@ main :: () -> i64 {
         mk_reader :: (ps: *sched.Scheduler, pst: *S, rfd: i32) {
             ps.spawn(() {
                 ps.block_on_fd(rfd, true);
-                n := read(rfd, xx @pst.bytes[0], xx 3);
+                n := read(rfd, xx *pst.bytes[0], xx 3);
                 pst.read_n = xx n;
                 pst.read_done = true;
             });
@@ -86,7 +86,7 @@ main :: () -> i64 {
             ps.spawn(() {
                 buf : [3]u8 = ---;
                 buf[0] = xx 97; buf[1] = xx 98; buf[2] = xx 99;
-                write(wfd, xx @buf[0], xx 3);
+                write(wfd, xx *buf[0], xx 3);
             });
         }
         mk_reader(ps, pst, read_fd);

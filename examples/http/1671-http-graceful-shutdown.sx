@@ -34,7 +34,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -88,7 +88,7 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: 
     tries := 0;
     while tries < 2000 {
         srv.tick(5) catch {};
-        n, re := socket.read_nb(fd, @scratch[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *scratch[total], xx (cap - total));
         if !re { total += n; }
         else if re == error.Closed { return string.{ ptr = scratch, len = xx total }; }
         if resp_complete(scratch, total) { return string.{ ptr = scratch, len = xx total }; }
@@ -103,7 +103,7 @@ peer_closed :: (srv: *http.Server, fd: i32) -> bool {
     tries := 0;
     while tries < 200 {
         srv.tick(5) catch {};
-        zq, ze := socket.read_nb(fd, @probe[0], 64);
+        zq, ze := socket.read_nb(fd, *probe[0], 64);
         if ze == error.Closed { return true; }
         if !ze and zq == 0 { return true; }
         tries += 1;
@@ -138,7 +138,7 @@ main :: () -> i32 {
             idle := dial_port(PORT);
             if idle < 0 { print("idle dial failed\n"); rc = 1; }
             if rc == 0 {
-                ri := roundtrip(@srv, idle, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
+                ri := roundtrip(*srv, idle, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
                 if !contains(ri, "HTTP/1.1 200 OK") { print("idle warmup bad\n"); rc = 1; }
             }
 
@@ -169,7 +169,7 @@ main :: () -> i32 {
                 socket.write(busy, tail.ptr, xx tail.len);
 
                 // Idle keep-alive is closed the instant begin_stop runs.
-                if !peer_closed(@srv, idle) { print("idle keep-alive not closed on stop\n"); rc = 1; }
+                if !peer_closed(*srv, idle) { print("idle keep-alive not closed on stop\n"); rc = 1; }
 
                 // Drive the bounded drain (what run() does after stopping),
                 // and concurrently read the in-flight response — it must
@@ -181,7 +181,7 @@ main :: () -> i32 {
                 drain_deadline := event.deadline_in(cfg.shutdown_timeout_ms);
                 while !event.expired(drain_deadline) {
                     srv.tick(20) catch {};
-                    n, re := socket.read_nb(busy, @scratch[total], xx (cap - total));
+                    n, re := socket.read_nb(busy, *scratch[total], xx (cap - total));
                     if !re { total += n; }
                     if resp_complete(scratch, total) { got = true; break; }
                     if srv.in_flight() == 0 and total == 0 { continue; }
@@ -207,7 +207,7 @@ main :: () -> i32 {
                 c := dial_port(PORT);
                 if c < 0 { print("restart dial failed\n"); rc = 1; }
                 else {
-                    r := roundtrip(@srv2, c, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 7\r\n\r\nrestart", scratch, cap);
+                    r := roundtrip(*srv2, c, "POST /echo HTTP/1.1\r\nHost: t\r\nContent-Length: 7\r\n\r\nrestart", scratch, cap);
                     if !contains(r, "HTTP/1.1 200 OK") or !contains(r, "restart") {
                         print("restart server did not serve\n"); rc = 1;
                     }

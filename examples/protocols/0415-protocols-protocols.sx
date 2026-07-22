@@ -487,7 +487,7 @@ main :: () {
     // P4.2: default method via dynamic dispatch (vtable)
     {
         pr := Printer.{ count = 0 };
-        r : *Repeater = @pr;          // borrowed VIEW — mutations reach pr
+        r : *Repeater = *pr;          // borrowed VIEW — mutations reach pr
         r.say_twice("yo ");
         print("\nP4.2: {}\n", pr.count);
     }
@@ -495,7 +495,7 @@ main :: () {
     // P4.3: chained default→default calls via vtable
     {
         ci := ChainImpl.{ val = 0 };
-        ch : *Chained = @ci;          // view — ci.val is asserted below
+        ch : *Chained = *ci;          // view — ci.val is asserted below
         // double_wrap calls wrap twice, wrap calls base once each
         // base("hi") returns 2 (len), wrap adds 1 → 3, double_wrap = 3 + 3 = 6
         result := ch.double_wrap("hi");

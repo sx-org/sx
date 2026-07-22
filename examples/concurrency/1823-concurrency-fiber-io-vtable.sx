@@ -23,18 +23,18 @@ sleeper :: (arg: *void) {
     n : *i64 = xx arg;
     tok : ParkToken = .{ handle = null };
     context.io.arm_timer(context.io.now_ms() + n.*, tok);
-    context.io.suspend_raw(@tok) catch {};
+    context.io.suspend_raw(*tok) catch {};
     print("worker(sleep {}) resumed at now_ms = {}\n", n.*, context.io.now_ms());
 }
 
 main :: () -> i64 {
     s := sched.Scheduler.init();
-    ps := @s;
+    ps := *s;
     d1 : i64 = 20;
     d2 : i64 = 10;
     push .{ io = xx s } {
-        context.io.spawn_raw(xx sleeper, xx @d1, .{});
-        context.io.spawn_raw(xx sleeper, xx @d2, .{});
+        context.io.spawn_raw(xx sleeper, xx *d1, .{});
+        context.io.spawn_raw(xx sleeper, xx *d2, .{});
         ps.run();
     }
     print("final clock: {}ms\n", ps.now_ms());

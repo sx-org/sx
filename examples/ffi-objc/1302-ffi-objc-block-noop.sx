@@ -12,6 +12,6 @@ main :: () -> i32 {
   cl := () { print("noop block ran\n"); };
   b : Block = xx cl;
   invoke_fn : (*Block) -> void abi(.c) = xx b.invoke;
-  invoke_fn(@b);
+  invoke_fn(*b);
   0
 }

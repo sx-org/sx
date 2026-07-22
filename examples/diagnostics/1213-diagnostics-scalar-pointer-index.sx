@@ -18,11 +18,11 @@
 S :: struct { a: i64; }
 main :: () -> i64 {
     x : i64 = 5;
-    pc : *i64 = @x;
+    pc : *i64 = *x;
     pc[0] = 7;      // error: cannot index '*i64' (write position)
-    q := @pc[0];    // error: cannot index '*i64' (address-of position)
+    q := *pc[0];    // error: cannot index '*i64' (address-of position)
     s := S.{ a = 1 };
-    ps : *S = @s;
+    ps : *S = *s;
     ps[0].a = 9;    // error: cannot index '*S' (field-lvalue-through-index)
     return pc[0];   // error: cannot index '*i64' (read position)
 }

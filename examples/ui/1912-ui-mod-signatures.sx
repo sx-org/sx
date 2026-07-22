@@ -28,7 +28,7 @@ chip :: (label: string, m: Mod = .{}) -> View {
 main :: () {
     u := Ui.{};
     root := Sink(View).{};
-    push .{ ui = @u, ui_sink = @root } {
+    push .{ ui = *u, ui_sink = *root } {
         // Container: named `m` + trailing block bind together — m is a
         // middle default, the block is the last param.
         vstack(8.0, m = .{ padding = EdgeInsets.all(10.0), bg = COLOR_DARK_GRAY }) {

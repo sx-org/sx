@@ -356,7 +356,7 @@ content_coding_acceptable :: (accept: *AcceptEncoding, raw: string) -> bool {
 // Compatibility wrapper for existing internal callers.
 select :: (headers: string) -> Encoding {
     accept := parse_accept_encoding(headers);
-    preferred_encoding(@accept)
+    preferred_encoding(*accept)
 }
 
 parse_content_encoding :: (value: string) -> Encoding {
@@ -530,7 +530,7 @@ EncodedProducer :: struct {
     next :: (self: *EncodedProducer, output: string) -> (EncodedProduceStep, !Error) {
         if self.finished { return EncodedProduceStep.{ status = EncodedProduceStatus.done }; }
         if self.input_at < self.input_len {
-            input := string.{ ptr = @self.input[self.input_at], len = self.input_len - self.input_at };
+            input := string.{ ptr = *self.input[self.input_at], len = self.input_len - self.input_at };
             progress := try self.encoder.write(input, output);
             self.input_at += progress.consumed;
             if progress.status == .done { self.finished = true; }

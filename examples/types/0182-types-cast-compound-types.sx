@@ -9,7 +9,7 @@
 
 main :: () {
     x := 42;
-    p : *i64 = @x;
+    p : *i64 = *x;
     q : *i64 = p.(*i64);        // no-op pointer cast
     print("a: {}\n", q.*);
     addr : i64 = xx p;

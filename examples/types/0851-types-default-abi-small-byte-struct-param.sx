@@ -60,8 +60,8 @@ main :: () -> i64 {
     fg := Color.{ r = 230, g = 230, b = 240, a = 255 };
     f := Frame.make(10.0, 20.0, 100.0, 40.0);
 
-    probe_string_two_colors(@n, "New Game", bg, fg);
-    probe_frame_draw(@n, f, "Notes", 14.0, bg, fg, 8.0);
-    probe_one_color(@n, "Hint", fg);
+    probe_string_two_colors(*n, "New Game", bg, fg);
+    probe_frame_draw(*n, f, "Notes", 14.0, bg, fg, 8.0);
+    probe_one_color(*n, "Hint", fg);
     0
 }

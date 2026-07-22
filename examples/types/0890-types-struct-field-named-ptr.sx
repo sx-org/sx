@@ -18,9 +18,9 @@ Gen :: struct ($T: Type) {
 
 main :: () {
     x := 5;
-    p := Plain.{ ptr = @x, len = 2.5 };
+    p := Plain.{ ptr = *x, len = 2.5 };
     print("{} {}\n", p.get(), p.len * 2.0);   // len is f64, not i64
-    g := Gen(i64).{ ptr = @x };
+    g := Gen(i64).{ ptr = *x };
     print("{}\n", g.get());
     // Container pseudo-fields keep working.
     s := "abc";

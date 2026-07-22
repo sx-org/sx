@@ -97,7 +97,7 @@ impl Platform for SdlPlatform {
             else: {
                 display_id := SDL_GetPrimaryDisplay();
                 bounds : SDL_Rect = ---;
-                if SDL_GetDisplayUsableBounds(display_id, @bounds) {
+                if SDL_GetDisplayUsableBounds(display_id, *bounds) {
                     init_w = bounds.w * 3 / 4;
                     init_h = bounds.h * 3 / 4;
                 }
@@ -115,10 +115,10 @@ impl Platform for SdlPlatform {
         // immediate). Ignored on wasm, where emscripten's rAF loop paces.
         SDL_GL_SetSwapInterval(1);
 
-        load_gl(@SDL_GL_GetProcAddress);
+        load_gl(*SDL_GL_GetProcAddress);
 
-        SDL_GetWindowSize(self.window, @self.width, @self.height);
-        SDL_GetWindowSizeInPixels(self.window, @self.pixel_w, @self.pixel_h);
+        SDL_GetWindowSize(self.window, *self.width, *self.height);
+        SDL_GetWindowSizeInPixels(self.window, *self.pixel_w, *self.pixel_h);
         wf : f32 = xx self.width;
         pw : f32 = xx self.pixel_w;
         self.dpi_scale = if wf > 0.0 then pw / wf else 1.0;
@@ -137,11 +137,11 @@ impl Platform for SdlPlatform {
 
         inline if OS == {
             case .wasm: {}
-            else: { SDL_AddEventWatch(@sdl_event_watch, xx self); }
+            else: { SDL_AddEventWatch(*sdl_event_watch, xx self); }
         }
 
         inline if OS == {
-            case .wasm: { c.emscripten_set_main_loop(@sdl_wasm_tick, 0, 1); }
+            case .wasm: { c.emscripten_set_main_loop(*sdl_wasm_tick, 0, 1); }
             else: {
                 while self.running {
                     frame_fn();
@@ -153,16 +153,16 @@ impl Platform for SdlPlatform {
     poll_events :: (self: *SdlPlatform) -> []Event {
         self.events.len = 0;
         sdl_event : SDL_Event = .none;
-        while SDL_PollEvent(@sdl_event) {
+        while SDL_PollEvent(*sdl_event) {
             if sdl_event == {
                 case .quit: { self.running = false; }
                 case .window_resized: (data) {
                     self.width = data.data1;
                     self.height = data.data2;
-                    SDL_GetWindowSizeInPixels(self.window, @self.pixel_w, @self.pixel_h);
+                    SDL_GetWindowSizeInPixels(self.window, *self.pixel_w, *self.pixel_h);
                 }
             }
-            ui_event := translate_sdl_event(@sdl_event);
+            ui_event := translate_sdl_event(*sdl_event);
             if ui_event != .none {
                 self.events.append(ui_event);
             }
@@ -188,11 +188,11 @@ impl Platform for SdlPlatform {
             case .wasm: {
                 new_w : i32 = 0;
                 new_h : i32 = 0;
-                SDL_GetWindowSize(self.window, @new_w, @new_h);
+                SDL_GetWindowSize(self.window, *new_w, *new_h);
                 if new_w != self.width or new_h != self.height {
                     self.width = new_w;
                     self.height = new_h;
-                    SDL_GetWindowSizeInPixels(self.window, @self.pixel_w, @self.pixel_h);
+                    SDL_GetWindowSizeInPixels(self.window, *self.pixel_w, *self.pixel_h);
                 }
             }
             else: {}
@@ -248,7 +248,7 @@ sdl_event_watch :: (userdata: *void, event: *SDL_Event) -> bool abi(.c) {
         case .window_resized: (data) {
             plat.width = data.data1;
             plat.height = data.data2;
-            SDL_GetWindowSizeInPixels(plat.window, @plat.pixel_w, @plat.pixel_h);
+            SDL_GetWindowSizeInPixels(plat.window, *plat.pixel_w, *plat.pixel_h);
             if plat.has_frame_closure {
                 fn := plat.frame_closure;
                 fn();

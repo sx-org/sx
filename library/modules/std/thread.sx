@@ -52,16 +52,16 @@ Mutex :: struct {
     buf: c.MutexBuf = .{};
 
     setup :: (self: *Mutex) -> bool {
-        return c.pthread_mutex_init(@self.buf, null) == 0;
+        return c.pthread_mutex_init(*self.buf, null) == 0;
     }
     lock :: (self: *Mutex) {
-        c.pthread_mutex_lock(@self.buf);
+        c.pthread_mutex_lock(*self.buf);
     }
     unlock :: (self: *Mutex) {
-        c.pthread_mutex_unlock(@self.buf);
+        c.pthread_mutex_unlock(*self.buf);
     }
     destroy :: (self: *Mutex) {
-        c.pthread_mutex_destroy(@self.buf);
+        c.pthread_mutex_destroy(*self.buf);
     }
 }
 
@@ -69,20 +69,20 @@ Cond :: struct {
     buf: c.CondBuf = .{};
 
     setup :: (self: *Cond) -> bool {
-        return c.pthread_cond_init(@self.buf, null) == 0;
+        return c.pthread_cond_init(*self.buf, null) == 0;
     }
     // Atomically releases `m` and sleeps; reacquires `m` before returning.
     wait :: (self: *Cond, m: *Mutex) {
-        c.pthread_cond_wait(@self.buf, @m.buf);
+        c.pthread_cond_wait(*self.buf, *m.buf);
     }
     signal :: (self: *Cond) {
-        c.pthread_cond_signal(@self.buf);
+        c.pthread_cond_signal(*self.buf);
     }
     broadcast :: (self: *Cond) {
-        c.pthread_cond_broadcast(@self.buf);
+        c.pthread_cond_broadcast(*self.buf);
     }
     destroy :: (self: *Cond) {
-        c.pthread_cond_destroy(@self.buf);
+        c.pthread_cond_destroy(*self.buf);
     }
 }
 
@@ -95,7 +95,7 @@ Thread :: struct {
     // Context before touching default-conv sx code (examples/1636).
     spawn :: (entry: (*void) -> *void abi(.c), arg: *void) -> (Thread, !ThreadErr) {
         t : Thread = .{};
-        if c.pthread_create(@t.handle, null, entry, arg) != 0 { raise error.Spawn; }
+        if c.pthread_create(*t.handle, null, entry, arg) != 0 { raise error.Spawn; }
         return t;
     }
     join :: (self: *Thread) {
@@ -151,7 +151,7 @@ Pool :: struct {
         p.count = workers;
         i : i64 = 0;
         while i < workers {
-            if c.pthread_create(@p.threads[i], null, pool_worker, xx p) != 0 {
+            if c.pthread_create(*p.threads[i], null, pool_worker, xx p) != 0 {
                 // join what started, then fail loudly
                 p.count = i;
                 p.shutdown();
@@ -209,7 +209,7 @@ pool_worker :: (arg: *void) -> *void abi(.c) {
         while true {
             p.mu.lock();
             while !p.stop and p.len == 0 {
-                p.nonempty.wait(@p.mu);
+                p.nonempty.wait(*p.mu);
             }
             if p.len == 0 {   // stop, and nothing queued
                 p.mu.unlock();

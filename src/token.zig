@@ -89,7 +89,6 @@ pub const Tag = enum {
     percent_equal, // %=
     ampersand, // &
     ampersand_equal, // &=
-    at, // @
     pipe, // |
     pipe_equal, // |=
     pipe_arrow, // |>
@@ -195,7 +194,6 @@ pub const Tag = enum {
             .percent_equal => "%=",
             .ampersand => "&",
             .ampersand_equal => "&=",
-            .at => "@",
             .pipe => "|",
             .pipe_equal => "|=",
             .pipe_arrow => "|>",

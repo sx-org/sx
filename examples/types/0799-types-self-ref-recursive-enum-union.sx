@@ -26,19 +26,19 @@ main :: () -> i32 {
     n2 : Node = ---;
     n2.value = 7;
     n1 : Node = ---;
-    n1.next = @n2;
+    n1.next = *n2;
     n0 : Node = ---;
-    n0.next = @n1;
+    n0.next = *n1;
 
     // Self-ref enum: a branch whose payload pointer derefs to a leaf.
     leaf_node : Tree = .leaf(42);
-    root : Tree = .branch(@leaf_node);
+    root : Tree = .branch(*leaf_node);
 
     // Mutual-ref pair: reach B's value through A's `*B`.
     bv : B = ---;
     bv.val = 99;
     av : A = ---;
-    av.b = @bv;
+    av.b = *bv;
 
     print("union={} enum={} mutual={}\n", n0.next.*.next.*.value, root.branch.*.leaf, av.b.*.val);
     0

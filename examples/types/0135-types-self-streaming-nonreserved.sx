@@ -16,15 +16,15 @@ update :: ufcs (self: *Hasher, n: i64) {
 
 main :: () -> i32 {
     hasher := Hasher.{ total = 0, count = 0 };
-    update(@hasher, 10);   // explicit address-of receiver
+    update(*hasher, 10);   // explicit address-of receiver
     hasher.update(20);     // autoref receiver
-    update(@hasher, 30);
+    update(*hasher, 30);
     hasher.update(40);
     print("hasher total={} count={}\n", hasher.total, hasher.count);
 
     ctx := Hasher.{ total = 100, count = 0 };
     ctx.update(5);
-    update(@ctx, 7);
+    update(*ctx, 7);
     print("ctx total={} count={}\n", ctx.total, ctx.count);
     return 0;
 }

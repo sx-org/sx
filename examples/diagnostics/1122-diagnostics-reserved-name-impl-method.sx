@@ -18,7 +18,7 @@ Doer :: protocol { go :: (self: *Self, n: i64); }
 impl Doer for Box {
     go :: (self: *Box, u8: i64) {
         i2 := Box.{ total = 1 };
-        update(@i2, u8);
+        update(*i2, u8);
         self.total += i2.total;
     }
 }

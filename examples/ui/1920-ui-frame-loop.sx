@@ -59,7 +59,7 @@ main :: () {
     root := UiRoot.init(.{ value = 7 });
     // Closures capture by value — take a pointer so handlers reach the
     // REAL loop (snapshot reads and intend writes).
-    lp := @loop;
+    lp := *loop;
 
     // The input consumer records what the world looks like DURING
     // ApplyInputs: the previous frame's revision (or none at all).
@@ -77,7 +77,7 @@ main :: () {
     loop.intend(() { mark(73); });  // I
     loop.host_effect(() { mark(69); });  // E
     root.input.push(.pointer_down(.{ pointer = .{ value = 1 }, position = .{ x = 5.0, y = 5.0 } }));
-    s1 := loop.tick(@root, home, 100.0, 50.0);
+    s1 := loop.tick(*root, home, 100.0, 50.0);
     process.assert(g_log[0] == 73 and g_log[1] == 65 and g_log[2] == 66 and g_log[3] == 69,
         "phase order: intent, input, build, effect");
     process.assert(g_input_rev == -1, "inputs applied before any committed frame see none");
@@ -97,7 +97,7 @@ main :: () {
         if s := lp.snapshot() { g_input_rev = s.revision; }
         lp.intend(() { mark(73); g_boost = g_counter + 100; });
     };
-    s2 := loop.tick(@root, home, 100.0, 50.0);
+    s2 := loop.tick(*root, home, 100.0, 50.0);
     process.assert(g_input_rev == 1, "ApplyInputs targets the PREVIOUS committed snapshot");
     process.assert(s2.revision == 2, "revision advances");
     process.assert(g_counter == 2, "store state persists across ticks");
@@ -106,7 +106,7 @@ main :: () {
     // Tick 3: the handler's intent fires first — before this build.
     g_n = 0;
     loop.on_input = null;
-    s3 := loop.tick(@root, home, 100.0, 50.0);
+    s3 := loop.tick(*root, home, 100.0, 50.0);
     process.assert(g_log[0] == 73 and g_log[1] == 66, "handler intent drained at the NEXT tick, before build");
     process.assert(g_boost == 102, "the intent saw PRE-build state (2) — it ran before this frame existed");
     process.assert(g_counter == 3, "the build then claimed as usual");

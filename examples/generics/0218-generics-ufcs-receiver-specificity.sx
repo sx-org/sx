@@ -22,7 +22,7 @@ echo :: (x: $U) -> $U { return x; }
 
 main :: () -> i64 {
     b : Box(i64) = ---; b.v = 0;
-    r := echo((@b).pick());   // *Box wins → i64 7; plan must agree (else misbox)
+    r := echo((*b).pick());   // *Box wins → i64 7; plan must agree (else misbox)
     print("r: {}\n", r);
     return 0;
 }

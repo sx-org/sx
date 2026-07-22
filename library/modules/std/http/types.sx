@@ -66,7 +66,7 @@ Request :: struct {
         left := blen - self.body_off;
         if left <= 0 { return 0; }
         n := if cap < left then cap else left;
-        c.memcpy(@dst[0], @self.body.ptr[self.body_off], xx n);
+        c.memcpy(*dst[0], *self.body.ptr[self.body_off], xx n);
         self.body_off += n;
         return n;
     }
@@ -183,7 +183,7 @@ find_header :: (req: *Request, name: string) -> string {
             e := v;
             while e < h.len and h[e] != '\r' { e += 1; }
             while e > v and (h[e - 1] == ' ' or h[e - 1] == '\t') { e -= 1; }
-            return string.{ ptr = @h[v], len = e - v };
+            return string.{ ptr = *h[v], len = e - v };
         }
         // skip to the next line
         while i < h.len and h[i] != '\n' { i += 1; }
@@ -376,7 +376,7 @@ decode_chunked_pass :: (src: [*]u8, avail: i64, max_body: i64, commit: bool, res
         // compact: move the data up over the stripped framing (wp <= rp always).
         // Only on the commit pass — the validation pass must not mutate.
         if commit and wp != rp {
-            c.memmove(xx @src[wp], xx @src[rp], size);
+            c.memmove(xx *src[wp], xx *src[rp], size);
         }
         wp += size;
         rp += size;
@@ -555,7 +555,7 @@ token_list_has :: (list: string, token_lower: string) -> bool {
         while i < list.len and list[i] != ',' { i += 1; }   // scan to end
         e := i;
         while e > s and (list[e - 1] == ' ' or list[e - 1] == '\t') { e -= 1; }   // trim trailing OWS
-        if ascii_ieq(string.{ ptr = @list[s], len = e - s }, token_lower) { return true; }
+        if ascii_ieq(string.{ ptr = *list[s], len = e - s }, token_lower) { return true; }
     }
     return false;
 }

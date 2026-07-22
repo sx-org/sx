@@ -24,13 +24,13 @@ spacer :: () -> View { place(View.{ tag = "spacer" }) }
 
 vstack :: (spacing: f32, content: Closure()) -> View {
     s := Sink(View).{};
-    push .{ ui_sink = @s } { content(); }
+    push .{ ui_sink = *s } { content(); }
     place(View.{ tag = "vstack" })
 }
 
 hstack :: (spacing: f32, content: Closure()) -> View {
     s := Sink(View).{};
-    push .{ ui_sink = @s } { content(); }
+    push .{ ui_sink = *s } { content(); }
     place(View.{ tag = "hstack" })
 }
 
@@ -57,7 +57,7 @@ home_screen :: () -> View {
 
 main :: () {
     root := Sink(View).{};
-    push .{ ui_sink = @root } {
+    push .{ ui_sink = *root } {
         home_screen();
         scaffold(top_bar = toolbar) { text("content"); }
     }

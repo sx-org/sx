@@ -28,7 +28,7 @@ main :: () {
     // ?*i64 instantiation: null -> the &v default.
     bp : ?*i64 = null;
     v : i64 = 123;
-    print("e={}\n", unwrap_or(@v, bp).*);
+    print("e={}\n", unwrap_or(*v, bp).*);
 
     // ?Struct instantiation: null -> default struct, present -> the value.
     ps : ?Pt = null;

@@ -83,7 +83,7 @@ impl Into(Block) for Closure(..$args) -> $R {
 //      reconstructs a typed fn-pointer from `block_self.sx_fn`,
 //      prepends `block_self.sx_env`, and tail-calls the sx closure.
 //   2. Returns a stack Block literal whose `invoke` slot points at
-//      the nested trampoline via `xx @__invoke`.
+//      the nested trampoline via `xx *__invoke`.
 //
 // The host impl wraps the emitted source via `#insert
 // build_block_convert($args, $R);`. Per-call-shape monomorphisation
@@ -128,11 +128,11 @@ build_block_convert :: (args: []Type, $ret: Type) -> string {
     }
     code = concat(code, "); } ");
     code = concat(code, "return .{ ");
-    code = concat(code, "isa = @_NSConcreteStackBlock, ");
+    code = concat(code, "isa = *_NSConcreteStackBlock, ");
     code = concat(code, "flags = 0, ");
     code = concat(code, "reserved = 0, ");
-    code = concat(code, "invoke = xx @__invoke, ");
-    code = concat(code, "descriptor = xx @__sx_block_descriptor, ");
+    code = concat(code, "invoke = xx *__invoke, ");
+    code = concat(code, "descriptor = xx *__sx_block_descriptor, ");
     code = concat(code, "sx_env = self.env, ");
     code = concat(code, "sx_fn = self.fn_ptr, ");
     code = concat(code, "};");

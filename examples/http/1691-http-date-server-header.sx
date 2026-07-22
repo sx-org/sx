@@ -50,7 +50,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -79,7 +79,7 @@ roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
             if !re { total += n; got += n; continue; }
             if re == error.Closed { done = true; }
             break;
@@ -145,7 +145,7 @@ date_epoch_of :: (r: string) -> i64 {
         i += 1;
     }
     if ds < 0 { return -1; }
-    v := string.{ ptr = @r[ds], len = 29 };
+    v := string.{ ptr = *r[ds], len = 29 };
     // "Www, DD Mmm YYYY HH:MM:SS GMT"
     wd := name_index(WDAYS, v, 0);
     if wd < 0 { return -1; }
@@ -203,17 +203,17 @@ main :: () -> i32 {
 
         // (a) a normal 200 carries a valid, current Date
         before := time.now_secs();
-        r := roundtrip(@srv, PORT_A, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r := roundtrip(*srv, PORT_A, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         after := time.now_secs();
-        check(r, "HTTP/1.1 200 OK", "basic status", @failed);
-        check_date(r, before, after, "basic Date", @failed);
+        check(r, "HTTP/1.1 200 OK", "basic status", *failed);
+        check_date(r, before, after, "basic Date", *failed);
 
         // (a2) a streamed (chunked) response carries Date too
         before = time.now_secs();
-        r2 := roundtrip(@srv, PORT_A, "GET /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r2 := roundtrip(*srv, PORT_A, "GET /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         after = time.now_secs();
-        check(r2, "Transfer-Encoding: chunked", "stream TE", @failed);
-        check_date(r2, before, after, "stream Date", @failed);
+        check(r2, "Transfer-Encoding: chunked", "stream TE", *failed);
+        check_date(r2, before, after, "stream Date", *failed);
 
         // (b) no Server: header unless configured
         if contains(r, "\r\nServer:") {
@@ -223,10 +223,10 @@ main :: () -> i32 {
 
         // (c) an error response carries Date too
         before = time.now_secs();
-        r = roundtrip(@srv, PORT_A, "BAD\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srv, PORT_A, "BAD\r\n\r\n", rbuf, cap);
         after = time.now_secs();
-        check(r, "HTTP/1.1 400", "error status", @failed);
-        check_date(r, before, after, "error Date", @failed);
+        check(r, "HTTP/1.1 400", "error status", *failed);
+        check_date(r, before, after, "error Date", *failed);
 
         srv.close();
 
@@ -237,11 +237,11 @@ main :: () -> i32 {
         srvp, spe := http.Server.init(cfgp, route, 0);
         if spe { print("pool init failed\n"); return 1; }
         before = time.now_secs();
-        r = roundtrip(@srvp, PORT_B, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        r = roundtrip(*srvp, PORT_B, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
         after = time.now_secs();
-        check(r, "HTTP/1.1 200 OK", "pooled status", @failed);
-        check(r, "\r\nServer: sx-test/1\r\n", "pooled Server header", @failed);
-        check_date(r, before, after, "pooled Date", @failed);
+        check(r, "HTTP/1.1 200 OK", "pooled status", *failed);
+        check(r, "\r\nServer: sx-test/1\r\n", "pooled Server header", *failed);
+        check_date(r, before, after, "pooled Date", *failed);
         srvp.close();
 
         context.allocator.dealloc_bytes(xx rbuf);

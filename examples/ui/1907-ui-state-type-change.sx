@@ -13,7 +13,7 @@ either :: (first: bool, loc: Source_Location = #caller_location) {
 main :: () {
     u := Ui.{};
     store := StateStore.init(.{ value = 1 });
-    push .{ ui = @u, ui_store = @store } {
+    push .{ ui = *u, ui_store = *store } {
         b := 0;
         while b < 2 {
             store.begin_build(); u.begin_build();

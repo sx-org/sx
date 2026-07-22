@@ -59,7 +59,7 @@ main :: () {
     sm.put(SK.{ name = "foo", n = 5 }, 42, gpa);
     churn(3);
     tmp : [3]u8 = ---; tmp[0] = 'f'; tmp[1] = 'o'; tmp[2] = 'o';
-    sk2 := SK.{ name = string.{ ptr = @tmp[0], len = 3 }, n = 5 };
+    sk2 := SK.{ name = string.{ ptr = *tmp[0], len = 3 }, n = 5 };
     report("string-field found", if v := sm.get(sk2) { v == 42 } else { false });
     sm.deinit(gpa);
 

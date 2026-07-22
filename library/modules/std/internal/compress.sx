@@ -289,7 +289,7 @@ private BitWriter :: struct {
         if self.out.failed { return; }
         bytes := self.count >> 3;
         if bytes > 0 {
-            words : [*]u64 = xx @self.out.bytes.items.ptr[self.out.bytes.items.len];
+            words : [*]u64 = xx *self.out.bytes.items.ptr[self.out.bytes.items.len];
             words[0] = self.bits.(u64);
             self.out.bytes.items.len += bytes;
             self.bits = self.bits >> (bytes * 8);
@@ -745,24 +745,24 @@ private pack_code_lengths :: (lengths: string) -> (PackedCodeLengths, [19]u16) {
     while at < lengths.len {
         value := lengths[at].(i64);
         if value == 0 {
-            flush_previous_code_length(@packed, @frequencies, previous, @repeat_count);
+            flush_previous_code_length(*packed, *frequencies, previous, *repeat_count);
             zero_count += 1;
-            if zero_count == 138 { flush_zero_code_length(@packed, @frequencies, @zero_count); }
+            if zero_count == 138 { flush_zero_code_length(*packed, *frequencies, *zero_count); }
         } else {
-            flush_zero_code_length(@packed, @frequencies, @zero_count);
+            flush_zero_code_length(*packed, *frequencies, *zero_count);
             if value != previous {
-                flush_previous_code_length(@packed, @frequencies, previous, @repeat_count);
-                append_code_length(@packed, @frequencies, value, 0, 0);
+                flush_previous_code_length(*packed, *frequencies, previous, *repeat_count);
+                append_code_length(*packed, *frequencies, value, 0, 0);
             } else {
                 repeat_count += 1;
-                if repeat_count == 6 { flush_previous_code_length(@packed, @frequencies, previous, @repeat_count); }
+                if repeat_count == 6 { flush_previous_code_length(*packed, *frequencies, previous, *repeat_count); }
             }
         }
         previous = value;
         at += 1;
     }
-    if repeat_count > 0 { flush_previous_code_length(@packed, @frequencies, previous, @repeat_count); }
-    else { flush_zero_code_length(@packed, @frequencies, @zero_count); }
+    if repeat_count > 0 { flush_previous_code_length(*packed, *frequencies, previous, *repeat_count); }
+    else { flush_zero_code_length(*packed, *frequencies, *zero_count); }
     return packed, frequencies;
 }
 
@@ -786,14 +786,14 @@ private emit_tdefl_dynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Al
     while i < hlit { combined[i] = lit_lengths[i]; i += 1; }
     i = 0;
     while i < hdist { combined[hlit + i] = dist_lengths[i]; i += 1; }
-    packed_lengths, cl_freq := pack_code_lengths(string.{ ptr = @combined[0], len = total });
+    packed_lengths, cl_freq := pack_code_lengths(string.{ ptr = *combined[0], len = total });
     cl_lengths := tdefl_lengths(cl_freq, 7);
     hclen := 19;
     while hclen > 4 and cl_lengths[CODELEN_ORDER[hclen - 1]] == 0 { hclen -= 1; }
 
-    lit_codes := canonical_codes(string.{ ptr = @lit_lengths[0], len = hlit }, 15);
-    dist_codes := canonical_codes(string.{ ptr = @dist_lengths[0], len = hdist }, 15);
-    cl_codes := canonical_codes(string.{ ptr = @cl_lengths[0], len = 19 }, 7);
+    lit_codes := canonical_codes(string.{ ptr = *lit_lengths[0], len = hlit }, 15);
+    dist_codes := canonical_codes(string.{ ptr = *dist_lengths[0], len = hdist }, 15);
+    cl_codes := canonical_codes(string.{ ptr = *cl_lengths[0], len = 19 }, 7);
 
     writer := BitWriter.init_capacity_storage(alloc, 85216, storage);
     writer.write(if final then 1 else 0, 1);
@@ -877,7 +877,7 @@ private emit_tdefl_dynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Al
                 }
             }
         }
-        output_words : [*]u64 = xx @output_ptr[output_at];
+        output_words : [*]u64 = xx *output_ptr[output_at];
         output_words[0] = bit_buffer.(u64);
         output_at += bits_in >> 3;
         bit_buffer = bit_buffer >> (bits_in & ~7);
@@ -886,7 +886,7 @@ private emit_tdefl_dynamic :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Al
     }
     bit_buffer = bit_buffer | (lit_codes[256].(i64) << bits_in);
     bits_in += lit_lengths[256];
-    output_words : [*]u64 = xx @output_ptr[output_at];
+    output_words : [*]u64 = xx *output_ptr[output_at];
     output_words[0] = bit_buffer.(u64);
     output_at += bits_in >> 3;
     bit_buffer = bit_buffer >> (bits_in & ~7);
@@ -977,7 +977,7 @@ private emit_tdefl_fixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
                 }
             }
         }
-        output_words : [*]u64 = xx @output_ptr[output_at];
+        output_words : [*]u64 = xx *output_ptr[output_at];
         output_words[0] = bit_buffer.(u64);
         output_at += bits_in >> 3;
         bit_buffer = bit_buffer >> (bits_in & ~7);
@@ -986,7 +986,7 @@ private emit_tdefl_fixed :: (buffer: *TdeflTokenBuffer, final: bool, alloc: Allo
     }
     bit_buffer = bit_buffer | (reverse_bits(0, 7) << bits_in);
     bits_in += 7;
-    output_words : [*]u64 = xx @output_ptr[output_at];
+    output_words : [*]u64 = xx *output_ptr[output_at];
     output_words[0] = bit_buffer.(u64);
     output_at += bits_in >> 3;
     bit_buffer = bit_buffer >> (bits_in & ~7);
@@ -1033,7 +1033,7 @@ private deflate_with_path_options :: (data: string, level: i64, strategy: Strate
         }
         input : string = .{ ptr = null, len = 0 };
         if input_at < data.len { input = data[input_at..]; }
-        output := string.{ ptr = @out.bytes.items.ptr[out.bytes.len], len = 8192 };
+        output := string.{ ptr = *out.bytes.items.ptr[out.bytes.len], len = 8192 };
         progress := state.step_unchecked(input, output, true);
         if state.allocation_failed {
             state.deinit(); out.deinit();
@@ -1205,8 +1205,8 @@ private fixed_trees_into :: (lit: *Huffman, dist: *Huffman) -> !Error {
     dist_lengths : [32]u8 = ---;
     i = 0;
     while i < 32 { dist_lengths[i] = 5; i += 1; }
-    try build_huffman_into(lit, string.{ ptr = @lit_lengths[0], len = 288 });
-    try build_huffman_into(dist, string.{ ptr = @dist_lengths[0], len = 32 });
+    try build_huffman_into(lit, string.{ ptr = *lit_lengths[0], len = 288 });
+    try build_huffman_into(dist, string.{ ptr = *dist_lengths[0], len = 32 });
 }
 
 private CODELEN_ORDER : [19]i64 = .[16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
@@ -1389,10 +1389,10 @@ private emit_stored_ring_with_offset :: (dict: string, start: i64, count: i64, f
         available := 32768 - ring_at;
         if first > available { first = available; }
         out_at := writer.out.bytes.items.len;
-        c.memcpy(@writer.out.bytes.items.ptr[out_at], @dict.ptr[ring_at], first);
+        c.memcpy(*writer.out.bytes.items.ptr[out_at], *dict.ptr[ring_at], first);
         remaining := count - first;
         if remaining > 0 {
-            c.memcpy(@writer.out.bytes.items.ptr[out_at + first], dict.ptr, remaining);
+            c.memcpy(*writer.out.bytes.items.ptr[out_at + first], dict.ptr, remaining);
         }
         writer.out.bytes.items.len += count;
     } else {
@@ -1701,11 +1701,11 @@ Deflater :: struct {
         while copied < take {
             span := 32768 - dst;
             if span > take - copied { span = take - copied; }
-            c.memcpy(@dict[dst], @input.ptr[consumed.* + copied], span);
+            c.memcpy(*dict[dst], *input.ptr[consumed.* + copied], span);
             if dst < 257 {
                 mirror := 257 - dst;
                 if mirror > span { mirror = span; }
-                c.memcpy(@dict[32768 + dst], @input.ptr[consumed.* + copied], mirror);
+                c.memcpy(*dict[32768 + dst], *input.ptr[consumed.* + copied], mirror);
             }
             copied += span;
             dst = (dst + span) & 32767;
@@ -1725,10 +1725,10 @@ Deflater :: struct {
         dict_size := self.dict_size.(u32);
         pos := lookahead_pos & 32767;
         probe_pos := pos;
-        source_words : [*]u16 = xx @dict[pos];
+        source_words : [*]u16 = xx *dict[pos];
         source_first := source_words[0];
         tail_at := pos + initial - 1;
-        tail_words : [*]u16 = xx @dict[tail_at];
+        tail_words : [*]u16 = xx *dict[tail_at];
         tail := tail_words[0];
         configured := self.max_probes.(u32);
         // tdefl probes up to three chain entries for the two-byte tail
@@ -1748,7 +1748,7 @@ Deflater :: struct {
                 distance = (lookahead_pos - next_probe) & 65535;
                 if distance > dict_size { return result; }
                 probe_pos = next_probe & 32767;
-                candidate_tail : [*]u16 = xx @dict[probe_pos + result.length.(u32) - 1];
+                candidate_tail : [*]u16 = xx *dict[probe_pos + result.length.(u32) - 1];
                 if candidate_tail[0] == tail {
                     found = true;
                     break;
@@ -1757,12 +1757,12 @@ Deflater :: struct {
             }
             if found {
                 if distance == 0 { return result; }
-                candidate_words : [*]u16 = xx @dict[probe_pos];
+                candidate_words : [*]u16 = xx *dict[probe_pos];
                 if candidate_words[0] != source_first { continue; }
                 // Compare a full group on the hot equal path, then recover
                 // tdefl's exact 16-bit mismatch boundary inside that group.
-                source_groups : [*]u64 = xx @source_words[1];
-                candidate_groups : [*]u64 = xx @candidate_words[1];
+                source_groups : [*]u64 = xx *source_words[1];
+                candidate_groups : [*]u64 = xx *candidate_words[1];
                 pair : u32 = 0;
                 group : u32 = 0;
                 compare_groups : u32 = 32;
@@ -1794,7 +1794,7 @@ Deflater :: struct {
                     result.distance = distance.(i64);
                     if length == lookahead_size { break; }
                     tail_at = pos + length - 1;
-                    tail_words = xx @dict[tail_at];
+                    tail_words = xx *dict[tail_at];
                     tail = tail_words[0];
                 }
             }
@@ -1824,7 +1824,7 @@ Deflater :: struct {
         code_limit := self.lz.codes.len - 8;
         while lookahead_size >= 4 and code_len <= code_limit {
             pos := lookahead_pos & 32767;
-            first_at : [*]u32 = xx @dict[pos];
+            first_at : [*]u32 = xx *dict[pos];
             first := first_at[0].(i64) & 0xffffff;
             h := (first ^ (first >> 17)) & 4095;
             probe := heads[h].(i64);
@@ -1832,14 +1832,14 @@ Deflater :: struct {
             distance := ((lookahead_pos & 65535) - probe) & 65535;
             length := 1;
             probe_pos := probe & 32767;
-            candidate_at : [*]u32 = xx @dict[probe_pos];
+            candidate_at : [*]u32 = xx *dict[probe_pos];
             if distance <= dict_size and (candidate_at[0].(i64) & 0xffffff) == first {
-                source_words : [*]u16 = xx @dict[pos];
-                candidate_words : [*]u16 = xx @dict[probe_pos];
+                source_words : [*]u16 = xx *dict[pos];
+                candidate_words : [*]u16 = xx *dict[probe_pos];
                 // Compare a full group on the hot equal path, then recover
                 // tdefl's exact 16-bit mismatch boundary inside that group.
-                source_groups : [*]u64 = xx @source_words[1];
-                candidate_groups : [*]u64 = xx @candidate_words[1];
+                source_groups : [*]u64 = xx *source_words[1];
+                candidate_groups : [*]u64 = xx *candidate_words[1];
                 pair := 0;
                 group := 0;
                 groups := 32;
@@ -2030,11 +2030,11 @@ Deflater :: struct {
         valid_bits := 0;
         if self.block_mode == 1 or self.block_mode == 3 or
            (self.block_mode == 0 and self.lz.source_bytes < 48) {
-            fixed, fixed_bits := emit_tdefl_fixed(@self.lz, final, self.alloc, storage);
+            fixed, fixed_bits := emit_tdefl_fixed(*self.lz, final, self.alloc, storage);
             packed = fixed;
             valid_bits = fixed_bits;
         } else {
-            dynamic, dynamic_bits := emit_tdefl_dynamic(@self.lz, final, self.alloc, storage);
+            dynamic, dynamic_bits := emit_tdefl_dynamic(*self.lz, final, self.alloc, storage);
             packed = dynamic;
             valid_bits = dynamic_bits;
         }
@@ -2119,7 +2119,7 @@ Deflater :: struct {
                     // token loop does not re-enter the complete streaming
                     // phase dispatcher for every literal or match.
                     while true {
-                        self.fill_normal(input, @consumed, 258);
+                        self.fill_normal(input, *consumed, 258);
                         max_history := 32768 - self.lookahead_size;
                         if self.dict_size > max_history { self.dict_size = max_history; }
                         if self.lookahead_size < 258 and
@@ -2150,7 +2150,7 @@ Deflater :: struct {
                 }
 
                 if !self.fast_draining {
-                    self.fill_fast(input, @consumed);
+                    self.fill_fast(input, *consumed);
                     max_history := 32768 - self.lookahead_size;
                     if self.dict_size > max_history { self.dict_size = max_history; }
                     if self.lookahead_size < 4096 and
@@ -2197,7 +2197,7 @@ Deflater :: struct {
                         available := output.len - produced;
                         take := if source_bytes < available then source_bytes else available;
                         if take <= 0 { return Progress.{ consumed = consumed, produced = produced, status = .need_output }; }
-                        c.memcpy(@output.ptr[produced], @self.pending.ptr[self.pending_at / 8], take);
+                        c.memcpy(*output.ptr[produced], *self.pending.ptr[self.pending_at / 8], take);
                         produced += take;
                         self.pending_at += take * 8;
                         continue;
@@ -2547,7 +2547,7 @@ GzipDeflater :: struct {
             if options.filename.len > 0 { tail.put_bytes(options.filename); tail.put(0); }
             if options.comment.len > 0 { tail.put_bytes(options.comment); tail.put(0); }
             if options.header_crc {
-                fixed := string.{ ptr = @state.header[0], len = state.header.len };
+                fixed := string.{ ptr = *state.header[0], len = state.header.len };
                 sum := crc32(fixed);
                 if tail.bytes.len > 0 {
                     sum = crc32(string.{ ptr = tail.bytes.items.ptr, len = tail.bytes.len }, sum);
@@ -2898,8 +2898,8 @@ Inflater :: struct {
 
     finish_dynamic_trees :: (self: *Inflater) -> !Error {
         if self.dynamic_lengths[256] == 0 { raise error.InvalidData; }
-        try build_huffman_into(@self.lit_tree, string.{ ptr = @self.dynamic_lengths[0], len = self.hlit });
-        try build_huffman_into(@self.dist_tree, string.{ ptr = @self.dynamic_lengths[self.hlit], len = self.hdist }, true, true);
+        try build_huffman_into(*self.lit_tree, string.{ ptr = *self.dynamic_lengths[0], len = self.hlit });
+        try build_huffman_into(*self.dist_tree, string.{ ptr = *self.dynamic_lengths[self.hlit], len = self.hdist }, true, true);
         // A complete literal/length tree spans 32768 units at 15-bit
         // precision. Scan only EOB and the at-most-29 length symbols; the
         // remainder is literal weight. Literal-dense blocks can use the
@@ -2944,7 +2944,7 @@ Inflater :: struct {
             }
 
             if self.phase == .block_header {
-                header, available := self.take_bits(input, @consumed, 3);
+                header, available := self.take_bits(input, *consumed, 3);
                 if !available { return Progress.{ consumed = consumed, produced = produced, status = .need_input }; }
                 self.final_block = (header & 1) != 0;
                 kind := (header >> 1) & 3;
@@ -2959,7 +2959,7 @@ Inflater :: struct {
                     self.phase = .stored_length;
                 } else if kind == 1 {
                     if !self.fixed_trees_ready {
-                        fixed_trees_into(@self.lit_tree, @self.dist_tree) catch (e) {
+                        fixed_trees_into(*self.lit_tree, *self.dist_tree) catch (e) {
                             self.remember_failure(consumed, produced); raise e;
                         };
                         self.fixed_trees_ready = true;
@@ -2977,14 +2977,14 @@ Inflater :: struct {
             }
 
             if self.phase == .stored_length {
-                value, available := self.take_bits(input, @consumed, 16);
+                value, available := self.take_bits(input, *consumed, 16);
                 if !available { return Progress.{ consumed = consumed, produced = produced, status = .need_input }; }
                 self.stored_length = value;
                 self.phase = .stored_inverse;
                 continue;
             }
             if self.phase == .stored_inverse {
-                inverse, available := self.take_bits(input, @consumed, 16);
+                inverse, available := self.take_bits(input, *consumed, 16);
                 if !available { return Progress.{ consumed = consumed, produced = produced, status = .need_input }; }
                 if ((self.stored_length ^ inverse) & 0xffff) != 0xffff { self.remember_failure(consumed, produced); raise error.InvalidData; }
                 if self.stored_length > self.max_output - self.total_output { self.remember_failure(consumed, produced); raise error.OutputLimit; }
@@ -3002,7 +3002,7 @@ Inflater :: struct {
                     value := self.bit_buffer & 0xff;
                     self.bit_buffer = self.bit_buffer >> 8;
                     self.bit_count -= 8;
-                    self.put_history(output, @produced, value);
+                    self.put_history(output, *produced, value);
                     self.stored_length -= 1;
                 }
                 if self.stored_length == 0 {
@@ -3045,7 +3045,7 @@ Inflater :: struct {
             }
 
             if self.phase == .dynamic_counts {
-                counts, available := self.take_bits(input, @consumed, 14);
+                counts, available := self.take_bits(input, *consumed, 14);
                 if !available { return Progress.{ consumed = consumed, produced = produced, status = .need_input }; }
                 self.hlit = (counts & 31) + 257;
                 self.hdist = ((counts >> 5) & 31) + 1;
@@ -3059,13 +3059,13 @@ Inflater :: struct {
             }
             if self.phase == .dynamic_code_lengths {
                 if self.dynamic_at < self.hclen {
-                    value, available := self.take_bits(input, @consumed, 3);
+                    value, available := self.take_bits(input, *consumed, 3);
                     if !available { return Progress.{ consumed = consumed, produced = produced, status = .need_input }; }
                     self.code_lengths[CODELEN_ORDER[self.dynamic_at]] = value.(u8);
                     self.dynamic_at += 1;
                     continue;
                 }
-                build_huffman_into(@self.code_tree, string.{ ptr = @self.code_lengths[0], len = 19 }, false) catch (e) {
+                build_huffman_into(*self.code_tree, string.{ ptr = *self.code_lengths[0], len = 19 }, false) catch (e) {
                     self.remember_failure(consumed, produced); raise e;
                 };
                 self.dynamic_at = 0;
@@ -3082,7 +3082,7 @@ Inflater :: struct {
                     };
                     continue;
                 }
-                symbol, available := self.decode(input, @consumed, @self.code_tree) catch (e) {
+                symbol, available := self.decode(input, *consumed, *self.code_tree) catch (e) {
                     self.remember_failure(consumed, produced); raise e;
                 };
                 if !available { return Progress.{ consumed = consumed, produced = produced, status = .need_input }; }
@@ -3110,7 +3110,7 @@ Inflater :: struct {
                 value := self.previous_length;
                 if self.phase == .dynamic_repeat_17 { extra_bits = 3; base = 3; value = 0; }
                 if self.phase == .dynamic_repeat_18 { extra_bits = 7; base = 11; value = 0; }
-                extra, available := self.take_bits(input, @consumed, extra_bits);
+                extra, available := self.take_bits(input, *consumed, extra_bits);
                 if !available { return Progress.{ consumed = consumed, produced = produced, status = .need_input }; }
                 repeat := base + extra;
                 total := self.hlit + self.hdist;
@@ -3149,7 +3149,7 @@ Inflater :: struct {
                                 direct_count += 32;
                                 consumed += 4;
                             }
-                            first_entry := huffman_resolve(@self.lit_tree, direct_bits);
+                            first_entry := huffman_resolve(*self.lit_tree, direct_bits);
                             if first_entry == 0 { break; }
                             first_length := first_entry >> 9;
                             first_symbol := first_entry & 511;
@@ -3157,7 +3157,7 @@ Inflater :: struct {
 
                             after_first_bits := direct_bits >> first_length;
                             after_first_count := direct_count - first_length;
-                            second_entry := huffman_resolve(@self.lit_tree, after_first_bits);
+                            second_entry := huffman_resolve(*self.lit_tree, after_first_bits);
                             if second_entry == 0 or (second_entry & 511) >= 256 {
                                 output.ptr[produced] = first_symbol.(u8);
                                 produced += 1;
@@ -3201,7 +3201,7 @@ Inflater :: struct {
                             direct_count += 32;
                             consumed += 4;
                         }
-                        first_entry := huffman_resolve(@self.lit_tree, direct_bits);
+                        first_entry := huffman_resolve(*self.lit_tree, direct_bits);
                         if first_entry == 0 { break; }
                         first_length := first_entry >> 9;
                         first_symbol := first_entry & 511;
@@ -3209,7 +3209,7 @@ Inflater :: struct {
 
                         after_first_bits := direct_bits >> first_length;
                         after_first_count := direct_count - first_length;
-                        second_entry := huffman_resolve(@self.lit_tree, after_first_bits);
+                        second_entry := huffman_resolve(*self.lit_tree, after_first_bits);
                         if second_entry == 0 or (second_entry & 511) >= 256 {
                             output.ptr[produced] = first_symbol.(u8);
                             produced += 1;
@@ -3254,14 +3254,14 @@ Inflater :: struct {
                             self.bit_count += 32;
                             consumed += 4;
                         }
-                        first_entry := huffman_resolve(@self.lit_tree, self.bit_buffer);
+                        first_entry := huffman_resolve(*self.lit_tree, self.bit_buffer);
                         if first_entry != 0 {
                             first_length := first_entry >> 9;
                             first_symbol := first_entry & 511;
                             self.bit_buffer = self.bit_buffer >> first_length;
                             self.bit_count -= first_length;
                             if first_symbol < 256 {
-                                second_entry := huffman_resolve(@self.lit_tree, self.bit_buffer);
+                                second_entry := huffman_resolve(*self.lit_tree, self.bit_buffer);
                                 if second_entry != 0 {
                                     second_length := second_entry >> 9;
                                     second_symbol := second_entry & 511;
@@ -3301,7 +3301,7 @@ Inflater :: struct {
                         }
 
                         if symbol < 0 {
-                            symbol = self.decode_direct(input, @consumed, @self.lit_tree) catch (e) {
+                            symbol = self.decode_direct(input, *consumed, *self.lit_tree) catch (e) {
                                 self.remember_failure(consumed, produced); raise e;
                             };
                         }
@@ -3322,18 +3322,18 @@ Inflater :: struct {
                         length := LENGTH_BASE[li];
                         extra_bits := LENGTH_EXTRA[li];
                         if extra_bits > 0 {
-                            extra, has_extra := self.take_bits(input, @consumed, extra_bits);
+                            extra, has_extra := self.take_bits(input, *consumed, extra_bits);
                             if !has_extra { self.remember_failure(consumed, produced); raise error.UnexpectedEnd; }
                             length += extra;
                         }
-                        dist_symbol := self.decode_direct(input, @consumed, @self.dist_tree) catch (e) {
+                        dist_symbol := self.decode_direct(input, *consumed, *self.dist_tree) catch (e) {
                             self.remember_failure(consumed, produced); raise e;
                         };
                         if dist_symbol > 29 { self.remember_failure(consumed, produced); raise error.InvalidData; }
                         distance := DIST_BASE[dist_symbol];
                         dist_bits := DIST_EXTRA[dist_symbol];
                         if dist_bits > 0 {
-                            dist_extra, has_dist_extra := self.take_bits(input, @consumed, dist_bits);
+                            dist_extra, has_dist_extra := self.take_bits(input, *consumed, dist_bits);
                             if !has_dist_extra { self.remember_failure(consumed, produced); raise error.UnexpectedEnd; }
                             distance += dist_extra;
                         }
@@ -3342,12 +3342,12 @@ Inflater :: struct {
                         global_at := self.total_output;
                         copied := 0;
                         if distance == 1 {
-                            c.memset(@self.direct_output.ptr[global_at], self.direct_output[global_at - 1], length);
+                            c.memset(*self.direct_output.ptr[global_at], self.direct_output[global_at - 1], length);
                         } else {
                             while copied < length {
                                 span := distance;
                                 if span > length - copied { span = length - copied; }
-                                c.memcpy(@self.direct_output.ptr[global_at + copied], @self.direct_output.ptr[global_at + copied - distance], span);
+                                c.memcpy(*self.direct_output.ptr[global_at + copied], *self.direct_output.ptr[global_at + copied - distance], span);
                                 copied += span;
                             }
                         }
@@ -3358,7 +3358,7 @@ Inflater :: struct {
                     }
                     if self.phase != .symbol { continue; }
                 }
-                symbol, available := self.decode(input, @consumed, @self.lit_tree) catch (e) {
+                symbol, available := self.decode(input, *consumed, *self.lit_tree) catch (e) {
                     self.remember_failure(consumed, produced); raise e;
                 };
                 if !available { return Progress.{ consumed = consumed, produced = produced, status = .need_input }; }
@@ -3379,19 +3379,19 @@ Inflater :: struct {
             if self.phase == .literal {
                 if self.total_output >= self.max_output { self.remember_failure(consumed, produced); raise error.OutputLimit; }
                 if produced >= output.len { return Progress.{ consumed = consumed, produced = produced, status = .need_output }; }
-                self.put_history(output, @produced, self.pending_literal);
+                self.put_history(output, *produced, self.pending_literal);
                 self.phase = .symbol;
                 continue;
             }
             if self.phase == .length_extra {
-                extra, available := self.take_bits(input, @consumed, self.pending_extra_bits);
+                extra, available := self.take_bits(input, *consumed, self.pending_extra_bits);
                 if !available { return Progress.{ consumed = consumed, produced = produced, status = .need_input }; }
                 self.match_length += extra;
                 self.phase = .distance_symbol;
                 continue;
             }
             if self.phase == .distance_symbol {
-                symbol, available := self.decode(input, @consumed, @self.dist_tree) catch (e) {
+                symbol, available := self.decode(input, *consumed, *self.dist_tree) catch (e) {
                     self.remember_failure(consumed, produced); raise e;
                 };
                 if !available { return Progress.{ consumed = consumed, produced = produced, status = .need_input }; }
@@ -3406,7 +3406,7 @@ Inflater :: struct {
                 continue;
             }
             if self.phase == .distance_extra {
-                extra, available := self.take_bits(input, @consumed, self.pending_extra_bits);
+                extra, available := self.take_bits(input, *consumed, self.pending_extra_bits);
                 if !available { return Progress.{ consumed = consumed, produced = produced, status = .need_input }; }
                 self.match_distance += extra;
                 if self.match_distance <= 0 or self.match_distance > self.history_len { self.remember_failure(consumed, produced); raise error.InvalidData; }
@@ -3423,12 +3423,12 @@ Inflater :: struct {
                 if self.direct_output.ptr != null {
                     global_at := self.total_output;
                     if self.match_distance == 1 {
-                        c.memset(@self.direct_output.ptr[global_at], self.direct_output[global_at - 1], take);
+                        c.memset(*self.direct_output.ptr[global_at], self.direct_output[global_at - 1], take);
                     } else {
                         while n < take {
                             span := self.match_distance;
                             if span > take - n { span = take - n; }
-                            c.memcpy(@self.direct_output.ptr[global_at + n], @self.direct_output.ptr[global_at + n - self.match_distance], span);
+                            c.memcpy(*self.direct_output.ptr[global_at + n], *self.direct_output.ptr[global_at + n - self.match_distance], span);
                             n += span;
                         }
                     }
@@ -4002,7 +4002,7 @@ inflate_with_consumed :: (data: string, max_output: i64, alloc: Allocator) -> (s
         if chunk > remaining { chunk = remaining; }
         if chunk > 0 and !out.ensure_capacity(out.bytes.len + chunk) { raise error.AllocationFailed; }
         output : string = .{ ptr = null, len = 0 };
-        if chunk > 0 { output = string.{ ptr = @out.bytes.items.ptr[out.bytes.len], len = chunk }; }
+        if chunk > 0 { output = string.{ ptr = *out.bytes.items.ptr[out.bytes.len], len = chunk }; }
         input : string = .{ ptr = null, len = 0 };
         if input_at < data.len { input = data[input_at..]; }
         progress := try state.step(input, output);
@@ -4063,7 +4063,7 @@ compress_path :: (data: string, level: i64, strategy: Strategy, path: DeflatePat
         }
         input : string = .{ ptr = null, len = 0 };
         if input_at < data.len { input = data[input_at..]; }
-        output := string.{ ptr = @out.bytes.items.ptr[out.bytes.len], len = 8192 };
+        output := string.{ ptr = *out.bytes.items.ptr[out.bytes.len], len = 8192 };
         progress := state.step_unchecked(input, output, true);
         if state.raw.allocation_failed {
             state.deinit(); out.deinit();
@@ -4141,7 +4141,7 @@ decompress_with_consumed :: (data: string, max_output: i64 = 1073741824, alloc: 
         if chunk > remaining { chunk = remaining; }
         if chunk > 0 and !out.ensure_capacity(out.bytes.len + chunk) { raise error.AllocationFailed; }
         output : string = .{ ptr = null, len = 0 };
-        if chunk > 0 { output = string.{ ptr = @out.bytes.items.ptr[out.bytes.len], len = chunk }; }
+        if chunk > 0 { output = string.{ ptr = *out.bytes.items.ptr[out.bytes.len], len = chunk }; }
         input : string = .{ ptr = null, len = 0 };
         if input_at < data.len { input = data[input_at..]; }
         progress := try state.step(input, output);
@@ -4247,7 +4247,7 @@ gzip_decompress :: (data: string, max_output: i64 = 1073741824, alloc: Allocator
         if chunk > remaining { chunk = remaining; }
         if chunk > 0 and !out.ensure_capacity(out.bytes.len + chunk) { raise error.AllocationFailed; }
         output : string = .{ ptr = null, len = 0 };
-        if chunk > 0 { output = string.{ ptr = @out.bytes.items.ptr[out.bytes.len], len = chunk }; }
+        if chunk > 0 { output = string.{ ptr = *out.bytes.items.ptr[out.bytes.len], len = chunk }; }
         input : string = .{ ptr = null, len = 0 };
         if input_at < data.len { input = data[input_at..]; }
         progress := try state.step(input, output, true);

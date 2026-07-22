@@ -1,0 +1,4 @@
+value: 42
+types: 8 8 *Pair
+places: 60 30
+mult: 42

@@ -1871,7 +1871,6 @@ pub const Server = struct {
             .percent_equal,
             .ampersand,
             .ampersand_equal,
-            .at,
             .pipe,
             .pipe_equal,
             .pipe_arrow,
@@ -3937,7 +3936,7 @@ test "lsp/project: whole-program check attributes a reachable error to its modul
         "use :: (p: *Move) -> i64 { return take(p); }\n" });
     try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = dir ++ "/main.sx", .data =
         "#import \"mod.sx\";\n" ++
-        "main :: () -> i32 { mv : Move = .{ flag = 1 }; return xx use(@mv); }\n" });
+        "main :: () -> i32 { mv : Move = .{ flag = 1 }; return xx use(*mv); }\n" });
 
     const store = doc_mod.DocumentStore.init(alloc, io, &.{});
     var server = Server{

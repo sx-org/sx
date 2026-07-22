@@ -25,15 +25,15 @@ check :: (name: string, base: i64, field: i64, walk: i64, sz: i64) {
 
 main :: () {
     a := V3.{ pre = 1, v = .[1.0, 2.0, 3.0], post = 2 };
-    check("V3", xx @a, xx @a.v, struct_field_offset(V3, 1), size_of(V3));
+    check("V3", xx *a, xx *a.v, struct_field_offset(V3, 1), size_of(V3));
     b := V2.{ pre = 1, v = .[1.0, 2.0] };
-    check("V2", xx @b, xx @b.v, struct_field_offset(V2, 1), size_of(V2));
+    check("V2", xx *b, xx *b.v, struct_field_offset(V2, 1), size_of(V2));
     c := V4d.{ pre = 1, v = .[1.0, 2.0, 3.0, 4.0] };
-    check("V4d", xx @c, xx @c.v, struct_field_offset(V4d, 1), size_of(V4d));
+    check("V4d", xx *c, xx *c.v, struct_field_offset(V4d, 1), size_of(V4d));
     d := V8.{ pre = 1, v = .[1, 2, 3, 4, 5, 6, 7, 8] };
-    check("V8", xx @d, xx @d.v, struct_field_offset(V8, 1), size_of(V8));
+    check("V8", xx *d, xx *d.v, struct_field_offset(V8, 1), size_of(V8));
     e := V16i.{ pre = 1, v = .[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16] };
-    check("V16i", xx @e, xx @e.v, struct_field_offset(V16i, 1), size_of(V16i));
+    check("V16i", xx *e, xx *e.v, struct_field_offset(V16i, 1), size_of(V16i));
 
     // The interior view reads the right lanes through the same offsets.
     av : any = a;

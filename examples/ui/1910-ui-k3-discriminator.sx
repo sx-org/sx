@@ -24,7 +24,7 @@ screen_keyed :: (route: i64) {
 main :: () {
     u := Ui.{};
     store := StateStore.init(.{ value = 1 });
-    push .{ ui = @u, ui_store = @store } {
+    push .{ ui = *u, ui_store = *store } {
         store.begin_build(); u.begin_build();
         print("unkeyed A {}\n", screen_unkeyed(0));
         store.commit_build();
@@ -34,7 +34,7 @@ main :: () {
     }
     ub := Ui.{};
     storeb := StateStore.init(.{ value = 2 });
-    push .{ ui = @ub, ui_store = @storeb } {
+    push .{ ui = *ub, ui_store = *storeb } {
         storeb.begin_build(); ub.begin_build();
         screen_keyed(0);
         print("keyed A {}\n", sk_result);

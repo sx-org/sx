@@ -449,7 +449,7 @@ impl GPU for MetalGPU {
         if self.device == null { return 0; }
 
         err : *void = null;
-        library := self.device.newLibraryWithSource_options_error(xx vsrc, null, @err);
+        library := self.device.newLibraryWithSource_options_error(xx vsrc, null, *err);
         if library == null {
             NSLog(xx "[metal] MSL compile failed\n");
             return 0;
@@ -474,7 +474,7 @@ impl GPU for MetalGPU {
         att0.setDestinationAlphaBlendFactor(MTL_BLEND_FACTOR_ONE_MINUS_SRC_A);
 
         err2 : *void = null;
-        state := self.device.newRenderPipelineStateWithDescriptor_error(desc, @err2);
+        state := self.device.newRenderPipelineStateWithDescriptor_error(desc, *err2);
         if state == null {
             NSLog(xx "[metal] pipeline state creation failed\n");
             return 0;

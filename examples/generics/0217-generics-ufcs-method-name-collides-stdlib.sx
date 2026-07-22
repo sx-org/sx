@@ -18,7 +18,7 @@ cancel :: ufcs (b: *Box($R)) { b.flag = 1; }
 
 main :: () -> i64 {
     x : Box(i64) = ---; x.value = 7; x.flag = 0;
-    (@x).cancel();          // resolves to the user `cancel` by receiver type
+    (*x).cancel();          // resolves to the user `cancel` by receiver type
     print("{}\n", x.flag);  // 1
     return 0;
 }

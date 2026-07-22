@@ -20,7 +20,7 @@ Wrapper :: struct {
 main :: () -> i32 {
     v : `i2(i64);
     v.x = 7;
-    p : *`i2(i64) = @v;  // pointer to a raw parameterized type
+    p : *`i2(i64) = *v;  // pointer to a raw parameterized type
     w : Wrapper = ---;
     w.inner.x = 12;
     print("val = {}\n", v.x);

@@ -108,7 +108,7 @@ RouteCtx :: struct {
     query_get :: (self: *RouteCtx, name: string) -> string {
         if !self.query_parsed {
             qs := query_string_of(self.req.path);
-            self.n_query = parse_pairs(qs, @self.query[0], MAX_QUERY);
+            self.n_query = parse_pairs(qs, *self.query[0], MAX_QUERY);
             self.query_parsed = true;
         }
         i := 0;
@@ -124,7 +124,7 @@ RouteCtx :: struct {
     query_has :: (self: *RouteCtx, name: string) -> bool {
         if !self.query_parsed {
             qs := query_string_of(self.req.path);
-            self.n_query = parse_pairs(qs, @self.query[0], MAX_QUERY);
+            self.n_query = parse_pairs(qs, *self.query[0], MAX_QUERY);
             self.query_parsed = true;
         }
         i := 0;
@@ -140,7 +140,7 @@ RouteCtx :: struct {
     // request body; "" when absent. Same percent/'+' decoding as the query.
     form_get :: (self: *RouteCtx, name: string) -> string {
         if !self.form_parsed {
-            self.n_form = parse_pairs(self.req.body, @self.form[0], MAX_FORM);
+            self.n_form = parse_pairs(self.req.body, *self.form[0], MAX_FORM);
             self.form_parsed = true;
         }
         i := 0;
@@ -153,7 +153,7 @@ RouteCtx :: struct {
 
     form_has :: (self: *RouteCtx, name: string) -> bool {
         if !self.form_parsed {
-            self.n_form = parse_pairs(self.req.body, @self.form[0], MAX_FORM);
+            self.n_form = parse_pairs(self.req.body, *self.form[0], MAX_FORM);
             self.form_parsed = true;
         }
         i := 0;
@@ -238,7 +238,7 @@ query_string_of :: (path: string) -> string {
     i := 0;
     while i < path.len {
         if path[i] == '?' {
-            return string.{ ptr = @path[i + 1], len = path.len - i - 1 };
+            return string.{ ptr = *path[i + 1], len = path.len - i - 1 };
         }
         i += 1;
     }
@@ -311,7 +311,7 @@ parse_pairs :: (s: string, out: [*]KV, cap: i64) -> i64 {
         // one segment runs to the next '&'
         seg_start := i;
         while i < s.len and s[i] != '&' { i += 1; }
-        seg := string.{ ptr = @s[seg_start], len = i - seg_start };
+        seg := string.{ ptr = *s[seg_start], len = i - seg_start };
         if i < s.len { i += 1; }   // skip '&'
 
         if seg.len == 0 { continue; }   // empty segment ("&&")
@@ -329,7 +329,7 @@ parse_pairs :: (s: string, out: [*]KV, cap: i64) -> i64 {
             key = seg;
         } else {
             key = string.{ ptr = seg.ptr, len = eq };
-            val = string.{ ptr = @seg[eq + 1], len = seg.len - eq - 1 };
+            val = string.{ ptr = *seg[eq + 1], len = seg.len - eq - 1 };
         }
         out[n] = KV.{ name = decode_token(key), value = decode_token(val) };
         n += 1;
@@ -359,13 +359,13 @@ match_pattern :: (pattern: string, path: string, params: [*]KV) -> (bool, i64 = 
         // grab one segment from each
         ps := pi;
         while pi < pattern.len and pattern[pi] != '/' { pi += 1; }
-        pseg := string.{ ptr = @pattern[ps], len = pi - ps };
+        pseg := string.{ ptr = *pattern[ps], len = pi - ps };
         xs := xi;
         while xi < path.len and path[xi] != '/' { xi += 1; }
-        xseg := string.{ ptr = @path[xs], len = xi - xs };
+        xseg := string.{ ptr = *path[xs], len = xi - xs };
         if pseg.len > 0 and pseg[0] == ':' {   // param segment
             if n < MAX_PARAMS {
-                name := string.{ ptr = @pseg[1], len = pseg.len - 1 };
+                name := string.{ ptr = *pseg[1], len = pseg.len - 1 };
                 params[n] = KV.{ name = name, value = xseg };
                 n += 1;
             }
@@ -435,11 +435,11 @@ dispatch :: (req: *types.Request, resp: *types.Response, ctx: *Router) {
     while i < self.n_routes {
         r := self.routes[i];
         if ci_eq(r.method, req.method) {
-            ok, np := match_pattern(r.pattern, path, @rc.params[0]);
+            ok, np := match_pattern(r.pattern, path, *rc.params[0]);
             if ok {
                 rc.n_params = np;
                 h := r.handler;
-                h(@rc);
+                h(*rc);
                 return;
             }
         }
@@ -457,11 +457,11 @@ dispatch :: (req: *types.Request, resp: *types.Response, ctx: *Router) {
         while i < self.n_routes {
             r := self.routes[i];
             if ci_eq(r.method, "GET") {
-                ok, np := match_pattern(r.pattern, path, @rc.params[0]);
+                ok, np := match_pattern(r.pattern, path, *rc.params[0]);
                 if ok {
                     rc.n_params = np;
                     h := r.handler;
-                    h(@rc);
+                    h(*rc);
                     return;
                 }
             }
@@ -479,7 +479,7 @@ dispatch :: (req: *types.Request, resp: *types.Response, ctx: *Router) {
     i = 0;
     while i < self.n_routes {
         r := self.routes[i];
-        ok, _ := match_pattern(r.pattern, path, @scratch[0]);
+        ok, _ := match_pattern(r.pattern, path, *scratch[0]);
         if ok {
             path_matched = true;
             if allow.len == 0 { allow = r.method; }
@@ -503,7 +503,7 @@ dispatch :: (req: *types.Request, resp: *types.Response, ctx: *Router) {
 
     if self.not_found != null {
         h := self.not_found;
-        h(@rc);
+        h(*rc);
         return;
     }
     resp.status = 404;

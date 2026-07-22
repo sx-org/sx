@@ -28,7 +28,7 @@ main :: () -> i32 {
     blk : Block = xx cl;
 
     invoke_fn : (*Block, i64, i64) -> void abi(.c) = xx blk.invoke;
-    invoke_fn(@blk, 10, 20);
+    invoke_fn(*blk, 10, 20);
 
     if g_a != 10 { print("FAIL: g_a={}\n", g_a); return 1; }
     if g_b != 20 { print("FAIL: g_b={}\n", g_b); return 1; }

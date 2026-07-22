@@ -49,7 +49,7 @@ main :: () {
     print("inline: {} {}\n", i.area(), i.name());
 
     // *P view dispatch over the same filtered slots.
-    pv : *Shape = @s;
+    pv : *Shape = *s;
     print("view:   {} {}\n", pv.area(), pv.name());
 
     // Excluded method: concrete receiver (static dispatch) still works...

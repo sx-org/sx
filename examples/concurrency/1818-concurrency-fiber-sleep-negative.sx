@@ -7,7 +7,7 @@
 #import "modules/std.sx";
 sched :: #import "modules/std/sched.sx";
 main :: () -> i64 {
-    s := sched.Scheduler.init(); ps := @s;
+    s := sched.Scheduler.init(); ps := *s;
     ps.spawn(() { ps.sleep(10); ps.sleep(-5); });   // -5 → loud abort
     s.run();
     print("unreachable\n");

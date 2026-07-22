@@ -30,7 +30,7 @@ ComposeTest :: struct {
     build :: (self: *ComposeTest, body: Closure() -> View) -> View {
         self.root.begin_build();
         v : View = ---;
-        push .{ ui = @self.root.ui, ui_store = @self.root.store } {
+        push .{ ui = *self.root.ui, ui_store = *self.root.store } {
             v = body();
         }
         self.root.commit_build();
@@ -41,7 +41,7 @@ ComposeTest :: struct {
     // store/identity semantics still run in full.
     build_void :: (self: *ComposeTest, body: Closure()) {
         self.root.begin_build();
-        push .{ ui = @self.root.ui, ui_store = @self.root.store } {
+        push .{ ui = *self.root.ui, ui_store = *self.root.store } {
             body();
         }
         self.root.commit_build();
@@ -92,7 +92,7 @@ dump_snapshot :: (s: *CommittedUiSnapshot) {
         s.revision, s.generation, s.scene.nodes.len, s.hit_list.len);
     i := 0;
     while i < s.scene.nodes.len {
-        n := @s.scene.nodes.items[i];
+        n := *s.scene.nodes.items[i];
         f := n.frame;
         if n.type == {
             case .rect: {
@@ -132,7 +132,7 @@ dump_snapshot :: (s: *CommittedUiSnapshot) {
     }
     i = 0;
     while i < s.hit_list.len {
-        h := @s.hit_list.items[i];
+        h := *s.hit_list.items[i];
         print("hit {} {} {} {} {}\n", h.id,
             h.frame.origin.x, h.frame.origin.y, h.frame.size.width, h.frame.size.height);
         i += 1;

@@ -31,7 +31,7 @@ rec :: (sh: *Sh, v: i64) { sh.log[sh.n] = v; sh.n = sh.n + 1; }
 main :: () -> i64 {
     sh : Sh = ---; sh.n = 0; sh.parked = null;
     s := sched.Scheduler.init();
-    ps := @s; psh := @sh;
+    ps := *s; psh := *sh;
 
     // Fiber A: record 10, park, then (after wake) record 11. Store A's handle in
     // the shared state so B can wake it.

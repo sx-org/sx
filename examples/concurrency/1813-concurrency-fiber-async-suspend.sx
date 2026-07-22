@@ -36,8 +36,8 @@ main :: () -> i64 {
     lg : Log = .{ n = 0 };   // seq[] zero-filled
 
     s := sched.Scheduler.init();
-    ps := @s;
-    pl := @lg;
+    ps := *s;
+    pl := *lg;
 
     // The coordinator fiber: drives two async workers, awaits both, then exercises
     // cancel. It runs as a fiber so `await` has a `self.current` to park. The

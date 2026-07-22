@@ -14,7 +14,7 @@ Shape :: enum { circle: i64; rect: i64; }
 
 main :: () {
     s : Shape = .rect(4);
-    p := @s;
+    p := *s;
 
     // Value position, pointer subject, every arm capture-dependent (the 0226 repro).
     r := if p == { case .circle: (v) { v } case .rect: (v) { v * 2 } };
@@ -31,7 +31,7 @@ main :: () {
     // (specs §for by-ref capture: "a pointer subject matches through the
     // deref") — the pointee value drives the case dispatch directly.
     n : i64 = 42;
-    pn := @n;
+    pn := *n;
     m := if pn == { case 42: { 1 } else: { 0 } };
     print("{}\n", m);
 }

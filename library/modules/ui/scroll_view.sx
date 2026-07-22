@@ -119,7 +119,7 @@ impl View for ScrollView {
                             position = .{ x = 0.0 - 10000.0, y = 0.0 - 10000.0 },
                             button = .none
                         });
-                        self.child.view.handle_event(@cancel, self.child.computed_frame);
+                        self.child.view.handle_event(*cancel, self.child.computed_frame);
                     }
                 }
                 if s.dragging {

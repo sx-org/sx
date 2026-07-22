@@ -82,7 +82,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -125,7 +125,7 @@ roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
             if !re { total += n; got += n; continue; }
             if re == error.Closed { done = true; }
             break;
@@ -160,24 +160,24 @@ main :: () -> i32 {
         rbuf : [*]u8 = xx context.allocator.alloc_bytes(cap);
 
         cfg : http.Config = .{ port = PORT_A, max_conn = 4, request_count = 10 };
-        srv, se := http.Server.init(cfg, route, xx @stream_calls);
+        srv, se := http.Server.init(cfg, route, xx *stream_calls);
         if se { print("init failed\n"); return 1; }
 
         // (a) GET control: full body with its length
-        r := roundtrip(@srv, PORT_A, "GET /data HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "GET status", @failed);
-        check(r, "Content-Length: 11", "GET length", @failed);
-        check(r, "hello world", "GET body", @failed);
+        r := roundtrip(*srv, PORT_A, "GET /data HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "GET status", *failed);
+        check(r, "Content-Length: 11", "GET length", *failed);
+        check(r, "hello world", "GET body", *failed);
 
         // (b) HEAD + pipelined GET on ONE connection: the HEAD response
         // carries the GET's Content-Length but no body — its blank line is
         // immediately followed by the GET's status line, and only ONE body
         // is on the wire.
-        r = roundtrip(@srv, PORT_A,
+        r = roundtrip(*srv, PORT_A,
             "HEAD /data HTTP/1.1\r\nHost: t\r\n\r\nGET /data HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n",
             rbuf, cap);
-        check(r, "Content-Length: 11", "HEAD length", @failed);
-        check(r, "\r\n\r\nHTTP/1.1 200 OK", "HEAD framing (no body before the GET)", @failed);
+        check(r, "Content-Length: 11", "HEAD length", *failed);
+        check(r, "\r\n\r\nHTTP/1.1 200 OK", "HEAD framing (no body before the GET)", *failed);
         if count_occurrences(r, "Content-Length: 11") != 2 {
             print("HEAD+GET: expected BOTH responses to carry CL 11\n");
             failed = 1;
@@ -192,30 +192,30 @@ main :: () -> i32 {
         }
 
         // (c) 204: handler-set body suppressed, no Content-Length at all
-        r = roundtrip(@srv, PORT_A, "GET /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 204 No Content", "204 status", @failed);
-        check_absent(r, "junk", "204 body", @failed);
-        check_absent(r, "Content-Length", "204 length", @failed);
+        r = roundtrip(*srv, PORT_A, "GET /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 204 No Content", "204 status", *failed);
+        check_absent(r, "junk", "204 body", *failed);
+        check_absent(r, "Content-Length", "204 length", *failed);
 
         // (d) 304: same suppression
-        r = roundtrip(@srv, PORT_A, "GET /nm HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 304 Not Modified", "304 status", @failed);
-        check_absent(r, "junk", "304 body", @failed);
-        check_absent(r, "Content-Length", "304 length", @failed);
+        r = roundtrip(*srv, PORT_A, "GET /nm HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 304 Not Modified", "304 status", *failed);
+        check_absent(r, "junk", "304 body", *failed);
+        check_absent(r, "Content-Length", "304 length", *failed);
 
         // (e) HEAD of a 204 — both rules at once
-        r = roundtrip(@srv, PORT_A, "HEAD /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 204 No Content", "HEAD 204 status", @failed);
-        check_absent(r, "junk", "HEAD 204 body", @failed);
+        r = roundtrip(*srv, PORT_A, "HEAD /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 204 No Content", "HEAD 204 status", *failed);
+        check_absent(r, "junk", "HEAD 204 body", *failed);
 
         // (f) HEAD of a STREAMED response: the chunked head alone — the
         // producer is never pulled, no chunk, no terminator
         stream_calls = 0;
-        r = roundtrip(@srv, PORT_A, "HEAD /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "HEAD stream status", @failed);
-        check(r, "Transfer-Encoding: chunked", "HEAD stream TE", @failed);
-        check_absent(r, "streamdata", "HEAD stream body", @failed);
-        check_absent(r, "0\r\n\r\n", "HEAD stream terminator", @failed);
+        r = roundtrip(*srv, PORT_A, "HEAD /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "HEAD stream status", *failed);
+        check(r, "Transfer-Encoding: chunked", "HEAD stream TE", *failed);
+        check_absent(r, "streamdata", "HEAD stream body", *failed);
+        check_absent(r, "0\r\n\r\n", "HEAD stream terminator", *failed);
         if stream_calls != 0 {
             print("HEAD stream: producer was pulled {} time(s)\n", stream_calls);
             failed = 1;
@@ -223,9 +223,9 @@ main :: () -> i32 {
 
         // (g) GET of the same streamed route still streams (control)
         stream_calls = 0;
-        r = roundtrip(@srv, PORT_A, "GET /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "streamdata", "GET stream body", @failed);
-        check(r, "0\r\n\r\n", "GET stream terminator", @failed);
+        r = roundtrip(*srv, PORT_A, "GET /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "streamdata", "GET stream body", *failed);
+        check(r, "0\r\n\r\n", "GET stream terminator", *failed);
         if stream_calls == 0 {
             print("GET stream: producer never pulled\n");
             failed = 1;
@@ -236,37 +236,37 @@ main :: () -> i32 {
         // (h) pooled HEAD: the worker-side serialization must suppress too
         cfgp : http.Config = .{ port = PORT_B, max_conn = 4, request_count = 10,
                                 thread_pool_count = 1, handler_timeout_ms = 30 };
-        srvp, spe := http.Server.init(cfgp, route, xx @stream_calls);
+        srvp, spe := http.Server.init(cfgp, route, xx *stream_calls);
         if spe { print("pool init failed\n"); return 1; }
-        r = roundtrip(@srvp, PORT_B, "HEAD /data HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 200 OK", "pooled HEAD status", @failed);
-        check(r, "Content-Length: 11", "pooled HEAD length", @failed);
-        check_absent(r, "hello world", "pooled HEAD body", @failed);
+        r = roundtrip(*srvp, PORT_B, "HEAD /data HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 200 OK", "pooled HEAD status", *failed);
+        check(r, "Content-Length: 11", "pooled HEAD length", *failed);
+        check_absent(r, "hello world", "pooled HEAD body", *failed);
 
         // (i) pooled HEAD of a STREAMED response — the worker's middle
         // branch (chunked head alone, Completion.streamed stays false)
         stream_calls = 0;
-        r = roundtrip(@srvp, PORT_B, "HEAD /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "Transfer-Encoding: chunked", "pooled HEAD stream TE", @failed);
-        check_absent(r, "streamdata", "pooled HEAD stream body", @failed);
-        check_absent(r, "0\r\n\r\n", "pooled HEAD stream terminator", @failed);
+        r = roundtrip(*srvp, PORT_B, "HEAD /stream HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "Transfer-Encoding: chunked", "pooled HEAD stream TE", *failed);
+        check_absent(r, "streamdata", "pooled HEAD stream body", *failed);
+        check_absent(r, "0\r\n\r\n", "pooled HEAD stream terminator", *failed);
         if stream_calls != 0 {
             print("pooled HEAD stream: producer was pulled {} time(s)\n", stream_calls);
             failed = 1;
         }
 
         // (j) pooled 204: no_body computed on the worker
-        r = roundtrip(@srvp, PORT_B, "GET /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 204 No Content", "pooled 204 status", @failed);
-        check_absent(r, "junk", "pooled 204 body", @failed);
-        check_absent(r, "Content-Length", "pooled 204 length", @failed);
+        r = roundtrip(*srvp, PORT_B, "GET /nc HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 204 No Content", "pooled 204 status", *failed);
+        check_absent(r, "junk", "pooled 204 body", *failed);
+        check_absent(r, "Content-Length", "pooled 204 length", *failed);
 
         // (k) a HEAD whose handler overruns the pooled deadline is owed a
         // BODY-LESS 504: "Gateway Timeout" must appear only in the status
         // line, never as a body (LAST case — the stalled worker drains at
         // srvp.close()).
-        r = roundtrip(@srvp, PORT_B, "HEAD /hang HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
-        check(r, "HTTP/1.1 504 Gateway Timeout", "hung HEAD status", @failed);
+        r = roundtrip(*srvp, PORT_B, "HEAD /hang HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n", rbuf, cap);
+        check(r, "HTTP/1.1 504 Gateway Timeout", "hung HEAD status", *failed);
         if count_occurrences(r, "Gateway Timeout") != 1 {
             print("hung HEAD: 504 body must be suppressed for HEAD\n");
             failed = 1;

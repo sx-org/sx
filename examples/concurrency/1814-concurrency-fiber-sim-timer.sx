@@ -46,8 +46,8 @@ main :: () -> i64 {
     lg : Log = .{ n = 0 };   // ids[] + ts[] zero-filled
 
     s := sched.Scheduler.init();
-    ps := @s;
-    pl := @lg;
+    ps := *s;
+    pl := *lg;
 
     // Spawn order A, B, C, D, E — but the WAKE order is set by deadline.
     ps.spawn(() { ps.sleep(30); rec(pl, 1, ps.now_ms()); });   // A: latest

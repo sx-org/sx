@@ -9,7 +9,7 @@ inline if OS != .windows {
 
     read_times :: (file: *fs.File) -> (i64, i64, bool) {
         raw : [256]u8 = .{};
-        if c.fstat(file.fd.(i32), xx @raw[0]) != 0 { return 0, 0, false; }
+        if c.fstat(file.fd.(i32), xx *raw[0]) != 0 { return 0, 0, false; }
 
         access_offset := 0;
         modified_offset := 0;
@@ -25,8 +25,8 @@ inline if OS != .windows {
 
         access : i64 = 0;
         modified : i64 = 0;
-        c.memcpy(@access, @raw[access_offset], size_of(i64));
-        c.memcpy(@modified, @raw[modified_offset], size_of(i64));
+        c.memcpy(*access, *raw[access_offset], size_of(i64));
+        c.memcpy(*modified, *raw[modified_offset], size_of(i64));
         return access, modified, true;
     }
 }
@@ -45,7 +45,7 @@ main :: () -> i32 {
             .{ sec = initial_access, nsec = 0 },
             .{ sec = initial_modified, nsec = 0 },
         ];
-        if posix_abi.fs_posix_utimensat(posix_abi.FS_POSIX_AT_FDCWD, path, xx @initial[0], 0) != 0 {
+        if posix_abi.fs_posix_utimensat(posix_abi.FS_POSIX_AT_FDCWD, path, xx *initial[0], 0) != 0 {
             fs.delete_file(path);
             return 2;
         }
@@ -57,8 +57,8 @@ main :: () -> i32 {
         maybe := fs.open_file(path, .read);
         if maybe == null { fs.delete_file(path); return 4; }
         file := maybe!;
-        public_modified, public_ok := fs.modified_seconds(@file);
-        access, modified, raw_ok := read_times(@file);
+        public_modified, public_ok := fs.modified_seconds(*file);
+        access, modified, raw_ok := read_times(*file);
         close_ok := file.close();
         delete_ok := fs.delete_file(path);
 

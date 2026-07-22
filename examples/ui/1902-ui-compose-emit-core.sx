@@ -39,14 +39,14 @@ wrapper :: (site: SiteId = site_of(#caller_location)) {
 main :: () {
     u := Ui.{};
     root := Sink(View).{};
-    push .{ ui = @u, ui_sink = @root } {
+    push .{ ui = *u, ui_sink = *root } {
         home();
     }
     print("root {} depth {}\n", root.items.len, u.depth);
 
     // S2 value mode: ui set, NO sink — place returns without emitting.
     v := Sink(View).{};
-    push .{ ui = @u } {
+    push .{ ui = *u } {
         text("value-mode");
     }
     print("value-mode emitted {}\n", v.items.len);
@@ -54,7 +54,7 @@ main :: () {
     // Identity chain: two call sites → distinct hashes; one site twice →
     // the same hash (occurrence disambiguation is the store's job); the
     // chain hash restores after each scope.
-    push .{ ui = @u } {
+    push .{ ui = *u } {
         before := u.chain_hash;
         wrapper();
         wrapper();

@@ -175,7 +175,7 @@ Sink :: struct {
     flush :: (self: *Sink) -> !JsonError {
         if self.file == null { return; }
         if self.pos == 0 { return; }
-        n := self.file.write(string.{ ptr = @self.dst[0], len = self.pos });
+        n := self.file.write(string.{ ptr = *self.dst[0], len = self.pos });
         if n != self.pos { raise error.Io; }
         self.pos = 0;
         return;
@@ -243,7 +243,7 @@ write_int :: (n: i64, sink: *Sink) -> !JsonError {
         v = v / 10;           // truncates toward zero
     }
     if neg { i -= 1; tmp[i] = '-'; }
-    try sink.put(string.{ ptr = @tmp[i], len = 20 - i });
+    try sink.put(string.{ ptr = *tmp[i], len = 20 - i });
     return;
 }
 
@@ -295,7 +295,7 @@ write_object :: (obj: Object, sink: *Sink) -> !JsonError {
 // silently). No allocation.
 write_to_buffer :: (v: Value, dst: []u8) -> (i64, !JsonError) {
     sink := Sink.{ dst = dst };
-    try write_value(v, @sink);
+    try write_value(v, *sink);
     return sink.pos;
 }
 
@@ -305,7 +305,7 @@ write_to_buffer :: (v: Value, dst: []u8) -> (i64, !JsonError) {
 // `error.Io` on a short/failed write. No allocation.
 write_to_file :: (v: Value, file: *File, staging: []u8) -> !JsonError {
     sink := Sink.{ dst = staging, file = file };
-    try write_value(v, @sink);
+    try write_value(v, *sink);
     try sink.flush();
     return;
 }
@@ -463,11 +463,11 @@ Parser :: struct {
                         lo := try self.read_hex4(lpos + 2, end);
                         if lo < 0xDC00 or lo > 0xDFFF { raise error.BadEscape; }
                         cp := 0x10000 + ((u - 0xD800) << 10) + (lo - 0xDC00);
-                        di += encode_utf8(cp, @out[di]);
+                        di += encode_utf8(cp, *out[di]);
                         i = lpos + 6;
                     } else {
                         if u >= 0xDC00 and u <= 0xDFFF { raise error.BadEscape; }   // lone low surrogate
-                        di += encode_utf8(u, @out[di]);
+                        di += encode_utf8(u, *out[di]);
                         i = hpos + 4;
                     }
                 }
@@ -507,7 +507,7 @@ Parser :: struct {
         end := i;
         if !has_escape {
             self.pos = end + 1;
-            return string.{ ptr = @self.src[start], len = end - start };
+            return string.{ ptr = *self.src[start], len = end - start };
         }
         raw_len := end - start;        // decoded length <= raw_len (escapes shrink)
         out : [*]u8 = xx self.alloc.alloc_bytes(raw_len);

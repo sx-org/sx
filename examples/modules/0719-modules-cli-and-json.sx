@@ -43,7 +43,7 @@ main :: () -> ! {
     ];
     argv : []string = .["ci", "publish", "--out", "dist"];
     d : Diag = .{};
-    p := try cli.parse(argv, cmds, @d);
+    p := try cli.parse(argv, cmds, *d);
     report("cli-group",   p.group == "ci");
     report("cli-command", p.command == "publish");
     report("cli-index",   p.cmd_index == 0);

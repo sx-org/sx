@@ -25,7 +25,7 @@ rec :: (l: *Log, v: i64) { l.seq[l.n] = v; l.n = l.n + 1; }
 main :: () -> i64 {
     lg : Log = .{ n = 0 };
     s := sched.Scheduler.init();
-    ps := @s; pl := @lg;
+    ps := *s; pl := *lg;
     push .{ io = xx s } {
         ps.spawn(() {
             w := context.io.async(() -> (i64, !) {

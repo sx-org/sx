@@ -5,5 +5,5 @@
 
 main :: () {
     n : i64 = 0;
-    x := atomic_load(i64, @n, .release);
+    x := atomic_load(i64, *n, .release);
 }

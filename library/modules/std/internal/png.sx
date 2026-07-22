@@ -100,16 +100,16 @@ png_encode_bytes :: (
     ihdr[10] = 0;
     ihdr[11] = 0;
     ihdr[12] = 0;
-    png_write_chunk(@out, "IHDR", string.{ ptr = @ihdr[0], len = ihdr.len });
+    png_write_chunk(*out, "IHDR", string.{ ptr = *ihdr[0], len = ihdr.len });
 
     at := 0;
     while at < compressed.len {
         take := compressed.len - at;
         if take > PNG_MAX_CHUNK_LEN { take = PNG_MAX_CHUNK_LEN; }
-        png_write_chunk(@out, "IDAT", compressed[at..at + take]);
+        png_write_chunk(*out, "IDAT", compressed[at..at + take]);
         at += take;
     }
-    png_write_chunk(@out, "IEND", "");
+    png_write_chunk(*out, "IEND", "");
     alloc.dealloc_bytes(compressed.ptr);
 
     if out.failed {

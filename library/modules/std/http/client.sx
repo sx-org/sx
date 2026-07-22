@@ -127,7 +127,7 @@ open :: (host: string, port: i64, opts: ClientOpts) -> (ClientConn, !ClientErr) 
     if !ok { raise error.Connect; }
     o := opts;
     if o.tls != null and o.tls_host.len == 0 { o.tls_host = host; }
-    return open_addr(@a, o);
+    return open_addr(*a, o);
 }
 
 // Close the connection (TLS close_notify + session teardown first).
@@ -201,7 +201,7 @@ ClientResponse :: struct {
     // header block — the shared-types payoff.
     header :: (self: *ClientResponse, name: string) -> string {
         req : types.Request = .{ headers_raw = self.headers_raw };
-        return types.find_header(@req, name);
+        return types.find_header(*req, name);
     }
 }
 
@@ -211,7 +211,7 @@ dial :: (ip: u32, port: i64) -> (i32, !ClientErr) {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { raise error.Connect; }
     addr := socket.sockaddr_in(port, ip);
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); raise error.Connect; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); raise error.Connect; }
     return fd;
 }
 
@@ -238,7 +238,7 @@ send :: (fd: i32, method: string, path: string, host: string, extra_headers: str
 
     sent : i64 = 0;
     while sent < req.len {
-        n := socket.write(fd, @req.ptr[sent], xx (req.len - sent));
+        n := socket.write(fd, *req.ptr[sent], xx (req.len - sent));
         if n <= 0 { raise error.Send; }
         sent += n;
     }
@@ -262,7 +262,7 @@ parse_status_line :: (line: string) -> (i64, string) {
     }
     if digits == 0 { return 0, ""; }
     if p < line.len and line.ptr[p] == ' ' { p += 1; }
-    reason := string.{ ptr = @line.ptr[p], len = line.len - p };
+    reason := string.{ ptr = *line.ptr[p], len = line.len - p };
     return code, reason;
 }
 
@@ -270,7 +270,7 @@ parse_status_line :: (line: string) -> (i64, string) {
 // the same transfer/content decoding as recv_on. Returns views INTO `buf`.
 recv :: (fd: i32, buf: [*]u8, cap: i64, request_method: string = "GET") -> (ClientResponse, !ClientErr) {
     conn : ClientConn = .{ fd = fd, request_was_head = ce_ascii_ieq(request_method, "head") };
-    recv_on(@conn, buf, cap)
+    recv_on(*conn, buf, cap)
 }
 
 // Send one HTTP/1.1 request on an open ClientConn (TLS-aware `send`).
@@ -319,7 +319,7 @@ send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_he
     sent : i64 = 0;
     failed := false;
     while sent < w {
-        n := conn_write_step(c, @p[sent], w - sent);
+        n := conn_write_step(c, *p[sent], w - sent);
         if n <= 0 { failed = true; break; }
         sent += n;
     }
@@ -331,7 +331,7 @@ send_on :: (c: *ClientConn, method: string, path: string, host: string, extra_he
 
 // Append `s` into the request build at offset `w`, returning the new offset.
 put :: (p: [*]u8, w: i64, s: string) -> i64 {
-    if s.len > 0 { clib.memcpy(@p[w], s.ptr, xx s.len); }
+    if s.len > 0 { clib.memcpy(*p[w], s.ptr, xx s.len); }
     return w + s.len;
 }
 
@@ -364,11 +364,11 @@ parse_url :: (url: string) -> (Url, bool) {
     if starts_with(url, "http://") {
         u.https = false;
         u.port = 80;
-        rest = string.{ ptr = @url.ptr[7], len = url.len - 7 };
+        rest = string.{ ptr = *url.ptr[7], len = url.len - 7 };
     } else if starts_with(url, "https://") {
         u.https = true;
         u.port = 443;
-        rest = string.{ ptr = @url.ptr[8], len = url.len - 8 };
+        rest = string.{ ptr = *url.ptr[8], len = url.len - 8 };
     } else {
         return u, false;
     }
@@ -380,7 +380,7 @@ parse_url :: (url: string) -> (Url, bool) {
         he = 1;
         while he < rest.len and rest[he] != ']' { he += 1; }
         if he >= rest.len { return u, false; }
-        u.host = string.{ ptr = @rest.ptr[1], len = he - 1 };
+        u.host = string.{ ptr = *rest.ptr[1], len = he - 1 };
         ps = he + 1;
     } else {
         while he < rest.len and rest[he] != ':' and rest[he] != '/' { he += 1; }
@@ -404,7 +404,7 @@ parse_url :: (url: string) -> (Url, bool) {
     }
     if ps < rest.len {
         if rest[ps] != '/' { return u, false; }   // junk between port and path
-        u.path = string.{ ptr = @rest.ptr[ps], len = rest.len - ps };
+        u.path = string.{ ptr = *rest.ptr[ps], len = rest.len - ps };
     }
     // review L4 (RFC 9112): the fragment is never part of the request
     // target — strip it here so neither fetch loop sends one on the wire.
@@ -434,10 +434,10 @@ fetch_hop :: (u: Url, method: string, body: string, opts: ClientOpts, verify_hos
     }
     c, oe := open(u.host, u.port, o);
     if oe { raise oe; }
-    se := send_on(@c, method, u.path, u.host, "", body);
-    if se { close_conn(@c); raise se; }
-    r, re := recv_on(@c, buf, cap);
-    if re { close_conn(@c); raise re; }
+    se := send_on(*c, method, u.path, u.host, "", body);
+    if se { close_conn(*c); raise se; }
+    r, re := recv_on(*c, buf, cap);
+    if re { close_conn(*c); raise re; }
     return c, r;
 }
 
@@ -527,7 +527,7 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         // it — a later relative hop must not leave u.host viewing a freed
         // previous location copy (absolute-then-relative chains).
         if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.dealloc_bytes(xx pathp); } raise error.Url; }
-        hbp : [*]u8 = xx @hostb[0];
+        hbp : [*]u8 = xx *hostb[0];
         if u.host.ptr != hbp {
             clib.memcpy(hbp, u.host.ptr, xx u.host.len);
             u.host = string.{ ptr = hbp, len = u.host.len };
@@ -539,19 +539,19 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         if he { if freeing { context.allocator.dealloc_bytes(xx pathp); } raise he; }
 
         if !is_redirect(r.status) or opts.max_redirects <= 0 {
-            close_conn(@c);
+            close_conn(*c);
             if freeing { context.allocator.dealloc_bytes(xx pathp); }
             return r;
         }
         loc := r.header("location");
         if loc.len == 0 {
-            close_conn(@c);
+            close_conn(*c);
             if freeing { context.allocator.dealloc_bytes(xx pathp); }
             return r;
         }
         hops += 1;
         if hops > opts.max_redirects {
-            close_conn(@c);
+            close_conn(*c);
             if freeing { context.allocator.dealloc_bytes(xx pathp); }
             raise error.Redirect;
         }
@@ -560,7 +560,7 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         np : [*]u8 = xx context.allocator.alloc_bytes(loc.len);
         clib.memcpy(np, loc.ptr, xx loc.len);
         locv := string.{ ptr = np, len = loc.len };
-        close_conn(@c);
+        close_conn(*c);
         if freeing { context.allocator.dealloc_bytes(xx pathp); }
         pathp = np;
         freeing = true;
@@ -634,13 +634,13 @@ normalize_decoded_headers :: (raw: [*]u8, len: i64) -> i64 {
         while colon < line_end and raw[colon] != ':' { colon += 1; }
         remove := false;
         if colon < line_end {
-            field := string.{ ptr = @raw[read_at], len = colon - read_at };
+            field := string.{ ptr = *raw[read_at], len = colon - read_at };
             remove = ce_ascii_ieq(field, "content-encoding")
                 or ce_ascii_ieq(field, "content-length");
         }
         if !remove {
             count := after - read_at;
-            if write_at != read_at { clib.memmove(xx @raw[write_at], xx @raw[read_at], count); }
+            if write_at != read_at { clib.memmove(xx *raw[write_at], xx *raw[read_at], count); }
             write_at += count;
         }
         read_at = after;
@@ -665,7 +665,7 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
 
     wire : [CLIENT_WIRE_PIECE]u8 = ---;
     if initial.len > CLIENT_WIRE_PIECE { raise error.TooLarge; }
-    if initial.len > 0 { clib.memcpy(@wire[0], initial.ptr, xx initial.len); }
+    if initial.len > 0 { clib.memcpy(*wire[0], initial.ptr, xx initial.len); }
     wire_at : i64 = 0;
     wire_len : i64 = initial.len;
     output_at : i64 = 0;
@@ -690,7 +690,7 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
         }
 
         if wire_at >= wire_len {
-            n := conn_read_step(c, @wire[0], CLIENT_WIRE_PIECE);
+            n := conn_read_step(c, *wire[0], CLIENT_WIRE_PIECE);
             if n < 0 { raise error.Recv; }
             if n == 0 {
                 if chunked or content_len >= 0 { raise error.Recv; }
@@ -708,10 +708,10 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
             while take > 0 {
                 output : string = "";
                 if output_at < output_cap {
-                    output = string.{ ptr = @buf[head_end + output_at], len = output_cap - output_at };
+                    output = string.{ ptr = *buf[head_end + output_at], len = output_cap - output_at };
                 }
-                consumed, produced, done := try feed_content_decoder(@decoder,
-                    string.{ ptr = @wire[wire_at], len = take }, output);
+                consumed, produced, done := try feed_content_decoder(*decoder,
+                    string.{ ptr = *wire[wire_at], len = take }, output);
                 wire_at += consumed;
                 take -= consumed;
                 if content_len >= 0 { fixed_left -= consumed; }
@@ -736,10 +736,10 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
             while take > 0 {
                 output : string = "";
                 if output_at < output_cap {
-                    output = string.{ ptr = @buf[head_end + output_at], len = output_cap - output_at };
+                    output = string.{ ptr = *buf[head_end + output_at], len = output_cap - output_at };
                 }
-                consumed, produced, done := try feed_content_decoder(@decoder,
-                    string.{ ptr = @wire[wire_at], len = take }, output);
+                consumed, produced, done := try feed_content_decoder(*decoder,
+                    string.{ ptr = *wire[wire_at], len = take }, output);
                 wire_at += consumed;
                 take -= consumed;
                 chunk_left -= consumed;
@@ -838,9 +838,9 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
     while !decoder_done {
         output : string = "";
         if output_at < output_cap {
-            output = string.{ ptr = @buf[head_end + output_at], len = output_cap - output_at };
+            output = string.{ ptr = *buf[head_end + output_at], len = output_cap - output_at };
         }
-        produced, done := try finish_content_decoder(@decoder, output);
+        produced, done := try finish_content_decoder(*decoder, output);
         output_at += produced;
         decoder_done = done;
         if !done and output_at >= output_cap { raise error.TooLarge; }
@@ -907,7 +907,7 @@ recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr
 
             if code >= 100 and code < 200 {
                 remaining := total - head_end;
-                if remaining > 0 { clib.memmove(xx buf, xx @buf[head_end], remaining); }
+                if remaining > 0 { clib.memmove(xx buf, xx *buf[head_end], remaining); }
                 total = remaining;
                 head_end = -1;
                 saw_informational = true;
@@ -917,20 +917,20 @@ recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr
             final_status = code;
             final_reason = reason;
             header_start = sl + 2;
-            hdrs := string.{ ptr = @buf[header_start], len = head_end - 2 - header_start };
+            hdrs := string.{ ptr = *buf[header_start], len = head_end - 2 - header_start };
 
             if !(request_was_head or code == 204 or code == 304) {
                 tmp : types.Request = .{ headers_raw = hdrs };
-                te_count := types.count_header(@tmp, "transfer-encoding");
-                cl_count := types.count_header(@tmp, "content-length");
+                te_count := types.count_header(*tmp, "transfer-encoding");
+                cl_count := types.count_header(*tmp, "content-length");
                 if te_count > 1 or cl_count > 1 { raise error.Recv; }
                 if te_count > 0 and cl_count > 0 { raise error.Recv; }
-                te := types.find_header(@tmp, "transfer-encoding");
+                te := types.find_header(*tmp, "transfer-encoding");
                 if te.len > 0 {
                     if !te_is_chunked(te) { raise error.Recv; }
                     chunked = true;
                 } else {
-                    cl := types.find_header(@tmp, "content-length");
+                    cl := types.find_header(*tmp, "content-length");
                     if cl_count > 0 {
                         v, valid := valid_content_length(cl);
                         if !valid { raise error.Recv; }
@@ -940,18 +940,18 @@ recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr
 
                 range_response := code == 206 or code == 416 or has_header(hdrs, "content-range");
                 if c.accept_compression and !range_response {
-                    ce_count := types.count_header(@tmp, "content-encoding");
+                    ce_count := types.count_header(*tmp, "content-encoding");
                     if ce_count > 0 {
                         if ce_count != 1 { raise error.Recv; }
-                        encoding = parse_content_encoding(types.find_header(@tmp, "content-encoding"));
+                        encoding = parse_content_encoding(types.find_header(*tmp, "content-encoding"));
                         if encoding == .unacceptable { raise error.Recv; }
                     }
                     if encoding != .identity {
-                        initial := string.{ ptr = @buf[head_end], len = total - head_end };
+                        initial := string.{ ptr = *buf[head_end], len = total - head_end };
                         decoded = try recv_encoded_body(c, buf, cap, head_end,
                             initial, content_len, chunked, encoding);
                         decoded_from = if encoding == .gzip then types.ContentCoding.gzip else types.ContentCoding.deflate;
-                        normalized_headers_len = normalize_decoded_headers(@buf[header_start], head_end - 2 - header_start);
+                        normalized_headers_len = normalize_decoded_headers(*buf[header_start], head_end - 2 - header_start);
                         total = head_end + decoded;
                         break;
                     }
@@ -967,7 +967,7 @@ recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr
                 break;
             }
             if chunked {
-                r := types.decode_chunked(@buf[head_end], total - head_end, cap - head_end, scan);
+                r := types.decode_chunked(*buf[head_end], total - head_end, cap - head_end, scan);
                 if r.status == types.ChunkStatus.OK { decoded = r.decoded_len; break; }
                 if r.status == types.ChunkStatus.TOO_BIG { raise error.TooLarge; }
                 if r.status != types.ChunkStatus.NEED_MORE { raise error.Recv; }
@@ -981,7 +981,7 @@ recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr
         if total >= cap { raise error.TooLarge; }
         room := cap - total;
         if head_end < 0 and room > CLIENT_WIRE_PIECE { room = CLIENT_WIRE_PIECE; }
-        n := conn_read_step(c, @buf[total], room);
+        n := conn_read_step(c, *buf[total], room);
         if n == READ_RESET and total == 0 and !saw_informational { raise error.Closed; }
         if n < 0 { raise error.Recv; }
         if n == 0 {
@@ -1004,8 +1004,8 @@ recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr
     return ClientResponse.{
         status = final_status,
         reason = final_reason,
-        headers_raw = string.{ ptr = @buf[header_start], len = if normalized_headers_len >= 0 then normalized_headers_len else head_end - 2 - header_start },
-        body = string.{ ptr = @buf[head_end], len = body_len },
+        headers_raw = string.{ ptr = *buf[header_start], len = if normalized_headers_len >= 0 then normalized_headers_len else head_end - 2 - header_start },
+        body = string.{ ptr = *buf[head_end], len = body_len },
         decoded_from = decoded_from,
     };
 }
@@ -1062,7 +1062,7 @@ ClientPool :: struct {
         first := true;
         while true {
             if u.host.len == 0 or u.host.len > 255 { if freeing { context.allocator.dealloc_bytes(xx pathp); } raise error.Url; }
-            hbp : [*]u8 = xx @hostb[0];
+            hbp : [*]u8 = xx *hostb[0];
             if u.host.ptr != hbp {
                 clib.memcpy(hbp, u.host.ptr, xx u.host.len);
                 u.host = string.{ ptr = hbp, len = u.host.len };
@@ -1126,15 +1126,15 @@ ClientPool :: struct {
                 idx = self.store(u, c);
                 reused = false;
             }
-            e := @self.entries.items[idx];
-            se := send_on(@e.conn, method, u.path, u.host, "", body);
+            e := *self.entries.items[idx];
+            se := send_on(*e.conn, method, u.path, u.host, "", body);
             if se {
                 self.drop(idx);
                 idx = -1;
                 if reused and attempt == 0 { attempt += 1; reused = false; continue; }
                 raise se;
             }
-            r, re := recv_on(@e.conn, buf, cap);
+            r, re := recv_on(*e.conn, buf, cap);
             if re {
                 self.drop(idx);
                 idx = -1;
@@ -1170,7 +1170,7 @@ ClientPool :: struct {
     find :: (self: *ClientPool, u: Url) -> i64 {
         i : i64 = 0;
         while i < self.entries.len {
-            e := @self.entries.items[i];
+            e := *self.entries.items[i];
             if e.live and e.https == u.https and e.port == u.port and e.host_len == u.host.len {
                 same := true;
                 j : i64 = 0;
@@ -1198,7 +1198,7 @@ ClientPool :: struct {
         ne : PoolEntry = .{ host = hp, host_len = u.host.len, port = u.port,
                             https = u.https, conn = c, live = true };
         if i < self.entries.len {
-            old := @self.entries.items[i];
+            old := *self.entries.items[i];
             if old.host != null { self.a.dealloc_bytes(xx old.host); }
             self.entries.items[i] = ne;
         } else {
@@ -1208,9 +1208,9 @@ ClientPool :: struct {
     }
 
     drop :: (self: *ClientPool, idx: i64) {
-        e := @self.entries.items[idx];
+        e := *self.entries.items[idx];
         if !e.live { return; }
-        close_conn(@e.conn);
+        close_conn(*e.conn);
         e.live = false;
     }
 
@@ -1218,8 +1218,8 @@ ClientPool :: struct {
     close :: (self: *ClientPool) {
         i : i64 = 0;
         while i < self.entries.len {
-            e := @self.entries.items[i];
-            if e.live { close_conn(@e.conn); e.live = false; }
+            e := *self.entries.items[i];
+            if e.live { close_conn(*e.conn); e.live = false; }
             if e.host != null { self.a.dealloc_bytes(xx e.host); e.host = null; }
             i += 1;
         }

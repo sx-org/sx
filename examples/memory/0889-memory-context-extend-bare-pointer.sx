@@ -11,7 +11,7 @@ Ui :: struct { depth: i64; }
 main :: () {
     print("default ui is null = {}\n", context.ui == null);
     u : Ui = .{ depth = 42 };
-    push .{ ui = @u } {
+    push .{ ui = *u } {
         print("pushed ui.depth = {}\n", context.ui.depth);
         push .{ ui = null } {
             print("inner ui is null = {}\n", context.ui == null);

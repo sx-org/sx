@@ -46,7 +46,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -100,7 +100,7 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: 
     tries := 0;
     while tries < 2000 {
         srv.tick(5) catch {};
-        n, re := socket.read_nb(fd, @scratch[total], xx (cap - total));
+        n, re := socket.read_nb(fd, *scratch[total], xx (cap - total));
         if !re { total += n; }
         else if re == error.Closed { return string.{ ptr = scratch, len = xx total }; }
         if resp_complete(scratch, total) { return string.{ ptr = scratch, len = xx total }; }
@@ -129,7 +129,7 @@ serve_once :: (port: i64, pool_count: i64, scratch: [*]u8, cap: i64) -> bool {
     if c < 0 { print("dial failed (pool={})\n", pool_count); srv.close(); return false; }
 
     // small GET
-    r1 := roundtrip(@srv, c, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
+    r1 := roundtrip(*srv, c, "GET /hello HTTP/1.1\r\nHost: t\r\n\r\n", scratch, cap);
     if !contains(r1, "HTTP/1.1 200 OK") { print("small GET bad (pool={})\n", pool_count); socket.close(c); srv.close(); return false; }
 
     // large POST: body past READ_BUF_INITIAL forces grow_read_buf on the
@@ -143,7 +143,7 @@ serve_once :: (port: i64, pool_count: i64, scratch: [*]u8, cap: i64) -> bool {
     cstd.memcpy(rbuf, hdr.ptr, hdr.len);
     f := 0;
     while f < big_n { rbuf[hdr.len + f] = 97 + (f % 26).(u8); f += 1; }
-    r2 := roundtrip(@srv, c, string.{ ptr = rbuf, len = req_len }, scratch, cap);
+    r2 := roundtrip(*srv, c, string.{ ptr = rbuf, len = req_len }, scratch, cap);
     ok := contains(r2, "HTTP/1.1 200 OK") and contains(r2, "Content-Length: 40000");
     context.allocator.dealloc_bytes(xx rbuf);
     if !ok { print("large POST bad (pool={})\n", pool_count); socket.close(c); srv.close(); return false; }

@@ -36,18 +36,18 @@ main :: () -> i32 {
         srv, se := http.Server.init(cfg, handler, 0);
         if se { print("init failed\n"); rc = 1; }
         else {
-            t, te := thread.Thread.spawn(srv_entry, xx @srv);
+            t, te := thread.Thread.spawn(srv_entry, xx *srv);
             if te { print("spawn failed\n"); rc = 1; }
             else {
                 b1 : [4096]u8 = ---;
-                r1, e1 := http.Client.request(LOOPBACK, PORT, "GET", "/hello", "t", "", "", @b1[0], 4096);
+                r1, e1 := http.Client.request(LOOPBACK, PORT, "GET", "/hello", "t", "", "", *b1[0], 4096);
                 if e1 { print("GET /hello errored\n"); rc = 1; }
                 else if r1.status != 200 or r1.body != "world" {
                     print("GET /hello wrong: status={} body={}\n", r1.status, r1.body); rc = 1;
                 }
 
                 b2 : [4096]u8 = ---;
-                r2, e2 := http.Client.request(LOOPBACK, PORT, "POST", "/echo", "t", "", "ping-pong", @b2[0], 4096);
+                r2, e2 := http.Client.request(LOOPBACK, PORT, "POST", "/echo", "t", "", "ping-pong", *b2[0], 4096);
                 if e2 { print("POST /echo errored\n"); rc = 1; }
                 else {
                     if r2.status != 200 or r2.body != "ping-pong" {
@@ -60,7 +60,7 @@ main :: () -> i32 {
                 }
 
                 b3 : [4096]u8 = ---;
-                r3, e3 := http.Client.request(LOOPBACK, PORT, "GET", "/missing", "t", "", "", @b3[0], 4096);
+                r3, e3 := http.Client.request(LOOPBACK, PORT, "GET", "/missing", "t", "", "", *b3[0], 4096);
                 if e3 { print("GET /missing errored\n"); rc = 1; }
                 else if r3.status != 404 {
                     print("GET /missing wrong: status={}\n", r3.status); rc = 1;

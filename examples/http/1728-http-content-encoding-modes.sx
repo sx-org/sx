@@ -175,61 +175,61 @@ policy_cases :: (app: *App, port: i64, storage: [*]u8, cap: i64) -> bool {
     if oe { return false; }
     ok := true;
 
-    wildcard, we := request_on(@conn, "GET", "/fixed",
+    wildcard, we := request_on(*conn, "GET", "/fixed",
         "Accept-Encoding: *;q=0.7, identity;q=0\r\n", storage, cap);
     if we or wildcard.decoded_from == null
         or wildcard.decoded_from! != http.ContentCoding.gzip
         or !same(wildcard.body, app.body) { ok = false; }
 
-    duplicate, de := request_on(@conn, "GET", "/fixed",
+    duplicate, de := request_on(*conn, "GET", "/fixed",
         "Accept-Encoding: gzip;q=1, identity;q=0\r\nAccept-Encoding: gzip;q=0, deflate;q=0.5\r\n",
         storage, cap);
     if de or duplicate.decoded_from == null
         or duplicate.decoded_from! != http.ContentCoding.deflate
         or !same(duplicate.body, app.body) { ok = false; }
 
-    duplicate_q, dqe := request_on(@conn, "GET", "/fixed",
+    duplicate_q, dqe := request_on(*conn, "GET", "/fixed",
         "Accept-Encoding: gzip;q=1;q=0, deflate;q=0.4, identity;q=0\r\n", storage, cap);
     if dqe or duplicate_q.decoded_from == null
         or duplicate_q.decoded_from! != http.ContentCoding.deflate { ok = false; }
 
-    malformed, me := request_on(@conn, "GET", "/fixed",
+    malformed, me := request_on(*conn, "GET", "/fixed",
         "Accept-Encoding: gzip;q=1.1, deflate;q=bogus, identity;q=0\r\n", storage, cap);
     if me or malformed.status != 406 or malformed.body.len != 0 { ok = false; }
 
-    refused, re := request_on(@conn, "GET", "/existing-gzip",
+    refused, re := request_on(*conn, "GET", "/existing-gzip",
         "Accept-Encoding: gzip;q=0, identity;q=1\r\n", storage, cap);
     if re or refused.status != 406 { ok = false; }
 
-    partial, pe := request_on(@conn, "GET", "/coded-deflate-206", "", storage, cap);
+    partial, pe := request_on(*conn, "GET", "/coded-deflate-206", "", storage, cap);
     if pe or partial.status != 206 or partial.decoded_from != null
         or partial.header("content-encoding") != "deflate"
         or !same(partial.body, app.deflate_body) { ok = false; }
-    unsatisfied, ue := request_on(@conn, "GET", "/coded-deflate-416", "", storage, cap);
+    unsatisfied, ue := request_on(*conn, "GET", "/coded-deflate-416", "", storage, cap);
     if ue or unsatisfied.status != 416 or unsatisfied.decoded_from != null
         or unsatisfied.header("content-encoding") != "deflate"
         or !same(unsatisfied.body, app.deflate_body) { ok = false; }
 
-    strong, se := request_on(@conn, "GET", "/strong",
+    strong, se := request_on(*conn, "GET", "/strong",
         "Accept-Encoding: deflate, identity;q=0.5\r\n", storage, cap);
     if se or strong.decoded_from != null or strong.header("etag") != "\"identity-only\""
         or !same(strong.body, app.body) { ok = false; }
-    strong_refused, sre := request_on(@conn, "GET", "/strong",
+    strong_refused, sre := request_on(*conn, "GET", "/strong",
         "Accept-Encoding: deflate, identity;q=0\r\n", storage, cap);
     if sre or strong_refused.status != 406 { ok = false; }
-    http.Client.close_conn(@conn);
+    http.Client.close_conn(*conn);
 
     raw_opts : http.ClientOpts = .{
         connect_timeout_ms = 2000, io_timeout_ms = 5000, accept_compression = false,
     };
     raw, roe := http.Client.open("127.0.0.1", port, raw_opts);
     if roe { return false; }
-    stacked, ste := request_on(@raw, "GET", "/existing-stacked",
+    stacked, ste := request_on(*raw, "GET", "/existing-stacked",
         "Accept-Encoding: *;q=0.5, identity;q=0\r\n", storage, cap);
     if ste or stacked.status != 200 or stacked.body != "stacked"
         or !contains(stacked.headers_raw, "Content-Encoding: br")
         or !contains(stacked.headers_raw, "Content-Encoding: gzip") { ok = false; }
-    http.Client.close_conn(@raw);
+    http.Client.close_conn(*raw);
     ok
 }
 
@@ -237,7 +237,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     socket.set_io_timeout(fd, 5000);
     fd
 }
@@ -245,7 +245,7 @@ dial_port :: (port: i64) -> i32 {
 write_all :: (fd: i32, data: string) -> bool {
     at : i64 = 0;
     while at < data.len {
-        n := socket.write(fd, @data.ptr[at], xx (data.len - at));
+        n := socket.write(fd, *data.ptr[at], xx (data.len - at));
         if n <= 0 { return false; }
         at += n;
     }
@@ -267,12 +267,12 @@ fault_wire_case :: (port: i64, path: string, accept: string) -> bool {
     storage : [65536]u8 = ---;
     total : i64 = 0;
     while ok and total < storage.len {
-        n := socket.read(fd, @storage[total], xx (storage.len - total));
+        n := socket.read(fd, *storage[total], xx (storage.len - total));
         if n <= 0 { break; }
         total += n;
     }
     socket.close(fd);
-    wire : string = .{ ptr = @storage[0], len = total };
+    wire : string = .{ ptr = *storage[0], len = total };
     ok and contains(wire, "Transfer-Encoding: chunked")
         and count_occurrences(wire, "HTTP/1.1 ") == 1
         and !contains(wire, "pong")
@@ -285,23 +285,23 @@ fairness_case :: (app: *App, port: i64, storage: [*]u8, cap: i64) -> bool {
     opts : http.ClientOpts = .{ connect_timeout_ms = 2000, io_timeout_ms = 5000 };
     stream_conn, se := http.Client.open("127.0.0.1", port, opts);
     if se { return false; }
-    send_error := http.Client.send_on(@stream_conn, "GET", "/huge", "mode.test", "", "");
-    if send_error { http.Client.close_conn(@stream_conn); return false; }
+    send_error := http.Client.send_on(*stream_conn, "GET", "/huge", "mode.test", "", "");
+    if send_error { http.Client.close_conn(*stream_conn); return false; }
 
     waits : i64 = 0;
     while app.huge_calls.load(.relaxed) == 0 and waits < 20000 {
         usleep(100);
         waits += 1;
     }
-    if app.huge_calls.load(.relaxed) == 0 { http.Client.close_conn(@stream_conn); return false; }
+    if app.huge_calls.load(.relaxed) == 0 { http.Client.close_conn(*stream_conn); return false; }
 
     ping_conn, pe := http.Client.open("127.0.0.1", port, opts);
-    if pe { http.Client.close_conn(@stream_conn); return false; }
-    ok := ping_on(@ping_conn, storage, cap);
+    if pe { http.Client.close_conn(*stream_conn); return false; }
+    ok := ping_on(*ping_conn, storage, cap);
     seen := app.ping_seen.load(.relaxed);
     ok = ok and seen > 0 and seen < HUGE_CALLS;
-    http.Client.close_conn(@ping_conn);
-    http.Client.close_conn(@stream_conn);
+    http.Client.close_conn(*ping_conn);
+    http.Client.close_conn(*stream_conn);
     ok
 }
 
@@ -320,7 +320,7 @@ run_mode :: (app: *App, mode: i64, port: i64) -> bool {
     if mode == 2 { cfg.fibers = xx runner; }
     srv, se := http.Server.init(cfg, route, xx app);
     if se { runner.deinit(); return false; }
-    t, te := thread.Thread.spawn(server_entry, xx @srv);
+    t, te := thread.Thread.spawn(server_entry, xx *srv);
     if te { srv.close(); runner.deinit(); return false; }
 
     storage : [*]u8 = xx context.allocator.alloc_bytes(BODY_LEN + 8192);
@@ -332,13 +332,13 @@ run_mode :: (app: *App, mode: i64, port: i64) -> bool {
     ok := true;
     if oe { ok = false; }
     else {
-        ok = bodyless_followed(app, @conn, "HEAD", "/fixed", 200, false, storage, BODY_LEN + 8192)
-            and bodyless_followed(app, @conn, "HEAD", "/stream", 200, true, storage, BODY_LEN + 8192)
-            and bodyless_followed(app, @conn, "GET", "/n204-fixed", 204, false, storage, BODY_LEN + 8192)
-            and bodyless_followed(app, @conn, "GET", "/n204-stream", 204, true, storage, BODY_LEN + 8192)
-            and bodyless_followed(app, @conn, "GET", "/n304-fixed", 304, false, storage, BODY_LEN + 8192)
-            and bodyless_followed(app, @conn, "GET", "/n304-stream", 304, true, storage, BODY_LEN + 8192);
-        http.Client.close_conn(@conn);
+        ok = bodyless_followed(app, *conn, "HEAD", "/fixed", 200, false, storage, BODY_LEN + 8192)
+            and bodyless_followed(app, *conn, "HEAD", "/stream", 200, true, storage, BODY_LEN + 8192)
+            and bodyless_followed(app, *conn, "GET", "/n204-fixed", 204, false, storage, BODY_LEN + 8192)
+            and bodyless_followed(app, *conn, "GET", "/n204-stream", 204, true, storage, BODY_LEN + 8192)
+            and bodyless_followed(app, *conn, "GET", "/n304-fixed", 304, false, storage, BODY_LEN + 8192)
+            and bodyless_followed(app, *conn, "GET", "/n304-stream", 304, true, storage, BODY_LEN + 8192);
+        http.Client.close_conn(*conn);
     }
     if ok and mode == 0 { ok = policy_cases(app, port, storage, BODY_LEN + 8192); }
     if ok and mode != 2 {
@@ -380,9 +380,9 @@ main :: () -> i32 {
             huge_calls = Atomic(i64).init(0),
             ping_seen = Atomic(i64).init(-1),
         };
-        ok = run_mode(@app, 0, PORT_INLINE);
-        if ok { ok = run_mode(@app, 1, PORT_POOL); }
-        if ok { ok = run_mode(@app, 2, PORT_FIBER); }
+        ok = run_mode(*app, 0, PORT_INLINE);
+        if ok { ok = run_mode(*app, 1, PORT_POOL); }
+        if ok { ok = run_mode(*app, 2, PORT_FIBER); }
         context.allocator.dealloc_bytes(zl.ptr);
         context.allocator.dealloc_bytes(gz.ptr);
         context.allocator.dealloc_bytes(raw);

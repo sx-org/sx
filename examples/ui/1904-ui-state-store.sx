@@ -34,7 +34,7 @@ with_buf :: () -> i64 {
 main :: () {
     u := Ui.{};
     store := StateStore.init(.{ value = 1 });
-    push .{ ui = @u, ui_store = @store } {
+    push .{ ui = *u, ui_store = *store } {
         // Build 1: two keyed rows + two same-site occurrences + transient + arena entry.
         store.begin_build(); u.begin_build();
         u.key_scope(Key.str("a"), () => { print("a1 {}\n", bump()); });

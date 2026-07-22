@@ -79,7 +79,7 @@ FrameLoop :: struct {
     // The latest committed frame — null before the first tick completes.
     snapshot :: (self: *FrameLoop) -> ?*CommittedUiSnapshot {
         if self.committed < 0 { return null; }
-        if self.committed == 0 then @self.snap_a else @self.snap_b
+        if self.committed == 0 then *self.snap_a else *self.snap_b
     }
 
     // One frame over `root`, phases in §6.7 order.
@@ -104,9 +104,9 @@ FrameLoop :: struct {
 
         // Build → Layout → Project on this parity's arena and slot.
         parity := self.frame_index & 1;
-        arena : *Arena = if parity == 0 then @self.arena_a else @self.arena_b;
+        arena : *Arena = if parity == 0 then *self.arena_a else *self.arena_b;
         arena.reset();
-        snap : *CommittedUiSnapshot = if parity == 0 then @self.snap_a else @self.snap_b;
+        snap : *CommittedUiSnapshot = if parity == 0 then *self.snap_a else *self.snap_b;
         // The slot's backings died with the arena reset — detach, never free.
         snap.scene.nodes.items = null;
         snap.scene.nodes.len = 0;
@@ -119,16 +119,16 @@ FrameLoop :: struct {
         push .{ allocator = arena } {
             root.begin_build();
             v : View = ---;
-            push .{ ui = @root.ui, ui_store = @root.store } {
+            push .{ ui = *root.ui, ui_store = *root.store } {
                 v = body();           // typed-return root, value mode (no sink)
             }
             // Layout — subscope builds may open here (S1).
             v.size_that_fits(ProposedSize.fixed(width, height));
             v.layout(bounds);
             // Project — scene + paint-ordered hit list.
-            ctx := RenderContext.init(@snap.scene);
-            ctx.hits = @snap.hit_list;
-            v.render(@ctx, bounds);
+            ctx := RenderContext.init(*snap.scene);
+            ctx.hits = *snap.hit_list;
+            v.render(*ctx, bounds);
         }
 
         // Commit: fill everything, flip `committed` last.

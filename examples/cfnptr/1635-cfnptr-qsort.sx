@@ -15,7 +15,7 @@ cmp_i32 :: (a: *void, b: *void) -> i32 abi(.c) {
 
 main :: () -> i32 {
     arr : [5]i32 = .[ 4, 1, 5, 2, 3 ];
-    qsort(xx @arr[0], 5, 4, cmp_i32);
+    qsort(xx *arr[0], 5, 4, cmp_i32);
     i := 0;
     while i < 5 {
         if arr[i] != (i + 1).(i32) { print("not sorted at {}\n", i); return 1; }

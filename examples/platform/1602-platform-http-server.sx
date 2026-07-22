@@ -32,11 +32,11 @@ main :: () -> i32 {
     }
 
     opt : i32 = 1;
-    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, @opt, 4);
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, *opt, 4);
 
     addr := sockaddr_in(PORT, 0);   // INADDR_ANY, per-OS layout
 
-    if bind(fd, @addr, 16) < 0 {
+    if bind(fd, *addr, 16) < 0 {
         print("error: bind()\n");
         return 1;
     }
@@ -55,7 +55,7 @@ main :: () -> i32 {
         client := accept(fd, null, null);
         if client < 0 { continue; }
 
-        push .{ allocator = arena, logger = @logger } {
+        push .{ allocator = arena, logger = *logger } {
             handle(client);
         }
 

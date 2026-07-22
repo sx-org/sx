@@ -20,7 +20,7 @@ main :: () -> i32 {
     b  : Box(i64)      = .{ v = 42 };
     p  : Pair(i64, f64) = .{ a = 1, b = 2.5 };
     nb : Box(Box(i64)) = .{ v = .{ v = 9 } };
-    print("unbox={}\n", unbox(@b));
+    print("unbox={}\n", unbox(*b));
     print("byval={}\n", byval(b));
     print("second={}\n", second(p));
     print("nested={}\n", nested(nb));

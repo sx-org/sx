@@ -9,7 +9,7 @@
 main :: () {
     u := Ui.{};
     store := StateStore.init(.{ value = 1 });
-    push .{ ui = @u, ui_store = @store } {
+    push .{ ui = *u, ui_store = *store } {
         store.begin_build(); u.begin_build();
         u.key_scope(Key.str("row"), () => {
             u.key_scope(Key.int(7), () => {});

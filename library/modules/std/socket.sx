@@ -74,11 +74,11 @@ Addr :: struct {
 // *SockAddr at the call (one C symbol, one signature; the sockaddr_in
 // surface stays as the legitimate simple-v4 API).
 bind_to :: (fd: i32, a: *Addr) -> i32 {
-    return bind(fd, xx @a.buf[0], a.len);
+    return bind(fd, xx *a.buf[0], a.len);
 }
 
 connect_to :: (fd: i32, a: *Addr) -> i32 {
-    return connect(fd, xx @a.buf[0], a.len);
+    return connect(fd, xx *a.buf[0], a.len);
 }
 
 // Leaf-module byte copy (socket.sx imports nothing but libc; addresses are
@@ -122,8 +122,8 @@ set_blocking :: (fd: i32) -> bool {
 set_io_timeout :: (fd: i32, ms: i64) -> bool {
     if ms <= 0 { return false; }
     tv := timeval_ms(ms);
-    if setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, xx @tv, size_of(Timeval)) != 0 { return false; }
-    return setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, xx @tv, size_of(Timeval)) == 0;
+    if setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, xx *tv, size_of(Timeval)) != 0 { return false; }
+    return setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, xx *tv, size_of(Timeval)) == 0;
 }
 
 // Connect `fd` (already created, any family) to `a` with a hard deadline:
@@ -140,12 +140,12 @@ connect_timed :: (fd: i32, a: *Addr, timeout_ms: i64) -> bool {
         // poll takes an i32 — clamp instead of truncating (an i64 ≥ 2^31
         // would go negative = INFINITE poll; ≥ 2^32 would wrap to ~instant).
         tmo : i32 = if timeout_ms > 2147483647 then 2147483647 else xx timeout_ms;
-        pr := poll(@pfd, 1, tmo);
+        pr := poll(*pfd, 1, tmo);
         if pr <= 0 { return false; }                       // timeout (0) or poll fault
         if (pfd.revents & (POLLERR | POLLHUP)) != 0 { return false; }
         soerr : i32 = 0;
         solen : u32 = 4;
-        if getsockopt(fd, SOL_SOCKET, SO_ERROR, @soerr, @solen) != 0 { return false; }
+        if getsockopt(fd, SOL_SOCKET, SO_ERROR, *soerr, *solen) != 0 { return false; }
         if soerr != 0 { return false; }                    // refused / unreachable
     }
     return set_blocking(fd);
@@ -182,16 +182,16 @@ parse_addr :: (text: string, port: i64) -> (Addr, bool) {
     }
     tb[text.len] = 0;
     v4 : u32 = 0;
-    if inet_pton(AF_INET, @tb[0], xx @v4) == 1 {
+    if inet_pton(AF_INET, *tb[0], xx *v4) == 1 {
         sa := sockaddr_in(port, v4);
-        copy_bytes(@a.buf[0], xx @sa, size_of(SockAddr));
+        copy_bytes(*a.buf[0], xx *sa, size_of(SockAddr));
         a.len = 16;
         return a, true;
     }
     v6 : [16]u8 = ---;
-    if inet_pton(AF_INET6, @tb[0], xx @v6[0]) == 1 {
-        sa6 := sockaddr_in6(port, @v6[0]);
-        copy_bytes(@a.buf[0], xx @sa6, size_of(SockAddrIn6));
+    if inet_pton(AF_INET6, *tb[0], xx *v6[0]) == 1 {
+        sa6 := sockaddr_in6(port, *v6[0]);
+        copy_bytes(*a.buf[0], xx *sa6, size_of(SockAddrIn6));
         a.len = 28;
         return a, true;
     }
@@ -203,7 +203,7 @@ parse_addr :: (text: string, port: i64) -> (Addr, bool) {
 addr_unix :: (path: string) -> (Addr, bool) {
     a : Addr = .{};
     if path.len == 0 or path.len >= SUN_PATH_MAX { return a, false; }
-    un_header(@a, xx (2 + path.len + 1));
+    un_header(*a, xx (2 + path.len + 1));
     i : i64 = 0;
     while i < path.len {
         a.buf[2 + i] = path[i];
@@ -220,7 +220,7 @@ resolve :: (host: string, port: i64) -> (Addr, bool) {
     a : Addr = .{};
     if host.len == 0 or host.len > 254 or port < 0 or port > 65535 { return a, false; }
     hb : [256]u8 = ---;
-    copy_bytes(@hb[0], host.ptr, xx host.len);
+    copy_bytes(*hb[0], host.ptr, xx host.len);
     hb[host.len] = 0;
     // decimal port, NUL-terminated
     sb : [8]u8 = ---;
@@ -238,12 +238,12 @@ resolve :: (host: string, port: i64) -> (Addr, bool) {
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
     res : usize = 0;
-    if getaddrinfo(@hb[0], @sb[0], @hints, @res) != 0 { return a, false; }
+    if getaddrinfo(*hb[0], *sb[0], *hints, *res) != 0 { return a, false; }
     if res == 0 { return a, false; }
     ai : *AddrInfo = xx res;
     ok := false;
     if ai.ai_addrlen > 0 and ai.ai_addrlen <= 128 and ai.ai_addr != 0 {
-        copy_bytes(@a.buf[0], xx ai.ai_addr, xx ai.ai_addrlen);
+        copy_bytes(*a.buf[0], xx ai.ai_addr, xx ai.ai_addrlen);
         a.len = ai.ai_addrlen;
         ok = true;
     }

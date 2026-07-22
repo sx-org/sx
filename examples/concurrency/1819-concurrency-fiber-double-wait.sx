@@ -11,7 +11,7 @@ sched :: #import "modules/std/sched.sx";
 S :: struct { t: *Future(i64); }
 main :: () -> i64 {
     st : S = ---; st.t = null;
-    s := sched.Scheduler.init(); ps := @s; pst := @st;
+    s := sched.Scheduler.init(); ps := *s; pst := *st;
     mkprod :: (ps: *sched.Scheduler, pst: *S) { pst.t = context.io.async(() -> (i64, !) { ps.yield_now(); 42 }); }
     mkw :: (ps: *sched.Scheduler, pst: *S) { ps.spawn(() { x := pst.t.await() or { -1 }; print("got {}\n", x); }); }
     push .{ io = xx s } {

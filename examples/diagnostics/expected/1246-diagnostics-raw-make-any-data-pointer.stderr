@@ -1,10 +1,10 @@
-error: raw_make_any expects a pointer for 'data' (got 'i64') — pass the value's address (`@v`, or a raw_any_data result)
+error: raw_make_any expects a pointer for 'data' (got 'i64') — pass the value's address (`*v`, or a raw_any_data result)
   --> examples/diagnostics/1246-diagnostics-raw-make-any-data-pointer.sx:10:30
    |
 10 |     bad := raw_make_any(i64, x);        // error: data must be a pointer
    |                              ^
 
-error: raw_make_any expects a pointer for 'data' (got 'any') — pass the value's address (`@v`, or a raw_any_data result)
+error: raw_make_any expects a pointer for 'data' (got 'any') — pass the value's address (`*v`, or a raw_any_data result)
   --> examples/diagnostics/1246-diagnostics-raw-make-any-data-pointer.sx:12:31
    |
 12 |     bad2 := raw_make_any(i64, ax);      // error: an any is not a data pointer

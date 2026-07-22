@@ -28,7 +28,7 @@ dial_port :: (port: i64) -> i32 {
     fd := socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0);
     if fd < 0 { return -1; }
     addr := socket.sockaddr_in(port, 0x0100007F);   // 127.0.0.1
-    if socket.connect(fd, @addr, 16) != 0 { socket.close(fd); return -1; }
+    if socket.connect(fd, *addr, 16) != 0 { socket.close(fd); return -1; }
     if !socket.set_nonblocking(fd) { socket.close(fd); return -1; }
     return fd;
 }
@@ -71,7 +71,7 @@ exchange :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64, eof: *bool) -
         srv.tick(1) catch {};
         got : i64 = 0;
         while true {
-            n, re := socket.read_nb(fd, @buf[total], xx (cap - total));
+            n, re := socket.read_nb(fd, *buf[total], xx (cap - total));
             if !re { total += n; got += n; continue; }
             if re == error.Closed { done = true; }
             break;
@@ -93,7 +93,7 @@ check :: (r: string, frag: string, label: string, failed: *i64) {
 // A close-list case: one request, server must announce close and FIN.
 expect_close :: (srv: *http.Server, req: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
     eof := false;
-    r := exchange(srv, req, buf, cap, @eof);
+    r := exchange(srv, req, buf, cap, *eof);
     check(r, "HTTP/1.1 200 OK", label, failed);
     check(r, "Connection: close", label, failed);
     if !eof {
@@ -106,7 +106,7 @@ expect_close :: (srv: *http.Server, req: string, label: string, buf: [*]u8, cap:
 // pipelined close-marked second request answered on the same conn.
 expect_kept :: (srv: *http.Server, two_reqs: string, label: string, buf: [*]u8, cap: i64, failed: *i64) {
     eof := false;
-    r := exchange(srv, two_reqs, buf, cap, @eof);
+    r := exchange(srv, two_reqs, buf, cap, *eof);
     if count_occurrences(r, "HTTP/1.1 200 OK") != 2 {
         print("{}: expected two responses on one connection\n", label);
         failed.* = 1;
@@ -128,28 +128,28 @@ main :: () -> i32 {
         if se { print("init failed\n"); return 1; }
 
         // (a) close first in the list
-        expect_close(@srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close, TE\r\n\r\n",
-            "close-first", rbuf, cap, @failed);
+        expect_close(*srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close, TE\r\n\r\n",
+            "close-first", rbuf, cap, *failed);
 
         // (b) close not first
-        expect_close(@srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: TE, close\r\n\r\n",
-            "close-last", rbuf, cap, @failed);
+        expect_close(*srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: TE, close\r\n\r\n",
+            "close-last", rbuf, cap, *failed);
 
         // (c) OWS around the token
-        expect_close(@srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close , TE\r\n\r\n",
-            "close-ows", rbuf, cap, @failed);
+        expect_close(*srv, "GET / HTTP/1.1\r\nHost: t\r\nConnection: close , TE\r\n\r\n",
+            "close-ows", rbuf, cap, *failed);
 
         // (d) 1.0 + "Keep-Alive, TE" (case + list) → kept; the pipelined
         // 1.0 follow-up (default close) proves it
-        expect_kept(@srv,
+        expect_kept(*srv,
             "GET / HTTP/1.0\r\nConnection: Keep-Alive, TE\r\n\r\nGET / HTTP/1.0\r\n\r\n",
-            "1.0 keep-list", rbuf, cap, @failed);
+            "1.0 keep-list", rbuf, cap, *failed);
 
         // (e) "closefoo" is NOT the close token — 1.1 default keep-alive
         // must survive; the close-marked follow-up proves liveness
-        expect_kept(@srv,
+        expect_kept(*srv,
             "GET / HTTP/1.1\r\nHost: t\r\nConnection: closefoo\r\n\r\nGET / HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n",
-            "closefoo", rbuf, cap, @failed);
+            "closefoo", rbuf, cap, *failed);
 
         srv.close();
         context.allocator.dealloc_bytes(xx rbuf);

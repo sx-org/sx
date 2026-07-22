@@ -59,7 +59,7 @@ main :: () {
     // copy is what the consumer sees.
     buf : [2]u8 = .[104, 105];               // "hi"
     s : string = ---;
-    s.ptr = xx @buf;
+    s.ptr = xx *buf;
     s.len = 2;
     q.push(.text(.{ text = s }));
     buf[0] = 120;                            // "xi" — must not reach the drain

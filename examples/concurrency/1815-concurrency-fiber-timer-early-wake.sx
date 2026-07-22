@@ -25,7 +25,7 @@ rec :: (s: *S, v: i64) { s.log[s.n] = v; s.n = s.n + 1; }
 main :: () -> i64 {
     st : S = ---; st.n = 0; st.sleeper = null;
     s := sched.Scheduler.init();
-    ps := @s; pst := @st;
+    ps := *s; pst := *st;
 
     // Sleeper: arm sleep(100), park; when woken (early), record 1 and finish.
     mk_sleeper :: (ps: *sched.Scheduler, pst: *S) {

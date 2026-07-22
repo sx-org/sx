@@ -21,7 +21,7 @@ open_pixel_surface :: (w: i32, h: i32) -> ?PixelSurface {
         // not the dead stack value.
         mp := s.(*MetalOffscreen);
         mp.rebind();
-        set_global_font(@mp.font);
+        set_global_font(*mp.font);
         return s;
     }
     inline if OS != .ios and OS != .macos {
@@ -31,7 +31,7 @@ open_pixel_surface :: (w: i32, h: i32) -> ?PixelSurface {
         // The erasure heap-copied the backend; the ambient font must
         // point INTO the owned copy, not the dead stack value.
         gp := s.(*GlOffscreen);
-        set_global_font(@gp.font);
+        set_global_font(*gp.font);
         return s;
     }
     null   // iOS: Metal offscreen rides the app host, not the test factory

@@ -237,7 +237,7 @@ test_streaming :: (alloc: Allocator) -> bool {
     decoder.deinit();
 
     protocol_encoder := deflate.Encoder.init(.{}, alloc) catch { return false; };
-    erased : *compress.StreamingEncoder = @protocol_encoder;
+    erased : *compress.StreamingEncoder = *protocol_encoder;
     empty_output : [8]u8 = ---;
     progress := erased.finish(empty_output[..]) catch { erased.deinit(); return false; };
     erased.deinit();
