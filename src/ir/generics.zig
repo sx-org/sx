@@ -185,6 +185,19 @@ pub const GenericResolver = struct {
 
     // ── Type-parameter substitution ─────────────────────────────────────
 
+    /// A bare identifier naming a type param BOUND by the enclosing
+    /// monomorphization (`outer :: ($T: Type, …) { inner(T); }`) is a type
+    /// argument: `resolveTypeArg`'s identifier arm resolves it through the
+    /// active `type_bindings` — but `isTypeShapedAstNode` only knows
+    /// REGISTERED type names, so Strategy 1 skipped it and the callee
+    /// diagnosed "cannot infer" (issue 0339). Folded type expressions
+    /// (`struct_field_type(T, i)`) already passed; a bound `T` must too.
+    fn argIsBoundTypeParam(self: GenericResolver, arg: *const Node) bool {
+        if (arg.data != .identifier) return false;
+        const tb = if (self.l.type_bindings) |*b| b else return false;
+        return tb.contains(arg.data.identifier.name);
+    }
+
     /// Build the `$T → concrete TypeId` bindings for a generic call site.
     /// Strategy 1: explicit type args (the param named `$T` IS a type
     /// expression). Strategy 2: infer from value params that use `T`
@@ -203,7 +216,7 @@ pub const GenericResolver = struct {
             if (types_passed_explicitly) {
                 for (fd.params, 0..) |param, pi| {
                     if (std.mem.eql(u8, param.name, tp.name)) {
-                        if (pi < args_ast.len and (type_bridge.isTypeShapedAstNode(args_ast[pi], &self.l.module.types) or self.l.isTypeReturningCallNode(args_ast[pi]))) {
+                        if (pi < args_ast.len and (type_bridge.isTypeShapedAstNode(args_ast[pi], &self.l.module.types) or self.l.isTypeReturningCallNode(args_ast[pi]) or self.argIsBoundTypeParam(args_ast[pi]))) {
                             const ty = self.l.resolveTypeArg(args_ast[pi]);
                             bindings.put(tp.name, ty) catch {};
                             found = true;
