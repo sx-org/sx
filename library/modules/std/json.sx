@@ -85,9 +85,9 @@ JsonError :: error { Overflow, Io }
 // its children, so the layout is finite).
 
 Value :: enum {
-    `null;
-    `bool: bool;
-    `int:  i64;
+    null;
+    bool: bool;
+    int:  i64;
     str:   string;     // view into caller-owned bytes; not copied
     array: List(Value);
     object: Object;

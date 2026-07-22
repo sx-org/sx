@@ -1,11 +1,13 @@
 // Statement keywords are member names (issue 0345): every keyword except
-// `inline` bare-names struct fields, struct methods/constants, and
-// protocol methods — impl definitions included, so a keyword-named
-// protocol method is implementable without ceremony. Access rides every
-// member position: literal init, dot access, optional chaining. In a
-// struct literal a keyword field takes only the `name = value` form, so
-// a positional if-expression element still parses as an expression.
-// Companion to 0158 (the reserved TYPE-spelling exemption).
+// `inline` bare-names struct fields, struct methods/constants, protocol
+// methods — impl definitions included, so a keyword-named protocol
+// method is implementable without ceremony — and enum/tagged-union
+// variants (std/meta.sx's TypeInfo is the canonical case). Access rides
+// every member position: literal init, dot access, optional chaining,
+// enum literals and case patterns. In a struct literal a keyword field
+// takes only the `name = value` form, so a positional if-expression
+// element still parses as an expression. Companion to 0158 (the
+// reserved TYPE-spelling exemption).
 #import "modules/std.sx";
 
 P :: protocol {
@@ -31,6 +33,15 @@ impl P for R {
 // `inline` is the one exception — backtick-only, everywhere.
 Esc :: struct { `inline: i64 = 5; }
 
+// Keyword-named VARIANTS: payload-carrying and tagless, declared bare;
+// enum literals and case patterns were always dot-disambiguated.
+Kind :: enum {
+    struct: i64;
+    enum;
+    bool;
+    void;
+}
+
 Pair :: struct { a, b: i64; }
 
 main :: () {
@@ -52,4 +63,9 @@ main :: () {
     x := 3;
     pr := Pair.{ if x > 1 then 10 else 20, 2 };
     print("pos {} {}\n", pr.a, pr.b);
+
+    k : Kind = .struct(42);
+    tagless : Kind = .bool;
+    kv := if k == { case .struct: (v) { v } else: 0 };
+    print("variant {} {}\n", kv, tagless == .bool);
 }

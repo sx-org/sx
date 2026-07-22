@@ -963,8 +963,8 @@ pub const Parser = struct {
         var has_any_type = false;
         var has_any_value = false;
         while (self.current.tag != .r_brace and self.current.tag != .eof) {
-            if (self.current.tag != .identifier) {
-                return self.fail("expected variant name");
+            if (!self.isMemberDeclName()) {
+                return self.failMemberDeclName("expected variant name");
             }
             try variant_names.append(self.allocator, self.tokenSlice(self.current));
             self.advance();

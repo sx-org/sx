@@ -41,9 +41,12 @@ slot), so a reserved-spelled impl method still needs the backtick
 **Statement keywords are member names too (issue 0345, decided 2026-07-22).**
 Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`,
 `f32`, `f64`, `try`, `defer`, … — may bare-name a struct **field**, a struct
-**method or constant**, and a protocol **method**, and is reachable through
-every member position: literal init (`.{ push = 1, if = 2 }`), field access
-(`q.push(…)`, `q.for`), and optional chaining (`o?.if`). Declaration position
+**method or constant**, a protocol **method**, and an enum/tagged-union
+**variant** (`enum { struct: StructInfo; bool; }` — std/meta.sx's `TypeInfo`
+is the canonical case), and is reachable through every member position:
+literal init (`.{ push = 1, if = 2 }`), field access (`q.push(…)`, `q.for`),
+enum literals and case patterns (`.enum`, `case .struct:`), and optional
+chaining (`o?.if`). Declaration position
 is unambiguous — struct, protocol, and `impl` bodies hold only declarations —
 and access is dot-disambiguated. Unlike the type-spelling rule above, keyword
 names are bare-legal in `impl` method **definitions** as well: a keyword-named

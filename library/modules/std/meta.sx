@@ -68,22 +68,22 @@ UnionInfo    :: struct { arms: []StructField; }
 
 // The reflected/constructed type shape — a tagged union EXHAUSTIVE over the
 // type table's kinds (a kind the compiler adds fails the record builder until
-// classified; no catch-all). Only `` .`enum `` / `` .`struct `` / `` .`tuple ``
-// can be MINTED via `define`; every other variant is reflect-only. The first
-// three variants keep their historical order (write-side ordinals). Variant
-// names that collide with keywords use the backtick escape at the DECLARATION;
-// use sites read bare (`.enum`, `.struct` — the leading dot disambiguates).
+// classified; no catch-all). Only `.enum` / `.struct` / `.tuple` can be
+// MINTED via `define`; every other variant is reflect-only. The first
+// three variants keep their historical order (write-side ordinals).
+// Keyword-colliding variant names declare bare, like every other member
+// position.
 TypeInfo :: enum {
-    `enum: EnumInfo;
-    `struct: StructInfo;
-    `tuple: TupleInfo;
-    `union: UnionInfo;
+    enum: EnumInfo;
+    struct: StructInfo;
+    tuple: TupleInfo;
+    union: UnionInfo;
     int: IntInfo;
     float: FloatInfo;
-    `bool;
+    bool;
     string;
     cstring;
-    `void;
+    void;
     array: ArrayInfo;
     vector: VectorInfo;
     slice: SliceInfo;
@@ -92,7 +92,7 @@ TypeInfo :: enum {
     optional: OptionalInfo;
     function;
     closure;
-    `protocol;
+    protocol;
     error_set;
     pack;
     any;
@@ -171,7 +171,7 @@ declare :: (name: string) -> Type {
 // under kind 2, so the kind is chosen from whether every payload is `void`.
 define :: (handle: Type, info: TypeInfo) -> Type {
     if info == {
-        case .`enum: (e) {
+        case .enum: (e) {
             mems : List(Member) = .{};
             all_void := true;
             for e.variants (v) {
@@ -182,14 +182,14 @@ define :: (handle: Type, info: TypeInfo) -> Type {
             if all_void { kind = KIND_ENUM; }
             return raw_register_type(handle, kind, mems.items[0..mems.len]);
         }
-        case .`struct: (s) {
+        case .struct: (s) {
             mems : List(Member) = .{};
             for s.fields (f) {
                 mems.append(Member.{ name = f.name, ty = f.type });
             }
             return raw_register_type(handle, KIND_STRUCT, mems.items[0..mems.len]);
         }
-        case .`tuple: (t) {
+        case .tuple: (t) {
             mems : List(Member) = .{};
             for t.elements (ety) {
                 mems.append(Member.{ name = "", ty = ety });

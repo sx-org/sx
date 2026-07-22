@@ -3,3 +3,4 @@ impl 3
 chain 4
 esc 5
 pos 10 2
+variant 42 true
