@@ -8,6 +8,7 @@
 
 #import "modules/std.sx";
 #import "modules/ffi/objc.sx";
+#import "modules/ffi/quartzcore.sx";
 #import "modules/build.sx";
 #import "modules/ffi/opengl.sx";
 #import "modules/ui/types.sx";
@@ -126,21 +127,8 @@ CADisplayLink :: #objc_class("CADisplayLink") extern {
 // ── View tree + GL drawables (Phase 3.2 C5) ────────────────────────────
 // (Declared before UIView so `layer :: (...) -> *CALayer` can reference it.)
 
-CALayer :: #objc_class("CALayer") extern {
-    #extends NSObject;
-    setOpaque :: (self: *Self, opaque: i8);
-}
-
-CAEAGLLayer :: #objc_class("CAEAGLLayer") extern {
-    #extends CALayer;
-    class :: () -> *void;
-    setDrawableProperties :: (self: *Self, props: *void);
-}
-
-CAMetalLayer :: #objc_class("CAMetalLayer") extern {
-    #extends CALayer;
-    class :: () -> *void;
-}
+// CALayer / CAEAGLLayer / CAMetalLayer moved to modules/ffi/quartzcore.sx
+// (shared with gpu/metal.sx — one decl per runtime class).
 
 EAGLContext :: #objc_class("EAGLContext") extern {
     #extends NSObject;
@@ -176,6 +164,7 @@ UIView :: #objc_class("UIView") extern {
     addSubview            :: (self: *Self, view: *void);
     layer                 :: (self: *Self) -> *CALayer;
     setContentScaleFactor :: (self: *Self, scale: f64);
+    bounds                :: (self: *Self) -> CGRect;
 }
 
 UIWindow :: #objc_class("UIWindow") extern {
@@ -198,6 +187,11 @@ UITextField :: #objc_class("UITextField") extern {
     #extends UIResponder;
     alloc :: () -> *UITextField;
     init  :: (self: *Self) -> *UITextField;
+}
+
+UITouch :: #objc_class("UITouch") extern {
+    #extends NSObject;
+    locationInView :: (self: *Self, view: *void) -> CGPoint;
 }
 
 // SxAppDelegate — UIApplicationMain's delegate class (the app delegate, a
@@ -538,7 +532,7 @@ impl Platform for UIKitPlatform {
     compute_layer_pixel_size :: (self: *UIKitPlatform) {
         inline if OS != .ios { return; }
         if gl_view := self.gl_view {
-            b := #objc_call(CGRect)(gl_view, "bounds");
+            b := gl_view.bounds();
 
             w_pts : f64 = b.width;
             h_pts : f64 = b.height;
@@ -626,16 +620,14 @@ impl Platform for UIKitPlatform {
     scene_will_connect :: (self: *UIKitPlatform, delegate: *void, scene: *void) {
         inline if OS != .ios { return; }
 
-        SxGLView    := objc_getClass("SxGLView".ptr);
-        SxMetalView := objc_getClass("SxMetalView".ptr);
-
         win := UIWindow.alloc().initWithWindowScene(scene);
         self.window = win;
 
         // Make the scene delegate own the window so iOS retains it. Per the
         // scene-based lifecycle, the scene delegate is expected to provide
         // the UIWindow via -window/-setWindow:.
-        #objc_call(void)(delegate, "setWindow:", win);
+        sd : *SxSceneDelegate = xx delegate;
+        sd.setWindow(win);
 
         vc := UIViewController.alloc().init();
         self.root_vc = vc;
@@ -644,9 +636,12 @@ impl Platform for UIKitPlatform {
         // view's +layerClass override gives us the right CAEAGLLayer /
         // CAMetalLayer subclass. Set the VC's view BEFORE
         // setRootViewController to avoid a default-view lazy-load.
-        view_class := if self.gpu_mode == .gles then SxGLView else SxMetalView;
-        glv_raw := #objc_call(*void)(view_class, "alloc");
-        gl_view := #objc_call(*UIView)(glv_raw, "init");
+        gl_view : *UIView = null;
+        if self.gpu_mode == .gles {
+            gl_view = xx SxGLView.alloc().init();
+        } else {
+            gl_view = xx SxMetalView.alloc().init();
+        }
         self.gl_view = gl_view;
         vc.setView(gl_view);
 
@@ -830,6 +825,9 @@ uikit_chdir_to_bundle :: () {
 SxGLView :: #objc_class("SxGLView") export {
     #extends UIView;
 
+    alloc :: () -> *SxGLView;
+    init  :: (self: *Self) -> *SxGLView;
+
     layerClass :: () => CAEAGLLayer.class();
 
     sxTick :: (self: *Self, link: *CADisplayLink) {
@@ -868,7 +866,8 @@ SxGLView :: #objc_class("SxGLView") export {
 // UIKitPlatform.
 
 uikit_touch_location :: (touch: *void, view: *void) -> Point {
-    p := #objc_call(CGPoint)(touch, "locationInView:", view);
+    t : *UITouch = xx touch;
+    p := t.locationInView(view);
     Point.{ x = xx p.x, y = xx p.y }
 }
 
@@ -888,6 +887,9 @@ uikit_first_touch :: (touches: *void) -> *void {
 // differs from SxGLView (returns CAMetalLayer instead of CAEAGLLayer).
 SxMetalView :: #objc_class("SxMetalView") export {
     #extends UIView;
+
+    alloc :: () -> *SxMetalView;
+    init  :: (self: *Self) -> *SxMetalView;
 
     layerClass :: () => CAMetalLayer.class();
 

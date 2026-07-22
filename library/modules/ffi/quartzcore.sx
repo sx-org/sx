@@ -1,0 +1,37 @@
+// QuartzCore layer surfaces shared by the platform host (uikit.sx) and
+// the Metal GPU backend (gpu/metal.sx). ONE declaration per runtime
+// class: the #objc_class registry is name-keyed program-wide, so two
+// modules declaring the same class race for the slot and whichever
+// loses resolves against the other's method surface.
+//
+// The Metal-typed ends of CAMetalLayer (device, drawable) are declared
+// untyped here — MTLDevice/CAMetalDrawable live in gpu/metal.sx, which
+// this module must not import (dependency direction: the GPU backend
+// consumes the layer, not the reverse).
+#import "modules/ffi/objc.sx";
+
+#framework "QuartzCore";
+
+// CGSize is a 2-element f64 HFA. arm64 Apple ABI puts it in d0,d1.
+CGSize :: struct { width: f64; height: f64; }
+
+CALayer :: #objc_class("CALayer") extern {
+    #extends NSObject;
+    setOpaque :: (self: *Self, opaque: i8);
+}
+
+CAEAGLLayer :: #objc_class("CAEAGLLayer") extern {
+    #extends CALayer;
+    class :: () -> *void;
+    setDrawableProperties :: (self: *Self, props: *void);
+}
+
+CAMetalLayer :: #objc_class("CAMetalLayer") extern {
+    #extends CALayer;
+    class :: () -> *void;
+    setDevice :: (self: *Self, device: *void);
+    setPixelFormat :: (self: *Self, fmt: u64);
+    setFramebufferOnly :: (self: *Self, on: BOOL);
+    setDrawableSize :: (self: *Self, size: CGSize);
+    nextDrawable :: (self: *Self) -> *void;
+}

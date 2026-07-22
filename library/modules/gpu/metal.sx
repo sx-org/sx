@@ -19,6 +19,7 @@
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 #import "modules/ffi/objc.sx";
+#import "modules/ffi/quartzcore.sx";
 #import "modules/build.sx";
 #import "modules/gpu/types.sx";
 #import "modules/gpu/api.sx";
@@ -28,7 +29,7 @@
 // MTLCreateSystemDefaultDevice lives in the Metal framework as a plain C
 // function. Returns id<MTLDevice> retained +1; we leak it for now since
 // the device lives for the whole process.
-MTLCreateSystemDefaultDevice :: () -> *void extern;
+MTLCreateSystemDefaultDevice :: () -> *MTLDevice extern;
 
 // Pixel formats.
 MTL_PIXEL_FORMAT_BGRA8_UNORM :u64: 80;
@@ -58,11 +59,10 @@ MTL_PRIMITIVE_TYPE_TRIANGLE :u64: 3;
 MTL_BLEND_FACTOR_SRC_ALPHA       :u64: 4;
 MTL_BLEND_FACTOR_ONE_MINUS_SRC_A :u64: 5;
 
-// CGSize is a 2-element f64 HFA. arm64 Apple ABI puts it in d0,d1 — direct
-// fn-pointer cast on objc_msgSend with a CGSize arg does the right thing.
-CGSize :: struct { width: f64; height: f64; }
-
-// MTLClearColor is a 4-element f64 HFA. Same ABI story — passes in d0..d3.
+// MTLClearColor is an f64 HFA; MTLRegion (48 B) and MTLScissorRect
+// (32 B) are large integer aggregates passed by value. DSL dispatch
+// marshals both classes per the C ABI (HFA registers / caller copy +
+// ptr). CGSize lives in ffi/quartzcore.sx.
 MTLClearColor :: struct {
     red:   f64;
     green: f64;
@@ -70,49 +70,163 @@ MTLClearColor :: struct {
     alpha: f64;
 }
 
-// MTLOrigin / MTLSize / MTLRegion / MTLScissorRect — integer aggregates.
-// MTLRegion is 48 bytes and MTLScissorRect is 32 bytes; both are passed
-// by value to the Obj-C runtime, which the compiler marshals as
-// `ptr byval(<T>)` via the C-ABI byval coercion. The fn-pointer cast
-// must spell `abi(.c)` so the indirect call applies that coercion.
 MTLOrigin :: struct { x: u64; y: u64; z: u64; }
 MTLSize   :: struct { width: u64; height: u64; depth: u64; }
 MTLRegion :: struct { origin: MTLOrigin; size: MTLSize; }
 MTLScissorRect :: struct { x: u64; y: u64; width: u64; height: u64; }
 
+// ── Metal object surfaces (#objc_class DSL) ──────────────────────────────
+// Only the methods this backend dispatches are declared. Instance
+// methods dispatch by selector alone — the bound runtime-class name is
+// never looked up for them — so protocol-typed Metal objects
+// (id<MTLDevice>, id<MTLTexture>, ...) bind by their protocol name
+// harmlessly. Statics exist only on the real descriptor classes.
+// `#extends NSObject` supplies retain/release for the destroy paths.
+
+MTLBuffer :: #objc_class("MTLBuffer") extern {
+    #extends NSObject;
+    contents :: (self: *Self) -> *void;
+}
+
+MTLTexture :: #objc_class("MTLTexture") extern {
+    #extends NSObject;
+    replaceRegion_mipmapLevel_withBytes_bytesPerRow :: (self: *Self, region: MTLRegion, level: u64, bytes: *void, bytes_per_row: u64);
+    getBytes_bytesPerRow_fromRegion_mipmapLevel :: (self: *Self, out: *void, bytes_per_row: u64, region: MTLRegion, level: u64);
+}
+
+MTLRenderPipelineState :: #objc_class("MTLRenderPipelineState") extern {
+    #extends NSObject;
+}
+
+MTLLibrary :: #objc_class("MTLLibrary") extern {
+    #extends NSObject;
+    // MTLFunction is only handed straight back to the pipeline
+    // descriptor — untyped is enough.
+    newFunctionWithName :: (self: *Self, name: *NSString) -> *void;
+}
+
+MTLTextureDescriptor :: #objc_class("MTLTextureDescriptor") extern {
+    #extends NSObject;
+    texture2DDescriptorWithPixelFormat_width_height_mipmapped :: (fmt: u64, w: u64, h: u64, mipmapped: BOOL) -> *MTLTextureDescriptor;
+    setUsage :: (self: *Self, usage: u64);
+    setStorageMode :: (self: *Self, mode: u64);
+}
+
+MTLRenderPipelineColorAttachment :: #objc_class("MTLRenderPipelineColorAttachmentDescriptor") extern {
+    setPixelFormat :: (self: *Self, fmt: u64);
+    setBlendingEnabled :: (self: *Self, on: BOOL);
+    setSourceRGBBlendFactor :: (self: *Self, f: u64);
+    setDestinationRGBBlendFactor :: (self: *Self, f: u64);
+    setSourceAlphaBlendFactor :: (self: *Self, f: u64);
+    setDestinationAlphaBlendFactor :: (self: *Self, f: u64);
+}
+
+MTLRenderPipelineColorAttachmentArray :: #objc_class("MTLRenderPipelineColorAttachmentDescriptorArray") extern {
+    objectAtIndexedSubscript :: (self: *Self, i: u64) -> *MTLRenderPipelineColorAttachment;
+}
+
+MTLRenderPipelineDescriptor :: #objc_class("MTLRenderPipelineDescriptor") extern {
+    #extends NSObject;
+    alloc :: () -> *MTLRenderPipelineDescriptor;
+    init :: (self: *Self) -> *MTLRenderPipelineDescriptor;
+    setVertexFunction :: (self: *Self, f: *void);
+    setFragmentFunction :: (self: *Self, f: *void);
+    colorAttachments :: (self: *Self) -> *MTLRenderPipelineColorAttachmentArray;
+}
+
+MTLRenderPassColorAttachment :: #objc_class("MTLRenderPassColorAttachmentDescriptor") extern {
+    setTexture :: (self: *Self, tex: *MTLTexture);
+    setLoadAction :: (self: *Self, action: u64);
+    setStoreAction :: (self: *Self, action: u64);
+    setClearColor :: (self: *Self, color: MTLClearColor);
+}
+
+MTLRenderPassColorAttachmentArray :: #objc_class("MTLRenderPassColorAttachmentDescriptorArray") extern {
+    objectAtIndexedSubscript :: (self: *Self, i: u64) -> *MTLRenderPassColorAttachment;
+}
+
+MTLRenderPassDescriptor :: #objc_class("MTLRenderPassDescriptor") extern {
+    renderPassDescriptor :: () -> *MTLRenderPassDescriptor;
+    colorAttachments :: (self: *Self) -> *MTLRenderPassColorAttachmentArray;
+}
+
+MTLRenderCommandEncoder :: #objc_class("MTLRenderCommandEncoder") extern {
+    endEncoding :: (self: *Self);
+    setRenderPipelineState :: (self: *Self, state: *MTLRenderPipelineState);
+    setVertexBuffer_offset_atIndex :: (self: *Self, buf: *MTLBuffer, offset: u64, index: u64);
+    setFragmentTexture_atIndex :: (self: *Self, tex: *MTLTexture, index: u64);
+    setVertexBytes_length_atIndex :: (self: *Self, bytes: *void, length: u64, index: u64);
+    setScissorRect :: (self: *Self, rect: MTLScissorRect);
+    drawPrimitives_vertexStart_vertexCount :: (self: *Self, prim: u64, start: u64, count: u64);
+}
+
+MTLBlitCommandEncoder :: #objc_class("MTLBlitCommandEncoder") extern {
+    endEncoding :: (self: *Self);
+    copyFromTexture_toTexture :: (self: *Self, src: *MTLTexture, dst: *MTLTexture);
+}
+
+CAMetalDrawable :: #objc_class("CAMetalDrawable") extern {
+    texture :: (self: *Self) -> *MTLTexture;
+}
+
+MTLCommandBuffer :: #objc_class("MTLCommandBuffer") extern {
+    renderCommandEncoderWithDescriptor :: (self: *Self, pass: *MTLRenderPassDescriptor) -> *MTLRenderCommandEncoder;
+    blitCommandEncoder :: (self: *Self) -> *MTLBlitCommandEncoder;
+    presentDrawable :: (self: *Self, drawable: *CAMetalDrawable);
+    presentDrawable_atTime :: (self: *Self, drawable: *CAMetalDrawable, t: f64);
+    commit :: (self: *Self);
+    waitUntilCompleted :: (self: *Self);
+}
+
+MTLCommandQueue :: #objc_class("MTLCommandQueue") extern {
+    commandBuffer :: (self: *Self) -> *MTLCommandBuffer;
+}
+
+// CAMetalLayer is declared in ffi/quartzcore.sx (shared with the
+// platform host — one decl per runtime class). Its Metal-typed ends
+// are untyped there; this module casts at the boundary.
+
+MTLDevice :: #objc_class("MTLDevice") extern {
+    newCommandQueue :: (self: *Self) -> *MTLCommandQueue;
+    newBufferWithLength_options :: (self: *Self, length: u64, options: u64) -> *MTLBuffer;
+    newTextureWithDescriptor :: (self: *Self, desc: *MTLTextureDescriptor) -> *MTLTexture;
+    newLibraryWithSource_options_error :: (self: *Self, src: *NSString, options: *void, err: **void) -> *MTLLibrary;
+    newRenderPipelineStateWithDescriptor_error :: (self: *Self, desc: *MTLRenderPipelineDescriptor, err: **void) -> *MTLRenderPipelineState;
+}
+
 // Pixel sub-format storage for textures. Tracks the bytes-per-pixel for the
 // upload path (replaceRegion needs bytesPerRow which is bpp × width).
 TextureSlot :: struct {
-    tex: *void = null;
+    tex: *MTLTexture = null;
     bytes_per_pixel: u32 = 0;
 }
 
 MetalGPU :: struct {
-    device:  *void = null;     // id<MTLDevice>
-    queue:   *void = null;     // id<MTLCommandQueue>
-    layer:   *void = null;     // CAMetalLayer*
-    pixel_w: i32   = 0;
-    pixel_h: i32   = 0;
+    device:  *MTLDevice = null;
+    queue:   *MTLCommandQueue = null;
+    layer:   *CAMetalLayer = null;
+    pixel_w: i32 = 0;
+    pixel_h: i32 = 0;
 
     // Offscreen mode (layer == null): the render pass targets
     // offscreen_tex; readback blits into the shared readback_tex and
     // reads with getBytes. nextDrawable is never touched.
-    offscreen_tex: *void = null;  // id<MTLTexture>, private storage
-    readback_tex:  *void = null;  // id<MTLTexture>, shared storage
+    offscreen_tex: *MTLTexture = null;  // private storage
+    readback_tex:  *MTLTexture = null;  // shared storage
     // Pixel format of the render target — pipeline states must match.
     // Layer mode keeps BGRA8 (CAMetalLayer's format); offscreen uses
     // RGBA8 so readback hands out RGBA rows with no swizzle.
     target_format: u64 = MTL_PIXEL_FORMAT_BGRA8_UNORM;
 
     // Per-frame transients. Live only between begin_frame and end_frame.
-    drawable:   *void = null;  // id<CAMetalDrawable>
-    cmd_buffer: *void = null;  // id<MTLCommandBuffer>
-    encoder:    *void = null;  // id<MTLRenderCommandEncoder>
+    drawable:   *CAMetalDrawable = null;
+    cmd_buffer: *MTLCommandBuffer = null;
+    encoder:    *MTLRenderCommandEncoder = null;
 
     // Resource tables. Handles are 1-based indices (0 = invalid).
-    shaders:  List(*void)       = .{};  // MTLRenderPipelineState*
-    buffers:  List(*void)       = .{};  // MTLBuffer*
-    textures: List(TextureSlot) = .{};
+    shaders:  List(*MTLRenderPipelineState) = .{};
+    buffers:  List(*MTLBuffer)              = .{};
+    textures: List(TextureSlot)             = .{};
 
     // Captured at init() so resource creation always grows the cache lists
     // through the long-lived allocator, even when the caller is currently
@@ -120,14 +234,14 @@ MetalGPU :: struct {
     parent_allocator: Allocator = .{};
 
     // Handle → retained object lookups shared by the buffer/shader paths.
-    lookup_buffer :: (self: *MetalGPU, handle: u32) -> *void {
+    lookup_buffer :: (self: *MetalGPU, handle: u32) -> *MTLBuffer {
         if handle == 0 { return null; }
         h64 : i64 = xx handle;
         if h64 > self.buffers.len { return null; }
         self.buffers.items[handle - 1]
     }
 
-    lookup_shader :: (self: *MetalGPU, handle: u32) -> *void {
+    lookup_shader :: (self: *MetalGPU, handle: u32) -> *MTLRenderPipelineState {
         if handle == 0 { return null; }
         h64 : i64 = xx handle;
         if h64 > self.shaders.len { return null; }
@@ -151,35 +265,24 @@ MetalGPU :: struct {
             self.device = MTLCreateSystemDefaultDevice();
             if self.device == null { return false; }
         }
-
-        msg_o  : (*void, *void)      -> *void abi(.c) = xx objc_msgSend;
-        msg_ou : (*void, *void, u64) -> void abi(.c)  = xx objc_msgSend;
-
         if self.queue == null {
-            self.queue = msg_o(self.device, sel_registerName("newCommandQueue".ptr));
+            self.queue = self.device.newCommandQueue();
             if self.queue == null { return false; }
         }
 
-        msg_desc : (*void, *void, u64, u64, u64, u8) -> *void abi(.c) = xx objc_msgSend;
-        msg_tex  : (*void, *void, *void)             -> *void abi(.c) = xx objc_msgSend;
-        MTLTextureDescriptor := objc_getClass("MTLTextureDescriptor".ptr);
-
-        desc := msg_desc(MTLTextureDescriptor,
-            sel_registerName("texture2DDescriptorWithPixelFormat:width:height:mipmapped:".ptr),
+        desc := MTLTextureDescriptor.texture2DDescriptorWithPixelFormat_width_height_mipmapped(
             self.target_format, xx pixel_w, xx pixel_h, 0);
         if desc == null { return false; }
-        msg_ou(desc, sel_registerName("setUsage:".ptr),
-            MTL_TEXTURE_USAGE_RENDER_TARGET | MTL_TEXTURE_USAGE_SHADER_READ);
-        msg_ou(desc, sel_registerName("setStorageMode:".ptr), MTL_STORAGE_MODE_PRIVATE);
-        self.offscreen_tex = msg_tex(self.device, sel_registerName("newTextureWithDescriptor:".ptr), desc);
+        desc.setUsage(MTL_TEXTURE_USAGE_RENDER_TARGET | MTL_TEXTURE_USAGE_SHADER_READ);
+        desc.setStorageMode(MTL_STORAGE_MODE_PRIVATE);
+        self.offscreen_tex = self.device.newTextureWithDescriptor(desc);
         if self.offscreen_tex == null { return false; }
 
-        rdesc := msg_desc(MTLTextureDescriptor,
-            sel_registerName("texture2DDescriptorWithPixelFormat:width:height:mipmapped:".ptr),
+        rdesc := MTLTextureDescriptor.texture2DDescriptorWithPixelFormat_width_height_mipmapped(
             self.target_format, xx pixel_w, xx pixel_h, 0);
         if rdesc == null { return false; }
-        msg_ou(rdesc, sel_registerName("setStorageMode:".ptr), MTL_STORAGE_MODE_SHARED);
-        self.readback_tex = msg_tex(self.device, sel_registerName("newTextureWithDescriptor:".ptr), rdesc);
+        rdesc.setStorageMode(MTL_STORAGE_MODE_SHARED);
+        self.readback_tex = self.device.newTextureWithDescriptor(rdesc);
         if self.readback_tex == null { return false; }
 
         true
@@ -192,32 +295,23 @@ MetalGPU :: struct {
         if self.offscreen_tex == null or self.readback_tex == null { return false; }
         if self.queue == null { return false; }
 
-        msg_o    : (*void, *void)               -> *void abi(.c) = xx objc_msgSend;
-        msg_v    : (*void, *void)               -> void abi(.c)  = xx objc_msgSend;
-        msg_copy : (*void, *void, *void, *void) -> void abi(.c)  = xx objc_msgSend;
-
         // The private render target isn't CPU-readable — blit it into the
         // shared texture first.
-        cmd := msg_o(self.queue, sel_registerName("commandBuffer".ptr));
+        cmd := self.queue.commandBuffer();
         if cmd == null { return false; }
-        blit := msg_o(cmd, sel_registerName("blitCommandEncoder".ptr));
+        blit := cmd.blitCommandEncoder();
         if blit == null { return false; }
-        msg_copy(blit, sel_registerName("copyFromTexture:toTexture:".ptr),
-            self.offscreen_tex, self.readback_tex);
-        msg_v(blit, sel_registerName("endEncoding".ptr));
-        msg_v(cmd, sel_registerName("commit".ptr));
-        msg_v(cmd, sel_registerName("waitUntilCompleted".ptr));
+        blit.copyFromTexture_toTexture(self.offscreen_tex, self.readback_tex);
+        blit.endEncoding();
+        cmd.commit();
+        cmd.waitUntilCompleted();
 
         region : MTLRegion = .{
             origin = .{ x = 0, y = 0, z = 0 },
             size   = .{ width = xx self.pixel_w, height = xx self.pixel_h, depth = 1 },
         };
         bytes_per_row : u64 = xx (self.pixel_w * 4);
-        // [readback_tex getBytes:out bytesPerRow:n fromRegion:region mipmapLevel:0]
-        msg_get : (*void, *void, *void, u64, MTLRegion, u64) -> void abi(.c) = xx objc_msgSend;
-        msg_get(self.readback_tex,
-            sel_registerName("getBytes:bytesPerRow:fromRegion:mipmapLevel:".ptr),
-            out, bytes_per_row, region, 0);
+        self.readback_tex.getBytes_bytesPerRow_fromRegion_mipmapLevel(out, bytes_per_row, region, 0);
         true
     }
 }
@@ -231,7 +325,7 @@ impl GPU for MetalGPU {
     // the layer is only touched when one's been supplied.
     init :: (self: *MetalGPU, target: *void, pixel_w: i32, pixel_h: i32) -> bool {
         if target != null {
-            self.layer   = target;
+            self.layer   = xx target;
             self.pixel_w = pixel_w;
             self.pixel_h = pixel_h;
         }
@@ -241,30 +335,22 @@ impl GPU for MetalGPU {
             self.device = MTLCreateSystemDefaultDevice();
             if self.device == null { return false; }
         }
-
-        msg_oo    : (*void, *void, *void)  -> void abi(.c)  = xx objc_msgSend;
-        msg_ou    : (*void, *void, u64)    -> void abi(.c)  = xx objc_msgSend;
-        msg_ob    : (*void, *void, u8)     -> void abi(.c)  = xx objc_msgSend;
-        msg_osize : (*void, *void, CGSize) -> void abi(.c)  = xx objc_msgSend;
-        msg_o     : (*void, *void)         -> *void abi(.c) = xx objc_msgSend;
-
         if self.queue == null {
-            self.queue = msg_o(self.device, sel_registerName("newCommandQueue".ptr));
+            self.queue = self.device.newCommandQueue();
             if self.queue == null { return false; }
         }
 
         if self.layer != null {
-            msg_oo(self.layer, sel_registerName("setDevice:".ptr), self.device);
-            msg_ou(self.layer, sel_registerName("setPixelFormat:".ptr), MTL_PIXEL_FORMAT_BGRA8_UNORM);
-            msg_ob(self.layer, sel_registerName("setFramebufferOnly:".ptr), 1);
+            self.layer.setDevice(self.device);
+            self.layer.setPixelFormat(MTL_PIXEL_FORMAT_BGRA8_UNORM);
+            self.layer.setFramebufferOnly(1);
 
             // setDrawableSize:(0,0) makes nextDrawable abort via XPC. Skip the
             // size set when dims are not yet known — the layer's drawableSize
             // defaults to its bounds×contentsScale until we override it, which
             // also lets the first frame render at the natural backing size.
             if self.pixel_w > 0 and self.pixel_h > 0 {
-                size := CGSize.{ width = xx self.pixel_w, height = xx self.pixel_h };
-                msg_osize(self.layer, sel_registerName("setDrawableSize:".ptr), size);
+                self.layer.setDrawableSize(.{ width = xx self.pixel_w, height = xx self.pixel_h });
             }
         }
 
@@ -280,10 +366,7 @@ impl GPU for MetalGPU {
         self.pixel_w = pixel_w;
         self.pixel_h = pixel_h;
         if self.layer == null { return; }
-
-        msg_osize : (*void, *void, CGSize) -> void abi(.c) = xx objc_msgSend;
-        size := CGSize.{ width = xx self.pixel_w, height = xx self.pixel_h };
-        msg_osize(self.layer, sel_registerName("setDrawableSize:".ptr), size);
+        self.layer.setDrawableSize(.{ width = xx self.pixel_w, height = xx self.pixel_h });
     }
 
     begin_frame :: (self: *MetalGPU, clear: ClearColor) -> bool {
@@ -291,48 +374,29 @@ impl GPU for MetalGPU {
         if self.queue == null { return false; }
         if self.pixel_w <= 0 or self.pixel_h <= 0 { return false; }
 
-        msg_o      : (*void, *void)                -> *void abi(.c) = xx objc_msgSend;
-        msg_oo     : (*void, *void, *void)         -> void abi(.c)  = xx objc_msgSend;
-        msg_oo_ret : (*void, *void, *void)         -> *void abi(.c) = xx objc_msgSend;
-        msg_ou     : (*void, *void, u64)           -> void abi(.c)  = xx objc_msgSend;
-        msg_ouret  : (*void, *void, u64)           -> *void abi(.c) = xx objc_msgSend;
-        msg_oclear : (*void, *void, MTLClearColor) -> void abi(.c)  = xx objc_msgSend;
-
-        target_texture : *void = self.offscreen_tex;
+        target_texture := self.offscreen_tex;
         if self.layer != null {
-            // drawable = [layer nextDrawable]
-            self.drawable = msg_o(self.layer, sel_registerName("nextDrawable".ptr));
+            self.drawable = xx self.layer.nextDrawable();
             if self.drawable == null { return false; }
-            target_texture = msg_o(self.drawable, sel_registerName("texture".ptr));
+            target_texture = self.drawable.texture();
         }
 
-        // pass = [MTLRenderPassDescriptor renderPassDescriptor]  (autoreleased)
-        MTLRenderPassDescriptor := objc_getClass("MTLRenderPassDescriptor".ptr);
-        pass := msg_o(MTLRenderPassDescriptor, sel_registerName("renderPassDescriptor".ptr));
-
-        // color0 = pass.colorAttachments[0]
-        attachments := msg_o(pass, sel_registerName("colorAttachments".ptr));
-        color0 := msg_ouret(attachments, sel_registerName("objectAtIndexedSubscript:".ptr), 0);
-
-        msg_oo(color0, sel_registerName("setTexture:".ptr), target_texture);
-        msg_ou(color0, sel_registerName("setLoadAction:".ptr), MTL_LOAD_ACTION_CLEAR);
-        msg_ou(color0, sel_registerName("setStoreAction:".ptr), MTL_STORE_ACTION_STORE);
-
-        mtl_clear := MTLClearColor.{
+        pass := MTLRenderPassDescriptor.renderPassDescriptor();   // autoreleased
+        color0 := pass.colorAttachments().objectAtIndexedSubscript(0);
+        color0.setTexture(target_texture);
+        color0.setLoadAction(MTL_LOAD_ACTION_CLEAR);
+        color0.setStoreAction(MTL_STORE_ACTION_STORE);
+        color0.setClearColor(.{
             red   = xx clear.r,
             green = xx clear.g,
             blue  = xx clear.b,
             alpha = xx clear.a,
-        };
-        msg_oclear(color0, sel_registerName("setClearColor:".ptr), mtl_clear);
+        });
 
-        // cmd = [queue commandBuffer]  (autoreleased)
-        self.cmd_buffer = msg_o(self.queue, sel_registerName("commandBuffer".ptr));
+        self.cmd_buffer = self.queue.commandBuffer();             // autoreleased
         if self.cmd_buffer == null { self.drawable = null; return false; }
 
-        // encoder = [cmd renderCommandEncoderWithDescriptor:pass]  (autoreleased)
-        self.encoder = msg_oo_ret(self.cmd_buffer,
-            sel_registerName("renderCommandEncoderWithDescriptor:".ptr), pass);
+        self.encoder = self.cmd_buffer.renderCommandEncoderWithDescriptor(pass);  // autoreleased
         if self.encoder == null { self.cmd_buffer = null; self.drawable = null; return false; }
 
         true
@@ -343,29 +407,24 @@ impl GPU for MetalGPU {
         if self.cmd_buffer == null { return; }
         if self.drawable == null and self.offscreen_tex == null { return; }
 
-        msg_v   : (*void, *void)             -> void abi(.c) = xx objc_msgSend;
-        msg_oo  : (*void, *void, *void)      -> void abi(.c) = xx objc_msgSend;
-        msg_ood : (*void, *void, *void, f64) -> void abi(.c) = xx objc_msgSend;
-
-        msg_v(self.encoder, sel_registerName("endEncoding".ptr));
+        self.encoder.endEncoding();
 
         if self.drawable != null {
             // target_time > 0 → presentDrawable:atTime: (lockstep path).
             // target_time == 0 → fall back to presentDrawable: (immediate).
             if target_time > 0.0 {
-                msg_ood(self.cmd_buffer, sel_registerName("presentDrawable:atTime:".ptr),
-                    self.drawable, target_time);
+                self.cmd_buffer.presentDrawable_atTime(self.drawable, target_time);
             } else {
-                msg_oo(self.cmd_buffer, sel_registerName("presentDrawable:".ptr), self.drawable);
+                self.cmd_buffer.presentDrawable(self.drawable);
             }
         }
 
-        msg_v(self.cmd_buffer, sel_registerName("commit".ptr));
+        self.cmd_buffer.commit();
 
         // Offscreen mode has no vsync to hide behind: the caller reads the
         // texture right after end_frame, so drain the GPU here.
         if self.drawable == null {
-            msg_v(self.cmd_buffer, sel_registerName("waitUntilCompleted".ptr));
+            self.cmd_buffer.waitUntilCompleted();
         }
 
         self.encoder    = null;
@@ -384,53 +443,33 @@ impl GPU for MetalGPU {
     create_shader :: (self: *MetalGPU, vsrc: string, fsrc: string) -> ShaderHandle {
         if self.device == null { return 0; }
 
-        msg_o    : (*void, *void)               -> *void abi(.c) = xx objc_msgSend;
-        msg_oo   : (*void, *void, *void)        -> void abi(.c)  = xx objc_msgSend;
-        msg_oo_r : (*void, *void, *NSString)    -> *void abi(.c) = xx objc_msgSend;
-        msg_ou   : (*void, *void, u64)          -> void abi(.c)  = xx objc_msgSend;
-        msg_ouret: (*void, *void, u64)          -> *void abi(.c) = xx objc_msgSend;
-        msg_ob   : (*void, *void, u8)           -> void abi(.c)  = xx objc_msgSend;
-
-        // [device newLibraryWithSource:src options:nil error:&err]
-        msg_lib : (*void, *void, *NSString, *void, **void) -> *void abi(.c) = xx objc_msgSend;
         err : *void = null;
-        library := msg_lib(self.device,
-            sel_registerName("newLibraryWithSource:options:error:".ptr),
-            xx vsrc, xx 0, @err);
+        library := self.device.newLibraryWithSource_options_error(xx vsrc, null, @err);
         if library == null {
             NSLog(xx "[metal] MSL compile failed\n");
             return 0;
         }
 
-        vfn := msg_oo_r(library, sel_registerName("newFunctionWithName:".ptr),
-            xx "vmain");
-        ffn := msg_oo_r(library, sel_registerName("newFunctionWithName:".ptr),
-            xx "fmain");
+        vfn := library.newFunctionWithName(xx "vmain");
+        ffn := library.newFunctionWithName(xx "fmain");
         if vfn == null { NSLog(xx "[metal] missing vmain in MSL\n"); return 0; }
         if ffn == null { NSLog(xx "[metal] missing fmain in MSL\n"); return 0; }
 
-        MTLRenderPipelineDescriptor := objc_getClass("MTLRenderPipelineDescriptor".ptr);
-        desc := msg_o(MTLRenderPipelineDescriptor, sel_registerName("alloc".ptr));
-        desc = msg_o(desc, sel_registerName("init".ptr));
-
-        msg_oo(desc, sel_registerName("setVertexFunction:".ptr), vfn);
-        msg_oo(desc, sel_registerName("setFragmentFunction:".ptr), ffn);
+        desc := MTLRenderPipelineDescriptor.alloc().init();
+        desc.setVertexFunction(vfn);
+        desc.setFragmentFunction(ffn);
 
         // colorAttachments[0]: pixel format + alpha blending.
-        atts := msg_o(desc, sel_registerName("colorAttachments".ptr));
-        att0 := msg_ouret(atts, sel_registerName("objectAtIndexedSubscript:".ptr), 0);
-        msg_ou(att0, sel_registerName("setPixelFormat:".ptr), self.target_format);
-        msg_ob(att0, sel_registerName("setBlendingEnabled:".ptr), 1);
-        msg_ou(att0, sel_registerName("setSourceRGBBlendFactor:".ptr), MTL_BLEND_FACTOR_SRC_ALPHA);
-        msg_ou(att0, sel_registerName("setDestinationRGBBlendFactor:".ptr), MTL_BLEND_FACTOR_ONE_MINUS_SRC_A);
-        msg_ou(att0, sel_registerName("setSourceAlphaBlendFactor:".ptr), MTL_BLEND_FACTOR_SRC_ALPHA);
-        msg_ou(att0, sel_registerName("setDestinationAlphaBlendFactor:".ptr), MTL_BLEND_FACTOR_ONE_MINUS_SRC_A);
+        att0 := desc.colorAttachments().objectAtIndexedSubscript(0);
+        att0.setPixelFormat(self.target_format);
+        att0.setBlendingEnabled(1);
+        att0.setSourceRGBBlendFactor(MTL_BLEND_FACTOR_SRC_ALPHA);
+        att0.setDestinationRGBBlendFactor(MTL_BLEND_FACTOR_ONE_MINUS_SRC_A);
+        att0.setSourceAlphaBlendFactor(MTL_BLEND_FACTOR_SRC_ALPHA);
+        att0.setDestinationAlphaBlendFactor(MTL_BLEND_FACTOR_ONE_MINUS_SRC_A);
 
-        msg_pipe : (*void, *void, *void, **void) -> *void abi(.c) = xx objc_msgSend;
         err2 : *void = null;
-        state := msg_pipe(self.device,
-            sel_registerName("newRenderPipelineStateWithDescriptor:error:".ptr),
-            desc, @err2);
+        state := self.device.newRenderPipelineStateWithDescriptor_error(desc, @err2);
         if state == null {
             NSLog(xx "[metal] pipeline state creation failed\n");
             return 0;
@@ -447,10 +486,7 @@ impl GPU for MetalGPU {
         if size_bytes <= 0 { return 0; }
 
         // MTLResourceStorageModeShared is the default (option value 0).
-        msg_buf : (*void, *void, u64, u64) -> *void abi(.c) = xx objc_msgSend;
-        buf := msg_buf(self.device,
-            sel_registerName("newBufferWithLength:options:".ptr),
-            xx size_bytes, 0);
+        buf := self.device.newBufferWithLength_options(xx size_bytes, 0);
         if buf == null { return 0; }
 
         self.buffers.append(buf, self.parent_allocator);
@@ -463,8 +499,7 @@ impl GPU for MetalGPU {
         if data == null { return; }
         if size_bytes <= 0 { return; }
 
-        msg_o : (*void, *void) -> *void abi(.c) = xx objc_msgSend;
-        dst := msg_o(mbuf, sel_registerName("contents".ptr));
+        dst := mbuf.contents();
         if dst == null { return; }
         c.memcpy(dst, data, size_bytes);
     }
@@ -476,8 +511,7 @@ impl GPU for MetalGPU {
         if size_bytes <= 0 { return; }
         if byte_offset < 0 { return; }
 
-        msg_o : (*void, *void) -> *void abi(.c) = xx objc_msgSend;
-        base := msg_o(mbuf, sel_registerName("contents".ptr));
+        base := mbuf.contents();
         if base == null { return; }
         // Add byte_offset via integer arithmetic — `@dst[i]` on `[*]u8`
         // already does this, but we keep this form explicit so a future
@@ -502,22 +536,16 @@ impl GPU for MetalGPU {
             bytes_per_pixel = 1;
         }
 
-        // [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:width:height:mipmapped:]
-        MTLTextureDescriptor := objc_getClass("MTLTextureDescriptor".ptr);
-        msg_desc : (*void, *void, u64, u64, u64, u8) -> *void abi(.c) = xx objc_msgSend;
-        desc := msg_desc(MTLTextureDescriptor,
-            sel_registerName("texture2DDescriptorWithPixelFormat:width:height:mipmapped:".ptr),
+        desc := MTLTextureDescriptor.texture2DDescriptorWithPixelFormat_width_height_mipmapped(
             pixel_format, xx w, xx h, 0);
         if desc == null { return 0; }
 
         // Force shared storage so the CPU can keep writing pixels (atlas updates,
         // sprite uploads). On iOS-sim under Apple Silicon the convenience class
         // method's default storage isn't reliably shared for every format.
-        msg_ou_void : (*void, *void, u64) -> void abi(.c) = xx objc_msgSend;
-        msg_ou_void(desc, sel_registerName("setStorageMode:".ptr), MTL_STORAGE_MODE_SHARED);
+        desc.setStorageMode(MTL_STORAGE_MODE_SHARED);
 
-        msg_oo : (*void, *void, *void) -> *void abi(.c) = xx objc_msgSend;
-        tex := msg_oo(self.device, sel_registerName("newTextureWithDescriptor:".ptr), desc);
+        tex := self.device.newTextureWithDescriptor(desc);
         if tex == null { return 0; }
 
         slot : TextureSlot = .{ tex = tex, bytes_per_pixel = bytes_per_pixel };
@@ -546,12 +574,7 @@ impl GPU for MetalGPU {
             size   = .{ width = xx w, height = xx h, depth = 1 },
         };
         bytes_per_row : u64 = xx (slot.bytes_per_pixel * w.(u32));
-
-        // [tex replaceRegion:region mipmapLevel:0 withBytes:pixels bytesPerRow:bytes_per_row]
-        msg_replace : (*void, *void, MTLRegion, u64, *void, u64) -> void abi(.c) = xx objc_msgSend;
-        msg_replace(slot.tex,
-            sel_registerName("replaceRegion:mipmapLevel:withBytes:bytesPerRow:".ptr),
-            region, 0, pixels, bytes_per_row);
+        slot.tex.replaceRegion_mipmapLevel_withBytes_bytesPerRow(region, 0, pixels, bytes_per_row);
     }
 
     // ── Destroy ──────────────────────────────────────────────────────────
@@ -568,8 +591,7 @@ impl GPU for MetalGPU {
         if h64 > self.shaders.len { return; }
         obj := self.shaders.items[sh - 1];
         if obj == null { return; }
-        msg : (*void, *void) -> void abi(.c) = xx objc_msgSend;
-        msg(obj, sel_registerName("release".ptr));
+        obj.release();
         self.shaders.items[sh - 1] = null;
     }
 
@@ -579,8 +601,7 @@ impl GPU for MetalGPU {
         if h64 > self.buffers.len { return; }
         obj := self.buffers.items[buf - 1];
         if obj == null { return; }
-        msg : (*void, *void) -> void abi(.c) = xx objc_msgSend;
-        msg(obj, sel_registerName("release".ptr));
+        obj.release();
         self.buffers.items[buf - 1] = null;
     }
 
@@ -590,8 +611,7 @@ impl GPU for MetalGPU {
         if h64 > self.textures.len { return; }
         obj := self.textures.items[tex - 1].tex;
         if obj == null { return; }
-        msg : (*void, *void) -> void abi(.c) = xx objc_msgSend;
-        msg(obj, sel_registerName("release".ptr));
+        obj.release();
         self.textures.items[tex - 1].tex = null;
         self.textures.items[tex - 1].bytes_per_pixel = 0;
     }
@@ -604,17 +624,14 @@ impl GPU for MetalGPU {
         if self.encoder == null { return; }
         state := self.lookup_shader(sh);
         if state == null { return; }
-        msg : (*void, *void, *void) -> void abi(.c) = xx objc_msgSend;
-        msg(self.encoder, sel_registerName("setRenderPipelineState:".ptr), state);
+        self.encoder.setRenderPipelineState(state);
     }
 
     set_vertex_buffer :: (self: *MetalGPU, buf: BufferHandle) {
         if self.encoder == null { return; }
         mbuf := self.lookup_buffer(buf);
         if mbuf == null { return; }
-        // [encoder setVertexBuffer:buf offset:0 atIndex:0]
-        msg : (*void, *void, *void, u64, u64) -> void abi(.c) = xx objc_msgSend;
-        msg(self.encoder, sel_registerName("setVertexBuffer:offset:atIndex:".ptr), mbuf, 0, 0);
+        self.encoder.setVertexBuffer_offset_atIndex(mbuf, 0, 0);
     }
 
     set_texture :: (self: *MetalGPU, slot: u32, tex: TextureHandle) {
@@ -624,45 +641,32 @@ impl GPU for MetalGPU {
         if h64 > self.textures.len { return; }
         mtex := self.textures.items[tex - 1].tex;
         if mtex == null { return; }
-        // [encoder setFragmentTexture:tex atIndex:slot]
-        msg : (*void, *void, *void, u64) -> void abi(.c) = xx objc_msgSend;
-        msg(self.encoder, sel_registerName("setFragmentTexture:atIndex:".ptr), mtex, xx slot);
+        self.encoder.setFragmentTexture_atIndex(mtex, xx slot);
     }
 
     set_vertex_constants :: (self: *MetalGPU, slot: u32, data: *void, size_bytes: i64) {
         if self.encoder == null { return; }
         if data == null { return; }
         if size_bytes <= 0 { return; }
-        // [encoder setVertexBytes:data length:size_bytes atIndex:slot]
-        msg : (*void, *void, *void, u64, u64) -> void abi(.c) = xx objc_msgSend;
-        msg(self.encoder, sel_registerName("setVertexBytes:length:atIndex:".ptr),
-            data, xx size_bytes, xx slot);
+        self.encoder.setVertexBytes_length_atIndex(data, xx size_bytes, xx slot);
     }
 
     set_scissor :: (self: *MetalGPU, x: i32, y: i32, w: i32, h: i32) {
         if self.encoder == null { return; }
-        rect : MTLScissorRect = .{ x = xx x, y = xx y, width = xx w, height = xx h };
-        // [encoder setScissorRect:rect]  (MTLScissorRect is 32 bytes → ptr byval)
-        msg : (*void, *void, MTLScissorRect) -> void abi(.c) = xx objc_msgSend;
-        msg(self.encoder, sel_registerName("setScissorRect:".ptr), rect);
+        self.encoder.setScissorRect(.{ x = xx x, y = xx y, width = xx w, height = xx h });
     }
 
     disable_scissor :: (self: *MetalGPU) {
         if self.encoder == null { return; }
         // Metal has no "disable scissor" — set the rect to cover the full
         // drawable so subsequent draws aren't clipped.
-        rect : MTLScissorRect = .{ x = 0, y = 0, width = xx self.pixel_w, height = xx self.pixel_h };
-        msg : (*void, *void, MTLScissorRect) -> void abi(.c) = xx objc_msgSend;
-        msg(self.encoder, sel_registerName("setScissorRect:".ptr), rect);
+        self.encoder.setScissorRect(.{ x = 0, y = 0, width = xx self.pixel_w, height = xx self.pixel_h });
     }
 
     draw_triangles :: (self: *MetalGPU, vertex_offset: i32, vertex_count: i32) {
         if self.encoder == null { return; }
         if vertex_count <= 0 { return; }
-        // [encoder drawPrimitives:.triangle vertexStart:offset vertexCount:count]
-        msg : (*void, *void, u64, u64, u64) -> void abi(.c) = xx objc_msgSend;
-        msg(self.encoder, sel_registerName("drawPrimitives:vertexStart:vertexCount:".ptr),
+        self.encoder.drawPrimitives_vertexStart_vertexCount(
             MTL_PRIMITIVE_TYPE_TRIANGLE, xx vertex_offset, xx vertex_count);
     }
 }
-
