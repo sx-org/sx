@@ -1,0 +1,164 @@
+// The §6.7 frame core (G3), host-independent: one FrameLoop drives a
+// UiRoot through Drain intents → ApplyInputs → Build → Layout (S1
+// subscopes may open) → Project → Commit → HostEffects → sweep, and
+// publishes a CommittedUiSnapshot per frame. Present is a host concern
+// and does not appear here; v1 pipeline.sx rebases on this core when
+// the host gates land.
+//
+// Memory contract (C8): snapshot data — the scene and the hit list —
+// lives on the frame arena that built it. The a/b double buffer IS the
+// validity story: the latest committed snapshot stays valid through the
+// following frame's handler dispatch, because its arena is not reset
+// until one more tick begins. Handler envs and queued intents get the
+// same second life, which is why intents drained at tick N+1 can safely
+// carry envs from tick N.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/runtime.sx";
+
+// The committed output of one frame (§6.7). The hit list is
+// paint-ordered — emission order during render — so the LAST region
+// containing a point is the top hit; it is what the §6.9 router
+// consumes (G2's second half).
+CommittedUiSnapshot :: struct {
+    revision: i64 = 0;
+    root: UiRootId = .{ value = 0 };
+    generation: i64 = 0;
+    hit_list: List(HitRegion) = .{};
+    scene: RenderTree = .{};
+}
+
+FrameLoop :: struct {
+    arena_a: Arena;
+    arena_b: Arena;
+    snap_a: CommittedUiSnapshot = .{};
+    snap_b: CommittedUiSnapshot = .{};
+    // Parity of the latest committed slot; -1 before the first commit.
+    // Flipped LAST in tick — a partially built frame is never
+    // observable through snapshot().
+    committed: i64 = -1;
+    revision: i64 = 0;
+    generation: i64 = 0;
+    frame_index: i64 = 0;
+    // Queued mutations (I11): handlers and host callbacks never mutate
+    // mid-phase — they intend, and the mutation runs at the top of the
+    // next tick.
+    intents: List(Closure()) = .{};
+    // Deferred host work (I13): build is hermetic; effects drain after
+    // commit.
+    effects: List(Closure()) = .{};
+    // ApplyInputs consumer — the router plugs in here (G2 second half).
+    // Without one, the queue drains to discard so it cannot grow
+    // unboundedly.
+    on_input: ?Closure(*InputEvent) = null;
+    gpa: Allocator;
+
+    init :: (gpa: Allocator = context.allocator) -> FrameLoop {
+        FrameLoop.{
+            gpa = gpa,
+            arena_a = Arena.init(gpa, 262144),
+            arena_b = Arena.init(gpa, 262144),
+        }
+    }
+
+    intend :: (self: *FrameLoop, f: Closure()) {
+        self.intents.append(f, self.gpa);
+    }
+
+    host_effect :: (self: *FrameLoop, f: Closure()) {
+        self.effects.append(f, self.gpa);
+    }
+
+    // The latest committed frame — null before the first tick completes.
+    snapshot :: (self: *FrameLoop) -> ?*CommittedUiSnapshot {
+        if self.committed < 0 { return null; }
+        if self.committed == 0 then @self.snap_a else @self.snap_b
+    }
+
+    // One frame over `root`, phases in §6.7 order.
+    tick :: (self: *FrameLoop, root: *UiRoot, body: Closure() -> View, width: f32, height: f32) -> *CommittedUiSnapshot {
+        // Drain intents. Envs may live on the PREVIOUS frame's arena —
+        // still valid here, reset only below.
+        i := 0;
+        while i < self.intents.len {
+            f := self.intents.items[i];
+            f();
+            i += 1;
+        }
+        self.intents.len = 0;
+
+        // ApplyInputs — whatever the consumer queries, it sees the
+        // PREVIOUS committed snapshot; this frame does not exist yet.
+        if h := self.on_input {
+            root.input.drain(h);
+        } else {
+            root.input.clear();
+        }
+
+        // Build → Layout → Project on this parity's arena and slot.
+        parity := self.frame_index & 1;
+        arena : *Arena = if parity == 0 then @self.arena_a else @self.arena_b;
+        arena.reset();
+        snap : *CommittedUiSnapshot = if parity == 0 then @self.snap_a else @self.snap_b;
+        // The slot's backings died with the arena reset — detach, never free.
+        snap.scene.nodes.items = null;
+        snap.scene.nodes.len = 0;
+        snap.scene.nodes.cap = 0;
+        snap.hit_list.items = null;
+        snap.hit_list.len = 0;
+        snap.hit_list.cap = 0;
+
+        bounds := Frame.make(0.0, 0.0, width, height);
+        push .{ allocator = arena } {
+            root.begin_build();
+            v : View = ---;
+            push .{ ui = @root.ui, ui_store = @root.store } {
+                v = body();           // typed-return root, value mode (no sink)
+            }
+            // Layout — subscope builds may open here (S1).
+            v.size_that_fits(ProposedSize.fixed(width, height));
+            v.layout(bounds);
+            // Project — scene + paint-ordered hit list.
+            ctx := RenderContext.init(@snap.scene);
+            ctx.hits = @snap.hit_list;
+            v.render(@ctx, bounds);
+        }
+
+        // Commit: fill everything, flip `committed` last.
+        self.revision += 1;
+        self.generation += 1;
+        snap.revision = self.revision;
+        snap.root = root.id;
+        snap.generation = self.generation;
+        self.committed = parity;
+
+        // HostEffects — after commit, synchronously.
+        i = 0;
+        while i < self.effects.len {
+            f := self.effects.items[i];
+            f();
+            i += 1;
+        }
+        self.effects.len = 0;
+
+        // (Present is the host's.) Sweep — after the committed build.
+        root.commit_build();
+
+        self.frame_index += 1;
+        snap
+    }
+
+    deinit :: (self: *FrameLoop) {
+        self.intents.deinit(self.gpa);
+        self.effects.deinit(self.gpa);
+        self.arena_a.deinit();
+        self.arena_b.deinit();
+    }
+}

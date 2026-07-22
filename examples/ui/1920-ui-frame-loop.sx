@@ -1,0 +1,118 @@
+// The §6.7 frame core (modules/ui/frame.sx): phases run in order —
+// intents drain first (envs from the previous frame's arena stay valid,
+// the C8 double-buffer second life), inputs apply against the PREVIOUS
+// committed snapshot, then Build → Layout → Project fill the parity
+// slot, commit flips last, host effects drain after commit, and the
+// store sweeps on the committed build. The snapshot carries revision,
+// root id, generation, the paint-ordered hit list (declared during
+// render), and the scene.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/runtime.sx";
+#import "modules/ui/frame.sx";
+
+// Phase-order log: I = intent, A = input, B = build, E = host effect.
+g_log : [16]u8 = .[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+g_n : i64 = 0;
+mark :: (c: u8) { g_log[g_n] = c; g_n += 1; }
+
+g_counter : i64 = 0;
+g_boost : i64 = 0;
+g_input_rev : i64 = -100;
+
+// A leaf that declares itself interactive: its hit region rides the
+// snapshot, paint-ordered.
+Tappable :: struct {
+    eid: u64;
+    w, h: f32;
+}
+impl View for Tappable {
+    size_that_fits :: (self: *Tappable, proposal: ProposedSize) -> Size {
+        Size.{ width = self.w, height = self.h }
+    }
+    layout :: (self: *Tappable, bounds: Frame) {}
+    render :: (self: *Tappable, ctx: *RenderContext, frame: Frame) {
+        ctx.add_rect(frame, COLOR_BLUE);
+        ctx.hit_region(self.eid, frame);
+    }
+    handle_event :: (self: *Tappable, event: *Event, frame: Frame) -> bool { false }
+}
+
+home :: () -> View {
+    mark(66);                       // B
+    n := use_state(i64, 0);
+    n.set(n.get() + 1);
+    g_counter = n.get();
+    vstack(0.0) {
+        place(Tappable.{ eid = element_id().value, w = 40.0, h = 20.0 }.(View));
+    }
+}
+
+main :: () {
+    loop := FrameLoop.init();
+    root := UiRoot.init(.{ value = 7 });
+    // Closures capture by value — take a pointer so handlers reach the
+    // REAL loop (snapshot reads and intend writes).
+    lp := @loop;
+
+    // The input consumer records what the world looks like DURING
+    // ApplyInputs: the previous frame's revision (or none at all).
+    loop.on_input = (ev: *InputEvent) {
+        mark(65);                   // A
+        if s := lp.snapshot() {
+            g_input_rev = s.revision;
+        } else {
+            g_input_rev = -1;
+        }
+    };
+
+    // Tick 1: intent queued up front runs before the build; the input
+    // handler sees NO committed snapshot yet.
+    loop.intend(() { mark(73); });  // I
+    loop.host_effect(() { mark(69); });  // E
+    root.input.push(.pointer_down(.{ pointer = .{ value = 1 }, position = .{ x = 5.0, y = 5.0 } }));
+    s1 := loop.tick(@root, home, 100.0, 50.0);
+    process.assert(g_log[0] == 73 and g_log[1] == 65 and g_log[2] == 66 and g_log[3] == 69,
+        "phase order: intent, input, build, effect");
+    process.assert(g_input_rev == -1, "inputs applied before any committed frame see none");
+    process.assert(s1.revision == 1 and s1.generation == 1, "first commit");
+    process.assert(s1.root == root.id, "snapshot names its root");
+    process.assert(s1.hit_list.len == 1, "render declared one hit region");
+    process.assert(s1.hit_list.items[0].frame.size.width == 40.0, "hit frame is the leaf's");
+    process.assert(g_counter == 1, "state claimed");
+
+    // Tick 2: state persists; the input handler now sees revision 1;
+    // an intent queued FROM the handler runs at tick 3, its env crossing
+    // the arena swap intact.
+    root.input.push(.pointer_move(.{ pointer = .{ value = 1 }, position = .{ x = 6.0, y = 5.0 } }));
+    g_n = 0;
+    loop.on_input = (ev: *InputEvent) {
+        mark(65);
+        if s := lp.snapshot() { g_input_rev = s.revision; }
+        lp.intend(() { mark(73); g_boost = g_counter + 100; });
+    };
+    s2 := loop.tick(@root, home, 100.0, 50.0);
+    process.assert(g_input_rev == 1, "ApplyInputs targets the PREVIOUS committed snapshot");
+    process.assert(s2.revision == 2, "revision advances");
+    process.assert(g_counter == 2, "store state persists across ticks");
+    process.assert(loop.snapshot() != null, "latest committed visible");
+
+    // Tick 3: the handler's intent fires first — before this build.
+    g_n = 0;
+    loop.on_input = null;
+    s3 := loop.tick(@root, home, 100.0, 50.0);
+    process.assert(g_log[0] == 73 and g_log[1] == 66, "handler intent drained at the NEXT tick, before build");
+    process.assert(g_boost == 102, "the intent saw PRE-build state (2) — it ran before this frame existed");
+    process.assert(g_counter == 3, "the build then claimed as usual");
+    process.assert(s3.revision == 3 and s3.hit_list.len == 1, "steady frames");
+
+    print("ok {} {} {}\n", s3.revision, g_counter, s3.hit_list.len);
+    loop.deinit();
+    root.teardown();
+}

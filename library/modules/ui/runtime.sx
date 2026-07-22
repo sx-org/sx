@@ -16,6 +16,7 @@
 #import "modules/std.sx";
 #import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
 
 // §4 completes: the surface identity, and the host-registration identity.
 
@@ -41,10 +42,11 @@ UiRoot :: struct {
     id: UiRootId = .{ value = 0 };
     ui: Ui = .{};
     store: StateStore;
+    input: InputQueue;
     surface_gen: u64 = 0;
 
     init :: (id: UiRootId, gpa: Allocator = context.allocator) -> UiRoot {
-        UiRoot.{ id = id, store = StateStore.init(id, gpa) }
+        UiRoot.{ id = id, store = StateStore.init(id, gpa), input = InputQueue.init(gpa) }
     }
 
     // One build transaction against this root's identity + store.
@@ -72,9 +74,10 @@ UiRoot :: struct {
     // Invalidate + release every entry now; no frame, no present. The Ui
     // identity scratch is frame-owned (allocated from the ambient build
     // allocator at append time) and is not the root's to free — the
-    // STORE is the owned resource.
+    // store and the input queue are the owned resources.
     teardown :: (self: *UiRoot) {
         self.store.teardown();
+        self.input.deinit();
     }
 }
 

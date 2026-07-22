@@ -58,6 +58,14 @@ RenderTree :: struct {
     }
 }
 
+// An interactive region declared during render (§6.9): paint order =
+// emission order, so the last region containing a point is the top hit.
+// The id is the raw ElementId hash — render.sx sits below compose.sx.
+HitRegion :: struct {
+    id: u64;
+    frame: Frame;
+}
+
 // Stateful builder — views use this to emit render nodes
 
 RenderContext :: struct {
@@ -65,6 +73,9 @@ RenderContext :: struct {
     clip_depth: i64;
     opacity: f32;
     depth: i64;
+    // Optional hit sink: the frame loop points this at the committed
+    // snapshot's list; null (the default) makes declarations no-ops.
+    hits: *List(HitRegion) = null;
 
     init :: (tree: *RenderTree) -> RenderContext {
         RenderContext.{
@@ -72,6 +83,12 @@ RenderContext :: struct {
             clip_depth = 0,
             opacity = 1.0,
             depth = 0
+        }
+    }
+
+    hit_region :: (self: *RenderContext, id: u64, frame: Frame) {
+        if self.hits != null {
+            self.hits.append(.{ id = id, frame = frame });
         }
     }
 
