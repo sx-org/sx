@@ -1,0 +1,11 @@
+// No imports: `Into` is not nameable here, so this impl cannot
+// register — issue 0346's production shape (the objc.sx NSString
+// bridge). The importer's build fails loudly instead of the impl
+// dying silently.
+DeadBox :: struct { v: i64; }
+
+g_dead : DeadBox = .{ v = 99 };
+
+impl Into(*DeadBox) for string {
+    convert :: (self: string) -> *DeadBox { return @g_dead; }
+}

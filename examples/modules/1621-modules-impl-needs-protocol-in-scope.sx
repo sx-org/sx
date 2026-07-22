@@ -1,0 +1,14 @@
+// Issue 0346, cross-module production shape: the imported module
+// declares `impl Into(*DeadBox) for string` but imports nothing, so
+// `Into` is not nameable in ITS scope. Before the fix the impl was
+// dropped silently and `xx "abc"` here degraded to the reinterpret
+// spill (b.v read the string's header bytes; pointer targets then
+// segfaulted — the objc.sx NSString bridge died exactly this way).
+// Now the build rejects the dead impl at its declaration.
+#import "modules/std.sx";
+#import "1621-modules-impl-needs-protocol-in-scope/dead_impl.sx";
+
+main :: () {
+    b : *DeadBox = xx "abc";
+    print("b.v = {}\n", b.v);
+}

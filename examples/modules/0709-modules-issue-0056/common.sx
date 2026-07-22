@@ -3,10 +3,18 @@
 // Impl blocks are anonymous (`declName() == null`), so the diamond-import
 // dedup in imports.zig (`mergeFlat`) skips them and appends the node once per
 // path — `registerParamImpl` then trips its same-file duplicate check.
+//
+// std must be imported HERE: the impl registers only if `Into` is nameable
+// in this module's scope (issue 0346). The +35 keeps the pin honest — a
+// bit-identity convert is indistinguishable from the reinterpret spill a
+// dead impl degrades to, so the old `.{ v = self }` passed with the impl
+// never running.
+#import "modules/std.sx";
+
 Wrapped :: struct { v: i64; }
 
 impl Into(Wrapped) for i64 {
     convert :: (self: i64) -> Wrapped {
-        return .{ v = self };
+        return .{ v = self + 35 };
     }
 }

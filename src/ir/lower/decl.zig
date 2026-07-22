@@ -311,6 +311,10 @@ pub fn lowerRoot(self: *Lowering, root: *const Node) void {
     // then the user-declared params (with type-erased pointers since JNI
     // doesn't carry sx-side types across the binding).
     self.synthesizeJniMainStubs();
+    // Pass 6: any impl block STILL unregistered has an unresolvable head or
+    // types — every registration opportunity has run. Silence here let a
+    // dead impl degrade its consumers (issue 0346).
+    self.protocolResolver().diagnoseUnregisteredImpls(decls);
     // CP coverage lock: every generic instance carries both a template and an
     // author stamp (body-author ≡ layout-author by construction).
     self.assertInstanceMapsCoincide();

@@ -1,0 +1,23 @@
+// Issue 0346: an impl whose protocol head does not resolve in the
+// declaring module used to be dropped SILENTLY — the impl was dead and
+// every consumer degraded (an `xx` site fell through to the
+// aggregate↔scalar reinterpret, producing garbage values or a segfault
+// downstream). Both the parameterised and the plain impl head now
+// diagnose after all registration passes.
+#import "modules/std.sx";
+
+Box :: struct { v: i64; }
+
+// Parameterised head: `Frobnicate` names no protocol anywhere.
+impl Frobnicate(*Box) for string {
+    convert :: (self: string) -> *Box { return null; }
+}
+
+// Plain head: same rejection through the non-parameterised path.
+impl Munge for Box {
+    munge :: (self: *Box) -> i64 { self.v }
+}
+
+main :: () {
+    print("unreachable — the impls above fail the build\n");
+}

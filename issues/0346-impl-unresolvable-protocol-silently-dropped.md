@@ -1,6 +1,26 @@
 # 0346 — `impl` for a protocol name not in the module's scope is silently dropped
 
-Status: OPEN (discovered during G6 Option B, 2026-07-22)
+Status: RESOLVED 2026-07-22
+
+## Resolution
+
+`ProtocolResolver.diagnoseUnregisteredImpls` (src/ir/protocols.zig),
+called as the last pass of `lowerRoot`: any impl block still absent
+from `registered_protocol_impls` after every registration opportunity
+(scan, order retry, body lowering) is an error, with the failing part
+named — unknown protocol head, unresolvable type argument/source, or
+unresolvable target type. Walks exactly where registration walked
+(top-level decls; namespace decls in full-program hosts).
+
+Pins: examples/diagnostics/1278 (both impl-head shapes reject),
+examples/modules/1621 (the cross-module production shape rejects at
+the declaring module). The fix also EXPOSED a second production
+instance: examples/modules/0709's common.sx (the issue-0056 diamond
+pin) had no std import — its Into impl was dead the whole time and the
+example passed only because the bit-identity convert matched the
+reinterpret spill byte-for-byte. Repaired (std imported, convert made
+non-identity: 7 + 35 = 42) so the pin now proves the impl RUNS exactly
+once.
 
 ## Symptom
 
@@ -64,6 +84,7 @@ CONSUMER's imports, so registration is where the drop must happen.
 
 ## Disposition
 
-The blocking production instance is fixed library-side (objc.sx now
-imports modules/std.sx, activating the bridge — G6 Option B commit).
-The missing-diagnostic/registration bug remains open here.
+The blocking production instance was fixed library-side first (objc.sx
+imports modules/std.sx, activating the bridge — G6 Option B commit
+`fcdc6468`); the compiler-side diagnostic landed after G6 (see
+Resolution).

@@ -1,0 +1,19 @@
+error: unknown protocol 'Frobnicate' in impl — not declared or imported in this module
+  --> examples/diagnostics/1278-diagnostics-impl-unknown-protocol.sx:12:1
+   |
+12 | impl Frobnicate(*Box) for string {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     convert :: (self: string) -> *Box { return null; }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 | }
+   | ^
+
+error: unknown protocol 'Munge' in impl — not declared or imported in this module
+  --> examples/diagnostics/1278-diagnostics-impl-unknown-protocol.sx:17:1
+   |
+17 | impl Munge for Box {
+   | ^^^^^^^^^^^^^^^^^^^^
+18 |     munge :: (self: *Box) -> i64 { self.v }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+19 | }
+   | ^

@@ -711,6 +711,37 @@ pub const ProtocolResolver = struct {
         self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
     }
 
+    /// Issue 0346: an impl block still unregistered after every registration
+    /// pass (scan, order retry, body lowering) has an unresolvable protocol
+    /// head, type argument, or target — the impl is dead code no consumer can
+    /// see (an `xx` site silently degrades to the reinterpret spill). Runs at
+    /// the end of `lowerRoot`; walks exactly where registration walked
+    /// (top-level decls, plus namespace decls in full-program hosts).
+    pub fn diagnoseUnregisteredImpls(self: ProtocolResolver, decls: []const *const Node) void {
+        const diags = self.l.diagnostics orelse return;
+        for (decls) |decl| {
+            switch (decl.data) {
+                .impl_block => {
+                    const ib = &decl.data.impl_block;
+                    if (self.l.registered_protocol_impls.contains(ib)) continue;
+                    const source = decl.source_file orelse self.l.current_source_file;
+                    const saved = diags.current_source_file;
+                    if (source) |src| diags.current_source_file = src;
+                    defer diags.current_source_file = saved;
+                    if (self.resolveProtocol(ib.protocol_name, source) == null) {
+                        diags.addFmt(.err, decl.span, "unknown protocol '{s}' in impl — not declared or imported in this module", .{ib.protocol_name});
+                    } else if (ib.protocol_type_args.len > 0) {
+                        diags.addFmt(.err, decl.span, "impl '{s}' cannot register: a protocol type argument or the source type does not resolve in this module", .{ib.protocol_name});
+                    } else {
+                        diags.addFmt(.err, decl.span, "impl '{s}' cannot register: target type '{s}' does not resolve in this module", .{ ib.protocol_name, ib.target_type });
+                    }
+                },
+                .namespace_decl => |ns| if (self.l.main_file != null) self.diagnoseUnregisteredImpls(ns.decls),
+                else => {},
+            }
+        }
+    }
+
     /// Register a parameterised-protocol impl into `param_impl_map`.
     /// Resolves the protocol's type args + the source type, mangles them, and
     /// stashes the impl's method fn_decls for later monomorphisation by
