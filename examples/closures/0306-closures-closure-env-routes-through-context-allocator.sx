@@ -39,7 +39,7 @@ main :: () -> i32 {
         // `allocViaContext` — which dispatches through the installed
         // tracer's `alloc`.
         captured : i64 = 100;
-        add_capture := closure((y: i64) -> i64 => y + captured);
+        add_capture := (y: i64) -> i64 => y + captured;
         _ = add_capture(1);
     }
     print("Tracer.count = {}\n", tracer.count);

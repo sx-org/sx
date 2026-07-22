@@ -38,7 +38,7 @@ impl Hashable for Probe {
 // references it inside the `#objc_call` arg list. Locked in by
 // `examples/103-ffi-closure-capture.sx`.
 make_hasher :: (recv: *void) -> Closure(i32) -> i64 {
-    closure((dummy: i32) -> i64 => #objc_call(i64)(recv, "hash"))
+    (dummy: i32) -> i64 => #objc_call(i64)(recv, "hash")
 }
 
 // ── 4. Generic function body — instantiated per call site ───────────

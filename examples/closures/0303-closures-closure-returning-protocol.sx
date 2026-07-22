@@ -22,7 +22,7 @@ main :: () -> void {
     out("direct call works\n");
 
     // Closure call crashes:
-    c := closure(make_thing);
+    c := make_thing;
     result := c();
     out("closure call works\n");
 }

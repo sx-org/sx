@@ -3367,7 +3367,7 @@ pub const Parser = struct {
                 self.advance();
                 return try self.createNode(start, .{ .identifier = .{ .name = name, .is_raw = is_raw } });
             },
-            .kw_closure, .kw_protocol, .kw_impl, .kw_ufcs => {
+            .kw_protocol, .kw_impl, .kw_ufcs => {
                 // Contextual keywords used as identifiers in expressions
                 const name = self.tokenSlice(self.current);
                 self.advance();
@@ -4340,7 +4340,7 @@ pub const Parser = struct {
     /// keywords in specific syntactic positions (e.g., `protocol`, `impl`).
     fn isIdentLike(self: *const Parser) bool {
         return switch (self.current.tag) {
-            .identifier, .kw_protocol, .kw_impl, .kw_ufcs, .kw_closure => true,
+            .identifier, .kw_protocol, .kw_impl, .kw_ufcs => true,
             else => false,
         };
     }

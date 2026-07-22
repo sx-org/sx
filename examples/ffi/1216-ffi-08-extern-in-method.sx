@@ -39,7 +39,7 @@ impl Doubler for Counter {
 
 // ── 3. Closure body calling a #extern fn ────────────────────────────
 make_adder :: (bias: i32) -> Closure(i32) -> i32 {
-    closure((x: i32) -> i32 => ffi_method_helper(x) + bias)
+    (x: i32) -> i32 => ffi_method_helper(x) + bias
 }
 
 main :: () -> i32 {

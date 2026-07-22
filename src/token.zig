@@ -38,7 +38,6 @@ pub const Tag = enum {
     kw_push, // push
     kw_ufcs, // ufcs
     kw_in, // in
-    kw_closure, // closure
     kw_protocol, // protocol
     kw_impl, // impl
     kw_Self, // Self (in protocol declarations)
@@ -280,7 +279,6 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
     .{ "push", .kw_push },
     .{ "ufcs", .kw_ufcs },
     .{ "in", .kw_in },
-    .{ "closure", .kw_closure },
     .{ "protocol", .kw_protocol },
     .{ "impl", .kw_impl },
     .{ "Self", .kw_Self },

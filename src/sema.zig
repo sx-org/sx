@@ -1041,7 +1041,7 @@ pub const Analyzer = struct {
         }
 
         // Built-in names that aren't declared in source
-        const builtins = [_][]const u8{ "io", "true", "false", "closure", "size_of", "align_of", "malloc", "free", "memcpy", "memset", "context" };
+        const builtins = [_][]const u8{ "io", "true", "false", "size_of", "align_of", "malloc", "free", "memcpy", "memset", "context" };
         for (builtins) |b| {
             if (std.mem.eql(u8, name, b)) return;
         }

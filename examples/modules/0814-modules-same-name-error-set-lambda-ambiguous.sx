@@ -1,5 +1,5 @@
 // E6b — ambiguity guard for an ERROR-SET name in a CLOSURE-LITERAL return
-// annotation (`closure(() -> !IoErr { … })`). `main` flat-imports two modules
+// annotation (`() -> !IoErr { … }`). `main` flat-imports two modules
 // that each author a same-name `IoErr` and authors none itself, so the closure
 // literal's `-> !IoErr` channel is a genuine collision the source cannot
 // disambiguate. It must emit the LOUD "type 'IoErr' is ambiguous" diagnostic and
@@ -22,6 +22,6 @@
 #import "0814-modules-same-name-error-set-lambda-ambiguous/b.sx";
 
 main :: () -> i32 {
-    fail_io := closure(() -> !IoErr { return; });
+    fail_io := () -> !IoErr { return; };
     return 0;
 }

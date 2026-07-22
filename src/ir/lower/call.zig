@@ -597,61 +597,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         }
     }
 
-    // Handle closure(fn_or_lambda) — wrap bare functions into closures
-    if (c.callee.data == .identifier and std.mem.eql(u8, c.callee.data.identifier.name, "closure")) {
-        if (c.args.len >= 1) {
-            const arg = c.args[0];
-            // If argument is a bare function name, create a proper closure from it
-            if (arg.data == .identifier) {
-                const fn_name = arg.data.identifier.name;
-                // `closure(fn)` over a genuine flat same-name
-                // collision must capture the RESOLVED author's FuncId, not the
-                // first-wins winner's. Plain bare name only; `.ambiguous`
-                // → loud diagnostic; `.none` → existing first-wins path.
-                const closure_fid: ?FuncId = blk_cl: {
-                    if (self.ufcsAliasTarget(fn_name) == null and
-                        (if (self.scope) |scope| scope.lookup(fn_name) == null else true))
-                    {
-                        if (self.current_source_file) |caller_file| {
-                            switch (self.selectPlainCallableAuthor(fn_name, caller_file)) {
-                                .func => |sf| {
-                                    var selected = sf;
-                                    break :blk_cl self.selectedFuncId(&selected, fn_name);
-                                },
-                                .ambiguous => {
-                                    if (self.diagnostics) |d|
-                                        d.addFmt(.err, arg.span, "'{s}' is ambiguous; declared by multiple imported modules — qualify the call", .{fn_name});
-                                    return Ref.none;
-                                },
-                                .none => {},
-                            }
-                        }
-                    }
-                    if (!self.lowered_functions.contains(fn_name)) {
-                        self.lazyLowerFunction(fn_name);
-                    }
-                    break :blk_cl self.resolveFuncByName(fn_name);
-                };
-                if (closure_fid) |fid| {
-                    const func = &self.module.functions.items[@intFromEnum(fid)];
-                    // Build closure type from user-visible params only —
-                    // skip the implicit __sx_ctx param.
-                    var param_types_list = std.ArrayList(TypeId).empty;
-                    defer param_types_list.deinit(self.alloc);
-                    const skip: usize = if (func.has_implicit_ctx) 1 else 0;
-                    for (func.params[skip..]) |p| {
-                        param_types_list.append(self.alloc, p.ty) catch unreachable;
-                    }
-                    const closure_ty = self.module.types.closureType(param_types_list.items, func.ret);
-                    const closure_info = self.module.types.get(closure_ty).closure;
-                    const tramp_id = self.createBareFnTrampoline(fid, closure_info);
-                    return self.builder.closureCreate(tramp_id, Ref.none, closure_ty);
-                }
-            }
-            // Lambda or other expression — already produces closure_create
-            return self.lowerExpr(arg);
-        }
-    }
 
     // Early detection of comptime-expanded calls (e.g. print) — skip arg evaluation
     // since lowerComptimeCall re-evaluates args from AST (avoiding double evaluation)

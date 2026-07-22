@@ -3003,26 +3003,28 @@ Closure(param_types)          // void return: Closure(i64) -> void
 Closure(..Ts) -> R            // pack-expanded params (see Variadic Heterogeneous Type Packs)
 ```
 
-#### Creating Closures — `closure()` intrinsic
+#### Creating Closures — lambda literals
+A lambda literal IS the closure value — there is no wrapping
+intrinsic, and `closure` is an ordinary identifier, not a keyword.
 ```sx
 offset := 50;
-f := closure((x: i32) -> i32 => x + offset);  // expression body
-g := closure((x: i32) -> i32 {                 // block body
+f := (x: i32) -> i32 => x + offset;   // expression body
+g := (x: i32) -> i32 {                 // block body
     if x < 0 { return 0; }
     return x + offset;
-});
+};
 ```
 
-The `closure()` intrinsic:
-1. Analyzes the lambda body for free variables (variables from outer scope)
-2. Allocates an env struct on the heap (via `malloc`) containing captured values
+A lambda literal:
+1. Analyzes its body for free variables (variables from outer scope)
+2. Allocates an env struct on the heap containing captured values
 3. Generates a trampoline function with signature `(env: *void, params...) -> R`
-4. Returns a `Closure` value `{ trampoline, env_ptr }`
+4. Evaluates to a `Closure` value `{ trampoline, env_ptr }`
 
 **Capture semantics**: capture by value (snapshot at creation time). Mutating the original variable after creating the closure does not affect the captured value.
 ```sx
 n := 10;
-f := closure((x: i64) -> i64 => x + n);
+f := (x: i64) -> i64 => x + n;
 n = 999;
 print("{}\n", f(5));  // 15, not 1004
 ```
@@ -3046,7 +3048,7 @@ apply(double, 10);  // double auto-promoted to Closure
 Functions can return closures, enabling the factory pattern:
 ```sx
 make_adder :: (n: i32) -> Closure(i32) -> i32 {
-    return closure((x: i32) -> i32 => x + n);
+    return (x: i32) -> i32 => x + n;
 }
 add5 := make_adder(5);
 print("{}\n", add5(100));  // 105
@@ -3068,7 +3070,7 @@ if handler := btn.on_click {
 #### Memory
 Closure env is allocated via `context.allocator`. The compiler auto-initializes `context` with a default GPA (malloc/free wrapper) at the start of `main()`. Use `push Context` to override with a custom allocator. Auto-promoted closures have a null env and require no allocation.
 ```sx
-f := closure((x: i64) -> i64 => x + 10);  // env allocated via default GPA
+f := (x: i64) -> i64 => x + 10;   // env allocated via default GPA
 print("{}\n", f(5));
 ```
 
@@ -4390,7 +4392,7 @@ function, or at top level, is rejected.
 
 - **Explicit annotation required.** A closure literal's value type is inferred
   as today, but if its body raises or `try`-escapes, the `!` channel is **not**
-  inferred — declare it (`closure((x: i32) -> (i32, !) { ... })`). This keeps
+  inferred — declare it (`(x: i32) -> (i32, !) { ... }`). This keeps
   adding a `raise` from silently changing a lambda's type.
 - **Program-wide union per shape.** All `Closure(<sig>) -> (T, !)` occurrences
   with the same signature share one inferred-set node; the SCC pass unions

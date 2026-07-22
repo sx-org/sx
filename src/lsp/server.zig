@@ -1800,7 +1800,6 @@ pub const Server = struct {
             .kw_push,
             .kw_ufcs,
             .kw_in,
-            .kw_closure,
             .kw_protocol,
             .kw_impl,
             .kw_inline,

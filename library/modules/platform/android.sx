@@ -12,7 +12,7 @@
 //   3. Render thread: brings up EGL on the ANativeWindow, then calls
 //      `sx_app_main()` — the user's entry-point, which sets up the
 //      AndroidPlatform / GPU / pipeline globals and ends in
-//      `run_frame_loop(closure(frame))`.
+//      `run_frame_loop(frame)`.
 //   4. `run_frame_loop` drives the loop: drain touch events queue,
 //      invoke `frame_fn`, `eglSwapBuffers`, sleep ~1ms.
 //   5. Java `onTouchEvent` → native `sx_onTouchEvent`: push the

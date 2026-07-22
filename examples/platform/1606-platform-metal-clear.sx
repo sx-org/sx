@@ -116,7 +116,7 @@ main :: () -> i32 {
     gpu : *MetalGPU = xx context.allocator.alloc_bytes(size_of(MetalGPU));
     g_gpu = gpu;
 
-    uikit_app_run(plat, closure(frame));
+    uikit_app_run(plat, frame);
     plat.shutdown();
     0
 }

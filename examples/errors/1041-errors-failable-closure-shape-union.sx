@@ -20,8 +20,8 @@ main :: () -> i32 {
         // Two literals of the SAME shape raising DIFFERENT tags both feed the
         // one shared `Closure(i32)->(i32,!)` union node.
         handlers : List(Closure(i32) -> (i32, !)) = .{};
-        handlers.append(closure((x: i32) -> (i32, !) { if x < 0 { raise error.Negative; } return x * 2; }));
-        handlers.append(closure((x: i32) -> (i32, !) { if x == 0 { raise error.Other; } return x + 100; }));
+        handlers.append((x: i32) -> (i32, !) { if x < 0 { raise error.Negative; } return x * 2; });
+        handlers.append((x: i32) -> (i32, !) { if x == 0 { raise error.Other; } return x + 100; });
 
         // success paths
         print("ok0={}\n", dispatch(handlers.items[0], 5) catch (e) 0);   // 10

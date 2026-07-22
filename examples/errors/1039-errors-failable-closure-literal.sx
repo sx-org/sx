@@ -1,4 +1,4 @@
-// Failable closure literals (ERR E5.1): a `closure(...)` literal may declare a
+// Failable closure literals (ERR E5.1): a lambda literal may declare a
 // failable return type — `-> (T, !)` / `-> !Named` — in both block and arrow
 // body forms, and `raise` inside. Called directly through the bound local, the
 // error channel is consumed by `catch` / `or`; passed as a `Closure(...)`
@@ -14,8 +14,8 @@ runwith :: (cb: Closure(i64) -> (i64, !E), n: i64) -> i64 { return cb(n) catch (
 
 main :: () -> i32 {
     // block-body and arrow-body failable closures, called directly
-    m := closure((x: i64) -> (i64, !E) { if x < 0 { raise error.Neg; } return x * 2; });
-    n := closure((x: i64) -> (i64, !E) => x + 1);
+    m := (x: i64) -> (i64, !E) { if x < 0 { raise error.Neg; } return x * 2; };
+    n := (x: i64) -> (i64, !E) => x + 1;
     print("{} {} {} {}\n", m(5) catch (e) 0, m(-1) catch (e) 99, m(-1) or 7, n(40) catch (e) 0); // 10 99 7 41
 
     // failable closure passed as a Closure(...) parameter

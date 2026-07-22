@@ -4,9 +4,9 @@
 // inside a closure slipped through and silently became a 0-field struct.
 // Regression (issue 0064, nested scopes). Expected: error at the annotation; exit 1.
 main :: () -> i32 {
-    f := closure(() -> i32 {
+    f := () -> i32 {
         bad: Coordnate = ---;
         return 0;
-    });
+    };
     return f();
 }

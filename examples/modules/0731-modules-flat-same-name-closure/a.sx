@@ -2,5 +2,5 @@
 // `from_a_closure` / `from_a_value` take a.sx's own author (own == winner →
 // existing path, byte-for-byte unchanged).
 pick :: () -> i64 { return 1; }
-from_a_closure :: () -> i64 { f := closure(pick); return f(); }
+from_a_closure :: () -> i64 { f := pick; return f(); }
 from_a_value   :: () -> i64 { g : () -> i64 = pick; return g(); }

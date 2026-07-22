@@ -1,5 +1,5 @@
 error: lambda body raises; declare its return type explicitly with `-> (T, !)` or `-> (T, !Named)`
-  --> examples/errors/1043-errors-lambda-raise-annotation-hint.sx:18:61
+  --> examples/errors/1043-errors-lambda-raise-annotation-hint.sx:18:53
    |
-18 |     print("{}\n", take(closure((x: i32) -> i32 { if x < 0 { raise error.Neg; } return x; }), -1));
-   |                                                             ^^^^^^^^^^^^^^^^
+18 |     print("{}\n", take((x: i32) -> i32 { if x < 0 { raise error.Neg; } return x; }, -1));
+   |                                                     ^^^^^^^^^^^^^^^^

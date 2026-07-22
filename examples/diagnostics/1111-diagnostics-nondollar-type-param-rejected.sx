@@ -6,5 +6,5 @@
 idwrap :: (T: Type, f: Closure() -> T) -> T { return f(); }
 
 main :: () -> i32 {
-    return idwrap(i32, closure(() -> i32 { return 7; }));
+    return idwrap(i32, () -> i32 { return 7; });
 }

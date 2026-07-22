@@ -11,12 +11,12 @@
 #import "modules/ffi/objc.sx";
 
 passthrough_works :: (recv: *void) -> Closure(i32) -> *void {
-    closure((d: i32) -> *void => recv)  // captures `recv` — fine
+    (d: i32) -> *void => recv  // captures `recv` — fine
 }
 
 passthrough_via_objc_call :: (recv: *void) -> Closure(i32) -> i64 {
     // Same `recv` capture, but inside `#objc_call(...)`'s arg list.
-    closure((d: i32) -> i64 => #objc_call(i64)(recv, "hash"))
+    (d: i32) -> i64 => #objc_call(i64)(recv, "hash")
 }
 
 main :: () -> i32 {

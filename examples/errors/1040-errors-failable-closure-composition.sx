@@ -20,15 +20,15 @@ dbl :: (x: i64) -> (i64, !E) { if x < 0 { raise error.Neg; } return x * 2; }
 main :: () -> i32 {
     // failable closure literal through a bare fn-type param (matching ABI)
     print("bare ok={} err={}\n",
-        bare(closure((x: i64) -> (i64, !E) { if x < 0 { raise error.Neg; } return x * 2; }), 5),
-        bare(closure((x: i64) -> (i64, !E) => x * 2), -1));                 // ok=10; err: arrow never raises → cb(-1) = -2
+        bare((x: i64) -> (i64, !E) { if x < 0 { raise error.Neg; } return x * 2; }, 5),
+        bare((x: i64) -> (i64, !E) => x * 2, -1));                 // ok=10; err: arrow never raises → cb(-1) = -2
 
     // Closure(...) param, try-propagated, then caught at the call site
     print("chain ok={} err={}\n",
-        chain(closure((x: i64) -> (i64, !E) => x + 6), 4) catch (e) 0,        // 10
-        chain(closure((x: i64) -> (i64, !E) { raise error.Neg; }), 1) catch (e) 0); // 0
+        chain((x: i64) -> (i64, !E) => x + 6, 4) catch (e) 0,        // 10
+        chain((x: i64) -> (i64, !E) { raise error.Neg; }, 1) catch (e) 0); // 0
 
     // NON-failable closure literal widened into the failable bare slot
-    print("widen={}\n", bare(closure((x: i64) -> i64 => x + 1), 9));        // 10
+    print("widen={}\n", bare((x: i64) -> i64 => x + 1, 9));        // 10
     return 0;
 }

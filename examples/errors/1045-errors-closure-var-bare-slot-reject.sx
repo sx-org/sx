@@ -16,9 +16,9 @@ bare  :: (cb: (i64) -> i64, n: i64) -> i64 { return cb(n); }
 baref :: (cb: (i64) -> (i64, !E), n: i64) -> i64 { return cb(n) catch (e) -1; }
 
 main :: () -> i32 {
-    inc := closure((x: i64) -> i64 => x + 1);          // capture-free closure var
+    inc := (x: i64) -> i64 => x + 1;          // capture-free closure var
     base := 100;
-    add := closure((x: i64) -> i64 => x + base);       // CAPTURING closure var
+    add := (x: i64) -> i64 => x + base;       // CAPTURING closure var
 
     _ := bare(inc, 9);          // reject: closure value → bare slot
     _ := baref(inc, 9);         // reject: also the ∅-widening crossing

@@ -352,13 +352,13 @@ Router :: struct {
     attach :: (self: *Router, loop: *FrameLoop, root: *UiRoot) {
         self.loop = loop;
         self.root = root;
-        loop.on_input = closure((ev: *InputEvent) { router_dispatch(self, ev); });
+        loop.on_input = (ev: *InputEvent) { router_dispatch(self, ev); };
         // Build-side pressed fills (compose.button) read the router
         // through the per-root Ui hook — compose sits below this
         // module.
-        root.ui.pressed_query = closure((id: u64) -> bool {
+        root.ui.pressed_query = (id: u64) -> bool {
             return self.is_pressed(.{ value = id });
-        });
+        };
     }
 
     drain_gestures :: (self: *Router, f: Closure(*GestureEvent)) {

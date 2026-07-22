@@ -1,6 +1,6 @@
 // b.sx authors its OWN `pick` returning 2. Taking `pick` as a value —
-// `closure(pick)` or `g : () -> i64 = pick` — must capture b.sx's author (2),
+// `f := pick` or `g : () -> i64 = pick` — must capture b.sx's author (2),
 // not the first-wins winner from a.sx (1).
 pick :: () -> i64 { return 2; }
-from_b_closure :: () -> i64 { f := closure(pick); return f(); }
+from_b_closure :: () -> i64 { f := pick; return f(); }
 from_b_value   :: () -> i64 { g : () -> i64 = pick; return g(); }

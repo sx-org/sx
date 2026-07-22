@@ -41,7 +41,7 @@ impl View for DoubleTapPad {
     layout :: (self: *DoubleTapPad, bounds: Frame) {}
     render :: (self: *DoubleTapPad, ctx: *RenderContext, frame: Frame) {
         ctx.add_rect(frame, COLOR_BLUE);
-        ctx.hit_region(self.eid, frame, wait_double_everywhere, closure(pad_tapped));
+        ctx.hit_region(self.eid, frame, wait_double_everywhere, pad_tapped);
     }
 }
 
@@ -49,8 +49,8 @@ pad_tapped :: () { g_pad += 1; }
 
 home :: () -> View {
     vstack(4.0) {
-        button("Alpha", on_tap = closure(() { g_a += 1; }));
-        button("Beta", on_tap = closure(() { g_b += 1; }));
+        button("Alpha", on_tap = () { g_a += 1; });
+        button("Beta", on_tap = () { g_b += 1; });
         e := element_id().value;
         g_pad_eid = e;
         place(DoubleTapPad.{ eid = e, w = 80.0, h = 30.0 }.(View));

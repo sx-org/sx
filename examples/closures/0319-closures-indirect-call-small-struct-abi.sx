@@ -21,7 +21,7 @@ add_hfa :: (h: Hfa) -> f32 { return h.x + h.y; }
 main :: () {
     // Closure with a captured struct + packed struct param (the 0292 repro).
     off_c5 := Point.{ x = 10, y = 20 };
-    f_c5 := closure((p: Point) -> Point => Point.{ x = p.x + off_c5.x, y = p.y + off_c5.y });
+    f_c5 := (p: Point) -> Point => Point.{ x = p.x + off_c5.x, y = p.y + off_c5.y };
     res_c5 := f_c5(Point.{ x = 1, y = 2 });
     print("closure-rstruct: {} {}\n", res_c5.x, res_c5.y);
 
@@ -31,11 +31,11 @@ main :: () {
     print("closure-local: {} {}\n", res_q.x, res_q.y);
 
     // Width matrix through closures: packed (2 B), wide (16 B), HFA.
-    ft := closure((t: Tiny) -> i32 => xx t.a + xx t.b);
+    ft := (t: Tiny) -> i32 => xx t.a + xx t.b;
     print("closure-tiny: {}\n", ft(Tiny.{ a = 7, b = 8 }));
-    fw := closure((w: Wide) -> i64 => w.x + w.y);
+    fw := (w: Wide) -> i64 => w.x + w.y;
     print("closure-wide: {}\n", fw(Wide.{ x = 30, y = 40 }));
-    fh := closure((h: Hfa) -> f32 => h.x + h.y);
+    fh := (h: Hfa) -> f32 => h.x + h.y;
     print("closure-hfa: {}\n", fh(Hfa.{ x = 0.5, y = 0.25 }));
 
     // Same matrix through default-conv fn pointers.

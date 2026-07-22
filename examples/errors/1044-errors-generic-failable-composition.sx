@@ -13,17 +13,17 @@ wrap :: ($T: Type, f: Closure() -> (T, !E)) -> (T, !E) { return try f(); }
 
 main :: () -> i32 {
     // success, consumed by catch
-    print("catch={}\n", wrap(i32, closure(() -> (i32, !E) { return 7; })) catch (e) -1);   // 7
+    print("catch={}\n", wrap(i32, () -> (i32, !E) { return 7; }) catch (e) -1);   // 7
 
     // success, consumed by destructure (binds value + error slot); the value
     // slot is read only under an `if !err` guard (ERR E1.8 path-sensitivity)
-    r, err := wrap(i32, closure(() -> (i32, !E) { return 9; }));
+    r, err := wrap(i32, () -> (i32, !E) { return 9; });
     if !err { print("destr={} ok=true\n", r); }                                           // destr=9 ok=true
 
     // failure path: the raised tag propagates through the generic `try`
-    print("fail={}\n", wrap(i32, closure(() -> (i32, !E) { raise error.Bad; }) ) catch (e) -1); // -1
+    print("fail={}\n", wrap(i32, () -> (i32, !E) { raise error.Bad; } ) catch (e) -1); // -1
 
     // a second monomorphization at a different T
-    print("u8={}\n", wrap(u8, closure(() -> (u8, !E) { return 200; })) catch (e) 0);         // 200
+    print("u8={}\n", wrap(u8, () -> (u8, !E) { return 200; }) catch (e) 0);         // 200
     return 0;
 }

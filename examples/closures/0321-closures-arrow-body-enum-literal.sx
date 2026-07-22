@@ -16,16 +16,16 @@ sink :: (policy: ?Closure(f32) -> Pol = null) -> Region {
 
 main :: () {
     // Bare enum-literal arrow body.
-    f := closure((x: f32) -> Pol => .a);
+    f := (x: f32) -> Pol => .a;
     process.assert(f(0.0) == .a, "bare literal body");
 
     // If-else arrow body of enum literals.
-    g := closure((x: f32) -> Pol => if x < 0.0 then .a else .b);
+    g := (x: f32) -> Pol => if x < 0.0 then .a else .b;
     process.assert(g(-1.0) == .a and g(1.0) == .b, "if-else literal body");
 
     // The same lambda as a CALL ARGUMENT: the parameter's closure type
     // is the argument's destination — the body still types against Pol.
-    r := sink(closure((x: f32) -> Pol => if x < 0.0 then .a else .b));
+    r := sink((x: f32) -> Pol => if x < 0.0 then .a else .b);
     if pf := r.policy {
         process.assert(pf(-1.0) == .a and pf(1.0) == .b, "call-argument body");
     } else {
@@ -33,10 +33,10 @@ main :: () {
     }
 
     // Block body with returns — unchanged behavior, same answers.
-    h := closure((x: f32) -> Pol {
+    h := (x: f32) -> Pol {
         if x < 0.0 { return .a; }
         return .b;
-    });
+    };
     process.assert(h(1.0) == .b, "block body");
 
     print("ok\n");

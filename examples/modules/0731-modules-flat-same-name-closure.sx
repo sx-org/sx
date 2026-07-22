@@ -1,9 +1,9 @@
 // fix-0102d site 2 (issue 0102): two flat FILE imports each author a same-name
 // free function `pick` (a.sx returns 1, b.sx returns 2). Each module takes
-// `pick` as a function VALUE — both as `closure(pick)` and as a bare-name
+// `pick` as a function VALUE — both as `f := pick` and as a bare-name
 // fn-pointer binding (`g : () -> i64 = pick`). The captured FuncId must be the
 // RESOLVED author's (own-author wins), not the first-wins winner's. Before the
-// fix, b.sx's `closure(pick)` / `pick`-as-value both captured a.sx's winner
+// fix, b.sx's `pick`-as-value spellings both captured a.sx's winner
 // (1). Regression: per-source function-value conversion (closure + func_ref).
 #import "modules/std.sx";
 #import "0731-modules-flat-same-name-closure/a.sx";

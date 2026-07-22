@@ -120,15 +120,15 @@ main :: () {
     iv, ierr := sm_acquire(false);
 
     // composition: inline failable closure literal through a Closure(...) param
-    cl := sm_run(closure((x: i32) -> (i32, !SmokeErr) { if x < 0 { raise error.BadDigit; } return x * 2; }), 6) catch (e) -1;
+    cl := sm_run((x: i32) -> (i32, !SmokeErr) { if x < 0 { raise error.BadDigit; } return x * 2; }, 6) catch (e) -1;
     print("closure-run: {}\n", cl);                                                     // 12
-    print("closure-run-err: {}\n", sm_run(closure((x: i32) -> (i32, !SmokeErr) { raise error.Empty; }), 1) catch (e) -9); // -9
+    print("closure-run-err: {}\n", sm_run((x: i32) -> (i32, !SmokeErr) { raise error.Empty; }, 1) catch (e) -9); // -9
 
     // non-failable closure literal widened into the failable bare slot
-    print("widen: {}\n", sm_widen(closure((x: i32) -> i32 => x + 1), 9));               // 10
+    print("widen: {}\n", sm_widen((x: i32) -> i32 => x + 1, 9));               // 10
 
     // generic failable composition (monomorphized at i32)
-    print("wrap: {}\n", sm_wrap(i32, closure(() -> (i32, !SmokeErr) { return 42; })) catch (e) 0); // 42
+    print("wrap: {}\n", sm_wrap(i32, () -> (i32, !SmokeErr) { return 42; }) catch (e) 0); // 42
 
     print("errors ok\n");
 }

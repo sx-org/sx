@@ -91,7 +91,7 @@ TypeInfo :: enum {
     many_pointer: PointerInfo;
     optional: OptionalInfo;
     function;
-    `closure;
+    closure;
     `protocol;
     error_set;
     pack;

@@ -392,7 +392,7 @@ are_equal :: ($T: Type/Eq, a: T, b: T) -> bool { a.eq(b); }
 
 ```sx
 make_adder :: (n: i64) -> Closure(i64) -> i64 {
-    closure((x: i64) -> i64 => x + n);
+    (x: i64) -> i64 => x + n
 }
 
 add5 := make_adder(5);

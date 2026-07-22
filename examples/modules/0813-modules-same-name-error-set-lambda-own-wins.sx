@@ -1,5 +1,5 @@
 // E6b — own-wins for an ERROR-SET name in a CLOSURE-LITERAL return annotation
-// (`closure(() -> !IoErr { … })`). `main` flat-imports `dep.sx` (which authors
+// (`() -> !IoErr { … }`). `main` flat-imports `dep.sx` (which authors
 // `IoErr { Net }`) AND authors its OWN `IoErr { Disk }`. The closure literal's
 // `-> !IoErr` channel must resolve to `main`'s OWN author (own-wins), so the
 // `raise error.Disk` inside the closure body validates against main's `{ Disk }`;
@@ -20,7 +20,7 @@
 IoErr :: error { Disk }
 
 main :: () -> i32 {
-    fail_own := closure(() -> !IoErr { raise error.Disk; });
+    fail_own := () -> !IoErr { raise error.Disk; };
     fail_own() catch (e) {
         if e == error.Disk { print("own=Disk\n"); }
     };
