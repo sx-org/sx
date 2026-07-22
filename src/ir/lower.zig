@@ -1787,13 +1787,15 @@ pub const Lowering = struct {
     }
 
     pub fn emitFieldError(self: *Lowering, obj_ty: TypeId, field: []const u8, span: ast.Span) Ref {
-        // A field access on an already-`.unresolved` object is a cascade from an
-        // upstream type-resolution failure that was ALREADY diagnosed (e.g. an
-        // unresolvable / oversized array dimension). The
-        // `.unresolved` sentinel never exists without an accompanying error, so
+        // A field access on an already-`.unresolved` object is USUALLY a
+        // cascade from an upstream type-resolution failure that was already
+        // diagnosed (e.g. an unresolvable / oversized array dimension) —
         // piling a second "field not found on unresolved" onto the real one is
-        // pure noise; stay silent and return a placeholder so lowering finishes
-        // and `hasErrors()` aborts the build on the genuine diagnostic.
+        // pure noise. But the sentinel's invariant is "never without an
+        // accompanying error": when NO diagnostic precedes it, the resolution
+        // failure was SILENT (issue 0341's class — a plan-side inference gap
+        // lowered a whole chain to a placeholder zero at run time). Suppress
+        // only a genuine cascade; surface a silent one loudly.
         if (obj_ty != .unresolved) {
             if (self.diagnostics) |diags| {
                 const ty_name = self.formatTypeName(obj_ty);
@@ -1804,6 +1806,10 @@ pub const Lowering = struct {
                 if (self.module.types.findByName(self.module.types.internString("Context"))) |ctx_ty| {
                     if (obj_ty == ctx_ty) self.noteRegisteredContextFields(id);
                 }
+            }
+        } else if (self.diagnostics) |diags| {
+            if (diags.errorCount() == 0) {
+                diags.addFmt(.err, span, "cannot access field '{s}': the object expression's type failed to resolve with no prior diagnostic — compiler inference gap; the access would lower to an undefined value (please reduce and file)", .{field});
             }
         }
         return self.emitPlaceholder(field);
@@ -3080,6 +3086,7 @@ pub const Lowering = struct {
     pub const findReturnTypeExpr = lower_generic.findReturnTypeExpr;
     pub const returnExprMintsType = lower_generic.returnExprMintsType;
     pub const genericInstanceMethod = lower_generic.genericInstanceMethod;
+    pub const genericInstanceMethodReturnType = lower_generic.genericInstanceMethodReturnType;
     pub const ensureGenericInstanceMethodLowered = lower_generic.ensureGenericInstanceMethodLowered;
     pub const lowerComptimeGenericInstanceMethod = lower_generic.lowerComptimeGenericInstanceMethod;
     pub const assertInstanceMapsCoincide = lower_generic.assertInstanceMapsCoincide;

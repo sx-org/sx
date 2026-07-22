@@ -28,9 +28,7 @@ with_buf :: () -> i64 {
         d[0] = 42;
         Buf.{ data = d }
     });
-    v := b.get();
-    n : i64 = xx v.data[0];
-    n
+    xx b.get().data[0]
 }
 
 main :: () {

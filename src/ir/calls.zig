@@ -398,6 +398,26 @@ pub const CallResolver = struct {
                 if (!obj_ty.isBuiltin()) {
                     const oi = self.l.module.types.get(obj_ty);
                     if (oi == .@"struct") {
+                        // Generic-struct INSTANCE method: resolve plan-side
+                        // through the SAME stamped-author reader the dispatch
+                        // uses (CP-4), return type under the instance's
+                        // bindings — call-result typing must work before the
+                        // method has ever monomorphized (issue 0341: with no
+                        // plan arm, a first-use `inst.method()` chain typed
+                        // `.unresolved` and lowered to a silent zero).
+                        {
+                            const inst_name = self.l.module.types.getString(oi.@"struct".name);
+                            if (self.l.genericInstanceMethod(inst_name, cfa.field)) |gm| {
+                                return .{
+                                    .kind = .struct_method,
+                                    .return_type = self.l.genericInstanceMethodReturnType(gm),
+                                    .target = .{ .named = cfa.field },
+                                    .prepends_receiver = true,
+                                    .prepends_ctx = self.l.implicit_ctx_enabled,
+                                    .expands_defaults = defaultsFor(gm.fd, c.args.len + 1),
+                                };
+                            }
+                        }
                         // Plain nominal struct: select the method from the
                         // receiver TypeId's author before consulting the
                         // global `StructName.method` compatibility map. Two

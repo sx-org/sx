@@ -1,0 +1,29 @@
+// The FIRST use of a generic-instance method types correctly inside a chain
+// (issue 0341): plan-side call-result inference resolves through the
+// instance's stamped author + bindings BEFORE the method has ever
+// monomorphized. Previously `xx b.get().data[0]` — with no earlier call to
+// `get` anywhere — inferred `.unresolved` and the whole chain lowered to a
+// SILENT zero. No other use of `get` may precede f1 in this file: the
+// first-use ordering is the regression.
+#import "modules/std.sx";
+
+Buf :: struct { data: []u8; }
+
+Box :: struct ($T: Type) {
+    p: *T;
+    get :: (self: Box(T)) -> T { self.p.* }
+}
+
+mk :: ($T: Type, p: *T) -> Box(T) { Box(T).{ p = p } }
+
+f1 :: (v: *Buf) -> i64 {
+    b := mk(Buf, v);
+    xx b.get().data[0]
+}
+
+main :: () {
+    d : []u8 = context.allocator.alloc(u8, 3);
+    d[0] = 42;
+    v := Buf.{ data = d };
+    print("{}\n", f1(@v));
+}

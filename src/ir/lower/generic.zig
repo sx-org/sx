@@ -1953,11 +1953,28 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
 /// A generic-struct instance method selected via the STAMPED authoring decl:
 /// the `fn_decl` to monomorphize, the instance's stored type bindings, and the
 /// instance (mangled / alias) name the monomorphized function is keyed under.
-const GenericStructMethod = struct {
+pub const GenericStructMethod = struct {
     fd: *const ast.FnDecl,
     bindings: *std.StringHashMap(TypeId),
     inst_name: []const u8,
 };
+
+/// The RETURN type of a selected generic-instance method, resolved under the
+/// instance's stored bindings in the method's defining module — the plan-side
+/// twin of `ensureGenericInstanceMethodLowered`, so call-result typing works
+/// BEFORE the method has ever monomorphized (issue 0341: with no plan arm the
+/// first use of `inst.method()` in a chain typed `.unresolved` and the chain
+/// lowered to a silent zero).
+pub fn genericInstanceMethodReturnType(self: *Lowering, gm: GenericStructMethod) TypeId {
+    const rt_node = gm.fd.return_type orelse return .void;
+    const saved = self.type_bindings;
+    self.type_bindings = gm.bindings.*;
+    defer self.type_bindings = saved;
+    const saved_src = self.current_source_file;
+    defer self.setCurrentSourceFile(saved_src);
+    if (gm.fd.body.source_file) |src| self.setCurrentSourceFile(src);
+    return self.resolveTypeWithBindings(rt_node);
+}
 
 /// THE single body-axis reader: select `method` of generic-struct instance
 /// `inst_name` via the instance's STAMPED author (`struct_instance_author`),
