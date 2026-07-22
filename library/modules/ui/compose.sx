@@ -1,0 +1,184 @@
+// The emit core surface (experiment/ui direction, gate G4 Step 1):
+// components are plain functions that emit into an ambient sink; containers
+// are scope functions; the root is a typed return; identity is an explicit
+// key chain plus comptime scope sites plus occurrence counters (K1).
+//
+// Emission scope = `push .{ ui_sink = @s }` (S1, append-only, restore
+// automatic). The single placement helper `place` is the only code that
+// touches `context.ui_sink` (S2). Dual-mode rule: inside an emit scope call
+// components as statements — placement already happened, the return is for
+// value position; never `place()` a dual component's return.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/stacks.sx";
+#import "modules/ui/label.sx";
+#import "modules/ui/button.sx";
+
+// --- Sink — the append-only emission target (frame-local) ---
+
+Sink :: struct ($T: Type) {
+    items: List(T) = .{};
+
+    // Allocates via context.allocator — the build arena during a frame
+    // build; sinks and their lists never outlive the emission push.
+    emit :: (self: *Sink(T), v: T) { self.items.append(v); }
+}
+
+#context_extend ui_sink: *Sink(View) = null;   // container children (rebinds per scope)
+#context_extend ui: *Ui = null;                // identity chain + store (per build)
+
+// --- Identity: scope sites and keys (K1) ---
+
+// A comptime per-call-site constant: containers declare
+// `site: SiteId = site_of(#caller_location)` so every CALL SITE becomes its
+// own scope segment — no keys needed for repeated wrappers, and K2 messages
+// print file:line natively. The site param sits BEFORE the closure param
+// (T1 binds a trailing block to the LAST param); named arguments reach it
+// when a caller must override.
+SiteId :: struct {
+    file: string;
+    line: i32;
+}
+
+site_of :: (loc: Source_Location) -> SiteId => .{ file = loc.file, line = loc.line };
+
+// Dynamic identity for list items, conditional presence, and K3
+// discriminators. Compare with `eq` — payload-enum `==` is tag-only by spec
+// and must never be used on Keys.
+Key :: enum {
+    int: i64;
+    str: string;
+}
+
+eq :: ufcs (a: Key, b: Key) -> bool {
+    if a == {
+        case .int: (x) { if b == { case .int: (y) { x == y } else: false } }
+        case .str: (s) { if b == { case .str: (t) { s == t } else: false } }
+    }
+}
+
+// --- The identity chain ---
+
+ChainKind :: enum {
+    site;
+    key;
+}
+
+ChainSegment :: struct {
+    kind: ChainKind;
+    site: SiteId = .{ file = "", line = 0 };
+    key: Key = .int(0);
+    // The chain hash BEFORE this segment — popping restores it without
+    // rehashing the whole chain.
+    prev_hash: u64;
+}
+
+FNV_OFFSET : u64 : 14695981039346656037;
+
+hash_site :: (h: u64, site: SiteId) -> u64 {
+    h2 := hash.fnv1a_fold(h, site.file.ptr, site.file.len);
+    line := site.line;
+    hash.fnv1a_fold(h2, xx @line, size_of(i32))
+}
+
+hash_key :: (h: u64, k: Key) -> u64 {
+    if k == {
+        case .int: (x) {
+            v := x;
+            hash.fnv1a_fold(h, xx @v, size_of(i64))
+        }
+        case .str: (s) {
+            // A tag byte separates .str("1") from .int(1)'s bytes.
+            tag : u8 = 0xFF;
+            h2 := hash.fnv1a_fold(h, @tag, 1);
+            hash.fnv1a_fold(h2, s.ptr, s.len)
+        }
+    }
+}
+
+// --- Ui — the per-build identity carrier (store lands in Step 2) ---
+
+Ui :: struct {
+    chain: List(ChainSegment) = .{};
+    chain_hash: u64 = FNV_OFFSET;
+
+    depth :: (self: *Ui) -> i64 #get => self.chain.len;
+
+    // Open one comptime scope-site segment for the duration of `content`.
+    scope_at :: (self: *Ui, site: SiteId, content: Closure()) {
+        prev := self.chain_hash;
+        self.chain.append(.{ kind = .site, site = site, prev_hash = prev });
+        self.chain_hash = hash_site(prev, site);
+        content();
+        self.chain_hash = prev;
+        self.chain.len = self.chain.len - 1;
+    }
+
+    // Open one explicit-key segment (dynamic identity: list items,
+    // conditional presence, K3 discriminators).
+    key_scope :: (self: *Ui, k: Key, content: Closure()) {
+        prev := self.chain_hash;
+        self.chain.append(.{ kind = .key, key = k, prev_hash = prev });
+        self.chain_hash = hash_key(prev, k);
+        content();
+        self.chain_hash = prev;
+        self.chain.len = self.chain.len - 1;
+    }
+}
+
+// --- place — THE single placement helper (S2) ---
+
+// Three states: `ui == null` → outside a frame build (handler, layout,
+// callback) → hard stop; `ui` set + `ui_sink == null` → root / value
+// position → return only; both set → emit into the parent + return.
+place :: (v: View) -> View {
+    process.assert(context.ui != null, "UI element used outside a frame build");
+    if context.ui_sink != null { context.ui_sink.emit(v); }
+    v
+}
+
+// --- Scope containers and leaf elements (target spelling) ---
+
+fold_vstack :: (items: []View, spacing: f32) -> View {
+    vs := VStack.{ spacing = spacing, alignment = .leading, children = .{} };
+    for items (v) { vs.children.append(.{ view = v }); }
+    vs.(View)
+}
+
+fold_hstack :: (items: []View, spacing: f32) -> View {
+    hs := HStack.{ spacing = spacing, alignment = .center, children = .{} };
+    for items (v) { hs.children.append(.{ view = v }); }
+    hs.(View)
+}
+
+vstack :: (spacing: f32, site: SiteId = site_of(#caller_location), content: Closure()) -> View {
+    s := Sink(View).{};
+    push .{ ui_sink = @s } {
+        context.ui.scope_at(site, content);
+    }
+    place(fold_vstack(s.items.items, spacing))
+}
+
+hstack :: (spacing: f32, site: SiteId = site_of(#caller_location), content: Closure()) -> View {
+    s := Sink(View).{};
+    push .{ ui_sink = @s } {
+        context.ui.scope_at(site, content);
+    }
+    place(fold_hstack(s.items.items, spacing))
+}
+
+text :: (s: string) -> View { place(Label.make(s).(View)) }
+
+spacer :: () -> View { place(Spacer.{ min_length = 0.0 }.(View)) }
+
+button :: (label: string, on_tap: ?Closure() = null) -> View {
+    place(Button.{
+        label = label,
+        font_size = 14.0,
+        style = ButtonStyle.default(),
+        on_tap = on_tap,
+        hovered = false,
+        pressed = false,
+    }.(View))
+}

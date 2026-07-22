@@ -1,0 +1,10 @@
+// S2 hard stop (modules/ui/compose.sx): a UI element used OUTSIDE a frame
+// build — no ambient `Ui` — must fail loudly at the placement helper, never
+// emit into nothing. Pins the exit and the message.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/view.sx";
+
+main :: () {
+    _ = text("nope");
+}

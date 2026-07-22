@@ -1,0 +1,73 @@
+// The G4 emit-core surface (modules/ui/compose.sx, Step 1): Sink emission
+// scopes, dual-mode components as bare statements, trailing-block scope fns
+// with comptime scope sites, `place`'s S2 value mode (ui set, no sink →
+// return only), Key.eq, and the identity chain — distinct sites hash
+// distinct, the same site in a loop hashes the same, and the chain
+// restores after every scope.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/view.sx";
+
+chat_row :: (title: string) {
+    hstack(8.0) {
+        text(title);
+        spacer();
+        button("Open");
+    }
+}
+
+home :: () -> View {
+    vstack(0.0) {
+        hstack(8.0) { text("Chats"); spacer(); }
+        chat_row("alice");
+        chat_row("bob");
+        button("New chat") { print("tapped\n"); };
+    }
+}
+
+g_hashes : [4]u64 = .[0, 0, 0, 0];
+g_count : i64 = 0;
+record_hash :: () {
+    g_hashes[g_count] = context.ui.chain_hash;
+    g_count += 1;
+}
+
+wrapper :: (site: SiteId = site_of(#caller_location)) {
+    context.ui.scope_at(site, record_hash);
+}
+
+main :: () {
+    u := Ui.{};
+    root := Sink(View).{};
+    push .{ ui = @u, ui_sink = @root } {
+        home();
+    }
+    print("root {} depth {}\n", root.items.len, u.depth);
+
+    // S2 value mode: ui set, NO sink — place returns without emitting.
+    v := Sink(View).{};
+    push .{ ui = @u } {
+        text("value-mode");
+    }
+    print("value-mode emitted {}\n", v.items.len);
+
+    // Identity chain: two call sites → distinct hashes; one site twice →
+    // the same hash (occurrence disambiguation is the store's job); the
+    // chain hash restores after each scope.
+    push .{ ui = @u } {
+        before := u.chain_hash;
+        wrapper();
+        wrapper();
+        i := 0;
+        while i < 2 { wrapper(); i += 1; }
+        process.assert(u.chain_hash == before, "chain hash must restore");
+    }
+    process.assert(g_count == 4, "four scope entries recorded");
+    process.assert(g_hashes[0] != g_hashes[1], "distinct sites hash distinct");
+    process.assert(g_hashes[2] == g_hashes[3], "one site hashes stable");
+    process.assert(g_hashes[0] != g_hashes[2], "loop site differs from others");
+    print("chain ok\n");
+
+    k1 := Key.int(4);
+    print("keys {} {} {}\n", k1.eq(Key.int(4)), k1.eq(Key.str("4")), Key.str("a").eq(Key.str("a")));
+}

@@ -46,20 +46,20 @@ scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: Closur
     }
 }
 
-toolbar :: () { _ = text("toolbar"); }
+toolbar :: () { text("toolbar"); }
 
 home_screen :: () -> View {
     vstack(0.0) {
-        hstack(8.0) { _ = text("Chats"); _ = spacer(); }
-        _ = button("New chat") { print("tapped\n"); };
+        hstack(8.0) { text("Chats"); spacer(); }
+        button("New chat") { print("tapped\n"); };
     }
 }
 
 main :: () {
     root := Sink(View).{};
     push .{ ui_sink = @root } {
-        _ = home_screen();
-        _ = scaffold(top_bar = toolbar) { _ = text("content"); };
+        home_screen();
+        scaffold(top_bar = toolbar) { text("content"); }
     }
     print("emitted {}\n", root.items.len);
     print("{} {}\n", root.items.items[0].tag, root.items.items[1].tag);
