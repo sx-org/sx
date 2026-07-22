@@ -1,6 +1,7 @@
 // Private PNG assembly layered on the native zlib implementation. The public
-// image model and validation live in std/codecs/png.sx; this module owns only
-// filtered-row construction and PNG chunk encoding.
+// image model and validation live in std/codecs/png.sx; this module owns
+// filtered-row construction, PNG chunk encoding, and chunk-walking +
+// unfiltering for decode.
 
 #import "modules/std/core.sx";
 #import "modules/std/compress.sx";
@@ -116,4 +117,156 @@ png_encode_bytes :: (
         raise error.AllocationFailed;
     }
     out.take()
+}
+
+// ── Decode ──────────────────────────────────────────────────────────────
+
+DecodedPng :: struct {
+    pixels: string;
+    width: i64;
+    height: i64;
+    channels: i64;
+}
+
+private png_u32be :: (d: string, off: i64) -> i64 {
+    (d[off].(i64) << 24) | (d[off + 1].(i64) << 16) | (d[off + 2].(i64) << 8) | d[off + 3].(i64)
+}
+
+private paeth :: (a: i64, b: i64, c: i64) -> i64 {
+    p := a + b - c;
+    pa := if p >= a then p - a else a - p;
+    pb := if p >= b then p - b else b - p;
+    pc := if p >= c then p - c else c - p;
+    if pa <= pb and pa <= pc { return a; }
+    if pb <= pc { return b; }
+    c
+}
+
+// 8-bit, non-interlaced, color types 0/2/4/6 (what `png_encode_bytes`
+// emits, plus filters 1-4 for files written by other encoders). Every
+// chunk CRC is verified; anything outside this envelope rejects loudly.
+png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !) {
+    if data.len < 8 { raise error.TruncatedData; }
+    sig : [8]u8 = .[137, 80, 78, 71, 13, 10, 26, 10];
+    si := 0;
+    while si < 8 {
+        if data[si] != sig[si] { raise error.InvalidSignature; }
+        si += 1;
+    }
+
+    width := 0;
+    height := 0;
+    channels := 0;
+    saw_ihdr := false;
+    saw_iend := false;
+    idat_total := 0;
+
+    // Pass 1: validate every chunk (length bounds + CRC), parse IHDR,
+    // sum the IDAT payload.
+    off := 8;
+    while off < data.len {
+        if off + 12 > data.len { raise error.TruncatedData; }
+        len := png_u32be(data, off);
+        if len < 0 or off + 12 + len > data.len { raise error.TruncatedData; }
+        kind := data[off + 4..off + 8];
+        payload := data[off + 8..off + 8 + len];
+        expect := png_u32be(data, off + 8 + len);
+        actual := crc32(kind);
+        actual = crc32(payload, actual);
+        if (actual & 0xffffffff) != expect { raise error.ChecksumMismatch; }
+        if kind == "IHDR" {
+            if len != 13 { raise error.UnsupportedFormat; }
+            width = png_u32be(payload, 0);
+            height = png_u32be(payload, 4);
+            bit := payload[8].(i64);
+            ct := payload[9].(i64);
+            if bit != 8 or payload[10] != 0 or payload[11] != 0 { raise error.UnsupportedFormat; }
+            if payload[12] != 0 { raise error.UnsupportedFormat; }   // Adam7
+            if ct == 0 { channels = 1; }
+            else if ct == 2 { channels = 3; }
+            else if ct == 4 { channels = 2; }
+            else if ct == 6 { channels = 4; }
+            else { raise error.UnsupportedFormat; }                  // palette etc.
+            saw_ihdr = true;
+        } else if kind == "IDAT" {
+            idat_total += len;
+        } else if kind == "IEND" {
+            saw_iend = true;
+            break;
+        }
+        off += 12 + len;
+    }
+    if !saw_ihdr or !saw_iend or width < 1 or height < 1 { raise error.TruncatedData; }
+
+    // Pass 2: concatenate the zlib stream.
+    if idat_total < 1 { raise error.TruncatedData; }
+    idat_raw := alloc.alloc_bytes(idat_total);
+    if idat_raw == null { raise error.AllocationFailed; }
+    idat := string.{ ptr = xx idat_raw, len = idat_total };
+    at := 0;
+    off = 8;
+    while true {
+        len := png_u32be(data, off);
+        kind := data[off + 4..off + 8];
+        if kind == "IEND" { break; }
+        if kind == "IDAT" {
+            ci := 0;
+            while ci < len {
+                idat.ptr[at + ci] = data[off + 8 + ci];
+                ci += 1;
+            }
+            at += len;
+        }
+        off += 12 + len;
+    }
+
+    row_bytes := width * channels;
+    filtered_row_bytes := row_bytes + 1;
+    need := filtered_row_bytes * height;
+    filtered := decompress_exact(idat, need, alloc) catch (e) {
+        alloc.dealloc_bytes(idat_raw);
+        raise error.DecompressionFailed;
+    };
+    alloc.dealloc_bytes(idat_raw);
+    if filtered.len != need {
+        alloc.dealloc_bytes(filtered.ptr);
+        raise error.TruncatedData;
+    }
+
+    out_raw := alloc.alloc_bytes(row_bytes * height);
+    if out_raw == null {
+        alloc.dealloc_bytes(filtered.ptr);
+        raise error.AllocationFailed;
+    }
+    out := string.{ ptr = xx out_raw, len = row_bytes * height };
+
+    bpp := channels;
+    r := 0;
+    while r < height {
+        f := filtered[r * filtered_row_bytes].(i64);
+        if f < 0 or f > 4 {
+            alloc.dealloc_bytes(filtered.ptr);
+            alloc.dealloc_bytes(out_raw);
+            raise error.InvalidFilter;
+        }
+        c := 0;
+        while c < row_bytes {
+            x := filtered[r * filtered_row_bytes + 1 + c].(i64);
+            a := if c >= bpp then out[r * row_bytes + c - bpp].(i64) else 0;
+            b := if r > 0 then out[(r - 1) * row_bytes + c].(i64) else 0;
+            cc := if r > 0 and c >= bpp then out[(r - 1) * row_bytes + c - bpp].(i64) else 0;
+            v := x;
+            if f == 1 { v = x + a; }
+            else if f == 2 { v = x + b; }
+            else if f == 3 { v = x + (a + b) / 2; }
+            else if f == 4 { v = x + paeth(a, b, cc); }
+            out.ptr[r * row_bytes + c] = (v & 0xff).(u8);
+            c += 1;
+        }
+        r += 1;
+    }
+    alloc.dealloc_bytes(filtered.ptr);
+
+    result : DecodedPng = .{ pixels = out, width = width, height = height, channels = channels };
+    result
 }

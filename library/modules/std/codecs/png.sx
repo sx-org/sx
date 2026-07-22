@@ -15,6 +15,12 @@ Error :: error {
     TooLarge,
     CompressionFailed,
     AllocationFailed,
+    InvalidSignature,
+    TruncatedData,
+    ChecksumMismatch,
+    UnsupportedFormat,
+    InvalidFilter,
+    DecompressionFailed,
 }
 
 PixelFormat :: enum {
@@ -102,6 +108,35 @@ encode :: (image: Image, options: EncodeOptions = .{}, alloc: Allocator = contex
         if e == error.AllocationFailed { raise error.AllocationFailed; }
         if e == error.TooLarge { raise error.TooLarge; }
         raise error.CompressionFailed;
+    };
+    result
+}
+
+// Decode an 8-bit, non-interlaced PNG (grayscale, grayscale-alpha, RGB,
+// or RGBA — the same envelope `encode` emits; filters 0-4 accepted, so
+// files from other encoders load too). Every chunk CRC is verified;
+// palette, 16-bit, and Adam7 images reject with UnsupportedFormat.
+// `Image.pixels` is owned by `alloc`, tightly packed, top-down.
+decode :: (data: string, alloc: Allocator = context.allocator) -> (Image, !Error) {
+    d := png_decode_bytes(data, alloc) catch (e) {
+        if e == error.InvalidSignature { raise error.InvalidSignature; }
+        if e == error.TruncatedData { raise error.TruncatedData; }
+        if e == error.ChecksumMismatch { raise error.ChecksumMismatch; }
+        if e == error.UnsupportedFormat { raise error.UnsupportedFormat; }
+        if e == error.InvalidFilter { raise error.InvalidFilter; }
+        if e == error.AllocationFailed { raise error.AllocationFailed; }
+        raise error.DecompressionFailed;
+    };
+    fmt : PixelFormat = .rgba;
+    if d.channels == 1 { fmt = .gray; }
+    else if d.channels == 2 { fmt = .gray_alpha; }
+    else if d.channels == 3 { fmt = .rgb; }
+    result : Image = .{
+        pixels = d.pixels,
+        width = d.width,
+        height = d.height,
+        format = fmt,
+        stride = 0,
     };
     result
 }

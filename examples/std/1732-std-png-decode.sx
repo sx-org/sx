@@ -1,0 +1,75 @@
+// std png decode (companion to 1710's encode): encode → decode
+// roundtrips byte-exactly for all four 8-bit formats, a bottom-up
+// (negative-stride) encode decodes back top-down, and malformed input
+// rejects loudly — bad signature, truncation, and a corrupted CRC each
+// hit their own error tag.
+#import "modules/std.sx";
+
+roundtrip :: (fmt: png.PixelFormat, channels: i64) {
+    w := 5;
+    h := 4;
+    n := w * h * channels;
+    src := context.allocator.alloc(u8, n);
+    i := 0;
+    while i < n { src[i] = ((i * 7 + channels * 13) % 256).(u8); i += 1; }
+
+    img : png.Image = .{ pixels = string.{ ptr = @src[0], len = n }, width = w, height = h, format = fmt };
+    data := png.encode(img) catch (e) { print("encode failed\n"); process.exit(1); "" };
+    back := png.decode(data) catch (e) { print("decode failed\n"); process.exit(1); png.Image.{ pixels = "", width = 0, height = 0, format = .rgba } };
+
+    process.assert(back.width == w and back.height == h, "dims roundtrip");
+    process.assert(back.format == fmt, "format roundtrips");
+    process.assert(back.pixels.len == n, "size roundtrips");
+    i = 0;
+    while i < n {
+        process.assert(back.pixels[i] == src[i], "pixels roundtrip byte-exact");
+        i += 1;
+    }
+    print("rt {} ok\n", channels);
+}
+
+main :: () {
+    roundtrip(.gray, 1);
+    roundtrip(.gray_alpha, 2);
+    roundtrip(.rgb, 3);
+    roundtrip(.rgba, 4);
+
+    // Bottom-up storage encodes through the negative stride and decodes
+    // back TOP-DOWN: the first decoded row is the last stored one.
+    w := 3; h := 2;
+    src := context.allocator.alloc(u8, w * h * 4);
+    i := 0;
+    while i < w * h * 4 { src[i] = i.(u8); i += 1; }
+    img : png.Image = .{
+        pixels = string.{ ptr = @src[0], len = w * h * 4 },
+        width = w, height = h, format = .rgba,
+        stride = 0 - (w * 4),
+    };
+    data := png.encode(img) catch (e) { print("encode failed\n"); process.exit(1); "" };
+    back := png.decode(data) catch (e) { print("decode failed\n"); process.exit(1); png.Image.{ pixels = "", width = 0, height = 0, format = .rgba } };
+    process.assert(back.pixels[0] == src[w * 4], "bottom-up flipped to top-down");
+    print("flip ok\n");
+
+    // Rejects: signature, truncation, CRC.
+    bad := png.decode("not a png at all") catch (e) {
+        process.assert(e == error.InvalidSignature, "signature reject");
+        print("sig reject ok\n");
+        png.Image.{ pixels = "", width = 0, height = 0, format = .rgba }
+    };
+    short := png.decode(data[..20]) catch (e) {
+        process.assert(e == error.TruncatedData, "truncation reject");
+        print("trunc reject ok\n");
+        png.Image.{ pixels = "", width = 0, height = 0, format = .rgba }
+    };
+    // Flip one payload byte inside IHDR — its CRC no longer matches.
+    corrupt := context.allocator.alloc(u8, data.len);
+    i = 0;
+    while i < data.len { corrupt[i] = data[i]; i += 1; }
+    corrupt[16] = corrupt[16] ^ 0xff;
+    cstr := string.{ ptr = @corrupt[0], len = data.len };
+    crc := png.decode(cstr) catch (e) {
+        process.assert(e == error.ChecksumMismatch, "crc reject");
+        print("crc reject ok\n");
+        png.Image.{ pixels = "", width = 0, height = 0, format = .rgba }
+    };
+}

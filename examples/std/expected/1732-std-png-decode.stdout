@@ -1,0 +1,8 @@
+rt 1 ok
+rt 2 ok
+rt 3 ok
+rt 4 ok
+flip ok
+sig reject ok
+trunc reject ok
+crc reject ok
