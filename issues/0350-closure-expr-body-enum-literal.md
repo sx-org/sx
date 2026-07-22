@@ -1,7 +1,12 @@
 # 0350 — expression-bodied closure return type does not reach the body expression (enum literals fail)
 
-Status: OPEN (found writing per-point HitPolicy closures for the §6.9
-router 2c slice, 2026-07-23)
+Status: FIXED 2026-07-23 — the lambda body now lowers with
+`target_type` set to the lambda's own return type (mirroring
+lowerFunction), scoped to the body and restored after; the enclosing
+expression's destination no longer leaks in. Regression:
+examples/closures/0321-closures-arrow-body-enum-literal.sx; the
+per-point policy closure in examples/ui/1927 is back on the arrow
+spelling.
 
 ## Symptom
 

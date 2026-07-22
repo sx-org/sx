@@ -304,6 +304,13 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     // lambda inside a lambda) restores the enclosing context.
     const saved_in_lambda = self.in_lambda_body;
     self.in_lambda_body = true;
+    // The body types against the lambda's OWN return type, exactly as a
+    // named fn's body does (lowerFunction): enum literals in an arrow body
+    // resolve against `-> E`, and the enclosing expression's target — the
+    // closure type itself when the literal sits in a call argument — must
+    // not leak in as the body's destination (issue 0350).
+    const saved_target_lam = self.target_type;
+    self.target_type = if (ret_ty != .void and ret_ty != .noreturn) ret_ty else null;
     if (ret_ty != .void) {
         if (self.lowerBlockValue(lam.body)) |val| {
             if (!self.currentBlockHasTerminator()) {
@@ -331,6 +338,7 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     } else {
         self.lowerBlock(lam.body);
     }
+    self.target_type = saved_target_lam;
     self.in_lambda_body = saved_in_lambda;
     self.ensureTerminator(ret_ty);
     self.builder.finalize();

@@ -92,10 +92,8 @@ impl View for DoubleZone {
     render :: (self: *DoubleZone, ctx: *RenderContext, frame: Frame) {
         ctx.add_rect(frame, COLOR_BLUE);
         split := frame.origin.x + self.split;
-        ctx.hit_region(self.eid, frame, closure((p: Point) -> HitPolicy {
-            if p.x < split { return .wait_double; }
-            return .tap;
-        }));
+        ctx.hit_region(self.eid, frame, closure((p: Point) -> HitPolicy =>
+            if p.x < split then .wait_double else .tap));
     }
 }
 
