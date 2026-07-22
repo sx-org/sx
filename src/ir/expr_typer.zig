@@ -240,12 +240,22 @@ pub const ExprTyper = struct {
                         obj_ty = opt_info.optional.child;
                     }
                 }
-                if (std.mem.eql(u8, fa.field, "len")) return if (is_opt_chain) self.l.module.types.optionalOf(.i64) else .i64;
-                if (std.mem.eql(u8, fa.field, "ptr")) {
-                    // .ptr on slice/string → [*]element_type
-                    const elem_ty = self.l.getElementType(obj_ty);
-                    const mp_ty = self.l.module.types.manyPtrTo(elem_ty);
-                    return if (is_opt_chain) self.l.module.types.optionalOf(mp_ty) else mp_ty;
+                // `.len`/`.ptr` pseudo-fields belong to the special containers
+                // only — a struct/union/tuple member named `len`/`ptr` resolves
+                // below to its DECLARED type (issue 0340; `#get` accessors also
+                // resolve below, via getAccessorFor).
+                const is_special_container = obj_ty == .string or (!obj_ty.isBuiltin() and switch (self.l.module.types.get(obj_ty)) {
+                    .slice, .array, .vector => true,
+                    else => false,
+                });
+                if (is_special_container) {
+                    if (std.mem.eql(u8, fa.field, "len")) return if (is_opt_chain) self.l.module.types.optionalOf(.i64) else .i64;
+                    if (std.mem.eql(u8, fa.field, "ptr")) {
+                        // .ptr on slice/string → [*]element_type
+                        const elem_ty = self.l.getElementType(obj_ty);
+                        const mp_ty = self.l.module.types.manyPtrTo(elem_ty);
+                        return if (is_opt_chain) self.l.module.types.optionalOf(mp_ty) else mp_ty;
+                    }
                 }
                 if (!obj_ty.isBuiltin()) {
                     const field_name_id = self.l.module.types.internString(fa.field);

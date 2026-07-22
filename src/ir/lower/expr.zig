@@ -728,12 +728,25 @@ pub fn builtinTypeName(ty: TypeId) ?[]const u8 {
     };
 }
 
-/// Resolve the type of a named field on a given type.
+/// Resolve the type of a named field on a given type. The `.len`/`.ptr`
+/// pseudo-fields belong to the special containers (string/slice/array/
+/// vector) — a REAL struct/union/tuple member named `len` or `ptr` resolves
+/// to its declared type (issue 0340: the unconditional pseudo arm typed a
+/// struct's own `ptr: *T` as `[*]unresolved` and its `len` as `i64`). For
+/// non-container types with NO matching real member the pseudo typing is
+/// kept as a FALLBACK — `#get len` accessors (e.g. `List.len`) have no
+/// field entry and historically type through it.
 pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
-    if (std.mem.eql(u8, field, "len")) return .i64;
-    if (std.mem.eql(u8, field, "ptr")) {
-        const elem_ty = self.getElementType(ty);
-        return self.module.types.manyPtrTo(elem_ty);
+    const is_special_container = ty == .string or (!ty.isBuiltin() and switch (self.module.types.get(ty)) {
+        .slice, .array, .vector => true,
+        else => false,
+    });
+    if (is_special_container) {
+        if (std.mem.eql(u8, field, "len")) return .i64;
+        if (std.mem.eql(u8, field, "ptr")) {
+            const elem_ty = self.getElementType(ty);
+            return self.module.types.manyPtrTo(elem_ty);
+        }
     }
     const field_name_id = self.module.types.internString(field);
     // Check union fields + promoted fields
@@ -781,6 +794,12 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
     const struct_fields = self.getStructFields(ty);
     for (struct_fields) |f| {
         if (f.name == field_name_id) return f.ty;
+    }
+    // Legacy pseudo-field fallback for non-containers with no matching real
+    // member (`#get len` accessors type through here).
+    if (std.mem.eql(u8, field, "len")) return .i64;
+    if (std.mem.eql(u8, field, "ptr")) {
+        return self.module.types.manyPtrTo(self.getElementType(ty));
     }
     return .unresolved;
 }

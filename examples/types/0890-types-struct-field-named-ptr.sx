@@ -1,0 +1,29 @@
+// A real struct member named `ptr` or `len` resolves to its DECLARED type —
+// the `.len`/`.ptr` pseudo-fields belong to the special containers only
+// (issue 0340: the unconditional pseudo arm typed a struct's own `ptr: *T`
+// as `[*]unresolved` and its `len` as `i64`). Plain and generic structs,
+// method-interior reads, and the untouched container pseudo-fields.
+#import "modules/std.sx";
+
+Plain :: struct {
+    ptr: *i64;
+    len: f64;
+    get :: (self: Plain) -> i64 { self.ptr.* }
+}
+
+Gen :: struct ($T: Type) {
+    ptr: *T;
+    get :: (self: Gen(T)) -> T { self.ptr.* }
+}
+
+main :: () {
+    x := 5;
+    p := Plain.{ ptr = @x, len = 2.5 };
+    print("{} {}\n", p.get(), p.len * 2.0);   // len is f64, not i64
+    g := Gen(i64).{ ptr = @x };
+    print("{}\n", g.get());
+    // Container pseudo-fields keep working.
+    s := "abc";
+    xs : []i64 = .[7, 8];
+    print("{} {} {}\n", s.len, xs.len, xs.ptr != null);
+}
