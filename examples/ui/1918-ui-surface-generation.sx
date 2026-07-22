@@ -1,0 +1,67 @@
+// G1 surface-generation semantics (modules/ui/runtime.sx): a LOGICAL
+// root outlives native surface recreation — surface_recreated() moves
+// only the generation; identity, store, and every entry persist, so
+// state continues exactly where it was when the surface died. Anything
+// holding the old SurfaceGeneration is stale BY VALUE (field-wise ==).
+// A torn-down root's replacement starts from defaults — nothing leaks
+// across the teardown, and the sibling never notices either event.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/runtime.sx";
+
+g_last : i64 = 0;
+
+bump :: () {
+    n := use_state(i64, 0);
+    n.set(n.get() + 1);
+    g_last = n.get();
+}
+
+build_in :: (r: *UiRoot) {
+    r.begin_build();
+    push .{ ui = @r.ui, ui_store = @r.store } {
+        bump();
+    }
+    r.commit_build();
+}
+
+main :: () {
+    rt := AppRuntime.init();
+    sc := rt.create_scene();
+    a := sc.create_root();
+    b := sc.create_root();
+
+    // State builds up, the surface dies and comes back, state continues.
+    build_in(a);
+    build_in(a);
+    before := a.surface();
+    entries_before := a.store.entries.len;
+    after := a.surface_recreated();
+    process.assert(before != after, "the old SurfaceGeneration is stale by value");
+    process.assert(before.root == after.root, "the logical root is the same");
+    build_in(a);
+    print("gen {} -> {} state {} entries {} == {}\n",
+        before.gen, after.gen, g_last, entries_before, a.store.entries.len);
+    process.assert(g_last == 3, "state survives surface recreation");
+    process.assert(a.store.entries.len == entries_before, "entries untouched by the bump");
+
+    // The sibling never observed any of it.
+    build_in(b);
+    process.assert(g_last == 1, "sibling unaffected by a's surface events");
+
+    // Teardown + replacement: the new root starts from defaults; the
+    // sibling's state still continues.
+    aid := a.id;
+    sc.teardown_root(aid);
+    a2 := sc.create_root();
+    process.assert(a2.id != aid, "replacement is a NEW identity");
+    build_in(a2);
+    process.assert(g_last == 1, "replacement starts from defaults");
+    build_in(b);
+    process.assert(g_last == 2, "sibling state continues across teardown + replacement");
+    print("replacement fresh, sibling {}\n", g_last);
+
+    rt.teardown();
+    print("ok\n");
+}
