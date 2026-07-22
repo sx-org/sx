@@ -58,12 +58,27 @@ RenderTree :: struct {
     }
 }
 
+// Per-point policy (§6.9): what a region allows AT a point — the
+// tapActionAtPoint shape. Declared as a closure on the region so the
+// answer may depend on point and content; the hit list is rebuilt every
+// commit, so policies are re-supplied each frame by construction.
+HitPolicy :: enum {
+    tap;          // default: a single tap fires on release
+    wait_double;  // the release arms a pending tap — a second tap within
+                  // the window is the double, the window's end the single
+    hold;         // no taps at this point — long-press / pan only
+    fail;         // transparent at this point: the hit falls through to
+                  // the region below in paint order
+}
+
 // An interactive region declared during render (§6.9): paint order =
-// emission order, so the last region containing a point is the top hit.
-// The id is the raw ElementId hash — render.sx sits below compose.sx.
+// emission order, so the last containing region whose policy does not
+// fail the point is the top hit. The id is the raw ElementId hash —
+// render.sx sits below compose.sx.
 HitRegion :: struct {
     id: u64;
     frame: Frame;
+    policy: ?Closure(Point) -> HitPolicy = null;   // null = .tap everywhere
 }
 
 // Stateful builder — views use this to emit render nodes
@@ -86,9 +101,9 @@ RenderContext :: struct {
         }
     }
 
-    hit_region :: (self: *RenderContext, id: u64, frame: Frame) {
+    hit_region :: (self: *RenderContext, id: u64, frame: Frame, policy: ?Closure(Point) -> HitPolicy = null) {
         if self.hits != null {
-            self.hits.append(.{ id = id, frame = frame });
+            self.hits.append(.{ id = id, frame = frame, policy = policy });
         }
     }
 

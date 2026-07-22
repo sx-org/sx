@@ -1,0 +1,325 @@
+// §6.9 router, 2c slice: per-point policies, captured streams,
+// simultaneity, cancel-through-the-referee. Pins:
+//   - a region's policy closure answers PER POINT: `.fail` makes the
+//     region transparent there and the hit falls through the
+//     paint-ordered stack to the region below;
+//   - `.wait_double` holds the release as a pending tap: the window's
+//     end (via advance) fires the single, a second tap inside the
+//     window fires ONLY the double; the same region taps immediately
+//     where its policy answers `.tap` (the tapActionAtPoint shape,
+//     env-carrying closure re-supplied each frame);
+//   - `.hold`: press feedback shows and long-press fires, but a quick
+//     release is never a tap;
+//   - after a claim the holder captures the raw continuation stream
+//     (moves + the up forward); an unclaimed sequence refuses;
+//   - a declared (long_press, pan) simultaneity lets BOTH claim one
+//     sequence: long-press fires mid-pan and the pan keeps updating;
+//   - router.cancel(pointer) goes through the referee: the claimed pan
+//     emits its ended with velocity, later events on the pointer are
+//     dead;
+//   - a pending wait_double tap whose element leaves the tree
+//     dissolves without firing (C8).
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/runtime.sx";
+#import "modules/ui/frame.sx";
+#import "modules/ui/router.sx";
+
+g_a_bottom : u64 = 0;
+g_a_top    : u64 = 0;
+g_b : u64 = 0;
+g_c : u64 = 0;
+g_d : u64 = 0;
+g_show_b : bool = true;
+
+g_taps : i64 = 0;
+g_last_tap : u64 = 0;
+g_double : i64 = 0;
+g_long : i64 = 0;
+g_began : i64 = 0;
+g_updated : i64 = 0;
+g_ended : i64 = 0;
+g_last_axis : PanAxis = .free;
+g_end_velocity : Point = .{ x = 0.0, y = 0.0 };
+
+g_raw_moves : i64 = 0;
+g_raw_ups : i64 = 0;
+g_raw_last : Point = .{ x = 0.0, y = 0.0 };
+
+// A: two regions over one frame; the top one fails its right half, so
+// hits there fall through to the bottom one.
+right_half_fails :: (p: Point) -> HitPolicy {
+    if p.x >= 50.0 then .fail else .tap
+}
+
+always_hold :: (p: Point) -> HitPolicy { .hold }
+
+Overlay :: struct {
+    bottom: u64;
+    top: u64;
+    w, h: f32;
+}
+impl View for Overlay {
+    size_that_fits :: (self: *Overlay, proposal: ProposedSize) -> Size {
+        Size.{ width = self.w, height = self.h }
+    }
+    layout :: (self: *Overlay, bounds: Frame) {}
+    render :: (self: *Overlay, ctx: *RenderContext, frame: Frame) {
+        ctx.add_rect(frame, COLOR_BLUE);
+        ctx.hit_region(self.bottom, frame);
+        ctx.hit_region(self.top, frame, right_half_fails);
+    }
+    handle_event :: (self: *Overlay, event: *Event, frame: Frame) -> bool { false }
+}
+
+// B: wait_double left of the split, plain tap right of it — one
+// region, per-point answers, closure env rebuilt every frame on the
+// frame arena.
+DoubleZone :: struct {
+    eid: u64;
+    split: f32;
+    w, h: f32;
+}
+impl View for DoubleZone {
+    size_that_fits :: (self: *DoubleZone, proposal: ProposedSize) -> Size {
+        Size.{ width = self.w, height = self.h }
+    }
+    layout :: (self: *DoubleZone, bounds: Frame) {}
+    render :: (self: *DoubleZone, ctx: *RenderContext, frame: Frame) {
+        ctx.add_rect(frame, COLOR_BLUE);
+        split := frame.origin.x + self.split;
+        ctx.hit_region(self.eid, frame, closure((p: Point) -> HitPolicy {
+            if p.x < split { return .wait_double; }
+            return .tap;
+        }));
+    }
+    handle_event :: (self: *DoubleZone, event: *Event, frame: Frame) -> bool { false }
+}
+
+Pad :: struct {
+    eid: u64;
+    hold: bool;
+    w, h: f32;
+}
+impl View for Pad {
+    size_that_fits :: (self: *Pad, proposal: ProposedSize) -> Size {
+        Size.{ width = self.w, height = self.h }
+    }
+    layout :: (self: *Pad, bounds: Frame) {}
+    render :: (self: *Pad, ctx: *RenderContext, frame: Frame) {
+        ctx.add_rect(frame, COLOR_BLUE);
+        if self.hold { ctx.hit_region(self.eid, frame, always_hold); }
+        else { ctx.hit_region(self.eid, frame); }
+    }
+    handle_event :: (self: *Pad, event: *Event, frame: Frame) -> bool { false }
+}
+
+// Rows of 100x30: A at y 0..30, B 30..60, C (hold) 60..90, D 90..120.
+home :: () -> View {
+    vstack(0.0) {
+        ab := element_id().value;
+        at := element_id().value;
+        g_a_bottom = ab;
+        g_a_top = at;
+        place(Overlay.{ bottom = ab, top = at, w = 100.0, h = 30.0 }.(View));
+        if g_show_b {
+            b := element_id().value;
+            g_b = b;
+            place(DoubleZone.{ eid = b, split = 50.0, w = 100.0, h = 30.0 }.(View));
+        }
+        cid := element_id().value;
+        g_c = cid;
+        place(Pad.{ eid = cid, hold = true, w = 100.0, h = 30.0 }.(View));
+        d := element_id().value;
+        g_d = d;
+        place(Pad.{ eid = d, hold = false, w = 100.0, h = 30.0 }.(View));
+    }
+}
+
+on_gesture :: (g: *GestureEvent) {
+    if g.kind == {
+        case .tap: { g_taps += 1; g_last_tap = g.element.value; }
+        case .double_tap: { g_double += 1; g_last_tap = g.element.value; }
+        case .long_press: { g_long += 1; }
+        case .pan_began: { g_began += 1; g_last_axis = g.axis; }
+        case .pan_updated: { g_updated += 1; }
+        case .pan_ended: { g_ended += 1; g_end_velocity = g.velocity; }
+    }
+}
+
+on_raw :: (ev: *InputEvent) {
+    if ev.* == {
+        case .pointer_move: (pm) { g_raw_moves += 1; g_raw_last = pm.position; }
+        case .pointer_up: (pu) { g_raw_ups += 1; g_raw_last = pu.position; }
+        else: {}
+    }
+}
+
+g_loop : *FrameLoop = null;
+g_root : *UiRoot = null;
+g_router : *Router = null;
+
+tick :: () -> *CommittedUiSnapshot {
+    s := g_loop.tick(g_root, home, 100.0, 120.0);
+    g_router.refresh(g_root, s);
+    s
+}
+
+MS :: 1_000_000;   // ns per millisecond
+
+down :: (ptr: u64, x: f32, y: f32, t_ms: u64) {
+    g_root.input.push(.pointer_down(.{ header = .{ time_ns = t_ms * MS.(u64) },
+        pointer = .{ value = ptr }, position = .{ x = x, y = y } }));
+}
+move :: (ptr: u64, x: f32, y: f32, t_ms: u64) {
+    g_root.input.push(.pointer_move(.{ header = .{ time_ns = t_ms * MS.(u64) },
+        pointer = .{ value = ptr }, position = .{ x = x, y = y } }));
+}
+up :: (ptr: u64, x: f32, y: f32, t_ms: u64) {
+    g_root.input.push(.pointer_up(.{ header = .{ time_ns = t_ms * MS.(u64) },
+        pointer = .{ value = ptr }, position = .{ x = x, y = y } }));
+}
+cancel_ev :: (ptr: u64, t_ms: u64) {
+    g_root.input.push(.pointer_cancel(.{ header = .{ time_ns = t_ms * MS.(u64) },
+        pointer = .{ value = ptr } }));
+}
+
+drain :: () { g_router.drain_gestures(on_gesture); }
+
+main :: () {
+    loop := FrameLoop.init();
+    root := UiRoot.init(.{ value = 12 });
+    router := Router.init();
+    g_loop = *loop;
+    g_root = *root;
+    g_router = *router;
+    router.attach(*loop, *root);
+
+    s1 := tick();
+    process.assert(s1.hit_list.len == 5, "five regions declared");
+
+    // Per-point fail → fall through the stack: A's top region is
+    // transparent on its right half.
+    down(1, 75.0, 15.0, 100); up(1, 75.0, 15.0, 110);
+    tick(); drain();
+    process.assert(g_taps == 1 and g_last_tap == g_a_bottom, "failed point fell through to the region below");
+    down(1, 25.0, 15.0, 200); up(1, 25.0, 15.0, 210);
+    tick(); drain();
+    process.assert(g_taps == 2 and g_last_tap == g_a_top, "non-failing point hits the top region");
+
+    // wait_double, single: the release arms a pending tap; the window's
+    // end fires it through advance.
+    down(1, 10.0, 45.0, 1000); up(1, 10.0, 45.0, 1010);
+    tick(); drain();
+    process.assert(g_taps == 2, "wait_double release does not tap yet");
+    router.advance(1200 * MS.(u64)); drain();
+    process.assert(g_taps == 2, "inside the window still nothing");
+    router.advance(1400 * MS.(u64)); drain();
+    process.assert(g_taps == 3 and g_last_tap == g_b, "the window's end fired the single tap");
+
+    // wait_double, double: a second tap inside the window consumes the
+    // pending first — only the double fires.
+    down(1, 10.0, 45.0, 2000); up(1, 10.0, 45.0, 2010);
+    tick(); drain();
+    down(1, 10.0, 45.0, 2100); up(1, 10.0, 45.0, 2110);
+    tick(); drain();
+    process.assert(g_double == 1 and g_last_tap == g_b, "double tap fired");
+    process.assert(g_taps == 3, "no single tap alongside the double");
+    router.advance(3000 * MS.(u64)); drain();
+    process.assert(g_taps == 3, "the consumed pending never fires");
+
+    // Same region, other side of the split: plain immediate tap.
+    down(1, 90.0, 45.0, 3100); up(1, 90.0, 45.0, 3110);
+    tick(); drain();
+    process.assert(g_taps == 4 and g_last_tap == g_b, "the .tap side answers immediately");
+
+    // hold: a quick release is never a tap; press feedback and
+    // long-press still work.
+    down(1, 10.0, 75.0, 4000); up(1, 10.0, 75.0, 4050);
+    tick(); drain();
+    process.assert(g_taps == 4, "a hold point eats the quick release");
+    down(1, 10.0, 75.0, 4100);
+    tick();
+    process.assert(router.is_pressed(.{ value = g_c }), "hold point still shows press feedback");
+    router.advance(4700 * MS.(u64)); drain();
+    process.assert(g_long == 1, "long-press fires on the hold point");
+    up(1, 10.0, 75.0, 4750);
+    tick(); drain();
+    process.assert(g_taps == 4, "the claimed release is not a tap");
+
+    // Captured continuation: after the long-press claim the holder
+    // takes the raw stream; moves and the up forward to it.
+    down(2, 50.0, 105.0, 5000);
+    tick();
+    router.advance(5600 * MS.(u64)); drain();
+    process.assert(g_long == 2, "long-press claimed on D");
+    process.assert(router.capture_stream(.{ value = 2 }, on_raw), "the claim holder takes the stream");
+    move(2, 60.0, 105.0, 5650);
+    tick();   // moves coalesce in the queue — a tick between keeps both
+    move(2, 70.0, 108.0, 5700);
+    tick();
+    process.assert(g_raw_moves == 2 and g_raw_last.x == 70.0 and g_raw_last.y == 108.0, "raw moves stream to the holder");
+    up(2, 70.0, 108.0, 5750);
+    tick(); drain();
+    process.assert(g_raw_ups == 1, "the raw up streams too");
+    process.assert(g_taps == 4 and g_began == 0, "the streamed sequence recognized nothing else");
+
+    // An unclaimed sequence refuses the stream.
+    down(3, 50.0, 105.0, 5900);
+    tick();
+    process.assert(!router.capture_stream(.{ value = 3 }, on_raw), "no claim, no stream");
+    cancel_ev(3, 5950);
+    tick(); drain();
+
+    // Declared simultaneity: pan claims first, the spared long-press
+    // fires mid-pan, and the pan keeps updating.
+    router.allow_simultaneous(.long_press, .pan);
+    down(4, 50.0, 105.0, 6000);
+    move(4, 75.0, 105.0, 6010);
+    tick(); drain();
+    process.assert(g_began == 1 and g_last_axis == .horizontal, "pan claimed horizontally");
+    router.advance(6600 * MS.(u64)); drain();
+    process.assert(g_long == 3, "the simultaneous long-press fired mid-pan");
+    process.assert(router.is_pressed(.{ value = g_d }), "its claim shows as pressed");
+    move(4, 85.0, 105.0, 6650);
+    tick(); drain();
+    process.assert(g_updated == 1, "the pan kept updating");
+    up(4, 85.0, 105.0, 6700);
+    tick(); drain();
+    process.assert(g_ended == 1, "the pan ended on release");
+
+    // cancel through the referee: the claimed pan emits its ended with
+    // the hand-off velocity; the pointer is dead afterwards.
+    down(5, 50.0, 105.0, 7000);
+    move(5, 70.0, 105.0, 7010);
+    tick(); drain();
+    process.assert(g_began == 2, "second pan claimed");
+    router.cancel(.{ value = 5 });
+    drain();
+    process.assert(g_ended == 2, "cancel emitted the pan's ended through the referee");
+    process.assert(g_end_velocity.x > 1990.0 and g_end_velocity.x < 2010.0, "ended carries the deceleration velocity (~2000 px/s)");
+    move(5, 90.0, 105.0, 7100);
+    up(5, 90.0, 105.0, 7150);
+    tick(); drain();
+    process.assert(g_updated == 1 and g_ended == 2 and g_taps == 4, "the cancelled pointer is dead");
+
+    // A pending wait_double tap dissolves when its element leaves.
+    down(6, 10.0, 45.0, 8000); up(6, 10.0, 45.0, 8010);
+    tick(); drain();
+    g_show_b = false;
+    tick();
+    router.advance(9000 * MS.(u64)); drain();
+    process.assert(g_taps == 4, "the vanished element's pending tap never fired");
+
+    process.assert(g_double == 1 and g_long == 3 and g_ended == 2, "final tallies");
+    print("ok taps={} double={} long={} pans={}\n", g_taps, g_double, g_long, g_ended);
+    router.deinit();
+    loop.deinit();
+    root.teardown();
+}
