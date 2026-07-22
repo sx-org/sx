@@ -1,0 +1,26 @@
+// The objc.sx literal→NSString bridge: `xx "..."` in a *NSString slot
+// routes through `impl Into(*NSString) for string` (stringWithUTF8String:),
+// declared in modules/ffi/objc.sx — i.e. in an IMPORTED module, not the
+// consumer. Pins issue 0346's production instance: the impl registers
+// only because objc.sx imports std (an impl whose protocol name is not
+// nameable in its own module is silently dropped); without it, `xx`
+// degrades to the reinterpret spill and this segfaults inside libobjc.
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+
+main :: () {
+    ns : *NSString = xx "bridge me";
+    back := ns.UTF8String();
+    s : string = ---;
+    s.ptr = back;
+    s.len = 9;
+    print("roundtrip: {}\n", s);
+
+    // The call-arg position too (the metal.sx create_shader shape).
+    take :: (fmt: *NSString) -> i64 {
+        b := fmt.UTF8String();
+        b[0].(i64)
+    }
+    n := take(xx "Xarg");
+    print("first byte: {}\n", n);
+}

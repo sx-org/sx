@@ -7,6 +7,12 @@
 //     msg_fn : (recv: *void, sel: *void, arg: [*]u8) -> *void = xx objc_msgSend;
 //     result := msg_fn(receiver, selector, c_str);
 
+// std is required for real: the `impl Into(*NSString) for string`
+// bridge below registers only if `Into` is nameable in THIS module's
+// scope (issue 0346 — an impl head that doesn't resolve is silently
+// dropped and every `xx` site degrades to a reinterpret).
+#import "modules/std.sx";
+
 // ─── Obj-C primitive type aliases ───────────────────────────────────────
 // Named stand-ins for the three opaque Obj-C runtime types. They all
 // resolve to `*void` at the LLVM layer (no runtime cost) but improve
