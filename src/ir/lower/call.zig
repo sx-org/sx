@@ -2933,7 +2933,7 @@ fn isReflectionCall(name: []const u8) bool {
     const keywords = [_][]const u8{
         "type_eq",               "has_impl",
         "is_struct",             "is_comptime",
-        "compile_error",         "__interp_print_frames",
+        "__interp_print_frames",
         "__trace_resolve_frame",
     };
     for (keywords) |k| {
@@ -3307,14 +3307,6 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const ty = self.resolveTypeArg(c.args[0]);
         if (ty.isBuiltin() or ty == .unresolved) return self.builder.constBool(false);
         return self.builder.constBool(self.module.types.get(ty) == .@"struct");
-    }
-    if (std.mem.eql(u8, name, "compile_error")) {
-        // `compile_error(...)` was consolidated into the `#error("msg");`
-        // directive (which fires when reached in live code, anchored at the
-        // outermost instantiation site). Point migrators at the spelling.
-        if (self.diagnostics) |diags|
-            diags.addFmt(.err, c.callee.span, "'compile_error(...)' was removed — use the '#error(\"msg\");' directive (fires when reached in live code, incl. pruned inline-if arms)", .{});
-        return self.builder.constInt(0, .void);
     }
     if (std.mem.eql(u8, name, "struct_field_name") or std.mem.eql(u8, name, "variant_name")) {
         if (c.args.len < 2) return self.builder.constString(self.module.types.internString(""));

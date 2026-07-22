@@ -1,5 +1,0 @@
-error: 'compile_error(...)' was removed — use the '#error("msg");' directive (fires when reached in live code, incl. pruned inline-if arms)
-  --> examples/diagnostics/1105-diagnostics-compile-error.sx:8:6
-   |
- 8 | #run compile_error("this spelling is gone");
-   |      ^^^^^^^^^^^^^

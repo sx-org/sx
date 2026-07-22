@@ -3958,9 +3958,6 @@ pub const Parser = struct {
     fn parseErrorDirective(self: *Parser) anyerror!*Node {
         const start = self.current.loc.start;
         self.advance(); // skip '#error'
-        if (self.current.tag == .string_literal) {
-            return self.fail("'#error \"msg\";' is now spelled '#error(\"msg\");'");
-        }
         try self.expect(.l_paren);
         if (self.current.tag != .string_literal) {
             return self.fail("expected a string message in '#error(...)'");
