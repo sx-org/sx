@@ -4,3 +4,5 @@ zig-out
 .vscode/
 .sx-cache
 .sx-tmp
+current/
+experiment/
