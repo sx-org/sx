@@ -1,0 +1,50 @@
+// Issue 0347: #objc_class method dispatch with struct-by-value
+// arguments. Large non-HFA aggregates (48-byte MTLRegion shape) pass
+// by reference (caller copy + ptr — the same marshaling as the
+// abi(.c) fn-pointer idiom); float-pair HFAs (CGSize shape) stay
+// register-class aggregates. Previously both aborted the LLVM
+// verifier ("Call parameter type does not match function signature").
+// The mixed case pins slot bookkeeping with scalars around the byval
+// arg.
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+
+ProbeRegion :: struct { a: u64; b: u64; c: u64; d: u64; e: u64; f: u64; }
+ProbeSize   :: struct { w: f64; h: f64; }
+
+SxStructProbe :: #objc_class("SxStructProbe") extern {
+    take_region :: (self: *Self, r: ProbeRegion) -> u64 #selector("takeRegion:");
+    take_size   :: (self: *Self, s: ProbeSize) -> f64 #selector("takeSize:");
+    take_mixed  :: (self: *Self, a: i64, r: ProbeRegion, b: i64) -> u64 #selector("takeMixed:region:tail:");
+}
+
+region_imp :: (self: *void, _cmd: *void, r: ProbeRegion) -> u64 abi(.c) {
+    r.a + r.b + r.c + r.d + r.e + r.f
+}
+
+size_imp :: (self: *void, _cmd: *void, s: ProbeSize) -> f64 abi(.c) {
+    s.w * 1000.0 + s.h
+}
+
+mixed_imp :: (self: *void, _cmd: *void, a: i64, r: ProbeRegion, b: i64) -> u64 abi(.c) {
+    a.(u64) * 1000000 + (r.a + r.b + r.c + r.d + r.e + r.f) * 1000 + b.(u64)
+}
+
+main :: () {
+    ns_object := objc_getClass("NSObject".ptr);
+    cls := objc_allocateClassPair(ns_object, "SxStructProbe".ptr, 0);
+    class_addMethod(cls, sel_registerName("takeRegion:".ptr), xx region_imp, "Q@:{ProbeRegion=QQQQQQ}".ptr);
+    class_addMethod(cls, sel_registerName("takeSize:".ptr), xx size_imp, "d@:{ProbeSize=dd}".ptr);
+    class_addMethod(cls, sel_registerName("takeMixed:region:tail:".ptr), xx mixed_imp, "Q@:q{ProbeRegion=QQQQQQ}q".ptr);
+    objc_registerClassPair(cls);
+
+    inst : *SxStructProbe = xx class_createInstance(cls, 0);
+
+    r := ProbeRegion.{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6 };
+    print("region sum: {}\n", inst.take_region(r));
+
+    s := ProbeSize.{ w = 12.0, h = 34.0 };
+    print("size packed: {}\n", inst.take_size(s));
+
+    print("mixed: {}\n", inst.take_mixed(7, r, 9));
+}

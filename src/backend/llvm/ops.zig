@@ -682,9 +682,19 @@ pub const Ops = struct {
         for (msg.args, 0..) |arg_ref, i| {
             const raw_ty = self.e.argIRTypeOrFail(arg_ref);
             const raw_llvm = self.e.toLLVMType(raw_ty);
+            const slot = i + 2 + sret_off;
+            // Large non-HFA structs (MTLRegion, MTLScissorRect, ...) pass by
+            // reference: caller copy + ptr — same marshaling as the abi(.c)
+            // fn-pointer path (issue 0347). coerceArg can't spill these
+            // (its struct→ptr arm is the 2-field fat-pointer decay only).
+            if (self.e.needsByval(raw_ty, raw_llvm)) {
+                param_types[slot] = self.e.cached_ptr;
+                call_args[slot] = self.e.materializeByvalArg(self.e.resolveRef(arg_ref), raw_llvm);
+                continue;
+            }
             const coerced_ty = self.e.abiCoerceParamType(raw_ty, raw_llvm);
-            param_types[i + 2 + sret_off] = coerced_ty;
-            call_args[i + 2 + sret_off] = self.e.coerceArg(self.e.resolveRef(arg_ref), coerced_ty);
+            param_types[slot] = coerced_ty;
+            call_args[slot] = self.e.coerceArg(self.e.resolveRef(arg_ref), coerced_ty);
         }
 
         const fn_ty = c.LLVMFunctionType(ret_ty, param_types.ptr, @intCast(total_params), 0);

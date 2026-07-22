@@ -1,6 +1,18 @@
 # 0347 — `#objc_class` method with a struct-byval argument aborts the LLVM verifier
 
-Status: OPEN (found during the G6 metal.sx DSL-port assessment, 2026-07-22)
+Status: RESOLVED 2026-07-22
+
+## Resolution
+
+`emitObjcMsgSend` (src/backend/llvm/ops.zig) grows the same byval arm
+the abi(.c) fn-pointer path has: a >16-byte non-HFA struct arg is
+materialized (caller copy) and passed as `ptr` (`needsByval` →
+`materializeByvalArg`); HFAs and ≤16-byte structs keep the existing
+`abiCoerceParamType`/`coerceArg` route. Covers instance and static
+dispatch (one shared codegen site). Pin: examples/ffi-objc/1351 —
+48-byte aggregate, 2×f64 HFA, and scalars around a byval arg (slot
+bookkeeping). This unblocks porting gpu/metal.sx + platform/uikit.sx
+onto the objc DSL (separate follow-up task).
 
 ## Symptom
 
@@ -71,9 +83,8 @@ raw `objc_msgSend` declaration.
 
 ## Impact / follow-up
 
-Blocks porting gpu/metal.sx (and platform/uikit.sx) off the manual
+Blocked porting gpu/metal.sx (and platform/uikit.sx) off the manual
 msgSend-cast idiom — Metal's hottest selectors take MTLRegion /
-MTLScissorRect / MTLClearColor / CGSize by value (Agra-decided
-2026-07-22: keep metal.sx uniform on the manual idiom until this is
-fixed, then port the platform layer wholesale). Fix ships with a
-regression example covering the byval + HFA shapes.
+MTLScissorRect / MTLClearColor / CGSize by value. With the fix landed
+the port is unblocked and remains its own follow-up task (Agra-decided
+2026-07-22: port the platform layer wholesale, not piecemeal).
