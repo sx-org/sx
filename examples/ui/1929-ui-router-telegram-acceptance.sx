@@ -1,0 +1,245 @@
+// §6.9 G2 acceptance (2e): the five telegram-survey behaviors, pinned
+// against the finished router. One message-row scene:
+//   1. long-press wins during scroll settle — the v-pan concedes by
+//      ENDING with its hand-off velocity (deceleration is the
+//      consumer's), and a fresh press during the settle claims and
+//      fires;
+//   2. menu takeover clears foreign highlights ROOT-wide — one
+//      pointer's long-press claim drops the other pointer's press
+//      record and eats its release;
+//   3. the five-way race on ONE row: tap / long-press / swipe-reply
+//      (horizontal, edge=false) / v-scroll (vertical) / edge-pan
+//      (from the screen edge margin: claims horizontally at half slop
+//      on mere dominance, carries edge=true);
+//   4. drag-across-menu in a single gesture: the long-press claim
+//      takes the raw continuation stream — moves track under the
+//      finger, the release selects;
+//   5. per-point double-tap policy: the bubble's TEXT answers
+//      wait_double (two quick taps → one double, no single), its
+//      PADDING answers tap (immediate single).
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/runtime.sx";
+#import "modules/ui/frame.sx";
+#import "modules/ui/router.sx";
+
+g_row : u64 = 0;
+g_bubble : u64 = 0;
+
+g_taps : i64 = 0;
+g_last_tap : u64 = 0;
+g_double : i64 = 0;
+g_long : i64 = 0;
+g_began : i64 = 0;
+g_ended : i64 = 0;
+g_last_axis : PanAxis = .free;
+g_last_edge : bool = false;
+g_end_velocity : Point = .{ x = 0.0, y = 0.0 };
+
+g_raw_moves : i64 = 0;
+g_raw_last : Point = .{ x = 0.0, y = 0.0 };
+g_raw_ups : i64 = 0;
+
+// The bubble: double-tap policy is a function of the CONTENT point —
+// text spans x 50..150, padding is the rest.
+bubble_policy :: (p: Point) -> HitPolicy {
+    if p.x >= 50.0 and p.x < 150.0 then .wait_double else .tap
+}
+
+Region :: struct {
+    eid: u64;
+    bubble: bool;
+    w, h: f32;
+}
+impl View for Region {
+    size_that_fits :: (self: *Region, proposal: ProposedSize) -> Size {
+        Size.{ width = self.w, height = self.h }
+    }
+    layout :: (self: *Region, bounds: Frame) {}
+    render :: (self: *Region, ctx: *RenderContext, frame: Frame) {
+        ctx.add_rect(frame, COLOR_BLUE);
+        if self.bubble { ctx.hit_region(self.eid, frame, bubble_policy); }
+        else { ctx.hit_region(self.eid, frame); }
+    }
+}
+
+// Row at y 0..40 (the message row), bubble at y 40..80.
+home :: () -> View {
+    vstack(0.0) {
+        r := element_id().value;
+        g_row = r;
+        place(Region.{ eid = r, bubble = false, w = 200.0, h = 40.0 }.(View));
+        b := element_id().value;
+        g_bubble = b;
+        place(Region.{ eid = b, bubble = true, w = 200.0, h = 40.0 }.(View));
+    }
+}
+
+on_gesture :: (g: *GestureEvent) {
+    if g.kind == {
+        case .tap: { g_taps += 1; g_last_tap = g.element.value; }
+        case .double_tap: { g_double += 1; g_last_tap = g.element.value; }
+        case .long_press: { g_long += 1; }
+        case .pan_began: { g_began += 1; g_last_axis = g.axis; g_last_edge = g.edge; }
+        case .pan_updated: {}
+        case .pan_ended: { g_ended += 1; g_end_velocity = g.velocity; }
+    }
+}
+
+on_raw :: (ev: *InputEvent) {
+    if ev.* == {
+        case .pointer_move: (pm) { g_raw_moves += 1; g_raw_last = pm.position; }
+        case .pointer_up: (pu) { g_raw_ups += 1; g_raw_last = pu.position; }
+        else: {}
+    }
+}
+
+g_loop : *FrameLoop = null;
+g_root : *UiRoot = null;
+g_router : *Router = null;
+
+tick :: () -> *CommittedUiSnapshot {
+    s := g_loop.tick(g_root, home, 200.0, 200.0);
+    g_router.refresh();
+    s
+}
+
+MS :: 1_000_000;   // ns per millisecond
+
+down :: (ptr: u64, x: f32, y: f32, t_ms: u64) {
+    g_root.input.push(.pointer_down(.{ header = .{ time_ns = t_ms * MS.(u64) },
+        pointer = .{ value = ptr }, position = .{ x = x, y = y } }));
+}
+move :: (ptr: u64, x: f32, y: f32, t_ms: u64) {
+    g_root.input.push(.pointer_move(.{ header = .{ time_ns = t_ms * MS.(u64) },
+        pointer = .{ value = ptr }, position = .{ x = x, y = y } }));
+}
+up :: (ptr: u64, x: f32, y: f32, t_ms: u64) {
+    g_root.input.push(.pointer_up(.{ header = .{ time_ns = t_ms * MS.(u64) },
+        pointer = .{ value = ptr }, position = .{ x = x, y = y } }));
+}
+
+drain :: () { g_router.drain_gestures(on_gesture); }
+
+main :: () {
+    loop := FrameLoop.init();
+    root := UiRoot.init(.{ value = 14 });
+    router := Router.init();
+    g_loop = *loop;
+    g_root = *root;
+    g_router = *router;
+    router.attach(*loop, *root);
+    tick();
+
+    // ── 1. Long-press wins during scroll settle ──────────────────────
+    // A vertical scroll on the row ends with its hand-off velocity
+    // (40px in 10ms → ~4000 px/s): deceleration belongs to the
+    // consumer from here.
+    down(1, 100.0, 20.0, 100);
+    move(1, 100.0, 60.0, 110);
+    up(1, 100.0, 60.0, 115);
+    tick(); drain();
+    process.assert(g_began == 1 and g_last_axis == .vertical, "scroll claimed vertically");
+    process.assert(g_ended == 1 and g_end_velocity.y > 3990.0 and g_end_velocity.y < 4010.0,
+        "the concession carries the deceleration velocity");
+    // During the settle a fresh press claims — the settle does not own
+    // the arena.
+    down(1, 100.0, 20.0, 200);
+    tick();
+    router.advance(800 * MS.(u64)); drain();
+    process.assert(g_long == 1, "long-press fired during the settle");
+    up(1, 100.0, 20.0, 850);
+    tick(); drain();
+    process.assert(g_taps == 0, "its release is not a tap");
+
+    // ── 2. Menu takeover clears foreign highlights root-wide ─────────
+    down(2, 100.0, 20.0, 1000);      // row press (the menu source)
+    down(3, 30.0, 60.0, 1100);       // bubble-padding press elsewhere
+    tick();
+    process.assert(router.is_pressed(.{ value = g_row }) and router.is_pressed(.{ value = g_bubble }),
+        "both pressed before the takeover");
+    router.advance(1550 * MS.(u64)); drain();   // 2's deadline only
+    process.assert(g_long == 2, "the menu takeover claimed");
+    process.assert(!router.is_pressed(.{ value = g_bubble }), "the FOREIGN highlight cleared root-wide");
+    up(3, 30.0, 60.0, 1600);
+    up(2, 100.0, 20.0, 1650);
+    tick(); drain();
+    process.assert(g_taps == 0, "the cleared press's release taps nothing");
+
+    // ── 3. The five-way race on one row ──────────────────────────────
+    // tap
+    down(4, 100.0, 20.0, 2000); up(4, 100.0, 20.0, 2050);
+    tick(); drain();
+    process.assert(g_taps == 1 and g_last_tap == g_row, "tap");
+    // long-press
+    down(4, 100.0, 20.0, 3000);
+    tick();
+    router.advance(3600 * MS.(u64)); drain();
+    up(4, 100.0, 20.0, 3650);
+    tick(); drain();
+    process.assert(g_long == 3 and g_taps == 1, "long-press");
+    // swipe-reply: horizontal pan, NOT from the edge
+    down(4, 100.0, 20.0, 4000);
+    move(4, 130.0, 22.0, 4010);
+    tick(); drain();
+    process.assert(g_began == 2 and g_last_axis == .horizontal and !g_last_edge, "swipe-reply pans horizontally, edge=false");
+    up(4, 130.0, 22.0, 4020);
+    tick(); drain();
+    // v-scroll: vertical pan
+    down(4, 100.0, 20.0, 5000);
+    move(4, 102.0, 50.0, 5010);
+    tick(); drain();
+    process.assert(g_began == 3 and g_last_axis == .vertical, "v-scroll pans vertically");
+    up(4, 102.0, 50.0, 5020);
+    tick(); drain();
+    // edge-pan: from inside the margin, half slop + mere dominance
+    // claims horizontally with edge=true — before content gets a call.
+    down(4, 10.0, 20.0, 6000);
+    move(4, 18.0, 24.0, 6010);
+    tick(); drain();
+    process.assert(g_began == 4 and g_last_axis == .horizontal and g_last_edge, "edge-pan claims early, edge=true");
+    up(4, 18.0, 24.0, 6020);
+    tick(); drain();
+
+    // ── 4. Drag-across-menu in a single gesture ──────────────────────
+    down(5, 100.0, 20.0, 7000);
+    tick();
+    router.advance(7600 * MS.(u64)); drain();
+    process.assert(g_long == 4, "menu opened (long-press claim)");
+    process.assert(router.capture_stream(.{ value = 5 }, on_raw), "the menu takes the continuation");
+    move(5, 120.0, 30.0, 7650);
+    tick();
+    move(5, 140.0, 70.0, 7700);
+    tick();
+    process.assert(g_raw_moves == 2 and g_raw_last.x == 140.0 and g_raw_last.y == 70.0,
+        "the drag tracks under the finger across the menu");
+    up(5, 140.0, 70.0, 7750);
+    tick(); drain();
+    process.assert(g_raw_ups == 1, "the release selects (streamed up)");
+    process.assert(g_taps == 1, "no stray tap from the drag");
+
+    // ── 5. Per-point double-tap policy ───────────────────────────────
+    // Two quick taps on the TEXT: one double, never a single.
+    down(6, 100.0, 60.0, 8000); up(6, 100.0, 60.0, 8010);
+    tick(); drain();
+    down(6, 100.0, 60.0, 8100); up(6, 100.0, 60.0, 8110);
+    tick(); drain();
+    process.assert(g_double == 1 and g_last_tap == g_bubble, "text double-taps");
+    router.advance(9000 * MS.(u64)); drain();
+    process.assert(g_taps == 1, "no ghost single after the double");
+    // The PADDING of the same bubble answers .tap immediately.
+    down(6, 30.0, 60.0, 9100); up(6, 30.0, 60.0, 9110);
+    tick(); drain();
+    process.assert(g_taps == 2 and g_last_tap == g_bubble, "padding taps immediately");
+
+    process.assert(g_long == 4 and g_began == 4 and g_ended == 4 and g_double == 1, "final tallies");
+    print("ok taps={} double={} long={} pans={} edge_seen={}\n", g_taps, g_double, g_long, g_began, g_last_edge);
+    router.deinit();
+    loop.deinit();
+    root.teardown();
+}

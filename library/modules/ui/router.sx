@@ -27,11 +27,15 @@
 // Baseline arena math (§6.9): the slop radius that ends tap
 // eligibility and starts pan competition; the early-call ratio that
 // locks an axis before full slop; the long-press deadline; the window
-// a `wait_double` release stays pending for its second tap.
+// a `wait_double` release stays pending for its second tap; the
+// screen-edge margin whose pans get PRIORITY (the back-swipe class —
+// a from-edge sequence claims horizontally at half slop on mere
+// dominance, and its pan gestures carry `edge`).
 ROUTER_TAP_SLOP    :: 10.0;
 ROUTER_AXIS_RATIO  :: 2.0;
 ROUTER_LONG_PRESS_NS : u64 : 500_000_000;
 ROUTER_DOUBLE_TAP_NS : u64 : 300_000_000;
+ROUTER_EDGE_MARGIN :: 20.0;
 
 GestureKind :: enum {
     tap;
@@ -57,6 +61,9 @@ GestureEvent :: struct {
     delta: Point = .{ x = 0.0, y = 0.0 };
     velocity: Point = .{ x = 0.0, y = 0.0 };
     axis: PanAxis = .free;
+    // The sequence began inside the screen-edge margin — the back-swipe
+    // consumer (navigation) reads edge pans, content reads the rest.
+    edge: bool = false;
 }
 
 // One recognizer's life within a sequence. `possible` competes;
@@ -95,6 +102,9 @@ PointerSequence :: struct {
     // that won the hit (per-point: the same region may answer
     // differently elsewhere).
     policy: HitPolicy = .tap;
+    // Down landed inside the screen-edge margin: horizontal pans claim
+    // with priority and carry `edge` (§6.9 edge-pan rule).
+    from_edge: bool = false;
     // This down consumed a pending first tap — its release is the
     // double, not a new arm.
     double_arm: bool = false;
@@ -318,6 +328,7 @@ Router :: struct {
                 position = seq.last_position,
                 velocity = seq.velocity,
                 axis = seq.axis,
+                edge = seq.from_edge,
             }, self.gpa);
         }
         seq.dead = true;
@@ -436,6 +447,7 @@ router_dispatch :: (r: *Router, ev: *InputEvent) {
                 last_time_ns = pd.header.time_ns,
                 policy = target.policy,
                 double_arm = double_arm,
+                from_edge = pd.position.x < ROUTER_EDGE_MARGIN,
             };
             if idx >= 0 { r.sequences.items[idx] = seq; }
             else { r.sequences.append(seq, r.gpa); }
@@ -472,6 +484,7 @@ router_dispatch :: (r: *Router, ev: *InputEvent) {
                     delta = d,
                     velocity = seq.velocity,
                     axis = seq.axis,
+                    edge = seq.from_edge,
                 }, r.gpa);
                 return;
             }
@@ -490,10 +503,15 @@ router_dispatch :: (r: *Router, ev: *InputEvent) {
             full := dist2 >= ROUTER_TAP_SLOP * ROUTER_TAP_SLOP;
             half := dist2 >= (ROUTER_TAP_SLOP * 0.5) * (ROUTER_TAP_SLOP * 0.5);
             dominant2to1 := ax >= ay * ROUTER_AXIS_RATIO or ay >= ax * ROUTER_AXIS_RATIO;
-            if full or (half and dominant2to1) {
+            // Edge-pan priority (§6.9): a from-edge sequence claims
+            // horizontally at half slop on MERE dominance — the
+            // back-swipe wins before content recognizers get their
+            // full-slop or 2:1 call.
+            edge_call := seq.from_edge and half and ax >= ay;
+            if full or (half and dominant2to1) or edge_call {
                 if seq.pan == .possible {
                     axis : PanAxis = .free;
-                    if ax >= ay * ROUTER_AXIS_RATIO { axis = .horizontal; }
+                    if edge_call or ax >= ay * ROUTER_AXIS_RATIO { axis = .horizontal; }
                     else if ay >= ax * ROUTER_AXIS_RATIO { axis = .vertical; }
                     seq.axis = axis;
                     r.claim(idx, .pan);
@@ -505,6 +523,7 @@ router_dispatch :: (r: *Router, ev: *InputEvent) {
                         delta = .{ x = dx, y = dy },
                         velocity = seq.velocity,
                         axis = axis,
+                        edge = seq.from_edge,
                     }, r.gpa);
                 } else if seq.tap == .possible {
                     seq.tap = .failed;
@@ -527,6 +546,7 @@ router_dispatch :: (r: *Router, ev: *InputEvent) {
                     position = pu.position,
                     velocity = seq.velocity,
                     axis = seq.axis,
+                    edge = seq.from_edge,
                 }, r.gpa);
             } else if !seq.dead and seq.claimed_by == .none and seq.tap == .possible and
                       Router.contains(snap, seq.capture.id.value) and

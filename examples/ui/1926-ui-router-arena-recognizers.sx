@@ -130,15 +130,16 @@ main :: () {
     router.drain_gestures(on_gesture);
     process.assert(g_taps == 0, "root-scoped claim failed the other pointer's tap");
 
-    // Pan, horizontal at full slop: 20px in 10ms → 2000 px/s.
-    down(4, 5.0, 5.0, 2000);
-    move(4, 25.0, 5.0, 2010);
+    // Pan, horizontal at full slop (off the edge margin — pointer
+    // downs at x < 20 get the §6.9 edge-pan priority instead).
+    down(4, 30.0, 5.0, 2000);
+    move(4, 50.0, 5.0, 2010);
     tick();
     router.drain_gestures(on_gesture);
     process.assert(g_began == 1 and g_last_axis == .horizontal, "pan began, axis locked horizontal");
     process.assert(!router.is_pressed(.{ value = g_eid }), "pan claim cleared the press");
-    move(4, 35.0, 5.0, 2020);
-    up(4, 35.0, 5.0, 2030);
+    move(4, 60.0, 5.0, 2020);
+    up(4, 60.0, 5.0, 2030);
     tick();
     router.drain_gestures(on_gesture);
     process.assert(g_updated == 1, "one update after the claim");
@@ -147,32 +148,32 @@ main :: () {
     process.assert(g_end_velocity.x > 990.0 and g_end_velocity.x < 1010.0, "ended carries the last velocity (~1000 px/s)");
 
     // Early 2:1 call at half slop: (6, 2) — dist 6.3 < 10 but 6 ≥ 2·2.
-    down(5, 5.0, 5.0, 3000);
-    move(5, 11.0, 7.0, 3010);
+    down(5, 30.0, 5.0, 3000);
+    move(5, 36.0, 7.0, 3010);
     tick();
     router.drain_gestures(on_gesture);
     process.assert(g_began == 2 and g_last_axis == .horizontal, "2:1 dominance claims early");
-    up(5, 11.0, 7.0, 3020);
+    up(5, 36.0, 7.0, 3020);
     tick();
     router.drain_gestures(on_gesture);
 
     // Vertical lock.
-    down(6, 5.0, 5.0, 4000);
-    move(6, 7.0, 20.0, 4010);
+    down(6, 30.0, 5.0, 4000);
+    move(6, 32.0, 20.0, 4010);
     tick();
     router.drain_gestures(on_gesture);
     process.assert(g_began == 3 and g_last_axis == .vertical, "vertical dominance locks vertical");
-    up(6, 7.0, 20.0, 4020);
+    up(6, 32.0, 20.0, 4020);
     tick();
     router.drain_gestures(on_gesture);
 
     // Diagonal past slop: no dominance → axis-free pan.
-    down(7, 5.0, 5.0, 5000);
-    move(7, 15.0, 15.0, 5010);
+    down(7, 30.0, 5.0, 5000);
+    move(7, 40.0, 15.0, 5010);
     tick();
     router.drain_gestures(on_gesture);
     process.assert(g_began == 4 and g_last_axis == .free, "diagonal pans axis-free");
-    up(7, 15.0, 15.0, 5020);
+    up(7, 40.0, 15.0, 5020);
     tick();
     router.drain_gestures(on_gesture);
 
