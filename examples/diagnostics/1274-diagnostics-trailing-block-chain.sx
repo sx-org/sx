@@ -1,0 +1,10 @@
+// T7′ (specs: Trailing Blocks): a trailing block TERMINATES the postfix
+// chain — chaining onto the emitted result would silently modify a discarded
+// copy, so it is banned grammatically with the pinned message.
+#import "modules/std.sx";
+
+vstack :: (spacing: f32, content: Closure()) -> i64 { content(); 7 }
+
+main :: () {
+    _ = vstack(1.0) { print("x\n"); }.abs();
+}

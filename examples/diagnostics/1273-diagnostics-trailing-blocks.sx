@@ -1,0 +1,23 @@
+// Trailing-block mapping diagnostics (specs: Trailing Blocks), each firing
+// exactly once — no arity cascade: T1 last param not a Closure; T1 variadic
+// last param; T3 parameterized closure (blocks are zero-param); N4 the
+// block-bound param also named; callee without a known declaration (closure
+// values bind explicitly). T7′ (chain termination) is a PARSE error and pins
+// separately in 1274.
+#import "modules/std.sx";
+
+vstack :: (spacing: f32, content: Closure()) -> i64 { content(); 7 }
+plain :: (a: i64, b: i64) -> i64 { a + b }
+vari :: (n: i64, ..rest: []i64) { }
+rower :: (row: Closure(i64)) { row(1); }
+scaffold :: (top_bar: ?Closure() = null, content: Closure()) { content(); }
+toolbar :: () { print("t\n"); }
+
+main :: () {
+    _ = plain(1, 2) { print("x\n"); };
+    vari(1) { print("x\n"); };
+    rower() { print("x\n"); };
+    scaffold(content = toolbar) { print("x\n"); };
+    q := () => print("q\n");
+    q() { print("x\n"); };
+}

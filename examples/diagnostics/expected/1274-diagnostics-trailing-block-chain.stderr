@@ -1,0 +1,5 @@
+error: a trailing block ends the call chain — pass the modifier inside the call: `f(x, m = .{ … }) { … }`
+  --> examples/diagnostics/1274-diagnostics-trailing-block-chain.sx:9:38
+   |
+ 9 |     _ = vstack(1.0) { print("x\n"); }.abs();
+   |                                      ^

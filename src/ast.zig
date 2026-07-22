@@ -90,6 +90,7 @@ pub const Node = struct {
         for_expr: ForExpr,
         spread_expr: SpreadExpr,
         named_arg: NamedArg,
+        trailing_block: TrailingBlock,
         break_expr: void,
         continue_expr: void,
         undef_literal: void,
@@ -886,6 +887,14 @@ pub const SpreadExpr = struct {
 pub const NamedArg = struct {
     name: []const u8,
     value: *Node,
+};
+
+/// `f(args) { body }` trailing block (specs: Trailing Blocks). `lambda` is
+/// the zero-param closure literal the parser built from the block. Exists
+/// only as the LAST element of `Call.args`; the mapping pass binds it to the
+/// callee's last declared parameter (T1/N4 checks live there).
+pub const TrailingBlock = struct {
+    lambda: *Node,
 };
 
 pub const NamespaceDecl = struct {

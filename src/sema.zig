@@ -795,6 +795,7 @@ pub const Analyzer = struct {
             .for_expr => .void_type,
             .spread_expr => .void_type,
             .named_arg => |na| return self.inferExprType(na.value),
+            .trailing_block => .void_type,
             .break_expr => .void_type,
             .continue_expr => .void_type,
             .enum_literal => .{ .enum_type = "" },
@@ -1258,6 +1259,7 @@ pub const Analyzer = struct {
             },
             .spread_expr => |se| try self.analyzeNode(se.operand),
             .named_arg => |na| try self.analyzeNode(na.value),
+            .trailing_block => |tb| try self.analyzeNode(tb.lambda),
             .break_expr, .continue_expr => {},
             .assignment => |asgn| {
                 try self.analyzeNode(asgn.target);
@@ -1783,6 +1785,9 @@ pub fn findNodeAtOffset(node: *Node, offset: u32) ?*Node {
         },
         .named_arg => |na| {
             if (findNodeAtOffset(na.value, offset)) |found| return found;
+        },
+        .trailing_block => |tb| {
+            if (findNodeAtOffset(tb.lambda, offset)) |found| return found;
         },
         .break_expr, .continue_expr => {},
         .caller_location => {},

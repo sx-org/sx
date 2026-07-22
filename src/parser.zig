@@ -33,6 +33,12 @@ pub const Parser = struct {
     /// struct literal starts the if body, not the literal's optional init
     /// block (`if x != .{1, 2} { ... }`, issue 0246).
     in_if_condition: bool = false,
+    /// Trailing-block T5 (specs: Trailing Blocks): while parsing a header
+    /// expression whose `{` opens the statement body (`while cond {`,
+    /// `push expr {`), a call may not take a trailing block. `if`/`for`
+    /// headers are covered by `in_if_condition`/`in_for_header`. Cleared
+    /// inside nested paren/argument contexts alongside `in_for_header`.
+    no_trailing_block: bool = false,
     /// When true (set while parsing an `onfail` body), a `raise` statement is
     /// rejected — an error during cleanup has no propagation target. E1.7
     /// extends this to the full {try, return, break, continue} set.
@@ -2278,6 +2284,9 @@ pub const Parser = struct {
         const block_form = switch (expr.data) {
             .if_expr => |ie| !ie.is_inline,
             .match_expr, .while_expr, .for_expr, .block, .jni_env_block => true,
+            // A call ending in a trailing block reads as a block statement
+            // (`vstack(8.0) { … }`) — no `;` required after the `}`.
+            .call => |call| call.args.len > 0 and call.args[call.args.len - 1].data == .trailing_block,
             else => false,
         };
         if (self.current.tag == .semicolon) {
@@ -2800,8 +2809,11 @@ pub const Parser = struct {
                 // the for-header capture rule does not apply inside them.
                 self.advance();
                 const saved_hdr_args = self.in_for_header;
+                const saved_ntb_args = self.no_trailing_block;
                 self.in_for_header = false;
+                self.no_trailing_block = false;
                 defer self.in_for_header = saved_hdr_args;
+                defer self.no_trailing_block = saved_ntb_args;
                 var args = std.ArrayList(*Node).empty;
                 while (self.current.tag != .r_paren and self.current.tag != .eof) {
                     if (args.items.len > 0) {
@@ -2828,7 +2840,36 @@ pub const Parser = struct {
                         try args.append(self.allocator, try self.parseExpr());
                     }
                 }
+                const rparen_end = self.current.loc.end;
                 try self.expect(.r_paren);
+                // Trailing block (specs: Trailing Blocks): `f(args) { body }`.
+                // T4: the `{` must sit on the SAME LINE as `)` — a next-line
+                // `{` stays an ordinary scope block. T5: disabled in header
+                // position (the OUTER context's flags — the resets above only
+                // govern the nested argument list). The block becomes a
+                // zero-param closure literal in a `trailing_block` marker
+                // appended as the last argument; the mapping pass binds it to
+                // the callee's last declared param (T1/T3/N4 live there).
+                if (self.current.tag == .l_brace and
+                    !saved_ntb_args and !saved_hdr_args and !self.in_if_condition and
+                    std.mem.indexOfScalar(u8, self.source[rparen_end..self.current.loc.start], '\n') == null)
+                {
+                    const block = try self.parseBlock();
+                    const lambda = try self.createNode(block.span.start, .{ .lambda = .{
+                        .params = &.{},
+                        .return_type = null,
+                        .body = block,
+                    } });
+                    try args.append(self.allocator, try self.createNode(block.span.start, .{ .trailing_block = .{ .lambda = lambda } }));
+                    expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
+                    // T7′: a trailing block TERMINATES the postfix chain —
+                    // chaining onto the emitted result would modify a
+                    // discarded copy.
+                    if (self.current.tag == .dot) {
+                        return self.fail("a trailing block ends the call chain — pass the modifier inside the call: `f(x, m = .{ … }) { … }`");
+                    }
+                    break;
+                }
                 expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
             } else if (self.current.tag == .dot) {
                 self.advance();
@@ -3682,7 +3723,10 @@ pub const Parser = struct {
             const binding_is_raw = self.current.is_raw;
             self.advance(); // skip identifier
             self.advance(); // skip :=
+            const saved_ntb = self.no_trailing_block;
+            self.no_trailing_block = true;
             const source_expr = try self.parseExpr();
+            self.no_trailing_block = saved_ntb;
             const body = try self.parseBlock();
             return try self.createNode(start, .{ .while_expr = .{
                 .condition = source_expr,
@@ -3693,7 +3737,10 @@ pub const Parser = struct {
             } });
         }
 
+        const saved_ntb = self.no_trailing_block;
+        self.no_trailing_block = true;
         const condition = try self.parseExpr();
+        self.no_trailing_block = saved_ntb;
         const body = try self.parseBlock();
 
         return try self.createNode(start, .{ .while_expr = .{
@@ -3706,7 +3753,10 @@ pub const Parser = struct {
         const start = self.current.loc.start;
         self.advance(); // skip 'push'
 
+        const saved_ntb = self.no_trailing_block;
+        self.no_trailing_block = true;
         const context_expr = try self.parseExpr();
+        self.no_trailing_block = saved_ntb;
 
         // push Context.{ ... } { body } — if parseExpr consumed the push body
         // as a struct init block, steal it back as the push body.

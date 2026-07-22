@@ -270,6 +270,26 @@ scaffold(top_bar = toolbar, content = chat_list); // bare fns promote into ?Clos
 Names are not part of a function's identity (no overloading) — but they are
 public API: renaming a parameter breaks named call sites.
 
+### Trailing blocks
+
+A block after a call binds the callee's **last** parameter as a zero-param
+closure — `f(args) { body }` is exactly `f(args, content = () => { body })`:
+
+```sx
+vstack :: (spacing: f32, content: Closure()) -> View { … }
+
+vstack(8.0) {
+    text("hello");
+    text("world");
+}
+
+scaffold(top_bar = toolbar) { chat_list(); }   // named slots + block
+```
+
+The `{` must sit on the same line as the `)`; one block per call; the block
+ends the call chain (pass modifiers inside the call). A capture-free block
+promotes to a null-env thunk — zero allocation.
+
 ### Structs
 
 ```sx

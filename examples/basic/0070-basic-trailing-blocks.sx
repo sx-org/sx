@@ -1,0 +1,43 @@
+// Trailing blocks (specs: Trailing Blocks): `f(args) { body }` passes the
+// block as a zero-param closure literal bound to the callee's LAST declared
+// parameter — definitionally `f(args, content = () => { body })`. Covers:
+// statement position (no `;` after `}`), middle defaults skipped, named args
+// + block, expression position with `;`, capture-by-value semantics, T4
+// (next-line `{` stays a scope block), and T5 (header calls unaffected).
+#import "modules/std.sx";
+
+vstack :: (spacing: f32, content: Closure()) -> i64 {
+    print("begin {}\n", spacing);
+    content();
+    print("end\n");
+    7
+}
+
+scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: Closure()) {
+    if tb := top_bar { tb(); }
+    content();
+    if fb := fab { fb(); }
+}
+
+toolbar :: () { print("toolbar\n"); }
+check :: (f: Closure()) -> bool { f(); true }
+
+main :: () {
+    _ = vstack(8.0) { print("a\n"); print("b\n"); };
+    scaffold() { print("content\n"); }
+    scaffold(top_bar = toolbar) { print("content2\n"); }
+    r := vstack(2.0) { print("x\n"); };
+    print("ret {}\n", r);
+    // Closures capture by value: the block mutates its env copy, not `n`.
+    n := 0;
+    _ = vstack(1.0) { n += 9; };
+    print("by-value {}\n", n);
+    // T4: a next-line `{` is an ordinary scope block, not a trailing block.
+    _ = vstack(3.0, () => print("lam\n"));
+    { print("scope\n"); }
+    // T5: a call in a while/if header never grabs the statement body.
+    m := 0;
+    while check(() => print("hdr\n")) and m < 1 { m += 1; }
+    // Nested trailing block inside call args (parens disambiguate).
+    _ = vstack(4.0, () => { _ = vstack(5.0) { print("inner\n"); }; });
+}

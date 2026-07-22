@@ -4149,10 +4149,17 @@ fn namedCalleeDecl(
 /// the mapping diagnostic before codegen; this only prevents an
 /// unknown-node cascade).
 fn stripNamedArgs(self: *Lowering, c: *const ast.Call) *ast.Call {
-    const new_args = self.alloc.alloc(*Node, c.args.len) catch unreachable;
-    for (c.args, 0..) |a, i| new_args[i] = if (a.data == .named_arg) a.data.named_arg.value else a;
+    var new_args = std.ArrayList(*Node).empty;
+    for (c.args) |a| switch (a.data) {
+        .named_arg => |na| new_args.append(self.alloc, na.value) catch unreachable,
+        // A failed trailing block DROPS from the stripped call — keeping it
+        // as a phantom positional arg would stack an arity error on top of
+        // the mapping diagnostic.
+        .trailing_block => {},
+        else => new_args.append(self.alloc, a) catch unreachable,
+    };
     const new_call = self.alloc.create(ast.Call) catch unreachable;
-    new_call.* = .{ .callee = c.callee, .args = new_args };
+    new_call.* = .{ .callee = c.callee, .args = new_args.toOwnedSlice(self.alloc) catch unreachable };
     return new_call;
 }
 
@@ -4195,13 +4202,12 @@ pub fn mapNamedArgs(
     author_ambiguous: bool,
 ) ?*ast.Call {
     var any_named = false;
+    var has_block = false;
     for (c.args) |a| {
-        if (a.data == .named_arg) {
-            any_named = true;
-            break;
-        }
+        if (a.data == .named_arg) any_named = true;
+        if (a.data == .trailing_block) has_block = true;
     }
-    if (!any_named) return null;
+    if (!any_named and !has_block) return null;
 
     const callee_name: []const u8 = switch (c.callee.data) {
         .identifier => |id| id.name,
@@ -4210,8 +4216,13 @@ pub fn mapNamedArgs(
         else => "callee",
     };
     const callee = namedCalleeDecl(self, c, sel_author, qualified_selected, author_ambiguous) orelse {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, c.callee.span, "cannot use named arguments here — '{s}' has no known parameter names (closure and function-pointer values, builtins, and protocol methods bind positionally)", .{callee_name});
+        if (self.diagnostics) |d| {
+            if (has_block) {
+                d.addFmt(.err, c.callee.span, "cannot use a trailing block here — '{s}' has no known declaration (closure and function-pointer values bind their arguments explicitly)", .{callee_name});
+            } else {
+                d.addFmt(.err, c.callee.span, "cannot use named arguments here — '{s}' has no known parameter names (closure and function-pointer values, builtins, and protocol methods bind positionally)", .{callee_name});
+            }
+        }
         return stripNamedArgs(self, c);
     };
     const fd = callee.fd;
@@ -4302,6 +4313,65 @@ pub fn mapNamedArgs(
                 if (self.diagnostics) |d|
                     d.addFmt(.err, a.span, "a spread argument cannot be combined with named arguments — pass the call positionally", .{});
             },
+            .trailing_block => |tb| {
+                // Trailing block binds the callee's LAST declared parameter
+                // (specs: Trailing Blocks): T1 non-variadic Closure (an
+                // optional closure slot wraps like any named closure
+                // argument), T3 zero-param, N4 duplicate against a named or
+                // positional binding of the same parameter.
+                if (nparams == off) {
+                    errored = true;
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, a.span, "'{s}' cannot take a trailing block — it has no parameters", .{callee_name});
+                    continue;
+                }
+                const last = nparams - 1;
+                const p = fd.params[last];
+                if (p.is_variadic or p.is_pack) {
+                    errored = true;
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '..{s}' is variadic; a variadic tail binds positionally", .{ callee_name, p.name });
+                    continue;
+                }
+                const pty = self.resolveDeclParamType(fd, last);
+                const closure_ty: TypeId = blk: {
+                    if (!pty.isBuiltin()) {
+                        const info = self.module.types.get(pty);
+                        if (info == .closure) break :blk pty;
+                        if (info == .optional and !info.optional.child.isBuiltin() and
+                            self.module.types.get(info.optional.child) == .closure)
+                        {
+                            break :blk info.optional.child;
+                        }
+                    }
+                    break :blk .unresolved;
+                };
+                if (closure_ty == .unresolved) {
+                    errored = true;
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '{s}' is not a `Closure`", .{ callee_name, p.name });
+                    continue;
+                }
+                if (self.module.types.get(closure_ty).closure.params.len != 0) {
+                    errored = true;
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, a.span, "'{s}' expects a parameterized closure for '{s}' — a trailing block is zero-param; pass the closure explicitly", .{ callee_name, p.name });
+                    continue;
+                }
+                if (last < pos) {
+                    errored = true;
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, a.span, "parameter '{s}' is bound both by a positional argument and by the trailing block", .{p.name});
+                    continue;
+                }
+                if (slots[last] != null) {
+                    errored = true;
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, a.span, "parameter '{s}' is bound both by a named argument and by the trailing block", .{p.name});
+                    continue;
+                }
+                slots[last] = tb.lambda;
+            },
             else => {
                 if (seen_named) {
                     errored = true;
@@ -4314,10 +4384,9 @@ pub fn mapNamedArgs(
                     continue;
                 }
                 if (pos >= nparams) {
-                    // Over-supplied positionally: no diagnostic here — the
-                    // stripped call reaches checkCallArity, which owns the
-                    // count message.
                     errored = true;
+                    if (self.diagnostics) |d|
+                        d.addFmt(.err, a.span, "too many positional arguments in call to '{s}' — it has {d} parameter{s}", .{ callee_name, nparams - off, if (nparams - off == 1) @as([]const u8, "") else "s" });
                     continue;
                 }
                 slots[pos] = a;
@@ -4325,8 +4394,6 @@ pub fn mapNamedArgs(
             },
         }
     }
-    if (errored) return stripNamedArgs(self, c);
-
     // N3: evaluation order is written order. The rewrite hands the call
     // machinery param-ordered nodes, so when the named values' param indices
     // are not already ascending, evaluate EVERY argument now — positional
@@ -4340,11 +4407,14 @@ pub fn mapNamedArgs(
     for (named_seq.items, 0..) |e, k| {
         if (k > 0 and e.i < named_seq.items[k - 1].i) displaced = true;
     }
-    if (displaced and off == 0 and variadic_idx == null and
+    if (!errored and displaced and off == 0 and variadic_idx == null and
         fd.type_params.len == 0 and !hasComptimeParams(fd) and !isPackFn(fd))
     {
         var hoist_pos: usize = 0;
         for (c.args) |a| {
+            // A trailing block is written last and binds the last param —
+            // never displaced; its lambda lowers at the machinery position.
+            if (a.data == .trailing_block) continue;
             const bind: struct { i: usize, v: *Node } = switch (a.data) {
                 .named_arg => |na| blk: {
                     for (fd.params, 0..) |p, i| {
@@ -4367,6 +4437,10 @@ pub fn mapNamedArgs(
     }
 
     // Fill skipped defaulted params; report missing required ones BY NAME.
+    // This runs on the ERRORED path too: the rewritten call stays
+    // arity-complete (defaults + undef holes), so the mapping diagnostic is
+    // the only error — never a checkCallArity cascade on top. The build
+    // aborts before codegen either way.
     var missing = std.ArrayList([]const u8).empty;
     defer missing.deinit(self.alloc);
     for (fd.params[off..], off..) |p, i| {
@@ -4376,15 +4450,12 @@ pub fn mapNamedArgs(
             slots[i] = defaultArgAtCall(self, def, callee.source, c.callee) orelse return stripNamedArgs(self, c);
         } else {
             missing.append(self.alloc, p.name) catch {};
-            // Fill the hole with an undef node so the rewritten call stays
-            // arity-complete — the named diagnostic below is the only error
-            // (no checkCallArity cascade); the build aborts before codegen.
             const undef = self.alloc.create(Node) catch unreachable;
             undef.* = .{ .span = c.callee.span, .data = .undef_literal };
             slots[i] = undef;
         }
     }
-    if (missing.items.len > 0) {
+    if (!errored and missing.items.len > 0) {
         if (self.diagnostics) |d| {
             var buf = std.ArrayList(u8).empty;
             defer buf.deinit(self.alloc);
