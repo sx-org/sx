@@ -1,13 +1,16 @@
-// §6.9 input router — 2a slice: the persistent per-UiRoot dispatcher
-// that consumes C7 events (ui/input.sx) against the committed
-// snapshot's paint-ordered hit list (ui/frame.sx). This slice lands the
-// spine the arena builds on: (ElementId, generation) capture recorded
-// at down and re-resolved against EACH frame's hit list — press
-// survives rebuild (the P0.3 pin), the element vanishing from the hit
-// list is a clean cancel, a surface-generation bump refuses the stale
-// capture — plus the tap recognizer's release rule and press records
-// for build-side styling. Claims/arena/recognizer objects are the 2b+
-// slices; handle_event stays on the View protocol until 2d.
+// §6.9 input router — 2a+2b slices: the persistent per-UiRoot
+// dispatcher consuming C7 events (ui/input.sx) against the committed
+// snapshot's paint-ordered hit list (ui/frame.sx), now with the arena
+// core: per-sequence recognizer state machines (tap / long-press /
+// pan), root-scoped claims with loser-owned concessions, baseline
+// axis-lock math (dominant axis at slop, early 2:1 calls), and
+// deterministic long-press timing fed through `advance(now_ns)` — the
+// router never reads a wall clock. Capture stays the 2a spine:
+// (ElementId, surface generation) at down, re-resolved against EACH
+// commit's hit list; vanish or a surface bump is a clean cancel.
+// Per-point policy closures, captured continuation streams, and
+// simultaneity sets are the 2c slice; handle_event stays on the View
+// protocol until 2d.
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/input.sx";
@@ -16,12 +19,25 @@
 #import "modules/ui/frame.sx";
 #import "modules/ui/runtime.sx";
 
-// Baseline slop (§6.9 arena math): a pointer wandering past this
-// distance from its down point stops being a tap.
-ROUTER_TAP_SLOP :: 10.0;
+// Baseline arena math (§6.9): the slop radius that ends tap
+// eligibility and starts pan competition; the early-call ratio that
+// locks an axis before full slop; the long-press deadline.
+ROUTER_TAP_SLOP    :: 10.0;
+ROUTER_AXIS_RATIO  :: 2.0;
+ROUTER_LONG_PRESS_NS : u64 : 500_000_000;
 
 GestureKind :: enum {
     tap;
+    long_press;
+    pan_began;
+    pan_updated;
+    pan_ended;
+}
+
+PanAxis :: enum {
+    free;
+    horizontal;
+    vertical;
 }
 
 GestureEvent :: struct {
@@ -29,16 +45,47 @@ GestureEvent :: struct {
     element: ElementId = .{ value = 0 };
     pointer: PointerId = .{ value = 0 };
     position: Point = .{ x = 0.0, y = 0.0 };
+    // pan payloads: per-update delta, instantaneous velocity (px/s).
+    delta: Point = .{ x = 0.0, y = 0.0 };
+    velocity: Point = .{ x = 0.0, y = 0.0 };
+    axis: PanAxis = .free;
 }
 
-// One live pointer sequence: captured element + where it went down.
-// `tap_alive` survives only while the pointer stays within slop AND the
-// captured element keeps resolving against each frame's hit list.
+// One recognizer's life within a sequence. `possible` competes;
+// `claimed` owns the sequence; `failed` = lost (its concession ran).
+RecognizerState :: enum {
+    possible;
+    claimed;
+    failed;
+}
+
+ClaimHolder :: enum {
+    none;
+    tap;        // never claims pre-release; wins by outliving competitors
+    long_press;
+    pan;
+}
+
+// One live pointer sequence: the captured element + the arena's
+// recognizer states. Everything is data — the state machines advance
+// only on events and `advance` ticks.
 PointerSequence :: struct {
     pointer: PointerId = .{ value = 0 };
     capture: ElementCapture = .{ id = .{ value = 0 }, generation = 0 };
     down_position: Point = .{ x = 0.0, y = 0.0 };
-    tap_alive: bool = false;
+    down_time_ns: u64 = 0;
+    last_position: Point = .{ x = 0.0, y = 0.0 };
+    last_time_ns: u64 = 0;
+    velocity: Point = .{ x = 0.0, y = 0.0 };
+
+    tap: RecognizerState = .possible;
+    long_press: RecognizerState = .possible;
+    pan: RecognizerState = .possible;
+    claimed_by: ClaimHolder = .none;
+    axis: PanAxis = .free;
+    // The capture failed structurally (vanish/surface bump/cancel):
+    // nothing in this sequence may recognize anymore.
+    dead: bool = false;
 }
 
 Router :: struct {
@@ -66,60 +113,122 @@ Router :: struct {
     }
 
     contains :: (snap: *CommittedUiSnapshot, id: u64) -> bool {
-        i : i64 = 0;
-        while i < snap.hit_list.len {
-            if snap.hit_list.items[i].id == id { return true; }
-            i += 1;
+        for snap.hit_list (r) {
+            if r.id == id { return true; }
         }
         false
     }
 
     find_sequence :: (self: *Router, pointer: PointerId) -> i64 {
-        i : i64 = 0;
-        while i < self.sequences.len {
-            if self.sequences.items[i].pointer.value == pointer.value { return i; }
-            i += 1;
+        for self.sequences, 0.. (s, i) {
+            if s.pointer.value == pointer.value { return i; }
         }
         -1
     }
 
-    // Build-side styling query (press/highlight chrome). The
-    // use_transient record bridge rides the claim work (2b); reading
-    // the router directly is the 2a spelling.
+    // Build-side styling query (press/highlight chrome). Pressed while
+    // a tap is still possible or a long-press holds the claim — a pan
+    // claim's concession cleared it. The use_transient record bridge
+    // rides the 2c policy work; reading the router is the 2a/2b
+    // spelling.
     is_pressed :: (self: *Router, id: ElementId) -> bool {
-        i : i64 = 0;
-        while i < self.sequences.len {
-            s := self.sequences.items[i];
-            if s.capture.id.value == id.value and s.tap_alive { return true; }
-            i += 1;
+        for self.sequences (s) {
+            if s.capture.id.value == id.value and !s.dead {
+                if s.claimed_by == .long_press { return true; }
+                if s.claimed_by == .none and s.tap == .possible { return true; }
+            }
         }
         false
+    }
+
+    // Root-scoped claim (§6.9 default scope): the winner takes its
+    // sequence; every OTHER live recognizer in EVERY sequence fails —
+    // losers own their concession (tap fails quietly, long-press
+    // timers die, an unbegun pan just stops competing; a CLAIMED pan
+    // is not revoked — genuine concurrent pan-vs-longpress interplay
+    // arrives with 2c simultaneity sets).
+    claim :: (self: *Router, winner_idx: i64, holder: ClaimHolder) {
+        for self.sequences, 0.. (*seq, i) {
+            if i == winner_idx {
+                seq.claimed_by = holder;
+                if holder == .long_press {
+                    seq.long_press = .claimed;
+                    seq.tap = .failed;
+                    seq.pan = .failed;
+                } else if holder == .pan {
+                    seq.pan = .claimed;
+                    seq.tap = .failed;
+                    seq.long_press = .failed;
+                }
+            } else {
+                if seq.tap == .possible { seq.tap = .failed; }
+                if seq.long_press == .possible { seq.long_press = .failed; }
+                if seq.pan == .possible { seq.pan = .failed; }
+            }
+        }
+    }
+
+    // Deterministic time feed: the loop (or host) reports frame time;
+    // long-press deadlines resolve here, never against a wall clock.
+    advance :: (self: *Router, now_ns: u64) {
+        for self.sequences, 0.. (*seq, i) {
+            if !seq.dead and seq.claimed_by == .none and seq.long_press == .possible and
+               now_ns >= seq.down_time_ns + ROUTER_LONG_PRESS_NS {
+                self.claim(i, .long_press);
+                self.gestures.append(.{
+                    kind = .long_press,
+                    element = seq.capture.id,
+                    pointer = seq.pointer,
+                    position = seq.last_position,
+                }, self.gpa);
+            }
+        }
     }
 
     // Per committed frame: re-resolve every live capture against the
     // NEW hit list (§6.9 — capture is identity, not geometry or tree
     // pointers). A vanished element or a bumped surface generation
-    // cancels cleanly.
+    // cancels the whole sequence cleanly.
     refresh :: (self: *Router, root: *UiRoot, snap: *CommittedUiSnapshot) {
-        i : i64 = 0;
-        while i < self.sequences.len {
-            seq := @self.sequences.items[i];
-            if seq.tap_alive {
+        for self.sequences, 0.. (*seq, i) {
+            if !seq.dead {
                 if seq.capture.generation != root.surface_gen.(i64) or
                    !Router.contains(snap, seq.capture.id.value) {
-                    seq.tap_alive = false;
+                    self.cancel_sequence(i);
                 }
             }
-            i += 1;
         }
+    }
+
+    // The §6.9 escape hatch goes through the referee: kill one
+    // sequence — a claimed pan emits its ended (concession = enter
+    // deceleration with current velocity at the consumer), pending
+    // recognizers fail, records clear.
+    cancel_sequence :: (self: *Router, idx: i64) {
+        seq := @self.sequences.items[idx];
+        if seq.claimed_by == .pan {
+            self.gestures.append(.{
+                kind = .pan_ended,
+                element = seq.capture.id,
+                pointer = seq.pointer,
+                position = seq.last_position,
+                velocity = seq.velocity,
+                axis = seq.axis,
+            }, self.gpa);
+        }
+        seq.dead = true;
+        seq.tap = .failed;
+        seq.long_press = .failed;
+        seq.pan = .failed;
+        seq.claimed_by = .none;
     }
 
     // Install this router as the loop's ApplyInputs consumer. The loop
     // drains the root's queue in its phase slot (§6.7) — events resolve
     // against the PREVIOUS committed snapshot by construction; before
     // the first commit there is nothing hittable and pointer events
-    // drop. Call `refresh` after each tick to re-resolve captures
-    // against the NEW commit.
+    // drop. Call `refresh` after each tick and `advance` with frame
+    // time to run timers.
     attach :: (self: *Router, loop: *FrameLoop, root: *UiRoot) {
         g_router_active = self;
         g_router_loop = loop;
@@ -128,11 +237,7 @@ Router :: struct {
     }
 
     drain_gestures :: (self: *Router, f: Closure(*GestureEvent)) {
-        i : i64 = 0;
-        while i < self.gestures.len {
-            f(@self.gestures.items[i]);
-            i += 1;
-        }
+        for self.gestures (*g) { f(g); }
         self.gestures.len = 0;
     }
 
@@ -166,7 +271,9 @@ router_dispatch_one :: (ev: *InputEvent) {
                 pointer = pd.pointer,
                 capture = .{ id = .{ value = target }, generation = root.surface_gen.(i64) },
                 down_position = pd.position,
-                tap_alive = true,
+                down_time_ns = pd.header.time_ns,
+                last_position = pd.position,
+                last_time_ns = pd.header.time_ns,
             };
             if idx >= 0 { r.sequences.items[idx] = seq; }
             else { r.sequences.append(seq, r.gpa); }
@@ -175,22 +282,87 @@ router_dispatch_one :: (ev: *InputEvent) {
             idx := r.find_sequence(pm.pointer);
             if idx < 0 { return; }
             seq := @r.sequences.items[idx];
-            if !seq.tap_alive { return; }
+            if seq.dead { return; }
+
+            dx_step := pm.position.x - seq.last_position.x;
+            dy_step := pm.position.y - seq.last_position.y;
+            dt_ns := pm.header.time_ns - seq.last_time_ns;
+            if dt_ns > 0 {
+                dt_s : f32 = pm.header.time_ns.(f32) / 1_000_000_000.0 - seq.last_time_ns.(f32) / 1_000_000_000.0;
+                if dt_s > 0.0 {
+                    seq.velocity = .{ x = dx_step / dt_s, y = dy_step / dt_s };
+                }
+            }
+            seq.last_position = pm.position;
+            seq.last_time_ns = pm.header.time_ns;
+
+            if seq.claimed_by == .pan {
+                d : Point = .{ x = dx_step, y = dy_step };
+                if seq.axis == .horizontal { d.y = 0.0; }
+                if seq.axis == .vertical { d.x = 0.0; }
+                r.gestures.append(.{
+                    kind = .pan_updated,
+                    element = seq.capture.id,
+                    pointer = seq.pointer,
+                    position = pm.position,
+                    delta = d,
+                    velocity = seq.velocity,
+                    axis = seq.axis,
+                }, r.gpa);
+                return;
+            }
+            if seq.claimed_by != .none { return; }
+
+            // Pre-claim arbitration: past slop the tap dies; the pan
+            // claims at slop, or EARLY when one axis dominates 2:1 at
+            // half slop (§6.9 baseline — the math Telegram copies).
             dx := pm.position.x - seq.down_position.x;
             dy := pm.position.y - seq.down_position.y;
-            if dx * dx + dy * dy > ROUTER_TAP_SLOP * ROUTER_TAP_SLOP {
-                seq.tap_alive = false;
+            ax := if dx < 0.0 then -dx else dx;
+            ay := if dy < 0.0 then -dy else dy;
+            dist2 := dx * dx + dy * dy;
+            full := dist2 >= ROUTER_TAP_SLOP * ROUTER_TAP_SLOP;
+            half := dist2 >= (ROUTER_TAP_SLOP * 0.5) * (ROUTER_TAP_SLOP * 0.5);
+            dominant2to1 := ax >= ay * ROUTER_AXIS_RATIO or ay >= ax * ROUTER_AXIS_RATIO;
+            if full or (half and dominant2to1) {
+                if seq.pan == .possible {
+                    axis : PanAxis = .free;
+                    if ax >= ay * ROUTER_AXIS_RATIO { axis = .horizontal; }
+                    else if ay >= ax * ROUTER_AXIS_RATIO { axis = .vertical; }
+                    seq.axis = axis;
+                    r.claim(idx, .pan);
+                    r.gestures.append(.{
+                        kind = .pan_began,
+                        element = seq.capture.id,
+                        pointer = seq.pointer,
+                        position = pm.position,
+                        delta = .{ x = dx, y = dy },
+                        velocity = seq.velocity,
+                        axis = axis,
+                    }, r.gpa);
+                } else if seq.tap == .possible {
+                    seq.tap = .failed;
+                    seq.long_press = .failed;
+                }
             }
         }
         case .pointer_up: (pu) {
             idx := r.find_sequence(pu.pointer);
             if idx < 0 { return; }
             seq := r.sequences.items[idx];
-            // Release rule: an un-cancelled, still-resolving capture
-            // taps. (Pre-claim is implicit in 2a — claims arrive with
-            // the arena.)
-            if seq.tap_alive and Router.contains(snap, seq.capture.id.value) and
-               seq.capture.generation == root.surface_gen.(i64) {
+            if seq.claimed_by == .pan {
+                r.gestures.append(.{
+                    kind = .pan_ended,
+                    element = seq.capture.id,
+                    pointer = pu.pointer,
+                    position = pu.position,
+                    velocity = seq.velocity,
+                    axis = seq.axis,
+                }, r.gpa);
+            } else if !seq.dead and seq.claimed_by == .none and seq.tap == .possible and
+                      Router.contains(snap, seq.capture.id.value) and
+                      seq.capture.generation == root.surface_gen.(i64) {
+                // The release rule: a tap wins only before any claim.
                 r.gestures.append(.{
                     kind = .tap,
                     element = seq.capture.id,
@@ -198,16 +370,15 @@ router_dispatch_one :: (ev: *InputEvent) {
                     position = pu.position,
                 }, r.gpa);
             }
-            r.sequences.items[idx] = r.sequences.items[r.sequences.len - 1];
-            r.sequences.len -= 1;
+            r.sequences.swap_remove(idx);
         }
         case .pointer_cancel: (pc) {
             idx := r.find_sequence(pc.pointer);
             if idx < 0 { return; }
-            r.sequences.items[idx] = r.sequences.items[r.sequences.len - 1];
-            r.sequences.len -= 1;
+            r.cancel_sequence(idx);
+            r.sequences.swap_remove(idx);
         }
-        // scroll/key/text/hover: the 2b+ recognizers' food.
+        // scroll wheels/keys/text/hover feed later recognizers (2c+).
         else: {}
     }
 }

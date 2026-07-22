@@ -1,0 +1,186 @@
+// §6.9 router, 2b slice: the arena core. Pins:
+//   - long-press fires on the deadline via the deterministic
+//     `advance(now_ns)` feed (no wall clock), holds the claim (press
+//     record stays), and eats the release (no tap);
+//   - claims are ROOT-scoped: one pointer's long-press claim fails a
+//     second pointer's pending tap (loser concedes quietly);
+//   - pan claims at slop with the dominant axis, or EARLY at half
+//     slop on a 2:1 dominance call; the axis locks the update deltas;
+//     a diagonal past slop pans axis-free;
+//   - the pan claim's concession clears the press record;
+//   - pan_updated carries per-step deltas and instantaneous velocity;
+//     pan_ended carries the last velocity.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/runtime.sx";
+#import "modules/ui/frame.sx";
+#import "modules/ui/router.sx";
+
+g_eid : u64 = 0;
+
+g_taps : i64 = 0;
+g_long : i64 = 0;
+g_began : i64 = 0;
+g_updated : i64 = 0;
+g_ended : i64 = 0;
+g_last_axis : PanAxis = .free;
+g_last_delta : Point = .{ x = 0.0, y = 0.0 };
+g_end_velocity : Point = .{ x = 0.0, y = 0.0 };
+
+Pad :: struct {
+    eid: u64;
+    w, h: f32;
+}
+impl View for Pad {
+    size_that_fits :: (self: *Pad, proposal: ProposedSize) -> Size {
+        Size.{ width = self.w, height = self.h }
+    }
+    layout :: (self: *Pad, bounds: Frame) {}
+    render :: (self: *Pad, ctx: *RenderContext, frame: Frame) {
+        ctx.add_rect(frame, COLOR_BLUE);
+        ctx.hit_region(self.eid, frame);
+    }
+    handle_event :: (self: *Pad, event: *Event, frame: Frame) -> bool { false }
+}
+
+home :: () -> View {
+    vstack(0.0) {
+        e := element_id().value;
+        g_eid = e;
+        place(Pad.{ eid = e, w = 100.0, h = 50.0 }.(View));
+    }
+}
+
+on_gesture :: (g: *GestureEvent) {
+    if g.kind == {
+        case .tap: { g_taps += 1; }
+        case .long_press: { g_long += 1; }
+        case .pan_began: { g_began += 1; g_last_axis = g.axis; }
+        case .pan_updated: { g_updated += 1; g_last_delta = g.delta; }
+        case .pan_ended: { g_ended += 1; g_end_velocity = g.velocity; }
+    }
+}
+
+g_loop : *FrameLoop = null;
+g_root : *UiRoot = null;
+g_router : *Router = null;
+
+tick :: () -> *CommittedUiSnapshot {
+    s := g_loop.tick(g_root, home, 100.0, 50.0);
+    g_router.refresh(g_root, s);
+    s
+}
+
+MS :: 1_000_000;   // ns per millisecond
+
+down :: (ptr: u64, x: f32, y: f32, t_ms: u64) {
+    g_root.input.push(.pointer_down(.{ header = .{ time_ns = t_ms * MS.(u64) },
+        pointer = .{ value = ptr }, position = .{ x = x, y = y } }));
+}
+move :: (ptr: u64, x: f32, y: f32, t_ms: u64) {
+    g_root.input.push(.pointer_move(.{ header = .{ time_ns = t_ms * MS.(u64) },
+        pointer = .{ value = ptr }, position = .{ x = x, y = y } }));
+}
+up :: (ptr: u64, x: f32, y: f32, t_ms: u64) {
+    g_root.input.push(.pointer_up(.{ header = .{ time_ns = t_ms * MS.(u64) },
+        pointer = .{ value = ptr }, position = .{ x = x, y = y } }));
+}
+
+main :: () {
+    loop := FrameLoop.init();
+    root := UiRoot.init(.{ value = 11 });
+    router := Router.init();
+    g_loop = @loop;
+    g_root = @root;
+    g_router = @router;
+    router.attach(@loop, @root);
+
+    tick();   // first commit — the hit list exists
+
+    // Long-press: down, no release; the deadline fires through advance.
+    down(1, 5.0, 5.0, 0);
+    tick();
+    router.advance(400 * MS.(u64));
+    router.drain_gestures(on_gesture);
+    process.assert(g_long == 0, "before the deadline nothing fires");
+    process.assert(router.is_pressed(.{ value = g_eid }), "held press shows");
+    router.advance(600 * MS.(u64));
+    router.drain_gestures(on_gesture);
+    process.assert(g_long == 1, "long-press fired at the deadline");
+    process.assert(router.is_pressed(.{ value = g_eid }), "long-press HOLDS the press record");
+    up(1, 5.0, 5.0, 650);
+    tick();
+    router.drain_gestures(on_gesture);
+    process.assert(g_taps == 0, "the claimed release is not a tap");
+
+    // Root scope: pointer 2's long-press claim fails pointer 3's tap.
+    down(2, 5.0, 5.0, 1000);
+    down(3, 60.0, 5.0, 1200);
+    tick();
+    router.advance(1500 * MS.(u64));    // 2's deadline (1.5s); 3's (1.7s) not yet
+    router.drain_gestures(on_gesture);
+    process.assert(g_long == 2, "second long-press claimed");
+    up(3, 60.0, 5.0, 1550);
+    up(2, 5.0, 5.0, 1600);
+    tick();
+    router.drain_gestures(on_gesture);
+    process.assert(g_taps == 0, "root-scoped claim failed the other pointer's tap");
+
+    // Pan, horizontal at full slop: 20px in 10ms → 2000 px/s.
+    down(4, 5.0, 5.0, 2000);
+    move(4, 25.0, 5.0, 2010);
+    tick();
+    router.drain_gestures(on_gesture);
+    process.assert(g_began == 1 and g_last_axis == .horizontal, "pan began, axis locked horizontal");
+    process.assert(!router.is_pressed(.{ value = g_eid }), "pan claim cleared the press");
+    move(4, 35.0, 5.0, 2020);
+    up(4, 35.0, 5.0, 2030);
+    tick();
+    router.drain_gestures(on_gesture);
+    process.assert(g_updated == 1, "one update after the claim");
+    process.assert(g_last_delta.x == 10.0 and g_last_delta.y == 0.0, "axis lock zeroes the minor delta");
+    process.assert(g_ended == 1, "pan ended on release");
+    process.assert(g_end_velocity.x > 990.0 and g_end_velocity.x < 1010.0, "ended carries the last velocity (~1000 px/s)");
+
+    // Early 2:1 call at half slop: (6, 2) — dist 6.3 < 10 but 6 ≥ 2·2.
+    down(5, 5.0, 5.0, 3000);
+    move(5, 11.0, 7.0, 3010);
+    tick();
+    router.drain_gestures(on_gesture);
+    process.assert(g_began == 2 and g_last_axis == .horizontal, "2:1 dominance claims early");
+    up(5, 11.0, 7.0, 3020);
+    tick();
+    router.drain_gestures(on_gesture);
+
+    // Vertical lock.
+    down(6, 5.0, 5.0, 4000);
+    move(6, 7.0, 20.0, 4010);
+    tick();
+    router.drain_gestures(on_gesture);
+    process.assert(g_began == 3 and g_last_axis == .vertical, "vertical dominance locks vertical");
+    up(6, 7.0, 20.0, 4020);
+    tick();
+    router.drain_gestures(on_gesture);
+
+    // Diagonal past slop: no dominance → axis-free pan.
+    down(7, 5.0, 5.0, 5000);
+    move(7, 15.0, 15.0, 5010);
+    tick();
+    router.drain_gestures(on_gesture);
+    process.assert(g_began == 4 and g_last_axis == .free, "diagonal pans axis-free");
+    up(7, 15.0, 15.0, 5020);
+    tick();
+    router.drain_gestures(on_gesture);
+
+    process.assert(g_taps == 0 and g_long == 2 and g_ended == 4, "final tallies");
+    print("ok long={} pans={} taps={}\n", g_long, g_ended, g_taps);
+    router.deinit();
+    loop.deinit();
+    root.teardown();
+}

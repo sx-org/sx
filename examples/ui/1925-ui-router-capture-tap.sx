@@ -82,6 +82,7 @@ home :: () -> View {
 }
 
 on_tap :: (g: *GestureEvent) {
+    if g.kind != .tap { return; }   // the slop path emits pan phases (2b)
     g_taps += 1;
     g_last_tap = g.element.value;
 }
@@ -114,19 +115,19 @@ main :: () {
     // LAST-declared (top) region.
     root.input.push(.pointer_down(.{ pointer = .{ value = 1 }, position = .{ x = 5.0, y = 5.0 } }));
     root.input.push(.pointer_up(.{ pointer = .{ value = 1 }, position = .{ x = 6.0, y = 5.0 } }));
-    _ = tick();
+    tick();
     router.drain_gestures(on_tap);
     process.assert(g_taps == 1 and g_last_tap == g_eid_top, "top-most region tapped");
 
     // P0.3 — press survives rebuild: down this frame, three rebuilds,
     // still pressed; the release AFTER the rebuilds taps.
     root.input.push(.pointer_down(.{ pointer = .{ value = 2 }, position = .{ x = 5.0, y = 5.0 } }));
-    _ = tick();
-    _ = tick();
-    _ = tick();
+    tick();
+    tick();
+    tick();
     process.assert(router.is_pressed(.{ value = g_eid_top }), "press survives rebuild");
     root.input.push(.pointer_up(.{ pointer = .{ value = 2 }, position = .{ x = 5.0, y = 5.0 } }));
-    _ = tick();
+    tick();
     router.drain_gestures(on_tap);
     process.assert(g_taps == 2 and g_last_tap == g_eid_top, "release after rebuilds taps");
 
@@ -134,41 +135,41 @@ main :: () {
     root.input.push(.pointer_down(.{ pointer = .{ value = 3 }, position = .{ x = 5.0, y = 5.0 } }));
     root.input.push(.pointer_move(.{ pointer = .{ value = 3 }, position = .{ x = 30.0, y = 5.0 } }));
     root.input.push(.pointer_up(.{ pointer = .{ value = 3 }, position = .{ x = 30.0, y = 5.0 } }));
-    _ = tick();
+    tick();
     router.drain_gestures(on_tap);
     process.assert(g_taps == 2, "slop crossing killed the tap");
 
     // Vanish: press C, rebuild WITHOUT C — the capture cancels cleanly.
     root.input.push(.pointer_down(.{ pointer = .{ value = 4 }, position = .{ x = 5.0, y = 25.0 } }));
-    _ = tick();
+    tick();
     process.assert(router.is_pressed(.{ value = g_eid_c }), "C pressed");
     g_show_c = false;
-    _ = tick();
+    tick();
     process.assert(!router.is_pressed(.{ value = g_eid_c }), "vanished element cancelled the press");
     root.input.push(.pointer_up(.{ pointer = .{ value = 4 }, position = .{ x = 5.0, y = 25.0 } }));
-    _ = tick();
+    tick();
     router.drain_gestures(on_tap);
     process.assert(g_taps == 2, "release of a vanished capture does not tap");
 
     // Surface generation: a mid-press surface recreation refuses the
     // stale capture.
     root.input.push(.pointer_down(.{ pointer = .{ value = 5 }, position = .{ x = 5.0, y = 5.0 } }));
-    _ = tick();
+    tick();
     process.assert(router.is_pressed(.{ value = g_eid_top }), "pressed before surface loss");
-    _ = root.surface_recreated();
-    _ = tick();
+    root.surface_recreated();
+    tick();
     process.assert(!router.is_pressed(.{ value = g_eid_top }), "surface bump refused the capture");
     root.input.push(.pointer_up(.{ pointer = .{ value = 5 }, position = .{ x = 5.0, y = 5.0 } }));
-    _ = tick();
+    tick();
     router.drain_gestures(on_tap);
     process.assert(g_taps == 2, "stale-generation release does not tap");
 
     // pointer_cancel ends the sequence silently.
     root.input.push(.pointer_down(.{ pointer = .{ value = 6 }, position = .{ x = 5.0, y = 5.0 } }));
-    _ = tick();
+    tick();
     root.input.push(.pointer_cancel(.{ pointer = .{ value = 6 }, position = .{ x = 5.0, y = 5.0 } }));
     root.input.push(.pointer_up(.{ pointer = .{ value = 6 }, position = .{ x = 5.0, y = 5.0 } }));
-    _ = tick();
+    tick();
     router.drain_gestures(on_tap);
     process.assert(g_taps == 2, "cancelled sequence does not tap");
 
