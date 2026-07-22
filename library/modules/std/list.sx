@@ -56,6 +56,16 @@ List :: struct ($T: Type) {
         list.cap = new_cap;
     }
 
+    // Drop the reference to a backing that is ALREADY GONE (its arena
+    // was reset) — no free, the list is empty and unallocated, ready
+    // to grow again from any allocator. For an owned buffer, use
+    // `deinit`.
+    detach :: (list: *List(T)) {
+        list.items.ptr = null;
+        list.items.len = 0;
+        list.cap = 0;
+    }
+
     deinit :: (list: *List(T), alloc: Allocator = context.allocator) {
         // `cap > 0` is the ownership signal: a List holds an allocated buffer
         // ONLY after a growth set `cap`. Guarding on `cap` (not `items.ptr`)
@@ -64,8 +74,6 @@ List :: struct ($T: Type) {
         if list.cap > 0 {
             alloc.dealloc_bytes(list.items.ptr);
         }
-        list.items.ptr = null;
-        list.items.len = 0;
-        list.cap = 0;
+        list.detach();
     }
 }

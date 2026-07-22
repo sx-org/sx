@@ -110,15 +110,9 @@ FrameLoop :: struct {
         arena.reset();
         snap : *CommittedUiSnapshot = if parity == 0 then *self.snap_a else *self.snap_b;
         // The slot's backings died with the arena reset — detach, never free.
-        snap.scene.nodes.items = null;
-        snap.scene.nodes.len = 0;
-        snap.scene.nodes.cap = 0;
-        snap.hit_list.items = null;
-        snap.hit_list.len = 0;
-        snap.hit_list.cap = 0;
-        snap.focus_list.items = null;
-        snap.focus_list.len = 0;
-        snap.focus_list.cap = 0;
+        snap.scene.nodes.detach();
+        snap.hit_list.detach();
+        snap.focus_list.detach();
 
         bounds := Frame.make(0.0, 0.0, width, height);
         push .{ allocator = arena } {

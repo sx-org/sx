@@ -136,9 +136,7 @@ UIPipeline :: struct {
         build_arena.reset();
 
         // Reset render_tree nodes (backing is stale after arena reset)
-        self.render_tree.nodes.items = null;
-        self.render_tree.nodes.len = 0;
-        self.render_tree.nodes.cap = 0;
+        self.render_tree.nodes.detach();
 
         push .{ allocator = build_arena } {
             // Workaround: self.body() crashes through struct field (issue-0010)
