@@ -1,0 +1,14 @@
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+
+// A second view of the SAME runtime class under the same sx name,
+// declaring a different method. Pre-0348 the registry raced
+// (last-wins) and one module's calls failed resolution.
+Probe :: #objc_class("NSString") extern {
+    length :: (self: *Self) -> u64;
+}
+
+probe_len :: (p: *void) -> u64 {
+    s : *Probe = xx p;
+    s.length()
+}

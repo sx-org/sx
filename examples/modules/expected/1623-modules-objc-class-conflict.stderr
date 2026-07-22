@@ -1,0 +1,1 @@
+error: extern runtime-class name 'Probe' binds different runtime classes: "NSString" (in examples/modules/1623-modules-objc-class-conflict/bind_string.sx) vs "NSArray" (in examples/modules/1623-modules-objc-class-conflict/bind_array.sx) — one sx name, one runtime class

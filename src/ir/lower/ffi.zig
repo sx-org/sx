@@ -793,7 +793,7 @@ pub fn lowerSuperCall(
 /// then handles the body via the standard path; `*Self` is
 /// substituted to `*<ClassName>State` during body lowering (M1.2 A.2b).
 pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDecl) void {
-    self.program_index.runtime_class_map.put(fcd.name, fcd) catch {};
+    upsertRuntimeClass(self, fcd.name, fcd);
     if (!fcd.is_extern and fcd.runtime == .objc_class) {
         if (self.module.lookupObjcDefinedClass(fcd.name) == null) {
             self.module.appendObjcDefinedClass(fcd.name, fcd);
@@ -816,6 +816,119 @@ pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDec
         }
         self.registerObjcDefinedClassMethods(fcd);
     }
+}
+
+/// Issue 0348: the runtime-class registry is name-keyed program-wide, so
+/// two modules declaring the same sx name used to race the slot silently
+/// (last-wins) — the loser's member calls resolved against the winner's
+/// surface. Extern declarations are C-header-like per-module VIEWS of one
+/// runtime class, so same-name externs binding the SAME runtime class now
+/// MERGE into a union surface (every consumer sees the union through the
+/// map). Genuine conflicts diagnose: different runtime bindings, any
+/// sx-defined (export) duplicate, or same-name methods with different
+/// static-ness/arity/selector.
+fn upsertRuntimeClass(self: *Lowering, key: []const u8, fcd: *const ast.RuntimeClassDecl) void {
+    const existing = self.program_index.runtime_class_map.get(key) orelse {
+        self.program_index.runtime_class_map.put(key, fcd) catch {};
+        return;
+    };
+    if (existing == fcd) return;
+    const src_a = existing.source_file orelse "<unknown>";
+    const src_b = fcd.source_file orelse (self.current_source_file orelse "<unknown>");
+    if (!existing.is_extern or !fcd.is_extern) {
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, null, "duplicate runtime-class declaration '{s}': an sx-defined (export) class allows exactly one declaration — declared in {s} and {s}", .{ key, src_a, src_b });
+        }
+        return;
+    }
+    if (existing.runtime != fcd.runtime or !std.mem.eql(u8, existing.runtime_path, fcd.runtime_path)) {
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, null, "extern runtime-class name '{s}' binds different runtime classes: \"{s}\" (in {s}) vs \"{s}\" (in {s}) — one sx name, one runtime class", .{ key, existing.runtime_path, src_a, fcd.runtime_path, src_b });
+        }
+        return;
+    }
+
+    var members = std.ArrayList(ast.RuntimeClassMember).empty;
+    members.appendSlice(self.alloc, existing.members) catch return;
+    for (fcd.members) |m| {
+        switch (m) {
+            .method => |md| {
+                var conflict = false;
+                var present = false;
+                for (existing.members) |em| {
+                    if (em != .method) continue;
+                    const emd = em.method;
+                    if (!std.mem.eql(u8, emd.name, md.name)) continue;
+                    const same_sel = (emd.selector_override == null and md.selector_override == null) or
+                        (emd.selector_override != null and md.selector_override != null and
+                            std.mem.eql(u8, emd.selector_override.?, md.selector_override.?));
+                    // Arity + selector identify the dispatch; static-ness is
+                    // NOT compared — it derives from the `*Self` spelling, so
+                    // `self: *Self` vs `self: *NSObject` (both instance) would
+                    // false-conflict, while a true static/instance pair
+                    // already differs in params.len (statics carry no self).
+                    if (emd.params.len == md.params.len and same_sel) {
+                        present = true;
+                    } else {
+                        conflict = true;
+                    }
+                    break;
+                }
+                if (conflict) {
+                    if (self.diagnostics) |d| {
+                        d.addFmt(.err, null, "extern runtime-class '{s}': method '{s}' declared with conflicting shapes in {s} and {s} (static-ness, arity, or #selector differ)", .{ key, md.name, src_a, src_b });
+                    }
+                    return;
+                }
+                if (!present) members.append(self.alloc, m) catch return;
+            },
+            .field => |fd| {
+                var dup = false;
+                for (existing.members) |em| {
+                    if (em == .field and std.mem.eql(u8, em.field.name, fd.name)) { dup = true; break; }
+                }
+                if (dup) {
+                    if (self.diagnostics) |d| {
+                        d.addFmt(.err, null, "extern runtime-class '{s}': field '{s}' declared in both {s} and {s} — declare it in one view", .{ key, fd.name, src_a, src_b });
+                    }
+                    return;
+                }
+                members.append(self.alloc, m) catch return;
+            },
+            .extends => |parent| {
+                var existing_parent: ?[]const u8 = null;
+                for (existing.members) |em| {
+                    if (em == .extends) { existing_parent = em.extends; break; }
+                }
+                if (existing_parent) |ep| {
+                    if (!std.mem.eql(u8, ep, parent)) {
+                        if (self.diagnostics) |d| {
+                            d.addFmt(.err, null, "extern runtime-class '{s}': #extends disagrees — '{s}' (in {s}) vs '{s}' (in {s})", .{ key, ep, src_a, parent, src_b });
+                        }
+                        return;
+                    }
+                } else {
+                    members.append(self.alloc, m) catch return;
+                }
+            },
+            .implements => |proto| {
+                var dup = false;
+                for (existing.members) |em| {
+                    if (em == .implements and std.mem.eql(u8, em.implements, proto)) { dup = true; break; }
+                }
+                if (!dup) members.append(self.alloc, m) catch return;
+            },
+        }
+    }
+
+    // Nothing new (a re-scan of an already-merged pair) — keep the
+    // existing entry, no fresh allocation.
+    if (members.items.len == existing.members.len) return;
+
+    const merged = self.alloc.create(ast.RuntimeClassDecl) catch return;
+    merged.* = existing.*;
+    merged.members = self.alloc.dupe(ast.RuntimeClassMember, members.items) catch return;
+    self.program_index.runtime_class_map.put(key, merged) catch {};
 }
 
 /// Resolve the `#extends ParentAlias` declaration on a sx-defined
@@ -1018,7 +1131,7 @@ pub fn registerNamespacedRuntimeClasses(self: *Lowering, ns: ast.NamespaceDecl) 
         if (inner.data == .runtime_class_decl) {
             const fcd = &inner.data.runtime_class_decl;
             const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ ns.name, fcd.name }) catch fcd.name;
-            self.program_index.runtime_class_map.put(qualified, fcd) catch {};
+            upsertRuntimeClass(self, qualified, fcd);
         } else if (inner.data == .namespace_decl) {
             // Nested namespaces — qualify with both prefixes.
             self.registerNamespacedRuntimeClasses(inner.data.namespace_decl);

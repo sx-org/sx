@@ -1,0 +1,6 @@
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+
+Probe :: #objc_class("NSArray") extern {
+    count :: (self: *Self) -> u64;
+}

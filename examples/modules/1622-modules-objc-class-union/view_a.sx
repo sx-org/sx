@@ -1,0 +1,14 @@
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+
+// One module's VIEW of NSString — extern #objc_class decls are
+// C-header-like; issue 0348 merges same-name views of one runtime
+// class into a union surface.
+Probe :: #objc_class("NSString") extern {
+    UTF8String :: (self: *Self) -> [*]u8;
+}
+
+probe_first_byte :: (p: *void) -> i64 {
+    s : *Probe = xx p;
+    s.UTF8String()[0].(i64)
+}

@@ -1,0 +1,11 @@
+// Issue 0348, the genuine-collision arm: one sx name binding two
+// DIFFERENT runtime classes across modules is an error naming both
+// declaration sites (pre-fix: silent last-wins registry race).
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+#import "1623-modules-objc-class-conflict/bind_string.sx";
+#import "1623-modules-objc-class-conflict/bind_array.sx";
+
+main :: () {
+    print("unreachable — the conflicting bindings above fail the build\n");
+}

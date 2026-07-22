@@ -1,6 +1,31 @@
 # 0348 — duplicate `#objc_class` decls for one runtime class race the name-keyed registry silently
 
-Status: OPEN (found during the platform objc-DSL port, 2026-07-22)
+Status: RESOLVED 2026-07-22
+
+## Resolution
+
+`upsertRuntimeClass` (src/ir/lower/ffi.zig) replaces both raw
+`runtime_class_map.put` sites. Extern declarations are C-header-like
+per-module views: same sx name + same runtime binding MERGE into a
+union surface (a synthesized decl with the member union — every
+consumer sees it through the map, so no per-consumer source-awareness
+was needed). Genuine conflicts diagnose, naming both source files:
+different runtime bindings under one sx name, any sx-defined (export)
+duplicate, same-name methods differing in static-ness/arity/#selector,
+duplicate fields, and disagreeing #extends. Re-scans are idempotent
+(no-op merges keep the existing entry).
+
+Pins: examples/modules/1622 (union — both views' calls resolve on one
+value; the CAMetalLayer race shape) and examples/modules/1623
+(conflicting bindings reject). The existing corpus exercises the merge
+too: ffi-objc/1317 redeclares NSObject (alloc/init) against objc.sx's
+view — identical methods dedup rather than conflict. Method equality
+is (name, arity, #selector); static-ness is deliberately NOT compared —
+it derives from the `*Self` spelling (`self: *NSObject` vs
+`self: *Self` are both instance receivers), and a true static/instance
+pair already differs in arity (statics carry no self param). Note
+ffi/quartzcore.sx STAYS — one decl per runtime class remains the
+better layering; the compiler just no longer forces it.
 
 ## Symptom
 
