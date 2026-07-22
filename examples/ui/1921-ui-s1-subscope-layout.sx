@@ -1,0 +1,110 @@
+// S1 (modules/ui/frame.sx + compose.sx): LAYOUT may open subscope
+// builds — the virtualization primitive (§6.10 realizes rows during
+// layout). A view captures its root's Ui/StateStore at build time and
+// opens an emission scope inside layout(); the realized children join
+// this frame's tree, their use_state claims land in the SAME build
+// transaction (the sweep runs last in the tick, so layout-time claims
+// survive it and persist across frames). And the C8 atomicity pin: from
+// INSIDE a build, snapshot() still shows the previous frame — a partial
+// replacement is never observable.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/events.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/stacks.sx";
+#import "modules/ui/label.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/input.sx";
+#import "modules/ui/runtime.sx";
+#import "modules/ui/frame.sx";
+
+g_loop : *FrameLoop = null;
+g_root : *UiRoot = null;
+g_mid_build_rev : i64 = -100;
+g_row_state : i64 = 0;
+g_realized : i64 = 0;
+
+row :: (n: i64) {
+    s := use_state(i64, 0);
+    s.set(s.get() + 1);
+    g_row_state = s.get();
+    text("row");
+}
+
+// A lazy container: emits NOTHING at build; realizes its rows during
+// LAYOUT via a subscope build against the captured root.
+LazyHost :: struct {
+    ui: *Ui;
+    store: *StateStore;
+    count: i64;
+    children: List(ViewChild) = .{};
+}
+impl View for LazyHost {
+    size_that_fits :: (self: *LazyHost, proposal: ProposedSize) -> Size {
+        Size.{ width = 100.0, height = 20.0 }
+    }
+    layout :: (self: *LazyHost, bounds: Frame) {
+        // The S1 subscope: an append-only emission scope, opened inside
+        // layout, claiming state in the same build transaction.
+        s := Sink(View).{};
+        push .{ ui = self.ui, ui_store = self.store, ui_sink = @s } {
+            i := 0;
+            while i < self.count {
+                keyed(i) { row(i); }
+                i += 1;
+            }
+        }
+        i := 0;
+        while i < s.items.len {
+            self.children.append(.{ view = s.items.items[i], computed_frame = bounds });
+            i += 1;
+        }
+        g_realized = self.children.len;
+    }
+    render :: (self: *LazyHost, ctx: *RenderContext, frame: Frame) {
+        i := 0;
+        while i < self.children.len {
+            self.children.items[i].view.render(ctx, self.children.items[i].computed_frame);
+            i += 1;
+        }
+    }
+    handle_event :: (self: *LazyHost, event: *Event, frame: Frame) -> bool { false }
+}
+
+home :: () -> View {
+    // C8: this frame is mid-build — the committed world is still the
+    // previous one.
+    if s := g_loop.snapshot() {
+        g_mid_build_rev = s.revision;
+    } else {
+        g_mid_build_rev = -1;
+    }
+    vstack(0.0) {
+        place(LazyHost.{ ui = @g_root.ui, store = @g_root.store, count = 3 }.(View));
+    }
+}
+
+main :: () {
+    loop := FrameLoop.init();
+    root := UiRoot.init(.{ value = 3 });
+    g_loop = @loop;
+    g_root = @root;
+
+    s1 := loop.tick(@root, home, 100.0, 60.0);
+    process.assert(g_mid_build_rev == -1, "mid-build: no committed frame yet");
+    process.assert(g_realized == 3, "layout realized the subscope rows");
+    process.assert(g_row_state == 1, "subscope claims initialized");
+    process.assert(root.store.entries.len == 3, "layout-time claims survived the sweep");
+    process.assert(s1.scene.nodes.len == 3, "realized rows rendered into the scene");
+
+    s2 := loop.tick(@root, home, 100.0, 60.0);
+    process.assert(g_mid_build_rev == 1, "mid-build: snapshot() still shows the PREVIOUS frame");
+    process.assert(g_row_state == 2, "subscope state persists across frames");
+    process.assert(s2.revision == 2, "commit advanced after the build");
+
+    print("ok {} {} {}\n", g_realized, g_row_state, s2.revision);
+    loop.deinit();
+    root.teardown();
+}
