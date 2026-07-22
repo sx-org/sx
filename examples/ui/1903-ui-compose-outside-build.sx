@@ -6,5 +6,5 @@
 #import "modules/ui/view.sx";
 
 main :: () {
-    _ = text("nope");
+    text("nope");
 }

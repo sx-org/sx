@@ -6,8 +6,8 @@
 #import "modules/ui/store.sx";
 
 either :: (first: bool, loc: Source_Location = #caller_location) {
-    if first { _ = use_state(i64, 0, loc); }
-    else { _ = use_state(f64, 0.0, loc); }
+    if first { use_state(i64, 0, loc); }
+    else { use_state(f64, 0.0, loc); }
 }
 
 main :: () {

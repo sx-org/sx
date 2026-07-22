@@ -6,7 +6,7 @@
 #import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";
 
-row :: () { _ = use_state(i64, 0); }
+row :: () { use_state(i64, 0); }
 
 build :: (n: i64, u: *Ui, store: *StateStore) {
     store.begin_build(); u.begin_build();
