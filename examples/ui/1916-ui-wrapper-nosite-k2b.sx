@@ -1,0 +1,38 @@
+// A wrapper WITHOUT a site param merges its call sites into one scope:
+// its rows share one occurrence group, so a call site vanishing between
+// builds is indistinguishable from misbinding (2 -> 1 instances) — K2b
+// panics at the flip, and the fix-it offers BOTH repairs: key the rows,
+// or give the wrapper `site: SiteId = site_of(#caller_location)` so each
+// call site becomes its own scope (the 1914 titled_box shape, which
+// makes the same removal legal).
+#import "modules/std.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/testing.sx";
+
+counter_row :: () {
+    n := use_state(i64, 0);
+    n.set(n.get() + 1);
+}
+
+plain_box :: (content: Closure()) {
+    content();
+}
+
+// One screen, run every build: without a site param the two call sites
+// share one scope, so counter_row's claims land in ONE occurrence group.
+screen :: (both: bool) {
+    plain_box() { counter_row(); };
+    if both {
+        plain_box() { counter_row(); };
+    }
+}
+
+main :: () {
+    t := ComposeTest.init();
+    t.build_void(() { screen(true); });
+    // The second call site toggles off; the SHARED group flips 2 -> 1.
+    t.build_void(() { screen(false); });
+    print("unreachable\n");
+}

@@ -150,7 +150,7 @@ StateStore :: struct {
         while gi < self.groups.len {
             g := @self.groups.items[gi];
             if g.tier == .strict and g.prev_count > 0 and g.cur_count > 0 and g.prev_count != g.cur_count {
-                print("K2: unkeyed instance count changed for use_state at {}:{} — {} -> {} instances under one scope; conditionally-present instances must be keyed (wrap each row in keyed(id))\n",
+                print("K2: unkeyed instance count changed for use_state at {}:{} — {} -> {} instances under one scope; conditionally-present instances must be keyed (wrap each row in keyed(id)), or give the enclosing wrapper its own scope per call site (site: SiteId = site_of(#caller_location))\n",
                     g.loc_file, g.loc_line, g.prev_count, g.cur_count);
                 process.exit(1);
             }

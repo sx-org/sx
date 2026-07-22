@@ -1,0 +1,109 @@
+// compose_for_test (modules/ui/testing.sx): drive components headless —
+// no host/GPU — and assert the emitted tree and store semantics across
+// build transactions. Pins the G4 acceptance rows: S2 residual (bare
+// statement in root value position drops; the trailing expression IS the
+// root), helper flattening (N siblings, no wrapper nodes), keyless
+// static repeats via the occurrence counter (K1 — stable and independent
+// across builds), scope-site separation (same rows split across two
+// containers; a wrapper WITH the site param repeats keylessly and one
+// call site's removal never shifts another's state).
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/stacks.sx";
+#import "modules/ui/label.sx";
+#import "modules/ui/modifier.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/testing.sx";
+
+g_vals : [8]i64 = .[0, 0, 0, 0, 0, 0, 0, 0];
+g_n : i64 = 0;
+record :: (v: i64) { g_vals[g_n] = v; g_n += 1; }
+
+// A row with strict internal state: bumps every build it appears in.
+counter_row :: () {
+    n := use_state(i64, 0);
+    n.set(n.get() + 1);
+    record(n.get());
+    text("row");
+}
+
+two_rows :: () {
+    text("r1");
+    text("r2");
+}
+
+// A wrapper WITH the site param: every call site is its own scope.
+titled_box :: (site: SiteId = site_of(#caller_location), content: Closure()) -> View {
+    vstack(0.0, site = site) {
+        content();
+    }
+}
+
+// One screen, run every build — identity comes from the SOURCE call
+// sites, so presence toggles at one site never shift the other's scope.
+site_screen :: (both: bool) {
+    titled_box() { counter_row(); };
+    if both {
+        titled_box() { counter_row(); };
+    }
+}
+
+main :: () {
+    t := ComposeTest.init();
+
+    // S2 residual: the bare statement's return drops in root value
+    // position; the trailing vstack IS the root.
+    root := t.build(() -> View {
+        text("dropped");
+        vstack(0.0) {
+            two_rows();
+            two_rows();
+        }
+    });
+    kids := stack_children(root);
+    process.assert(root.(?VStack) != null, "trailing expression is the root");
+    process.assert(kids.len == 4, "helpers flatten: two calls emit four siblings");
+    process.assert(kids[0].view.(?Label) != null and kids[3].view.(?Label) != null,
+        "flattened children are the leaves themselves — no wrapper nodes");
+    print("root {} kids {}\n", root.(?VStack) != null, kids.len);
+
+    // Keyless static repeats (K1): same helper twice under one scope →
+    // occurrence #0/#1 — independent entries, stable across builds.
+    t2 := ComposeTest.init();
+    t2.build_void(() {
+        counter_row();
+        counter_row();
+    });
+    t2.build_void(() {
+        counter_row();
+        counter_row();
+    });
+    print("occ {} {} then {} {} entries {}\n", g_vals[0], g_vals[1], g_vals[2], g_vals[3], t2.entry_count);
+    process.assert(g_vals[2] == 2 and g_vals[3] == 2, "occurrence identity persists per instance");
+
+    // Scope sites: the same row under two wrapper call sites — distinct
+    // chains, keyless (the wrapper carries the site param); one site's
+    // presence toggling off sweeps only its entries and never shifts the
+    // survivor's state (no panic: the groups are distinct — contrast
+    // 1916, where a wrapper WITHOUT the param panics on the same toggle).
+    g_n = 0;
+    t3 := ComposeTest.init();
+    t3.build_void(() { site_screen(true); });
+    t3.build_void(() { site_screen(true); });
+    entries_both := t3.entry_count;
+    t3.build_void(() { site_screen(false); });
+    print("sites {} {} / {} {} / {} entries {} -> {}\n",
+        g_vals[0], g_vals[1], g_vals[2], g_vals[3], g_vals[4], entries_both, t3.entry_count);
+    process.assert(g_vals[2] == 2 and g_vals[3] == 2, "per-call-site scopes: independent state");
+    process.assert(g_vals[4] == 3, "the surviving call site keeps its own state");
+    process.assert(t3.entry_count < entries_both, "the toggled-off call site's entries swept");
+
+    // The §6.3 helpers ride the harness too: a call-site-composed chip.
+    chip := t.build(() -> View {
+        text("chip", .{ padding = EdgeInsets.all(4.0), bg = COLOR_BLUE, corner = 3.0 })
+    });
+    process.assert(mod_child(chip).(?Label) != null, "one ModBox over the leaf");
+    print("chip ok\n");
+}

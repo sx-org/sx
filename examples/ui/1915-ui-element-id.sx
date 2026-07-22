@@ -1,0 +1,85 @@
+// K5 ElementId (modules/ui/compose.sx): the hash of the K1 identity tuple
+// for interactive elements. The G4 acceptance slice: two keyless sibling
+// buttons get DISTINCT ids that are STABLE across rebuilds (the identity
+// half of the P0.3 press-survives-rebuild pin — capture itself is the
+// open events-dispatch decision), ids follow keys not order under keyed
+// scopes, and a K3 discriminator changes the chain and therefore the id.
+// C6: two UiRoots share nothing — one root's build never evicts the
+// other's state.
+#import "modules/std.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/testing.sx";
+
+g_ids : [8]u64 = .[0, 0, 0, 0, 0, 0, 0, 0];
+g_n : i64 = 0;
+
+// A keyless interactive element: identity from chain + this site +
+// occurrence, exactly like use_transient chrome state.
+btn :: () {
+    id := element_id();
+    g_ids[g_n] = id.value;
+    g_n += 1;
+}
+
+main :: () {
+    t := ComposeTest.init();
+
+    // Two keyless siblings: distinct ids, stable across rebuilds.
+    t.build_void(() { btn(); btn(); });
+    t.build_void(() { btn(); btn(); });
+    process.assert(g_ids[0] != g_ids[1], "siblings get distinct ids");
+    process.assert(g_ids[0] == g_ids[2] and g_ids[1] == g_ids[3], "ids stable across rebuilds");
+    print("siblings {} {}\n", g_ids[0] != g_ids[1], g_ids[0] == g_ids[2]);
+
+    // Keyed rows: the id follows the KEY, not the order.
+    g_n = 0;
+    t.build_void(() {
+        keyed("a") { btn(); }
+        keyed("b") { btn(); }
+    });
+    a1 := g_ids[0]; b1 := g_ids[1];
+    g_n = 0;
+    t.build_void(() {
+        keyed("b") { btn(); }
+        keyed("a") { btn(); }
+    });
+    process.assert(g_ids[0] == b1 and g_ids[1] == a1, "ids follow keys across reorder");
+    print("keyed follow {}\n", g_ids[0] == b1 and g_ids[1] == a1);
+
+    // K3 slice: a discriminator key changes the chain — the same element
+    // site under route "A" and route "B" is two identities.
+    g_n = 0;
+    t.build_void(() {
+        keyed("route-A") { btn(); }
+    });
+    route_a := g_ids[0];
+    g_n = 0;
+    t.build_void(() {
+        keyed("route-B") { btn(); }
+    });
+    process.assert(route_a != g_ids[0], "discriminator scopes the id");
+    print("k3 distinct {}\n", route_a != g_ids[0]);
+
+    // C6: two UiRoots, same component shapes — independent stores. Root
+    // B building (and sweeping) never touches root A's entries; A's
+    // state continues where it left off.
+    ra := ComposeTest.init(1);
+    rb := ComposeTest.init(2);
+    ra.build_void(() { bump(); });
+    rb.build_void(() { bump(); });
+    rb.build_void(() { });          // B claims nothing — B's entry sweeps
+    ra.build_void(() { bump(); });  // A continues: 2, untouched by B
+    process.assert(ra.entry_count == 1 and rb.entry_count == 0, "stores are per root");
+    process.assert(g_last == 2, "root A's state survived root B's sweep");
+    print("roots {} {} last {}\n", ra.entry_count, rb.entry_count, g_last);
+}
+
+g_last : i64 = 0;
+
+bump :: () {
+    n := use_state(i64, 0);
+    n.set(n.get() + 1);
+    g_last = n.get();
+}

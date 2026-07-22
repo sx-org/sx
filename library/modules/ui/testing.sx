@@ -1,0 +1,82 @@
+// compose_for_test (G4): drive a component headless — no host, no GPU,
+// no renderer — and assert the emitted tree. One ComposeTest owns one
+// Ui + one StateStore (one UiRoot), so state persistence, occurrence
+// identity, and sweep semantics are assertable across successive builds.
+//
+// Panic paths (S2 outside-build, K2a/K2b, type change) print their
+// contract message and exit 1 — assertable as expected-exit examples,
+// the corpus panic-capture mechanism.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/store.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/stacks.sx";
+#import "modules/ui/modifier.sx";
+
+ComposeTest :: struct {
+    ui: Ui = .{};
+    store: StateStore;
+
+    init :: (root: u64 = 1, gpa: Allocator = context.allocator) -> ComposeTest {
+        ComposeTest.{ store = StateStore.init(.{ value = root }, gpa) }
+    }
+
+    // One headless build transaction: begin (store + identity state) →
+    // run `body` as the typed-return root in VALUE mode (ui set, no
+    // sink — S2) → commit (K2b validation, then sweep). The returned
+    // View is the built tree, ready for downcast assertions.
+    build :: (self: *ComposeTest, body: Closure() -> View) -> View {
+        self.store.begin_build();
+        self.ui.begin_build();
+        v : View = ---;
+        push .{ ui = @self.ui, ui_store = @self.store } {
+            v = body();
+        }
+        self.store.commit_build();
+        v
+    }
+
+    // A build whose root emits nothing the test wants back (void body);
+    // store/identity semantics still run in full.
+    build_void :: (self: *ComposeTest, body: Closure()) {
+        self.store.begin_build();
+        self.ui.begin_build();
+        push .{ ui = @self.ui, ui_store = @self.store } {
+            body();
+        }
+        self.store.commit_build();
+    }
+
+    entry_count :: (self: *ComposeTest) -> i64 #get => self.store.entries.len;
+}
+
+// --- Tree assertions (downcast-based) ---
+
+// The children of a stack container. The slice borrows the emitted
+// tree's backing (the downcast copies the struct shell, not the items);
+// its length is the container's live child count.
+stack_children :: (v: View) -> []ViewChild {
+    if vs := v.(?VStack) {
+        s := vs.children.items;
+        s.len = vs.children.len;
+        return s;
+    }
+    if hs := v.(?HStack) {
+        s := hs.children.items;
+        s.len = hs.children.len;
+        return s;
+    }
+    print("panic: stack_children on a non-stack view\n");
+    process.exit(1);
+    empty : []ViewChild = ---;
+    empty.len = 0;
+    empty
+}
+
+// Unwrap exactly one ModBox level — the modified-place shape (§6.3).
+mod_child :: (v: View) -> View {
+    if mb := v.(?ModBox) { return mb.child.view; }
+    print("panic: mod_child on a view that is not a ModBox\n");
+    process.exit(1);
+    v
+}

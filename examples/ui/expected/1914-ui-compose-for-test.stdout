@@ -1,0 +1,4 @@
+root true kids 4
+occ 1 1 then 2 2 entries 2
+sites 1 1 / 2 2 / 3 entries 2 -> 1
+chip ok

@@ -184,6 +184,41 @@ Ui :: struct {
     }
 }
 
+// --- ElementId (K5) — interactive-element identity ---
+
+// ElementId = hash of the K1 identity tuple (ambient chain ++ element
+// site ++ occurrence). The identity is dispatch-neutral and STANDS;
+// how events reach an element (handle_event today; a router/hit-list
+// model is a separate open decision) does not change it. Focus and
+// a11y ride the same identity when those gates land.
+ElementId :: struct {
+    value: u64;
+}
+
+// The capture shape: what an input router (or focus table) records
+// instead of retaining closures or tree pointers — resolved against
+// persistent structures at fire time, refused on a stale generation.
+// G4 ships the TYPES; the recording mechanism is out of scope.
+ElementCapture :: struct {
+    id: ElementId;
+    generation: i64;
+}
+
+// Derive the calling element's id inside a build. Same-site siblings
+// disambiguate by occurrence (K1's last tuple element) — the id is
+// stable across rebuilds as long as the element's identity tuple is.
+element_id :: (site: SiteId = site_of(#caller_location)) -> ElementId {
+    if context.ui == null {
+        print("panic: element_id used outside a frame build\n");
+        process.exit(1);
+    }
+    ui := context.ui;
+    gid := hash_site(ui.chain_hash, site);
+    occurrence := ui.next_occurrence(gid);
+    occ := occurrence;
+    ElementId.{ value = hash.fnv1a_fold(gid, xx @occ, size_of(i32)) }
+}
+
 // --- keyed — THE dynamic-identity spelling ---
 
 // Comptime kind-match: an i64, a string, or an already-built Key. Anything

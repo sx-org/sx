@@ -1,0 +1,5 @@
+error: function returns 'View' but the last expression's value is discarded by this `;` — drop the `;` to return it (or use an explicit `return`)
+  --> examples/ui/1913-ui-root-typed-return.sx:10:20
+   |
+10 |     text("content");    // error: the root's value is discarded by this ';'
+   |                    ^
