@@ -2,9 +2,9 @@
 //
 // Linking is per-target via the game's build.sx (`opts.add_framework("UIKit")`
 // + `opts.add_framework("OpenGLES")` + `opts.add_framework("QuartzCore")` on
-// `.ios`). The file compiles cleanly on every target — the UIKit-touching
-// bodies live behind `inline if OS == .ios` guards, so non-iOS builds never
-// reach the unresolved Obj-C symbols.
+// `.ios`). iOS-only by nature: platform selection lives at the consumer
+// seam, not per-function here — touching this host on another target
+// fails at link/JIT with the UIKit symbol named.
 
 #import "modules/std.sx";
 #import "modules/ffi/objc.sx";
@@ -194,68 +194,12 @@ UITouch :: #objc_class("UITouch") extern {
     locationInView :: (self: *Self, view: *void) -> CGPoint;
 }
 
-// SxAppDelegate — UIApplicationMain's delegate class (the app delegate, a
-// UIResponder — NOT the UIApplication principal class). Method bodies
-// dispatch to UIKitPlatform methods on the shared `g_uikit_plat`.
-SxAppDelegate :: #objc_class("SxAppDelegate") export {
-    #extends UIResponder;
-
-    application_didFinishLaunchingWithOptions :: (self: *Self, app: *void, opts: *void) -> BOOL {
-        inline if OS == .ios {
-            if g_uikit_plat != null {
-                center := NSNotificationCenter.defaultCenter();
-                center.addObserver_selector_name_object(
-                    xx self,
-                    sel_registerName("sxKeyboardWillChangeFrame:".ptr),
-                    xx "UIKeyboardWillChangeFrameNotification",
-                    null);
-            }
-        }
-        return 1;
-    }
-
-    sxKeyboardWillChangeFrame :: (self: *Self, notification: *void) {
-        if g_uikit_plat == null { return; }
-        notif : *NSNotification = xx notification;
-        g_uikit_plat.keyboard_will_change_frame(notif);
-    }
-
-    alloc :: () -> *SxAppDelegate;
-    init  :: (self: *SxAppDelegate) -> *SxAppDelegate;
-}
-
-// SxSceneDelegate — iOS 13+ scene-based lifecycle delegate. Two
-// `#implements` declarations formally conform to the scene-delegate
-// protocols — iOS rejects the class otherwise.
-SxSceneDelegate :: #objc_class("SxSceneDelegate") export {
-    #extends UIResponder;
-    #implements UISceneDelegate;
-    #implements UIWindowSceneDelegate;
-
-    scene_willConnectToSession_options :: (self: *Self, scene: *void, session: *void, options: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.scene_will_connect(xx self, scene);
-    }
-
-    window :: (self: *Self) -> ?*UIWindow {
-        if g_uikit_plat == null { return null; }
-        return g_uikit_plat.window;
-    }
-
-    setWindow :: (self: *Self, w: ?*UIWindow) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.window = w;
-    }
-}
-
 // GLenum constants for renderbuffer/framebuffer setup that aren't in opengl.sx's
 // loader path (they live on the framework's symbol table directly).
 GL_RENDERBUFFER          :u32: 0x8D41;
 GL_FRAMEBUFFER           :u32: 0x8D40;
 GL_COLOR_ATTACHMENT0     :u32: 0x8CE0;
 GL_FRAMEBUFFER_COMPLETE  :u32: 0x8CD5;
-
-g_uikit_plat : *UIKitPlatform = null;
 
 // Which GPU API the UIKit backend wires up. `.gles` keeps the existing
 // CAEAGLLayer + EAGLContext + renderbuffer path; `.metal` swaps the view
@@ -280,6 +224,12 @@ UIKitPlatform :: struct {
     framebuffer: u32 = 0;
     gl_initialized: bool = false;
     gpu_mode: GpuMode = .gles;
+    // The Obj-C class handed to UIApplicationMain as the app delegate.
+    // The host ships no app class names: the shell's boot
+    // (platform/uikit_app.sx `uikit_app_run`) sets its own, an app with
+    // custom delegates sets this to theirs before `run_frame_loop`.
+    // Must be a NUL-terminated string (a literal is).
+    delegate_class_name: string = "";
 
     // Hidden UITextField; firstResponder ⇆ keyboard visibility.
     text_field: ?*UITextField = null;
@@ -336,37 +286,39 @@ impl Platform for UIKitPlatform {
         self.keyboard_visible = false;
         self.keyboard_height = 0.0;
         self.saved_title = title.ptr;
-        g_uikit_plat = self;
 
         // iOS apps start with CWD=/. chdir to the bundle's resourcePath so the
         // game's relative `fopen("assets/...")` calls find their data — must
         // happen BEFORE any code that loads fonts/textures from disk.
-        inline if OS == .ios {
-            uikit_chdir_to_bundle();
-            if self.gpu_mode == .gles {
-                self.create_gl_context();
-            } else {
-                // Metal mode: skip EAGL. dpi_scale still needs to be known
-                // before the window exists so callers can size resources.
-                self.read_screen_scale();
-            }
+        uikit_chdir_to_bundle();
+        if self.gpu_mode == .gles {
+            self.create_gl_context();
+        } else {
+            // Metal mode: skip EAGL. dpi_scale still needs to be known
+            // before the window exists so callers can size resources.
+            self.read_screen_scale();
         }
         true
     }
 
+    // Boots UIKit with the app-delegate class named in
+    // `self.delegate_class_name` — the host ships no app class names;
+    // the shell's boot (platform/uikit_app.sx `uikit_app_run`) or the
+    // app's own sets the field first. The name goes in the
+    // delegateClassName slot: the delegate is a UIResponder, NOT the
+    // UIApplication subclass — pass nil for the principal so UIKit uses
+    // the default UIApplication. Passing it as the principal makes
+    // newer UIKit call UIApplication class methods on it (e.g.
+    // `+registerAsSystemApp`) → unrecognized selector crash during
+    // UIApplicationMain prep.
     run_frame_loop :: (self: *UIKitPlatform, frame_fn: Closure()) {
         self.frame_closure = frame_fn;
         self.has_frame_closure = true;
-        g_uikit_plat = self;
-        inline if OS == .ios {
-            // (argc, argv, principalClassName, delegateClassName). SxAppDelegate
-            // is the DELEGATE (a UIResponder), not the UIApplication subclass —
-            // pass nil for the principal so UIKit uses the default UIApplication.
-            // Passing it as the principal makes newer UIKit call UIApplication
-            // class methods on it (e.g. `+registerAsSystemApp`) → unrecognized
-            // selector crash during UIApplicationMain prep.
-            UIApplicationMain(0, xx 0, xx 0, xx "SxAppDelegate");
+        if self.delegate_class_name.len == 0 {
+            NSLog(xx "[sx] UIKitPlatform.run_frame_loop: delegate_class_name unset — boot through uikit_app_run (platform/uikit_app.sx) or set your own delegate class first\n");
+            return;
         }
+        UIApplicationMain(0, xx 0, xx 0, xx self.delegate_class_name);
     }
 
     poll_events :: (self: *UIKitPlatform) -> []Event {
@@ -378,9 +330,7 @@ impl Platform for UIKitPlatform {
     }
 
     begin_frame :: (self: *UIKitPlatform) -> FrameContext {
-        inline if OS == .ios {
-            self.refresh_safe_insets();
-        }
+        self.refresh_safe_insets();
         FrameContext.{
             viewport_w = self.viewport_w,
             viewport_h = self.viewport_h,
@@ -393,12 +343,10 @@ impl Platform for UIKitPlatform {
     }
 
     end_frame :: (self: *UIKitPlatform) {
-        inline if OS == .ios {
-            if self.gpu_mode == .gles {
-                self.present_renderbuffer();
-            }
-            // Metal mode: caller's gpu.end_frame() handles present.
+        if self.gpu_mode == .gles {
+            self.present_renderbuffer();
         }
+        // Metal mode: caller's gpu.end_frame() handles present.
     }
 
     safe_insets :: (self: *UIKitPlatform) -> EdgeInsets {
@@ -422,18 +370,14 @@ impl Platform for UIKitPlatform {
     }
 
     show_keyboard :: (self: *UIKitPlatform) {
-        inline if OS == .ios {
-            if tf := self.text_field {
-                tf.becomeFirstResponder();
-            }
+        if tf := self.text_field {
+            tf.becomeFirstResponder();
         }
     }
 
     hide_keyboard :: (self: *UIKitPlatform) {
-        inline if OS == .ios {
-            if tf := self.text_field {
-                tf.resignFirstResponder();
-            }
+        if tf := self.text_field {
+            tf.resignFirstResponder();
         }
     }
 
@@ -441,12 +385,9 @@ impl Platform for UIKitPlatform {
 
     shutdown :: (self: *UIKitPlatform) { }
 
-    // ── iOS-only internal helpers ──────────────────────────────────────────
-    // Bodies are guarded with `inline if OS != .ios { return; }` so non-iOS
-    // builds never reach unresolved UIKit / OpenGLES symbols.
+    // ── Internal helpers ───────────────────────────────────────────────────
 
     refresh_safe_insets :: (self: *UIKitPlatform) {
-        inline if OS != .ios { return; }
         if gl_view := self.gl_view {
             i := gl_view.safeAreaInsets();
             self.safe_top    = xx i.top;
@@ -457,13 +398,11 @@ impl Platform for UIKitPlatform {
     }
 
     read_screen_scale :: (self: *UIKitPlatform) {
-        inline if OS != .ios { return; }
         screen := UIScreen.mainScreen();
         self.dpi_scale = xx screen.nativeScale();
     }
 
     create_gl_context :: (self: *UIKitPlatform) {
-        inline if OS != .ios { return; }
         // Read the screen scale up-front so callers can size font caches and
         // textures with the right DPI before the window even exists.
         screen := UIScreen.mainScreen();
@@ -481,7 +420,6 @@ impl Platform for UIKitPlatform {
     // `[ctx renderbufferStorage:GL_RENDERBUFFER fromDrawable:layer]`, so the
     // layer must already be in the view hierarchy at the right size.
     setup_renderbuffer :: (self: *UIKitPlatform) {
-        inline if OS != .ios { return; }
 
         glGenFramebuffers(1, @self.framebuffer);
         glGenRenderbuffers(1, @self.color_renderbuffer);
@@ -519,7 +457,6 @@ impl Platform for UIKitPlatform {
     }
 
     present_renderbuffer :: (self: *UIKitPlatform) {
-        inline if OS != .ios { return; }
         glBindRenderbuffer(GL_RENDERBUFFER, self.color_renderbuffer);
         if gl_ctx := self.gl_ctx {
             gl_ctx.presentRenderbuffer(GL_RENDERBUFFER);
@@ -530,7 +467,6 @@ impl Platform for UIKitPlatform {
     // drawable is in pixels". Reads the layer's bounds in points and scales
     // to pixels via dpi_scale.
     compute_layer_pixel_size :: (self: *UIKitPlatform) {
-        inline if OS != .ios { return; }
         if gl_view := self.gl_view {
             b := gl_view.bounds();
 
@@ -548,8 +484,8 @@ impl Platform for UIKitPlatform {
     }
 
     // ── Obj-C class-method callbacks ────────────────────────────────────
-    // Sx-defined class methods (SxAppDelegate / SxSceneDelegate / SxGLView /
-    // SxMetalView) forward to these on the shared `g_uikit_plat` so the
+    // The app shell's exported classes (platform/uikit_app.sx) forward
+    // to these through the shell's bridge global so the
     // tick/layout/touch/scene/keyboard paths share one implementation.
 
     // NSNotification callback. The notification's userInfo dict has the
@@ -559,7 +495,6 @@ impl Platform for UIKitPlatform {
     // Keyboard height = how much of the screen the keyboard covers from the bottom.
     // If the keyboard's end Y >= screen.height, the keyboard is offscreen (hiding).
     keyboard_will_change_frame :: (self: *UIKitPlatform, notification: *NSNotification) {
-        inline if OS != .ios { return; }
 
         user_info := notification.userInfo();
         if user_info == null { return; }
@@ -614,34 +549,24 @@ impl Platform for UIKitPlatform {
         }
     }
 
-    // First scene-connect: builds the window, root VC, GL/Metal view, layer,
-    // EAGL props (if gles), display link, and hidden text-field. Called from
-    // SxSceneDelegate.scene_willConnectToSession_options.
-    scene_will_connect :: (self: *UIKitPlatform, delegate: *void, scene: *void) {
-        inline if OS != .ios { return; }
+    // First scene-connect: builds the window, root VC, layer, EAGL props
+    // (if gles), display link, and hidden text-field around the app
+    // shell's view. Called from the scene delegate
+    // (platform/uikit_app.sx), which allocates the GL/Metal view — the
+    // shell owns the view classes; the view's +layerClass override
+    // supplies the right CAEAGLLayer / CAMetalLayer subclass. iOS reads
+    // the window back through the delegate's `-window`
+    // (`self.window` here backs it).
+    scene_will_connect :: (self: *UIKitPlatform, scene: *void, gl_view: *UIView) {
 
         win := UIWindow.alloc().initWithWindowScene(scene);
         self.window = win;
 
-        // Make the scene delegate own the window so iOS retains it. Per the
-        // scene-based lifecycle, the scene delegate is expected to provide
-        // the UIWindow via -window/-setWindow:.
-        sd : *SxSceneDelegate = xx delegate;
-        sd.setWindow(win);
-
         vc := UIViewController.alloc().init();
         self.root_vc = vc;
 
-        // Allocate either SxGLView or SxMetalView based on gpu_mode. The
-        // view's +layerClass override gives us the right CAEAGLLayer /
-        // CAMetalLayer subclass. Set the VC's view BEFORE
-        // setRootViewController to avoid a default-view lazy-load.
-        gl_view : *UIView = null;
-        if self.gpu_mode == .gles {
-            gl_view = xx SxGLView.alloc().init();
-        } else {
-            gl_view = xx SxMetalView.alloc().init();
-        }
+        // Set the VC's view BEFORE setRootViewController to avoid a
+        // default-view lazy-load.
         self.gl_view = gl_view;
         vc.setView(gl_view);
 
@@ -708,7 +633,6 @@ impl Platform for UIKitPlatform {
     // CADisplayLink callback (vsync-paced). Drives keyboard-inset
     // interpolation and calls the user's frame closure.
     gl_view_tick :: (self: *UIKitPlatform, link: *CADisplayLink) {
-        inline if OS != .ios { return; }
 
         // Keyboard-inset lockstep — sx-side cubic ease-out approximation of
         // UIKit's private keyboard curve. Sample targetTimestamp so we
@@ -746,7 +670,6 @@ impl Platform for UIKitPlatform {
     // UIView -layoutSubviews callback. Sets up the renderbuffer (gles) or
     // computes the layer pixel size (metal) on the first layout pass.
     gl_view_did_layout :: (self: *UIKitPlatform) {
-        inline if OS != .ios { return; }
         if self.gl_initialized { return; }
         if self.gpu_mode == .gles {
             self.setup_renderbuffer();
@@ -760,7 +683,6 @@ impl Platform for UIKitPlatform {
     // NSSet<UITouch *> + UIEvent. Single-touch model matching chess's UX.
 
     push_touch_down :: (self: *UIKitPlatform, view: *void, touches: *void) {
-        inline if OS != .ios { return; }
         touch := uikit_first_touch(touches);
         if touch == null { return; }
         pos := uikit_touch_location(touch, view);
@@ -768,7 +690,6 @@ impl Platform for UIKitPlatform {
     }
 
     push_touch_moved :: (self: *UIKitPlatform, view: *void, touches: *void) {
-        inline if OS != .ios { return; }
         touch := uikit_first_touch(touches);
         if touch == null { return; }
         pos := uikit_touch_location(touch, view);
@@ -776,7 +697,6 @@ impl Platform for UIKitPlatform {
     }
 
     push_touch_up :: (self: *UIKitPlatform, view: *void, touches: *void) {
-        inline if OS != .ios { return; }
         touch := uikit_first_touch(touches);
         if touch == null { return; }
         pos := uikit_touch_location(touch, view);
@@ -803,62 +723,14 @@ uikit_extern_nsstring :: (name: [*]u8) -> *void {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-// iOS-only helpers — only reachable from `inline if OS == .ios` call sites,
-// so non-iOS builds never reference the unresolved UIKit symbols below.
+// Free helpers
 // ───────────────────────────────────────────────────────────────────────────
 
 uikit_chdir_to_bundle :: () {
-    inline if OS != .ios { return; }
     bundle := NSBundle.mainBundle();
     rsrc := bundle.resourcePath();
     if rsrc == null { return; }
     chdir(rsrc.UTF8String());
-}
-
-// ── SxGLView class ─────────────────────────────────────────────────────────
-// UIView subclass overriding `+layerClass` to return [CAEAGLLayer class].
-// Instance method `sxTick:` is what CADisplayLink calls.
-//
-// M3.3 — migrated to declarative `#objc_class` form. The compiler
-// synthesises class-pair init, metaclass `+layerClass`, and the
-// instance-method IMP trampolines at module init.
-SxGLView :: #objc_class("SxGLView") export {
-    #extends UIView;
-
-    alloc :: () -> *SxGLView;
-    init  :: (self: *Self) -> *SxGLView;
-
-    layerClass :: () => CAEAGLLayer.class();
-
-    sxTick :: (self: *Self, link: *CADisplayLink) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.gl_view_tick(link);
-    }
-
-    layoutSubviews :: (self: *Self) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.gl_view_did_layout();
-    }
-
-    touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_down(xx self, touches);
-    }
-
-    touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_moved(xx self, touches);
-    }
-
-    touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_up(xx self, touches);
-    }
-
-    touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_up(xx self, touches);
-    }
 }
 
 // Pull the first UITouch out of an NSSet<UITouch *> and convert its
@@ -876,53 +748,3 @@ uikit_first_touch :: (touches: *void) -> *void {
     touches_set.anyObject()
 }
 
-// uikit_register_gl_view_class — deleted (M3.3). SxGLView is now
-// declarative; the compiler synthesises everything at module init.
-
-// SxMetalView reuses the same tick/layout/touch IMPs as SxGLView. The IMPs
-// already branch on `plat.gpu_mode` for the GL-specific bits (renderbuffer
-// setup, etc.), so a single set of IMPs serves both view classes.
-//
-// M3.4 — migrated to declarative `#objc_class`. Only `+layerClass`
-// differs from SxGLView (returns CAMetalLayer instead of CAEAGLLayer).
-SxMetalView :: #objc_class("SxMetalView") export {
-    #extends UIView;
-
-    alloc :: () -> *SxMetalView;
-    init  :: (self: *Self) -> *SxMetalView;
-
-    layerClass :: () => CAMetalLayer.class();
-
-    sxTick :: (self: *Self, link: *CADisplayLink) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.gl_view_tick(link);
-    }
-
-    layoutSubviews :: (self: *Self) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.gl_view_did_layout();
-    }
-
-    touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_down(xx self, touches);
-    }
-
-    touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_moved(xx self, touches);
-    }
-
-    touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_up(xx self, touches);
-    }
-
-    touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
-        if g_uikit_plat == null { return; }
-        g_uikit_plat.push_touch_up(xx self, touches);
-    }
-}
-
-// uikit_register_metal_view_class — deleted (M3.4). Replaced by
-// the declarative SxMetalView form above.

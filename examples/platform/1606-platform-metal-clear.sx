@@ -21,6 +21,7 @@
 #import "modules/build.sx";
 #import "modules/platform/api.sx";
 #import "modules/platform/uikit.sx";
+#import "modules/platform/uikit_app.sx";
 #import "modules/gpu/types.sx";
 #import "modules/gpu/api.sx";
 #import "modules/gpu/metal.sx";
@@ -115,7 +116,7 @@ main :: () -> i32 {
     gpu : *MetalGPU = xx context.allocator.alloc_bytes(size_of(MetalGPU));
     g_gpu = gpu;
 
-    plat.run_frame_loop(closure(frame));
+    uikit_app_run(plat, closure(frame));
     plat.shutdown();
     0
 }

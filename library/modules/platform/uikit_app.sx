@@ -1,0 +1,177 @@
+// The iOS APP SHELL: the exported Obj-C classes UIKit instantiates by
+// name — app delegate, scene delegate, and the GL/Metal view
+// subclasses. Split out of uikit.sx: these are app-side artifacts
+// (registered into the runtime at module init, IMP bodies eagerly
+// lowered), not platform-host surface — importing the host alone must
+// not drag them in. An app that boots through
+// `UIKitPlatform.run_frame_loop` imports THIS module (the
+// "SxAppDelegate" name handed to UIApplicationMain resolves to the
+// class registered here); an app with its own delegate classes imports
+// only the host.
+#import "modules/std.sx";
+#import "modules/ffi/objc.sx";
+#import "modules/ffi/quartzcore.sx";
+#import "modules/platform/uikit.sx";
+
+// The objc-callback → platform bridge. UIKit invokes the exported
+// classes' IMPs with (self, _cmd, ...) only — there is no slot to
+// thread an instance through — so the shell's IMP bodies resolve the
+// platform through this global. It belongs to the SHELL, not the host:
+// uikit.sx is instance-pure, and an app with its own delegate classes
+// owns its own bridge.
+g_uikit_plat : *UIKitPlatform = null;
+
+// Boot the app through the shell: installs the bridge and hands
+// UIApplicationMain the shell's delegate class. Never returns on iOS.
+uikit_app_run :: (plat: *UIKitPlatform, frame_fn: Closure()) {
+    g_uikit_plat = plat;
+    plat.delegate_class_name = "SxAppDelegate";
+    plat.run_frame_loop(frame_fn);
+}
+
+// SxAppDelegate — UIApplicationMain's delegate class (the app delegate, a
+// UIResponder — NOT the UIApplication principal class). Method bodies
+// dispatch to UIKitPlatform methods on the shared `g_uikit_plat`.
+SxAppDelegate :: #objc_class("SxAppDelegate") export {
+    #extends UIResponder;
+
+    application_didFinishLaunchingWithOptions :: (self: *Self, app: *void, opts: *void) -> BOOL {
+        if g_uikit_plat != null {
+            center := NSNotificationCenter.defaultCenter();
+            center.addObserver_selector_name_object(
+                xx self,
+                sel_registerName("sxKeyboardWillChangeFrame:".ptr),
+                xx "UIKeyboardWillChangeFrameNotification",
+                null);
+        }
+        return 1;
+    }
+
+    sxKeyboardWillChangeFrame :: (self: *Self, notification: *void) {
+        if g_uikit_plat == null { return; }
+        notif : *NSNotification = xx notification;
+        g_uikit_plat.keyboard_will_change_frame(notif);
+    }
+
+    alloc :: () -> *SxAppDelegate;
+    init  :: (self: *SxAppDelegate) -> *SxAppDelegate;
+}
+
+// SxSceneDelegate — iOS 13+ scene-based lifecycle delegate. Two
+// `#implements` declarations formally conform to the scene-delegate
+// protocols — iOS rejects the class otherwise. The delegate allocates
+// the GL/Metal view (the shell owns the view classes) and hands it to
+// the platform; iOS reads the window back through `-window`.
+SxSceneDelegate :: #objc_class("SxSceneDelegate") export {
+    #extends UIResponder;
+    #implements UISceneDelegate;
+    #implements UIWindowSceneDelegate;
+
+    scene_willConnectToSession_options :: (self: *Self, scene: *void, session: *void, options: *void) {
+        if g_uikit_plat == null { return; }
+        // The view's +layerClass override gives the platform the right
+        // CAEAGLLayer / CAMetalLayer subclass.
+        view : *UIView = null;
+        if g_uikit_plat.gpu_mode == .gles {
+            view = xx SxGLView.alloc().init();
+        } else {
+            view = xx SxMetalView.alloc().init();
+        }
+        g_uikit_plat.scene_will_connect(scene, view);
+    }
+
+    window :: (self: *Self) -> ?*UIWindow {
+        if g_uikit_plat == null { return null; }
+        return g_uikit_plat.window;
+    }
+
+    setWindow :: (self: *Self, w: ?*UIWindow) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.window = w;
+    }
+}
+
+// ── SxGLView class ─────────────────────────────────────────────────────────
+// UIView subclass overriding `+layerClass` to return [CAEAGLLayer class].
+// Instance method `sxTick:` is what CADisplayLink calls.
+SxGLView :: #objc_class("SxGLView") export {
+    #extends UIView;
+
+    alloc :: () -> *SxGLView;
+    init  :: (self: *Self) -> *SxGLView;
+
+    layerClass :: () => CAEAGLLayer.class();
+
+    sxTick :: (self: *Self, link: *CADisplayLink) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.gl_view_tick(link);
+    }
+
+    layoutSubviews :: (self: *Self) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.gl_view_did_layout();
+    }
+
+    touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_down(xx self, touches);
+    }
+
+    touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_moved(xx self, touches);
+    }
+
+    touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_up(xx self, touches);
+    }
+
+    touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_up(xx self, touches);
+    }
+}
+
+// SxMetalView reuses the same tick/layout/touch IMPs as SxGLView. The IMPs
+// already branch on `plat.gpu_mode` for the GL-specific bits (renderbuffer
+// setup, etc.), so a single set of IMPs serves both view classes. Only
+// `+layerClass` differs (returns CAMetalLayer instead of CAEAGLLayer).
+SxMetalView :: #objc_class("SxMetalView") export {
+    #extends UIView;
+
+    alloc :: () -> *SxMetalView;
+    init  :: (self: *Self) -> *SxMetalView;
+
+    layerClass :: () => CAMetalLayer.class();
+
+    sxTick :: (self: *Self, link: *CADisplayLink) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.gl_view_tick(link);
+    }
+
+    layoutSubviews :: (self: *Self) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.gl_view_did_layout();
+    }
+
+    touchesBegan_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_down(xx self, touches);
+    }
+
+    touchesMoved_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_moved(xx self, touches);
+    }
+
+    touchesEnded_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_up(xx self, touches);
+    }
+
+    touchesCancelled_withEvent :: (self: *Self, touches: *void, event: *void) {
+        if g_uikit_plat == null { return; }
+        g_uikit_plat.push_touch_up(xx self, touches);
+    }
+}

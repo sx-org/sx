@@ -26,6 +26,7 @@
 #import "modules/ui/types.sx";
 #import "modules/ui/events.sx";
 #import "modules/platform/uikit.sx";
+#import "modules/platform/uikit_app.sx";
 
 GL_SCISSOR_TEST :u32: 0x0C11;
 glEnable_  : (u32) -> void = ---;
@@ -90,7 +91,10 @@ tap_frame :: () {
 }
 
 main :: () -> void {
+    // iOS-only example (see the build+run header). The host seam gates
+    // here — uikit.sx itself carries no per-function OS guards.
+    inline if OS != .ios { return; }
     plat : *UIKitPlatform = xx c.libc_malloc(size_of(UIKitPlatform));
     plat.init("SxUIKitPlatform", 0, 0);
-    plat.run_frame_loop(closure(tap_frame));
+    uikit_app_run(plat, closure(tap_frame));
 }
