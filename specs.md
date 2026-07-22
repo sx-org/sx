@@ -3028,6 +3028,56 @@ compute(6)
 print("hello")
 ```
 
+### Named Arguments
+```sx
+callee(positional..., name = value, ...)
+```
+Call-site sugar over positional parameters. Names are **not** part of a
+function's identity (no Swift-style labels, nothing to overload on); a named
+argument binds a value to a declared parameter name, and the spelling matches
+struct literals exactly (`name = value` — the argument slot is free because
+assignment is statement-only).
+
+```sx
+scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: Closure()) { ... }
+
+scaffold(content = chat_list);                       // reach past defaults by name
+scaffold(top_bar = toolbar, content = chat_list);    // any order among named
+scaffold(chat_list_closure, fab = fab_button);       // positional, then named
+```
+
+- **Order**: positional arguments first, then named ones. A positional
+  argument after a named one is an error ("positional argument after a named
+  argument — name it or move it before the named arguments").
+- **Binding**: a named argument binds by the callee's declared parameter
+  name; named arguments may appear in any order among themselves. Each
+  parameter binds **at most once** — naming a parameter a positional argument
+  already filled is the duplicate-binding error.
+- **Evaluation order is written order**: arguments evaluate left-to-right
+  exactly as written; mapping to parameter positions happens afterwards.
+  Side effects observe the call site's textual order, never the declaration
+  order.
+- **Defaults become reachable anywhere**: a named argument can skip any
+  defaulted parameter, including ones in the middle of the list. Purely
+  positional calls keep the existing rule — only a *trailing* run of
+  defaulted parameters may be omitted.
+- **Positional-only zones**: three parameter kinds never bind by name —
+  closure-typed *values'* parameters (`Closure(i64) -> i64` declares types,
+  not names), variadic tails, and comptime `$` parameters (bound by the
+  type/value argument machinery). Naming one is an error.
+- **Unknown / missing names**: an unknown argument name is an error with a
+  did-you-mean suggestion; missing required parameters are reported by name.
+
+UFCS calls compose: the receiver binds the FIRST parameter positionally, and
+named arguments may bind the rest (`buf.write_all(data, flush = true)`). A
+ufcs **alias** resolves names against the *target* function's declared
+parameter names. Extern functions accept named arguments when their
+declaration declares parameter names.
+
+Parameter names are **public API** under this feature: renaming a parameter
+breaks named call sites. Treat parameter renames in published modules as
+breaking changes.
+
 ### UFCS (Uniform Function Call Syntax)
 ```sx
 object.func(args)    // equivalent to func(object, args) — for OPT-IN functions
