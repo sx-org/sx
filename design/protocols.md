@@ -170,7 +170,10 @@ inline if OS == .ios {
 
 A top-level `inline for` unrolls one declaration group per comptime
 element — enumerated conformance over a curated list, with the
-reflection builtins supplying field-wise bodies:
+reflection builtins supplying field-wise bodies. The iterable here
+is a comptime array of types; the capture binds each element as a
+comptime `Type` constant, usable in type position (the impl head,
+the receiver spelling) exactly like a `$T: Type` binding:
 
 ```sx
 Point  :: struct { x, y: f64; }
