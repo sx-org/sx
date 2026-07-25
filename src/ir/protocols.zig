@@ -550,7 +550,7 @@ pub const ProtocolResolver = struct {
             .ty = .type_value,
         }) catch unreachable;
 
-        if (pd.is_inline) {
+        if (pd.kind == .@"inline") {
             // One fn-ptr field per DISPATCHABLE protocol method (Era-2:
             // a method whose signature mentions `Self` past the receiver
             // has no slot — it is only callable through a generic bound).
@@ -619,7 +619,7 @@ pub const ProtocolResolver = struct {
         const identity_name = self.protocolIdentityName(pd);
         const protocol_info: ProtocolDeclInfo = .{
             .name = identity_name,
-            .is_inline = pd.is_inline,
+            .kind = pd.kind,
             .ownership = if (pd.is_identity) .identity else .value_own,
             .methods = self.l.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
         };
@@ -635,8 +635,8 @@ pub const ProtocolResolver = struct {
             self.l.program_index.protocol_ast_map.put(identity_name, pd) catch {};
 
         // For vtable protocols, create the vtable struct type — one slot per
-        // DISPATCHABLE method (Era-2), same filter as the #inline field list.
-        if (!pd.is_inline) {
+        // DISPATCHABLE method (Era-2), same filter as the `inline`-kind field list.
+        if (pd.kind != .@"inline") {
             var vtable_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
             for (pd.methods) |method| {
                 if (program_index_mod.protocolMethodSelfOccurrence(method) != null) continue;

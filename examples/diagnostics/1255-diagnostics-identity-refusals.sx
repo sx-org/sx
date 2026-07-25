@@ -9,7 +9,7 @@
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 
-IdP :: protocol #identity {
+IdP :: protocol vtable #identity {
     ping :: (self: *Self) -> i64;
 }
 W :: struct { v: i64; }

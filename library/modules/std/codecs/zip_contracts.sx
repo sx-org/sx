@@ -8,12 +8,12 @@
 
 Method :: enum { store; deflate; unsupported; }
 
-Source :: protocol #identity {
+Source :: protocol vtable #identity {
     size :: (self: *Self) -> i64;
     read_at :: (self: *Self, offset: i64, output: string) -> (string, !Error);
 }
 
-Sink :: protocol #identity {
+Sink :: protocol vtable #identity {
     write :: (self: *Self, data: string) -> !Error;
 }
 

@@ -1,9 +1,9 @@
-// Closure whose return type is a (non-`#inline`) protocol value — exercises
+// Closure whose return type is a `vtable`-kind protocol value — exercises
 // the indirect-call path where the result is a boxed protocol.
 
 #import "modules/std.sx";
 
-MyProtocol :: protocol {
+MyProtocol :: protocol vtable {
     get_value :: (self: *Self) -> i64;
 }
 

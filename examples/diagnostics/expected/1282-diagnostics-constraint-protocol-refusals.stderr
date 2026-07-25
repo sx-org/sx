@@ -1,0 +1,47 @@
+error: cannot declare a field of type 'Ord' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/Ord') where polymorphism is needed
+  --> examples/diagnostics/1282-diagnostics-constraint-protocol-refusals.sx:14:22
+   |
+14 | Boxed :: struct { o: Ord; }               // field
+   |                      ^^^
+
+error: cannot declare a field of type 'Ord' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/Ord') where polymorphism is needed
+  --> examples/diagnostics/1282-diagnostics-constraint-protocol-refusals.sx:15:24
+   |
+15 | Row :: struct { cells: [4]Ord; }          // array element
+   |                        ^^^^^^
+
+error: cannot declare a parameter of type 'Ord' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/Ord') where polymorphism is needed
+  --> examples/diagnostics/1282-diagnostics-constraint-protocol-refusals.sx:16:13
+   |
+16 | take :: (o: Ord) -> i64 { 1 }             // parameter
+   |             ^^^
+
+error: cannot declare a return of type 'Ord' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/Ord') where polymorphism is needed
+  --> examples/diagnostics/1282-diagnostics-constraint-protocol-refusals.sx:17:21
+   |
+17 | give :: (n: i64) -> Ord { n }             // return
+   |                     ^^^
+
+error: cannot make a value of 'Ord' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/Ord') where polymorphism is needed
+  --> examples/diagnostics/1282-diagnostics-constraint-protocol-refusals.sx:20:9
+   |
+20 |     o : Ord = 5;                          // implicit erasure at a binding
+   |         ^^^
+
+error: cannot make a value of 'Ord' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/Ord') where polymorphism is needed
+  --> examples/diagnostics/1282-diagnostics-constraint-protocol-refusals.sx:21:11
+   |
+21 |     p := (7).(Ord);                       // the postfix erasure spelling
+   |           ^^^^^^^^
+
+error: cannot make a value of 'Ord' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/Ord') where polymorphism is needed
+  --> examples/diagnostics/1282-diagnostics-constraint-protocol-refusals.sx:22:9
+   |
+22 |     v : *Ord = o;                         // the borrowed view
+   |         ^^^^
+
+error: cannot instantiate with the type argument 'Ord' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/Ord') where polymorphism is needed
+  --> examples/diagnostics/1282-diagnostics-constraint-protocol-refusals.sx:23:15
+   |
+23 |     xs : List(Ord) = List(Ord).{};        // generic type argument
+   |               ^^^

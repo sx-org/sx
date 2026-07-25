@@ -1,0 +1,5 @@
+error: expected '{'
+  --> examples/diagnostics/1284-diagnostics-protocol-inline-attribute-removed.sx:6:20
+   |
+ 6 | Hasher :: protocol #inline {
+   |                    ^

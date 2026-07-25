@@ -9,7 +9,7 @@ ProposedSize :: struct {
     height: ?f32;
 }
 
-Sizable :: protocol {
+Sizable :: protocol vtable {
     size :: (self: *Self, proposal: ProposedSize) -> f32;
 }
 

@@ -24,7 +24,7 @@ Keycode :: enum { unknown; escape; enter; }
 KeyData :: struct { key: Keycode; }
 Event   :: enum { none; key_up: KeyData; }
 
-Plat :: protocol { one_event :: (self: *Self) -> Event; }
+Plat :: protocol vtable { one_event :: (self: *Self) -> Event; }
 
 Impl :: struct { dummy: i64; }
 impl Plat for Impl {

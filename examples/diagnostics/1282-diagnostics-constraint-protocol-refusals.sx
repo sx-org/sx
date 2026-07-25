@@ -1,0 +1,24 @@
+// A constraint protocol (the default kind) has NO runtime values. Every
+// erasure spelling and every storable position refuses at the USE site, and
+// the guidance is always the same pair — stay concrete, or bind through
+// `$T/P`. It never suggests respelling the declaration: whether `Ord` should
+// have runtime values is its author's decision, made at the declaration.
+#import "modules/std.sx";
+#import "modules/std/list.sx";
+
+Ord :: protocol {
+    less :: (self: *Self, other: Self) -> bool;
+}
+impl Ord for i64 { less :: (self: *i64, other: i64) -> bool { self.* < other } }
+
+Boxed :: struct { o: Ord; }               // field
+Row :: struct { cells: [4]Ord; }          // array element
+take :: (o: Ord) -> i64 { 1 }             // parameter
+give :: (n: i64) -> Ord { n }             // return
+
+main :: () {
+    o : Ord = 5;                          // implicit erasure at a binding
+    p := (7).(Ord);                       // the postfix erasure spelling
+    v : *Ord = o;                         // the borrowed view
+    xs : List(Ord) = List(Ord).{};        // generic type argument
+}

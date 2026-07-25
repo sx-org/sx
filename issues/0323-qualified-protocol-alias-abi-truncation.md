@@ -16,7 +16,7 @@
 Given a protocol authored in another module:
 
 ```sx
-P :: protocol #identity {
+P :: protocol vtable #identity {
     value :: (self: *Self) -> i64;
 }
 ```

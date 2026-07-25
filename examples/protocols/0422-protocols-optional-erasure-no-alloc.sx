@@ -15,7 +15,7 @@
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 
-P :: protocol {
+P :: protocol vtable {
     ping :: (self: *Self) -> i64;
     bump :: (self: *Self);
 }

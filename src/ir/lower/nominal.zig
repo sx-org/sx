@@ -968,6 +968,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
         if (field_idx < total_explicit) {
             _ = self.rejectMultiReturnValueType(sd.field_types[field_idx], "field");
             const field_ty = self.resolveType(sd.field_types[field_idx]);
+            _ = self.refuseValuelessProtocol(field_ty, sd.field_types[field_idx].span, "declare a field of type");
             fields.append(self.alloc, .{
                 .name = table.internString(sd.field_names[field_idx]),
                 .ty = field_ty,

@@ -3,16 +3,16 @@
 // strings), and ProtocolRaw {ctx, type_id} come back via `v.(XxxRaw)` or
 // `xx v`. The protocol pair is a MODELED conversion built field-wise —
 // {ctx, __type_id} is the prefix BOTH protocol layouts share (default
-// {ctx, __type_id, vtable} and #inline {ctx, __type_id, fn_ptrs…}),
+// {ctx, __type_id, vtable} and `inline` {ctx, __type_id, fn_ptrs…}),
 // byte-identical to an any {data, type_id} — never a bit reinterpret, so
-// an #inline value can't leak a wrong word and the result is a real value
+// an `inline`-kind value can't leak a wrong word and the result is a real value
 // that works in ARG POSITION (a reinterpret width-mismatched there).
 // Recovery targets are exempt from the phase-2 downcast refusal; other
 // concrete targets on a protocol receiver go through the downcast.
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 
-Sizable :: protocol { size :: (self: *Self) -> i64; }
+Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }
 impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 
@@ -42,7 +42,7 @@ main :: () {
     print("default: {} {}\n", wc.value == 7 and sz.(ProtocolRaw).ctx != xx *w, pr.ctx == sz.(ProtocolRaw).ctx);
     print("default type_id: {}\n", sz.(ProtocolRaw).type_id == type_of(sz));
 
-    // protocol (#inline layout, Allocator) — correct ctx, no layout lie
+    // protocol (`inline` layout, Allocator) — correct ctx, no layout lie
     ga := GPA.init();
     a : Allocator = xx ga;
     print("inline: {}\n", a.(ProtocolRaw).ctx == xx *ga);

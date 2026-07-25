@@ -9,7 +9,7 @@
 // slice named `[]Self` and a correct `[]T` impl was WRONGLY flagged.
 #import "modules/std.sx";
 
-P :: protocol {
+P :: protocol vtable {
     // `*Self` receiver + `[]Self` slice param + `Self` value param.
     total :: (self: *Self, xs: []Self, extra: Self) -> i64;
 }

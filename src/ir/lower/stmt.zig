@@ -502,6 +502,12 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         _ = self.rejectMultiReturnValueType(ta, "variable");
         const ty = self.resolveType(ta);
         const slot = self.builder.alloca(ty);
+        // The annotation already names the valueless type; lowering the
+        // initializer would only restate the refusal at the erasure.
+        if (self.refuseValuelessProtocol(ty, ta.span, "make a value of")) {
+            if (self.scope) |scope| scope.put(vd.name, .{ .ref = slot, .ty = ty, .is_alloca = true });
+            return;
+        }
         if (vd.value) |val| {
             if (val.data == .undef_literal and !ty.isBuiltin()) {
                 const ti = self.module.types.get(ty);

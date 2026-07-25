@@ -14,7 +14,7 @@
 
 Box :: struct { m: i32; }
 
-Provider :: protocol {
+Provider :: protocol vtable {
     get :: (self: *Self) -> Box;
 }
 

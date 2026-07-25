@@ -6,12 +6,12 @@
 // drift-immune form that pairs the allocator explicitly. `free` is ONE
 // pure-sx function (std/mem.sx), kind-dispatched at compile time via the
 // inline type match: a protocol arm (ctx via `x.(ProtocolRaw)` — one body
-// for both layouts, default and #inline) and a slice arm; anything else
+// for both layouts, `vtable` and `inline`) and a slice arm; anything else
 // is a compile error.
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 
-Sizable :: protocol { size :: (self: *Self) -> i64; }
+Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }
 impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 

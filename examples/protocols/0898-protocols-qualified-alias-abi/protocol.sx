@@ -1,4 +1,4 @@
-P :: protocol #identity {
+P :: protocol vtable #identity {
     bump :: (self: *Self) -> i64;
     value :: (self: *Self) -> i64;
 }

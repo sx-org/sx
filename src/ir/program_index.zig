@@ -48,7 +48,7 @@ pub const ProtocolMethodInfo = struct {
     ret_type: TypeId, // a `Self` return is encoded as *void
     // Era-2 per-method erasability: true iff the signature is expressible
     // with `Self` unknown (`Self` only as the receiver). An excluded method
-    // has no vtable/#inline slot; erased dispatch refuses it and points at
+    // has no vtable / `inline` slot; erased dispatch refuses it and points at
     // the generic-bound path. Conformance still requires an impl for it.
     dispatchable: bool = true,
     // When !dispatchable: the first offending parameter's name, or null
@@ -133,9 +133,14 @@ pub const ProtocolOwnership = enum {
 
 pub const ProtocolDeclInfo = struct {
     name: []const u8,
-    is_inline: bool,
+    kind: ast.ProtocolKind,
     ownership: ProtocolOwnership = .value_own,
     methods: []const ProtocolMethodInfo,
+
+    /// True for the two kinds whose values are erased ({ctx, type_id, …}).
+    pub fn isErased(self: ProtocolDeclInfo) bool {
+        return self.kind == .vtable or self.kind == .@"inline";
+    }
 };
 
 pub const ModuleConstInfo = struct {

@@ -126,7 +126,6 @@ pub const Tag = enum {
     hash_source, // #source (inside #import c { ... })
     hash_define, // #define (inside #import c { ... })
     hash_flags, // #flags (inside #import c { ... })
-    hash_inline, // #inline (protocol layout modifier)
     hash_identity, // #identity (protocol ownership-class marker: borrow-only values)
     hash_objc_call, // #objc_call(T)(recv, "sel:", args...)
     hash_jni_call, // #jni_call(T)(env, target, "name", "(Sig)R", args...)

@@ -10,7 +10,7 @@
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 
-P :: protocol {
+P :: protocol vtable {
     n :: (self: *Self) -> i32;
     bump :: (self: *Self);
 }

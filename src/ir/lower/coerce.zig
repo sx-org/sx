@@ -133,7 +133,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         // FIELD-WISE — {ctx, __type_id} is the prefix of BOTH protocol
         // layouts, so the view can never carry a wrong word and the result
         // is a real value that works in any position (a bit reinterpret
-        // would width-mismatch on #inline values, which are wider).
+        // would width-mismatch on `inline`-kind values, which are wider).
         .protocol_to_raw => {
             const void_ptr_ty = self.module.types.ptrTo(.void);
             const ctx_ref = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr_ty);
@@ -650,6 +650,7 @@ pub fn arrayToSliceView(self: *Lowering, val: Ref, src_ty: TypeId) ?Ref {
 pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const Node, src_ty: TypeId, dst_ty: TypeId) Ref {
     const dst_info = self.module.types.get(dst_ty);
     if (dst_info != .@"struct") return operand;
+    if (self.refuseValuelessProtocol(dst_ty, operand_node.span, "make a value of")) return self.builder.constUndef(dst_ty);
     const proto_name = self.module.types.getString(dst_info.@"struct".name);
 
     // Determine concrete type name and type — resolve through pointer if needed

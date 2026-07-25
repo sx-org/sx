@@ -14,7 +14,7 @@
 
 #import "modules/std.sx";
 
-P :: protocol {
+P :: protocol vtable {
     get :: (self: *Self) -> i64;
     bump :: (self: *Self);
 }

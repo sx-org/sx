@@ -8,7 +8,7 @@
 // `for (g_plat.poll_events()) (*ev)` frame loop).
 #import "modules/std.sx";
 
-P :: protocol {
+P :: protocol vtable {
     items :: (self: *Self) -> []i32;
 }
 

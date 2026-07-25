@@ -4,7 +4,7 @@
 
 #import "modules/std.sx";
 
-Sizable :: protocol {
+Sizable :: protocol vtable {
     size :: (self: *Self) -> i64;
 }
 

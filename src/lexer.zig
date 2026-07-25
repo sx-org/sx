@@ -100,7 +100,6 @@ pub const Lexer = struct {
                 .{ "#source", Tag.hash_source },
                 .{ "#define", Tag.hash_define },
                 .{ "#flags", Tag.hash_flags },
-                .{ "#inline", Tag.hash_inline },
                 .{ "#identity", Tag.hash_identity },
                 .{ "#objc_call", Tag.hash_objc_call },
                 .{ "#jni_call", Tag.hash_jni_call },

@@ -3,7 +3,7 @@
 
 // --- Lerpable protocol (inline — static dispatch, no vtable) ---
 
-Lerpable :: protocol #inline {
+Lerpable :: protocol inline {
     lerp :: (self: *Self, b: Self, t: f32) -> Self;
 }
 

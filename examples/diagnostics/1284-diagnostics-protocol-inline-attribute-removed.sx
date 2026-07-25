@@ -1,0 +1,10 @@
+// `#inline` is gone: the layout is spelled in the kind slot (`protocol inline`).
+// The old attribute is not recognized anywhere — it fails through the ordinary
+// lexer path, with no hint arm keeping the removed spelling alive.
+#import "modules/std.sx";
+
+Hasher :: protocol #inline {
+    sum :: (self: *Self) -> u64;
+}
+
+main :: () { print("unreachable\n"); }

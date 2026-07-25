@@ -1315,18 +1315,37 @@ pub const Parser = struct {
             try self.expect(.r_paren);
         }
 
-        // Protocol attributes: #inline (layout) and #identity (ownership
-        // class) — mutually independent, either order.
-        var is_inline = false;
-        var is_identity = false;
-        while (self.current.tag == .hash_inline or self.current.tag == .hash_identity) {
-            if (self.current.tag == .hash_inline) {
-                if (is_inline) return self.fail("duplicate #inline on protocol");
-                is_inline = true;
+        // The kind slot, after the parameter list and before the attributes.
+        // `constraint` / `vtable` / `tagged` are CONTEXTUAL here — ordinary
+        // identifiers everywhere else; `inline` is the language keyword doing
+        // double duty. Absent ⇒ constraint. Nothing but a kind word or `{`
+        // may stand here, so an identifier is unambiguously a kind.
+        var kind: ast.ProtocolKind = .constraint;
+        if (self.current.tag == .kw_inline) {
+            kind = .@"inline";
+            self.advance();
+        } else if (self.current.tag == .identifier and !self.current.is_raw) {
+            const word = self.tokenSlice(self.current);
+            if (std.mem.eql(u8, word, "constraint")) {
+                kind = .constraint;
+            } else if (std.mem.eql(u8, word, "vtable")) {
+                kind = .vtable;
+            } else if (std.mem.eql(u8, word, "tagged")) {
+                kind = .tagged;
             } else {
-                if (is_identity) return self.fail("duplicate #identity on protocol");
-                is_identity = true;
+                return self.fail("expected a protocol kind ('constraint', 'vtable', 'inline', 'tagged') or '{' after the protocol head");
             }
+            self.advance();
+        }
+
+        // Protocol attributes: #identity (ownership class).
+        var is_identity = false;
+        while (self.current.tag == .hash_identity) {
+            if (is_identity) return self.fail("duplicate #identity on protocol");
+            if (kind == .constraint) {
+                return self.fail("#identity is meaningless on a constraint protocol — there are no runtime values to classify");
+            }
+            is_identity = true;
             self.advance();
         }
 
@@ -1440,7 +1459,7 @@ pub const Parser = struct {
         return try self.createNode(start_pos, .{ .protocol_decl = .{
             .name = name,
             .methods = try methods.toOwnedSlice(self.allocator),
-            .is_inline = is_inline,
+            .kind = kind,
             .is_identity = is_identity,
             .type_params = try type_params.toOwnedSlice(self.allocator),
             .is_raw = name_is_raw,

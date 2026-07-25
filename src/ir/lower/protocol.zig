@@ -99,7 +99,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
     fields.append(self.alloc, .{ .name = table.internString("ctx"), .ty = void_ptr_ty }) catch unreachable;
     fields.append(self.alloc, .{ .name = table.internString("__type_id"), .ty = .type_value }) catch unreachable;
-    if (pd.is_inline) {
+    if (pd.kind == .@"inline") {
         // Dispatchable methods only (Era-2) — mirrors registerProtocolDecl.
         for (pd.methods) |m| {
             if (program_index_mod.protocolMethodSelfOccurrence(m) != null) continue;
@@ -152,7 +152,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     const owned = self.alloc.dupe(u8, mangled) catch return id;
     const protocol_info: ProtocolDeclInfo = .{
         .name = owned,
-        .is_inline = pd.is_inline,
+        .kind = pd.kind,
         .ownership = if (pd.is_identity) .identity else .value_own,
         .methods = self.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
     };
@@ -162,7 +162,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     // method-arg resolution on this instance can recover it.
     self.struct_instance_bindings.put(owned, tb) catch {};
 
-    if (!pd.is_inline) {
+    if (pd.kind != .@"inline") {
         var vtable_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
         for (pd.methods) |m| {
             if (program_index_mod.protocolMethodSelfOccurrence(m) != null) continue;
@@ -226,6 +226,57 @@ pub fn isProtocolConstraint(self: *Lowering, written: []const u8, source: ?[]con
     return self.protocolResolver().isProtocolConstraint(written, source);
 }
 
+/// The declared kind of the protocol `ty` names, or null when `ty` is not a
+/// protocol type.
+pub fn protocolKindOf(self: *Lowering, ty: TypeId) ?ast.ProtocolKind {
+    if (ty.isBuiltin() or ty == .unresolved) return null;
+    const info = self.module.types.get(ty);
+    if (info != .@"struct" or !info.@"struct".is_protocol) return null;
+    const pd = self.getProtocolInfo(ty) orelse return null;
+    return pd.kind;
+}
+
+/// The protocol kind reached through `ty`'s composite spine (`*P`, `?P`,
+/// `[]P`, `[N]P`, `[*]P`) whose values do not exist — `constraint` has none
+/// by design, `tagged` has no representation here. Struct FIELDS are not
+/// walked: each was checked at its own declaration.
+fn valuelessProtocolIn(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty.isBuiltin() or ty == .unresolved) return null;
+    const info = self.module.types.get(ty);
+    return switch (info) {
+        .pointer => |p| valuelessProtocolIn(self, p.pointee),
+        .many_pointer => |p| valuelessProtocolIn(self, p.element),
+        .optional => |o| valuelessProtocolIn(self, o.child),
+        .slice => |sl| valuelessProtocolIn(self, sl.element),
+        .array => |a| valuelessProtocolIn(self, a.element),
+        .@"struct" => |s| blk: {
+            if (!s.is_protocol) break :blk null;
+            const pd = self.getProtocolInfo(ty) orelse break :blk null;
+            break :blk if (pd.isErased()) null else ty;
+        },
+        else => null,
+    };
+}
+
+/// Refuse a protocol whose kind has no runtime values at a position that
+/// would make or store one. `what` completes "cannot …" — "make a value of",
+/// "declare a field of type". Returns true when a diagnostic was emitted.
+pub fn refuseValuelessProtocol(self: *Lowering, ty: TypeId, span: ast.Span, what: []const u8) bool {
+    const offender = valuelessProtocolIn(self, ty) orelse return false;
+    const pd = self.getProtocolInfo(offender) orelse return false;
+    const name = self.formatTypeName(offender);
+    const d = self.diagnostics orelse return true;
+    switch (pd.kind) {
+        // The guidance is use-site only: stay concrete, or bind through a
+        // constraint. Whether the protocol should have runtime values is its
+        // author's decision, made at the declaration.
+        .constraint => d.addFmt(.err, span, "cannot {s} '{s}' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/{s}') where polymorphism is needed", .{ what, name, name }),
+        .tagged => d.addFmt(.err, span, "cannot {s} '{s}' — a tagged protocol has no runtime model in this compiler; erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/{s}')", .{ what, name, name }),
+        else => unreachable,
+    }
+    return true;
+}
+
 /// Get or create thunks for a (protocol, concrete_type) pair.
 /// Returns a slice of FuncIds, one per protocol method.
 pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) []const FuncId {
@@ -242,7 +293,7 @@ pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: 
     // EMISSION: materialize one thunk per DISPATCHABLE method (stays in
     // Lowering). Excluded methods (Era-2: `Self` past the receiver) have no
     // slot anywhere — the thunk list must align with the filtered
-    // vtable/#inline field lists built at protocol registration.
+    // vtable / `inline` field lists built at protocol registration.
     for (methods) |method| {
         if (!method.dispatchable) continue;
         const thunk_id = self.createProtocolThunk(proto_ty, pd.name, concrete_type_name, concrete_ty, method);
@@ -254,7 +305,7 @@ pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: 
     return owned;
 }
 
-/// Fold `xx <global>` at an `#inline`-PROTOCOL-typed static initializer into
+/// Fold `xx <global>` at an `inline`-PROTOCOL-typed static initializer into
 /// the inline protocol constant `{ ctx, __type_id, thunk fn-refs… }` — the
 /// spellable form of the default-context thunk tables (L8 rider a). Only an
 /// IDENTIFIER naming a registered top-level global qualifies: the erasure
@@ -270,9 +321,9 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     const proto_ti = tbl.get(proto_ty);
     if (proto_ti != .@"struct" or !proto_ti.@"struct".is_protocol) return null;
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
-    // Non-#inline protocols carry a vtable pointer, not inline fn slots — a
-    // static form for those is a separate step. (Allocator / Io are #inline.)
-    if (!pd.is_inline) return null;
+    // Vtable-kind protocols carry a vtable pointer, not inline fn slots — a
+    // static form for those is a separate step. (Allocator / Io are `inline`.)
+    if (pd.kind != .@"inline") return null;
     if (operand.data != .identifier) return null;
     const gname = operand.data.identifier.name;
     const g: program_index_mod.GlobalInfo = switch (self.selectGlobalAuthor(gname)) {
@@ -883,7 +934,7 @@ pub fn refuseProtocolAssertTargetOnAny(self: *Lowering, type_node: *const Node, 
     return true;
 }
 
-/// Allocate `size_ref` bytes through an ALLOCATOR VALUE (#inline layout
+/// Allocate `size_ref` bytes through an ALLOCATOR VALUE (`inline` layout
 /// {ctx, __type_id, alloc_fn, dealloc_fn}) — the named-allocator dual of
 /// `allocViaContext`, for the `.(P, alloc)` owning erasure.
 pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Ref {
@@ -915,6 +966,7 @@ fn erasureAlloc(self: *Lowering, alloc_val: ?Ref, size_ref: Ref) Ref {
 /// The allocator argument must be an LVALUE naming an allocator; absent =
 /// context.allocator at the erasure.
 pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: TypeId, span: ast.Span) Ref {
+    if (self.refuseValuelessProtocol(dst_ty, span, "make a value of")) return self.builder.constUndef(dst_ty);
     const dst_pi = self.getProtocolInfo(dst_ty) orelse return self.builder.constUndef(dst_ty);
     const void_ptr_ty = self.module.types.ptrTo(.void);
 
@@ -1006,7 +1058,7 @@ pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: T
 }
 
 /// Number of Era-2 dispatchable methods — the slot count of the protocol's
-/// vtable / #inline fn-ptr fields and of its thunk list.
+/// vtable / `inline` fn-ptr fields and of its thunk list.
 pub fn dispatchableCount(methods: []const ProtocolMethodInfo) usize {
     var n: usize = 0;
     for (methods) |m| {
@@ -1078,7 +1130,7 @@ pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []cons
     // layouts). This is what the downcast / protocol type switch read.
     const type_id_ref = self.builder.constType(concrete_ty);
 
-    if (pd.is_inline) {
+    if (pd.kind == .@"inline") {
         // Inline: { ctx, __type_id, fn1, fn2, ... }
         var field_vals = std.ArrayList(Ref).empty;
         defer field_vals.deinit(self.alloc);
@@ -1135,7 +1187,7 @@ pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []cons
 /// Returns the call result ref.
 pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: ProtocolDeclInfo, method_name: []const u8, args: []const Ref, proto_ty: TypeId, span: ast.Span) Ref {
     // Find the method and its slot among the DISPATCHABLE methods only —
-    // vtable/#inline layouts carry no slot for an excluded method (Era-2),
+    // vtable / `inline` layouts carry no slot for an excluded method (Era-2),
     // so the slot index counts dispatchable predecessors, not decl order.
     var method_info: ?ProtocolMethodInfo = null;
     var midx: usize = 0;
@@ -1181,7 +1233,7 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
     const ctx = self.builder.structGet(receiver, 0, void_ptr);
 
     // Extract fn_ptr
-    const fn_ptr = if (proto_info.is_inline) blk: {
+    const fn_ptr = if (proto_info.kind == .@"inline") blk: {
         // Inline: fn_ptr at field 2+method_idx ({ctx, __type_id, fns…})
         break :blk self.builder.structGet(receiver, @intCast(2 + midx), void_ptr);
     } else blk: {

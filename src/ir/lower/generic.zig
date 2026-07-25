@@ -1958,7 +1958,13 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
     // never the global last-wins map for a visible-shadowed or qualified head.
     {
         switch (self.selectGenericStructHead(base_name, if (is_qualified) pt.name else null, is_qualified, span)) {
-            .template => |t| return self.instantiateGenericStruct(&t, pt.args),
+            .template => |t| {
+                for (pt.args) |a| {
+                    if (!isStaticTypeArg(self, a)) continue;
+                    _ = self.refuseValuelessProtocol(resolveTypeArg(self, a), a.span, "instantiate with the type argument");
+                }
+                return self.instantiateGenericStruct(&t, pt.args);
+            },
             .poisoned => return .unresolved,
             .not_generic => {},
         }
