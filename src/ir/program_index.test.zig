@@ -82,7 +82,7 @@ test "ProgramIndex declaration maps round-trip (A1.1b)" {
     try std.testing.expect(idx.runtime_class_map.get("NSString").? == &fcd);
 
     // protocol_decl_map: protocol name → ProtocolDeclInfo.
-    try idx.protocol_decl_map.put("Show", .{ .name = "Show", .is_inline = false, .methods = &.{} });
+    try idx.protocol_decl_map.put("Show", .{ .name = "Show", .kind = .vtable, .methods = &.{} });
     try std.testing.expectEqualStrings("Show", idx.protocol_decl_map.get("Show").?.name);
 
     // protocol_ast_map: protocol name → AST decl.

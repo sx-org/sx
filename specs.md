@@ -2991,11 +2991,11 @@ retrieved through this same engine — `c.(ClosureRaw)`, `name.(SliceRaw)`,
 `p.(ProtocolRaw)` (or the `xx` spelling), `av.(AnyRaw)` (postfix ONLY —
 see below). The protocol case is a MODELED conversion built field-wise, not
 a bit reinterpret: `{ctx, __type_id}` is the prefix **both** protocol
-layouts share (default `{ctx, __type_id, vtable}` and `#inline`
+layouts share (`vtable` `{ctx, __type_id, vtable}` and `inline`
 `{ctx, __type_id, fn_ptrs…}`), so the view is correct for either and the
 result is a real value usable in any position (argument, return, store).
 `ProtocolRaw` mirrors exactly that shared prefix — byte-identical to an
-`any` `{data, type_id}`; an `#inline` value is wider, which is why the
+`any` `{data, type_id}`; an `inline`-kind value is wider, which is why the
 build is field-wise and never a reinterpret. A protocol receiver with any
 other concrete target is the checked DOWNCAST (see the assertion
 temperaments — the receiver reads as its `{ctx, type_id}` prefix view);
@@ -3684,8 +3684,8 @@ Arms select in order (a specific type name may precede its category);
 match lowers to nothing (the runtime form's skip-to-merge, statically). A
 `#error(…)` arm fires only when SELECTED — the un-selected case is
 the OS-match discipline. The static classifier mirrors the runtime tag
-switch arm for arm, **plus the `protocol` category** (default and
-`#inline` protocol values alike), which exists ONLY here: a protocol value
+switch arm for arm, **plus the `protocol` category** (`vtable` and
+`inline` protocol values alike), which exists ONLY here: a protocol value
 carries no runtime type tag, so a runtime `case protocol:` is a pointed
 compile error rather than a silently dead arm. Inline branches lower in
 statement position (like `inline if OS`), so value-producing arms use

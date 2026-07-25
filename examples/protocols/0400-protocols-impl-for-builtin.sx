@@ -4,7 +4,7 @@
 // an erased `Lerpable` value (Era-2 per-method erasability; the refusal
 // is pinned in diagnostics/1253) — the bound keeps Self known.
 
-Lerpable :: protocol #inline {
+Lerpable :: protocol inline {
     lerp :: (self: *Self, b: Self, t: f32) -> Self;
 }
 

@@ -202,7 +202,7 @@ c_abs :: (n: i32) -> i32 extern libc "abs";
 
 // --- Protocol declarations (Phase 1: static dispatch only) ---
 
-Counter :: protocol {
+Counter :: protocol vtable {
     inc :: (self: *Self);
     get :: (self: *Self) -> i32;
 }
@@ -222,10 +222,10 @@ impl Summable for Point {
     sum :: (self: *Point) -> i32 { self.x + self.y }
 }
 
-// Phase 2: #inline protocol for dynamic dispatch
+// Phase 2: `inline`-kind protocol for dynamic dispatch
 
-// Phase 2: #inline protocol for dynamic dispatch
-Adder :: protocol #inline {
+// Phase 2: `inline`-kind protocol for dynamic dispatch
+Adder :: protocol inline {
     add :: (self: *Self, n: i32);
     value :: (self: *Self) -> i32;
 }
@@ -249,7 +249,7 @@ impl Adder for Doubler {
 // Phase 4: default methods
 
 // Phase 4: default methods
-Repeater :: protocol {
+Repeater :: protocol vtable {
     say :: (self: *Self, msg: string);
     say_twice :: (self: *Self, msg: string) {
         self.say(msg);
@@ -269,7 +269,7 @@ impl Repeater for Printer {
 // P4 edge: Chained default→default calls
 
 // P4 edge: Chained default→default calls
-Chained :: protocol {
+Chained :: protocol vtable {
     base :: (self: *Self, msg: string) -> i32;
     wrap :: (self: *Self, msg: string) -> i32 {
         self.base(msg) + 1
@@ -421,7 +421,7 @@ main :: () {
         print("P1.2: {}\n", p.sum());
     }
 
-    // P2.1: #inline protocol — xx conversion + dynamic dispatch
+    // P2.1: `inline`-kind protocol — xx conversion + dynamic dispatch
     {
         acc := Accumulator.{ total = 0 };
         a := acc.(Adder);              // owning copy (postfix erasure)
@@ -453,7 +453,7 @@ main :: () {
         print("P2.3: {} {}\n", a1.value(), a2.value());
     }
 
-    // P3.1: vtable-pointer protocol (default, no #inline)
+    // P3.1: vtable-pointer protocol
     {
         sc := SimpleCounter.{ val = 0 };
         c := sc.(Counter);

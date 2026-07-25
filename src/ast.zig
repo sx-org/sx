@@ -1019,10 +1019,29 @@ pub const ProtocolMethodDecl = struct {
     default_body: ?*Node, // null = required method, non-null = default implementation
 };
 
+/// The kind slot of a protocol head — `protocol [(params)] kind [attrs]`.
+/// Ordered by cost: `constraint` emits nothing; the rest opt into dynamic
+/// dispatch. Absent in source ⇒ `constraint`.
+pub const ProtocolKind = enum {
+    constraint,
+    vtable,
+    @"inline",
+    tagged,
+
+    pub fn spelling(self: ProtocolKind) []const u8 {
+        return switch (self) {
+            .constraint => "constraint",
+            .vtable => "vtable",
+            .@"inline" => "inline",
+            .tagged => "tagged",
+        };
+    }
+};
+
 pub const ProtocolDecl = struct {
     name: []const u8,
     methods: []const ProtocolMethodDecl,
-    is_inline: bool = false, // #inline — embedded fn ptrs instead of vtable pointer
+    kind: ProtocolKind = .constraint,
     is_identity: bool = false, // #identity — borrow-only ownership class (values never own their ctx)
     type_params: []const StructTypeParam = &.{}, // for `protocol(Target: Type) { ... }`
     /// True when the declared NAME was a backtick raw identifier — exempt from

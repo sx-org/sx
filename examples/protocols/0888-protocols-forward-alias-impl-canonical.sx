@@ -2,7 +2,7 @@
 // retried after the alias fixpoint and keyed by the canonical protocol.
 // Regression (issue 0320 adversarial review).
 
-P :: protocol #identity {
+P :: protocol vtable #identity {
     value :: (self: *Self) -> i64;
 }
 

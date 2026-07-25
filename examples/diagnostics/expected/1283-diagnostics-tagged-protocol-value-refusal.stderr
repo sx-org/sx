@@ -1,0 +1,23 @@
+error: cannot declare a field of type 'View' — a tagged protocol has no runtime model in this compiler; erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/View')
+  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:19:26
+   |
+19 | Screen :: struct { root: View; }               // field
+   |                          ^^^^
+
+error: cannot declare a parameter of type 'View' — a tagged protocol has no runtime model in this compiler; erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/View')
+  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:20:15
+   |
+20 | render :: (v: View) -> i64 { v.area() }        // parameter
+   |               ^^^^
+
+error: cannot make a value of 'View' — a tagged protocol has no runtime model in this compiler; erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/View')
+  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:27:9
+   |
+27 |     v : View = w;                              // erasure into a value
+   |         ^^^^
+
+error: cannot make a value of 'Series__i64' — a tagged protocol has no runtime model in this compiler; erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/Series__i64')
+  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:28:9
+   |
+28 |     s : Series(i64) = w;                       // the parameterized instantiation
+   |         ^^^^^^^^^^^

@@ -11,7 +11,7 @@
 // device+layer, a GLES context owner) reached through concrete handles
 // alongside the erased value — erasure always borrows the named object's
 // storage, never copies it (same class as Platform/Allocator/Io).
-GPU :: protocol #identity {
+GPU :: protocol vtable #identity {
     // Bind the GPU to a backend-specific render target (e.g. a
     // CAMetalLayer on iOS). pixel_w/pixel_h are the drawable's pixel
     // dimensions; call resize when they change.

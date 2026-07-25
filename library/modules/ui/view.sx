@@ -4,7 +4,7 @@
 // Events do not dispatch through the tree (§6.9): interactive
 // elements declare hit regions during render; the router consumes
 // input against the committed snapshot's hit list.
-View :: protocol {
+View :: protocol vtable {
     // Measure: given a size proposal, return desired size
     size_that_fits :: (self: *Self, proposal: ProposedSize) -> Size;
 

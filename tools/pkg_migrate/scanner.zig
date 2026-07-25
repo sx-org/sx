@@ -89,7 +89,6 @@ const directive_whitelist = [_][]const u8{
     "#source",
     "#define",
     "#flags",
-    "#inline",
     "#objc_call",
     "#jni_call",
     "#jni_static_call",

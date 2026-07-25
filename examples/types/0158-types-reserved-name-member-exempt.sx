@@ -27,7 +27,7 @@ Tag :: union {
 }
 
 // Protocol method SIGNATURE spelled with a reserved type name — bare is legal.
-Speaker :: protocol {
+Speaker :: protocol vtable {
     i2 :: (self: *Self) -> i64;
 }
 

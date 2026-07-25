@@ -1579,7 +1579,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         // global narrows only when integral.
         .unary_op => blk: {
             const u = v.data.unary_op;
-            // `xx <global>` at an #inline-protocol-typed global folds to the
+            // `xx <global>` at an `inline`-protocol-typed global folds to the
             // inline protocol constant (identity erasure of the global's
             // stable storage — L8 rider a). Non-protocol `xx` falls through
             // to the ordinary const-expr fold below.
@@ -1624,7 +1624,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
         .struct_literal => |sl| self.constStructLiteral(&sl, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
         .identifier => |id| blk: {
-            // A bare identifier at an #inline-PROTOCOL-typed global is an
+            // A bare identifier at an `inline`-PROTOCOL-typed global is an
             // identity erasure of the named global — the declared type states
             // the conversion, no `xx` needed. Same fold as the explicit
             // `xx <global>` in the unary arm.
@@ -3187,6 +3187,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     if (fd.type_params.len > 0) return;
 
     const ret_ty = self.resolveReturnType(fd);
+    if (fd.return_type) |rtn| _ = self.refuseValuelessProtocol(ret_ty, rtn.span, "declare a return of type");
 
     // A `$T`-generic return with NO parameter mentioning `$T`: the fn isn't
     // a template (the guard above runs on param-derived `type_params`) yet
@@ -3245,6 +3246,10 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
             self.protocol_impl_receiver_types.get(fd) orelse self.resolveParamType(&p)
         else
             self.resolveParamType(&p);
+        // `..xs: P` is the comptime heterogeneous pack — each element keeps
+        // its concrete type and calls monomorphize, so every kind takes part.
+        if (!p.is_pack and !p.is_comptime)
+            _ = self.refuseValuelessProtocol(pty, p.type_expr.span, "declare a parameter of type");
         params.append(self.alloc, .{
             .name = self.module.types.internString(p.name),
             .ty = pty,

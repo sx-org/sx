@@ -2296,7 +2296,7 @@ pub fn allocViaContext(self: *Lowering, size_ref: Ref, void_ptr_ty: TypeId) Ref 
     };
     const ctx = self.builder.load(self.current_ctx_ref, ctx_ty);
     const allocator = self.builder.structGet(ctx, af.index, af.ty);
-    // #inline Allocator layout: { ctx, __type_id, alloc_fn, dealloc_fn }.
+    // `inline` Allocator layout: { ctx, __type_id, alloc_fn, dealloc_fn }.
     // field 0 = receiver ctx, field 2 = alloc fn-ptr.
     const alloc_ctx = self.builder.structGet(allocator, 0, void_ptr_ty);
     const fn_ptr = self.builder.structGet(allocator, 2, void_ptr_ty);
@@ -2416,6 +2416,7 @@ pub fn resolveBuiltin(name: []const u8) ?inst_mod.BuiltinId {
         .pointee_type,
         .is_flags,
         .is_identity,
+        .protocol_kind,
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
@@ -2645,6 +2646,7 @@ fn isAtomicIntrinsic(name: []const u8) bool {
         .pointee_type,
         .is_flags,
         .is_identity,
+        .protocol_kind,
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
@@ -2942,6 +2944,7 @@ fn isReflectionCall(name: []const u8) bool {
         .pointee_type,
         .is_flags,
         .is_identity,
+        .protocol_kind,
         .error_name,
         .vector_lanes,
         .__sx_variant_tag_width,
@@ -3278,6 +3281,26 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
         const ty = self.resolveTypeArg(c.args[0]);
         if (self.getProtocolInfo(ty)) |pi| return self.builder.constBool(pi.ownership == .identity);
         return self.builder.constBool(false);
+    }
+    if (std.mem.eql(u8, name, "protocol_kind")) {
+        // Static-only for the same reason `is_identity` is: a runtime `Type`
+        // value always tags a concrete type. Folds to a `ProtocolKind`
+        // constant, so `inline if protocol_kind(P) == .vtable` prunes.
+        const pk_ty = self.module.types.findByName(self.module.types.internString("ProtocolKind")) orelse {
+            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "protocol_kind needs 'ProtocolKind' in scope — #import \"modules/std.sx\"", .{});
+            return Ref.none;
+        };
+        if (c.args.len < 1) return self.builder.enumInit(0, Ref.none, pk_ty);
+        if (!self.isStaticTypeArg(c.args[0])) {
+            if (self.diagnostics) |d| d.addFmt(.err, c.callee.span, "protocol_kind expects a compile-time type — a runtime 'Type' value always tags a concrete type, never a protocol", .{});
+            return self.builder.enumInit(0, Ref.none, pk_ty);
+        }
+        const ty = self.resolveTypeArg(c.args[0]);
+        const kind = self.protocolKindOf(ty) orelse {
+            if (self.diagnostics) |d| d.addFmt(.err, c.args[0].span, "protocol_kind expects a protocol; '{s}' is not one", .{self.formatTypeName(ty)});
+            return self.builder.enumInit(0, Ref.none, pk_ty);
+        };
+        return self.builder.enumInit(self.resolveVariantValue(pk_ty, kind.spelling()), Ref.none, pk_ty);
     }
     if (std.mem.eql(u8, name, "is_struct")) {
         // is_struct(T) → const_bool: true iff T is a nominal `struct`. A

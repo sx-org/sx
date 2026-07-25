@@ -11,7 +11,7 @@
 // which now only handles a genuine non-optional `T → ?T` wrap.
 #import "modules/std.sx";
 
-Shape :: protocol { area :: (self: *Self) -> i64; }
+Shape :: protocol vtable { area :: (self: *Self) -> i64; }
 Sq :: struct { s: i64; }
 impl Shape for Sq { area :: (self: *Sq) -> i64 { return self.s * self.s; } }
 

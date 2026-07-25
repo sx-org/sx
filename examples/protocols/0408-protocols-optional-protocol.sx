@@ -6,7 +6,7 @@
 
 #import "modules/std.sx";
 
-GPU :: protocol {
+GPU :: protocol vtable {
   ping :: (self: *Self) -> i64;
 }
 

@@ -8,7 +8,7 @@
 // "unresolved 'n'" while the same shape with `?P` compiled.
 #import "modules/std.sx";
 
-P :: protocol {
+P :: protocol vtable {
     n :: (self: *Self) -> i32;
     bump :: (self: *Self);
 }

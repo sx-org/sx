@@ -1,5 +1,5 @@
 // Protocol RTTI (Step-4 phase 2, Option B): every protocol value carries
-// its concrete type_id at slot 1 — {ctx, __type_id, vtable} / #inline
+// its concrete type_id at slot 1 — {ctx, __type_id, vtable} / `inline`
 // {ctx, __type_id, fn_ptrs…} — so the value's first two words are an
 // `any` {data, type_id}. What that unlocks, all pinned here:
 //   - `type_of(p)` answers the CONCRETE type (never folds to the static
@@ -12,11 +12,11 @@
 //     `any`;
 //   - `xx p : any` — the explicit CONCRETE view (the prefix); implicit
 //     boxing (`av : any = p`) still boxes the protocol value itself;
-//   - all of it layout-independent (default AND #inline protocols).
+//   - all of it layout-independent (`vtable` AND `inline` protocols).
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 
-Drawable :: protocol { area :: (self: *Self) -> i64; }
+Drawable :: protocol vtable { area :: (self: *Self) -> i64; }
 Circle :: struct { r: i64; }
 Rect :: struct { w: i64; h: i64; }
 impl Drawable for Circle { area :: (self: *Circle) -> i64 { 3 * self.r * self.r } }
@@ -62,7 +62,7 @@ main :: () {
     av : any = xx s;
     print("view: {}\n", type_name(type_of(av)));
 
-    // #inline layout: same story through an Allocator value
+    // `inline` layout: same story through an Allocator value
     ga := GPA.init();
     a : Allocator = xx ga;
     print("inline: {}\n", type_name(type_of(a)));

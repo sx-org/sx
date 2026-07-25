@@ -10,12 +10,12 @@
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 
-Sizable :: protocol { size :: (self: *Self) -> i64; }
+Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
 W :: struct { v: i64; }
 impl Sizable for W { size :: (self: *W) -> i64 { self.v } }
 Holder :: struct { s: Sizable; }
 
-IdP :: protocol #identity { ping :: (self: *Self) -> i64; }
+IdP :: protocol vtable #identity { ping :: (self: *Self) -> i64; }
 impl IdP for W { ping :: (self: *W) -> i64 { self.v } }
 
 use_val :: (s: Sizable) -> i64 { s.size() }

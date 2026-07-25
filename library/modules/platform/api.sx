@@ -7,7 +7,7 @@
 // BOTH the erased value and concrete handles — erasure always borrows
 // the named object's storage, never copies it (a snapshot would fork the
 // live platform state).
-Platform :: protocol #identity {
+Platform :: protocol vtable #identity {
     init :: (self: *Self, title: [:0]u8, w: i32, h: i32) -> bool;
 
     run_frame_loop :: (self: *Self, frame_fn: Closure());

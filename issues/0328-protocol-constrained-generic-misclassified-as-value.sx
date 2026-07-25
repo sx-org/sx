@@ -1,6 +1,6 @@
 #import "modules/std.sx";
 
-Combines :: protocol #inline {
+Combines :: protocol inline {
     combine :: (self: *Self, other: Self) -> Self;
 }
 

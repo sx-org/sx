@@ -2,7 +2,7 @@
 // retried after the alias fixpoint instead of being keyed as unresolved.
 // Regression (issue 0320 adversarial review).
 
-Value :: protocol (T: Type) #identity {
+Value :: protocol (T: Type) vtable #identity {
     get :: (self: *Self) -> T;
 }
 

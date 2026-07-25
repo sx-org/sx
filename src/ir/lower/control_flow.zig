@@ -545,6 +545,15 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
 pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
     switch (node.data) {
         .bool_literal => |bl| return bl.value,
+        .binary_op => |b| {
+            // `protocol_kind(P) == .vtable` — the kind classifier's comparison
+            // folds so `inline if` drops the dead branch whole, the same way
+            // the predicate builtins above do.
+            if (b.op != .eq and b.op != .neq) return null;
+            const matched = protocolKindComparison(self, b.lhs, b.rhs) orelse
+                protocolKindComparison(self, b.rhs, b.lhs) orelse return null;
+            return if (b.op == .eq) matched else !matched;
+        },
         .call => |c| {
             if (c.callee.data == .identifier) {
                 const cname = c.callee.data.identifier.name;
@@ -600,6 +609,19 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
         else => {},
     }
     return null;
+}
+
+/// `protocol_kind(P)` against an enum literal: does the protocol's declared
+/// kind equal the named variant? Null when the pair is not that shape.
+fn protocolKindComparison(self: *Lowering, call_node: *const Node, lit_node: *const Node) ?bool {
+    if (call_node.data != .call) return null;
+    const c = call_node.data.call;
+    if (c.callee.data != .identifier) return null;
+    if (!std.mem.eql(u8, c.callee.data.identifier.name, "protocol_kind")) return null;
+    if (lit_node.data != .enum_literal) return null;
+    if (c.args.len < 1 or !self.isStaticTypeArg(c.args[0])) return null;
+    const kind = self.protocolKindOf(self.resolveTypeArg(c.args[0])) orelse return null;
+    return std.mem.eql(u8, kind.spelling(), lit_node.data.enum_literal.name);
 }
 
 pub fn lowerWhile(self: *Lowering, we: *const ast.WhileExpr) Ref {

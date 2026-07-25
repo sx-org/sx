@@ -1137,7 +1137,7 @@ main :: () {
         val_e16 : i32 = 30;
         print("closure-neg: {}\n", neg_fn(val_e16));
 
-        // C5.E17: closure with protocol value capture (#inline protocol)
+        // C5.E17: closure with protocol value capture (`inline`-kind protocol)
         gpa_e17 := GPA.init();
         a_e17 : Allocator = xx gpa_e17;
         alloc_fn := (size: i64) -> *void => a_e17.alloc_bytes(size);

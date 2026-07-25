@@ -5,7 +5,7 @@
 
 Fmt :: enum { a; b; }
 
-Proto :: protocol {
+Proto :: protocol vtable {
   take_fmt :: (self: *Self, f: Fmt);
 }
 
