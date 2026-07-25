@@ -76,7 +76,8 @@ main :: () {
     vb := context.allocator.alloc(i64, SAMPLES);
     vw := context.allocator.alloc(i64, SAMPLES);
 
-    sink := 0;
+    tsink := 0;
+    vsink := 0;
     s := 0;
     while s < SAMPLES {
         // ── tagged: build (borrows) ──
@@ -95,7 +96,7 @@ main :: () {
         k := 0;
         while k < WALKS {
             i = 0;
-            while i < N { sink = sink + tv[i].area(); i = i + 1; }
+            while i < N { tsink = tsink + tv[i].area(); i = i + 1; }
             k = k + 1;
         }
         t2 := mono_ns();
@@ -115,7 +116,7 @@ main :: () {
         k = 0;
         while k < WALKS {
             i = 0;
-            while i < N { sink = sink + vv[i].area(); i = i + 1; }
+            while i < N { vsink = vsink + vv[i].area(); i = i + 1; }
             k = k + 1;
         }
         t4 := mono_ns();
@@ -139,5 +140,8 @@ main :: () {
     print("build x{}.{}\twalk x{}.{}\n",
           vbm / tbm, (vbm * 10 / tbm) % 10,
           vwm / twm, (vwm * 10 / twm) % 10);
-    print("checksum {}\n", sink % 1000);
+    // Same conformers, same walks: a checksum divergence means one model
+    // dispatched a wrong body.
+    if tsink != vsink { print("CHECKSUM MISMATCH tagged {} vtable {}\n", tsink, vsink); c.exit(1); }
+    print("checksum {} (tagged == vtable)\n", tsink % 1000);
 }
