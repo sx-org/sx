@@ -531,6 +531,12 @@ once instantiated and not otherwise. An instantiation nobody
 value-uses emits nothing at all; a tagged protocol used only as a
 bound costs exactly what a constraint protocol costs.
 
+Membership is deliberately stable: it does not depend on which code
+executes, so dead-code edits never change what typechecks. Every
+member receives a tag, switch arm, and table row. (A stricter
+emission-level shake is possible without touching these semantics —
+see the appendix note on liveness shaking.)
+
 ### 6.7 Templated tagged protocols
 
 Each canonical argument tuple names its own protocol with its own
@@ -773,6 +779,7 @@ instantiations produced by monomorphizing admitted impl bodies
 Deterministic tag order falls out of sorting the converged set by
 conformer identity.
 
+
 ## 10. Edge-case catalog
 
 | case | disposition |
@@ -857,3 +864,19 @@ conformer identity.
   program with visibility-disjoint duplicate impls into a coherence
   error — the kind decides which programs are well-formed, not only
   what they cost.
+- **Liveness shaking (a compatible refinement).** The operations
+  that produce a tagged value form a closed, statically enumerable
+  set: direct erasure sites, re-erasure (§7.4), and `Self`-returning
+  dispatch (which only reproduces present types) — nothing conjures
+  a value from a runtime type id. Emission may therefore drop
+  members no execution path can produce (seeding from erasure sites
+  in call-graph-reachable code, address-taken functions and closure
+  literals as roots; propagating across re-erasure edges): no arm,
+  no tag, no table row for them, and a dispatch whose instantiation
+  has no producible member lowers to unreachable. The refinement is
+  semantics-neutral by construction — a producer-less member's
+  downcast can only ever be false at runtime, so folding it constant
+  changes no observable behavior — which is why membership
+  (typechecking, diagnostics) must never read the liveness result,
+  and why the shake can be adopted or dropped freely as an emission
+  concern.
