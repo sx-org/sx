@@ -53,9 +53,12 @@ Series    :: protocol(T: Type) tagged {
 
 **The running cast.** Every example in this document draws from one
 notional program: the five protocols above plus the declarations
-below. Conformances live where they are discussed — `Show`/`Point`
-and the `Series` family in §3, the recursive `Scaled(T)` in §6.9 —
-and the ones no section showcases are given here in full.
+below. The cast is the canonical registry and overview; each
+example *restates* the declarations it touches so every snippet
+reads in place, without referring back here. Conformances live in
+full where they are discussed — `Show`/`Point` and the `Series`
+family in §3, the recursive `Scaled(T)` in §6.9 — and the ones no
+section showcases are given here.
 
 ```sx
 Point   :: struct { x, y: f64; }
@@ -194,6 +197,13 @@ A constraint protocol has **no runtime values**. It exists to bound
 generics and to serve as a compiler-recognized customization point.
 
 ```sx
+Ord :: protocol {                             // constraint — the default kind
+    less :: (self: *Self, other: Self) -> bool;
+}
+impl Ord for i64 {
+    less :: (self: *i64, other: i64) -> bool { self.* < other }
+}
+
 largest :: (xs: []$T/Ord) -> T { … }          // bound: any T conforming to Ord
 
 // Into, restated from §1:
@@ -208,6 +218,9 @@ Into :: protocol(Target: Type) constraint {
 **Erasure refuses.** Every erasure spelling — implicit at a
 protocol-typed position, `xx`, postfix `.(P)` — is a compile error:
 
+```sx
+o : Ord = 5;      // i64 conforms — but Ord has no values to make
+```
 ```
 error: cannot make a value of 'Ord' — a constraint protocol has no
        runtime values; use the concrete type, or a generic bound
@@ -306,6 +319,12 @@ storage would silently heap-copy (or silently alias) something the
 reader believes is shared:
 
 ```sx
+Widget  :: struct { value: i64; }
+Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
+impl Sizable for Widget {
+    size :: (self: *Widget) -> i64 { self.value }
+}
+
 w := Widget.{ value = 7 };
 s : Sizable = w;      // error: 'w' is an lvalue and 'Sizable' values own
                       // their storage — write the copy ('w.(Sizable)')
@@ -359,6 +378,12 @@ annotated-local and argument forms are compile errors — never a
 reinterpretation of value bytes into a pointer slot.
 
 ```sx
+Widget  :: struct { value: i64; }
+Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
+impl Sizable for Widget {
+    size :: (self: *Widget) -> i64 { self.value }
+}
+
 measure :: (v: *Sizable) -> i64 { v.size() }
 w := Widget.{ value = 7 };
 measure(w);                            // view in place — aliases w
@@ -393,6 +418,14 @@ call does NOT fall through to UFCS (§7.8) — members win, then the
 member's unavailability diagnoses:
 
 ```sx
+Point :: struct { x, y: f64; }
+Eq    :: protocol vtable { eq :: (self: *Self, other: Self) -> bool; }
+impl Eq for Point {
+    eq :: (self: *Point, other: Point) -> bool {
+        self.x == other.x and self.y == other.y
+    }
+}
+
 p1 := Point.{ x = 1.0, y = 2.0 };
 p2 := Point.{ x = 3.0, y = 2.0 };
 e := p1.(Eq);
@@ -490,6 +523,9 @@ inlinable call with `Self` fully concrete. Schematically (backend
 pseudocode, not sx syntax):
 
 ```
+; Series(T) declares  at :: (self: *Self, i: i64) -> T   (§1);
+; set(Series(f32)) = {Buffer(f32), Sine, Scaled(f32)}    (§3, §6.9)
+
 __sx_tags_Series$(f32)$_at(v: {ctx, tag}, i: i64) -> f32:
     switch v.tag:
         0: Buffer(f32).at(cast v.ctx to *Buffer(f32), i)
@@ -524,7 +560,25 @@ An excluded method behaves exactly as on the erased kinds:
 required of impls, callable concretely and through bounds, compile
 error through the value, members-win over UFCS.
 
-**Bare `Self` return — placement.** The dispatch switch for a
+**Bare `Self` return — placement.**
+
+```sx
+Shape :: protocol tagged {
+    area    :: (self: *Self) -> f64;
+    resized :: (self: Self, k: f64) -> Self;   // bare Self in and out
+}
+Circle :: struct { r: f64; }
+impl Shape for Circle {
+    area    :: (self: *Circle) -> f64 { 3.14159 * self.r * self.r }
+    resized :: (self: Circle, k: f64) -> Circle { .{ r = self.r * k } }
+}
+
+c := Circle.{ r = 1.0 };
+s : Shape = c;
+big := s.resized(2.0);     // ← the note below fires here
+```
+
+The dispatch switch for a
 `Self`-returning method expands inline at the call site (§6.3), and
 each arm materializes its concrete result as a temporary in the
 **calling function's frame**, yielding a tagged borrow of it. Two
@@ -619,10 +673,24 @@ more reason tags are unobservable.
 
 ### 6.8 Static diagnostics
 
+The examples below run against the cast's `Series` world —
+restated: `Series(T)` (§1, tagged: `count`, `at`); conformers
+`Sine`/`Buffer($T)`/`Counter` (§3) and `Scaled($T)` (§6.9);
+`Timer :: struct { deadline: i64; }` conforms to nothing; no impl
+anywhere names `Series(bool)`.
+
+```sx
+v : Series(f32) = Sine.{ freq = 0.5 };
+```
+
 - **Empty set**: any value-consuming operation — erasure, method
   call, downcast — at an instantiation whose computed set is empty
   is a compile error at that site (no value of the type can exist):
 
+  ```sx
+  count_flags :: (s: Series(bool)) -> i64 { s.count() }
+  //                                        ^^^^^^^^^ ← the error
+  ```
   ```
   error: no impl of 'Series(bool)' exists in this program
          'Series' is implemented for: f32 (3 impls), i64 (2 impls)
@@ -654,6 +722,11 @@ A conformer may contain the protocol type; the 16-byte handle is the
 indirection, so no size equation arises:
 
 ```sx
+Series :: protocol(T: Type) tagged {       // restated from §1
+    count :: (self: *Self) -> i64;
+    at    :: (self: *Self, i: i64) -> T;
+}
+
 Scaled :: struct($T: Type) {
     inner: Series(T);         // a handle — not an inline payload
     factor: T;
