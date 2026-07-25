@@ -51,52 +51,9 @@ Series    :: protocol(T: Type) tagged {
 }
 ```
 
-**The running cast.** Every example in this document draws from one
-notional program: the five protocols above plus the declarations
-below. The cast is the canonical registry and overview; each
-example *restates* the declarations it touches so every snippet
-reads in place, without referring back here. Conformances live in
-full where they are discussed — `Show`/`Point` and the `Series`
-family in §3, the recursive `Scaled(T)` in §6.9 — and the ones no
-section showcases are given here.
-
-```sx
-Point   :: struct { x, y: f64; }
-Widget  :: struct { value: i64; }
-Timer   :: struct { deadline: i64; }     // conforms to nothing — the running non-member
-GPA     :: struct { alloc_count: i64; }
-Sine    :: struct { freq: f32; }
-Counter :: struct { n: i64; }
-Buffer  :: struct($T: Type) { items: []T; }
-
-Sizable :: protocol vtable {
-    size :: (self: *Self) -> i64;
-}
-impl Sizable for Widget {
-    size :: (self: *Widget) -> i64 { self.value }
-}
-
-Ord :: protocol {                        // constraint — the default kind
-    less :: (self: *Self, other: Self) -> bool;
-}
-impl Ord for i64 {
-    less :: (self: *i64, other: i64) -> bool { self.* < other }
-}
-
-Eq :: protocol vtable {
-    eq :: (self: *Self, other: Self) -> bool;
-}
-impl Eq for Point {
-    eq :: (self: *Point, other: Point) -> bool {
-        self.x == other.x and self.y == other.y
-    }
-}
-
-impl Allocator for GPA {
-    alloc_bytes   :: (self: *GPA, size: i64) -> *void { self.alloc_count += 1; … }
-    dealloc_bytes :: (self: *GPA, ptr: *void) { self.alloc_count -= 1; … }
-}
-```
+The examples throughout describe one notional program built from
+the five protocols above; every snippet restates the declarations
+it touches, so each reads in place.
 
 ## 2. Declaration
 
@@ -145,6 +102,11 @@ aliases and folds value arguments to comparable constants.
 ## 3. Conformance — `impl`
 
 ```sx
+Point   :: struct { x, y: f64; }
+Sine    :: struct { freq: f32; }
+Counter :: struct { n: i64; }
+Buffer  :: struct($T: Type) { items: []T; }
+
 impl Show for Point {
     fmt :: (self: *Point) -> string { … }
 }
@@ -337,10 +299,25 @@ Interior pointers (slices, strings, pointers) are copied as
 pointers; the copy and the source share their referents. Types whose
 deep state must not be shared belong behind `#identity` or a view.
 
-**`#identity` erasure** borrows in every spelling — `xx gpa`,
-`gpa.(Allocator)`, decl targets, call arguments, struct-literal
-fields. Rvalue erasure refuses ("identity objects need a name; bind
-it first"); `.(P, alloc)` refuses (a borrow allocates nothing).
+**`#identity` erasure** borrows in every spelling — decl targets,
+call arguments, struct-literal fields alike:
+
+```sx
+GPA :: struct { alloc_count: i64; }
+impl Allocator for GPA {                 // Allocator: §1, inline #identity
+    alloc_bytes   :: (self: *GPA, size: i64) -> *void { self.alloc_count += 1; … }
+    dealloc_bytes :: (self: *GPA, ptr: *void) { self.alloc_count -= 1; … }
+}
+
+gpa := GPA.{ alloc_count = 0 };
+a : Allocator = gpa;                     // borrow — no demand error, no copy
+b := gpa.(Allocator);                    // borrow, same value shape
+c : Allocator = GPA.{ alloc_count = 0 }; // error: identity objects need a
+                                         // name; bind it first
+```
+
+The two-argument form `.(Allocator, alloc)` refuses on an identity
+target — a borrow allocates nothing.
 
 ### 5.4 `free`
 
@@ -673,11 +650,10 @@ more reason tags are unobservable.
 
 ### 6.8 Static diagnostics
 
-The examples below run against the cast's `Series` world —
-restated: `Series(T)` (§1, tagged: `count`, `at`); conformers
-`Sine`/`Buffer($T)`/`Counter` (§3) and `Scaled($T)` (§6.9);
-`Timer :: struct { deadline: i64; }` conforms to nothing; no impl
-anywhere names `Series(bool)`.
+The examples below share this context: `Series(T)` (§1, tagged:
+`count`, `at`); conformers `Sine`/`Buffer($T)`/`Counter` (§3) and
+`Scaled($T)` (§6.9); `Timer :: struct { deadline: i64; }` conforms
+to nothing; no impl anywhere names `Series(bool)`.
 
 ```sx
 v : Series(f32) = Sine.{ freq = 0.5 };
