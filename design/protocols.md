@@ -987,6 +987,15 @@ through Context fields such as the ambient allocator.
 `protocol_kind`, `is_identity`, and all monomorphized machinery
 work unchanged.
 
+Comptime execution runs under a **VM-local Context**: its
+protocol-typed fields reference VM-owned instances, whose mutations
+(an allocator's bookkeeping, an arena's cursor) are execution-local
+state discarded with the run — consistent with the general rule
+that comptime code cannot mutate globals. When a comptime result
+escapes carrying such a field, the VM instance corresponding to a
+declared global relocates to that global (see Escape), exactly as
+the default-context fold does.
+
 **Scheduling.** Comptime entangled with membership — the conditions
 and iterables of top-level `inline if`/`inline for`, any `#run`
 they transitively reference, and body-level comptime reached by the
