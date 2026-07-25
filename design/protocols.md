@@ -211,12 +211,17 @@ deliberate set of types" — the bound-blanket (`impl Show for
 $T/Ord`, §6.5) is refused precisely because a list keeps the set
 intentional.
 
-**Expansion is monotone.** Comptime code may add conformances; it
-cannot observe membership — no reflection enumerates a protocol's
-conformers, at comptime or runtime, so the facts driving an
-expansion can never depend on the sets the expansion feeds. The
-conformer fixpoint (§6.5) runs on the fully expanded program; tags
-are assigned at link, after every expansion is complete.
+**Expansion is monotone and deterministic.** Expansion only *adds*
+conformances — nothing retracts. Expansion-driving comptime may
+consult per-pair membership facts through protocol values (a probe,
+a dispatch), under the scheduling discipline of §7.9: positive
+facts answer immediately, negative answers wait for the queried set
+to be final, and an expansion that depends negatively on a set it
+can still feed is the expansion-deadlock error. No reflection
+enumerates a protocol's conformers, at comptime or runtime — sets
+are unobservable as collections. The conformer fixpoint (§6.5) runs
+on the fully expanded program; tags are assigned at link, after
+every expansion is complete.
 
 ## 4. Constraint protocols (the default kind)
 
@@ -970,17 +975,46 @@ including through Context fields such as the ambient allocator.
 `protocol_kind`, `is_identity`, and all monomorphized machinery
 work unchanged.
 
-**Stages.** Comptime that *drives expansion* — the conditions and
-iterables of top-level `inline if`/`inline for`, and any `#run`
-they transitively reference — evaluates in the **expansion stage**,
-where protocol values are refused entirely: through dispatch or a
-conversion temperament, a protocol value could observe whether some
-impl exists, and refusing values in this stage is what makes
-expansion monotone (§3). All other comptime execution runs **after
-the conformer fixpoint**, against the final sets — every `#run`
-sees the same converged world, so comptime dispatch and conversions
-are order-independent, and their membership facts are the program's
-final facts.
+**Scheduling.** Comptime that *drives expansion* — the conditions
+and iterables of top-level `inline if`/`inline for`, and any `#run`
+they transitively reference — evaluates under the dataflow
+discipline that keeps expansion deterministic:
+
+- Membership only **grows** during expansion, so a *positive*
+  membership fact — a dispatch finding its impl, a probe answering
+  true — is readable the moment it exists and can never be
+  invalidated.
+- A *negative* answer — a soft probe yielding null, an erasure
+  meeting an empty set — is utterable only once the queried set is
+  **final**: no unexpanded `inline if`/`inline for` branch can
+  still contribute to it. Contribution is judged syntactically and
+  conservatively: an unexpanded body mentioning `impl P for …`
+  contributes to `P`'s sets.
+- An evaluation needing a not-yet-utterable answer **suspends** —
+  its VM state parks as a bookmark against the facts it awaits
+  (presence of the pair, or finality of the set) — and the
+  scheduler proceeds with other drivers; the bookmark resumes when
+  a fact fires. Every instruction runs exactly once: nothing is
+  speculative, nothing re-runs, no evaluation ever observes a fact
+  that later changes. Monotone writes plus gated negative reads
+  make the outcome order-independent by construction.
+- A wait cycle — an expansion whose condition needs finality of a
+  set that expansion itself can still feed — is a compile error
+  naming the cycle:
+
+  ```
+  error: expansion deadlock — 'HAS' needs 'Serialize' membership to
+         be final, but 'inline if !HAS' can still add 'impl
+         Serialize for Gpa'; the expansion depends negatively on a
+         set it feeds
+  ```
+
+All other comptime execution runs **after the conformer fixpoint**,
+against the final sets — every ordinary `#run` sees the same
+converged world. Conformer sets remain unobservable as
+*collections* at every phase (no enumeration reflection exists,
+§3); the granted facility is per-pair facts through protocol
+values, under the discipline above.
 
 **Escape.** A comptime result that carries a protocol value into
 the runtime image materializes the *referent* itself: its bytes
@@ -1112,7 +1146,8 @@ conformer identity.
 | protocol as a protocol-instantiation argument (`Series(View)`) | legal — a type argument like any other; conformer sets keyed accordingly |
 | value parameters in a protocol head (`protocol(N: u32) tagged`) | as generic structs; canonicalized by folded value equality |
 | type switch arm naming a non-conformer (tagged subject) | warned dead; never matches |
-| protocol values inside `#run` / comptime execution | legal, symbolic — `{ctx, concrete type}`, VM-devirtualized dispatch — EXCEPT in expansion-driving comptime, where protocol values are refused (§7.9 stages) |
+| protocol values inside `#run` / comptime execution | legal, symbolic — `{ctx, concrete type}`, VM-devirtualized dispatch; in expansion-driving comptime, a negative membership answer suspends the evaluation until the queried set is final (§7.9) |
+| expansion depending negatively on a set it can still feed | compile error — expansion deadlock, the wait cycle named at both sites (§7.9) |
 | comptime protocol value escaping into the image | referent materializes as an anonymous immutable global (writes = constant-write rejection); numeric word relocates at link; OWNING erased values cannot escape — compile error (§7.9) |
 | type declared inside a top-level `inline for` body | flattens to module scope — duplicate across iterations diagnoses; parameterize the type (`Vec :: struct($N: u32)`) instead of re-declaring per iteration |
 | `inline for` conformance-list elements | concrete types only (a `Type` never tags a protocol, §8); `#run`-computed lists are legal but expansion-driving (§7.9 stages); duplicate elements and nested unrolls diagnose with cursor provenance ("T = Point, i = 1") |
@@ -1120,7 +1155,7 @@ conformer identity.
 | default method calling an excluded method | legal — defaults compile per conformer against concrete `Self` (§2); exclusion binds only calls through erased values |
 | impl inside a dead `inline if` branch | never exists — joins no set, emits nothing |
 | `inline for`-generated impls | ordinary impls of the expanded program; a colliding pair is the ordinary coherence error, naming the unrolled sites |
-| comptime observation of a conformer set | no such reflection exists, at comptime or runtime — expansion facts cannot depend on membership |
+| comptime observation of a conformer set | no enumeration exists at any phase — sets are unobservable as collections; per-pair facts through protocol values are legal under the §7.9 discipline (positive immediately, negative at finality) |
 
 ## Appendix: rationale notes
 
@@ -1167,6 +1202,20 @@ conformer identity.
   program with visibility-disjoint duplicate impls into a coherence
   error — the kind decides which programs are well-formed, not only
   what they cost.
+- **Why suspension, not a refusal wall or speculation.** A wall
+  (protocol values banned from expansion-driving comptime) is sound
+  but forbids meaningful programs — "derive unless a hand-written
+  impl exists" is a per-pair membership question with a legitimate
+  answer. Speculation (run against current sets, invalidate,
+  re-run) answers it but pays everywhere: re-executed VM waves,
+  transactional retraction of speculative registrations, deferred
+  diagnostics, and a "did not converge" failure class. Suspension
+  runs every instruction exactly once against facts that never
+  change afterward: positive facts are safe immediately because
+  membership only grows; negative facts wait for finality; the only
+  new error is the wait cycle — precisely the program whose meaning
+  is genuinely circular. Cost is localized to one subsystem (the
+  VM's ability to park and resume an evaluation).
 - **Liveness shaking (a compatible refinement).** The operations
   that produce a tagged value form a closed, statically enumerable
   set: direct erasure sites, re-erasure (§7.4), `Self`-returning
