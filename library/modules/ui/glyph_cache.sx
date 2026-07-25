@@ -98,13 +98,16 @@ KbtsGlyph :: struct {
     advance_y: i32;
 }
 
-// kbts_font_info2 base (simplified — we only need the Size field for dispatch)
-KBTS_FONT_INFO_STRING_ID_COUNT :i32: 7;
+// kbts_font_info2. The string arrays must match the upstream enum's COUNT
+// exactly: kbts_GetFontInfo2 dispatches on `Size`, and a struct laid out one
+// element short computes a size no version matches — the call then fills
+// nothing and every field reads back zero.
+KBTS_FONT_INFO_STRING_ID_COUNT :: 13;   // c/kb/kb_text_shape.h, kbts_font_info_string_id_enum
 
 KbtsFontInfo2 :: struct {
     size: u32;
-    strings: [7]*void;     // char* array
-    string_lengths: [7]u16;
+    strings: [KBTS_FONT_INFO_STRING_ID_COUNT]*void;     // char* array
+    string_lengths: [KBTS_FONT_INFO_STRING_ID_COUNT]u16;
     style_flags: u32;
     weight: u32;
     width: u32;

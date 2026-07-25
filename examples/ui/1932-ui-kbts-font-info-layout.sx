@@ -1,0 +1,26 @@
+// The kbts_font_info2 binding must match the upstream struct byte for byte:
+// kbts_GetFontInfo2 dispatches on the caller-supplied `Size`, so a layout one
+// array element short computes a size that matches NO version, the call fills
+// nothing, and units_per_em reads back 0.
+// Regression (issue 0355): the string arrays were declared [7] against an
+// upstream COUNT of 13. `scale = font_size / units_per_em` then divided by
+// zero, so every shaped (non-ASCII) run measured NaN and drew nothing —
+// silently, since ASCII takes a separate stbtt path and was unaffected.
+//
+// A layout pin rather than a shaping run: this belongs in the byte-exact
+// corpus, and shaping needs a font and a GPU-backed atlas.
+#import "modules/std.sx";
+#import "modules/ui/glyph_cache.sx";
+
+main :: () {
+    // c/kb/kb_text_shape.h: kbts_font_info_string_id_enum ends at
+    // KBTS_FONT_INFO_STRING_ID_COUNT after 12 named ids plus NONE.
+    process.assert(KBTS_FONT_INFO_STRING_ID_COUNT == 13, "string id count matches the upstream enum");
+
+    // kbts_font_info2: u32 Size, char*[13], u16[13], then three u32s.
+    process.assert(size_of(KbtsFontInfo2) == 152, "kbts_font_info2 layout");
+    // kbts_font_info2_1 adds UnitsPerEm and seven more s16 metrics.
+    process.assert(size_of(KbtsFontInfo2_1) == 168, "kbts_font_info2_1 layout");
+
+    print("ok {} {}\n", size_of(KbtsFontInfo2), size_of(KbtsFontInfo2_1));
+}
