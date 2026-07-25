@@ -203,10 +203,13 @@ its receiver, extended with dispatch information. `type_of`, the
 downcast, the type switch, and `ProtocolRaw` all read this prefix.
 
 Vtables are global constants, one per `(protocol-instantiation,
-concrete type)` pair — a parameterized erased protocol gets distinct
-vtables per instantiation, since slot types differ (§5.6). They emit
-on first erasure of the pair and are shared by every value; they are
-never allocated or freed at runtime. `inline` trades value size for
+concrete type, impl)` — a parameterized erased protocol gets
+distinct vtables per instantiation (slot types differ, §5.6), and
+distinct impls of the same pair in visibility-disjoint modules (§3)
+each get their own. Within any one import scope exactly one impl is
+visible, so every erasure site selects one vtable deterministically.
+They emit on first erasure and are shared by every value erased
+through that impl; they are never allocated or freed at runtime. `inline` trades value size for
 zero indirection: the fn-ptr words are copied into every value.
 Choose `inline` for few-method, call-heavy protocols (allocators,
 io); `vtable` keeps many-method values small.
@@ -714,9 +717,11 @@ machinery work fully.
 ## 9. Internals walkthrough
 
 **Symbols.** Vtables: one global constant per
-`(protocol-instantiation, concrete type)` pair, both identities
+`(protocol-instantiation, concrete type, impl)`, every identity
 spelled in full — `Conv(f32)`/`Conv(i64)` never share a vtable
-symbol (their slot types differ). Tagged tables and dispatch
+symbol (their slot types differ), and neither do two
+visibility-disjoint impls of one pair (their bodies differ; the
+impl's declaring module is part of the symbol). Tagged tables and dispatch
 routines: named by the protocol's canonical identity including
 complete instantiation arguments. Canonical identity is structural
 on the argument tuple after alias resolution — no display-name
@@ -826,3 +831,19 @@ conformer identity.
   split method semantics by call path; per-conformer compilation
   makes a default indistinguishable from a hand-written impl
   method, at the cost the impl-registration model already pays.
+- **Why coherence differs by kind.** sx has no orphan rule —
+  conformance is fully retroactive — so global coherence for every
+  kind would make two independent libraries that both conform the
+  same pair permanently un-linkable into one program. Import-scoped
+  visibility is the composability mechanism in place of an orphan
+  rule: an erased value carries its dispatch info, chosen at the
+  erasure site, so "which impl" is answerable site-locally and
+  conflicts matter only where both are visible. A tagged value
+  carries only `{ctx, tag}` and dispatches through ONE shared
+  switch per instantiation for the whole program — there is no site
+  left to consult, so the arm per conformer must be unique and
+  coherence is necessarily global. Consequence, stated plainly:
+  respelling a protocol from an erased kind to `tagged` can turn a
+  program with visibility-disjoint duplicate impls into a coherence
+  error — the kind decides which programs are well-formed, not only
+  what they cost.
