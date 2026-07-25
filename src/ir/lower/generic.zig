@@ -1885,6 +1885,18 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
         .poisoned => return .unresolved,
         .not_generic => {},
     }
+    // Parameterized protocol head (`size_of(Series(f32))`,
+    // `protocol_kind(Slot(i64))`): the same instantiation the type-expr
+    // sibling materializes. Reflection over one instantiation arrives here,
+    // where the head parses as a call rather than as a type expression.
+    {
+        const qualified_path: ?[]const u8 = if (is_qualified) self.qualifiedTypeName(cl.callee) else null;
+        defer if (qualified_path) |p| self.alloc.free(p);
+        if (self.protocolResolver().resolveParamProtocolHead(callee_name, qualified_path)) |pd| {
+            if (!is_qualified and self.headTypeLeak(callee_name, cl.callee.span)) return .unresolved;
+            return self.instantiateParamProtocol(pd, cl.args);
+        }
+    }
     // User-defined type-returning function: Complex(u32), Sx(f32). A
     // qualified head selects the exact terminal namespace author; it must
     // never consult the process-global same-name function map.

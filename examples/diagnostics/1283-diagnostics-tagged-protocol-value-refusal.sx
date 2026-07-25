@@ -1,36 +1,67 @@
-// A NULLARY `tagged` protocol has its full runtime model: it erases, stores
-// in fields and parameters, and dispatches through its generated switch.
-// A PARAMETERIZED one does not yet — each canonical argument tuple names its
-// own protocol with its own conformer set and tag space, and that machinery
-// is staged. Every position that would make a value of an instantiation
-// refuses through the ordinary error path.
+// Membership on a parameterized `tagged` protocol is PER INSTANTIATION: each
+// canonical argument tuple owns its conformer set, so the empty-set and
+// out-of-set diagnostics name the exact instantiation. Reaching an
+// instantiation (a field, a parameter) is legal even when its set is empty —
+// only a value-CONSUMING operation demands a member.
 #import "modules/std.sx";
 
-View :: protocol tagged {
-    area :: (self: *Self) -> i64;
-}
 Series :: protocol(T: Type) tagged {
-    at :: (self: *Self, i: i64) -> T;
+    count :: (self: *Self) -> i64;
+    at    :: (self: *Self, i: i64) -> T;
 }
 
-Widget :: struct { n: i64; }
-impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
-impl Series(i64) for Widget { at :: (self: *Widget, i: i64) -> i64 { self.n + i } }
+Sine :: struct { freq: f32; }
+impl Series(f32) for Sine {
+    count :: (self: *Sine) -> i64 { 64 }
+    at    :: (self: *Sine, i: i64) -> f32 { self.freq }
+}
+Ramp :: struct { step: f32; }
+impl Series(f32) for Ramp {
+    count :: (self: *Ramp) -> i64 { 8 }
+    at    :: (self: *Ramp, i: i64) -> f32 { self.step }
+}
+Counter :: struct { n: i64; }
+impl Series(i64) for Counter {
+    count :: (self: *Counter) -> i64 { self.n }
+    at    :: (self: *Counter, i: i64) -> i64 { i }
+}
+Timer :: struct { deadline: i64; }          // conforms to nothing
 
-Screen :: struct { root: View; }               // field — fine, 16 bytes
-render :: (v: View) -> i64 { v.area() }        // parameter — fine
+// A blanket admits one member per instantiated source — at the tuple the
+// unification produces, and at no other.
+Buffer :: struct($T: Type) { items: []$T; }
+impl Series($T) for Buffer($T) {
+    count :: (self: *Buffer) -> i64 { self.items.len }
+    at    :: (self: *Buffer, i: i64) -> $T { self.items[i] }
+}
 
-Feed :: struct { rows: Series(i64); }          // field of an instantiation
-sample :: (s: Series(i64)) -> i64 { s.at(0) }  // parameter of an instantiation
+// Reaching uses of an instantiation nothing implements: legal, and they emit
+// nothing. The field and the parameter materialize the instantiation and arm
+// its diagnostics; neither erases into it nor dispatches through it.
+Flags :: struct { rows: Series(string); }
+hold  :: (s: Series(string)) -> i64 { 0 }
+
+// A value-consuming use of the same empty instantiation is the error.
+count_flags :: (s: Series(string)) -> i64 { s.count() }
 
 main :: () {
-    // The classifier answers for both heads.
-    print("{}\n", protocol_kind(View) == .tagged);
+    sn := Sine.{ freq = 0.5 };
+    ct := Counter.{ n = 3 };
+    v : Series(f32) = sn;
+    print("{} {}\n", v.count(), size_of(Flags));
 
-    w := Widget.{ n = 3 };
-    v : View = w;                              // the nullary erasure works
-    print("{} {}\n", v.area(), render(w));
-    print("{}\n", Screen.{ root = v }.root.area());
+    // `Counter` implements the family — at another tuple. Tags never travel
+    // between spaces, so this can never match.
+    c := v.(Counter);
 
-    s : Series(i64) = w;                       // the parameterized one is staged
+    // Nothing implements this one at all.
+    t := v.(Timer);
+
+    // `Buffer(bool)` is a member of `Series(bool)`, which the blanket admits
+    // it at — not of this instantiation.
+    ba : [2]bool = .[true, false];
+    w : Series(f32) = Buffer(bool).{ items = ba[0..] };
+
+    // The empty set refuses at the consuming site.
+    print("{}\n", count_flags(ct));
 }

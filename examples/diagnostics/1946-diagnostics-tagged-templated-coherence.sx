@@ -1,0 +1,16 @@
+// Global coherence holds PER INSTANTIATION. Two modules implementing
+// `Series(f32)` for `Sine` leave the switch arm that pair owns ambiguous, and
+// import visibility cannot arbitrate a whole-program set — so the duplicate is
+// an error at the reached instantiation, naming both impl sites. A collision
+// at an instantiation nothing reaches is not diagnosed: nothing exists to
+// collide at.
+#import "modules/std.sx";
+#import "./1946-diagnostics-tagged-templated-coherence-types.sx";
+#import "./1946-diagnostics-tagged-templated-coherence-a.sx";
+#import "./1946-diagnostics-tagged-templated-coherence-b.sx";
+
+main :: () {
+    s := Sine.{ freq = 1.0 };
+    v : Series(f32) = s;
+    print("{}\n", v.at(0));
+}

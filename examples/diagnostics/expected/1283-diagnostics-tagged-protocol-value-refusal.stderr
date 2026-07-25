@@ -1,17 +1,29 @@
-error: cannot declare a field of type 'Series__i64' — a parameterized tagged protocol has no runtime model in this compiler yet; use the nullary tagged form, erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/Series__i64')
-  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:23:24
+error: 'Counter' implements 'Series__i64', not 'Series__f32' — each instantiation of a tagged protocol family owns its conformer set and tag space, so a conformer of another instantiation can never match here
+  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:55:13
    |
-23 | Feed :: struct { rows: Series(i64); }          // field of an instantiation
-   |                        ^^^^^^^^^^^
+55 |     c := v.(Counter);
+   |             ^^^^^^^
 
-error: cannot declare a parameter of type 'Series__i64' — a parameterized tagged protocol has no runtime model in this compiler yet; use the nullary tagged form, erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/Series__i64')
-  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:24:15
+error: 'Timer' does not implement 'Series__f32' — a tagged protocol's conformer set is whole-program, so this downcast can never match; implement it, or name a conformer
+  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:58:13
    |
-24 | sample :: (s: Series(i64)) -> i64 { s.at(0) }  // parameter of an instantiation
-   |               ^^^^^^^^^^^
+58 |     t := v.(Timer);
+   |             ^^^^^
 
-error: cannot make a value of 'Series__i64' — a parameterized tagged protocol has no runtime model in this compiler yet; use the nullary tagged form, erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/Series__i64')
-  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:35:9
+error: 'Buffer__bool' does not implement 'Series__f32' — a tagged conformer set is whole-program and per instantiation, and no impl admits this type at this argument tuple
+  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:63:23
    |
-35 |     s : Series(i64) = w;                       // the parameterized one is staged
-   |         ^^^^^^^^^^^
+63 |     w : Series(f32) = Buffer(bool).{ items = ba[0..] };
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: no impl of 'Series__string' exists in this program — a tagged conformer set is per instantiation and whole-program, and 'Series' is implemented at 'Series__f32' (2 impls) and 'Series__i64' (1 impl), so no value of this instantiation can exist
+  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:66:31
+   |
+66 |     print("{}\n", count_flags(ct));
+   |                               ^^
+
+error: no impl of 'Series__string' exists in this program — a tagged conformer set is per instantiation and whole-program, and 'Series' is implemented at 'Series__f32' (2 impls) and 'Series__i64' (1 impl), so no value of this instantiation can exist
+  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:45:45
+   |
+45 | count_flags :: (s: Series(string)) -> i64 { s.count() }
+   |                                             ^^^^^^^

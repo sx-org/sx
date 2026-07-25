@@ -692,6 +692,11 @@ pub const Lowering = struct {
     /// frame is about to die (spec §6.2).
     in_return_expr: bool = false,
     param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; list lets Phase 4/5 detect cross-module overlap)
+    /// One materialized instantiation of a parameterized protocol family, by
+    /// its protocol TypeId. The base identity name plus the canonical argument
+    /// tuple ARE the instantiation's identity: membership, tables, and
+    /// diagnostics are keyed per tuple (spec §6.7).
+    param_protocol_instances: std.AutoHashMap(TypeId, ParamProtocolInstance),
     /// Pack-variadic impl entries — separate map keyed by `"Proto\x00<arg_mangled>"`
     /// (NO source suffix) so a single impl `Closure(..$args) -> $R` can be
     /// matched against many concrete source shapes. Concrete impls in
@@ -795,6 +800,19 @@ pub const Lowering = struct {
         target_args: []const TypeId,
         defining_module: []const u8,
         span: ast.Span,
+        /// The declaration itself. A blanket impl's head and source spell
+        /// binders whose resolved TypeIds say nothing about which position
+        /// each binder occupies, so conformer collection unifies against the
+        /// written shapes.
+        block: *const ast.ImplBlock,
+    };
+
+    /// A parameterized protocol instantiation: the family's declaration
+    /// identity plus the canonical argument tuple it was instantiated at.
+    pub const ParamProtocolInstance = struct {
+        base: []const u8,
+        args: []const TypeId,
+        decl: *const ast.ProtocolDecl,
     };
 
     const InlineReturnInfo = struct { slot: Ref, ret_ty: TypeId, done_bb: BlockId };
@@ -990,6 +1008,7 @@ pub const Lowering = struct {
             .tagged_pending = std.ArrayList(lower_tagged.PendingRoutine).empty,
             .tagged_impl_sites = std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
             .param_impl_map = std.StringHashMap(std.ArrayList(ParamImplEntry)).init(module.alloc),
+            .param_protocol_instances = std.AutoHashMap(TypeId, ParamProtocolInstance).init(module.alloc),
             .param_impl_pack_map = std.StringHashMap(std.ArrayList(PackParamImplEntry)).init(module.alloc),
             .struct_const_map = std.StringHashMap(StructConstInfo).init(module.alloc),
             .extern_name_map = std.StringHashMap([]const u8).init(module.alloc),
@@ -3009,6 +3028,7 @@ pub const Lowering = struct {
     pub const taggedIn = lower_tagged.taggedIn;
     pub const reachTagged = lower_tagged.reachTagged;
     pub const refuseEmptyTaggedSet = lower_tagged.refuseEmptySet;
+    pub const refuseNonMemberTagged = lower_tagged.refuseNonMember;
     pub const buildTaggedValue = lower_tagged.buildTaggedValue;
     pub const protocolTypeIdWord = lower_tagged.protocolTypeIdWord;
     pub const emitTaggedDispatch = lower_tagged.emitTaggedDispatch;

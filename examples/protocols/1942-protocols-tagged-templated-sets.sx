@@ -1,0 +1,67 @@
+// A parameterized `tagged` protocol is a FAMILY: each canonical argument
+// tuple names its own protocol, with its own conformer set, its own tag
+// space, and its own tables and dispatch routines. `Series(f32)` and
+// `Series(i64)` are unrelated types — one's conformer is not the other's,
+// and a tag means a different conformer in each space. Canonicalization
+// resolves aliases before keying, so `Series(Sample)` and `Series(f32)` are
+// one entry when `Sample :: f32`.
+#import "modules/std.sx";
+
+Series :: protocol(T: Type) tagged {
+    count :: (self: *Self) -> i64;
+    at    :: (self: *Self, i: i64) -> T;
+}
+
+Sample :: f32;                       // an alias — not a second type
+
+Sine :: struct { freq: f32; }
+impl Series(Sample) for Sine {       // keyed at Series(f32), spelled through the alias
+    count :: (self: *Sine) -> i64 { 64 }
+    at    :: (self: *Sine, i: i64) -> Sample { self.freq * xx i }
+}
+
+Ramp :: struct { step: f32; }
+impl Series(f32) for Ramp {
+    count :: (self: *Ramp) -> i64 { 8 }
+    at    :: (self: *Ramp, i: i64) -> f32 { self.step * xx i }
+}
+
+Counter :: struct { n: i64; }
+impl Series(i64) for Counter {
+    count :: (self: *Counter) -> i64 { self.n }
+    at    :: (self: *Counter, i: i64) -> i64 { i * 2 }
+}
+
+// Protocol-typed parameters, fields and returns at an instantiation are
+// ordinary storable positions over the same 16-byte handle.
+Feed :: struct { rows: Series(i64); }
+sample_f :: (s: Series(f32)) -> f32 { s.at(2) }
+sum_i    :: (s: Series(i64)) -> i64 { s.count() + s.at(3) }
+
+main :: () {
+    print("{} {}\n", size_of(Series(f32)), size_of(Series(i64)));
+
+    sn := Sine.{ freq = 0.5 };
+    rp := Ramp.{ step = 3.0 };
+    ct := Counter.{ n = 5 };
+
+    // The alias spelling reaches the same instantiation as the canonical
+    // one: `Sine`, implemented at `Series(Sample)`, erases into `Series(f32)`
+    // positions because there is exactly one entry for the tuple.
+    a : Series(Sample) = sn;
+    b : Series(f32)    = rp;
+    print("{} {}\n", a.at(2), b.at(2));
+    print("{} {}\n", sample_f(sn), sum_i(ct));
+
+    f := Feed.{ rows = ct };
+    print("{} {}\n", f.rows.count(), f.rows.at(4));
+
+    // RTTI reads the concrete type through the instantiation's OWN table,
+    // so the two spaces answer independently.
+    print("{} {}\n", type_of(a) == Sine, type_of(b) == Ramp);
+
+    // Every conformer of one instantiation dispatches through that
+    // instantiation's switch, whatever order the members were admitted in.
+    vs : [2]Series(f32) = .[sn, rp];
+    for vs (v) { print("{} {}\n", v.count(), v.at(1)); }
+}
