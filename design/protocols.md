@@ -8,7 +8,7 @@ runtime value with dynamic dispatch.
 ```
 protocol-decl := Name '::' 'protocol' [ '(' params ')' ] [ kind ] [ attrs ] '{' body '}'
 kind          := 'constraint' | 'vtable' | 'inline' | 'tagged'     (absent ⇒ constraint)
-attrs         := '#identity'                                        (erased kinds only)
+attrs         := '#identity'                                        (erased and tagged kinds)
 ```
 
 The kind words are contextual: they are ordinary identifiers
@@ -22,7 +22,7 @@ kinds. Exactly one kind may appear.
 | `constraint` (default) | none | monomorphized per use site | per call site | — |
 | `vtable` | erased, 3 words | vtable pointer | open world | value/own or `#identity` |
 | `inline` | erased, 2 + N words | fn-ptrs in the value | open world | value/own or `#identity` |
-| `tagged` | tagged borrow, 2 words | generated switch | whole program, per instantiation | always a borrow |
+| `tagged` | tagged borrow, 2 words | generated switch | whole program, per instantiation | always a borrow; `#identity` adds the naming discipline |
 
 The ladder is ordered by cost. The default is the kind that emits
 nothing; a program opts *into* paying for dynamic dispatch by
@@ -36,7 +36,11 @@ Into      :: protocol(Target: Type) constraint {
     convert :: (self: *Self) -> Target;
 }
 Show      :: protocol vtable   { fmt :: (self: *Self) -> string; }
-Allocator :: protocol inline #identity {
+Hasher    :: protocol inline {                 // few methods, call-heavy
+    put :: (self: *Self, bytes: []u8);
+    sum :: (self: *Self) -> u64;
+}
+Allocator :: protocol tagged #identity {       // unique stateful conformers
     alloc_bytes   :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -304,8 +308,8 @@ visible, so every erasure site selects one vtable deterministically.
 They emit on first erasure and are shared by every value erased
 through that impl; they are never allocated or freed at runtime. `inline` trades value size for
 zero indirection: the fn-ptr words are copied into every value.
-Choose `inline` for few-method, call-heavy protocols (allocators,
-io); `vtable` keeps many-method values small.
+Choose `inline` for few-method, call-heavy protocols (hashers,
+writers); `vtable` keeps many-method values small.
 
 ### 5.2 Ownership classes
 
@@ -361,21 +365,24 @@ deep state must not be shared belong behind `#identity` or a view.
 call arguments, struct-literal fields alike:
 
 ```sx
-GPA :: struct { alloc_count: i64; }
-impl Allocator for GPA {                 // Allocator: §1, inline #identity
-    alloc_bytes   :: (self: *GPA, size: i64) -> *void { self.alloc_count += 1; … }
-    dealloc_bytes :: (self: *GPA, ptr: *void) { self.alloc_count -= 1; … }
+Rng :: protocol inline #identity { next :: (self: *Self) -> u64; }
+Pcg :: struct { state: u64; }
+impl Rng for Pcg {
+    next :: (self: *Pcg) -> u64 {
+        self.state = self.state * 6364136223846793005 + 1442695040888963407;
+        self.state
+    }
 }
 
-gpa := GPA.{ alloc_count = 0 };
-a : Allocator = gpa;                     // borrow — no demand error, no copy
-b := gpa.(Allocator);                    // borrow, same value shape
-c : Allocator = GPA.{ alloc_count = 0 }; // error: identity objects need a
-                                         // name; bind it first
+rng := Pcg.{ state = 42 };
+a : Rng = rng;                      // borrow — no demand error, no copy
+b := rng.(Rng);                     // borrow, same value shape
+c : Rng = Pcg.{ state = 7 };        // error: identity objects need a
+                                    // name; bind it first
 ```
 
-The two-argument form `.(Allocator, alloc)` refuses on an identity
-target — a borrow allocates nothing.
+The two-argument form `.(Rng, alloc)` refuses on an identity target
+— a borrow allocates nothing.
 
 ### 5.4 `free`
 
@@ -537,10 +544,41 @@ argument, return, field, array element:
 
 There is no owning form, hence: no demand diagnostic (nothing
 hidden happens), no `free` (compile error, same gate class as
-`#identity`), no `.(P, alloc)` (refused), and `#identity` itself is
-refused ("a tagged protocol value is already a borrow"). The postfix
-`v.(P)` at a tagged target is legal and identical to the implicit
-coercion — never required.
+`#identity` erased values), and no `.(P, alloc)` (refused). The
+postfix `v.(P)` at a tagged target is legal and identical to the
+implicit coercion — never required.
+
+**`#identity` on tagged.** Borrow semantics and the `free` refusal
+are structural to the kind, so the attribute contributes exactly
+the **naming discipline**: rvalue erasure refuses ("identity
+objects need a name; bind it first") instead of materializing a
+frame temp. Declare it for protocols whose conformers are unique
+stateful objects — an allocator whose state lives in a frame temp,
+handing out allocations that outlive the frame, is exactly the
+accident the discipline refuses:
+
+```sx
+Allocator :: protocol tagged #identity {       // §1
+    alloc_bytes   :: (self: *Self, size: i64) -> *void;
+    dealloc_bytes :: (self: *Self, ptr: *void);
+}
+Gpa :: struct { … }
+impl Allocator for Gpa { … }
+
+Arena :: struct {
+    first: *void;
+    end_index: i64;
+    parent: Allocator;
+    init :: (parent: Allocator, size: i64) -> Arena { … }
+}
+impl Allocator for Arena { … }
+
+gpa := Gpa.{ … };
+arena := Arena.init(gpa, 4096);
+push .{ allocator = arena } { … }              // borrow of a named arena
+push .{ allocator = Arena.init(gpa, 4096) } { … }
+// error: identity objects need a name; bind it first
+```
 
 Lifetime is the ordinary pointer doctrine: a tagged value is valid
 while its referent lives. Storing one beyond its referent — in
@@ -883,22 +921,30 @@ through. Constraint-bound receivers resolve at monomorphization.
 
 ### 7.9 Compile-time execution
 
-Protocol *values* do not exist during compile-time execution
-(`#run`, comptime folds): vtables and tag tables are link-time
-artifacts, and a comptime-invented tag would renumber. Erasure
-inside comptime-executed code is a compile error; constraint bounds,
-`protocol_kind`, `is_identity`, and all monomorphized protocol
-machinery work fully. Comptime expansion may still *declare*:
-impls inside top-level `inline if`/`inline for` (§3) are
-registration, not values — they exist before the fixpoint runs and
-never touch a tag.
+Comptime protocol values are **symbolic**: the VM carries `{ctx,
+concrete type}` — never a numeric tag or vtable address, which are
+link-time artifacts that do not exist during compilation (and whose
+numbering the comptime expansion of §3 may still change). Erasure
+at comptime is legal for every value kind under each kind's own
+rules; dispatch resolves directly against the concrete type's impl
+— the VM devirtualizes, exactly as constraint resolution does —
+including through Context fields such as the ambient allocator. A
+comptime-computed result that carries a protocol value into the
+runtime image materializes its numeric parts at link: the tag or
+vtable word becomes a link-resolved relocation, the same way
+function pointers in comptime results do. `protocol_kind`,
+`is_identity`, and all monomorphized machinery work unchanged.
+Comptime expansion may *declare* freely — impls inside top-level
+`inline if`/`inline for` (§3) exist before the fixpoint runs — and
+no reflection observes a conformer set at either phase.
 
 ## 8. Reflection
 
 - `protocol_kind(P) -> {constraint, vtable, inline, tagged}` —
   compile-time only; folds in `inline if`.
-- `is_identity(P)` — true only for `#identity` erased protocols;
-  false for every other type. Compile-time only.
+- `is_identity(P)` — true for `#identity` protocols of either value
+  representation (erased or tagged); false for every other type.
+  Compile-time only.
 - A runtime `Type` value always tags a concrete type, never a bare
   protocol type. Composites *containing* protocol types (`*Show`,
   `[]View`) are concrete types and get tags like any other
@@ -923,6 +969,15 @@ whole-program link, after the conformer fixpoint converges — they
 cannot emit per-module, because any module may still add impls.
 Marker/empty vtables are emitted like any other (a protocol always
 erases on the erased kinds).
+
+**Tag references in module objects.** No numeric tag is ever baked
+into per-module compiled code: a downcast's compare constant and an
+inlined `Self`-switch's case values emit as link-resolved absolute
+symbols (`__sx_tag_<P>_<T>`), materialized when the converged set
+is numbered. Module objects therefore survive impl additions
+unchanged — adding a conformer anywhere renumbers tags and
+regenerates the link-stage tables and routines, but recompiles
+nothing; object-cache keys stay tag-independent.
 
 **Dispatch call sequences** (backend pseudocode, not sx syntax):
 
@@ -974,7 +1029,8 @@ conformer identity.
 | rvalue at `P` (tagged), non-return position | frame-scoped temp, borrow — the `any`-box placement rule |
 | rvalue at `P` (tagged), `return` position | compile error — nothing durable to borrow beyond the frame |
 | returning a tagged borrow of a callee local | legal, unchecked, dangles — the slice-of-local doctrine |
-| rvalue at `P` (`#identity`) | compile error — identity objects need a name |
+| rvalue at `P` (`#identity`, erased or tagged) | compile error — identity objects need a name |
+| `#identity` on `tagged` | legal — contributes exactly the naming discipline (rvalue erasure refuses); borrow and `free` refusal are structural to the kind |
 | `free` on: view / identity / tagged / constraint-typed anything | compile error in each case (distinct wordings; constraint has no values at all) |
 | `p.(ProtocolRaw)` | field-wise build per layout; tagged inserts one table load |
 | `p.(Q)`, different protocol | direct re-erasure conversion (§7.4); temperaments apply; result ownership per `Q`'s kind |
@@ -989,7 +1045,7 @@ conformer identity.
 | protocol as a protocol-instantiation argument (`Series(View)`) | legal — a type argument like any other; conformer sets keyed accordingly |
 | value parameters in a protocol head (`protocol(N: u32) tagged`) | as generic structs; canonicalized by folded value equality |
 | type switch arm naming a non-conformer (tagged subject) | warned dead; never matches |
-| erasure inside `#run` / comptime execution | compile error (§7.9); constraint machinery fully available |
+| protocol values inside `#run` / comptime execution | legal, symbolic — `{ctx, concrete type}`, VM-devirtualized dispatch; numeric tags/vtable words materialize at link (§7.9) |
 | conformer method name colliding with an existing member of the type | exact protocol signature: the existing method satisfies conformance (impl may omit; providing it duplicates). anything else (field, different signature): compile error at the impl |
 | default method calling an excluded method | legal — defaults compile per conformer against concrete `Self` (§2); exclusion binds only calls through erased values |
 | impl inside a dead `inline if` branch | never exists — joins no set, emits nothing |
