@@ -131,7 +131,10 @@ pub const GenericResolver = struct {
         bindings: *const std.StringHashMap(TypeId),
     ) []const u8 {
         var mangled = std.ArrayList(u8).empty;
-        mangled.appendSlice(self.l.alloc, base_name) catch @panic("out of memory while mangling generic function");
+        // The base carries `fd`'s declaration identity: two modules may author
+        // the same generic spelling, and a bare-name base would make the first
+        // monomorph answer both authors' call sites.
+        mangled.appendSlice(self.l.alloc, self.l.declIdentityName(base_name, fd)) catch @panic("out of memory while mangling generic function");
         for (fd.type_params) |tp| {
             const ty = bindings.get(tp.name) orelse .unresolved;
             // `mangleTypeName` is the complete semantic type key (including

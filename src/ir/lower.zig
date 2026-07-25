@@ -471,6 +471,16 @@ pub const Lowering = struct {
     /// records each name's first author source to make that decision.
     nominal_name_authors: std.AutoHashMap(types.StringId, []const u8),
     next_nominal_id: u32 = 0,
+    /// Declaration-identity bookkeeping for every NAME-KEYED instantiation cache
+    /// (generic-struct layouts, type-function results, generic/pack monomorphs,
+    /// protocol registrations and their parameterized instances). A cache key
+    /// built from a display name alone collapses two same-spelled declarations
+    /// into one entry; `declIdentityName` appends a per-declaration `__d<id>`
+    /// so they cannot. The FIRST declaration to claim a spelling keeps the bare
+    /// name, so a single-author program mangles byte-identically.
+    decl_identity_first: std.StringHashMap(*const anyopaque),
+    decl_identity_ids: std.AutoHashMap(*const anyopaque, u32),
+    next_decl_identity: u32 = 0,
     /// Nominal plain-struct TypeId → the declaration that authored its layout.
     /// Same-display-name structs already receive distinct TypeIds; retaining the
     /// author here lets method dispatch select the body from that identity rather
@@ -925,6 +935,8 @@ pub const Lowering = struct {
             .global_decl_infos = std.AutoHashMap(*const ast.VarDecl, GlobalInfo).init(module.alloc),
             .lowered_fids = std.AutoHashMap(FuncId, void).init(module.alloc),
             .nominal_name_authors = std.AutoHashMap(types.StringId, []const u8).init(module.alloc),
+            .decl_identity_first = std.StringHashMap(*const anyopaque).init(module.alloc),
+            .decl_identity_ids = std.AutoHashMap(*const anyopaque, u32).init(module.alloc),
             .plain_struct_authors = std.AutoHashMap(TypeId, PlainStructAuthor).init(module.alloc),
             .protocol_impl_methods = std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod).init(module.alloc),
             .protocol_impl_decls = std.AutoHashMap(ProtocolConcreteKey, void).init(module.alloc),
@@ -2923,6 +2935,7 @@ pub const Lowering = struct {
     pub const internNamedTypeDecl = lower_nominal.internNamedTypeDecl;
     pub const adoptsForwardStructStub = lower_nominal.adoptsForwardStructStub;
     pub const shadowNominalId = lower_nominal.shadowNominalId;
+    pub const declIdentityName = lower_nominal.declIdentityName;
     pub const nameHasMultipleTypeAuthors = lower_nominal.nameHasMultipleTypeAuthors;
     pub const rawNamedTypePtr = lower_nominal.rawNamedTypePtr;
     pub const buildGenericStructTemplate = lower_nominal.buildGenericStructTemplate;

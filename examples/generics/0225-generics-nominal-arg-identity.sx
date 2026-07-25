@@ -1,0 +1,27 @@
+// issue 0329: a generic instantiation is keyed by the nominal IDENTITY of every
+// type argument, not by its display name. Two modules author `Thing`; the
+// generic struct, the type function, and the type-pack struct must each build a
+// distinct layout per author instead of reusing the first one's.
+#import "modules/std.sx";
+a :: #import "0225-generics-nominal-arg-identity/a.sx";
+b :: #import "0225-generics-nominal-arg-identity/b.sx";
+
+Wrap :: struct($T: Type) { value: T; }
+Make :: ($T: Type) -> Type { return struct { value: T; }; }
+Tup :: struct(..$Ts: []Type) { fields: Tuple(..$Ts); }
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("Wrap layout per author", size_of(Wrap(a.Thing)) == 8 and size_of(Wrap(b.Thing)) == 24);
+    report("Make layout per author", size_of(Make(a.Thing)) == 8 and size_of(Make(b.Thing)) == 24);
+    report("Tup pack arg per author", size_of(Tup(a.Thing, i64)) == 16 and size_of(Tup(b.Thing, i64)) == 32);
+
+    wa : Wrap(a.Thing) = .{ value = a.make() };
+    wb : Wrap(b.Thing) = .{ value = b.make() };
+    report("Wrap(a.Thing) field", wa.value.one == 1);
+    report("Wrap(b.Thing) field", wb.value.three == 3);
+    0
+}

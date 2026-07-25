@@ -75,9 +75,9 @@ Every row above is closed by fresh stdlib evidence or an explicit reviewed
 supersession; the disposition manifest's gate keys are all closed. Residual
 items tracked OUTSIDE this crosswalk:
 
-1. compiler-internal issues 0320, 0322, 0323, 0325, and 0329-0331 are
+1. compiler-internal issues 0320, 0322, 0323, 0325, 0330 and 0331 are
    follow-up work (`current/PLAN-COMPRESS.md` Step 6); 0324, 0326, 0328,
-   0332, and 0334 are resolved with permanent regressions. Issue 0321
+   0329, 0332, and 0334 are resolved with permanent regressions. Issue 0321
    (module-private struct state) awaits a language-design decision;
 2. the final-tree 61-trial benchmark (exact 110-case matrix, timed-artifact
    byte identity, gain-versus-regression gate) is recorded in
