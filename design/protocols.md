@@ -81,9 +81,9 @@ appear at any depth in later parameters and returns (`Self`, `*Self`,
 on the kind (§5.6, §6.4).
 
 **Keyword member names.** Every reserved word except `inline` is a
-legal *bare* method name; `inline` is spellable only in backtick
-form (`` `inline ``). The keyword-classified type names (`f32`,
-`f64`, …) follow the same backtick rule in member slots.
+legal *bare* method name — including the keyword-classified type
+names (`f32`, `f64`); `inline` alone is spellable only in backtick
+form (`` `inline ``).
 
 **Default methods.** A method with a body is a default; impls may
 omit it (or override it by providing their own). Default bodies are
@@ -369,18 +369,20 @@ call arguments, struct-literal fields alike:
 
 ```sx
 Rng :: protocol inline #identity { next :: (self: *Self) -> u64; }
-Pcg :: struct { state: u64; }
-impl Rng for Pcg {
-    next :: (self: *Pcg) -> u64 {
-        self.state = self.state * 6364136223846793005 + 1442695040888963407;
+Xorshift :: struct { state: u64; }
+impl Rng for Xorshift {
+    next :: (self: *Xorshift) -> u64 {
+        self.state = self.state ^ (self.state << 13);
+        self.state = self.state ^ (self.state >> 7);
+        self.state = self.state ^ (self.state << 17);
         self.state
     }
 }
 
-rng := Pcg.{ state = 42 };
+rng := Xorshift.{ state = 42 };
 a : Rng = rng;                      // borrow — no demand error, no copy
 b := rng.(Rng);                     // borrow, same value shape
-c : Rng = Pcg.{ state = 7 };        // error: identity objects need a
+c : Rng = Xorshift.{ state = 7 };   // error: identity objects need a
                                     // name; bind it first
 ```
 
@@ -616,7 +618,9 @@ one member — a single-conformer tagged protocol devirtualizes
 completely). Methods whose ABI depends on the selected arm —
 `Self`-returning methods (§6.4) — do not use an outlined routine:
 their switch is expanded **inline at each call site**, so arm-local
-materializations land in the caller's frame.
+materializations land in the caller's frame. That expansion is
+set-dependent codegen — §9's fingerprint-keyed caching consequence
+applies to the containing function.
 
 ### 6.4 Dispatchability on tagged values
 
@@ -635,6 +639,13 @@ Tagged dispatch extends the erased rule by exactly the *direct*
 An excluded method behaves exactly as on the erased kinds:
 required of impls, callable concretely and through bounds, compile
 error through the value, members-win over UFCS.
+
+On a **`#identity` tagged protocol**, bare-`Self`-**returning**
+methods are additionally excluded from dispatch through values: an
+arm would materialize precisely the anonymous frame-temp instance
+the naming discipline refuses. They stay callable concretely and
+through bounds. Bare `Self` *parameters* remain dispatchable — the
+arm receives an existing referent; nothing anonymous is created.
 
 **Bare `Self` return — placement.**
 
@@ -673,6 +684,11 @@ No fixit is offered: the right restructure (bind the receiver
 concretely, place the result into owned storage, hoist out of the
 loop) depends on intent.
 
+Returning the result directly (`return s.resized(2.0)`) is the same
+compile error as erasing an rvalue at `return` (§6.2): the borrow's
+referent is a same-statement temporary of the dying frame, and the
+site is syntactically evident.
+
 ### 6.5 Conformer collection
 
 Membership is computed by a whole-program fixpoint over `impl`
@@ -695,6 +711,12 @@ repeat until no set and no reached-instantiation changes
 **What "instantiated" means.** Admission draws only from types the
 monomorphized program instantiates — the fixpoint itself never
 invents new *type* instantiations out of blanket unification alone.
+Spelling a concrete type is instantiation wherever it appears:
+an impl HEAD counts (`impl Serialize for Buffer(f64)` admits
+`Buffer(f64)` even when nothing else mentions it), an expansion
+list element counts (§3), and comptime bodies count — a type
+instantiated only inside `#run` code is instantiated for admission,
+so comptime-carried values (§7.9) always reference real members.
 Reaching a protocol instantiation and monomorphizing admitted
 impl bodies CAN instantiate new types (an impl body may spell
 `Nest(Nest(T))`); such chains fall under the ordinary generic
@@ -772,13 +794,16 @@ v : Series(f32) = Sine.{ freq = 0.5 };
          'Series' is implemented for: f32 (3 impls), i64 (2 impls)
   ```
 
-  A *type-position* use (a field or parameter of an empty-set
-  instantiation, never erased into and never dispatched) is legal
-  and emits nothing.
+  A merely-*reaching* use — a field or parameter of an empty-set
+  instantiation, never erased into and never dispatched — is legal
+  and emits nothing: reaching (§6.6) materializes the instantiation
+  and arms its diagnostics (coherence, §3); only value-CONSUMING
+  operations demand a member.
 - **Downcast in the set**: `v.(Buffer(f32))` compiles to one
   immediate compare against the known constant tag — no table load.
-  The checked/soft/chained assertion temperaments apply as on any
-  postfix assertion.
+  The assertion temperaments apply as on any postfix assertion:
+  graceful when consumed via the error channel, panic when
+  unconsumed, soft for the `?T` target.
 - **Downcast out of the set** — a non-conformer, or a conformer of a
   different instantiation — is a compile error, not a runtime false:
 
@@ -864,15 +889,26 @@ downcast-then-erase — the concrete type behind `p` is not statically
 known, so only the compiler can perform it. Semantics:
 
 - **Conformance check**: whether `p`'s concrete type implements `Q`
-  is a runtime fact; the assertion temperaments apply (`p.(Q)` hard,
-  `p.(?Q)` soft, `try p.(Q)` failable). For a tagged `Q`, "conforms"
-  means "is in `Q`'s conformer set"; the check maps
-  `type_id → Q-tag` through a link-time table.
+  is a runtime fact; the assertion temperaments apply (unconsumed
+  `p.(Q)` panics, `try p.(Q)` is graceful, `p.(?Q)` is soft). For a
+  tagged `Q`, "conforms" means "is in `Q`'s conformer set"; the
+  check maps `type_id → Q-tag` through a link-time table.
+- **Erased `Q`**: the check and the result's vtable/fn-ptr words
+  come from a link-time `type_id → Q-dispatch` table holding
+  exactly the pairs with a **program-unique** impl. A pair with
+  visibility-disjoint duplicate impls (§3) is absent from the
+  table: the conversion fails as non-conforming — the site-local
+  visibility that arbitrates ordinary erasure does not exist at a
+  dynamic conversion, and no other arbiter would be sound.
+- **`#identity` `Q`** — either representation — **refuses at
+  compile time**: identity conformers are named objects, and a
+  dynamic conversion cannot prove the referent is one.
 - **Result ownership follows `Q`'s kind**: value/own `Q` → an
   owning copy of the receiver (`rt_size_of` via the concrete type
-  id); `#identity` `Q` → a borrow of `p`'s ctx; tagged `Q` → a
-  borrow of `p`'s ctx with `Q`'s tag. A borrow result ties its
-  lifetime to `p`'s referent.
+  id) through `context.allocator`; the two-argument `p.(Q, alloc)`
+  routes it explicitly and pairs with `free(q, alloc)`. Tagged `Q`
+  (non-identity) → a borrow of `p`'s ctx with `Q`'s tag; a borrow
+  result ties its lifetime to `p`'s referent.
 - `Q == P` degenerates to the same-protocol rows of §5.3 (erased)
   or the identity coercion (tagged).
 
@@ -894,13 +930,13 @@ per §5.1/§6.1. A protocol type may itself be an instantiation
 argument of another protocol (`Series(View)`). Constraint protocols
 are refused in every storable position (§4).
 
-Context fields may be protocol-typed. A **default** on such a field
-requires a borrow-kind protocol (`#identity` or tagged): the
-default-context fold is the identity erasure of a named instance
-global — a borrow, never null (null ctx is exclusively the `?P`
-absent sentinel). A value/own protocol-typed context field takes no
-folded default (an owning constant cannot exist before `main`); it
-is populated by `push` at runtime. Threads and fibers inherit the
+Context fields may be protocol-typed only at a borrow-kind protocol
+(`#identity` or tagged): context defaults are mandatory and
+comptime-evaluable, the fold of a protocol-typed default is the
+identity erasure of a named instance global — a borrow, never null
+(null ctx is exclusively the `?P` absent sentinel) — and an owning
+constant cannot exist before `main`, so a value/own protocol-typed
+context field is refused at its declaration. Threads and fibers inherit the
 context by snapshot; a snapshot copies handles, not referents — a
 borrow outliving its referent is the standard hazard.
 
@@ -926,20 +962,38 @@ through. Constraint-bound receivers resolve at monomorphization.
 
 Comptime protocol values are **symbolic**: the VM carries `{ctx,
 concrete type}` — never a numeric tag or vtable address, which are
-link-time artifacts that do not exist during compilation (and whose
-numbering the comptime expansion of §3 may still change). Erasure
+link-time artifacts that do not exist during compilation. Erasure
 at comptime is legal for every value kind under each kind's own
 rules; dispatch resolves directly against the concrete type's impl
 — the VM devirtualizes, exactly as constraint resolution does —
-including through Context fields such as the ambient allocator. A
-comptime-computed result that carries a protocol value into the
-runtime image materializes its numeric parts at link: the tag or
-vtable word becomes a link-resolved relocation, the same way
-function pointers in comptime results do. `protocol_kind`,
-`is_identity`, and all monomorphized machinery work unchanged.
-Comptime expansion may *declare* freely — impls inside top-level
-`inline if`/`inline for` (§3) exist before the fixpoint runs — and
-no reflection observes a conformer set at either phase.
+including through Context fields such as the ambient allocator.
+`protocol_kind`, `is_identity`, and all monomorphized machinery
+work unchanged.
+
+**Stages.** Comptime that *drives expansion* — the conditions and
+iterables of top-level `inline if`/`inline for`, and any `#run`
+they transitively reference — evaluates in the **expansion stage**,
+where protocol values are refused entirely: through dispatch or a
+conversion temperament, a protocol value could observe whether some
+impl exists, and refusing values in this stage is what makes
+expansion monotone (§3). All other comptime execution runs **after
+the conformer fixpoint**, against the final sets — every `#run`
+sees the same converged world, so comptime dispatch and conversions
+are order-independent, and their membership facts are the program's
+final facts.
+
+**Escape.** A comptime result that carries a protocol value into
+the runtime image materializes the *referent* itself: its bytes
+become an anonymous immutable image global (recursively — interior
+pointers follow the ordinary comptime-result materialization),
+`ctx` relocates to that global, and the numeric word resolves at
+link — the tag or vtable word becomes a link-resolved relocation,
+the same way function pointers in comptime results do. Referents
+materialized this way are constants: a write through such a value
+is the ordinary constant-write rejection. An **owning** erased
+value cannot escape — no runtime allocator owns a compile-time
+copy, so carrying one into the image is a compile error ("bind the
+concrete value; owning erasure happens at runtime").
 
 ## 8. Reflection
 
@@ -974,13 +1028,23 @@ Marker/empty vtables are emitted like any other (a protocol always
 erases on the erased kinds).
 
 **Tag references in module objects.** No numeric tag is ever baked
-into per-module compiled code: a downcast's compare constant and an
-inlined `Self`-switch's case values emit as link-resolved absolute
-symbols (`__sx_tag_<P>_<T>`), materialized when the converged set
-is numbered. Module objects therefore survive impl additions
-unchanged — adding a conformer anywhere renumbers tags and
-regenerates the link-stage tables and routines, but recompiles
-nothing; object-cache keys stay tag-independent.
+into per-module compiled code: a downcast's compare constant emits
+as a link-resolved absolute symbol (`__sx_tag_<P>_<T>`),
+materialized when the converged set is numbered. Most module
+objects therefore survive impl additions unchanged — plain dispatch
+is a symbol call, compare constants relocate; adding a conformer
+renumbers tags and regenerates the link-stage tables and routines
+without recompiling them. The exceptions are functions whose
+*codegen* is set-dependent — call-site-inlined `Self`-switches
+(§6.3, one arm and one temp slot per member) and folded
+single-conformer downcasts — whose object-cache keys include the
+conformer-set fingerprint of the protocols involved: adding a
+conformer recompiles exactly those functions and relinks the rest.
+
+The fixpoint precedes codegen, so every membership diagnostic —
+empty-set errors, out-of-set downcasts, coherence (§3, §6.8) — is
+an ordinary compile error, never a link error; only *numbering* and
+table emission are link-stage.
 
 **Dispatch call sequences** (backend pseudocode, not sx syntax):
 
@@ -1018,7 +1082,7 @@ conformer identity.
 |---|---|
 | marker protocol (empty body) | constraint: free partition. erased: erases with empty vtable; RTTI/free work. tagged: erases; downcast/type switch are its whole interface |
 | all methods `Self`-excluded (erased kind) | erases fine; every method call through the value diagnoses; concrete/bound calls fine |
-| single-conformer tagged protocol | fully devirtualizes: dispatch is a direct call; downcast to that conformer folds to true |
+| single-conformer tagged protocol | fully devirtualizes: dispatch is a direct call; downcast to that conformer folds to true (set-dependent codegen — fingerprint-keyed caching, §9) |
 | zero-conformer tagged instantiation | type-position use legal; erasure, method call, or downcast at it is a compile error naming the implemented instantiations |
 | duplicate impl `(P-instantiation, T)` | constraint/erased: import-scoped (§3). tagged: global coherence — error at the first reached colliding instantiation, naming both impl sites; unreached collisions are not diagnosed |
 | impl for a protocol type itself (`impl P for Q`) | protocols are not concrete types; refused |
@@ -1027,7 +1091,7 @@ conformer identity.
 | protocol-typed protocol member (`m :: (self: *Self, v: View)`) | ordinary — the parameter erases per `View`'s kind at the call |
 | bare `Self` later parameter | erased: excluded. tagged: dispatchable — caller passes a `P`; the arm tag-checks (checked runtime failure on mismatch) |
 | `Self` at depth in parameter or return (`[]Self`, `?Self`, `Buffer(Self)`) | excluded from dynamic dispatch on every kind; concrete/bound calls fine |
-| bare `-> Self` through a tagged value | call-site-inlined switch; caller-frame temp per call + warn-note (§6.4), no fixit |
+| bare `-> Self` through a tagged value | call-site-inlined switch; caller-frame temp per call + warn-note (§6.4), no fixit; returning the result directly is the §6.2 return error; EXCLUDED from dispatch on `#identity` tagged protocols (would mint an anonymous instance) |
 | rvalue at `*P` (erased) | compile error — nothing durable to borrow |
 | rvalue at `P` (tagged), non-return position | frame-scoped temp, borrow — the `any`-box placement rule |
 | rvalue at `P` (tagged), `return` position | compile error — nothing durable to borrow beyond the frame |
@@ -1036,7 +1100,7 @@ conformer identity.
 | `#identity` on `tagged` | legal — contributes exactly the naming discipline (rvalue erasure refuses); borrow and `free` refusal are structural to the kind |
 | `free` on: view / identity / tagged / constraint-typed anything | compile error in each case (distinct wordings; constraint has no values at all) |
 | `p.(ProtocolRaw)` | field-wise build per layout; tagged inserts one table load |
-| `p.(Q)`, different protocol | direct re-erasure conversion (§7.4); temperaments apply; result ownership per `Q`'s kind |
+| `p.(Q)`, different protocol | direct re-erasure conversion (§7.4); temperaments apply; result ownership per `Q`'s kind; `#identity` targets refuse at compile time; erased targets resolve through the unique-impl table — a duplicated pair converts as non-conforming |
 | `s.(P)`, operand already `P` | erased value/own: independent owning copy of the receiver. tagged: identity coercion |
 | `any` holding a protocol value | never arises from boxing a protocol value (that boxes the receiver); `xx *s` boxes a `*Show` — a concrete composite type with its own tag |
 | `av.(P)` — protocol target on `any` receiver | compile error, every kind with values; constraint refuses as constraint |
@@ -1048,7 +1112,10 @@ conformer identity.
 | protocol as a protocol-instantiation argument (`Series(View)`) | legal — a type argument like any other; conformer sets keyed accordingly |
 | value parameters in a protocol head (`protocol(N: u32) tagged`) | as generic structs; canonicalized by folded value equality |
 | type switch arm naming a non-conformer (tagged subject) | warned dead; never matches |
-| protocol values inside `#run` / comptime execution | legal, symbolic — `{ctx, concrete type}`, VM-devirtualized dispatch; numeric tags/vtable words materialize at link (§7.9) |
+| protocol values inside `#run` / comptime execution | legal, symbolic — `{ctx, concrete type}`, VM-devirtualized dispatch — EXCEPT in expansion-driving comptime, where protocol values are refused (§7.9 stages) |
+| comptime protocol value escaping into the image | referent materializes as an anonymous immutable global (writes = constant-write rejection); numeric word relocates at link; OWNING erased values cannot escape — compile error (§7.9) |
+| type declared inside a top-level `inline for` body | flattens to module scope — duplicate across iterations diagnoses; parameterize the type (`Vec :: struct($N: u32)`) instead of re-declaring per iteration |
+| `inline for` conformance-list elements | concrete types only (a `Type` never tags a protocol, §8); `#run`-computed lists are legal but expansion-driving (§7.9 stages); duplicate elements and nested unrolls diagnose with cursor provenance ("T = Point, i = 1") |
 | conformer method name colliding with an existing member of the type | exact protocol signature: the existing method satisfies conformance (impl may omit; providing it duplicates). anything else (field, different signature): compile error at the impl |
 | default method calling an excluded method | legal — defaults compile per conformer against concrete `Self` (§2); exclusion binds only calls through erased values |
 | impl inside a dead `inline if` branch | never exists — joins no set, emits nothing |
@@ -1102,9 +1169,11 @@ conformer identity.
   what they cost.
 - **Liveness shaking (a compatible refinement).** The operations
   that produce a tagged value form a closed, statically enumerable
-  set: direct erasure sites, re-erasure (§7.4), and `Self`-returning
-  dispatch (which only reproduces present types) — nothing conjures
-  a value from a runtime type id. Emission may therefore drop
+  set: direct erasure sites, re-erasure (§7.4), `Self`-returning
+  dispatch (which only reproduces present types), and
+  comptime-carried values escaping into the image (§7.9), whose
+  members seed liveness without any runtime erasure site — nothing
+  conjures a value from a runtime type id. Emission may therefore drop
   members no execution path can produce (seeding from erasure sites
   in call-graph-reachable code, address-taken functions and closure
   literals as roots; propagating across re-erasure edges): no arm,
