@@ -1,0 +1,11 @@
+warning: function 'alpha' is declared `!` but never errors — drop the `!`
+  --> examples/diagnostics/1281-diagnostics-warn-and-error-render-once.sx:8:16
+   |
+ 8 | alpha :: () -> ! { return; }
+   |                ^
+
+error: field 'bogus' not found on type 'i32'
+  --> examples/diagnostics/1281-diagnostics-warn-and-error-render-once.sx:12:12
+   |
+12 |     return v.bogus;
+   |            ^^^^^^^

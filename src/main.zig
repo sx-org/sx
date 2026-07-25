@@ -237,11 +237,11 @@ pub fn main(init: std.process.Init) !void {
         defer comp.deinit();
 
         timer.mark();
-        comp.parse() catch { comp.renderErrors(); std.process.exit(1); };
+        comp.parse() catch { comp.renderDiagnostics(); std.process.exit(1); };
         timer.record("parse");
 
         timer.mark();
-        comp.resolveImports() catch { comp.renderErrors(); std.process.exit(1); };
+        comp.resolveImports() catch { comp.renderDiagnostics(); std.process.exit(1); };
         timer.record("imports");
 
         // Cache check — use .o files (precompiled object, skip IR compilation in JIT)
@@ -282,15 +282,17 @@ pub fn main(init: std.process.Init) !void {
 
             // Cache MISS — codegen (including verification + optimization) and
             // emit the resulting object to memory.
-            comp.generateCode() catch { comp.renderErrors(); std.process.exit(1); };
+            comp.generateCode() catch { comp.renderDiagnostics(); std.process.exit(1); };
             timer.record("codegen");
 
             timer.mark();
             const buf = comp.ir_emitter.?.emitObjectToMemory() catch std.process.exit(1);
             timer.record("emit");
 
-            // Save .o to cache (extract data before JIT takes ownership)
-            if (use_cache) {
+            // Save .o to cache (extract data before JIT takes ownership).
+            // A compile that produced warnings is never cached: a later hit
+            // skips lowering, and the warnings would silently vanish.
+            if (use_cache and !comp.diagnostics.hasWarnings()) {
                 saveObjectToCache(buf, io, cache_obj);
             }
 
@@ -299,9 +301,11 @@ pub fn main(init: std.process.Init) !void {
 
         // Compile C sources natively and dlopen before JIT
         timer.mark();
-        var c_handle = compileCForJIT(allocator, io, &comp) catch { comp.renderErrors(); std.process.exit(1); };
+        var c_handle = compileCForJIT(allocator, io, &comp) catch { comp.renderDiagnostics(); std.process.exit(1); };
         defer c_handle.unload(io);
         timer.record("c-import");
+
+        comp.renderDiagnostics();
 
         // dlopen #library dependencies so JIT can resolve extern symbols.
         // Program-owned dylibs (the #import c unit first, then #library
@@ -510,17 +514,18 @@ fn compilePipeline(allocator: std.mem.Allocator, io: std.Io, input_path: []const
     errdefer comp.deinit();
 
     timer.mark();
-    comp.parse() catch { comp.renderErrors(); return error.CompileError; };
+    comp.parse() catch { comp.renderDiagnostics(); return error.CompileError; };
     timer.record("parse");
 
     timer.mark();
-    comp.resolveImports() catch { comp.renderErrors(); return error.CompileError; };
+    comp.resolveImports() catch { comp.renderDiagnostics(); return error.CompileError; };
     timer.record("imports");
 
     timer.mark();
-    comp.generateCode() catch { comp.renderErrors(); return error.CompileError; };
+    comp.generateCode() catch { comp.renderDiagnostics(); return error.CompileError; };
     timer.record("codegen");
 
+    comp.renderDiagnostics();
     return comp;
 }
 
@@ -529,11 +534,12 @@ fn dumpSxIR(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, st
     var comp = sx.core.Compilation.init(allocator, io, input_path, source, .{}, stdlib_paths);
     defer comp.deinit();
 
-    comp.parse() catch { comp.renderErrors(); return error.CompileError; };
-    comp.resolveImports() catch { comp.renderErrors(); return error.CompileError; };
+    comp.parse() catch { comp.renderDiagnostics(); return error.CompileError; };
+    comp.resolveImports() catch { comp.renderDiagnostics(); return error.CompileError; };
 
-    var ir_module = comp.lowerToIR() catch { comp.renderErrors(); return error.CompileError; };
+    var ir_module = comp.lowerToIR() catch { comp.renderDiagnostics(); return error.CompileError; };
     defer ir_module.deinit();
+    comp.renderDiagnostics();
 
     var aw = std.Io.Writer.Allocating.init(allocator);
     sx.ir.printModule(&ir_module, &aw.writer) catch return error.CompileError;
@@ -623,7 +629,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     defer comp.deinit();
 
     timer.mark();
-    comp.parse() catch { comp.renderErrors(); return error.CompileError; };
+    comp.parse() catch { comp.renderDiagnostics(); return error.CompileError; };
     timer.record("parse");
 
     // Auto-import the stdlib build driver so `default_pipeline` (+ the build
@@ -642,7 +648,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     }
 
     timer.mark();
-    comp.resolveImports() catch { comp.renderErrors(); return error.CompileError; };
+    comp.resolveImports() catch { comp.renderDiagnostics(); return error.CompileError; };
     timer.record("imports");
 
     // Extract library + framework names from AST (needed for linking regardless of cache)
@@ -664,8 +670,10 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
     // can't tolerate — removed; a future cache can live inside default_pipeline.)
     _ = enable_cache;
     timer.mark();
-    comp.generateCode() catch { comp.renderErrors(); return error.CompileError; };
+    comp.generateCode() catch { comp.renderDiagnostics(); return error.CompileError; };
     timer.record("codegen");
+
+    comp.renderDiagnostics();
 
     // Compile C sources from #import c blocks to .o files
     timer.mark();

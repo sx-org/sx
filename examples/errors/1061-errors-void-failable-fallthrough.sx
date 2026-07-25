@@ -9,6 +9,9 @@
 //     handler must NOT fire;
 //   - a `main :: () -> !` that falls off the end — must exit 0.
 //
+// `noop`'s `!` really is redundant, so the "drop the `!`" warning fires and
+// is pinned; the shape under test is exactly that redundant channel.
+//
 // Regression (issue 0190).
 
 #import "modules/std.sx";

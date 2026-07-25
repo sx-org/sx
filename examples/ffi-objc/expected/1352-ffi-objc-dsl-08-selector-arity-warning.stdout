@@ -1,0 +1,2 @@
+static override non-null: true
+instance override on nil: true
