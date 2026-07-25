@@ -153,6 +153,64 @@ impl Series($T) for Buffer(T) {            // blanket: one impl, a family of con
   (§6.6). Colliding blankets whose instantiations are never reached
   are not diagnosed (nothing exists to collide at).
 
+**Comptime-expanded conformance.** `impl` blocks participate in the
+ordinary top-level comptime declaration forms. An `inline if` gates
+conformance on comptime facts — the dead branch's impl never
+exists, joins no set, and emits nothing:
+
+```sx
+inline if OS == .ios {
+    impl View for CameraButton { … }
+}
+```
+
+A top-level `inline for` unrolls one declaration group per comptime
+element — enumerated conformance over a curated list, with the
+reflection builtins supplying field-wise bodies:
+
+```sx
+Point  :: struct { x, y: f64; }
+Rect   :: struct { origin: Point; w, h: f64; }
+Color  :: struct { r, g, b, a: f32; }
+Widget :: struct { value: i64; }
+
+Buf :: struct { … }
+write_field :: (out: *Buf, name: string, v: any) { … }
+
+Serialize :: protocol tagged {
+    write :: (self: *Self, out: *Buf);
+}
+
+SERIALIZABLE :: .[Point, Rect, Color, Widget];
+
+inline for SERIALIZABLE (T) {
+    impl Serialize for T {
+        write :: (self: *T, out: *Buf) {
+            inline for 0..struct_field_count(T) (i) {
+                write_field(out, struct_field_name(T, i),
+                            struct_field_value(self.*, i));
+            }
+        }
+    }
+}
+```
+
+Each unrolled iteration is an ordinary impl with a concrete `T`:
+membership, coherence (two iterations landing on one `(P, T)` pair
+are the ordinary duplicate error, naming the unrolled sites), and
+every downstream rule apply to the expanded program unchanged. The
+curated-list form is the supported spelling for "one body, a
+deliberate set of types" — the bound-blanket (`impl Show for
+$T/Ord`, §6.5) is refused precisely because a list keeps the set
+intentional.
+
+**Expansion is monotone.** Comptime code may add conformances; it
+cannot observe membership — no reflection enumerates a protocol's
+conformers, at comptime or runtime, so the facts driving an
+expansion can never depend on the sets the expansion feeds. The
+conformer fixpoint (§6.5) runs on the fully expanded program; tags
+are assigned at link, after every expansion is complete.
+
 ## 4. Constraint protocols (the default kind)
 
 A constraint protocol has **no runtime values**. It exists to bound
@@ -611,7 +669,8 @@ does not mention (`impl Series(f32) for Repeat($U)`) contribute one
 member per *instantiated* `Repeat(U)` — never an open-ended family.
 Blanket impls bounded by constraint protocols
 (`impl Show for $T/Ord`) are not a supported form: an impl's `for`
-target must name a type constructor, not a bound.
+target must name a type constructor, not a bound — enumerate a
+curated list with a top-level `inline for` instead (§3).
 
 ### 6.6 Reached instantiations only
 
@@ -829,7 +888,10 @@ Protocol *values* do not exist during compile-time execution
 artifacts, and a comptime-invented tag would renumber. Erasure
 inside comptime-executed code is a compile error; constraint bounds,
 `protocol_kind`, `is_identity`, and all monomorphized protocol
-machinery work fully.
+machinery work fully. Comptime expansion may still *declare*:
+impls inside top-level `inline if`/`inline for` (§3) are
+registration, not values — they exist before the fixpoint runs and
+never touch a tag.
 
 ## 8. Reflection
 
@@ -930,6 +992,9 @@ conformer identity.
 | erasure inside `#run` / comptime execution | compile error (§7.9); constraint machinery fully available |
 | conformer method name colliding with an existing member of the type | exact protocol signature: the existing method satisfies conformance (impl may omit; providing it duplicates). anything else (field, different signature): compile error at the impl |
 | default method calling an excluded method | legal — defaults compile per conformer against concrete `Self` (§2); exclusion binds only calls through erased values |
+| impl inside a dead `inline if` branch | never exists — joins no set, emits nothing |
+| `inline for`-generated impls | ordinary impls of the expanded program; a colliding pair is the ordinary coherence error, naming the unrolled sites |
+| comptime observation of a conformer set | no such reflection exists, at comptime or runtime — expansion facts cannot depend on membership |
 
 ## Appendix: rationale notes
 
