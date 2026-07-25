@@ -2214,7 +2214,7 @@ pub fn lowerMainAndComptime(self: *Lowering, decls: []const *const Node) void {
     for (decls) |decl| {
         // A `#run` body lowers in its OWN module's source context: `NAME :: #run f()` written in an imported module must
         // resolve a bare `f` from that module's flat imports, not the main
-        // file's. Without this, `selectPlainCallableAuthor` runs with the main
+        // file's. Without this, `selectCallableAuthor` runs with the main
         // file's perspective and reports a genuine per-source author as
         // ambiguous. Mirrors `scanDecls` / `lowerDecls`, which already set
         // the source file per decl.
@@ -2334,9 +2334,28 @@ pub const BareCallee = union(enum) {
     /// ≥2 distinct flat authors are reachable from the caller and none is
     /// the caller's own — the bare call can't pick one; require a qualifier.
     ambiguous,
+    /// The visible author of the name denotes a VALUE, not a function — a
+    /// `var`, a literal const, or an alias chain terminating at one. The
+    /// spelling means that declaration here, so the name-keyed function map
+    /// must not answer for it; the reference resolves (or fails) through the
+    /// ordinary value path.
+    not_callable,
     /// 0 or 1 reachable author, or the resolved author IS the existing
     /// bare-name winner — defer to the existing path, byte-for-byte.
     none,
+};
+
+/// Which callable shapes an author selection admits.
+pub const CallableKinds = enum {
+    /// Plain free functions only (`isPlainFreeFn`) — the shapes that own a
+    /// name-keyed FuncId slot. Function VALUES and UFCS dispatch select over
+    /// this set: a generic / pack / comptime author has no callable slot to
+    /// bind and keeps its own monomorphizing dispatch.
+    plain_free,
+    /// Every sx-bodied free function: plain, generic, comptime and pack. A
+    /// bare CALL dispatches all four from the declaration itself, so all four
+    /// must be selected from the caller's own visible authors.
+    any_body,
 };
 
 /// The single bare-call author object (R5 §#3): the `*FnDecl` that defines
@@ -2407,77 +2426,109 @@ pub const TypeHeadResolution = union(enum) {
     ambiguous,
 };
 
-/// THE plain bare-name call selector. `resolveBareCallee`'s
-/// body verbatim, now over the Phase B author collector
-/// (`resolver.collectVisibleAuthors` — the ONE graph-walk) instead of a direct
-/// `module_decls` + `flat_import_graph` traversal. Routes a bare identifier
-/// call `name` from `caller_file` to the right same-name author when flat
-/// imports introduce a genuine collision. Every single-author / local /
-/// parameter / std / qualified name resolves through the EXISTING path
-/// unchanged: the selector returns `.none` whenever the outcome would match
-/// first-wins, so nothing on the common path is perturbed.
+/// The exact FUNCTION an author denotes: a fn author is its own terminal; a
+/// const ALIAS (`go :: target`, `go :: ns.target`) resolves through its chain —
+/// each hop from the hop author's own source, cycles diagnosed once — to the
+/// terminal declaration. Null when the chain terminates at a non-function or
+/// does not resolve. The returned source is the TERMINAL author's module, so
+/// the callee carries the visibility context of the body that runs.
+pub fn callableAuthorFn(self: *Lowering, author: resolver_mod.RawAuthor) ?SelectedFunc {
+    const terminal = self.followAliasChain(author) orelse return null;
+    const fd = fnDeclOfRaw(terminal.raw) orelse return null;
+    return .{ .decl = fd, .source = terminal.source };
+}
+
+/// TRUE when an author's alias chain terminates at a plain VALUE — a `var`, or
+/// a const bound to a literal / expression. Such a spelling denotes that value
+/// in this source, so a call on it can never mean a same-spelled function
+/// authored elsewhere. Type-shaped terminals (named types, type aliases,
+/// parameterized heads) are NOT value authors: the type-head paths own those
+/// spellings in call position.
+fn valueAuthor(self: *Lowering, author: resolver_mod.RawAuthor) bool {
+    const terminal = self.followAliasChain(author) orelse return false;
+    return switch (terminal.raw) {
+        .var_decl => true,
+        .const_decl => |cd| switch (cd.value.data) {
+            .int_literal, .float_literal, .string_literal, .bool_literal, .char_literal,
+            .array_literal, .struct_literal, .tuple_literal, .binary_op, .unary_op => true,
+            else => false,
+        },
+        else => false,
+    };
+}
+
+/// Whether a selected function may bind `kinds`. `extern` imports and
+/// intrinsics are dispatched name-keyed by the C symbol / the compiler and
+/// have no per-author sx body to select, so neither set admits them.
+fn selectableFn(fd: *const ast.FnDecl, kinds: CallableKinds) bool {
+    return switch (kinds) {
+        .plain_free => isPlainFreeFn(fd),
+        .any_body => fd.extern_export != .extern_ and fd.body.data != .intrinsic_expr,
+    };
+}
+
+/// THE bare-name callable selector, over the Phase B author collector
+/// (`resolver.collectVisibleAuthors` — the ONE graph-walk). Routes a bare
+/// reference to `name` from `caller_file` to the author that spelling actually
+/// denotes there, following `alias :: target` chains to their exact terminal
+/// declaration. Every single-author / local / parameter / std / qualified name
+/// resolves through the EXISTING path unchanged: the selector returns `.none`
+/// whenever the outcome would match first-wins.
 ///
-/// The collector returns RAW authors across ALL decl domains; this selector
-/// reproduces a fn-only author view by filtering each author through
-/// `fnDeclOfRaw` (a `const`-wrapped fn unwraps to its inner fn; every other
-/// domain drops out), preserving resolveBareCallee's negative space
-/// byte-for-byte.
-///
-/// - **own-author wins**: if `caller_file` authors `name` as a fn and the
-///   bare-name first-wins winner is a DIFFERENT author, select the caller's
-///   own author. (When the winner already IS the caller's own — the
-///   single-author and first-importer cases — `.none` lets the existing path
-///   bind it.)
+/// - **own-author wins**: if `caller_file` authors `name` as a fn (directly or
+///   through an alias chain) and the bare-name first-wins winner is a DIFFERENT
+///   declaration, select the caller's own author. (When the winner already IS
+///   the caller's own — the single-author and first-importer cases — `.none`
+///   lets the existing path bind it.)
 /// - else select among the authors reachable via `caller_file`'s FLAT import
 ///   edges (bare `#import` of a file or directory, never a namespaced
 ///   `ns :: #import`), deduped by author identity (a diamond import of the
 ///   same module is one author): `≥2 distinct` → `.ambiguous`; exactly one
-///   that DIFFERS from the winner → select it; otherwise `.none`.
+///   that DIFFERS from the winner → select it.
+/// - a visible author that denotes a VALUE (`valueAuthor`) yields
+///   `.not_callable`: the name-keyed function map may not answer for a name
+///   whose visible meaning here is a value.
 ///
-/// Generic / comptime / extern / builtin authors are never rerouted — the
-/// existing dispatch owns those shapes; `isPlainFreeFn` filters them out
-/// BEFORE the count gate (so a same-name collision of non-plain authors is
-/// NOT ambiguous), and the selector returns `.none`. No eager
-/// materialization: the returned `SelectedFunc` carries decl + source and
-/// `materialized = null`; a consumer fills the FuncId via `selectedFuncId`
-/// only when it truly needs it (0102d).
-pub fn selectPlainCallableAuthor(self: *Lowering, name: []const u8, caller_file: []const u8) BareCallee {
+/// `kinds` decides which function shapes participate; a shape outside the set
+/// (an `extern` symbol, an intrinsic, a generic under `.plain_free`) is not an
+/// eligible author at all — it neither wins nor counts toward ambiguity, and
+/// keeps its existing dispatch. No eager materialization: the returned
+/// `SelectedFunc` carries decl + source and `materialized = null`; a consumer
+/// fills the FuncId via `selectedFuncId` only when it truly needs it.
+pub fn selectCallableAuthor(self: *Lowering, name: []const u8, caller_file: []const u8, kinds: CallableKinds) BareCallee {
     const winner = self.program_index.fn_ast_map.get(name);
     var res = self.resolver();
     const set = res.collectVisibleAuthors(name, caller_file, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
 
-    // own-author wins. The collector's `own` spans all domains; a non-fn
-    // (or a const not bound to a function) means `caller_file` has no fn
-    // `name` — fall through to the flat authors, exactly as a fn-only walk
-    // would.
     if (set.own) |own_author| {
-        if (fnDeclOfRaw(own_author.raw)) |own| {
-            if (winner != null and winner.? == own) return .none;
-            if (!isPlainFreeFn(own)) return .none;
-            return .{ .func = .{ .decl = own, .source = own_author.source } };
+        if (self.callableAuthorFn(own_author)) |own| {
+            if (winner != null and winner.? == own.decl) return .none;
+            if (!selectableFn(own.decl, kinds)) return .none;
+            return .{ .func = own };
         }
+        if (valueAuthor(self, own_author)) return .not_callable;
     }
 
     // Caller does not author `name` as a fn → its flat-reachable authors.
-    // Filter to plain free functions BEFORE counting: a same-name collision
-    // of non-plain authors (e.g. two flat-imported modules each `extern`ing
-    // the same symbol) is NOT counted as ambiguous — it falls through to
-    // `.none` and the existing first-wins path.
-    var the_one: ?*const ast.FnDecl = null;
-    var the_source: []const u8 = &.{};
+    // Filter by kind BEFORE counting: a same-name collision of ineligible
+    // authors (e.g. two flat-imported modules each `extern`ing the same
+    // symbol) is NOT ambiguous — it falls through to the existing path.
+    var the_one: ?SelectedFunc = null;
     var count: usize = 0;
     for (set.flat) |fa| {
-        const fd = fnDeclOfRaw(fa.raw) orelse continue;
-        if (!isPlainFreeFn(fd)) continue;
+        const sel = self.callableAuthorFn(fa) orelse continue;
+        if (!selectableFn(sel.decl, kinds)) continue;
         count += 1;
         if (count >= 2) return .ambiguous;
-        the_one = fd;
-        the_source = fa.source;
+        the_one = sel;
     }
-    if (count == 0) return .none;
-    if (winner != null and winner.? == the_one.?) return .none;
-    return .{ .func = .{ .decl = the_one.?, .source = the_source } };
+    const one = the_one orelse {
+        if (set.own == null and set.flat.len == 1 and valueAuthor(self, set.flat[0])) return .not_callable;
+        return .none;
+    };
+    if (winner != null and winner.? == one.decl) return .none;
+    return .{ .func = one };
 }
 
 /// Resolve an as-yet-unregistered alias author directly to a terminal named
@@ -2529,7 +2580,7 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
 }
 
 /// THE source-aware bare TYPE leaf (R5 §E, E1). The type-position analogue
-/// of `selectPlainCallableAuthor`: resolve a bare type name `name` referenced
+/// of `selectCallableAuthor`: resolve a bare type name `name` referenced
 /// from `from` by selecting its nominal author over the ONE graph-walk
 /// collector (`resolver.collectVisibleAuthors`) and reading the alias from the
 /// source-keyed cache (`type_aliases_by_source`, E0's write side) keyed by the
@@ -3014,28 +3065,19 @@ pub fn structMethodFn(sd: *const ast.StructDecl, method: []const u8) ?*const ast
     return null;
 }
 
-/// TRUE iff `ref` is a TYPE-FUNCTION head author — a `fn_decl` (or const-
-/// wrapped fn) declaring at least one `$`-parameter, i.e. instantiable as a
-/// bare type head (`Make(i64)` where `Make :: ($T) -> Type`). Mirrors the
-/// `fd.type_params.len > 0` gate every instantiation site uses to recognize a
-/// type-fn head, so an ORDINARY same-name function (`Make :: () -> i32`, zero
-/// type params) is NOT a type-fn author and does NOT vouch for a hidden 2-flat-
-/// hop type-fn head (E4 attempt-8: a `fn_decl != null` author view let any
-/// visible function — type-fn or not — authorize a type head).
-pub fn typeFnAuthor(ref: resolver_mod.RawDeclRef) bool {
-    const fd = fnDeclOfRaw(ref) orelse return false;
-    return fd.type_params.len > 0;
-}
-
-/// Materialize (lower-on-demand) the FuncId for a selected bare-call author,
+/// Materialize (lower-on-demand) the FuncId for a selected call author,
 /// caching into `sf.materialized`. Shadow-only: the winner owns the
 /// name-keyed slot and lowers through the lazy path, so
-/// `selectPlainCallableAuthor` returns `.none` for it and this is never asked
-/// to lower the winner (0102d). `name` is the call name (== the author's
-/// registered name); `sf.source` pins the author's own visibility context.
-pub fn selectedFuncId(self: *Lowering, sf: *SelectedFunc, name: []const u8) FuncId {
+/// `selectCallableAuthor` returns `.none` for it and this is never asked
+/// to lower the winner (0102d). `sf.source` pins the author's own visibility
+/// context. The slot is registered under the author's OWN declared name, not
+/// the spelling that reached it: an `alias :: target` call would otherwise
+/// register the terminal body under the ALIAS name and win that name-keyed
+/// slot ahead of the real alias winner, whose own lazy lowering then resolves
+/// to this body.
+pub fn selectedFuncId(self: *Lowering, sf: *SelectedFunc) FuncId {
     if (sf.materialized) |fid| return fid;
-    const fid = self.bareAuthorFuncId(sf.decl, name, sf.source);
+    const fid = self.bareAuthorFuncId(sf.decl, sf.decl.name, sf.source);
     sf.materialized = fid;
     return fid;
 }
@@ -3043,7 +3085,7 @@ pub fn selectedFuncId(self: *Lowering, sf: *SelectedFunc, name: []const u8) Func
 /// The FuncId for a resolved bare-call author, ensuring its body is lowered.
 /// Only ever called for a SHADOW (an author that is not the name-keyed
 /// winner): the winner owns the name-keyed slot and lowers through the
-/// normal lazy path, so `selectPlainCallableAuthor` returns `.none` for it. A shadow
+/// normal lazy path, so `selectCallableAuthor` returns `.none` for it. A shadow
 /// is declared a fresh same-name FuncId in its OWN module's visibility
 /// context and its body lowered into that slot via the identity-
 /// addressable `lowerFunctionBodyInto`. Idempotent: `lowered_fids` tracks

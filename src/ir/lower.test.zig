@@ -1748,7 +1748,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body (fix-0102
     while (cache_it.next()) |entry| {
         try module_scopes.put(entry.key_ptr.*, entry.value_ptr.scope);
     }
-    // Phase A raw facts: both `selectPlainCallableAuthor` (Phase C) and
+    // Phase A raw facts: both `selectCallableAuthor` (Phase C) and
     // `lowerRetainedSameNameAuthors` read function authors out of `module_decls`.
     // Wired exactly as `core.zig` does.
     var facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
@@ -1831,9 +1831,9 @@ test "lower: shadowed same-name author gets its own FuncId + real body (fix-0102
     // Imported modules are keyed by their CANONICAL path (issue 0148).
     const a_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/a.sx", .{absdir}));
     const b_path = try imports.canonicalizePath(alloc, try std.fmt.allocPrint(alloc, "{s}/b.sx", .{absdir}));
-    try std.testing.expect(lowering.selectPlainCallableAuthor("greet", main_path) == .ambiguous);
-    try std.testing.expect(lowering.selectPlainCallableAuthor("greet", a_path) == .none);
-    switch (lowering.selectPlainCallableAuthor("greet", b_path)) {
+    try std.testing.expect(lowering.selectCallableAuthor("greet", main_path, .any_body) == .ambiguous);
+    try std.testing.expect(lowering.selectCallableAuthor("greet", a_path, .any_body) == .none);
+    switch (lowering.selectCallableAuthor("greet", b_path, .any_body)) {
         .func => |sf| {
             try std.testing.expectEqual(shadow_fd.?, sf.decl);
             try std.testing.expectEqualStrings(b_path, sf.source);
@@ -1843,7 +1843,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body (fix-0102
         else => return error.TestUnexpectedResult,
     }
     // A name no module authors (and no flat import provides) never routes.
-    try std.testing.expect(lowering.selectPlainCallableAuthor("nonexistent", b_path) == .none);
+    try std.testing.expect(lowering.selectCallableAuthor("nonexistent", b_path, .any_body) == .none);
 }
 
 // E0 (R5 §#4): the scan populates the source-keyed caches partitioned by the

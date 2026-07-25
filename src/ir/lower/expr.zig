@@ -3147,7 +3147,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 std.mem.eql(u8, eff_fn_name, id.name) and
                 (if (self.scope) |scope| scope.lookup(id.name) == null else true) and
                 self.current_source_file != null and
-                self.selectPlainCallableAuthor(id.name, self.current_source_file.?) == .func;
+                self.selectCallableAuthor(id.name, self.current_source_file.?, .plain_free) == .func;
             if (self.program_index.fn_ast_map.contains(eff_fn_name) or fn_author_only) {
                 // Visibility check only for user-typed bare names (id.name
                 // == eff_fn_name) without a UFCS alias. Mangled local-
@@ -3168,7 +3168,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // type-name string boxed as Any).
                 if (self.target_type == .any or self.target_type == .type_value) {
                     const fd_any: ?*const ast.FnDecl = self.program_index.fn_ast_map.get(eff_fn_name) orelse fd_blk: {
-                        switch (self.selectPlainCallableAuthor(id.name, self.current_source_file.?)) {
+                        switch (self.selectCallableAuthor(id.name, self.current_source_file.?, .plain_free)) {
                             .func => |sf| break :fd_blk sf.decl,
                             else => break :fd_blk null,
                         }
@@ -3200,16 +3200,19 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                         (if (self.scope) |scope| scope.lookup(id.name) == null else true))
                     {
                         if (self.current_source_file) |caller_file| {
-                            switch (self.selectPlainCallableAuthor(id.name, caller_file)) {
+                            switch (self.selectCallableAuthor(id.name, caller_file, .plain_free)) {
                                 .func => |sf| {
                                     var selected = sf;
-                                    break :blk_fv self.selectedFuncId(&selected, id.name);
+                                    break :blk_fv self.selectedFuncId(&selected);
                                 },
                                 .ambiguous => {
                                     if (self.diagnostics) |d|
                                         d.addFmt(.err, node.span, "'{s}' is ambiguous; declared by multiple imported modules — qualify the call", .{id.name});
                                     break :blk self.emitError(id.name, node.span);
                                 },
+                                // The visible author is a value: the name-keyed
+                                // winner is not what this spelling means here.
+                                .not_callable => break :blk_fv null,
                                 .none => {},
                             }
                         }

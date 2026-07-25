@@ -130,7 +130,7 @@ pub const Domain = enum {
 /// Whether `raw` is an author ELIGIBLE to decide a reference in `domain`.
 /// `field` is the accessed member name (struct-const domain only; ignored
 /// elsewhere). Mirrors the per-kind author predicates the lowering selectors
-/// gate on (`isNamedTypeKind`, `isPlainFreeFn`, `typeFnAuthor`, etc.).
+/// gate on (`isNamedTypeKind`, `isPlainFreeFn`, `callableAuthorFn`, etc.).
 pub fn eligibleKind(domain: Domain, raw: RawDeclRef, field: ?[]const u8) bool {
     return switch (domain) {
         .bare_type => switch (raw) {

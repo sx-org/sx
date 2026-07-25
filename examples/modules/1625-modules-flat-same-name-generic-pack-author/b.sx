@@ -1,0 +1,7 @@
+// b.sx authors its OWN `ident` / `tally`. Both are monomorphized from the
+// declaration, so the bare call must monomorphize b.sx's declaration.
+ident :: (v: $T) -> i64 { return 2; }
+tally :: (..$args) -> i64 { return 20; }
+
+b_generic :: () -> i64 { return ident(5); }
+b_pack    :: () -> i64 { return tally(1, 2); }

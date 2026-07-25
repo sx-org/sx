@@ -6,6 +6,7 @@ const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 const type_bridge = @import("../type_bridge.zig");
 const program_index_mod = @import("../program_index.zig");
+const resolver_mod = @import("../resolver.zig");
 const StructTemplate = program_index_mod.StructTemplate;
 const GenericResolver = @import("../generics.zig").GenericResolver;
 
@@ -21,7 +22,6 @@ const inferExprType = Lowering.inferExprType;
 const isNamedTypeKind = Lowering.isNamedTypeKind;
 const resolveBuiltin = Lowering.resolveBuiltin;
 const structMethodFn = Lowering.structMethodFn;
-const typeFnAuthor = Lowering.typeFnAuthor;
 
 pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name: []const u8, bindings: *std.StringHashMap(TypeId)) void {
     // Mark as lowered before lowering (prevents infinite recursion)
@@ -1688,10 +1688,21 @@ pub fn headFnLeak(self: *Lowering, name: []const u8, span: ?ast.Span) bool {
     return true;
 }
 
+/// The TYPE-FUNCTION an author denotes: its own declaration, or the terminal
+/// declaration of its `alias :: target` chain (`Make2 :: Make`). Null when the
+/// author heads no type function. Alias chains resolve from each hop author's
+/// own source, so an alias is exactly as good an author as the function it
+/// names — a visibility boolean over the alias decl alone would report a
+/// perfectly visible `Make2(i64)` as unreachable.
+fn typeFnOfAuthor(self: *Lowering, author: resolver_mod.RawAuthor) ?*const ast.FnDecl {
+    const sel = self.callableAuthorFn(author) orelse return null;
+    return if (sel.decl.type_params.len > 0) sel.decl else null;
+}
+
 /// TRUE iff bare `name` has ≥2 DISTINCT direct flat-import authors that are
-/// TYPE-FUNCTIONS (`typeFnAuthor`: a `fn_decl` with ≥1 `$`-param — an ordinary
-/// same-name function does not count) and the querying source authors NONE
-/// itself. The querying source's OWN
+/// TYPE-FUNCTIONS (a `fn_decl` with ≥1 `$`-param, or an alias naming one — an
+/// ordinary same-name function does not count) and the querying source authors
+/// NONE itself. The querying source's OWN
 /// author wins outright (own-wins), so an own author short-circuits to "not
 /// ambiguous" — the existing single-author path instantiates it. Diamond
 /// imports of the SAME author collapse in `collectVisibleAuthors`'s
@@ -1705,15 +1716,15 @@ pub fn flatFnAuthorAmbiguous(self: *Lowering, name: []const u8, from: []const u8
     if (set.own != null) return false; // own-wins
     var fn_authors: usize = 0;
     for (set.flat) |fa| {
-        if (typeFnAuthor(fa.raw)) fn_authors += 1;
+        if (typeFnOfAuthor(self, fa) != null) fn_authors += 1;
     }
     return fn_authors >= 2;
 }
 
 /// TRUE iff bare `name` has at least one DIRECTLY-visible author — the
 /// querying source's OWN author or a 1-hop flat-import author — that is a
-/// TYPE-FUNCTION (`typeFnAuthor`: a `fn_decl` with ≥1 `$`-param). The KIND-AWARE
-/// analogue of `isNameVisible` for a type-fn head: a same-name 1-hop
+/// TYPE-FUNCTION (a `fn_decl` with ≥1 `$`-param, or an alias naming one). The
+/// KIND-AWARE analogue of `isNameVisible` for a type-fn head: a same-name 1-hop
 /// NON-function (a value const `Make :: 123`, a named type) does NOT vouch
 /// (attempt-7), and — crucially — neither does a same-name 1-hop ORDINARY
 /// function (`Make :: () -> i32`, zero `$`-params), which cannot be the type
@@ -1726,12 +1737,45 @@ pub fn flatFnAuthorVisible(self: *Lowering, name: []const u8, from: []const u8) 
     const set = res.collectVisibleAuthors(name, from, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
     if (set.own) |own| {
-        if (typeFnAuthor(own.raw)) return true;
+        if (typeFnOfAuthor(self, own) != null) return true;
     }
     for (set.flat) |fa| {
-        if (typeFnAuthor(fa.raw)) return true;
+        if (typeFnOfAuthor(self, fa) != null) return true;
     }
     return false;
+}
+
+/// The TYPE-FUNCTION declaration a bare head `name` names, selected from the
+/// querying source's OWN visibility domain: a scope-local (mangled) function
+/// first, then the visible author — own wins, else its single flat-import
+/// author — with `alias :: target` chains followed to their exact terminal.
+/// This is what a bare `Make(i64)` instantiates: proving a visible author and
+/// then instantiating the name-keyed winner would run another module's body.
+/// The declaration map answers only where there is no author picture to select
+/// from (a comptime host, unwired import facts) or where no visible author
+/// heads a type function — and that second case never instantiates: it is
+/// exactly what `headFnLeak` rejects before instantiation, as it does the
+/// ≥2-visible-author case (where the first author is returned).
+pub fn visibleTypeFnHead(self: *Lowering, name: []const u8) ?*const ast.FnDecl {
+    const mapped: ?*const ast.FnDecl = blk: {
+        const resolved = if (self.scope) |scope| (scope.lookupFn(name) orelse name) else name;
+        const fd = self.program_index.fn_ast_map.get(resolved) orelse break :blk null;
+        break :blk if (fd.type_params.len > 0) fd else null;
+    };
+    if (self.scope) |scope| if (scope.lookupFn(name) != null) return mapped;
+    const from = self.current_source_file orelse return mapped;
+    if (self.program_index.module_decls == null or self.program_index.flat_import_graph == null) return mapped;
+
+    var res = self.resolver();
+    const set = res.collectVisibleAuthors(name, from, .user_bare_flat);
+    defer if (set.flat.len > 0) self.alloc.free(set.flat);
+    if (set.own) |own| {
+        if (typeFnOfAuthor(self, own)) |fd| return fd;
+    }
+    for (set.flat) |fa| {
+        if (typeFnOfAuthor(self, fa)) |fd| return fd;
+    }
+    return mapped;
 }
 
 /// Resolve a .call node that represents a type constructor (e.g., List(T), Vector(N, T)).
@@ -1853,13 +1897,11 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
             }
         }
     } else {
-        // Also resolve via scope fn_names (local functions get mangled names).
-        const resolved_name = if (self.scope) |scope| (scope.lookupFn(callee_name) orelse callee_name) else callee_name;
-        if (self.program_index.fn_ast_map.get(resolved_name)) |fd| {
-            if (fd.type_params.len > 0) {
-                if (self.headFnLeak(callee_name, cl.callee.span)) return .unresolved;
-                if (self.instantiateTypeFunction(callee_name, callee_name, fd, cl.args)) |ty| return ty;
-            }
+        // The head instantiates the author VISIBLE here (scope-local, own, or
+        // its single flat import), following alias chains to their terminal.
+        if (self.visibleTypeFnHead(callee_name)) |fd| {
+            if (self.headFnLeak(callee_name, cl.callee.span)) return .unresolved;
+            if (self.instantiateTypeFunction(callee_name, callee_name, fd, cl.args)) |ty| return ty;
         }
     }
     // Try as a named type
@@ -1943,12 +1985,9 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
             }
         }
     } else {
-        const resolved_name = if (self.scope) |scope| (scope.lookupFn(base_name) orelse base_name) else base_name;
-        if (self.program_index.fn_ast_map.get(resolved_name)) |fd| {
-            if (fd.type_params.len > 0) {
-                if (self.headFnLeak(base_name, span)) return .unresolved;
-                if (self.instantiateTypeFunction(base_name, base_name, fd, pt.args)) |ty| return ty;
-            }
+        if (self.visibleTypeFnHead(base_name)) |fd| {
+            if (self.headFnLeak(base_name, span)) return .unresolved;
+            if (self.instantiateTypeFunction(base_name, base_name, fd, pt.args)) |ty| return ty;
         }
     }
 

@@ -1,0 +1,6 @@
+// a.sx is imported first, so its `ident` / `tally` own the name-keyed slots.
+ident :: (v: $T) -> i64 { return 1; }
+tally :: (..$args) -> i64 { return 10; }
+
+a_generic :: () -> i64 { return ident(5); }
+a_pack    :: () -> i64 { return tally(1, 2); }

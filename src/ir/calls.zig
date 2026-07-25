@@ -184,19 +184,29 @@ pub const CallResolver = struct {
             if (std.mem.eql(u8, bare_name, "__interp_print_frames")) return refl(bare_name, .void);
             if (std.mem.eql(u8, bare_name, "__trace_resolve_frame"))
                 return refl(bare_name, self.l.module.types.findByName(self.l.module.types.internString("TraceFrame")) orelse .unresolved);
-            // Plain bare same-name flat collision (R5 §C): route through the ONE
+            // Bare same-name flat collision (R5 §C): route through the ONE
             // author producer `selectedFreeAuthor` so `plan` types the call as the
             // SAME author the lowering call-path binds — they can no longer
-            // disagree. A generic / extern / builtin author is not
-            // plain-free so the producer returns `.none`; `.ambiguous` / `.none`
-            // fall through to the first-wins path below, byte-for-byte.
+            // disagree. `.ambiguous` / `.none` fall through to the first-wins
+            // path below, byte-for-byte; `.not_callable` means the visible
+            // author is a value, so the name-keyed function arms below must not
+            // answer for it.
             switch (self.selectedFreeAuthor(c)) {
-                .func => |sf| return .{
-                    .kind = .direct_fn,
-                    .return_type = if (sf.decl.return_type) |rt| self.l.resolveType(rt) else .void,
-                    .target = .{ .selected = sf },
-                    .expands_defaults = defaultsFor(sf.decl, c.args.len),
+                .func => |sf| {
+                    if (sf.decl.type_params.len > 0) return .{
+                        .kind = .generic_fn,
+                        .return_type = self.l.genericResolver().inferGenericReturnType(sf.decl, c),
+                        .target = .{ .selected = sf },
+                        .expands_defaults = defaultsFor(sf.decl, c.args.len),
+                    };
+                    return .{
+                        .kind = .direct_fn,
+                        .return_type = if (sf.decl.return_type) |rt| self.l.resolveType(rt) else .void,
+                        .target = .{ .selected = sf },
+                        .expands_defaults = defaultsFor(sf.decl, c.args.len),
+                    };
                 },
+                .not_callable => return .{ .kind = .unresolved, .return_type = .unresolved },
                 .ambiguous, .none => {},
             }
             // Generic function — infer return type via type bindings.
@@ -513,7 +523,7 @@ pub const CallResolver = struct {
                         .prepends_receiver = true,
                         .expands_defaults = defaultsFor(sf.decl, c.args.len + 1),
                     },
-                    .ambiguous, .none => {},
+                    .ambiguous, .not_callable, .none => {},
                 }
                 if (self.l.resolveFuncByName(eff_field)) |fid| {
                     const func = &self.l.module.functions.items[@intFromEnum(fid)];
@@ -691,15 +701,19 @@ pub const CallResolver = struct {
     /// `lowerCall` (default expansion / param typing / dispatch) consume THIS one
     /// result, so they can never pick different same-name authors for the same
     /// call. Side-effect-free: it consults ONLY the author selector
-    /// (`selectPlainCallableAuthor`) — never return-type inference or type-arg
+    /// (`selectCallableAuthor`) — never return-type inference or type-arg
     /// resolution — so `lowerCall` can compute it eagerly without emitting a
     /// premature diagnostic the full `plan` would (e.g. `cast(type)`'s type-arg).
     ///
-    /// - identifier callee: a plain bare call. The gate mirrors `plan`/`lowerCall`
-    ///   — a builtin, a scope-mangled / UFCS-aliased name, or a locally-shadowed
-    ///   name is never a same-name free-fn collision → `.none`.
+    /// - identifier callee: a bare call, which dispatches every sx-bodied shape
+    ///   (plain, generic, comptime, pack) from the declaration itself, so all
+    ///   four are selectable. The gate mirrors `plan`/`lowerCall` — a builtin, a
+    ///   scope-mangled / UFCS-aliased name, or a locally-shadowed name is never
+    ///   a same-name free-fn collision → `.none`.
     /// - field-access callee with a VALUE receiver: a free-function UFCS
-    ///   (`recv.fn(args)`). A namespace / type prefix receiver → `.none`. The
+    ///   (`recv.fn(args)`), whose generic / pack shapes are dispatched by the
+    ///   receiver-matching UFCS path — so only plain free authors are selected
+    ///   here. A namespace / type prefix receiver → `.none`. The
     ///   verdict over-selects a struct-method / protocol / extern call whose
     ///   field happens to name a free fn, but those dispatch BEFORE the free-fn
     ///   UFCS path in both `plan` and `lowerCall`, so the verdict is consumed only
@@ -717,11 +731,11 @@ pub const CallResolver = struct {
                     scoped;
                 if (!std.mem.eql(u8, name, bare_name)) return .none;
                 if (self.l.scope) |scope| if (scope.lookup(bare_name) != null) return .none;
-                return self.l.selectPlainCallableAuthor(bare_name, caller_file);
+                return self.l.selectCallableAuthor(bare_name, caller_file, .any_body);
             },
             .field_access => |cfa| {
                 if (!self.objectIsValue(cfa.object)) return .none;
-                return self.l.selectPlainCallableAuthor(cfa.field, caller_file);
+                return self.l.selectCallableAuthor(cfa.field, caller_file, .plain_free);
             },
             else => return .none,
         }
