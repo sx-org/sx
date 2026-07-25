@@ -132,10 +132,15 @@ Ui :: struct {
     // Reset the per-build identity state. Pairs with the store's
     // begin_build/commit_build transaction.
     begin_build :: (self: *Ui) {
-        self.chain.len = 0;
+        // DETACH, not `len = 0`: these backings live on the frame arena that
+        // built them, and the arena is reset before this build fills them
+        // again. Keeping ptr/cap would append into memory the reset has
+        // already released — the Ui outlives the arena, so it must not
+        // outlive its pointers into it.
+        self.chain.detach();
         self.chain_hash = FNV_OFFSET;
-        self.occ.len = 0;
-        self.seen_keys.len = 0;
+        self.occ.detach();
+        self.seen_keys.detach();
     }
 
     // Occurrence within a (chain, use_state-site) group, advancing per call.
