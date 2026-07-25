@@ -1,0 +1,7 @@
+b call binds b.target (120): ok
+b fn-value binds b.target (120): ok
+b capture binds b.target (120): ok
+b generic consumer binds b.target (120): ok
+a call binds a.target (7): ok
+a fn-value binds a.target (7): ok
+a generic consumer binds a.target (7): ok

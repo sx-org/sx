@@ -1,0 +1,19 @@
+// issue 0330 / discovery 0365: a BARE call to a same-spelled generic or pack
+// function binds the author visible in the CALLING module, not the first-wins
+// name-keyed winner. Both flat-imported modules author `ident` (generic) and
+// `tally` (comptime pack); each module's bare calls must run its own bodies.
+#import "modules/std.sx";
+#import "1625-modules-flat-same-name-generic-pack-author/a.sx";
+#import "1625-modules-flat-same-name-generic-pack-author/b.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("b generic binds b.ident (2)", b_generic() == 2);
+    report("b pack binds b.tally (20)", b_pack() == 20);
+    report("a generic binds a.ident (1)", a_generic() == 1);
+    report("a pack binds a.tally (10)", a_pack() == 10);
+    0
+}

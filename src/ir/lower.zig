@@ -1706,7 +1706,7 @@ pub const Lowering = struct {
 
     /// A `Resolver` facade over the borrowed Phase A import facts (Phase B). Cheap
     /// by-value; `collectVisibleAuthors`'s `AuthorSet.flat` slice is backed by
-    /// `self.alloc` and owned by the caller (`selectPlainCallableAuthor` frees it).
+    /// `self.alloc` and owned by the caller (`selectCallableAuthor` frees it).
     pub fn resolver(self: *Lowering) resolver_mod.Resolver {
         return resolver_mod.Resolver.init(&self.program_index, self.alloc);
     }
@@ -2880,7 +2880,9 @@ pub const Lowering = struct {
     pub const lowerFunction = lower_decl.lowerFunction;
     pub const lowerMainAndComptime = lower_decl.lowerMainAndComptime;
     pub const lowerRetainedSameNameAuthors = lower_decl.lowerRetainedSameNameAuthors;
-    pub const selectPlainCallableAuthor = lower_decl.selectPlainCallableAuthor;
+    pub const selectCallableAuthor = lower_decl.selectCallableAuthor;
+    pub const callableAuthorFn = lower_decl.callableAuthorFn;
+    pub const CallableKinds = lower_decl.CallableKinds;
     pub const selectNominalLeaf = lower_decl.selectNominalLeaf;
     pub const typeNodeLeavesReady = lower_decl.typeNodeLeavesReady;
     pub const isNamedTypeKind = lower_decl.isNamedTypeKind;
@@ -2896,7 +2898,6 @@ pub const Lowering = struct {
     pub const accessorEffName = lower_decl.accessorEffName;
     pub const accessorNameMatches = lower_decl.accessorNameMatches;
     pub const setter_eff_suffix = lower_decl.setter_eff_suffix;
-    pub const typeFnAuthor = lower_decl.typeFnAuthor;
     pub const selectedFuncId = lower_decl.selectedFuncId;
     pub const bareAuthorFuncId = lower_decl.bareAuthorFuncId;
     pub const putTypeAlias = lower_decl.putTypeAlias;
@@ -3146,6 +3147,7 @@ pub const Lowering = struct {
     pub const headFnLeak = lower_generic.headFnLeak;
     pub const flatFnAuthorAmbiguous = lower_generic.flatFnAuthorAmbiguous;
     pub const flatFnAuthorVisible = lower_generic.flatFnAuthorVisible;
+    pub const visibleTypeFnHead = lower_generic.visibleTypeFnHead;
     pub const resolveTypeCallWithBindings = lower_generic.resolveTypeCallWithBindings;
     pub const fieldTypeOf = lower_generic.fieldTypeOf;
     pub const resolveParameterizedWithBindings = lower_generic.resolveParameterizedWithBindings;

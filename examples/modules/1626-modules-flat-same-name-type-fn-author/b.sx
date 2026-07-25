@@ -1,0 +1,14 @@
+// b.sx authors its OWN `Make` with a different member, and an alias naming it.
+// Both spellings instantiate b.sx's declaration.
+Make  :: ($T: Type) -> Type { return struct { value: T; mark: i64; }; }
+Make2 :: Make;
+
+b_head :: () -> i64 {
+    v : Make(i64) = .{ value = 5, mark = 2 };
+    return v.mark;
+}
+
+b_alias_head :: () -> i64 {
+    v : Make2(i64) = .{ value = 5, mark = 3 };
+    return v.mark;
+}

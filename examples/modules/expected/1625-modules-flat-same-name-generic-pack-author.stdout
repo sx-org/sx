@@ -1,0 +1,4 @@
+b generic binds b.ident (2): ok
+b pack binds b.tally (20): ok
+a generic binds a.ident (1): ok
+a pack binds a.tally (10): ok

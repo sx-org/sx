@@ -1,0 +1,5 @@
+error: unresolved 'limit' (in examples/modules/1628-modules-own-value-shadows-imported-fn.sx fn main)
+  --> examples/modules/1628-modules-own-value-shadows-imported-fn.sx:11:19
+   |
+11 |     print("{}\n", limit());
+   |                   ^^^^^

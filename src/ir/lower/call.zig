@@ -499,6 +499,12 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     };
     const sel_author: ?*SelectedFunc = bare_author orelse qualified_author;
     const author_ambiguous = bare_author_verdict == .ambiguous;
+    // The bare name's visible author is a VALUE: this spelling denotes that
+    // declaration here, so no name-keyed function lookup may answer for it.
+    const author_not_callable = bare_author_verdict == .not_callable;
+    // Either verdict forbids reading a signature off the name-keyed winner:
+    // there is no single author to take named-arg names or defaults from.
+    const author_declines = author_ambiguous or author_not_callable;
 
     // A proved namespace path that fails at one edge/member is terminal. Emit
     // the selector's exact failure now and do not evaluate argument side effects
@@ -530,11 +536,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
     // `f(a, name = v)` into declaration order with defaults filled, BEFORE
     // positional default expansion (a named call never reaches it: mapping
     // fills every default itself, middle holes included).
-    if (mapNamedArgs(self, c, sel_author, qualified_author != null, author_ambiguous)) |mapped| c = mapped;
+    if (mapNamedArgs(self, c, sel_author, qualified_author != null, author_declines)) |mapped| c = mapped;
     // Expand default parameter values for bare identifier callees:
     // when the caller omits trailing positional args, fill them in
     // from the callee's `param: T = expr` declarations.
-    if (self.expandCallDefaults(c, sel_author, qualified_author != null, author_ambiguous)) |expanded| c = expanded;
+    if (self.expandCallDefaults(c, sel_author, qualified_author != null, author_declines)) |expanded| c = expanded;
     // Check reflection builtins first (before lowering args — some args are type names, not values)
     if (c.callee.data == .identifier) {
         if (self.tryLowerReflectionCall(c.callee.data.identifier.name, c)) |ref| return ref;
@@ -611,17 +617,15 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         };
         // R5 §C: the early pack/comptime/generic dispatch reads
         // the SAME author the call resolver SELECTED — not the first-wins
-        // winner — whenever a genuine flat same-name collision rerouted the
-        // call (`sel_author != null`). The selector only ever returns a plain
-        // free fn (`isPlainFreeFn` rejects type-params / comptime / pack), so
-        // `sel_author.decl` matches none of the arms below and the early path
-        // falls through to the main dispatch, which CONSUMES `sel_author` and
-        // binds that author. Without this the early path would dispatch the
-        // first-wins winner (e.g. a pack `(..$args)`) and disagree with the
-        // main dispatch — the selected plain author's bare call would invoke
-        // the wrong function. On the common path (`sel_author == null`) this
-        // reads the winner exactly as before — byte-identical, since the
-        // selector reroutes nothing there.
+        // winner. A bare call selects every sx-bodied shape, so a selected
+        // pack / comptime / generic author monomorphizes HERE, from the
+        // caller's own author; a selected plain author falls through to the
+        // main dispatch, which CONSUMES `sel_author` and binds it. Without
+        // this the early path would dispatch the first-wins winner and
+        // disagree with the main dispatch — the selected author's bare call
+        // would invoke another module's function. On the common path
+        // (`sel_author == null`) this reads the winner exactly as before —
+        // byte-identical, since the selector reroutes nothing there.
         // A callable LOCAL binding shadows the top-level fn (issue 0217):
         // the early pack/comptime/generic program-fn dispatch must not
         // consume the call — the main dispatch routes it indirect through
@@ -629,7 +633,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // name, so only the first-wins map lookup needs the gate.)
         const early_fd: ?*const ast.FnDecl = if (sel_author) |sf|
             sf.decl
-        else if (callableLocalShadow(self, c.callee.data.identifier.name))
+        else if (author_not_callable or callableLocalShadow(self, c.callee.data.identifier.name))
             null
         else
             self.program_index.fn_ast_map.get(early_name);
@@ -1143,7 +1147,12 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             // were filled by `expandCallDefaults`, comptime-pack spreads
             // expanded element-wise above.
             {
-                const arity_fd: ?*const ast.FnDecl = if (sel_author) |sf| sf.decl else self.program_index.fn_ast_map.get(func_name);
+                const arity_fd: ?*const ast.FnDecl = if (sel_author) |sf|
+                    sf.decl
+                else if (author_not_callable)
+                    null
+                else
+                    self.program_index.fn_ast_map.get(func_name);
                 if (arity_fd) |fd| {
                     // A leftover slice/array-spread placeholder into a callee
                     // with NO variadic slot to consume it: diagnose the spread
@@ -1159,7 +1168,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
             }
             if (sel_author) |sf| {
-                const fid = self.selectedFuncId(sf, func_name);
+                const fid = self.selectedFuncId(sf);
                 const func = &self.module.functions.items[@intFromEnum(fid)];
                 const ret_ty = func.ret;
                 const params = func.params;
@@ -1172,8 +1181,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 if (func.is_variadic) self.promoteCVariadicArgs(final_args, params.len);
                 return self.builder.call(fid, final_args, ret_ty);
             }
+            // A value-authored name has no callable declaration here, so the
+            // name-keyed map does not answer for it.
+            const named_fd: ?*const ast.FnDecl = if (author_not_callable) null else self.program_index.fn_ast_map.get(func_name);
             // Check for comptime-expanded or generic functions
-            if (self.program_index.fn_ast_map.get(func_name)) |fd| {
+            if (named_fd) |fd| {
                 if (hasComptimeParams(fd)) {
                     return self.lowerComptimeCall(fd, c);
                 }
@@ -1183,7 +1195,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
             }
             // Look up declared/extern function — try lazy lowering if not yet lowered
-            {
+            if (!author_not_callable) {
                 // First attempt: function may already be declared (from scanDecls)
                 // but not yet lowered. Try lazy lowering if needed.
                 if (self.program_index.fn_ast_map.contains(func_name) and !self.lowered_functions.contains(func_name)) {
@@ -1416,7 +1428,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             break :declared self.fn_decl_fids.get(fd) orelse return self.emitError(fd.name, c.callee.span);
                         }
                     else
-                        self.selectedFuncId(sf, fd.name);
+                        self.selectedFuncId(sf);
                     const func = &self.module.functions.items[@intFromEnum(fid)];
                     self.packVariadicCallArgs(fd, c, &args);
                     const final_args = self.prependCtxIfNeeded(func, args.items);
@@ -1531,7 +1543,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             if (fd.type_params.len > 0) return self.lowerGenericCall(fd, fa.field, c, args.items);
                             if (self.checkCallArity(fd, fa.field, args.items.len, false, c.callee.span)) return Ref.none;
                             var sf = SelectedFunc{ .decl = fd, .source = target.target_module_path };
-                            const fid = self.selectedFuncId(&sf, fa.field);
+                            const fid = self.selectedFuncId(&sf);
                             const func = &self.module.functions.items[@intFromEnum(fid)];
                             self.packVariadicCallArgs(fd, c, &args);
                             const final_args = self.prependCtxIfNeeded(func, args.items);
@@ -2056,7 +2068,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
                 const ufcs_fid: ?FuncId = blk_uf: {
                     if (sel_author) |sf| {
-                        break :blk_uf self.selectedFuncId(sf, eff_field);
+                        break :blk_uf self.selectedFuncId(sf);
                     }
                     if (ufcs_fd != null) {
                         if (!self.lowered_functions.contains(eff_field)) {
@@ -4025,11 +4037,11 @@ fn namedCalleeDecl(
     c: *const ast.Call,
     sel_author: ?*const SelectedFunc,
     qualified_selected: bool,
-    author_ambiguous: bool,
+    author_declines: bool,
 ) ?NamedCallee {
     switch (c.callee.data) {
         .identifier => |id| {
-            if (author_ambiguous) return null;
+            if (author_declines) return null;
             if (sel_author) |sf| return .{ .fd = sf.decl, .source = sf.source, .receiver_params = 0 };
             if (callableLocalShadow(self, id.name)) return null;
             const eff_name = blk: {
@@ -4156,7 +4168,7 @@ pub fn mapNamedArgs(
     c: *const ast.Call,
     sel_author: ?*const SelectedFunc,
     qualified_selected: bool,
-    author_ambiguous: bool,
+    author_declines: bool,
 ) ?*ast.Call {
     var any_named = false;
     var has_block = false;
@@ -4172,7 +4184,7 @@ pub fn mapNamedArgs(
         .enum_literal => |el| el.name,
         else => "callee",
     };
-    const callee = namedCalleeDecl(self, c, sel_author, qualified_selected, author_ambiguous) orelse {
+    const callee = namedCalleeDecl(self, c, sel_author, qualified_selected, author_declines) orelse {
         if (self.diagnostics) |d| {
             if (has_block) {
                 d.addFmt(.err, c.callee.span, "cannot use a trailing block here — '{s}' has no known declaration (closure and function-pointer values bind their arguments explicitly)", .{callee_name});
@@ -4443,7 +4455,7 @@ pub fn expandCallDefaults(
     c: *const ast.Call,
     sel_author: ?*const SelectedFunc,
     qualified_selected: bool,
-    author_ambiguous: bool,
+    author_declines: bool,
 ) ?*ast.Call {
     const fd = blk: {
         switch (c.callee.data) {
@@ -4466,7 +4478,7 @@ pub fn expandCallDefaults(
                 // call keeps the existing first-wins winner, byte-for-byte.
                 // Reading `.decl` only keeps `materialized` null — inspecting
                 // defaults must not lower the author (0102d).
-                if (author_ambiguous) return null;
+                if (author_declines) return null;
                 if (sel_author) |sf| break :blk sf.decl;
                 // A callable LOCAL binding shadows the top-level fn (issue
                 // 0217, review F2): the shadowed-out global's defaults must
@@ -4938,7 +4950,7 @@ pub fn resolveCallParamTypes(
     // it. A non-collision call falls to the existing first-wins path below,
     // byte-for-byte.
     if (sel_author) |sf| {
-        const fid = self.selectedFuncId(sf, bare_name);
+        const fid = self.selectedFuncId(sf);
         const func = &self.module.functions.items[@intFromEnum(fid)];
         return self.userParamTypes(func);
     }

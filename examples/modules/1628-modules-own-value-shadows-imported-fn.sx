@@ -1,0 +1,13 @@
+// issue 0330: the visible author decides what a spelling MEANS. `main` declares
+// `limit` as a value, so `limit()` is not a call to the flat-imported function
+// of that name — the name-keyed function map must not answer for a name whose
+// visible author here is a value.
+#import "modules/std.sx";
+#import "1628-modules-own-value-shadows-imported-fn/a.sx";
+
+limit :: 7;
+
+main :: () -> i32 {
+    print("{}\n", limit());
+    0
+}

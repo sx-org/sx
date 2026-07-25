@@ -1872,7 +1872,7 @@ const ConstAuthor = union(enum) {
 
 /// The source-aware module-const author of `name` from the querying module
 /// (E2/F2) — the value-const analogue of `selectNominalLeaf` (types) and
-/// `selectPlainCallableAuthor` (functions). Selects over the ONE graph-walk
+/// `selectCallableAuthor` (functions). Selects over the ONE graph-walk
 /// collector and reads the value from the SELECTED author's per-source cache
 /// (`module_consts_by_source`), never the global last-wins `module_const_map`:
 ///
