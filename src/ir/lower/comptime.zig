@@ -1916,76 +1916,94 @@ pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
 
 /// `<array const>.len` as a compile-time integer — the SELECTED author's
 /// element count (E2/F2 source-aware, like every const fold).
+/// Select the const that carries `name`'s VALUE SHAPE, following an
+/// identifier-RHS alias chain to its terminal target. An alias's registered
+/// value node is the identifier it was declared with, so a shape test against
+/// it ("is this an array_literal?") would fail on every alias of an aggregate
+/// while the alias folds fine in scalar positions. Returns the terminal
+/// author, so the caller pins the right source. A chain that leaves the const
+/// domain, or one that loops, yields null.
+fn selectShapedConst(self: *Lowering, name: []const u8) ?SelectedConst {
+    // Each hop resolves from the PREVIOUS hop's author, so a chain whose middle
+    // link is visible only inside its own module still follows. The pin is
+    // restored on every exit path, including the terminal return.
+    const entry = self.pinConstAuthorSource(self.current_source_file);
+    defer entry.unpin();
+
+    var current = name;
+    var hops: u32 = 0;
+    while (hops < 64) : (hops += 1) {
+        const sel = switch (self.selectModuleConst(current)) {
+            .resolved => |s| s,
+            .own_opaque, .ambiguous, .none => return null,
+        };
+        if (sel.info.value.data != .identifier) return sel;
+        const id = sel.info.value.data.identifier;
+        if (id.is_raw) return null;
+        if (sel.source) |s| self.setCurrentSourceFile(s);
+        current = id.name;
+    }
+    return null;
+}
+
 pub fn foldConstAggLen(self: *Lowering, name: []const u8) ?i64 {
-    return switch (self.selectModuleConst(name)) {
-        .resolved => |sel| if (sel.info.value.data == .array_literal)
-            @intCast(sel.info.value.data.array_literal.elements.len)
-        else
-            null,
-        .own_opaque, .ambiguous, .none => null,
-    };
+    const sel = selectShapedConst(self, name) orelse return null;
+    if (sel.info.value.data != .array_literal) return null;
+    return @intCast(sel.info.value.data.array_literal.elements.len);
 }
 
 /// `K[<const idx>]` over an ARRAY const: the element's compile-time integer
 /// value, folded in the AUTHOR's context. Out-of-range diagnoses loudly —
 /// never a wrap or a silent null-into-runtime.
 pub fn foldConstArrayElem(self: *Lowering, name: []const u8, idx: i64, span: ?ast.Span, frame: ?*const ConstFoldFrame) ?i64 {
-    switch (self.selectModuleConst(name)) {
-        .resolved => |sel| {
-            if (sel.info.value.data != .array_literal) return null;
-            const elems = sel.info.value.data.array_literal.elements;
-            if (idx < 0 or idx >= elems.len) {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, span, "index {d} is out of bounds for constant '{s}' ({d} elements)", .{ idx, name, elems.len });
-                return null;
-            }
-            if (constFoldFrameContains(frame, name, sel.source)) return null;
-            var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
-            const restore = self.pinConstAuthorSource(sel.source);
-            defer restore.unpin();
-            return program_index_mod.evalConstIntExpr(elems[@intCast(idx)], SourceConstCtx{ .lowering = self, .frame = &f });
-        },
-        .own_opaque, .ambiguous, .none => return null,
+    const sel = selectShapedConst(self, name) orelse return null;
+    if (sel.info.value.data != .array_literal) return null;
+    const elems = sel.info.value.data.array_literal.elements;
+    if (idx < 0 or idx >= elems.len) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "index {d} is out of bounds for constant '{s}' ({d} elements)", .{ idx, name, elems.len });
+        return null;
     }
+    if (constFoldFrameContains(frame, name, sel.source)) return null;
+    var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
+    const restore = self.pinConstAuthorSource(sel.source);
+    defer restore.unpin();
+    return program_index_mod.evalConstIntExpr(elems[@intCast(idx)], SourceConstCtx{ .lowering = self, .frame = &f });
 }
 
 /// `<struct const>.field` as a compile-time integer — the SELECTED author's
 /// field initializer, matched by name (named inits) or position, folded in
 /// the author's context.
 pub fn foldConstStructField(self: *Lowering, name: []const u8, field: []const u8, frame: ?*const ConstFoldFrame) ?i64 {
-    switch (self.selectModuleConst(name)) {
-        .resolved => |sel| {
-            if (sel.info.value.data != .struct_literal) return null;
-            const sl = &sel.info.value.data.struct_literal;
-            const init_expr: ?*const Node = blk: {
-                const has_names = sl.field_inits.len > 0 and sl.field_inits[0].name != null;
-                if (has_names) {
-                    for (sl.field_inits) |fi| {
-                        if (fi.name) |n| if (std.mem.eql(u8, n, field)) break :blk fi.value;
-                    }
-                    break :blk null;
-                }
-                // Positional inits: index via the struct type's field order.
-                if (sel.info.ty.isBuiltin()) break :blk null;
-                const ti = self.module.types.get(sel.info.ty);
-                if (ti != .@"struct") break :blk null;
-                for (ti.@"struct".fields, 0..) |sf, i| {
-                    if (std.mem.eql(u8, self.module.types.getString(sf.name), field)) {
-                        if (i < sl.field_inits.len) break :blk sl.field_inits[i].value;
-                        break :blk null;
-                    }
-                }
+    const sel = selectShapedConst(self, name) orelse return null;
+    if (sel.info.value.data != .struct_literal) return null;
+    const sl = &sel.info.value.data.struct_literal;
+    const init_expr: ?*const Node = blk: {
+        const has_names = sl.field_inits.len > 0 and sl.field_inits[0].name != null;
+        if (has_names) {
+            for (sl.field_inits) |fi| {
+                if (fi.name) |n| if (std.mem.eql(u8, n, field)) break :blk fi.value;
+            }
+            break :blk null;
+        }
+        // Positional inits: index via the struct type's field order.
+        if (sel.info.ty.isBuiltin()) break :blk null;
+        const ti = self.module.types.get(sel.info.ty);
+        if (ti != .@"struct") break :blk null;
+        for (ti.@"struct".fields, 0..) |sf, i| {
+            if (std.mem.eql(u8, self.module.types.getString(sf.name), field)) {
+                if (i < sl.field_inits.len) break :blk sl.field_inits[i].value;
                 break :blk null;
-            };
-            const e = init_expr orelse return null;
-            if (constFoldFrameContains(frame, name, sel.source)) return null;
-            var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
-            const restore = self.pinConstAuthorSource(sel.source);
-            defer restore.unpin();
-            return program_index_mod.evalConstIntExpr(e, SourceConstCtx{ .lowering = self, .frame = &f });
-        },
-        .own_opaque, .ambiguous, .none => return null,
-    }
+            }
+        }
+        break :blk null;
+    };
+    const e = init_expr orelse return null;
+    if (constFoldFrameContains(frame, name, sel.source)) return null;
+    var f = ConstFoldFrame{ .name = name, .source = sel.source, .parent = frame };
+    const restore = self.pinConstAuthorSource(sel.source);
+    defer restore.unpin();
+    return program_index_mod.evalConstIntExpr(e, SourceConstCtx{ .lowering = self, .frame = &f });
 }
 
 /// `source`'s per-source const cache entry for `name` (E0's

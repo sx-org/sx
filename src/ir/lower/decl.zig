@@ -703,34 +703,7 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
     // unresolvable or cyclic alias simply never registers; a cycle is
     // diagnosed by `followAliasChain` during fn-alias registration and the
     // use site still reports the unresolved name.
-    {
-        var changed = true;
-        while (changed) {
-            changed = false;
-            for (decls) |decl| {
-                if (decl.data != .const_decl) continue;
-                const cd = decl.data.const_decl;
-                if (cd.value.data != .identifier and cd.value.data != .field_access) continue;
-                if (self.program_index.module_const_map.contains(cd.name)) continue;
-                const target: program_index_mod.ModuleConstInfo = switch (cd.value.data) {
-                    .identifier => |id| self.program_index.module_const_map.get(id.name) orelse continue,
-                    .field_access => blk: {
-                        const from = decl.source_file orelse self.main_file orelse continue;
-                        const path = self.qualifiedTypeName(cd.value) orelse continue;
-                        defer self.alloc.free(path);
-                        const sel = switch (self.qualifiedMemberVerdictFrom(path, from)) {
-                            .selected => |s| s,
-                            .not_qualified, .missing, .ambiguous => continue,
-                        };
-                        break :blk self.sourceModuleConst(sel.target.target_module_path, sel.member) orelse continue;
-                    },
-                    else => unreachable,
-                };
-                self.putModuleConst(decl.source_file, cd.name, .{ .value = cd.value, .ty = target.ty });
-                changed = true;
-            }
-        }
-    }
+    registerConstAliases(self, decls);
     // Pass 0b: reserve every GENUINE same-name NAMED-TYPE shadow's DISTINCT
     // nominal slot BEFORE the registration loop resolves any fields (E2/F1, and
     // enum/union from E6a). A field / variant type referencing a shadow name —
@@ -1172,6 +1145,54 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
         };
         if (!recv_is_agg) continue;
         self.putModuleConst(decl.source_file, cd.name, .{ .value = cd.value, .ty = .i64 });
+    }
+    // Pass 2c: the const-alias fixpoint again. Its pass-0a' run can only see
+    // the LITERAL consts pass 0 registers; an aggregate const (`C :: S.{…}`,
+    // `A :: .[…]`) does not reach `module_const_map` until pass 1/2, so an
+    // alias of one (`D :: C`) had no registered target back then. Re-running
+    // here closes over those. Idempotent — the fixpoint skips a name already
+    // registered — so aliases resolved in pass 0a' keep their exact binding.
+    registerConstAliases(self, decls);
+}
+
+/// Fixpoint: register every const whose RHS is a bare identifier or a
+/// qualified member naming another module const (`B :: A`, `N :: m.COUNT`),
+/// chains of any depth and any declaration order. The alias carries its
+/// TARGET's type — the typer reads `ty`, so a placeholder would break `if B`
+/// on a bool chain — while the stored value node stays the identifier, so
+/// `emitModuleConst`'s expression arm lowers it through the target. Only a
+/// target that IS a registered module const qualifies; an identifier naming a
+/// type / function / global keeps its existing behavior. Each productive round
+/// registers at least one new name, so the loop is bounded by the decl count
+/// (issue 0331 — no arbitrary round cap). An unresolvable or cyclic alias
+/// simply never registers; a cycle is diagnosed by `followAliasChain` during
+/// fn-alias registration and the use site still reports the unresolved name.
+fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
+    var changed = true;
+    while (changed) {
+        changed = false;
+        for (decls) |decl| {
+            if (decl.data != .const_decl) continue;
+            const cd = decl.data.const_decl;
+            if (cd.value.data != .identifier and cd.value.data != .field_access) continue;
+            if (self.program_index.module_const_map.contains(cd.name)) continue;
+            const target: program_index_mod.ModuleConstInfo = switch (cd.value.data) {
+                .identifier => |id| self.program_index.module_const_map.get(id.name) orelse continue,
+                .field_access => blk: {
+                    const from = decl.source_file orelse self.main_file orelse continue;
+                    const path = self.qualifiedTypeName(cd.value) orelse continue;
+                    defer self.alloc.free(path);
+                    const sel = switch (self.qualifiedMemberVerdictFrom(path, from)) {
+                        .selected => |s| s,
+                        .not_qualified, .missing, .ambiguous => continue,
+                    };
+                    break :blk self.sourceModuleConst(sel.target.target_module_path, sel.member) orelse continue;
+                },
+                else => unreachable,
+            };
+            self.putModuleConst(decl.source_file, cd.name, .{ .value = cd.value, .ty = target.ty });
+            changed = true;
+        }
     }
 }
 

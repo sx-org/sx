@@ -1,0 +1,33 @@
+// A const alias reaches AGGREGATE targets too — a struct-literal const
+// and an array-literal const alias exactly like a scalar one, at any
+// declaration order and chain depth, and members read through the alias.
+// Regression (issue 0353): the alias fixpoint ran before aggregate consts
+// were registered, so only literal-valued targets were visible and
+// `ALIAS :: STRUCT_CONST` registered nowhere — every use of the alias
+// reported "unresolved", including through an import.
+#import "modules/std.sx";
+
+P :: struct { x: i64; y: i64; }
+
+ORIGIN :: P.{ x = 3, y = 4 };
+START  :: ORIGIN;           // alias of a struct-literal const
+HOME   :: START;            // chained
+AHEAD  :: BEHIND;           // forward alias, declared before its target
+BEHIND :: ORIGIN;
+
+DIMS   :: i64.[7, 8, 9];
+SIZES  :: DIMS;             // alias of an array-literal const
+
+main :: () {
+    print("{} {}\n", START.x, START.y);
+    print("{} {}\n", HOME.x, AHEAD.y);
+    print("{} {}\n", SIZES[0], SIZES.len);
+
+    // The alias is the target: a copy through it carries every field.
+    p := HOME;
+    p.x += 10;
+    print("{} {} {}\n", p.x, p.y, ORIGIN.x);
+
+    arr : [SIZES[0]]i64 = .[1, 2, 3, 4, 5, 6, 7];
+    print("len {}\n", arr.len);
+}
