@@ -573,3 +573,68 @@ fn relocateTags(self: *Lowering) void {
         }
     }
 }
+
+/// The tagged downcast (§6.8): the check is one immediate compare of the
+/// value's tag word against the target's constant tag — no table load on
+/// the hot path. The failure arm is cold: the soft form yields `null`
+/// outright; the panic form materializes the `any` view there (the only
+/// table read) and re-enters `__sx_cast_or_panic`, so the message, the
+/// `#caller_location`, and the exit path stay byte-identical to the other
+/// kinds. The receiver is lowered exactly once; the cold call sees it
+/// through a synthetic scope binding, never a re-evaluation. The graceful
+/// (`try`) temperament still routes through `__sx_cast_assert`'s any view
+/// (desugared before lowering, where no IR blocks exist to split).
+pub fn lowerTaggedDowncast(
+    self: *Lowering,
+    pc: *const ast.PostfixCast,
+    node: *const ast.Node,
+    proto_ty: TypeId,
+    full_dst: TypeId,
+) Ref {
+    const soft = pc.type_expr.data == .optional_type_expr;
+    const concrete = if (soft) self.module.types.get(full_dst).optional.child else full_dst;
+    const operand = self.lowerExpr(pc.operand);
+
+    const tag = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 1 } }, .i64);
+    const want = self.builder.emit(.{ .tagged_tag_of = .{ .proto = proto_ty, .concrete = concrete } }, .i64);
+    const matches = self.builder.emit(.{ .cmp_eq = .{ .lhs = tag, .rhs = want } }, .bool);
+
+    const ok_bb = self.freshBlock("tagcast.ok");
+    const fail_bb = self.freshBlock("tagcast.fail");
+    const merge_bb = self.freshBlockWithParams("tagcast.merge", &.{full_dst});
+    self.builder.condBr(matches, ok_bb, &.{}, fail_bb, &.{});
+
+    // Match: the tag proved the concrete type, so the `any` view carries a
+    // CONSTANT type word — the unbox reads straight through ctx.
+    self.builder.switchToBlock(ok_bb);
+    const void_ptr_ty = self.module.types.ptrTo(.void);
+    const ctx = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr_ty);
+    const av_ok = self.builder.makeAny(self.builder.constType(concrete), ctx);
+    const unboxed = self.builder.emit(.{ .unbox_any = .{ .operand = av_ok } }, concrete);
+    const ok_val = if (soft) self.builder.optionalWrap(unboxed, full_dst) else unboxed;
+    self.builder.br(merge_bb, &.{ok_val});
+
+    self.builder.switchToBlock(fail_bb);
+    if (soft) {
+        self.builder.br(merge_bb, &.{self.builder.constNull(full_dst)});
+    } else {
+        var buf: [40]u8 = undefined;
+        const nm = std.fmt.bufPrint(&buf, "$tagcast_{d}", .{self.block_counter}) catch "$tagcast";
+        self.block_counter += 1;
+        const owned = self.alloc.dupe(u8, nm) catch @panic("out of memory");
+        self.scope.?.put(owned, .{ .ref = operand, .ty = proto_ty, .is_alloca = false });
+        const recv_id = self.alloc.create(ast.Node) catch @panic("out of memory");
+        recv_id.* = .{ .data = .{ .identifier = .{ .name = owned } }, .span = pc.operand.span, .source_file = pc.operand.source_file };
+        const xx_node = self.alloc.create(ast.Node) catch @panic("out of memory");
+        xx_node.* = .{ .data = .{ .unary_op = .{ .op = .xx, .operand = recv_id } }, .span = pc.operand.span, .source_file = pc.operand.source_file };
+        const callee = self.alloc.create(ast.Node) catch @panic("out of memory");
+        callee.* = .{ .data = .{ .identifier = .{ .name = "__sx_cast_or_panic" } }, .span = node.span, .source_file = node.source_file };
+        const args = self.alloc.dupe(*ast.Node, &.{ xx_node, pc.type_expr }) catch @panic("out of memory");
+        const syn_call = ast.Call{ .callee = callee, .args = args };
+        const res = self.lowerCall(&syn_call);
+        self.builder.br(merge_bb, &.{res});
+    }
+
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, full_dst);
+}
