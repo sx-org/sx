@@ -352,6 +352,16 @@ A tagged protocol exploits whole-program compilation: the compiler
 collects the complete conformer set and represents a protocol value
 as a tagged borrow into that set.
 
+**The program** is the import closure of the build's root file. An
+`impl` in a module nothing imports does not exist for the build.
+Within the closure, membership is **presence-based, not
+path-based**: an impl anywhere in the program joins the set — no
+import path from an erasure site to the impl's module is required
+(the site needs only the type and the protocol in scope; the erased
+kinds' site-local impl visibility does not apply). Importing a
+module for any reason enrolls all its tagged impls; removing an
+import can shrink a set.
+
 ### 6.1 Value layout and tables
 
 ```
