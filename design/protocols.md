@@ -153,16 +153,20 @@ Into :: protocol(Target: Type) constraint {
 protocol-typed position, `xx`, postfix `.(P)` — is a compile error:
 
 ```
-error: 'Ord' is a constraint protocol — it has no runtime values;
-       declare it 'protocol vtable', 'inline', or 'tagged' to erase
+error: cannot make a value of 'Ord' — a constraint protocol has no
+       runtime values; use the concrete type, or a generic bound
+       ('$T/Ord') where polymorphism is needed
 ```
 
-No fixit names a specific kind: the choice between ownership,
-inline layout, and whole-program tagging is semantic and cannot be
-guessed from the refusing site. The same refusal applies wherever a
-constraint protocol is used as a *storable* type: a field, array
-element, or generic type argument of a constraint-protocol type
-diagnoses at the declaration or instantiation site.
+The diagnostic guides the use site only: the ordinary fixes are
+staying concrete or binding through a constraint. It never suggests
+respelling the protocol's kind — whether `Ord` should have runtime
+values is its author's design decision, made at the declaration; a
+use site cannot judge it. The same refusal, with the same guidance,
+applies wherever a constraint protocol is used as a *storable*
+type: a field, array element, or generic type argument of a
+constraint-protocol type diagnoses at the declaration or
+instantiation site.
 
 **Emission: none.** A constraint protocol produces no vtables, no
 tables, no metadata. Its methods exist only as monomorphized direct
