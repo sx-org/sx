@@ -1,0 +1,5 @@
+warning: function 'alpha' is declared `!` but never errors — drop the `!`
+  --> examples/diagnostics/1279-diagnostics-warn-on-successful-compile.sx:9:16
+   |
+ 9 | alpha :: () -> ! { return; }
+   |                ^

@@ -1,0 +1,16 @@
+// The second `.warn` producer: a protocol whose type-arg and method share a
+// name is legal, and the warning tells the reader that `..pack.value`
+// resolves by position. Like every warning it must render on a clean
+// compile (issue 0283). This one carries no span, so it renders as a bare
+// header line with no source excerpt.
+
+#import "modules/std.sx";
+
+Boxed :: protocol(value: Type) {
+    value :: (self: *Self) -> i64;
+}
+
+main :: () -> i32 {
+    print("ok\n");
+    0
+}

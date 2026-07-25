@@ -5013,7 +5013,12 @@ quick :: () -> (i32, !) {
   union, not bare `!`.
 - A top-level (non-`main`) function declared `!` that never errors warns
   ("declared `!` but never errors — drop the `!`"). Closures and
-  function-type slots with an empty `!` do **not** warn.
+  function-type slots with an empty `!` do **not** warn. A body that
+  forwards (`return callee(...)`) or `try`s an opaque channel — a protocol
+  or UFCS method, a closure slot, a checked assertion — carries a
+  load-bearing `!` and does not warn either.
+- Warnings are reported on a **successful** compile too, before the program
+  runs; a warnings-only build still exits 0.
 
 **Tag identity is the name, globally (Zig-style).** Two sets that both list
 `NotFound` reference the *same* tag id; `if e == error.NotFound` matches every

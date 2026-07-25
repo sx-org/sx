@@ -433,7 +433,10 @@ pub const Compilation = struct {
         return self.lowering_jni_main_decls.items;
     }
 
-    pub fn renderErrors(self: *const Compilation) void {
+    /// Render every collected diagnostic to stderr. Called once per pipeline:
+    /// on the failing stage's `catch`, or after the last stage on the success
+    /// path (warnings and their notes only surface there).
+    pub fn renderDiagnostics(self: *const Compilation) void {
         self.diagnostics.renderStderr();
     }
 };

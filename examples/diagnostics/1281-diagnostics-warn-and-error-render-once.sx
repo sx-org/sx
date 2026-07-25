@@ -1,0 +1,13 @@
+// A FAILING compile renders the collected diagnostics exactly once: the
+// `!`-never-errors warning and the field error each appear a single time,
+// in source order, with exit 1. The success-path render added for issue
+// 0283 must not double up with the failure-path one.
+
+#import "modules/std.sx";
+
+alpha :: () -> ! { return; }
+
+main :: () -> i32 {
+    v : i32 = 0;
+    return v.bogus;
+}

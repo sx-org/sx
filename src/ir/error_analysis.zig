@@ -49,14 +49,15 @@ pub const ErrorAnalysis = struct {
             .try_expr => |te| {
                 if (Lowering.callTargetName(te.operand)) |nm| {
                     edges.append(self.l.alloc, nm) catch {};
-                } else if (te.operand.data == .call) {
-                    // A `try` whose callee is NOT a plain identifier — a protocol
+                } else {
+                    // A `try` on anything but a plain-identifier call — a protocol
                     // method (`io.suspend_raw`), a UFCS / instance method, a
-                    // closure / fn-pointer value. Its error channel is OPAQUE to
-                    // this static convergence (no free-fn name to resolve a set
-                    // from), so the function genuinely propagates a dynamic error.
-                    // Mark it so the "declared `!` but never errors" warning is
-                    // suppressed — the `!` is load-bearing, not droppable.
+                    // closure / fn-pointer value, a checked assertion (`av.(T)`).
+                    // Its error channel is OPAQUE to this static convergence (no
+                    // free-fn name to resolve a set from), so the function
+                    // genuinely propagates a dynamic error. Mark it so the
+                    // "declared `!` but never errors" warning is suppressed — the
+                    // `!` is load-bearing, not droppable.
                     dyn.* = true;
                 }
                 self.collectErrorSites(te.operand, tags, edges, dyn);
@@ -78,7 +79,15 @@ pub const ErrorAnalysis = struct {
                 }
                 self.collectErrorSites(f.body, tags, edges, dyn);
             },
-            .return_stmt => |r| if (r.value) |v| self.collectErrorSites(v, tags, edges, dyn),
+            .return_stmt => |r| if (r.value) |v| {
+                // `return callee(...)` in a pure `-> !` function is a FORWARD of
+                // the callee's error channel (a pure failable returns no value),
+                // so it contributes the callee's set exactly like a `try` edge.
+                if (Lowering.callTargetName(v)) |nm| {
+                    edges.append(self.l.alloc, nm) catch {};
+                }
+                self.collectErrorSites(v, tags, edges, dyn);
+            },
             .var_decl => |v| if (v.value) |val| self.collectErrorSites(val, tags, edges, dyn),
             .const_decl => |c| self.collectErrorSites(c.value, tags, edges, dyn),
             .destructure_decl => |d| self.collectErrorSites(d.value, tags, edges, dyn),
@@ -138,8 +147,12 @@ pub const ErrorAnalysis = struct {
             tags: std.ArrayList(u32),
             edges: std.ArrayList([]const u8),
             rt: ?*const Node,
-            // The body `try`s a callee with an OPAQUE error channel (a protocol
-            // method / UFCS-method / closure call) — so it genuinely propagates a
+            // Module the function is written in. `rt.span` is an offset into
+            // THAT file, and this whole-program pass runs with whatever
+            // ambient source file the previous phase left behind.
+            source_file: ?[]const u8,
+            // The body `try`s an OPAQUE error channel (a protocol / UFCS method,
+            // a closure call, a checked assertion) — so it genuinely propagates a
             // dynamic error even when no concrete tag converges. Suppresses the
             // empty-set "drop the `!`" warning.
             dyn: bool,
@@ -156,7 +169,7 @@ pub const ErrorAnalysis = struct {
             var edges = std.ArrayList([]const u8).empty;
             var dyn = false;
             self.collectErrorSites(fd.body, &tags, &edges, &dyn);
-            work.put(e.key_ptr.*, .{ .tags = tags, .edges = edges, .rt = fd.return_type, .dyn = dyn }) catch {};
+            work.put(e.key_ptr.*, .{ .tags = tags, .edges = edges, .rt = fd.return_type, .source_file = fd.body.source_file, .dyn = dyn }) catch {};
         }
 
         // Union edge contributions until no set grows (monotone → terminates).
@@ -208,6 +221,9 @@ pub const ErrorAnalysis = struct {
             }
         }.lessThan);
 
+        const saved_file = self.l.current_source_file;
+        defer self.l.setCurrentSourceFile(saved_file);
+
         for (entries.items) |se| {
             const sorted = self.l.alloc.dupe(u32, se.node.tags.items) catch continue;
             std.mem.sort(u32, sorted, {}, std.sort.asc(u32));
@@ -219,6 +235,7 @@ pub const ErrorAnalysis = struct {
             if (sorted.len == 0 and !se.node.dyn and !std.mem.eql(u8, se.name, "main") and !self.l.impl_method_names.contains(se.name)) {
                 if (self.l.diagnostics) |diags| {
                     if (se.node.rt) |rt| {
+                        self.l.setCurrentSourceFile(se.node.source_file orelse saved_file);
                         diags.addFmt(.warn, rt.span, "function '{s}' is declared `!` but never errors — drop the `!`", .{se.name});
                     }
                 }

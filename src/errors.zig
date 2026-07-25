@@ -239,6 +239,13 @@ pub const DiagnosticList = struct {
         return false;
     }
 
+    pub fn hasWarnings(self: *const DiagnosticList) bool {
+        for (self.items.items) |d| {
+            if (d.level == .warn) return true;
+        }
+        return false;
+    }
+
     /// Count of `.err`-level diagnostics (excludes warnings / notes / help).
     /// Used to detect whether a NEW error was reported across a span of work,
     /// without a warning/note bumping the total `items` length.
