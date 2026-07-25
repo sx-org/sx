@@ -1,0 +1,24 @@
+// issue 0329: the monomorph cache is keyed by the TEMPLATE's declaration
+// identity. Two modules author `Box`, `Mk`, `pick` and `tally`; reaching each
+// author through its own namespace must build that author's layout and call
+// that author's body, whatever the import order.
+#import "modules/std.sx";
+a :: #import "0226-generics-template-author-identity/a.sx";
+b :: #import "0226-generics-template-author-identity/b.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("Box author layout", size_of(a.Box(i64)) == 8 and size_of(b.Box(i64)) == 24);
+    report("Mk author layout", size_of(a.Mk(i64)) == 8 and size_of(b.Mk(i64)) == 24);
+    report("generic author body", a.pick(5) == 1 and b.pick(5) == 2);
+    report("pack author body", a.tally(1, 2) == 1 and b.tally(1, 2) == 2);
+
+    ba : a.Box(i64) = .{ one = 7 };
+    bb : b.Box(i64) = .{ one = 7, two = 8, three = 9 };
+    report("a.Box field", ba.one == 7);
+    report("b.Box field", bb.three == 9);
+    0
+}

@@ -1,0 +1,25 @@
+// issue 0329: monomorph keys are built in dynamic storage — a base and type
+// arguments whose mangled key runs well past 256 bytes must stay distinct all
+// the way to the last byte. Both authors' long spelling is identical, so a
+// truncated or display-only key would collapse them onto one layout and one
+// monomorph.
+#import "modules/std.sx";
+a :: #import "0227-generics-long-mono-key/a.sx";
+b :: #import "0227-generics-long-mono-key/b.sx";
+
+Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_ :: struct($T: Type) { value: T; }
+
+sizer :: (v: $T) -> i64 { return size_of(T); }
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    wa : Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_(a.Very_Long_Nominal_Type_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Nominal_Type_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Nominal_Type_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_) = .{ value = a.make() };
+    wb : Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_(b.Very_Long_Nominal_Type_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Nominal_Type_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Nominal_Type_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_) = .{ value = b.make() };
+    report("long template key", size_of(Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_(a.Very_Long_Nominal_Type_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Nominal_Type_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Nominal_Type_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_)) == 8 and size_of(Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Generic_Template_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_(b.Very_Long_Nominal_Type_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Nominal_Type_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_Very_Long_Nominal_Type_Name_Whose_Mangled_Monomorph_Key_Runs_Past_Two_Hundred_And_Fifty_Six_Bytes_)) == 24);
+    report("long generic mono key", sizer(wa) == 8 and sizer(wb) == 24);
+    report("long key fields", wa.value.one == 1 and wb.value.three == 3);
+    0
+}

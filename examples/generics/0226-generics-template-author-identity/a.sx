@@ -1,0 +1,6 @@
+// One author of the `Box` template, the `Mk` type function, the `pick` generic
+// and the `tally` pack function.
+Box :: struct($T: Type) { one: T; }
+Mk :: ($T: Type) -> Type { return struct { one: T; }; }
+pick :: (v: $T) -> i64 { return 1; }
+tally :: (..$args) -> i64 { return 1; }

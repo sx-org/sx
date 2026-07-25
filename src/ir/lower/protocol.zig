@@ -86,7 +86,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
         tb.put(tp.name, ty) catch {};
         arg_tys.append(self.alloc, ty) catch @panic("out of memory");
     }
-    const mangled = self.protocolResolver().paramProtocolInstanceName(pd.name, arg_tys.items);
+    const mangled = self.protocolResolver().paramProtocolInstanceName(self.protocolResolver().protocolIdentityName(pd), arg_tys.items);
     const name_id = table.internString(mangled);
     if (table.findByName(name_id)) |existing| {
         const info = table.get(existing);

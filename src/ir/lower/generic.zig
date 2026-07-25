@@ -1924,11 +1924,11 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
 
     // Parameterized protocol used as a value type (`VL(i64)`): materialize a
     // 16-byte protocol value with the type-arg bound (not a 0-field stub).
-    if (self.program_index.protocol_ast_map.get(base_name)) |pd| {
-        if (pd.type_params.len > 0) {
-            if (!is_qualified and self.headTypeLeak(base_name, span)) return .unresolved;
-            return self.instantiateParamProtocol(pd, pt.args);
-        }
+    // The author is selected from the head's own visibility domain — a bare
+    // head from the visible author, a qualified one from the named namespace.
+    if (self.protocolResolver().resolveParamProtocolHead(base_name, if (is_qualified) pt.name else null)) |pd| {
+        if (!is_qualified and self.headTypeLeak(base_name, span)) return .unresolved;
+        return self.instantiateParamProtocol(pd, pt.args);
     }
 
     // User-defined type-returning function used as a TYPE annotation
@@ -2119,26 +2119,13 @@ pub fn assertInstanceMapsCoincide(self: *Lowering) void {
 pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, args: []const *const Node) TypeId {
     const table = &self.module.types;
 
-    // Build mangled name dynamically: StructName__arg1_arg2
+    // Build mangled name dynamically: StructName__arg1_arg2. The base carries
+    // the TEMPLATE's declaration identity and every argument fragment is the
+    // nominal-aware `mangleTypeName` — two same-display-name templates, or one
+    // template applied to two same-display-name nominal arguments, must never
+    // land on one layout.
     var name_parts = std.ArrayList(u8).empty;
-    name_parts.appendSlice(self.alloc, tmpl.name) catch {};
-
-    // A qualified `ns.Box(..)` head can select a generic template whose bare
-    // name also belongs to a DIFFERENT module's same-name template (the one
-    // that won the last-wins `struct_template_map`). Both would mangle to
-    // `Box__i64` and the second instantiation would alias the first's layout.
-    // Tag the NON-canonical author's mangled name with its source so each
-    // author's instantiation is a distinct type. The canonical (bare-map)
-    // author keeps the untagged name — no churn for single-author generics.
-    if (self.program_index.struct_template_map.get(tmpl.name)) |canon| {
-        const canon_src = canon.source_file orelse "";
-        const this_src = tmpl.source_file orelse "";
-        if (!std.mem.eql(u8, canon_src, this_src)) {
-            var tag_buf: [24]u8 = undefined;
-            const tag = std.fmt.bufPrint(&tag_buf, "$m{x}", .{std.hash.Wyhash.hash(0, this_src)}) catch "";
-            name_parts.appendSlice(self.alloc, tag) catch {};
-        }
-    }
+    name_parts.appendSlice(self.alloc, self.declIdentityName(tmpl.name, tmpl.decl)) catch @panic("out of memory while mangling generic struct");
 
     // Bind type params to args and build name suffix
     const saved_type_bindings = self.type_bindings;
@@ -2163,8 +2150,8 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
                         defer self.alloc.free(elems);
                         for (elems) |ty| {
                             pack_tys.append(self.alloc, ty) catch {};
-                            name_parts.appendSlice(self.alloc, "__") catch {};
-                            name_parts.appendSlice(self.alloc, self.formatTypeName(ty)) catch {};
+                            name_parts.appendSlice(self.alloc, "__") catch @panic("out of memory while mangling generic struct");
+                            name_parts.appendSlice(self.alloc, self.mangleTypeName(ty)) catch @panic("out of memory while mangling generic struct");
                         }
                         continue;
                     }
@@ -2173,14 +2160,14 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
                 if (self.rejectMultiReturnValueType(a, "generic type argument")) return .unresolved;
                 const ty = self.resolveTypeWithBindings(a);
                 pack_tys.append(self.alloc, ty) catch {};
-                name_parts.appendSlice(self.alloc, "__") catch {};
-                name_parts.appendSlice(self.alloc, self.formatTypeName(ty)) catch {};
+                name_parts.appendSlice(self.alloc, "__") catch @panic("out of memory while mangling generic struct");
+                name_parts.appendSlice(self.alloc, self.mangleTypeName(ty)) catch @panic("out of memory while mangling generic struct");
             }
             pb.put(tp.name, pack_tys.toOwnedSlice(self.alloc) catch &.{}) catch {};
             break; // a pack param is always last
         }
 
-        name_parts.appendSlice(self.alloc, "__") catch {};
+        name_parts.appendSlice(self.alloc, "__") catch @panic("out of memory while mangling generic struct");
 
         if (tp.is_type_param) {
             // A bare-paren `(A, B)` multi-return signature is return-position-only,
@@ -2188,16 +2175,16 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
             if (self.rejectMultiReturnValueType(args[i], "generic type argument")) return .unresolved;
             const ty = self.resolveTypeWithBindings(args[i]);
             tb.put(tp.name, ty) catch {};
-            const tname = self.formatTypeName(ty);
-            name_parts.appendSlice(self.alloc, tname) catch {};
+            const tname = self.mangleTypeName(ty);
+            name_parts.appendSlice(self.alloc, tname) catch @panic("out of memory while mangling generic struct");
         } else {
             // Value param (e.g., $N: u32) — fold to a compile-time integer
             // and range-check against its declared type.
             const val = self.resolveValueParamArg(args[i], tp.name, tp.value_type) orelse return .unresolved;
             cvb.put(tp.name, val) catch {};
             var val_buf: [32]u8 = undefined;
-            const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{val}) catch "0";
-            name_parts.appendSlice(self.alloc, val_str) catch {};
+            const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{val}) catch unreachable;
+            name_parts.appendSlice(self.alloc, val_str) catch @panic("out of memory while mangling generic struct");
         }
     }
 
@@ -2355,31 +2342,16 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     var tb = std.StringHashMap(TypeId).init(self.alloc);
     var cvb = std.StringHashMap(i64).init(self.alloc);
 
-    // Build mangled name
+    // Build mangled name. Two namespace targets may author the same
+    // type-function spelling and receive the same type arguments; the base
+    // carries `fd`'s declaration identity so the second author's lookup cannot
+    // return the first author's materialized type before reading its own body.
     var name_parts = std.ArrayList(u8).empty;
-    name_parts.appendSlice(self.alloc, template_name) catch {};
-
-    // Two namespace targets may author the same type-function spelling and
-    // receive the same type arguments. The exact `fd` selection above is not
-    // enough if both cache as `Make__i64`: the second lookup would return the
-    // first author's materialized type before reading its own body. Mirror the
-    // generic-struct identity rule by source-tagging a non-canonical author;
-    // the canonical/single-author spelling remains byte-for-byte unchanged.
-    if (self.program_index.fn_ast_map.get(template_name)) |canonical| {
-        if (canonical != fd) {
-            const canonical_src = canonical.body.source_file orelse "";
-            const this_src = fd.body.source_file orelse self.current_source_file orelse self.main_file orelse "";
-            if (!std.mem.eql(u8, canonical_src, this_src)) {
-                var tag_buf: [24]u8 = undefined;
-                const tag = std.fmt.bufPrint(&tag_buf, "$m{x}", .{std.hash.Wyhash.hash(0, this_src)}) catch "";
-                name_parts.appendSlice(self.alloc, tag) catch {};
-            }
-        }
-    }
+    name_parts.appendSlice(self.alloc, self.declIdentityName(template_name, fd)) catch @panic("out of memory while mangling type function");
 
     for (fd.type_params, 0..) |tp, i| {
         if (i >= args.len) break;
-        name_parts.appendSlice(self.alloc, "__") catch {};
+        name_parts.appendSlice(self.alloc, "__") catch @panic("out of memory while mangling type function");
 
         // Check if this is a Type param ($T: Type) or a value param ($N: u32)
         const is_type_param = if (tp.constraint.data == .type_expr)
@@ -2390,8 +2362,8 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
         if (is_type_param) {
             const ty = self.resolveTypeWithBindings(args[i]);
             tb.put(tp.name, ty) catch {};
-            const tname = self.formatTypeName(ty);
-            name_parts.appendSlice(self.alloc, tname) catch {};
+            const tname = self.mangleTypeName(ty);
+            name_parts.appendSlice(self.alloc, tname) catch @panic("out of memory while mangling type function");
         } else {
             // Value param (e.g., $N: u32) — fold to a compile-time integer
             // and range-check against its declared type. A failed bind has
@@ -2404,8 +2376,8 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
             const val = self.resolveValueParamArg(args[i], tp.name, vp_type) orelse return .unresolved;
             cvb.put(tp.name, val) catch {};
             var val_buf: [32]u8 = undefined;
-            const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{val}) catch "0";
-            name_parts.appendSlice(self.alloc, val_str) catch {};
+            const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{val}) catch unreachable;
+            name_parts.appendSlice(self.alloc, val_str) catch @panic("out of memory while mangling type function");
         }
     }
 
