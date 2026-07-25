@@ -1,0 +1,54 @@
+// A `#get` accessor reached through a CALL RESULT reads the same value it
+// would through a bound local. The object of a field chain is only a SLOT for
+// field/index/deref shapes; a call result already IS the value, and must not
+// be loaded again on the way to the accessor's receiver.
+// Regression (issue 0359): `box.snap().xs.len` silently answered 1, 0, or
+// garbage while `s := box.snap(); s.xs.len` answered correctly — and the plain
+// field `.cap` next to it was right the whole time, because only the
+// synthesized getter call materializes its receiver through the address path.
+#import "modules/std.sx";
+
+Snap :: struct { xs: List(i64) = .{}; n: i64 = 0; }
+
+Box :: struct {
+    a: Snap = .{};
+
+    ptr :: (self: *Box) -> *Snap { *self.a }
+    opt :: (self: *Box) -> ?*Snap { *self.a }
+    // The shape modules/ui/frame.sx uses: an early null, then one of two
+    // embedded fields as the tail.
+    pick :: (self: *Box, second: bool) -> ?*Snap {
+        if second { return null; }
+        *self.a
+    }
+}
+
+g : Box = ---;
+
+// The whole function body as the chain — how the failure was first seen.
+via_call  :: () -> i64 { g.ptr().xs.len }
+via_unwrap :: () -> i64 { g.opt()!.xs.len }
+
+main :: () {
+    g = Box.{};
+    g.a.n = 7;
+    for 0..3 (i) { g.a.xs.append(i); }
+
+    bound := g.ptr();
+    process.assert(bound.xs.len == 3, "baseline: accessor through a bound local");
+
+    process.assert(g.ptr().xs.len == 3, "accessor through a call result");
+    process.assert(g.opt()!.xs.len == 3, "accessor through a force-unwrapped call result");
+    process.assert(g.pick(false)!.xs.len == 3, "accessor through a two-branch optional return");
+    process.assert(via_call() == 3, "accessor chain as a whole function body");
+    process.assert(via_unwrap() == 3, "unwrap chain as a whole function body");
+
+    // Plain fields on the same chains keep working.
+    process.assert(g.ptr().n == 7, "plain field through a call result");
+    process.assert(g.opt()!.n == 7, "plain field through a force-unwrap");
+
+    // Element reads through the same chain agree with the length.
+    process.assert(g.ptr().xs.items[2] == 2, "indexing through a call result");
+
+    print("ok {} {}\n", via_call(), g.ptr().n);
+}

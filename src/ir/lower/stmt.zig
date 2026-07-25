@@ -2775,10 +2775,18 @@ pub fn lowerExprAsPtr(self: *Lowering, node: *const Node) Ref {
             }
             // Auto-deref for chained pointer field access:
             // When fa.object is a field_access or index_expr, lowerExprAsPtr returns
-            // a structGep/pointer to the slot. If the slot holds a pointer type,
+            // a structGep/pointer to the SLOT. If the slot holds a pointer type,
             // we need to load the pointer value before GEPing into the pointee struct.
             // (Identifiers are already loaded by the identifier handler in lowerExprAsPtr.)
-            if (fa.object.data != .identifier and !obj_ty.isBuiltin()) {
+            //
+            // Only those slot-producing kinds. Everything else — a call result, a
+            // force-unwrap, any shape that reaches lowerExprAsPtr's value fallback —
+            // already IS the pointer, and loading it again GEPs through the pointee's
+            // first bytes as if they were an address (issue 0359).
+            const obj_is_slot = fa.object.data == .field_access or
+                fa.object.data == .index_expr or
+                fa.object.data == .deref_expr;
+            if (obj_is_slot and !obj_ty.isBuiltin()) {
                 const info = self.module.types.get(obj_ty);
                 if (info == .pointer) {
                     obj_ptr = self.builder.load(obj_ptr, obj_ty);
