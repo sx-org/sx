@@ -29,7 +29,7 @@ error: free on an '#identity' protocol value — identity values only ever borro
    |     ^^^^
 
 note: raised by '#error' here
-  --> library/modules/std/mem.sx:64:17
+  --> library/modules/std/mem.sx:67:17
    |
-64 |                 #error("free on an '#identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free");
+67 |                 #error("free on an '#identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free");
    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

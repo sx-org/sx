@@ -3660,6 +3660,11 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (recv_erased) delegate: {
                     const full_dst = self.resolveTypeArg(pc.type_expr);
                     if (full_dst == .unresolved) break :delegate; // diagnosed below
+                    // Tagged membership is whole-program and known here, so a
+                    // downcast to a non-conformer can never match: it is a
+                    // compile error, not a runtime false (spec §6.8).
+                    if (self.refuseOutOfSetDowncast(recv_ty, full_dst, pc.type_expr.span))
+                        break :blk self.builder.constUndef(full_dst);
                     switch (self.coercionResolver().classifyXX(recv_ty, full_dst)) {
                         .protocol_to_pointer, .protocol_to_raw, .protocol_to_any, .no_op, .erase_protocol, .erase_protocol_wrap => {},
                         else => {

@@ -1596,7 +1596,11 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, pr
     self.block_terminated = false;
     self.target_type = null;
     self.func_defer_base = self.defer_stack.items.len;
+    // Everything lowered into this wrapper runs on the comptime VM, where a
+    // tagged value has no representation: tags are link-stage artifacts.
+    self.comptime_body_depth += 1;
     defer {
+        self.comptime_body_depth -= 1;
         self.current_ctx_ref = saved_ctx_ref;
         self.inline_return_target = saved_iri;
         self.pack_arg_nodes = saved_pan;

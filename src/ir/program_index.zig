@@ -135,6 +135,9 @@ pub const ProtocolDeclInfo = struct {
     name: []const u8,
     kind: ast.ProtocolKind,
     ownership: ProtocolOwnership = .value_own,
+    /// True for one instantiation of a parameterized protocol family
+    /// (`Series(f32)`), false for a nullary declaration.
+    is_instantiation: bool = false,
     methods: []const ProtocolMethodInfo,
 
     /// True for the two kinds whose values are erased ({ctx, type_id, …}).

@@ -1680,6 +1680,7 @@ pub const LLVMEmitter = struct {
             .const_null => self.ops().emitConstNull(instruction),
             .const_undef => self.ops().emitConstUndef(instruction),
             .const_type => |tid| self.ops().emitConstType(tid),
+            .tagged_tag_of => std.debug.panic("a tagged conformer tag reached codegen unnumbered — the collection fixpoint did not run", .{}),
 
             // ── Arithmetic ─────────────────────────────────────────
             .add => |bin| self.ops().emitAdd(instruction, bin),

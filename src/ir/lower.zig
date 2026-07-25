@@ -40,6 +40,7 @@ const lower_decl = @import("lower/decl.zig");
 const lower_context_ext = @import("lower/context_ext.zig");
 const lower_nominal = @import("lower/nominal.zig");
 const lower_protocol = @import("lower/protocol.zig");
+const lower_tagged = @import("lower/tagged.zig");
 const lower_coerce = @import("lower/coerce.zig");
 const lower_ffi = @import("lower/ffi.zig");
 const lower_objc_class = @import("lower/objc_class.zig");
@@ -667,6 +668,29 @@ pub const Lowering = struct {
     protocol_vtable_type_map: std.StringHashMap(TypeId), // protocol name → vtable struct TypeId
     protocol_vtable_type_by_type: std.AutoHashMap(TypeId, TypeId),
     protocol_vtable_global_map: std.AutoHashMap(ProtocolConcreteKey, inst_mod.GlobalId),
+    /// Whole-program `tagged` membership (lower/tagged.zig). `tagged_reached`
+    /// holds the value-used instantiations, `tagged_members` their conformer
+    /// sets, `tagged_tags` the numbering the collection fixpoint produces.
+    tagged_reached: std.AutoHashMap(TypeId, void),
+    tagged_members: std.AutoHashMap(TypeId, std.ArrayList(TypeId)),
+    tagged_tags: std.AutoHashMap(lower_tagged.PairKey, i64),
+    tagged_arms: std.AutoHashMap(lower_tagged.ArmKey, FuncId),
+    tagged_dispatch_fns: std.AutoHashMap(lower_tagged.MethodKey, FuncId),
+    tagged_type_id_tables: std.AutoHashMap(TypeId, inst_mod.GlobalId),
+    tagged_pending: std.ArrayList(lower_tagged.PendingRoutine),
+    /// Every declared impl site of a tagged `(protocol, conformer)` pair.
+    /// Tagged coherence is GLOBAL — a duplicate is an error regardless of
+    /// import visibility — but only for a REACHED instantiation, so the check
+    /// runs with the collection fixpoint rather than at registration.
+    tagged_impl_sites: std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)),
+    /// Nonzero while a comptime wrapper body (`#run`, `#insert`, a type-fn) is
+    /// being lowered. Tagged protocol values refuse there: the conformer
+    /// fixpoint has not converged and tags do not exist until link.
+    comptime_body_depth: u32 = 0,
+    /// True while the operand of a `return` is being lowered. Erasing an
+    /// RVALUE into a tagged value there has nothing durable to borrow — the
+    /// frame is about to die (spec §6.2).
+    in_return_expr: bool = false,
     param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; list lets Phase 4/5 detect cross-module overlap)
     /// Pack-variadic impl entries — separate map keyed by `"Proto\x00<arg_mangled>"`
     /// (NO source suffix) so a single impl `Closure(..$args) -> $R` can be
@@ -957,6 +981,14 @@ pub const Lowering = struct {
             .protocol_vtable_type_map = std.StringHashMap(TypeId).init(module.alloc),
             .protocol_vtable_type_by_type = std.AutoHashMap(TypeId, TypeId).init(module.alloc),
             .protocol_vtable_global_map = std.AutoHashMap(ProtocolConcreteKey, inst_mod.GlobalId).init(module.alloc),
+            .tagged_reached = std.AutoHashMap(TypeId, void).init(module.alloc),
+            .tagged_members = std.AutoHashMap(TypeId, std.ArrayList(TypeId)).init(module.alloc),
+            .tagged_tags = std.AutoHashMap(lower_tagged.PairKey, i64).init(module.alloc),
+            .tagged_arms = std.AutoHashMap(lower_tagged.ArmKey, FuncId).init(module.alloc),
+            .tagged_dispatch_fns = std.AutoHashMap(lower_tagged.MethodKey, FuncId).init(module.alloc),
+            .tagged_type_id_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
+            .tagged_pending = std.ArrayList(lower_tagged.PendingRoutine).empty,
+            .tagged_impl_sites = std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
             .param_impl_map = std.StringHashMap(std.ArrayList(ParamImplEntry)).init(module.alloc),
             .param_impl_pack_map = std.StringHashMap(std.ArrayList(PackParamImplEntry)).init(module.alloc),
             .struct_const_map = std.StringHashMap(StructConstInfo).init(module.alloc),
@@ -2969,7 +3001,22 @@ pub const Lowering = struct {
     pub const refuseProtocolAssertTargetOnAny = lower_protocol.refuseProtocolAssertTargetOnAny;
     pub const lowerOwningErasure = lower_protocol.lowerOwningErasure;
     pub const refuseValuelessProtocol = lower_protocol.refuseValuelessProtocol;
+    pub const refuseNonConformer = lower_protocol.refuseNonConformer;
     pub const protocolKindOf = lower_protocol.protocolKindOf;
+
+    // ── tagged protocols (lower/tagged.zig) ──
+    pub const isTagged = lower_tagged.isTagged;
+    pub const taggedIn = lower_tagged.taggedIn;
+    pub const reachTagged = lower_tagged.reachTagged;
+    pub const refuseEmptyTaggedSet = lower_tagged.refuseEmptySet;
+    pub const buildTaggedValue = lower_tagged.buildTaggedValue;
+    pub const protocolTypeIdWord = lower_tagged.protocolTypeIdWord;
+    pub const emitTaggedDispatch = lower_tagged.emitTaggedDispatch;
+    pub const convergeTaggedSets = lower_tagged.convergeTaggedSets;
+    pub const refuseComptimeTagged = lower_tagged.refuseComptimeTagged;
+    pub const recordTaggedImplSite = lower_tagged.recordImplSite;
+    pub const refuseOutOfSetDowncast = lower_tagged.refuseOutOfSetDowncast;
+    pub const warnDeadTypeSwitchArm = lower_tagged.warnDeadTypeSwitchArm;
     pub const allocViaAllocatorValue = lower_protocol.allocViaAllocatorValue;
     pub const resolveConcreteTypeName = lower_protocol.resolveConcreteTypeName;
     pub const computeHasImpl = lower_protocol.computeHasImpl;

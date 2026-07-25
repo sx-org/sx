@@ -1045,6 +1045,12 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt) void {
             self.validateMultiReturn(val, self.module.functions.items[@intFromEnum(fid)].ret);
         }
     }
+    // Erasing an rvalue into a tagged value borrows a frame temp, which at a
+    // `return` would outlive its frame — the flag is what the erasure path
+    // reads to refuse (spec §6.2).
+    const old_in_return = self.in_return_expr;
+    self.in_return_expr = true;
+    defer self.in_return_expr = old_in_return;
     // Set target_type to function return type so null_literal etc. get the right type.
     // When inlining a comptime body, the *inlined* fn's declared return type wins
     // over the caller's — otherwise `return 42` inside a `-> i64` body lowered into

@@ -1,0 +1,7 @@
+Square Rect
+4
+soft 2
+soft miss
+raw Rect
+square side 4 area 16
+rect 2x6 area 12
