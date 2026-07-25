@@ -3530,9 +3530,10 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             return self.builder.structGet(val, 1, .type_value);
         } else if (self.getProtocolInfo(arg_ty) != null) {
             // A PROTOCOL value answers its CONCRETE type — the type_id
-            // word at slot 1 (RTTI Option B), same position as an any's.
+            // word at slot 1 (RTTI Option B), same position as an any's;
+            // a tagged value synthesizes it through its tag table.
             const val = self.lowerExpr(c.args[0]);
-            return self.builder.structGet(val, 1, .type_value);
+            return self.protocolTypeIdWord(arg_ty, val);
         } else {
             return self.builder.constType(arg_ty);
         }

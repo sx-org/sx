@@ -1,8 +1,9 @@
-// A `tagged` protocol parses and classifies — `protocol_kind` answers
-// `.tagged`, impls register, and it bounds generics like any other kind.
-// What it does not have here is a runtime model: every position that would
-// make a tagged VALUE refuses through the ordinary error path, naming the
-// kinds that do erase.
+// A NULLARY `tagged` protocol has its full runtime model: it erases, stores
+// in fields and parameters, and dispatches through its generated switch.
+// A PARAMETERIZED one does not yet — each canonical argument tuple names its
+// own protocol with its own conformer set and tag space, and that machinery
+// is staged. Every position that would make a value of an instantiation
+// refuses through the ordinary error path.
 #import "modules/std.sx";
 
 View :: protocol tagged {
@@ -16,14 +17,20 @@ Widget :: struct { n: i64; }
 impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
 impl Series(i64) for Widget { at :: (self: *Widget, i: i64) -> i64 { self.n + i } }
 
-Screen :: struct { root: View; }               // field
-render :: (v: View) -> i64 { v.area() }        // parameter
+Screen :: struct { root: View; }               // field — fine, 16 bytes
+render :: (v: View) -> i64 { v.area() }        // parameter — fine
+
+Feed :: struct { rows: Series(i64); }          // field of an instantiation
+sample :: (s: Series(i64)) -> i64 { s.at(0) }  // parameter of an instantiation
 
 main :: () {
-    // The classifier works — the kind is a fact about the declaration.
+    // The classifier answers for both heads.
     print("{}\n", protocol_kind(View) == .tagged);
 
     w := Widget.{ n = 3 };
-    v : View = w;                              // erasure into a value
-    s : Series(i64) = w;                       // the parameterized instantiation
+    v : View = w;                              // the nullary erasure works
+    print("{} {}\n", v.area(), render(w));
+    print("{}\n", Screen.{ root = v }.root.area());
+
+    s : Series(i64) = w;                       // the parameterized one is staged
 }

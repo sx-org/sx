@@ -1,23 +1,17 @@
-error: cannot declare a field of type 'View' — a tagged protocol has no runtime model in this compiler; erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/View')
-  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:19:26
+error: cannot declare a field of type 'Series__i64' — a parameterized tagged protocol has no runtime model in this compiler yet; use the nullary tagged form, erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/Series__i64')
+  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:23:24
    |
-19 | Screen :: struct { root: View; }               // field
-   |                          ^^^^
+23 | Feed :: struct { rows: Series(i64); }          // field of an instantiation
+   |                        ^^^^^^^^^^^
 
-error: cannot declare a parameter of type 'View' — a tagged protocol has no runtime model in this compiler; erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/View')
-  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:20:15
+error: cannot declare a parameter of type 'Series__i64' — a parameterized tagged protocol has no runtime model in this compiler yet; use the nullary tagged form, erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/Series__i64')
+  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:24:15
    |
-20 | render :: (v: View) -> i64 { v.area() }        // parameter
-   |               ^^^^
+24 | sample :: (s: Series(i64)) -> i64 { s.at(0) }  // parameter of an instantiation
+   |               ^^^^^^^^^^^
 
-error: cannot make a value of 'View' — a tagged protocol has no runtime model in this compiler; erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/View')
-  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:27:9
+error: cannot make a value of 'Series__i64' — a parameterized tagged protocol has no runtime model in this compiler yet; use the nullary tagged form, erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/Series__i64')
+  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:35:9
    |
-27 |     v : View = w;                              // erasure into a value
-   |         ^^^^
-
-error: cannot make a value of 'Series__i64' — a tagged protocol has no runtime model in this compiler; erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/Series__i64')
-  --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:28:9
-   |
-28 |     s : Series(i64) = w;                       // the parameterized instantiation
+35 |     s : Series(i64) = w;                       // the parameterized one is staged
    |         ^^^^^^^^^^^

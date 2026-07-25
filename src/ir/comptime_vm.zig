@@ -670,6 +670,9 @@ pub const Vm = struct {
             // (the `.type_value` representation). `regToValue` maps it back to a
             // `.type_tag` Value at the legacy boundary.
             .const_type => |tid| return .{ .value = @as(Reg, tid.index()) },
+            // Tags are link-stage artifacts that do not exist during
+            // compilation; comptime tagged values refuse at their source site.
+            .tagged_tag_of => return error.Unsupported,
 
             // ── Arithmetic ──────────────────────────────────────
             .add, .sub, .mul, .div, .mod => |b| return .{

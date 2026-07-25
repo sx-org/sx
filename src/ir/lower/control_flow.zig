@@ -1127,10 +1127,15 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
     // A PROTOCOL subject type-switches through its {ctx, type_id} prefix
     // view (RTTI Option B) — the scrutinee/captures are exactly the any
     // switch's, over the concrete value the protocol erases.
+    // Non-null when the subject was a protocol value: the type switch then
+    // opens the CONCRETE receiver, and a tagged subject additionally knows
+    // its whole-program conformer set, so an arm outside it is dead.
+    var protocol_subject_ty: ?TypeId = null;
     if (self.getProtocolInfo(subject_ty) != null) {
         const void_ptr_ty = self.module.types.ptrTo(.void);
         const ctx_ref = self.builder.structGet(subject, 0, void_ptr_ty);
-        const tid_ref = self.builder.structGet(subject, 1, .type_value);
+        const tid_ref = self.protocolTypeIdWord(subject_ty, subject);
+        protocol_subject_ty = subject_ty;
         subject = self.builder.makeAny(tid_ref, ctx_ref);
         subject_ty = .any;
     }
@@ -1356,6 +1361,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
                 }
                 const ty = self.resolveTypeArg(pat);
                 if (ty == .unresolved) break :blk_rt &.{}; // resolveTypeArg diagnosed
+                if (protocol_subject_ty) |pst| self.warnDeadTypeSwitchArm(pst, ty, pat.span);
                 arm_concrete.items[i] = ty;
                 const one = self.alloc.alloc(u64, 1) catch break :blk_rt &.{};
                 one[0] = ty.index();

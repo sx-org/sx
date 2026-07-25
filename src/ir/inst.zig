@@ -117,6 +117,12 @@ pub const Op = union(enum) {
     /// surfacing a "Type value reached runtime" diagnostic instead of
     /// silently lowering to a stale int.
     const_type: TypeId,
+    /// The dense conformer tag of `concrete` inside tagged protocol `proto`'s
+    /// whole-program conformer set. The set is only complete once the
+    /// collection fixpoint converges, so erasure and downcast sites emit this
+    /// and the numbering pass rewrites every occurrence into a `const_int`.
+    /// Reaching a backend means the numbering pass was skipped.
+    tagged_tag_of: TagOf,
 
     // ── Arithmetic ──────────────────────────────────────────────────
     add: BinOp,
@@ -282,6 +288,11 @@ pub const Op = union(enum) {
 };
 
 // ── Operand structs ─────────────────────────────────────────────────────
+
+pub const TagOf = struct {
+    proto: TypeId,
+    concrete: TypeId,
+};
 
 pub const UnaryOp = struct {
     operand: Ref,

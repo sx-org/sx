@@ -1,0 +1,67 @@
+// `#identity` on a tagged protocol contributes exactly the NAMING
+// DISCIPLINE: borrow semantics and the `free` refusal are already structural
+// to the kind, so the attribute only refuses rvalue erasure. And because the
+// handle is an indirection, a conformer may contain the protocol type — the
+// recursion carries no size equation.
+#import "modules/std.sx";
+
+// A stateful, uniquely-owned conformer: exactly the shape `#identity` is for.
+Sink :: protocol tagged #identity {
+    put   :: (self: *Self, v: i64);
+    total :: (self: *Self) -> i64;
+}
+
+Accum :: struct { sum: i64; }
+impl Sink for Accum {
+    put   :: (self: *Accum, v: i64) { self.sum = self.sum + v; }
+    total :: (self: *Accum) -> i64 { self.sum }
+}
+
+// Recursion: `Scaled` holds a `Series` handle, not an inline payload.
+Series :: protocol tagged {
+    count :: (self: *Self) -> i64;
+    at    :: (self: *Self, i: i64) -> i64;
+}
+
+Ramp :: struct { n: i64; }
+impl Series for Ramp {
+    count :: (self: *Ramp) -> i64 { self.n }
+    at    :: (self: *Ramp, i: i64) -> i64 { i }
+}
+
+Scaled :: struct { inner: Series; factor: i64; }
+impl Series for Scaled {
+    count :: (self: *Scaled) -> i64 { self.inner.count() }
+    at    :: (self: *Scaled, i: i64) -> i64 { self.inner.at(i) * self.factor }
+}
+
+drain :: (s: Sink, xs: Series) {
+    i := 0;
+    while i < xs.count() {
+        s.put(xs.at(i));
+        i = i + 1;
+    }
+}
+
+main :: () {
+    // The identity value borrows a NAMED object — mutations land in it.
+    acc := Accum.{ sum = 0 };
+    sink : Sink = acc;
+
+    ramp := Ramp.{ n = 5 };
+    doubled := Scaled.{ inner = ramp, factor = 2 };
+    nested  := Scaled.{ inner = doubled, factor = 10 };
+
+    print("{} {}\n", nested.count(), size_of(Series));
+    drain(sink, nested);
+    print("{} {}\n", sink.total(), acc.sum);
+
+    // Each hop is one 16-byte handle, to arbitrary depth.
+    s : Series = nested;
+    i := 0;
+    while i < s.count() {
+        print("{} ", s.at(i));
+        i = i + 1;
+    }
+    print("\n");
+}

@@ -540,17 +540,23 @@ pub const ProtocolResolver = struct {
         // the prefix through the any machinery. Dunder name: a protocol
         // METHOD named `type_id` must not collide (same reason as
         // `__vtable`); the public spelling is ProtocolRaw's `type_id`.
+        // A `tagged` value is {ctx, __tag} instead — 16 bytes, always: the
+        // dense conformer index replaces the stamped type id, and the
+        // concrete id is synthesized through the protocol's tag table.
         const void_ptr_ty = table.ptrTo(.void);
         fields.append(self.l.alloc, .{
             .name = table.internString("ctx"),
             .ty = void_ptr_ty,
         }) catch unreachable;
         fields.append(self.l.alloc, .{
-            .name = table.internString("__type_id"),
-            .ty = .type_value,
+            .name = table.internString(if (pd.kind == .tagged) "__tag" else "__type_id"),
+            .ty = if (pd.kind == .tagged) .i64 else .type_value,
         }) catch unreachable;
 
-        if (pd.kind == .@"inline") {
+        if (pd.kind == .tagged) {
+            // No third word: dispatch is an outlined switch on the tag,
+            // emitted at whole-program link.
+        } else if (pd.kind == .@"inline") {
             // One fn-ptr field per DISPATCHABLE protocol method (Era-2:
             // a method whose signature mentions `Self` past the receiver
             // has no slot — it is only callable through a generic bound).
@@ -636,7 +642,7 @@ pub const ProtocolResolver = struct {
 
         // For vtable protocols, create the vtable struct type — one slot per
         // DISPATCHABLE method (Era-2), same filter as the `inline`-kind field list.
-        if (pd.kind != .@"inline") {
+        if (pd.kind != .@"inline" and pd.kind != .tagged) {
             var vtable_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
             for (pd.methods) |method| {
                 if (program_index_mod.protocolMethodSelfOccurrence(method) != null) continue;
@@ -680,6 +686,7 @@ pub const ProtocolResolver = struct {
         if (ib.target_type_params.len == 0 and ib.target_type.len > 0 and concrete_ty == null) return;
         if (concrete_ty) |cty| {
             self.l.protocol_impl_decls.put(self.protocolConcreteKey(proto.ty, proto_name, cty), {}) catch @panic("out of memory");
+            if (proto.ty) |pty| self.l.recordTaggedImplSite(pty, cty, decl.span, source);
         }
         // Collect explicitly implemented method names
         var impl_methods = std.StringHashMap(void).init(self.l.alloc);

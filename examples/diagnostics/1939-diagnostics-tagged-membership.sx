@@ -1,0 +1,42 @@
+// Tagged membership is whole-program, so the compiler knows the complete
+// conformer set at every site. Three diagnostics follow from that: an
+// EMPTY set refuses every value-consuming operation, a downcast OUT OF the
+// set can never match and is refused rather than compiled to a false, and a
+// type-switch arm naming a non-conformer is warned dead.
+#import "modules/std.sx";
+
+View :: protocol tagged { area :: (self: *Self) -> i64; }
+
+Widget :: struct { n: i64; }
+impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
+
+Timer :: struct { deadline: i64; }        // conforms to nothing
+
+// Nothing implements this one anywhere in the program.
+Drawable :: protocol tagged { draw :: (self: *Self) -> i64; }
+
+// A merely REACHING use is legal and emits nothing: a parameter of an
+// empty-set instantiation, never erased into and never dispatched.
+reaching :: (d: Drawable) -> i64 { 0 }
+
+main :: () {
+    w := Widget.{ n = 3 };
+    v : View = w;
+
+    // Empty set: the erasure demands a member, and there is none.
+    d : Drawable = w;
+
+    // Out of the set: `Timer` implements nothing, so this compare is
+    // decidable at compile time and refused.
+    t := v.(Timer);
+
+    // Same fact through the soft temperament.
+    s := v.(?Timer);
+
+    // A dead arm is a warning, not an error — user code cannot spell "all
+    // conformers", and the set is open to extension at the source level.
+    if v == {
+        case Widget: (x) { print("{}\n", x.n); }
+        case Timer:  (y) { print("{}\n", y.deadline); }
+    }
+}
