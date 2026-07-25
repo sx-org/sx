@@ -823,6 +823,26 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         // reference captured variables (`asm { … [v] "+m" -> @(p.*) }` where `p`
         // is an outer var). `out_value` payloads are Type nodes — descending is
         // harmless (the identifier arm filters type/fn names from capture).
+        // A postfix cast's OPERAND is an ordinary expression and may name a
+        // capture (`place(Row.{ w = width }.(View))` inside a build closure).
+        // The type expression is a type, never a value. Without this arm the
+        // operand's names never enter the env and the body reports them
+        // unresolved, while the same literal without the cast works.
+        .postfix_cast => |pc| {
+            self.collectCaptures(pc.operand, param_names, captures);
+            if (pc.alloc_arg) |an| self.collectCaptures(an, param_names, captures);
+        },
+        // `f(x = captured)` — the argument value hangs off the named-arg node,
+        // so `.call`'s walk over `args` stops at the wrapper.
+        .named_arg => |na| {
+            self.collectCaptures(na.value, param_names, captures);
+        },
+        // `f(a) { body }` — the block is a zero-param lambda sitting in the
+        // call's arg list; its body captures from here exactly like a written
+        // lambda literal.
+        .trailing_block => |tb| {
+            self.collectCaptures(tb.lambda, param_names, captures);
+        },
         .asm_expr => |ae| {
             self.collectCaptures(ae.template, param_names, captures);
             for (ae.operands) |op| {

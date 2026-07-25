@@ -1,0 +1,48 @@
+// A capture is reached through every expression WRAPPER a closure body can
+// put it behind: a postfix cast's operand (`V.{ w = side }.(Shape)`), a
+// named argument's value (`f(b = side)`), and a trailing block's lambda
+// (`f(1.0) { … side … }`).
+// Regression (issue 0354): `collectCaptures` had no arm for `postfix_cast`,
+// `named_arg` or `trailing_block`, so names under them never entered the
+// env and the body reported them unresolved — while the same names in a
+// bare struct literal or a positional argument captured fine.
+#import "modules/std.sx";
+
+Shape :: protocol { area :: (self: *Self) -> f32; }
+
+Box :: struct { w: f32; }
+impl Shape for Box { area :: (self: *Box) -> f32 { self.w } }
+
+run   :: (f: Closure()) { f(); }
+put   :: (s: Shape) { print("area {}\n", s.area()); }
+named :: (a: f32 = 0.0, b: f32 = 0.0) { print("named {} {}\n", a, b); }
+block :: (x: f32, body: Closure()) { print("block {}\n", x); body(); }
+
+erase_in_closure :: (side: f32) {
+    run(() { put(Box.{ w = side }.(Shape)); });
+}
+
+named_arg_in_closure :: (side: f32) {
+    run(() { named(b = side); });
+}
+
+trailing_block_in_closure :: (side: f32) {
+    run(() { block(1.0) { print("inner {}\n", side); }; });
+}
+
+// The wrappers nest, and a loop variable between them stays the loop's own.
+all_at_once :: (side: f32) {
+    run(() {
+        for 0..2 (i) {
+            n := i;
+            block(side) { put(Box.{ w = side + n.(f32) }.(Shape)); };
+        }
+    });
+}
+
+main :: () {
+    erase_in_closure(7.0);
+    named_arg_in_closure(5.0);
+    trailing_block_in_closure(6.0);
+    all_at_once(10.0);
+}
