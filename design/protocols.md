@@ -214,8 +214,8 @@ intentional.
 
 **Expansion is monotone and deterministic.** Expansion only *adds*
 conformances — nothing retracts. Expansion-driving comptime may
-consult per-pair membership facts through protocol values (a probe,
-a dispatch), under the scheduling discipline of §7.9: positive
+consult per-pair membership facts (a probe, `has_impl`, a dispatch,
+a conversion), under the scheduling discipline of §7.9: positive
 facts answer immediately, negative answers wait for the queried set
 to be final, and an expansion that depends negatively on a set it
 can still feed is the expansion-deadlock error. No reflection
@@ -544,9 +544,10 @@ argument, return, field, array element:
   enclosing function frame and borrows that (the same placement
   rule as boxing an rvalue into `any`) — **except at a `return`
   position**, where the frame is about to die: erasing an rvalue
-  directly at `return` is a compile error ("nothing durable to
-  borrow beyond this frame; bind it, or place it in storage the
-  caller owns"). Returning a tagged value whose referent is a
+  directly at `return` — anywhere within the returned expression,
+  aggregate literals included — is a compile error ("nothing
+  durable to borrow beyond this frame; bind it, or place it in
+  storage the caller owns"). Returning a tagged value whose referent is a
   callee LOCAL is legal and unchecked — the same doctrine as
   returning a slice of a local array: the borrow dangles, and the
   caller must not use it. Sound component patterns return values
@@ -683,7 +684,7 @@ frame ends. The compiler emits a warning at each such call site:
 ```
 warning: 'resized' returns 'Self' through a tagged value — the
 result materializes a frame-scoped temporary (one per call; lives
-to end of frame). See design/protocols.md §6.4.
+to end of frame). See the Protocols spec, "-> Self placement".
 ```
 
 No fixit is offered: the right restructure (bind the receiver
@@ -723,10 +724,12 @@ an impl HEAD counts (`impl Serialize for Buffer(f64)` admits
 list element counts (§3), and comptime bodies count — a type
 instantiated only inside `#run` code is instantiated for admission,
 so comptime-carried values (§7.9) always reference real members.
-Mention through a probe counts: probing a pair whose type only
-that probe spells instantiates the type — with a blanket impl in
-scope, the probe both admits the member (enlarging the shipped
-set) and answers true by construction. Reaching a protocol
+Mention through a probe counts **in scheduled comptime only**
+(§7.9): there, probing a pair whose type only that probe spells
+instantiates the type — with a blanket impl in scope, the probe
+both admits the member (enlarging the shipped set) and answers
+true by construction. Post-fixpoint comptime cannot admit (§7.9's
+phase law). Reaching a protocol
 instantiation and monomorphizing admitted impl bodies CAN
 instantiate new types (an impl body may spell `Nest(Nest(T))`);
 such chains fall under the ordinary generic instantiation-depth
@@ -987,14 +990,20 @@ through Context fields such as the ambient allocator.
 `protocol_kind`, `is_identity`, and all monomorphized machinery
 work unchanged.
 
-Comptime execution runs under a **VM-local Context**: its
-protocol-typed fields reference VM-owned instances, whose mutations
-(an allocator's bookkeeping, an arena's cursor) are execution-local
-state discarded with the run — consistent with the general rule
-that comptime code cannot mutate globals. When a comptime result
-escapes carrying such a field, the VM instance corresponding to a
-declared global relocates to that global (see Escape), exactly as
-the default-context fold does.
+Comptime execution is **per-evaluation**: each evaluation (a
+driver, an ordinary `#run`) owns its VM, heap, and **VM-local
+Context**; suspension parks and resumes *that* evaluation — its VM
+state is never shared with or visible to another evaluation, so
+scheduler order cannot leak through Context or heap state. The
+Context's protocol-typed fields reference VM-owned instances, whose
+mutations (an allocator's bookkeeping, an arena's cursor) are
+execution-local and discarded when the evaluation completes —
+comptime code cannot mutate globals: the VM reads globals into
+VM-local copies and never writes back. A VM object **corresponds**
+to a declared global by provenance: it is the object the VM created
+to represent that global when first referenced (the context-default
+fold included); correspondence survives borrows, not copies — a
+struct copy is a new object and escapes through the temporary path.
 
 **Scheduling.** Comptime entangled with membership — the conditions
 and iterables of top-level `inline if`/`inline for`, any `#run`
@@ -1035,6 +1044,12 @@ dataflow discipline:
   than one consistent outcome is genuinely ambiguous, and sx
   refuses rather than electing a fixpoint.
 
+  ```sx
+  GPA :: struct { … }
+  Serialize :: protocol tagged { write :: (self: *Self, out: *Buf); }
+  HAS :: #run { g := GPA.{ … }; g.(?Serialize) != null };
+  inline if !HAS { impl Serialize for GPA { … } }
+  ```
   ```
   error: expansion deadlock — 'HAS' needs 'Serialize' membership to
          be final, but 'inline if !HAS' can still add 'impl
@@ -1047,27 +1062,62 @@ dataflow discipline:
   diagnoses at finality with the ordinary §6.8-family error at the
   operation's site. A suspended **soft** probe answers null.
 
-**The probe spelling.** A soft protocol target on a *concrete*
-receiver — `gpa.(?Serialize)` — answers conformance directly, no
-value ceremony: a compile-time-known bool at ordinary sites, the
-suspending probe under this discipline.
+**The probe.** A soft protocol target on a *concrete* receiver —
+`gpa.(?Serialize)` — answers conformance directly, no value
+ceremony; `has_impl(P, T)` is the same probe spelled at type level,
+under the same rules. What a probe answers is **per kind**:
 
-All other comptime execution runs **after the conformer fixpoint**,
-against the final sets — every such `#run` sees the same converged
-world. Conformer sets remain unobservable as *collections* at every
-phase (no enumeration reflection exists, §3); the granted facility
-is per-pair facts, under the discipline above.
+- `constraint` and the erased kinds: **site-local impl
+  visibility** — the same static fact that decides whether the site
+  could erase. (For erased kinds this is deliberately a different
+  question from the dynamic re-erasure check, which consults
+  program-wide uniqueness, §7.4.) Under the discipline, a negative
+  gates on declaration-space finality — impls are declarations.
+- `tagged`: whole-program membership of the instantiation's set,
+  under the discipline's polarity rules.
+
+A probe **queries** an instantiation: its set is computed on demand
+and its coherence diagnostics arm (§3) — but a probe is *not* a
+value use: it reaches nothing for emission and ships no tables
+(§6.6).
+
+**The phase law.** All comptime execution not under the discipline
+runs **after the conformer fixpoint**, against the final sets —
+every such `#run` sees the same converged world, and **cannot
+enlarge it**: an operation that would require admitting a new
+member — a probe, erasure, dispatch, or escape of a pair outside
+the final set, blanket-unifiable or not — is a compile error
+("would enlarge a final conformer set; move this into
+expansion-scheduled code, or spell the type in runtime code").
+Post-fixpoint code may instantiate types freely for every
+non-protocol purpose. Conformer sets remain unobservable as
+*collections* at every phase (no enumeration reflection exists,
+§3); the granted facility is per-pair facts — a probe, `has_impl`,
+a dispatch, a conversion — under the discipline above.
 
 **Escape.** A comptime result that carries a protocol value into
 the runtime image resolves per the referent:
 
 - a referent that *is* a declared global — a named instance, the
   object behind a context default — relocates `ctx` to that
-  global's symbol: nothing is copied, mutability is preserved;
+  global's symbol: nothing is copied, mutability is preserved, and
+  the global's runtime bytes are its declared initializer
+  (comptime-era mutations were execution-local and vanish; two
+  evaluations whose instances diverged both relocate to the one
+  global, and neither state wins). An interior pointer *into* such
+  an instance's VM state refuses to escape ("points into a global's
+  compile-time state, which is discarded");
 - a comptime **temporary** referent materializes as an anonymous
   image global in writable data, deduplicated by comptime object
-  identity — two handles that shared one object at comptime share
-  one global at runtime, so borrow semantics survive the escape.
+  identity *within the evaluation* (cross-evaluation temporaries
+  are distinct objects and never deduplicate) — two handles that
+  shared one object share one global, so borrow semantics survive
+  the escape. Escaped temporaries are literal-class static data:
+  they belong to no allocator, and freeing one through any
+  allocator is the ordinary mispairing hazard — an escaped
+  structure carrying both an allocator handle and comptime-made
+  allocations is self-inconsistent by construction, and the frees
+  simply must not happen.
   Materialization is **type-directed** machinery this design
   requires: the referent's bytes are walked by its concrete
   layout; nested protocol handles recurse (their referents
@@ -1212,7 +1262,9 @@ conformer identity.
 | default method calling an excluded method | legal — defaults compile per conformer against concrete `Self` (§2); exclusion binds only calls through erased values |
 | impl inside a dead `inline if` branch | never exists — joins no set, emits nothing |
 | `inline for`-generated impls | ordinary impls of the expanded program; a colliding pair is the ordinary coherence error, naming the unrolled sites |
-| comptime observation of a conformer set | no enumeration exists at any phase — sets are unobservable as collections; per-pair facts through protocol values are legal under the §7.9 discipline (positive immediately, negative at finality) |
+| comptime observation of a conformer set | no enumeration exists at any phase — sets are unobservable as collections; per-pair facts (probe, `has_impl`, dispatch, conversion) are legal under the §7.9 discipline |
+| the probe (`x.(?P)` on a concrete receiver / `has_impl(P, T)`) | constraint/erased: site-local impl visibility; tagged: whole-program membership; queries compute the set and arm coherence but reach nothing for emission (§7.9) |
+| post-fixpoint comptime touching an out-of-set pair | compile error — would enlarge a final conformer set; only scheduled comptime admits (§7.9 phase law) |
 
 ## Appendix: rationale notes
 
@@ -1293,5 +1345,7 @@ conformer identity.
   the liveness result. The refinement is semantics-neutral by
   construction — a producer-less member's downcast can only ever be
   false at runtime — which is why membership (typechecking,
-  diagnostics) never reads it, and why the shake can be adopted or
-  dropped freely as an emission concern.
+  diagnostics) never reads it. **The design as specified does not
+  perform the shake**; this note is rationale for a possible future
+  design change, not an emission mode — there is exactly one
+  shipping behavior at any time.
