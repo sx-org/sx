@@ -1,0 +1,41 @@
+// One font_size means ONE size: a run measures the same whether it took the
+// ASCII fast path (stbtt) or the shaping path (kbts). The two disagreed
+// because they scaled font units differently, so adding a single non-ASCII
+// character silently resized the whole string.
+// Regression (issue 0356).
+//
+// Run:
+//     sx run examples/ui/1933-ui-shaped-ascii-scale-parity.sx
+// Other desktops go GL over a hidden SDL window (bare externs):
+//     sx run --lflags -lSDL3 -L /opt/homebrew/lib examples/ui/1933-ui-shaped-ascii-scale-parity.sx
+//
+// NOT part of the byte-exact corpus (no expected/ files): measuring needs a
+// real font and a GPU-backed atlas, and the suite must pass where neither
+// exists — hence the clean skip.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/font.sx";
+#import "modules/ui/surface.sx";
+#import "modules/ui/surface_select.sx";
+
+main :: () {
+    surface := open_pixel_surface(64, 32);
+    if surface == null {
+        print("scale parity skipped: no display/GPU on this host\n");
+        return;
+    }
+
+    // "AB" is ASCII, so it shapes through stbtt. "AB·" contains a non-ASCII
+    // byte, so the WHOLE run shapes through kbts — including the same A and B.
+    // Subtracting the middot leaves the identical pair, measured by the other
+    // path.
+    ascii := measure_text("AB", 20.0).width;
+    dot := measure_text("·", 20.0).width;
+    shaped := measure_text("AB·", 20.0).width - dot;
+
+    delta := if shaped > ascii then shaped - ascii else ascii - shaped;
+    process.assert(delta < 0.01, "the two shaping paths scale font units identically");
+    process.assert(dot > 0.0, "a non-ASCII glyph has a real advance");
+
+    print("ok\n");
+}

@@ -63,6 +63,11 @@ two struct sizes rather than a shaping run, so it stays in the
 byte-exact corpus (shaping needs a font and a GPU-backed atlas); any
 future field edit that changes the layout trips it immediately.
 
+`units_per_em` is no longer on the measurement path — issue 0356
+replaced the division that consumed it — but the binding was wrong
+regardless, and every other field of the struct comes back through the
+same call.
+
 Not addressed here: printing a NaN `f32` renders as
 `00000000000000000000000000` rather than `nan`, which is what made the
 measurement output hard to read while diagnosing this.

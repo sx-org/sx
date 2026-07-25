@@ -623,7 +623,12 @@ GlyphCache :: struct {
             return;
         }
 
-        scale : f32 = font_size / xx self.units_per_em;
+        // kbts advances are font design units, the same space stbtt's advances
+        // live in — so they take the SAME scale the ASCII path and the
+        // rasterizer use. Scaling by `font_size / units_per_em` instead makes
+        // one font_size mean two different sizes depending on whether the
+        // string happens to contain a byte >= 0x80.
+        scale := self.scale_for_size(font_size);
         total : f32 = 0.0;
 
         kbts_ShapeBegin(xx self.shape_ctx, KBTS_DIRECTION_DONT_KNOW, KBTS_LANGUAGE_DONT_KNOW);
