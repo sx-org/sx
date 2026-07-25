@@ -51,6 +51,50 @@ Series    :: protocol(T: Type) tagged {
 }
 ```
 
+**The running cast.** Every example in this document draws from one
+notional program: the five protocols above plus the declarations
+below. Conformances live where they are discussed — `Show`/`Point`
+and the `Series` family in §3, the recursive `Scaled(T)` in §6.9 —
+and the ones no section showcases are given here in full.
+
+```sx
+Point   :: struct { x, y: f64; }
+Widget  :: struct { value: i64; }
+Timer   :: struct { deadline: i64; }     // conforms to nothing — the running non-member
+GPA     :: struct { alloc_count: i64; }
+Sine    :: struct { freq: f32; }
+Counter :: struct { n: i64; }
+Buffer  :: struct($T: Type) { items: []T; }
+
+Sizable :: protocol vtable {
+    size :: (self: *Self) -> i64;
+}
+impl Sizable for Widget {
+    size :: (self: *Widget) -> i64 { self.value }
+}
+
+Ord :: protocol {                        // constraint — the default kind
+    less :: (self: *Self, other: Self) -> bool;
+}
+impl Ord for i64 {
+    less :: (self: *i64, other: i64) -> bool { self.* < other }
+}
+
+Eq :: protocol vtable {
+    eq :: (self: *Self, other: Self) -> bool;
+}
+impl Eq for Point {
+    eq :: (self: *Point, other: Point) -> bool {
+        self.x == other.x and self.y == other.y
+    }
+}
+
+impl Allocator for GPA {
+    alloc_bytes   :: (self: *GPA, size: i64) -> *void { self.alloc_count += 1; … }
+    dealloc_bytes :: (self: *GPA, ptr: *void) { self.alloc_count -= 1; … }
+}
+```
+
 ## 2. Declaration
 
 **Body.** A protocol body holds method signatures and default-method
@@ -69,7 +113,7 @@ any kind, matching the concrete call.
 
 **`Self`.** A contextual keyword naming the conforming type. It may
 appear at any depth in later parameters and returns (`Self`, `*Self`,
-`?Self`, `[]Self`, `Box(Self)`); what that does to dispatch depends
+`?Self`, `[]Self`, `Buffer(Self)`); what that does to dispatch depends
 on the kind (§5.6, §6.4).
 
 **Keyword member names.** Every reserved word except `inline` is a
@@ -101,8 +145,19 @@ aliases and folds value arguments to comparable constants.
 impl Show for Point {
     fmt :: (self: *Point) -> string { … }
 }
-impl Series(f32) for Sine { … }            // conformance to one instantiation
-impl Series($T) for Buffer(T) { … }        // blanket: one impl, a family of conformances
+
+impl Series(f32) for Sine {                // conformance to one instantiation
+    count :: (self: *Sine) -> i64 { 64 }
+    at    :: (self: *Sine, i: i64) -> f32 { self.freq * xx i }
+}
+impl Series(i64) for Counter {
+    count :: (self: *Counter) -> i64 { self.n }
+    at    :: (self: *Counter, i: i64) -> i64 { i }
+}
+impl Series($T) for Buffer(T) {            // blanket: one impl, a family of conformances
+    count :: (self: *Buffer(T)) -> i64 { self.items.len }
+    at    :: (self: *Buffer(T), i: i64) -> T { self.items[i] }
+}
 ```
 
 - `impl` blocks are top-level declarations. Conformance is
@@ -141,6 +196,7 @@ generics and to serve as a compiler-recognized customization point.
 ```sx
 largest :: (xs: []$T/Ord) -> T { … }          // bound: any T conforming to Ord
 
+// Into, restated from §1:
 Into :: protocol(Target: Type) constraint {
     convert :: (self: *Self) -> Target;
 }
@@ -337,10 +393,13 @@ call does NOT fall through to UFCS (§7.8) — members win, then the
 member's unavailability diagnoses:
 
 ```sx
+p1 := Point.{ x = 1.0, y = 2.0 };
+p2 := Point.{ x = 3.0, y = 2.0 };
 e := p1.(Eq);
 e.eq(p2);            // error: 'eq' is unavailable on an erased 'Eq' value —
                      // its parameter 'other: Self' has no expressible type here
 are_equal :: (a: $T/Eq, b: T) -> bool { a.eq(b) }    // fine
+are_equal(p1, p2);   // Self is the bound Point
 ```
 
 A protocol always erases, whatever its methods: a marker protocol
@@ -458,7 +517,7 @@ Tagged dispatch extends the erased rule by exactly the *direct*
 | receiver | yes | yes |
 | bare `Self` later parameter | no | **yes** — caller passes a `P` value; the arm checks its tag against the arm's own (mismatch is a checked runtime failure — the one runtime check in tagged dispatch) and passes the referent |
 | bare `Self` return | no | **yes** — see placement below |
-| `Self` at depth (`*Self`, `?Self`, `[]Self`, `Box(Self)`, fn types) | no | **no** — excluded, same rule: a composite of `Self` has no caller-side type (a `[]P` of 16-byte handles is not a `[]Buffer(f32)`), and no per-element coercion exists |
+| `Self` at depth (`*Self`, `?Self`, `[]Self`, `Buffer(Self)`, fn types) | no | **no** — excluded, same rule: a composite of `Self` has no caller-side type (a `[]P` of 16-byte handles is not a `[]Buffer(f32)`), and no per-element coercion exists |
 | protocol's own parameters, any depth | yes (concrete per instantiation) | yes |
 
 An excluded method behaves exactly as on the erased kinds:
@@ -566,7 +625,7 @@ more reason tags are unobservable.
 
   ```
   error: no impl of 'Series(bool)' exists in this program
-         'Series' is implemented for: f32 (3 impls), i64 (1 impl)
+         'Series' is implemented for: f32 (3 impls), i64 (2 impls)
   ```
 
   A *type-position* use (a field or parameter of an empty-set
@@ -794,11 +853,11 @@ conformer identity.
 | zero-conformer tagged instantiation | type-position use legal; erasure, method call, or downcast at it is a compile error naming the implemented instantiations |
 | duplicate impl `(P-instantiation, T)` | constraint/erased: import-scoped (§3). tagged: global coherence — error at the first reached colliding instantiation, naming both impl sites; unreached collisions are not diagnosed |
 | impl for a protocol type itself (`impl P for Q`) | protocols are not concrete types; refused |
-| impl for a structural type (`impl DataSource($T) for []T`) | legal — conformer identity is canonical type identity |
+| impl for a structural type (`impl Series($T) for []T`) | legal — conformer identity is canonical type identity |
 | impl bounded by a constraint (`impl Show for $T/Ord`) | not a supported form; the `for` target names a type constructor |
 | protocol-typed protocol member (`m :: (self: *Self, v: View)`) | ordinary — the parameter erases per `View`'s kind at the call |
 | bare `Self` later parameter | erased: excluded. tagged: dispatchable — caller passes a `P`; the arm tag-checks (checked runtime failure on mismatch) |
-| `Self` at depth in parameter or return (`[]Self`, `?Self`, `Box(Self)`) | excluded from dynamic dispatch on every kind; concrete/bound calls fine |
+| `Self` at depth in parameter or return (`[]Self`, `?Self`, `Buffer(Self)`) | excluded from dynamic dispatch on every kind; concrete/bound calls fine |
 | bare `-> Self` through a tagged value | call-site-inlined switch; caller-frame temp per call + warn-note (§6.4), no fixit |
 | rvalue at `*P` (erased) | compile error — nothing durable to borrow |
 | rvalue at `P` (tagged), non-return position | frame-scoped temp, borrow — the `any`-box placement rule |
