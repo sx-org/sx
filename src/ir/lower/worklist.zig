@@ -10,9 +10,10 @@
 //! A driver that has not been decided may still contribute declarations, and
 //! which ones is judged SYNTACTICALLY and conservatively (specs.md §7.9): an
 //! unexpanded body mentioning `impl P for …` contributes to `P`'s sets, and
-//! every declaration name it spells is a name the module scope may still gain.
-//! Every branch and every iteration counts — the whole node is unexpanded, so
-//! no arm can be ruled out yet.
+//! every declaration name it spells is a name the module scope may still gain,
+//! and every `#context_extend` it spells is a field the program Context may
+//! still gain. Every branch and every iteration counts — the whole node is
+//! unexpanded, so no arm can be ruled out yet.
 //!
 //! Contributions are what finality reads. `setFinal` cannot publish a negative
 //! about a protocol some unexpanded body still mentions, and a namespace's
@@ -53,6 +54,9 @@ const Item = struct {
     impls: []const []const u8,
     scope: []const u8,
     names: []const []const u8,
+    /// How many `#context_extend` declarations its unexpanded branches could
+    /// still put into the program Context.
+    contexts: u32,
     retired: bool,
 };
 
@@ -93,6 +97,9 @@ pub const Worklist = struct {
     /// `#run` nodes being driven right now — a condition that reaches the run
     /// it is itself part of would otherwise recurse forever.
     driving: std.AutoHashMap(*const Node, void),
+    /// How many `#context_extend` declarations unretired drivers could still
+    /// add. The program Context is ONE layout, so it publishes only at zero.
+    open_contexts: u32 = 0,
     /// Registered-but-untaken monomorphization rounds.
     rounds: u32 = 0,
     /// The fact a threshold read could not answer yet. The read is deep inside
@@ -133,12 +140,14 @@ pub const Worklist = struct {
         for (impls) |p| bump(&w.open_impls, p);
         if (names.len > 0) bumpBy(&w.open_names, scope, @intCast(names.len));
         for (names) |n| bump(&w.open_decls, w.declKey(scope, n));
+        w.open_contexts += scan.contexts;
         w.known.put(node, w.items.items.len) catch {};
         w.items.append(w.alloc, .{
             .kind = .module_driver,
             .impls = impls,
             .scope = scope,
             .names = names,
+            .contexts = scan.contexts,
             .retired = false,
         }) catch {};
     }
@@ -153,6 +162,7 @@ pub const Worklist = struct {
         for (item.impls) |p| drop(&w.open_impls, p);
         if (item.names.len > 0) dropBy(&w.open_names, item.scope, @intCast(item.names.len));
         for (item.names) |n| drop(&w.open_decls, w.declKey(item.scope, n));
+        w.open_contexts -= @min(w.open_contexts, item.contexts);
     }
 
     /// Register a driver of a non-declaration class. These contribute no
@@ -165,6 +175,7 @@ pub const Worklist = struct {
             .impls = &.{},
             .scope = "",
             .names = &.{},
+            .contexts = 0,
             .retired = true,
         }) catch {};
     }
@@ -266,6 +277,14 @@ pub const Worklist = struct {
         return (w.open_names.get(scope) orelse 0) == 0;
     }
 
+    /// Has the program Context stopped growing? Its layout is program-global
+    /// and single: an evaluation that reads it must see the one the whole
+    /// program ends up with, so it publishes only once no undecided driver can
+    /// still write a `#context_extend`.
+    pub fn contextFinal(w: *const Worklist) bool {
+        return w.open_contexts == 0;
+    }
+
     /// Can an undecided driver still declare `name` into `scope`? What a
     /// name LOOKUP waits on: the absence of one name, not the closure of the
     /// whole scope.
@@ -303,6 +322,7 @@ const Scan = struct {
     alloc: std.mem.Allocator,
     impls: std.ArrayList([]const u8),
     names: std.ArrayList([]const u8),
+    contexts: u32 = 0,
 
     fn driver(s: *Scan, node: *const Node, depth: u8) void {
         if (depth > 16) return;
@@ -329,6 +349,7 @@ const Scan = struct {
                 .if_expr, .match_expr, .for_expr => s.driver(stmt, depth + 1),
                 .impl_block => |ib| s.addImpl(ib.protocol_name),
                 .import_decl => |imp| if (imp.name) |ns| s.addName(ns),
+                .context_extend_decl => s.contexts += 1,
                 else => {},
             }
             if (stmt.data.declName()) |name| s.addName(name);

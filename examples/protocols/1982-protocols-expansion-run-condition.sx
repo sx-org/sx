@@ -1,0 +1,34 @@
+// A driver condition that must be RUN.
+//
+// The `#run` has a BODY, so nothing about it folds: it executes, on the one
+// comptime VM, owned by the expansion worklist that owns the driver asking. It
+// calls a function, and that function reads the ambient allocator — so the
+// evaluation needs the ground the program stands on before it can take a
+// single step: the decided declaration space (`budget` resolves and lowers
+// there) and the implicit Context.
+//
+// Both arrive as scheduled facts. Nothing in this program can still write a
+// `#context_extend`, so Context-ready publishes at once: the decided space
+// registers, the L6 layout assembles, and the exact `__sx_default_context` is
+// emitted BEFORE the run starts. The allocation below therefore runs on the
+// VM's own heap, through the real thunks of the real default context — no
+// provisional layout, no shadow context, and no second evaluator.
+#import "modules/std.sx";
+
+budget :: () -> i64 {
+    p := context.allocator.alloc_bytes(64);
+    context.allocator.dealloc_bytes(p);
+    return 12;
+}
+
+WIDE :: #run { budget() > 8 };
+
+inline if WIDE {
+    LANES :: 8;
+} else {
+    LANES :: 4;
+}
+
+main :: () {
+    print("{}\n", LANES);
+}

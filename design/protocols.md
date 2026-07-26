@@ -1071,6 +1071,16 @@ dataflow discipline:
   name-lookup hit is monotone-safe (declarations are never
   removed); a miss in code under this discipline suspends until the
   scope is final — no unexpanded branch can still declare the name.
+- **The program Context is a single layout**, so an evaluation that
+  reads it waits for that layout to settle: while any unexpanded
+  branch could still declare a `#context_extend`, the field set is
+  not final, and the evaluation suspends against Context-ready
+  exactly as it suspends against an open conformer set.
+  Contribution is judged syntactically, like an `impl`'s. Once
+  nothing can contribute, the decided declaration space registers,
+  the deterministic layout assembles, and the default context is
+  built from the selected branches' defaults — an untaken branch
+  contributes no field.
 - An evaluation needing a not-yet-utterable answer **suspends** —
   its VM state parks as a bookmark against the facts it awaits
   (presence of a pair or name, finality of a set or scope) — and

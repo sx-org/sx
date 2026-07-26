@@ -1764,6 +1764,16 @@ dataflow discipline:
   name-lookup hit is monotone-safe (declarations are never
   removed); a miss in code under this discipline suspends until the
   scope is final — no unexpanded branch can still declare the name.
+- **The program Context is a single layout**, so an evaluation that
+  reads it waits for that layout to settle: while any unexpanded
+  branch could still declare a `#context_extend`, the field set is
+  not final, and the evaluation suspends against Context-ready
+  exactly as it suspends against an open conformer set.
+  Contribution is judged syntactically, like an `impl`'s. Once
+  nothing can contribute, the decided declaration space registers,
+  the deterministic layout assembles, and the default context is
+  built from the selected branches' defaults — an untaken branch
+  contributes no field.
 - An evaluation needing a not-yet-utterable answer **suspends** —
   its VM state parks as a bookmark against the facts it awaits
   (presence of a pair or name, finality of a set or scope) — and
@@ -4226,7 +4236,7 @@ Any module — stdlib or user — can declare a field the program's Context carr
 prove presence before use); the bare spelling keeps null as an unchecked
 sentinel, per the pointer contract.
 
-- **Grammar**: `#context_extend <name> : <type> = <default> ;` at top level only.
+- **Grammar**: `#context_extend <name> : <type> = <default> ;` at top level only — which includes a top-level `inline if` branch or `inline for` body, whose statements ARE module scope after comptime flattening. A branch that is not selected declares no field; while such a driver is undecided the Context is not final, and comptime that reads it waits (§7.9 scheduling).
 - **Assembly**: the compiler assembles the program's `Context` from every declaration in the compilation — there is no builtin prefix — in a deterministic order (sorted by declaring module path, then field name). Field offsets are program-specific — never rely on them across programs.
 - **Access is global and unconditional**: after assembly, `context.field` works in ANY module of the program with no import requirement. Imports gate existence only (an uncompiled module contributes nothing); there is no per-source scoping of context fields.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.

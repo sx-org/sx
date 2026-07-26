@@ -619,6 +619,12 @@ pub const Lowering = struct {
     /// (possibly EARLY, from a scan-time type-fn eval; the assembly is
     /// reconciling, so this only gates default-context emission).
     context_assembled: bool = false,
+    /// Declarations already registered by a scan. Only consulted once
+    /// `incremental_scan` is armed — a driver's comptime evaluation registers
+    /// the DECIDED declaration space before it runs, and the whole-program pass
+    /// then adds exactly what the taken groups contributed since.
+    scanned_decls: std.AutoHashMap(*const Node, void),
+    incremental_scan: bool = false,
     /// Set when a Context STRUCTURAL error was diagnosed (L4 collision, L5
     /// missing default, unresolvable field type). Such an error poisons
     /// every downstream `context.field` access — `lowerRoot` halts after
@@ -1016,6 +1022,7 @@ pub const Lowering = struct {
             .registered_protocol_decls = std.AutoHashMap(*const ast.ProtocolDecl, void).init(module.alloc),
             .protocol_info_by_type = std.AutoHashMap(TypeId, program_index_mod.ProtocolDeclInfo).init(module.alloc),
             .protocol_ast_by_type = std.AutoHashMap(TypeId, *const ast.ProtocolDecl).init(module.alloc),
+            .scanned_decls = std.AutoHashMap(*const ast.Node, void).init(module.alloc),
             .local_type_names = std.StringHashMap(std.StringHashMap(void)).init(module.alloc),
             .struct_defaults_map = std.StringHashMap([]const ?*const Node).init(module.alloc),
             .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
@@ -2957,6 +2964,7 @@ pub const Lowering = struct {
     pub const collectContextExtensions = lower_context_ext.collectContextExtensions;
     pub const assembleContext = lower_context_ext.assembleContext;
     pub const assembleContextEarly = lower_context_ext.assembleContextEarly;
+    pub const assembleContextIfReady = lower_context_ext.assembleContextIfReady;
     pub const contextExtensionDefault = lower_context_ext.contextExtensionDefault;
     pub const hasContextExtension = lower_context_ext.hasContextExtension;
     pub const contextFieldByName = lower_context_ext.contextFieldByName;

@@ -709,8 +709,34 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
     }
 }
 
+/// Registration is INCREMENTAL once a driver's comptime evaluation has already
+/// registered part of the declaration space: a declaration is scanned exactly
+/// once, whichever pass reached it first, so the whole-program pass adds only
+/// what the decided space did not already carry. Off entirely until an
+/// expansion-time scan arms it — a program without a driver evaluation
+/// registers through the untouched pass.
+fn freshDecls(self: *Lowering, decls: []const *const Node) []const *const Node {
+    if (!self.incremental_scan) return decls;
+    var out = std.ArrayList(*const Node).empty;
+    for (decls) |decl| {
+        // A namespaced module's list is not fixed while expansion runs — a
+        // driver written there still lands its group in it — so the node itself
+        // never counts as scanned; the recursion dedups on what it holds NOW.
+        if (decl.data == .namespace_decl) {
+            out.append(self.alloc, decl) catch {};
+            continue;
+        }
+        const gop = self.scanned_decls.getOrPut(decl) catch continue;
+        if (gop.found_existing) continue;
+        out.append(self.alloc, decl) catch {};
+    }
+    return out.toOwnedSlice(self.alloc) catch decls;
+}
+
 /// Pass 1: Scan declarations — register ASTs and extern stubs, but don't lower bodies.
-pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
+pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
+    const decls = freshDecls(self, all_decls);
+    if (decls.len == 0) return;
     registerLiteralModuleConsts(self, decls);
     // Pass 0a': const ALIASES of consts (`B :: A`, chains of any depth /
     // declaration order). A bare-identifier RHS was never registered, so

@@ -12,6 +12,13 @@
 //! backends both resolve, both author `fs_file_is_valid`, and neither reaches
 //! module scope until its branch is selected.
 //!
+//! A condition or iterable that COMPUTES rather than names is executed, not
+//! folded: the `#run` it reaches runs on the one comptime VM, against the
+//! decided declaration space and the settled program Context. Both are
+//! scheduled facts of the same worklist every other threshold read uses, so a
+//! run that cannot start yet parks its driver, and a run that suspends
+//! mid-flight keeps its VM until the fact it awaits fires.
+//!
 //! The pre-lowering facts are already built by the time a group is selected, so
 //! the splice MINTS them: module scope entry, import graph edge, raw decl fact,
 //! `DeclId`, source and visibility provenance. Everything after that is the
@@ -24,8 +31,11 @@ const Node = ast.Node;
 const imports = @import("../../imports.zig");
 const types = @import("../types.zig");
 const TypeId = types.TypeId;
+const comptime_vm = @import("../comptime_vm.zig");
+const comptime_value = @import("../comptime_value.zig");
 
 const lower = @import("../lower.zig");
+const lower_tagged = @import("tagged.zig");
 const Lowering = lower.Lowering;
 
 /// Expand every module-scope driver the program declares, returning the
@@ -44,6 +54,7 @@ pub fn expandModuleDrivers(self: *Lowering, decls: []const *Node) []const *Node 
         .parked = std.ArrayList(ParkedDriver).empty,
         .ledgers = std.ArrayList(*Ledger).empty,
         .cursors = std.ArrayList(*std.StringHashMap([]const u8)).empty,
+        .runs = std.AutoHashMap(*const Node, RunResult).init(self.alloc),
     };
     defer ex.deinit();
 
@@ -105,6 +116,19 @@ const Ledger = struct {
     nodes: std.AutoHashMap(*const Node, void),
 };
 
+/// What driving a `#run` produced. A body-bearing run is EXECUTED, once: the
+/// value it settled on is kept for every re-fold that reaches it, and an
+/// evaluation that suspended keeps its VM — heap, task, VM-local Context — so
+/// the resume lands at the instruction that asked rather than restarting the
+/// run.
+const RunResult = union(enum) {
+    value: comptime_value.Value,
+    parked: *comptime_vm.Evaluation,
+    /// Ran and produced nothing a condition can read — the ordinary
+    /// unevaluable-condition path takes it from here.
+    unevaluable,
+};
+
 /// A driver suspended mid-fold: everything its resumption needs, plus the
 /// fact it is waiting on, rendered for the deadlock diagnostic.
 const ParkedDriver = struct {
@@ -139,6 +163,9 @@ const Expansion = struct {
     parked: std.ArrayList(ParkedDriver),
     ledgers: std.ArrayList(*Ledger),
     cursors: std.ArrayList(*std.StringHashMap([]const u8)),
+    /// Every `#run` a driver condition reached, by node — the run is evaluated
+    /// once and read as often as the folds that reach it need.
+    runs: std.AutoHashMap(*const Node, RunResult),
     /// Whether the fold being driven parked on a fact it could not answer.
     just_parked: bool = false,
     parked_any: bool = false,
@@ -157,6 +184,11 @@ const Expansion = struct {
         ex.ledgers.deinit(ex.self.alloc);
         for (ex.cursors.items) |c| c.deinit();
         ex.cursors.deinit(ex.self.alloc);
+        var runs = ex.runs.valueIterator();
+        while (runs.next()) |r| {
+            if (r.* == .parked) r.*.parked.destroy();
+        }
+        ex.runs.deinit();
     }
 
     fn decided(ex: *Expansion, decl: *Node) void {
@@ -389,7 +421,7 @@ const Expansion = struct {
     fn drainParked(ex: *Expansion) void {
         var progress = true;
         while (progress) {
-            progress = false;
+            progress = ex.advanceRuns();
             var i: usize = 0;
             while (i < ex.parked.items.len) {
                 var p = ex.parked.items[i];
@@ -455,10 +487,158 @@ const Expansion = struct {
         };
     }
 
+    /// The ground a comptime evaluation stands on, as a scheduled fact.
+    ///
+    /// An evaluation reads the DECIDED declaration space — what the program
+    /// wrote plus what taken groups have spliced — and, where the program has
+    /// one, the implicit Context. The Context is a single program-global
+    /// layout, so it cannot be read before it is settled: while any undecided
+    /// driver could still write a `#context_extend`, the fact is not
+    /// publishable and the asking driver parks against it exactly as it parks
+    /// against an open conformer set. Once nothing can contribute, the decided
+    /// space registers (incrementally — a declaration is scanned once), the L6
+    /// layout assembles, and the exact `__sx_default_context` is emitted. A
+    /// field type a taken group has not declared yet is the same wait: another
+    /// driver's group can still supply it.
+    fn contextReady(ex: *Expansion) bool {
+        const self = ex.self;
+        if (self.implicit_ctx_enabled and !self.expansion.contextFinal()) {
+            ex.awaitContext();
+            return false;
+        }
+        ex.registerDecided();
+        if (!self.implicit_ctx_enabled) return true;
+        if (!self.assembleContextIfReady()) {
+            ex.awaitContext();
+            return false;
+        }
+        self.emitDefaultContextGlobalEarly();
+        if (!self.program_index.global_names.contains("__sx_default_context")) {
+            ex.awaitContext();
+            return false;
+        }
+        return true;
+    }
+
+    fn awaitContext(ex: *Expansion) void {
+        ex.self.expansion.awaitFact("the program Context to be final");
+    }
+
+    /// Register the decided declaration space the way `lowerRoot` registers the
+    /// whole program: the `#context_extend` collection, then the scan. Both are
+    /// incremental — a declaration is registered once, whichever pass reached
+    /// it first — so a group spliced since the last evaluation is all that is
+    /// added, and the whole-program pass later adds only what expansion never
+    /// decided. Quiet: a declaration error here is reported by that pass, at
+    /// its own site, once.
+    fn registerDecided(ex: *Expansion) void {
+        const self = ex.self;
+        const space = ex.decidedList();
+        const saved_diags = self.diagnostics;
+        const saved_src = self.current_source_file;
+        self.diagnostics = null;
+        self.incremental_scan = true;
+        defer {
+            self.diagnostics = saved_diags;
+            self.setCurrentSourceFile(saved_src);
+        }
+        self.collectContextExtensions(space);
+        self.scanDecls(space);
+    }
+
+    fn decidedList(ex: *Expansion) []const *const Node {
+        var out = std.ArrayList(*const Node).empty;
+        for (ex.scope) |decl| out.append(ex.self.alloc, decl) catch {};
+        for (ex.spliced.items) |decl| out.append(ex.self.alloc, decl) catch {};
+        return out.toOwnedSlice(ex.self.alloc) catch &.{};
+    }
+
+    /// Execute the `#run` a driver condition reached. The wrapper lowers under
+    /// the same fold that reached it, so a threshold read inside the body parks
+    /// the driver before the VM starts; from there the evaluation OWNS its VM,
+    /// and a fact it awaits mid-flight keeps the whole continuation.
+    fn driveRun(ex: *Expansion, node: *const Node, expr: *const Node, src: ?[]const u8) ?bool {
+        const value = ex.runValue(node, expr, src, .bool) orelse return null;
+        return switch (value) {
+            .boolean => |b| b,
+            else => null,
+        };
+    }
+
+    fn runValue(ex: *Expansion, node: *const Node, expr: *const Node, src: ?[]const u8, ret_ty: TypeId) ?comptime_value.Value {
+        const self = ex.self;
+        if (ex.runs.get(node)) |result| switch (result) {
+            .value => |v| return v,
+            .unevaluable => return null,
+            .parked => |e| {
+                self.expansion.awaitFact(lower_tagged.describeFact(self, e.state.parked));
+                return null;
+            },
+        };
+        if (!ex.contextReady()) return null;
+
+        const saved_src = self.current_source_file;
+        defer self.setCurrentSourceFile(saved_src);
+        self.setCurrentSourceFile(src);
+        const func_id = self.createComptimeFunction("__drive", .expansion, expr, ret_ty);
+        // A read the body reached that no set can answer yet is the DRIVER's
+        // wait: the run has not begun, so nothing is suspended and nothing is
+        // recorded — the fold that resumes lowers the wrapper again.
+        if (self.expansion.awaited != null) return null;
+
+        const evaluation = comptime_vm.tryEval(self.alloc, self.module, func_id, null, null, self.factScheduler());
+        if (evaluation.state == .parked) {
+            ex.runs.put(node, .{ .parked = evaluation }) catch {};
+            self.expansion.awaitFact(lower_tagged.describeFact(self, evaluation.state.parked));
+            return null;
+        }
+        return ex.settleRun(node, evaluation);
+    }
+
+    /// Record a finished evaluation's result and release its VM.
+    fn settleRun(ex: *Expansion, node: *const Node, evaluation: *comptime_vm.Evaluation) ?comptime_value.Value {
+        const value = evaluation.completed();
+        evaluation.destroy();
+        ex.runs.put(node, if (value) |v| .{ .value = v } else .unevaluable) catch {};
+        return value;
+    }
+
+    /// Hand every suspended run the fact it awaits, where the drain has made
+    /// one answerable. The evaluation resumes AT the instruction that asked —
+    /// its frames below are the ones that parked — so a run executes exactly
+    /// once however many facts it waited on.
+    fn advanceRuns(ex: *Expansion) bool {
+        var progress = false;
+        var it = ex.runs.iterator();
+        while (it.next()) |entry| {
+            if (entry.value_ptr.* != .parked) continue;
+            const evaluation = entry.value_ptr.*.parked;
+            const scheduler = ex.self.factScheduler();
+            switch (scheduler.resolve(scheduler.ctx, evaluation.state.parked)) {
+                .later => continue,
+                .now => |resolution| {
+                    evaluation.resumeWith(resolution);
+                    progress = true;
+                    if (evaluation.state == .parked) continue;
+                    _ = ex.settleRun(entry.key_ptr.*, evaluation);
+                },
+            }
+        }
+        return progress;
+    }
+
     /// Fold one driver's condition under the scheduling discipline: every
     /// non-monotone read it reaches — a membership question, an impl-visibility
     /// question, a name lookup — may WAIT here, because this fold is the one
     /// thing the drain can run again once the fact fires.
+    fn foldTypeList(ex: *Expansion, iterable: *const Node, src: ?[]const u8) ?*const ast.ArrayLiteral {
+        ex.self.expansion.awaited = null;
+        const saved = ex.self.expansion.folding;
+        ex.self.expansion.folding = true;
+        defer ex.self.expansion.folding = saved;
+        return typeListLiteral(ex, iterable, src, 0);
+    }
+
     fn foldCondition(ex: *Expansion, condition: *const Node, src: ?[]const u8) ?bool {
         ex.self.expansion.awaited = null;
         const saved = ex.self.expansion.folding;
@@ -505,7 +685,11 @@ const Expansion = struct {
             .comptime_expr => |ce| {
                 if (!ex.self.expansion.claimRun(node)) return null;
                 defer ex.self.expansion.releaseRun(node);
-                return ex.driveCondition(ce.expr, src, depth + 1);
+                if (ex.driveCondition(ce.expr, src, depth + 1)) |folded| return folded;
+                // The run computes rather than names: it EXECUTES, under this
+                // fold, on the one comptime VM.
+                if (ex.self.expansion.awaited != null) return null;
+                return ex.driveRun(node, ce.expr, src);
             },
             .call => return ex.driveMembershipCondition(node, src),
             else => return ex.self.evalComptimeCondition(node),
@@ -626,11 +810,39 @@ const Expansion = struct {
                     .struct_decl => |*sd| ex.self.registerStructDecl(sd, decl.source_file),
                     .enum_decl => |*ed| ex.self.registerEnumDecl(ed),
                     .union_decl => |*ud| ex.self.registerUnionDecl(ud),
+                    // A type-function-bound constant (`Chosen :: pick()`) is
+                    // MINTED by running its constructor, so the question can
+                    // only name the type once the decided declaration space —
+                    // the constructor's own body included — is registered.
+                    .call => |c| if (ex.typeFunctionCall(c.callee)) {
+                        _ = ex.contextReady();
+                    },
                     else => {},
                 },
                 else => {},
             }
         }
+    }
+
+    /// Does `callee` name a non-generic function returning `Type`? That is the
+    /// one call shape whose result IS a type identity, minted by evaluation
+    /// rather than resolved from a spelling.
+    fn typeFunctionCall(ex: *Expansion, callee: *const Node) bool {
+        const name = ast.bareName(callee) orelse return false;
+        var it = ex.decidedDecls();
+        while (it.next()) |decl| {
+            const declared = decl.data.declName() orelse continue;
+            if (!std.mem.eql(u8, declared, name)) continue;
+            const fd: *const ast.FnDecl = switch (decl.data) {
+                .fn_decl => |*f| f,
+                .const_decl => |cd| if (cd.value.data == .fn_decl) &cd.value.data.fn_decl else continue,
+                else => continue,
+            };
+            if (fd.type_params.len > 0) continue;
+            const rt = fd.return_type orelse continue;
+            if (rt.data == .type_expr and std.mem.eql(u8, rt.data.type_expr.name, "Type")) return true;
+        }
+        return false;
     }
 
     fn decidedDecls(ex: *Expansion) DecidedDecls {
@@ -767,7 +979,7 @@ const Group = struct {
                 const body = g.ex.self.evalComptimeMatch(&me) orelse return true;
                 return g.spliceGroup(body, src, mint, declared, cursor);
             },
-            .for_expr => |fe| return g.expandInlineFor(decl, &fe, src, g.claimRegistration(decl)),
+            .for_expr => |fe| return g.expandInlineFor(decl, &fe, src),
             else => return true,
         }
     }
@@ -967,8 +1179,21 @@ const Group = struct {
     /// Expand a module-scope `inline for` into one declaration group per
     /// element of its comptime type list. The cursor binds each element as a
     /// type name, substituted through the cloned group.
-    fn expandInlineFor(g: *Group, decl: *const Node, fe: *const ast.ForExpr, src: ?[]const u8, mint: bool) bool {
+    fn expandInlineFor(g: *Group, decl: *const Node, fe: *const ast.ForExpr, src: ?[]const u8) bool {
         const self = g.ex.self;
+        // The iterable is a driver condition's twin — it can reach a `#run`,
+        // and the same discipline applies — so it is resolved BEFORE anything
+        // is claimed: a fold that parks must leave the driver exactly as it
+        // found it, for the drain to run again.
+        const list: ?*const ast.ArrayLiteral = if (fe.iterables.len > 0 and !fe.iterables[0].is_range)
+            g.ex.foldTypeList(fe.iterables[0].expr, src)
+        else
+            null;
+        if (list == null and self.expansion.awaited != null) {
+            g.ex.just_parked = true;
+            return true;
+        }
+        const mint = g.claimRegistration(decl);
         const diags = if (mint) self.diagnostics else null;
         if (fe.captures.len == 0 or fe.captures[0].name.len == 0) {
             if (diags) |d| d.addFmt(.err, decl.span, "a module-scope `inline for` needs a cursor — `inline for LIST (T) {{ … }}`", .{});
@@ -983,7 +1208,7 @@ const Group = struct {
             if (diags) |d| d.addFmt(.err, list_iterable.expr.span, "a module-scope `inline for` iterates a comptime type list — `inline for .[A, B] (T) {{ … }}`", .{});
             return true;
         }
-        const literal = typeListLiteral(g.ex, list_iterable.expr, src, 0) orelse {
+        const literal = list orelse {
             if (diags) |d| d.addFmt(.err, list_iterable.expr.span, "a module-scope `inline for` iterates a comptime type list — this is not an array literal or a constant bound to one", .{});
             return true;
         };
@@ -1062,8 +1287,36 @@ fn typeListLiteral(ex: *Expansion, node: *const Node, src: ?[]const u8, depth: u
             const target = constNamed(ex, id.name, src) orelse return null;
             return typeListLiteral(ex, target.value, src, depth + 1);
         },
+        .comptime_expr => |ce| return runTypeList(ex, node, ce.expr, src),
         else => return null,
     }
+}
+
+/// A `#run`-COMPUTED iterable. The run executes under the same discipline a
+/// condition's does — it is the same driver class — and the types it answers
+/// with are respelled as the element names the unroll substitutes, so the
+/// group it expands is written exactly as a literal list's would be.
+fn runTypeList(ex: *Expansion, node: *const Node, expr: *const Node, src: ?[]const u8) ?*const ast.ArrayLiteral {
+    const self = ex.self;
+    if (!ex.contextReady()) return null;
+    const value = ex.runValue(node, expr, src, self.inferExprType(expr)) orelse return null;
+    const fields = switch (value) {
+        .aggregate => |f| f,
+        else => return null,
+    };
+    var elements = std.ArrayList(*Node).empty;
+    for (fields) |field| {
+        const tid = field.asTypeId() orelse return null;
+        const element = self.alloc.create(Node) catch return null;
+        element.* = .{
+            .span = expr.span,
+            .data = .{ .identifier = .{ .name = self.formatTypeName(tid) } },
+        };
+        elements.append(self.alloc, element) catch return null;
+    }
+    const literal = self.alloc.create(ast.ArrayLiteral) catch return null;
+    literal.* = .{ .elements = elements.toOwnedSlice(self.alloc) catch return null };
+    return literal;
 }
 
 fn constNamed(ex: *Expansion, name: []const u8, src: ?[]const u8) ?*const ast.ConstDecl {
