@@ -1,19 +1,28 @@
-//! Byte-addressable comptime machine — Phase 1 of `current/PLAN-COMPILER-VM.md`.
+//! The comptime machine: a byte-addressable, SUSPENDABLE evaluator.
 //!
-//! The comptime evaluator is being rebuilt around a byte-addressable memory
-//! so comptime values are NATIVE BYTES (like runtime), instead of the tagged
-//! `Value` union the legacy interpreter (`interp.zig`) uses. This module is the
-//! machine substrate: byte-addressable memory backed by an ARENA of stable host
-//! allocations (each `allocBytes` never moves; freed wholesale on `deinit`), plus
-//! a per-call `Frame` holding a register file. `Addr` is the allocation's real
+//! Comptime values are NATIVE BYTES (like runtime), not a tagged `Value` union.
+//! This module is both the machine substrate — byte-addressable memory backed by
+//! an ARENA of stable host allocations (each `allocBytes` never moves; freed
+//! wholesale on `deinit`), plus a per-call `Frame` holding a register file — and
+//! the executor that walks the SSA IR over it. `Addr` is the allocation's real
 //! host pointer, so a comptime pointer and an FFI-returned host pointer are the
 //! same kind of value.
 //!
-//! Value model (grows over later sub-steps): a register (`Reg`) is a raw 64-bit
-//! word that is EITHER an immediate scalar (its bits) OR an `Addr` into comptime
-//! memory (for aggregates) — interpreted by the IR result type, exactly like a
-//! real machine / LLVM. Scalars up to 64 bits (sx's widest is `i64`/`u64`/`f64`)
-//! fit a register directly; structs/arrays/slices live in comptime memory and a
+//! One evaluation is ONE native-async task (`comptime_async`): `evaluate` starts
+//! the interpreter with `std.Io.async` and collects it with `Future.await`. The
+//! interpreter itself stays plainly recursive — `run` walks blocks, `invoke`
+//! calls `run` — so a call chain IS the task's Zig stack, and `Vm.awaitFact`
+//! parks that whole chain without reifying a frame. The driver loop between
+//! `async` and `await` is the seam a bookmark scheduler plugs into: it answers
+//! the pending fact and resumes the same continuation at the awaiting
+//! instruction. With no scheduler installed every await answers `.unavailable`
+//! immediately and the evaluation refuses through its ordinary staged path.
+//!
+//! Value model: a register (`Reg`) is a raw 64-bit word that is EITHER an
+//! immediate scalar (its bits) OR an `Addr` into comptime memory (for
+//! aggregates) — interpreted by the IR result type, exactly like a real machine
+//! / LLVM. Scalars up to 64 bits (sx's widest is `i64`/`u64`/`f64`) fit a
+//! register directly; structs/arrays/slices live in comptime memory and a
 //! register holds their address.
 //!
 //! Target-awareness lives in the EXECUTOR, not here: this module only moves raw
@@ -25,11 +34,11 @@
 //! `Machine` (arena-backed memory + scalar word read/write + byte views) holds the
 //! comptime stack + heap; `Frame` is the per-call register file. A `Frame` does NOT
 //! reclaim the machine's memory on exit — a callee can return an aggregate whose
-//! register holds an `Addr` into comptime memory, and reclaiming would dangle it. The
-//! legacy interpreter remains the live evaluator until the VM reaches parity.
+//! register holds an `Addr` into comptime memory, and reclaiming would dangle it.
 
 const std = @import("std");
 const inst_mod = @import("inst.zig");
+const comptime_async = @import("comptime_async.zig");
 const types = @import("types.zig");
 const intrinsics = @import("intrinsics.zig");
 const mod_mod = @import("module.zig");
@@ -198,6 +207,60 @@ pub var last_bail_reason: ?[]const u8 = null;
 /// `null`; cleared at the top of every `tryEval`.
 pub var last_bail_was_bridge: bool = false;
 
+// ── Fact-await seam ─────────────────────────────────────────────────────────
+//
+// A comptime evaluation can reach a question whose answer is not yet FINAL —
+// today only "which conformer arm implements this symbolic dispatch", since a
+// conformance admitted later still grows the routine's member set. Instead of
+// failing on the spot, the evaluation awaits that fact: it parks, the driver
+// asks the installed scheduler, and the same continuation resumes with the
+// answer. Nothing installs a scheduler yet, so every await answers
+// `.unavailable` and the evaluation refuses exactly as it did before.
+
+/// The fact a parked evaluation is waiting on.
+pub const FactRequest = struct {
+    kind: Kind,
+    /// The outlined dispatch routine whose conformer set is not final.
+    routine: FuncId,
+    /// The concrete type the receiver carries — the member the routine lacks.
+    concrete: TypeId,
+
+    pub const Kind = enum { conformer_arm };
+};
+
+/// The scheduler's answer. `.published` means the fact is now recorded in the
+/// module and the evaluation should re-read it; `.unavailable` means it will
+/// never be, and the evaluation fails through its ordinary path.
+pub const FactResolution = enum { published, unavailable };
+
+/// Resolves the fact a parked evaluation awaits, running whatever work that
+/// needs while the evaluation is suspended.
+pub const FactScheduler = struct {
+    ctx: ?*anyopaque,
+    resolve: *const fn (ctx: ?*anyopaque, request: FactRequest) FactResolution,
+};
+
+/// The installed bookmark scheduler. Null → no evaluation ever parks.
+pub var fact_scheduler: ?FactScheduler = null;
+
+/// Drive one comptime evaluation as a single native-async task and return its
+/// result word. Every nested `run`/`invoke` frame lives on that task's stack, so
+/// a park suspends the complete chain; each loop turn answers the pending fact
+/// and resumes the same continuation. The loop ends when the task is finished,
+/// which is what `Future.await` then collects.
+fn evaluate(vm: *Vm, func_id: FuncId, extra: []const Reg) Error!Reg {
+    const io = comptime_async.io();
+    var future = io.async(evaluationTask, .{ vm, func_id, extra });
+    while (vm.pending_fact) |request| {
+        vm.deliverFact(if (fact_scheduler) |s| s.resolve(s.ctx, request) else .unavailable);
+    }
+    return future.await(io);
+}
+
+fn evaluationTask(vm: *Vm, func_id: FuncId, extra: []const Reg) Error!Reg {
+    return vm.runEntryArgs(func_id, extra);
+}
+
 /// Wiring entry point: try to evaluate comptime function `func_id` entirely on the
 /// comptime VM and return its result as a legacy `Value`, or `null` if the VM
 /// can't handle it (unsupported op, no body, or any bail) — the caller then falls
@@ -229,12 +292,12 @@ pub fn tryEval(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.
     vm.build_config = build_config;
     vm.source_map = source_map;
 
-    // `runEntry` materializes the implicit `*Context` (a comptime const-init /
+    // The evaluation materializes the implicit `*Context` (a comptime const-init /
     // `#run` wrapper is nullary in user args, so the implicit ctx is its sole
     // param) as a zeroed Context in comptime memory and runs. The common const body
     // never reads the ctx; one that uses the allocator hits unported
     // `call_indirect` → bails → legacy. Gate-ON corpus parity validates this.
-    const reg = vm.runEntry(func_id) catch |err| {
+    const reg = evaluate(&vm, func_id, &.{}) catch |err| {
         last_bail_reason = vm.detail orelse @errorName(err);
         return null;
     };
@@ -274,7 +337,7 @@ pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: 
     vm.build_config = build_config;
     vm.source_map = source_map;
     const extra: []const Reg = if (pass_options) &.{null_addr} else &.{};
-    const reg = vm.runEntryArgs(func_id, extra) catch |err| {
+    const reg = evaluate(&vm, func_id, extra) catch |err| {
         last_bail_reason = vm.detail orelse @errorName(err);
         return null;
     };
@@ -410,6 +473,13 @@ pub const Vm = struct {
     /// `call_chain`). `trace_frame` packs the top of this stack into a return-trace
     /// frame; pushed by `invoke`/`runEntry`, popped on return.
     call_stack: std.ArrayList(FuncId) = .empty,
+    /// The fact this evaluation is parked on — read by the `evaluate` driver
+    /// while the task is suspended, cleared by `deliverFact`.
+    pending_fact: ?FactRequest = null,
+    /// The suspended task, valid exactly while `pending_fact` is set.
+    parked_task: ?*comptime_async.Task = null,
+    /// The answer `deliverFact` hands back to the awaiting instruction.
+    fact_resolution: FactResolution = .unavailable,
 
     pub const max_depth: u32 = 512;
 
@@ -1510,6 +1580,30 @@ pub const Vm = struct {
         return self.run(callee, argbuf);
     }
 
+    /// Park this evaluation until `request` is answered. The park suspends the
+    /// task, so every interpreter frame below this call survives untouched and
+    /// the resume lands right here — the awaiting instruction runs on, it never
+    /// runs again. Outside a task (a direct `run`), or with no scheduler to ask,
+    /// the answer is `.unavailable` and nothing suspends.
+    fn awaitFact(self: *Vm, request: FactRequest) FactResolution {
+        if (fact_scheduler == null) return .unavailable;
+        const task = comptime_async.current() orelse return .unavailable;
+        self.parked_task = task;
+        self.pending_fact = request;
+        comptime_async.park();
+        return self.fact_resolution;
+    }
+
+    /// Hand `resolution` to the parked evaluation and run it on, from the driver
+    /// side. Returns once the evaluation parks again or finishes.
+    fn deliverFact(self: *Vm, resolution: FactResolution) void {
+        const task = self.parked_task.?;
+        self.fact_resolution = resolution;
+        self.pending_fact = null;
+        self.parked_task = null;
+        comptime_async.unpark(task);
+    }
+
     /// A call to an outlined tagged dispatch routine, resolved against the
     /// receiver's CARRIED concrete type instead of the routine's tag switch
     /// (§7.9): the value's second word is a `TypeId` here, so the switch would
@@ -1517,23 +1611,48 @@ pub const Vm = struct {
     /// devirtualization — the same answer the switch gives at runtime.
     /// Null when `fid` is not a dispatch routine.
     fn devirtualize(self: *Vm, module: *const Module, fid: FuncId, args: []Reg) Error!?Reg {
-        const entry = for (module.tagged_dispatch.items) |*e| {
-            if (e.routine == fid) break e;
-        } else return null;
+        if (dispatchEntry(module, fid) == null) return null;
         const callee = module.getFunction(fid);
         const value_slot: usize = if (callee.has_implicit_ctx) 1 else 0;
         if (value_slot >= args.len) return self.failMsg("comptime VM: tagged dispatch routine called without its receiver");
         const value = args[value_slot];
         const concrete = TypeId.fromIndex(@intCast(try self.machine.readWord(value + 8, 8)));
-        const arm = for (entry.members, entry.arms) |m, a| {
-            if (m == concrete) break a;
-        } else return self.failFmt("comptime VM: no '{s}' conformer arm for the value's concrete type", .{module.types.getString(callee.name)});
+        const arm = dispatchArm(module, fid, concrete) orelse missing: {
+            // The conformer set is not final while the program is still being
+            // lowered, so a member the routine lacks now can still be admitted.
+            // Await that fact; publishing REPLACES the routine's entry, so the
+            // arm is looked up again on the resumed side.
+            if (self.awaitFact(.{ .kind = .conformer_arm, .routine = fid, .concrete = concrete }) == .published) {
+                if (dispatchArm(module, fid, concrete)) |a| break :missing a;
+            }
+            return self.failFmt("comptime VM: no '{s}' conformer arm for the value's concrete type", .{module.types.getString(callee.name)});
+        };
         // The arm takes the receiver's ctx pointer where the routine took the
         // whole value; every other argument passes through.
         args[value_slot] = try self.machine.readWord(value, 8);
         self.call_stack.append(self.gpa, arm) catch @panic("comptime VM: out of memory (call stack)");
         defer _ = self.call_stack.pop();
         return try self.run(module.getFunction(arm), args);
+    }
+
+    /// The dispatch record for routine `fid`, or null when `fid` is an ordinary
+    /// function. Looked up by id rather than held across a park: publishing a
+    /// conformance rewrites the record in place and can move the list.
+    fn dispatchEntry(module: *const Module, fid: FuncId) ?*const Module.TaggedDispatchEntry {
+        for (module.tagged_dispatch.items) |*e| {
+            if (e.routine == fid) return e;
+        }
+        return null;
+    }
+
+    /// The arm of routine `fid` implementing `concrete`, or null while no
+    /// admitted conformance carries that type.
+    fn dispatchArm(module: *const Module, fid: FuncId, concrete: TypeId) ?FuncId {
+        const entry = dispatchEntry(module, fid) orelse return null;
+        for (entry.members, entry.arms) |m, a| {
+            if (m == concrete) return a;
+        }
+        return null;
     }
 
     /// Call a real extern (libc / host) function via dlsym + the `host_ffi`

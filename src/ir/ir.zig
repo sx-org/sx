@@ -61,6 +61,7 @@ pub const ErrorFacts = error_analysis.ErrorFacts;
 pub const compiler_hooks = @import("compiler_hooks.zig");
 pub const compiler_lib = @import("compiler_lib.zig");
 pub const reachability = @import("reachability.zig");
+pub const comptime_async = @import("comptime_async.zig");
 pub const comptime_vm = @import("comptime_vm.zig");
 pub const emit_llvm = @import("emit_llvm.zig");
 pub const LLVMEmitter = emit_llvm.LLVMEmitter;
