@@ -1,0 +1,18 @@
+// A declaration written inside a module-scope expansion group is an ordinary
+// author of its module: `gated.sx` authors `Slot` from inside an `inline if`,
+// `plain.sx` authors its own `Slot` textually, and each module's own code binds
+// its OWN author. The group's author arrives after the plain one is published,
+// so this pins that the late arrival takes a fresh nominal identity instead of
+// renumbering — or clobbering — the published one.
+//
+// 1630 is the same program with the two imports permuted; both print the same
+// three sizes, because identity comes from the authoring module, not from the
+// order the authors happen to register in.
+#import "modules/std.sx";
+#import "1629-modules-inline-if-late-type-author/plain.sx";
+gated :: #import "1629-modules-inline-if-late-type-author/gated.sx";
+
+main :: () -> i32 {
+    print("{} {} {}\n", plain_size(), gated.gated_size(), size_of(gated.Slot));
+    0
+}

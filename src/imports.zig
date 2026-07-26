@@ -5,337 +5,6 @@ const errors = @import("errors.zig");
 const c_import = @import("c_import.zig");
 const Node = ast.Node;
 
-/// Comptime evaluation context for the inline-if hoisting pass below.
-/// Mirrors the values `injectComptimeConstants` will later push into the
-/// lowering's `comptime_constants` map (OS / ARCH / POINTER_SIZE), but
-/// derived directly from the build target so we can resolve top-level
-/// `inline if OS == .X { ... }` arms before imports + lowering run.
-pub const ComptimeContext = struct {
-    /// Lowercase OS name matching the OperatingSystem enum tag
-    /// (macos / linux / windows / wasm / ios / android / unknown).
-    os: []const u8 = "unknown",
-    /// Lowercase architecture name matching the Architecture enum tag
-    /// (aarch64 / x86_64 / wasm32 / wasm64 / unknown).
-    arch: []const u8 = "unknown",
-    /// 4 for wasm32, 8 for every other target.
-    pointer_size: i64 = 8,
-};
-
-/// Top-level `inline if OS == .X { decls }` blocks are parsed as
-/// `if_expr` / `match_expr` nodes in `root.decls`, but the lowering
-/// pass only knows how to dispatch on `.fn_decl` / `.const_decl` /
-/// `.var_decl` / etc. at decl positions — an `if_expr` at the top
-/// level is silently dropped. Same story for `#import` decls inside an
-/// `inline if` body: they need to be surfaced to the top so import
-/// resolution sees them.
-///
-/// This pass walks `decls`, replaces every comptime conditional with
-/// the body of its taken arm (recursively flattened), and drops the
-/// rest. A condition we can't resolve at this stage is also dropped —
-/// the caller may want to surface that as a diagnostic later, but for
-/// the OS / ARCH / POINTER_SIZE patterns we cover here it shouldn't
-/// happen in practice.
-///
-/// A top-level `inline for` flattens the same way: one declaration
-/// group per element of its comptime type list, with the cursor
-/// substituted through each cloned group.
-pub fn flattenComptimeConditionals(allocator: std.mem.Allocator, decls: []const *Node, ctx: ComptimeContext, diagnostics: ?*errors.DiagnosticList) std.mem.Allocator.Error![]const *Node {
-    return flattenInScope(allocator, decls, decls, ctx, diagnostics);
-}
-
-/// `scope_decls` stays the FILE's module-scope declaration list through every
-/// recursion, so an `inline for` nested inside another expansion body resolves
-/// its iterable name against module scope — where the curated list is declared.
-fn flattenInScope(allocator: std.mem.Allocator, decls: []const *Node, scope_decls: []const *Node, ctx: ComptimeContext, diagnostics: ?*errors.DiagnosticList) std.mem.Allocator.Error![]const *Node {
-    var out = std.ArrayList(*Node).empty;
-    for (decls) |decl| {
-        switch (decl.data) {
-            .for_expr => |fe| {
-                if (fe.is_inline) {
-                    try expandModuleInlineFor(allocator, &out, decl, &fe, scope_decls, ctx, diagnostics);
-                    continue;
-                }
-                try out.append(allocator, decl);
-            },
-            .if_expr => |ie| {
-                if (ie.is_comptime) {
-                    if (evalComptimeCondition(ie.condition, ctx)) |is_true| {
-                        const taken: ?*const Node = if (is_true) ie.then_branch else ie.else_branch;
-                        if (taken) |b| try appendBranchDecls(allocator, &out, b, scope_decls, ctx, diagnostics);
-                        continue;
-                    }
-                    // Never silently discard declarations from an unevaluable
-                    // module-scope conditional (issue 0241).  This early pass
-                    // intentionally supports only target-condition forms; tell
-                    // the author exactly what is accepted instead of making a
-                    // live function/import/asm vanish and reporting a distant
-                    // unresolved-name error later.
-                    if (diagnostics) |diags| diags.addFmt(.err, ie.condition.span, "cannot evaluate this module-scope `inline if` condition; use an OS/ARCH/POINTER_SIZE comparison", .{});
-                    continue;
-                }
-                try out.append(allocator, decl);
-            },
-            .match_expr => |me| {
-                if (me.is_comptime) {
-                    if (evalComptimeMatch(&me, ctx)) |body| {
-                        try appendBranchDecls(allocator, &out, body, scope_decls, ctx, diagnostics);
-                    }
-                    continue;
-                }
-                try out.append(allocator, decl);
-            },
-            .error_directive => |ed| {
-                // A `#error` that survived flattening into live decls (a bare
-                // top-level one, or the taken arm of an `inline if`) fires here.
-                // Non-taken arms were already dropped above, so this only emits
-                // when the directive is genuinely reached.
-                if (diagnostics) |diags| diags.addFmt(.err, decl.span, "{s}", .{ed.message});
-            },
-            else => try out.append(allocator, decl),
-        }
-    }
-    return try out.toOwnedSlice(allocator);
-}
-
-fn appendBranchDecls(allocator: std.mem.Allocator, out: *std.ArrayList(*Node), branch: *const Node, scope_decls: []const *Node, ctx: ComptimeContext, diagnostics: ?*errors.DiagnosticList) std.mem.Allocator.Error!void {
-    const stmts: []const *Node = if (branch.data == .block)
-        branch.data.block.stmts
-    else
-        &[_]*Node{@constCast(branch)};
-    const recursed = try flattenInScope(allocator, stmts, scope_decls, ctx, diagnostics);
-    for (recursed) |node| {
-        // A module-level `asm { "tmpl", };` inside an `inline if` branch was
-        // parsed by the STATEMENT parser (the branch body is a block), so it
-        // arrives here as an in-function `.asm_expr` — not the `.asm_global`
-        // the top-level parser produces for an unwrapped block. Once the
-        // branch is taken and its decls surface to module scope, the node IS
-        // module-scope global asm: retag it so lowering's `.asm_global` arm
-        // appends the template to `module.global_asm` (issue 0194 — the
-        // statement-form node used to fall into lowering's `else => {}` and
-        // the symbol silently vanished from the object). The same top-level
-        // restrictions as `parseAsmGlobal` apply: template only — a
-        // `volatile` marker or any operand/clobber is diagnosed, not dropped.
-        if (node.data == .asm_expr) {
-            const ae = &node.data.asm_expr;
-            if (ae.is_volatile) {
-                if (diagnostics) |diags| diags.addFmt(.err, node.span, "global (top-level) asm cannot be `volatile`", .{});
-                continue;
-            }
-            if (ae.operands.len > 0 or ae.clobbers.len > 0) {
-                if (diagnostics) |diags| diags.addFmt(.err, node.span, "global (top-level) asm takes no operands, inputs, or clobbers — only a template string", .{});
-                continue;
-            }
-            node.data = .{ .asm_global = .{ .template = ae.template } };
-        }
-        try out.append(allocator, node);
-    }
-}
-
-/// One expanded iteration's cursor bindings, rendered for diagnostics
-/// ("T = Point", "T = Point, i = 1").
-fn renderCursor(allocator: std.mem.Allocator, captures: []const ast.ForCapture, element: *const Node, index: usize) std.mem.Allocator.Error![]const u8 {
-    const type_name = ast.bareName(element) orelse "?";
-    if (captures.len > 1 and captures[1].name.len > 0) {
-        return std.fmt.allocPrint(allocator, "{s} = {s}, {s} = {d}", .{ captures[0].name, type_name, captures[1].name, index });
-    }
-    return std.fmt.allocPrint(allocator, "{s} = {s}", .{ captures[0].name, type_name });
-}
-
-/// Follow a module-scope `inline for` iterable to the array literal it names:
-/// the literal written in the header, a `NAME :: .[…]` constant, or a chain of
-/// constant aliases ending in one.
-fn resolveTypeListLiteral(node: *const Node, scope_decls: []const *Node, depth: u8) ?*const ast.ArrayLiteral {
-    if (depth > 8) return null;
-    switch (node.data) {
-        .array_literal => |*al| return al,
-        .identifier => |id| {
-            for (scope_decls) |decl| {
-                if (decl.data != .const_decl) continue;
-                if (!std.mem.eql(u8, decl.data.const_decl.name, id.name)) continue;
-                return resolveTypeListLiteral(decl.data.const_decl.value, scope_decls, depth + 1);
-            }
-            return null;
-        },
-        else => return null,
-    }
-}
-
-/// Expand a module-scope `inline for` into one declaration group per element of
-/// its comptime type list, flattened into module scope. The cursor binds each
-/// element as a type name, substituted through the cloned group.
-fn expandModuleInlineFor(
-    allocator: std.mem.Allocator,
-    out: *std.ArrayList(*Node),
-    decl: *const Node,
-    fe: *const ast.ForExpr,
-    scope_decls: []const *Node,
-    ctx: ComptimeContext,
-    diagnostics: ?*errors.DiagnosticList,
-) std.mem.Allocator.Error!void {
-    if (fe.captures.len == 0 or fe.captures[0].name.len == 0) {
-        if (diagnostics) |diags| diags.addFmt(.err, decl.span, "a module-scope `inline for` needs a cursor — `inline for LIST (T) {{ … }}`", .{});
-        return;
-    }
-    if (fe.captures[0].by_ref) {
-        if (diagnostics) |diags| diags.addFmt(.err, decl.span, "a type-list cursor cannot be captured by reference", .{});
-        return;
-    }
-    const list_iterable = fe.iterables[0];
-    if (list_iterable.is_range) {
-        if (diagnostics) |diags| diags.addFmt(.err, list_iterable.expr.span, "a module-scope `inline for` iterates a comptime type list — `inline for .[A, B] (T) {{ … }}`", .{});
-        return;
-    }
-    const literal = resolveTypeListLiteral(list_iterable.expr, scope_decls, 0) orelse {
-        if (diagnostics) |diags| diags.addFmt(.err, list_iterable.expr.span, "a module-scope `inline for` iterates a comptime type list — this is not an array literal or a constant bound to one", .{});
-        return;
-    };
-
-    // Elements are bare type names: the cursor is substituted into type
-    // position, including an `impl`'s target-type spelling, which carries no
-    // node. Instantiations reach the list through a type alias.
-    for (literal.elements) |element| {
-        if (ast.bareName(element) != null) continue;
-        if (diagnostics) |diags| diags.addFmt(.err, element.span, "a type-list element must name a type; bind an instantiation to a type alias first (`B :: Buffer(f64);`)", .{});
-        return;
-    }
-    for (literal.elements, 0..) |element, i| {
-        const name = ast.bareName(element).?;
-        for (literal.elements[0..i], 0..) |earlier, j| {
-            if (!std.mem.eql(u8, ast.bareName(earlier).?, name)) continue;
-            if (diagnostics) |diags| {
-                const id = diags.addFmtId(.err, element.span, "type list repeats '{s}' — each element expands its own declaration group", .{name});
-                diags.addNoteFmt(id, earlier.span, "first at element {d}", .{j});
-                diags.addNoteFmt(id, element.span, "again at element {d}", .{i});
-            }
-            return;
-        }
-    }
-
-    // Declaration names produced by the expansion, with the cursor that
-    // produced each — the flattened group shares one module scope, so a name
-    // that does not vary with the cursor collides with itself.
-    var declared = std.StringHashMap([]const u8).init(allocator);
-    defer declared.deinit();
-
-    for (literal.elements, 0..) |element, i| {
-        var subst = ast.Substitution.init(allocator);
-        defer subst.deinit();
-        try subst.put(fe.captures[0].name, element);
-        if (fe.captures.len > 1 and fe.captures[1].name.len > 0) {
-            const index_node = try allocator.create(Node);
-            index_node.* = .{ .span = decl.span, .data = .{ .int_literal = .{ .value = @intCast(i) } } };
-            try subst.put(fe.captures[1].name, index_node);
-        }
-        const cursor = try renderCursor(allocator, fe.captures, element, i);
-
-        const stmts: []const *Node = if (fe.body.data == .block)
-            fe.body.data.block.stmts
-        else
-            &[_]*Node{fe.body};
-        var group = std.ArrayList(*Node).empty;
-        defer group.deinit(allocator);
-        for (stmts) |stmt| try group.append(allocator, try ast.cloneWithSubst(allocator, stmt, &subst));
-
-        var expanded = std.ArrayList(*Node).empty;
-        defer expanded.deinit(allocator);
-        try appendBranchDecls(allocator, &expanded, try blockOf(allocator, decl.span, group.items), scope_decls, ctx, diagnostics);
-
-        for (expanded.items) |node| {
-            if (node.data.declName()) |name| {
-                if (declared.get(name)) |first_cursor| {
-                    if (diagnostics) |diags| {
-                        const id = diags.addFmtId(.err, node.span, "`inline for` expansion declares '{s}' more than once — a declaration group flattens into module scope", .{name});
-                        diags.addNoteFmt(id, node.span, "first at {s}", .{first_cursor});
-                        diags.addNoteFmt(id, node.span, "again at {s}", .{cursor});
-                        diags.addHelp(id, node.span, "parameterize the declaration instead of re-declaring it per iteration", null);
-                    }
-                    return;
-                }
-                try declared.put(name, cursor);
-            }
-            try out.append(allocator, node);
-        }
-    }
-}
-
-fn blockOf(allocator: std.mem.Allocator, span: ast.Span, stmts: []const *Node) std.mem.Allocator.Error!*Node {
-    const owned = try allocator.dupe(*Node, stmts);
-    const node = try allocator.create(Node);
-    node.* = .{ .span = span, .data = .{ .block = .{ .stmts = owned, .produces_value = false } } };
-    return node;
-}
-
-fn evalComptimeCondition(node: *const Node, ctx: ComptimeContext) ?bool {
-    if (node.data != .binary_op) return null;
-    const bo = &node.data.binary_op;
-    if (bo.op == .and_op) {
-        const lhs = evalComptimeCondition(bo.lhs, ctx) orelse return null;
-        if (!lhs) return false;
-        return evalComptimeCondition(bo.rhs, ctx);
-    }
-    if (bo.op == .or_op) {
-        const lhs = evalComptimeCondition(bo.lhs, ctx) orelse return null;
-        if (lhs) return true;
-        return evalComptimeCondition(bo.rhs, ctx);
-    }
-    if (bo.op != .eq and bo.op != .neq) return null;
-    const name = switch (bo.lhs.data) {
-        .identifier => |id| id.name,
-        else => return null,
-    };
-    if (std.mem.eql(u8, name, "OS") or std.mem.eql(u8, name, "ARCH")) {
-        const variant = switch (bo.rhs.data) {
-            .enum_literal => |el| el.name,
-            else => return null,
-        };
-        const target = if (std.mem.eql(u8, name, "OS")) ctx.os else ctx.arch;
-        const matches = std.mem.eql(u8, variant, target);
-        return if (bo.op == .eq) matches else !matches;
-    }
-    if (std.mem.eql(u8, name, "POINTER_SIZE")) {
-        const rhs_val: i64 = switch (bo.rhs.data) {
-            .int_literal => |il| il.value,
-            else => return null,
-        };
-        const matches = ctx.pointer_size == rhs_val;
-        return if (bo.op == .eq) matches else !matches;
-    }
-    return null;
-}
-
-fn evalComptimeMatch(me: *const ast.MatchExpr, ctx: ComptimeContext) ?*const Node {
-    const name = switch (me.subject.data) {
-        .identifier => |id| id.name,
-        else => return null,
-    };
-    if (std.mem.eql(u8, name, "OS") or std.mem.eql(u8, name, "ARCH")) {
-        const target = if (std.mem.eql(u8, name, "OS")) ctx.os else ctx.arch;
-        for (me.arms) |arm| {
-            const pattern = arm.pattern orelse continue;
-            const variant = switch (pattern.data) {
-                .enum_literal => |el| el.name,
-                else => continue,
-            };
-            if (std.mem.eql(u8, variant, target)) return arm.body;
-        }
-        for (me.arms) |arm| if (arm.pattern == null) return arm.body;
-        return null;
-    }
-    if (std.mem.eql(u8, name, "POINTER_SIZE")) {
-        for (me.arms) |arm| {
-            const pattern = arm.pattern orelse continue;
-            const rhs_val: i64 = switch (pattern.data) {
-                .int_literal => |il| il.value,
-                else => continue,
-            };
-            if (ctx.pointer_size == rhs_val) return arm.body;
-        }
-        for (me.arms) |arm| if (arm.pattern == null) return arm.body;
-        return null;
-    }
-    return null;
-}
-
 pub fn dirName(path: []const u8) []const u8 {
     var last_sep: usize = 0;
     var found = false;
@@ -717,7 +386,7 @@ pub const ResolvedModule = struct {
     /// `var_decl`s, including a `extern` extern global declared in two files
     /// (e.g. `__stdinp : *void extern;`) that MUST resolve to the ONE libSystem
     /// symbol, not split into a duplicate `__stdinp.1`.
-    fn isPerSourceDecl(decl: *const Node) bool {
+    pub fn isPerSourceDecl(decl: *const Node) bool {
         return switch (decl.data) {
             .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .runtime_class_decl => true,
             .const_decl => |cd| cd.value.data != .fn_decl,
@@ -912,6 +581,21 @@ fn indexModuleDecls(
     path: []const u8,
     own_decls: []const *Node,
 ) !void {
+    for (own_decls) |decl| try indexOneDecl(allocator, decls, ns_edges, path, decl);
+}
+
+/// Index ONE authored declaration into `decls[path]` (+ its namespace edge).
+/// The same writer serves the up-front walk and lowering's incremental splice
+/// of a selected module-scope expansion group — a group's declarations are
+/// module surface exactly like textual ones, so their raw facts are minted the
+/// same way, just later.
+pub fn indexOneDecl(
+    allocator: std.mem.Allocator,
+    decls: *ModuleDecls,
+    ns_edges: *NamespaceEdges,
+    path: []const u8,
+    decl: *const Node,
+) !void {
     const gop = try decls.getOrPut(path);
     if (!gop.found_existing) gop.value_ptr.* = .{
         .source = path,
@@ -919,28 +603,26 @@ fn indexModuleDecls(
         .private_names = std.StringHashMap(void).init(allocator),
     };
     const index = gop.value_ptr;
-    for (own_decls) |decl| {
-        const ref = rawDeclRefOf(decl) orelse continue;
-        const name = decl.data.declName() orelse continue;
-        const name_gop = try index.names.getOrPut(name);
-        if (!name_gop.found_existing) {
-            name_gop.value_ptr.* = ref;
-            if (decl.visibility == .private) try index.private_names.put(name, {});
-        }
+    const ref = rawDeclRefOf(decl) orelse return;
+    const name = decl.data.declName() orelse return;
+    const name_gop = try index.names.getOrPut(name);
+    if (!name_gop.found_existing) {
+        name_gop.value_ptr.* = ref;
+        if (decl.visibility == .private) try index.private_names.put(name, {});
+    }
 
-        if (decl.data == .namespace_decl) {
-            const ns = &decl.data.namespace_decl;
-            const edge_gop = try ns_edges.getOrPut(path);
-            if (!edge_gop.found_existing) edge_gop.value_ptr.* = std.StringHashMap(NamespaceTarget).init(allocator);
-            const tgt_gop = try edge_gop.value_ptr.getOrPut(ns.name);
-            if (!tgt_gop.found_existing) tgt_gop.value_ptr.* = .{
-                .alias = ns.name,
-                .importer_source = path,
-                .target_module_path = ns.target_module_path,
-                .own_decls = ns.own_decls,
-                .visibility = decl.visibility,
-            };
-        }
+    if (decl.data == .namespace_decl) {
+        const ns = &decl.data.namespace_decl;
+        const edge_gop = try ns_edges.getOrPut(path);
+        if (!edge_gop.found_existing) edge_gop.value_ptr.* = std.StringHashMap(NamespaceTarget).init(allocator);
+        const tgt_gop = try edge_gop.value_ptr.getOrPut(ns.name);
+        if (!tgt_gop.found_existing) tgt_gop.value_ptr.* = .{
+            .alias = ns.name,
+            .importer_source = path,
+            .target_module_path = ns.target_module_path,
+            .own_decls = ns.own_decls,
+            .visibility = decl.visibility,
+        };
     }
 }
 
@@ -1082,7 +764,7 @@ pub const DeclTable = struct {
     /// `DeclId`. First-wins / diamond dedup by node identity, matching how the
     /// scalar import facts dedup. The caller guarantees `rawDeclRefOf(decl)` is
     /// non-null (so `declName` is too).
-    fn intern(self: *DeclTable, source: []const u8, decl: *const Node) !DeclId {
+    pub fn intern(self: *DeclTable, source: []const u8, decl: *const Node) !DeclId {
         const ref = rawDeclRefOf(decl).?;
         const key = authorNodePtrOf(ref);
         if (self.by_node.get(key)) |existing| return existing;
@@ -1205,7 +887,7 @@ fn importErrSpan(p: *const parser.Parser) ast.Span {
 /// the body Node would carry no source; a null body source after this means a
 /// synthesized/sourceless decl (the monomorphizer then keeps its caller's
 /// context, the legitimate fall-open).
-fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
+pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
     switch (decl.data) {
         .fn_decl => |fd| fd.body.source_file = file_path,
         .struct_decl => |sd| stampStructMethodSources(sd, file_path),
@@ -1300,7 +982,6 @@ pub fn resolveImports(
     stdlib_paths: []const []const u8,
     import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
     flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
-    comptime_ctx: ComptimeContext,
 ) !ResolvedModule {
     // Record this file's edge set so `param_impl_map` lookups can filter
     // candidates by what's been imported from where. Populated as each
@@ -1331,12 +1012,6 @@ pub fn resolveImports(
         return mod;
     }
 
-    // Hoist top-level `inline if OS == .X { ... }` body decls (including
-    // any `#import`s inside them) to the top level before resolution
-    // proceeds. After this pass, the decl list contains no top-level
-    // `if_expr` / `match_expr` nodes with `is_comptime = true`.
-    const flat_decls = try flattenComptimeConditionals(allocator, root.data.root.decls, comptime_ctx, diagnostics);
-
     var decl_list = std.ArrayList(*Node).empty;
     var own_decl_list = std.ArrayList(*Node).empty;
     // Name set spanning every decl already appended to `decl_list` — used
@@ -1347,7 +1022,19 @@ pub fn resolveImports(
     // (impl blocks) that carry no name to dedupe on.
     var seen_nodes = std.AutoHashMap(*Node, void).init(allocator);
 
-    for (flat_decls) |decl| {
+    for (root.data.root.decls) |decl| {
+        if (isModuleDriver(decl)) {
+            // A module-scope `inline if` / comptime `match` / `inline for` is
+            // OPAQUE here: its groups stay inside the node until lowering
+            // evaluates the driver and splices the taken one. Only the
+            // `#import`s inside its bodies resolve now, re-entrantly and
+            // CONTAINED — the windows and posix `std.fs` backends both load,
+            // and neither reaches module scope until its branch is selected.
+            try resolveBranchImports(allocator, io, decl, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+            decl.source_file = file_path;
+            reportDuplicateDecl(diagnostics, try mod.addOwnDecl(allocator, &decl_list, &own_decl_list, &seen_in_list, decl), decl);
+            continue;
+        }
         if (decl.data == .c_import_decl) {
             // Resolve `#source` / `#include` paths through the same chain
             // as `#import`: importing-file's directory → CWD → stdlib
@@ -1465,75 +1152,7 @@ pub fn resolveImports(
             }
         }
 
-        // Circular import check — only along the current chain
-        if (chain.contains(resolved_path)) continue;
-
-        // Resolve or retrieve the imported module
-        const imported_mod = if (cache.get(resolved_path)) |cached|
-            cached
-        else blk: {
-            // Try as file first
-            if (std.Io.Dir.readFileAlloc(.cwd(), io, resolved_path, allocator, .limited(10 * 1024 * 1024))) |imp_bytes| {
-                const imp_source = try allocator.dupeZ(u8, imp_bytes);
-
-                if (source_map) |sm| {
-                    sm.put(resolved_path, imp_source) catch {};
-                }
-
-                var p = parser.Parser.init(allocator, imp_source);
-                const imp_root = p.parse() catch {
-                    if (diagnostics) |diags| {
-                        diags.addFmtInFile(.err, resolved_path, importErrSpan(&p), "parse error in '{s}': {s}", .{ resolved_path, p.err_msg orelse "unknown" });
-                    }
-                    return error.ImportError;
-                };
-
-                // Push onto chain before recursing, pop after
-                try chain.put(resolved_path, {});
-                const imp_dir = dirName(resolved_path);
-                const result = try resolveImports(allocator, io, imp_root, imp_dir, resolved_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph, comptime_ctx);
-                _ = chain.remove(resolved_path);
-
-                // Cache
-                try cache.put(resolved_path, result);
-                break :blk result;
-            } else |_| {
-                // File read failed — try as directory import. An extensionless
-                // path that names a directory next to a same-named `.sx` file
-                // is ambiguous: require the explicit `.sx` spelling for the
-                // file rather than silently picking the directory. Exception:
-                // when the sibling `.sx` is the importing file itself (a test
-                // importing its own companion directory), the directory is the
-                // only sensible target.
-                const sibling_sx = try std.fmt.allocPrint(allocator, "{s}.sx", .{resolved_path});
-                const sibling_exists = if (std.mem.eql(u8, sibling_sx, file_path))
-                    false
-                else if (std.Io.Dir.readFileAlloc(.cwd(), io, sibling_sx, allocator, .limited(10 * 1024 * 1024))) |_|
-                    true
-                else |_|
-                    false;
-                if (sibling_exists) {
-                    const is_dir = if (std.Io.Dir.openDir(.cwd(), io, resolved_path, .{})) |d| dir_blk: {
-                        d.close(io);
-                        break :dir_blk true;
-                    } else |_| false;
-                    if (is_dir) {
-                        if (diagnostics) |diags| {
-                            diags.addFmt(.err, decl.span, "ambiguous import '{s}': both a file '{s}.sx' and a directory '{s}' exist — write \"{s}.sx\" to import the file", .{ imp.path, imp.path, imp.path, imp.path });
-                        }
-                        return error.ImportError;
-                    }
-                }
-                const result = resolveDirectoryImport(allocator, io, resolved_path, chain, cache, source_map, diagnostics, decl.span, stdlib_paths, import_graph, flat_import_graph, comptime_ctx) catch {
-                    if (diagnostics) |diags| {
-                        diags.addFmt(.err, decl.span, "cannot read import '{s}' (not a file or directory)", .{resolved_path});
-                    }
-                    return error.ImportError;
-                };
-                try cache.put(resolved_path, result);
-                break :blk result;
-            }
-        };
+        const imported_mod = (try loadImport(allocator, io, resolved_path, file_path, decl, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph)) orelse continue;
 
         if (imp.name) |ns_name| {
             const added = try mod.addNamespace(allocator, &decl_list, &own_decl_list, &seen_in_list, ns_name, imported_mod, decl.span, imp.is_raw, decl.visibility);
@@ -1545,6 +1164,167 @@ pub fn resolveImports(
 
     try mod.finalize(allocator, &decl_list, &own_decl_list);
     return mod;
+}
+
+/// Load the module an already-resolved `#import` path names — from the cache,
+/// as a file, or as a directory aggregate — and cache it. Null when the path
+/// is on the current chain (a cycle): the caller adds nothing.
+fn loadImport(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    resolved_path: []const u8,
+    file_path: []const u8,
+    decl: *const Node,
+    chain: *std.StringHashMap(void),
+    cache: *ModuleCache,
+    source_map: ?*std.StringHashMap([:0]const u8),
+    diagnostics: ?*errors.DiagnosticList,
+    stdlib_paths: []const []const u8,
+    import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+    flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+) anyerror!?ResolvedModule {
+    if (chain.contains(resolved_path)) return null;
+    if (cache.get(resolved_path)) |cached| return cached;
+
+    // Try as file first
+    if (std.Io.Dir.readFileAlloc(.cwd(), io, resolved_path, allocator, .limited(10 * 1024 * 1024))) |imp_bytes| {
+        const imp_source = try allocator.dupeZ(u8, imp_bytes);
+
+        if (source_map) |sm| {
+            sm.put(resolved_path, imp_source) catch {};
+        }
+
+        var p = parser.Parser.init(allocator, imp_source);
+        const imp_root = p.parse() catch {
+            if (diagnostics) |diags| {
+                diags.addFmtInFile(.err, resolved_path, importErrSpan(&p), "parse error in '{s}': {s}", .{ resolved_path, p.err_msg orelse "unknown" });
+            }
+            return error.ImportError;
+        };
+
+        // Push onto chain before recursing, pop after
+        try chain.put(resolved_path, {});
+        const imp_dir = dirName(resolved_path);
+        const result = try resolveImports(allocator, io, imp_root, imp_dir, resolved_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+        _ = chain.remove(resolved_path);
+
+        try cache.put(resolved_path, result);
+        return result;
+    } else |_| {
+        // File read failed — try as directory import. An extensionless
+        // path that names a directory next to a same-named `.sx` file
+        // is ambiguous: require the explicit `.sx` spelling for the
+        // file rather than silently picking the directory. Exception:
+        // when the sibling `.sx` is the importing file itself (a test
+        // importing its own companion directory), the directory is the
+        // only sensible target.
+        const raw_spelling = decl.data.import_decl.path;
+        const sibling_sx = try std.fmt.allocPrint(allocator, "{s}.sx", .{resolved_path});
+        const sibling_exists = if (std.mem.eql(u8, sibling_sx, file_path))
+            false
+        else if (std.Io.Dir.readFileAlloc(.cwd(), io, sibling_sx, allocator, .limited(10 * 1024 * 1024))) |_|
+            true
+        else |_|
+            false;
+        if (sibling_exists) {
+            const is_dir = if (std.Io.Dir.openDir(.cwd(), io, resolved_path, .{})) |d| dir_blk: {
+                d.close(io);
+                break :dir_blk true;
+            } else |_| false;
+            if (is_dir) {
+                if (diagnostics) |diags| {
+                    diags.addFmt(.err, decl.span, "ambiguous import '{s}': both a file '{s}.sx' and a directory '{s}' exist — write \"{s}.sx\" to import the file", .{ raw_spelling, raw_spelling, raw_spelling, raw_spelling });
+                }
+                return error.ImportError;
+            }
+        }
+        const result = resolveDirectoryImport(allocator, io, resolved_path, chain, cache, source_map, diagnostics, decl.span, stdlib_paths, import_graph, flat_import_graph) catch {
+            if (diagnostics) |diags| {
+                diags.addFmt(.err, decl.span, "cannot read import '{s}' (not a file or directory)", .{resolved_path});
+            }
+            return error.ImportError;
+        };
+        try cache.put(resolved_path, result);
+        return result;
+    }
+}
+
+/// A module-scope declaration-expansion driver: `inline if` (including its
+/// `inline if X == { case … }` match spelling) or `inline for`. Lowering owns
+/// their evaluation — here they are opaque containers whose bodies keep their
+/// declarations until a branch is selected.
+pub fn isModuleDriver(decl: *const Node) bool {
+    return switch (decl.data) {
+        .if_expr => |ie| ie.is_comptime,
+        .match_expr => |me| me.is_comptime,
+        .for_expr => |fe| fe.is_inline,
+        else => false,
+    };
+}
+
+/// Resolve every `#import` inside a module-scope driver's bodies, in every
+/// branch — the taken one is not known until lowering. Each import's module is
+/// parsed and cached under its canonical path, and the `#import` node's own
+/// path is rewritten to that path so the splice can read the module back out
+/// of the cache. Nothing is merged and no edge is recorded: containment is the
+/// point — two backends authoring the same name (`std.fs`'s windows / posix
+/// `fs_file_is_valid`) never meet in module scope.
+fn resolveBranchImports(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    decl: *Node,
+    base_dir: []const u8,
+    file_path: []const u8,
+    chain: *std.StringHashMap(void),
+    cache: *ModuleCache,
+    source_map: ?*std.StringHashMap([:0]const u8),
+    diagnostics: ?*errors.DiagnosticList,
+    stdlib_paths: []const []const u8,
+    import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+    flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+) anyerror!void {
+    switch (decl.data) {
+        .if_expr => |ie| {
+            try resolveBranchBodyImports(allocator, io, ie.then_branch, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+            if (ie.else_branch) |eb| try resolveBranchBodyImports(allocator, io, eb, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+        },
+        .match_expr => |me| {
+            for (me.arms) |arm| {
+                try resolveBranchBodyImports(allocator, io, arm.body, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+            }
+        },
+        .for_expr => |fe| {
+            try resolveBranchBodyImports(allocator, io, fe.body, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+        },
+        else => {},
+    }
+}
+
+fn resolveBranchBodyImports(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    body: *Node,
+    base_dir: []const u8,
+    file_path: []const u8,
+    chain: *std.StringHashMap(void),
+    cache: *ModuleCache,
+    source_map: ?*std.StringHashMap([:0]const u8),
+    diagnostics: ?*errors.DiagnosticList,
+    stdlib_paths: []const []const u8,
+    import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+    flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
+) anyerror!void {
+    const stmts: []const *Node = if (body.data == .block) body.data.block.stmts else &[_]*Node{body};
+    for (stmts) |stmt| {
+        if (isModuleDriver(stmt)) {
+            try resolveBranchImports(allocator, io, stmt, base_dir, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+            continue;
+        }
+        if (stmt.data != .import_decl) continue;
+        const resolved_path = try resolveImportPath(allocator, io, base_dir, stmt.data.import_decl.path, null, stdlib_paths);
+        _ = try loadImport(allocator, io, resolved_path, file_path, stmt, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
+        stmt.data.import_decl.path = resolved_path;
+    }
 }
 
 /// Resolve a directory import by aggregating all .sx files in the directory.
@@ -1560,7 +1340,6 @@ fn resolveDirectoryImport(
     stdlib_paths: []const []const u8,
     import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
     flat_import_graph: ?*std.StringHashMap(std.StringHashMap(void)),
-    comptime_ctx: ComptimeContext,
 ) anyerror!ResolvedModule {
     // Open the directory with iteration capability
     const dir = std.Io.Dir.openDir(.cwd(), io, dir_path, .{ .iterate = true }) catch {
@@ -1637,7 +1416,7 @@ fn resolveDirectoryImport(
             };
 
             try chain.put(file_path, {});
-            const result = try resolveImports(allocator, io, imp_root, dir_path, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph, comptime_ctx);
+            const result = try resolveImports(allocator, io, imp_root, dir_path, file_path, chain, cache, source_map, diagnostics, stdlib_paths, import_graph, flat_import_graph);
             _ = chain.remove(file_path);
 
             try cache.put(file_path, result);

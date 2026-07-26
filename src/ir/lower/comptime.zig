@@ -245,6 +245,14 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
             const result = et.tag == variant_idx;
             return if (bo.op == .eq) result else !result;
         },
+        .target_variant => |tv| {
+            const variant_name = switch (bo.rhs.data) {
+                .enum_literal => |el| el.name,
+                else => return null,
+            };
+            const result = std.mem.eql(u8, tv, variant_name);
+            return if (bo.op == .eq) result else !result;
+        },
         .int_val => |iv| {
             // RHS must be an integer literal
             const rhs_val: i64 = switch (bo.rhs.data) {
@@ -395,6 +403,20 @@ pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node
                     else => continue,
                 };
                 if (iv == rhs_val) return arm.body;
+            }
+            for (me.arms) |arm| {
+                if (arm.pattern == null) return arm.body;
+            }
+            return null;
+        },
+        .target_variant => |tv| {
+            for (me.arms) |arm| {
+                const pattern = arm.pattern orelse continue;
+                const variant_name = switch (pattern.data) {
+                    .enum_literal => |el| el.name,
+                    else => continue,
+                };
+                if (std.mem.eql(u8, tv, variant_name)) return arm.body;
             }
             for (me.arms) |arm| {
                 if (arm.pattern == null) return arm.body;

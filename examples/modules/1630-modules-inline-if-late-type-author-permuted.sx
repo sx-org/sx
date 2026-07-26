@@ -1,0 +1,11 @@
+// 1629 with the imports permuted: the expansion group's `Slot` is reached
+// before the plain author's module. Same three sizes — a nominal identity
+// belongs to its authoring module, not to registration order.
+#import "modules/std.sx";
+gated :: #import "1629-modules-inline-if-late-type-author/gated.sx";
+#import "1629-modules-inline-if-late-type-author/plain.sx";
+
+main :: () -> i32 {
+    print("{} {} {}\n", plain_size(), gated.gated_size(), size_of(gated.Slot));
+    0
+}

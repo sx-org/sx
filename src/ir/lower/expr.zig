@@ -3074,6 +3074,9 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 switch (cv) {
                     .int_val => |iv| break :blk self.builder.constInt(iv, .i64),
                     .enum_tag => |et| break :blk self.builder.constInt(@intCast(et.tag), et.ty),
+                    // No enum type to read it as — fall through to the ordinary
+                    // name resolution, which reports the missing declaration.
+                    .target_variant => {},
                 }
             }
             // `context` resolves to a load through the lowering's
