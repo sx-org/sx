@@ -1,0 +1,73 @@
+// The soft probe (specs.md §7.9). A protocol target under `?` on a CONCRETE
+// receiver asks conformance instead of converting: a non-conformer answers
+// `null` where the plain erasure is a compile error. `has_impl(P, T)` is the
+// same question spelled at type level.
+//
+// Answers are per kind. On `tagged` the question is whole-program membership,
+// and an ordinary `#run` runs after the conformer fixpoint — so a probe there
+// reads the FINAL set, including members a blanket impl admitted from code
+// lowered after the `#run`.
+#import "modules/std.sx";
+
+Series :: protocol(T: Type) tagged { count :: (self: *Self) -> i64; }
+Buffer :: struct($T: Type) { items: []$T; }
+impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.items.len } }
+
+// Implements nothing at all.
+Loose :: struct { n: i64; }
+
+// A tagged protocol with an EMPTY conformer set: the probe answers null
+// rather than the value-consuming "nothing implements it" error.
+Nobody :: protocol tagged { ping :: (self: *Self) -> i64; }
+
+// The erased kinds answer site-local impl visibility, the static fact that
+// decides whether the site could erase at all.
+Show :: protocol inline #identity { text :: (self: *Self) -> i64; }
+impl Show for Loose { text :: (self: *Loose) -> i64 { self.n } }
+
+in_set :: () -> bool {
+    ia : [3]i64 = .[1, 2, 3];
+    b := Buffer(i64).{ items = ia[0..] };
+    return b.(?Series(i64)) != null;
+}
+
+out_of_set :: () -> bool {
+    l := Loose.{ n = 1 };
+    return l.(?Series(i64)) != null;
+}
+
+empty_set :: () -> bool {
+    l := Loose.{ n = 1 };
+    return l.(?Nobody) != null;
+}
+
+// A positive probe hands back the value, so the answer is usable directly.
+through_probe :: () -> i64 {
+    ia : [4]i64 = .[9, 8, 7, 6];
+    b := Buffer(i64).{ items = ia[0..] };
+    s := b.(?Series(i64));
+    if s { return s!.count(); }
+    return -1;
+}
+
+erased_probe :: () -> bool {
+    l := Loose.{ n = 5 };
+    return l.(?Show) != null;
+}
+
+IN      :: #run in_set();
+OUT     :: #run out_of_set();
+EMPTY   :: #run empty_set();
+COUNT   :: #run through_probe();
+ERASED  :: #run erased_probe();
+HAS_YES :: #run has_impl(Show, Loose);
+HAS_NO  :: #run has_impl(Nobody, Loose);
+
+main :: () {
+    print("{} {}\n", IN, in_set());
+    print("{} {}\n", OUT, out_of_set());
+    print("{} {}\n", EMPTY, empty_set());
+    print("{} {}\n", COUNT, through_probe());
+    print("{} {}\n", ERASED, erased_probe());
+    print("{} {}\n", HAS_YES, HAS_NO);
+}

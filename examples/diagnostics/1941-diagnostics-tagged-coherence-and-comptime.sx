@@ -1,9 +1,11 @@
 // Two consequences of "whole program, at link". COHERENCE is global on the
 // tagged kind: one `(protocol, conformer)` pair may have exactly one impl,
 // whatever the import visibility, because the switch arm the pair owns can
-// only call one body. And a tagged value has no COMPTIME representation: its
-// numeric word is assigned when the converged set is numbered, which happens
-// after every compile-time evaluation has run.
+// only call one body. And a tagged value has no meaning in EXPANSION-DRIVING
+// comptime: such a body is evaluated during lowering, before the conformer
+// fixpoint converges, so nothing it observes about a set is final. An ordinary
+// `#run` is the other phase — it runs after convergence and sees the final
+// sets (examples/protocols/1959 pins that).
 #import "modules/std.sx";
 
 View :: protocol tagged { area :: (self: *Self) -> i64; }
@@ -12,15 +14,17 @@ Widget :: struct { n: i64; }
 impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
 impl View for Widget { area :: (self: *Widget) -> i64 { self.n * 2 } }
 
-// The concrete method stays callable at comptime — only the erased VALUE is
-// staged out.
-CONCRETE :: #run { w := Widget.{ n = 4 }; w.area() };
+// A `-> Type` body is evaluated at lowering time, to mint a type.
+pick :: () -> Type { w := Widget.{ n = 4 }; v : View = w; return i64; }
+Alias :: pick();
 
-// A tagged value inside a `#run` refuses at the erasure and at the dispatch.
-ERASED :: #run { w := Widget.{ n = 4 }; v : View = w; v.area() };
+// So is an `#insert`, whose result becomes declarations.
+gen :: () -> string { w := Widget.{ n = 4 }; v : View = w; return "y := 1;"; }
 
 main :: () {
+    #insert gen();
     w := Widget.{ n = 3 };
     v : View = w;
-    print("{} {} {}\n", v.area(), CONCRETE, ERASED);
+    a : Alias = 1;
+    print("{} {} {}\n", v.area(), a, y);
 }

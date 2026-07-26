@@ -678,19 +678,17 @@ pub const Lowering = struct {
     tagged_dispatch_fns: std.AutoHashMap(lower_tagged.MethodKey, FuncId),
     tagged_type_id_tables: std.AutoHashMap(TypeId, inst_mod.GlobalId),
     tagged_pending: std.ArrayList(lower_tagged.PendingRoutine),
-    /// Call-site-inlined `-> Self` switches (§6.4), whose case values are the
-    /// conformer tags — assigned only once the set converges, so they are
-    /// rewritten with the deferred `tagged_tag_of` operands.
-    tagged_pending_switches: std.ArrayList(lower_tagged.PendingSwitch),
     /// Every declared impl site of a tagged `(protocol, conformer)` pair.
     /// Tagged coherence is GLOBAL — a duplicate is an error regardless of
     /// import visibility — but only for a REACHED instantiation, so the check
     /// runs with the collection fixpoint rather than at registration.
     tagged_impl_sites: std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)),
-    /// Nonzero while a comptime wrapper body (`#run`, `#insert`, a type-fn) is
-    /// being lowered. Tagged protocol values refuse there: the conformer
-    /// fixpoint has not converged and tags do not exist until link.
-    comptime_body_depth: u32 = 0,
+    /// Which comptime phase the wrapper body being lowered belongs to, or null
+    /// outside every comptime body (§7.9's phase law). An EXPANSION-driving
+    /// body runs during lowering, before the conformer fixpoint — protocol
+    /// values refuse there until the scheduler lands. An ORDINARY `#run` runs
+    /// after convergence and sees the final sets.
+    comptime_phase: ?lower_comptime.ComptimePhase = null,
     /// True while the operand of a `return` is being lowered. Erasing an
     /// RVALUE into a tagged value there has nothing durable to borrow — the
     /// frame is about to die (spec §6.2).
@@ -1017,7 +1015,6 @@ pub const Lowering = struct {
             .tagged_dispatch_fns = std.AutoHashMap(lower_tagged.MethodKey, FuncId).init(module.alloc),
             .tagged_type_id_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
             .tagged_pending = std.ArrayList(lower_tagged.PendingRoutine).empty,
-            .tagged_pending_switches = std.ArrayList(lower_tagged.PendingSwitch).empty,
             .tagged_impl_sites = std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
             .param_impl_map = std.StringHashMap(std.ArrayList(ParamImplEntry)).init(module.alloc),
             .param_protocol_instances = std.AutoHashMap(TypeId, ParamProtocolInstance).init(module.alloc),
@@ -3051,6 +3048,7 @@ pub const Lowering = struct {
     pub const emitTaggedDispatch = lower_tagged.emitTaggedDispatch;
     pub const convergeTaggedSets = lower_tagged.convergeTaggedSets;
     pub const refuseComptimeTagged = lower_tagged.refuseComptimeTagged;
+    pub const lowerProtocolProbe = lower_protocol.lowerProtocolProbe;
     pub const recordTaggedImplSite = lower_tagged.recordImplSite;
     pub const refuseOutOfSetDowncast = lower_tagged.refuseOutOfSetDowncast;
     pub const lowerTaggedDowncast = lower_tagged.lowerTaggedDowncast;

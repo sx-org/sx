@@ -1,23 +1,23 @@
-error: 'View' is a tagged protocol and its values are not available in compile-time execution — a tag is assigned when the whole-program conformer set is numbered, which happens after every comptime evaluation; use the concrete type here, or a generic bound ('$T/View')
-  --> examples/diagnostics/1941-diagnostics-tagged-coherence-and-comptime.sx:20:41
+error: 'View' is a tagged protocol and its values are not available in expansion-driving compile-time execution — this body runs before the whole-program conformer set converges, so nothing it observes about 'View' is final; use the concrete type here, or a generic bound ('$T/View')
+  --> examples/diagnostics/1941-diagnostics-tagged-coherence-and-comptime.sx:18:45
    |
-20 | ERASED :: #run { w := Widget.{ n = 4 }; v : View = w; v.area() };
-   |                                         ^^^^^^^^^^^^^
+18 | pick :: () -> Type { w := Widget.{ n = 4 }; v : View = w; return i64; }
+   |                                             ^^^^^^^^^^^^^
 
-error: 'View' is a tagged protocol and its values are not available in compile-time execution — a tag is assigned when the whole-program conformer set is numbered, which happens after every comptime evaluation; use the concrete type here, or a generic bound ('$T/View')
-  --> examples/diagnostics/1941-diagnostics-tagged-coherence-and-comptime.sx:20:55
+error: 'View' is a tagged protocol and its values are not available in expansion-driving compile-time execution — this body runs before the whole-program conformer set converges, so nothing it observes about 'View' is final; use the concrete type here, or a generic bound ('$T/View')
+  --> examples/diagnostics/1941-diagnostics-tagged-coherence-and-comptime.sx:22:46
    |
-20 | ERASED :: #run { w := Widget.{ n = 4 }; v : View = w; v.area() };
-   |                                                       ^^^^^^
+22 | gen :: () -> string { w := Widget.{ n = 4 }; v : View = w; return "y := 1;"; }
+   |                                              ^^^^^^^^^^^^^
 
 error: duplicate impl of tagged protocol 'View' for 'Widget' — a tagged conformer set is whole-program, so its coherence is global: exactly one impl of a pair may exist, whatever the import visibility
-  --> examples/diagnostics/1941-diagnostics-tagged-coherence-and-comptime.sx:12:1
+  --> examples/diagnostics/1941-diagnostics-tagged-coherence-and-comptime.sx:14:1
    |
-12 | impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
+14 | impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: also implemented here
-  --> examples/diagnostics/1941-diagnostics-tagged-coherence-and-comptime.sx:13:1
+  --> examples/diagnostics/1941-diagnostics-tagged-coherence-and-comptime.sx:15:1
    |
-13 | impl View for Widget { area :: (self: *Widget) -> i64 { self.n * 2 } }
+15 | impl View for Widget { area :: (self: *Widget) -> i64 { self.n * 2 } }
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -3704,6 +3704,15 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             {
                 const recv_t = self.inferExprType(pc.operand);
                 const recv_erased = recv_t == .any or self.getProtocolInfo(recv_t) != null;
+                // `x.(?P)` on a concrete receiver is the soft PROBE, not a
+                // conversion: it answers conformance, so a non-conformer is
+                // `null` rather than the erasure's error (§7.9).
+                if (!recv_erased and !dst.isBuiltin()) {
+                    const di = self.module.types.get(dst);
+                    if (di == .optional and self.getProtocolInfo(di.optional.child) != null) {
+                        if (self.lowerProtocolProbe(&pc, di.optional.child, dst)) |answer| break :blk answer;
+                    }
+                }
                 if (!recv_erased and self.getProtocolInfo(dst) != null) {
                     break :blk self.lowerOwningErasure(&pc, dst, node.span);
                 }

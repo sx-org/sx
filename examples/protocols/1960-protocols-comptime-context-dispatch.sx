@@ -1,0 +1,42 @@
+// A protocol-typed Context field holds a compile-time protocol value like any
+// other, and dispatches through it (specs.md §7.9). `context.allocator` is the
+// standing example: a `push` installs a user impl, and the allocation the
+// stdlib performs inside the `#run` reaches THAT impl — the value carries the
+// impl selected at its erasure site.
+//
+// The Context is VM-LOCAL: the instance the comptime evaluation mutates is the
+// evaluation's own, so its bookkeeping is discarded when the evaluation ends
+// and the runtime call starts from the declared state again.
+#import "modules/std.sx";
+
+Counting :: struct { calls: i64; parent: Allocator; }
+impl Allocator for Counting {
+    alloc_bytes :: (self: *Counting, size: i64) -> *void {
+        self.calls = self.calls + 1;
+        return self.parent.alloc_bytes(size);
+    }
+    dealloc_bytes :: (self: *Counting, ptr: *void) { self.parent.dealloc_bytes(ptr); }
+}
+
+// The list grows through `context.allocator`, which the `push` has bound to
+// the `Counting` instance — every growth is one dispatch through the field.
+grow :: () -> i64 {
+    c : Counting = .{ calls = 0, parent = context.allocator };
+    push .{ allocator = c } {
+        xs : List(i64) = .{};
+        i := 0;
+        while i < 40 {
+            xs.append(i);
+            i = i + 1;
+        }
+    }
+    return c.calls;
+}
+
+CALLS :: #run grow();
+
+main :: () {
+    // Same count either side: the dispatch target is the same impl, and the
+    // comptime instance's mutations never leaked into the runtime one.
+    print("{} {}\n", CALLS, grow());
+}

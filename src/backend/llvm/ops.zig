@@ -23,6 +23,8 @@ const AtomicFence = ir_inst.AtomicFence;
 const Conversion = ir_inst.Conversion;
 const GlobalId = ir_inst.GlobalId;
 const GlobalSet = ir_inst.GlobalSet;
+const TaggedTypeId = ir_inst.TaggedTypeId;
+const TagOf = ir_inst.TagOf;
 const FuncId = ir_inst.FuncId;
 const Call = ir_inst.Call;
 const CallIndirect = ir_inst.CallIndirect;
@@ -144,6 +146,33 @@ pub const Ops = struct {
         // when the arg is `.type_value`, `.boxed` when it is an Any).
         const val = c.LLVMConstInt(self.e.cached_i64, tid.index(), 0);
         self.e.mapRef(val);
+    }
+
+    /// The dense conformer tag, the one place a literal tag exists: the IR
+    /// carries the pair symbolically and the numbering resolves here (§7.9).
+    pub fn emitTaggedTagOf(self: Ops, t: TagOf) void {
+        const tag = self.e.ir_mod.tagged_tags.get(.{ .proto = t.proto, .concrete = t.concrete }) orelse 0;
+        self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, @bitCast(tag), 0));
+    }
+
+    /// The soft probe's answer: being in the converged numbering IS being in
+    /// the final conformer set.
+    pub fn emitTaggedConforms(self: Ops, t: TagOf) void {
+        const in_set = self.e.ir_mod.tagged_tags.contains(.{ .proto = t.proto, .concrete = t.concrete });
+        self.e.mapRef(c.LLVMConstInt(c.LLVMInt1TypeInContext(self.e.context), @intFromBool(in_set), 0));
+    }
+
+    /// `table[tag]` — the concrete `Type` word of a tagged value. One indexed
+    /// load through the protocol's `tag → type_id` table.
+    pub fn emitTaggedTypeId(self: Ops, instruction: *const Inst, t: TaggedTypeId) void {
+        const llvm_global = self.e.global_map.get(t.table.index()) orelse {
+            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            return;
+        };
+        const tag = self.e.resolveRef(t.tag);
+        var idx = [_]c.LLVMValueRef{tag};
+        const slot = c.LLVMBuildInBoundsGEP2(self.e.builder, self.e.cached_i64, llvm_global, &idx, 1, "tid.slot");
+        self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, self.e.cached_i64, slot, "tid"));
     }
 
     // ── Arithmetic ─────────────────────────────────────────

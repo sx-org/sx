@@ -1,0 +1,46 @@
+// Comptime execution is per-evaluation and its Context is VM-LOCAL (specs.md
+// §7.9): the evaluation owns its VM, heap, and Context, and the instances that
+// Context references are the VM's own. Everything a `#run` allocates — a
+// growing `List`, a formatted string, an arena's chunks — comes from the
+// allocator on that VM-local Context, so the bookkeeping it mutates is
+// execution-local and is discarded when the evaluation completes.
+#import "modules/std.sx";
+
+// `List.append` grows through `context.allocator`.
+sum_list :: () -> i64 {
+    xs : List(i64) = .{};
+    xs.append(1);
+    xs.append(2);
+    xs.append(3);
+    t := 0;
+    for xs.items (x) { t = t + x; }
+    return t;
+}
+
+// `format` allocates its result string the same way.
+label :: () -> string { format("{}-{}", 7, "ok") }
+
+// An arena pushed onto the Context: the push replaces the allocator field for
+// the block, and the arena's own cursor is comptime state that never escapes.
+arena_sum :: () -> i64 {
+    a := mem.Arena.init(context.allocator, 4096);
+    t := 0;
+    push .{ allocator = a } {
+        xs : List(i64) = .{};
+        xs.append(11);
+        xs.append(31);
+        for xs.items (x) { t = t + x; }
+    }
+    a.deinit();
+    return t;
+}
+
+SUM   :: #run sum_list();
+LABEL :: #run label();
+ARENA :: #run arena_sum();
+
+main :: () {
+    print("{} {}\n", SUM, sum_list());
+    print("{} {}\n", LABEL, label());
+    print("{} {}\n", ARENA, arena_sum());
+}

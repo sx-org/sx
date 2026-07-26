@@ -1,0 +1,64 @@
+// Compile-time protocol values are SYMBOLIC (specs.md §7.9): the VM carries
+// `{ctx, concrete type}`, never a numeric tag — tags are assigned when the
+// whole-program conformer set is numbered, which is a link-stage artifact.
+// Dispatch resolves against the carried concrete type, so a `#run` gets the
+// same answers the compiled program does, by a different mechanism. The
+// downcast and `type_of` read the same symbolic word.
+#import "modules/std.sx";
+
+View :: protocol tagged {
+    area :: (self: *Self) -> i64;
+}
+
+Widget :: struct { n: i64; }
+Native :: struct { n: i64; }
+impl View for Widget { area :: (self: *Widget) -> i64 { self.n * 10 } }
+impl View for Native { area :: (self: *Native) -> i64 { self.n + 1 } }
+
+// Erase, then dispatch — twice over, so the answer cannot come from a
+// single-conformer devirtualization at the call site.
+both :: () -> i64 {
+    w := Widget.{ n = 4 };
+    n := Native.{ n = 4 };
+    v : View = w;
+    u : View = n;
+    return v.area() + u.area();
+}
+
+// RTTI over the symbolic word: the downcast compares the carried type, and
+// `type_of` answers it directly instead of reading the tag table.
+narrowed :: () -> i64 {
+    n := Native.{ n = 7 };
+    u : View = n;
+    if u.(?Widget) { return -1; }
+    got := u.(?Native);
+    if got { return got!.n; }
+    return -2;
+}
+
+named :: () -> string {
+    w := Widget.{ n = 1 };
+    v : View = w;
+    return type_name(type_of(v));
+}
+
+// A protocol value flowing through an ordinary function parameter and back
+// keeps its symbolic word across the call boundary.
+twice :: (v: View) -> i64 { v.area() + v.area() }
+relayed :: () -> i64 {
+    n := Native.{ n = 20 };
+    u : View = n;
+    return twice(u);
+}
+
+BOTH    :: #run both();
+NARROW  :: #run narrowed();
+NAME    :: #run named();
+RELAYED :: #run relayed();
+
+main :: () {
+    print("{} {}\n", BOTH, both());
+    print("{} {}\n", NARROW, narrowed());
+    print("{} {}\n", NAME, named());
+    print("{} {}\n", RELAYED, relayed());
+}

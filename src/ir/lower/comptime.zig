@@ -443,7 +443,7 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
     else
         expr_ty;
     const global_ty: TypeId = if (is_failable) self.failableSuccessType(expr_ty) else func_ret;
-    const func_id = self.createComptimeFunction(name, expr, func_ret);
+    const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
 
     // Add a global constant whose initializer will be filled by the interpreter.
     const name_id = self.module.types.internString(name);
@@ -467,7 +467,7 @@ pub fn lowerComptimeSideEffect(self: *Lowering, expr: *const Node) void {
     // non-failable side effects stay `void`.
     const expr_ty = self.inferExprType(expr);
     const ret: TypeId = if (self.errorChannelOf(expr_ty) != null) expr_ty else .void;
-    _ = self.createComptimeFunction("__run", expr, ret);
+    _ = self.createComptimeFunction("__run", .ordinary, expr, ret);
 }
 
 /// Lower a `#run expr` that appears inline within an expression.
@@ -475,7 +475,7 @@ pub fn lowerComptimeSideEffect(self: *Lowering, expr: *const Node) void {
 /// interpreter can evaluate it and replace with the constant result.
 pub fn lowerInlineComptime(self: *Lowering, expr: *const Node) Ref {
     const ret_ty: TypeId = self.target_type orelse self.inferExprType(expr);
-    const func_id = self.createComptimeFunction("__ct", expr, ret_ty);
+    const func_id = self.createComptimeFunction("__ct", .ordinary, expr, ret_ty);
     // Carry the binding const's name (when this `#run` initializes one) onto the
     // wrapper so a comptime-init failure names the user const, not `__ct_N`.
     if (self.comptime_const_name) |cname| {
@@ -598,7 +598,7 @@ pub fn evalComptimeType(self: *Lowering, expr: *const Node) ?TypeId {
     // handle). The legacy path reads the result via `asTypeId` regardless, but the
     // VM path converts `func.ret` — `.type_value` → `.type_tag` (an `.any` return
     // would box the result and bail at the VM↔legacy boundary).
-    const func_id = self.createComptimeFunction("__ctype", expr, .type_value);
+    const func_id = self.createComptimeFunction("__ctype", .expansion, expr, .type_value);
     return self.runComptimeTypeFunc(func_id, expr.span);
 }
 
@@ -613,7 +613,7 @@ pub fn evalComptimeTypeBody(self: *Lowering, body: *const Node, ret_expr: *const
     preregisterForwardTypes(self, body);
     const prelude = preludeBeforeReturn(body);
     // Return type `.type_value` (a `Type` value) — see `evalComptimeType`.
-    const func_id = self.createComptimeFunctionWithPrelude("__ctype", prelude, ret_expr, .type_value);
+    const func_id = self.createComptimeFunctionWithPrelude("__ctype", .expansion, prelude, ret_expr, .type_value);
     return self.runComptimeTypeFunc(func_id, ret_expr.span);
 }
 
@@ -862,7 +862,7 @@ pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
     // (the visibility error, …) was already emitted while lowering the inserted
     // expression. `regToValue` dupes the result string into `self.alloc`, so it
     // outlives the VM's arena.
-    const ct_func_id = self.createComptimeFunction("__insert", expr, .string);
+    const ct_func_id = self.createComptimeFunction("__insert", .expansion, expr, .string);
     const result = comptime_vm.tryEval(self.alloc, self.module, ct_func_id, null, null) orelse return null;
     const str = switch (result) {
         .string => |s| s,
@@ -1652,10 +1652,21 @@ pub fn fnBodyHasReturn(node: *const Node) bool {
     };
 }
 
+/// Which comptime phase a wrapper body belongs to (§7.9's phase law).
+pub const ComptimePhase = enum {
+    /// Evaluated DURING lowering, so its result can still add declarations:
+    /// a type-fn body, an `#insert`. Nothing it observes about a conformer
+    /// set is final.
+    expansion,
+    /// Evaluated after the conformer fixpoint — a `#run` constant, a `#run`
+    /// side effect, a body-local `#run`. Sees the final sets.
+    ordinary,
+};
+
 /// Creates a temporary function marked `is_comptime = true` that wraps
 /// the given expression as its return value. Returns the FuncId.
-pub fn createComptimeFunction(self: *Lowering, prefix: []const u8, expr: *const Node, ret_ty: TypeId) FuncId {
-    return self.createComptimeFunctionWithPrelude(prefix, &.{}, expr, ret_ty);
+pub fn createComptimeFunction(self: *Lowering, prefix: []const u8, phase: ComptimePhase, expr: *const Node, ret_ty: TypeId) FuncId {
+    return self.createComptimeFunctionWithPrelude(prefix, phase, &.{}, expr, ret_ty);
 }
 
 /// Like `createComptimeFunction`, but lowers `prelude` statements (e.g. a
@@ -1663,7 +1674,7 @@ pub fn createComptimeFunction(self: *Lowering, prefix: []const u8, expr: *const 
 /// the result `expr`, so the expr can reference names they bind. Used to
 /// comptime-evaluate a generic type-fn body that has locals before its `return`
 /// (the non-prelude path only sees the return expression).
-pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, prelude: []const *const Node, expr: *const Node, ret_ty: TypeId) FuncId {
+pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, phase: ComptimePhase, prelude: []const *const Node, expr: *const Node, ret_ty: TypeId) FuncId {
     // EVERY comptime wrapper body (type-fn, #run-at-scan, #insert, …) lowers
     // through here — and it (or a lazily-lowered callee) may read
     // `context.allocator`, which only exists once the Context is ASSEMBLED
@@ -1715,11 +1726,13 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, pr
     self.block_terminated = false;
     self.target_type = null;
     self.func_defer_base = self.defer_stack.items.len;
-    // Everything lowered into this wrapper runs on the comptime VM, where a
-    // tagged value has no representation: tags are link-stage artifacts.
-    self.comptime_body_depth += 1;
+    // A wrapper nested inside an expansion-driving body drives expansion too:
+    // its result feeds the outer one, which is still being evaluated during
+    // lowering.
+    const saved_phase = self.comptime_phase;
+    self.comptime_phase = if (saved_phase == .expansion) .expansion else phase;
     defer {
-        self.comptime_body_depth -= 1;
+        self.comptime_phase = saved_phase;
         self.current_ctx_ref = saved_ctx_ref;
         self.inline_return_target = saved_iri;
         self.pack_arg_nodes = saved_pan;

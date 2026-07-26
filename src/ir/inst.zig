@@ -117,12 +117,23 @@ pub const Op = union(enum) {
     /// surfacing a "Type value reached runtime" diagnostic instead of
     /// silently lowering to a stale int.
     const_type: TypeId,
-    /// The dense conformer tag of `concrete` inside tagged protocol `proto`'s
-    /// whole-program conformer set. The set is only complete once the
-    /// collection fixpoint converges, so erasure and downcast sites emit this
-    /// and the numbering pass rewrites every occurrence into a `const_int`.
-    /// Reaching a backend means the numbering pass was skipped.
+    /// The conformer word of `concrete` inside tagged protocol `proto`'s
+    /// whole-program conformer set. It stays a PAIR in the IR: codegen
+    /// resolves it to the dense tag the converged fixpoint assigned, while the
+    /// comptime VM answers with the conformer's own type — a tag is a
+    /// link-stage artifact and does not exist during compilation (§7.9).
     tagged_tag_of: TagOf,
+    /// Whether `concrete` is in tagged protocol `proto`'s conformer set. Like
+    /// `tagged_tag_of`, the answer only exists once the collection fixpoint
+    /// converges, so probe sites emit this and the numbering pass rewrites
+    /// every occurrence into a `const_bool` against the FINAL set.
+    tagged_conforms: TagOf,
+    /// The concrete `Type` word behind a tagged value, from its tag word.
+    /// At runtime that is one indexed load through the protocol's
+    /// `tag → type_id` table; on the comptime VM a tagged value carries its
+    /// concrete type directly (§7.9 — tags are link-stage artifacts), so the
+    /// operand IS the answer. One op, so both worlds read RTTI the same way.
+    tagged_type_id: TaggedTypeId,
 
     // ── Arithmetic ──────────────────────────────────────────────────
     add: BinOp,
@@ -292,6 +303,11 @@ pub const Op = union(enum) {
 pub const TagOf = struct {
     proto: TypeId,
     concrete: TypeId,
+};
+
+pub const TaggedTypeId = struct {
+    tag: Ref,
+    table: GlobalId,
 };
 
 pub const UnaryOp = struct {
