@@ -3777,6 +3777,9 @@ inline for 0..n (i) { }             // comptime unroll; first range bounded
 inline for xs, 0.. (x, i) { }       // comptime unroll over a PACK: x = the
                                     // concrete i-th element (see "Variadic
                                     // Heterogeneous Type Packs")
+inline for TYPES (T) { }            // comptime unroll over a `[N]Type` list:
+                                    // T is a comptime Type, legal in type
+                                    // position (see "Protocols" §3)
 ```
 
 **Range bound markers.** Each side of `..` takes an optional marker — `=`
@@ -4706,8 +4709,9 @@ Placement rules — `private` is rejected on: locals, parameters, struct/union/
 runtime-class fields, enum cases and error tags, struct/protocol/impl methods
 and requirements, flat `#import`, `impl` blocks, `#context_extend`, `#using`,
 standalone `#run`, global `asm`, and `#framework`. Top-level `inline if`
-branches MAY declare private globals (their statements are module-scope after
-comptime flattening); function and method bodies may not.
+branches and `inline for` bodies MAY declare private globals (their statements
+are module-scope after comptime flattening); function and method bodies may
+not.
 
 `` `private `` (backtick raw identifier) remains a legal name, and the
 `.private` member spelling remains legal after a dot.

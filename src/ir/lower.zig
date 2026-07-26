@@ -749,6 +749,13 @@ pub const Lowering = struct {
     extern_name_map: std.StringHashMap([]const u8), // sx name → C name for #extern renames
     target_config: ?@import("../target.zig").TargetConfig = null, // compilation target (for inline if)
     comptime_constants: std.StringHashMap(ComptimeValue), // compile-time known constants (e.g. OS, ARCH)
+    /// Module constants bound to a comptime `[N]Type` list (`S :: .[A, B];`).
+    /// A type list has no runtime representation — it exists to drive
+    /// `inline for` expansion, so it never becomes a global.
+    comptime_type_lists: std.StringHashMap([]const TypeId),
+    /// `M :: L;` where `L` is a type list. Resolved lazily so declaration
+    /// order does not matter.
+    comptime_type_list_aliases: std.StringHashMap([]const u8),
     diagnostics: ?*errors.DiagnosticList = null, // error reporting with source locations
     xx_reentrancy: std.AutoHashMap(u64, void), // (src_ty, dst_ty) pairs currently being resolved through user-space Into; prevents infinite monomorphisation when a convert body re-enters the same xx
     /// Whole-program-converged inferred error sets (ERR E1.4b): top-level
@@ -1013,6 +1020,8 @@ pub const Lowering = struct {
             .struct_const_map = std.StringHashMap(StructConstInfo).init(module.alloc),
             .extern_name_map = std.StringHashMap([]const u8).init(module.alloc),
             .comptime_constants = std.StringHashMap(ComptimeValue).init(module.alloc),
+            .comptime_type_lists = std.StringHashMap([]const TypeId).init(module.alloc),
+            .comptime_type_list_aliases = std.StringHashMap([]const u8).init(module.alloc),
             .narrowed = std.StringHashMap(void).init(module.alloc),
             .diag_enclosing_seen = std.StringHashMap(void).init(module.alloc),
             .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
@@ -2771,6 +2780,9 @@ pub const Lowering = struct {
     pub const evalComptimeString = lower_comptime.evalComptimeString;
     pub const evalComptimeType = lower_comptime.evalComptimeType;
     pub const evalComptimeTypeBody = lower_comptime.evalComptimeTypeBody;
+    pub const evalComptimeTypeList = lower_comptime.evalComptimeTypeList;
+    pub const registerComptimeTypeList = lower_comptime.registerComptimeTypeList;
+    pub const registerComptimeTypeListAlias = lower_comptime.registerComptimeTypeListAlias;
     pub const runComptimeTypeFunc = lower_comptime.runComptimeTypeFunc;
     pub const renameNominalType = lower_comptime.renameNominalType;
     pub const lowerComptimeGlobal = lower_comptime.lowerComptimeGlobal;

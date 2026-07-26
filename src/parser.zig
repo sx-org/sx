@@ -60,11 +60,13 @@ pub const Parser = struct {
     /// have been kept by dropping it). Null when the statement kept its value or
     /// wasn't a value expression. Read by `parseBlock` into `Block.discarded_semi`.
     last_stmt_semi_loc: ?ast.Span = null,
-    /// True while parsing the branches of a MODULE-SCOPE `inline if`: its
-    /// statements are top-level declarations after comptime flattening, so
-    /// `private` remains legal on them. Function/lambda bodies clear it — a
-    /// nested body's declarations are locals, never module scope.
-    in_module_inline_if: bool = false,
+    /// True while parsing the body of a MODULE-SCOPE expansion form — an
+    /// `inline if` branch or an `inline for` iteration group. Their statements
+    /// are top-level declarations after comptime flattening, so `private` and
+    /// the declaration-only forms (`impl`) remain legal on them.
+    /// Function/lambda bodies clear it — a nested body's declarations are
+    /// locals, never module scope.
+    in_module_expansion: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, source: [:0]const u8) Parser {
         var lexer = Lexer.init(source);
@@ -175,19 +177,30 @@ pub const Parser = struct {
             return self.parseImplBlock(start);
         }
 
-        // Top-level `inline if` — compile-time conditional
+        // Top-level `inline if` / `inline for` — compile-time expansion forms.
+        // Both bodies hold module-scope declarations, flattened by
+        // `imports.flattenComptimeConditionals`.
         if (self.current.tag == .kw_inline) {
             if (self.peekNext() == .kw_if) {
                 self.advance(); // skip 'inline'
-                const saved_module_if = self.in_module_inline_if;
-                self.in_module_inline_if = true;
-                defer self.in_module_inline_if = saved_module_if;
+                const saved_module_expansion = self.in_module_expansion;
+                self.in_module_expansion = true;
+                defer self.in_module_expansion = saved_module_expansion;
                 const expr = try self.parseIfExpr();
                 if (expr.data == .if_expr) {
                     expr.data.if_expr.is_comptime = true;
                 } else if (expr.data == .match_expr) {
                     expr.data.match_expr.is_comptime = true;
                 }
+                return expr;
+            }
+            if (self.peekNext() == .kw_for) {
+                self.advance(); // skip 'inline'
+                const saved_module_expansion = self.in_module_expansion;
+                self.in_module_expansion = true;
+                defer self.in_module_expansion = saved_module_expansion;
+                const expr = try self.parseForExpr();
+                expr.data.for_expr.is_inline = true;
                 return expr;
             }
         }
@@ -1428,9 +1441,9 @@ pub const Parser = struct {
             var default_body: ?*Node = null;
             if (self.current.tag == .l_brace) {
                 // A default-method body's declarations are locals.
-                const saved_module_if = self.in_module_inline_if;
-                self.in_module_inline_if = false;
-                defer self.in_module_inline_if = saved_module_if;
+                const saved_module_expansion = self.in_module_expansion;
+                self.in_module_expansion = false;
+                defer self.in_module_expansion = saved_module_expansion;
                 default_body = try self.parseBlock();
             } else {
                 if (self.current.tag == .semicolon) self.advance();
@@ -1764,9 +1777,9 @@ pub const Parser = struct {
             var body_node: ?*Node = null;
             if (self.current.tag == .l_brace) {
                 // A runtime-class method body's declarations are locals.
-                const saved_module_if = self.in_module_inline_if;
-                self.in_module_inline_if = false;
-                defer self.in_module_inline_if = saved_module_if;
+                const saved_module_expansion = self.in_module_expansion;
+                self.in_module_expansion = false;
+                defer self.in_module_expansion = saved_module_expansion;
                 body_node = try self.parseBlock();
             } else if (self.current.tag == .fat_arrow) {
                 self.advance();
@@ -2234,9 +2247,9 @@ pub const Parser = struct {
         // A function body is never module scope — even inside a module-level
         // `inline if` branch its declarations are locals, so `private` stops
         // being legal here.
-        const saved_module_if = self.in_module_inline_if;
-        self.in_module_inline_if = false;
-        defer self.in_module_inline_if = saved_module_if;
+        const saved_module_expansion = self.in_module_expansion;
+        self.in_module_expansion = false;
+        defer self.in_module_expansion = saved_module_expansion;
         var is_arrow = false;
         const body = if (extern_export == .extern_) blk: {
             const semi_start = self.current.loc.start;
@@ -2353,12 +2366,19 @@ pub const Parser = struct {
         if (self.current.tag == .hash_context_extend) {
             return self.fail("'#context_extend' is only allowed at top level (module scope)");
         }
-        // `private` on a statement: legal only inside a MODULE-SCOPE `inline if`
-        // branch, whose statements become top-level declarations after comptime
+        // `impl Protocol for T { … }` inside a MODULE-SCOPE expansion body is an
+        // ordinary module-scope declaration that the flatten pass surfaces to
+        // the top level (comptime-expanded conformance). A bare `impl` followed
+        // by a binding operator is the ordinary name.
+        if (self.current.tag == .kw_impl and self.in_module_expansion and self.peekNext() == .identifier) {
+            return self.parseImplBlock(self.current.loc.start);
+        }
+        // `private` on a statement: legal only inside a MODULE-SCOPE expansion
+        // body, whose statements become top-level declarations after comptime
         // flattening. Anywhere else (function/method/lambda bodies) the
         // declaration is a local — visibility does not apply.
         if (self.current.tag == .kw_private) {
-            if (!self.in_module_inline_if) {
+            if (!self.in_module_expansion) {
                 return self.fail("'private' is only allowed on module-scope declarations");
             }
             self.advance();
@@ -4322,15 +4342,15 @@ pub const Parser = struct {
         // a `defer` / `onfail` body. Restored after the body.
         const saved_onfail = self.in_onfail_body;
         const saved_defer = self.in_defer_body;
-        const saved_module_if = self.in_module_inline_if;
+        const saved_module_expansion = self.in_module_expansion;
         self.in_onfail_body = false;
         self.in_defer_body = false;
         // A closure body's declarations are locals, never module scope.
-        self.in_module_inline_if = false;
+        self.in_module_expansion = false;
         defer {
             self.in_onfail_body = saved_onfail;
             self.in_defer_body = saved_defer;
-            self.in_module_inline_if = saved_module_if;
+            self.in_module_expansion = saved_module_expansion;
         }
 
         // Two body forms:

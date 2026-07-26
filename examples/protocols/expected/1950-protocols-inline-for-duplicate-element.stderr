@@ -1,0 +1,17 @@
+error: type list repeats 'Point' — each element expands its own declaration group
+  --> examples/protocols/1950-protocols-inline-for-duplicate-element.sx:11:21
+   |
+11 | inline for .[Point, Point] (T) {
+   |                     ^^^^^
+
+note: first at element 0
+  --> examples/protocols/1950-protocols-inline-for-duplicate-element.sx:11:14
+   |
+11 | inline for .[Point, Point] (T) {
+   |              ^^^^^
+
+note: again at element 1
+  --> examples/protocols/1950-protocols-inline-for-duplicate-element.sx:11:21
+   |
+11 | inline for .[Point, Point] (T) {
+   |                     ^^^^^

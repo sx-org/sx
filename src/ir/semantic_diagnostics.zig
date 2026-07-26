@@ -12,6 +12,9 @@ const TypeTable = types.TypeTable;
 const ProgramIndex = program_index_mod.ProgramIndex;
 const TypeResolver = type_resolver.TypeResolver;
 
+/// The `$T: Type` constraint every synthesized type-param binding carries.
+var type_param_constraint: ast.Node = .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .type_expr = .{ .name = "Type" } } };
+
 /// Declaration-name / type-position diagnostic pass. Two checks, before
 /// lowering:
 ///
@@ -722,6 +725,20 @@ pub const UnknownTypeChecker = struct {
                 for (fe.iterables) |it| {
                     self.walkBodyTypes(it.expr, declared, in_scope, type_vals);
                     if (it.range_end) |re| self.walkBodyTypes(re, declared, in_scope, type_vals);
+                }
+                // An `inline for` over a comptime type list binds its cursor as
+                // a type param for the body — the same standing as a `$T: Type`.
+                const save_s = in_scope.items.len;
+                defer in_scope.shrinkRetainingCapacity(save_s);
+                if (fe.is_inline) {
+                    for (fe.iterables, 0..) |it, ci| {
+                        if (it.is_range or ci >= fe.captures.len) continue;
+                        const cap = fe.captures[ci];
+                        if (cap.name.len == 0) continue;
+                        const l = self.lowering orelse continue;
+                        if (l.evalComptimeTypeList(it.expr) == null) continue;
+                        in_scope.append(self.alloc, .{ .name = cap.name, .constraint = &type_param_constraint }) catch {};
+                    }
                 }
                 self.walkBodyTypes(fe.body, declared, in_scope, type_vals);
             },

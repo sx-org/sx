@@ -1,0 +1,22 @@
+error: `inline for` expansion declares 'Wrapper' more than once — a declaration group flattens into module scope
+  --> examples/protocols/1949-protocols-inline-for-duplicate-decl.sx:13:5
+   |
+13 |     Wrapper :: struct { inner: T; }
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: first at T = Point
+  --> examples/protocols/1949-protocols-inline-for-duplicate-decl.sx:13:5
+   |
+13 |     Wrapper :: struct { inner: T; }
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: again at T = Rect
+  --> examples/protocols/1949-protocols-inline-for-duplicate-decl.sx:13:5
+   |
+13 |     Wrapper :: struct { inner: T; }
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+help: parameterize the declaration instead of re-declaring it per iteration
+   |
+13 |     Wrapper :: struct { inner: T; }
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

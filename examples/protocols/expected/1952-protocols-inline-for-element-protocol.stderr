@@ -1,0 +1,9 @@
+error: 'Show' is a protocol, not a concrete type — an impl target names a type
+  --> examples/protocols/1952-protocols-inline-for-element-protocol.sx:11:5
+   |
+11 |     impl Show for T {
+   |     ^^^^^^^^^^^^^^^^^
+12 |         show :: (self: *T) -> i64 { self.x }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     }
+   | ^^^^^

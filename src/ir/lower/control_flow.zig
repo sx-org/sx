@@ -939,23 +939,26 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     return self.builder.constInt(0, .void);
 }
 
-/// Comptime-unrolled `inline for`. Iterables are comptime ranges and/or
-/// PACKS, mirroring the runtime multi-iterable contract: position 0 drives
-/// the iteration count (a pack's arity, or a bounded range's span) and
-/// trailing range bounds are ignored. Per iteration the body is lowered
-/// once; a range capture binds as an `int_val` comptime constant (so
-/// `xs[i]` substitutes the concrete per-position argument), and a pack
-/// capture binds as an AST alias for the synthesized `xs[<i>]`
-/// (`Binding.pack_elem`), inheriting full pack-element semantics —
-/// substitution, typing, and the interface-only constraint check.
+/// Comptime-unrolled `inline for`. Iterables are comptime ranges, PACKS, and
+/// comptime `[N]Type` lists, mirroring the runtime multi-iterable contract:
+/// position 0 drives the iteration count (a pack's arity, a list's length, or
+/// a bounded range's span) and trailing range bounds are ignored. Per
+/// iteration the body is lowered once; a range capture binds as an `int_val`
+/// comptime constant (so `xs[i]` substitutes the concrete per-position
+/// argument), a pack capture binds as an AST alias for the synthesized
+/// `xs[<i>]` (`Binding.pack_elem`), inheriting full pack-element semantics —
+/// substitution, typing, and the interface-only constraint check — and a
+/// type-list capture binds as a type param, legal in type position.
 ///
 ///   inline for 0..xs.len (i) { xs[i].show(); }      // index form
 ///   inline for xs (x) { x.show(); }                 // element form
 ///   inline for xs, 0.. (x, i) { ... }               // element + index
+///   inline for TYPES (T) { v : T = ---; }           // type-list form
 pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     const IterClass = union(enum) {
         range: i64, // comptime start value
         pack: []const u8, // pack name
+        type_list: []const TypeId,
     };
     var classes = std.ArrayList(IterClass).empty;
     defer classes.deinit(self.alloc);
@@ -993,8 +996,19 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                 return self.builder.constInt(0, .void);
             }
             classes.append(self.alloc, .{ .pack = name }) catch unreachable;
+        } else if (self.evalComptimeTypeList(it.expr)) |list| {
+            const len: i64 = @intCast(list.len);
+            if (idx == 0) {
+                count = len;
+            } else if (len < count) {
+                if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: type list has {} element{s} but the unroll is {} iterations", .{
+                    len, if (len == 1) @as([]const u8, "") else @as([]const u8, "s"), count,
+                });
+                return self.builder.constInt(0, .void);
+            }
+            classes.append(self.alloc, .{ .type_list = list }) catch unreachable;
         } else {
-            if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: each iterable must be a comptime range or a pack — `inline for 0..N (i) {{ }}` / `inline for xs (x) {{ }}`", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: each iterable must be a comptime range, a pack, or a type list — `inline for 0..N (i) {{ }}` / `inline for xs (x) {{ }}` / `inline for TYPES (T) {{ }}`", .{});
             return self.builder.constInt(0, .void);
         }
     }
@@ -1007,6 +1021,26 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
             if (self.diagnostics) |d| d.addFmt(.err, sp, "a pack element cannot be captured by reference", .{});
             return self.builder.constInt(0, .void);
         }
+        if (cap.by_ref and ci < classes.items.len and classes.items[ci] == .type_list) {
+            const sp = cap.span orelse fe.iterables[ci].expr.span;
+            if (self.diagnostics) |d| d.addFmt(.err, sp, "a type cannot be captured by reference", .{});
+            return self.builder.constInt(0, .void);
+        }
+    }
+
+    // A type-list cursor binds as an ordinary type param for the iteration, so
+    // it resolves everywhere a `$T: Type` binding does.
+    const saved_type_bindings = self.type_bindings;
+    defer self.type_bindings = saved_type_bindings;
+    var type_scope: ?std.StringHashMap(TypeId) = null;
+    defer if (type_scope) |*m| m.deinit();
+    for (classes.items) |c| {
+        if (c != .type_list) continue;
+        type_scope = if (saved_type_bindings) |tb|
+            tb.clone() catch return self.builder.constInt(0, .void)
+        else
+            std.StringHashMap(TypeId).init(self.alloc);
+        break;
     }
 
     const CursorSave = struct { name: []const u8, had_prev: bool, prev: ComptimeValue };
@@ -1047,6 +1081,10 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                     elem_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = id_node, .index = idx_node } } };
                     const elem_ty = self.inferExprType(elem_node);
                     body_scope.put(cap.name, .{ .ref = Ref.none, .ty = elem_ty, .is_alloca = false, .pack_elem = elem_node, .origin = .pack_elem_alias });
+                },
+                .type_list => |list| {
+                    type_scope.?.put(cap.name, list[@intCast(i)]) catch {};
+                    self.type_bindings = type_scope.?;
                 },
             }
         }
