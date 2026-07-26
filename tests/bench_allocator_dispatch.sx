@@ -1,0 +1,174 @@
+// The `Allocator` protocol's dispatch cost, on demand:
+//
+//     ./zig-out/bin/sx build --opt 3 -o .sx-tmp/bench-alloc \
+//         tests/bench_allocator_dispatch.sx && .sx-tmp/bench-alloc
+//
+// Four lanes over the same arena-bump workload, so the protocol's share of
+// the cost is the difference between them:
+//   DIRECT  — `arena.alloc_bytes(n)` on the concrete receiver. No protocol
+//             value at all: the floor a devirtualized dispatch can reach.
+//   BORROW  — the same loop through a protocol value erased AT THE SITE, so
+//             the receiver's conformer is statically known. This is the lane
+//             that must devirtualize: the arena bump inlines into the loop
+//             and no dispatch survives.
+//   CTX     — the same loop under `push .{ allocator = arena }`, so every
+//             allocation goes through `context.allocator`. The handle is
+//             loaded from the pushed Context, so the receiver is dynamic —
+//             this is the lane that measures a real dispatch.
+//   DEFAULT — `context.allocator` as the program starts, i.e. the folded
+//             default-context handle over `c_allocator`. Measures the
+//             malloc/free round trip through the same handle shape.
+//
+// 61 trials per lane, reported as median with the quartile spread, so a
+// kind-to-kind comparison has a noise bound to be read against. Each lane
+// TIMES ITSELF and `main` only collects: four hot loops inlined into one
+// driver blow past the inliner's budget, and the lane that stops being
+// devirtualized is then an artifact of the harness, not of the language.
+//
+// Deliberately NOT a corpus example: it runs for seconds by design.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+ALLOCS  : i64 : 2000000;
+TRIALS  : i64 : 61;
+CHUNK   : i64 : 1 << 20;
+
+// Each lane folds its checksum in here rather than returning it, so the
+// return value is the elapsed time and the loop still cannot be deleted.
+checksum : i64 = 0;
+
+// The default lane frees what it allocates, and an allocation whose pointer
+// never leaves the loop is one LLVM is entitled to delete outright. Parking
+// it in a global makes it escape, so the round trip is really executed.
+escaped : *void = null;
+
+mono_ns :: () -> i64 {
+    ts : time.Timespec = .{};
+    c.clock_gettime(time.CLOCK_MONOTONIC, *ts);
+    ts.sec * 1000000000 + ts.nsec
+}
+
+sort :: (xs: []i64) {
+    i := 1;
+    while i < xs.len {
+        k := xs[i];
+        j := i - 1;
+        while j >= 0 and xs[j] > k { xs[j + 1] = xs[j]; j = j - 1; }
+        xs[j + 1] = k;
+        i = i + 1;
+    }
+}
+
+// Median plus the inter-quartile spread in per-mille of the median — the
+// noise bound a lane-to-lane delta has to clear to mean anything.
+report :: (label: string, xs: []i64) {
+    sort(xs);
+    med := xs[xs.len / 2];
+    q1 := xs[xs.len / 4];
+    q3 := xs[xs.len * 3 / 4];
+    spread := if med > 0 then (q3 - q1) * 1000 / med else 0;
+    print("{}\tmedian {} ns\tp25 {} ns\tp75 {} ns\tiqr {}/1000\tper-alloc {} ps\n",
+          label, med, q1, q3, spread, med * 1000 / ALLOCS);
+}
+
+direct_lane :: (arena: *Arena) -> i64 {
+    t0 := mono_ns();
+    sink := 0;
+    i := 0;
+    while i < ALLOCS {
+        p := arena.alloc_bytes(16);
+        b : [*]u8 = xx p;
+        b[0] = xx (i % 251);
+        sink = sink + xx b[0];
+        i = i + 1;
+    }
+    el := mono_ns() - t0;
+    checksum = checksum + sink;
+    el
+}
+
+borrow_lane :: (arena: *Arena) -> i64 {
+    a : Allocator = arena;
+    t0 := mono_ns();
+    sink := 0;
+    i := 0;
+    while i < ALLOCS {
+        p := a.alloc_bytes(16);
+        b : [*]u8 = xx p;
+        b[0] = xx (i % 251);
+        sink = sink + xx b[0];
+        i = i + 1;
+    }
+    el := mono_ns() - t0;
+    checksum = checksum + sink;
+    el
+}
+
+ctx_lane :: (arena: *Arena) -> i64 {
+    push .{ allocator = arena } {
+        t0 := mono_ns();
+        sink := 0;
+        i := 0;
+        while i < ALLOCS {
+            p := context.allocator.alloc_bytes(16);
+            b : [*]u8 = xx p;
+            b[0] = xx (i % 251);
+            sink = sink + xx b[0];
+            i = i + 1;
+        }
+        el := mono_ns() - t0;
+        checksum = checksum + sink;
+        return el;
+    }
+}
+
+default_lane :: () -> i64 {
+    t0 := mono_ns();
+    sink := 0;
+    i := 0;
+    while i < ALLOCS {
+        p := context.allocator.alloc_bytes(16);
+        b : [*]u8 = xx p;
+        b[0] = xx (i % 251);
+        sink = sink + xx b[0];
+        escaped = p;
+        context.allocator.dealloc_bytes(p);
+        i = i + 1;
+    }
+    el := mono_ns() - t0;
+    checksum = checksum + sink;
+    el
+}
+
+main :: () {
+    gpa := GPA.init();
+    direct := context.allocator.alloc(i64, TRIALS);
+    borrow := context.allocator.alloc(i64, TRIALS);
+    ctx := context.allocator.alloc(i64, TRIALS);
+    dflt := context.allocator.alloc(i64, TRIALS);
+
+    t := 0;
+    while t < TRIALS {
+        arena := Arena.init(gpa, CHUNK);
+        direct[t] = direct_lane(*arena);
+        arena.reset();
+        borrow[t] = borrow_lane(*arena);
+        arena.reset();
+        ctx[t] = ctx_lane(*arena);
+        arena.deinit();
+        dflt[t] = default_lane();
+        t = t + 1;
+    }
+
+    report("direct ", direct);
+    report("borrow ", borrow);
+    report("ctx    ", ctx);
+    report("default", dflt);
+    dm := direct[direct.len / 2];
+    bm := borrow[borrow.len / 2];
+    cm := ctx[ctx.len / 2];
+    print("borrow/direct x{}.{}\tctx/direct x{}.{}\n",
+          bm / dm, (bm * 100 / dm) % 100, cm / dm, (cm * 100 / dm) % 100);
+    print("checksum {}\n", checksum);
+}

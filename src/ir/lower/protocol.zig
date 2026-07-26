@@ -528,7 +528,8 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     if (proto_ti != .@"struct" or !proto_ti.@"struct".is_protocol) return null;
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
     // Vtable-kind protocols carry a vtable pointer, not inline fn slots — a
-    // static form for those is a separate step. (Allocator / Io are `inline`.)
+    // static form for those is a separate step. (`Io` is `inline`,
+    // `Allocator` is `tagged`.)
     if (pd.kind != .@"inline" and pd.kind != .tagged) return null;
     if (operand.data != .identifier) return null;
     const gname = operand.data.identifier.name;
@@ -1193,23 +1194,20 @@ pub fn refuseProtocolAssertTargetOnAny(self: *Lowering, type_node: *const Node, 
     return true;
 }
 
-/// Allocate `size_ref` bytes through an ALLOCATOR VALUE (`inline` layout
-/// {ctx, __type_id, alloc_fn, dealloc_fn}) — the named-allocator dual of
-/// `allocViaContext`, for the `.(P, alloc)` owning erasure.
+/// Allocate `size_ref` bytes through an ALLOCATOR VALUE — the named-allocator
+/// dual of `allocViaContext`, for the `.(P, alloc)` owning erasure. Goes
+/// through the ordinary method dispatch, so the allocator protocol's kind
+/// stays a property of its declaration.
 pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Ref {
-    const void_ptr_ty = self.module.types.ptrTo(.void);
-    const alloc_ctx = self.builder.structGet(allocator, 0, void_ptr_ty);
-    const fn_ptr = self.builder.structGet(allocator, 2, void_ptr_ty);
-    const args = if (self.implicit_ctx_enabled)
-        self.alloc.dupe(Ref, &.{ self.current_ctx_ref, alloc_ctx, size_ref }) catch unreachable
-    else
-        self.alloc.dupe(Ref, &.{ alloc_ctx, size_ref }) catch unreachable;
-    return self.builder.emit(.{ .call_indirect = .{ .callee = fn_ptr, .args = args } }, void_ptr_ty);
+    const alloc_ty = self.builder.getRefType(allocator);
+    const pd = self.getProtocolInfo(alloc_ty) orelse return self.emitError("allocator", null);
+    const cs = self.builder.current_span;
+    return emitProtocolDispatch(self, allocator, pd, "alloc_bytes", &.{size_ref}, alloc_ty, .{ .start = cs.start, .end = cs.end });
 }
 
 fn erasureAlloc(self: *Lowering, alloc_val: ?Ref, size_ref: Ref) Ref {
     if (alloc_val) |a| return allocViaAllocatorValue(self, a, size_ref);
-    return self.allocViaContext(size_ref, self.module.types.ptrTo(.void));
+    return self.allocViaContext(size_ref);
 }
 
 /// Postfix OWNING erasure `expr.(P)` / `expr.(P, alloc)` — the ownership
@@ -1372,7 +1370,7 @@ pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []cons
     if (heap_copy) {
         const concrete_size = self.module.types.typeSizeBytes(concrete_ty);
         const size_ref = self.builder.constInt(@intCast(concrete_size), .i64);
-        const heap_ptr = self.allocViaContext(size_ref, void_ptr_ty);
+        const heap_ptr = self.allocViaContext(size_ref);
         _ = self.callExtern("memcpy", &.{ heap_ptr, concrete_ptr, size_ref }, void_ptr_ty);
         ctx_ptr = heap_ptr;
     }

@@ -135,16 +135,21 @@ Source_Location :: struct {
 // `#identity`: an allocator IS its state object — protocol values only
 // ever borrow a named allocator (`xx gpa`, `gpa.(Allocator)`); rvalue
 // erasure and `free` of the protocol value refuse at compile time.
-Allocator :: protocol inline #identity {
+// `tagged`: the conformer set is whole-program, so the handle is the
+// 16-byte `{ctx, tag}` borrow and every dispatch goes through the
+// protocol's outlined switch — which folds to a direct call wherever the
+// program has one allocator.
+Allocator :: protocol tagged #identity {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
 
 // --- Io capability protocol (impls live in std/io.sx) ---
 //
-// `Io` is threaded on `Context` exactly like `Allocator`: an `inline`-kind
-// protocol whose default impl (the stateless `CBlockingIo` in std/io.sx)
-// is installed in the process-wide `__sx_default_context`. Async runtime
+// `Io` is threaded on `Context` exactly like `Allocator`, at the other
+// borrow-kind representation: an `inline` protocol whose default impl (the
+// stateless `CBlockingIo` in std/io.sx) is installed in the process-wide
+// `__sx_default_context`. Async runtime
 // is sx LIBRARY code — the compiler provides only the primitives (inline
 // asm, `abi(.naked)`, atomics) + fiber-safe codegen. The protocol is the
 // minimum the fiber scheduler [B1.3+] needs; everything ergonomic

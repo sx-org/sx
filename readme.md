@@ -474,7 +474,7 @@ allocator, an Io runtime): rvalue erasure and `free` of the value refuse
 at compile time, and `is_identity(T)` reflects the class. The std
 `Allocator` and `Io` are both:
 ```sx
-Allocator :: protocol inline #identity {
+Allocator :: protocol tagged #identity {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }

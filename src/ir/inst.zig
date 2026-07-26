@@ -810,9 +810,9 @@ pub const ConstantValue = union(enum) {
     /// Vtable constant: struct of function pointers, used for protocol vtable globals.
     vtable: []const FuncId,
     /// Function pointer leaf, for static initializers that include
-    /// function addresses inside nested aggregates (e.g. the inline
-    /// Allocator value `{ ctx, alloc_fn, dealloc_fn }` for the
-    /// process-wide default Context).
+    /// function addresses inside nested aggregates (e.g. an `inline`
+    /// protocol value `{ ctx, __type_id, fn…}` in the process-wide
+    /// default Context).
     func_ref: FuncId,
     /// Relocatable address of another IR global (e.g. `p : *T = @g`).
     global_ref: GlobalId,
