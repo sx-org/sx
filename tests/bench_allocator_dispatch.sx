@@ -6,14 +6,24 @@
 // Thirteen lanes over the same bump-allocation workload, so the protocol's
 // share of the cost is the difference between them.
 //
-// The first four hold ONE conformer live per run — the best case, where a
-// dispatch has a single arm to select and the branch predictor pins it:
+// It measures the declaration std SHIPS — `Allocator :: protocol inline
+// #identity` (std/core.sx). The two alternatives are each a ONE-LINE
+// stdlib edit and no compiler change at all, which is what makes them
+// measurable here: respell that line `protocol tagged #identity` or
+// `protocol tagged #identity #expand`, rebuild the compiler, rebuild this
+// file, and every lane below reports the same workload under the other
+// representation. The recorded three-way result — and why `inline` ships —
+// is design/protocols.md §6.3a, "the Allocator trade".
+//
+// The first four lanes hold ONE conformer live per run — the predictable
+// regime, where a dispatch has a single arm to select and the branch
+// predictor pins it:
 //   DIRECT  — `arena.alloc_bytes(n)` on the concrete receiver. No protocol
 //             value at all: the floor a devirtualized dispatch can reach.
 //   BORROW  — the same loop through a protocol value erased AT THE SITE, so
-//             the receiver's conformer is statically known. This is the lane
-//             that must devirtualize: the arena bump inlines into the loop
-//             and no dispatch survives.
+//             the receiver's conformer is statically known. Whether that
+//             fact reaches the machine code is the whole question a
+//             representation answers.
 //   CTX     — the same loop under `push .{ allocator = arena }`, so every
 //             allocation goes through `context.allocator`. The handle is
 //             loaded from the pushed Context, so the receiver is dynamic —
@@ -22,11 +32,11 @@
 //             default-context handle over `c_allocator`. Measures the
 //             malloc/free round trip through the same handle shape.
 //
-// The last three are the ADVERSARIAL matrix: 20 named conformers (B00..B19,
+// The next three are the ADVERSARIAL matrix: 20 named conformers (B00..B19,
 // bump arenas with deliberately unequal bookkeeping so no two arms fold
 // together) are erased into a handle array, and the lane picks a handle per
-// allocation. This is where a call-site-expanded switch has to pay for
-// itself against an outlined routine:
+// allocation. This is the regime that decided the trade — an allocator
+// population a call site cannot predict:
 //   INTER20 — the handle index comes from a heap array filled at RUNTIME by
 //             an xorshift stream. The order is data-dependent: invisible to
 //             LLVM, unlearnable by the branch predictor. Measures
@@ -40,20 +50,21 @@
 //
 // The last six repeat that shape against a Context field that holds a
 // POINTER to a handle (`#context_extend ap: *Allocator`) instead of the
-// 16-byte handle itself — the field shape a stdlib could choose without any
+// handle itself — the field shape a stdlib could choose without any
 // compiler change. Each `*`-suffixed lane pays exactly one extra dependent
 // load before the same dispatch:
 //   CTX*      — the single-conformer anchor through `context.ap`.
 //   INTER20* / INTER2* / ROTATE20* — the adversarial three, cycling an
 //             array of `*Allocator` rather than an array of handles, so the
 //             indirection is the only difference from the lanes above.
-//   PUSH / PUSH* — `push` INSIDE the loop, overriding the 16-byte handle
-//             field and the 8-byte pointer field respectively. A push
-//             copies the whole Context either way; these two isolate the
-//             width of the overridden field's own store.
+//   PUSH / PUSH* — `push` INSIDE the loop, overriding the handle field and
+//             the 8-byte pointer field respectively. A push copies the
+//             whole Context either way; these two isolate the width of the
+//             overridden field's own store.
 //
 // 61 trials per lane, reported as median with the quartile spread, so a
-// kind-to-kind comparison has a noise bound to be read against. Each lane
+// representation-to-representation comparison has a noise bound to be read
+// against. Each lane
 // TIMES ITSELF and `main` only collects: thirteen hot loops inlined into one
 // driver blow past the inliner's budget, and the lane that stops being
 // devirtualized is then an artifact of the harness, not of the language.
@@ -727,8 +738,8 @@ rotate_ptr_lane :: (ps: []*Allocator) -> i64 {
     el
 }
 
-// `push` per allocation, overriding the 16-byte handle field. A push copies
-// the whole Context, so the pair below differs only in the width of the one
+// `push` per allocation, overriding the handle field. A push copies the
+// whole Context, so the pair below differs only in the width of the one
 // field being written.
 push_h16_lane :: (arena: *Arena) -> i64 {
     t0 := mono_ns();

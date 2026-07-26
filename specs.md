@@ -737,7 +737,7 @@ Hasher    :: protocol inline {                 // few methods, call-heavy
     put :: (self: *Self, bytes: []u8);
     sum :: (self: *Self) -> u64;
 }
-Allocator :: protocol tagged #identity {       // unique stateful conformers
+Allocator :: protocol inline #identity {        // unique stateful conformers
     alloc_bytes   :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -1305,10 +1305,14 @@ objects need a name; bind it first") instead of materializing a
 frame temp. Declare it for protocols whose conformers are unique
 stateful objects — an allocator whose state lives in a frame temp,
 handing out allocations that outlive the frame, is exactly the
-accident the discipline refuses:
+accident the discipline refuses. `Allocator` appears below at its
+TAGGED representation, because this is the section about tagged;
+std ships the `inline` one (§1), and the naming discipline the
+attribute contributes is identical on either — only the value layout
+and the dispatch differ:
 
 ```sx
-Allocator :: protocol tagged #identity {       // §1
+Allocator :: protocol tagged #identity {       // the tagged variant
     alloc_bytes   :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -1385,9 +1389,9 @@ the header already said it, and which of the two is the leftover is
 not the compiler's guess to make.
 
 ```sx
-Allocator :: protocol tagged #identity #expand {   // every method
-    alloc_bytes   :: (self: *Self, size: i64) -> *void;
-    dealloc_bytes :: (self: *Self, ptr: *void);
+Slab :: protocol tagged #identity #expand {        // every method
+    take :: (self: *Self, size: i64) -> *void;
+    drop :: (self: *Self, ptr: *void);
 }
 Gauge :: protocol tagged {
     hot  :: (self: *Self, n: i64) -> i64 #expand;  // this method only

@@ -44,7 +44,7 @@ Hasher    :: protocol inline {                 // few methods, call-heavy
     put :: (self: *Self, bytes: []u8);
     sum :: (self: *Self) -> u64;
 }
-Allocator :: protocol tagged #identity {       // unique stateful conformers
+Allocator :: protocol inline #identity {        // unique stateful conformers
     alloc_bytes   :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -612,10 +612,14 @@ objects need a name; bind it first") instead of materializing a
 frame temp. Declare it for protocols whose conformers are unique
 stateful objects — an allocator whose state lives in a frame temp,
 handing out allocations that outlive the frame, is exactly the
-accident the discipline refuses:
+accident the discipline refuses. `Allocator` appears below at its
+TAGGED representation, because this is the section about tagged;
+std ships the `inline` one (§1), and the naming discipline the
+attribute contributes is identical on either — only the value layout
+and the dispatch differ:
 
 ```sx
-Allocator :: protocol tagged #identity {       // §1
+Allocator :: protocol tagged #identity {       // the tagged variant
     alloc_bytes   :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -692,9 +696,9 @@ the header already said it, and which of the two is the leftover is
 not the compiler's guess to make.
 
 ```sx
-Allocator :: protocol tagged #identity #expand {   // every method
-    alloc_bytes   :: (self: *Self, size: i64) -> *void;
-    dealloc_bytes :: (self: *Self, ptr: *void);
+Slab :: protocol tagged #identity #expand {        // every method
+    take :: (self: *Self, size: i64) -> *void;
+    drop :: (self: *Self, ptr: *void);
 }
 Gauge :: protocol tagged {
     hot  :: (self: *Self, n: i64) -> i64 #expand;  // this method only
@@ -729,6 +733,52 @@ The contract is a guarantee, not the cost-model preference an inlining
 hint would express. Whether an un-annotated routine happens to be
 inlined anyway is the backend's ordinary business and no part of this
 design.
+
+#### The `Allocator` trade — the measured record
+
+The standard `Allocator` was carried through all three
+representations and measured, because it is the one protocol every
+program dispatches on a hot path. `tests/bench_allocator_dispatch.sx`
+holds the harness: one bump-allocation workload, 61 trials per lane,
+medians, quartile spread as the noise bound. Per-allocation cost in
+picoseconds, arm64, `--opt 3`:
+
+| lane | `inline #identity` | `tagged` | `tagged #expand` |
+|---|---|---|---|
+| direct (concrete receiver — the floor) | 1074 | 1055 | 1070 |
+| borrow (conformer known at the site) | 1049 | 2076 | **912** |
+| ctx (`push`ed handle, one conformer) | 2064 | 2079 | **905** |
+| rotate20 (20 conformers, predictable) | 2423 | 2478 | **1845** |
+| inter2 (2 conformers, unpredictable) | **5463** | 6524 | 5719 |
+| inter20 (20 conformers, unpredictable) | **7986** | 10094 | 9461 |
+
+The unpredictable lanes draw their receiver from a heap index array
+filled at runtime by an xorshift stream: unfoldable by the compiler,
+unlearnable by the branch predictor.
+
+Three things the numbers say. **`#expand` earns the predictable
+regime outright** — it takes tagged dispatch from 2.0x the concrete
+receiver's cost down to the concrete receiver's cost, and beats
+`inline` even at 20 conformers walked in rotation, because a switch
+whose selection the predictor learns costs less than an indirect call
+it must still fetch through. **The cost is prediction failure, not
+switch width** — rotate20 (20 arms, predictable) is 1845, while inter2
+(2 arms, unpredictable) is 5719: a mispredicted switch pays for the
+whole arm it guessed wrong, where an indirect call pays one fetch. The
+25-member set lowers to a compressed jump table, not a compare tree
+(verified in the emitted asm), so width itself is nearly free. **And
+`#expand` costs text** — the 13-dispatch-site benchmark grew +45%
+`__text` over the outlined routine (14320 vs 9844 bytes); the
+7-dispatch-site version had grown 0.3%. One switch per call site is
+the price.
+
+An allocator's conformer population is exactly what a library cannot
+predict: a program with one arena and a program interleaving twenty
+both link against this declaration. So std ships `inline #identity`,
+which is flat across both regimes, and `tagged #expand` stands as the
+proven alternative — the decoupling invariant (§9) makes it one
+stdlib line for a program that knows its allocators are predictable,
+with no compiler change of any kind.
 
 ### 6.4 Dispatchability on tagged values
 

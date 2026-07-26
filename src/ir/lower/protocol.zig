@@ -529,8 +529,9 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     if (proto_ti != .@"struct" or !proto_ti.@"struct".is_protocol) return null;
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
     // Vtable-kind protocols carry a vtable pointer, not inline fn slots — a
-    // static form for those is a separate step. (`Io` is `inline`,
-    // `Allocator` is `tagged`.)
+    // static form for those is a separate step. (The two capability protocols
+    // reaching here, `Allocator` and `Io`, are `inline`; a tagged one folds
+    // through the same path.)
     if (pd.kind != .@"inline" and pd.kind != .tagged) return null;
     if (operand.data != .identifier) return null;
     const gname = operand.data.identifier.name;
@@ -606,9 +607,11 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
 /// Emit the process-wide default Context as an LLVM static constant.
 ///
 ///   @__sx_default_context = internal constant %Context {
-///     %Allocator { ptr @c_allocator, i64 <tag> },   (the declared kind's
-///     %Io { ptr null, i64 <CBlockingIo type_id>, ptr @__thunk_… },
-///     <each #context_extend field's evaluated default>            layout)
+///     %Allocator { ptr null, i64 <CAllocator type_id>,      (each field in
+///                  ptr @__thunk_CAllocator_Allocator_alloc_bytes,
+///                  ptr @__thunk_CAllocator_Allocator_dealloc_bytes },
+///     %Io { … },                                     its protocol's own
+///     <each #context_extend field's evaluated default>   declared layout)
 ///   }
 ///
 /// The initializer is built by walking the ASSEMBLED Context's fields BY
