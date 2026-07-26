@@ -1,0 +1,33 @@
+// The wait runs through SEVERAL expansions: three drivers in a cycle, each
+// asking about a set the next one feeds.
+//
+// No pair of them is deadlocked on its own — the cycle only closes once the
+// third driver's contribution is traced back to the first. Quiescence is still
+// the test the scheduler applies, and it is still ONE diagnostic: every parked
+// driver, and the fact each awaits, named together.
+#import "modules/std.sx";
+
+Draw :: protocol tagged { draw :: (self: *Self) -> i64; }
+Tally :: protocol tagged { count :: (self: *Self) -> i64; }
+Name :: protocol tagged { label :: (self: *Self) -> i64; }
+
+Widget :: struct { n: i64; }
+Panel :: struct { n: i64; }
+Badge :: struct { n: i64; }
+
+inline if !has_impl(Draw, Widget) {
+    impl Tally for Panel { count :: (self: *Panel) -> i64 { self.n } }
+}
+
+inline if !has_impl(Tally, Panel) {
+    impl Name for Badge { label :: (self: *Badge) -> i64 { self.n } }
+}
+
+inline if !has_impl(Name, Badge) {
+    impl Draw for Widget { draw :: (self: *Widget) -> i64 { self.n } }
+}
+
+main :: () {
+    b := Badge.{ n = 2 };
+    print("{}\n", b.n);
+}

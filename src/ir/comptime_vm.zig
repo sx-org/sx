@@ -13,10 +13,13 @@
 //! interpreter itself stays plainly recursive — `run` walks blocks, `invoke`
 //! calls `run` — so a call chain IS the task's Zig stack, and `Vm.awaitFact`
 //! parks that whole chain without reifying a frame. The driver loop between
-//! `async` and `await` is the seam a bookmark scheduler plugs into: it answers
-//! the pending fact and resumes the same continuation at the awaiting
-//! instruction. With no scheduler installed every await answers `.unavailable`
-//! immediately and the evaluation refuses through its ordinary staged path.
+//! `async` and `await` is the seam the VM's own bookmark scheduler plugs into:
+//! it answers the pending fact and resumes the same continuation at the
+//! awaiting instruction. A scheduler that cannot answer yet hands the whole
+//! `Evaluation` back PARKED — VM, task, heap, and VM-local Context intact —
+//! and its owner resumes it when the fact fires. With no scheduler every await
+//! answers `.unavailable` and the evaluation refuses through its ordinary
+//! staged path.
 //!
 //! Value model: a register (`Reg`) is a raw 64-bit word that is EITHER an
 //! immediate scalar (its bits) OR an `Addr` into comptime memory (for
@@ -213,9 +216,11 @@ pub var last_bail_was_bridge: bool = false;
 // today only "which conformer arm implements this symbolic dispatch", since a
 // conformance admitted later still grows the routine's member set. Instead of
 // failing on the spot, the evaluation awaits that fact: it parks, the driver
-// asks the installed scheduler, and the same continuation resumes with the
-// answer. Nothing installs a scheduler yet, so every await answers
-// `.unavailable` and the evaluation refuses exactly as it did before.
+// asks the evaluation's own scheduler, and the same continuation resumes with
+// the answer. A scheduler that cannot answer YET leaves the evaluation parked
+// and its owner — the expansion worklist — resumes it once the fact fires.
+// With no scheduler every await answers `.unavailable` on the spot and the
+// evaluation refuses through its ordinary staged path.
 
 /// The fact a parked evaluation is waiting on.
 pub const FactRequest = struct {
@@ -228,90 +233,194 @@ pub const FactRequest = struct {
     pub const Kind = enum { conformer_arm };
 };
 
-/// The scheduler's answer. `.published` means the fact is now recorded in the
-/// module and the evaluation should re-read it; `.unavailable` means it will
-/// never be, and the evaluation fails through its ordinary path.
+/// The answer to an awaited fact. `.published` means it is now recorded in the
+/// module and the evaluation should re-read it; `.unavailable` means it never
+/// will be, and the evaluation fails through its ordinary path.
 pub const FactResolution = enum { published, unavailable };
 
-/// Resolves the fact a parked evaluation awaits, running whatever work that
-/// needs while the evaluation is suspended.
-pub const FactScheduler = struct {
-    ctx: ?*anyopaque,
-    resolve: *const fn (ctx: ?*anyopaque, request: FactRequest) FactResolution,
+/// What a scheduler does with the fact a parked evaluation awaits: answer it
+/// now, or leave the evaluation parked for its owner to resume once the fact
+/// fires.
+pub const FactAnswer = union(enum) {
+    now: FactResolution,
+    later,
 };
 
-/// The installed bookmark scheduler. Null → no evaluation ever parks.
-pub var fact_scheduler: ?FactScheduler = null;
+/// Resolves the fact a parked evaluation awaits, running whatever work that
+/// needs while the evaluation is suspended. Carried by the `Vm` that installed
+/// it, so two evaluations under different owners never share one.
+pub const FactScheduler = struct {
+    ctx: ?*anyopaque,
+    resolve: *const fn (ctx: ?*anyopaque, request: FactRequest) FactAnswer,
+};
 
-/// Drive one comptime evaluation as a single native-async task and return its
-/// result word. Every nested `run`/`invoke` frame lives on that task's stack, so
-/// a park suspends the complete chain; each loop turn answers the pending fact
-/// and resumes the same continuation. The loop ends when the task is finished,
-/// which is what `Future.await` then collects.
-fn evaluate(vm: *Vm, func_id: FuncId, extra: []const Reg) Error!Reg {
-    const io = comptime_async.io();
-    var future = io.async(evaluationTask, .{ vm, func_id, extra });
-    while (vm.pending_fact) |request| {
-        vm.deliverFact(if (fact_scheduler) |s| s.resolve(s.ctx, request) else .unavailable);
+/// One OWNED comptime evaluation: the VM — its heap, globals, and VM-local
+/// Context — plus the native-async task every nested `run`/`invoke` frame lives
+/// on. `start` runs it to its result or to its first unanswered fact; a PARKED
+/// evaluation keeps all of that intact past the call that began it, so its owner
+/// can let other work proceed and resume the very same continuation later.
+pub const Evaluation = struct {
+    gpa: std.mem.Allocator,
+    module: *const Module,
+    func_id: FuncId,
+    /// The module's real (target) pointer width. VM aggregates hold host
+    /// pointers, so the table is switched to host width for the duration of a
+    /// RUN and switched back whenever control leaves the evaluation — a parked
+    /// evaluation hands the compiler its target ABI back until it resumes.
+    target_pointer_size: u8,
+    vm: Vm,
+    future: std.Io.Future(Error!Reg),
+    state: State,
+
+    pub const State = union(enum) {
+        /// Ran to its result, or bailed (`null`; `last_bail_reason` names why).
+        completed: ?Value,
+        /// Suspended at the awaiting instruction, on this fact.
+        parked: FactRequest,
+    };
+
+    /// The value this evaluation produced. Only an owner that installed a
+    /// scheduler can be handed a parked evaluation; every other caller reads
+    /// its result here.
+    pub fn completed(e: *const Evaluation) ?Value {
+        return switch (e.state) {
+            .completed => |v| v,
+            .parked => unreachable,
+        };
     }
-    return future.await(io);
+
+    /// Hand the awaited fact's answer to the parked evaluation and run it on.
+    /// The resume lands AT the awaiting instruction, with every frame below it
+    /// the one that parked — nothing before it runs a second time.
+    pub fn resumeWith(e: *Evaluation, resolution: FactResolution) void {
+        @constCast(&e.module.types).pointer_size = @sizeOf(usize);
+        e.vm.deliverFact(resolution);
+        e.pump();
+    }
+
+    /// Release the evaluation and everything it owns. A still-parked one is
+    /// abandoned: its task never resumes, so its stack goes back to the pool
+    /// along with the heap it referenced.
+    pub fn destroy(e: *Evaluation) void {
+        if (e.state == .parked) comptime_async.abandon(e.vm.parked_task.?);
+        e.vm.deinit();
+        e.gpa.destroy(e);
+    }
+
+    /// Run until the task finishes or its scheduler leaves a fact unanswered.
+    /// Every nested frame lives on the task's stack, so a park suspends the
+    /// complete chain and each loop turn resumes the same continuation.
+    fn pump(e: *Evaluation) void {
+        while (e.vm.pending_fact) |request| {
+            const scheduler = e.vm.fact_scheduler.?;
+            switch (scheduler.resolve(scheduler.ctx, request)) {
+                .now => |resolution| e.vm.deliverFact(resolution),
+                .later => {
+                    e.restoreTargetWidth();
+                    e.state = .{ .parked = request };
+                    return;
+                },
+            }
+        }
+        e.finish();
+    }
+
+    fn finish(e: *Evaluation) void {
+        const reg = e.future.await(comptime_async.io()) catch |err| {
+            last_bail_reason = e.vm.detail orelse @errorName(err);
+            e.restoreTargetWidth();
+            e.state = .{ .completed = null };
+            return;
+        };
+        const func = e.module.getFunction(e.func_id);
+        // A void/noreturn entry (a `#run <expr>;` side-effect) produces no value —
+        // `regToValue` would bail on the void type, so yield `.void_val` directly.
+        const value: ?Value = if (func.ret == .void or func.ret == .noreturn)
+            .void_val
+        else
+            e.vm.regToValue(e.gpa, &e.module.types, reg, func.ret) catch |err| blk: {
+                // The body RAN; only the result bridge failed → mark this a BRIDGE
+                // bail so a body-local `#run` fold can tell a genuine "result can't
+                // be materialized" miscompile from a "VM can't run it" fallback
+                // (issue 0182).
+                last_bail_was_bridge = true;
+                last_bail_reason = e.vm.detail orelse @errorName(err);
+                break :blk null;
+            };
+        e.restoreTargetWidth();
+        e.state = .{ .completed = value };
+    }
+
+    fn restoreTargetWidth(e: *Evaluation) void {
+        @constCast(&e.module.types).pointer_size = e.target_pointer_size;
+    }
+};
+
+/// Begin an owned evaluation of `func_id` with `extra` explicit arg words.
+fn startEvaluation(
+    gpa: std.mem.Allocator,
+    module: *const Module,
+    func_id: FuncId,
+    build_config: ?*compiler_hooks.BuildConfig,
+    source_map: ?*const std.StringHashMap([:0]const u8),
+    extra: []const Reg,
+    scheduler: ?FactScheduler,
+) *Evaluation {
+    last_bail_reason = null;
+    last_bail_was_bridge = false;
+    const e = gpa.create(Evaluation) catch @panic("comptime VM: out of memory (evaluation)");
+    e.* = .{
+        .gpa = gpa,
+        .module = module,
+        .func_id = func_id,
+        .target_pointer_size = module.types.pointer_size,
+        .vm = Vm.init(gpa),
+        .future = undefined,
+        .state = .{ .completed = null },
+    };
+    e.vm.table = &module.types;
+    e.vm.module = module;
+    e.vm.build_config = build_config;
+    e.vm.source_map = source_map;
+    e.vm.fact_scheduler = scheduler;
+
+    const func = module.getFunction(func_id);
+    if (func.is_extern or func.blocks.items.len == 0) {
+        last_bail_reason = "extern / no body";
+        return e;
+    }
+    // VM aggregates contain real host pointers, even while cross-compiling.
+    // Lay those temporary values out with the host pointer width; lowering and
+    // emission see the restored target width and retain the target ABI.
+    @constCast(&module.types).pointer_size = @sizeOf(usize);
+    e.future = comptime_async.io().async(evaluationTask, .{ &e.vm, func_id, extra });
+    e.pump();
+    return e;
 }
 
 fn evaluationTask(vm: *Vm, func_id: FuncId, extra: []const Reg) Error!Reg {
     return vm.runEntryArgs(func_id, extra);
 }
 
-/// Wiring entry point: try to evaluate comptime function `func_id` entirely on the
-/// comptime VM and return its result as a legacy `Value`, or `null` if the VM
-/// can't handle it (unsupported op, no body, or any bail) — the caller then falls
-/// back to the legacy interpreter. The result is deep-copied into `gpa`, so it
-/// outlives the VM's comptime memory (freed here on return).
+/// Wiring entry point: evaluate comptime function `func_id` on the comptime VM
+/// and hand back the OWNED evaluation — completed with its result as a legacy
+/// `Value` (or `null` on any bail: unsupported op, no body, malformed IR), or
+/// PARKED on a fact `scheduler` left unanswered. A parked evaluation belongs to
+/// the caller until it resumes or destroys it; nothing parks without a
+/// scheduler. The result is deep-copied into `gpa`, so it outlives the VM's
+/// comptime memory.
 ///
 /// Safe for ARBITRARY host comptime functions: the `Machine` accessors are
 /// hardened to return `error.OutOfBounds` (not a debug panic) on a null/out-of-
-/// range/oversized access, so a malformed run bails to `null` (→ legacy fallback)
-/// rather than crashing the compiler. On a bail, `last_bail_reason` names the cause.
-pub fn tryEval(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.FuncId, build_config: ?*compiler_hooks.BuildConfig, source_map: ?*const std.StringHashMap([:0]const u8)) ?Value {
-    last_bail_reason = null;
-    last_bail_was_bridge = false;
-    // VM aggregates contain real host pointers, even while cross-compiling.
-    // Lay those temporary values out with the host pointer width; lowering and
-    // emission see the restored target width and retain the target ABI.
-    const target_pointer_size = module.types.pointer_size;
-    @constCast(&module.types).pointer_size = @sizeOf(usize);
-    defer @constCast(&module.types).pointer_size = target_pointer_size;
-    const func = module.getFunction(func_id);
-    if (func.is_extern or func.blocks.items.len == 0) {
-        last_bail_reason = "extern / no body";
-        return null;
-    }
-    var vm = Vm.init(gpa);
-    defer vm.deinit();
-    vm.table = &module.types;
-    vm.module = module;
-    vm.build_config = build_config;
-    vm.source_map = source_map;
-
-    // The evaluation materializes the implicit `*Context` (a comptime const-init /
-    // `#run` wrapper is nullary in user args, so the implicit ctx is its sole
-    // param) as a zeroed Context in comptime memory and runs. The common const body
-    // never reads the ctx; one that uses the allocator hits unported
-    // `call_indirect` → bails → legacy. Gate-ON corpus parity validates this.
-    const reg = evaluate(&vm, func_id, &.{}) catch |err| {
-        last_bail_reason = vm.detail orelse @errorName(err);
-        return null;
-    };
-    // A void/noreturn entry (a `#run <expr>;` side-effect) produces no value —
-    // `regToValue` would bail on the void type, so yield `.void_val` directly.
-    if (func.ret == .void or func.ret == .noreturn) return .void_val;
-    return vm.regToValue(gpa, &module.types, reg, func.ret) catch |err| {
-        // The body RAN; only the result bridge failed → mark this a BRIDGE bail
-        // so a body-local `#run` fold can tell a genuine "result can't be
-        // materialized" miscompile from a "VM can't run it" fallback (issue 0182).
-        last_bail_was_bridge = true;
-        last_bail_reason = vm.detail orelse @errorName(err);
-        return null;
-    };
+/// range/oversized access, so a malformed run bails rather than crashing the
+/// compiler. On a bail, `last_bail_reason` names the cause.
+///
+/// The evaluation materializes the implicit `*Context` (a comptime const-init /
+/// `#run` wrapper is nullary in user args, so the implicit ctx is its sole
+/// param) as a zeroed Context in its own comptime memory — VM-local, never
+/// shared with another evaluation, and alive for as long as this one is.
+pub fn tryEval(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.FuncId, build_config: ?*compiler_hooks.BuildConfig, source_map: ?*const std.StringHashMap([:0]const u8), scheduler: ?FactScheduler) *Evaluation {
+    return startEvaluation(gpa, module, func_id, build_config, source_map, &.{}, scheduler);
 }
 
 /// Run a post-link build callback on the VM (the post-codegen build driver — see
@@ -319,33 +428,10 @@ pub fn tryEval(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.
 /// opaque `BuildOptions` handle as an explicit arg (the `on_build(cb)` form,
 /// `cb: (opt: BuildOptions) -> bool`): when `pass_options` is set, the handle (a
 /// null sentinel — the real state is the threaded `BuildConfig`) is passed after
-/// the implicit ctx. Returns null on a bail (`last_bail_reason` names the cause).
-pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.FuncId, build_config: ?*compiler_hooks.BuildConfig, source_map: ?*const std.StringHashMap([:0]const u8), pass_options: bool) ?Value {
-    last_bail_reason = null;
-    const target_pointer_size = module.types.pointer_size;
-    @constCast(&module.types).pointer_size = @sizeOf(usize);
-    defer @constCast(&module.types).pointer_size = target_pointer_size;
-    const func = module.getFunction(func_id);
-    if (func.is_extern or func.blocks.items.len == 0) {
-        last_bail_reason = "extern / no body";
-        return null;
-    }
-    var vm = Vm.init(gpa);
-    defer vm.deinit();
-    vm.table = &module.types;
-    vm.module = module;
-    vm.build_config = build_config;
-    vm.source_map = source_map;
+/// the implicit ctx.
+pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.FuncId, build_config: ?*compiler_hooks.BuildConfig, source_map: ?*const std.StringHashMap([:0]const u8), pass_options: bool, scheduler: ?FactScheduler) *Evaluation {
     const extra: []const Reg = if (pass_options) &.{null_addr} else &.{};
-    const reg = evaluate(&vm, func_id, extra) catch |err| {
-        last_bail_reason = vm.detail orelse @errorName(err);
-        return null;
-    };
-    if (func.ret == .void or func.ret == .noreturn) return .void_val;
-    return vm.regToValue(gpa, &module.types, reg, func.ret) catch |err| {
-        last_bail_reason = vm.detail orelse @errorName(err);
-        return null;
-    };
+    return startEvaluation(gpa, module, func_id, build_config, source_map, extra, scheduler);
 }
 
 // ── Executor ────────────────────────────────────────────────────────────────
@@ -480,6 +566,9 @@ pub const Vm = struct {
     parked_task: ?*comptime_async.Task = null,
     /// The answer `deliverFact` hands back to the awaiting instruction.
     fact_resolution: FactResolution = .unavailable,
+    /// This evaluation's bookmark scheduler. Null → nothing ever parks and
+    /// every await answers `.unavailable` on the spot.
+    fact_scheduler: ?FactScheduler = null,
 
     pub const max_depth: u32 = 512;
 
@@ -1586,7 +1675,7 @@ pub const Vm = struct {
     /// runs again. Outside a task (a direct `run`), or with no scheduler to ask,
     /// the answer is `.unavailable` and nothing suspends.
     fn awaitFact(self: *Vm, request: FactRequest) FactResolution {
-        if (fact_scheduler == null) return .unavailable;
+        if (self.fact_scheduler == null) return .unavailable;
         const task = comptime_async.current() orelse return .unavailable;
         self.parked_task = task;
         self.pending_fact = request;

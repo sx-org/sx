@@ -1333,7 +1333,9 @@ test "comptime_vm tryEval: pure function → Value; unsupported → null" {
     _ = fb.add(b0, inst(.{ .ret = .{ .operand = ref(m) } }, .void));
     const ok_id = module.addFunction(fb.func);
 
-    const v = vm.tryEval(alloc, &module, ok_id, null, null) orelse return error.VmShouldHaveHandledIt;
+    const ok_eval = vm.tryEval(alloc, &module, ok_id, null, null, null);
+    defer ok_eval.destroy();
+    const v = ok_eval.completed() orelse return error.VmShouldHaveHandledIt;
     try std.testing.expectEqual(@as(i64, 42), v.int);
 
     // fn bad() { vec_splat(...) }  → an unported op → tryEval yields null. The VM
@@ -1345,7 +1347,9 @@ test "comptime_vm tryEval: pure function → Value; unsupported → null" {
     _ = fb2.add(c0, inst(.ret_void, .void));
     const bad_id = module.addFunction(fb2.func);
 
-    try std.testing.expect(vm.tryEval(alloc, &module, bad_id, null, null) == null);
+    const bad_eval = vm.tryEval(alloc, &module, bad_id, null, null, null);
+    defer bad_eval.destroy();
+    try std.testing.expect(bad_eval.completed() == null);
 }
 
 test "comptime_vm tryEval: wasm32 target keeps host pointers intact and restores target width" {
@@ -1360,7 +1364,9 @@ test "comptime_vm tryEval: wasm32 target keeps host pointers intact and restores
     _ = fb.add(b0, inst(.{ .ret = .{ .operand = ref(text_ref) } }, .void));
     const fid = module.addFunction(fb.func);
 
-    const result = vm.tryEval(alloc, &module, fid, null, null) orelse return error.VmShouldHaveHandledIt;
+    const wasm_eval = vm.tryEval(alloc, &module, fid, null, null, null);
+    defer wasm_eval.destroy();
+    const result = wasm_eval.completed() orelse return error.VmShouldHaveHandledIt;
     defer alloc.free(result.string);
     try std.testing.expectEqualStrings("wasm", result.string);
     try std.testing.expectEqual(@as(u8, 4), module.types.pointer_size);
@@ -1520,8 +1526,10 @@ test "comptime_vm tryEval: deref of a null pointer bails (null, not a crash)" {
     const bad_id = module.addFunction(fb.func);
 
     // The hardened accessors turn the null deref into error.OutOfBounds → run
-    // bails → tryEval returns null (legacy fallback), NOT a debug panic.
-    try std.testing.expect(vm.tryEval(alloc, &module, bad_id, null, null) == null);
+    // bails → the evaluation completes with null (legacy fallback), NOT a panic.
+    const evaluation = vm.tryEval(alloc, &module, bad_id, null, null, null);
+    defer evaluation.destroy();
+    try std.testing.expect(evaluation.completed() == null);
 }
 
 test "comptime_vm: arena allocations are aligned, non-null, and stable across grows" {
@@ -1544,13 +1552,15 @@ test "comptime_vm: arena allocations are aligned, non-null, and stable across gr
 
 /// Answers the parked evaluation's fact by admitting the missing conformer the
 /// same way lowering does: the routine's dispatch entry is REPLACED with the
-/// wider member set.
+/// wider member set. `defer_first` models the owner that cannot answer on the
+/// spot — the evaluation stays parked and comes back to its owner instead.
 const ConformerPublisher = struct {
     alloc: std.mem.Allocator,
     module: *Module,
     routine: FuncId,
     members: [2]TypeId,
     arms: [2]FuncId,
+    defer_first: bool = false,
     requests: u32 = 0,
     seen_routine: ?FuncId = null,
     seen_concrete: ?TypeId = null,
@@ -1559,11 +1569,16 @@ const ConformerPublisher = struct {
         return .{ .ctx = self, .resolve = resolve };
     }
 
-    fn resolve(ctx: ?*anyopaque, request: vm.FactRequest) vm.FactResolution {
+    fn resolve(ctx: ?*anyopaque, request: vm.FactRequest) vm.FactAnswer {
         const self: *ConformerPublisher = @ptrCast(@alignCast(ctx.?));
         self.requests += 1;
         self.seen_routine = request.routine;
         self.seen_concrete = request.concrete;
+        if (self.defer_first) return .later;
+        return .{ .now = self.publish() };
+    }
+
+    fn publish(self: *ConformerPublisher) vm.FactResolution {
         for (self.module.tagged_dispatch.items) |*e| {
             if (e.routine != self.routine) continue;
             e.* = .{ .routine = self.routine, .members = &self.members, .arms = &self.arms };
@@ -1653,13 +1668,43 @@ test "comptime_vm: an evaluation parks inside a nested invocation and resumes th
 
     // With no scheduler the evaluation never parks: the missing arm fails through
     // the ordinary staged path.
-    try std.testing.expect(vm.tryEval(alloc, &module, outer_id, null, null) == null);
+    const unscheduled = vm.tryEval(alloc, &module, outer_id, null, null, null);
+    defer unscheduled.destroy();
+    try std.testing.expect(unscheduled.completed() == null);
     const bail = vm.last_bail_reason.?;
     try std.testing.expect(std.mem.indexOf(u8, bail, "conformer arm") != null);
     // `failFmt` renders into the caller's allocator and hands the text to a host
     // that is about to stop the build, so nothing frees it there.
     alloc.free(bail);
 
+    // An owner that cannot answer on the spot gets the evaluation BACK, parked:
+    // its VM, task, heap, and VM-local Context outlive the call that started it,
+    // and the fact it awaits is the one the awaiting instruction asked.
+    var deferring = ConformerPublisher{
+        .alloc = alloc,
+        .module = &module,
+        .routine = routine_id,
+        .members = .{ .f64, .i64 },
+        .arms = .{ other_id, arm_id },
+        .defer_first = true,
+    };
+    const owned = vm.tryEval(alloc, &module, outer_id, null, null, deferring.scheduler());
+    defer owned.destroy();
+    try std.testing.expect(owned.state == .parked);
+    try std.testing.expectEqual(routine_id, owned.state.parked.routine);
+    try std.testing.expectEqual(TypeId.i64, owned.state.parked.concrete);
+
+    // The owner publishes the fact itself and resumes the SAME evaluation. It
+    // lands at the awaiting instruction — the counter below it was incremented
+    // once and stays so.
+    try std.testing.expectEqual(vm.FactResolution.published, deferring.publish());
+    owned.resumeWith(.published);
+    const resumed = owned.completed() orelse return error.VmShouldHaveHandledIt;
+    try std.testing.expectEqual(@as(i64, 1107), resumed.int);
+    try std.testing.expectEqual(@as(u32, 1), deferring.requests);
+
+    // Same answer with a scheduler that resolves the fact in place.
+    module.tagged_dispatch.items[0] = .{ .routine = routine_id, .members = &initial_members, .arms = &initial_arms };
     var publisher = ConformerPublisher{
         .alloc = alloc,
         .module = &module,
@@ -1667,10 +1712,9 @@ test "comptime_vm: an evaluation parks inside a nested invocation and resumes th
         .members = .{ .f64, .i64 },
         .arms = .{ other_id, arm_id },
     };
-    vm.fact_scheduler = publisher.scheduler();
-    defer vm.fact_scheduler = null;
-
-    const result = vm.tryEval(alloc, &module, outer_id, null, null) orelse return error.VmShouldHaveHandledIt;
+    const scheduled = vm.tryEval(alloc, &module, outer_id, null, null, publisher.scheduler());
+    defer scheduled.destroy();
+    const result = scheduled.completed() orelse return error.VmShouldHaveHandledIt;
 
     // 1000 (outer) + 100 (the counter, incremented exactly ONCE across the park)
     // + 7 (the arm admitted while parked). A re-executed pre-park instruction

@@ -22,6 +22,8 @@ const std = @import("std");
 const ast = @import("../../ast.zig");
 const Node = ast.Node;
 const imports = @import("../../imports.zig");
+const types = @import("../types.zig");
+const TypeId = types.TypeId;
 
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
@@ -36,9 +38,12 @@ pub fn expandModuleDrivers(self: *Lowering, decls: []const *Node) []const *Node 
         .scope = decls,
         .expanded = std.AutoHashMap(*const Node, void).init(self.alloc),
         .raised = std.AutoHashMap(*const Node, void).init(self.alloc),
-        .lists = std.AutoHashMap(ListKey, []const *Node).init(self.alloc),
+        .lists = std.AutoHashMap(ListKey, *Expanded).init(self.alloc),
         .primed = std.StringHashMap(void).init(self.alloc),
         .spliced = std.ArrayList(*Node).empty,
+        .parked = std.ArrayList(ParkedDriver).empty,
+        .ledgers = std.ArrayList(*Ledger).empty,
+        .cursors = std.ArrayList(*std.StringHashMap([]const u8)).empty,
     };
     defer ex.deinit();
 
@@ -47,8 +52,14 @@ pub fn expandModuleDrivers(self: *Lowering, decls: []const *Node) []const *Node 
     // could still make — BEFORE any of them folds. A question asked while the
     // first driver folds must already know what the last one might contribute.
     ex.registerDrivers(decls);
-    const expanded = ex.expandList(decls, .transitive);
+    var expanded: []const *Node = decls;
+    ex.expandListInto(decls, .transitive, .{ .slot = &expanded });
     ex.expandNamespaces(expanded);
+    // A driver that could not decide is parked, not decided: run the drain to
+    // quiescence, then write every list from its now-complete slots.
+    ex.drainParked();
+    ex.flushLists();
+    self.expansion.reportDeadlock(self.diagnostics);
     // The member surface publishes last, per module, and only where no driver
     // that could still declare into that scope remains.
     ex.publishNamespaceMembers();
@@ -62,6 +73,49 @@ const ListKind = enum { own, transitive };
 
 const ListKey = struct { ptr: usize, len: usize, kind: ListKind };
 
+/// One expanded declaration list, held as SLOTS rather than a finished slice:
+/// every driver owns its own slot, so a driver that parks still lands its
+/// group at its own place in declaration order once the fact it awaits fires.
+const Expanded = struct {
+    chunks: std.ArrayList(Chunk),
+    sinks: std.ArrayList(Sink),
+};
+
+const Chunk = union(enum) {
+    node: *Node,
+    /// A driver's slot, filled when the driver folds — which may be after the
+    /// pass that reached it.
+    group: *std.ArrayList(*Node),
+};
+
+/// Where an expanded list is written back. A namespace target lives in a map
+/// lowering can still grow, so it is addressed by its keys instead of by a
+/// pointer a later insertion could move.
+const Sink = union(enum) {
+    slot: *[]const *Node,
+    ns_target: struct { importer: []const u8, alias: []const u8 },
+};
+
+/// The dedup state one declaration list is merged against. It outlives the
+/// pass: a driver that parks merges its group against the same ledger when it
+/// resumes.
+const Ledger = struct {
+    kind: ListKind,
+    names: std.StringHashMap(void),
+    nodes: std.AutoHashMap(*const Node, void),
+};
+
+/// A driver suspended mid-fold: everything its resumption needs, plus the
+/// fact it is waiting on, rendered for the deadlock diagnostic.
+const ParkedDriver = struct {
+    decl: *const Node,
+    src: ?[]const u8,
+    group: Group,
+    declared: ?*std.StringHashMap([]const u8),
+    cursor: []const u8,
+    awaited: []const u8,
+};
+
 const Expansion = struct {
     self: *Lowering,
     /// The root declaration list — where an `inline for` looks up the curated
@@ -73,7 +127,7 @@ const Expansion = struct {
     raised: std.AutoHashMap(*const Node, void),
     /// Expanded declaration lists, keyed by the input slice: the module views
     /// share slices, and one expansion answers all of them.
-    lists: std.AutoHashMap(ListKey, []const *Node),
+    lists: std.AutoHashMap(ListKey, *Expanded),
     /// Names a driver's condition already pulled into registration. Priming a
     /// name is a write to the real declaration facts, so it happens once.
     primed: std.StringHashMap(void),
@@ -81,6 +135,15 @@ const Expansion = struct {
     /// textual root list this IS the decided declaration space — what a
     /// question asked by a later driver is answered against.
     spliced: std.ArrayList(*Node),
+    /// Drivers whose condition asked a question no set can answer yet.
+    parked: std.ArrayList(ParkedDriver),
+    ledgers: std.ArrayList(*Ledger),
+    cursors: std.ArrayList(*std.StringHashMap([]const u8)),
+    /// The fact the read in the condition being driven could not answer, and
+    /// whether the fold it belongs to therefore parked.
+    awaited: ?[]const u8 = null,
+    just_parked: bool = false,
+    parked_any: bool = false,
 
     fn deinit(ex: *Expansion) void {
         ex.expanded.deinit();
@@ -88,6 +151,14 @@ const Expansion = struct {
         ex.lists.deinit();
         ex.primed.deinit();
         ex.spliced.deinit(ex.self.alloc);
+        ex.parked.deinit(ex.self.alloc);
+        for (ex.ledgers.items) |l| {
+            l.names.deinit();
+            l.nodes.deinit();
+        }
+        ex.ledgers.deinit(ex.self.alloc);
+        for (ex.cursors.items) |c| c.deinit();
+        ex.cursors.deinit(ex.self.alloc);
     }
 
     fn decided(ex: *Expansion, decl: *Node) void {
@@ -164,12 +235,29 @@ const Expansion = struct {
         defer seen.deinit();
         ex.expandNamespaceNodes(decls, &seen);
 
+        // Expanding a target mints declaration facts, which can grow the edge
+        // map itself — so the aliases are collected before any of them folds.
         const edges = ex.self.program_index.namespace_edges orelse return;
-        var it = edges.valueIterator();
-        while (it.next()) |aliases| {
-            var ait = aliases.valueIterator();
-            while (ait.next()) |target| target.own_decls = ex.expandList(target.own_decls, .own);
+        var targets = std.ArrayList(Sink).empty;
+        defer targets.deinit(ex.self.alloc);
+        var it = edges.iterator();
+        while (it.next()) |edge| {
+            var ait = edge.value_ptr.keyIterator();
+            while (ait.next()) |alias| {
+                targets.append(ex.self.alloc, .{ .ns_target = .{ .importer = edge.key_ptr.*, .alias = alias.* } }) catch {};
+            }
         }
+        for (targets.items) |sink| {
+            const list = ex.namespaceTargetList(sink.ns_target.importer, sink.ns_target.alias) orelse continue;
+            ex.expandListInto(list, .own, sink);
+        }
+    }
+
+    fn namespaceTargetList(ex: *Expansion, importer: []const u8, alias: []const u8) ?[]const *Node {
+        const edges = ex.self.program_index.namespace_edges orelse return null;
+        const aliases = edges.getPtr(importer) orelse return null;
+        const target = aliases.getPtr(alias) orelse return null;
+        return target.own_decls;
     }
 
     /// The `DeclId` surface of every namespaced module. A module publishes
@@ -201,16 +289,18 @@ const Expansion = struct {
             if (seen.contains(decl)) continue;
             seen.put(decl, {}) catch {};
             const ns = &decl.data.namespace_decl;
-            ns.own_decls = ex.expandList(ns.own_decls, .own);
-            ns.decls = ex.expandList(ns.decls, .transitive);
+            ex.expandListInto(ns.own_decls, .own, .{ .slot = &ns.own_decls });
+            ex.expandListInto(ns.decls, .transitive, .{ .slot = &ns.decls });
             ex.expandNamespaceNodes(ns.decls, seen);
         }
     }
 
-    /// One declaration list with every driver replaced by its selected group.
-    /// Returns the input untouched when it holds nothing to expand.
-    fn expandList(ex: *Expansion, list: []const *Node, kind: ListKind) []const *Node {
-        if (list.len == 0) return list;
+    /// Expand one declaration list — every driver replaced by its selected
+    /// group — and write the result to `sink`. A list with nothing to expand
+    /// leaves the sink alone; a list already expanded answers from the cache,
+    /// since the module views share slices.
+    fn expandListInto(ex: *Expansion, list: []const *Node, kind: ListKind, sink: Sink) void {
+        if (list.len == 0) return;
         var expandable = false;
         for (list) |decl| {
             if (imports.isModuleDriver(decl) or decl.data == .error_directive) {
@@ -218,30 +308,38 @@ const Expansion = struct {
                 break;
             }
         }
-        if (!expandable) return list;
+        if (!expandable) return;
 
         const key = ListKey{ .ptr = @intFromPtr(list.ptr), .len = list.len, .kind = kind };
-        if (ex.lists.get(key)) |cached| return cached;
-
-        var out = std.ArrayList(*Node).empty;
-        var names = std.StringHashMap(void).init(ex.self.alloc);
-        defer names.deinit();
-        var nodes = std.AutoHashMap(*const Node, void).init(ex.self.alloc);
-        defer nodes.deinit();
-        for (list) |decl| {
-            nodes.put(decl, {}) catch {};
-            if (decl.data.declName()) |name| names.put(name, {}) catch {};
+        if (ex.lists.get(key)) |cached| {
+            cached.sinks.append(ex.self.alloc, sink) catch {};
+            ex.writeSink(sink, ex.flatten(cached));
+            return;
         }
 
-        var group = Group{
-            .ex = ex,
-            .out = &out,
+        const exp = ex.self.alloc.create(Expanded) catch return;
+        exp.* = .{ .chunks = .empty, .sinks = .empty };
+        exp.sinks.append(ex.self.alloc, sink) catch {};
+        ex.lists.put(key, exp) catch {};
+
+        const ledger = ex.self.alloc.create(Ledger) catch return;
+        ledger.* = .{
             .kind = kind,
-            .names = &names,
-            .nodes = &nodes,
+            .names = std.StringHashMap(void).init(ex.self.alloc),
+            .nodes = std.AutoHashMap(*const Node, void).init(ex.self.alloc),
         };
+        ex.ledgers.append(ex.self.alloc, ledger) catch {};
+        for (list) |decl| {
+            ledger.nodes.put(decl, {}) catch {};
+            if (decl.data.declName()) |name| ledger.names.put(name, {}) catch {};
+        }
+
         for (list) |decl| {
             if (imports.isModuleDriver(decl)) {
+                const slot = ex.self.alloc.create(std.ArrayList(*Node)) catch return;
+                slot.* = .empty;
+                exp.chunks.append(ex.self.alloc, .{ .group = slot }) catch {};
+                var group = Group{ .ex = ex, .out = slot, .ledger = ledger };
                 _ = group.expandDriver(decl, decl.source_file, null, "");
                 continue;
             }
@@ -249,11 +347,114 @@ const Expansion = struct {
                 ex.raise(decl);
                 continue;
             }
-            out.append(ex.self.alloc, decl) catch {};
+            exp.chunks.append(ex.self.alloc, .{ .node = decl }) catch {};
         }
-        const expanded = out.toOwnedSlice(ex.self.alloc) catch return list;
-        ex.lists.put(key, expanded) catch {};
-        return expanded;
+        ex.writeSink(sink, ex.flatten(exp));
+    }
+
+    fn flatten(ex: *Expansion, exp: *Expanded) []const *Node {
+        var out = std.ArrayList(*Node).empty;
+        for (exp.chunks.items) |chunk| switch (chunk) {
+            .node => |n| out.append(ex.self.alloc, n) catch {},
+            .group => |g| out.appendSlice(ex.self.alloc, g.items) catch {},
+        };
+        return out.toOwnedSlice(ex.self.alloc) catch &.{};
+    }
+
+    fn writeSink(ex: *Expansion, sink: Sink, list: []const *Node) void {
+        switch (sink) {
+            .slot => |p| p.* = list,
+            .ns_target => |t| {
+                const edges = ex.self.program_index.namespace_edges orelse return;
+                const aliases = edges.getPtr(t.importer) orelse return;
+                const target = aliases.getPtr(t.alias) orelse return;
+                target.own_decls = list;
+            },
+        }
+    }
+
+    /// Every list, rewritten from its slots now that the drain has run. Only
+    /// a driver that parked can have left a slot empty past its pass.
+    fn flushLists(ex: *Expansion) void {
+        if (!ex.parked_any) return;
+        var it = ex.lists.valueIterator();
+        while (it.next()) |exp| {
+            const list = ex.flatten(exp.*);
+            for (exp.*.sinks.items) |sink| ex.writeSink(sink, list);
+        }
+    }
+
+    /// Fold every parked driver whose awaited fact has fired, to quiescence.
+    /// Resuming one retires it, which can close the set the next is waiting
+    /// on — so the loop runs until nothing moves. Whatever is left is handed
+    /// to the worklist, which refuses it as the expansion deadlock.
+    fn drainParked(ex: *Expansion) void {
+        var progress = true;
+        while (progress) {
+            progress = false;
+            var i: usize = 0;
+            while (i < ex.parked.items.len) {
+                var p = ex.parked.items[i];
+                ex.awaited = null;
+                ex.just_parked = false;
+                _ = p.group.expandDriverBody(p.decl, p.src, p.declared, p.cursor);
+                if (ex.just_parked) {
+                    ex.just_parked = false;
+                    ex.parked.items[i].awaited = ex.awaited orelse p.awaited;
+                    i += 1;
+                    continue;
+                }
+                ex.self.expansion.retire(p.decl);
+                _ = ex.parked.orderedRemove(i);
+                progress = true;
+            }
+        }
+        // The diagnostic is about the driver, not about how many views of its
+        // module reached it.
+        var named = std.AutoHashMap(*const Node, void).init(ex.self.alloc);
+        defer named.deinit();
+        for (ex.parked.items) |p| {
+            if (named.contains(p.decl)) continue;
+            named.put(p.decl, {}) catch {};
+            ex.self.expansion.parkDriver(driverWhat(p.decl), p.awaited, driverSpan(p.decl));
+        }
+    }
+
+    fn parkDriver(ex: *Expansion, group: Group, decl: *const Node, src: ?[]const u8, declared: ?*std.StringHashMap([]const u8), cursor: []const u8) void {
+        // One driver node is reachable from several views of its module, and
+        // each view holds its own slot — so each waits on its own bookmark.
+        for (ex.parked.items) |p| {
+            if (p.decl == decl and p.group.out == group.out) return;
+        }
+        ex.parked_any = true;
+        ex.parked.append(ex.self.alloc, .{
+            .decl = decl,
+            .src = src,
+            .group = group,
+            .declared = declared,
+            .cursor = cursor,
+            .awaited = ex.awaited orelse "",
+        }) catch {};
+    }
+
+    /// The one canonical membership read, asked by a driver condition. A
+    /// positive is readable the moment it exists — membership only grows. A
+    /// negative is utterable only against a set nothing can still grow, so an
+    /// open set parks the driver against the fact instead of answering
+    /// something the very next driver could contradict.
+    fn readMembership(ex: *Expansion, proto_node: *const Node, target: TypeId) ?bool {
+        const query = ex.self.taggedMembershipOf(proto_node, target) orelse return null;
+        return switch (query.state) {
+            .member => true,
+            .absent_final => false,
+            .absent_unstable => blk: {
+                ex.awaited = std.fmt.allocPrint(ex.self.alloc, "'{s}' membership of '{s}' to be final", .{
+                    ex.self.formatTypeName(query.proto),
+                    ex.self.formatTypeName(target),
+                }) catch "a tagged conformer set to be final";
+                break :blk null;
+            },
+        };
     }
 
     /// The sole evaluator of a module-scope driver condition. It folds the
@@ -314,7 +515,7 @@ const Expansion = struct {
         if (!ex.taggedProtocolNamed(proto_name)) return null;
         const target = ex.self.resolveTypeArg(c.args[1]);
         if (target == .unresolved) return null;
-        return ex.self.computeHasImpl(c.args[0], target);
+        return ex.readMembership(c.args[0], target);
     }
 
     fn taggedProtocolNamed(ex: *Expansion, name: []const u8) bool {
@@ -425,14 +626,30 @@ fn isTargetEnumName(name: []const u8) bool {
     return std.mem.eql(u8, name, "OperatingSystem") or std.mem.eql(u8, name, "Architecture");
 }
 
-/// One list's expansion cursor: where the selected declarations land, and the
-/// dedup state a branch-local flat import merges against.
+/// The name of the driver class in a diagnostic — what the deadlock report
+/// calls the thing that cannot be decided.
+fn driverWhat(decl: *const Node) []const u8 {
+    return switch (decl.data) {
+        .for_expr => "this `inline for`",
+        .match_expr => "this `inline if ... ==`",
+        else => "this `inline if`",
+    };
+}
+
+/// Where the diagnostic points: the question the driver could not answer.
+fn driverSpan(decl: *const Node) ast.Span {
+    return switch (decl.data) {
+        .if_expr => |ie| ie.condition.span,
+        else => decl.span,
+    };
+}
+
+/// One driver's expansion cursor: the slot its selected declarations land in,
+/// and the dedup state a branch-local flat import merges against.
 const Group = struct {
     ex: *Expansion,
     out: *std.ArrayList(*Node),
-    kind: ListKind,
-    names: *std.StringHashMap(void),
-    nodes: *std.AutoHashMap(*const Node, void),
+    ledger: *Ledger,
 
     /// Whether this driver's declarations still need their module-scope facts
     /// minted. A driver reached through a second view of its module produces
@@ -448,7 +665,15 @@ const Group = struct {
     /// expansion was abandoned after a diagnostic.
     fn expandDriver(g: *Group, decl: *const Node, src: ?[]const u8, declared: ?*std.StringHashMap([]const u8), cursor: []const u8) bool {
         g.ex.self.expansion.registerDriver(decl);
+        g.ex.just_parked = false;
         const done = g.expandDriverBody(decl, src, declared, cursor);
+        // A driver that parked is not decided: it holds its contributions until
+        // the fact it awaits fires and the drain folds it.
+        if (g.ex.just_parked) {
+            g.ex.just_parked = false;
+            g.ex.parkDriver(g.*, decl, src, declared, cursor);
+            return done;
+        }
         // Taken, rejected, or out of iterations — the driver is decided, and
         // exactly the contributions it registered come back.
         g.ex.self.expansion.retire(decl);
@@ -456,11 +681,20 @@ const Group = struct {
     }
 
     fn expandDriverBody(g: *Group, decl: *const Node, src: ?[]const u8, declared: ?*std.StringHashMap([]const u8), cursor: []const u8) bool {
-        const mint = g.claimRegistration(decl);
         g.ex.self.setCurrentSourceFile(src);
         switch (decl.data) {
             .if_expr => |ie| {
-                const is_true = g.ex.driveCondition(ie.condition, src, 0) orelse {
+                g.ex.awaited = null;
+                const folded = g.ex.driveCondition(ie.condition, src, 0);
+                // A read that cannot answer yet parks the whole fold: nothing
+                // is claimed, nothing is spliced, and the driver stays
+                // undecided until its fact fires.
+                if (folded == null and g.ex.awaited != null) {
+                    g.ex.just_parked = true;
+                    return true;
+                }
+                const mint = g.claimRegistration(decl);
+                const is_true = folded orelse {
                     // Never silently discard the declarations of an unevaluable
                     // module-scope conditional (issue 0241): a live function,
                     // import, or asm block would vanish and surface as a
@@ -477,10 +711,11 @@ const Group = struct {
                 return g.spliceGroup(body, src, mint, declared, cursor);
             },
             .match_expr => |me| {
+                const mint = g.claimRegistration(decl);
                 const body = g.ex.self.evalComptimeMatch(&me) orelse return true;
                 return g.spliceGroup(body, src, mint, declared, cursor);
             },
-            .for_expr => |fe| return g.expandInlineFor(decl, &fe, src, mint),
+            .for_expr => |fe| return g.expandInlineFor(decl, &fe, src, g.claimRegistration(decl)),
             else => return true,
         }
     }
@@ -580,7 +815,7 @@ const Group = struct {
         // into the importing module's list — never into its own surface. The
         // merged list is unexpanded: this is the only place a module reached
         // solely through a branch is ever walked, so its own drivers fold here.
-        if (g.kind == .own) return;
+        if (g.ledger.kind == .own) return;
         for (imported.decls) |decl| {
             if (imports.isModuleDriver(decl)) {
                 _ = g.expandDriver(decl, decl.source_file, null, "");
@@ -590,13 +825,13 @@ const Group = struct {
                 g.ex.raise(decl);
                 continue;
             }
-            if (g.nodes.contains(decl)) continue;
+            if (g.ledger.nodes.contains(decl)) continue;
             if (decl.data.declName()) |name| {
-                if (g.names.contains(name)) {
+                if (g.ledger.names.contains(name)) {
                     if (!imports.ResolvedModule.isPerSourceDecl(decl)) continue;
-                } else g.names.put(name, {}) catch {};
+                } else g.ledger.names.put(name, {}) catch {};
             }
-            g.nodes.put(decl, {}) catch {};
+            g.ledger.nodes.put(decl, {}) catch {};
             g.ex.decided(decl);
             g.out.append(self.alloc, decl) catch {};
         }
@@ -636,14 +871,14 @@ const Group = struct {
     /// takes part in the cross-module first-wins merge — except a per-source
     /// declaration, which must reach registration as its own module's author.
     fn emit(g: *Group, decl: *Node) void {
-        if (g.kind == .transitive) {
+        if (g.ledger.kind == .transitive) {
             if (decl.data.declName()) |name| {
-                if (g.names.contains(name)) {
+                if (g.ledger.names.contains(name)) {
                     if (!imports.ResolvedModule.isPerSourceDecl(decl)) return;
-                } else g.names.put(name, {}) catch {};
+                } else g.ledger.names.put(name, {}) catch {};
             }
         }
-        g.nodes.put(decl, {}) catch {};
+        g.ledger.nodes.put(decl, {}) catch {};
         g.ex.decided(decl);
         g.out.append(g.ex.self.alloc, decl) catch {};
     }
@@ -724,9 +959,11 @@ const Group = struct {
 
         // Declaration names produced by the expansion, with the cursor that
         // produced each — the groups share one module scope, so a name that
-        // does not vary with the cursor collides with itself.
-        var declared = std.StringHashMap([]const u8).init(self.alloc);
-        defer declared.deinit();
+        // does not vary with the cursor collides with itself. A driver inside
+        // the unroll can park holding it, so it outlives the unroll.
+        const declared = self.alloc.create(std.StringHashMap([]const u8)) catch return true;
+        declared.* = std.StringHashMap([]const u8).init(self.alloc);
+        g.ex.cursors.append(self.alloc, declared) catch {};
 
         for (literal.elements, 0..) |element, i| {
             var subst = ast.Substitution.init(self.alloc);
@@ -754,7 +991,7 @@ const Group = struct {
                 .span = decl.span,
                 .data = .{ .block = .{ .stmts = iteration.toOwnedSlice(self.alloc) catch return true, .produces_value = false } },
             };
-            if (!g.spliceGroup(body, src, mint, &declared, cursor)) return false;
+            if (!g.spliceGroup(body, src, mint, declared, cursor)) return false;
         }
         return true;
     }

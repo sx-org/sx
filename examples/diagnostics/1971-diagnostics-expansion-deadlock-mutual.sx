@@ -1,0 +1,27 @@
+// Mutual wait: neither driver feeds the set it asks about, but each feeds the
+// set the OTHER one asks about.
+//
+// Both park — the first on `Draw`'s finality, which only the second could
+// publish, and the second on `Tally`'s, which only the first could. Nothing
+// runnable is left, so the one expansion-deadlock diagnostic names both
+// bookmarks and the fact each is down against.
+#import "modules/std.sx";
+
+Draw :: protocol tagged { draw :: (self: *Self) -> i64; }
+Tally :: protocol tagged { count :: (self: *Self) -> i64; }
+
+Widget :: struct { n: i64; }
+Panel :: struct { n: i64; }
+
+inline if !has_impl(Draw, Widget) {
+    impl Tally for Panel { count :: (self: *Panel) -> i64 { self.n } }
+}
+
+inline if !has_impl(Tally, Panel) {
+    impl Draw for Widget { draw :: (self: *Widget) -> i64 { self.n } }
+}
+
+main :: () {
+    w := Widget.{ n = 1 };
+    print("{}\n", w.n);
+}

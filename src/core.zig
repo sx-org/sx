@@ -220,8 +220,9 @@ pub const Compilation = struct {
         // so a VM bail is a hard build error. The bail reason is in
         // `comptime_vm.last_bail_reason` (surfaced by `main.printInterpBailDiag`).
         const build_config = if (self.ir_emitter) |*e| &e.build_config else null;
-        return ir.comptime_vm.runBuildCallback(self.allocator, mod, id, build_config, &self.import_sources, pass_options) orelse
-            error.ComptimeVmBail;
+        const evaluation = ir.comptime_vm.runBuildCallback(self.allocator, mod, id, build_config, &self.import_sources, pass_options, null);
+        defer evaluation.destroy();
+        return evaluation.completed() orelse error.ComptimeVmBail;
     }
 
     /// Get link flags accumulated from #run build blocks.

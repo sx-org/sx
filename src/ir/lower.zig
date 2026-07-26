@@ -3083,6 +3083,8 @@ pub const Lowering = struct {
     pub const allocViaAllocatorValue = lower_protocol.allocViaAllocatorValue;
     pub const resolveConcreteTypeName = lower_protocol.resolveConcreteTypeName;
     pub const computeHasImpl = lower_protocol.computeHasImpl;
+    pub const taggedMembershipOf = lower_protocol.taggedMembershipOf;
+    pub const factScheduler = lower_tagged.factScheduler;
 
     // --- moved to lower/coerce.zig (lower_coerce) ---
     pub const lowerXX = lower_coerce.lowerXX;
