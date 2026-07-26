@@ -1071,6 +1071,12 @@ const Group = struct {
                 .visibility = stmt.visibility,
             };
             if (mint) g.mintFacts(ns_node, source);
+            // The module arrives with its own drivers, and they fold later —
+            // when the alias's views are expanded. They register HERE, while
+            // this driver's registration still covers what they can declare,
+            // so retiring it opens no window in which nothing accounts for
+            // them.
+            g.ex.registerDrivers(imported.decls);
             g.emit(ns_node);
             return;
         }
