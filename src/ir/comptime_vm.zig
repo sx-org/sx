@@ -675,6 +675,10 @@ pub const Vm = struct {
             .float => |v| try self.writeField(table, addr, ty, @bitCast(v)),
             .func_ref => |fid| try self.writeField(table, addr, ty, funcRefWord(fid)),
             .global_ref => |gid| try self.writeField(table, addr, ty, try self.evalGlobalAddress(gid)),
+            // The VM's tag word is the conformer's own type, exactly what
+            // `tagged_tag_of` answers here — the dense number is a link-time
+            // artifact (§7.9).
+            .tagged_tag => |t| try self.writeField(table, addr, ty, @as(Reg, t.concrete.index())),
             .null_val, .zeroinit, .undef => {}, // destination already zeroed
             .aggregate => |fields| {
                 if (ty.isBuiltin()) return self.failMsg("comptime VM: const aggregate at a builtin type");

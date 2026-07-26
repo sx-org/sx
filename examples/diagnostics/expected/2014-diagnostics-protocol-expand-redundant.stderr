@@ -1,0 +1,5 @@
+error: 'Meter' already carries #expand on its header, so every method's dispatch already expands at the call site — remove one
+  --> examples/diagnostics/2014-diagnostics-protocol-expand-redundant.sx:8:42
+   |
+ 8 |     read :: (self: *Self, n: i64) -> i64 #expand;
+   |                                          ^^^^^^^

@@ -1613,6 +1613,18 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
 /// which handles the optional `{payload, has_value}` layout before calling
 /// here). This is the raw payload serializer.
 pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const Node, var_ty: TypeId) ?inst_mod.ConstantValue {
+    // A borrow-kind protocol-typed global has exactly one static form — the
+    // identity erasure of a named global — so its arm runs before the shape
+    // dispatch below, which would otherwise serialize an rvalue initializer
+    // field-wise against the handle's layout.
+    switch (v.data) {
+        .undef_literal, .null_literal => {},
+        else => switch (self.protocolGlobalInit(vd, v, var_ty)) {
+            .not_applicable => {},
+            .folded => |cv| return cv,
+            .refused => return null,
+        },
+    }
     return switch (v.data) {
         .undef_literal => .zeroinit,
         .null_literal => .null_val,

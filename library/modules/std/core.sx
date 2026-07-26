@@ -135,6 +135,12 @@ Source_Location :: struct {
 // `#identity`: an allocator IS its state object — protocol values only
 // ever borrow a named allocator (`xx gpa`, `gpa.(Allocator)`); rvalue
 // erasure and `free` of the protocol value refuse at compile time.
+// `inline`: the handle carries its own dispatch words, so an allocation
+// through a protocol value is one indirect call whatever the program's
+// allocator population is. `tagged #expand` is the measured alternative
+// (design/protocols.md §6.3a, "the Allocator trade"): it wins wherever
+// the receiver is predictable and loses where it is not, and switching
+// is this one line — nothing in the compiler is keyed to the kind.
 Allocator :: protocol inline #identity {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);

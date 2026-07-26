@@ -2282,7 +2282,7 @@ pub fn diagnoseMissingContext(self: *Lowering, what: []const u8) Ref {
 /// NOT fall back to a direct libc malloc — that was the silent escape
 /// hatch that bit us through the implicit-context refactor (see the
 /// "Silent unimplemented arms" REJECTED PATTERN in CLAUDE.md).
-pub fn allocViaContext(self: *Lowering, size_ref: Ref, void_ptr_ty: TypeId) Ref {
+pub fn allocViaContext(self: *Lowering, size_ref: Ref) Ref {
     if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) {
         return self.diagnoseMissingContext("heap allocation");
     }
@@ -2294,24 +2294,25 @@ pub fn allocViaContext(self: *Lowering, size_ref: Ref, void_ptr_ty: TypeId) Ref 
     const af = self.contextFieldByName("allocator") orelse {
         return self.diagnoseMissingContext("heap allocation");
     };
+    const pd = self.getProtocolInfo(af.ty) orelse {
+        return self.diagnoseMissingContext("heap allocation");
+    };
     const ctx = self.builder.load(self.current_ctx_ref, ctx_ty);
     const allocator = self.builder.structGet(ctx, af.index, af.ty);
-    // `inline` Allocator layout: { ctx, __type_id, alloc_fn, dealloc_fn }.
-    // field 0 = receiver ctx, field 2 = alloc fn-ptr.
-    const alloc_ctx = self.builder.structGet(allocator, 0, void_ptr_ty);
-    const fn_ptr = self.builder.structGet(allocator, 2, void_ptr_ty);
-    // Allocator thunks are sx-side and carry the implicit __sx_ctx at
-    // slot 0. Forward our caller's current_ctx_ref so the thunk's body
-    // (and the concrete alloc method it forwards to) has a real
-    // Context to thread on.
-    const args = if (self.implicit_ctx_enabled)
-        self.alloc.dupe(Ref, &.{ self.current_ctx_ref, alloc_ctx, size_ref }) catch unreachable
-    else
-        self.alloc.dupe(Ref, &.{ alloc_ctx, size_ref }) catch unreachable;
-    return self.builder.emit(.{ .call_indirect = .{
-        .callee = fn_ptr,
-        .args = args,
-    } }, void_ptr_ty);
+    // Through the same dispatch every `a.alloc_bytes(n)` in sx goes through,
+    // so the allocator protocol's KIND is a property of its declaration and
+    // not something the compiler-driven heap copies re-encode.
+    const cs = self.builder.current_span;
+    const dispatched = self.emitProtocolDispatch(
+        allocator,
+        pd,
+        "alloc_bytes",
+        &.{size_ref},
+        af.ty,
+        .{ .start = cs.start, .end = cs.end },
+    );
+    if (dispatched == Ref.none) return self.emitPlaceholder("allocator-dispatch");
+    return dispatched;
 }
 
 /// Emit a call to a extern-declared function looked up by name.

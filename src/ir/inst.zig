@@ -744,6 +744,12 @@ pub const Function = struct {
     /// real field matches.
     is_set: bool = false,
 
+    /// The body must be inlined into every caller — a guarantee, not a
+    /// preference. Carried by the dispatch routine of an `#expand` tagged
+    /// method, whose contract is that the switch stands at the call site
+    /// (specs §6.3a); emit_llvm lowers it to LLVM's `alwaysinline`.
+    always_inline: bool = false,
+
     pub const Param = struct {
         name: StringId,
         ty: TypeId,
@@ -810,10 +816,21 @@ pub const ConstantValue = union(enum) {
     /// Vtable constant: struct of function pointers, used for protocol vtable globals.
     vtable: []const FuncId,
     /// Function pointer leaf, for static initializers that include
-    /// function addresses inside nested aggregates (e.g. the inline
-    /// Allocator value `{ ctx, alloc_fn, dealloc_fn }` for the
-    /// process-wide default Context).
+    /// function addresses inside nested aggregates (e.g. an `inline`
+    /// protocol value `{ ctx, __type_id, fn…}` in the process-wide
+    /// default Context).
     func_ref: FuncId,
     /// Relocatable address of another IR global (e.g. `p : *T = @g`).
     global_ref: GlobalId,
+    /// The tag word of a static tagged-protocol borrow. The dense number does
+    /// not exist until the collection fixpoint converges, so the pair is
+    /// carried and each world resolves it the way it resolves `tagged_tag_of`:
+    /// codegen to the published tag, the comptime VM to the conformer's own
+    /// type.
+    tagged_tag: TaggedTag,
+};
+
+pub const TaggedTag = struct {
+    proto: TypeId,
+    concrete: TypeId,
 };

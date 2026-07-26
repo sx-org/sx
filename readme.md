@@ -480,6 +480,13 @@ Allocator :: protocol inline #identity {
 }
 ```
 
+`#expand` is the tagged-only attribute: it puts the dispatch switch at the
+call site instead of behind one outlined routine, so a caller that knows its
+conformer keeps a single arm and pays nothing for the protocol.
+```sx
+Gauge :: protocol tagged #expand { read :: (self: *Self) -> i64; }
+```
+
 ### Pattern Matching
 
 ```sx

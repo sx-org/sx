@@ -3081,6 +3081,7 @@ pub const Lowering = struct {
     pub const emitDefaultContextGlobal = lower_protocol.emitDefaultContextGlobal;
     pub const emitDefaultContextGlobalEarly = lower_protocol.emitDefaultContextGlobalEarly;
     pub const protocolErasureConst = lower_protocol.protocolErasureConst;
+    pub const protocolGlobalInit = lower_protocol.protocolGlobalInit;
     pub const createProtocolThunk = lower_protocol.createProtocolThunk;
     pub const protocolDefaultDispatchDomain = lower_protocol.protocolDefaultDispatchDomain;
     pub const buildProtocolValue = lower_protocol.buildProtocolValue;

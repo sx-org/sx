@@ -1329,14 +1329,24 @@ pub const Parser = struct {
             self.advance();
         }
 
-        // Protocol attributes: #identity (ownership class).
+        // Protocol attributes: #identity (ownership class), #expand (call-site
+        // dispatch expansion). Order between them is free.
         var is_identity = false;
-        while (self.current.tag == .hash_identity) {
-            if (is_identity) return self.fail("duplicate #identity on protocol");
-            if (kind == .constraint) {
-                return self.fail("#identity is meaningless on a constraint protocol — there are no runtime values to classify");
+        var is_expand = false;
+        while (self.current.tag == .hash_identity or self.current.tag == .hash_expand) {
+            if (self.current.tag == .hash_identity) {
+                if (is_identity) return self.fail("duplicate #identity on protocol");
+                if (kind == .constraint) {
+                    return self.fail("#identity is meaningless on a constraint protocol — there are no runtime values to classify");
+                }
+                is_identity = true;
+            } else {
+                if (is_expand) return self.fail("duplicate #expand on protocol");
+                if (kind != .tagged) {
+                    return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and kind '{s}' does not", .{kind.spelling()});
+                }
+                is_expand = true;
             }
-            is_identity = true;
             self.advance();
         }
 
@@ -1415,6 +1425,21 @@ pub const Parser = struct {
                 return_type = try self.parseFnReturnType();
             }
 
+            // Per-method `#expand`, in the same trailing attribute slot `#get` /
+            // `#set` occupy on an ordinary method.
+            var method_expand = false;
+            while (self.current.tag == .hash_expand) {
+                if (method_expand) return self.failFmt("duplicate #expand on method '{s}'", .{method_name});
+                if (kind != .tagged) {
+                    return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and '{s}' is declared '{s}'", .{ name, kind.spelling() });
+                }
+                if (is_expand) {
+                    return self.failFmt("'{s}' already carries #expand on its header, so every method's dispatch already expands at the call site — remove one", .{name});
+                }
+                method_expand = true;
+                self.advance();
+            }
+
             // Optional body (default method) or semicolon
             var default_body: ?*Node = null;
             if (self.current.tag == .l_brace) {
@@ -1442,6 +1467,7 @@ pub const Parser = struct {
                 .param_name_is_raw = all_param_name_is_raw[1..],
                 .return_type = return_type,
                 .default_body = default_body,
+                .is_expand = method_expand,
             });
         }
 
@@ -1452,6 +1478,7 @@ pub const Parser = struct {
             .methods = try methods.toOwnedSlice(self.allocator),
             .kind = kind,
             .is_identity = is_identity,
+            .is_expand = is_expand,
             .type_params = try type_params.toOwnedSlice(self.allocator),
             .is_raw = name_is_raw,
         } });
