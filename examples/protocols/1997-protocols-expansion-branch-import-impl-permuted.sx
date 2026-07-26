@@ -1,0 +1,23 @@
+// The same program as 1990, written in the other order.
+//
+// Every driver registers what its branches could contribute before any of them
+// folds, so where the importing driver is written cannot change the answer:
+// read-then-import the reader waits and resumes, import-then-read it folds
+// straight through the spliced impl. Both agree, because both answer about the
+// same decided program.
+#import "modules/std.sx";
+#import "./1990-protocols-expansion-branch-import-shapes.sx";
+
+inline if POINTER_SIZE == 8 {
+    #import "./1990-protocols-expansion-branch-import-impl.sx";
+} else {
+    NARROW :: 1;
+}
+
+inline if has_impl(Show, Item) { ADMITTED :: 1; } else { ADMITTED :: 0; }
+
+main :: () {
+    i := Item.{ n = 2 };
+    s := i.(Show);
+    print("{} {}\n", ADMITTED, s.fmt());
+}

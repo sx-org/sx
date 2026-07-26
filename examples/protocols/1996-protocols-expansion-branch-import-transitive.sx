@@ -1,0 +1,24 @@
+// The surface a branch can contribute is TRANSITIVE.
+//
+// The module the branch imports authors nothing at all: it flat-imports a
+// second module, which is where the only `impl Tag for Cell` is written.
+// Selecting the branch merges that module's whole transitive list into this
+// program, so the sweep counts it the same way — a contribution two modules
+// away is still a contribution, and the negative below waits for it exactly as
+// it waits for one written in the branch itself.
+#import "modules/std.sx";
+#import "./1996-protocols-expansion-branch-import-kinds.sx";
+
+inline if has_impl(Tag, Cell) { ADMITTED :: 1; } else { ADMITTED :: 0; }
+
+inline if POINTER_SIZE == 8 {
+    #import "./1996-protocols-expansion-branch-import-mid.sx";
+} else {
+    NARROW :: 1;
+}
+
+main :: () {
+    c := Cell.{ n = 2 };
+    t := c.(Tag);
+    print("{} {}\n", ADMITTED, t.id());
+}

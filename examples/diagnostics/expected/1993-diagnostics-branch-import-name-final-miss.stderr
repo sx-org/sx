@@ -1,0 +1,5 @@
+error: cannot evaluate this module-scope `inline if` condition; it must fold to a compile-time constant
+  --> examples/diagnostics/1993-diagnostics-branch-import-name-final-miss.sx:10:11
+   |
+10 | inline if WIDE { A :: 1; } else { A :: 0; }
+   |           ^^^^

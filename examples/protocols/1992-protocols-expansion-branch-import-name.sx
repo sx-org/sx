@@ -1,0 +1,23 @@
+// The declaration namespace, reached through a branch-local `#import` (§7.9).
+//
+// A name-lookup MISS waits until no undecided driver can still declare that
+// name into that exact scope. A flat `#import` in an unexpanded branch is one
+// of the ways it can be declared there: selecting the branch merges every name
+// the imported module authors into this module scope, so each of them is a
+// name this scope may still gain.
+//
+// `WIDE` is written in no line of this file. The driver reading it is above
+// the driver that can import it, and folds only once that one has decided.
+#import "modules/std.sx";
+
+inline if WIDE { A :: 1; } else { A :: 0; }
+
+inline if POINTER_SIZE == 8 {
+    #import "./1992-protocols-expansion-branch-import-wide.sx";
+} else {
+    NARROW :: 1;
+}
+
+main :: () {
+    print("{}\n", A);
+}

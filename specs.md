@@ -1754,7 +1754,11 @@ dataflow discipline:
   unexpanded `inline if`/`inline for` branch can still contribute
   to it. Contribution is judged syntactically and conservatively:
   an unexpanded body mentioning `impl P for …` contributes to `P`'s
-  sets.
+  sets, and one holding an `#import` contributes the whole surface
+  of the module it names — the impls, declaration names and
+  `#context_extend`s that module authors, transitively through its
+  own imports and branches — because selecting the branch is what
+  brings them in.
 - **Erased-target conversion facts depend on impl multiplicity**
   (the program-unique rule, §7.4), and uniqueness is not monotone —
   a later impl destroys it. An erased-target conversion therefore
