@@ -8,6 +8,7 @@ const program_index_mod = @import("../program_index.zig");
 const ProtocolDeclInfo = program_index_mod.ProtocolDeclInfo;
 const ProtocolMethodInfo = program_index_mod.ProtocolMethodInfo;
 const ProtocolResolver = @import("../protocols.zig").ProtocolResolver;
+const lower_tagged = @import("tagged.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -144,13 +145,19 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
             break :blk self.resolveTypeWithBindings(rt);
         } else .void;
         const self_occ = program_index_mod.protocolMethodSelfOccurrence(method);
-        method_infos.append(self.alloc, .{
+        const shape = program_index_mod.protocolMethodSelfShape(self.alloc, method);
+        var info: ProtocolMethodInfo = .{
             .name = method.name,
             .param_types = self.alloc.dupe(TypeId, ptypes.items) catch unreachable,
             .ret_type = ret,
             .dispatchable = self_occ == null,
             .self_param = if (self_occ) |occ| occ.param_name else null,
-        }) catch unreachable;
+            .self_params = shape.direct_params,
+            .returns_self = shape.direct_return,
+            .self_at_depth = shape.at_depth,
+        };
+        program_index_mod.applyDispatchSignature(self.alloc, &info, pd.kind, id);
+        method_infos.append(self.alloc, info) catch unreachable;
     }
     self.type_bindings = saved_tb;
 
@@ -1246,8 +1253,26 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
     // Era-2 availability: a method whose signature mentions `Self` past the
     // receiver has no expressible type at an erased call site — it has no
     // slot, and calling it through P / *P is a compile error pointing at
-    // the generic-bound path (where Self IS known, as the bound `T`).
-    if (!mi.dispatchable) {
+    // the generic-bound path (where Self IS known, as the bound `T`). A
+    // TAGGED value dispatches the DIRECT `Self` positions (§6.4): every arm
+    // knows `Self`, so only a mention at depth — and a `Self` RETURN on an
+    // `#identity` protocol — stays excluded there.
+    if (!mi.dispatchable and proto_info.kind == .tagged) {
+        if (!lower_tagged.taggedDispatchable(proto_info, mi)) {
+            if (self.diagnostics) |d| {
+                if (mi.self_at_depth) {
+                    const where: []const u8 = if (mi.self_param) |pname|
+                        std.fmt.allocPrint(self.alloc, "its parameter '{s}'", .{pname}) catch "a parameter"
+                    else
+                        "its return type";
+                    d.addFmt(.err, span, "'{s}' is unavailable on a tagged '{s}' value — {s} mentions 'Self' under a composite ('*Self', '?Self', '[]Self', 'Box(Self)'), which has no caller-side type: a composite of 16-byte '{s}' handles is not a composite of any one conformer, and no per-element coercion exists; call it through a generic bound instead: `f :: (a: $T/{s}) {{ a.{s}(…); }}`", .{ method_name, proto_info.name, where, proto_info.name, proto_info.name, method_name });
+                } else {
+                    d.addFmt(.err, span, "'{s}' returns 'Self' and '{s}' is an '#identity' tagged protocol — an arm would materialize an anonymous frame-scoped instance, which the naming discipline refuses; call it on a concrete receiver, or through a generic bound: `f :: (a: $T/{s}) -> T {{ a.{s}() }}`", .{ method_name, proto_info.name, proto_info.name, method_name });
+                }
+            }
+            return Ref.none;
+        }
+    } else if (!mi.dispatchable) {
         if (self.diagnostics) |d| {
             if (mi.self_param) |pname| {
                 d.addFmt(.err, span, "'{s}' is unavailable on an erased '{s}' value — its parameter '{s}: Self' has no expressible type here ('Self' denotes no type through erasure); call it through a generic bound instead: `f :: (a: $T/{s}, b: T) {{ a.{s}(b); }}`", .{ method_name, proto_info.name, pname, proto_info.name, method_name });
@@ -1273,11 +1298,13 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
 
     // A tagged value dispatches through its protocol's outlined switch — one
     // call, set-independent at the site; the switch (and its single-conformer
-    // fold) lives inside the routine.
+    // fold) lives inside the routine. A bare `-> Self` method is the one
+    // exception: its result ABI is the arm's, so the switch expands at the
+    // call site (§6.3).
     if (proto_info.kind == .tagged) {
-        if (self.refuseComptimeTagged(proto_ty, span)) return self.builder.constUndef(mi.ret_type);
-        if (self.refuseEmptyTaggedSet(proto_ty, span)) return self.builder.constUndef(mi.ret_type);
-        return self.emitTaggedDispatch(receiver, proto_info, proto_ty, mi, args);
+        if (self.refuseComptimeTagged(proto_ty, span)) return self.builder.constUndef(mi.dispatch_ret_type);
+        if (self.refuseEmptyTaggedSet(proto_ty, span)) return self.builder.constUndef(mi.dispatch_ret_type);
+        return self.emitTaggedDispatch(receiver, proto_info, proto_ty, mi, args, span);
     }
 
     // Extract ctx from protocol struct (field 0)

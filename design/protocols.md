@@ -726,7 +726,7 @@ frame ends. The compiler emits a warning at each such call site:
 ```
 warning: 'resized' returns 'Self' through a tagged value — the
 result materializes a frame-scoped temporary (one per call; lives
-to end of frame). See the Protocols spec, "-> Self placement".
+to end of frame). See design/protocols.md §6.4, "-> Self placement".
 ```
 
 No fixit is offered: the right restructure (bind the receiver

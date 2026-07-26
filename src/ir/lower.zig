@@ -678,6 +678,10 @@ pub const Lowering = struct {
     tagged_dispatch_fns: std.AutoHashMap(lower_tagged.MethodKey, FuncId),
     tagged_type_id_tables: std.AutoHashMap(TypeId, inst_mod.GlobalId),
     tagged_pending: std.ArrayList(lower_tagged.PendingRoutine),
+    /// Call-site-inlined `-> Self` switches (§6.4), whose case values are the
+    /// conformer tags — assigned only once the set converges, so they are
+    /// rewritten with the deferred `tagged_tag_of` operands.
+    tagged_pending_switches: std.ArrayList(lower_tagged.PendingSwitch),
     /// Every declared impl site of a tagged `(protocol, conformer)` pair.
     /// Tagged coherence is GLOBAL — a duplicate is an error regardless of
     /// import visibility — but only for a REACHED instantiation, so the check
@@ -1013,6 +1017,7 @@ pub const Lowering = struct {
             .tagged_dispatch_fns = std.AutoHashMap(lower_tagged.MethodKey, FuncId).init(module.alloc),
             .tagged_type_id_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
             .tagged_pending = std.ArrayList(lower_tagged.PendingRoutine).empty,
+            .tagged_pending_switches = std.ArrayList(lower_tagged.PendingSwitch).empty,
             .tagged_impl_sites = std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
             .param_impl_map = std.StringHashMap(std.ArrayList(ParamImplEntry)).init(module.alloc),
             .param_protocol_instances = std.AutoHashMap(TypeId, ParamProtocolInstance).init(module.alloc),
