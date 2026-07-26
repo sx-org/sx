@@ -474,11 +474,15 @@ allocator, an Io runtime): rvalue erasure and `free` of the value refuse
 at compile time, and `is_identity(T)` reflects the class. The std
 `Allocator` and `Io` are both:
 ```sx
-Allocator :: protocol tagged #identity {
+Allocator :: protocol tagged #identity #expand {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
 ```
+
+`#expand` is the other tagged attribute: it puts the dispatch switch at the
+call site instead of behind one outlined routine, so a caller that knows its
+allocator keeps a single arm and pays nothing for the protocol.
 
 ### Pattern Matching
 

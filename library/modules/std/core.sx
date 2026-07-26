@@ -137,9 +137,12 @@ Source_Location :: struct {
 // erasure and `free` of the protocol value refuse at compile time.
 // `tagged`: the conformer set is whole-program, so the handle is the
 // 16-byte `{ctx, tag}` borrow and every dispatch goes through the
-// protocol's outlined switch — which folds to a direct call wherever the
-// program has one allocator.
-Allocator :: protocol tagged #identity {
+// protocol's switch — which folds to a direct call wherever the program
+// has one allocator.
+// `#expand`: that switch stands at the call site, so a caller that knows
+// its allocator pays nothing for the protocol and a bump arena inlines
+// into the loop that allocates from it.
+Allocator :: protocol tagged #identity #expand {
     alloc_bytes :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
