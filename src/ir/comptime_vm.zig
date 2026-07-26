@@ -670,9 +670,22 @@ pub const Vm = struct {
             // (the `.type_value` representation). `regToValue` maps it back to a
             // `.type_tag` Value at the legacy boundary.
             .const_type => |tid| return .{ .value = @as(Reg, tid.index()) },
-            // Tags are link-stage artifacts that do not exist during
-            // compilation; comptime tagged values refuse at their source site.
-            .tagged_tag_of => return error.Unsupported,
+            // A comptime tagged value is SYMBOLIC: its second word is the
+            // conformer's own `TypeId`, never the dense tag (§7.9 — tags are
+            // assigned at whole-program link, after every evaluation).
+            .tagged_tag_of => |t| return .{ .value = @as(Reg, t.concrete.index()) },
+            // Which makes the concrete `Type` word the word itself: no table
+            // load, because the tag space the table is indexed by does not
+            // exist here.
+            .tagged_type_id => |t| return .{ .value = frame.get(t.tag.index()) },
+            // The probe's negative half: utterable only against a final set, so
+            // it is answered from the converged numbering — being numbered IS
+            // being in the set.
+            .tagged_conforms => |t| {
+                const module = self.module orelse return self.failMsg("comptime VM: a conformance probe needs a module");
+                if (!module.tagged_sets_final) return self.failMsg("comptime VM: a tagged conformance probe ran before the collection fixpoint converged");
+                return .{ .value = @intFromBool(module.tagged_tags.contains(.{ .proto = t.proto, .concrete = t.concrete })) };
+            },
 
             // ── Arithmetic ──────────────────────────────────────
             .add, .sub, .mul, .div, .mod => |b| return .{
@@ -977,6 +990,7 @@ pub const Vm = struct {
                 const child = table.get(ins.ty).optional.child; // ins.ty is ?T
                 const val = frame.get(u.operand.index());
                 if (optChildIsPtr(table, child)) return .{ .value = val }; // pointer optional: the pointer
+                if (optChildIsProtocol(table, child)) return .{ .value = val }; // sentinel-shaped: the handle itself
                 const addr = self.machine.allocBytes(table.typeSizeBytes(ins.ty), table.typeAlignBytes(ins.ty));
                 try self.writeField(table, addr, child, val); // payload @ 0
                 try self.machine.writeWord(addr + table.typeSizeBytes(child), 1, 1); // has_value flag = 1
@@ -991,7 +1005,7 @@ pub const Vm = struct {
                     return error.TypeError;
                 }
                 const child = table.get(opt_ty).optional.child;
-                if (optChildIsPtr(table, child)) return .{ .value = v };
+                if (optChildIsPtr(table, child) or optChildIsProtocol(table, child)) return .{ .value = v };
                 return .{ .value = try self.readField(table, v, child) };
             },
             .optional_has_value => |u| {
@@ -1004,7 +1018,7 @@ pub const Vm = struct {
                 const v = frame.get(b.lhs.index());
                 if (try self.optHas(table, opt_ty, v)) {
                     const child = table.get(opt_ty).optional.child;
-                    if (optChildIsPtr(table, child)) return .{ .value = v };
+                    if (optChildIsPtr(table, child) or optChildIsProtocol(table, child)) return .{ .value = v };
                     return .{ .value = try self.readField(table, v, child) };
                 }
                 return .{ .value = frame.get(b.rhs.index()) };
@@ -1487,9 +1501,36 @@ pub const Vm = struct {
         const argbuf = self.gpa.alloc(Reg, args.len) catch @panic("comptime VM: out of memory (call args)");
         defer self.gpa.free(argbuf);
         for (args, 0..) |a, i| argbuf[i] = frame.get(a.index());
+        if (try self.devirtualize(module, fid, argbuf)) |r| return r;
         self.call_stack.append(self.gpa, fid) catch @panic("comptime VM: out of memory (call stack)");
         defer _ = self.call_stack.pop();
         return self.run(callee, argbuf);
+    }
+
+    /// A call to an outlined tagged dispatch routine, resolved against the
+    /// receiver's CARRIED concrete type instead of the routine's tag switch
+    /// (§7.9): the value's second word is a `TypeId` here, so the switch would
+    /// find no arm. Selecting the arm and calling it directly IS the
+    /// devirtualization — the same answer the switch gives at runtime.
+    /// Null when `fid` is not a dispatch routine.
+    fn devirtualize(self: *Vm, module: *const Module, fid: FuncId, args: []Reg) Error!?Reg {
+        const entry = for (module.tagged_dispatch.items) |*e| {
+            if (e.routine == fid) break e;
+        } else return null;
+        const callee = module.getFunction(fid);
+        const value_slot: usize = if (callee.has_implicit_ctx) 1 else 0;
+        if (value_slot >= args.len) return self.failMsg("comptime VM: tagged dispatch routine called without its receiver");
+        const value = args[value_slot];
+        const concrete = TypeId.fromIndex(@intCast(try self.machine.readWord(value + 8, 8)));
+        const arm = for (entry.members, entry.arms) |m, a| {
+            if (m == concrete) break a;
+        } else return self.failFmt("comptime VM: no '{s}' conformer arm for the value's concrete type", .{module.types.getString(callee.name)});
+        // The arm takes the receiver's ctx pointer where the routine took the
+        // whole value; every other argument passes through.
+        args[value_slot] = try self.machine.readWord(value, 8);
+        self.call_stack.append(self.gpa, arm) catch @panic("comptime VM: out of memory (call stack)");
+        defer _ = self.call_stack.pop();
+        return try self.run(module.getFunction(arm), args);
     }
 
     /// Call a real extern (libc / host) function via dlsym + the `host_ffi`
@@ -2702,6 +2743,15 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         };
     }
 
+    /// A `?P` over a protocol value is the protocol's own 16 bytes: the handle
+    /// with a null ctx IS the absent sentinel (specs.md §7.6), so there is no
+    /// flag byte to write and the value passes through wrap/unwrap unchanged.
+    fn optChildIsProtocol(table: *const types.TypeTable, child: TypeId) bool {
+        if (child.isBuiltin()) return false;
+        const info = table.get(child);
+        return info == .@"struct" and info.@"struct".is_protocol;
+    }
+
     /// Does an optional value `v` of type `opt_ty` hold a value? A pointer optional
     /// is present iff non-null; a `{T,i1}` optional is none when `v` is `null_addr`
     /// (the `const_null` form) else its flag byte (at offset `sizeof(child)`) is set.
@@ -2709,6 +2759,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         const child = table.get(opt_ty).optional.child;
         if (optChildIsPtr(table, child)) return v != null_addr;
         if (v == null_addr) return false;
+        if (optChildIsProtocol(table, child)) return (try self.machine.readWord(v, 8)) != null_addr;
         return (try self.machine.readWord(v + table.typeSizeBytes(child), 1)) != 0;
     }
 

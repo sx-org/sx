@@ -1133,6 +1133,49 @@ pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []cons
     return buildErasedValue(self, ctx_ptr, proto_name, concrete_type_name, proto_ty, concrete_ty, thunks, pd);
 }
 
+/// The soft probe `x.(?P)` on a CONCRETE receiver (§7.9): under `?`, a
+/// protocol target on a concrete value asks conformance instead of
+/// converting, so a non-conformer answers `null` where the erasure would
+/// error. What it asks is per kind — site-local impl visibility on the
+/// constraint/erased kinds, whole-program membership on `tagged`. Returns
+/// null when the site is not a probe ANSWER: the pair conforms, and the
+/// ordinary soft erasure lowers it.
+pub fn lowerProtocolProbe(self: *Lowering, pc: *const ast.PostfixCast, proto_ty: TypeId, dst_ty: TypeId) ?Ref {
+    // A constraint protocol has no values at all, which is a different fact
+    // from this type not conforming — leave it to the valueless refusal.
+    if (valuelessProtocolIn(self, proto_ty) != null) return null;
+    const recv_ty = self.inferExprType(pc.operand);
+    if (recv_ty == .unresolved or recv_ty == .void) return null;
+    const concrete_ty = if (recv_ty.isBuiltin()) recv_ty else switch (self.module.types.get(recv_ty)) {
+        .pointer => |p| p.pointee,
+        else => recv_ty,
+    };
+    if (self.isTagged(proto_ty)) {
+        if (self.refuseComptimeTagged(proto_ty, pc.type_expr.span)) return self.builder.constNull(dst_ty);
+        if (lower_tagged.taggedConformsNow(self, proto_ty, concrete_ty)) return null;
+        const ctx_ptr = probeReceiverAddress(self, pc.operand, recv_ty) orelse return null;
+        return lower_tagged.lowerTaggedProbe(self, ctx_ptr, proto_ty, concrete_ty, dst_ty);
+    }
+    const cname = self.resolveConcreteTypeName(concrete_ty) orelse return null;
+    if (firstUnimplementedMethod(self, proto_ty, cname, concrete_ty) == null) return null;
+    return self.builder.constNull(dst_ty);
+}
+
+/// The storage the probe's answer would borrow. A pointer receiver IS the
+/// address; an lvalue borrows the storage its value was read through; an
+/// rvalue gets a frame temporary.
+fn probeReceiverAddress(self: *Lowering, node: *const ast.Node, recv_ty: TypeId) ?Ref {
+    if (recv_ty == .void) return null;
+    if (!recv_ty.isBuiltin() and self.module.types.get(recv_ty) == .pointer) return self.lowerExpr(node);
+    const val = self.lowerExpr(node);
+    if (self.isLvalueExpr(node)) {
+        if (self.refStorageAddress(val)) |addr| return addr;
+    }
+    const slot = self.builder.alloca(recv_ty);
+    self.builder.store(slot, val);
+    return slot;
+}
+
 /// The conformance gate shared by every erasure spelling: a concrete type may
 /// only become a protocol value of a protocol it actually `impl`-ements.
 /// Without it, thunk synthesis falls through to `unreachable` — a silent

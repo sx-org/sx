@@ -4,9 +4,11 @@
 //! Membership is whole-program: the conformer set of a tagged protocol is
 //! collected by a fixpoint over the monomorphized program, then numbered in a
 //! deterministic canonical order. Because a conformer admitted late can
-//! renumber the whole space, no erasure or downcast site may bake a literal:
-//! they emit `tagged_tag_of`, and `convergeTaggedSets` rewrites every
-//! occurrence once the fixpoint has converged.
+//! renumber the whole space — and because the number does not exist at all
+//! during compile-time execution (specs.md §7.9) — no site bakes a literal:
+//! erasure and downcast emit `tagged_tag_of`, `convergeTaggedSets` publishes
+//! the numbering, and each world resolves the op its own way (codegen to the
+//! dense tag, the comptime VM to the conformer's own type).
 //!
 //! Emission at convergence produces, per reached protocol:
 //!   - `__sx_tags_<P>_type_ids` — the tag → concrete `Type` table, which the
@@ -571,20 +573,20 @@ pub fn warnDeadTypeSwitchArm(self: *Lowering, subject_ty: TypeId, arm_ty: TypeId
 
 // ── Erasure ─────────────────────────────────────────────────────────────
 
-/// Comptime protocol values are symbolic — `{ctx, concrete type}` — and a
-/// tagged value's numeric word is a link-stage artifact that does not exist
-/// during compilation. The staged capability lands with the scheduled
-/// comptime discipline; until then every comptime tagged value refuses
-/// through the ordinary error path.
+/// An EXPANSION-driving comptime body runs before the conformer fixpoint, so
+/// nothing it observes about a tagged set is final; the scheduled discipline
+/// that admits it is a staged capability. An ORDINARY `#run` runs after
+/// convergence and carries symbolic values — `{ctx, concrete type}`, the VM
+/// devirtualizing against the carried type (§7.9).
 pub fn refuseComptimeTagged(self: *Lowering, proto_ty: TypeId, span: ?ast.Span) bool {
-    if (self.comptime_body_depth == 0) return false;
+    if (self.comptime_phase != .expansion) return false;
     if (!isTagged(self, proto_ty)) return false;
     if (self.diagnostics) |d| {
         const at = span orelse blk: {
             const cs = self.builder.current_span;
             break :blk ast.Span{ .start = cs.start, .end = cs.end };
         };
-        d.addFmt(.err, at, "'{s}' is a tagged protocol and its values are not available in compile-time execution — a tag is assigned when the whole-program conformer set is numbered, which happens after every comptime evaluation; use the concrete type here, or a generic bound ('$T/{s}')", .{ self.formatTypeName(proto_ty), self.formatTypeName(proto_ty) });
+        d.addFmt(.err, at, "'{s}' is a tagged protocol and its values are not available in expansion-driving compile-time execution — this body runs before the whole-program conformer set converges, so nothing it observes about '{s}' is final; use the concrete type here, or a generic bound ('$T/{s}')", .{ self.formatTypeName(proto_ty), self.formatTypeName(proto_ty), self.formatTypeName(proto_ty) });
     }
     return true;
 }
@@ -593,10 +595,48 @@ pub fn refuseComptimeTagged(self: *Lowering, proto_ty: TypeId, span: ?ast.Span) 
 pub fn buildTaggedValue(self: *Lowering, ctx_ptr: Ref, proto_ty: TypeId, concrete_ty: TypeId) Ref {
     if (refuseComptimeTagged(self, proto_ty, null))
         return self.builder.constUndef(proto_ty);
-    if (self.refuseValuelessProtocol(proto_ty, .{ .start = self.builder.current_span.start, .end = self.builder.current_span.end }, "make a value of"))
-        return self.builder.constUndef(proto_ty);
     reachTagged(self, proto_ty);
     _ = admit(self, proto_ty, concrete_ty);
+    return taggedBorrow(self, ctx_ptr, proto_ty, concrete_ty);
+}
+
+/// Whether the probe `x.(?P)` may answer TRUE right now. Asking computes the
+/// set and arms its coherence diagnostics (§7.9); membership only grows, so a
+/// positive is stable the moment it exists.
+pub fn taggedConformsNow(self: *Lowering, proto: TypeId, concrete: TypeId) bool {
+    reachTagged(self, proto);
+    _ = admitDeclaredImpls(self, proto);
+    return conforms(self, proto, concrete);
+}
+
+/// The other half of the probe: a NEGATIVE is utterable only once the queried
+/// set is final, so the answer emits as `tagged_conforms` and is written at
+/// convergence. The value arm borrows the receiver without joining the set —
+/// a probe queries an instantiation, it is not a value use.
+pub fn lowerTaggedProbe(self: *Lowering, ctx_ptr: Ref, proto_ty: TypeId, concrete_ty: TypeId, dst_ty: TypeId) Ref {
+    const conf = self.builder.emit(.{ .tagged_conforms = .{ .proto = proto_ty, .concrete = concrete_ty } }, .bool);
+    const yes_bb = self.freshBlock("probe.yes");
+    const no_bb = self.freshBlock("probe.no");
+    const merge_bb = self.freshBlockWithParams("probe.merge", &.{dst_ty});
+    self.builder.condBr(conf, yes_bb, &.{}, no_bb, &.{});
+
+    self.builder.switchToBlock(yes_bb);
+    const borrowed = taggedBorrow(self, ctx_ptr, proto_ty, concrete_ty);
+    self.builder.br(merge_bb, &.{self.builder.optionalWrap(borrowed, dst_ty)});
+
+    self.builder.switchToBlock(no_bb);
+    self.builder.br(merge_bb, &.{self.builder.constNull(dst_ty)});
+
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, dst_ty);
+}
+
+/// The 16 bytes themselves, with no membership effect: `{ctx, tag}` over
+/// already-resolved storage. A probe builds its answer through here — it
+/// queries a set, it does not join one (§7.9).
+fn taggedBorrow(self: *Lowering, ctx_ptr: Ref, proto_ty: TypeId, concrete_ty: TypeId) Ref {
+    if (self.refuseValuelessProtocol(proto_ty, .{ .start = self.builder.current_span.start, .end = self.builder.current_span.end }, "make a value of"))
+        return self.builder.constUndef(proto_ty);
     const void_ptr_ty = self.module.types.ptrTo(.void);
     const ctx = if (self.builder.getRefType(ctx_ptr) == void_ptr_ty)
         ctx_ptr
@@ -626,10 +666,7 @@ pub fn protocolTypeIdWord(self: *Lowering, proto_ty: TypeId, value: Ref) Ref {
 fn typeIdWord(self: *Lowering, proto_ty: TypeId, value: Ref) Ref {
     const table_gid = typeIdTable(self, proto_ty);
     const tag = self.builder.emit(.{ .struct_get = .{ .base = value, .field_index = 1 } }, .i64);
-    const many_ty = self.module.types.manyPtrTo(.type_value);
-    const base = self.builder.emit(.{ .global_addr = table_gid }, many_ty);
-    const slot = self.builder.emit(.{ .index_gep = .{ .lhs = base, .rhs = tag } }, self.module.types.ptrTo(.type_value));
-    return self.builder.load(slot, .type_value);
+    return self.builder.emit(.{ .tagged_type_id = .{ .tag = tag, .table = table_gid } }, .type_value);
 }
 
 /// The protocol's tag table global. Created empty at first use and filled in
@@ -813,19 +850,21 @@ fn emitSelfReturnDispatch(self: *Lowering, receiver: Ref, pd: ProtocolDeclInfo, 
         return self.builder.blockParam(merge_bb, 0, proto_ty);
     }
 
-    const tag = self.builder.structGet(receiver, 1, .i64);
+    // The subject is the concrete `Type` word, not the tag: the arms are
+    // named by their conformer, so the switch needs no numbering pass and
+    // reads the same on the comptime VM, where no tag exists (§7.9).
+    const tid = protocolTypeIdWord(self, proto_ty, receiver);
     var cases = std.ArrayList(inst_mod.SwitchBranch.Case).empty;
     defer cases.deinit(self.alloc);
     var arm_blocks = std.ArrayList(inst_mod.BlockId).empty;
     defer arm_blocks.deinit(self.alloc);
-    for (members, 0..) |_, i| {
+    for (members) |concrete| {
         const b = self.freshBlock("tagself.arm");
         arm_blocks.append(self.alloc, b) catch unreachable;
-        cases.append(self.alloc, .{ .value = @intCast(i), .target = b, .args = &.{} }) catch unreachable;
+        cases.append(self.alloc, .{ .value = @intCast(concrete.index()), .target = b, .args = &.{} }) catch unreachable;
     }
     const unr_bb = self.freshBlock("tagself.unr");
-    self.builder.switchBr(tag, cases.items, unr_bb, &.{});
-    recordSwitchTags(self, proto_ty, members);
+    self.builder.switchBr(tid, cases.items, unr_bb, &.{});
 
     for (members, 0..) |concrete, i| {
         self.builder.switchToBlock(arm_blocks.items[i]);
@@ -900,22 +939,6 @@ fn callSiteMembers(self: *Lowering, proto: TypeId) []const TypeId {
     return out;
 }
 
-/// Remember the switch just emitted so its case values become the members'
-/// tags at convergence — the same deferral the `tagged_tag_of` operands get,
-/// for the one construct that carries tags as immediate case values.
-fn recordSwitchTags(self: *Lowering, proto: TypeId, members: []const TypeId) void {
-    const fid = self.builder.func.?;
-    const block = self.builder.current_block.?;
-    const insts = self.module.functions.items[@intFromEnum(fid)].blocks.items[block.index()].insts.items;
-    self.tagged_pending_switches.append(self.alloc, .{
-        .func = fid,
-        .block = block,
-        .inst = @intCast(insts.len - 1),
-        .proto = proto,
-        .members = members,
-    }) catch @panic("out of memory");
-}
-
 // ── The collection fixpoint + whole-program emission ────────────────────
 
 /// Run the conformer fixpoint and emit every reached protocol's tables and
@@ -954,7 +977,7 @@ pub fn convergeTaggedSets(self: *Lowering) void {
     numberTags(self);
     emitTypeIdTables(self);
     for (self.tagged_pending.items) |job| emitDispatchBody(self, job);
-    relocateTags(self);
+    publishTags(self);
 }
 
 /// Ensure each member of `proto`'s set has its thunk for `method` lowered.
@@ -996,16 +1019,6 @@ pub const PendingRoutine = struct {
     pd: ProtocolDeclInfo,
     method: ProtocolMethodInfo,
     fid: FuncId,
-};
-
-/// One call-site-inlined `-> Self` switch: its case values are `members`'
-/// tags, written once the space is numbered.
-pub const PendingSwitch = struct {
-    func: FuncId,
-    block: inst_mod.BlockId,
-    inst: u32,
-    proto: TypeId,
-    members: []const TypeId,
 };
 
 /// Assign the dense tags. Canonical order is the conformer's canonical
@@ -1076,6 +1089,7 @@ fn emitDispatchBody(self: *Lowering, job: PendingRoutine) void {
         return;
     }
 
+    registerSymbolicDispatch(self, job, members);
     const ctx_ref = self.builder.emit(.{ .struct_get = .{ .base = value_ref, .field_index = 0 } }, void_ptr);
 
     if (members.len == 1) {
@@ -1107,6 +1121,25 @@ fn emitDispatchBody(self: *Lowering, job: PendingRoutine) void {
     self.builder.finalize();
 }
 
+/// Record the routine's arm selection for the comptime VM. A comptime tagged
+/// value carries its concrete type, not a tag, so the VM cannot run the
+/// routine's tag switch: it reads the carried type here and calls the arm
+/// directly — the devirtualization §7.9 describes.
+fn registerSymbolicDispatch(self: *Lowering, job: PendingRoutine, members: []const TypeId) void {
+    const method = self.module.types.internString(job.method.name);
+    var arms = std.ArrayList(FuncId).empty;
+    defer arms.deinit(self.alloc);
+    for (members) |concrete| {
+        const thunk = self.tagged_arms.get(.{ .proto = job.proto, .concrete = concrete, .method = method }) orelse return;
+        arms.append(self.alloc, thunk) catch @panic("out of memory");
+    }
+    self.module.tagged_dispatch.append(self.alloc, .{
+        .routine = job.fid,
+        .members = self.alloc.dupe(TypeId, members) catch @panic("out of memory"),
+        .arms = arms.toOwnedSlice(self.alloc) catch @panic("out of memory"),
+    }) catch @panic("out of memory");
+}
+
 fn emitArmCall(self: *Lowering, job: PendingRoutine, concrete: TypeId, ctx_ref: Ref, user_base: u32) void {
     const key = ArmKey{ .proto = job.proto, .concrete = concrete, .method = self.module.types.internString(job.method.name) };
     const thunk = self.tagged_arms.get(key) orelse {
@@ -1126,40 +1159,19 @@ fn emitArmCall(self: *Lowering, job: PendingRoutine, concrete: TypeId, ctx_ref: 
     if (job.method.ret_type == .void) self.builder.retVoid() else self.builder.ret(result, job.method.ret_type);
 }
 
-/// Relocate every deferred tag into its numbered constant. The set is final
-/// here, so this is the one place a literal tag exists.
-fn relocateTags(self: *Lowering) void {
-    for (self.module.functions.items) |*func| {
-        for (func.blocks.items) |*block| {
-            for (block.insts.items) |*ins| {
-                switch (ins.op) {
-                    .tagged_tag_of => |t| {
-                        const tag = self.tagged_tags.get(.{ .proto = t.proto, .concrete = t.concrete }) orelse 0;
-                        ins.op = .{ .const_int = tag };
-                    },
-                    else => {},
-                }
-            }
-        }
-    }
-    for (self.tagged_pending_switches.items) |ps| {
-        const func = &self.module.functions.items[@intFromEnum(ps.func)];
-        const ins = &func.blocks.items[ps.block.index()].insts.items[ps.inst];
-        const sb = ins.op.switch_br;
-        const cases = self.alloc.alloc(inst_mod.SwitchBranch.Case, sb.cases.len) catch @panic("out of memory");
-        for (sb.cases, ps.members, 0..) |c, concrete, i| {
-            cases[i] = .{
-                .value = self.tagged_tags.get(.{ .proto = ps.proto, .concrete = concrete }) orelse 0,
-                .target = c.target,
-                .args = c.args,
-            };
-        }
-        ins.op = .{ .switch_br = .{
-            .operand = sb.operand,
-            .cases = cases,
-            .default = sb.default,
-            .default_args = sb.default_args,
-        } };
+/// Publish the converged numbering. `tagged_tag_of` and `tagged_conforms`
+/// stay in the IR: a numeric tag is an emission-time artifact that does not
+/// exist during compile-time execution (§7.9), so codegen resolves them
+/// against this map while the comptime VM answers them symbolically. Being in
+/// the map IS being in the final set, which is what a probe asks.
+fn publishTags(self: *Lowering) void {
+    self.module.tagged_sets_final = true;
+    var it = self.tagged_tags.iterator();
+    while (it.next()) |e| {
+        self.module.tagged_tags.put(
+            .{ .proto = e.key_ptr.proto, .concrete = e.key_ptr.concrete },
+            e.value_ptr.*,
+        ) catch @panic("out of memory");
     }
 }
 

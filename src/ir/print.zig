@@ -149,6 +149,8 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
         .trace_resolve => |u| try writer.print("trace_resolve %{d} : ", .{u.operand.index()}),
         .const_type => |tid| try writer.print("const type({s}) : ", .{tt.typeName(tid)}),
         .tagged_tag_of => |t| try writer.print("tag_of({s}, {s}) : ", .{ tt.typeName(t.proto), tt.typeName(t.concrete) }),
+        .tagged_conforms => |t| try writer.print("conforms({s}, {s}) : ", .{ tt.typeName(t.proto), tt.typeName(t.concrete) }),
+        .tagged_type_id => |t| try writer.print("tagged_type_id %{d}, @{d} : ", .{ t.tag.index(), t.table.index() }),
 
         // ── Arithmetic ──────────────────────────────────────────
         .add => |b| try writer.print("add %{d}, %{d} : ", .{ b.lhs.index(), b.rhs.index() }),
