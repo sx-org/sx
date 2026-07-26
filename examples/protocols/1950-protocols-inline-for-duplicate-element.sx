@@ -1,0 +1,19 @@
+// Each element of the list expands its own declaration group, so a repeated
+// element would expand the same group twice. The repeat is diagnosed at the
+// list with cursor provenance rather than left to surface as a downstream
+// coherence collision.
+#import "modules/std.sx";
+
+Point :: struct { x: i64; y: i64; }
+
+Show :: protocol tagged { show :: (self: *Self) -> i64; }
+
+inline for .[Point, Point] (T) {
+    impl Show for T {
+        show :: (self: *T) -> i64 { self.x }
+    }
+}
+
+main :: () {
+    print("{}\n", 0);
+}

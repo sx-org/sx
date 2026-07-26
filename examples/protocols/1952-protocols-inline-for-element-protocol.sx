@@ -1,0 +1,18 @@
+// A conformance list holds CONCRETE types: a protocol is not one, and never
+// tags a protocol. The expansion produces an ordinary `impl P for Q`, which is
+// refused through the ordinary declaration path — expansion adds no new rule.
+#import "modules/std.sx";
+
+Point :: struct { x: i64; y: i64; }
+
+Show :: protocol tagged { show :: (self: *Self) -> i64; }
+
+inline for .[Point, Show] (T) {
+    impl Show for T {
+        show :: (self: *T) -> i64 { self.x }
+    }
+}
+
+main :: () {
+    print("{}\n", 0);
+}

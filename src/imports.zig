@@ -35,15 +35,33 @@ pub const ComptimeContext = struct {
 /// the caller may want to surface that as a diagnostic later, but for
 /// the OS / ARCH / POINTER_SIZE patterns we cover here it shouldn't
 /// happen in practice.
+///
+/// A top-level `inline for` flattens the same way: one declaration
+/// group per element of its comptime type list, with the cursor
+/// substituted through each cloned group.
 pub fn flattenComptimeConditionals(allocator: std.mem.Allocator, decls: []const *Node, ctx: ComptimeContext, diagnostics: ?*errors.DiagnosticList) std.mem.Allocator.Error![]const *Node {
+    return flattenInScope(allocator, decls, decls, ctx, diagnostics);
+}
+
+/// `scope_decls` stays the FILE's module-scope declaration list through every
+/// recursion, so an `inline for` nested inside another expansion body resolves
+/// its iterable name against module scope — where the curated list is declared.
+fn flattenInScope(allocator: std.mem.Allocator, decls: []const *Node, scope_decls: []const *Node, ctx: ComptimeContext, diagnostics: ?*errors.DiagnosticList) std.mem.Allocator.Error![]const *Node {
     var out = std.ArrayList(*Node).empty;
     for (decls) |decl| {
         switch (decl.data) {
+            .for_expr => |fe| {
+                if (fe.is_inline) {
+                    try expandModuleInlineFor(allocator, &out, decl, &fe, scope_decls, ctx, diagnostics);
+                    continue;
+                }
+                try out.append(allocator, decl);
+            },
             .if_expr => |ie| {
                 if (ie.is_comptime) {
                     if (evalComptimeCondition(ie.condition, ctx)) |is_true| {
                         const taken: ?*const Node = if (is_true) ie.then_branch else ie.else_branch;
-                        if (taken) |b| try appendBranchDecls(allocator, &out, b, ctx, diagnostics);
+                        if (taken) |b| try appendBranchDecls(allocator, &out, b, scope_decls, ctx, diagnostics);
                         continue;
                     }
                     // Never silently discard declarations from an unevaluable
@@ -60,7 +78,7 @@ pub fn flattenComptimeConditionals(allocator: std.mem.Allocator, decls: []const 
             .match_expr => |me| {
                 if (me.is_comptime) {
                     if (evalComptimeMatch(&me, ctx)) |body| {
-                        try appendBranchDecls(allocator, &out, body, ctx, diagnostics);
+                        try appendBranchDecls(allocator, &out, body, scope_decls, ctx, diagnostics);
                     }
                     continue;
                 }
@@ -79,12 +97,12 @@ pub fn flattenComptimeConditionals(allocator: std.mem.Allocator, decls: []const 
     return try out.toOwnedSlice(allocator);
 }
 
-fn appendBranchDecls(allocator: std.mem.Allocator, out: *std.ArrayList(*Node), branch: *const Node, ctx: ComptimeContext, diagnostics: ?*errors.DiagnosticList) std.mem.Allocator.Error!void {
+fn appendBranchDecls(allocator: std.mem.Allocator, out: *std.ArrayList(*Node), branch: *const Node, scope_decls: []const *Node, ctx: ComptimeContext, diagnostics: ?*errors.DiagnosticList) std.mem.Allocator.Error!void {
     const stmts: []const *Node = if (branch.data == .block)
         branch.data.block.stmts
     else
         &[_]*Node{@constCast(branch)};
-    const recursed = try flattenComptimeConditionals(allocator, stmts, ctx, diagnostics);
+    const recursed = try flattenInScope(allocator, stmts, scope_decls, ctx, diagnostics);
     for (recursed) |node| {
         // A module-level `asm { "tmpl", };` inside an `inline if` branch was
         // parsed by the STATEMENT parser (the branch body is a block), so it
@@ -111,6 +129,140 @@ fn appendBranchDecls(allocator: std.mem.Allocator, out: *std.ArrayList(*Node), b
         }
         try out.append(allocator, node);
     }
+}
+
+/// One expanded iteration's cursor bindings, rendered for diagnostics
+/// ("T = Point", "T = Point, i = 1").
+fn renderCursor(allocator: std.mem.Allocator, captures: []const ast.ForCapture, element: *const Node, index: usize) std.mem.Allocator.Error![]const u8 {
+    const type_name = ast.bareName(element) orelse "?";
+    if (captures.len > 1 and captures[1].name.len > 0) {
+        return std.fmt.allocPrint(allocator, "{s} = {s}, {s} = {d}", .{ captures[0].name, type_name, captures[1].name, index });
+    }
+    return std.fmt.allocPrint(allocator, "{s} = {s}", .{ captures[0].name, type_name });
+}
+
+/// Follow a module-scope `inline for` iterable to the array literal it names:
+/// the literal written in the header, a `NAME :: .[…]` constant, or a chain of
+/// constant aliases ending in one.
+fn resolveTypeListLiteral(node: *const Node, scope_decls: []const *Node, depth: u8) ?*const ast.ArrayLiteral {
+    if (depth > 8) return null;
+    switch (node.data) {
+        .array_literal => |*al| return al,
+        .identifier => |id| {
+            for (scope_decls) |decl| {
+                if (decl.data != .const_decl) continue;
+                if (!std.mem.eql(u8, decl.data.const_decl.name, id.name)) continue;
+                return resolveTypeListLiteral(decl.data.const_decl.value, scope_decls, depth + 1);
+            }
+            return null;
+        },
+        else => return null,
+    }
+}
+
+/// Expand a module-scope `inline for` into one declaration group per element of
+/// its comptime type list, flattened into module scope. The cursor binds each
+/// element as a type name, substituted through the cloned group.
+fn expandModuleInlineFor(
+    allocator: std.mem.Allocator,
+    out: *std.ArrayList(*Node),
+    decl: *const Node,
+    fe: *const ast.ForExpr,
+    scope_decls: []const *Node,
+    ctx: ComptimeContext,
+    diagnostics: ?*errors.DiagnosticList,
+) std.mem.Allocator.Error!void {
+    if (fe.captures.len == 0 or fe.captures[0].name.len == 0) {
+        if (diagnostics) |diags| diags.addFmt(.err, decl.span, "a module-scope `inline for` needs a cursor — `inline for LIST (T) {{ … }}`", .{});
+        return;
+    }
+    if (fe.captures[0].by_ref) {
+        if (diagnostics) |diags| diags.addFmt(.err, decl.span, "a type-list cursor cannot be captured by reference", .{});
+        return;
+    }
+    const list_iterable = fe.iterables[0];
+    if (list_iterable.is_range) {
+        if (diagnostics) |diags| diags.addFmt(.err, list_iterable.expr.span, "a module-scope `inline for` iterates a comptime type list — `inline for .[A, B] (T) {{ … }}`", .{});
+        return;
+    }
+    const literal = resolveTypeListLiteral(list_iterable.expr, scope_decls, 0) orelse {
+        if (diagnostics) |diags| diags.addFmt(.err, list_iterable.expr.span, "a module-scope `inline for` iterates a comptime type list — this is not an array literal or a constant bound to one", .{});
+        return;
+    };
+
+    // Elements are bare type names: the cursor is substituted into type
+    // position, including an `impl`'s target-type spelling, which carries no
+    // node. Instantiations reach the list through a type alias.
+    for (literal.elements) |element| {
+        if (ast.bareName(element) != null) continue;
+        if (diagnostics) |diags| diags.addFmt(.err, element.span, "a type-list element must name a type; bind an instantiation to a type alias first (`B :: Buffer(f64);`)", .{});
+        return;
+    }
+    for (literal.elements, 0..) |element, i| {
+        const name = ast.bareName(element).?;
+        for (literal.elements[0..i], 0..) |earlier, j| {
+            if (!std.mem.eql(u8, ast.bareName(earlier).?, name)) continue;
+            if (diagnostics) |diags| {
+                const id = diags.addFmtId(.err, element.span, "type list repeats '{s}' — each element expands its own declaration group", .{name});
+                diags.addNoteFmt(id, earlier.span, "first at element {d}", .{j});
+                diags.addNoteFmt(id, element.span, "again at element {d}", .{i});
+            }
+            return;
+        }
+    }
+
+    // Declaration names produced by the expansion, with the cursor that
+    // produced each — the flattened group shares one module scope, so a name
+    // that does not vary with the cursor collides with itself.
+    var declared = std.StringHashMap([]const u8).init(allocator);
+    defer declared.deinit();
+
+    for (literal.elements, 0..) |element, i| {
+        var subst = ast.Substitution.init(allocator);
+        defer subst.deinit();
+        try subst.put(fe.captures[0].name, element);
+        if (fe.captures.len > 1 and fe.captures[1].name.len > 0) {
+            const index_node = try allocator.create(Node);
+            index_node.* = .{ .span = decl.span, .data = .{ .int_literal = .{ .value = @intCast(i) } } };
+            try subst.put(fe.captures[1].name, index_node);
+        }
+        const cursor = try renderCursor(allocator, fe.captures, element, i);
+
+        const stmts: []const *Node = if (fe.body.data == .block)
+            fe.body.data.block.stmts
+        else
+            &[_]*Node{fe.body};
+        var group = std.ArrayList(*Node).empty;
+        defer group.deinit(allocator);
+        for (stmts) |stmt| try group.append(allocator, try ast.cloneWithSubst(allocator, stmt, &subst));
+
+        var expanded = std.ArrayList(*Node).empty;
+        defer expanded.deinit(allocator);
+        try appendBranchDecls(allocator, &expanded, try blockOf(allocator, decl.span, group.items), scope_decls, ctx, diagnostics);
+
+        for (expanded.items) |node| {
+            if (node.data.declName()) |name| {
+                if (declared.get(name)) |first_cursor| {
+                    if (diagnostics) |diags| {
+                        const id = diags.addFmtId(.err, node.span, "`inline for` expansion declares '{s}' more than once — a declaration group flattens into module scope", .{name});
+                        diags.addNoteFmt(id, node.span, "first at {s}", .{first_cursor});
+                        diags.addNoteFmt(id, node.span, "again at {s}", .{cursor});
+                        diags.addHelp(id, node.span, "parameterize the declaration instead of re-declaring it per iteration", null);
+                    }
+                    return;
+                }
+                try declared.put(name, cursor);
+            }
+            try out.append(allocator, node);
+        }
+    }
+}
+
+fn blockOf(allocator: std.mem.Allocator, span: ast.Span, stmts: []const *Node) std.mem.Allocator.Error!*Node {
+    const owned = try allocator.dupe(*Node, stmts);
+    const node = try allocator.create(Node);
+    node.* = .{ .span = span, .data = .{ .block = .{ .stmts = owned, .produces_value = false } } };
+    return node;
 }
 
 fn evalComptimeCondition(node: *const Node, ctx: ComptimeContext) ?bool {

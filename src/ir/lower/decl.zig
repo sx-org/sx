@@ -1111,9 +1111,10 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
         self.setCurrentSourceFile(decl.source_file);
         switch (decl.data) {
             .var_decl => self.registerTopLevelGlobal(&decl.data.var_decl),
-            .const_decl => |cd| if (cd.value.data == .array_literal)
-                self.registerConstArrayGlobal(&cd)
-            else {
+            .const_decl => |cd| if (cd.value.data == .array_literal) {
+                if (!self.registerComptimeTypeList(&cd)) self.registerConstArrayGlobal(&cd);
+            } else {
+                self.registerComptimeTypeListAlias(&cd);
                 self.registerTypedModuleConst(&cd);
                 self.maybeRegisterConstStructGlobal(&cd);
             },

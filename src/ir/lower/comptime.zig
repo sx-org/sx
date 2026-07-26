@@ -718,6 +718,125 @@ pub fn renameNominalType(self: *Lowering, tid: TypeId, name: []const u8) void {
     tbl.replaceKeyedInfo(tid, info);
 }
 
+/// Does this array literal spell a comptime `[N]Type` list? A single element
+/// naming a declared type settles it — the remaining elements are then held to
+/// the same kind, so a stray value diagnoses as the element-kind error it is
+/// instead of falling into numeric element-type inference.
+pub fn arrayLiteralIsTypeList(self: *Lowering, al: *const ast.ArrayLiteral) bool {
+    for (al.elements) |element| {
+        switch (element.data) {
+            .identifier => |id| if (self.isKnownTypeName(id.name)) return true,
+            .type_expr => |te| if (self.isKnownTypeName(te.name)) return true,
+            .parameterized_type_expr,
+            .pointer_type_expr,
+            .slice_type_expr,
+            .array_type_expr,
+            .optional_type_expr,
+            .many_pointer_type_expr,
+            => return true,
+            else => {},
+        }
+    }
+    return false;
+}
+
+/// Resolve one type-list element to canonical type identity. A value element,
+/// or one naming a protocol rather than a concrete type, is the element-kind
+/// error.
+fn resolveTypeListElement(self: *Lowering, element: *const Node) ?TypeId {
+    switch (element.data) {
+        .int_literal,
+        .float_literal,
+        .string_literal,
+        .bool_literal,
+        .char_literal,
+        .null_literal,
+        .enum_literal,
+        .struct_literal,
+        .array_literal,
+        .tuple_literal,
+        => {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, element.span, "a type list holds types — this element is a value", .{});
+            return null;
+        },
+        else => {},
+    }
+    const ty = self.resolveTypeWithBindings(element);
+    if (ty == .unresolved) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, element.span, "type-list element does not name a type", .{});
+        return null;
+    }
+    if (!ty.isBuiltin()) {
+        const info = self.module.types.get(ty);
+        if (info == .@"struct" and info.@"struct".is_protocol) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, element.span, "a type list holds concrete types — '{s}' is a protocol", .{self.module.types.typeName(ty)});
+            return null;
+        }
+    }
+    return ty;
+}
+
+/// Evaluate a comptime `[N]Type` iterable: an array literal written in place,
+/// or a constant (or alias chain) bound to one. Null when the node is not a
+/// type list; element-kind failures diagnose and also answer null.
+pub fn evalComptimeTypeList(self: *Lowering, node: *const Node) ?[]const TypeId {
+    switch (node.data) {
+        .array_literal => |al| {
+            if (!arrayLiteralIsTypeList(self, &al)) return null;
+            return resolveTypeListElements(self, al.elements);
+        },
+        .identifier => |id| return lookupTypeList(self, id.name, 0),
+        else => return null,
+    }
+}
+
+fn lookupTypeList(self: *Lowering, name: []const u8, depth: u8) ?[]const TypeId {
+    if (depth > 8) return null;
+    if (self.comptime_type_lists.get(name)) |list| return list;
+    const target = self.comptime_type_list_aliases.get(name) orelse return null;
+    return lookupTypeList(self, target, depth + 1);
+}
+
+fn resolveTypeListElements(self: *Lowering, elements: []const *Node) ?[]const TypeId {
+    const tys = self.alloc.alloc(TypeId, elements.len) catch return null;
+    for (elements, 0..) |element, i| {
+        tys[i] = resolveTypeListElement(self, element) orelse return null;
+    }
+    return tys;
+}
+
+/// Register `NAME :: .[A, B];` as a comptime type list. Returns true when the
+/// constant is one — the caller then skips the runtime-global path, since a
+/// list of types has no runtime bytes.
+pub fn registerComptimeTypeList(self: *Lowering, cd: *const ast.ConstDecl) bool {
+    if (cd.value.data != .array_literal) return false;
+    const al = &cd.value.data.array_literal;
+    if (!arrayLiteralIsTypeList(self, al) and !annotationIsTypeArray(self, cd.type_annotation)) return false;
+    // A list whose elements failed the kind check still registers — as empty,
+    // so its `inline for` sites read a type list (no cascade) and unroll
+    // nothing while the element diagnostic stands.
+    const tys = resolveTypeListElements(self, al.elements) orelse &[_]TypeId{};
+    self.comptime_type_lists.put(cd.name, tys) catch {};
+    return true;
+}
+
+/// Record `M :: L;` as a type-list alias. Names only — the target may not be
+/// registered yet, and the chain resolves at the `inline for` site.
+pub fn registerComptimeTypeListAlias(self: *Lowering, cd: *const ast.ConstDecl) void {
+    if (cd.value.data != .identifier) return;
+    self.comptime_type_list_aliases.put(cd.name, cd.value.data.identifier.name) catch {};
+}
+
+fn annotationIsTypeArray(self: *Lowering, annotation: ?*Node) bool {
+    const node = annotation orelse return false;
+    if (node.data != .array_type_expr) return false;
+    const ty = self.resolveTypeWithBindings(node.data.array_type_expr.element_type);
+    return ty == .type_value;
+}
+
 /// Evaluate an expression at compile time, returning its string value.
 /// Returns null if evaluation fails.
 pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {

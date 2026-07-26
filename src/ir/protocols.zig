@@ -685,6 +685,16 @@ pub const ProtocolResolver = struct {
         // exact impl maps (issue 0320).
         if (ib.target_type_params.len == 0 and ib.target_type.len > 0 and concrete_ty == null) return;
         if (concrete_ty) |cty| {
+            // Protocols are not concrete types, so they never conform (§10).
+            // A curated `inline for` list that names one lands here.
+            if (!cty.isBuiltin() and self.l.module.types.get(cty) == .@"struct" and
+                self.l.module.types.get(cty).@"struct".is_protocol)
+            {
+                if (self.l.diagnostics) |d|
+                    d.addFmt(.err, decl.span, "'{s}' is a protocol, not a concrete type — an impl target names a type", .{ib.target_type});
+                self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
+                return;
+            }
             self.l.protocol_impl_decls.put(self.protocolConcreteKey(proto.ty, proto_name, cty), {}) catch @panic("out of memory");
             if (proto.ty) |pty| self.l.recordTaggedImplSite(pty, cty, decl.span, source);
         }
