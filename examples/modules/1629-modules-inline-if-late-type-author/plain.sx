@@ -1,0 +1,4 @@
+// A plain module-scope author of `Slot`, published by the ordinary scan.
+Slot :: struct { a: i64; }
+
+plain_size :: () -> i64 { size_of(Slot) }

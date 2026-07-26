@@ -64,7 +64,6 @@ fn buildFacts(alloc: std.mem.Allocator, io: std.Io, absdir: []const u8, main_pat
         &stdlib_paths,
         &import_graph,
         &flat_import_graph,
-        .{},
     );
 
     const facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);

@@ -9,7 +9,8 @@
 // canonical decl here is both the source of truth and drift-proof.
 //
 // Dependency-free by design: imports NOTHING. `inline if OS` is resolved by
-// the compiler's flatten pre-pass and needs no import (see std/target.sx), so
+// the compiler's module-scope expansion and needs no import (see
+// std/target.sx), so
 // even the lowest-level modules (core, map, io) can depend on this with no
 // import cycle.
 

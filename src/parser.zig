@@ -178,8 +178,8 @@ pub const Parser = struct {
         }
 
         // Top-level `inline if` / `inline for` — compile-time expansion forms.
-        // Both bodies hold module-scope declarations, flattened by
-        // `imports.flattenComptimeConditionals`.
+        // Both bodies hold module-scope declarations, spliced into module scope
+        // by lowering's `expandModuleDrivers`.
         if (self.current.tag == .kw_inline) {
             if (self.peekNext() == .kw_if) {
                 self.advance(); // skip 'inline'

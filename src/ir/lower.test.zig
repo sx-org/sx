@@ -1737,7 +1737,6 @@ test "lower: shadowed same-name author gets its own FuncId + real body (fix-0102
         &stdlib_paths,
         &import_graph,
         &flat_import_graph,
-        .{},
     );
 
     // Per-module visibility scopes + authored-function index, wired exactly as
@@ -1900,7 +1899,6 @@ test "lower: scan populates source-keyed caches per declaring source (E0)" {
         &stdlib_paths,
         &import_graph,
         &flat_import_graph,
-        .{},
     );
 
     var module_scopes = std.StringHashMap(std.StringHashMap(@import("../ast.zig").Visibility)).init(alloc);

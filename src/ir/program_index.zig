@@ -914,6 +914,10 @@ pub const ProgramIndex = struct {
     /// in parallel with the import facts. Borrowed view; nothing in lowering
     /// consumes it for selection yet (additive — S4 makes it the fact-store key).
     decl_table: ?*imports.DeclTable = null,
+    /// Every resolved module keyed by canonical path. A `#import` written
+    /// inside a module-scope expansion body resolves re-entrantly but stays
+    /// contained; the splice reads its module back out of here. Borrowed view.
+    module_cache: ?*const imports.ModuleCache = null,
     // ── Declaration maps ──
     /// Function name → AST decl.
     fn_ast_map: std.StringHashMap(*const ast.FnDecl),

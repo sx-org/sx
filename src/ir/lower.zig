@@ -37,6 +37,7 @@ const lower_comptime = @import("lower/comptime.zig");
 const lower_stmt = @import("lower/stmt.zig");
 const lower_control_flow = @import("lower/control_flow.zig");
 const lower_decl = @import("lower/decl.zig");
+const lower_expand = @import("lower/expand.zig");
 const lower_context_ext = @import("lower/context_ext.zig");
 const lower_nominal = @import("lower/nominal.zig");
 const lower_protocol = @import("lower/protocol.zig");
@@ -793,6 +794,12 @@ pub const Lowering = struct {
     pub const ComptimeValue = union(enum) {
         int_val: i64,
         enum_tag: struct { ty: TypeId, tag: u32 },
+        /// A target fact (`OS` / `ARCH`) in a program that does not declare the
+        /// enum it is a variant of: the variant NAME the target selects. It
+        /// compares against an enum literal at comptime and has no runtime
+        /// reading — the declaration a runtime read needs is exactly the one
+        /// that would have given it a tag.
+        target_variant: []const u8,
     };
 
     pub const StructConstInfo = struct {
@@ -2930,6 +2937,9 @@ pub const Lowering = struct {
     pub const funcWantsImplicitCtx = lower_decl.funcWantsImplicitCtx;
     pub const fnPtrTypeWantsCtx = lower_decl.fnPtrTypeWantsCtx;
     pub const scanDecls = lower_decl.scanDecls;
+    pub const expandModuleDrivers = lower_expand.expandModuleDrivers;
+    pub const registerConstAliases = lower_decl.registerConstAliases;
+    pub const registerLiteralModuleConsts = lower_decl.registerLiteralModuleConsts;
     pub const registerTypedModuleConst = lower_decl.registerTypedModuleConst;
     pub const registerConstArrayGlobal = lower_decl.registerConstArrayGlobal;
     pub const maybeRegisterConstStructGlobal = lower_decl.maybeRegisterConstStructGlobal;

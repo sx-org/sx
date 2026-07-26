@@ -1287,7 +1287,7 @@ pub const Analyzer = struct {
                 try self.analyzeNode(te.operand);
             },
             .caller_location => {}, // leaf marker (ERR E4.1b) — no sub-nodes
-            .error_directive => {}, // leaf marker — the flatten pass owns the emit
+            .error_directive => {}, // leaf marker — module-scope expansion owns the emit
             .catch_expr => |ce| {
                 try self.analyzeNode(ce.operand);
                 try self.pushScope();

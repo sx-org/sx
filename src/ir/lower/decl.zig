@@ -202,8 +202,8 @@ fn isDefaultBuildPipeline(name: []const u8) bool {
 /// Lower all top-level declarations from a root node.
 /// Pass 1: Scan all declarations (register ASTs, types, extern stubs).
 /// Pass 2: Lower only `main` (everything else is lowered lazily on demand).
-pub fn lowerRoot(self: *Lowering, root: *const Node) void {
-    const decls = switch (root.data) {
+pub fn lowerRoot(self: *Lowering, root: *Node) void {
+    const source_decls = switch (root.data) {
         .root => |r| r.decls,
         else => return,
     };
@@ -212,9 +212,17 @@ pub fn lowerRoot(self: *Lowering, root: *const Node) void {
     // function gets the implicit `__sx_ctx` param. Otherwise the
     // implicit-ctx machinery stays fully disabled — programs that
     // call only libc directly keep their bare C ABI.
-    self.implicit_ctx_enabled = detectContextDecl(decls);
+    self.implicit_ctx_enabled = detectContextDecl(source_decls);
     self.module.has_implicit_ctx = self.implicit_ctx_enabled;
-    // Pass 0a: collect every `#context_extend` declaration program-wide into
+    // Pass 0a: fold every module-scope `inline if` / `inline for` and splice
+    // the selected group at the driver's own place, minting the pre-lowering
+    // facts (module scope, import graph, raw decls, DeclIds) that were built
+    // before a branch was selected. From here on `decls` IS the program's
+    // declaration list — the root carries it too, so every later consumer
+    // (extern-ref validation, C-import collection) sees the expanded program.
+    const decls = self.expandModuleDrivers(source_decls);
+    root.data.root.decls = decls;
+    // Pass 0b: collect every `#context_extend` declaration program-wide into
     // ProgramIndex (L6 order, L4/L5 validation). Runs UNCONDITIONALLY — in a
     // no-context build the declarations are inert (O3) but the collected list
     // still powers the registered-field diagnostic.
@@ -233,9 +241,7 @@ pub fn lowerRoot(self: *Lowering, root: *const Node) void {
     // cascading a field-not-found per use site. `core.zig` gates on
     // `hasErrors()` right after `lowerRoot` either way.
     if (self.context_structural_error) return;
-    // Pass 1b: inject compile-time constants (OS, ARCH, POINTER_SIZE) from target config
-    self.injectComptimeConstants();
-    // Pass 1c: emit the process-wide default Context global, statically
+    // Pass 1b: emit the process-wide default Context global, statically
     // initialised to a CAllocator-backed Allocator value. Used by FFI
     // wrappers in Step 4 and by the interp's `callWithDefaultContext`
     // entry. Only fires when the program imports `std.sx` (so Context +
@@ -412,55 +418,60 @@ pub fn checkRequiredEntryPoints(self: *Lowering) void {
 }
 
 /// Inject compile-time constants from target_config into comptime_constants.
-/// Called after scanDecls so that enum types (OperatingSystem, Architecture) are registered.
+/// `OS` / `ARCH` are compiler facts, so they exist whether or not the program
+/// declares the enum they are variants of: with `std/target.sx` in the program
+/// they carry the declared enum's tag (a runtime read of `OS` yields that
+/// constant); without it they carry the target's variant NAME, which is all a
+/// module-scope `inline if OS == .windows` needs — and every low-level backend
+/// selecting its platform arm depends on exactly that, since importing
+/// `target.sx` from inside the arm it selects would be circular.
 pub fn injectComptimeConstants(self: *Lowering) void {
     const tc = self.target_config orelse return;
 
-    // OS: OperatingSystem enum { macos; linux; windows; wasm; unknown; }
-    const os_name_id = self.module.types.internString("OperatingSystem");
-    if (self.module.types.findByName(os_name_id)) |os_ty| {
-        const os_info = self.module.types.get(os_ty);
-        if (os_info == .@"enum") {
-            const tag: u32 = if (tc.isWasm())
-                self.findVariantIndex(os_info.@"enum".variants, "wasm")
-            else if (tc.isWindows())
-                self.findVariantIndex(os_info.@"enum".variants, "windows")
-            else if (tc.isAndroid())
-                self.findVariantIndex(os_info.@"enum".variants, "android")
-            else if (tc.isLinux())
-                self.findVariantIndex(os_info.@"enum".variants, "linux")
-            else if (tc.isIOS())
-                self.findVariantIndex(os_info.@"enum".variants, "ios")
-            else if (tc.isMacOS())
-                self.findVariantIndex(os_info.@"enum".variants, "macos")
-            else
-                self.findVariantIndex(os_info.@"enum".variants, "unknown");
-            self.comptime_constants.put("OS", .{ .enum_tag = .{ .ty = os_ty, .tag = tag } }) catch {};
-        }
-    }
+    const os_variant: []const u8 = if (tc.isWasm())
+        "wasm"
+    else if (tc.isWindows())
+        "windows"
+    else if (tc.isAndroid())
+        "android"
+    else if (tc.isLinux())
+        "linux"
+    else if (tc.isIOS())
+        "ios"
+    else if (tc.isMacOS())
+        "macos"
+    else
+        "unknown";
+    putTargetConstant(self, "OS", "OperatingSystem", os_variant);
 
-    // ARCH: Architecture enum { aarch64; x86_64; wasm32; wasm64; unknown; }
-    const arch_name_id = self.module.types.internString("Architecture");
-    if (self.module.types.findByName(arch_name_id)) |arch_ty| {
-        const arch_info = self.module.types.get(arch_ty);
-        if (arch_info == .@"enum") {
-            const tag: u32 = if (tc.isWasm32())
-                self.findVariantIndex(arch_info.@"enum".variants, "wasm32")
-            else if (tc.isWasm64())
-                self.findVariantIndex(arch_info.@"enum".variants, "wasm64")
-            else if (tc.isAarch64())
-                self.findVariantIndex(arch_info.@"enum".variants, "aarch64")
-            else if (tc.isX86_64())
-                self.findVariantIndex(arch_info.@"enum".variants, "x86_64")
-            else
-                self.findVariantIndex(arch_info.@"enum".variants, "unknown");
-            self.comptime_constants.put("ARCH", .{ .enum_tag = .{ .ty = arch_ty, .tag = tag } }) catch {};
-        }
-    }
+    const arch_variant: []const u8 = if (tc.isWasm32())
+        "wasm32"
+    else if (tc.isWasm64())
+        "wasm64"
+    else if (tc.isAarch64())
+        "aarch64"
+    else if (tc.isX86_64())
+        "x86_64"
+    else
+        "unknown";
+    putTargetConstant(self, "ARCH", "Architecture", arch_variant);
 
     // POINTER_SIZE: i64 (4 for wasm32, 8 for wasm64 and other 64-bit targets)
     const ptr_size: i64 = if (tc.isWasm32()) 4 else 8;
     self.comptime_constants.put("POINTER_SIZE", .{ .int_val = ptr_size }) catch {};
+}
+
+fn putTargetConstant(self: *Lowering, name: []const u8, enum_name: []const u8, variant: []const u8) void {
+    const enum_name_id = self.module.types.internString(enum_name);
+    if (self.module.types.findByName(enum_name_id)) |enum_ty| {
+        const info = self.module.types.get(enum_ty);
+        if (info == .@"enum") {
+            const tag = self.findVariantIndex(info.@"enum".variants, variant);
+            self.comptime_constants.put(name, .{ .enum_tag = .{ .ty = enum_ty, .tag = tag } }) catch {};
+            return;
+        }
+    }
+    self.comptime_constants.put(name, .{ .target_variant = variant }) catch {};
 }
 
 pub fn findVariantIndex(self: *Lowering, variants: []const types.StringId, name: []const u8) u32 {
@@ -637,9 +648,11 @@ pub fn dropModuleConst(self: *Lowering, source: ?[]const u8, name: []const u8) v
     if (source orelse self.main_file) |src| self.program_index.removeModuleConstBySource(src, name);
 }
 
-/// Pass 1: Scan declarations — register ASTs and extern stubs, but don't lower bodies.
-pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
-    // Pass 0: register every numeric-literal module const (`N :: 16` and the
+/// Scan pass 0, also run by the module-scope expansion before it folds a
+/// driver: a condition may name a module constant, and a constant is a fact
+/// the expansion must already have.
+pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) void {
+    // Register every numeric-literal module const (`N :: 16` and the
     // typed `N : i64 : 16`, plus float-valued `N :: 4.0` / `N : f64 : 4.0`)
     // BEFORE any type alias is resolved below. A type alias whose dimension is
     // a named const (`Arr :: [N]T`) resolves its dimension eagerly here, on
@@ -694,6 +707,11 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
             else => {},
         }
     }
+}
+
+/// Pass 1: Scan declarations — register ASTs and extern stubs, but don't lower bodies.
+pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
+    registerLiteralModuleConsts(self, decls);
     // Pass 0a': const ALIASES of consts (`B :: A`, chains of any depth /
     // declaration order). A bare-identifier RHS was never registered, so
     // `B` failed as "unresolved" at every value use — while the expression
@@ -1174,7 +1192,7 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
 /// (issue 0331 — no arbitrary round cap). An unresolvable or cyclic alias
 /// simply never registers; a cycle is diagnosed by `followAliasChain` during
 /// fn-alias registration and the use site still reports the unresolved name.
-fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
+pub fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
     var changed = true;
     while (changed) {
         changed = false;
