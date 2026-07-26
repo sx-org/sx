@@ -1652,6 +1652,7 @@ fn tryLowerQualifiedGlobalStore(
     const selected: Lowering.QualifiedMember = switch (self.qualifiedMemberVerdict(full_path)) {
         .selected => |sel| sel,
         .missing => |m| {
+            if (self.namespaceMissWaits(m)) return .handled;
             if (self.diagnostics) |d|
                 d.addFmt(.err, span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
             return .handled;
@@ -1667,6 +1668,7 @@ fn tryLowerQualifiedGlobalStore(
             const sel = switch (self.qualifiedMemberVerdict(path)) {
                 .selected => |s| s,
                 .missing => |m| {
+                    if (self.namespaceMissWaits(m)) return .handled;
                     if (self.diagnostics) |d|
                         d.addFmt(.err, span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                     return .handled;

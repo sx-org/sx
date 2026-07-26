@@ -1,0 +1,22 @@
+error: expansion deadlock — nothing can run: every compile-time unit still waiting needs a fact only another waiting unit could publish, so the expansion depends negatively on a set it feeds
+  --> examples/diagnostics/1975-diagnostics-expansion-deadlock-erased-unique.sx:33:11
+   |
+33 | inline if has_impl(Show, Item) {
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+note: this `inline if` awaits 'Show' impls to be final before 'Item' is judged its unique conformer
+  --> examples/diagnostics/1975-diagnostics-expansion-deadlock-erased-unique.sx:33:11
+   |
+33 | inline if has_impl(Show, Item) {
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+help: decide the declaration outside the set it queries — a question whose answer changes what it asks about has no single answer
+   |
+33 | inline if has_impl(Show, Item) {
+   |           ^^^^^^^^^^^^^^^^^^^^
+
+error: unresolved 'UNIQUE' (in examples/diagnostics/1975-diagnostics-expansion-deadlock-erased-unique.sx fn main)
+  --> examples/diagnostics/1975-diagnostics-expansion-deadlock-erased-unique.sx:41:33
+   |
+41 |     print("{} {}\n", PARTITION, UNIQUE);
+   |                                 ^^^^^^

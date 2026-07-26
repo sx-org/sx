@@ -68,8 +68,7 @@ fn typeContainsUnresolved(table: *const types.TypeTable, ty: TypeId) bool {
 /// Protocol / impl LOOKUP + REGISTRATION (architecture phase A4.2), extracted
 /// from `Lowering`. Owns:
 ///   - read-only conformance queries: `getProtocolInfo` (is a type a registered
-///     protocol + its method table), `hasImplPlain` (have a (protocol, type)
-///     pair's thunks been materialized), `packArgConformsTo` (impl-declaration
+///     protocol + its method table), `packArgConformsTo` (impl-declaration
 ///     conformance for protocol-pack `..xs: P` elements),
 ///   - registration: `registerProtocolDecl` (protocol struct + method table +
 ///     vtable type), `registerImplBlock` / `registerParamImpl` (populate the
@@ -111,18 +110,6 @@ pub const ProtocolResolver = struct {
                 self.l.program_index.protocol_ast_map.contains(written);
         }
         return self.canonicalProtocolName(written, source) != null;
-    }
-
-    /// Have the thunks for (protocol `p_name`, concrete `ty`) been materialized?
-    /// `protocol_thunk_map` is populated lazily when a protocol VALUE is created
-    /// with `xx`, so this answers "has erasure already happened for this pair".
-    pub fn hasImplPlain(self: ProtocolResolver, p_name: []const u8, ty: TypeId) bool {
-        const proto = self.resolveProtocol(p_name, self.l.current_source_file);
-        return self.l.protocol_thunk_map.contains(self.protocolConcreteKey(
-            if (proto) |p| p.ty else null,
-            if (proto) |p| p.name else p_name,
-            ty,
-        ));
     }
 
     pub fn protocolConcreteKey(self: ProtocolResolver, proto_ty: ?TypeId, p_name: []const u8, ty: TypeId) lower.ProtocolConcreteKey {

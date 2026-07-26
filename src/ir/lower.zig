@@ -1521,6 +1521,7 @@ pub const Lowering = struct {
                         return ty;
                     },
                     .missing => |m| {
+                        if (self.namespaceMissWaits(m)) return .unresolved;
                         if (self.diagnostics) |d|
                             d.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                         return .unresolved;
@@ -1656,6 +1657,7 @@ pub const Lowering = struct {
                             return ty;
                         },
                         .missing => |m| {
+                            if (self.namespaceMissWaits(m)) return .unresolved;
                             if (self.diagnostics) |d|
                                 d.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                             return .unresolved;
@@ -2227,6 +2229,11 @@ pub const Lowering = struct {
         member: []const u8,
     };
 
+    /// A name a proved namespace does not declare. `scope` is the exact module
+    /// it would have to come from — which is what the discipline's name-lookup
+    /// wait is a claim about (§7.9).
+    pub const MissingMember = struct { namespace: []const u8, member: []const u8, scope: []const u8 };
+
     /// Diagnostic-free result of resolving a full dotted namespace-member
     /// path (`facade.engine_alias.Member`) from an explicit source authority.
     /// Intermediate segments are namespace aliases and obey the same carry
@@ -2238,7 +2245,7 @@ pub const Lowering = struct {
         /// continue with its non-namespace field/type interpretation.
         not_qualified,
         /// An already-proved namespace lacks the next alias/member.
-        missing: struct { namespace: []const u8, member: []const u8 },
+        missing: MissingMember,
         /// The named root/intermediate alias is carried from multiple direct
         /// flat imports to distinct targets.
         ambiguous: []const u8,
@@ -2320,14 +2327,14 @@ pub const Lowering = struct {
             target = switch (self.namespaceAliasVerdictFrom(segment, target.target_module_path)) {
                 .target => |t| t,
                 .ambiguous => return .{ .ambiguous = segment },
-                .none => return .{ .missing = .{ .namespace = namespace_name, .member = segment } },
+                .none => return .{ .missing = .{ .namespace = namespace_name, .member = segment, .scope = target.target_module_path } },
             };
             // Deep traversal keeps the ORIGINAL requester's authority: a
             // private intermediate alias belongs to the file that declared it
             // and is not part of that module's namespace surface for anyone
             // else.
             if (target.visibility == .private and !std.mem.eql(u8, from, target.importer_source)) {
-                return .{ .missing = .{ .namespace = namespace_name, .member = segment } };
+                return .{ .missing = .{ .namespace = namespace_name, .member = segment, .scope = target.target_module_path } };
             }
             namespace_name = segment;
             segment_start = dot + 1;
@@ -2338,15 +2345,29 @@ pub const Lowering = struct {
         if (member.len == 0) return .not_qualified;
         const author = self.namespaceOwnMember(target, member) orelse {
             if (self.namespaceOwnSpecialMember(target, member)) return .not_qualified;
-            return .{ .missing = .{ .namespace = namespace_name, .member = member } };
+            return .{ .missing = .{ .namespace = namespace_name, .member = member, .scope = target.target_module_path } };
         };
         // A private member is no member at all from any other source file —
         // judged against the ORIGINAL requester, and against the member's
         // exact declaring file (not a directory-import aggregate).
         if (author.visibility == .private and !std.mem.eql(u8, from, author.visAuthority())) {
-            return .{ .missing = .{ .namespace = namespace_name, .member = member } };
+            return .{ .missing = .{ .namespace = namespace_name, .member = member, .scope = target.target_module_path } };
         }
         return .{ .selected = .{ .target = target, .author = author, .member = member } };
+    }
+
+    /// A name-lookup MISS is the one non-monotone half of the declaration
+    /// namespace: a hit can never be taken back, but a miss is repaired by any
+    /// branch that has not been selected yet. Under the discipline the miss
+    /// waits until the exact scope it would have to come from is final (§7.9);
+    /// at finality the ordinary namespace diagnostic stands.
+    pub fn namespaceMissWaits(self: *Lowering, miss: MissingMember) bool {
+        if (!self.expansion.scheduled()) return false;
+        if (!self.expansion.mayDeclare(miss.scope, miss.member)) return false;
+        self.expansion.awaitFact(std.fmt.allocPrint(self.alloc, "'{s}' to declare '{s}'", .{
+            miss.namespace, miss.member,
+        }) catch "a module scope to be final");
+        return true;
     }
 
     pub fn qualifiedMemberVerdict(self: *Lowering, path: []const u8) QualifiedMemberVerdict {

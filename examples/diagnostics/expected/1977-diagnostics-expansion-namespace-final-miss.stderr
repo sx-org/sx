@@ -1,0 +1,11 @@
+error: cannot evaluate this module-scope `inline if` condition; it must fold to a compile-time constant
+  --> examples/diagnostics/1977-diagnostics-expansion-namespace-final-miss.sx:11:11
+   |
+11 | inline if ABSENT { A :: 1; } else { A :: 0; }
+   |           ^^^^^^
+
+error: namespace 'cfg' has no member 'ABSENT'
+  --> examples/diagnostics/1977-diagnostics-expansion-namespace-final-miss.sx:14:19
+   |
+14 |     print("{}\n", cfg.ABSENT);
+   |                   ^^^^^^^^^^

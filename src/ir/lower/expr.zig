@@ -851,6 +851,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     }
                 },
                 .missing => |m| {
+                    if (self.namespaceMissWaits(m)) return Ref.none;
                     if (self.diagnostics) |d|
                         d.addFmt(.err, CallResolver.pathSliceSpan(&full_node, full_path, m.member), "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                     return Ref.none;
@@ -922,6 +923,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     }
                 },
                 .missing => |m| {
+                    if (self.namespaceMissWaits(m)) return Ref.none;
                     if (self.diagnostics) |d|
                         d.addFmt(.err, fa.object.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                     return Ref.none;

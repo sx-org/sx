@@ -917,8 +917,10 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
                                         .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => {},
                                     }
                                 },
-                                .missing => |m| if (self.diagnostics) |d|
-                                    d.addFmt(.err, cd.value.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member }),
+                                .missing => |m| if (!self.namespaceMissWaits(m)) {
+                                    if (self.diagnostics) |d|
+                                        d.addFmt(.err, cd.value.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
+                                },
                                 .ambiguous => |alias| if (self.diagnostics) |d|
                                     d.addFmt(.err, cd.value.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias}),
                                 .not_qualified => {},
