@@ -11,7 +11,7 @@
 #import "modules/gpu/offscreen_gl.sx";
 #import "modules/gpu/offscreen_metal.sx";
 
-open_pixel_surface :: (w: i32, h: i32) -> ?PixelSurface {
+open_pixel_surface :: (w: i32, h: i32) -> ?$T/PixelSurface {
     inline if OS == .macos {
         g := MetalOffscreen.{};
         if !g.open(w, h) { return null; }

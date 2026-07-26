@@ -1,0 +1,1 @@
+error: comptime init of 'B' failed: escape: the value points into a global's compile-time state, which is discarded

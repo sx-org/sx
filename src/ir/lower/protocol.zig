@@ -437,6 +437,51 @@ pub fn refuseValuelessProtocol(self: *Lowering, ty: TypeId, span: ast.Span, what
     return true;
 }
 
+/// The escape rules for a comptime result that lands in the runtime image
+/// (specs.md §7.9), applied to the type it escapes AS.
+///
+/// An escape is a VALUE USE of every tagged instantiation it carries: which
+/// conformer comes out is decided by the evaluation, so the whole set is
+/// reached and seeded here and its tables and numbering exist by emission. An
+/// OWNING erased value cannot make the trip at all — no runtime allocator owns
+/// a compile-time copy — while a borrow (a view, an `#identity` handle) is only
+/// ever a pointer to storage the image already has.
+pub fn checkComptimeEscape(self: *Lowering, ty: TypeId, span: ast.Span) void {
+    var seen = std.ArrayList(TypeId).empty;
+    defer seen.deinit(self.alloc);
+    walkEscape(self, ty, span, true, &seen);
+}
+
+fn walkEscape(self: *Lowering, ty: TypeId, span: ast.Span, by_value: bool, seen: *std.ArrayList(TypeId)) void {
+    if (ty.isBuiltin() or ty == .unresolved) return;
+    for (seen.items) |s| if (s == ty) return;
+    seen.append(self.alloc, ty) catch @panic("out of memory");
+    switch (self.module.types.get(ty)) {
+        .pointer => |p| walkEscape(self, p.pointee, span, false, seen),
+        .many_pointer => |p| walkEscape(self, p.element, span, false, seen),
+        .optional => |o| walkEscape(self, o.child, span, by_value, seen),
+        .slice => |sl| walkEscape(self, sl.element, span, false, seen),
+        .array => |a| walkEscape(self, a.element, span, by_value, seen),
+        .tuple => |t| for (t.fields) |f| walkEscape(self, f, span, by_value, seen),
+        .@"struct" => |s| {
+            if (!s.is_protocol) {
+                for (s.fields) |f| walkEscape(self, f.ty, span, by_value, seen);
+                return;
+            }
+            const pd = self.getProtocolInfo(ty) orelse return;
+            if (pd.kind == .tagged) {
+                self.seedTagged(ty);
+                return;
+            }
+            if (!by_value or pd.kind == .constraint or pd.ownership == .identity) return;
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "a '{s}' value owns its storage and cannot escape a `#run` — no runtime allocator owns a compile-time copy; bind the concrete value, and let the owning erasure happen at runtime", .{self.formatTypeName(ty)});
+            }
+        },
+        else => {},
+    }
+}
+
 /// Get or create thunks for a (protocol, concrete_type) pair.
 /// Returns a slice of FuncIds, one per protocol method.
 pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) []const FuncId {

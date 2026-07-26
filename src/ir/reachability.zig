@@ -12,6 +12,7 @@
 
 const std = @import("std");
 const inst = @import("inst.zig");
+const types_mod = @import("types.zig");
 const module_mod = @import("module.zig");
 
 const FuncId = inst.FuncId;
@@ -117,6 +118,82 @@ fn collectConstFuncs(cv: inst.ConstantValue, out: *std.ArrayList(FuncId), alloc:
     }
 }
 
+/// Can a comptime result of type `ty` carry a function into the image? A
+/// function value does, and so do the fn-ptr words of an ERASED protocol handle
+/// (a tagged handle carries a tag instead, and dispatches through a routine the
+/// binary already has).
+fn escapeCarriesFunction(m: *const Module, ty: types_mod.TypeId, seen: *std.ArrayList(types_mod.TypeId), alloc: std.mem.Allocator) !bool {
+    if (ty.isBuiltin() or ty == .unresolved) return false;
+    for (seen.items) |s| if (s == ty) return false;
+    try seen.append(alloc, ty);
+    return switch (m.types.get(ty)) {
+        .function => true,
+        .pointer => |p| try escapeCarriesFunction(m, p.pointee, seen, alloc),
+        .many_pointer => |p| try escapeCarriesFunction(m, p.element, seen, alloc),
+        .optional => |o| try escapeCarriesFunction(m, o.child, seen, alloc),
+        .slice => |sl| try escapeCarriesFunction(m, sl.element, seen, alloc),
+        .array => |a| try escapeCarriesFunction(m, a.element, seen, alloc),
+        .tuple => |t| for (t.fields) |f| {
+            if (try escapeCarriesFunction(m, f, seen, alloc)) break true;
+        } else false,
+        .@"struct" => |s| blk: {
+            if (s.is_protocol)
+                break :blk !(s.fields.len >= 2 and std.mem.eql(u8, m.types.getString(s.fields[1].name), "__tag"));
+            for (s.fields) |f| {
+                if (try escapeCarriesFunction(m, f.ty, seen, alloc)) break :blk true;
+            }
+            break :blk false;
+        },
+        else => false,
+    };
+}
+
+/// The functions a comptime global's evaluation can put in the image. Its
+/// result escapes as data, and the escape relocates a carried function
+/// reference to that function's symbol — so a function whose address the
+/// evaluation takes is live in the binary even though only compile-time code
+/// names it (specs.md §7.9).
+fn collectEscapedFuncs(alloc: std.mem.Allocator, m: *const Module, out: *std.ArrayList(FuncId)) !void {
+    const n = m.functions.items.len;
+    const walked = try alloc.alloc(bool, n);
+    defer alloc.free(walked);
+    @memset(walked, false);
+
+    var queue: std.ArrayList(FuncId) = .empty;
+    defer queue.deinit(alloc);
+    var seen_types: std.ArrayList(types_mod.TypeId) = .empty;
+    defer seen_types.deinit(alloc);
+    for (m.globals.items) |g| {
+        const fid = g.comptime_func orelse continue;
+        if (fid.index() >= n or walked[fid.index()]) continue;
+        seen_types.clearRetainingCapacity();
+        if (!try escapeCarriesFunction(m, g.ty, &seen_types, alloc)) continue;
+        walked[fid.index()] = true;
+        try queue.append(alloc, fid);
+    }
+
+    var head: usize = 0;
+    while (head < queue.items.len) : (head += 1) {
+        const f = &m.functions.items[queue.items[head].index()];
+        for (f.blocks.items) |blk| {
+            for (blk.insts.items) |ins| {
+                const named: ?FuncId = switch (ins.op) {
+                    .call => |c| c.callee,
+                    .func_ref => |fid| fid,
+                    .closure_create => |cc| cc.func,
+                    else => null,
+                };
+                const cid = named orelse continue;
+                if (cid.index() >= n) continue;
+                if (ins.op != .call) try out.append(alloc, cid);
+                if (walked[cid.index()]) continue;
+                walked[cid.index()] = true;
+                try queue.append(alloc, cid);
+            }
+        }
+    }
+}
+
 /// Compute the runtime-reachable set: a BFS from the roots over direct calls,
 /// plus every function whose address is taken (a `func_ref` or a closure
 /// trampoline can be called through a pointer we cannot follow statically, so
@@ -153,6 +230,7 @@ pub fn compute(alloc: std.mem.Allocator, m: *const Module) !Reachability {
     for (m.globals.items) |g| {
         if (g.init_val) |iv| try collectConstFuncs(iv, &from_data, alloc);
     }
+    try collectEscapedFuncs(alloc, m, &from_data);
     for (from_data.items) |id| {
         if (id.index() >= n) continue;
         if (r.runtime[id.index()]) continue;
