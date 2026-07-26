@@ -703,6 +703,11 @@ pub const ProtocolResolver = struct {
             }
             self.l.protocol_impl_decls.put(self.protocolConcreteKey(proto.ty, proto_name, cty), {}) catch @panic("out of memory");
             if (proto.ty) |pty| self.l.recordTaggedImplSite(pty, cty, decl.span, source);
+        } else if (proto.ty) |pty| {
+            // A template target (`impl P for Box($T)`) names no one conformer:
+            // each generic instance the program spells joins the set, so a
+            // tagged set with such an impl stays open until publication.
+            self.l.noteTemplateTaggedImpl(pty);
         }
         // Collect explicitly implemented method names
         var impl_methods = std.StringHashMap(void).init(self.l.alloc);

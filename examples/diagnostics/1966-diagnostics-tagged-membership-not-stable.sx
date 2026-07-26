@@ -1,0 +1,35 @@
+// A tagged NEGATIVE is utterable only against a set nothing can still grow.
+// Two things keep one open. An impl that admits by PATTERN takes in one member
+// per generic instance the program spells, and the program is still spelling
+// them. And an expansion-driving body is evaluated while the declaration space
+// is still growing — the very declarations it exists to produce can carry
+// another impl. A question that must answer THERE refuses rather than report a
+// "no" a later conformer would contradict. (A positive is always answerable:
+// membership only grows, so it can never be taken back.)
+#import "modules/std.sx";
+
+Series :: protocol(T: Type) tagged { count :: (self: *Self) -> i64; }
+Buffer :: struct($T: Type) { items: []$T; }
+impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.items.len } }
+
+View :: protocol tagged { area :: (self: *Self) -> i64; }
+Widget :: struct { n: i64; }
+impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
+
+Loose :: struct { k: i64; }
+
+// The blanket impl keeps `Series(i64)` open.
+NO :: #run has_impl(Series(i64), Loose);
+
+// A `-> Type` body: `View`'s set holds only what is declared so far.
+pick :: () -> Type {
+    l := Loose.{ k = 1 };
+    if l.(?View) != null { return f64; }
+    return i64;
+}
+Chosen :: pick();
+
+main :: () {
+    c : Chosen = 1;
+    print("{} {}\n", NO, c);
+}

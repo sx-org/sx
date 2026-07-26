@@ -22,6 +22,7 @@ const ast = @import("../../ast.zig");
 const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 const lower = @import("../lower.zig");
+const mod_mod = @import("../module.zig");
 const program_index_mod = @import("../program_index.zig");
 
 const Lowering = lower.Lowering;
@@ -199,10 +200,8 @@ fn admitDeclaredImpls(self: *Lowering, proto: TypeId) bool {
     return changed;
 }
 
-/// Whether `concrete` is a member of tagged `proto`'s set. Membership only
-/// grows, so a positive answer is stable the moment it exists; the declared
-/// impls are all registered before any body lowers, which is what makes the
-/// sema-time membership diagnostics exact.
+/// Whether `concrete` is a member of tagged `proto`'s set right now.
+/// Membership only grows, so a positive answer is stable the moment it exists.
 fn conforms(self: *Lowering, proto: TypeId, concrete: TypeId) bool {
     if (self.tagged_members.get(proto)) |list| {
         for (list.items) |m| if (m == concrete) return true;
@@ -573,40 +572,82 @@ pub fn warnDeadTypeSwitchArm(self: *Lowering, subject_ty: TypeId, arm_ty: TypeId
 
 // ── Erasure ─────────────────────────────────────────────────────────────
 
-/// An EXPANSION-driving comptime body runs before the conformer fixpoint, so
-/// nothing it observes about a tagged set is final; the scheduled discipline
-/// that admits it is a staged capability. An ORDINARY `#run` runs after
-/// convergence and carries symbolic values — `{ctx, concrete type}`, the VM
-/// devirtualizing against the carried type (§7.9).
-pub fn refuseComptimeTagged(self: *Lowering, proto_ty: TypeId, span: ?ast.Span) bool {
-    if (self.comptime_phase != .expansion) return false;
-    if (!isTagged(self, proto_ty)) return false;
-    if (self.diagnostics) |d| {
-        const at = span orelse blk: {
-            const cs = self.builder.current_span;
-            break :blk ast.Span{ .start = cs.start, .end = cs.end };
-        };
-        d.addFmt(.err, at, "'{s}' is a tagged protocol and its values are not available in expansion-driving compile-time execution — this body runs before the whole-program conformer set converges, so nothing it observes about '{s}' is final; use the concrete type here, or a generic bound ('$T/{s}')", .{ self.formatTypeName(proto_ty), self.formatTypeName(proto_ty), self.formatTypeName(proto_ty) });
-    }
-    return true;
-}
-
 /// Build the tagged borrow `{ctx, tag}` over already-resolved storage.
 pub fn buildTaggedValue(self: *Lowering, ctx_ptr: Ref, proto_ty: TypeId, concrete_ty: TypeId) Ref {
-    if (refuseComptimeTagged(self, proto_ty, null))
-        return self.builder.constUndef(proto_ty);
     reachTagged(self, proto_ty);
     _ = admit(self, proto_ty, concrete_ty);
     return taggedBorrow(self, ctx_ptr, proto_ty, concrete_ty);
 }
 
-/// Whether the probe `x.(?P)` may answer TRUE right now. Asking computes the
-/// set and arms its coherence diagnostics (§7.9); membership only grows, so a
-/// positive is stable the moment it exists.
-pub fn taggedConformsNow(self: *Lowering, proto: TypeId, concrete: TypeId) bool {
+/// What the one canonical membership question can answer about a pair.
+pub const Membership = enum {
+    /// In the set now. Membership only grows, so this never un-answers.
+    member,
+    /// Absent from a set nothing can still grow.
+    absent_final,
+    /// Absent from a set a later conformer can still join, so no negative is
+    /// utterable yet.
+    absent_unstable,
+};
+
+/// The canonical tagged-membership source, nullary and parameterized alike:
+/// `has_impl(P, T)`, `x.(?P)` and every internal membership need read it.
+/// Asking is a WRITE — it instantiates the queried pair, admits whatever the
+/// declared and blanket impls put in the set, and arms the instantiation's
+/// coherence — but never a value use: no table is emitted for a question
+/// (§7.9).
+pub fn taggedConformsNow(self: *Lowering, proto: TypeId, concrete: TypeId) Membership {
     reachTagged(self, proto);
     _ = admitDeclaredImpls(self, proto);
-    return conforms(self, proto, concrete);
+    if (conforms(self, proto, concrete)) return .member;
+    return if (setFinal(self, proto)) .absent_final else .absent_unstable;
+}
+
+/// Can `proto`'s conformer set still grow? Publication closes every set at
+/// once; before that, a set is closed when nothing that admits members by a
+/// PATTERN is registered — a blanket `impl P($T) for Box($T)` (or a nullary
+/// impl on a template target) admits one member per generic instance the
+/// program spells, and the program has not finished spelling them — and when
+/// the declaration space itself has stopped growing, which an
+/// expansion-driving body is by definition in the middle of.
+fn setFinal(self: *Lowering, proto: TypeId) bool {
+    if (self.module.tagged_sets_final) return true;
+    if (self.comptime_phase == .expansion) return false;
+    if (self.tagged_template_impls.contains(proto)) return false;
+    const inst = self.param_protocol_instances.get(proto) orelse return true;
+    var it = self.param_impl_map.iterator();
+    while (it.next()) |e| {
+        const key = e.key_ptr.*;
+        if (key.len <= inst.base.len) continue;
+        if (!std.mem.startsWith(u8, key, inst.base) or key[inst.base.len] != 0) continue;
+        for (e.value_ptr.items) |entry| {
+            const te = entry.block.target_type_expr orelse continue;
+            if (patternHasBinder(te)) return false;
+        }
+    }
+    return true;
+}
+
+/// Record that a template-target impl (`impl P for Box($T)`) can still admit
+/// conformers into `proto`'s set: each generic instance the program spells is
+/// another member, so the set stays open until publication.
+pub fn noteTemplateImpl(self: *Lowering, proto: TypeId) void {
+    if (!isTagged(self, proto)) return;
+    self.tagged_template_impls.put(proto, {}) catch @panic("out of memory");
+}
+
+/// The pre-scheduler answer to a negative that is not yet utterable: a site
+/// that must decide NOW — a type-level `has_impl`, a probe inside an
+/// expansion-driving body — cannot wait for the set to close, so it refuses
+/// through the ordinary path instead of answering something a later conformer
+/// could contradict.
+pub fn refuseUnstableMembership(self: *Lowering, proto: TypeId, concrete: TypeId, span: ?ast.Span) void {
+    const d = self.diagnostics orelse return;
+    const at = span orelse blk: {
+        const cs = self.builder.current_span;
+        break :blk ast.Span{ .start = cs.start, .end = cs.end };
+    };
+    d.addFmt(.err, at, "cannot decide whether '{s}' implements '{s}' here — a tagged conformer set is whole-program, and this one is still open: an impl can still admit '{s}' after this point, so a negative answered here could be contradicted later; a value probe ('x.(?P)') at an ordinary site answers against the final set instead", .{ self.formatTypeName(concrete), self.formatTypeName(proto), self.formatTypeName(concrete) });
 }
 
 /// The other half of the probe: a NEGATIVE is utterable only once the queried
@@ -700,11 +741,19 @@ fn tableName(self: *Lowering, proto_ty: TypeId) []const u8 {
 // ── Dispatch ────────────────────────────────────────────────────────────
 
 /// The outlined dispatch routine for one dispatchable method:
-/// `__sx_tags_<P>_<m>(v: P, args…) -> ret`. Declared on first call site,
-/// bodied at whole-program emission — its arms are the converged set.
+/// `__sx_tags_<P>_<m>(v: P, args…) -> ret`. Declared on first call site and
+/// bodied at whole-program emission, where its switch is total over the
+/// converged set; its ARMS exist from the first site, so a compile-time
+/// evaluation can select one before that body is written.
 fn dispatchRoutine(self: *Lowering, proto_ty: TypeId, pd: ProtocolDeclInfo, method: ProtocolMethodInfo) FuncId {
     const key = MethodKey{ .proto = proto_ty, .method = self.module.types.internString(method.name) };
-    if (self.tagged_dispatch_fns.get(key)) |fid| return fid;
+    if (self.tagged_dispatch_fns.get(key)) |fid| {
+        // Every dispatch site republishes: the set may have taken in conformers
+        // since the routine was declared, and an evaluation reaching this site
+        // needs the arms of the set AS IT STANDS.
+        publishSymbolicDispatch(self, .{ .proto = proto_ty, .pd = pd, .method = method, .fid = fid });
+        return fid;
+    }
 
     var params = std.ArrayList(inst_mod.Function.Param).empty;
     defer params.deinit(self.alloc);
@@ -724,8 +773,34 @@ fn dispatchRoutine(self: *Lowering, proto_ty: TypeId, pd: ProtocolDeclInfo, meth
     func.has_implicit_ctx = has_ctx;
     const fid = self.module.addFunction(func);
     self.tagged_dispatch_fns.put(key, fid) catch @panic("out of memory");
-    self.tagged_pending.append(self.alloc, .{ .proto = proto_ty, .pd = pd, .method = method, .fid = fid }) catch @panic("out of memory");
+    const job = PendingRoutine{ .proto = proto_ty, .pd = pd, .method = method, .fid = fid };
+    self.tagged_pending.append(self.alloc, job) catch @panic("out of memory");
+    // The routine is bodied at whole-program emission, but a compile-time
+    // evaluation dispatching through it runs NOW — so its arms are materialized
+    // and its arm selection published on demand, against the members the set
+    // holds at this point. Both are monotone: convergence adds the members
+    // admitted since and republishes the same record (§7.9).
+    publishSymbolicDispatch(self, job);
     return fid;
+}
+
+/// Materialize `job`'s arms for the set's current members and publish the
+/// routine's arm selection for the comptime VM. Idempotent per (routine,
+/// member): an arm is created once, and the routine's record is one entry that
+/// only ever grows.
+///
+/// Materializing an arm lowers a conformer's impl body, which may dispatch
+/// through this very routine — the re-entry publishes nothing and lets the
+/// outer call finish the set it is already walking.
+fn publishSymbolicDispatch(self: *Lowering, job: PendingRoutine) void {
+    const gop = self.tagged_publishing.getOrPut(job.fid) catch @panic("out of memory");
+    if (gop.found_existing) return;
+    defer _ = self.tagged_publishing.remove(job.fid);
+    _ = admitDeclaredImpls(self, job.proto);
+    _ = materializeArms(self, job.proto, job.pd, job.method);
+    const members = self.tagged_members.get(job.proto) orelse return;
+    if (members.items.len == 0) return;
+    registerSymbolicDispatch(self, job, callSiteMembers(self, job.proto));
 }
 
 /// Emit a tagged method call: the value plus the user args, straight into the
@@ -1124,20 +1199,33 @@ fn emitDispatchBody(self: *Lowering, job: PendingRoutine) void {
 /// Record the routine's arm selection for the comptime VM. A comptime tagged
 /// value carries its concrete type, not a tag, so the VM cannot run the
 /// routine's tag switch: it reads the carried type here and calls the arm
-/// directly — the devirtualization §7.9 describes.
+/// directly — the devirtualization §7.9 describes. One entry per routine,
+/// rewritten in place as the set grows, so an evaluation that ran before
+/// convergence saw a prefix of the same selection, never a stale rival record.
 fn registerSymbolicDispatch(self: *Lowering, job: PendingRoutine, members: []const TypeId) void {
     const method = self.module.types.internString(job.method.name);
+    var present = std.ArrayList(TypeId).empty;
+    defer present.deinit(self.alloc);
     var arms = std.ArrayList(FuncId).empty;
     defer arms.deinit(self.alloc);
     for (members) |concrete| {
-        const thunk = self.tagged_arms.get(.{ .proto = job.proto, .concrete = concrete, .method = method }) orelse return;
+        const thunk = self.tagged_arms.get(.{ .proto = job.proto, .concrete = concrete, .method = method }) orelse continue;
+        present.append(self.alloc, concrete) catch @panic("out of memory");
         arms.append(self.alloc, thunk) catch @panic("out of memory");
     }
-    self.module.tagged_dispatch.append(self.alloc, .{
+    if (present.items.len == 0) return;
+    const entry: mod_mod.Module.TaggedDispatchEntry = .{
         .routine = job.fid,
-        .members = self.alloc.dupe(TypeId, members) catch @panic("out of memory"),
-        .arms = arms.toOwnedSlice(self.alloc) catch @panic("out of memory"),
-    }) catch @panic("out of memory");
+        .members = self.alloc.dupe(TypeId, present.items) catch @panic("out of memory"),
+        .arms = self.alloc.dupe(FuncId, arms.items) catch @panic("out of memory"),
+    };
+    for (self.module.tagged_dispatch.items) |*e| {
+        if (e.routine != job.fid) continue;
+        if (e.members.len >= entry.members.len) return;
+        e.* = entry;
+        return;
+    }
+    self.module.tagged_dispatch.append(self.alloc, entry) catch @panic("out of memory");
 }
 
 fn emitArmCall(self: *Lowering, job: PendingRoutine, concrete: TypeId, ctx_ref: Ref, user_base: u32) void {
