@@ -1,0 +1,63 @@
+// One worklist drains every expansion driver, and what an undecided driver
+// could still declare is what finality reads.
+//
+// Each driver registers before it folds, carrying the contributions a
+// conservative syntactic sweep of its unexpanded branches found: an
+// `impl P for …` written anywhere inside contributes to `P`'s sets. Taking a
+// driver — or rejecting it, or running its iterations out — gives exactly
+// those contributions back.
+//
+// So a positive is readable the moment it exists (membership only grows), a
+// `#run` a condition names is registered and drained by the same worklist, and
+// a negative is answerable as soon as no undecided driver mentions the queried
+// protocol — even while other drivers are still open, because a driver that
+// contributes to a DIFFERENT protocol never held this set open.
+#import "modules/std.sx";
+
+View :: protocol tagged { area :: (self: *Self) -> i64; }
+Tally :: protocol tagged { count :: (self: *Self) -> i64; }
+
+Widget :: struct { n: i64; }
+Panel :: struct { n: i64; }
+Loose :: struct { n: i64; }
+
+impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
+
+// A declared impl IS membership, so this positive answers on the spot — and
+// the branch it takes admits another conformer into the same set.
+inline if has_impl(View, Widget) {
+    impl View for Panel { area :: (self: *Panel) -> i64 { self.n + 100 } }
+}
+
+// The condition names a `#run`; the run registers on the worklist, drains
+// there, and its value decides the branch. What it sees includes the impl the
+// driver above spliced — a taken group is module scope.
+HAS_PANEL :: #run has_impl(View, Panel);
+inline if HAS_PANEL { WIDTH :: 3; } else { WIDTH :: 0; }
+
+// Every iteration of an `inline for` contributes, so `Tally` stays open until
+// the whole unroll is drained; then the members it spliced are simply in.
+SHAPES :: .[Widget, Panel];
+inline for SHAPES (T) {
+    impl Tally for T { count :: (self: *T) -> i64 { self.n } }
+}
+inline if has_impl(Tally, Panel) { COUNTED :: 1; } else { COUNTED :: 0; }
+
+// Nothing implements `View` for `Loose`, and the one driver still undecided
+// contributes to `Tally` alone — so `View`'s set is closed here and the
+// negative is uttered rather than refused.
+inline if has_impl(View, Loose) { SEEN :: 1; } else { SEEN :: 0; }
+
+inline if POINTER_SIZE == 8 {
+    impl Tally for Loose { count :: (self: *Loose) -> i64 { self.n * 2 } }
+}
+
+main :: () {
+    w := Widget.{ n = 4 };
+    p := Panel.{ n = 5 };
+    l := Loose.{ n = 6 };
+    v : View = p;
+    t : Tally = w;
+    u : Tally = l;
+    print("{} {} {} {} {} {}\n", WIDTH, COUNTED, SEEN, v.area(), t.count(), u.count());
+}

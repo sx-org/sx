@@ -38,6 +38,7 @@ const lower_stmt = @import("lower/stmt.zig");
 const lower_control_flow = @import("lower/control_flow.zig");
 const lower_decl = @import("lower/decl.zig");
 const lower_expand = @import("lower/expand.zig");
+const lower_worklist = @import("lower/worklist.zig");
 const lower_context_ext = @import("lower/context_ext.zig");
 const lower_nominal = @import("lower/nominal.zig");
 const lower_protocol = @import("lower/protocol.zig");
@@ -684,6 +685,10 @@ pub const Lowering = struct {
     /// import visibility — but only for a REACHED instantiation, so the check
     /// runs with the collection fixpoint rather than at registration.
     tagged_impl_sites: std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)),
+    /// The one worklist every expansion driver registers on and is drained by
+    /// (lower/worklist.zig). Its unretired contributions are what finality —
+    /// `setFinal`, a namespace's member surface — reads before publishing.
+    expansion: lower_worklist.Worklist,
     /// Tagged protocols an impl on a TEMPLATE target (`impl P for Box($T)`)
     /// can still admit conformers into: one member per generic instance the
     /// program spells, so such a set is never closed before publication.
@@ -1030,6 +1035,7 @@ pub const Lowering = struct {
             .tagged_type_id_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
             .tagged_pending = std.ArrayList(lower_tagged.PendingRoutine).empty,
             .tagged_impl_sites = std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
+            .expansion = lower_worklist.Worklist.init(module.alloc),
             .tagged_template_impls = std.AutoHashMap(TypeId, void).init(module.alloc),
             .tagged_publishing = std.AutoHashMap(FuncId, void).init(module.alloc),
             .param_impl_map = std.StringHashMap(std.ArrayList(ParamImplEntry)).init(module.alloc),

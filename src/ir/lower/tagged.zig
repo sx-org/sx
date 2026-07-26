@@ -613,6 +613,7 @@ pub fn taggedConformsNow(self: *Lowering, proto: TypeId, concrete: TypeId) Membe
 fn setFinal(self: *Lowering, proto: TypeId) bool {
     if (self.module.tagged_sets_final) return true;
     if (self.comptime_phase == .expansion) return false;
+    if (self.expansion.mayImpl(sourceProtocolName(self, proto))) return false;
     if (self.tagged_template_impls.contains(proto)) return false;
     const inst = self.param_protocol_instances.get(proto) orelse return true;
     var it = self.param_impl_map.iterator();
@@ -626,6 +627,25 @@ fn setFinal(self: *Lowering, proto: TypeId) bool {
         }
     }
     return true;
+}
+
+/// The name an `impl` head would SPELL to reach `proto`. Contribution scanning
+/// is syntactic, so an instantiation answers with its family's base —
+/// `impl Series($T) for …` is written against `Series`, whichever tuple it
+/// ends up admitting into — and a second author's `__dN` identity suffix comes
+/// off: both authors are written as the same word.
+fn sourceProtocolName(self: *Lowering, proto: TypeId) []const u8 {
+    const keyed = if (self.param_protocol_instances.get(proto)) |inst|
+        inst.base
+    else if (self.getProtocolInfo(proto)) |info|
+        info.name
+    else
+        return "";
+    var i = keyed.len;
+    while (i > 0 and std.ascii.isDigit(keyed[i - 1])) i -= 1;
+    if (i == keyed.len or i < 3) return keyed;
+    if (!std.mem.eql(u8, keyed[i - 3 .. i], "__d")) return keyed;
+    return keyed[0 .. i - 3];
 }
 
 /// Record that a template-target impl (`impl P for Box($T)`) can still admit
@@ -1024,7 +1044,12 @@ fn callSiteMembers(self: *Lowering, proto: TypeId) []const TypeId {
 /// monomorphizes its impl bodies, which may erase into further protocols or
 /// instantiate further conformers (spec §6.5).
 pub fn convergeTaggedSets(self: *Lowering) void {
-    while (true) {
+    // The fixpoint drains off the one worklist: a round registers, is taken,
+    // and re-registers only when admitting or monomorphizing changed
+    // something. The comptime an admitted impl's monomorphization reaches is
+    // reached from inside a taken round.
+    self.expansion.pushRound();
+    while (self.expansion.takeRound()) {
         var changed = false;
 
         var reached = std.ArrayList(TypeId).empty;
@@ -1045,7 +1070,7 @@ pub fn convergeTaggedSets(self: *Lowering) void {
             if (materializeArms(self, job.proto, job.pd, job.method)) changed = true;
             pending = self.tagged_pending.items;
         }
-        if (!changed) break;
+        if (changed) self.expansion.pushRound();
     }
 
     checkCoherence(self);

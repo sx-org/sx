@@ -1,0 +1,39 @@
+// The third driver class the worklist owns: comptime reached by the
+// monomorphization of an admitted impl.
+//
+// Nothing calls `Box.draw` — it exists only because `Box` joined `Draw`'s set,
+// and its body is written when the conformer fixpoint materializes that arm.
+// The `#insert` in that body therefore runs from INSIDE a drained round, and
+// what it reaches — an erasure into a second tagged protocol — grows another
+// set, so the round re-registers and the drain continues until nothing new is
+// reached.
+#import "modules/std.sx";
+
+Draw :: protocol tagged { draw :: (self: *Self) -> i64; }
+Mark :: protocol tagged { mark :: (self: *Self) -> i64; }
+
+Dot :: struct { n: i64; }
+impl Mark for Dot { mark :: (self: *Dot) -> i64 { self.n * 3 } }
+
+// Reached only from the arm body below, so it is evaluated while the fixpoint
+// is running — and it dispatches through `Mark`, admitting `Dot` there.
+tally :: () -> string {
+    d := Dot.{ n = 2 };
+    m : Mark = d;
+    if m.mark() == 6 { return "bonus := 10;"; }
+    return "bonus := 0;";
+}
+
+Box :: struct { n: i64; }
+impl Draw for Box {
+    draw :: (self: *Box) -> i64 {
+        #insert tally();
+        return self.n + bonus;
+    }
+}
+
+main :: () {
+    b := Box.{ n = 1 };
+    d : Draw = b;
+    print("{}\n", d.draw());
+}

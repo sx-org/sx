@@ -37,12 +37,21 @@ pub fn expandModuleDrivers(self: *Lowering, decls: []const *Node) []const *Node 
         .expanded = std.AutoHashMap(*const Node, void).init(self.alloc),
         .raised = std.AutoHashMap(*const Node, void).init(self.alloc),
         .lists = std.AutoHashMap(ListKey, []const *Node).init(self.alloc),
+        .primed = std.StringHashMap(void).init(self.alloc),
+        .spliced = std.ArrayList(*Node).empty,
     };
     defer ex.deinit();
 
     ex.primeTargetFacts(decls);
+    // Every driver registers — with the declarations its unexpanded branches
+    // could still make — BEFORE any of them folds. A question asked while the
+    // first driver folds must already know what the last one might contribute.
+    ex.registerDrivers(decls);
     const expanded = ex.expandList(decls, .transitive);
     ex.expandNamespaces(expanded);
+    // The member surface publishes last, per module, and only where no driver
+    // that could still declare into that scope remains.
+    ex.publishNamespaceMembers();
     return expanded;
 }
 
@@ -65,11 +74,50 @@ const Expansion = struct {
     /// Expanded declaration lists, keyed by the input slice: the module views
     /// share slices, and one expansion answers all of them.
     lists: std.AutoHashMap(ListKey, []const *Node),
+    /// Names a driver's condition already pulled into registration. Priming a
+    /// name is a write to the real declaration facts, so it happens once.
+    primed: std.StringHashMap(void),
+    /// Everything a taken group has put into module scope. Together with the
+    /// textual root list this IS the decided declaration space — what a
+    /// question asked by a later driver is answered against.
+    spliced: std.ArrayList(*Node),
 
     fn deinit(ex: *Expansion) void {
         ex.expanded.deinit();
         ex.raised.deinit();
         ex.lists.deinit();
+        ex.primed.deinit();
+        ex.spliced.deinit(ex.self.alloc);
+    }
+
+    fn decided(ex: *Expansion, decl: *Node) void {
+        ex.spliced.append(ex.self.alloc, decl) catch {};
+    }
+
+    /// Register every driver the program's declaration lists hold, so the
+    /// contribution ledger is complete before the first fold. A driver reached
+    /// only through a branch-local `#import` registers when that branch is
+    /// selected — until then its contributions are covered by the driver whose
+    /// body holds the import.
+    fn registerDrivers(ex: *Expansion, decls: []const *Node) void {
+        var seen = std.AutoHashMap(*const Node, void).init(ex.self.alloc);
+        defer seen.deinit();
+        ex.registerDriversIn(decls, &seen);
+    }
+
+    fn registerDriversIn(ex: *Expansion, decls: []const *Node, seen: *std.AutoHashMap(*const Node, void)) void {
+        for (decls) |decl| {
+            if (imports.isModuleDriver(decl)) {
+                ex.self.expansion.registerDriver(decl);
+                continue;
+            }
+            if (decl.data != .namespace_decl) continue;
+            if (seen.contains(decl)) continue;
+            seen.put(decl, {}) catch {};
+            const ns = &decl.data.namespace_decl;
+            ex.registerDriversIn(ns.own_decls, seen);
+            ex.registerDriversIn(ns.decls, seen);
+        }
     }
 
     /// The comptime facts a driver folds against, established before the scan
@@ -120,9 +168,22 @@ const Expansion = struct {
         var it = edges.valueIterator();
         while (it.next()) |aliases| {
             var ait = aliases.valueIterator();
+            while (ait.next()) |target| target.own_decls = ex.expandList(target.own_decls, .own);
+        }
+    }
+
+    /// The `DeclId` surface of every namespaced module. A module publishes
+    /// only once its own scope is final — an alias's member table is a claim
+    /// about what that module declares, and a driver written there that has
+    /// not folded can still add to it.
+    fn publishNamespaceMembers(ex: *Expansion) void {
+        const edges = ex.self.program_index.namespace_edges orelse return;
+        const table = ex.self.program_index.decl_table orelse return;
+        var it = edges.valueIterator();
+        while (it.next()) |aliases| {
+            var ait = aliases.valueIterator();
             while (ait.next()) |target| {
-                target.own_decls = ex.expandList(target.own_decls, .own);
-                const table = ex.self.program_index.decl_table orelse continue;
+                if (!ex.self.expansion.scopeFinal(target.target_module_path)) continue;
                 var ids = std.ArrayList(imports.DeclId).empty;
                 for (target.own_decls) |member| {
                     if (imports.rawDeclRefOf(member) == null) continue;
@@ -195,6 +256,133 @@ const Expansion = struct {
         return expanded;
     }
 
+    /// The sole evaluator of a module-scope driver condition. It folds the
+    /// facts the scan primed (targets, module constants) and, where the
+    /// condition asks about the program instead, drives what the answer needs:
+    /// the `#run` a named constant binds, the declarations a membership
+    /// question names. Whichever route answers, the driver is the worklist's.
+    fn driveCondition(ex: *Expansion, node: *const Node, src: ?[]const u8, depth: u8) ?bool {
+        if (depth > 16) return null;
+        switch (node.data) {
+            .unary_op => |uo| {
+                if (uo.op != .not) return null;
+                const inner = ex.driveCondition(uo.operand, src, depth + 1) orelse return null;
+                return !inner;
+            },
+            .binary_op => |bo| {
+                if (bo.op == .and_op) {
+                    const lhs = ex.driveCondition(bo.lhs, src, depth + 1) orelse return null;
+                    if (!lhs) return false;
+                    return ex.driveCondition(bo.rhs, src, depth + 1);
+                }
+                if (bo.op == .or_op) {
+                    const lhs = ex.driveCondition(bo.lhs, src, depth + 1) orelse return null;
+                    if (lhs) return true;
+                    return ex.driveCondition(bo.rhs, src, depth + 1);
+                }
+                return ex.self.evalComptimeCondition(node);
+            },
+            .identifier => |id| {
+                if (ex.self.evalComptimeCondition(node)) |folded| return folded;
+                const cd = constNamed(ex, id.name, src) orelse return null;
+                return ex.driveCondition(cd.value, src, depth + 1);
+            },
+            .comptime_expr => |ce| {
+                if (!ex.self.expansion.claimRun(node)) return null;
+                defer ex.self.expansion.releaseRun(node);
+                return ex.driveCondition(ce.expr, src, depth + 1);
+            },
+            .call => return ex.driveMembershipCondition(node, src),
+            else => return ex.self.evalComptimeCondition(node),
+        }
+    }
+
+    /// `has_impl(P, T)` as a driver condition. The question is answerable only
+    /// against real declarations, so the names it spells are registered first;
+    /// the answer itself comes from the one canonical membership source, which
+    /// refuses a negative no unexpanded branch has ruled out yet.
+    fn driveMembershipCondition(ex: *Expansion, node: *const Node, src: ?[]const u8) ?bool {
+        const c = node.data.call;
+        const callee = ast.bareName(c.callee) orelse return null;
+        if (!std.mem.eql(u8, callee, "has_impl") or c.args.len < 2) return null;
+        const proto_name = ast.bareName(protocolHead(c.args[0])) orelse return null;
+        ex.primeMembershipFacts(proto_name, c.args[1], src);
+        // Only `tagged` answers here. The other kinds ask about site-local impl
+        // VISIBILITY, which is a fact of the lowered program rather than of the
+        // declarations — nothing has been lowered yet, so the question has no
+        // answer at expansion and the driver takes the ordinary refusal.
+        if (!ex.taggedProtocolNamed(proto_name)) return null;
+        const target = ex.self.resolveTypeArg(c.args[1]);
+        if (target == .unresolved) return null;
+        return ex.self.computeHasImpl(c.args[0], target);
+    }
+
+    fn taggedProtocolNamed(ex: *Expansion, name: []const u8) bool {
+        const resolver = ex.self.protocolResolver();
+        if (resolver.resolveProtocol(name, ex.self.current_source_file)) |p| {
+            if (p.ty) |pty| return ex.self.isTagged(pty);
+        }
+        if (resolver.resolveParamProtocolHead(name, null)) |pd| return pd.kind == .tagged;
+        return false;
+    }
+
+    /// Register what a membership question names: the protocol, the queried
+    /// type, and every impl of that protocol the program declares. The search
+    /// spans the whole root list rather than what registration has reached, so
+    /// the answer does not depend on where the driver sits among the
+    /// declarations it asks about.
+    fn primeMembershipFacts(ex: *Expansion, proto_name: []const u8, target: *const Node, src: ?[]const u8) void {
+        ex.primeDecl(proto_name);
+        if (ast.bareName(protocolHead(target))) |tname| ex.primeDecl(tname);
+        var it = ex.decidedDecls();
+        while (it.next()) |decl| {
+            if (decl.data != .impl_block) continue;
+            const ib = decl.data.impl_block;
+            if (!std.mem.eql(u8, ib.protocol_name, proto_name)) continue;
+            if (ib.target_type.len > 0) ex.primeDecl(ib.target_type);
+        }
+        it = ex.decidedDecls();
+        while (it.next()) |decl| {
+            if (decl.data != .impl_block) continue;
+            if (!std.mem.eql(u8, decl.data.impl_block.protocol_name, proto_name)) continue;
+            ex.self.setCurrentSourceFile(decl.source_file);
+            ex.self.protocolResolver().registerImplBlock(&decl.data.impl_block, false, decl);
+        }
+        ex.self.setCurrentSourceFile(src);
+    }
+
+    /// Register the declaration `name` denotes, wherever the program authors
+    /// it. Only the type-shaped declarations a membership question can name
+    /// answer here; everything else stays for the scan.
+    fn primeDecl(ex: *Expansion, name: []const u8) void {
+        if (ex.primed.contains(name)) return;
+        ex.primed.put(name, {}) catch {};
+        var it = ex.decidedDecls();
+        while (it.next()) |decl| {
+            const declared = decl.data.declName() orelse continue;
+            if (!std.mem.eql(u8, declared, name)) continue;
+            ex.self.setCurrentSourceFile(decl.source_file);
+            switch (decl.data) {
+                .protocol_decl => |*pd| ex.self.registerProtocolDecl(pd),
+                .struct_decl => |*sd| ex.self.registerStructDecl(sd, decl.source_file),
+                .enum_decl => |*ed| ex.self.registerEnumDecl(ed),
+                .union_decl => |*ud| ex.self.registerUnionDecl(ud),
+                .const_decl => |cd| switch (cd.value.data) {
+                    .protocol_decl => |*pd| ex.self.registerProtocolDecl(pd),
+                    .struct_decl => |*sd| ex.self.registerStructDecl(sd, decl.source_file),
+                    .enum_decl => |*ed| ex.self.registerEnumDecl(ed),
+                    .union_decl => |*ud| ex.self.registerUnionDecl(ud),
+                    else => {},
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn decidedDecls(ex: *Expansion) DecidedDecls {
+        return .{ .textual = ex.scope, .spliced = ex.spliced.items };
+    }
+
     /// A `#error` reached in live code. A non-selected group never reaches
     /// here, which is how `std/c.sx`'s per-target tables guard their `else`
     /// arms.
@@ -206,6 +394,32 @@ const Expansion = struct {
         diags.addFmt(.err, decl.span, "{s}", .{decl.data.error_directive.message});
     }
 };
+
+/// A walk over the DECIDED declaration space: what the program wrote, then
+/// what taken groups have added so far. A driver asking about the program is
+/// answered against both — a group already spliced is module scope.
+const DecidedDecls = struct {
+    textual: []const *Node,
+    spliced: []const *Node,
+    i: usize = 0,
+
+    fn next(it: *DecidedDecls) ?*Node {
+        if (it.i < it.textual.len) {
+            defer it.i += 1;
+            return it.textual[it.i];
+        }
+        const k = it.i - it.textual.len;
+        if (k >= it.spliced.len) return null;
+        it.i += 1;
+        return it.spliced[k];
+    }
+};
+
+/// The head of a protocol or type spelling: `Series(f32)` names `Series`, a
+/// bare `View` names itself.
+fn protocolHead(node: *const Node) *const Node {
+    return if (node.data == .call) node.data.call.callee else node;
+}
 
 fn isTargetEnumName(name: []const u8) bool {
     return std.mem.eql(u8, name, "OperatingSystem") or std.mem.eql(u8, name, "Architecture");
@@ -233,11 +447,20 @@ const Group = struct {
     /// per-`inline for` name ledger (null outside one); false means the
     /// expansion was abandoned after a diagnostic.
     fn expandDriver(g: *Group, decl: *const Node, src: ?[]const u8, declared: ?*std.StringHashMap([]const u8), cursor: []const u8) bool {
+        g.ex.self.expansion.registerDriver(decl);
+        const done = g.expandDriverBody(decl, src, declared, cursor);
+        // Taken, rejected, or out of iterations — the driver is decided, and
+        // exactly the contributions it registered come back.
+        g.ex.self.expansion.retire(decl);
+        return done;
+    }
+
+    fn expandDriverBody(g: *Group, decl: *const Node, src: ?[]const u8, declared: ?*std.StringHashMap([]const u8), cursor: []const u8) bool {
         const mint = g.claimRegistration(decl);
         g.ex.self.setCurrentSourceFile(src);
         switch (decl.data) {
             .if_expr => |ie| {
-                const is_true = g.ex.self.evalComptimeCondition(ie.condition) orelse {
+                const is_true = g.ex.driveCondition(ie.condition, src, 0) orelse {
                     // Never silently discard the declarations of an unevaluable
                     // module-scope conditional (issue 0241): a live function,
                     // import, or asm block would vanish and surface as a
@@ -374,6 +597,7 @@ const Group = struct {
                 } else g.names.put(name, {}) catch {};
             }
             g.nodes.put(decl, {}) catch {};
+            g.ex.decided(decl);
             g.out.append(self.alloc, decl) catch {};
         }
     }
@@ -420,6 +644,7 @@ const Group = struct {
             }
         }
         g.nodes.put(decl, {}) catch {};
+        g.ex.decided(decl);
         g.out.append(g.ex.self.alloc, decl) catch {};
     }
 

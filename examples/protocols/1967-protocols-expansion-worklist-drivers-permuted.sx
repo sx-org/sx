@@ -1,0 +1,46 @@
+// The same program as 1967, with the declarations the drivers ask about
+// written AFTER them and the two independent drivers swapped. Registration
+// spans the whole declaration space rather than what the scan has reached, so
+// where a protocol, a conformer, or an impl is written cannot change what a
+// driver folds to — and two drivers that contribute to different sets fold the
+// same either way round. Same output, to the byte.
+#import "modules/std.sx";
+
+inline if has_impl(View, Widget) {
+    impl View for Panel { area :: (self: *Panel) -> i64 { self.n + 100 } }
+}
+
+HAS_PANEL :: #run has_impl(View, Panel);
+inline if HAS_PANEL { WIDTH :: 3; } else { WIDTH :: 0; }
+
+inline for SHAPES (T) {
+    impl Tally for T { count :: (self: *T) -> i64 { self.n } }
+}
+inline if has_impl(Tally, Panel) { COUNTED :: 1; } else { COUNTED :: 0; }
+
+inline if POINTER_SIZE == 8 {
+    impl Tally for Loose { count :: (self: *Loose) -> i64 { self.n * 2 } }
+}
+
+inline if has_impl(View, Loose) { SEEN :: 1; } else { SEEN :: 0; }
+
+main :: () {
+    w := Widget.{ n = 4 };
+    p := Panel.{ n = 5 };
+    l := Loose.{ n = 6 };
+    v : View = p;
+    t : Tally = w;
+    u : Tally = l;
+    print("{} {} {} {} {} {}\n", WIDTH, COUNTED, SEEN, v.area(), t.count(), u.count());
+}
+
+SHAPES :: .[Widget, Panel];
+
+impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
+
+Widget :: struct { n: i64; }
+Panel :: struct { n: i64; }
+Loose :: struct { n: i64; }
+
+View :: protocol tagged { area :: (self: *Self) -> i64; }
+Tally :: protocol tagged { count :: (self: *Self) -> i64; }
