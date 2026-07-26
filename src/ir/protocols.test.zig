@@ -84,6 +84,43 @@ test "protocols: hasImplPlain reflects materialized thunks for a (protocol, type
     try std.testing.expect(!pr.hasImplPlain("Hash", circle));
 }
 
+test "protocols: a tagged membership question reads declarations, arms coherence, emits no table" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var l = Lowering.init(&module);
+    const pr = ProtocolResolver{ .l = &l };
+
+    const methods = [_]ast.ProtocolMethodDecl{protoMethodReq("area")};
+    const pd = ast.ProtocolDecl{ .name = "View", .methods = &methods, .kind = .tagged };
+    l.registerProtocolDecl(&pd);
+    const view = module.types.findByName(module.types.internString("View")).?;
+    const widget = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Widget"), .fields = &.{} } });
+    const loose = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Loose"), .fields = &.{} } });
+
+    // The DECLARATION is membership — no thunk for the pair has been
+    // materialized, which is exactly the fact `hasImplPlain` would report.
+    l.protocol_impl_decls.put(pr.protocolConcreteKey(view, "View", widget), {}) catch unreachable;
+    try std.testing.expect(!pr.hasImplPlain("View", widget));
+    try std.testing.expect(l.taggedConformsNow(view, widget) == .member);
+
+    // Nothing can still grow this set, so the negative is answerable.
+    try std.testing.expect(l.taggedConformsNow(view, loose) == .absent_final);
+
+    // Asking armed the instantiation's coherence, and emitted no tag table:
+    // a question is not a value use.
+    try std.testing.expect(l.tagged_reached.contains(view));
+    try std.testing.expectEqual(@as(usize, 0), l.tagged_type_id_tables.count());
+
+    // An impl on a template target admits one member per generic instance the
+    // program spells, so the same negative stops being utterable.
+    l.noteTemplateTaggedImpl(view);
+    try std.testing.expect(l.taggedConformsNow(view, loose) == .absent_unstable);
+    try std.testing.expect(l.taggedConformsNow(view, widget) == .member);
+}
+
 test "protocols: packArgConformsTo at the impl-declaration level (non-parameterised)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

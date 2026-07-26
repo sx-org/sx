@@ -683,11 +683,18 @@ pub const Lowering = struct {
     /// import visibility — but only for a REACHED instantiation, so the check
     /// runs with the collection fixpoint rather than at registration.
     tagged_impl_sites: std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)),
+    /// Tagged protocols an impl on a TEMPLATE target (`impl P for Box($T)`)
+    /// can still admit conformers into: one member per generic instance the
+    /// program spells, so such a set is never closed before publication.
+    tagged_template_impls: std.AutoHashMap(TypeId, void),
+    /// Dispatch routines whose arms are being materialized right now. An arm's
+    /// impl body can dispatch through the routine that is materializing it.
+    tagged_publishing: std.AutoHashMap(FuncId, void),
     /// Which comptime phase the wrapper body being lowered belongs to, or null
     /// outside every comptime body (§7.9's phase law). An EXPANSION-driving
-    /// body runs during lowering, before the conformer fixpoint — protocol
-    /// values refuse there until the scheduler lands. An ORDINARY `#run` runs
-    /// after convergence and sees the final sets.
+    /// body runs during lowering, so it reads the sets as they stand and can
+    /// carry no answer to finality. An ORDINARY `#run` runs after convergence
+    /// and sees the final sets.
     comptime_phase: ?lower_comptime.ComptimePhase = null,
     /// True while the operand of a `return` is being lowered. Erasing an
     /// RVALUE into a tagged value there has nothing durable to borrow — the
@@ -1016,6 +1023,8 @@ pub const Lowering = struct {
             .tagged_type_id_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
             .tagged_pending = std.ArrayList(lower_tagged.PendingRoutine).empty,
             .tagged_impl_sites = std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
+            .tagged_template_impls = std.AutoHashMap(TypeId, void).init(module.alloc),
+            .tagged_publishing = std.AutoHashMap(FuncId, void).init(module.alloc),
             .param_impl_map = std.StringHashMap(std.ArrayList(ParamImplEntry)).init(module.alloc),
             .param_protocol_instances = std.AutoHashMap(TypeId, ParamProtocolInstance).init(module.alloc),
             .param_impl_pack_map = std.StringHashMap(std.ArrayList(PackParamImplEntry)).init(module.alloc),
@@ -3047,7 +3056,9 @@ pub const Lowering = struct {
     pub const protocolTypeIdWord = lower_tagged.protocolTypeIdWord;
     pub const emitTaggedDispatch = lower_tagged.emitTaggedDispatch;
     pub const convergeTaggedSets = lower_tagged.convergeTaggedSets;
-    pub const refuseComptimeTagged = lower_tagged.refuseComptimeTagged;
+    pub const taggedConformsNow = lower_tagged.taggedConformsNow;
+    pub const refuseUnstableMembership = lower_tagged.refuseUnstableMembership;
+    pub const noteTemplateTaggedImpl = lower_tagged.noteTemplateImpl;
     pub const lowerProtocolProbe = lower_protocol.lowerProtocolProbe;
     pub const recordTaggedImplSite = lower_tagged.recordImplSite;
     pub const refuseOutOfSetDowncast = lower_tagged.refuseOutOfSetDowncast;

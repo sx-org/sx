@@ -22,22 +22,42 @@ const ProtocolDefaultDispatchDomain = lower.ProtocolDefaultDispatchDomain;
 
 /// Shared implementation for the `has_impl(P, T)` builtin and its
 /// `tryConstBoolCondition` arm. The protocol expression is either:
-/// - Plain `Hash` (identifier / type_expr) → walks
-///   `protocol_thunk_map["Hash\x00<T>"]`.
-/// - Parameterised `Into(Block)` (call) → walks `param_impl_map`
-///   keyed by `"<P>\x00<arg_mangled>\x00<T_mangled>"`.
+/// - Plain `Hash` (identifier / type_expr) → tagged membership for a tagged
+///   declaration, else `protocol_thunk_map["Hash\x00<T>"]`.
+/// - Parameterised `Into(Block)` (call) → tagged membership of the queried
+///   instantiation for a tagged family, else `param_impl_map` keyed by
+///   `"<P>\x00<arg_mangled>\x00<T_mangled>"`.
 /// Returns false on any malformed protocol-arg shape (caller
 /// reports a diagnostic if it wants).
 pub fn computeHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
     switch (proto_node.data) {
-        .identifier => |id| return self.protocolResolver().hasImplPlain(id.name, ty),
-        .type_expr => |te| return self.protocolResolver().hasImplPlain(te.name, ty),
+        .identifier, .type_expr => {
+            const name: []const u8 = switch (proto_node.data) {
+                .identifier => |id| id.name,
+                else => proto_node.data.type_expr.name,
+            };
+            if (self.protocolResolver().resolveProtocol(name, self.current_source_file)) |p| {
+                if (p.ty) |pty| {
+                    if (lower_tagged.isTagged(self, pty)) return taggedHasImpl(self, pty, ty, proto_node.span);
+                }
+            }
+            return self.protocolResolver().hasImplPlain(name, ty);
+        },
         .call => |c| {
             const p_name: []const u8 = switch (c.callee.data) {
                 .identifier => |id| id.name,
                 .type_expr => |te| te.name,
                 else => return false,
             };
+            // A tagged family answers per instantiation: the query NAMES the
+            // instantiation, which materializes it exactly as any other mention
+            // would (§6.7).
+            if (self.protocolResolver().resolveParamProtocolHead(p_name, null)) |pd| {
+                if (pd.kind == .tagged) {
+                    const pty = instantiateParamProtocol(self, pd, c.args);
+                    return taggedHasImpl(self, pty, ty, proto_node.span);
+                }
+            }
             // Resolve protocol type args. Each goes through
             // `resolveTypeArg` so type aliases / generics / pack-
             // indexed types all work as protocol args.
@@ -56,6 +76,20 @@ pub fn computeHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool
         },
         else => return false,
     }
+}
+
+/// `has_impl` on a tagged protocol is the canonical membership question asked
+/// at type level. It has to answer during lowering, so an unutterable negative
+/// refuses rather than reporting a `false` a later conformer could contradict.
+fn taggedHasImpl(self: *Lowering, proto_ty: TypeId, ty: TypeId, span: ast.Span) bool {
+    return switch (lower_tagged.taggedConformsNow(self, proto_ty, ty)) {
+        .member => true,
+        .absent_final => false,
+        .absent_unstable => blk: {
+            lower_tagged.refuseUnstableMembership(self, proto_ty, ty, span);
+            break :blk false;
+        },
+    };
 }
 
 /// Register a protocol declaration as a struct type in the IR type table.
@@ -1151,8 +1185,18 @@ pub fn lowerProtocolProbe(self: *Lowering, pc: *const ast.PostfixCast, proto_ty:
         else => recv_ty,
     };
     if (self.isTagged(proto_ty)) {
-        if (self.refuseComptimeTagged(proto_ty, pc.type_expr.span)) return self.builder.constNull(dst_ty);
-        if (lower_tagged.taggedConformsNow(self, proto_ty, concrete_ty)) return null;
+        const membership = lower_tagged.taggedConformsNow(self, proto_ty, concrete_ty);
+        // A member erases: the ordinary soft erasure lowers the value.
+        if (membership == .member) return null;
+        // An expansion-driving body is EVALUATED here, so it cannot carry the
+        // negative to finality the way emitted code does: a closed set answers
+        // null on the spot, an open one refuses.
+        if (self.comptime_phase == .expansion) {
+            if (membership == .absent_unstable)
+                lower_tagged.refuseUnstableMembership(self, proto_ty, concrete_ty, pc.type_expr.span);
+            _ = probeReceiverAddress(self, pc.operand, recv_ty);
+            return self.builder.constNull(dst_ty);
+        }
         const ctx_ptr = probeReceiverAddress(self, pc.operand, recv_ty) orelse return null;
         return lower_tagged.lowerTaggedProbe(self, ctx_ptr, proto_ty, concrete_ty, dst_ty);
     }
@@ -1345,7 +1389,6 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
     // exception: its result ABI is the arm's, so the switch expands at the
     // call site (§6.3).
     if (proto_info.kind == .tagged) {
-        if (self.refuseComptimeTagged(proto_ty, span)) return self.builder.constUndef(mi.dispatch_ret_type);
         if (self.refuseEmptyTaggedSet(proto_ty, span)) return self.builder.constUndef(mi.dispatch_ret_type);
         return self.emitTaggedDispatch(receiver, proto_info, proto_ty, mi, args, span);
     }

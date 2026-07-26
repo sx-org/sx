@@ -1472,6 +1472,13 @@ pub const Vm = struct {
         const module = self.module orelse return self.failMsg("comptime VM: call needs a module (not provided)");
         if (fid.index() >= module.functions.items.len) return self.failMsg("comptime VM: call to an out-of-range function id");
         const callee = module.getFunction(fid);
+        const argbuf = self.gpa.alloc(Reg, args.len) catch @panic("comptime VM: out of memory (call args)");
+        defer self.gpa.free(argbuf);
+        for (args, 0..) |a, i| argbuf[i] = frame.get(a.index());
+        // A tagged dispatch routine resolves against the receiver's carried
+        // concrete type, published on demand — before its body exists, which is
+        // written only at whole-program emission.
+        if (try self.devirtualize(module, fid, argbuf)) |r| return r;
         if (callee.is_extern or callee.blocks.items.len == 0) {
             const name = module.types.getString(callee.name);
             // A curated set of libc MEMORY builtins is modeled natively on comptime
@@ -1498,10 +1505,6 @@ pub const Vm = struct {
             // translation. Aggregate/float args+returns aren't marshaled yet (4D.2).
             return self.callHostExtern(callee, name, args, frame, ref_types);
         }
-        const argbuf = self.gpa.alloc(Reg, args.len) catch @panic("comptime VM: out of memory (call args)");
-        defer self.gpa.free(argbuf);
-        for (args, 0..) |a, i| argbuf[i] = frame.get(a.index());
-        if (try self.devirtualize(module, fid, argbuf)) |r| return r;
         self.call_stack.append(self.gpa, fid) catch @panic("comptime VM: out of memory (call stack)");
         defer _ = self.call_stack.pop();
         return self.run(callee, argbuf);

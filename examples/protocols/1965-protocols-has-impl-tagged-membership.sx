@@ -1,0 +1,35 @@
+// `has_impl(P, T)` on a tagged protocol is the membership question spelled at
+// type level, and it reads the same canonical source the value probe `x.(?P)`
+// does: the conformer set as it stands. A DECLARED impl IS membership — no
+// erasure has to have happened anywhere for the answer to be yes.
+//
+// Asking is a write (specs.md §7.9): naming an instantiation materializes it,
+// and a blanket impl admits the queried type into it, even when nothing else in
+// the program mentions either. A set nothing can still grow answers no — an
+// empty one included.
+#import "modules/std.sx";
+
+View :: protocol tagged { area :: (self: *Self) -> i64; }
+Widget :: struct { n: i64; }
+impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
+
+Series :: protocol(T: Type) tagged { count :: (self: *Self) -> i64; }
+Buffer :: struct($T: Type) { items: []$T; }
+impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.items.len } }
+
+// Implements nothing at all, and nothing implements it.
+Loose :: struct { k: i64; }
+Nobody :: protocol tagged { ping :: (self: *Self) -> i64; }
+
+// No `View` value is ever made in this program: the impl declaration alone
+// decides membership.
+DECLARED :: #run has_impl(View, Widget);
+// `Series(f32)` and `Buffer(f32)` are named ONLY by this question.
+BLANKET :: #run has_impl(Series(f32), Buffer(f32));
+// Closed sets, both answers final.
+OUTSIDE :: #run has_impl(View, Loose);
+EMPTY :: #run has_impl(Nobody, Loose);
+
+main :: () {
+    print("{} {} {} {}\n", DECLARED, BLANKET, OUTSIDE, EMPTY);
+}
