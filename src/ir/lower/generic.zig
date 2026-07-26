@@ -599,6 +599,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
                     if (ty != .unresolved) return ty;
                 },
                 .missing => |m| {
+                    if (self.namespaceMissWaits(m)) return .unresolved;
                     if (self.diagnostics) |diags|
                         diags.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                     return .unresolved;
@@ -1484,6 +1485,7 @@ pub fn selectGenericStructHead(self: *Lowering, name: []const u8, qualified_path
                 return .{ .template = tmpl };
             },
             .missing => |m| {
+                if (self.namespaceMissWaits(m)) return .poisoned;
                 if (self.diagnostics) |d|
                     d.addFmt(.err, span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                 return .poisoned;

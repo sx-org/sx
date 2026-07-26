@@ -1,0 +1,42 @@
+// A present, program-unique erased impl is not a publishable fact while the
+// driver reading it could itself duplicate the pair.
+//
+// `has_impl(Show, Item)` is true right now — exactly one visible
+// `impl Show for Item`. But a conversion to an erased protocol resolves through
+// the PROGRAM-UNIQUE impl (§7.4), so that truth dies the moment a second one is
+// declared — and the else-branch of the very driver asking would declare it.
+// The positive therefore waits, and the only unit that could publish the fact
+// it waits on is that same driver. Quiescence with the bookmark still down is
+// the expansion deadlock.
+//
+// `Ord` is the control: a `constraint` partition only grows, so its positive is
+// readable on the spot even though the same driver could add another
+// `impl Ord for Tag`. That driver folds, and never appears in the report.
+#import "modules/std.sx";
+
+Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
+Ord :: protocol constraint { cmp :: (self: *Self, o: *Self) -> i64; }
+
+Item :: struct { n: i64; }
+Tag :: struct { n: i64; }
+
+impl Show for Item { fmt :: (self: *Item) -> i64 { self.n } }
+impl Ord for Tag { cmp :: (self: *Tag, o: *Tag) -> i64 { self.n - o.n } }
+
+inline if has_impl(Ord, Tag) {
+    PARTITION :: 1;
+} else {
+    impl Ord for Tag { cmp :: (self: *Tag, o: *Tag) -> i64 { 0 } }
+    PARTITION :: 0;
+}
+
+inline if has_impl(Show, Item) {
+    UNIQUE :: 1;
+} else {
+    impl Show for Item { fmt :: (self: *Item) -> i64 { 0 } }
+    UNIQUE :: 0;
+}
+
+main :: () {
+    print("{} {}\n", PARTITION, UNIQUE);
+}

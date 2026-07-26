@@ -52,7 +52,7 @@ const Item = struct {
     kind: Kind,
     impls: []const []const u8,
     scope: []const u8,
-    names: u32,
+    names: []const []const u8,
     retired: bool,
 };
 
@@ -85,11 +85,24 @@ pub const Worklist = struct {
     /// that module's scope. A namespace's member surface is a claim about
     /// exactly this, so it publishes only at zero.
     open_names: std.StringHashMap(u32),
+    /// `scope \x00 name` → how many unretired drivers could still declare that
+    /// exact name there. A LOOKUP asks about one name, so it reads this rather
+    /// than the whole scope: a driver waiting on a name it does not itself
+    /// declare is not waiting on itself.
+    open_decls: std.StringHashMap(u32),
     /// `#run` nodes being driven right now — a condition that reaches the run
     /// it is itself part of would otherwise recurse forever.
     driving: std.AutoHashMap(*const Node, void),
     /// Registered-but-untaken monomorphization rounds.
     rounds: u32 = 0,
+    /// The fact a threshold read could not answer yet. The read is deep inside
+    /// lowering; the unit that must park is the driver whose fold reached it,
+    /// so the read records the fact here and the fold consumes it.
+    awaited: ?[]const u8 = null,
+    /// True while a module-scope driver's condition is being folded. Only there
+    /// can a non-monotone read WAIT — an ordinary body is lowered once the
+    /// declaration space is decided, so nothing it reads can change again.
+    folding: bool = false,
 
     pub fn init(alloc: std.mem.Allocator) Worklist {
         return .{
@@ -98,6 +111,7 @@ pub const Worklist = struct {
             .known = std.AutoHashMap(*const Node, usize).init(alloc),
             .open_impls = std.StringHashMap(u32).init(alloc),
             .open_names = std.StringHashMap(u32).init(alloc),
+            .open_decls = std.StringHashMap(u32).init(alloc),
             .driving = std.AutoHashMap(*const Node, void).init(alloc),
         };
     }
@@ -112,13 +126,13 @@ pub const Worklist = struct {
             .names = std.ArrayList([]const u8).empty,
         };
         scan.driver(node, 0);
-        defer scan.names.deinit(w.alloc);
         const impls = scan.impls.toOwnedSlice(w.alloc) catch &.{};
         // The names land in the scope of the file the driver was written in.
         const scope = node.source_file orelse "";
-        const names: u32 = @intCast(scan.names.items.len);
+        const names = scan.names.toOwnedSlice(w.alloc) catch &.{};
         for (impls) |p| bump(&w.open_impls, p);
-        if (names > 0) bumpBy(&w.open_names, scope, names);
+        if (names.len > 0) bumpBy(&w.open_names, scope, @intCast(names.len));
+        for (names) |n| bump(&w.open_decls, w.declKey(scope, n));
         w.known.put(node, w.items.items.len) catch {};
         w.items.append(w.alloc, .{
             .kind = .module_driver,
@@ -137,7 +151,8 @@ pub const Worklist = struct {
         if (item.retired) return;
         item.retired = true;
         for (item.impls) |p| drop(&w.open_impls, p);
-        if (item.names > 0) dropBy(&w.open_names, item.scope, item.names);
+        if (item.names.len > 0) dropBy(&w.open_names, item.scope, @intCast(item.names.len));
+        for (item.names) |n| drop(&w.open_decls, w.declKey(item.scope, n));
     }
 
     /// Register a driver of a non-declaration class. These contribute no
@@ -149,7 +164,7 @@ pub const Worklist = struct {
             .kind = kind,
             .impls = &.{},
             .scope = "",
-            .names = 0,
+            .names = &.{},
             .retired = true,
         }) catch {};
     }
@@ -230,11 +245,36 @@ pub const Worklist = struct {
         return (w.open_impls.get(name) orelse 0) > 0;
     }
 
+    /// Record the fact a threshold read is waiting on. The FIRST wait of a fold
+    /// is the one the diagnostic names: it is the read that could not proceed,
+    /// and everything after it in that fold is already speculative.
+    pub fn awaitFact(w: *Worklist, fact: []const u8) void {
+        if (w.awaited == null) w.awaited = fact;
+    }
+
+    /// Is a threshold read reached from here allowed to WAIT? Only a driver's
+    /// own fold can be re-run once its fact fires; every other reader is past
+    /// the point where the declaration space could still change.
+    pub fn scheduled(w: *const Worklist) bool {
+        return w.folding;
+    }
+
     /// Has `scope` stopped growing? A namespace's member surface is the answer
     /// to "what does this module declare", so it publishes only once no driver
     /// written there can still add a name.
     pub fn scopeFinal(w: *const Worklist, scope: []const u8) bool {
         return (w.open_names.get(scope) orelse 0) == 0;
+    }
+
+    /// Can an undecided driver still declare `name` into `scope`? What a
+    /// name LOOKUP waits on: the absence of one name, not the closure of the
+    /// whole scope.
+    pub fn mayDeclare(w: *Worklist, scope: []const u8, name: []const u8) bool {
+        return (w.open_decls.get(w.declKey(scope, name)) orelse 0) > 0;
+    }
+
+    fn declKey(w: *Worklist, scope: []const u8, name: []const u8) []const u8 {
+        return std.fmt.allocPrint(w.alloc, "{s}\x00{s}", .{ scope, name }) catch name;
     }
 
     fn bump(map: *std.StringHashMap(u32), key: []const u8) void {

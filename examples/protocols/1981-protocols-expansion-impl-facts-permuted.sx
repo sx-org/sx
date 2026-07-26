@@ -1,0 +1,37 @@
+// 1974's program with every declaration permuted: the readers sit after the
+// contributors, the impls after the drivers, the type list last.
+//
+// The scheduler is what makes the answers order-independent — each read is
+// folded at the instant its fact stopped being able to change, never at the
+// instant it was written — so the output is byte-identical to 1974's.
+#import "modules/std.sx";
+
+SHAPES :: .[Item];
+
+inline if has_impl(Ord, Note) { PARTITION :: 1; } else { PARTITION :: 0; }
+
+inline for SHAPES (T) {
+    impl Ord for T { cmp :: (self: *T, o: *T) -> i64 { self.n - o.n } }
+    impl Show for T { fmt :: (self: *T) -> i64 { self.n * 3 } }
+}
+
+inline if has_impl(Show, Note) { UNIQUE :: 1; } else { UNIQUE :: 0; }
+
+impl Ord for Note { cmp :: (self: *Note, o: *Note) -> i64 { self.n - o.n } }
+
+Note :: struct { n: i64; }
+
+inline if has_impl(Show, Item) { REPAIRED :: 1; } else { REPAIRED :: 0; }
+
+impl Show for Note { fmt :: (self: *Note) -> i64 { self.n } }
+
+Item :: struct { n: i64; }
+
+Ord :: protocol constraint { cmp :: (self: *Self, o: *Self) -> i64; }
+Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
+
+main :: () {
+    i := Item.{ n = 2 };
+    s := i.(Show);
+    print("{} {} {} {}\n", REPAIRED, UNIQUE, PARTITION, s.fmt());
+}

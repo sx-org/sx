@@ -11,7 +11,6 @@ const errors = @import("../errors.zig");
 
 const ir_mod = @import("ir.zig");
 const TypeId = ir_mod.TypeId;
-const FuncId = ir_mod.FuncId;
 const Lowering = ir_mod.Lowering;
 const ProtocolResolver = ir_mod.ProtocolResolver;
 
@@ -60,30 +59,6 @@ test "protocols: getProtocolInfo resolves registered protocol structs only" {
     try std.testing.expect(l.getProtocolInfo(drawable_ty) != null);
 }
 
-test "protocols: hasImplPlain reflects materialized thunks for a (protocol, type) pair" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-    var module = ir_mod.Module.init(alloc);
-    defer module.deinit();
-    var l = Lowering.init(&module);
-    const pr = ProtocolResolver{ .l = &l };
-
-    const circle = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Circle"), .fields = &.{} } });
-
-    // No thunks yet → not materialized.
-    try std.testing.expect(!pr.hasImplPlain("Drawable", circle));
-
-    // Materialize the (Drawable, Circle) thunk slot the way `getOrCreateThunks`
-    // does — by protocol + concrete TypeId. hasImplPlain must then see it.
-    const key = pr.protocolConcreteKey(null, "Drawable", circle);
-    l.protocol_thunk_map.put(key, &[_]FuncId{}) catch unreachable;
-    try std.testing.expect(pr.hasImplPlain("Drawable", circle));
-
-    // A different protocol over the same type is still unmaterialized.
-    try std.testing.expect(!pr.hasImplPlain("Hash", circle));
-}
-
 test "protocols: a tagged membership question reads declarations, arms coherence, emits no table" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -101,9 +76,9 @@ test "protocols: a tagged membership question reads declarations, arms coherence
     const loose = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Loose"), .fields = &.{} } });
 
     // The DECLARATION is membership — no thunk for the pair has been
-    // materialized, which is exactly the fact `hasImplPlain` would report.
+    // materialized, and membership does not wait for one.
     l.protocol_impl_decls.put(pr.protocolConcreteKey(view, "View", widget), {}) catch unreachable;
-    try std.testing.expect(!pr.hasImplPlain("View", widget));
+    try std.testing.expect(!l.protocol_thunk_map.contains(pr.protocolConcreteKey(view, "View", widget)));
     try std.testing.expect(l.taggedConformsNow(view, widget) == .member);
 
     // Nothing can still grow this set, so the negative is answerable.

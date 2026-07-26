@@ -1,0 +1,15 @@
+// At finality a name-lookup miss is an ordinary miss.
+//
+// Once no undecided driver can declare `ABSENT` into this file's scope, the
+// absence is a publishable fact — the wait ends and the condition takes the
+// ordinary unevaluable-condition path. The same holds one level out: with the
+// named module's scope final, `cfg.ABSENT` in ordinary code is the ordinary
+// namespace diagnostic, at the lookup site.
+#import "modules/std.sx";
+cfg :: #import "./1977-diagnostics-expansion-namespace-final-miss-cfg.sx";
+
+inline if ABSENT { A :: 1; } else { A :: 0; }
+
+main :: () {
+    print("{}\n", cfg.ABSENT);
+}

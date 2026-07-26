@@ -139,9 +139,7 @@ const Expansion = struct {
     parked: std.ArrayList(ParkedDriver),
     ledgers: std.ArrayList(*Ledger),
     cursors: std.ArrayList(*std.StringHashMap([]const u8)),
-    /// The fact the read in the condition being driven could not answer, and
-    /// whether the fold it belongs to therefore parked.
-    awaited: ?[]const u8 = null,
+    /// Whether the fold being driven parked on a fact it could not answer.
     just_parked: bool = false,
     parked_any: bool = false,
 
@@ -395,12 +393,12 @@ const Expansion = struct {
             var i: usize = 0;
             while (i < ex.parked.items.len) {
                 var p = ex.parked.items[i];
-                ex.awaited = null;
+                ex.self.expansion.awaited = null;
                 ex.just_parked = false;
                 _ = p.group.expandDriverBody(p.decl, p.src, p.declared, p.cursor);
                 if (ex.just_parked) {
                     ex.just_parked = false;
-                    ex.parked.items[i].awaited = ex.awaited orelse p.awaited;
+                    ex.parked.items[i].awaited = ex.self.expansion.awaited orelse p.awaited;
                     i += 1;
                     continue;
                 }
@@ -433,7 +431,7 @@ const Expansion = struct {
             .group = group,
             .declared = declared,
             .cursor = cursor,
-            .awaited = ex.awaited orelse "",
+            .awaited = ex.self.expansion.awaited orelse "",
         }) catch {};
     }
 
@@ -448,13 +446,25 @@ const Expansion = struct {
             .member => true,
             .absent_final => false,
             .absent_unstable => blk: {
-                ex.awaited = std.fmt.allocPrint(ex.self.alloc, "'{s}' membership of '{s}' to be final", .{
+                ex.self.expansion.awaitFact(std.fmt.allocPrint(ex.self.alloc, "'{s}' membership of '{s}' to be final", .{
                     ex.self.formatTypeName(query.proto),
                     ex.self.formatTypeName(target),
-                }) catch "a tagged conformer set to be final";
+                }) catch "a tagged conformer set to be final");
                 break :blk null;
             },
         };
+    }
+
+    /// Fold one driver's condition under the scheduling discipline: every
+    /// non-monotone read it reaches — a membership question, an impl-visibility
+    /// question, a name lookup — may WAIT here, because this fold is the one
+    /// thing the drain can run again once the fact fires.
+    fn foldCondition(ex: *Expansion, condition: *const Node, src: ?[]const u8) ?bool {
+        ex.self.expansion.awaited = null;
+        const saved = ex.self.expansion.folding;
+        ex.self.expansion.folding = true;
+        defer ex.self.expansion.folding = saved;
+        return ex.driveCondition(condition, src, 0);
     }
 
     /// The sole evaluator of a module-scope driver condition. It folds the
@@ -485,9 +495,13 @@ const Expansion = struct {
             },
             .identifier => |id| {
                 if (ex.self.evalComptimeCondition(node)) |folded| return folded;
-                const cd = constNamed(ex, id.name, src) orelse return null;
+                const cd = constNamed(ex, id.name, src) orelse {
+                    ex.awaitName(src orelse "", null, id.name);
+                    return null;
+                };
                 return ex.driveCondition(cd.value, src, depth + 1);
             },
+            .field_access => return ex.driveQualifiedCondition(node, src, depth),
             .comptime_expr => |ce| {
                 if (!ex.self.expansion.claimRun(node)) return null;
                 defer ex.self.expansion.releaseRun(node);
@@ -498,24 +512,63 @@ const Expansion = struct {
         }
     }
 
+    /// A namespace-qualified constant as a driver condition. A HIT is readable
+    /// the moment it exists — declarations are never removed — so it folds
+    /// straight through the member's own value. A MISS is the non-monotone
+    /// half: the named module may still be expanding, so the fold waits for
+    /// that exact scope to stop growing rather than reading an absence
+    /// (§7.9).
+    fn driveQualifiedCondition(ex: *Expansion, node: *const Node, src: ?[]const u8, depth: u8) ?bool {
+        const path = ex.self.qualifiedTypeName(node) orelse return null;
+        defer ex.self.alloc.free(path);
+        const from = src orelse ex.self.main_file orelse return null;
+        switch (ex.self.qualifiedMemberVerdictFrom(path, from)) {
+            .selected => |sel| {
+                for (sel.target.own_decls) |decl| {
+                    if (decl.data != .const_decl) continue;
+                    if (!std.mem.eql(u8, decl.data.const_decl.name, sel.member)) continue;
+                    return ex.driveCondition(decl.data.const_decl.value, sel.target.target_module_path, depth + 1);
+                }
+                return null;
+            },
+            .missing => |m| {
+                ex.awaitName(m.scope, m.namespace, m.member);
+                return null;
+            },
+            .ambiguous, .not_qualified => return null,
+        }
+    }
+
+    /// Wait for `scope` to finish declaring `member`. Once no undecided driver
+    /// can still write that name there, the absence is publishable and the
+    /// fold takes its ordinary unevaluable-condition path.
+    fn awaitName(ex: *Expansion, scope: []const u8, namespace: ?[]const u8, member: []const u8) void {
+        if (!ex.self.expansion.mayDeclare(scope, member)) return;
+        const fact = if (namespace) |ns|
+            std.fmt.allocPrint(ex.self.alloc, "'{s}' to declare '{s}'", .{ ns, member })
+        else
+            std.fmt.allocPrint(ex.self.alloc, "'{s}' to be declared", .{member});
+        ex.self.expansion.awaitFact(fact catch "a module scope to be final");
+    }
+
     /// `has_impl(P, T)` as a driver condition. The question is answerable only
     /// against real declarations, so the names it spells are registered first;
-    /// the answer itself comes from the one canonical membership source, which
-    /// refuses a negative no unexpanded branch has ruled out yet.
+    /// the answer itself comes from the one canonical source for the kind, and
+    /// waits on whatever an undecided driver could still change about it.
     fn driveMembershipCondition(ex: *Expansion, node: *const Node, src: ?[]const u8) ?bool {
         const c = node.data.call;
         const callee = ast.bareName(c.callee) orelse return null;
         if (!std.mem.eql(u8, callee, "has_impl") or c.args.len < 2) return null;
         const proto_name = ast.bareName(protocolHead(c.args[0])) orelse return null;
         ex.primeMembershipFacts(proto_name, c.args[1], src);
-        // Only `tagged` answers here. The other kinds ask about site-local impl
-        // VISIBILITY, which is a fact of the lowered program rather than of the
-        // declarations — nothing has been lowered yet, so the question has no
-        // answer at expansion and the driver takes the ordinary refusal.
-        if (!ex.taggedProtocolNamed(proto_name)) return null;
         const target = ex.self.resolveTypeArg(c.args[1]);
         if (target == .unresolved) return null;
-        return ex.readMembership(c.args[0], target);
+        if (ex.taggedProtocolNamed(proto_name)) return ex.readMembership(c.args[0], target);
+        // The other kinds ask site-local impl VISIBILITY. Impls are
+        // declarations, so what an undecided driver could still write is what
+        // the read waits on — in the polarities that kind owes (§7.9).
+        const visible = ex.self.computeHasImpl(c.args[0], target);
+        return if (ex.self.expansion.awaited != null) null else visible;
     }
 
     fn taggedProtocolNamed(ex: *Expansion, name: []const u8) bool {
@@ -684,12 +737,11 @@ const Group = struct {
         g.ex.self.setCurrentSourceFile(src);
         switch (decl.data) {
             .if_expr => |ie| {
-                g.ex.awaited = null;
-                const folded = g.ex.driveCondition(ie.condition, src, 0);
+                const folded = g.ex.foldCondition(ie.condition, src);
                 // A read that cannot answer yet parks the whole fold: nothing
                 // is claimed, nothing is spliced, and the driver stays
                 // undecided until its fact fires.
-                if (folded == null and g.ex.awaited != null) {
+                if (folded == null and g.ex.self.expansion.awaited != null) {
                     g.ex.just_parked = true;
                     return true;
                 }
@@ -1016,7 +1068,8 @@ fn typeListLiteral(ex: *Expansion, node: *const Node, src: ?[]const u8, depth: u
 
 fn constNamed(ex: *Expansion, name: []const u8, src: ?[]const u8) ?*const ast.ConstDecl {
     var fallback: ?*const ast.ConstDecl = null;
-    for (ex.scope) |decl| {
+    var it = ex.decidedDecls();
+    while (it.next()) |decl| {
         if (decl.data != .const_decl) continue;
         const cd = &decl.data.const_decl;
         if (!std.mem.eql(u8, cd.name, name)) continue;

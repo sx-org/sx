@@ -31,13 +31,27 @@ const ProtocolDefaultDispatchDomain = lower.ProtocolDefaultDispatchDomain;
 /// reports a diagnostic if it wants).
 pub fn computeHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
     if (taggedProtocolOf(self, proto_node)) |pty| return taggedHasImpl(self, pty, ty, proto_node.span);
+    const answer = plainHasImpl(self, proto_node, ty);
+    if (spelledProtocolName(proto_node)) |name|
+        _ = implFactWaits(self, protocolTypeOf(self, proto_node), name, ty, answer);
+    return answer;
+}
+
+/// The impl-visibility answer itself, ahead of the discipline's wait. It is
+/// the same static fact that decides whether the site could ERASE (§7.9) —
+/// every protocol method reached by an impl — read off the declarations for a
+/// plain protocol and off the keyed entry for a parameterized one.
+fn plainHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
     switch (proto_node.data) {
         .identifier, .type_expr => {
             const name: []const u8 = switch (proto_node.data) {
                 .identifier => |id| id.name,
                 else => proto_node.data.type_expr.name,
             };
-            return self.protocolResolver().hasImplPlain(name, ty);
+            const p = self.protocolResolver().resolveProtocol(name, self.current_source_file) orelse return false;
+            const pty = p.ty orelse return false;
+            const cname = self.resolveConcreteTypeName(ty) orelse return false;
+            return firstUnimplementedMethod(self, pty, cname, ty) == null;
         },
         .call => |c| {
             const p_name: []const u8 = switch (c.callee.data) {
@@ -119,6 +133,56 @@ fn taggedHasImpl(self: *Lowering, proto_ty: TypeId, ty: TypeId, span: ast.Span) 
             break :blk false;
         },
     };
+}
+
+/// The name an `impl` head would spell to reach the protocol `proto_node`
+/// names — the key the contribution ledger counts undecided drivers under.
+fn spelledProtocolName(proto_node: *const Node) ?[]const u8 {
+    return switch (proto_node.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        .call => |c| switch (c.callee.data) {
+            .identifier => |id| id.name,
+            .type_expr => |te| te.name,
+            else => null,
+        },
+        else => null,
+    };
+}
+
+/// What the discipline owes a `constraint`/erased-kind impl read, and in which
+/// polarity. Impls are DECLARATIONS, so what an undecided driver could still
+/// write is the whole question — but the two kinds owe it differently. A
+/// `constraint` partition only ever grows, so a positive stands and only a
+/// negative waits. An erased target reads impl MULTIPLICITY (§7.4), which is
+/// monotone in NEITHER direction — a later impl repairs a miss exactly as
+/// readily as it destroys a program-unique success — so BOTH polarities wait,
+/// whether the count is zero, one, or already duplicated.
+fn implFactWaits(self: *Lowering, proto_ty: ?TypeId, proto_name: []const u8, ty: TypeId, answer: bool) bool {
+    if (!self.expansion.scheduled()) return false;
+    if (answer and !erasedKind(self, proto_ty)) return false;
+    if (!self.expansion.mayImpl(proto_name)) return false;
+    const fact = if (answer)
+        std.fmt.allocPrint(self.alloc, "'{s}' impls to be final before '{s}' is judged its unique conformer", .{ proto_name, self.formatTypeName(ty) })
+    else
+        std.fmt.allocPrint(self.alloc, "'{s}' impls to be final before '{s}' is judged a non-conformer", .{ proto_name, self.formatTypeName(ty) });
+    self.expansion.awaitFact(fact catch "an impl set to be final");
+    return true;
+}
+
+/// Does `proto_ty` carry a VALUE that stamps the impl it was erased with —
+/// the two kinds whose conversion facts depend on multiplicity?
+fn erasedKind(self: *Lowering, proto_ty: ?TypeId) bool {
+    const pty = proto_ty orelse return false;
+    const kind = protocolKindOf(self, pty) orelse return false;
+    return kind == .vtable or kind == .@"inline";
+}
+
+/// The protocol a `has_impl`-shaped spelling names, whatever its kind.
+fn protocolTypeOf(self: *Lowering, proto_node: *const Node) ?TypeId {
+    const name = spelledProtocolName(proto_node) orelse return null;
+    const p = self.protocolResolver().resolveProtocol(name, self.current_source_file) orelse return null;
+    return p.ty;
 }
 
 /// Register a protocol declaration as a struct type in the IR type table.
@@ -1169,6 +1233,11 @@ pub fn dispatchableCount(methods: []const ProtocolMethodInfo) usize {
 pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []const u8, concrete_type_name: []const u8, proto_ty: TypeId, concrete_ty: TypeId, heap_copy: bool) Ref {
     const pd = self.getProtocolInfo(proto_ty) orelse return concrete_ptr;
 
+    // Neither polarity of the multiplicity read is publishable while an
+    // undecided driver could still write another `impl` into this protocol.
+    if (implFactWaits(self, proto_ty, pd.name, concrete_ty, true))
+        return self.builder.emit(.{ .placeholder = self.module.types.internString("erasure-await") }, proto_ty);
+
     if (refuseNonConformer(self, proto_ty, concrete_type_name, concrete_ty, null)) {
         // Return a placeholder TYPED AS THE PROTOCOL so a downstream coercion
         // doesn't re-attempt erasure (and re-report) on a mistyped result. The
@@ -1231,6 +1300,7 @@ pub fn lowerProtocolProbe(self: *Lowering, pc: *const ast.PostfixCast, proto_ty:
     }
     const cname = self.resolveConcreteTypeName(concrete_ty) orelse return null;
     if (firstUnimplementedMethod(self, proto_ty, cname, concrete_ty) == null) return null;
+    if (self.getProtocolInfo(proto_ty)) |pi| _ = implFactWaits(self, proto_ty, pi.name, concrete_ty, false);
     return self.builder.constNull(dst_ty);
 }
 
