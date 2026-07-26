@@ -1,0 +1,39 @@
+// The same program as 1982, written in a different order.
+//
+// Every driver registers its possible contributions before any of them folds,
+// and a run evaluates against the DECIDED declaration space rather than
+// against the text it happens to sit among — so where the constant, the helper
+// and the driver are written cannot change what the run computes or which
+// branch it selects. The unroll declaring conformers is moved ahead of the
+// driver too: it contributes nothing to the Context, so it does not hold
+// Context-ready open.
+#import "modules/std.sx";
+
+Show :: protocol tagged { fmt :: (self: *Self) -> i64; }
+
+Cell :: struct { n: i64; }
+
+inline if WIDE {
+    LANES :: 8;
+} else {
+    LANES :: 4;
+}
+
+SHAPES :: .[Cell];
+inline for SHAPES (T) {
+    impl Show for T { fmt :: (self: *T) -> i64 { self.n } }
+}
+
+WIDE :: #run { budget() > 8 };
+
+budget :: () -> i64 {
+    p := context.allocator.alloc_bytes(64);
+    context.allocator.dealloc_bytes(p);
+    return 12;
+}
+
+main :: () {
+    c := Cell.{ n = 1 };
+    v : Show = c;
+    print("{} {}\n", LANES, v.fmt());
+}

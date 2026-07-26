@@ -1,0 +1,35 @@
+// A membership question about a type that does not exist until it is MINTED.
+//
+// `Chosen` is bound to a type function, so the name denotes nothing a spelling
+// can resolve: the constructor has to run first. That makes the question a
+// driver-class evaluation like a `#run` — the decided declaration space
+// registers, the constructor executes on the comptime VM, and only then does
+// the query have a type to ask about.
+//
+// The answer itself follows the ordinary polarity rule: `Wide` is already in
+// the set, and membership only grows, so the positive is readable on the spot.
+#import "modules/std.sx";
+
+Show :: protocol tagged { fmt :: (self: *Self) -> i64; }
+
+Wide :: struct { n: i64; }
+
+pick :: () -> Type {
+    return Wide;
+}
+
+Chosen :: pick();
+
+impl Show for Wide { fmt :: (self: *Wide) -> i64 { self.n * 2 } }
+
+inline if has_impl(Show, Chosen) {
+    OK :: 1;
+} else {
+    OK :: 0;
+}
+
+main :: () {
+    w := Wide.{ n = 3 };
+    v : Show = w;
+    print("{} {}\n", OK, v.fmt());
+}

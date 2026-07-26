@@ -212,29 +212,7 @@ pub const Parser = struct {
 
         // Top-level `#context_extend name: Type = default;` — declares a field
         // of the program's assembled Context.
-        if (self.current.tag == .hash_context_extend) {
-            self.advance();
-            if (!self.isIdentLike()) {
-                return self.fail("expected field name after '#context_extend'");
-            }
-            const field_name = self.tokenSlice(self.current);
-            const field_name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
-            self.advance();
-            try self.expect(.colon);
-            const type_node = try self.parseTypeExpr();
-            var default_node: ?*Node = null;
-            if (self.current.tag == .equal) {
-                self.advance();
-                default_node = try self.parseExpr();
-            }
-            try self.expect(.semicolon);
-            return try self.createNode(start, .{ .context_extend_decl = .{
-                .name = field_name,
-                .name_span = field_name_span,
-                .type_expr = type_node,
-                .default_expr = default_node,
-            } });
-        }
+        if (self.current.tag == .hash_context_extend) return self.parseContextExtend(start);
 
         // All top-level declarations start with an identifier
         if (!self.isIdentLike() and self.current.tag != .kw_Self) {
@@ -2362,9 +2340,15 @@ pub const Parser = struct {
         // `#context_extend` is a top-level-only directive (L7): the Context is
         // assembled once per program, so a function-local declaration is
         // meaningless — reject it here with a placement error rather than
-        // letting it fall through to a generic expression-parse failure.
+        // letting it fall through to a generic expression-parse failure. A
+        // MODULE-SCOPE expansion body is top level, though: its statements
+        // become module-scope declarations, and a branch that declares a
+        // Context field is exactly what the expansion scheduler weighs.
         if (self.current.tag == .hash_context_extend) {
-            return self.fail("'#context_extend' is only allowed at top level (module scope)");
+            if (!self.in_module_expansion) {
+                return self.fail("'#context_extend' is only allowed at top level (module scope)");
+            }
+            return self.parseContextExtend(self.current.loc.start);
         }
         // `impl Protocol for T { … }` inside a MODULE-SCOPE expansion body is an
         // ordinary module-scope declaration that the flatten pass surfaces to
@@ -4017,6 +4001,32 @@ pub const Parser = struct {
         try self.expect(.r_paren);
         try self.expect(.semicolon);
         return try self.createNode(start, .{ .error_directive = .{ .message = message } });
+    }
+
+    /// Parse `#context_extend name: Type = default;` — a field of the
+    /// program's assembled Context. `current` is the directive token.
+    fn parseContextExtend(self: *Parser, start: u32) anyerror!*Node {
+        self.advance();
+        if (!self.isIdentLike()) {
+            return self.fail("expected field name after '#context_extend'");
+        }
+        const field_name = self.tokenSlice(self.current);
+        const field_name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
+        self.advance();
+        try self.expect(.colon);
+        const type_node = try self.parseTypeExpr();
+        var default_node: ?*Node = null;
+        if (self.current.tag == .equal) {
+            self.advance();
+            default_node = try self.parseExpr();
+        }
+        try self.expect(.semicolon);
+        return try self.createNode(start, .{ .context_extend_decl = .{
+            .name = field_name,
+            .name_span = field_name_span,
+            .type_expr = type_node,
+            .default_expr = default_node,
+        } });
     }
 
     /// Parse a `.( ... )` tuple value literal. `current` is the `(`.

@@ -129,10 +129,25 @@ fn taggedHasImpl(self: *Lowering, proto_ty: TypeId, ty: TypeId, span: ast.Span) 
         .member => true,
         .absent_final => false,
         .absent_unstable => blk: {
-            lower_tagged.refuseUnstableMembership(self, proto_ty, ty, span);
+            if (!membershipWaits(self, proto_ty, ty))
+                lower_tagged.refuseUnstableMembership(self, proto_ty, ty, span);
             break :blk false;
         },
     };
+}
+
+/// A membership negative asked from inside a driver's fold WAITS: the fold is
+/// the one thing the drain can run again, so the read records the fact and the
+/// driver that reached it parks against the set closing. False where nothing
+/// can park, and the read takes its ordinary refusal.
+fn membershipWaits(self: *Lowering, proto_ty: TypeId, ty: TypeId) bool {
+    if (!self.expansion.scheduled()) return false;
+    const fact = std.fmt.allocPrint(self.alloc, "'{s}' membership of '{s}' to be final", .{
+        self.formatTypeName(proto_ty),
+        self.formatTypeName(ty),
+    });
+    self.expansion.awaitFact(fact catch "a tagged conformer set to be final");
+    return true;
 }
 
 /// The name an `impl` head would spell to reach the protocol `proto_node`
@@ -1287,10 +1302,12 @@ pub fn lowerProtocolProbe(self: *Lowering, pc: *const ast.PostfixCast, proto_ty:
         // A member erases: the ordinary soft erasure lowers the value.
         if (membership == .member) return null;
         // An expansion-driving body is EVALUATED here, so it cannot carry the
-        // negative to finality the way emitted code does: a closed set answers
-        // null on the spot, an open one refuses.
+        // negative to finality the way emitted code does. Under a driver's
+        // fold the answer is not owed yet: the body WAITS for the set to close
+        // and the driver holding it parks. Anywhere else there is nothing to
+        // park, so an open set refuses and a closed one answers null.
         if (self.comptime_phase == .expansion) {
-            if (membership == .absent_unstable)
+            if (membership == .absent_unstable and !membershipWaits(self, proto_ty, concrete_ty))
                 lower_tagged.refuseUnstableMembership(self, proto_ty, concrete_ty, pc.type_expr.span);
             _ = probeReceiverAddress(self, pc.operand, recv_ty);
             return self.builder.constNull(dst_ty);

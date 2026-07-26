@@ -116,7 +116,7 @@ pub fn collectContextExtensions(self: *Lowering, decls: []const *const Node) voi
 /// its DECLARING module's visibility context, exactly like a namespaced
 /// callee's return type (`resolveTypeInSource`).
 pub fn assembleContext(self: *Lowering) void {
-    assembleContextImpl(self, .final);
+    _ = assembleContextImpl(self, .final);
 }
 
 /// Best-effort EARLY assembly, for comptime evaluation that runs DURING
@@ -126,17 +126,30 @@ pub fn assembleContext(self: *Lowering) void {
 /// (Context itself, or any extension's type), it changes NOTHING and emits
 /// NOTHING — the final call assembles and diagnoses.
 pub fn assembleContextEarly(self: *Lowering) void {
-    assembleContextImpl(self, .early);
+    _ = assembleContextImpl(self, .early);
 }
 
-fn assembleContextImpl(self: *Lowering, mode: enum { early, final }) void {
-    if (!self.implicit_ctx_enabled) return;
+/// Early assembly that REPORTS completeness: true once the registered Context
+/// carries every valid extension, so a scheduled evaluation knows whether the
+/// layout it is about to read is the final one. The expansion worklist has
+/// already established that no undecided driver can still declare a field;
+/// what can still be missing is a field's TYPE, which a taken group may yet
+/// declare — so a false here is a wait, not a verdict.
+pub fn assembleContextIfReady(self: *Lowering) bool {
+    return assembleContextImpl(self, .early);
+}
+
+fn assembleContextImpl(self: *Lowering, mode: enum { early, final }) bool {
+    if (!self.implicit_ctx_enabled) return true;
     const ext = self.program_index.context_extensions;
-    if (ext.len == 0) return;
     const tbl = &self.module.types;
-    const ctx_ty = tbl.findByName(tbl.internString("Context")) orelse return;
+    const ctx_ty = tbl.findByName(tbl.internString("Context")) orelse return false;
     const info = tbl.get(ctx_ty);
-    if (info != .@"struct") return;
+    if (info != .@"struct") return false;
+    if (ext.len == 0) {
+        self.context_assembled = true;
+        return true;
+    }
 
     // RECONCILING, not once-only: the Context struct decl can be
     // RE-REGISTERED after an early assembly (per-source re-registration in
@@ -145,7 +158,7 @@ fn assembleContextImpl(self: *Lowering, mode: enum { early, final }) void {
     // extensions the CURRENT TypeInfo is missing; with none missing it is a
     // cheap no-op. Convergent: same fields, same L6 order, every time.
     var fields = std.ArrayList(types_mod.TypeInfo.StructInfo.Field).empty;
-    fields.appendSlice(self.alloc, info.@"struct".fields) catch return;
+    fields.appendSlice(self.alloc, info.@"struct".fields) catch return false;
     var appended = false;
     for (ext) |e| {
         if (!e.valid) continue;
@@ -164,7 +177,7 @@ fn assembleContextImpl(self: *Lowering, mode: enum { early, final }) void {
         // whole assembly (a later registration may still supply the type);
         // final mode diagnoses and skips the field.
         if (!typeExprReady(self, e.type_expr, mode == .early)) {
-            if (mode == .early) return;
+            if (mode == .early) return false;
             self.context_structural_error = true;
             if (self.diagnostics) |d|
                 d.addFmtInFile(.err, e.module_path, e.type_expr.span, "cannot resolve the type of context field '{s}'", .{e.name});
@@ -172,7 +185,7 @@ fn assembleContextImpl(self: *Lowering, mode: enum { early, final }) void {
         }
         const fty = self.resolveTypeInSource(e.module_path, e.type_expr);
         if (fty == .unresolved) {
-            if (mode == .early) return;
+            if (mode == .early) return false;
             self.context_structural_error = true;
             if (self.diagnostics) |d|
                 d.addFmtInFile(.err, e.module_path, e.type_expr.span, "cannot resolve the type of context field '{s}'", .{e.name});
@@ -181,18 +194,19 @@ fn assembleContextImpl(self: *Lowering, mode: enum { early, final }) void {
         fields.append(self.alloc, .{
             .name = tbl.internString(e.name),
             .ty = fty,
-        }) catch return;
+        }) catch return false;
         appended = true;
     }
 
     if (appended) {
         var assembled = info;
-        assembled.@"struct".fields = fields.toOwnedSlice(self.alloc) catch return;
+        assembled.@"struct".fields = fields.toOwnedSlice(self.alloc) catch return false;
         // A field append changes neither the display name nor the nominal id —
         // the struct's intern key — so this is the sanctioned in-place update.
         tbl.updatePreservingKey(ctx_ty, assembled);
     }
     self.context_assembled = true;
+    return true;
 }
 
 /// Is `node` a type expression whose NAME LEAVES are all registered — checked

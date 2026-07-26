@@ -1,0 +1,50 @@
+// Context-ready is a scheduled fact, and a dead branch never reaches it.
+//
+// The program Context is ONE layout, so an evaluation that reads it must see
+// the one the whole program ends up with. The `inline if` at the bottom can
+// still write a `#context_extend` — in the branch it takes or the branch it
+// does not, which is not decided yet either way — so while it is undecided the
+// layout cannot publish, and both drivers above park against the fact: the
+// condition that runs, and the unroll whose ITERABLE runs.
+//
+// Deciding that driver retires exactly its contribution, which fires
+// Context-ready: only the SELECTED branch's field enters the layout, the
+// default context is emitted from it, and the parked drivers resume and fold.
+// The untaken branch declares the same field name with a different default —
+// if a dead branch contributed, the program would be a duplicate-field error
+// instead of printing which default is really in the Context.
+#import "modules/std.sx";
+
+Show :: protocol tagged { fmt :: (self: *Self) -> i64; }
+
+Deep :: struct { n: i64; }
+Flat :: struct { n: i64; }
+
+DEEP :: #run { context.depth > 2 };
+
+inline if DEEP {
+    MODE :: 1;
+} else {
+    MODE :: 0;
+}
+
+chosen :: () -> [1]Type {
+    if context.depth > 2 { return .[Deep]; }
+    return .[Flat];
+}
+
+inline for #run chosen() (T) {
+    impl Show for T { fmt :: (self: *T) -> i64 { self.n * 2 } }
+}
+
+inline if POINTER_SIZE == 8 {
+    #context_extend depth: i64 = 3;
+} else {
+    #context_extend depth: i64 = 9;
+}
+
+main :: () {
+    d := Deep.{ n = 4 };
+    v : Show = d;
+    print("{} {} {}\n", MODE, context.depth, v.fmt());
+}

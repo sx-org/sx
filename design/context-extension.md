@@ -80,8 +80,12 @@ compiler work; O(depth) walks; reserves `data`; depends on open 0298).
   cross-program offset — every access, compiler-internal ones
   included, compiles against the assembled layout by name.
 - **L7 — grammar**: `#context_extend <name> : <type> = <default> ;` at
-  top level only. Directive space to be confirmed free in the stress
-  review.
+  top level only — which includes a top-level `inline if` branch or
+  `inline for` body, whose statements are module scope after comptime
+  flattening. An untaken branch declares no field; an undecided driver
+  that could declare one holds the Context open, and comptime reading
+  the Context waits for it (protocols §7.9). Directive space to be
+  confirmed free in the stress review.
 
 - **L8 — the stdlib retrofit (RULED 2026-07-19)**: `allocator` AND
   `io` move to `#context_extend` declarations in their owning modules
