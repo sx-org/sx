@@ -536,6 +536,7 @@ fn writeConstant(val: ConstantValue, writer: Writer) !void {
         .vtable => try writer.writeAll("vtable{...}"),
         .func_ref => |fid| try writer.print("func_ref(#{d})", .{fid.index()}),
         .global_ref => |gid| try writer.print("global_ref(#{d})", .{gid.index()}),
+        .tagged_tag => try writer.writeAll("tagged_tag(...)"),
     }
 }
 

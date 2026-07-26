@@ -1,0 +1,21 @@
+// A protocol-typed Context default is a BORROW (specs.md §7.6), so it must
+// name a global instance to borrow. An rvalue — a struct literal, a call —
+// has no address, and serializing one field-wise against the handle's layout
+// would build a value whose ctx word is a payload byte: it compiles and traps
+// at the first dispatch. The refusal is at the declaration, for every
+// borrow-kind protocol.
+#import "modules/std.sx";
+
+Sink :: protocol tagged { emit :: (self: *Self, n: i64) -> i64; }
+Chirp :: protocol inline #identity { chirp :: (self: *Self) -> i64; }
+
+Doubler :: struct { k: i64; }
+impl Sink for Doubler { emit :: (self: *Doubler, n: i64) -> i64 { n * self.k } }
+impl Chirp for Doubler { chirp :: (self: *Doubler) -> i64 { self.k } }
+
+#context_extend sink: Sink = Doubler.{ k = 3 };
+#context_extend note: Chirp = Doubler.{ k = 4 };
+
+main :: () {
+    print("{} {}\n", context.sink.emit(5), context.note.chirp());
+}

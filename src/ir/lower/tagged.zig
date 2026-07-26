@@ -590,6 +590,14 @@ pub fn buildTaggedValue(self: *Lowering, ctx_ptr: Ref, proto_ty: TypeId, concret
     return taggedBorrow(self, ctx_ptr, proto_ty, concrete_ty);
 }
 
+/// The value use a STATIC borrow makes: a protocol-typed global's folded
+/// initializer carries the pair as data rather than as an instruction, so it
+/// reaches and admits exactly as `buildTaggedValue` does, minus the IR.
+pub fn admitTaggedValue(self: *Lowering, proto: TypeId, concrete: TypeId) void {
+    reachTagged(self, proto);
+    _ = admit(self, proto, concrete);
+}
+
 /// What the one canonical membership question can answer about a pair.
 pub const Membership = enum {
     /// In the set now. Membership only grows, so this never un-answers.

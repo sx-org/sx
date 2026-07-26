@@ -510,16 +510,17 @@ pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: 
     return owned;
 }
 
-/// Fold `xx <global>` at an `inline`-PROTOCOL-typed static initializer into
-/// the inline protocol constant `{ ctx, __type_id, thunk fn-refs… }` — the
-/// spellable form of the default-context thunk tables (L8 rider a). Only an
+/// Fold `<global>` / `xx <global>` at a BORROW-kind protocol-typed static
+/// initializer into that kind's constant: `{ ctx, __type_id, thunk fn-refs… }`
+/// for `inline`, `{ ctx, __tag }` for `tagged` (L8 rider a). Only an
 /// IDENTIFIER naming a registered top-level global qualifies: the erasure
 /// BORROWS the global's stable storage (identity semantics), so ctx is the
 /// global's address — ALWAYS, stateless impls included (ruled 2026-07-19: no
 /// null-receiver shortcut; a null ctx is the `?Protocol` "absent" sentinel
-/// and must never appear in a live protocol value). Null result = not this
-/// shape / not resolvable; the caller falls through to its non-const
-/// diagnostic.
+/// and must never appear in a live protocol value). The tagged form's number
+/// is not known here at all — the pair travels in the constant and resolves
+/// where every other tag does (§7.9). Null result = not this shape / not
+/// resolvable; the caller falls through to its non-const diagnostic.
 pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: TypeId) ?inst_mod.ConstantValue {
     const tbl = &self.module.types;
     if (proto_ty.isBuiltin()) return null;
@@ -528,7 +529,7 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
     // Vtable-kind protocols carry a vtable pointer, not inline fn slots — a
     // static form for those is a separate step. (Allocator / Io are `inline`.)
-    if (pd.kind != .@"inline") return null;
+    if (pd.kind != .@"inline" and pd.kind != .tagged) return null;
     if (operand.data != .identifier) return null;
     const gname = operand.data.identifier.name;
     const g: program_index_mod.GlobalInfo = switch (self.selectGlobalAuthor(gname)) {
@@ -536,6 +537,13 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
         .untracked => self.program_index.global_names.get(gname) orelse return null,
         else => return null,
     };
+    if (pd.kind == .tagged) {
+        lower_tagged.admitTaggedValue(self, proto_ty, g.ty);
+        const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch return null;
+        fields[0] = .{ .global_ref = g.id };
+        fields[1] = .{ .tagged_tag = .{ .proto = proto_ty, .concrete = g.ty } };
+        return .{ .aggregate = fields };
+    }
     const concrete_name = self.formatTypeName(g.ty);
     const thunks = self.getOrCreateThunks(proto_ty, concrete_name, g.ty);
     const want = dispatchableCount(pd.methods);
@@ -545,6 +553,52 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     fields[1] = .{ .int = @intCast(g.ty.index()) };
     for (thunks, 0..) |fid, i| fields[i + 2] = .{ .func_ref = fid };
     return .{ .aggregate = fields };
+}
+
+/// What the protocol-typed arm of the global-initializer serializer decided.
+pub const ProtocolGlobalInit = union(enum) {
+    /// Not a borrow-kind protocol-typed global — the ordinary serializer owns it.
+    not_applicable,
+    folded: inst_mod.ConstantValue,
+    /// Refused; the diagnostic is already out.
+    refused,
+};
+
+/// The static initializer of a borrow-kind protocol-typed global (§7.6): the
+/// identity erasure of a NAMED global instance, written `g` or `xx g`. A
+/// protocol value in static data is a borrow, and only a global has an
+/// address to borrow — so every other initializer shape is refused HERE,
+/// before the shape dispatch serializes it field-wise against the handle's
+/// layout and builds a value whose ctx word is a payload byte. `null` / `---`
+/// keep their own meaning and never reach this arm.
+pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Node, proto_ty: TypeId) ProtocolGlobalInit {
+    if (proto_ty.isBuiltin()) return .not_applicable;
+    const proto_ti = self.module.types.get(proto_ty);
+    if (proto_ti != .@"struct" or !proto_ti.@"struct".is_protocol) return .not_applicable;
+    const pd = self.getProtocolInfo(proto_ty) orelse return .not_applicable;
+    if (pd.kind != .@"inline" and pd.kind != .tagged) return .not_applicable;
+
+    const named: ?*const Node = switch (v.data) {
+        .identifier => v,
+        .unary_op => |u| if (u.op == .xx and u.operand.data == .identifier) u.operand else null,
+        else => null,
+    };
+    const operand = named orelse {
+        if (self.diagnostics) |d| {
+            const pname = self.formatTypeName(proto_ty);
+            d.addFmt(.err, v.span, "'{s}' is a '{s}' value, which borrows its receiver — its initializer must NAME a global instance to borrow ('{s} : {s} = the_instance;'), and this expression has no address to point at", .{ vd.name, pname, vd.name, pname });
+        }
+        return .refused;
+    };
+    const gname = operand.data.identifier.name;
+    const g: program_index_mod.GlobalInfo = switch (self.selectGlobalAuthor(gname)) {
+        .resolved => |sel| sel,
+        .untracked => self.program_index.global_names.get(gname) orelse return .not_applicable,
+        else => return .not_applicable,
+    };
+    if (refuseNonConformer(self, proto_ty, self.formatTypeName(g.ty), g.ty, v.span)) return .refused;
+    if (protocolErasureConst(self, operand, proto_ty)) |cv| return .{ .folded = cv };
+    return .not_applicable;
 }
 
 /// Emit the process-wide default Context as an LLVM static constant.

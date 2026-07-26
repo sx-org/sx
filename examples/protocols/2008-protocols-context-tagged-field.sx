@@ -1,0 +1,54 @@
+// A tagged protocol types a Context field like an erased one does (specs.md
+// §7.6): the default folds to the identity erasure of a NAMED global instance
+// — a borrow of that global's storage, never null — and the tag word is the
+// one number a static value cannot spell, so the pair travels in the constant
+// and resolves where every other tag does (§7.9): to the dense number in the
+// binary, to the conformer's own type in the comptime VM.
+//
+// Both accepted spellings of the default appear below: the bare name (the
+// declared type states the conversion) and the explicit `xx`.
+#import "modules/std.sx";
+
+Sink :: protocol tagged { emit :: (self: *Self, n: i64) -> i64; }
+Mark :: protocol tagged { mark :: (self: *Self) -> i64; }
+
+Doubler :: struct { k: i64; }
+impl Sink for Doubler { emit :: (self: *Doubler, n: i64) -> i64 { n * self.k } }
+impl Mark for Doubler { mark :: (self: *Doubler) -> i64 { self.k } }
+
+Tripler :: struct { k: i64; }
+impl Sink for Tripler { emit :: (self: *Tripler, n: i64) -> i64 { n * self.k + 1 } }
+
+the_sink : Doubler = .{ k = 3 };
+the_mark : Doubler = .{ k = 9 };
+loud : Tripler = .{ k = 7 };
+
+#context_extend sink: Sink = the_sink;
+#context_extend note: Mark = xx the_mark;
+
+// The same body either side of the phase line: the comptime evaluation reads
+// the VM's copy of the default context and dispatches against the conformer
+// the handle carries; the runtime call switches on the dense tag.
+through_default :: () -> i64 { context.sink.emit(5) + context.note.mark() }
+
+// A `push` installs another conformer of the same set; the dispatch inside
+// follows the value, not the declaration.
+through_push :: () -> i64 {
+    push .{ sink = loud } { return context.sink.emit(5); }
+}
+
+// The borrowed referent is the declared global itself, so a write through it
+// is visible to the next dispatch — the fold is a borrow, not a copy.
+retuned :: () -> i64 {
+    the_sink.k = 4;
+    return context.sink.emit(5);
+}
+
+CT :: #run through_default();
+CT_PUSH :: #run through_push();
+
+main :: () {
+    print("{} {}\n", CT, through_default());
+    print("{} {}\n", CT_PUSH, through_push());
+    print("{}\n", retuned());
+}

@@ -816,4 +816,15 @@ pub const ConstantValue = union(enum) {
     func_ref: FuncId,
     /// Relocatable address of another IR global (e.g. `p : *T = @g`).
     global_ref: GlobalId,
+    /// The tag word of a static tagged-protocol borrow. The dense number does
+    /// not exist until the collection fixpoint converges, so the pair is
+    /// carried and each world resolves it the way it resolves `tagged_tag_of`:
+    /// codegen to the published tag, the comptime VM to the conformer's own
+    /// type.
+    tagged_tag: TaggedTag,
+};
+
+pub const TaggedTag = struct {
+    proto: TypeId,
+    concrete: TypeId,
 };

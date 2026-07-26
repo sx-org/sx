@@ -114,7 +114,7 @@ fn collectConstFuncs(cv: inst.ConstantValue, out: *std.ArrayList(FuncId), alloc:
         .func_ref => |id| try out.append(alloc, id),
         .aggregate => |elems| for (elems) |e| try collectConstFuncs(e, out, alloc),
         // Carry no function reference.
-        .int, .float, .boolean, .string, .null_val, .undef, .zeroinit, .global_ref => {},
+        .int, .float, .boolean, .string, .null_val, .undef, .zeroinit, .global_ref, .tagged_tag => {},
     }
 }
 
