@@ -3090,11 +3090,13 @@ pub const Lowering = struct {
     pub const refuseValuelessProtocol = lower_protocol.refuseValuelessProtocol;
     pub const refuseNonConformer = lower_protocol.refuseNonConformer;
     pub const protocolKindOf = lower_protocol.protocolKindOf;
+    pub const checkComptimeEscape = lower_protocol.checkComptimeEscape;
 
     // ── tagged protocols (lower/tagged.zig) ──
     pub const isTagged = lower_tagged.isTagged;
     pub const taggedIn = lower_tagged.taggedIn;
     pub const reachTagged = lower_tagged.reachTagged;
+    pub const seedTagged = lower_tagged.seedTagged;
     pub const refuseEmptyTaggedSet = lower_tagged.refuseEmptySet;
     pub const refuseNonMemberTagged = lower_tagged.refuseNonMember;
     pub const buildTaggedValue = lower_tagged.buildTaggedValue;

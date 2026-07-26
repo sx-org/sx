@@ -155,6 +155,16 @@ pub fn reachTagged(self: *Lowering, proto: TypeId) void {
     self.tagged_reached.put(proto, {}) catch @panic("out of memory");
 }
 
+/// Reach `proto` AND seed its set with every declared impl — what a site that
+/// cannot name the conformer it will carry needs: a comptime escape hands the
+/// image whichever member the evaluation picked, so all of them must be
+/// numbered by emission.
+pub fn seedTagged(self: *Lowering, proto: TypeId) void {
+    if (!isTagged(self, proto)) return;
+    reachTagged(self, proto);
+    _ = admitDeclaredImpls(self, proto);
+}
+
 /// Admit `concrete` into `proto`'s conformer set. Returns true when this call
 /// grew the set.
 fn admit(self: *Lowering, proto: TypeId, concrete: TypeId) bool {

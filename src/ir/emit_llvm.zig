@@ -183,6 +183,15 @@ pub const LLVMEmitter = struct {
     // Pending PHI nodes to fixup after all blocks in a function are emitted
     pending_phis: std.ArrayList(PendingPhi),
 
+    // Comptime results waiting to become their global's initializer. An escaped
+    // value resolves to SYMBOLS — the globals its referents relocate to, the
+    // functions its fn refs name — so it is serialized once every function and
+    // global has been declared, not in the middle of declaring them.
+    pending_comptime_inits: std.ArrayList(PendingComptimeInit),
+    // The anonymous image globals minted for escaped comptime temporaries, by
+    // the image object each one materializes.
+    image_globals: std.AutoHashMap(usize, c.LLVMValueRef),
+
     // Whether the current function being emitted is "main" (needs i32 return for JIT)
     current_func_is_main: bool = false,
     current_func_idx: u32 = 0,
@@ -298,6 +307,13 @@ pub const LLVMEmitter = struct {
         param_index: u32,
     };
 
+    const PendingComptimeInit = struct {
+        global_index: u32,
+        value: Value,
+        ty: TypeId,
+        name: []const u8,
+    };
+
     pub const JniSlotPair = struct {
         cls_slot: c.LLVMValueRef, // @SX_JNI_CLS_<key>: ptr (GlobalRef to jclass)
         mid_slot: c.LLVMValueRef, // @SX_JNI_MID_<key>: ptr (jmethodID)
@@ -362,6 +378,8 @@ pub const LLVMEmitter = struct {
             .block_map = std.AutoHashMap(u64, c.LLVMBasicBlockRef).init(alloc),
             .term_block_map = std.AutoHashMap(u64, c.LLVMBasicBlockRef).init(alloc),
             .pending_phis = std.ArrayList(PendingPhi).empty,
+            .pending_comptime_inits = std.ArrayList(PendingComptimeInit).empty,
+            .image_globals = std.AutoHashMap(usize, c.LLVMValueRef).init(alloc),
             .cached_i1 = c.LLVMInt1TypeInContext(ctx),
             .cached_i8 = c.LLVMInt8TypeInContext(ctx),
             .cached_i16 = c.LLVMInt16TypeInContext(ctx),
@@ -400,6 +418,8 @@ pub const LLVMEmitter = struct {
         while (jni_it.next()) |k| self.alloc.free(k.*);
         self.jni_slots.deinit();
         self.global_map.deinit();
+        self.pending_comptime_inits.deinit(self.alloc);
+        self.image_globals.deinit();
         self.block_map.deinit();
         self.term_block_map.deinit();
         self.di_files.deinit();
@@ -463,6 +483,13 @@ pub const LLVMEmitter = struct {
 
         // Pass 1.5: Initialize vtable globals (needs function declarations from Pass 1)
         self.initVtableGlobals();
+
+        // Pass 1.6: Materialize the comptime results into their globals. Every
+        // symbol an escaped value can name — a relocated global, a function —
+        // exists by now. A failure here halts before any body is emitted, so an
+        // undef initializer is never called through.
+        self.initComptimeGlobals();
+        if (self.comptime_failed) return;
 
         // Pass 2: Emit function bodies
         for (self.ir_mod.functions.items, 0..) |func, i| {
@@ -1040,8 +1067,15 @@ pub const LLVMEmitter = struct {
                         continue;
                     }
                 }
-                const init_val = self.valueToLLVMConst(init_value, global.ty, self.ir_mod.types.getString(global.name));
-                c.LLVMSetInitializer(llvm_global, init_val);
+                // Serialized in Pass 1.6: an escaped value resolves to symbols
+                // that are not declared yet.
+                c.LLVMSetInitializer(llvm_global, c.LLVMConstNull(llvm_ty));
+                self.pending_comptime_inits.append(self.alloc, .{
+                    .global_index = @intCast(i),
+                    .value = init_value,
+                    .ty = global.ty,
+                    .name = self.ir_mod.types.getString(global.name),
+                }) catch {};
             } else if (global.init_val) |iv| {
                 const init_val = switch (iv) {
                     .int => |v| c.LLVMConstInt(llvm_ty, @bitCast(v), 1),
@@ -1144,6 +1178,34 @@ pub const LLVMEmitter = struct {
         }
     }
 
+    /// Fill every comptime-backed global with its evaluated result.
+    fn initComptimeGlobals(self: *LLVMEmitter) void {
+        for (self.pending_comptime_inits.items) |pending| {
+            const llvm_global = self.global_map.get(pending.global_index) orelse continue;
+            c.LLVMSetInitializer(llvm_global, self.valueToLLVMConst(pending.value, pending.ty, pending.name));
+        }
+    }
+
+    /// The anonymous image global backing an escaped comptime temporary, minted
+    /// once per object: two handles that shared the VM object get this same
+    /// global, so the borrow they had at compile time survives the escape. The
+    /// storage is WRITABLE — an escaped temporary is literal-class static data
+    /// that belongs to no allocator, not a constant. The global is created
+    /// before its initializer is serialized, so a referent that points back at
+    /// itself resolves to the symbol already in hand.
+    fn imageObjectGlobal(self: *LLVMEmitter, obj: *const Value.ImageObject, global_name: []const u8) c.LLVMValueRef {
+        const key = @intFromPtr(obj);
+        if (self.image_globals.get(key)) |g| return g;
+        const llvm_ty = self.toLLVMType(obj.ty);
+        var name_buf: [64]u8 = undefined;
+        const name = std.fmt.bufPrintZ(&name_buf, "__sx_ct_obj.{d}", .{self.image_globals.count()}) catch "__sx_ct_obj";
+        const llvm_global = c.LLVMAddGlobal(self.llvm_module, llvm_ty, name.ptr);
+        c.LLVMSetLinkage(llvm_global, c.LLVMInternalLinkage);
+        self.image_globals.put(key, llvm_global) catch {};
+        c.LLVMSetInitializer(llvm_global, self.valueToLLVMConst(obj.value, obj.ty, global_name));
+        return llvm_global;
+    }
+
     /// Read `len` bytes from `addr` in the current process. Used to lift
     /// comptime-evaluated heap data into a static binary constant — the
     /// interp ran in this process, so any libc-malloc'd buffer it
@@ -1186,49 +1248,42 @@ pub const LLVMEmitter = struct {
     ) c.LLVMValueRef {
         const llvm_ty = self.toLLVMType(ty);
         return switch (val) {
-            .int => |v| blk: {
-                // Host-pointer-as-int trap: the interp marshals raw pointers
-                // (libc-malloc'd buffers, etc.) into a .int that holds the
-                // host address. When that address is meant for a `ptr` slot
-                // in the destination type, emitting `LLVMConstInt` against
-                // the ptr type silently produces a malformed `i0 0`. The
-                // string/slice paths above handle this case by reading the
-                // pointed-to bytes; anything else with an int landing in a
-                // ptr slot is a Phase-1.4a heap-walk case we don't yet
-                // know how to serialize.
-                const kind = c.LLVMGetTypeKind(llvm_ty);
-                if (kind == c.LLVMPointerTypeKind) {
-                    std.debug.print(
-                        "error: comptime init of '{s}' produced a raw integer for a pointer field — needs IR-typed heap-walk serialization (Phase 1.4a heap-walk follow-up)\n",
-                        .{global_name},
-                    );
-                    break :blk self.failGlobalInit(llvm_ty);
-                }
-                break :blk c.LLVMConstInt(llvm_ty, @bitCast(v), 1);
-            },
+            .int => |v| c.LLVMConstInt(llvm_ty, @bitCast(v), 1),
             .float => |v| c.LLVMConstReal(llvm_ty, v),
             .boolean => |v| c.LLVMConstInt(llvm_ty, @intFromBool(v), 0),
             .null_val => c.LLVMConstNull(llvm_ty),
             .void_val, .undef => c.LLVMGetUndef(llvm_ty),
-            // Comptime globals are serialized here in Pass 0, before functions
-            // are declared (Pass 1) and with no later re-emit. A func_ref can
-            // therefore never resolve to a real function pointer at this point;
-            // bail loudly rather than ship a silently-null function pointer.
-            .func_ref => |fid| blk: {
+            // A `Type` value is its TypeId in a word, the same handle runtime
+            // code carries.
+            .type_tag => |tid| c.LLVMConstInt(llvm_ty, @intCast(tid.index()), 0),
+            // An escaped function reference IS its symbol.
+            .func_ref => |fid| self.func_map.get(fid.index()) orelse blk: {
                 std.debug.print(
-                    "error: comptime init of '{s}' produced a reference to function '{s}', which cannot be serialized as a static constant (function declarations are not available at global-init time)\n",
+                    "error: comptime init of '{s}' produced a reference to function '{s}', which has no declaration\n",
                     .{ global_name, self.ir_mod.types.getString(self.ir_mod.getFunction(fid).name) },
                 );
                 break :blk self.failGlobalInit(llvm_ty);
+            },
+            // An escaped referent: the declared global it relocates to, or the
+            // anonymous image global minted for a comptime temporary.
+            .image_ref => |ref| switch (ref) {
+                .global => |gid| self.global_map.get(gid.index()) orelse blk: {
+                    std.debug.print(
+                        "error: comptime init of '{s}' relocates to global '{s}', which is not emitted\n",
+                        .{ global_name, self.ir_mod.types.getString(self.ir_mod.globals.items[gid.index()].name) },
+                    );
+                    break :blk self.failGlobalInit(llvm_ty);
+                },
+                .object => |obj| self.imageObjectGlobal(obj, global_name),
             },
             .string => |s| self.emitConstStringGlobal(s),
             .aggregate => |fields| self.serializeAggregateValue(fields, ty, global_name),
             // The remaining Value variants cannot become static binary
             // constants outside of a fat-pointer aggregate. Bail loudly.
-            // (`heap_ptr` / `byte_ptr` / `int → ptr` are handled inside
+            // (`heap_ptr` / `byte_ptr` are handled inside
             // `serializeAggregateValue` when they appear in a string or
             // slice fat-pointer's data field.)
-            .heap_ptr, .byte_ptr, .slot_ptr, .closure, .type_tag => blk: {
+            .heap_ptr, .byte_ptr, .slot_ptr, .closure => blk: {
                 std.debug.print(
                     "error: comptime init of '{s}' produced a {s} value, which cannot be serialized as a static constant\n",
                     .{ global_name, @tagName(val) },

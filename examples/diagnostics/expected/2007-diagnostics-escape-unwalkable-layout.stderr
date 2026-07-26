@@ -1,0 +1,1 @@
+error: comptime init of 'B' failed: escape: a referent with no layout ('*void') cannot be materialized — carry the concrete type

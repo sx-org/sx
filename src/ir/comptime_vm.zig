@@ -569,6 +569,24 @@ pub const Vm = struct {
     /// This evaluation's bookmark scheduler. Null → nothing ever parks and
     /// every await answers `.unavailable` on the spot.
     fact_scheduler: ?FactScheduler = null,
+    /// Every declared global this evaluation materialized, by the instance it
+    /// got in comptime memory. An escaping pointer is resolved against these:
+    /// an instance BASE is that global (relocate to its symbol), an address
+    /// inside one is compile-time state the image never sees.
+    global_instances: std.ArrayList(GlobalInstance) = .empty,
+    /// The image objects minted for comptime temporaries, keyed by the VM
+    /// object they materialize. The map is per-evaluation, which is exactly the
+    /// scope identity dedup has: two evaluations produce distinct objects.
+    image_objects: std.AutoHashMap(ObjectKey, *Value.ImageObject),
+
+    /// A declared global's comptime instance: `size` bytes at `base`.
+    pub const GlobalInstance = struct {
+        base: Addr,
+        size: u64,
+        gid: inst_mod.GlobalId,
+    };
+
+    const ObjectKey = struct { addr: Addr, ty: TypeId };
 
     pub const max_depth: u32 = 512;
 
@@ -578,12 +596,15 @@ pub const Vm = struct {
             .gpa = gpa,
             .global_cache = std.AutoHashMap(u32, Reg).init(gpa),
             .global_addr_cache = std.AutoHashMap(u32, Reg).init(gpa),
+            .image_objects = std.AutoHashMap(ObjectKey, *Value.ImageObject).init(gpa),
         };
     }
 
     pub fn deinit(self: *Vm) void {
         self.global_cache.deinit();
         self.global_addr_cache.deinit();
+        self.global_instances.deinit(self.gpa);
+        self.image_objects.deinit();
         self.call_stack.deinit(self.gpa);
         self.machine.deinit();
     }
@@ -633,9 +654,10 @@ pub const Vm = struct {
     /// drifts from the real protocol shape.
     fn materializeDefaultContext(self: *Vm, module: *const Module) Error!Addr {
         const table = self.table orelse return self.failMsg("comptime VM: default context needs a type table");
-        for (module.globals.items) |*g| {
+        for (module.globals.items, 0..) |*g, i| {
             if (!std.mem.eql(u8, module.types.getString(g.name), "__sx_default_context")) continue;
             const addr = self.machine.allocBytes(table.typeSizeBytes(g.ty), table.typeAlignBytes(g.ty)); // zeroed
+            self.recordGlobalInstance(addr, table.typeSizeBytes(g.ty), inst_mod.GlobalId.fromIndex(@intCast(i)));
             if (g.init_val) |iv| try self.layoutConst(table, iv, g.ty, addr);
             return addr;
         }
@@ -675,7 +697,21 @@ pub const Vm = struct {
                     else => return self.failMsg("comptime VM: const aggregate at an unsupported type"),
                 }
             },
-            .string, .vtable => return self.failMsg("comptime VM: const string/vtable not supported in layoutConst yet"),
+            .string => |sid| {
+                const module = self.module orelse return self.failMsg("comptime VM: const string needs a module");
+                try self.writeField(table, addr, ty, try self.makeStringValue(table, module.types.getString(sid)));
+            },
+            // A vtable global is a struct of function pointers; each slot holds
+            // the encoded func-ref an indirect comptime call dispatches through,
+            // and relocates to the function's symbol on escape.
+            .vtable => |fids| {
+                if (ty.isBuiltin() or table.get(ty) != .@"struct") return self.failMsg("comptime VM: vtable const at a non-struct type");
+                const s = table.get(ty).@"struct";
+                for (fids, 0..) |fid, i| {
+                    if (i >= s.fields.len) break;
+                    try self.writeField(table, addr + fieldOffset(table, ty, @intCast(i)), s.fields[i].ty, funcRefWord(fid));
+                }
+            },
         }
     }
 
@@ -731,12 +767,32 @@ pub const Vm = struct {
         const g = &module.globals.items[gid.index()];
         const table = try self.requireTable();
         if (kindOf(table, g.ty) == .aggregate) {
-            if (self.global_cache.get(gid.index())) |cached| return cached;
+            if (self.global_cache.get(gid.index())) |cached| {
+                self.recordGlobalInstance(cached, table.typeSizeBytes(g.ty), gid);
+                return cached;
+            }
         }
         const addr = self.machine.allocBytes(table.typeSizeBytes(g.ty), table.typeAlignBytes(g.ty));
+        self.recordGlobalInstance(addr, table.typeSizeBytes(g.ty), gid);
         if (g.init_val) |iv| try self.layoutConst(table, iv, g.ty, addr);
         self.global_addr_cache.put(gid.index(), addr) catch @panic("comptime VM: out of memory (global address cache)");
         return addr;
+    }
+
+    /// Note that `size` bytes at `base` ARE declared global `gid`'s comptime
+    /// instance, so an escaping pointer to them relocates instead of copying.
+    fn recordGlobalInstance(self: *Vm, base: Addr, size: usize, gid: inst_mod.GlobalId) void {
+        for (self.global_instances.items) |gi| if (gi.base == base) return;
+        self.global_instances.append(self.gpa, .{ .base = base, .size = size, .gid = gid }) catch
+            @panic("comptime VM: out of memory (global instances)");
+    }
+
+    /// The declared global whose instance `addr` falls in, if any.
+    fn globalInstanceAt(self: *Vm, addr: Addr) ?GlobalInstance {
+        for (self.global_instances.items) |gi| {
+            if (addr >= gi.base and addr < gi.base + @max(gi.size, 1)) return gi;
+        }
+        return null;
     }
 
     /// Run `func` with scalar `args` (one `Reg` word each, in param order) and
@@ -1382,12 +1438,12 @@ pub const Vm = struct {
             // `comptime_func` run on this same VM, or a scalar static value),
             // memoized. Mirrors the legacy interp's `getGlobal`.
             .global_get => |gid| return .{ .value = try self.evalGlobal(gid) },
-            // `&global` — only `&__sx_default_context` is materialised at comptime
-            // (its address sees runtime use via the implicit-ctx plumbing). Return
-            // the context's comptime address — an aggregate value IS its address,
-            // so a later `load`/field read sees the materialised Context. Mirrors the
-            // legacy interp's `global_addr` (the sole supported global); any other
-            // global bails to legacy fallback.
+            // `&global` — the global's declared initializer laid into comptime
+            // memory, once per evaluation. The instance is VM-LOCAL: a store
+            // through it lands on compile-time state that is discarded, and only
+            // an escape relocates the address back to the global's symbol.
+            // `__sx_default_context` keeps its own materialization (the implicit
+            // ctx that every entry frame is handed).
             .global_addr => |gid| {
                 const module = self.module orelse return self.failMsg("comptime VM: global_addr needs a module");
                 if (gid.index() < module.globals.items.len and
@@ -1395,7 +1451,7 @@ pub const Vm = struct {
                 {
                     return .{ .value = try self.materializeDefaultContext(module) };
                 }
-                return self.failMsg("comptime global_addr: only `&__sx_default_context` is materialised at comptime");
+                return .{ .value = try self.evalGlobalAddress(gid) };
             },
             // A function value is its encoded func-ref word (see `funcRefWord`).
             .func_ref => |fid| return .{ .value = funcRefWord(fid) },
@@ -2797,6 +2853,11 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 if (isFuncRefType(table, ty)) {
                     return if (funcRefToId(reg)) |fid| .{ .func_ref = fid } else .null_val;
                 }
+                // A pointer word is an address in comptime memory; the image
+                // wants a symbol, so it escapes (see the section below).
+                if (escapePointee(table, ty)) |pointee| return self.escapePointer(alloc, table, reg, pointee);
+                if (isPointerish(table, ty))
+                    return self.failFmt("escape: a '{s}' referent has no layout to walk", .{table.typeName(ty)});
                 return .{ .int = @bitCast(reg) };
             },
             .aggregate => {
@@ -2805,6 +2866,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     return .{ .string = alloc.dupe(u8, src) catch return self.failMsg("reg→value: out of memory (string)") };
                 }
                 const info = table.get(ty);
+                if (info == .@"struct" and info.@"struct".is_protocol) return self.escapeProtocolValue(alloc, table, reg, ty);
                 if (info == .@"struct") {
                     const out = alloc.alloc(Value, info.@"struct".fields.len) catch return self.failMsg("reg→value: out of memory (struct)");
                     for (info.@"struct".fields, 0..) |f, i| {
@@ -2877,6 +2939,101 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             .unsupported => return self.failMsg("reg→value: unsupported type"),
         }
+    }
+
+    // ── Escape materialization ──────────────────────────────────────────────
+    //
+    // A comptime result carries pointers into the runtime image, and an address
+    // in comptime memory means nothing there. Each one resolves per its
+    // referent (specs.md §7.9): a DECLARED global relocates in place — nothing
+    // is copied, the image keeps the global's declared initializer, and the
+    // referent stays as mutable as it was written — while a comptime TEMPORARY
+    // materializes as an anonymous image global, one per VM object, so two
+    // handles that shared an object still share one global after the escape.
+    // The walk is type-directed: a referent's bytes are read by its concrete
+    // layout, nested handles and interior pointers recurse through the same
+    // resolution, and function references relocate to their symbols.
+
+    /// The type an escaping pointer word points AT, or null when `ty` is not a
+    /// pointer. A `?*T` is the same word with null as its absent sentinel.
+    fn escapePointee(table: *const types.TypeTable, ty: TypeId) ?TypeId {
+        if (ty.isBuiltin()) return null;
+        return switch (table.get(ty)) {
+            .pointer => |p| p.pointee,
+            .optional => |o| if (!o.child.isBuiltin() and table.get(o.child) == .pointer)
+                table.get(o.child).pointer.pointee
+            else
+                null,
+            else => null,
+        };
+    }
+
+    /// Resolve one escaping pointer to the symbol its referent lands on.
+    fn escapePointer(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, addr: Addr, pointee: TypeId) Error!Value {
+        if (addr == null_addr) return .null_val;
+        if (self.globalInstanceAt(addr)) |gi| {
+            if (addr != gi.base)
+                return self.failMsg("escape: the value points into a global's compile-time state, which is discarded");
+            return .{ .image_ref = .{ .global = gi.gid } };
+        }
+        return .{ .image_ref = .{ .object = try self.imageObject(alloc, table, addr, pointee) } };
+    }
+
+    /// The image object for the VM object of type `ty` at `addr`, minted once.
+    /// The record is registered BEFORE its bytes are walked, so a referent that
+    /// points back at itself resolves to the same object instead of recursing.
+    fn imageObject(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, addr: Addr, ty: TypeId) Error!*Value.ImageObject {
+        if (ty == .void or ty == .unresolved)
+            return self.failMsg("escape: a referent with no layout ('*void') cannot be materialized — carry the concrete type");
+        if (self.image_objects.get(.{ .addr = addr, .ty = ty })) |obj| return obj;
+        const obj = alloc.create(Value.ImageObject) catch return self.failMsg("escape: out of memory (image object)");
+        obj.* = .{ .ty = ty };
+        self.image_objects.put(.{ .addr = addr, .ty = ty }, obj) catch return self.failMsg("escape: out of memory (image object)");
+        obj.value = try self.regToValue(alloc, table, try self.readField(table, addr, ty), ty);
+        return obj;
+    }
+
+    /// The escape of a protocol handle. Its referent materializes by the
+    /// CONCRETE type the handle carries, and its numeric word resolves: a
+    /// tagged handle to the dense tag the converged numbering assigned, an
+    /// erased one to the stamped type id plus the vtable / fn-ptr symbols of
+    /// the impl it was erased with. A null ctx is the absent `?P` sentinel and
+    /// carries no referent at all.
+    fn escapeProtocolValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId) Error!Value {
+        const fields = table.get(ty).@"struct".fields;
+        if (fields.len < 2) return self.failMsg("escape: a protocol value carries at least its {ctx, tag} words");
+        const out = alloc.alloc(Value, fields.len) catch return self.failMsg("escape: out of memory (protocol value)");
+        const ctx = try self.machine.readWord(reg + fieldOffset(table, ty, 0), 8);
+        if (ctx == null_addr) {
+            @memset(out, .null_val);
+            return .{ .aggregate = out };
+        }
+        const carried = TypeId.fromIndex(@intCast(try self.machine.readWord(reg + fieldOffset(table, ty, 1), 8)));
+        out[0] = try self.escapePointer(alloc, table, ctx, carried);
+
+        if (std.mem.eql(u8, table.getString(fields[1].name), "__tag")) {
+            const module = self.module orelse return self.failMsg("escape: a tagged value needs a module to resolve its tag");
+            if (!module.tagged_sets_final)
+                return self.failMsg("escape: a tagged value cannot leave an evaluation that runs before the conformer sets converge");
+            const tag = module.tagged_tags.get(.{ .proto = ty, .concrete = carried }) orelse
+                return self.failFmt("escape: '{s}' is not in the final conformer set of '{s}'", .{ table.typeName(carried), table.typeName(ty) });
+            out[1] = .{ .int = tag };
+            return .{ .aggregate = out };
+        }
+
+        out[1] = .{ .type_tag = carried };
+        for (fields[2..], 2..) |f, i| {
+            const word = try self.machine.readWord(reg + fieldOffset(table, ty, @intCast(i)), 8);
+            // The vtable slot holds a declared global's instance; every other
+            // trailing slot of an erased value is one method's fn pointer.
+            out[i] = if (std.mem.eql(u8, table.getString(f.name), "__vtable"))
+                try self.escapePointer(alloc, table, word, .void)
+            else if (funcRefToId(word)) |fid|
+                .{ .func_ref = fid }
+            else
+                .null_val;
+        }
+        return .{ .aggregate = out };
     }
 
     /// How a value of type `ty` is held: a register word (scalar/pointer, ≤8

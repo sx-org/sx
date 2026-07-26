@@ -1,0 +1,57 @@
+// A comptime TEMPORARY referent materializes as an anonymous image global in
+// writable data, deduplicated by comptime object identity WITHIN the evaluation
+// (specs.md §7.9): two handles that shared one object share one global, so the
+// borrow they had at compile time survives the escape. Two objects stay two
+// globals, and two evaluations never deduplicate against each other — their
+// temporaries are distinct objects.
+#import "modules/std.sx";
+
+View :: protocol tagged {
+    area :: (self: *Self) -> i64;
+    bump :: (self: *Self);
+}
+
+Cell :: struct { n: i64; }
+impl View for Cell {
+    area :: (self: *Cell) -> i64 { self.n * 10 }
+    bump :: (self: *Cell) { self.n = self.n + 1; }
+}
+
+Pair :: struct { a: View; b: View; }
+
+// ONE object, two handles.
+shared :: () -> Pair {
+    c := context.allocator.create(Cell);
+    c.n = 5;
+    return Pair.{ a = c, b = c };
+}
+
+// Two objects, two handles.
+split :: () -> Pair {
+    x := context.allocator.create(Cell);
+    x.n = 1;
+    y := context.allocator.create(Cell);
+    y.n = 4;
+    return Pair.{ a = x, b = y };
+}
+
+SHARED :: #run shared();
+SPLIT  :: #run split();
+AGAIN  :: #run shared();
+
+main :: () {
+    // The shared object is one global: bumping through either handle moves both.
+    print("{} {}\n", SHARED.a.area(), SHARED.b.area());
+    SHARED.a.bump();
+    SHARED.a.bump();
+    print("{} {}\n", SHARED.a.area(), SHARED.b.area());
+
+    // Distinct objects stay distinct.
+    print("{} {}\n", SPLIT.a.area(), SPLIT.b.area());
+    SPLIT.a.bump();
+    print("{} {}\n", SPLIT.a.area(), SPLIT.b.area());
+
+    // A second evaluation of the same body is a second object: it never
+    // deduplicates against the first one's temporaries.
+    print("{} {}\n", AGAIN.a.area(), SHARED.a.area());
+}
