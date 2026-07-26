@@ -675,7 +675,9 @@ fn dispatchRoutine(self: *Lowering, proto_ty: TypeId, pd: ProtocolDeclInfo, meth
     const has_ctx = self.implicit_ctx_enabled;
     if (has_ctx) params.append(self.alloc, .{ .name = self.module.types.internString("__sx_ctx"), .ty = void_ptr }) catch unreachable;
     params.append(self.alloc, .{ .name = self.module.types.internString("v"), .ty = proto_ty }) catch unreachable;
-    for (method.param_types, 0..) |pty, i| {
+    // A bare `Self` parameter is the PROTOCOL at the routine's boundary: the
+    // caller holds a handle, and the arm resolves it to its own conformer.
+    for (method.dispatch_param_types, 0..) |pty, i| {
         var buf: [32]u8 = undefined;
         const pname = std.fmt.bufPrint(&buf, "a{d}", .{i}) catch "arg";
         params.append(self.alloc, .{ .name = self.module.types.internString(pname), .ty = pty }) catch unreachable;
@@ -691,19 +693,227 @@ fn dispatchRoutine(self: *Lowering, proto_ty: TypeId, pd: ProtocolDeclInfo, meth
 
 /// Emit a tagged method call: the value plus the user args, straight into the
 /// outlined routine. The switch (and its single-conformer fold) lives inside
-/// the routine, so ordinary callers stay set-independent.
-pub fn emitTaggedDispatch(self: *Lowering, receiver: Ref, pd: ProtocolDeclInfo, proto_ty: TypeId, method: ProtocolMethodInfo, args: []const Ref) Ref {
+/// the routine, so ordinary callers stay set-independent — except for a bare
+/// `-> Self` method, whose result ABI is the selected arm's, and whose switch
+/// therefore expands here (§6.3, `emitSelfReturnDispatch`).
+pub fn emitTaggedDispatch(self: *Lowering, receiver: Ref, pd: ProtocolDeclInfo, proto_ty: TypeId, method: ProtocolMethodInfo, args: []const Ref, span: ast.Span) Ref {
+    var user_args = std.ArrayList(Ref).empty;
+    defer user_args.deinit(self.alloc);
+    for (args, 0..) |a, i| {
+        const want = method.dispatch_param_types[i];
+        user_args.append(self.alloc, self.coerceToType(a, self.builder.getRefType(a), want)) catch unreachable;
+    }
+    checkSelfArgs(self, receiver, pd, proto_ty, method, user_args.items);
+
+    if (method.returns_self) return emitSelfReturnDispatch(self, receiver, pd, proto_ty, method, user_args.items, span);
+
     const fid = dispatchRoutine(self, proto_ty, pd, method);
     var call_args = std.ArrayList(Ref).empty;
     defer call_args.deinit(self.alloc);
     if (self.implicit_ctx_enabled) call_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
     call_args.append(self.alloc, receiver) catch unreachable;
-    for (args, 0..) |a, i| {
-        const want = method.param_types[i];
-        call_args.append(self.alloc, self.coerceToType(a, self.builder.getRefType(a), want)) catch unreachable;
-    }
+    call_args.appendSlice(self.alloc, user_args.items) catch unreachable;
     const owned = self.alloc.dupe(Ref, call_args.items) catch unreachable;
     return self.builder.call(fid, owned, method.ret_type);
+}
+
+// ── Direct `Self` positions (§6.4) ──────────────────────────────────────
+
+/// Is `method` dispatchable through a tagged VALUE? Tagged extends the erased
+/// rule (§5.6) by exactly the DIRECT `Self` positions: every arm knows `Self`,
+/// so a bare `Self` parameter and a bare `Self` return are expressible. A
+/// `Self` at depth has no caller-side type on any kind, and on an `#identity`
+/// protocol a `Self`-RETURNING arm would materialize precisely the anonymous
+/// instance the naming discipline refuses.
+pub fn taggedDispatchable(pd: ProtocolDeclInfo, method: ProtocolMethodInfo) bool {
+    if (method.dispatchable) return true;
+    if (method.self_at_depth) return false;
+    return !(method.returns_self and pd.ownership == .identity);
+}
+
+/// The one runtime check in tagged dispatch (§6.4): a bare `Self` argument
+/// must be of the receiver's own conformer, because the arm the receiver
+/// selects takes the argument's referent as its own concrete type. Comparing
+/// against the receiver's tag word IS the arm's own tag — the switch selects
+/// on it. Mismatch is a checked failure, not UB.
+fn checkSelfArgs(self: *Lowering, receiver: Ref, pd: ProtocolDeclInfo, proto_ty: TypeId, method: ProtocolMethodInfo, args: []const Ref) void {
+    for (method.self_params, 0..) |is_self, i| {
+        if (!is_self or i >= args.len) continue;
+        const recv_tag = self.builder.structGet(receiver, 1, .i64);
+        const arg_tag = self.builder.structGet(args[i], 1, .i64);
+        const same = self.builder.emit(.{ .cmp_eq = .{ .lhs = recv_tag, .rhs = arg_tag } }, .bool);
+        const ok_bb = self.freshBlock("tagself.ok");
+        const bad_bb = self.freshBlock("tagself.bad");
+        self.builder.condBr(same, ok_bb, &.{}, bad_bb, &.{});
+        self.builder.switchToBlock(bad_bb);
+        emitSelfMismatchCall(self, pd, proto_ty, method, receiver, args[i]);
+        self.builder.br(ok_bb, &.{});
+        self.builder.switchToBlock(ok_bb);
+    }
+}
+
+/// The cold side of that compare: name the method and both conformers, then
+/// exit. Synthesized as an ordinary call so the helper's own ABI (implicit
+/// context included) is the one the call path builds everywhere else.
+fn emitSelfMismatchCall(self: *Lowering, pd: ProtocolDeclInfo, proto_ty: TypeId, method: ProtocolMethodInfo, receiver: Ref, arg: Ref) void {
+    const want = protocolTypeIdWord(self, proto_ty, receiver);
+    const got = protocolTypeIdWord(self, proto_ty, arg);
+    const src = self.current_source_file;
+    const span = ast.Span{ .start = self.builder.current_span.start, .end = self.builder.current_span.end };
+
+    const want_name = std.fmt.allocPrint(self.alloc, "$tagself_want_{d}", .{self.block_counter}) catch @panic("out of memory");
+    const got_name = std.fmt.allocPrint(self.alloc, "$tagself_got_{d}", .{self.block_counter}) catch @panic("out of memory");
+    self.block_counter += 1;
+    self.scope.?.put(want_name, .{ .ref = want, .ty = .type_value, .is_alloca = false });
+    self.scope.?.put(got_name, .{ .ref = got, .ty = .type_value, .is_alloca = false });
+
+    const what = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ pd.name, method.name }) catch @panic("out of memory");
+    const args = self.alloc.alloc(*ast.Node, 3) catch @panic("out of memory");
+    args[0] = synthNode(self, .{ .string_literal = .{ .raw = what } }, span, src);
+    args[1] = synthNode(self, .{ .identifier = .{ .name = want_name } }, span, src);
+    args[2] = synthNode(self, .{ .identifier = .{ .name = got_name } }, span, src);
+    const callee = synthNode(self, .{ .identifier = .{ .name = "__sx_tagged_self_mismatch" } }, span, src);
+    const call = ast.Call{ .callee = callee, .args = args };
+    _ = self.lowerCall(&call);
+}
+
+fn synthNode(self: *Lowering, data: ast.Node.Data, span: ast.Span, src: ?[]const u8) *ast.Node {
+    const n = self.alloc.create(ast.Node) catch @panic("out of memory");
+    n.* = .{ .data = data, .span = span, .source_file = src };
+    return n;
+}
+
+/// A bare `-> Self` dispatch: the switch expands HERE, at the call site, so
+/// each arm's concrete result materializes in the CALLING frame and the
+/// result is a tagged borrow of that temporary (§6.3, §6.4). Every such site
+/// warns; returning the result directly is refused.
+fn emitSelfReturnDispatch(self: *Lowering, receiver: Ref, pd: ProtocolDeclInfo, proto_ty: TypeId, method: ProtocolMethodInfo, args: []const Ref, span: ast.Span) Ref {
+    if (self.in_return_expr) {
+        if (self.diagnostics) |d| {
+            d.addFmt(.err, span, "cannot return the result of '{s}' directly — a '-> Self' dispatch through tagged protocol '{s}' materializes its result in a temporary of THIS frame, which is about to die, so there is nothing durable to borrow beyond it; bind it, or place it in storage the caller owns", .{ method.name, self.formatTypeName(proto_ty) });
+        }
+        return self.builder.emit(.{ .placeholder = self.module.types.internString("tagged-self-return") }, proto_ty);
+    }
+    if (self.diagnostics) |d| {
+        d.addFmt(.warn, span, "'{s}' returns 'Self' through a tagged value — the result materializes a frame-scoped temporary (one per call; lives to end of frame). See design/protocols.md §6.4, \"-> Self placement\".", .{method.name});
+    }
+
+    const members = callSiteMembers(self, proto_ty);
+    if (members.len == 0) return self.builder.constUndef(proto_ty);
+
+    const void_ptr = self.module.types.ptrTo(.void);
+    const ctx = self.builder.structGet(receiver, 0, void_ptr);
+    const merge_bb = self.freshBlockWithParams("tagself.merge", &.{proto_ty});
+
+    if (members.len == 1) {
+        // A single-conformer set devirtualizes completely — no switch at all.
+        const value = emitSelfReturnArm(self, pd, proto_ty, method, members[0], ctx, args);
+        self.builder.br(merge_bb, &.{value});
+        self.builder.switchToBlock(merge_bb);
+        return self.builder.blockParam(merge_bb, 0, proto_ty);
+    }
+
+    const tag = self.builder.structGet(receiver, 1, .i64);
+    var cases = std.ArrayList(inst_mod.SwitchBranch.Case).empty;
+    defer cases.deinit(self.alloc);
+    var arm_blocks = std.ArrayList(inst_mod.BlockId).empty;
+    defer arm_blocks.deinit(self.alloc);
+    for (members, 0..) |_, i| {
+        const b = self.freshBlock("tagself.arm");
+        arm_blocks.append(self.alloc, b) catch unreachable;
+        cases.append(self.alloc, .{ .value = @intCast(i), .target = b, .args = &.{} }) catch unreachable;
+    }
+    const unr_bb = self.freshBlock("tagself.unr");
+    self.builder.switchBr(tag, cases.items, unr_bb, &.{});
+    recordSwitchTags(self, proto_ty, members);
+
+    for (members, 0..) |concrete, i| {
+        self.builder.switchToBlock(arm_blocks.items[i]);
+        const value = emitSelfReturnArm(self, pd, proto_ty, method, concrete, ctx, args);
+        self.builder.br(merge_bb, &.{value});
+    }
+    self.builder.switchToBlock(unr_bb);
+    _ = self.builder.emit(.{ .@"unreachable" = {} }, .void);
+
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, proto_ty);
+}
+
+/// One arm of that switch: a direct call with `Self` fully concrete, its
+/// result placed in a caller-frame temporary, and a tagged borrow of it.
+fn emitSelfReturnArm(self: *Lowering, pd: ProtocolDeclInfo, proto_ty: TypeId, method: ProtocolMethodInfo, concrete: TypeId, ctx: Ref, args: []const Ref) Ref {
+    const thunk = selfReturnArm(self, proto_ty, pd, method, concrete) orelse
+        return self.builder.constUndef(proto_ty);
+    var call_args = std.ArrayList(Ref).empty;
+    defer call_args.deinit(self.alloc);
+    if (self.implicit_ctx_enabled) call_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
+    call_args.append(self.alloc, ctx) catch unreachable;
+    for (args, 0..) |a, i| {
+        call_args.append(self.alloc, armArg(self, method, a, i)) catch unreachable;
+    }
+    const owned = self.alloc.dupe(Ref, call_args.items) catch unreachable;
+    const result = self.builder.call(thunk, owned, concrete);
+    const slot = self.builder.alloca(concrete);
+    self.builder.store(slot, result);
+    return buildTaggedValue(self, slot, proto_ty, concrete);
+}
+
+/// The value an arm passes for user parameter `i`: a bare `Self` argument is
+/// a handle, and the arm hands its referent to the concrete method (the tag
+/// check already proved it is the arm's own conformer).
+fn armArg(self: *Lowering, method: ProtocolMethodInfo, arg: Ref, i: usize) Ref {
+    if (i >= method.self_params.len or !method.self_params[i]) return arg;
+    return self.builder.structGet(arg, 0, self.module.types.ptrTo(.void));
+}
+
+/// The arm thunk of a `Self`-RETURNING method: identical to any other arm
+/// thunk except that its return type is the conformer itself, since `Self` is
+/// concrete inside the arm.
+fn selfReturnArm(self: *Lowering, proto_ty: TypeId, pd: ProtocolDeclInfo, method: ProtocolMethodInfo, concrete: TypeId) ?FuncId {
+    const key = ArmKey{ .proto = proto_ty, .concrete = concrete, .method = self.module.types.internString(method.name) };
+    if (self.tagged_arms.get(key)) |fid| return fid;
+    const cname = self.resolveConcreteTypeName(concrete) orelse return null;
+    var concrete_method = method;
+    concrete_method.ret_type = concrete;
+    const thunk = self.createProtocolThunk(proto_ty, pd.name, cname, concrete, concrete_method);
+    self.tagged_arms.put(key, thunk) catch @panic("out of memory");
+    return thunk;
+}
+
+/// The conformer set a call-site-inlined switch expands over. Declared impls
+/// are admitted first: the fixpoint would admit exactly these at convergence,
+/// and the arms have to exist now. Sorted in the canonical tag order so the
+/// emitted IR is deterministic; the case VALUES are the tags, relocated once
+/// the space is numbered.
+fn callSiteMembers(self: *Lowering, proto: TypeId) []const TypeId {
+    reachTagged(self, proto);
+    _ = admitDeclaredImpls(self, proto);
+    const list = self.tagged_members.get(proto) orelse return &.{};
+    const out = self.alloc.dupe(TypeId, list.items) catch @panic("out of memory");
+    const Ctx = struct {
+        l: *Lowering,
+        fn lt(ctx: @This(), a: TypeId, b: TypeId) bool {
+            return std.mem.order(u8, ctx.l.mangleTypeName(a), ctx.l.mangleTypeName(b)) == .lt;
+        }
+    };
+    std.mem.sort(TypeId, out, Ctx{ .l = self }, Ctx.lt);
+    return out;
+}
+
+/// Remember the switch just emitted so its case values become the members'
+/// tags at convergence — the same deferral the `tagged_tag_of` operands get,
+/// for the one construct that carries tags as immediate case values.
+fn recordSwitchTags(self: *Lowering, proto: TypeId, members: []const TypeId) void {
+    const fid = self.builder.func.?;
+    const block = self.builder.current_block.?;
+    const insts = self.module.functions.items[@intFromEnum(fid)].blocks.items[block.index()].insts.items;
+    self.tagged_pending_switches.append(self.alloc, .{
+        .func = fid,
+        .block = block,
+        .inst = @intCast(insts.len - 1),
+        .proto = proto,
+        .members = members,
+    }) catch @panic("out of memory");
 }
 
 // ── The collection fixpoint + whole-program emission ────────────────────
@@ -786,6 +996,16 @@ pub const PendingRoutine = struct {
     pd: ProtocolDeclInfo,
     method: ProtocolMethodInfo,
     fid: FuncId,
+};
+
+/// One call-site-inlined `-> Self` switch: its case values are `members`'
+/// tags, written once the space is numbered.
+pub const PendingSwitch = struct {
+    func: FuncId,
+    block: inst_mod.BlockId,
+    inst: u32,
+    proto: TypeId,
+    members: []const TypeId,
 };
 
 /// Assign the dense tags. Canonical order is the conformer's canonical
@@ -898,7 +1118,8 @@ fn emitArmCall(self: *Lowering, job: PendingRoutine, concrete: TypeId, ctx_ref: 
     if (self.implicit_ctx_enabled) call_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
     call_args.append(self.alloc, ctx_ref) catch unreachable;
     for (job.method.param_types, 0..) |_, i| {
-        call_args.append(self.alloc, Ref.fromIndex(@intCast(user_base + i))) catch unreachable;
+        const param = Ref.fromIndex(@intCast(user_base + i));
+        call_args.append(self.alloc, armArg(self, job.method, param, i)) catch unreachable;
     }
     const owned = self.alloc.dupe(Ref, call_args.items) catch unreachable;
     const result = self.builder.call(thunk, owned, job.method.ret_type);
@@ -920,6 +1141,25 @@ fn relocateTags(self: *Lowering) void {
                 }
             }
         }
+    }
+    for (self.tagged_pending_switches.items) |ps| {
+        const func = &self.module.functions.items[@intFromEnum(ps.func)];
+        const ins = &func.blocks.items[ps.block.index()].insts.items[ps.inst];
+        const sb = ins.op.switch_br;
+        const cases = self.alloc.alloc(inst_mod.SwitchBranch.Case, sb.cases.len) catch @panic("out of memory");
+        for (sb.cases, ps.members, 0..) |c, concrete, i| {
+            cases[i] = .{
+                .value = self.tagged_tags.get(.{ .proto = ps.proto, .concrete = concrete }) orelse 0,
+                .target = c.target,
+                .args = c.args,
+            };
+        }
+        ins.op = .{ .switch_br = .{
+            .operand = sb.operand,
+            .cases = cases,
+            .default = sb.default,
+            .default_args = sb.default_args,
+        } };
     }
 }
 

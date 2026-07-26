@@ -4794,7 +4794,7 @@ pub fn resolveCallParamTypes(
         };
         if (self.getProtocolInfo(proto_recv)) |proto_info| {
             for (proto_info.methods) |m| {
-                if (std.mem.eql(u8, m.name, fa.field)) return m.param_types;
+                if (std.mem.eql(u8, m.name, fa.field)) return m.dispatch_param_types;
             }
         }
         // `*Protocol` receiver (borrowed view): same lookup through the
@@ -4804,7 +4804,7 @@ pub fn resolveCallParamTypes(
             if (oi == .pointer) {
                 if (self.getProtocolInfo(oi.pointer.pointee)) |proto_info| {
                     for (proto_info.methods) |m| {
-                        if (std.mem.eql(u8, m.name, fa.field)) return m.param_types;
+                        if (std.mem.eql(u8, m.name, fa.field)) return m.dispatch_param_types;
                     }
                 }
             }
@@ -4816,7 +4816,7 @@ pub fn resolveCallParamTypes(
             if (opt_info == .optional) {
                 if (self.getProtocolInfo(opt_info.optional.child)) |proto_info| {
                     for (proto_info.methods) |m| {
-                        if (std.mem.eql(u8, m.name, fa.field)) return m.param_types;
+                        if (std.mem.eql(u8, m.name, fa.field)) return m.dispatch_param_types;
                     }
                 }
             }

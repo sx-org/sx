@@ -321,7 +321,7 @@ pub const CallResolver = struct {
                     for (proto_info.methods, 0..) |m, mi| {
                         if (std.mem.eql(u8, m.name, cfa.field)) return .{
                             .kind = .protocol_dispatch,
-                            .return_type = m.ret_type,
+                            .return_type = m.dispatch_ret_type,
                             .target = .{ .protocol_method = @intCast(mi) },
                             .prepends_receiver = true,
                         };

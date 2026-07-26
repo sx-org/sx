@@ -614,13 +614,19 @@ pub const ProtocolResolver = struct {
                 break :blk self.l.resolveTypeInSource(pd.source_file, rt);
             } else .void;
             const self_occ = program_index_mod.protocolMethodSelfOccurrence(method);
-            method_infos.append(self.l.alloc, .{
+            const shape = program_index_mod.protocolMethodSelfShape(self.l.alloc, method);
+            var info: ProtocolMethodInfo = .{
                 .name = method.name,
                 .param_types = self.l.alloc.dupe(TypeId, ptypes.items) catch unreachable,
                 .ret_type = ret,
                 .dispatchable = self_occ == null,
                 .self_param = if (self_occ) |occ| occ.param_name else null,
-            }) catch unreachable;
+                .self_params = shape.direct_params,
+                .returns_self = shape.direct_return,
+                .self_at_depth = shape.at_depth,
+            };
+            program_index_mod.applyDispatchSignature(self.l.alloc, &info, pd.kind, protocol_ty);
+            method_infos.append(self.l.alloc, info) catch unreachable;
         }
         const identity_name = self.protocolIdentityName(pd);
         const protocol_info: ProtocolDeclInfo = .{

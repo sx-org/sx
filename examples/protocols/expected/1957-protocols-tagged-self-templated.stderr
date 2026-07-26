@@ -1,0 +1,11 @@
+warning: 'scaled' returns 'Self' through a tagged value — the result materializes a frame-scoped temporary (one per call; lives to end of frame). See design/protocols.md §6.4, "-> Self placement".
+  --> examples/protocols/1957-protocols-tagged-self-templated.sx:32:10
+   |
+32 |     d := s.scaled(2);
+   |          ^^^^^^^^
+
+warning: 'scaled' returns 'Self' through a tagged value — the result materializes a frame-scoped temporary (one per call; lives to end of frame). See design/protocols.md §6.4, "-> Self placement".
+  --> examples/protocols/1957-protocols-tagged-self-templated.sx:48:10
+   |
+48 |     d := c.scaled(4.0);
+   |          ^^^^^^^^
