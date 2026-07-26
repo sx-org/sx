@@ -1,0 +1,13 @@
+// Table identity is the protocol's canonical NOMINAL identity plus the full
+// canonical argument tuple — never the display name. Two modules each
+// authoring `Series(T)` and each instantiating it at `i64` produce two
+// instantiations: separate conformer sets, separate tag spaces, separate
+// tables and dispatch routines. `LeftCell` is a member of one and a
+// non-conformer of the other.
+#import "modules/std.sx";
+#import "./1945-protocols-tagged-templated-cross-module-left.sx";
+#import "./1945-protocols-tagged-templated-cross-module-right.sx";
+
+main :: () {
+    print("{} {}\n", left(), right());
+}

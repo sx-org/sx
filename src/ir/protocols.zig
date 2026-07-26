@@ -842,6 +842,7 @@ pub const ProtocolResolver = struct {
             .target_args = self.l.alloc.dupe(TypeId, arg_tys.items) catch return,
             .defining_module = defining_module,
             .span = decl.span,
+            .block = ib,
         };
 
         const gop = self.l.param_impl_map.getOrPut(key) catch return;

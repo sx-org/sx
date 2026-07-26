@@ -280,8 +280,9 @@ test "protocols: findVisibleImpls filters by transitive import visibility" {
     var l = Lowering.init(&module);
     const pr = ProtocolResolver{ .l = &l };
 
-    const here_entry: Lowering.ParamImplEntry = .{ .methods = &.{}, .source_ty = .i64, .target_args = &.{}, .defining_module = "a.sx", .span = .{ .start = 0, .end = 0 } };
-    const other_entry: Lowering.ParamImplEntry = .{ .methods = &.{}, .source_ty = .i64, .target_args = &.{}, .defining_module = "b.sx", .span = .{ .start = 0, .end = 0 } };
+    const block: ast.ImplBlock = .{ .protocol_name = "P", .target_type = "i64", .methods = &.{} };
+    const here_entry: Lowering.ParamImplEntry = .{ .methods = &.{}, .source_ty = .i64, .target_args = &.{}, .defining_module = "a.sx", .span = .{ .start = 0, .end = 0 }, .block = &block };
+    const other_entry: Lowering.ParamImplEntry = .{ .methods = &.{}, .source_ty = .i64, .target_args = &.{}, .defining_module = "b.sx", .span = .{ .start = 0, .end = 0 }, .block = &block };
     const entries = [_]Lowering.ParamImplEntry{ here_entry, other_entry };
 
     // No source-file context → falls open (all entries visible).

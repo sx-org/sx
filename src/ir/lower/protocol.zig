@@ -159,11 +159,18 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
         .name = owned,
         .kind = pd.kind,
         .ownership = if (pd.is_identity) .identity else .value_own,
-        .is_instantiation = true,
         .methods = self.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
     };
     self.program_index.protocol_decl_map.put(owned, protocol_info) catch {};
     self.protocol_info_by_type.put(id, protocol_info) catch @panic("out of memory");
+    // The canonical argument tuple, kept alongside the family's declaration
+    // identity: conformer collection, coherence, and the empty-set diagnostic
+    // all key on this pair rather than on the instance's display name.
+    self.param_protocol_instances.put(id, .{
+        .base = self.protocolResolver().protocolIdentityName(pd),
+        .args = self.alloc.dupe(TypeId, arg_tys.items) catch unreachable,
+        .decl = pd,
+    }) catch @panic("out of memory");
     // Record the type-arg binding so projection (`xs.T`, `.value`) and
     // method-arg resolution on this instance can recover it.
     self.struct_instance_bindings.put(owned, tb) catch {};
@@ -257,7 +264,7 @@ fn valuelessProtocolIn(self: *Lowering, ty: TypeId) ?TypeId {
         .@"struct" => |s| blk: {
             if (!s.is_protocol) break :blk null;
             const pd = self.getProtocolInfo(ty) orelse break :blk null;
-            break :blk if (pd.kind == .constraint or (pd.kind == .tagged and pd.is_instantiation)) ty else null;
+            break :blk if (pd.kind == .constraint) ty else null;
         },
         else => null,
     };
@@ -272,13 +279,8 @@ pub fn refuseValuelessProtocol(self: *Lowering, ty: TypeId, span: ast.Span, what
     // here (spec §6.6).
     if (self.taggedIn(ty)) |p| self.reachTagged(p);
     const offender = valuelessProtocolIn(self, ty) orelse return false;
-    const pd = self.getProtocolInfo(offender) orelse return false;
     const name = self.formatTypeName(offender);
     const d = self.diagnostics orelse return true;
-    if (pd.kind == .tagged) {
-        d.addFmt(.err, span, "cannot {s} '{s}' — a parameterized tagged protocol has no runtime model in this compiler yet; use the nullary tagged form, erase through a 'vtable' or 'inline' protocol, or bind through a generic bound ('$T/{s}')", .{ what, name, name });
-        return true;
-    }
     // The guidance is use-site only: stay concrete, or bind through a
     // constraint. Whether the protocol should have runtime values is its
     // author's decision, made at the declaration.
@@ -1139,6 +1141,7 @@ pub fn refuseNonConformer(self: *Lowering, proto_ty: TypeId, concrete_type_name:
         break :blk ast.Span{ .start = cs.start, .end = cs.end };
     };
     if (self.refuseEmptyTaggedSet(proto_ty, span)) return true;
+    if (self.refuseNonMemberTagged(proto_ty, concrete_ty, span)) return true;
     if (firstUnimplementedMethod(self, proto_ty, concrete_type_name, concrete_ty)) |nc| {
         if (self.diagnostics) |d| {
             switch (nc.kind) {
@@ -1272,9 +1275,6 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
     // call, set-independent at the site; the switch (and its single-conformer
     // fold) lives inside the routine.
     if (proto_info.kind == .tagged) {
-        // A parameterized instantiation is staged — the declaration position
-        // that made this value already refused; stay quiet here.
-        if (proto_info.is_instantiation) return self.builder.constUndef(mi.ret_type);
         if (self.refuseComptimeTagged(proto_ty, span)) return self.builder.constUndef(mi.ret_type);
         if (self.refuseEmptyTaggedSet(proto_ty, span)) return self.builder.constUndef(mi.ret_type);
         return self.emitTaggedDispatch(receiver, proto_info, proto_ty, mi, args);

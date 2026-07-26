@@ -1,0 +1,65 @@
+// Blanket impls over a tagged family. `impl Series($T) for Buffer($T)` is one
+// impl and a family of conformances; `impl Series(f32) for Repeat($U)` is a
+// blanket over a parameter the protocol head does not mention. Both admit
+// members bounded by what the program INSTANTIATES: unification never invents
+// a type, and an instantiation nobody value-uses materializes nothing at all
+// (`Buffer(bool)` exists here, `Series(bool)` does not).
+#import "modules/std.sx";
+
+Series :: protocol(T: Type) tagged {
+    count :: (self: *Self) -> i64;
+    at    :: (self: *Self, i: i64) -> T;
+}
+
+Buffer :: struct($T: Type) { items: []$T; }
+impl Series($T) for Buffer($T) {
+    count :: (self: *Buffer) -> i64 { self.items.len }
+    at    :: (self: *Buffer, i: i64) -> $T { self.items[i] }
+}
+
+// The head is concrete; the SOURCE carries the binder. One member per
+// instantiated `Repeat(U)`, never an open-ended family.
+Repeat :: struct($U: Type) { tag: $U; n: i64; }
+impl Series(f32) for Repeat($U) {
+    count :: (self: *Repeat) -> i64 { self.n }
+    at    :: (self: *Repeat, i: i64) -> f32 { 7.5 }
+}
+
+Counter :: struct { n: i64; }
+impl Series(i64) for Counter {
+    count :: (self: *Counter) -> i64 { self.n }
+    at    :: (self: *Counter, i: i64) -> i64 { i }
+}
+
+total_f :: (s: Series(f32)) -> f32 { s.at(0) + s.at(1) }
+total_i :: (s: Series(i64)) -> i64 { s.count() * 10 + s.at(2) }
+
+main :: () {
+    fa : [3]f32  = .[1.0, 2.0, 3.0];
+    ia : [4]i64  = .[9, 8, 7, 6];
+    ba : [2]bool = .[true, false];
+
+    bf := Buffer(f32).{ items = fa[0..] };
+    bi := Buffer(i64).{ items = ia[0..] };
+    // Instantiated, and admissible under the blanket — but `Series(bool)` is
+    // never value-used, so no set, tag space, or table exists for it.
+    bb := Buffer(bool).{ items = ba[0..] };
+
+    ru := Repeat(i64).{ tag = 1, n = 4 };
+    rs := Repeat(string).{ tag = "k", n = 2 };
+    ct := Counter.{ n = 3 };
+
+    print("{} {}\n", total_f(bf), total_i(bi));
+    print("{} {}\n", total_f(ru), total_f(rs));
+    print("{} {}\n", total_i(ct), bb.items[0]);
+
+    // The two blankets land in the SAME set at `Series(f32)`, so both kinds
+    // of conformer dispatch through one switch.
+    vs : [3]Series(f32) = .[bf, ru, rs];
+    for vs (v) { print("{} {}\n", v.count(), v.at(0)); }
+
+    // A blanket conformer keeps its own instantiation's element type: the
+    // `Series(i64)` space holds `Buffer(i64)` and `Counter`, nothing of f32.
+    w : Series(i64) = bi;
+    print("{} {}\n", w.count(), w.at(3));
+}

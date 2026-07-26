@@ -62,6 +62,7 @@ pub fn recordImplSite(self: *Lowering, proto: TypeId, concrete: TypeId, span: as
 /// sites. An unreached collision is not diagnosed — nothing exists to collide
 /// at.
 fn checkCoherence(self: *Lowering) void {
+    checkParamCoherence(self);
     const d = self.diagnostics orelse return;
     var it = self.tagged_impl_sites.iterator();
     while (it.next()) |entry| {
@@ -75,6 +76,46 @@ fn checkCoherence(self: *Lowering) void {
         for (sites[1..]) |s| {
             if (s.source) |src| d.current_source_file = src;
             d.addNoteFmt(id, s.span, "also implemented here", .{});
+        }
+    }
+}
+
+/// The same global coherence, per instantiation: two impls of one
+/// `(instantiation, conformer)` pair leave the switch arm ambiguous however
+/// visibility is arranged. Registration already refuses a same-module
+/// duplicate; this is the cross-module half, and it fires only for a reached
+/// instantiation.
+fn checkParamCoherence(self: *Lowering) void {
+    const d = self.diagnostics orelse return;
+    var rit = self.tagged_reached.keyIterator();
+    while (rit.next()) |p| {
+        const inst = self.param_protocol_instances.get(p.*) orelse continue;
+        var it = self.param_impl_map.iterator();
+        while (it.next()) |e| {
+            const key = e.key_ptr.*;
+            if (key.len <= inst.base.len) continue;
+            if (!std.mem.startsWith(u8, key, inst.base) or key[inst.base.len] != 0) continue;
+            const entries = e.value_ptr.items;
+            if (entries.len < 2) continue;
+            var found = std.ArrayList(TypeId).empty;
+            defer found.deinit(self.alloc);
+            collectFromImpl(self, inst, entries[0], &found);
+            if (found.items.len == 0) continue;
+            const Ctx = struct {
+                l: *Lowering,
+                fn lt(ctx: @This(), a: TypeId, b: TypeId) bool {
+                    return std.mem.order(u8, ctx.l.mangleTypeName(a), ctx.l.mangleTypeName(b)) == .lt;
+                }
+            };
+            std.mem.sort(TypeId, found.items, Ctx{ .l = self }, Ctx.lt);
+            const saved = d.current_source_file;
+            defer d.current_source_file = saved;
+            d.current_source_file = entries[0].defining_module;
+            const id = d.addFmtId(.err, entries[0].span, "duplicate impl of tagged protocol '{s}' for '{s}' — a tagged conformer set is whole-program, so its coherence is global: exactly one impl of a pair may exist, whatever the import visibility", .{ self.formatTypeName(p.*), self.formatTypeName(found.items[0]) });
+            for (entries[1..]) |other| {
+                d.current_source_file = other.defining_module;
+                d.addNoteFmt(id, other.span, "also implemented here", .{});
+            }
         }
     }
 }
@@ -117,15 +158,37 @@ fn admit(self: *Lowering, proto: TypeId, concrete: TypeId) bool {
     if (!gop.found_existing) gop.value_ptr.* = std.ArrayList(TypeId).empty;
     for (gop.value_ptr.items) |m| if (m == concrete) return false;
     gop.value_ptr.append(self.alloc, concrete) catch @panic("out of memory");
+    reachMentionedInstantiations(self, concrete);
     return true;
 }
 
-/// The declared conformers of nullary tagged `proto`: every concrete type with
-/// an `impl P for T` anywhere in the program's import closure. Presence-based,
+/// A conformer's fields may hold values of other instantiations — the
+/// `Scaled(T)` shape holds a `Series(T)` handle. Admitting it reaches those
+/// instantiations, so their sets and tables materialize too (spec §6.5).
+fn reachMentionedInstantiations(self: *Lowering, concrete: TypeId) void {
+    if (concrete.isBuiltin() or concrete == .unresolved) return;
+    const info = self.module.types.get(concrete);
+    if (info != .@"struct") return;
+    for (info.@"struct".fields) |f| {
+        if (taggedIn(self, f.ty)) |p| reachTagged(self, p);
+    }
+}
+
+/// The declared conformers of tagged `proto`: every concrete type with an
+/// `impl P for T` anywhere in the program's import closure. Presence-based,
 /// not path-based (spec §6) — no import path from a use site to the impl is
 /// required.
 fn admitDeclaredImpls(self: *Lowering, proto: TypeId) bool {
     var changed = false;
+    if (isInstantiation(self, proto)) {
+        var found = std.ArrayList(TypeId).empty;
+        defer found.deinit(self.alloc);
+        collectParamConformers(self, proto, &found);
+        for (found.items) |c| {
+            if (admit(self, proto, c)) changed = true;
+        }
+        return changed;
+    }
     var it = self.protocol_impl_decls.keyIterator();
     while (it.next()) |key| {
         if (key.protocol != proto) continue;
@@ -139,22 +202,197 @@ fn admitDeclaredImpls(self: *Lowering, proto: TypeId) bool {
 /// impls are all registered before any body lowers, which is what makes the
 /// sema-time membership diagnostics exact.
 fn conforms(self: *Lowering, proto: TypeId, concrete: TypeId) bool {
+    if (self.tagged_members.get(proto)) |list| {
+        for (list.items) |m| if (m == concrete) return true;
+    }
+    if (isInstantiation(self, proto)) {
+        var found = std.ArrayList(TypeId).empty;
+        defer found.deinit(self.alloc);
+        collectParamConformers(self, proto, &found);
+        for (found.items) |c| if (c == concrete) return true;
+        return false;
+    }
     var it = self.protocol_impl_decls.keyIterator();
     while (it.next()) |key| {
         if (key.protocol == proto and key.concrete == concrete) return true;
     }
-    if (self.tagged_members.get(proto)) |list| {
-        for (list.items) |m| if (m == concrete) return true;
-    }
     return false;
 }
 
-/// Does anything at all implement `proto`?
+/// Does anything at all implement `proto`? For a parameterized family this is
+/// asked of ONE instantiation: another tuple's impls are another set (§6.7).
 fn hasAnyConformer(self: *Lowering, proto: TypeId) bool {
+    if (self.tagged_members.get(proto)) |list| {
+        if (list.items.len != 0) return true;
+    }
+    if (isInstantiation(self, proto)) return countParamConformers(self, proto) != 0;
     var it = self.protocol_impl_decls.keyIterator();
     while (it.next()) |key| if (key.protocol == proto) return true;
-    if (self.tagged_members.get(proto)) |list| return list.items.len != 0;
     return false;
+}
+
+// ── Per-instantiation membership ────────────────────────────────────────
+
+/// Is `proto` one instantiation of a parameterized family?
+fn isInstantiation(self: *Lowering, proto: TypeId) bool {
+    return self.param_protocol_instances.contains(proto);
+}
+
+fn countParamConformers(self: *Lowering, proto: TypeId) usize {
+    var found = std.ArrayList(TypeId).empty;
+    defer found.deinit(self.alloc);
+    collectParamConformers(self, proto, &found);
+    return found.items.len;
+}
+
+fn appendUnique(self: *Lowering, out: *std.ArrayList(TypeId), ty: TypeId) void {
+    if (ty == .unresolved) return;
+    for (out.items) |t| if (t == ty) return;
+    out.append(self.alloc, ty) catch @panic("out of memory");
+}
+
+/// Every conformer of instantiation `proto`. A concrete impl contributes its
+/// source when the canonical argument tuples match; a blanket impl contributes
+/// one member per INSTANTIATED type its source shape unifies with — never an
+/// open-ended family (spec §6.5).
+fn collectParamConformers(self: *Lowering, proto: TypeId, out: *std.ArrayList(TypeId)) void {
+    const inst = self.param_protocol_instances.get(proto) orelse return;
+    var it = self.param_impl_map.iterator();
+    while (it.next()) |e| {
+        const key = e.key_ptr.*;
+        if (key.len <= inst.base.len) continue;
+        if (!std.mem.startsWith(u8, key, inst.base) or key[inst.base.len] != 0) continue;
+        for (e.value_ptr.items) |entry| collectFromImpl(self, inst, entry, out);
+    }
+}
+
+/// The conformers one `impl` contributes to `inst`.
+fn collectFromImpl(self: *Lowering, inst: lower.Lowering.ParamProtocolInstance, entry: lower.Lowering.ParamImplEntry, out: *std.ArrayList(TypeId)) void {
+    const ib = entry.block;
+    if (ib.protocol_type_args.len != inst.args.len) return;
+    const blanket = if (ib.target_type_expr) |te| patternHasBinder(te) else false;
+    if (!blanket) {
+        // The source is one concrete type; only the head has to agree.
+        var closed = std.StringHashMap(TypeId).init(self.alloc);
+        defer closed.deinit();
+        if (headArgsMatch(self, inst, entry, &closed)) appendUnique(self, out, entry.source_ty);
+        return;
+    }
+    const pattern = ib.target_type_expr.?;
+    // Blanket: the candidates are the generic instances the monomorphized
+    // program actually spells. Unification never invents one.
+    var cit = self.struct_instance_author.keyIterator();
+    while (cit.next()) |name| {
+        const cty = self.module.types.findByName(self.module.types.internString(name.*)) orelse continue;
+        var binds = std.StringHashMap(TypeId).init(self.alloc);
+        defer binds.deinit();
+        if (!matchPattern(self, pattern, cty, entry.defining_module, &binds)) continue;
+        if (!headArgsMatch(self, inst, entry, &binds)) continue;
+        appendUnique(self, out, cty);
+    }
+}
+
+/// Does the impl's source shape introduce a binder (`$T`)?
+fn patternHasBinder(node: *const ast.Node) bool {
+    return switch (node.data) {
+        .type_expr => |te| te.is_generic,
+        .pointer_type_expr => |p| patternHasBinder(p.pointee_type),
+        .many_pointer_type_expr => |p| patternHasBinder(p.element_type),
+        .optional_type_expr => |o| patternHasBinder(o.inner_type),
+        .slice_type_expr => |s| patternHasBinder(s.element_type),
+        .array_type_expr => |a| patternHasBinder(a.element_type),
+        .parameterized_type_expr => |pt| blk: {
+            for (pt.args) |a| if (patternHasBinder(a)) break :blk true;
+            break :blk false;
+        },
+        else => false,
+    };
+}
+
+/// Unify the impl's written source shape against a candidate conformer,
+/// binding each `$T` to the type standing at its position.
+fn matchPattern(self: *Lowering, node: *const ast.Node, ty: TypeId, source: []const u8, binds: *std.StringHashMap(TypeId)) bool {
+    switch (node.data) {
+        .type_expr => |te| {
+            if (te.is_generic) {
+                const gop = binds.getOrPut(te.name) catch @panic("out of memory");
+                if (gop.found_existing) return gop.value_ptr.* == ty;
+                gop.value_ptr.* = ty;
+                return true;
+            }
+            const written = resolveInImplSource(self, node, source, binds);
+            return written != .unresolved and written == ty;
+        },
+        .pointer_type_expr => |p| {
+            if (ty.isBuiltin()) return false;
+            const info = self.module.types.get(ty);
+            if (info != .pointer) return false;
+            return matchPattern(self, p.pointee_type, info.pointer.pointee, source, binds);
+        },
+        .many_pointer_type_expr => |p| {
+            if (ty.isBuiltin()) return false;
+            const info = self.module.types.get(ty);
+            if (info != .many_pointer) return false;
+            return matchPattern(self, p.element_type, info.many_pointer.element, source, binds);
+        },
+        .optional_type_expr => |o| {
+            if (ty.isBuiltin()) return false;
+            const info = self.module.types.get(ty);
+            if (info != .optional) return false;
+            return matchPattern(self, o.inner_type, info.optional.child, source, binds);
+        },
+        .slice_type_expr => |s| {
+            if (ty.isBuiltin()) return false;
+            const info = self.module.types.get(ty);
+            if (info != .slice) return false;
+            return matchPattern(self, s.element_type, info.slice.element, source, binds);
+        },
+        .parameterized_type_expr => |pt| {
+            const cname = self.resolveConcreteTypeName(ty) orelse return false;
+            const author = self.struct_instance_author.get(cname) orelse return false;
+            const template = self.struct_instance_template.get(cname) orelse return false;
+            if (!std.mem.eql(u8, template, pt.name)) return false;
+            const instance_binds = self.struct_instance_bindings.getPtr(cname) orelse return false;
+            if (author.type_params.len != pt.args.len) return false;
+            for (author.type_params, pt.args) |tp, arg| {
+                if (tp.is_variadic) return false;
+                const aty = instance_binds.get(tp.name) orelse return false;
+                if (!matchPattern(self, arg, aty, source, binds)) return false;
+            }
+            return true;
+        },
+        else => return false,
+    }
+}
+
+/// Resolve a type written in an impl, in that impl's own module and under the
+/// binder assignment unification produced.
+fn resolveInImplSource(self: *Lowering, node: *const ast.Node, source: []const u8, binds: *std.StringHashMap(TypeId)) TypeId {
+    const saved_bindings = self.type_bindings;
+    const saved_source = self.current_source_file;
+    defer {
+        self.type_bindings = saved_bindings;
+        self.setCurrentSourceFile(saved_source);
+    }
+    var tb = std.StringHashMap(TypeId).init(self.alloc);
+    var it = binds.iterator();
+    while (it.next()) |b| tb.put(b.key_ptr.*, b.value_ptr.*) catch @panic("out of memory");
+    self.type_bindings = tb;
+    if (source.len != 0) self.setCurrentSourceFile(source);
+    return self.resolveTypeWithBindings(node);
+}
+
+/// Does the impl's protocol head, read under `binds`, name exactly this
+/// instantiation's canonical argument tuple? Aliases resolve on the way in, so
+/// `impl Series(Sample)` and `impl Series(f32)` land on one entry.
+fn headArgsMatch(self: *Lowering, inst: lower.Lowering.ParamProtocolInstance, entry: lower.Lowering.ParamImplEntry, binds: *std.StringHashMap(TypeId)) bool {
+    const ib = entry.block;
+    if (ib.protocol_type_args.len != inst.args.len) return false;
+    for (ib.protocol_type_args, inst.args) |arg_node, want| {
+        const got = resolveInImplSource(self, arg_node, entry.defining_module, binds);
+        if (got != want) return false;
+    }
+    return true;
 }
 
 /// The empty-set gate (spec §6.8): any value-CONSUMING operation — erasure,
@@ -164,14 +402,89 @@ fn hasAnyConformer(self: *Lowering, proto: TypeId) bool {
 pub fn refuseEmptySet(self: *Lowering, proto: TypeId, span: ?ast.Span) bool {
     const pd = self.getProtocolInfo(proto) orelse return false;
     if (pd.kind != .tagged) return false;
-    // A parameterized instantiation is staged: its own refusal already fired
-    // at the declaration position, and its impls live in the parameterized
-    // registry, so the conformer set here would read empty for the wrong
-    // reason.
-    if (pd.is_instantiation) return false;
     if (hasAnyConformer(self, proto)) return false;
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "no impl of '{s}' exists in this program — a tagged protocol's conformer set is whole-program, and nothing implements this one, so no value of it can exist", .{self.formatTypeName(proto)});
+        if (isInstantiation(self, proto)) {
+            d.addFmt(.err, span, "no impl of '{s}' exists in this program — a tagged conformer set is per instantiation and whole-program, and {s}, so no value of this instantiation can exist", .{ self.formatTypeName(proto), siblingInstantiations(self, proto) });
+        } else {
+            d.addFmt(.err, span, "no impl of '{s}' exists in this program — a tagged protocol's conformer set is whole-program, and nothing implements this one, so no value of it can exist", .{self.formatTypeName(proto)});
+        }
+    }
+    return true;
+}
+
+/// The other instantiations of `proto`'s family that DO have conformers,
+/// rendered for the empty-set diagnostic: an empty `Series(bool)` is almost
+/// always a wrong argument, and the tuples that do exist are the fix.
+fn siblingInstantiations(self: *Lowering, proto: TypeId) []const u8 {
+    const inst = self.param_protocol_instances.get(proto).?;
+    const own = self.protocolResolver().paramProtocolInstanceName(inst.base, inst.args);
+    var names = std.ArrayList([]const u8).empty;
+    defer names.deinit(self.alloc);
+    var counts = std.ArrayList(usize).empty;
+    defer counts.deinit(self.alloc);
+    var it = self.param_impl_map.iterator();
+    while (it.next()) |e| {
+        const key = e.key_ptr.*;
+        if (key.len <= inst.base.len) continue;
+        if (!std.mem.startsWith(u8, key, inst.base) or key[inst.base.len] != 0) continue;
+        for (e.value_ptr.items) |entry| {
+            var head_open = false;
+            for (entry.block.protocol_type_args) |a| {
+                if (patternHasBinder(a)) head_open = true;
+            }
+            if (head_open) continue;
+            const name = self.protocolResolver().paramProtocolInstanceName(inst.base, entry.target_args);
+            if (std.mem.eql(u8, name, own)) continue;
+            var seen = false;
+            for (names.items, 0..) |n, i| {
+                if (!std.mem.eql(u8, n, name)) continue;
+                counts.items[i] += 1;
+                seen = true;
+            }
+            if (seen) continue;
+            names.append(self.alloc, name) catch @panic("out of memory");
+            counts.append(self.alloc, 1) catch @panic("out of memory");
+        }
+    }
+    var rendered = std.ArrayList([]const u8).empty;
+    defer rendered.deinit(self.alloc);
+    for (names.items, counts.items) |n, c| {
+        const plural: []const u8 = if (c == 1) "" else "s";
+        rendered.append(self.alloc, std.fmt.allocPrint(self.alloc, "'{s}' ({d} impl{s})", .{ n, c, plural }) catch @panic("out of memory")) catch @panic("out of memory");
+    }
+    if (rendered.items.len == 0)
+        return std.fmt.allocPrint(self.alloc, "nothing implements '{s}' at any instantiation", .{inst.base}) catch @panic("out of memory");
+    std.mem.sort([]const u8, rendered.items, {}, struct {
+        fn lt(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b) == .lt;
+        }
+    }.lt);
+    var buf = std.ArrayList(u8).empty;
+    buf.appendSlice(self.alloc, "'") catch @panic("out of memory");
+    buf.appendSlice(self.alloc, inst.base) catch @panic("out of memory");
+    buf.appendSlice(self.alloc, "' is implemented at ") catch @panic("out of memory");
+    for (rendered.items, 0..) |n, i| {
+        if (i > 0) buf.appendSlice(self.alloc, if (i + 1 == rendered.items.len) " and " else ", ") catch @panic("out of memory");
+        buf.appendSlice(self.alloc, n) catch @panic("out of memory");
+    }
+    return buf.items;
+}
+
+/// The erasure gate for an INSTANTIATION: membership is the tuple's own, so
+/// `Buffer(bool)` is no member of `Series(f32)` however well its methods line
+/// up by name. The per-method conformance check that follows works off the
+/// impl registries, which are keyed per family — only the set knows which
+/// tuple a blanket admitted this type at.
+pub fn refuseNonMember(self: *Lowering, proto: TypeId, concrete: TypeId, span: ast.Span) bool {
+    if (!isTagged(self, proto) or !isInstantiation(self, proto)) return false;
+    if (conforms(self, proto, concrete)) return false;
+    if (self.diagnostics) |d| {
+        if (otherInstantiationOf(self, proto, concrete)) |other| {
+            d.addFmt(.err, span, "'{s}' implements '{s}', not '{s}' — each instantiation of a tagged protocol family owns its conformer set, so a conformer of another instantiation cannot erase into this one", .{ self.formatTypeName(concrete), other, self.formatTypeName(proto) });
+        } else {
+            d.addFmt(.err, span, "'{s}' does not implement '{s}' — a tagged conformer set is whole-program and per instantiation, and no impl admits this type at this argument tuple", .{ self.formatTypeName(concrete), self.formatTypeName(proto) });
+        }
     }
     return true;
 }
@@ -203,9 +516,45 @@ pub fn refuseOutOfSetDowncast(self: *Lowering, recv_ty: TypeId, written: TypeId,
     if (refuseEmptySet(self, recv_ty, span)) return true;
     if (conforms(self, recv_ty, target)) return false;
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "'{s}' does not implement '{s}' — a tagged protocol's conformer set is whole-program, so this downcast can never match; implement it, or name a conformer", .{ self.formatTypeName(target), self.formatTypeName(recv_ty) });
+        if (otherInstantiationOf(self, recv_ty, target)) |other| {
+            d.addFmt(.err, span, "'{s}' implements '{s}', not '{s}' — each instantiation of a tagged protocol family owns its conformer set and tag space, so a conformer of another instantiation can never match here", .{ self.formatTypeName(target), other, self.formatTypeName(recv_ty) });
+        } else {
+            d.addFmt(.err, span, "'{s}' does not implement '{s}' — a tagged protocol's conformer set is whole-program, so this downcast can never match; implement it, or name a conformer", .{ self.formatTypeName(target), self.formatTypeName(recv_ty) });
+        }
     }
     return true;
+}
+
+/// The instantiation of `proto`'s own family that `target` DOES conform to,
+/// when there is one. A conformer of a sibling tuple is the common mistake the
+/// per-instantiation rule catches, and naming the tuple it belongs to is the
+/// whole fix.
+fn otherInstantiationOf(self: *Lowering, proto: TypeId, target: TypeId) ?[]const u8 {
+    const inst = self.param_protocol_instances.get(proto) orelse return null;
+    var it = self.param_impl_map.iterator();
+    while (it.next()) |e| {
+        const key = e.key_ptr.*;
+        if (key.len <= inst.base.len) continue;
+        if (!std.mem.startsWith(u8, key, inst.base) or key[inst.base.len] != 0) continue;
+        for (e.value_ptr.items) |entry| {
+            var head_open = false;
+            for (entry.block.protocol_type_args) |a| {
+                if (patternHasBinder(a)) head_open = true;
+            }
+            if (head_open) continue;
+            const cand: lower.Lowering.ParamProtocolInstance = .{ .base = inst.base, .args = entry.target_args, .decl = inst.decl };
+            var found = std.ArrayList(TypeId).empty;
+            defer found.deinit(self.alloc);
+            collectFromImpl(self, cand, entry, &found);
+            for (found.items) |c| {
+                if (c != target) continue;
+                const name = self.protocolResolver().paramProtocolInstanceName(inst.base, entry.target_args);
+                if (std.mem.eql(u8, name, self.formatTypeName(proto))) continue;
+                return name;
+            }
+        }
+    }
+    return null;
 }
 
 /// A type-switch arm on a tagged subject that names a non-conformer never
@@ -439,9 +788,9 @@ pub const PendingRoutine = struct {
     fid: FuncId,
 };
 
-/// Assign the dense tags. Canonical order is the conformer's type identity
-/// (its canonical display name), so numbering is deterministic and
-/// independent of the order sites were lowered in.
+/// Assign the dense tags. Canonical order is the conformer's canonical
+/// identity — its nominal-aware mangle, not its display name, so two
+/// same-spelled conformers from different modules order deterministically.
 fn numberTags(self: *Lowering) void {
     var it = self.tagged_members.iterator();
     while (it.next()) |entry| {
@@ -449,7 +798,7 @@ fn numberTags(self: *Lowering) void {
         const Ctx = struct {
             l: *Lowering,
             fn lt(ctx: @This(), a: TypeId, b: TypeId) bool {
-                return std.mem.order(u8, ctx.l.formatTypeName(a), ctx.l.formatTypeName(b)) == .lt;
+                return std.mem.order(u8, ctx.l.mangleTypeName(a), ctx.l.mangleTypeName(b)) == .lt;
             }
         };
         std.mem.sort(TypeId, list.items, Ctx{ .l = self }, Ctx.lt);

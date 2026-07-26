@@ -1,0 +1,5 @@
+// A second impl of the same pair, in another module.
+#import "modules/std.sx";
+#import "./1946-diagnostics-tagged-templated-coherence-types.sx";
+
+impl Series(f32) for Sine { at :: (self: *Sine, i: i64) -> f32 { self.freq * 2.0 } }
