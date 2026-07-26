@@ -1,0 +1,21 @@
+// Retirement is exact: a REJECTED branch retires the whole surface it named.
+//
+// The same program as 1990 with the condition inverted. Counting an import's
+// module holds the impl set open only while the branch is undecided — the
+// moment the branch is rejected, the module it names can never reach this
+// program, so the contribution comes back in full and the negative the reader
+// asked is publishable. Waiting is not the answer; it is what precedes one.
+#import "modules/std.sx";
+#import "./1990-protocols-expansion-branch-import-shapes.sx";
+
+inline if has_impl(Show, Item) { ADMITTED :: 1; } else { ADMITTED :: 0; }
+
+inline if POINTER_SIZE == 0 {
+    #import "./1990-protocols-expansion-branch-import-impl.sx";
+} else {
+    NARROW :: 1;
+}
+
+main :: () {
+    print("{}\n", ADMITTED);
+}

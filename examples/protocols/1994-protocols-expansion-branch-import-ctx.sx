@@ -1,0 +1,4 @@
+// A module whose surface is a Context field. Importing it is what puts `depth`
+// in the one program layout, so a branch that imports it is a branch that can
+// still grow the Context.
+#context_extend depth: i64 = 3;

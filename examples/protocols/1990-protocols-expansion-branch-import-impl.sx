@@ -1,0 +1,5 @@
+// A module that exists only to author an impl. Nothing imports it at module
+// scope: it is reachable exclusively through the branch below the reader.
+#import "./1990-protocols-expansion-branch-import-shapes.sx";
+
+impl Show for Item { fmt :: (self: *Item) -> i64 { self.n * 3 } }

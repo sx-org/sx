@@ -1,0 +1,3 @@
+// The module the branch names. It authors nothing itself — everything it
+// brings, it brings through its own flat import.
+#import "./1996-protocols-expansion-branch-import-deep.sx";

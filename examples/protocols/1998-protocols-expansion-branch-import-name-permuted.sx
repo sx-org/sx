@@ -1,0 +1,19 @@
+// The same program as 1992, written in the other order.
+//
+// The name arrives from the imported module either way: read first, the miss
+// waits for the branch to decide; imported first, the name is simply there.
+// Declaration order decides when the question is answerable, never what the
+// answer is.
+#import "modules/std.sx";
+
+inline if POINTER_SIZE == 8 {
+    #import "./1992-protocols-expansion-branch-import-wide.sx";
+} else {
+    NARROW :: 1;
+}
+
+inline if WIDE { A :: 1; } else { A :: 0; }
+
+main :: () {
+    print("{}\n", A);
+}

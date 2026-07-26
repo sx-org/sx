@@ -209,7 +209,7 @@ const Expansion = struct {
     fn registerDriversIn(ex: *Expansion, decls: []const *Node, seen: *std.AutoHashMap(*const Node, void)) void {
         for (decls) |decl| {
             if (imports.isModuleDriver(decl)) {
-                ex.self.expansion.registerDriver(decl);
+                ex.self.expansion.registerDriver(decl, ex.self.program_index.module_cache);
                 continue;
             }
             if (decl.data != .namespace_decl) continue;
@@ -929,7 +929,7 @@ const Group = struct {
     /// per-`inline for` name ledger (null outside one); false means the
     /// expansion was abandoned after a diagnostic.
     fn expandDriver(g: *Group, decl: *const Node, src: ?[]const u8, declared: ?*std.StringHashMap([]const u8), cursor: []const u8) bool {
-        g.ex.self.expansion.registerDriver(decl);
+        g.ex.self.expansion.registerDriver(decl, g.ex.self.program_index.module_cache);
         g.ex.just_parked = false;
         const done = g.expandDriverBody(decl, src, declared, cursor);
         // A driver that parked is not decided: it holds its contributions until
@@ -1071,6 +1071,12 @@ const Group = struct {
                 .visibility = stmt.visibility,
             };
             if (mint) g.mintFacts(ns_node, source);
+            // The module arrives with its own drivers, and they fold later —
+            // when the alias's views are expanded. They register HERE, while
+            // this driver's registration still covers what they can declare,
+            // so retiring it opens no window in which nothing accounts for
+            // them.
+            g.ex.registerDrivers(imported.decls);
             g.emit(ns_node);
             return;
         }

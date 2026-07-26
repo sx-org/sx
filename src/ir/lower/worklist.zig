@@ -15,6 +15,12 @@
 //! still gain. Every branch and every iteration counts — the whole node is
 //! unexpanded, so no arm can be ruled out yet.
 //!
+//! A branch-local `#import` spells a whole MODULE, so the sweep counts what
+//! that module authors — transitively, through its own imports and its own
+//! unexpanded branches — as contributions the import could still make. The
+//! module is read out of the cache it was contained in and nothing is merged:
+//! only selecting the branch makes it an edge.
+//!
 //! Contributions are what finality reads. `setFinal` cannot publish a negative
 //! about a protocol some unexpanded body still mentions, and a namespace's
 //! member surface publishes only once no driver can still declare into it.
@@ -31,6 +37,7 @@
 const std = @import("std");
 const ast = @import("../../ast.zig");
 const errors = @import("../../errors.zig");
+const imports = @import("../../imports.zig");
 const comptime_vm = @import("../comptime_vm.zig");
 const Node = ast.Node;
 
@@ -124,15 +131,19 @@ pub const Worklist = struct {
     }
 
     /// Register a module-scope driver with the contributions its unexpanded
-    /// branches could still make. Idempotent per node.
-    pub fn registerDriver(w: *Worklist, node: *const Node) void {
+    /// branches could still make. `cache` is every resolved module, so a
+    /// branch-local `#import`'s module is counted too. Idempotent per node.
+    pub fn registerDriver(w: *Worklist, node: *const Node, cache: ?*const imports.ModuleCache) void {
         if (w.known.contains(node)) return;
         var scan = Scan{
             .alloc = w.alloc,
+            .cache = cache,
             .impls = std.ArrayList([]const u8).empty,
             .names = std.ArrayList([]const u8).empty,
+            .counted = std.StringHashMap(bool).init(w.alloc),
         };
-        scan.driver(node, 0);
+        defer scan.counted.deinit();
+        scan.driver(node, 0, true);
         const impls = scan.impls.toOwnedSlice(w.alloc) catch &.{};
         // The names land in the scope of the file the driver was written in.
         const scope = node.source_file orelse "";
@@ -320,39 +331,96 @@ pub const Worklist = struct {
 /// `inline for` — the cursor is unsubstituted, which only widens the answer.
 const Scan = struct {
     alloc: std.mem.Allocator,
+    /// Every resolved module, keyed by canonical path — where a branch-local
+    /// `#import`'s module has been waiting since import resolution contained
+    /// it, under the very path the node carries.
+    cache: ?*const imports.ModuleCache,
     impls: std.ArrayList([]const u8),
     names: std.ArrayList([]const u8),
     contexts: u32 = 0,
+    /// Modules already counted, and whether their NAMES were: a module a
+    /// diamond reaches twice contributes once, and one reached behind an alias
+    /// contributes no names until some path reaches it flat.
+    counted: std.StringHashMap(bool),
 
-    fn driver(s: *Scan, node: *const Node, depth: u8) void {
+    /// `flat` is whether declarations found here would land in the registering
+    /// driver's own scope. They do in its own branches; behind a namespace
+    /// alias they never do — the scope gains the alias and nothing else.
+    fn driver(s: *Scan, node: *const Node, depth: u8, flat: bool) void {
         if (depth > 16) return;
         switch (node.data) {
             .if_expr => |ie| {
-                s.body(ie.then_branch, depth);
-                if (ie.else_branch) |eb| s.body(eb, depth);
+                s.body(ie.then_branch, depth, flat);
+                if (ie.else_branch) |eb| s.body(eb, depth, flat);
             },
             .match_expr => |me| {
-                for (me.arms) |arm| s.body(arm.body, depth);
+                for (me.arms) |arm| s.body(arm.body, depth, flat);
             },
-            .for_expr => |fe| s.body(fe.body, depth),
+            .for_expr => |fe| s.body(fe.body, depth, flat),
             else => {},
         }
     }
 
-    fn body(s: *Scan, node: *const Node, depth: u8) void {
+    fn body(s: *Scan, node: *const Node, depth: u8, flat: bool) void {
         const stmts: []const *Node = if (node.data == .block)
             node.data.block.stmts
         else
             &[_]*Node{@constCast(node)};
         for (stmts) |stmt| {
             switch (stmt.data) {
-                .if_expr, .match_expr, .for_expr => s.driver(stmt, depth + 1),
+                .if_expr, .match_expr, .for_expr => s.driver(stmt, depth + 1, flat),
                 .impl_block => |ib| s.addImpl(ib.protocol_name),
-                .import_decl => |imp| if (imp.name) |ns| s.addName(ns),
+                .import_decl => |imp| {
+                    if (flat) {
+                        if (imp.name) |ns| s.addName(ns);
+                    }
+                    s.module(imp.path, flat and imp.name == null, depth + 1);
+                },
                 .context_extend_decl => s.contexts += 1,
                 else => {},
             }
-            if (stmt.data.declName()) |name| s.addName(name);
+            if (flat) {
+                if (stmt.data.declName()) |name| s.addName(name);
+            }
+        }
+    }
+
+    /// The contribution surface of the module an `#import` names, counted
+    /// where selecting the branch would put it and merged nowhere. A flat
+    /// import would merge the module's declarations into the driver's scope,
+    /// so those are names that scope may still gain; behind an alias only the
+    /// alias is. Impls and `#context_extend` are program-global either way.
+    /// The module's flat imports are already part of its declaration list, and
+    /// the drivers it holds are swept exactly like the registering one — a
+    /// branch two modules away contributes the same.
+    fn module(s: *Scan, path: []const u8, flat: bool, depth: u8) void {
+        if (depth > 16) return;
+        const cache = s.cache orelse return;
+        const resolved = cache.get(path) orelse return;
+        const seen = s.counted.getOrPut(path) catch return;
+        const first = !seen.found_existing;
+        if (!first and (seen.value_ptr.* or !flat)) return;
+        seen.value_ptr.* = flat;
+        for (resolved.decls) |decl| {
+            if (imports.isModuleDriver(decl)) {
+                s.driver(decl, depth + 1, flat);
+                continue;
+            }
+            switch (decl.data) {
+                .impl_block => |ib| s.addImpl(ib.protocol_name),
+                .context_extend_decl => {
+                    if (first) s.contexts += 1;
+                },
+                .namespace_decl => |ns| {
+                    if (flat) s.addName(ns.name);
+                    s.module(ns.target_module_path, false, depth + 1);
+                },
+                else => {
+                    if (flat) {
+                        if (decl.data.declName()) |name| s.addName(name);
+                    }
+                },
+            }
         }
     }
 

@@ -1,0 +1,5 @@
+// The far end of the chain: the only `impl Tag for Cell` in the program, two
+// modules away from the branch that can reach it.
+#import "./1996-protocols-expansion-branch-import-kinds.sx";
+
+impl Tag for Cell { id :: (self: *Cell) -> i64 { self.n * 5 } }
