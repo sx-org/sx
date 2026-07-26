@@ -170,6 +170,13 @@ fn recycle(t: *Task) void {
     free_list = t;
 }
 
+/// Give up on a parked task: it is never resumed, so its stack returns to the
+/// pool. Only reached once the evaluation it carries has been refused.
+pub fn abandon(t: *Task) void {
+    std.debug.assert(t.state == .parked);
+    recycle(t);
+}
+
 fn asyncImpl(
     _: ?*anyopaque,
     result: []u8,

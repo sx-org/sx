@@ -18,6 +18,7 @@ const FuncId = inst_mod.FuncId;
 const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
+const lower_tagged = @import("tagged.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const ConstFoldFrame = lower.ConstFoldFrame;
@@ -674,7 +675,13 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     // fallback. The VM is hardened against malformed lowering-time IR (it BAILS,
     // never panics; see `comptime_vm.refTy`/`badRef`), and bails BEFORE any table
     // mutation, so a failed mint never leaves a partial type.
-    const vm_result = comptime_vm.tryEval(self.alloc, self.module, func_id, null, null);
+    const evaluation = comptime_vm.tryEval(self.alloc, self.module, func_id, null, null, self.factScheduler());
+    if (evaluation.state == .parked) {
+        self.expansion.parkEvaluation(evaluation, "this compile-time type construction", lower_tagged.describeFact(self, evaluation.state.parked), span);
+        return null;
+    }
+    defer evaluation.destroy();
+    const vm_result = evaluation.completed();
     if (std.c.getenv("SX_COMPTIME_FLAT_TRACE") != null) {
         if (vm_result != null)
             std.debug.print("[comptime-vm] HANDLED  type-fn\n", .{})
@@ -885,7 +892,13 @@ pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
     // expression. `regToValue` dupes the result string into `self.alloc`, so it
     // outlives the VM's arena.
     const ct_func_id = self.createComptimeFunction("__insert", .expansion, expr, .string);
-    const result = comptime_vm.tryEval(self.alloc, self.module, ct_func_id, null, null) orelse return null;
+    const evaluation = comptime_vm.tryEval(self.alloc, self.module, ct_func_id, null, null, self.factScheduler());
+    if (evaluation.state == .parked) {
+        self.expansion.parkEvaluation(evaluation, "this `#insert`", lower_tagged.describeFact(self, evaluation.state.parked), expr.span);
+        return null;
+    }
+    defer evaluation.destroy();
+    const result = evaluation.completed() orelse return null;
     const str = switch (result) {
         .string => |s| s,
         else => return null,

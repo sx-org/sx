@@ -19,9 +19,18 @@
 //! member surface publishes only once no driver can still declare into it.
 //! Positives are untouched: membership only grows, so a pair that IS in a set
 //! is readable the moment it lands.
+//!
+//! A unit that needs a fact none of that can answer yet PARKS here rather than
+//! failing: a driver whose condition asked, or a whole evaluation suspended at
+//! the instruction that asked — which keeps its VM, task, heap, and VM-local
+//! Context for as long as the worklist holds it. The drain resumes each one
+//! when its fact fires. Quiescence with a bookmark still down is the
+//! expansion deadlock, and it is ONE diagnostic naming every parked unit.
 
 const std = @import("std");
 const ast = @import("../../ast.zig");
+const errors = @import("../../errors.zig");
+const comptime_vm = @import("../comptime_vm.zig");
 const Node = ast.Node;
 
 /// What a driver is. The drain treats all three alike — register, run, retire
@@ -47,9 +56,26 @@ const Item = struct {
     retired: bool,
 };
 
+/// Work the drain cannot run: a driver whose condition asked a question no set
+/// can answer yet, or an evaluation suspended at the instruction that asked
+/// one. A parked evaluation OWNS its VM — heap, task, and VM-local Context —
+/// until it is resumed or refused, so the bookmark it left is intact for as
+/// long as the worklist holds it.
+pub const Parked = struct {
+    /// The suspended evaluation, or null when a driver's fold is what waits.
+    evaluation: ?*comptime_vm.Evaluation,
+    /// What to call it in the diagnostic, and the fact it awaits.
+    what: []const u8,
+    awaited: []const u8,
+    span: ast.Span,
+};
+
 pub const Worklist = struct {
     alloc: std.mem.Allocator,
     items: std.ArrayList(Item),
+    /// Everything the drain left waiting. Quiescence with any of these is the
+    /// expansion deadlock.
+    parked: std.ArrayList(Parked) = .empty,
     /// Registered driver nodes, so a driver reached through a second view of
     /// its module registers its contributions exactly once.
     known: std.AutoHashMap(*const Node, usize),
@@ -154,6 +180,49 @@ pub const Worklist = struct {
 
     pub fn releaseRun(w: *Worklist, node: *const Node) void {
         _ = w.driving.remove(node);
+    }
+
+    /// A driver the drain could not fold: it awaits `awaited`, and until that
+    /// fires it stays undecided — its contributions are still out.
+    pub fn parkDriver(w: *Worklist, what: []const u8, awaited: []const u8, span: ast.Span) void {
+        w.parked.append(w.alloc, .{
+            .evaluation = null,
+            .what = what,
+            .awaited = awaited,
+            .span = span,
+        }) catch {};
+    }
+
+    /// An evaluation suspended at the instruction that asked the fact. The
+    /// worklist owns it from here: its VM, task, heap, and VM-local Context
+    /// stay alive until it resumes or the deadlock refuses it.
+    pub fn parkEvaluation(w: *Worklist, evaluation: *comptime_vm.Evaluation, what: []const u8, awaited: []const u8, span: ast.Span) void {
+        w.parked.append(w.alloc, .{
+            .evaluation = evaluation,
+            .what = what,
+            .awaited = awaited,
+            .span = span,
+        }) catch {};
+    }
+
+    /// Runnable work is exhausted and something is still parked: every waiting
+    /// unit needs a fact only another waiting unit could publish, which is a
+    /// program admitting more than one consistent outcome. ONE diagnostic names
+    /// them all and the facts they await (§7.9); sx refuses rather than
+    /// electing a fixpoint.
+    pub fn reportDeadlock(w: *Worklist, diagnostics: ?*errors.DiagnosticList) void {
+        if (w.parked.items.len == 0) return;
+        if (diagnostics) |d| {
+            const id = d.addFmtId(.err, w.parked.items[0].span, "expansion deadlock — nothing can run: every compile-time unit still waiting needs a fact only another waiting unit could publish, so the expansion depends negatively on a set it feeds", .{});
+            for (w.parked.items) |p| {
+                d.addNoteFmt(id, p.span, "{s} awaits {s}", .{ p.what, p.awaited });
+            }
+            d.addHelp(id, w.parked.items[0].span, "decide the declaration outside the set it queries — a question whose answer changes what it asks about has no single answer", null);
+        }
+        for (w.parked.items) |p| {
+            if (p.evaluation) |e| e.destroy();
+        }
+        w.parked.clearRetainingCapacity();
     }
 
     /// Can an undecided driver still admit a conformer into `name`'s sets?

@@ -23,6 +23,7 @@ const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 const lower = @import("../lower.zig");
 const mod_mod = @import("../module.zig");
+const comptime_vm = @import("../comptime_vm.zig");
 const program_index_mod = @import("../program_index.zig");
 
 const Lowering = lower.Lowering;
@@ -793,6 +794,11 @@ fn dispatchRoutine(self: *Lowering, proto_ty: TypeId, pd: ProtocolDeclInfo, meth
     func.has_implicit_ctx = has_ctx;
     const fid = self.module.addFunction(func);
     self.tagged_dispatch_fns.put(key, fid) catch @panic("out of memory");
+    // The routine is a dispatch routine from the instant it exists, arms or no
+    // arms: an evaluation reaching it before any arm is materialized must
+    // AWAIT the one it needs, not fall through to a body that is not written
+    // until whole-program emission.
+    self.module.tagged_dispatch.append(self.alloc, .{ .routine = fid, .members = &.{}, .arms = &.{} }) catch @panic("out of memory");
     const job = PendingRoutine{ .proto = proto_ty, .pd = pd, .method = method, .fid = fid };
     self.tagged_pending.append(self.alloc, job) catch @panic("out of memory");
     // The routine is bodied at whole-program emission, but a compile-time
@@ -821,6 +827,65 @@ fn publishSymbolicDispatch(self: *Lowering, job: PendingRoutine) void {
     const members = self.tagged_members.get(job.proto) orelse return;
     if (members.items.len == 0) return;
     registerSymbolicDispatch(self, job, callSiteMembers(self, job.proto));
+}
+
+// ── The scheduled facts (§7.9) ──────────────────────────────────────────
+
+/// The bookmark scheduler a comptime evaluation under the expansion discipline
+/// runs with. Answering a fact is real work — admitting the pair, materializing
+/// its arm, republishing the routine's selection — and all of it happens while
+/// the evaluation stays suspended at the instruction that asked.
+pub fn factScheduler(self: *Lowering) comptime_vm.FactScheduler {
+    return .{ .ctx = self, .resolve = resolveFact };
+}
+
+fn resolveFact(ctx: ?*anyopaque, request: comptime_vm.FactRequest) comptime_vm.FactAnswer {
+    const self: *Lowering = @ptrCast(@alignCast(ctx.?));
+    return switch (request.kind) {
+        .conformer_arm => publishConformerArm(self, request.routine, request.concrete),
+    };
+}
+
+/// A comptime dispatch found no arm for the value's carried concrete type.
+/// Membership only grows, so a pair the set already holds is answered by
+/// materializing its arm and republishing the routine's selection. A pair a
+/// still-open set can yet take in leaves the evaluation parked. A closed set
+/// that lacks it never will, and the dispatch fails through its ordinary path.
+fn publishConformerArm(self: *Lowering, routine: FuncId, concrete: TypeId) comptime_vm.FactAnswer {
+    const job = pendingRoutine(self, routine) orelse return .{ .now = .unavailable };
+    _ = admitDeclaredImpls(self, job.proto);
+    if (!conforms(self, job.proto, concrete)) {
+        return if (setFinal(self, job.proto)) .{ .now = .unavailable } else .later;
+    }
+    const method = self.module.types.internString(job.method.name);
+    const key = ArmKey{ .proto = job.proto, .concrete = concrete, .method = method };
+    if (!self.tagged_arms.contains(key)) {
+        const cname = self.resolveConcreteTypeName(concrete) orelse return .{ .now = .unavailable };
+        const thunk = self.createProtocolThunk(job.proto, job.pd.name, cname, concrete, job.method);
+        self.tagged_arms.put(key, thunk) catch @panic("out of memory");
+    }
+    registerSymbolicDispatch(self, job, callSiteMembers(self, job.proto));
+    return .{ .now = .published };
+}
+
+fn pendingRoutine(self: *Lowering, routine: FuncId) ?PendingRoutine {
+    for (self.tagged_pending.items) |job| {
+        if (job.fid == routine) return job;
+    }
+    return null;
+}
+
+/// The fact a parked evaluation awaits, rendered for the deadlock diagnostic.
+pub fn describeFact(self: *Lowering, request: comptime_vm.FactRequest) []const u8 {
+    switch (request.kind) {
+        .conformer_arm => {
+            const proto = if (pendingRoutine(self, request.routine)) |job| self.formatTypeName(job.proto) else "a tagged protocol";
+            return std.fmt.allocPrint(self.alloc, "'{s}' to take in '{s}' so the dispatch it reached has an arm", .{
+                proto,
+                self.formatTypeName(request.concrete),
+            }) catch "a conformer arm";
+        },
+    }
 }
 
 /// Emit a tagged method call: the value plus the user args, straight into the
@@ -1072,6 +1137,9 @@ pub fn convergeTaggedSets(self: *Lowering) void {
         }
         if (changed) self.expansion.pushRound();
     }
+    // The fixpoint is the last driver class to drain, so its quiescence is the
+    // worklist's: anything still parked here never had a fact coming.
+    self.expansion.reportDeadlock(self.diagnostics);
 
     checkCoherence(self);
     numberTags(self);

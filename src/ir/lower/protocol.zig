@@ -30,17 +30,13 @@ const ProtocolDefaultDispatchDomain = lower.ProtocolDefaultDispatchDomain;
 /// Returns false on any malformed protocol-arg shape (caller
 /// reports a diagnostic if it wants).
 pub fn computeHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
+    if (taggedProtocolOf(self, proto_node)) |pty| return taggedHasImpl(self, pty, ty, proto_node.span);
     switch (proto_node.data) {
         .identifier, .type_expr => {
             const name: []const u8 = switch (proto_node.data) {
                 .identifier => |id| id.name,
                 else => proto_node.data.type_expr.name,
             };
-            if (self.protocolResolver().resolveProtocol(name, self.current_source_file)) |p| {
-                if (p.ty) |pty| {
-                    if (lower_tagged.isTagged(self, pty)) return taggedHasImpl(self, pty, ty, proto_node.span);
-                }
-            }
             return self.protocolResolver().hasImplPlain(name, ty);
         },
         .call => |c| {
@@ -49,15 +45,6 @@ pub fn computeHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool
                 .type_expr => |te| te.name,
                 else => return false,
             };
-            // A tagged family answers per instantiation: the query NAMES the
-            // instantiation, which materializes it exactly as any other mention
-            // would (§6.7).
-            if (self.protocolResolver().resolveParamProtocolHead(p_name, null)) |pd| {
-                if (pd.kind == .tagged) {
-                    const pty = instantiateParamProtocol(self, pd, c.args);
-                    return taggedHasImpl(self, pty, ty, proto_node.span);
-                }
-            }
             // Resolve protocol type args. Each goes through
             // `resolveTypeArg` so type aliases / generics / pack-
             // indexed types all work as protocol args.
@@ -78,9 +65,51 @@ pub fn computeHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool
     }
 }
 
+/// The tagged instantiation a `has_impl`-shaped protocol spelling names, or
+/// null when it names something else — the other kinds answer site-local impl
+/// visibility, which is a different question. A parameterized family answers
+/// per instantiation: the query NAMES the instantiation, which materializes it
+/// exactly as any other mention would (§6.7).
+pub fn taggedProtocolOf(self: *Lowering, proto_node: *const Node) ?TypeId {
+    switch (proto_node.data) {
+        .identifier, .type_expr => {
+            const name: []const u8 = switch (proto_node.data) {
+                .identifier => |id| id.name,
+                else => proto_node.data.type_expr.name,
+            };
+            const p = self.protocolResolver().resolveProtocol(name, self.current_source_file) orelse return null;
+            const pty = p.ty orelse return null;
+            return if (lower_tagged.isTagged(self, pty)) pty else null;
+        },
+        .call => |c| {
+            const p_name: []const u8 = switch (c.callee.data) {
+                .identifier => |id| id.name,
+                .type_expr => |te| te.name,
+                else => return null,
+            };
+            const pd = self.protocolResolver().resolveParamProtocolHead(p_name, null) orelse return null;
+            if (pd.kind != .tagged) return null;
+            return instantiateParamProtocol(self, pd, c.args);
+        },
+        else => return null,
+    }
+}
+
+/// What the canonical membership source answers about a `has_impl`-shaped
+/// question, with the instantiation it resolved to — so a caller that can WAIT
+/// for the set to close names the right one in its bookmark. Null when the
+/// spelling names no tagged protocol.
+pub const TaggedQuery = struct { proto: TypeId, state: lower_tagged.Membership };
+
+pub fn taggedMembershipOf(self: *Lowering, proto_node: *const Node, ty: TypeId) ?TaggedQuery {
+    const proto_ty = taggedProtocolOf(self, proto_node) orelse return null;
+    return .{ .proto = proto_ty, .state = lower_tagged.taggedConformsNow(self, proto_ty, ty) };
+}
+
 /// `has_impl` on a tagged protocol is the canonical membership question asked
-/// at type level. It has to answer during lowering, so an unutterable negative
-/// refuses rather than reporting a `false` a later conformer could contradict.
+/// at type level. A site that must decide NOW — one outside the expansion
+/// worklist, which has nowhere to park — refuses rather than reporting a
+/// `false` a later conformer could contradict.
 fn taggedHasImpl(self: *Lowering, proto_ty: TypeId, ty: TypeId, span: ast.Span) bool {
     return switch (lower_tagged.taggedConformsNow(self, proto_ty, ty)) {
         .member => true,

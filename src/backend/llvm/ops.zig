@@ -1370,7 +1370,9 @@ pub const Ops = struct {
             //     `comptime_failed`): emit the located diagnostic and gate the
             //     build, NEVER fall through to a runtime call over `---` storage
             //     (issue 0182 — that produced exit-0 garbage with no diagnostic).
-            if (comptime_vm.tryEval(self.e.alloc, self.e.ir_mod, call_op.callee, &self.e.build_config, self.e.import_sources)) |result| {
+            const evaluation = comptime_vm.tryEval(self.e.alloc, self.e.ir_mod, call_op.callee, &self.e.build_config, self.e.import_sources, null);
+            defer evaluation.destroy();
+            if (evaluation.completed()) |result| {
                 if (result.asInt()) |v| {
                     self.e.mapRef(c.LLVMConstInt(self.e.toLLVMType(instruction.ty), @bitCast(v), 0));
                     return;

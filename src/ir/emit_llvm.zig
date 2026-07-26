@@ -943,7 +943,9 @@ pub const LLVMEmitter = struct {
             // A VM-run `#run` side-effect writes its `print` output directly to
             // fd 1 via host-FFI (no buffered interp output to flush). A bail is a
             // build-gating error naming the reason.
-            const result = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources) orelse {
+            const evaluation = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources, null);
+            defer evaluation.destroy();
+            const result = evaluation.completed() orelse {
                 std.debug.print("error: comptime `#run` ({s}) failed: {s}\n", .{ fname, comptime_vm.last_bail_reason orelse "<unknown>" });
                 self.comptime_failed = true;
                 continue;
@@ -1010,7 +1012,9 @@ pub const LLVMEmitter = struct {
                 // fallback. A bail is ALWAYS a build-gating error naming the
                 // reason; its result Value is materialized by `valueToLLVMConst`.
                 sx_trace_clear();
-                const result = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources) orelse {
+                const evaluation = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources, null);
+                defer evaluation.destroy();
+                const result = evaluation.completed() orelse {
                     // Surface the bail loudly instead of silently filling the
                     // const with zero. Leave the global undef; comptime_failed
                     // halts the build before it ships.
