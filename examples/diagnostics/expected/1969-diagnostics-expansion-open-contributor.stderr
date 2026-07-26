@@ -1,0 +1,11 @@
+error: cannot decide whether 'Widget' implements 'View' here — a tagged conformer set is whole-program, and this one is still open: an impl can still admit 'Widget' after this point, so a negative answered here could be contradicted later; a value probe ('x.(?P)') at an ordinary site answers against the final set instead
+  --> examples/diagnostics/1969-diagnostics-expansion-open-contributor.sx:19:20
+   |
+19 | inline if has_impl(View, Widget) { FIRST :: 1; } else { FIRST :: 0; }
+   |                    ^^^^
+
+error: cannot decide whether 'Panel' implements 'Tally' here — a tagged conformer set is whole-program, and this one is still open: an impl can still admit 'Panel' after this point, so a negative answered here could be contradicted later; a value probe ('x.(?P)') at an ordinary site answers against the final set instead
+  --> examples/diagnostics/1969-diagnostics-expansion-open-contributor.sx:30:20
+   |
+30 | inline if has_impl(Tally, Panel) { SECOND :: 1; } else { SECOND :: 0; }
+   |                    ^^^^^
