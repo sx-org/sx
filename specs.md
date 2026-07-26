@@ -1017,9 +1017,12 @@ writers); `vtable` keeps many-method values small.
 
 Every erased protocol belongs to one of two classes:
 
-- **value/own** (unmarked): a protocol value `P` OWNS its ctx — a
-  heap copy of the receiver, made at erasure through
-  `context.allocator`. `*P` is the borrowed view.
+- **value/own** (unmarked): erasure creates manually managed,
+  allocation-backed storage — a heap copy of the receiver, made at
+  erasure through `context.allocator`. The handles over that storage
+  may ALIAS it (§5.3a); "owning erasure" names the operation and the
+  storage's discipline, not a per-handle claim. `*P` is the borrowed
+  view.
 - **`#identity`**: for protocols whose runtime object *is* unique
   state (an allocator, an io runtime). Values only ever borrow, in
   every spelling; there is nothing to free.
@@ -1039,6 +1042,45 @@ Every erased protocol belongs to one of two classes:
 
 Re-erasure to a *different* protocol (`p.(Q)`) is a conversion in
 its own right — see §7.4.
+
+##### 5.3a Copies alias; conversion allocates
+
+Only a CONVERSION allocates: the concrete-to-`P` rows of §5.3 and
+the re-erasures of §7.4. An ordinary same-protocol copy — `q := p`,
+argument passing, returning, struct/array/tuple copying, storing
+into and reading out of containers, a generic body copying a `P` —
+copies the handle itself and nothing else: no allocation, no second
+erasure. Every handle so copied aliases the SAME backing allocation.
+`p.(P)` (the same-protocol row of §5.3) is the explicit clone: a new
+backing allocation holding an independent shallow byte-copy of the
+concrete receiver.
+
+There are no compiler-enforced moves: protocol values are ordinarily
+copyable handles. A program may transfer responsibility by copying a
+handle and ceasing to use the source — a convention, not a checked
+property.
+
+The free discipline follows from aliasing: each owning backing
+allocation is freed exactly ONCE, through ANY one of its aliases,
+and the free invalidates every alias to that backing. Double-free,
+use-after-free, and allocator mismatch are unchecked errors under
+the ordinary pointer/manual-memory doctrine. The handle carries no
+allocator word and the allocation no header — pairing the free with
+the right allocator is the program's job (§5.4).
+
+```sx
+p := circle.(Show);  // allocation A: concrete-to-Show erasure
+q := p;              // aliases A; no allocation
+r := p.(Show);       // allocation B: explicit shallow clone
+
+free(q);             // releases A; p and q are now invalid
+free(r);             // releases B
+```
+
+Borrowed representations sit outside this discipline: `#identity`
+values, tagged values, and `*P` views copy as borrowed handles over
+storage they never own (§5.2, §5.5, §6.2) — there is nothing to
+free, and `free` refuses them (§5.4).
 
 The demand diagnostic exists because an implicit erasure of named
 storage would silently heap-copy (or silently alias) something the
