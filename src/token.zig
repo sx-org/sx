@@ -127,6 +127,7 @@ pub const Tag = enum {
     hash_define, // #define (inside #import c { ... })
     hash_flags, // #flags (inside #import c { ... })
     hash_identity, // #identity (protocol ownership-class marker: borrow-only values)
+    hash_expand, // #expand (tagged dispatch expands at the call site)
     hash_objc_call, // #objc_call(T)(recv, "sel:", args...)
     hash_jni_call, // #jni_call(T)(env, target, "name", "(Sig)R", args...)
     hash_jni_static_call, // #jni_static_call(T)(class, "name", "(Sig)R", args...)

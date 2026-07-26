@@ -297,6 +297,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
             .self_params = shape.direct_params,
             .returns_self = shape.direct_return,
             .self_at_depth = shape.at_depth,
+            .expand = pd.is_expand or method.is_expand,
         };
         program_index_mod.applyDispatchSignature(self.alloc, &info, pd.kind, id);
         method_infos.append(self.alloc, info) catch unreachable;
@@ -605,10 +606,9 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
 /// Emit the process-wide default Context as an LLVM static constant.
 ///
 ///   @__sx_default_context = internal constant %Context {
-///     %Allocator { ptr null, i64 <CAllocator type_id>,
-///                  ptr @__thunk_CAllocator_Allocator_alloc_bytes,
-///                  ptr @__thunk_CAllocator_Allocator_dealloc_bytes },
-///     %Io { … }, <each #context_extend field's evaluated default>
+///     %Allocator { ptr @c_allocator, i64 <tag> },   (the declared kind's
+///     %Io { ptr null, i64 <CBlockingIo type_id>, ptr @__thunk_… },
+///     <each #context_extend field's evaluated default>            layout)
 ///   }
 ///
 /// The initializer is built by walking the ASSEMBLED Context's fields BY

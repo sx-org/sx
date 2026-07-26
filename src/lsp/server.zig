@@ -1822,6 +1822,7 @@ pub const Server = struct {
             .hash_define,
             .hash_flags,
             .hash_identity,
+            .hash_expand,
             .hash_objc_call,
             .hash_jni_call,
             .hash_jni_static_call,

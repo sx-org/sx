@@ -1539,6 +1539,13 @@ pub const LLVMEmitter = struct {
                 const nounwind_attr = c.LLVMCreateEnumAttribute(self.context, nounwind_id, 0);
                 c.LLVMAddAttributeAtIndex(llvm_func, func_idx_attr, nounwind_attr);
             }
+            // `#expand`: the routine's switch must stand at the call site, so
+            // the inlining is `alwaysinline` — a guarantee the inliner's cost
+            // model cannot decline, not the hint `inlinehint` would be.
+            if (func.always_inline and !func.is_naked) {
+                const ai_id = c.LLVMGetEnumAttributeKindForName("alwaysinline", 12);
+                c.LLVMAddAttributeAtIndex(llvm_func, func_idx_attr, c.LLVMCreateEnumAttribute(self.context, ai_id, 0));
+            }
         }
 
         // Apple ARM64 ABI for >16B non-HFA composites: pass by reference

@@ -16,6 +16,9 @@
 //!   - `__sx_tags_<P>_<method>` — one outlined dispatch routine per
 //!     dispatchable method, a total switch over the tag whose arms are direct
 //!     calls. A single-member set folds to the direct call with no switch.
+//!     Under `#expand` (§6.3a) that routine is the same one body, marked to
+//!     be inlined into every caller, so the switch stands at the call site
+//!     and the caller's own facts fold it.
 
 const std = @import("std");
 const ast = @import("../../ast.zig");
@@ -810,6 +813,11 @@ fn dispatchRoutine(self: *Lowering, proto_ty: TypeId, pd: ProtocolDeclInfo, meth
     const fname = std.fmt.allocPrint(self.alloc, "__sx_tags_{s}_{s}", .{ tableName(self, proto_ty), method.name }) catch @panic("out of memory");
     var func = inst_mod.Function.init(self.module.types.internString(fname), self.alloc.dupe(inst_mod.Function.Param, params.items) catch unreachable, method.ret_type);
     func.has_implicit_ctx = has_ctx;
+    // `#expand` (§6.3a): the routine still exists — one body, one switch, the
+    // same arms — but it is inlined into every caller, so the switch stands AT
+    // the call site and each caller's own facts (a pinned tag, a known
+    // receiver) fold it.
+    func.always_inline = method.expand;
     const fid = self.module.addFunction(func);
     self.tagged_dispatch_fns.put(key, fid) catch @panic("out of memory");
     // The routine is a dispatch routine from the instant it exists, arms or no

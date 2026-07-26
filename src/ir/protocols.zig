@@ -611,6 +611,7 @@ pub const ProtocolResolver = struct {
                 .self_params = shape.direct_params,
                 .returns_self = shape.direct_return,
                 .self_at_depth = shape.at_depth,
+                .expand = pd.is_expand or method.is_expand,
             };
             program_index_mod.applyDispatchSignature(self.l.alloc, &info, pd.kind, protocol_ty);
             method_infos.append(self.l.alloc, info) catch unreachable;
