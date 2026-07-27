@@ -16,6 +16,20 @@ by_tail :: () -> View { Widget.{ n = 2 }.(View) }
 
 by_arrow :: () -> View => Widget.{ n = 3 }.(View);
 
+// A lambda is its own function: the same escape refuses for the same
+// reason (issue 0406 coverage of lowerLambda).
+by_lambda_arrow :: () {
+    f : Closure() -> View = () => Widget.{ n = 5 }.(View);
+    _ = f;
+}
+
+by_lambda_tail :: () {
+    f : Closure() -> View = () {
+        Widget.{ n = 6 }.(View)
+    };
+    _ = f;
+}
+
 // A frame temp OFF the return position stays legal: the borrow dies with
 // this frame, and nothing here outlives it.
 local_temp :: () -> i64 {
@@ -23,7 +37,20 @@ local_temp :: () -> i64 {
     v.area()
 }
 
+// A trailing no-else `if` is a valueless guard, not the returned value —
+// erasing inside the guard must stay legal (the temp does not escape).
+guard_ok :: () -> i64 {
+    if true {
+        v := Widget.{ n = 7 }.(View);
+        _ = v.area();
+    }
+    0
+}
+
 main :: () {
     print("{}\n", local_temp());
+    print("{}\n", guard_ok());
     print("{} {} {}\n", by_keyword().area(), by_tail().area(), by_arrow().area());
+    by_lambda_arrow();
+    by_lambda_tail();
 }

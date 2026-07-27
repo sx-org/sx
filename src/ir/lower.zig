@@ -717,11 +717,11 @@ pub const Lowering = struct {
     /// RVALUE into a tagged value there has nothing durable to borrow — the
     /// frame is about to die (spec §6.2).
     in_return_expr: bool = false,
-    /// The body node whose value becomes a function's IMPLICIT return, so the
-    /// trailing-expression spelling reaches the same return position as an
-    /// explicit `return`. Matched by pointer identity against the tail
-    /// `lowerBlockValue` is about to lower.
-    implicit_return_tail: ?*const Node = null,
+    /// True while lowering a function/lambda body's value that becomes the
+    /// implicit return. Only the value-producing chain (block tails, if/match
+    /// arm values) inherits `in_return_expr`; nested statements clear it
+    /// (and clear this flag) in `lowerStmt`.
+    return_value_body: bool = false,
     param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; list lets Phase 4/5 detect cross-module overlap)
     /// One materialized instantiation of a parameterized protocol family, by
     /// its protocol TypeId. The base identity name plus the canonical argument

@@ -25,7 +25,7 @@ sound :: () -> View { place(Dot.{ s = 4.0 }) }
 
 // The erase-early spelling: `V` binds to `View` itself. The handle here
 // borrows a NAMED local, so nothing else about the erasure is wrong — the
-// refusal is `place`'s alone.
+// refusal is `place`'s alone. Non-default Mod is pinned separately in 1938.
 erased :: () {
     d := Dot.{ s = 4.0 };
     place(d.(View));

@@ -317,6 +317,12 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     // not leak in as the body's destination (issue 0350).
     const saved_target_lam = self.target_type;
     self.target_type = if (ret_ty != .void and ret_ty != .noreturn) ret_ty else null;
+    // Lambda bodies are separate functions: arm return-value mode for their
+    // body's value chain (same §6.2 rule as named fns). Nested statements
+    // clear `in_return_expr` in lowerStmt.
+    const saved_rvb_lam = self.return_value_body;
+    self.return_value_body = ret_ty != .void;
+    defer self.return_value_body = saved_rvb_lam;
     if (ret_ty != .void) {
         if (self.lowerBlockValue(lam.body)) |val| {
             if (!self.currentBlockHasTerminator()) {
