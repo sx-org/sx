@@ -7,8 +7,9 @@
 // pointer calls (PC=0 crash) because the variables are uninitialized.
 //
 // Conventions:
-//   - One shared VAO with the renderer's fixed 12-float layout
-//     (pos2 / uv2 / color4 / params4 = 48 bytes, attribute locations 0-3).
+//   - One shared VAO with the renderer's fixed 16-float layout
+//     (pos2 / uv2 / color4 / params4 / stroke4 = 64 bytes, attribute
+//     locations 0-4).
 //     `set_vertex_buffer` rebinds the VBO against this VAO each time.
 //   - `set_vertex_constants(slot=1, data, 64)` is treated as the 4x4
 //     projection matrix and uploaded via `glUniformMatrix4fv(uProj)`,
@@ -266,14 +267,16 @@ impl GPU for Gles3Gpu {
         // GL_ARRAY_BUFFER into the VAO state. Reconfigure each frame
         // so the VAO knows about the live buffer; otherwise drawing
         // sources attribs from the zero-buffer (invisible geometry).
-        glVertexAttribPointer(0, 2, GL_FLOAT, 0, 48, xx 0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, 0, 64, xx 0);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(1, 2, GL_FLOAT, 0, 48, xx 8);
+        glVertexAttribPointer(1, 2, GL_FLOAT, 0, 64, xx 8);
         glEnableVertexAttribArray(1);
-        glVertexAttribPointer(2, 4, GL_FLOAT, 0, 48, xx 16);
+        glVertexAttribPointer(2, 4, GL_FLOAT, 0, 64, xx 16);
         glEnableVertexAttribArray(2);
-        glVertexAttribPointer(3, 4, GL_FLOAT, 0, 48, xx 32);
+        glVertexAttribPointer(3, 4, GL_FLOAT, 0, 64, xx 32);
         glEnableVertexAttribArray(3);
+        glVertexAttribPointer(4, 4, GL_FLOAT, 0, 64, xx 48);
+        glEnableVertexAttribArray(4);
     }
 
     set_texture :: (self: *Gles3Gpu, slot: u32, handle: TextureHandle) {

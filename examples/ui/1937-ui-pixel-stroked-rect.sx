@@ -1,0 +1,90 @@
+// Host-GPU pixel golden for stroked rects (issue 0357): a fill and a
+// stroke are two independent colours, and the ring composites ON the
+// fill rather than replacing it.
+//
+// Two scene shapes, both taken from the sudoku game that reported the
+// defect:
+//   - a number-pad key: solid fill + a contrasting ring on top;
+//   - an unselected difficulty chip: NO fill, ring only, which must
+//     still draw something.
+//
+// The scene is built straight on RenderContext so every frame is exact
+// and the sampled pixels do not move with host font metrics.
+//
+// Run — macOS renders through the windowless Metal backend:
+//     sx run examples/ui/1937-ui-pixel-stroked-rect.sx
+// Other desktops go GL over a hidden SDL window:
+//     sx run --lflags -lSDL3 -L /opt/homebrew/lib examples/ui/1937-ui-pixel-stroked-rect.sx
+// Regenerate the reference consciously:
+//     SX_UPDATE_PIXELS=1 sx run examples/ui/1937-ui-pixel-stroked-rect.sx
+//
+// NOT part of the byte-exact corpus (no expected/ files), same contract
+// as 1924: where no display or GPU exists, open_pixel_surface returns
+// null and this reports a clean skip.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/surface.sx";
+#import "modules/ui/surface_select.sx";
+#import "modules/ui/pixeltest.sx";
+
+BACKDROP :: Color.{ r = 20, g = 20, b = 20, a = 255 };
+
+// A sample is "the colour c" when every channel is within the same
+// budget the golden comparison uses, so AA jitter across drivers does
+// not turn into a false failure.
+sampled :: (px: string, w: i64, x: i64, y: i64, c: Color, what: [:0]u8) -> bool {
+    off := (y * w + x) * 4;
+    r := px[off + 0].(i64);
+    g := px[off + 1].(i64);
+    b := px[off + 2].(i64);
+    near :: (a: i64, b: i64) -> bool {
+        d := if a >= b then a - b else b - a;
+        d <= 12
+    }
+    if near(r, c.r.(i64)) and near(g, c.g.(i64)) and near(b, c.b.(i64)) {
+        return true;
+    }
+    print("pixel FAIL {} at {},{}: got {} {} {}, want {} {} {}\n",
+        what, x, y, r, g, b, c.r, c.g, c.b);
+    false
+}
+
+main :: () {
+    surface := open_pixel_surface(200, 120);
+    if surface == null {
+        print("pixels skipped: no display/GPU on this host\n");
+        return;
+    }
+    s := surface!;
+
+    tree := RenderTree.init();
+    ctx := RenderContext.init(*tree);
+
+    ctx.add_rect(Frame.make(0.0, 0.0, 200.0, 120.0), BACKDROP);
+    // Number-pad key: dark-gray cap under a blue ring.
+    ctx.add_stroked_rect(Frame.make(20.0, 20.0, 60.0, 60.0),
+        COLOR_DARK_GRAY, COLOR_BLUE, 6.0, 10.0);
+    // Unselected chip: transparent interior, green ring.
+    ctx.add_stroked_rect(Frame.make(120.0, 20.0, 60.0, 60.0),
+        COLOR_TRANSPARENT, COLOR_GREEN, 6.0, 10.0);
+
+    s.render(*tree);
+    pixels := s.read_rgba(context.allocator);
+    w := s.width();
+
+    ok := true;
+    // The key keeps its fill: the interior is dark gray, not the ring
+    // colour and not the backdrop showing through a hollow shape.
+    if !sampled(pixels, w, 50, 50, COLOR_DARK_GRAY, "key interior keeps the fill") { ok = false; }
+    // The ring wears the STROKE colour, not the fill's.
+    if !sampled(pixels, w, 50, 23, COLOR_BLUE, "key ring wears the stroke") { ok = false; }
+    if !sampled(pixels, w, 23, 50, COLOR_BLUE, "key ring wears the stroke") { ok = false; }
+    // A fill-less chip still draws its ring, and its interior stays
+    // transparent so the backdrop shows through.
+    if !sampled(pixels, w, 150, 23, COLOR_GREEN, "chip ring draws without a fill") { ok = false; }
+    if !sampled(pixels, w, 150, 50, BACKDROP, "chip interior stays transparent") { ok = false; }
+
+    if !pixel_golden(pixels, w, s.height(), "examples/ui/pixels/1937-stroked-rect.png") { ok = false; }
+    if !ok { process.exit(1); }
+}
