@@ -1285,6 +1285,9 @@ pub fn isTypeCategoryMatch(me: *const ast.MatchExpr) bool {
             const name = switch (pat.data) {
                 .identifier => |id| id.name,
                 .type_expr => |te| te.name,
+                // An instantiation spelling (`case Buffer(f32):`) names a
+                // type by construction — no category/capitalization probe.
+                .parameterized_type_expr => return true,
                 else => continue,
             };
             const categories = [_][]const u8{

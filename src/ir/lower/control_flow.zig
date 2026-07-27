@@ -1390,7 +1390,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
                     break :blk_rt self.resolveTypeCategoryTags(cat_name);
                 }
                 switch (pat.data) {
-                    .identifier, .type_expr, .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr, .optional_type_expr, .array_type_expr, .call => {},
+                    .identifier, .type_expr, .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr, .optional_type_expr, .array_type_expr, .parameterized_type_expr, .call => {},
                     else => {
                         if (self.diagnostics) |d|
                             d.addFmt(.err, pat.span, "a type switch arm names a type or a category — value patterns don't apply to an `any` subject", .{});
@@ -1460,7 +1460,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
                 // refuse pointedly (mirrors the any switch), never a
                 // silently dead arm.
                 switch (pat.data) {
-                    .identifier, .type_expr, .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr, .optional_type_expr, .array_type_expr, .call => {},
+                    .identifier, .type_expr, .pointer_type_expr, .many_pointer_type_expr, .slice_type_expr, .optional_type_expr, .array_type_expr, .parameterized_type_expr, .call => {},
                     else => {
                         if (self.diagnostics) |d|
                             d.addFmt(.err, pat.span, "a type-category match arm names a type or a category — value patterns don't apply to a 'Type' subject", .{});
