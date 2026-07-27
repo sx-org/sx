@@ -41,8 +41,8 @@ pub const ErrorAnalysis = struct {
     pub fn collectErrorSites(self: ErrorAnalysis, node: *const Node, tags: *std.ArrayList(u32), edges: *std.ArrayList([]const u8), dyn: *bool) void {
         switch (node.data) {
             .raise_stmt => |rs| {
-                if (Lowering.isErrorTagLiteralNode(rs.tag)) {
-                    tags.append(self.l.alloc, self.l.module.types.internTag(rs.tag.data.field_access.field)) catch {};
+                if (Lowering.literalTagName(rs.tag)) |nm| {
+                    tags.append(self.l.alloc, self.l.module.types.internTag(nm)) catch {};
                 }
                 self.collectErrorSites(rs.tag, tags, edges, dyn);
             },

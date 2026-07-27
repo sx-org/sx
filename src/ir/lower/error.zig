@@ -98,6 +98,16 @@ pub fn isErrorTagLiteralNode(node: *const Node) bool {
     return obj.data == .identifier and std.mem.eql(u8, obj.data.identifier.name, "error");
 }
 
+/// The tag NAME a `raise` operand names literally, in either spelling — the
+/// anonymous `error.X` or the contextual `.X` shorthand — or null for a
+/// variable / computed tag. In `raise` position a `.X` is unambiguously a tag,
+/// so the two spellings are interchangeable to every caller of this.
+pub fn literalTagName(node: *const Node) ?[]const u8 {
+    if (isErrorTagLiteralNode(node)) return node.data.field_access.field;
+    if (node.data == .enum_literal) return node.data.enum_literal.name;
+    return null;
+}
+
 /// Lower `==` / `!=` when an error-set value or `error.X` tag is involved.
 /// Returns null when neither operand is error-related (general path runs).
 /// Both operands must be a tag (an `error.X` literal or an error-set value);
@@ -109,11 +119,17 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
     const r_tag = isErrorTagLiteralNode(bop.rhs);
     if (l_set == null and r_set == null and !l_tag and !r_tag) return null;
 
-    const l_ok = l_set != null or l_tag;
-    const r_ok = r_set != null or r_tag;
+    // A contextual `.Name` shorthand is a tag when the OTHER operand supplies
+    // the set to type it from; with no set on either side there is nothing to
+    // resolve against and it stays an ordinary enum literal.
+    const l_dot = bop.lhs.data == .enum_literal and r_set != null;
+    const r_dot = bop.rhs.data == .enum_literal and l_set != null;
+
+    const l_ok = l_set != null or l_tag or l_dot;
+    const r_ok = r_set != null or r_tag or r_dot;
     if (!l_ok or !r_ok) {
         if (self.diagnostics) |diags| {
-            diags.addFmt(.err, bop.lhs.span, "an error-set value compares only with an `error.X` tag or another error-set value; coerce with `xx` to compare the raw id", .{});
+            diags.addFmt(.err, bop.lhs.span, "an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id", .{});
         }
         return self.builder.constBool(false);
     }
@@ -258,7 +274,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     const tag_ref = self.lowerExpr(rs.tag);
     self.target_type = saved_target;
 
-    if (!inferred and !isErrorTagLiteralNode(rs.tag)) {
+    if (!inferred and literalTagName(rs.tag) == null) {
         if (self.errorSetTypeOf(rs.tag)) |src_set| {
             self.checkErrorSetSubset(src_set, err_set, span);
         }

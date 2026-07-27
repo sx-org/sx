@@ -23,5 +23,18 @@ main :: () -> i32 {
     h := Holder.{ e = be };      // error: same, in field-init position
 
     lit : Narrow = error.Extra;  // error: tag literal not in Narrow
+
+    // The `.Name` shorthand is membership-checked by the same rule, and
+    // reports the same diagnostic as the `error.Name` spelling.
+    short : Narrow = .Extra;     // error: Extra not in Narrow
+    take_narrow(.Extra);         // error: same, in argument position
+    hs := Holder.{ e = .Extra }; // error: same, in field-init position
+    if short == .Extra { return 1; }  // error: same, in comparison position
+    bad_raise() catch {};        // force bad_raise to lower
     return 0;
+}
+
+// A shorthand raise is membership-checked against the declared channel.
+bad_raise :: () -> !Narrow {
+    raise .Extra;                // error: Extra not in Narrow
 }

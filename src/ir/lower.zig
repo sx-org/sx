@@ -2794,6 +2794,7 @@ pub const Lowering = struct {
     pub const placeholderTraceFrame = lower_error.placeholderTraceFrame;
     pub const errorSetTypeOf = lower_error.errorSetTypeOf;
     pub const isErrorTagLiteralNode = lower_error.isErrorTagLiteralNode;
+    pub const literalTagName = lower_error.literalTagName;
     pub const tryLowerErrorSetEquality = lower_error.tryLowerErrorSetEquality;
     pub const effectiveReturnType = lower_error.effectiveReturnType;
     pub const errorChannelOf = lower_error.errorChannelOf;

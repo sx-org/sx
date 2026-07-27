@@ -40,13 +40,35 @@ main :: () -> i32 {
     lit : Broad = error.Extra;
     print("literal: {}\n", lit);
 
+    // The contextual `.Name` shorthand types itself from the destination set
+    // in every position `error.Name` does, and means exactly the same tag.
+    short : Broad = .Extra;
+    print("shorthand decl: {}\n", short);
+    take_broad(.Wide);
+    sh := Holder.{ e = .Extra };
+    print("shorthand field: {}\n", sh.e);
+    opt : ?Broad = .Wide;
+    print("shorthand optional: {}\n", opt!);
+    if short == error.Extra { print("spellings agree: {}\n", short == .Extra); }
+    raises_shorthand() catch (e) { print("shorthand return: {}\n", e); };
+    raises_wide() catch (e) { print("shorthand raise: {}\n", e); };
+
     // Propagation through a wider channel keeps working.
-    x := via_broad() catch (e) { print("caught: {}\n", e); return 0; };
+    x := via_broad() catch (e) { print("propagated: {}\n", e); return 0; };
     return 0;
+}
+
+// A pure-failable `return` takes the shorthand; `raises_wide` raises one.
+raises_shorthand :: () -> !Broad {
+    return .Wide;
 }
 
 // `try` on a Narrow callee escaping through a Broad channel: Narrow ⊆ Broad.
 via_broad :: () -> (i32, !Broad) {
     n := try narrow_src();
     return n;
+}
+
+raises_wide :: () -> !Broad {
+    raise .Wide;
 }

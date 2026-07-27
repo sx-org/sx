@@ -1661,6 +1661,14 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
     const cs = self.builder.current_span;
     const span = ast.Span{ .start = cs.start, .end = cs.end };
 
+    // An error-set destination types `.Name` as that set's tag — the
+    // contextual parallel to `error.Name`, sharing its membership check and
+    // its optional wrapping (`lowerErrorTagLiteral` re-derives both from
+    // `self.target_type`, which still holds the un-unwrapped destination).
+    if (!target.isBuiltin() and self.module.types.get(target) == .error_set) {
+        return self.lowerErrorTagLiteral(el.name, span);
+    }
+
     // The destination must be a known enum / tagged union that carries the
     // named variant — every other shape used to lower to a silent 0.
     if (target == .unresolved) {
