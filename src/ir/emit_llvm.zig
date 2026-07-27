@@ -1569,8 +1569,14 @@ pub const LLVMEmitter = struct {
             self.mapRef(param_val);
         }
 
+        // A block the entry cannot reach is never emitted: a folded probe's
+        // dead arm names a (protocol, concrete) pair that has no tag.
+        const reachable = self.reachableBlocks(func);
+        defer self.alloc.free(reachable);
+
         // Create all basic blocks first (so branches can reference them)
         for (func.blocks.items, 0..) |block, bi| {
+            if (!reachable[bi]) continue;
             const block_name = self.ir_mod.types.getString(block.name);
             const block_name_z = self.alloc.dupeZ(u8, block_name) catch unreachable;
             defer self.alloc.free(block_name_z);
@@ -1601,6 +1607,7 @@ pub const LLVMEmitter = struct {
 
         // Emit instructions for each block — use first_ref to sync ref numbering
         for (func.blocks.items, 0..) |block, bi| {
+            if (!reachable[bi]) continue;
             const block_key = makeBlockKey(func_idx, @intCast(bi));
             const bb = self.block_map.get(block_key) orelse unreachable;
             c.LLVMPositionBuilderAtEnd(self.builder, bb);
@@ -1658,6 +1665,65 @@ pub const LLVMEmitter = struct {
         return result;
     }
 
+    /// The constant answer a condition already carries at whole-program
+    /// emission, or `null` when it is genuinely dynamic. The conformer sets
+    /// are final here, so a probe's `tagged_conforms` is a constant and one
+    /// arm of the branch it feeds is statically dead (§7.9).
+    pub fn constCondition(self: *LLVMEmitter, func: *const Function, cond: Ref) ?bool {
+        if (cond.isNone()) return null;
+        const idx = cond.index();
+        if (idx < func.params.len) return null;
+        for (func.blocks.items) |blk| {
+            if (idx >= blk.first_ref and idx < blk.first_ref + blk.insts.items.len) {
+                return switch (blk.insts.items[idx - blk.first_ref].op) {
+                    .tagged_conforms => |t| self.ir_mod.tagged_tags.contains(.{ .proto = t.proto, .concrete = t.concrete }),
+                    else => null,
+                };
+            }
+        }
+        return null;
+    }
+
+    /// The blocks reachable from the entry, where a folded `cond_br`
+    /// contributes only its live successor. Caller owns the slice.
+    fn reachableBlocks(self: *LLVMEmitter, func: *const Function) []bool {
+        const seen = self.alloc.alloc(bool, func.blocks.items.len) catch unreachable;
+        @memset(seen, false);
+        if (seen.len == 0) return seen;
+
+        var stack = std.ArrayList(u32).empty;
+        defer stack.deinit(self.alloc);
+        seen[0] = true;
+        stack.append(self.alloc, 0) catch unreachable;
+
+        while (stack.pop()) |bi| {
+            for (func.blocks.items[bi].insts.items) |instruction| {
+                switch (instruction.op) {
+                    .br => |branch| self.markReachable(branch.target, seen, &stack),
+                    .cond_br => |cb| if (self.constCondition(func, cb.cond)) |taken| {
+                        self.markReachable(if (taken) cb.then_target else cb.else_target, seen, &stack);
+                    } else {
+                        self.markReachable(cb.then_target, seen, &stack);
+                        self.markReachable(cb.else_target, seen, &stack);
+                    },
+                    .switch_br => |sw| {
+                        for (sw.cases) |case| self.markReachable(case.target, seen, &stack);
+                        self.markReachable(sw.default, seen, &stack);
+                    },
+                    else => {},
+                }
+            }
+        }
+        return seen;
+    }
+
+    fn markReachable(self: *LLVMEmitter, target: BlockId, seen: []bool, stack: *std.ArrayList(u32)) void {
+        const bi = target.index();
+        if (bi >= seen.len or seen[bi]) return;
+        seen[bi] = true;
+        stack.append(self.alloc, @intCast(bi)) catch unreachable;
+    }
+
     /// After emitting all blocks, fill in PHI incoming values from branch args.
     fn fixupPhiNodes(self: *LLVMEmitter, func: *const Function, func_idx: u32) void {
         if (self.pending_phis.items.len == 0) return;
@@ -1674,7 +1740,14 @@ pub const LLVMEmitter = struct {
                     .br => |branch| {
                         self.addPhiIncoming(branch.target, branch.args, src_bb);
                     },
-                    .cond_br => |cb| {
+                    // A folded branch has one real edge, so the phi takes one
+                    // incoming from it — the dead arm is not a predecessor.
+                    .cond_br => |cb| if (self.constCondition(func, cb.cond)) |taken| {
+                        if (taken)
+                            self.addPhiIncoming(cb.then_target, cb.then_args, src_bb)
+                        else
+                            self.addPhiIncoming(cb.else_target, cb.else_args, src_bb);
+                    } else {
                         self.addPhiIncoming(cb.then_target, cb.then_args, src_bb);
                         self.addPhiIncoming(cb.else_target, cb.else_args, src_bb);
                     },
@@ -2807,7 +2880,11 @@ pub const LLVMEmitter = struct {
     /// numbering the collection fixpoint published — the constant analogue of
     /// `emitTaggedTagOf`.
     fn taggedTagValue(self: *LLVMEmitter, t: ir_inst.TaggedTag) i64 {
-        return self.ir_mod.tagged_tags.get(.{ .proto = t.proto, .concrete = t.concrete }) orelse 0;
+        return self.ir_mod.tagged_tags.get(.{ .proto = t.proto, .concrete = t.concrete }) orelse
+            std.debug.panic("taggedTagValue: '{s}' is not in the final conformer set of '{s}' — a pair that did not survive the numbering has no tag", .{
+                self.ir_mod.types.typeName(t.concrete),
+                self.ir_mod.types.typeName(t.proto),
+            });
     }
 
     fn emitConstAggregate(self: *LLVMEmitter, agg: []const ir_inst.ConstantValue, llvm_ty: c.LLVMTypeRef, require_resolved: bool) c.LLVMValueRef {
