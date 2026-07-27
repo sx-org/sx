@@ -1,1 +1,1 @@
-{ "aot": true, "absent_symbols": ["double"] }
+{ "aot": true, "serial": true, "absent_symbols": ["double"] }

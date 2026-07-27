@@ -40,10 +40,10 @@ SEED   :: 0x2545F4914F6CDD1D;   // fixed nonzero PRNG state (< i64.max)
 PORT   :: 18977;
 
 // Iteration count. Tuned so the run phase fits the corpus 1s post-compile
-// budget on the dev host (~0.9s) while still exercising hundreds of
+// budget on the dev host (~0.74s) while still exercising hundreds of
 // mutated requests. Bump it (and/or sweep SEED) for a longer
 // out-of-corpus fuzz — see the CI note in the header + tests/fuzz-http.md.
-ITERATIONS :: 600;
+ITERATIONS :: 400;
 
 // Deterministic xorshift PRNG over i64 — NO time, NO Math.random (the corpus
 // has no nondeterministic RNG anyway). The shifts/xors wrap in i64, which is
