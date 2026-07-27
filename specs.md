@@ -1752,7 +1752,10 @@ identity erasure of a named instance global — a borrow, never null
 constant cannot exist before `main`, so a value/own protocol-typed
 context field is refused at its declaration. Threads and fibers inherit the
 context by snapshot; a snapshot copies handles, not referents — a
-borrow outliving its referent is the standard hazard.
+borrow outliving its referent is the standard hazard. `context.allocator`
+rides the same snapshot, so the spawning container — not the language —
+is responsible for pushing an allocator that outlives the spawned fiber
+or thread when the ambient one does not.
 
 ##### 7.7 Packs and variadics
 
