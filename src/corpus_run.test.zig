@@ -24,7 +24,11 @@ const corpus_paths = @import("corpus_paths");
 // regardless of completion order. An example whose `.build` sets
 // `"serial": true` is held out of the pool and run sequentially afterwards —
 // the escape hatch for wall-clock-sensitive tests (socket deadlines) that
-// cannot tolerate a loaded machine.
+// cannot tolerate a loaded machine. EVERY `"aot"` example sets it: a
+// freshly linked binary pays a one-time macOS code-signature/XProtect scan on
+// its first exec (~0.25s idle, >1.5s under pool load), and that OS cost lands
+// in the measured run phase, where it has nothing to do with the example's
+// own workload.
 //
 // Timing: every run is measured. JIT examples additionally pass `--time` to
 // `sx run`, whose stage table (a well-delimited stderr suffix, stripped before

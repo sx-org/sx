@@ -1,1 +1,1 @@
-{ "aot": true, "target": "macos" }
+{ "aot": true, "serial": true, "target": "macos" }
