@@ -1,0 +1,54 @@
+// `p.(?*T)` is the SOFT ctx recovery: the downcast's membership question,
+// answered with the receiver's own ctx typed as `*T`. It BORROWS — a write
+// through the recovered pointer lands in the concrete value's own storage —
+// where `p.(?T)` copies the value out and `p.(*T)` recovers ctx unchecked.
+// Every protocol kind answers it: a tagged receiver by its tag word, a
+// vtable/inline one by its `Type` word.
+#import "modules/std.sx";
+
+Tagged :: protocol tagged { area :: (self: *Self) -> i64; }
+Boxed  :: protocol vtable { area :: (self: *Self) -> i64; }
+Flat   :: protocol inline { area :: (self: *Self) -> i64; }
+
+Rect :: struct { w: i64; h: i64; }
+impl Tagged for Rect { area :: (self: *Rect) -> i64 { self.w * self.h } }
+impl Boxed  for Rect { area :: (self: *Rect) -> i64 { self.w * self.h } }
+impl Flat   for Rect { area :: (self: *Rect) -> i64 { self.w * self.h } }
+
+Square :: struct { side: i64; }
+impl Tagged for Square { area :: (self: *Square) -> i64 { self.side * self.side } }
+impl Boxed  for Square { area :: (self: *Square) -> i64 { self.side * self.side } }
+impl Flat   for Square { area :: (self: *Square) -> i64 { self.side * self.side } }
+
+main :: () {
+    r := Rect.{ w = 2, h = 6 };
+
+    // --- tagged: the receiver borrows `r` in place ---
+    t : Tagged = r;
+    // The three temperaments agree on the MATCHING type.
+    print("tagged hard {}\n", t.(*Rect).w);
+    if v := t.(?Rect) { print("tagged value {}\n", v.w); }
+    if p := t.(?*Rect) { print("tagged ptr {}\n", p.w); } else { print("tagged ptr null\n"); }
+    // A conformer that is not the receiver's own type answers null. Rect is
+    // the FIRST conformer by canonical order, so its tag is 0 — the word a
+    // missing tag used to fall back to, which made this arm crash.
+    if p := t.(?*Square) { print("tagged miss {}\n", p.side); } else { print("tagged ptr miss null\n"); }
+    // The recovery is a BORROW: the write is seen through `r`.
+    if p := t.(?*Rect) { p.w = 9; }
+    print("tagged borrowed {}\n", r.w);
+    r.w = 2;
+
+    // --- vtable: the erasure owns a copy, the recovery points INTO it ---
+    b := r.(Boxed);
+    print("vtable hard {}\n", b.(*Rect).w);
+    if v := b.(?Rect) { print("vtable value {}\n", v.w); }
+    if p := b.(?*Rect) { print("vtable ptr {}\n", p.w); } else { print("vtable ptr null\n"); }
+    if p := b.(?*Square) { print("vtable miss {}\n", p.side); } else { print("vtable ptr miss null\n"); }
+    if p := b.(?*Rect) { p.h = 7; }
+    print("vtable borrowed {}\n", b.area());
+
+    // --- inline: same answers off the wider value ---
+    f := r.(Flat);
+    if p := f.(?*Rect) { print("inline ptr {}\n", p.w); } else { print("inline ptr null\n"); }
+    if p := f.(?*Square) { print("inline miss {}\n", p.side); } else { print("inline ptr miss null\n"); }
+}

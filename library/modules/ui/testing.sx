@@ -77,12 +77,12 @@ stack_children :: (v: View) -> []ViewChild {
 // The child is stored inline at `V`, so the caller names it; the returned
 // handle borrows the box's own storage, never a copy of it.
 mod_child :: (v: View, $V: Type) -> View {
-    if v.(?ModBox(V)) == null {
-        print("panic: mod_child on a view that is not a ModBox\n");
-        process.exit(1);
+    if b := v.(?*ModBox(V)) {
+        return *b.child;
     }
-    b := v.(*ModBox(V));
-    *b.child
+    print("panic: mod_child on a view that is not a ModBox\n");
+    process.exit(1);
+    v
 }
 
 // --- Structural scene goldens (I9) ---

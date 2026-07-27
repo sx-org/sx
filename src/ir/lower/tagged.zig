@@ -507,17 +507,24 @@ pub fn refuseNonMember(self: *Lowering, proto: TypeId, concrete: TypeId, span: a
 /// A downcast off a tagged value names a conformer or nothing: the set is
 /// whole-program, so `v.(Timer)` where `Timer` implements nothing is a
 /// compile error rather than a compare that can never succeed (spec §6.8).
-/// Protocol, `ProtocolRaw`, `any` and pointer targets are conversions, not
-/// downcasts, and pass through untouched.
+/// Protocol, `ProtocolRaw`, `any` and bare pointer targets are conversions,
+/// not downcasts, and pass through untouched. `?*T` is not: it is the soft
+/// ctx recovery, whose check asks the same membership question as `?T`.
 pub fn refuseOutOfSetDowncast(self: *Lowering, recv_ty: TypeId, written: TypeId, span: ast.Span) bool {
     if (!isTagged(self, recv_ty)) return false;
     if (written == .unresolved) return false;
     // `.(?T)` is the soft temperament of the same assertion — the asserted
     // type is the inner one.
-    const target = if (!written.isBuiltin() and self.module.types.get(written) == .optional)
+    const soft_child: ?TypeId = if (!written.isBuiltin() and self.module.types.get(written) == .optional)
         self.module.types.get(written).optional.child
     else
-        written;
+        null;
+    const target = t: {
+        const inner = soft_child orelse break :t written;
+        // `.(?*T)` tests T and hands back ctx typed as `*T`.
+        if (softRecoveryPointee(self, inner)) |pointee| break :t pointee;
+        break :t inner;
+    };
     if (target == .unresolved or target == recv_ty or target == .any) return false;
     if (self.getProtocolInfo(target) != null) return false;
     if (!target.isBuiltin()) {
@@ -1392,6 +1399,81 @@ fn publishTags(self: *Lowering) void {
 /// through a synthetic scope binding, never a re-evaluation. The graceful
 /// (`try`) temperament still routes through `__sx_cast_assert`'s any view
 /// (desugared before lowering, where no IR blocks exist to split).
+/// The concrete type a `?*T` postfix target tests, when `child` is a plain
+/// pointer whose pointee names one. A protocol pointee is the type lie the
+/// hard ctx recovery refuses (issue 0306); `void` and `any` name no concrete
+/// type, so neither can be a membership question.
+pub fn softRecoveryPointee(self: *Lowering, child: TypeId) ?TypeId {
+    if (child.isBuiltin()) return null;
+    const info = self.module.types.get(child);
+    if (info != .pointer) return null;
+    const pointee = info.pointer.pointee;
+    if (pointee == .void or pointee == .any or pointee == .unresolved) return null;
+    if (self.getProtocolInfo(pointee) != null) return null;
+    return pointee;
+}
+
+/// `p.(?*T)` — the SOFT ctx recovery (§6.8), for every protocol kind.
+/// It asks the downcast's membership question and differs from `p.(?T)`
+/// only in the answer it hands back: the receiver's own ctx typed as `*T`,
+/// so the concrete value is BORROWED in place instead of copied out. A
+/// tagged receiver compares its tag word against `T`'s constant tag, every
+/// other kind its `Type` word — the target is `T`, never `*T`, which is
+/// what neither the any-view helpers nor the tag compare could answer.
+/// Returns null when the written target is not `?*T`.
+pub fn lowerSoftPointerRecovery(
+    self: *Lowering,
+    pc: *const ast.PostfixCast,
+    proto_ty: TypeId,
+    full_dst: TypeId,
+) ?Ref {
+    if (pc.type_expr.data != .optional_type_expr) return null;
+    if (full_dst.isBuiltin() or self.module.types.get(full_dst) != .optional) return null;
+    const ptr_ty = self.module.types.get(full_dst).optional.child;
+    if (ptr_ty.isBuiltin() or self.module.types.get(ptr_ty) != .pointer) return null;
+
+    const pointee = softRecoveryPointee(self, ptr_ty) orelse {
+        const written = self.module.types.get(ptr_ty).pointer.pointee;
+        if (self.diagnostics) |d| {
+            if (self.getProtocolInfo(written) != null) {
+                d.addFmt(.err, pc.type_expr.span, "the ctx recovery yields a pointer to the CONCRETE value, so its target must be the concrete pointee type ('p.(?*YourConcrete)'); to point at the protocol value itself, take its address with prefix '*'", .{});
+            } else {
+                d.addFmt(.err, pc.type_expr.span, "the soft ctx recovery tests the pointee type, and '{s}' names no concrete type — name the conformer ('p.(?*YourConcrete)'), or take the unchecked raw ctx with 'p.(*void)'", .{self.formatTypeName(written)});
+            }
+        }
+        return self.builder.constUndef(full_dst);
+    };
+    const operand = self.lowerExpr(pc.operand);
+
+    const matches = m: {
+        if (isTagged(self, proto_ty)) {
+            const tag = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 1 } }, .i64);
+            const want = self.builder.emit(.{ .tagged_tag_of = .{ .proto = proto_ty, .concrete = pointee } }, .i64);
+            break :m self.builder.emit(.{ .cmp_eq = .{ .lhs = tag, .rhs = want } }, .bool);
+        }
+        const got = protocolTypeIdWord(self, proto_ty, operand);
+        const want = self.builder.constType(pointee);
+        break :m self.builder.emit(.{ .cmp_eq = .{ .lhs = got, .rhs = want } }, .bool);
+    };
+
+    const ok_bb = self.freshBlock("ptrcast.ok");
+    const fail_bb = self.freshBlock("ptrcast.fail");
+    const merge_bb = self.freshBlockWithParams("ptrcast.merge", &.{full_dst});
+    self.builder.condBr(matches, ok_bb, &.{}, fail_bb, &.{});
+
+    self.builder.switchToBlock(ok_bb);
+    const void_ptr_ty = self.module.types.ptrTo(.void);
+    const ctx = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr_ty);
+    const typed = self.builder.emit(.{ .bitcast = .{ .operand = ctx, .from = void_ptr_ty, .to = ptr_ty } }, ptr_ty);
+    self.builder.br(merge_bb, &.{self.builder.optionalWrap(typed, full_dst)});
+
+    self.builder.switchToBlock(fail_bb);
+    self.builder.br(merge_bb, &.{self.builder.constNull(full_dst)});
+
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, full_dst);
+}
+
 pub fn lowerTaggedDowncast(
     self: *Lowering,
     pc: *const ast.PostfixCast,
