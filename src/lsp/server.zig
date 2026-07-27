@@ -3895,7 +3895,7 @@ test "lsp/workspace: loadWorkspaceFiles analyses .sx files that were never opene
     const alloc = arena.allocator();
     const io = test_io();
 
-    const dir = ".sx-lsp-ws-test";
+    const dir = ".sx-tmp/lsp-ws-test";
     std.Io.Dir.createDirPath(.cwd(), io, dir) catch {};
     defer {
         std.Io.Dir.deleteFile(.cwd(), io, dir ++ "/a.sx") catch {};
@@ -3923,7 +3923,7 @@ test "lsp/project: whole-program check attributes a reachable error to its modul
     const alloc = arena.allocator();
     const io = test_io();
 
-    const dir = ".sx-lsp-proj-test";
+    const dir = ".sx-tmp/lsp-proj-test";
     std.Io.Dir.createDirPath(.cwd(), io, dir) catch {};
     defer {
         std.Io.Dir.deleteFile(.cwd(), io, dir ++ "/main.sx") catch {};

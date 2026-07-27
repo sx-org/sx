@@ -11,7 +11,7 @@
 
 configure :: () {
     opts := build_options();
-    opts.set_bundle_path("IosSimApp.app");
+    opts.set_bundle_path(".sx-tmp/1615-platform-ios-sim-bundle.app");
     opts.set_bundle_id("co.example.iossim");
     on_build(bundle_main);
 }

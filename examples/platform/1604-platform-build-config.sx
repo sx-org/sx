@@ -11,7 +11,7 @@ configure_build :: () {
     // These calls are intercepted by the compiler at compile time.
     // On a normal (non-wasm) target, inline if gates them off.
     inline if OS == .wasm {
-        opts.set_output_path("sx-out/wasm/test.html");
+        opts.set_output_path(".sx-tmp/1604-platform-build-config/test.html");
         opts.add_link_flag("-sUSE_SDL=3");
     }
 }

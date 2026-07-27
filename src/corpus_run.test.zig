@@ -61,6 +61,83 @@ const MAX_OUTPUT = 16 * 1024 * 1024;
 /// AGENTS.md budget: an example's RUN phase (post-compile) must fit in 1s.
 const RUN_BUDGET_NS: u64 = 1_000_000_000;
 
+/// The one directory a corpus run owns. Everything an example's build sidecar
+/// declares as an output lives here, and it is the only place the runner
+/// deletes from: the repo root also holds untracked user content (`assets/`,
+/// scratch trees) that no test may touch.
+const SANDBOX_DIR = ".sx-tmp";
+
+/// A repo-relative path the corpus run owns — strictly inside `SANDBOX_DIR`,
+/// with no `.`/`..` hop and no absolute prefix. `remove` is reachable only
+/// through this type, so a path an example authored gets to `rm -rf` only after
+/// `parse` accepted it.
+const SandboxPath = struct {
+    rel: []const u8,
+
+    fn parse(rel: []const u8) ?SandboxPath {
+        if (std.fs.path.isAbsolute(rel)) return null;
+        var it = std.mem.splitScalar(u8, rel, '/');
+        if (!std.mem.eql(u8, it.next().?, SANDBOX_DIR)) return null;
+        var segments: usize = 0;
+        while (it.next()) |seg| {
+            if (seg.len == 0) return null;
+            if (std.mem.eql(u8, seg, ".") or std.mem.eql(u8, seg, "..")) return null;
+            segments += 1;
+        }
+        return if (segments > 0) .{ .rel = rel } else null;
+    }
+
+    /// An output the RUNNER names (as opposed to one a sidecar declares),
+    /// placed directly under the sandbox root. `fmt` must not contain a path
+    /// separator — that is what keeps the result inside the sandbox without
+    /// re-parsing.
+    fn own(a: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !SandboxPath {
+        return .{ .rel = try std.fmt.allocPrint(a, SANDBOX_DIR ++ "/" ++ fmt, args) };
+    }
+
+    /// A sibling named by appending `suffix` (e.g. `.stage`). `suffix` must not
+    /// contain a path separator — that is what keeps the result inside the
+    /// sandbox without re-parsing.
+    fn suffixed(self: SandboxPath, a: std.mem.Allocator, suffix: []const u8) !SandboxPath {
+        return .{ .rel = try std.fmt.allocPrint(a, "{s}{s}", .{ self.rel, suffix }) };
+    }
+
+    fn abs(self: SandboxPath, a: std.mem.Allocator, repo_root: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(a, "{s}/{s}", .{ repo_root, self.rel });
+    }
+
+    /// `rm -rf` the target. Best-effort: a target the build never produced is
+    /// not an error.
+    fn remove(self: SandboxPath, a: std.mem.Allocator, io: std.Io, repo_root: []const u8) void {
+        const path = self.abs(a, repo_root) catch return;
+        _ = std.process.run(a, io, .{
+            .argv = &.{ "/bin/rm", "-rf", path },
+            .timeout = deadline(io),
+        }) catch {};
+    }
+};
+
+/// The outputs a `.build` sidecar declares, resolved against the sandbox.
+/// `escaped` names the first declared path that left it; the runner reports
+/// that and builds nothing, so an escaping path is never created — and never
+/// deleted.
+const DeclaredOutputs = struct {
+    bundle_app: ?SandboxPath = null,
+    apk_out: ?SandboxPath = null,
+    escaped: ?[]const u8 = null,
+};
+
+fn declaredOutputs(cfg: BuildConfig) DeclaredOutputs {
+    var res: DeclaredOutputs = .{};
+    if (cfg.bundle) |bc| {
+        res.bundle_app = SandboxPath.parse(bc.app) orelse return .{ .escaped = bc.app };
+    }
+    if (cfg.apk) |ac| {
+        res.apk_out = SandboxPath.parse(ac.out) orelse return .{ .escaped = ac.out };
+    }
+    return res;
+}
+
 /// Wrap the live C `environ` so spawned children inherit the test process's
 /// environment. `Io.Threaded`'s default `process_environ` is EMPTY, and a null
 /// `environ_map` on a spawn falls back to it — so without this the child `sx`
@@ -271,8 +348,9 @@ const BuildConfig = struct {
     aot: bool = false,
     target: ?[]const u8 = null,
     /// Bundle smoke-test directive (requires `aot`). After a successful build the
-    /// runner asserts each `expect` entry exists under `app` (repo-relative), then
-    /// `rm -rf`s the `app`. macOS-host ONLY (the `.app` + `codesign` are Apple) —
+    /// runner asserts each `expect` entry exists under `app` (repo-relative, and
+    /// inside `SANDBOX_DIR` — the runner deletes it), then `rm -rf`s the `app`.
+    /// macOS-host ONLY (the `.app` + `codesign` are Apple) —
     /// on any other host the example is SKIPPED (the bundler would take a different
     /// per-OS branch / fail codesign).
     bundle: ?BundleCheck = null,
@@ -326,7 +404,8 @@ const BundleCheck = struct {
 };
 
 const ApkCheck = struct {
-    /// Repo-relative output `.apk` path (conventionally under `.sx-tmp/`).
+    /// Repo-relative output `.apk` path. Must be under `SANDBOX_DIR` — the
+    /// runner deletes it plus the bundler's intermediates beside it.
     out: []const u8,
     bundle_id: []const u8,
     /// Zip entries asserted present (substring match against `unzip -l` output).
@@ -468,22 +547,17 @@ fn jdkAvailable(a: std.mem.Allocator, io: std.Io) bool {
 
 /// Remove the APK, the staged `.so`, and the bundler's intermediates
 /// (`<apk>.stage` dir, `<apk>.unaligned`/`.aligned`) so a smoke test leaves no
-/// litter. Best-effort `/bin/rm -rf` — failures are ignored.
-fn cleanupApk(a: std.mem.Allocator, io: std.Io, out_abs: []const u8, so_abs: []const u8) void {
-    const targets = [_][]const u8{
-        out_abs,
-        so_abs,
-        std.fmt.allocPrint(a, "{s}.stage", .{out_abs}) catch return,
-        std.fmt.allocPrint(a, "{s}.unaligned", .{out_abs}) catch return,
-        std.fmt.allocPrint(a, "{s}.aligned", .{out_abs}) catch return,
-        std.fmt.allocPrint(a, "{s}.idsig", .{out_abs}) catch return, // apksigner sidecar
+/// litter.
+fn cleanupApk(a: std.mem.Allocator, io: std.Io, repo_root: []const u8, out_path: SandboxPath, so_path: SandboxPath) void {
+    const targets = [_]SandboxPath{
+        out_path,
+        so_path,
+        out_path.suffixed(a, ".stage") catch return,
+        out_path.suffixed(a, ".unaligned") catch return,
+        out_path.suffixed(a, ".aligned") catch return,
+        out_path.suffixed(a, ".idsig") catch return, // apksigner sidecar
     };
-    for (targets) |t| {
-        _ = std.process.run(a, io, .{
-            .argv = &.{ "/bin/rm", "-rf", t },
-            .timeout = deadline(io),
-        }) catch {};
-    }
+    for (targets) |t| t.remove(a, io, repo_root);
 }
 
 /// One runnable corpus entry, fully resolved at collection time. All strings
@@ -671,6 +745,15 @@ fn runOne(
     }
     const cfg = item.cfg;
 
+    // Refuse a sidecar whose declared output leaves the sandbox BEFORE the
+    // build runs: the runner deletes what it declares, and outside `.sx-tmp/`
+    // that is someone else's data.
+    const outputs = declaredOutputs(cfg);
+    if (outputs.escaped) |bad| {
+        out.failure = try std.fmt.allocPrint(results_gpa, "{s}: {s}/expected/{s}.build declares the output '{s}' outside {s}/ — the runner deletes its outputs, so they must stay in the sandbox", .{ name, item.rel_prefix, name, bad, SANDBOX_DIR });
+        return;
+    }
+
     const rel_path = try std.fmt.allocPrint(a, "{s}/{s}.sx", .{ item.rel_prefix, name });
     const exit_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.exit", .{ exp_dir, name })) orelse "";
     const out_raw = readOptional(io, a, try std.fmt.allocPrint(a, "{s}/{s}.stdout", .{ exp_dir, name })) orelse "";
@@ -714,9 +797,11 @@ fn runOne(
     // produced APK's zip entries and then returns, never falling through
     // to the stream snapshot comparison below.
     if (cfg.apk) |ac| {
-        const out_abs = try std.fs.path.join(a, &.{ repo_root, ac.out });
+        const out_path = outputs.apk_out.?;
+        const out_abs = try out_path.abs(a, repo_root);
         // Android requires the shared-lib basename to start with `lib`.
-        const so_abs = try std.fmt.allocPrint(a, "{s}/.sx-tmp/libsxapk_{s}.so", .{ repo_root, name });
+        const so_path = try SandboxPath.own(a, "libsxapk_{s}.so", .{name});
+        const so_abs = try so_path.abs(a, repo_root);
         const build_res = blk: {
             g_build_mutex.lockUncancelable(io);
             defer g_build_mutex.unlock(io);
@@ -742,7 +827,7 @@ fn runOne(
             out.failure = try std.fmt.allocPrint(results_gpa, "{s}: apk build failed (exit {d})\n{s}", .{
                 name, termCode(build_res.term), trimNl(build_res.stderr),
             });
-            cleanupApk(a, io, out_abs, so_abs);
+            cleanupApk(a, io, repo_root, out_path, so_path);
             return;
         }
         // Inspect the APK's zip entries via `unzip -l`; each `expect` entry
@@ -753,14 +838,14 @@ fn runOne(
             .timeout = deadline(io),
         }) catch |err| {
             out.failure = try std.fmt.allocPrint(results_gpa, "{s}: `unzip -l` {s}", .{ name, @errorName(err) });
-            cleanupApk(a, io, out_abs, so_abs);
+            cleanupApk(a, io, repo_root, out_path, so_path);
             return;
         };
         if (termCode(list_res.term) != 0) {
             out.failure = try std.fmt.allocPrint(results_gpa, "{s}: `unzip -l` failed (exit {d}) — apk not produced?\n{s}", .{
                 name, termCode(list_res.term), trimNl(list_res.stderr),
             });
-            cleanupApk(a, io, out_abs, so_abs);
+            cleanupApk(a, io, repo_root, out_path, so_path);
             return;
         }
         var missing: std.ArrayList(u8) = .empty;
@@ -771,7 +856,7 @@ fn runOne(
         }
         if (missing.items.len > 0)
             out.failure = try results_gpa.dupe(u8, trimNl(missing.items));
-        cleanupApk(a, io, out_abs, so_abs);
+        cleanupApk(a, io, repo_root, out_path, so_path);
         return;
     }
 
@@ -877,7 +962,8 @@ fn runOne(
             // (default_pipeline → bundle_main) and produced an `.app`. Assert
             // its structure, then `rm -rf` it so it doesn't linger.
             if (cfg.bundle) |bc| {
-                const app_abs = try std.fs.path.join(a, &.{ repo_root, bc.app });
+                const app_path = outputs.bundle_app.?;
+                const app_abs = try app_path.abs(a, repo_root);
                 var missing: std.ArrayList(u8) = .empty;
                 for (bc.expect) |entry| {
                     const entry_abs = try std.fs.path.join(a, &.{ app_abs, entry });
@@ -885,11 +971,7 @@ fn runOne(
                         try missing.appendSlice(a, try std.fmt.allocPrint(a, "{s}: bundle missing '{s}' under {s}\n", .{ name, entry, bc.app }));
                     };
                 }
-                _ = std.process.run(a, io, .{
-                    .argv = &.{ "/bin/rm", "-rf", app_abs },
-                    .cwd = .{ .path = repo_root },
-                    .timeout = deadline(io),
-                }) catch {};
+                app_path.remove(a, io, repo_root);
                 if (missing.items.len > 0) {
                     out.failure = try results_gpa.dupe(u8, trimNl(missing.items));
                     return;
@@ -1291,6 +1373,81 @@ test "issues corpus: every pinned issues/*.sx repro runs and matches its snapsho
     try reportFailures("issues", ran, failures.items);
 }
 
+test "sandbox: a declared output outside .sx-tmp is refused and never deleted" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const io = test_io();
+
+    // Issue 0391: a corpus run deleted the repo root's untracked `assets/`.
+    // Stand in for the repo root so the scenario is reproduced without writing
+    // into the real one, and give it the same untracked content to lose.
+    const repo_root = std.fs.path.dirname(corpus_paths.examples_dir) orelse ".";
+    const root = try SandboxPath.own(a, "sandbox-0391-root", .{});
+    const root_abs = try root.abs(a, repo_root);
+    defer root.remove(a, io, repo_root);
+    const sentinel = "0391 untracked user content\x00\xff not a build output\n";
+    const assets_abs = try std.fmt.allocPrint(a, "{s}/assets", .{root_abs});
+    const canary_abs = try std.fmt.allocPrint(a, "{s}/canary.bin", .{assets_abs});
+    try std.Io.Dir.createDirPath(.cwd(), io, assets_abs);
+    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = canary_abs, .data = sentinel });
+
+    // Every shape that resolves outside the sandbox: the repo root itself, a
+    // sibling of it, an absolute path, a `..` hop back out, the sandbox root
+    // (deleting it would take every other example's outputs with it), and a
+    // directory whose name merely starts with the sandbox's.
+    const escapes = [_][]const u8{
+        "assets",
+        "assets/canary.bin",
+        "./assets",
+        "../assets",
+        "..",
+        ".",
+        "",
+        "/",
+        try std.fmt.allocPrint(a, "{s}/assets", .{root_abs}),
+        ".sx-tmp/../assets",
+        ".sx-tmp/./x.app",
+        ".sx-tmp",
+        ".sx-tmp/",
+        ".sx-tmpish/x.app",
+    };
+    for (escapes) |bad| {
+        try std.testing.expect(SandboxPath.parse(bad) == null);
+
+        // The runner reports the sidecar and builds nothing — there is no
+        // `SandboxPath` for either output, so nothing can reach `rm -rf`.
+        const bundled = declaredOutputs(.{ .bundle = .{ .app = bad, .expect = &.{} } });
+        try std.testing.expectEqualStrings(bad, bundled.escaped.?);
+        try std.testing.expect(bundled.bundle_app == null);
+
+        const apked = declaredOutputs(.{ .apk = .{ .out = bad, .bundle_id = "co.example.x", .expect = &.{} } });
+        try std.testing.expectEqualStrings(bad, apked.escaped.?);
+        try std.testing.expect(apked.apk_out == null);
+
+        // Drive the cleanup the runner performs once a check is done. Both
+        // decisions resolve to "nothing to delete" — the deletion the sidecar
+        // asked for is the one that took `assets/` with it.
+        if (bundled.bundle_app) |p| p.remove(a, io, root_abs);
+        if (apked.apk_out) |p| cleanupApk(a, io, root_abs, p, try SandboxPath.own(a, "libsxapk_x.so", .{}));
+    }
+
+    const after = try std.Io.Dir.readFileAlloc(.cwd(), io, canary_abs, a, .limited(MAX_OUTPUT));
+    try std.testing.expectEqualSlices(u8, sentinel, after);
+
+    // A sandbox path is still accepted, and cleanup still removes it — plus the
+    // intermediates the APK bundler leaves beside it.
+    const good = declaredOutputs(.{ .apk = .{ .out = ".sx-tmp/x.apk", .bundle_id = "co.example.x", .expect = &.{} } });
+    try std.testing.expect(good.escaped == null);
+    try std.testing.expectEqualStrings(".sx-tmp/x.apk", good.apk_out.?.rel);
+
+    const litter_abs = try good.apk_out.?.abs(a, root_abs);
+    try std.Io.Dir.createDirPath(.cwd(), io, try std.fmt.allocPrint(a, "{s}/{s}", .{ root_abs, SANDBOX_DIR }));
+    try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = litter_abs, .data = "apk" });
+    cleanupApk(a, io, root_abs, good.apk_out.?, try SandboxPath.own(a, "libsxapk_x.so", .{}));
+    if (std.Io.Dir.access(.cwd(), io, litter_abs, .{})) |_| return error.TestUnexpectedResult else |_| {}
+}
+
 test "parseBuildConfig: defaults, fields, unknown key" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1313,9 +1470,9 @@ test "parseBuildConfig: defaults, fields, unknown key" {
     try std.testing.expect(ser.serial);
     try std.testing.expect(!ser.aot);
 
-    const bnd = try parseBuildConfig(a, "{ \"aot\": true, \"bundle\": { \"app\": \"x.app\", \"expect\": [\"Contents/MacOS\", \"Contents/Info.plist\"] } }");
+    const bnd = try parseBuildConfig(a, "{ \"aot\": true, \"bundle\": { \"app\": \".sx-tmp/x.app\", \"expect\": [\"Contents/MacOS\", \"Contents/Info.plist\"] } }");
     try std.testing.expect(bnd.aot);
-    try std.testing.expectEqualStrings("x.app", bnd.bundle.?.app);
+    try std.testing.expectEqualStrings(".sx-tmp/x.app", bnd.bundle.?.app);
     try std.testing.expectEqual(@as(usize, 2), bnd.bundle.?.expect.len);
     try std.testing.expectEqualStrings("Contents/Info.plist", bnd.bundle.?.expect[1]);
 

@@ -71,7 +71,7 @@ bundle_main :: (opts: BuildOptions) -> bool {
 
     // Clean previous bundle. `rm -rf` via shell until fs.sx grows
     // `delete_dir_all`.
-    rm_cmd := concat("rm -rf ", bundle);
+    rm_cmd := concat("rm -rf \"", concat(bundle, "\""));
     rm_z := str_to_cstr(rm_cmd);
     if r := run(rm_z) {
         if r.exit_code != 0 {
@@ -1158,7 +1158,7 @@ zip_asset_dir :: (src: string, dest: string, apk: string) -> bool {
     if !exists(str_to_cstr(src)) { return true; }
     asset_root := str_to_cstr(".sx-tmp/apk-assets");
     create_dir_all(asset_root);
-    rm_cmd := concat("rm -rf .sx-tmp/apk-assets/", dest);
+    rm_cmd := concat("rm -rf \".sx-tmp/apk-assets/", concat(dest, "\""));
     run(str_to_cstr(rm_cmd));
     parent := if dir_part(dest).len > 0 then concat(".sx-tmp/apk-assets/", dir_part(dest)) else ".sx-tmp/apk-assets";
     if !create_dir_all(str_to_cstr(parent)) {
