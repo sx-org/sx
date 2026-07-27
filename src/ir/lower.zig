@@ -2468,6 +2468,17 @@ pub const Lowering = struct {
         return false;
     }
 
+    /// The integer type a payload-less enum's value IS — its declared backing
+    /// type, `i64` when none was written. Null for every other type: a
+    /// payload-CARRYING enum is a `tagged_union` (`{tag, payload}`), not a
+    /// scalar, so no integer stands for its value.
+    pub fn enumBackingType(self: *Lowering, ty: TypeId) ?TypeId {
+        if (ty.isBuiltin()) return null;
+        const info = self.module.types.get(ty);
+        if (info != .@"enum") return null;
+        return info.@"enum".backing_type orelse .i64;
+    }
+
     /// Value range of an integer type, for literal fits-checks. Null for
     /// 64-bit types — every i64 literal bit pattern is legal there (a 64-bit
     /// hex literal wraps negative through the lexer's i64 value, so a

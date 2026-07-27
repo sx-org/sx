@@ -1701,6 +1701,22 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
             return self.builder.emit(.{ .float_to_int = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
         },
+        // Int ↔ payload-less enum: run the integer ladder to/from the enum's
+        // backing type, then retype the word to the other side. The retype is
+        // a `bitcast` between two identically-shaped scalars (the enum lowers
+        // to its backing integer), so the result is a genuinely enum-/int-
+        // typed value in every position — optional wrap, argument, `switch`
+        // subject, comparison.
+        .int_to_enum => {
+            const backing = self.enumBackingType(dst_ty).?;
+            const as_backing = self.coerceMode(val, src_ty, backing, mode);
+            return self.builder.emit(.{ .bitcast = .{ .operand = as_backing, .from = backing, .to = dst_ty } }, dst_ty);
+        },
+        .enum_to_int => {
+            const backing = self.enumBackingType(src_ty).?;
+            const as_backing = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = backing } }, backing);
+            return self.coerceMode(as_backing, backing, dst_ty, mode);
+        },
         // Ptr ↔ Int — explicit `xx ptr` to/from an integer-typed slot.
         // Emits a `bitcast` IR op; emit_llvm.zig's bitcast arm dispatches
         // to LLVMBuildPtrToInt / LLVMBuildIntToPtr at the LLVM level
