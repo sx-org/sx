@@ -98,6 +98,16 @@ pub fn isErrorTagLiteralNode(node: *const Node) bool {
     return obj.data == .identifier and std.mem.eql(u8, obj.data.identifier.name, "error");
 }
 
+/// The tag NAME a `raise` operand names literally, in either spelling — the
+/// anonymous `error.X` or the contextual `.X` shorthand — or null for a
+/// variable / computed tag. In `raise` position a `.X` is unambiguously a tag,
+/// so the two spellings are interchangeable to every caller of this.
+pub fn literalTagName(node: *const Node) ?[]const u8 {
+    if (isErrorTagLiteralNode(node)) return node.data.field_access.field;
+    if (node.data == .enum_literal) return node.data.enum_literal.name;
+    return null;
+}
+
 /// Lower `==` / `!=` when an error-set value or `error.X` tag is involved.
 /// Returns null when neither operand is error-related (general path runs).
 /// Both operands must be a tag (an `error.X` literal or an error-set value);
@@ -109,11 +119,17 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
     const r_tag = isErrorTagLiteralNode(bop.rhs);
     if (l_set == null and r_set == null and !l_tag and !r_tag) return null;
 
-    const l_ok = l_set != null or l_tag;
-    const r_ok = r_set != null or r_tag;
+    // A contextual `.Name` shorthand is a tag when the OTHER operand supplies
+    // the set to type it from; with no set on either side there is nothing to
+    // resolve against and it stays an ordinary enum literal.
+    const l_dot = bop.lhs.data == .enum_literal and r_set != null;
+    const r_dot = bop.rhs.data == .enum_literal and l_set != null;
+
+    const l_ok = l_set != null or l_tag or l_dot;
+    const r_ok = r_set != null or r_tag or r_dot;
     if (!l_ok or !r_ok) {
         if (self.diagnostics) |diags| {
-            diags.addFmt(.err, bop.lhs.span, "an error-set value compares only with an `error.X` tag or another error-set value; coerce with `xx` to compare the raw id", .{});
+            diags.addFmt(.err, bop.lhs.span, "an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id", .{});
         }
         return self.builder.constBool(false);
     }
@@ -176,6 +192,37 @@ pub fn checkErrorSetSubset(self: *Lowering, src: TypeId, dst: TypeId, span: ast.
     self.diagTagsNotInSet(src_info.error_set.tags, dst, span);
 }
 
+/// An error-set VALUE crossing between two named sets is legal only when
+/// every tag of `src` is a member of `dst` — the same subset rule the error
+/// channel applies to `raise` and to a forwarded failable. Both sets are
+/// u32-backed, so the width-based reinterpret guard in `coerce.zig` classifies
+/// the pair as a legitimate same-width passthrough and lets a foreign tag land
+/// in the destination slot, where no `error.X` literal of that set can ever
+/// name it. The inferred bare-`!` placeholder absorbs any tag on either side.
+pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, span: ast.Span) void {
+    if (src == dst) return;
+    if (src.isBuiltin() or dst.isBuiltin()) return;
+    const src_info = self.module.types.get(src);
+    const dst_info = self.module.types.get(dst);
+    if (src_info != .error_set or dst_info != .error_set) return;
+    if (self.isInferredErrorSet(src) or self.isInferredErrorSet(dst)) return;
+    const src_name = self.module.types.getString(src_info.error_set.name);
+    const dst_name = self.module.types.getString(dst_info.error_set.name);
+    for (src_info.error_set.tags) |tag| {
+        var found = false;
+        for (dst_info.error_set.tags) |d| {
+            if (d == tag) {
+                found = true;
+                break;
+            }
+        }
+        if (found) continue;
+        if (self.diagnostics) |diags| {
+            diags.addFmt(.err, span, "cannot coerce error set '{s}' to '{s}': tag 'error.{s}' is not a member of '{s}'", .{ src_name, dst_name, self.module.types.getTagName(tag), dst_name });
+        }
+    }
+}
+
 /// Diagnose every tag id in `src_tags` that is not a member of the named
 /// error set `dst`. Shared by the named-set subset check and E1.4b's
 /// inferred-callee widening (where the callee's tags come from the SCC,
@@ -227,7 +274,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     const tag_ref = self.lowerExpr(rs.tag);
     self.target_type = saved_target;
 
-    if (!inferred and !isErrorTagLiteralNode(rs.tag)) {
+    if (!inferred and literalTagName(rs.tag) == null) {
         if (self.errorSetTypeOf(rs.tag)) |src_set| {
             self.checkErrorSetSubset(src_set, err_set, span);
         }
@@ -238,10 +285,12 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     self.emitTracePush(self.placeholderTraceFrame());
 
     // (4) Emit the failure return. Pure-failable: the return type IS the
-    //     error set, so return the tag value directly.
+    //     error set, so return the tag value directly. Step (2)'s subset rule
+    //     owns the set relationship here, so the tag move into the channel
+    //     bypasses the implicit value-coercion membership guard.
     if (ret_ty == err_set) {
         const tag_ty = self.builder.getRefType(tag_ref);
-        const coerced = if (tag_ty != err_set) self.coerceToType(tag_ref, tag_ty, err_set) else tag_ref;
+        const coerced = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
         self.emitErrorCleanup(self.func_defer_base, coerced);
         if (self.inline_return_target) |iri| {
             self.builder.store(iri.slot, coerced);
@@ -253,7 +302,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
         // Value-carrying `-> (T..., !)`: the error path leaves the value
         // slots undefined and carries the tag in the error slot (ERR E2.1).
         const tag_ty = self.builder.getRefType(tag_ref);
-        const coerced_tag = if (tag_ty != err_set) self.coerceToType(tag_ref, tag_ty, err_set) else tag_ref;
+        const coerced_tag = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
         self.emitErrorCleanup(self.func_defer_base, coerced_tag);
         const fields = self.module.types.get(ret_ty).tuple.fields;
         var slots = std.ArrayList(Ref).empty;
@@ -710,7 +759,10 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
 /// inline-comptime return targets. The caller emits defers first.
 pub fn emitErrorReturn(self: *Lowering, caller_ret: TypeId, caller_set: TypeId, err: Ref) void {
     const ety = self.builder.getRefType(err);
-    const coerced = if (ety != caller_set) self.coerceToType(err, ety, caller_set) else err;
+    // The channel's own subset rule (`checkEscapeWidening` / `checkErrorSetSubset`
+    // at the raise / propagate / forward site) owns this move, so it bypasses the
+    // implicit value-coercion membership guard rather than being reported twice.
+    const coerced = if (ety != caller_set) self.coerceExplicit(err, ety, caller_set) else err;
     if (caller_ret == caller_set) {
         if (self.inline_return_target) |iri| {
             self.builder.store(iri.slot, coerced);

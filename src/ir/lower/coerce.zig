@@ -1385,6 +1385,10 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
         }
     }
+    if (mode == .implicit and !self.xx_passthrough_refs.contains(val)) {
+        const cs = self.builder.current_span;
+        self.checkErrorSetValueCoercion(src_ty, dst_ty, .{ .start = cs.start, .end = cs.end });
+    }
     // PLANNING: classify the built-in coercion (conversions.zig).
     // EMISSION: each arm below reproduces the original lowering.
     switch (self.coercionResolver().classify(src_ty, dst_ty)) {
