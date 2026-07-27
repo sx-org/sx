@@ -1,4 +1,14 @@
 error: duplicate impl 'Into' for source 'i64' in examples/protocols/0412-protocols-impl-duplicate-same-file.sx
+  --> examples/protocols/0412-protocols-impl-duplicate-same-file.sx:11:1
+   |
+11 | impl Into(MyA) for i64 {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^
+12 |   convert :: (self: i64) -> MyA { .{ v = self } }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 | }
+   | ^
+
+note: also implemented here
   --> examples/protocols/0412-protocols-impl-duplicate-same-file.sx:15:1
    |
 15 | impl Into(MyA) for i64 {

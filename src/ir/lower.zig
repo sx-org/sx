@@ -498,6 +498,11 @@ pub const Lowering = struct {
     /// impl adopt an exact method already owned by the same concrete TypeId
     /// without turning protocol conformance structural or scan-order dependent.
     protocol_impl_decls: std.AutoHashMap(ProtocolConcreteKey, void),
+    /// Every declared impl site of a concrete `(protocol, type)` pair, so
+    /// import-scoped coherence (§3) can refuse a second impl of the pair in the
+    /// module that already declared one. Cross-module overlaps stay legal here
+    /// and are decided at a use site that sees both.
+    protocol_impl_sites: std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_tagged.ImplSite)),
     /// Exact receiver type recorded when a nullary-protocol impl method is
     /// declared. Synthesized default methods are authored in the protocol's
     /// module, where re-resolving their synthetic `self: *Target` annotation
@@ -1016,6 +1021,7 @@ pub const Lowering = struct {
             .plain_struct_authors = std.AutoHashMap(TypeId, PlainStructAuthor).init(module.alloc),
             .protocol_impl_methods = std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod).init(module.alloc),
             .protocol_impl_decls = std.AutoHashMap(ProtocolConcreteKey, void).init(module.alloc),
+            .protocol_impl_sites = std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
             .protocol_impl_receiver_types = std.AutoHashMap(*const ast.FnDecl, TypeId).init(module.alloc),
             .protocol_default_dispatch = null,
             .registered_protocol_impls = std.AutoHashMap(*const ast.ImplBlock, void).init(module.alloc),

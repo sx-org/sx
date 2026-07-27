@@ -1,0 +1,26 @@
+// Import-scoped coherence (§3) starts at home: one module may declare exactly
+// one impl of a `(protocol, type)` pair, whatever the protocol's kind. Two of
+// them leave every consumer — a concrete `p.show()` as much as an erasure —
+// picking a body by declaration order, so the pair is refused at the impls and
+// the error names both.
+#import "modules/std.sx";
+
+Show :: protocol { show :: (self: *Self) -> i64; }
+Draw :: protocol vtable { draw :: (self: *Self) -> i64; }
+Size :: protocol inline { size :: (self: *Self) -> i64; }
+
+Point :: struct { v: i64 = 0; }
+
+impl Show for Point { show :: (self: *Point) -> i64 { self.v } }
+impl Show for Point { show :: (self: *Point) -> i64 { self.v * 2 } }
+
+impl Draw for Point { draw :: (self: *Point) -> i64 { self.v } }
+impl Draw for Point { draw :: (self: *Point) -> i64 { self.v * 3 } }
+
+impl Size for Point { size :: (self: *Point) -> i64 { self.v } }
+impl Size for Point { size :: (self: *Point) -> i64 { self.v * 4 } }
+
+main :: () {
+    p : Point = .{ v = 1 };
+    print("{}\n", p.show());
+}
