@@ -511,6 +511,29 @@ pub fn shadowNominalId(self: *Lowering, name_id: types.StringId) u32 {
     return self.next_nominal_id;
 }
 
+/// The spelling `name` must be keyed under so it addresses `decl` and nothing
+/// else. The FIRST declaration to claim a spelling keeps it verbatim; every
+/// further declaration of the same spelling gets a distinct `__d<id>` suffix.
+/// Every name-keyed instantiation cache (generic-struct layouts, type-function
+/// results, generic/pack monomorphs, protocol registrations and instances)
+/// funnels its base name through here, so two same-display-name authors can
+/// never share a cache entry, symbol, impl entry, thunk set, or vtable.
+pub fn declIdentityName(self: *Lowering, name: []const u8, decl: *const anyopaque) []const u8 {
+    if (self.decl_identity_first.get(name)) |first| {
+        if (first == decl) return name;
+    } else {
+        const owned = self.alloc.dupe(u8, name) catch @panic("out of memory while keying declaration identity");
+        self.decl_identity_first.put(owned, decl) catch @panic("out of memory while keying declaration identity");
+        return name;
+    }
+    const gop = self.decl_identity_ids.getOrPut(decl) catch @panic("out of memory while keying declaration identity");
+    if (!gop.found_existing) {
+        self.next_decl_identity += 1;
+        gop.value_ptr.* = self.next_decl_identity;
+    }
+    return std.fmt.allocPrint(self.alloc, "{s}__d{d}", .{ name, gop.value_ptr.* }) catch @panic("out of memory while keying declaration identity");
+}
+
 /// TRUE iff `name` is authored AS A NAMED TYPE (struct / enum / union /
 /// error-set / protocol / runtime class) by ≥2 DISTINCT modules in the import
 /// raw facts — the authoritative same-name-shadow signal (the only case where
@@ -945,6 +968,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
         if (field_idx < total_explicit) {
             _ = self.rejectMultiReturnValueType(sd.field_types[field_idx], "field");
             const field_ty = self.resolveType(sd.field_types[field_idx]);
+            _ = self.refuseValuelessProtocol(field_ty, sd.field_types[field_idx].span, "declare a field of type");
             fields.append(self.alloc, .{
                 .name = table.internString(sd.field_names[field_idx]),
                 .ty = field_ty,

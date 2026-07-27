@@ -1,0 +1,16 @@
+error: expansion deadlock — nothing can run: every compile-time unit still waiting needs a fact only another waiting unit could publish, so the expansion depends negatively on a set it feeds
+  --> examples/diagnostics/1989-diagnostics-expansion-deadlock-context.sx:10:11
+   |
+10 | inline if #run { context.depth > 2 } {
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: this `inline if` awaits the program Context to be final
+  --> examples/diagnostics/1989-diagnostics-expansion-deadlock-context.sx:10:11
+   |
+10 | inline if #run { context.depth > 2 } {
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+help: decide the declaration outside the set it queries — a question whose answer changes what it asks about has no single answer
+   |
+10 | inline if #run { context.depth > 2 } {
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^

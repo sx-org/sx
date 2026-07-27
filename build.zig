@@ -326,31 +326,6 @@ pub fn build(b: *std.Build) void {
     corpus_opts.addOption([]const u8, "name", name_filter);
     mod.addOptions("corpus_paths", corpus_opts);
 
-    // `zig build [test] -Dcomptime-flat` defaults comptime evaluation to the
-    // flat-memory VM (`src/ir/comptime_vm.zig`), with the legacy tagged interpreter
-    // as the per-eval fallback — the "swap behind a build flag" step of
-    // `current/PLAN-COMPILER-VM.md`. Default OFF (legacy). The `SX_COMPTIME_FLAT`
-    // env var enables it too (either turns it on); read in `emit_llvm.zig::init`.
-    const comptime_flat = b.option(
-        bool,
-        "comptime-flat",
-        "Default comptime evaluation to the flat-memory VM (legacy interp as fallback)",
-    ) orelse false;
-    // `-Dcomptime-flat-strict` (or env `SX_COMPTIME_FLAT_STRICT`): run EVERY comptime
-    // eval on the VM with NO legacy fallback — a VM bail becomes a build-gating error
-    // naming the reason. The enumeration gate for retiring `interp.zig`: when the
-    // corpus is green under strict mode, the VM handles everything and legacy can be
-    // deleted. Implies `comptime_flat`.
-    const comptime_flat_strict = b.option(
-        bool,
-        "comptime-flat-strict",
-        "Run all comptime eval on the VM with NO fallback; a bail is a hard error (interp-retirement gate)",
-    ) orelse false;
-    const build_opts = b.addOptions();
-    build_opts.addOption(bool, "comptime_flat", comptime_flat);
-    build_opts.addOption(bool, "comptime_flat_strict", comptime_flat_strict);
-    mod.addOptions("build_opts", build_opts);
-
     const mod_tests = b.addTest(.{
         .root_module = mod,
     });
@@ -366,7 +341,22 @@ pub fn build(b: *std.Build) void {
     });
     const run_exe_tests = b.addRunArtifact(exe_tests);
 
+    // The comptime-evaluation suspension substrate switches stacks under a full
+    // register clobber, so its correctness is a CODEGEN property: a Debug build
+    // spills everything and can never observe a register the switch destroys.
+    // It gets its own optimized test artifact — it depends on nothing but std,
+    // so the extra compile is cheap — and the Debug gate covers it too.
+    const async_substrate_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/ir/comptime_async.test.zig"),
+            .target = target,
+            .optimize = .ReleaseFast,
+        }),
+    });
+    const run_async_substrate_tests = b.addRunArtifact(async_substrate_tests);
+
     const test_step = b.step("test", "Run unit tests + the example/issue regression suite");
+    test_step.dependOn(&run_async_substrate_tests.step);
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 }

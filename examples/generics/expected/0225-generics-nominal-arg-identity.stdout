@@ -1,0 +1,5 @@
+Wrap layout per author: ok
+Make layout per author: ok
+Tup pack arg per author: ok
+Wrap(a.Thing) field: ok
+Wrap(b.Thing) field: ok

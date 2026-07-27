@@ -60,6 +60,9 @@ alloc :: ufcs (a: Allocator, $T: Type, count: i64) -> []T {
 free :: ufcs (x: $T, a: Allocator = context.allocator) {
     inline if T == {
         case protocol: {
+            inline if protocol_kind(T) == .tagged {
+                #error("free on a tagged protocol value — a tagged value is always a borrow into its conformer's storage; there is no owned allocation to free");
+            }
             inline if is_identity(T) {
                 #error("free on an '#identity' protocol value — identity values only ever borrow a named object's storage; there is no owned allocation to free");
             }

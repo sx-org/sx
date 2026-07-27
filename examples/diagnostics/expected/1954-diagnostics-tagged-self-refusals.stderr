@@ -1,0 +1,29 @@
+error: 'nearest' is unavailable on a tagged 'Shape' value — its parameter 'others' mentions 'Self' under a composite ('*Self', '?Self', '[]Self', 'Box(Self)'), which has no caller-side type: a composite of 16-byte 'Shape' handles is not a composite of any one conformer, and no per-element coercion exists; call it through a generic bound instead: `f :: (a: $T/Shape) { a.nearest(…); }`
+  --> examples/diagnostics/1954-diagnostics-tagged-self-refusals.sx:51:5
+   |
+51 |     v.nearest(arr[0..1]);
+   |     ^^^^^^^^^
+
+error: 'maybe' is unavailable on a tagged 'Shape' value — its return type mentions 'Self' under a composite ('*Self', '?Self', '[]Self', 'Box(Self)'), which has no caller-side type: a composite of 16-byte 'Shape' handles is not a composite of any one conformer, and no per-element coercion exists; call it through a generic bound instead: `f :: (a: $T/Shape) { a.maybe(…); }`
+  --> examples/diagnostics/1954-diagnostics-tagged-self-refusals.sx:52:5
+   |
+52 |     v.maybe();
+   |     ^^^^^^^
+
+error: 'twin' is unavailable on a tagged 'Shape' value — its parameter 'other' mentions 'Self' under a composite ('*Self', '?Self', '[]Self', 'Box(Self)'), which has no caller-side type: a composite of 16-byte 'Shape' handles is not a composite of any one conformer, and no per-element coercion exists; call it through a generic bound instead: `f :: (a: $T/Shape) { a.twin(…); }`
+  --> examples/diagnostics/1954-diagnostics-tagged-self-refusals.sx:53:5
+   |
+53 |     v.twin(*c);
+   |     ^^^^^^
+
+error: 'rebound' returns 'Self' and 'Handle' is an '#identity' tagged protocol — an arm would materialize an anonymous frame-scoped instance, which the naming discipline refuses; call it on a concrete receiver, or through a generic bound: `f :: (a: $T/Handle) -> T { a.rebound() }`
+  --> examples/diagnostics/1954-diagnostics-tagged-self-refusals.sx:57:5
+   |
+57 |     h.rebound(2);
+   |     ^^^^^^^^^
+
+error: cannot return the result of 'resized' directly — a '-> Self' dispatch through tagged protocol 'Shape' materializes its result in a temporary of THIS frame, which is about to die, so there is nothing durable to borrow beyond it; bind it, or place it in storage the caller owns
+  --> examples/diagnostics/1954-diagnostics-tagged-self-refusals.sx:40:38
+   |
+40 | grow :: (v: Shape) -> Shape { return v.resized(2.0); }
+   |                                      ^^^^^^^^^

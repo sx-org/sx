@@ -1,0 +1,24 @@
+// Taking a branch hands its contributions over — it does not drop them.
+//
+// The branch here aliases a module whose own driver authors the only
+// `impl Mark for Slot` in the program. While the branch is undecided, the
+// sweep counts that impl through the import. Taking the branch retires the
+// count, so the module's driver must be registered by the splice that brings
+// it in: it folds later, when the alias's views expand, and until then it is
+// what the reader below waits on.
+#import "modules/std.sx";
+#import "./1999-protocols-expansion-branch-import-alias-kinds.sx";
+
+inline if POINTER_SIZE == 8 {
+    alias :: #import "./1999-protocols-expansion-branch-import-alias-mod.sx";
+} else {
+    NARROW :: 1;
+}
+
+inline if has_impl(Mark, Slot) { ADMITTED :: 1; } else { ADMITTED :: 0; }
+
+main :: () {
+    s := Slot.{ n = 2 };
+    m := s.(Mark);
+    print("{} {}\n", ADMITTED, m.tag());
+}

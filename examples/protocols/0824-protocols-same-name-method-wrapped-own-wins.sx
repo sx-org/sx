@@ -19,7 +19,7 @@
 Box :: struct { m: i32; }
 Holder :: struct { b: Box = ---; }
 
-Provider :: protocol {
+Provider :: protocol vtable {
     // discriminating wrapped/compound RETURNS
     getp :: (self: *Self) -> *Box;
     geto :: (self: *Self) -> ?Box;

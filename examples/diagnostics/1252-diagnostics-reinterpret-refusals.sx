@@ -5,7 +5,7 @@
 // and the view spelling (`@s`) are the honest forms.
 #import "modules/std.sx";
 
-Sizable :: protocol { size :: (self: *Self) -> i64; }
+Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }
 impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 

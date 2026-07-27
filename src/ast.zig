@@ -1017,13 +1017,37 @@ pub const ProtocolMethodDecl = struct {
     param_name_is_raw: []const bool = &.{},
     return_type: ?*Node, // null = void return
     default_body: ?*Node, // null = required method, non-null = default implementation
+    /// `#expand` on this method alone — its tagged dispatch switch expands at
+    /// each call site instead of going through the outlined routine. A
+    /// header-level `#expand` sets it on every method.
+    is_expand: bool = false,
+};
+
+/// The kind slot of a protocol head — `protocol [(params)] kind [attrs]`.
+/// Ordered by cost: `constraint` emits nothing; the rest opt into dynamic
+/// dispatch. Absent in source ⇒ `constraint`.
+pub const ProtocolKind = enum {
+    constraint,
+    vtable,
+    @"inline",
+    tagged,
+
+    pub fn spelling(self: ProtocolKind) []const u8 {
+        return switch (self) {
+            .constraint => "constraint",
+            .vtable => "vtable",
+            .@"inline" => "inline",
+            .tagged => "tagged",
+        };
+    }
 };
 
 pub const ProtocolDecl = struct {
     name: []const u8,
     methods: []const ProtocolMethodDecl,
-    is_inline: bool = false, // #inline — embedded fn ptrs instead of vtable pointer
+    kind: ProtocolKind = .constraint,
     is_identity: bool = false, // #identity — borrow-only ownership class (values never own their ctx)
+    is_expand: bool = false, // #expand on the header — every method's dispatch expands at the call site
     type_params: []const StructTypeParam = &.{}, // for `protocol(Target: Type) { ... }`
     /// True when the declared NAME was a backtick raw identifier — exempt from
     /// the reserved-type-name decl check.
@@ -1112,3 +1136,143 @@ pub const ImplBlock = struct {
     protocol_type_args: []const *Node = &.{}, // for `impl Into(Block) for Source` — type args on the protocol side
     target_type_expr: ?*Node = null, // populated for parameterised-protocol impls; carries non-identifier source spellings (e.g. `Closure() -> void`)
 };
+
+// ── Expansion cloning ───────────────────────────────────────────────────
+
+/// Name → replacement node, as bound by a module-scope `inline for` cursor.
+pub const Substitution = std.StringHashMap(*const Node);
+
+/// The bare NAME a node denotes, when it denotes one. `inline for` cursors
+/// bind type names, so only the two bare-name spellings answer.
+pub fn bareName(node: *const Node) ?[]const u8 {
+    return switch (node.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        else => null,
+    };
+}
+
+/// Deep-copy an AST subtree, replacing every reference to a substituted name
+/// with a fresh copy of its bound node. Reference sites are the bare-name
+/// spellings a cursor can occupy: an expression identifier, a type
+/// expression, a parameterized-type head, a struct-literal prefix, and an
+/// `impl`'s target-type spelling. The copy is complete — an expansion never
+/// shares nodes with its template, so per-iteration source stamping and
+/// diagnostics stay independent.
+pub fn cloneWithSubst(
+    allocator: std.mem.Allocator,
+    node: *const Node,
+    subst: *const Substitution,
+) std.mem.Allocator.Error!*Node {
+    if (bareName(node)) |name| {
+        if (subst.get(name)) |replacement| {
+            var empty = Substitution.init(allocator);
+            defer empty.deinit();
+            const copy = try cloneWithSubst(allocator, replacement, &empty);
+            copy.span = node.span;
+            return copy;
+        }
+    }
+    const out = try allocator.create(Node);
+    out.* = .{
+        .span = node.span,
+        .data = try cloneData(allocator, node.data, subst),
+        .source_file = node.source_file,
+        .visibility = node.visibility,
+    };
+    switch (out.data) {
+        .parameterized_type_expr => |*pt| {
+            if (subst.get(pt.name)) |replacement| {
+                if (bareName(replacement)) |name| pt.name = name;
+            }
+        },
+        .struct_literal => |*sl| {
+            if (sl.struct_name) |sn| {
+                if (subst.get(sn)) |replacement| {
+                    if (bareName(replacement)) |name| sl.struct_name = name;
+                }
+            }
+        },
+        .impl_block => |*ib| {
+            if (subst.get(ib.target_type)) |replacement| {
+                if (bareName(replacement)) |name| ib.target_type = name;
+            }
+        },
+        else => {},
+    }
+    return out;
+}
+
+fn cloneData(
+    allocator: std.mem.Allocator,
+    data: Node.Data,
+    subst: *const Substitution,
+) std.mem.Allocator.Error!Node.Data {
+    switch (data) {
+        inline else => |payload, tag| {
+            const cloned = try cloneValue(@TypeOf(payload), allocator, payload, subst);
+            return @unionInit(Node.Data, @tagName(tag), cloned);
+        },
+    }
+}
+
+fn cloneValue(
+    comptime T: type,
+    allocator: std.mem.Allocator,
+    value: T,
+    subst: *const Substitution,
+) std.mem.Allocator.Error!T {
+    if (comptime !holdsNode(T)) return value;
+    switch (@typeInfo(T)) {
+        .pointer => |p| switch (p.size) {
+            .one => return try cloneWithSubst(allocator, value, subst),
+            .slice => {
+                const buf = try allocator.alloc(p.child, value.len);
+                for (value, 0..) |elem, i| buf[i] = try cloneValue(p.child, allocator, elem, subst);
+                return buf;
+            },
+            else => return value,
+        },
+        .optional => |o| return if (value) |inner| try cloneValue(o.child, allocator, inner, subst) else null,
+        .@"struct" => |s| {
+            var out: T = value;
+            inline for (s.fields) |f| {
+                @field(out, f.name) = try cloneValue(f.type, allocator, @field(value, f.name), subst);
+            }
+            return out;
+        },
+        .@"union" => switch (value) {
+            inline else => |payload, tag| {
+                const cloned = try cloneValue(@TypeOf(payload), allocator, payload, subst);
+                return @unionInit(T, @tagName(tag), cloned);
+            },
+        },
+        else => return value,
+    }
+}
+
+/// True when `T` reaches a `*Node` — the comptime gate that keeps the cloner
+/// off the payload types it must copy verbatim (names, spans, flags).
+fn holdsNode(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .pointer => |p| switch (p.size) {
+            .one => p.child == Node,
+            .slice => holdsNode(p.child),
+            else => false,
+        },
+        .optional => |o| holdsNode(o.child),
+        .@"struct" => |s| blk: {
+            for (s.fields) |f| {
+                if (holdsNode(f.type)) break :blk true;
+            }
+            break :blk false;
+        },
+        .@"union" => |u| blk: {
+            for (u.fields) |f| {
+                if (holdsNode(f.type)) break :blk true;
+            }
+            break :blk false;
+        },
+        else => false,
+    };
+}

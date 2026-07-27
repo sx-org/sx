@@ -701,13 +701,16 @@ runtime value with dynamic dispatch.
 ```
 protocol-decl := Name '::' 'protocol' [ '(' params ')' ] [ kind ] [ attrs ] '{' body '}'
 kind          := 'constraint' | 'vtable' | 'inline' | 'tagged'     (absent ⇒ constraint)
-attrs         := '#identity'                                        (erased and tagged kinds)
+attrs         := ( '#identity' | '#expand' )*                       (order free)
+                  '#identity' — erased and tagged kinds
+                  '#expand'   — tagged kind only (§6.3a)
 ```
 
 Three of the kind words — `constraint`, `vtable`, `tagged` — are
 contextual: ordinary identifiers everywhere else, read as kinds
 only in this position. `inline` is the language's existing keyword,
-serving here as a kind. Exactly one kind may appear.
+serving here as a kind. Exactly one kind may appear. Each attribute
+may appear at most once.
 
 #### 1. The kind ladder
 
@@ -734,7 +737,7 @@ Hasher    :: protocol inline {                 // few methods, call-heavy
     put :: (self: *Self, bytes: []u8);
     sum :: (self: *Self) -> u64;
 }
-Allocator :: protocol tagged #identity {       // unique stateful conformers
+Allocator :: protocol inline #identity {        // unique stateful conformers
     alloc_bytes   :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -1017,9 +1020,12 @@ writers); `vtable` keeps many-method values small.
 
 Every erased protocol belongs to one of two classes:
 
-- **value/own** (unmarked): a protocol value `P` OWNS its ctx — a
-  heap copy of the receiver, made at erasure through
-  `context.allocator`. `*P` is the borrowed view.
+- **value/own** (unmarked): erasure creates manually managed,
+  allocation-backed storage — a heap copy of the receiver, made at
+  erasure through `context.allocator`. The handles over that storage
+  may ALIAS it (§5.3a); "owning erasure" names the operation and the
+  storage's discipline, not a per-handle claim. `*P` is the borrowed
+  view.
 - **`#identity`**: for protocols whose runtime object *is* unique
   state (an allocator, an io runtime). Values only ever borrow, in
   every spelling; there is nothing to free.
@@ -1039,6 +1045,45 @@ Every erased protocol belongs to one of two classes:
 
 Re-erasure to a *different* protocol (`p.(Q)`) is a conversion in
 its own right — see §7.4.
+
+##### 5.3a Copies alias; conversion allocates
+
+Only a CONVERSION allocates: the concrete-to-`P` rows of §5.3 and
+the re-erasures of §7.4. An ordinary same-protocol copy — `q := p`,
+argument passing, returning, struct/array/tuple copying, storing
+into and reading out of containers, a generic body copying a `P` —
+copies the handle itself and nothing else: no allocation, no second
+erasure. Every handle so copied aliases the SAME backing allocation.
+`p.(P)` (the same-protocol row of §5.3) is the explicit clone: a new
+backing allocation holding an independent shallow byte-copy of the
+concrete receiver.
+
+There are no compiler-enforced moves: protocol values are ordinarily
+copyable handles. A program may transfer responsibility by copying a
+handle and ceasing to use the source — a convention, not a checked
+property.
+
+The free discipline follows from aliasing: each owning backing
+allocation is freed exactly ONCE, through ANY one of its aliases,
+and the free invalidates every alias to that backing. Double-free,
+use-after-free, and allocator mismatch are unchecked errors under
+the ordinary pointer/manual-memory doctrine. The handle carries no
+allocator word and the allocation no header — pairing the free with
+the right allocator is the program's job (§5.4).
+
+```sx
+p := circle.(Show);  // allocation A: concrete-to-Show erasure
+q := p;              // aliases A; no allocation
+r := p.(Show);       // allocation B: explicit shallow clone
+
+free(q);             // releases A; p and q are now invalid
+free(r);             // releases B
+```
+
+Borrowed representations sit outside this discipline: `#identity`
+values, tagged values, and `*P` views copy as borrowed handles over
+storage they never own (§5.2, §5.5, §6.2) — there is nothing to
+free, and `free` refuses them (§5.4).
 
 The demand diagnostic exists because an implicit erasure of named
 storage would silently heap-copy (or silently alias) something the
@@ -1260,10 +1305,14 @@ objects need a name; bind it first") instead of materializing a
 frame temp. Declare it for protocols whose conformers are unique
 stateful objects — an allocator whose state lives in a frame temp,
 handing out allocations that outlive the frame, is exactly the
-accident the discipline refuses:
+accident the discipline refuses. `Allocator` appears below at its
+TAGGED representation, because this is the section about tagged;
+std ships the `inline` one (§1), and the naming discipline the
+attribute contributes is identical on either — only the value layout
+and the dispatch differ:
 
 ```sx
-Allocator :: protocol tagged #identity {       // §1
+Allocator :: protocol tagged #identity {       // the tagged variant
     alloc_bytes   :: (self: *Self, size: i64) -> *void;
     dealloc_bytes :: (self: *Self, ptr: *void);
 }
@@ -1323,6 +1372,61 @@ materializations land in the caller's frame. That expansion is
 set-dependent codegen — §9's fingerprint-keyed caching consequence
 applies to the containing function.
 
+##### 6.3a `#expand` — the switch at the call site
+
+```
+attrs  := ( '#identity' | '#expand' )*                        (protocol header)
+method := Name '::' '(' params ')' [ '->' type ] [ '#expand' ] ( ';' | body )
+```
+
+`#expand` says **where a dispatch switch stands**, and nothing else.
+On the header it reaches every method of the protocol; on a method it
+reaches that method alone. It is a `tagged` attribute: `#expand` on
+any other kind is a compile error, on the header and on a method
+alike, because no other kind generates a switch to place. A
+method-level `#expand` under a header-level one is also an error —
+the header already said it, and which of the two is the leftover is
+not the compiler's guess to make.
+
+```sx
+Slab :: protocol tagged #identity #expand {        // every method
+    take :: (self: *Self, size: i64) -> *void;
+    drop :: (self: *Self, ptr: *void);
+}
+Gauge :: protocol tagged {
+    hot  :: (self: *Self, n: i64) -> i64 #expand;  // this method only
+    cold :: (self: *Self, n: i64) -> i64;          // outlined, as usual
+}
+```
+
+An `#expand` method's switch expands **at each call site** instead of
+standing behind the outlined `__sx_tags_<P>_<m>` routine. The arms,
+the totality, the tag order, and the computed result are the outlined
+routine's exactly — what changes is that each caller holds its own
+copy of the switch, so the caller's own facts fold it: a site whose
+receiver is a statically known conformer keeps one arm and drops the
+switch entirely, and every site in a one-conformer program folds to a
+direct call. The cost paid for that is code size — one switch per
+call site rather than one per program.
+
+The consequence is the `-> Self` consequence class (§6.3): an expanded
+call site is **set-dependent codegen**, so §9's fingerprint-keyed
+caching covers the containing function. Un-annotated tagged dispatch
+is untouched: its callers see one symbol call and stay
+set-independent.
+
+`#expand` is not observable. No builtin reports it, `protocol_kind`
+and `is_identity` are unaffected (§8), and the two spellings of a
+protocol compute the same values — a program cannot branch on where
+its switches live.
+
+*Implementation note.* The routine is still generated, once; the
+expansion is forced inlining of it, emitted as LLVM's `alwaysinline`.
+The contract is a guarantee, not the cost-model preference an inlining
+hint would express. Whether an un-annotated routine happens to be
+inlined anyway is the backend's ordinary business and no part of this
+specification.
+
 ##### 6.4 Dispatchability on tagged values
 
 Tagged dispatch extends the erased rule by exactly the *direct*
@@ -1377,7 +1481,7 @@ frame ends. The compiler emits a warning at each such call site:
 ```
 warning: 'resized' returns 'Self' through a tagged value — the
 result materializes a frame-scoped temporary (one per call; lives
-to end of frame). See the Protocols spec, "-> Self placement".
+to end of frame). See design/protocols.md §6.4, "-> Self placement".
 ```
 
 No fixit is offered: the right restructure (bind the receiver
@@ -1712,7 +1816,11 @@ dataflow discipline:
   unexpanded `inline if`/`inline for` branch can still contribute
   to it. Contribution is judged syntactically and conservatively:
   an unexpanded body mentioning `impl P for …` contributes to `P`'s
-  sets.
+  sets, and one holding an `#import` contributes the whole surface
+  of the module it names — the impls, declaration names and
+  `#context_extend`s that module authors, transitively through its
+  own imports and branches — because selecting the branch is what
+  brings them in.
 - **Erased-target conversion facts depend on impl multiplicity**
   (the program-unique rule, §7.4), and uniqueness is not monotone —
   a later impl destroys it. An erased-target conversion therefore
@@ -1722,6 +1830,16 @@ dataflow discipline:
   name-lookup hit is monotone-safe (declarations are never
   removed); a miss in code under this discipline suspends until the
   scope is final — no unexpanded branch can still declare the name.
+- **The program Context is a single layout**, so an evaluation that
+  reads it waits for that layout to settle: while any unexpanded
+  branch could still declare a `#context_extend`, the field set is
+  not final, and the evaluation suspends against Context-ready
+  exactly as it suspends against an open conformer set.
+  Contribution is judged syntactically, like an `impl`'s. Once
+  nothing can contribute, the decided declaration space registers,
+  the deterministic layout assembles, and the default context is
+  built from the selected branches' defaults — an untaken branch
+  contributes no field.
 - An evaluation needing a not-yet-utterable answer **suspends** —
   its VM state parks as a bookmark against the facts it awaits
   (presence of a pair or name, finality of a set or scope) — and
@@ -1833,6 +1951,8 @@ the runtime image resolves per the referent:
 - `is_identity(P)` — true for `#identity` protocols of either value
   representation (erased or tagged); false for every other type.
   Compile-time only.
+- `#expand` has no reflection form. It places switches; it changes no
+  value, type, or result, so nothing observes it (§6.3a).
 - A runtime `Type` value always tags a concrete type, never a bare
   protocol type. Composites *containing* protocol types (`*Show`,
   `[]View`) are concrete types and get tags like any other
@@ -1868,12 +1988,17 @@ renumbers tags and regenerates the link-stage tables and routines
 without recompiling them. Downcasts always emit as symbol compares
 — never constant-folded caller-side — so ordinary callers stay
 set-independent; single-conformer folding happens inside the
-link-stage outlined routine only. The one exception is functions
-containing call-site-inlined `Self`-switches (§6.3, one arm and one
-temp slot per member): their object-cache keys include the
-membership fingerprint of exactly the protocols whose
-`Self`-returning methods they dispatch — adding a conformer
-recompiles those functions and relinks the rest.
+link-stage outlined routine only. The exceptions are the functions
+that carry a switch of their own: one containing a call-site-inlined
+`Self`-switch (§6.3, one arm and one temp slot per member), and one
+calling an `#expand` method (§6.3a, one arm per member). Their
+object-cache keys include the membership fingerprint of exactly the
+protocols they expand a switch over — those whose `Self`-returning
+methods they dispatch, plus those whose `#expand` methods they call —
+and adding a conformer recompiles those functions and relinks the
+rest. The second exception is conditional on the annotation, not on
+the kind: a tagged protocol with no `#expand` method puts its
+membership in no cache key at all.
 
 The fixpoint precedes codegen, so every membership diagnostic —
 empty-set errors, out-of-set downcasts, coherence (§3, §6.8) — is
@@ -1891,6 +2016,9 @@ tagged:  call __sx_tags_P_m(v, args…)      — outlined switch on v.tag
 tagged, bare-Self-returning method:
          the switch expands INLINE at the call site; each arm
          materializes its concrete result in the caller's frame
+tagged, #expand method:
+         the same switch, expanded INLINE at the call site, where the
+         caller's own facts fold it (§6.3a)
 ```
 
 **`free`.** One function, compile-time kind-dispatched by an inline
@@ -1898,6 +2026,15 @@ type match: a protocol arm (ctx via `ProtocolRaw`, one body for both
 erased layouts, gated on the ownership class — `#identity` and
 tagged refuse), a closure arm, a slice arm; every other argument
 kind is a compile error.
+
+**The standard `Allocator` is stdlib-owned.** Its declaration —
+kind, attributes, method set — belongs to `std/core.sx`, not to the
+compiler. The compiler-driven heap paths (an owning erasure's copy,
+the implicit-context allocation, the Obj-C `+alloc`/`-dealloc` IMPs)
+find the allocator by NAME on the assembled `Context` and go through
+the ordinary protocol dispatch for whatever kind they find there, so
+respelling `Allocator` — a different kind, `#expand` added or removed
+— is a library edit that requires no compiler change.
 
 **The collection pass.** Tagged membership runs as an SCC fixpoint
 over the whole monomorphized program (the same machinery family as
@@ -1932,6 +2069,10 @@ conformer identity.
 | returning a tagged borrow of a callee local | legal, unchecked, dangles — the slice-of-local doctrine |
 | rvalue at `P` (`#identity`, erased or tagged) | compile error — identity objects need a name |
 | `#identity` on `tagged` | legal — contributes exactly the naming discipline (rvalue erasure refuses); borrow and `free` refusal are structural to the kind |
+| `#expand` on a non-tagged kind (header or method) | compile error at the attribute — no other kind generates a switch to place |
+| method `#expand` under a header `#expand` | compile error — the header already reaches every method; which spelling is the leftover is not the compiler's guess |
+| `#expand` on a single-conformer tagged protocol | legal and redundant in effect: the routine already folds to a direct call, and expanding it moves that call to the site |
+| `#expand` under comptime execution | invisible — the VM devirtualizes by the carried concrete type either way (§7.9); the annotation only places the runtime switch |
 | `free` on: view / identity / tagged / constraint-typed anything | compile error in each case (distinct wordings; constraint has no values at all) |
 | `p.(ProtocolRaw)` | field-wise build per layout; tagged inserts one table load |
 | `p.(Q)`, different protocol | direct re-erasure conversion (§7.4); temperaments apply; result ownership per `Q`'s kind; `#identity` targets refuse at compile time; erased targets resolve through the unique-impl table — a duplicated pair converts as non-conforming |
@@ -2991,11 +3132,11 @@ retrieved through this same engine — `c.(ClosureRaw)`, `name.(SliceRaw)`,
 `p.(ProtocolRaw)` (or the `xx` spelling), `av.(AnyRaw)` (postfix ONLY —
 see below). The protocol case is a MODELED conversion built field-wise, not
 a bit reinterpret: `{ctx, __type_id}` is the prefix **both** protocol
-layouts share (default `{ctx, __type_id, vtable}` and `#inline`
+layouts share (`vtable` `{ctx, __type_id, vtable}` and `inline`
 `{ctx, __type_id, fn_ptrs…}`), so the view is correct for either and the
 result is a real value usable in any position (argument, return, store).
 `ProtocolRaw` mirrors exactly that shared prefix — byte-identical to an
-`any` `{data, type_id}`; an `#inline` value is wider, which is why the
+`any` `{data, type_id}`; an `inline`-kind value is wider, which is why the
 build is field-wise and never a reinterpret. A protocol receiver with any
 other concrete target is the checked DOWNCAST (see the assertion
 temperaments — the receiver reads as its `{ctx, type_id}` prefix view);
@@ -3005,6 +3146,16 @@ since ctx addresses the concrete value: lend a view of the protocol value
 itself with `*p` instead),
 `ProtocolRaw`, `any` (the explicit concrete view `xx p : any`), and
 another protocol (re-erasure) — are conversions and pass through.
+
+`p.(?*T)` is the SOFT ctx recovery — the pointer target under the soft
+temperament. It asks the DOWNCAST's question (is the receiver a `T`?) and
+answers it with a pointer: `*T` addressing the receiver's own ctx on a
+match, `null` otherwise. It BORROWS where `p.(?T)` copies the value out,
+and it CHECKS where `p.(*T)` reinterprets ctx unconditionally. The pointee
+names the type to test, so it must be a concrete one: `?*void` and a
+pointer-to-protocol pointee are refused, and off a `tagged` receiver a
+non-conformer pointee is the same whole-program out-of-set error `p.(?T)`
+raises.
 
 On an **`any` receiver** the assertion has three temperaments:
 
@@ -3684,8 +3835,8 @@ Arms select in order (a specific type name may precede its category);
 match lowers to nothing (the runtime form's skip-to-merge, statically). A
 `#error(…)` arm fires only when SELECTED — the un-selected case is
 the OS-match discipline. The static classifier mirrors the runtime tag
-switch arm for arm, **plus the `protocol` category** (default and
-`#inline` protocol values alike), which exists ONLY here: a protocol value
+switch arm for arm, **plus the `protocol` category** (`vtable` and
+`inline` protocol values alike), which exists ONLY here: a protocol value
 carries no runtime type tag, so a runtime `case protocol:` is a pointed
 compile error rather than a silently dead arm. Inline branches lower in
 statement position (like `inline if OS`), so value-producing arms use
@@ -3735,6 +3886,9 @@ inline for 0..n (i) { }             // comptime unroll; first range bounded
 inline for xs, 0.. (x, i) { }       // comptime unroll over a PACK: x = the
                                     // concrete i-th element (see "Variadic
                                     // Heterogeneous Type Packs")
+inline for TYPES (T) { }            // comptime unroll over a `[N]Type` list:
+                                    // T is a comptime Type, legal in type
+                                    // position (see "Protocols" §3)
 ```
 
 **Range bound markers.** Each side of `..` takes an optional marker — `=`
@@ -4181,7 +4335,7 @@ Any module — stdlib or user — can declare a field the program's Context carr
 prove presence before use); the bare spelling keeps null as an unchecked
 sentinel, per the pointer contract.
 
-- **Grammar**: `#context_extend <name> : <type> = <default> ;` at top level only.
+- **Grammar**: `#context_extend <name> : <type> = <default> ;` at top level only — which includes a top-level `inline if` branch or `inline for` body, whose statements ARE module scope after comptime flattening. A branch that is not selected declares no field; while such a driver is undecided the Context is not final, and comptime that reads it waits (§7.9 scheduling).
 - **Assembly**: the compiler assembles the program's `Context` from every declaration in the compilation — there is no builtin prefix — in a deterministic order (sorted by declaring module path, then field name). Field offsets are program-specific — never rely on them across programs.
 - **Access is global and unconditional**: after assembly, `context.field` works in ANY module of the program with no import requirement. Imports gate existence only (an uncompiled module contributes nothing); there is no per-source scoping of context fields.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.
@@ -4664,8 +4818,9 @@ Placement rules — `private` is rejected on: locals, parameters, struct/union/
 runtime-class fields, enum cases and error tags, struct/protocol/impl methods
 and requirements, flat `#import`, `impl` blocks, `#context_extend`, `#using`,
 standalone `#run`, global `asm`, and `#framework`. Top-level `inline if`
-branches MAY declare private globals (their statements are module-scope after
-comptime flattening); function and method bodies may not.
+branches and `inline for` bodies MAY declare private globals (their statements
+are module-scope after comptime flattening); function and method bodies may
+not.
 
 `` `private `` (backtick raw identifier) remains a legal name, and the
 `.private` member spelling remains legal after a dot.
@@ -5013,7 +5168,12 @@ quick :: () -> (i32, !) {
   union, not bare `!`.
 - A top-level (non-`main`) function declared `!` that never errors warns
   ("declared `!` but never errors — drop the `!`"). Closures and
-  function-type slots with an empty `!` do **not** warn.
+  function-type slots with an empty `!` do **not** warn. A body that
+  forwards (`return callee(...)`) or `try`s an opaque channel — a protocol
+  or UFCS method, a closure slot, a checked assertion — carries a
+  load-bearing `!` and does not warn either.
+- Warnings are reported on a **successful** compile too, before the program
+  runs; a warnings-only build still exits 0.
 
 **Tag identity is the name, globally (Zig-style).** Two sets that both list
 `NotFound` reference the *same* tag id; `if e == error.NotFound` matches every

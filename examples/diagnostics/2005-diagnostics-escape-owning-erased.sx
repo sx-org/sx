@@ -1,0 +1,28 @@
+// An OWNING erased value cannot escape a `#run` (specs.md §7.9): its ctx is a
+// compile-time copy, and no runtime allocator owns one — the free that pairs
+// with the erasure could never happen. The refusal is at the escape site, on
+// the type the result crosses into the image as.
+//
+// A borrow is unaffected: a view (`*Show`) and an `#identity` handle are
+// pointers to storage the image already has.
+#import "modules/std.sx";
+
+Show :: protocol vtable {
+    area :: (self: *Self) -> i64;
+}
+
+Widget :: struct { n: i64; }
+impl Show for Widget { area :: (self: *Widget) -> i64 { self.n * 10 } }
+
+Holder :: struct { s: Show; }
+
+make :: () -> Holder {
+    w := Widget.{ n = 4 };
+    return Holder.{ s = w.(Show, context.allocator) };
+}
+
+H :: #run make();
+
+main :: () {
+    print("{}\n", H.s.area());
+}

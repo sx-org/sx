@@ -1,0 +1,54 @@
+// Comptime `[N]Type` iterables and their captures. The list is a constant, a
+// literal, or an alias of one; the cursor binds each element as a comptime
+// `Type` — legal in TYPE position at statement scope and at module scope, and
+// legal as the argument of the type-introspection builtins. A trailing open
+// range pairs an index cursor, exactly as in the runtime `for`.
+#import "modules/std.sx";
+
+Pair  :: struct { a: i64; b: i64; }
+Trip  :: struct { a: i64; b: i64; c: i64; }
+
+SHAPES  :: .[Pair, Trip];
+ALSO    :: SHAPES;                 // an alias of the list iterates the same set
+
+Sized :: protocol tagged {
+    footprint :: (self: *Self) -> i64;
+}
+
+// Module scope: the cursor spells the impl head, the receiver, and the
+// reflection argument. A nested `inline if` selects per-target bodies.
+inline for ALSO (T) {
+    inline if POINTER_SIZE == 8 {
+        impl Sized for T {
+            footprint :: (self: *T) -> i64 { size_of(T) }
+        }
+    } else {
+        impl Sized for T {
+            footprint :: (self: *T) -> i64 { 0 }
+        }
+    }
+}
+
+main :: () {
+    // Statement scope: `T` names a type in an annotation, and the index cursor
+    // rides the trailing open range.
+    inline for SHAPES, 0.. (T, i) {
+        v : T = ---;
+        print("{} {} {} {}\n", i, size_of(T), align_of(T), struct_field_count(T));
+    }
+
+    // A literal list needs no name; an alias iterates the same set.
+    inline for .[i64, f64, bool] (T) {
+        print("{} ", size_of(T));
+    }
+    inline for ALSO (T) {
+        print("{} ", struct_field_count(T));
+    }
+    print("\n");
+
+    p := Pair.{ a = 1, b = 2 };
+    t := Trip.{ a = 1, b = 2, c = 3 };
+    s : Sized = p;
+    u : Sized = t;
+    print("{} {}\n", s.footprint(), u.footprint());
+}

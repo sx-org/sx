@@ -1,0 +1,30 @@
+// A `#run`-COMPUTED iterable.
+//
+// An unroll's type list need not be written: it can be computed, and then the
+// run that computes it is a driver like any other — it executes under the
+// expansion worklist, and the declarations its result expands are module
+// scope. The types it answers with are respelled as the element names the
+// cursor substitutes, so the group is written exactly as a literal list's
+// would be, with the same coherence and provenance.
+#import "modules/std.sx";
+
+Show :: protocol tagged { fmt :: (self: *Self) -> i64; }
+
+Dot :: struct { n: i64; }
+Bar :: struct { n: i64; }
+
+pick_list :: () -> [2]Type {
+    return .[Dot, Bar];
+}
+
+inline for #run pick_list() (T) {
+    impl Show for T { fmt :: (self: *T) -> i64 { self.n * 3 } }
+}
+
+main :: () {
+    d := Dot.{ n = 2 };
+    b := Bar.{ n = 5 };
+    v : Show = d;
+    w : Show = b;
+    print("{} {}\n", v.fmt(), w.fmt());
+}

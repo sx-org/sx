@@ -1,0 +1,23 @@
+error: duplicate impl of tagged protocol 'View' for 'Widget' — a tagged conformer set is whole-program, so its coherence is global: exactly one impl of a pair may exist, whatever the import visibility
+  --> examples/diagnostics/1941-diagnostics-tagged-coherence.sx:12:1
+   |
+12 | impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: also implemented here
+  --> examples/diagnostics/1941-diagnostics-tagged-coherence.sx:13:1
+   |
+13 | impl View for Widget { area :: (self: *Widget) -> i64 { self.n * 2 } }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: duplicate impl of tagged protocol 'Mark' for 'Badge' — a tagged conformer set is whole-program, so its coherence is global: exactly one impl of a pair may exist, whatever the import visibility
+  --> examples/diagnostics/1941-diagnostics-tagged-coherence.sx:19:1
+   |
+19 | impl Mark for Badge { rank :: (self: *Badge) -> i64 { self.k } }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: also implemented here
+  --> examples/diagnostics/1941-diagnostics-tagged-coherence.sx:20:1
+   |
+20 | impl Mark for Badge { rank :: (self: *Badge) -> i64 { self.k + 1 } }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

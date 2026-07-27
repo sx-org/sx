@@ -1,0 +1,24 @@
+// The declaration namespace under the discipline (§7.9).
+//
+// A name-lookup HIT is monotone: declarations are never withdrawn, so a name
+// that resolves resolves for good and is readable the moment it lands. A MISS
+// is not — any unexpanded branch can still write it — so a miss WAITS until no
+// undecided driver can declare that name into that exact scope, and a later
+// expanded declaration resumes the fold.
+//
+// Both spellings are here. `cfg.WIDE` is QUALIFIED: the member is absent
+// because the named module's own driver has not folded. `LOCAL` is ORDINARY:
+// the name is written by the driver below the one reading it. Neither
+// condition is evaluated until the driver that could write it retired.
+#import "modules/std.sx";
+cfg :: #import "./1976-protocols-expansion-namespace-cfg.sx";
+
+inline if cfg.WIDE { A :: 1; } else { A :: 0; }
+
+inline if LOCAL { B :: 1; } else { B :: 0; }
+
+inline if POINTER_SIZE == 8 { LOCAL :: true; } else { LOCAL :: false; }
+
+main :: () {
+    print("{} {}\n", A, B);
+}

@@ -2,7 +2,7 @@
 // wait for the target's nominal TypeId instead of committing name-only state.
 // Regression (issue 0320 adversarial review).
 
-P :: protocol #identity {
+P :: protocol vtable #identity {
     value :: (self: *Self) -> i64;
 }
 

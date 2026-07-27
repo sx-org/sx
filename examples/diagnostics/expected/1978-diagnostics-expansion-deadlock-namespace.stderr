@@ -1,0 +1,22 @@
+error: expansion deadlock — nothing can run: every compile-time unit still waiting needs a fact only another waiting unit could publish, so the expansion depends negatively on a set it feeds
+  --> examples/diagnostics/1978-diagnostics-expansion-deadlock-namespace.sx:11:11
+   |
+11 | inline if SELF {
+   |           ^^^^
+
+note: this `inline if` awaits 'SELF' to be declared
+  --> examples/diagnostics/1978-diagnostics-expansion-deadlock-namespace.sx:11:11
+   |
+11 | inline if SELF {
+   |           ^^^^
+
+help: decide the declaration outside the set it queries — a question whose answer changes what it asks about has no single answer
+   |
+11 | inline if SELF {
+   |           ^^^^
+
+error: unresolved 'A' (in examples/diagnostics/1978-diagnostics-expansion-deadlock-namespace.sx fn main)
+  --> examples/diagnostics/1978-diagnostics-expansion-deadlock-namespace.sx:19:19
+   |
+19 |     print("{}\n", A);
+   |                   ^

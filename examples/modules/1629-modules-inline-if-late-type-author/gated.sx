@@ -1,0 +1,11 @@
+// A SECOND author of `Slot`, written inside a module-scope `inline if` group
+// and reachable only through a namespace alias — so it registers after the
+// plain author's TypeId is already published. The two are distinct nominal
+// types; publishing the second must not renumber the first.
+inline if POINTER_SIZE == 8 {
+    Slot :: struct { a: i64; b: i64; }
+} else {
+    Slot :: struct { a: i32; }
+}
+
+gated_size :: () -> i64 { size_of(Slot) }

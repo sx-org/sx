@@ -576,6 +576,15 @@ __sx_cast_or_panic :: (av: any, $T: Type, loc: Source_Location = #caller_locatio
     return xx av;
 }
 
+// The checked failure of tagged dispatch (Protocols spec §6.4): a bare `Self`
+// argument must name the receiver's own conformer, since the arm the receiver
+// selects takes its referent as that concrete type. The compiler emits this
+// call on the cold side of the tag compare.
+__sx_tagged_self_mismatch :: (what: string, want: Type, got: Type) {
+    print("tagged dispatch failed: '{}' takes a 'Self' argument of the receiver's own conformer: the receiver is {}, the argument is {}\n", what, want, got);
+    c.exit(1);
+}
+
 // The SOFT assertion form `av.(?T)`: mismatch is a value (`null`), never a
 // failure — the optional IS the check (comma-ok parity).
 __sx_cast_maybe :: (av: any, $T: Type) -> ?T {

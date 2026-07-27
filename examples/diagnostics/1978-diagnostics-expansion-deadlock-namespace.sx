@@ -1,0 +1,20 @@
+// The name-lookup half of the expansion deadlock.
+//
+// The condition reads `SELF`, and the only declaration of `SELF` anywhere is in
+// the else-branch of the very driver reading it. So the miss cannot be
+// published — the scope can still gain that exact name — and the fact it waits
+// on is one only this driver could fire. Runnable work runs out with the
+// bookmark down, and sx refuses rather than electing one of the two consistent
+// outcomes (specs.md §7.9).
+#import "modules/std.sx";
+
+inline if SELF {
+    A :: 1;
+} else {
+    SELF :: false;
+    A :: 0;
+}
+
+main :: () {
+    print("{}\n", A);
+}

@@ -1151,7 +1151,7 @@ pub fn lowerPackFnCallNamed(
     // comptime VALUES — get distinct symbols.
     var name_buf = std.ArrayList(u8).empty;
     defer name_buf.deinit(self.alloc);
-    name_buf.appendSlice(self.alloc, dispatch_name) catch @panic("out of memory while mangling pack function");
+    name_buf.appendSlice(self.alloc, self.declIdentityName(dispatch_name, fd)) catch @panic("out of memory while mangling pack function");
     // Comptime values first (deterministic by fd.params order).
     var ct_fi: usize = 0;
     for (fd.params) |p| {

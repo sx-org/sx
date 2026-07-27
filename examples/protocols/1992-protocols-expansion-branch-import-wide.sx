@@ -1,0 +1,4 @@
+// A module whose whole surface is one name. Flat-importing it declares that
+// name into the importing scope, which is why a branch that imports it is a
+// branch that can still write it.
+WIDE :: true;

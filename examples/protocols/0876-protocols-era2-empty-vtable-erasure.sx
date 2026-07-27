@@ -11,9 +11,9 @@
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 
-Marker :: protocol {}
+Marker :: protocol vtable {}
 
-Eqish :: protocol {
+Eqish :: protocol vtable {
     eq :: (self: *Self, other: Self) -> bool;   // excluded: Self param
 }
 

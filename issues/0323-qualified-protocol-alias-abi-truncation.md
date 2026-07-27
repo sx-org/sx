@@ -1,6 +1,6 @@
 # 0323 — a qualified protocol alias is ABI-lowered as one `i64`
 
-> **NULLARY PATH GREEN; PARAMETERIZED IDENTITY OPEN (2026-07-21).** Pending identifier/qualified alias chains are now
+> **NULLARY PATH GREEN (2026-07-21).** Pending identifier/qualified alias chains are now
 > canonicalized from raw source/import facts before any ABI consumer interns
 > its type, independent of declaration/import order. A terminal nullary
 > protocol is materialized exactly once and every alias binds its exact nominal
@@ -8,16 +8,15 @@
 > identity, so distinct namespace protocols with the same display name cannot
 > overwrite or share method sets. No SX syntax or public API changed.
 >
-> This proof covers nullary protocols. Parameterized templates are still
-> selected through global spelling maps and their instance/impl/thunk keys omit
-> exact template identity. That adjacent blocker is filed as issue 0329.
+> Parameterized template selection and instance/impl/thunk keying are covered by
+> `examples/protocols/0901-protocols-param-protocol-author-identity.sx`.
 
 ## Symptom
 
 Given a protocol authored in another module:
 
 ```sx
-P :: protocol #identity {
+P :: protocol vtable #identity {
     value :: (self: *Self) -> i64;
 }
 ```

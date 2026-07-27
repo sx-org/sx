@@ -1,0 +1,24 @@
+// issue 0330: a bare call/value through an `alias :: target` chain binds the
+// author VISIBLE where the alias is written. Both flat-imported modules author
+// `target` and an alias for it — a.sx directly, b.sx through a second hop — and
+// b.sx's uses must reach b.sx's `target` (body `x + 100`, default 20), never
+// a.sx's first-wins winner. The alias-selected calls run FIRST so the selected
+// author materializes before the winner's own lazy lowering.
+#import "modules/std.sx";
+#import "1624-modules-flat-same-name-alias-call/a.sx";
+#import "1624-modules-flat-same-name-alias-call/b.sx";
+
+report :: (label: string, ok: bool) {
+    if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
+}
+
+main :: () -> i32 {
+    report("b call binds b.target (120)", b_call() == 120);
+    report("b fn-value binds b.target (120)", b_value() == 120);
+    report("b capture binds b.target (120)", b_capture() == 120);
+    report("b generic consumer binds b.target (120)", b_consumed() == 120);
+    report("a call binds a.target (7)", a_call() == 7);
+    report("a fn-value binds a.target (7)", a_value() == 7);
+    report("a generic consumer binds a.target (7)", a_consumed() == 7);
+    0
+}

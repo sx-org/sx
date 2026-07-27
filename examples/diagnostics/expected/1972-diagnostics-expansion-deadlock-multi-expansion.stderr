@@ -1,0 +1,28 @@
+error: expansion deadlock — nothing can run: every compile-time unit still waiting needs a fact only another waiting unit could publish, so the expansion depends negatively on a set it feeds
+  --> examples/diagnostics/1972-diagnostics-expansion-deadlock-multi-expansion.sx:18:11
+   |
+18 | inline if !has_impl(Draw, Widget) {
+   |           ^^^^^^^^^^^^^^^^^^^^^^^
+
+note: this `inline if` awaits 'Draw' membership of 'Widget' to be final
+  --> examples/diagnostics/1972-diagnostics-expansion-deadlock-multi-expansion.sx:18:11
+   |
+18 | inline if !has_impl(Draw, Widget) {
+   |           ^^^^^^^^^^^^^^^^^^^^^^^
+
+note: this `inline if` awaits 'Tally' membership of 'Panel' to be final
+  --> examples/diagnostics/1972-diagnostics-expansion-deadlock-multi-expansion.sx:22:11
+   |
+22 | inline if !has_impl(Tally, Panel) {
+   |           ^^^^^^^^^^^^^^^^^^^^^^^
+
+note: this `inline if` awaits 'Name' membership of 'Badge' to be final
+  --> examples/diagnostics/1972-diagnostics-expansion-deadlock-multi-expansion.sx:26:11
+   |
+26 | inline if !has_impl(Name, Badge) {
+   |           ^^^^^^^^^^^^^^^^^^^^^^
+
+help: decide the declaration outside the set it queries — a question whose answer changes what it asks about has no single answer
+   |
+18 | inline if !has_impl(Draw, Widget) {
+   |           ^^^^^^^^^^^^^^^^^^^^^^^

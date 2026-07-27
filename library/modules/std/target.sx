@@ -3,8 +3,8 @@
 // without pulling the std barrel.
 //
 // The compiler sets OS / ARCH / POINTER_SIZE per build target (name-matched in
-// src/imports.zig). NOTE: a top-level `inline if OS/ARCH/POINTER_SIZE`
-// conditional is resolved by the compiler's flatten pre-pass and needs NO
+// src/ir/lower/decl.zig). NOTE: a top-level `inline if OS/ARCH/POINTER_SIZE`
+// conditional is resolved by the compiler's module-scope expansion and needs NO
 // import at all (that is how std/net/epoll.sx selects its layout). Import this
 // module only when you need the enum TYPE (`OperatingSystem` / `Architecture`)
 // or a value in a non-`inline if` position.

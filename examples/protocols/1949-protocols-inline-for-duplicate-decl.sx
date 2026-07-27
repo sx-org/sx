@@ -1,0 +1,18 @@
+// A declaration group flattens into ONE module scope, so a name that does not
+// vary with the cursor collides with itself across iterations. The diagnostic
+// carries cursor provenance — which element produced each site — and points at
+// the fix: parameterize the declaration instead of re-declaring it.
+#import "modules/std.sx";
+
+Point :: struct { x: i64; y: i64; }
+Rect  :: struct { w: i64; h: i64; }
+
+SHAPES :: .[Point, Rect];
+
+inline for SHAPES (T) {
+    Wrapper :: struct { inner: T; }
+}
+
+main :: () {
+    print("{}\n", 0);
+}

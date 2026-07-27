@@ -1,0 +1,40 @@
+// Conditional conformance: a top-level `inline if` gates an `impl` on a
+// comptime fact. The dead branch's impl never exists — it joins no set and
+// emits nothing — so exactly one conformance of each pair reaches the program
+// whichever branch is live, and coherence is never in question.
+#import "modules/std.sx";
+
+View :: protocol tagged {
+    area :: (self: *Self) -> i64;
+}
+
+Widget :: struct { n: i64; }
+Native :: struct { n: i64; }
+
+// Every target takes exactly one arm, so `Widget` has exactly one impl.
+inline if POINTER_SIZE == 8 {
+    impl View for Widget {
+        area :: (self: *Widget) -> i64 { self.n * 10 }
+    }
+} else {
+    impl View for Widget {
+        area :: (self: *Widget) -> i64 { self.n }
+    }
+}
+
+// An expansion body is module scope, so `private` stays legal on its
+// declarations and the impl beside them is an ordinary top-level impl.
+inline if POINTER_SIZE == 8 {
+    private SCALE :: 3;
+    impl View for Native {
+        area :: (self: *Native) -> i64 { self.n * SCALE }
+    }
+}
+
+main :: () {
+    w := Widget.{ n = 4 };
+    n := Native.{ n = 4 };
+    v : View = w;
+    u : View = n;
+    print("{} {}\n", v.area(), u.area());
+}

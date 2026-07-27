@@ -545,6 +545,15 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
 pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
     switch (node.data) {
         .bool_literal => |bl| return bl.value,
+        .binary_op => |b| {
+            // `protocol_kind(P) == .vtable` — the kind classifier's comparison
+            // folds so `inline if` drops the dead branch whole, the same way
+            // the predicate builtins above do.
+            if (b.op != .eq and b.op != .neq) return null;
+            const matched = protocolKindComparison(self, b.lhs, b.rhs) orelse
+                protocolKindComparison(self, b.rhs, b.lhs) orelse return null;
+            return if (b.op == .eq) matched else !matched;
+        },
         .call => |c| {
             if (c.callee.data == .identifier) {
                 const cname = c.callee.data.identifier.name;
@@ -600,6 +609,19 @@ pub fn tryConstBoolCondition(self: *Lowering, node: *const Node) ?bool {
         else => {},
     }
     return null;
+}
+
+/// `protocol_kind(P)` against an enum literal: does the protocol's declared
+/// kind equal the named variant? Null when the pair is not that shape.
+fn protocolKindComparison(self: *Lowering, call_node: *const Node, lit_node: *const Node) ?bool {
+    if (call_node.data != .call) return null;
+    const c = call_node.data.call;
+    if (c.callee.data != .identifier) return null;
+    if (!std.mem.eql(u8, c.callee.data.identifier.name, "protocol_kind")) return null;
+    if (lit_node.data != .enum_literal) return null;
+    if (c.args.len < 1 or !self.isStaticTypeArg(c.args[0])) return null;
+    const kind = self.protocolKindOf(self.resolveTypeArg(c.args[0])) orelse return null;
+    return std.mem.eql(u8, kind.spelling(), lit_node.data.enum_literal.name);
 }
 
 pub fn lowerWhile(self: *Lowering, we: *const ast.WhileExpr) Ref {
@@ -917,23 +939,26 @@ pub fn lowerFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     return self.builder.constInt(0, .void);
 }
 
-/// Comptime-unrolled `inline for`. Iterables are comptime ranges and/or
-/// PACKS, mirroring the runtime multi-iterable contract: position 0 drives
-/// the iteration count (a pack's arity, or a bounded range's span) and
-/// trailing range bounds are ignored. Per iteration the body is lowered
-/// once; a range capture binds as an `int_val` comptime constant (so
-/// `xs[i]` substitutes the concrete per-position argument), and a pack
-/// capture binds as an AST alias for the synthesized `xs[<i>]`
-/// (`Binding.pack_elem`), inheriting full pack-element semantics —
-/// substitution, typing, and the interface-only constraint check.
+/// Comptime-unrolled `inline for`. Iterables are comptime ranges, PACKS, and
+/// comptime `[N]Type` lists, mirroring the runtime multi-iterable contract:
+/// position 0 drives the iteration count (a pack's arity, a list's length, or
+/// a bounded range's span) and trailing range bounds are ignored. Per
+/// iteration the body is lowered once; a range capture binds as an `int_val`
+/// comptime constant (so `xs[i]` substitutes the concrete per-position
+/// argument), a pack capture binds as an AST alias for the synthesized
+/// `xs[<i>]` (`Binding.pack_elem`), inheriting full pack-element semantics —
+/// substitution, typing, and the interface-only constraint check — and a
+/// type-list capture binds as a type param, legal in type position.
 ///
 ///   inline for 0..xs.len (i) { xs[i].show(); }      // index form
 ///   inline for xs (x) { x.show(); }                 // element form
 ///   inline for xs, 0.. (x, i) { ... }               // element + index
+///   inline for TYPES (T) { v : T = ---; }           // type-list form
 pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
     const IterClass = union(enum) {
         range: i64, // comptime start value
         pack: []const u8, // pack name
+        type_list: []const TypeId,
     };
     var classes = std.ArrayList(IterClass).empty;
     defer classes.deinit(self.alloc);
@@ -971,8 +996,19 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                 return self.builder.constInt(0, .void);
             }
             classes.append(self.alloc, .{ .pack = name }) catch unreachable;
+        } else if (self.evalComptimeTypeList(it.expr)) |list| {
+            const len: i64 = @intCast(list.len);
+            if (idx == 0) {
+                count = len;
+            } else if (len < count) {
+                if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: type list has {} element{s} but the unroll is {} iterations", .{
+                    len, if (len == 1) @as([]const u8, "") else @as([]const u8, "s"), count,
+                });
+                return self.builder.constInt(0, .void);
+            }
+            classes.append(self.alloc, .{ .type_list = list }) catch unreachable;
         } else {
-            if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: each iterable must be a comptime range or a pack — `inline for 0..N (i) {{ }}` / `inline for xs (x) {{ }}`", .{});
+            if (self.diagnostics) |d| d.addFmt(.err, it.expr.span, "inline for: each iterable must be a comptime range, a pack, or a type list — `inline for 0..N (i) {{ }}` / `inline for xs (x) {{ }}` / `inline for TYPES (T) {{ }}`", .{});
             return self.builder.constInt(0, .void);
         }
     }
@@ -985,6 +1021,26 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
             if (self.diagnostics) |d| d.addFmt(.err, sp, "a pack element cannot be captured by reference", .{});
             return self.builder.constInt(0, .void);
         }
+        if (cap.by_ref and ci < classes.items.len and classes.items[ci] == .type_list) {
+            const sp = cap.span orelse fe.iterables[ci].expr.span;
+            if (self.diagnostics) |d| d.addFmt(.err, sp, "a type cannot be captured by reference", .{});
+            return self.builder.constInt(0, .void);
+        }
+    }
+
+    // A type-list cursor binds as an ordinary type param for the iteration, so
+    // it resolves everywhere a `$T: Type` binding does.
+    const saved_type_bindings = self.type_bindings;
+    defer self.type_bindings = saved_type_bindings;
+    var type_scope: ?std.StringHashMap(TypeId) = null;
+    defer if (type_scope) |*m| m.deinit();
+    for (classes.items) |c| {
+        if (c != .type_list) continue;
+        type_scope = if (saved_type_bindings) |tb|
+            tb.clone() catch return self.builder.constInt(0, .void)
+        else
+            std.StringHashMap(TypeId).init(self.alloc);
+        break;
     }
 
     const CursorSave = struct { name: []const u8, had_prev: bool, prev: ComptimeValue };
@@ -1025,6 +1081,10 @@ pub fn lowerInlineRangeFor(self: *Lowering, fe: *const ast.ForExpr) Ref {
                     elem_node.* = .{ .span = span, .data = .{ .index_expr = .{ .object = id_node, .index = idx_node } } };
                     const elem_ty = self.inferExprType(elem_node);
                     body_scope.put(cap.name, .{ .ref = Ref.none, .ty = elem_ty, .is_alloca = false, .pack_elem = elem_node, .origin = .pack_elem_alias });
+                },
+                .type_list => |list| {
+                    type_scope.?.put(cap.name, list[@intCast(i)]) catch {};
+                    self.type_bindings = type_scope.?;
                 },
             }
         }
@@ -1105,10 +1165,15 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
     // A PROTOCOL subject type-switches through its {ctx, type_id} prefix
     // view (RTTI Option B) — the scrutinee/captures are exactly the any
     // switch's, over the concrete value the protocol erases.
+    // Non-null when the subject was a protocol value: the type switch then
+    // opens the CONCRETE receiver, and a tagged subject additionally knows
+    // its whole-program conformer set, so an arm outside it is dead.
+    var protocol_subject_ty: ?TypeId = null;
     if (self.getProtocolInfo(subject_ty) != null) {
         const void_ptr_ty = self.module.types.ptrTo(.void);
         const ctx_ref = self.builder.structGet(subject, 0, void_ptr_ty);
-        const tid_ref = self.builder.structGet(subject, 1, .type_value);
+        const tid_ref = self.protocolTypeIdWord(subject_ty, subject);
+        protocol_subject_ty = subject_ty;
         subject = self.builder.makeAny(tid_ref, ctx_ref);
         subject_ty = .any;
     }
@@ -1334,6 +1399,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
                 }
                 const ty = self.resolveTypeArg(pat);
                 if (ty == .unresolved) break :blk_rt &.{}; // resolveTypeArg diagnosed
+                if (protocol_subject_ty) |pst| self.warnDeadTypeSwitchArm(pst, ty, pat.span);
                 arm_concrete.items[i] = ty;
                 const one = self.alloc.alloc(u64, 1) catch break :blk_rt &.{};
                 one[0] = ty.index();

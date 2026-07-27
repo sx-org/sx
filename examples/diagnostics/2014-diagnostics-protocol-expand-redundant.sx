@@ -1,0 +1,12 @@
+// A header `#expand` already reaches every method, so repeating it on one
+// of them states nothing new. The second spelling is refused rather than
+// silently absorbed: one of the two is a leftover, and which one the author
+// meant is not the compiler's guess to make.
+#import "modules/std.sx";
+
+Meter :: protocol tagged #expand {
+    read :: (self: *Self, n: i64) -> i64 #expand;
+    scale :: (self: *Self) -> i64;
+}
+
+main :: () { print("unreachable\n"); }

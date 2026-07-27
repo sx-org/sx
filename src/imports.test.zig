@@ -51,7 +51,6 @@ fn buildFacts(alloc: std.mem.Allocator, io: std.Io, absdir: []const u8, main_pat
         &stdlib_paths,
         &import_graph,
         &flat_import_graph,
-        .{},
     );
 
     const facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
@@ -132,7 +131,6 @@ test "imports: module_decls retains same-name cross-module fns; flat_import_grap
         &stdlib_paths,
         &import_graph,
         &flat_import_graph,
-        .{},
     );
 
     var facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
@@ -235,7 +233,6 @@ test "imports: mixed non-fn/fn same-name collision stays first-wins in merged sc
         &stdlib_paths,
         &import_graph,
         &flat_import_graph,
-        .{},
     );
 
     // Exactly ONE `Widget` survives the merged scope, and it is a.sx's STRUCT —
@@ -606,7 +603,6 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
         &stdlib_paths,
         &import_graph,
         &flat_import_graph,
-        .{},
     );
 
     var facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);
@@ -655,92 +651,4 @@ test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespa
         if (std.mem.eql(u8, table.get(id).name, "Point")) found_point = true;
     }
     try std.testing.expect(found_point);
-}
-
-// ── flattenComptimeConditionals unit tests (issue 0194) ──
-
-fn flattenFor(alloc: std.mem.Allocator, source: [:0]const u8, os: []const u8, diags: ?*errors.DiagnosticList) ![]const *ast.Node {
-    var p = parser.Parser.init(alloc, source);
-    const root = p.parse() catch return error.ParseFailed;
-    return imports.flattenComptimeConditionals(
-        alloc,
-        root.data.root.decls,
-        .{ .os = os, .arch = "aarch64" },
-        diags,
-    );
-}
-
-/// Parse `source` and flatten its top-level comptime conditionals for macOS.
-fn flattenForMacos(alloc: std.mem.Allocator, source: [:0]const u8, diags: ?*errors.DiagnosticList) ![]const *ast.Node {
-    return flattenFor(alloc, source, "macos", diags);
-}
-
-test "flatten: top-level target condition supports logical or" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    const source: [:0]const u8 =
-        \\inline if OS == .linux or OS == .android {
-        \\    SocketAbi :: struct { family: u16; }
-        \\}
-    ;
-    const android = try flattenFor(alloc, source, "android", null);
-    try std.testing.expectEqual(@as(usize, 1), android.len);
-    try std.testing.expectEqual(ast.Node.Data.struct_decl, std.meta.activeTag(android[0].data));
-
-    const macos = try flattenFor(alloc, source, "macos", null);
-    try std.testing.expectEqual(@as(usize, 0), macos.len);
-}
-
-// Regression (issue 0194): a module-level `asm { "tmpl", };` inside a taken
-// `inline if OS == { case ... }` arm is statement-parsed as `.asm_expr`; the
-// flatten pass must retag the surfaced node to `.asm_global` so lowering's
-// global-asm arm emits it (it used to fall into `else => {}` and the symbol
-// silently vanished from the object).
-test "flatten: wrapped module-level asm surfaces as asm_global" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    const source: [:0]const u8 =
-        \\inline if OS == {
-        \\    case .linux: asm { "linux_tmpl", };
-        \\    case .macos: asm { "macos_tmpl", };
-        \\}
-        \\main :: () {}
-    ;
-    const flat = try flattenForMacos(alloc, source, null);
-    try std.testing.expectEqual(@as(usize, 2), flat.len);
-    try std.testing.expectEqual(ast.Node.Data.asm_global, std.meta.activeTag(flat[0].data));
-    const tmpl = flat[0].data.asm_global.template;
-    try std.testing.expectEqualStrings("macos_tmpl", tmpl.data.string_literal.raw);
-}
-
-// A `volatile` or operand-carrying asm surfaced to module scope is diagnosed
-// (mirrors `parseAsmGlobal`'s top-level restrictions), never silently dropped.
-test "flatten: wrapped volatile/operand asm at module scope is diagnosed" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-    const alloc = arena.allocator();
-
-    const vol_source: [:0]const u8 =
-        \\inline if OS == .macos {
-        \\    asm volatile { "tmpl", };
-        \\}
-    ;
-    var vol_diags = errors.DiagnosticList.init(alloc, vol_source, "vol.sx");
-    const vol_flat = try flattenForMacos(alloc, vol_source, &vol_diags);
-    try std.testing.expectEqual(@as(usize, 0), vol_flat.len);
-    try std.testing.expect(hasErr(&vol_diags, "cannot be `volatile`"));
-
-    const ops_source: [:0]const u8 =
-        \\inline if OS == .macos {
-        \\    asm { "tmpl", "r" = 1 };
-        \\}
-    ;
-    var ops_diags = errors.DiagnosticList.init(alloc, ops_source, "ops.sx");
-    const ops_flat = try flattenForMacos(alloc, ops_source, &ops_diags);
-    try std.testing.expectEqual(@as(usize, 0), ops_flat.len);
-    try std.testing.expect(hasErr(&ops_diags, "no operands, inputs, or clobbers"));
 }

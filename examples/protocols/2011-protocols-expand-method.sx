@@ -1,0 +1,45 @@
+// `#expand` on ONE method (specs.md §6.3a). The annotation is per method:
+// `hot` expands its switch at every call site, `cold` keeps the outlined
+// `__sx_tags_Gauge_cold` routine, and the two dispatch to the same arms with
+// the same results. The IR shape is the whole difference — a `hot` call site
+// carries the switch, a `cold` call site carries one call — so this example
+// pins that the choice is per method and that neither spelling changes what
+// the program computes.
+#import "modules/std.sx";
+
+Gauge :: protocol tagged {
+    hot :: (self: *Self, n: i64) -> i64 #expand;
+    cold :: (self: *Self, n: i64) -> i64;
+}
+
+Fast :: struct { k: i64; }
+impl Gauge for Fast {
+    hot :: (self: *Fast, n: i64) -> i64 { n * self.k }
+    cold :: (self: *Fast, n: i64) -> i64 { n + self.k }
+}
+
+Slow :: struct { k: i64; }
+impl Gauge for Slow {
+    hot :: (self: *Slow, n: i64) -> i64 { n * self.k + 1 }
+    cold :: (self: *Slow, n: i64) -> i64 { n + self.k + 1 }
+}
+
+f : Fast = .{ k = 4 };
+s : Slow = .{ k = 7 };
+
+pick :: (which: i64) -> Gauge {
+    if which == 0 { return f; }
+    return s;
+}
+
+both :: (which: i64) -> i64 {
+    g := pick(which);
+    g.hot(10) * 1000 + g.cold(10)
+}
+
+CT :: #run both(1);
+
+main :: () {
+    print("{} {}\n", both(0), both(1));
+    print("{}\n", CT);
+}

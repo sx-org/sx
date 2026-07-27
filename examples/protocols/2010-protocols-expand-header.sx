@@ -1,0 +1,63 @@
+// `#expand` on a tagged protocol's HEADER (specs.md §6.3a): every method's
+// dispatch switch stands AT THE CALL SITE instead of behind the outlined
+// `__sx_tags_<P>_<m>` routine. The observable semantics are the outlined
+// routine's, exactly — the same arms, the same total switch, the same
+// result — so this example pins that the annotation changes only where the
+// switch lives, including where the caller knows its conformer and the
+// switch folds away entirely.
+#import "modules/std.sx";
+
+Meter :: protocol tagged #expand {
+    read :: (self: *Self, n: i64) -> i64;
+    scale :: (self: *Self) -> i64;
+}
+
+Volts :: struct { k: i64; }
+impl Meter for Volts {
+    read :: (self: *Volts, n: i64) -> i64 { n * self.k }
+    scale :: (self: *Volts) -> i64 { self.k }
+}
+
+Amps :: struct { k: i64; }
+impl Meter for Amps {
+    read :: (self: *Amps, n: i64) -> i64 { n * self.k + 1 }
+    scale :: (self: *Amps) -> i64 { self.k * 10 }
+}
+
+Ohms :: struct { k: i64; }
+impl Meter for Ohms {
+    read :: (self: *Ohms, n: i64) -> i64 { n + self.k }
+    scale :: (self: *Ohms) -> i64 { 0 - self.k }
+}
+
+v : Volts = .{ k = 2 };
+a : Amps = .{ k = 3 };
+o : Ohms = .{ k = 5 };
+
+// A dynamic receiver: which conformer arrives is a runtime choice, so the
+// expanded switch really selects.
+pick :: (which: i64) -> Meter {
+    if which == 0 { return v; }
+    if which == 1 { return a; }
+    return o;
+}
+
+sum :: (which: i64) -> i64 {
+    m := pick(which);
+    m.read(10) + m.scale()
+}
+
+// A statically known conformer: the expansion folds to the one arm.
+known :: () -> i64 {
+    m : Meter = v;
+    m.read(4)
+}
+
+// The switch reads the same before the phase line — a comptime evaluation
+// carries the conformer's own type, not a tag.
+CT :: #run sum(1);
+
+main :: () {
+    print("{} {} {}\n", sum(0), sum(1), sum(2));
+    print("{} {}\n", CT, known());
+}

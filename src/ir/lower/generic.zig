@@ -6,6 +6,7 @@ const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 const type_bridge = @import("../type_bridge.zig");
 const program_index_mod = @import("../program_index.zig");
+const resolver_mod = @import("../resolver.zig");
 const StructTemplate = program_index_mod.StructTemplate;
 const GenericResolver = @import("../generics.zig").GenericResolver;
 
@@ -21,7 +22,6 @@ const inferExprType = Lowering.inferExprType;
 const isNamedTypeKind = Lowering.isNamedTypeKind;
 const resolveBuiltin = Lowering.resolveBuiltin;
 const structMethodFn = Lowering.structMethodFn;
-const typeFnAuthor = Lowering.typeFnAuthor;
 
 pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name: []const u8, bindings: *std.StringHashMap(TypeId)) void {
     // Mark as lowered before lowering (prevents infinite recursion)
@@ -435,6 +435,27 @@ pub fn isTypeReturningCallNode(self: *Lowering, node: *const Node) bool {
     return rt.data == .type_expr and std.mem.eql(u8, rt.data.type_expr.name, "Type");
 }
 
+/// True iff `node` is a generic type-CONSTRUCTOR head applied to arguments —
+/// `List(i64)`, `ModBox(V)`, `Series(f32)`. A type position parses that
+/// spelling as a `.parameterized_type_expr`; the value grammar of an argument
+/// slot parses it as a `.call`, which `resolveTypeArg` resolves through
+/// `resolveTypeCallWithBindings`'s gated choke-point. Recognizing the shape
+/// here is what lets `alloc.create(ModBox(V))` bind its `$T: Type` param —
+/// membership in the head maps only, so selection (visibility, ambiguity)
+/// stays with the choke-point.
+pub fn isGenericTypeConstructorCallNode(self: *Lowering, node: *const Node) bool {
+    if (node.data != .call) return false;
+    const head = headNameOfCallee(node.data.call.callee) orelse return false;
+    return self.isGenericTypeConstructorHead(head.name);
+}
+
+/// The head half of the predicate above: does `name` name a generic struct
+/// template or a parameterized protocol?
+pub fn isGenericTypeConstructorHead(self: *Lowering, name: []const u8) bool {
+    if (self.program_index.struct_template_map.contains(name)) return true;
+    return self.protocolResolver().resolveParamProtocolHead(name, null) != null;
+}
+
 pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
     // Prefix `*` (parsed address_of) over a type operand IS the pointer
     // type — `describe(*Padded)`, `List(*T)`-style args, recursively for
@@ -599,6 +620,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
                     if (ty != .unresolved) return ty;
                 },
                 .missing => |m| {
+                    if (self.namespaceMissWaits(m)) return .unresolved;
                     if (self.diagnostics) |diags|
                         diags.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                     return .unresolved;
@@ -1484,6 +1506,7 @@ pub fn selectGenericStructHead(self: *Lowering, name: []const u8, qualified_path
                 return .{ .template = tmpl };
             },
             .missing => |m| {
+                if (self.namespaceMissWaits(m)) return .poisoned;
                 if (self.diagnostics) |d|
                     d.addFmt(.err, span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                 return .poisoned;
@@ -1688,10 +1711,21 @@ pub fn headFnLeak(self: *Lowering, name: []const u8, span: ?ast.Span) bool {
     return true;
 }
 
+/// The TYPE-FUNCTION an author denotes: its own declaration, or the terminal
+/// declaration of its `alias :: target` chain (`Make2 :: Make`). Null when the
+/// author heads no type function. Alias chains resolve from each hop author's
+/// own source, so an alias is exactly as good an author as the function it
+/// names — a visibility boolean over the alias decl alone would report a
+/// perfectly visible `Make2(i64)` as unreachable.
+fn typeFnOfAuthor(self: *Lowering, author: resolver_mod.RawAuthor) ?*const ast.FnDecl {
+    const sel = self.callableAuthorFn(author) orelse return null;
+    return if (sel.decl.type_params.len > 0) sel.decl else null;
+}
+
 /// TRUE iff bare `name` has ≥2 DISTINCT direct flat-import authors that are
-/// TYPE-FUNCTIONS (`typeFnAuthor`: a `fn_decl` with ≥1 `$`-param — an ordinary
-/// same-name function does not count) and the querying source authors NONE
-/// itself. The querying source's OWN
+/// TYPE-FUNCTIONS (a `fn_decl` with ≥1 `$`-param, or an alias naming one — an
+/// ordinary same-name function does not count) and the querying source authors
+/// NONE itself. The querying source's OWN
 /// author wins outright (own-wins), so an own author short-circuits to "not
 /// ambiguous" — the existing single-author path instantiates it. Diamond
 /// imports of the SAME author collapse in `collectVisibleAuthors`'s
@@ -1705,15 +1739,15 @@ pub fn flatFnAuthorAmbiguous(self: *Lowering, name: []const u8, from: []const u8
     if (set.own != null) return false; // own-wins
     var fn_authors: usize = 0;
     for (set.flat) |fa| {
-        if (typeFnAuthor(fa.raw)) fn_authors += 1;
+        if (typeFnOfAuthor(self, fa) != null) fn_authors += 1;
     }
     return fn_authors >= 2;
 }
 
 /// TRUE iff bare `name` has at least one DIRECTLY-visible author — the
 /// querying source's OWN author or a 1-hop flat-import author — that is a
-/// TYPE-FUNCTION (`typeFnAuthor`: a `fn_decl` with ≥1 `$`-param). The KIND-AWARE
-/// analogue of `isNameVisible` for a type-fn head: a same-name 1-hop
+/// TYPE-FUNCTION (a `fn_decl` with ≥1 `$`-param, or an alias naming one). The
+/// KIND-AWARE analogue of `isNameVisible` for a type-fn head: a same-name 1-hop
 /// NON-function (a value const `Make :: 123`, a named type) does NOT vouch
 /// (attempt-7), and — crucially — neither does a same-name 1-hop ORDINARY
 /// function (`Make :: () -> i32`, zero `$`-params), which cannot be the type
@@ -1726,12 +1760,45 @@ pub fn flatFnAuthorVisible(self: *Lowering, name: []const u8, from: []const u8) 
     const set = res.collectVisibleAuthors(name, from, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
     if (set.own) |own| {
-        if (typeFnAuthor(own.raw)) return true;
+        if (typeFnOfAuthor(self, own) != null) return true;
     }
     for (set.flat) |fa| {
-        if (typeFnAuthor(fa.raw)) return true;
+        if (typeFnOfAuthor(self, fa) != null) return true;
     }
     return false;
+}
+
+/// The TYPE-FUNCTION declaration a bare head `name` names, selected from the
+/// querying source's OWN visibility domain: a scope-local (mangled) function
+/// first, then the visible author — own wins, else its single flat-import
+/// author — with `alias :: target` chains followed to their exact terminal.
+/// This is what a bare `Make(i64)` instantiates: proving a visible author and
+/// then instantiating the name-keyed winner would run another module's body.
+/// The declaration map answers only where there is no author picture to select
+/// from (a comptime host, unwired import facts) or where no visible author
+/// heads a type function — and that second case never instantiates: it is
+/// exactly what `headFnLeak` rejects before instantiation, as it does the
+/// ≥2-visible-author case (where the first author is returned).
+pub fn visibleTypeFnHead(self: *Lowering, name: []const u8) ?*const ast.FnDecl {
+    const mapped: ?*const ast.FnDecl = blk: {
+        const resolved = if (self.scope) |scope| (scope.lookupFn(name) orelse name) else name;
+        const fd = self.program_index.fn_ast_map.get(resolved) orelse break :blk null;
+        break :blk if (fd.type_params.len > 0) fd else null;
+    };
+    if (self.scope) |scope| if (scope.lookupFn(name) != null) return mapped;
+    const from = self.current_source_file orelse return mapped;
+    if (self.program_index.module_decls == null or self.program_index.flat_import_graph == null) return mapped;
+
+    var res = self.resolver();
+    const set = res.collectVisibleAuthors(name, from, .user_bare_flat);
+    defer if (set.flat.len > 0) self.alloc.free(set.flat);
+    if (set.own) |own| {
+        if (typeFnOfAuthor(self, own)) |fd| return fd;
+    }
+    for (set.flat) |fa| {
+        if (typeFnOfAuthor(self, fa)) |fd| return fd;
+    }
+    return mapped;
 }
 
 /// Resolve a .call node that represents a type constructor (e.g., List(T), Vector(N, T)).
@@ -1841,6 +1908,18 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
         .poisoned => return .unresolved,
         .not_generic => {},
     }
+    // Parameterized protocol head (`size_of(Series(f32))`,
+    // `protocol_kind(Slot(i64))`): the same instantiation the type-expr
+    // sibling materializes. Reflection over one instantiation arrives here,
+    // where the head parses as a call rather than as a type expression.
+    {
+        const qualified_path: ?[]const u8 = if (is_qualified) self.qualifiedTypeName(cl.callee) else null;
+        defer if (qualified_path) |p| self.alloc.free(p);
+        if (self.protocolResolver().resolveParamProtocolHead(callee_name, qualified_path)) |pd| {
+            if (!is_qualified and self.headTypeLeak(callee_name, cl.callee.span)) return .unresolved;
+            return self.instantiateParamProtocol(pd, cl.args);
+        }
+    }
     // User-defined type-returning function: Complex(u32), Sx(f32). A
     // qualified head selects the exact terminal namespace author; it must
     // never consult the process-global same-name function map.
@@ -1853,13 +1932,11 @@ pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId 
             }
         }
     } else {
-        // Also resolve via scope fn_names (local functions get mangled names).
-        const resolved_name = if (self.scope) |scope| (scope.lookupFn(callee_name) orelse callee_name) else callee_name;
-        if (self.program_index.fn_ast_map.get(resolved_name)) |fd| {
-            if (fd.type_params.len > 0) {
-                if (self.headFnLeak(callee_name, cl.callee.span)) return .unresolved;
-                if (self.instantiateTypeFunction(callee_name, callee_name, fd, cl.args)) |ty| return ty;
-            }
+        // The head instantiates the author VISIBLE here (scope-local, own, or
+        // its single flat import), following alias chains to their terminal.
+        if (self.visibleTypeFnHead(callee_name)) |fd| {
+            if (self.headFnLeak(callee_name, cl.callee.span)) return .unresolved;
+            if (self.instantiateTypeFunction(callee_name, callee_name, fd, cl.args)) |ty| return ty;
         }
     }
     // Try as a named type
@@ -1916,7 +1993,13 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
     // never the global last-wins map for a visible-shadowed or qualified head.
     {
         switch (self.selectGenericStructHead(base_name, if (is_qualified) pt.name else null, is_qualified, span)) {
-            .template => |t| return self.instantiateGenericStruct(&t, pt.args),
+            .template => |t| {
+                for (pt.args) |a| {
+                    if (!isStaticTypeArg(self, a)) continue;
+                    _ = self.refuseValuelessProtocol(resolveTypeArg(self, a), a.span, "instantiate with the type argument");
+                }
+                return self.instantiateGenericStruct(&t, pt.args);
+            },
             .poisoned => return .unresolved,
             .not_generic => {},
         }
@@ -1924,11 +2007,11 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
 
     // Parameterized protocol used as a value type (`VL(i64)`): materialize a
     // 16-byte protocol value with the type-arg bound (not a 0-field stub).
-    if (self.program_index.protocol_ast_map.get(base_name)) |pd| {
-        if (pd.type_params.len > 0) {
-            if (!is_qualified and self.headTypeLeak(base_name, span)) return .unresolved;
-            return self.instantiateParamProtocol(pd, pt.args);
-        }
+    // The author is selected from the head's own visibility domain — a bare
+    // head from the visible author, a qualified one from the named namespace.
+    if (self.protocolResolver().resolveParamProtocolHead(base_name, if (is_qualified) pt.name else null)) |pd| {
+        if (!is_qualified and self.headTypeLeak(base_name, span)) return .unresolved;
+        return self.instantiateParamProtocol(pd, pt.args);
     }
 
     // User-defined type-returning function used as a TYPE annotation
@@ -1943,12 +2026,9 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
             }
         }
     } else {
-        const resolved_name = if (self.scope) |scope| (scope.lookupFn(base_name) orelse base_name) else base_name;
-        if (self.program_index.fn_ast_map.get(resolved_name)) |fd| {
-            if (fd.type_params.len > 0) {
-                if (self.headFnLeak(base_name, span)) return .unresolved;
-                if (self.instantiateTypeFunction(base_name, base_name, fd, pt.args)) |ty| return ty;
-            }
+        if (self.visibleTypeFnHead(base_name)) |fd| {
+            if (self.headFnLeak(base_name, span)) return .unresolved;
+            if (self.instantiateTypeFunction(base_name, base_name, fd, pt.args)) |ty| return ty;
         }
     }
 
@@ -2119,26 +2199,13 @@ pub fn assertInstanceMapsCoincide(self: *Lowering) void {
 pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, args: []const *const Node) TypeId {
     const table = &self.module.types;
 
-    // Build mangled name dynamically: StructName__arg1_arg2
+    // Build mangled name dynamically: StructName__arg1_arg2. The base carries
+    // the TEMPLATE's declaration identity and every argument fragment is the
+    // nominal-aware `mangleTypeName` — two same-display-name templates, or one
+    // template applied to two same-display-name nominal arguments, must never
+    // land on one layout.
     var name_parts = std.ArrayList(u8).empty;
-    name_parts.appendSlice(self.alloc, tmpl.name) catch {};
-
-    // A qualified `ns.Box(..)` head can select a generic template whose bare
-    // name also belongs to a DIFFERENT module's same-name template (the one
-    // that won the last-wins `struct_template_map`). Both would mangle to
-    // `Box__i64` and the second instantiation would alias the first's layout.
-    // Tag the NON-canonical author's mangled name with its source so each
-    // author's instantiation is a distinct type. The canonical (bare-map)
-    // author keeps the untagged name — no churn for single-author generics.
-    if (self.program_index.struct_template_map.get(tmpl.name)) |canon| {
-        const canon_src = canon.source_file orelse "";
-        const this_src = tmpl.source_file orelse "";
-        if (!std.mem.eql(u8, canon_src, this_src)) {
-            var tag_buf: [24]u8 = undefined;
-            const tag = std.fmt.bufPrint(&tag_buf, "$m{x}", .{std.hash.Wyhash.hash(0, this_src)}) catch "";
-            name_parts.appendSlice(self.alloc, tag) catch {};
-        }
-    }
+    name_parts.appendSlice(self.alloc, self.declIdentityName(tmpl.name, tmpl.decl)) catch @panic("out of memory while mangling generic struct");
 
     // Bind type params to args and build name suffix
     const saved_type_bindings = self.type_bindings;
@@ -2163,8 +2230,8 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
                         defer self.alloc.free(elems);
                         for (elems) |ty| {
                             pack_tys.append(self.alloc, ty) catch {};
-                            name_parts.appendSlice(self.alloc, "__") catch {};
-                            name_parts.appendSlice(self.alloc, self.formatTypeName(ty)) catch {};
+                            name_parts.appendSlice(self.alloc, "__") catch @panic("out of memory while mangling generic struct");
+                            name_parts.appendSlice(self.alloc, self.mangleTypeName(ty)) catch @panic("out of memory while mangling generic struct");
                         }
                         continue;
                     }
@@ -2173,14 +2240,14 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
                 if (self.rejectMultiReturnValueType(a, "generic type argument")) return .unresolved;
                 const ty = self.resolveTypeWithBindings(a);
                 pack_tys.append(self.alloc, ty) catch {};
-                name_parts.appendSlice(self.alloc, "__") catch {};
-                name_parts.appendSlice(self.alloc, self.formatTypeName(ty)) catch {};
+                name_parts.appendSlice(self.alloc, "__") catch @panic("out of memory while mangling generic struct");
+                name_parts.appendSlice(self.alloc, self.mangleTypeName(ty)) catch @panic("out of memory while mangling generic struct");
             }
             pb.put(tp.name, pack_tys.toOwnedSlice(self.alloc) catch &.{}) catch {};
             break; // a pack param is always last
         }
 
-        name_parts.appendSlice(self.alloc, "__") catch {};
+        name_parts.appendSlice(self.alloc, "__") catch @panic("out of memory while mangling generic struct");
 
         if (tp.is_type_param) {
             // A bare-paren `(A, B)` multi-return signature is return-position-only,
@@ -2188,16 +2255,16 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
             if (self.rejectMultiReturnValueType(args[i], "generic type argument")) return .unresolved;
             const ty = self.resolveTypeWithBindings(args[i]);
             tb.put(tp.name, ty) catch {};
-            const tname = self.formatTypeName(ty);
-            name_parts.appendSlice(self.alloc, tname) catch {};
+            const tname = self.mangleTypeName(ty);
+            name_parts.appendSlice(self.alloc, tname) catch @panic("out of memory while mangling generic struct");
         } else {
             // Value param (e.g., $N: u32) — fold to a compile-time integer
             // and range-check against its declared type.
             const val = self.resolveValueParamArg(args[i], tp.name, tp.value_type) orelse return .unresolved;
             cvb.put(tp.name, val) catch {};
             var val_buf: [32]u8 = undefined;
-            const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{val}) catch "0";
-            name_parts.appendSlice(self.alloc, val_str) catch {};
+            const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{val}) catch unreachable;
+            name_parts.appendSlice(self.alloc, val_str) catch @panic("out of memory while mangling generic struct");
         }
     }
 
@@ -2355,31 +2422,16 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     var tb = std.StringHashMap(TypeId).init(self.alloc);
     var cvb = std.StringHashMap(i64).init(self.alloc);
 
-    // Build mangled name
+    // Build mangled name. Two namespace targets may author the same
+    // type-function spelling and receive the same type arguments; the base
+    // carries `fd`'s declaration identity so the second author's lookup cannot
+    // return the first author's materialized type before reading its own body.
     var name_parts = std.ArrayList(u8).empty;
-    name_parts.appendSlice(self.alloc, template_name) catch {};
-
-    // Two namespace targets may author the same type-function spelling and
-    // receive the same type arguments. The exact `fd` selection above is not
-    // enough if both cache as `Make__i64`: the second lookup would return the
-    // first author's materialized type before reading its own body. Mirror the
-    // generic-struct identity rule by source-tagging a non-canonical author;
-    // the canonical/single-author spelling remains byte-for-byte unchanged.
-    if (self.program_index.fn_ast_map.get(template_name)) |canonical| {
-        if (canonical != fd) {
-            const canonical_src = canonical.body.source_file orelse "";
-            const this_src = fd.body.source_file orelse self.current_source_file orelse self.main_file orelse "";
-            if (!std.mem.eql(u8, canonical_src, this_src)) {
-                var tag_buf: [24]u8 = undefined;
-                const tag = std.fmt.bufPrint(&tag_buf, "$m{x}", .{std.hash.Wyhash.hash(0, this_src)}) catch "";
-                name_parts.appendSlice(self.alloc, tag) catch {};
-            }
-        }
-    }
+    name_parts.appendSlice(self.alloc, self.declIdentityName(template_name, fd)) catch @panic("out of memory while mangling type function");
 
     for (fd.type_params, 0..) |tp, i| {
         if (i >= args.len) break;
-        name_parts.appendSlice(self.alloc, "__") catch {};
+        name_parts.appendSlice(self.alloc, "__") catch @panic("out of memory while mangling type function");
 
         // Check if this is a Type param ($T: Type) or a value param ($N: u32)
         const is_type_param = if (tp.constraint.data == .type_expr)
@@ -2390,8 +2442,8 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
         if (is_type_param) {
             const ty = self.resolveTypeWithBindings(args[i]);
             tb.put(tp.name, ty) catch {};
-            const tname = self.formatTypeName(ty);
-            name_parts.appendSlice(self.alloc, tname) catch {};
+            const tname = self.mangleTypeName(ty);
+            name_parts.appendSlice(self.alloc, tname) catch @panic("out of memory while mangling type function");
         } else {
             // Value param (e.g., $N: u32) — fold to a compile-time integer
             // and range-check against its declared type. A failed bind has
@@ -2404,8 +2456,8 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
             const val = self.resolveValueParamArg(args[i], tp.name, vp_type) orelse return .unresolved;
             cvb.put(tp.name, val) catch {};
             var val_buf: [32]u8 = undefined;
-            const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{val}) catch "0";
-            name_parts.appendSlice(self.alloc, val_str) catch {};
+            const val_str = std.fmt.bufPrint(&val_buf, "{d}", .{val}) catch unreachable;
+            name_parts.appendSlice(self.alloc, val_str) catch @panic("out of memory while mangling type function");
         }
     }
 

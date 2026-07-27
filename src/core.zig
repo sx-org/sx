@@ -39,6 +39,11 @@ pub const Compilation = struct {
     /// `imports.buildDeclTable` in parallel with the import facts. Borrowed by
     /// `ProgramIndex.decl_table`.
     decl_table: imports.DeclTable,
+    /// Every module resolution reached, keyed by canonical path — including the
+    /// backends imported inside an unselected module-scope `inline if` branch.
+    /// Borrowed by `ProgramIndex.module_cache`: lowering reads a branch-local
+    /// import back out of it when it splices the branch that owns it.
+    module_cache: imports.ModuleCache,
     ir_emitter: ?ir.LLVMEmitter = null,
     /// Lowered IR module, kept alive past `generateCode` so post-link
     /// callbacks can re-enter the interpreter to invoke sx functions
@@ -69,6 +74,7 @@ pub const Compilation = struct {
             .module_decls = imports.ModuleDecls.init(allocator),
             .namespace_edges = imports.NamespaceEdges.init(allocator),
             .decl_table = imports.DeclTable.init(allocator),
+            .module_cache = imports.ModuleCache.init(allocator),
             .target_config = target_config,
             .stdlib_paths = stdlib_paths,
         };
@@ -89,22 +95,10 @@ pub const Compilation = struct {
         self.root = p.parse() catch return error.CompileError;
     }
 
-    /// Derive the comptime evaluation context (OS / ARCH / POINTER_SIZE
-    /// values) from the build target. Used by `imports.resolveImports`
-    /// to hoist top-level `inline if OS == .X { ... }` body decls
-    /// before resolution; mirrors `injectComptimeConstants` in lowering.
-    fn comptimeContext(self: *const Compilation) imports.ComptimeContext {
-        const tc = self.target_config;
-        const os: []const u8 = if (tc.isWasm()) "wasm" else if (tc.isWindows()) "windows" else if (tc.isAndroid()) "android" else if (tc.isLinux()) "linux" else if (tc.isIOS()) "ios" else if (tc.isMacOS()) "macos" else "unknown";
-        const arch: []const u8 = if (tc.isWasm32()) "wasm32" else if (tc.isWasm64()) "wasm64" else if (tc.isAarch64()) "aarch64" else if (tc.isX86_64()) "x86_64" else "unknown";
-        const ptr_size: i64 = if (tc.isWasm32()) 4 else 8;
-        return .{ .os = os, .arch = arch, .pointer_size = ptr_size };
-    }
-
     pub fn resolveImports(self: *Compilation) !void {
         const root = self.root orelse return error.CompileError;
         var chain = std.StringHashMap(void).init(self.allocator);
-        var cache = imports.ModuleCache.init(self.allocator);
+        const cache = &self.module_cache;
         const base_dir = imports.dirName(self.file_path);
 
         // Wire import_sources to diagnostics BEFORE resolving imports, so a parse
@@ -123,13 +117,12 @@ pub const Compilation = struct {
             base_dir,
             self.file_path,
             &chain,
-            &cache,
+            cache,
             &self.import_sources,
             &self.diagnostics,
             self.stdlib_paths,
             &self.import_graph,
             &self.flat_import_graph,
-            self.comptimeContext(),
         ) catch return error.CompileError;
 
         // Preserve per-module visibility scopes for C import access checking
@@ -145,7 +138,7 @@ pub const Compilation = struct {
         // phases (and the LSP). Built without IR lowering. A build failure here
         // (allocation) is the Phase A deliverable failing — propagate it rather
         // than leaving the borrowed views silently empty/stale.
-        const facts = try imports.buildImportFacts(self.allocator, self.file_path, mod, &cache);
+        const facts = try imports.buildImportFacts(self.allocator, self.file_path, mod, cache);
         self.module_decls = facts.decls;
         self.namespace_edges = facts.ns_edges;
 
@@ -153,7 +146,7 @@ pub const Compilation = struct {
         // parallel from the SAME modules. Additive — nothing consumes it for
         // selection yet, so generated IR + bytes are unchanged. Updates
         // `namespace_edges` in place to record each target's member ids.
-        self.decl_table = try imports.buildDeclTable(self.allocator, self.file_path, mod, &cache, &self.module_decls, &self.namespace_edges);
+        self.decl_table = try imports.buildDeclTable(self.allocator, self.file_path, mod, cache, &self.module_decls, &self.namespace_edges);
 
         // (import_sources ↔ diagnostics wiring + main-file seed now done before
         // resolution, above, so mid-resolution parse errors render correctly.)
@@ -227,8 +220,9 @@ pub const Compilation = struct {
         // so a VM bail is a hard build error. The bail reason is in
         // `comptime_vm.last_bail_reason` (surfaced by `main.printInterpBailDiag`).
         const build_config = if (self.ir_emitter) |*e| &e.build_config else null;
-        return ir.comptime_vm.runBuildCallback(self.allocator, mod, id, build_config, &self.import_sources, pass_options) orelse
-            error.ComptimeVmBail;
+        const evaluation = ir.comptime_vm.runBuildCallback(self.allocator, mod, id, build_config, &self.import_sources, pass_options, null);
+        defer evaluation.destroy();
+        return evaluation.completed() orelse error.ComptimeVmBail;
     }
 
     /// Get link flags accumulated from #run build blocks.
@@ -312,12 +306,6 @@ pub const Compilation = struct {
     pub fn lowerToIR(self: *Compilation) !ir.Module {
         const root = self.resolved_root orelse self.root orelse return ir.Module.init(self.allocator);
 
-        // Every `extern <ref>` must name a #library constant or a named
-        // `#import c` unit — a typo'd ref otherwise resolves silently
-        // through whatever image happens to carry the symbol.
-        try c_import.validateExternRefs(self.allocator, root, &self.diagnostics);
-        if (self.diagnostics.hasErrors()) return error.CompileError;
-
         var module = ir.Module.init(self.allocator);
         //TODO: find a better place for this
         if (self.target_config.isWasm32()) {
@@ -334,7 +322,15 @@ pub const Compilation = struct {
         lowering.program_index.module_decls = &self.module_decls;
         lowering.program_index.namespace_edges = &self.namespace_edges;
         lowering.program_index.decl_table = &self.decl_table;
+        lowering.program_index.module_cache = &self.module_cache;
         lowering.lowerRoot(root);
+        // Every `extern <ref>` must name a #library constant or a named
+        // `#import c` unit — a typo'd ref otherwise resolves silently through
+        // whatever image happens to carry the symbol. Runs after `lowerRoot`,
+        // which splices each selected module-scope expansion group into
+        // `root`, so a declaration written inside one is checked like any
+        // other.
+        try c_import.validateExternRefs(self.allocator, root, &self.diagnostics);
         if (self.diagnostics.hasErrors()) return error.CompileError;
 
         // Auto-link the JNI env TL runtime when lowering used it. The .c file
@@ -433,7 +429,10 @@ pub const Compilation = struct {
         return self.lowering_jni_main_decls.items;
     }
 
-    pub fn renderErrors(self: *const Compilation) void {
+    /// Render every collected diagnostic to stderr. Called once per pipeline:
+    /// on the failing stage's `catch`, or after the last stage on the success
+    /// path (warnings and their notes only surface there).
+    pub fn renderDiagnostics(self: *const Compilation) void {
         self.diagnostics.renderStderr();
     }
 };

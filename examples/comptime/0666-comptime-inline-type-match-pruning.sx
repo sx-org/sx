@@ -15,7 +15,7 @@
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 
-Sizable :: protocol { size :: (self: *Self) -> i64; }
+Sizable :: protocol vtable { size :: (self: *Self) -> i64; }
 Widget :: struct { value: i64; }
 impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 
@@ -40,7 +40,7 @@ main :: () {
     xs : []i64 = .[1, 2, 3];
     o : ?i64 = 5;
     ga := GPA.init();
-    a : Allocator = xx ga;    // #inline protocol — classifies as protocol too
+    a : Allocator = xx ga;    // `inline`-kind protocol — classifies as protocol too
     print("{} {} {} {}\n", describe(s), describe(xs), describe(5), describe(w));
     print("{} {} {} {}\n", describe(Pt.{ x = 1 }), describe(o), describe(a), describe(1.5));
 }

@@ -1,0 +1,47 @@
+warning: 'resized' returns 'Self' through a tagged value — the result materializes a frame-scoped temporary (one per call; lives to end of frame). See design/protocols.md §6.4, "-> Self placement".
+  --> examples/protocols/1955-protocols-tagged-self-return.sx:55:12
+   |
+55 |     big := v.resized(2.0);
+   |            ^^^^^^^^^
+
+warning: 'resized' returns 'Self' through a tagged value — the result materializes a frame-scoped temporary (one per call; lives to end of frame). See design/protocols.md §6.4, "-> Self placement".
+  --> examples/protocols/1955-protocols-tagged-self-return.sx:59:19
+   |
+59 |     print("{}\n", v.resized(2.0).resized(3.0).area());
+   |                   ^^^^^^^^^
+
+warning: 'resized' returns 'Self' through a tagged value — the result materializes a frame-scoped temporary (one per call; lives to end of frame). See design/protocols.md §6.4, "-> Self placement".
+  --> examples/protocols/1955-protocols-tagged-self-return.sx:59:19
+   |
+59 |     print("{}\n", v.resized(2.0).resized(3.0).area());
+   |                   ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: 'merged' returns 'Self' through a tagged value — the result materializes a frame-scoped temporary (one per call; lives to end of frame). See design/protocols.md §6.4, "-> Self placement".
+  --> examples/protocols/1955-protocols-tagged-self-return.sx:62:13
+   |
+62 |     both := w.merged(sq);
+   |             ^^^^^^^^
+
+warning: 'resized' returns 'Self' through a tagged value — the result materializes a frame-scoped temporary (one per call; lives to end of frame). See design/protocols.md §6.4, "-> Self placement".
+  --> examples/protocols/1955-protocols-tagged-self-return.sx:67:15
+   |
+67 |     shrunk := v.resized(0.5);
+   |               ^^^^^^^^^
+
+warning: 'resized' returns 'Self' through a tagged value — the result materializes a frame-scoped temporary (one per call; lives to end of frame). See design/protocols.md §6.4, "-> Self placement".
+  --> examples/protocols/1955-protocols-tagged-self-return.sx:74:17
+   |
+74 |         step := w.resized(xx i);
+   |                 ^^^^^^^^^
+
+warning: 'resized' returns 'Self' through a tagged value — the result materializes a frame-scoped temporary (one per call; lives to end of frame). See design/protocols.md §6.4, "-> Self placement".
+  --> examples/protocols/1955-protocols-tagged-self-return.sx:32:13
+   |
+32 |     step := v.resized(k);
+   |             ^^^^^^^^^
+
+warning: 'next' returns 'Self' through a tagged value — the result materializes a frame-scoped temporary (one per call; lives to end of frame). See design/protocols.md §6.4, "-> Self placement".
+  --> examples/protocols/1955-protocols-tagged-self-return.sx:85:19
+   |
+85 |     print("{}\n", t.next().count());
+   |                   ^^^^^^

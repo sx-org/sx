@@ -6,7 +6,7 @@
 
 #import "modules/std.sx";
 
-Proto :: protocol {
+Proto :: protocol vtable {
   get :: (self: *Self) -> *u8;
 }
 

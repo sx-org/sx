@@ -502,6 +502,12 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         _ = self.rejectMultiReturnValueType(ta, "variable");
         const ty = self.resolveType(ta);
         const slot = self.builder.alloca(ty);
+        // The annotation already names the valueless type; lowering the
+        // initializer would only restate the refusal at the erasure.
+        if (self.refuseValuelessProtocol(ty, ta.span, "make a value of")) {
+            if (self.scope) |scope| scope.put(vd.name, .{ .ref = slot, .ty = ty, .is_alloca = true });
+            return;
+        }
         if (vd.value) |val| {
             if (val.data == .undef_literal and !ty.isBuiltin()) {
                 const ti = self.module.types.get(ty);
@@ -1039,6 +1045,12 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt) void {
             self.validateMultiReturn(val, self.module.functions.items[@intFromEnum(fid)].ret);
         }
     }
+    // Erasing an rvalue into a tagged value borrows a frame temp, which at a
+    // `return` would outlive its frame — the flag is what the erasure path
+    // reads to refuse (spec §6.2).
+    const old_in_return = self.in_return_expr;
+    self.in_return_expr = true;
+    defer self.in_return_expr = old_in_return;
     // Set target_type to function return type so null_literal etc. get the right type.
     // When inlining a comptime body, the *inlined* fn's declared return type wins
     // over the caller's — otherwise `return 42` inside a `-> i64` body lowered into
@@ -1640,6 +1652,7 @@ fn tryLowerQualifiedGlobalStore(
     const selected: Lowering.QualifiedMember = switch (self.qualifiedMemberVerdict(full_path)) {
         .selected => |sel| sel,
         .missing => |m| {
+            if (self.namespaceMissWaits(m)) return .handled;
             if (self.diagnostics) |d|
                 d.addFmt(.err, span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
             return .handled;
@@ -1655,6 +1668,7 @@ fn tryLowerQualifiedGlobalStore(
             const sel = switch (self.qualifiedMemberVerdict(path)) {
                 .selected => |s| s,
                 .missing => |m| {
+                    if (self.namespaceMissWaits(m)) return .handled;
                     if (self.diagnostics) |d|
                         d.addFmt(.err, span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                     return .handled;

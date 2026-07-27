@@ -1,0 +1,48 @@
+// A driver's question about a set another driver can still grow — answered by
+// PARKING, not by refusing.
+//
+// Contribution is judged syntactically over the WHOLE unexpanded node: both
+// branches of an `inline if`, every iteration of an `inline for`. While such a
+// driver is undecided the sets it mentions cannot publish a negative, so a
+// question asked here has no answer YET. The asking driver parks against the
+// fact — the queried set becoming final — and the drain moves on. Deciding the
+// contributor retires exactly its contributions, which fires the fact, and the
+// parked driver resumes and folds against the set as it now stands.
+//
+// Nothing is speculative and nothing re-runs: the condition is evaluated once,
+// after its answer stopped being able to change.
+#import "modules/std.sx";
+
+View :: protocol tagged { area :: (self: *Self) -> i64; }
+Tally :: protocol tagged { count :: (self: *Self) -> i64; }
+
+Widget :: struct { n: i64; }
+Panel :: struct { n: i64; }
+
+// The `inline if` below can still write `impl View for Widget` — in its taken
+// branch or its untaken one, which is not decided yet either way. So this
+// question parks, and resumes once that driver is decided: `Widget` is in.
+inline if has_impl(View, Widget) { FIRST :: 1; } else { FIRST :: 0; }
+
+inline if POINTER_SIZE == 8 {
+    impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
+} else {
+    impl View for Widget { area :: (self: *Widget) -> i64 { self.n * 2 } }
+}
+
+// An unroll contributes once per element, so `Tally` stays open across the
+// whole scheduled expansion — and the answer arrives when the unroll drains.
+SHAPES :: .[Widget, Panel];
+inline if has_impl(Tally, Panel) { SECOND :: 1; } else { SECOND :: 0; }
+
+inline for SHAPES (T) {
+    impl Tally for T { count :: (self: *T) -> i64 { self.n } }
+}
+
+main :: () {
+    w := Widget.{ n = 4 };
+    p := Panel.{ n = 5 };
+    v : View = w;
+    t : Tally = p;
+    print("{} {} {} {}\n", FIRST, SECOND, v.area(), t.count());
+}

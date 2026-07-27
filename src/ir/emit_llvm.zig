@@ -32,7 +32,6 @@ const Module = ir_module.Module;
 const compiler_hooks = @import("compiler_hooks.zig");
 const Value = @import("comptime_value.zig").Value;
 const comptime_vm = @import("comptime_vm.zig");
-const build_opts = @import("build_opts");
 
 // The vendored error-trace ring buffer (library/vendors/sx_trace_runtime/sx_trace.c)
 // is linked into the compiler. Comptime `#run` evaluation pushes frames to it via
@@ -127,23 +126,6 @@ pub const LLVMEmitter = struct {
     /// compile-time-only function turns out to be reachable from the binary.
     reach: ?@import("reachability.zig").Reachability = null,
 
-    // When set (env `SX_COMPTIME_FLAT`, → a `-Dcomptime-flat` build flag later),
-    // comptime const-init folds try the comptime VM (`comptime_vm.tryEval`)
-    // first and fall back to the legacy tagged interpreter on null. Default OFF so
-    // the corpus is unaffected until the VM reaches parity (Phase 1.final step d).
-    comptime_flat: bool = false,
-
-    // When set (env `SX_COMPTIME_FLAT_TRACE`, only meaningful with `comptime_flat`),
-    // each comptime const-init reports to stderr whether the VM handled it or fell
-    // back to the legacy interpreter (with the bail reason) — the coverage signal
-    // for porting the next ops. Default OFF.
-    comptime_flat_trace: bool = false,
-
-    // When set (`-Dcomptime-flat-strict` / env `SX_COMPTIME_FLAT_STRICT`), a VM bail
-    // does NOT fall back to the legacy interpreter — it becomes a build-gating error.
-    // The enumeration gate for retiring `interp.zig`. Implies `comptime_flat`.
-    comptime_flat_strict: bool = false,
-
     // Allocator for temporary bookkeeping
     alloc: Allocator,
 
@@ -182,6 +164,15 @@ pub const LLVMEmitter = struct {
 
     // Pending PHI nodes to fixup after all blocks in a function are emitted
     pending_phis: std.ArrayList(PendingPhi),
+
+    // Comptime results waiting to become their global's initializer. An escaped
+    // value resolves to SYMBOLS — the globals its referents relocate to, the
+    // functions its fn refs name — so it is serialized once every function and
+    // global has been declared, not in the middle of declaring them.
+    pending_comptime_inits: std.ArrayList(PendingComptimeInit),
+    // The anonymous image globals minted for escaped comptime temporaries, by
+    // the image object each one materializes.
+    image_globals: std.AutoHashMap(usize, c.LLVMValueRef),
 
     // Whether the current function being emitted is "main" (needs i32 return for JIT)
     current_func_is_main: bool = false,
@@ -298,6 +289,13 @@ pub const LLVMEmitter = struct {
         param_index: u32,
     };
 
+    const PendingComptimeInit = struct {
+        global_index: u32,
+        value: Value,
+        ty: TypeId,
+        name: []const u8,
+    };
+
     pub const JniSlotPair = struct {
         cls_slot: c.LLVMValueRef, // @SX_JNI_CLS_<key>: ptr (GlobalRef to jclass)
         mid_slot: c.LLVMValueRef, // @SX_JNI_MID_<key>: ptr (jmethodID)
@@ -362,6 +360,8 @@ pub const LLVMEmitter = struct {
             .block_map = std.AutoHashMap(u64, c.LLVMBasicBlockRef).init(alloc),
             .term_block_map = std.AutoHashMap(u64, c.LLVMBasicBlockRef).init(alloc),
             .pending_phis = std.ArrayList(PendingPhi).empty,
+            .pending_comptime_inits = std.ArrayList(PendingComptimeInit).empty,
+            .image_globals = std.AutoHashMap(usize, c.LLVMValueRef).init(alloc),
             .cached_i1 = c.LLVMInt1TypeInContext(ctx),
             .cached_i8 = c.LLVMInt8TypeInContext(ctx),
             .cached_i16 = c.LLVMInt16TypeInContext(ctx),
@@ -381,12 +381,6 @@ pub const LLVMEmitter = struct {
             .build_config = .{},
             .di_files = std.StringHashMap(c.LLVMMetadataRef).init(alloc),
             .frame_str_cache = std.StringHashMap(c.LLVMValueRef).init(alloc),
-            // Enabled by the `-Dcomptime-flat` build flag OR the `SX_COMPTIME_FLAT`
-            // env var (either turns it on); default OFF (legacy interpreter).
-            .comptime_flat = build_opts.comptime_flat or std.c.getenv("SX_COMPTIME_FLAT") != null or
-                build_opts.comptime_flat_strict or std.c.getenv("SX_COMPTIME_FLAT_STRICT") != null,
-            .comptime_flat_trace = std.c.getenv("SX_COMPTIME_FLAT_TRACE") != null,
-            .comptime_flat_strict = build_opts.comptime_flat_strict or std.c.getenv("SX_COMPTIME_FLAT_STRICT") != null,
         };
     }
 
@@ -400,6 +394,8 @@ pub const LLVMEmitter = struct {
         while (jni_it.next()) |k| self.alloc.free(k.*);
         self.jni_slots.deinit();
         self.global_map.deinit();
+        self.pending_comptime_inits.deinit(self.alloc);
+        self.image_globals.deinit();
         self.block_map.deinit();
         self.term_block_map.deinit();
         self.di_files.deinit();
@@ -463,6 +459,13 @@ pub const LLVMEmitter = struct {
 
         // Pass 1.5: Initialize vtable globals (needs function declarations from Pass 1)
         self.initVtableGlobals();
+
+        // Pass 1.6: Materialize the comptime results into their globals. Every
+        // symbol an escaped value can name — a relocated global, a function —
+        // exists by now. A failure here halts before any body is emitted, so an
+        // undef initializer is never called through.
+        self.initComptimeGlobals();
+        if (self.comptime_failed) return;
 
         // Pass 2: Emit function bodies
         for (self.ir_mod.functions.items, 0..) |func, i| {
@@ -943,7 +946,9 @@ pub const LLVMEmitter = struct {
             // A VM-run `#run` side-effect writes its `print` output directly to
             // fd 1 via host-FFI (no buffered interp output to flush). A bail is a
             // build-gating error naming the reason.
-            const result = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources) orelse {
+            const evaluation = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources, null);
+            defer evaluation.destroy();
+            const result = evaluation.completed() orelse {
                 std.debug.print("error: comptime `#run` ({s}) failed: {s}\n", .{ fname, comptime_vm.last_bail_reason orelse "<unknown>" });
                 self.comptime_failed = true;
                 continue;
@@ -970,6 +975,7 @@ pub const LLVMEmitter = struct {
                     switch (instruction.op) {
                         .global_get, .global_addr => |gid| used.put(gid.index(), {}) catch {},
                         .global_set => |gs| used.put(gs.global.index(), {}) catch {},
+                        .tagged_type_id => |t| used.put(t.table.index(), {}) catch {},
                         else => {},
                     }
                 }
@@ -1009,7 +1015,9 @@ pub const LLVMEmitter = struct {
                 // fallback. A bail is ALWAYS a build-gating error naming the
                 // reason; its result Value is materialized by `valueToLLVMConst`.
                 sx_trace_clear();
-                const result = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources) orelse {
+                const evaluation = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources, null);
+                defer evaluation.destroy();
+                const result = evaluation.completed() orelse {
                     // Surface the bail loudly instead of silently filling the
                     // const with zero. Leave the global undef; comptime_failed
                     // halts the build before it ships.
@@ -1035,8 +1043,15 @@ pub const LLVMEmitter = struct {
                         continue;
                     }
                 }
-                const init_val = self.valueToLLVMConst(init_value, global.ty, self.ir_mod.types.getString(global.name));
-                c.LLVMSetInitializer(llvm_global, init_val);
+                // Serialized in Pass 1.6: an escaped value resolves to symbols
+                // that are not declared yet.
+                c.LLVMSetInitializer(llvm_global, c.LLVMConstNull(llvm_ty));
+                self.pending_comptime_inits.append(self.alloc, .{
+                    .global_index = @intCast(i),
+                    .value = init_value,
+                    .ty = global.ty,
+                    .name = self.ir_mod.types.getString(global.name),
+                }) catch {};
             } else if (global.init_val) |iv| {
                 const init_val = switch (iv) {
                     .int => |v| c.LLVMConstInt(llvm_ty, @bitCast(v), 1),
@@ -1054,6 +1069,7 @@ pub const LLVMEmitter = struct {
                     // Pass 1). Emit a placeholder and resolve in initVtableGlobals.
                     .func_ref => c.LLVMConstNull(llvm_ty),
                     .global_ref => c.LLVMConstNull(llvm_ty),
+                    .tagged_tag => |t| c.LLVMConstInt(llvm_ty, @intCast(self.taggedTagValue(t)), 0),
                 };
                 c.LLVMSetInitializer(llvm_global, init_val);
             } else {
@@ -1139,6 +1155,34 @@ pub const LLVMEmitter = struct {
         }
     }
 
+    /// Fill every comptime-backed global with its evaluated result.
+    fn initComptimeGlobals(self: *LLVMEmitter) void {
+        for (self.pending_comptime_inits.items) |pending| {
+            const llvm_global = self.global_map.get(pending.global_index) orelse continue;
+            c.LLVMSetInitializer(llvm_global, self.valueToLLVMConst(pending.value, pending.ty, pending.name));
+        }
+    }
+
+    /// The anonymous image global backing an escaped comptime temporary, minted
+    /// once per object: two handles that shared the VM object get this same
+    /// global, so the borrow they had at compile time survives the escape. The
+    /// storage is WRITABLE — an escaped temporary is literal-class static data
+    /// that belongs to no allocator, not a constant. The global is created
+    /// before its initializer is serialized, so a referent that points back at
+    /// itself resolves to the symbol already in hand.
+    fn imageObjectGlobal(self: *LLVMEmitter, obj: *const Value.ImageObject, global_name: []const u8) c.LLVMValueRef {
+        const key = @intFromPtr(obj);
+        if (self.image_globals.get(key)) |g| return g;
+        const llvm_ty = self.toLLVMType(obj.ty);
+        var name_buf: [64]u8 = undefined;
+        const name = std.fmt.bufPrintZ(&name_buf, "__sx_ct_obj.{d}", .{self.image_globals.count()}) catch "__sx_ct_obj";
+        const llvm_global = c.LLVMAddGlobal(self.llvm_module, llvm_ty, name.ptr);
+        c.LLVMSetLinkage(llvm_global, c.LLVMInternalLinkage);
+        self.image_globals.put(key, llvm_global) catch {};
+        c.LLVMSetInitializer(llvm_global, self.valueToLLVMConst(obj.value, obj.ty, global_name));
+        return llvm_global;
+    }
+
     /// Read `len` bytes from `addr` in the current process. Used to lift
     /// comptime-evaluated heap data into a static binary constant — the
     /// interp ran in this process, so any libc-malloc'd buffer it
@@ -1181,49 +1225,42 @@ pub const LLVMEmitter = struct {
     ) c.LLVMValueRef {
         const llvm_ty = self.toLLVMType(ty);
         return switch (val) {
-            .int => |v| blk: {
-                // Host-pointer-as-int trap: the interp marshals raw pointers
-                // (libc-malloc'd buffers, etc.) into a .int that holds the
-                // host address. When that address is meant for a `ptr` slot
-                // in the destination type, emitting `LLVMConstInt` against
-                // the ptr type silently produces a malformed `i0 0`. The
-                // string/slice paths above handle this case by reading the
-                // pointed-to bytes; anything else with an int landing in a
-                // ptr slot is a Phase-1.4a heap-walk case we don't yet
-                // know how to serialize.
-                const kind = c.LLVMGetTypeKind(llvm_ty);
-                if (kind == c.LLVMPointerTypeKind) {
-                    std.debug.print(
-                        "error: comptime init of '{s}' produced a raw integer for a pointer field — needs IR-typed heap-walk serialization (Phase 1.4a heap-walk follow-up)\n",
-                        .{global_name},
-                    );
-                    break :blk self.failGlobalInit(llvm_ty);
-                }
-                break :blk c.LLVMConstInt(llvm_ty, @bitCast(v), 1);
-            },
+            .int => |v| c.LLVMConstInt(llvm_ty, @bitCast(v), 1),
             .float => |v| c.LLVMConstReal(llvm_ty, v),
             .boolean => |v| c.LLVMConstInt(llvm_ty, @intFromBool(v), 0),
             .null_val => c.LLVMConstNull(llvm_ty),
             .void_val, .undef => c.LLVMGetUndef(llvm_ty),
-            // Comptime globals are serialized here in Pass 0, before functions
-            // are declared (Pass 1) and with no later re-emit. A func_ref can
-            // therefore never resolve to a real function pointer at this point;
-            // bail loudly rather than ship a silently-null function pointer.
-            .func_ref => |fid| blk: {
+            // A `Type` value is its TypeId in a word, the same handle runtime
+            // code carries.
+            .type_tag => |tid| c.LLVMConstInt(llvm_ty, @intCast(tid.index()), 0),
+            // An escaped function reference IS its symbol.
+            .func_ref => |fid| self.func_map.get(fid.index()) orelse blk: {
                 std.debug.print(
-                    "error: comptime init of '{s}' produced a reference to function '{s}', which cannot be serialized as a static constant (function declarations are not available at global-init time)\n",
+                    "error: comptime init of '{s}' produced a reference to function '{s}', which has no declaration\n",
                     .{ global_name, self.ir_mod.types.getString(self.ir_mod.getFunction(fid).name) },
                 );
                 break :blk self.failGlobalInit(llvm_ty);
+            },
+            // An escaped referent: the declared global it relocates to, or the
+            // anonymous image global minted for a comptime temporary.
+            .image_ref => |ref| switch (ref) {
+                .global => |gid| self.global_map.get(gid.index()) orelse blk: {
+                    std.debug.print(
+                        "error: comptime init of '{s}' relocates to global '{s}', which is not emitted\n",
+                        .{ global_name, self.ir_mod.types.getString(self.ir_mod.globals.items[gid.index()].name) },
+                    );
+                    break :blk self.failGlobalInit(llvm_ty);
+                },
+                .object => |obj| self.imageObjectGlobal(obj, global_name),
             },
             .string => |s| self.emitConstStringGlobal(s),
             .aggregate => |fields| self.serializeAggregateValue(fields, ty, global_name),
             // The remaining Value variants cannot become static binary
             // constants outside of a fat-pointer aggregate. Bail loudly.
-            // (`heap_ptr` / `byte_ptr` / `int → ptr` are handled inside
+            // (`heap_ptr` / `byte_ptr` are handled inside
             // `serializeAggregateValue` when they appear in a string or
             // slice fat-pointer's data field.)
-            .heap_ptr, .byte_ptr, .slot_ptr, .closure, .type_tag => blk: {
+            .heap_ptr, .byte_ptr, .slot_ptr, .closure => blk: {
                 std.debug.print(
                     "error: comptime init of '{s}' produced a {s} value, which cannot be serialized as a static constant\n",
                     .{ global_name, @tagName(val) },
@@ -1478,6 +1515,13 @@ pub const LLVMEmitter = struct {
                 const nounwind_attr = c.LLVMCreateEnumAttribute(self.context, nounwind_id, 0);
                 c.LLVMAddAttributeAtIndex(llvm_func, func_idx_attr, nounwind_attr);
             }
+            // `#expand`: the routine's switch must stand at the call site, so
+            // the inlining is `alwaysinline` — a guarantee the inliner's cost
+            // model cannot decline, not the hint `inlinehint` would be.
+            if (func.always_inline and !func.is_naked) {
+                const ai_id = c.LLVMGetEnumAttributeKindForName("alwaysinline", 12);
+                c.LLVMAddAttributeAtIndex(llvm_func, func_idx_attr, c.LLVMCreateEnumAttribute(self.context, ai_id, 0));
+            }
         }
 
         // Apple ARM64 ABI for >16B non-HFA composites: pass by reference
@@ -1525,8 +1569,14 @@ pub const LLVMEmitter = struct {
             self.mapRef(param_val);
         }
 
+        // A block the entry cannot reach is never emitted: a folded probe's
+        // dead arm names a (protocol, concrete) pair that has no tag.
+        const reachable = self.reachableBlocks(func);
+        defer self.alloc.free(reachable);
+
         // Create all basic blocks first (so branches can reference them)
         for (func.blocks.items, 0..) |block, bi| {
+            if (!reachable[bi]) continue;
             const block_name = self.ir_mod.types.getString(block.name);
             const block_name_z = self.alloc.dupeZ(u8, block_name) catch unreachable;
             defer self.alloc.free(block_name_z);
@@ -1557,6 +1607,7 @@ pub const LLVMEmitter = struct {
 
         // Emit instructions for each block — use first_ref to sync ref numbering
         for (func.blocks.items, 0..) |block, bi| {
+            if (!reachable[bi]) continue;
             const block_key = makeBlockKey(func_idx, @intCast(bi));
             const bb = self.block_map.get(block_key) orelse unreachable;
             c.LLVMPositionBuilderAtEnd(self.builder, bb);
@@ -1614,6 +1665,65 @@ pub const LLVMEmitter = struct {
         return result;
     }
 
+    /// The constant answer a condition already carries at whole-program
+    /// emission, or `null` when it is genuinely dynamic. The conformer sets
+    /// are final here, so a probe's `tagged_conforms` is a constant and one
+    /// arm of the branch it feeds is statically dead (§7.9).
+    pub fn constCondition(self: *LLVMEmitter, func: *const Function, cond: Ref) ?bool {
+        if (cond.isNone()) return null;
+        const idx = cond.index();
+        if (idx < func.params.len) return null;
+        for (func.blocks.items) |blk| {
+            if (idx >= blk.first_ref and idx < blk.first_ref + blk.insts.items.len) {
+                return switch (blk.insts.items[idx - blk.first_ref].op) {
+                    .tagged_conforms => |t| self.ir_mod.tagged_tags.contains(.{ .proto = t.proto, .concrete = t.concrete }),
+                    else => null,
+                };
+            }
+        }
+        return null;
+    }
+
+    /// The blocks reachable from the entry, where a folded `cond_br`
+    /// contributes only its live successor. Caller owns the slice.
+    fn reachableBlocks(self: *LLVMEmitter, func: *const Function) []bool {
+        const seen = self.alloc.alloc(bool, func.blocks.items.len) catch unreachable;
+        @memset(seen, false);
+        if (seen.len == 0) return seen;
+
+        var stack = std.ArrayList(u32).empty;
+        defer stack.deinit(self.alloc);
+        seen[0] = true;
+        stack.append(self.alloc, 0) catch unreachable;
+
+        while (stack.pop()) |bi| {
+            for (func.blocks.items[bi].insts.items) |instruction| {
+                switch (instruction.op) {
+                    .br => |branch| self.markReachable(branch.target, seen, &stack),
+                    .cond_br => |cb| if (self.constCondition(func, cb.cond)) |taken| {
+                        self.markReachable(if (taken) cb.then_target else cb.else_target, seen, &stack);
+                    } else {
+                        self.markReachable(cb.then_target, seen, &stack);
+                        self.markReachable(cb.else_target, seen, &stack);
+                    },
+                    .switch_br => |sw| {
+                        for (sw.cases) |case| self.markReachable(case.target, seen, &stack);
+                        self.markReachable(sw.default, seen, &stack);
+                    },
+                    else => {},
+                }
+            }
+        }
+        return seen;
+    }
+
+    fn markReachable(self: *LLVMEmitter, target: BlockId, seen: []bool, stack: *std.ArrayList(u32)) void {
+        const bi = target.index();
+        if (bi >= seen.len or seen[bi]) return;
+        seen[bi] = true;
+        stack.append(self.alloc, @intCast(bi)) catch unreachable;
+    }
+
     /// After emitting all blocks, fill in PHI incoming values from branch args.
     fn fixupPhiNodes(self: *LLVMEmitter, func: *const Function, func_idx: u32) void {
         if (self.pending_phis.items.len == 0) return;
@@ -1630,7 +1740,14 @@ pub const LLVMEmitter = struct {
                     .br => |branch| {
                         self.addPhiIncoming(branch.target, branch.args, src_bb);
                     },
-                    .cond_br => |cb| {
+                    // A folded branch has one real edge, so the phi takes one
+                    // incoming from it — the dead arm is not a predecessor.
+                    .cond_br => |cb| if (self.constCondition(func, cb.cond)) |taken| {
+                        if (taken)
+                            self.addPhiIncoming(cb.then_target, cb.then_args, src_bb)
+                        else
+                            self.addPhiIncoming(cb.else_target, cb.else_args, src_bb);
+                    } else {
                         self.addPhiIncoming(cb.then_target, cb.then_args, src_bb);
                         self.addPhiIncoming(cb.else_target, cb.else_args, src_bb);
                     },
@@ -1680,6 +1797,9 @@ pub const LLVMEmitter = struct {
             .const_null => self.ops().emitConstNull(instruction),
             .const_undef => self.ops().emitConstUndef(instruction),
             .const_type => |tid| self.ops().emitConstType(tid),
+            .tagged_tag_of => |t| self.ops().emitTaggedTagOf(t),
+            .tagged_conforms => |t| self.ops().emitTaggedConforms(t),
+            .tagged_type_id => |t| self.ops().emitTaggedTypeId(instruction, t),
 
             // ── Arithmetic ─────────────────────────────────────────
             .add => |bin| self.ops().emitAdd(instruction, bin),
@@ -2756,6 +2876,17 @@ pub const LLVMEmitter = struct {
     /// whole aggregate is re-emitted by `initVtableGlobals` after Pass 1 with
     /// `true`, where any still-unresolved func_ref is a loud diagnostic — never
     /// a silently-null function pointer.
+    /// The dense conformer tag a static tagged borrow carries, read from the
+    /// numbering the collection fixpoint published — the constant analogue of
+    /// `emitTaggedTagOf`.
+    fn taggedTagValue(self: *LLVMEmitter, t: ir_inst.TaggedTag) i64 {
+        return self.ir_mod.tagged_tags.get(.{ .proto = t.proto, .concrete = t.concrete }) orelse
+            std.debug.panic("taggedTagValue: '{s}' is not in the final conformer set of '{s}' — a pair that did not survive the numbering has no tag", .{
+                self.ir_mod.types.typeName(t.concrete),
+                self.ir_mod.types.typeName(t.proto),
+            });
+    }
+
     fn emitConstAggregate(self: *LLVMEmitter, agg: []const ir_inst.ConstantValue, llvm_ty: c.LLVMTypeRef, require_resolved: bool) c.LLVMValueRef {
         const kind = c.LLVMGetTypeKind(llvm_ty);
         const is_struct = kind == c.LLVMStructTypeKind;
@@ -2786,6 +2917,7 @@ pub const LLVMEmitter = struct {
                     break :blk c.LLVMConstNull(elem_ty);
                 },
                 .global_ref => |gid| self.global_map.get(gid.index()) orelse c.LLVMConstNull(elem_ty),
+                .tagged_tag => |t| c.LLVMConstInt(elem_ty, @intCast(self.taggedTagValue(t)), 0),
                 // A null pointer field and a zero-initialized field both emit as
                 // the all-zero constant of the leaf type.
                 .null_val, .zeroinit => c.LLVMConstNull(elem_ty),

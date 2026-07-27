@@ -1,19 +1,31 @@
-//! Byte-addressable comptime machine — Phase 1 of `current/PLAN-COMPILER-VM.md`.
+//! The comptime machine: a byte-addressable, SUSPENDABLE evaluator.
 //!
-//! The comptime evaluator is being rebuilt around a byte-addressable memory
-//! so comptime values are NATIVE BYTES (like runtime), instead of the tagged
-//! `Value` union the legacy interpreter (`interp.zig`) uses. This module is the
-//! machine substrate: byte-addressable memory backed by an ARENA of stable host
-//! allocations (each `allocBytes` never moves; freed wholesale on `deinit`), plus
-//! a per-call `Frame` holding a register file. `Addr` is the allocation's real
+//! Comptime values are NATIVE BYTES (like runtime), not a tagged `Value` union.
+//! This module is both the machine substrate — byte-addressable memory backed by
+//! an ARENA of stable host allocations (each `allocBytes` never moves; freed
+//! wholesale on `deinit`), plus a per-call `Frame` holding a register file — and
+//! the executor that walks the SSA IR over it. `Addr` is the allocation's real
 //! host pointer, so a comptime pointer and an FFI-returned host pointer are the
 //! same kind of value.
 //!
-//! Value model (grows over later sub-steps): a register (`Reg`) is a raw 64-bit
-//! word that is EITHER an immediate scalar (its bits) OR an `Addr` into comptime
-//! memory (for aggregates) — interpreted by the IR result type, exactly like a
-//! real machine / LLVM. Scalars up to 64 bits (sx's widest is `i64`/`u64`/`f64`)
-//! fit a register directly; structs/arrays/slices live in comptime memory and a
+//! One evaluation is ONE native-async task (`comptime_async`): `evaluate` starts
+//! the interpreter with `std.Io.async` and collects it with `Future.await`. The
+//! interpreter itself stays plainly recursive — `run` walks blocks, `invoke`
+//! calls `run` — so a call chain IS the task's Zig stack, and `Vm.awaitFact`
+//! parks that whole chain without reifying a frame. The driver loop between
+//! `async` and `await` is the seam the VM's own bookmark scheduler plugs into:
+//! it answers the pending fact and resumes the same continuation at the
+//! awaiting instruction. A scheduler that cannot answer yet hands the whole
+//! `Evaluation` back PARKED — VM, task, heap, and VM-local Context intact —
+//! and its owner resumes it when the fact fires. With no scheduler every await
+//! answers `.unavailable` and the evaluation refuses through its ordinary
+//! staged path.
+//!
+//! Value model: a register (`Reg`) is a raw 64-bit word that is EITHER an
+//! immediate scalar (its bits) OR an `Addr` into comptime memory (for
+//! aggregates) — interpreted by the IR result type, exactly like a real machine
+//! / LLVM. Scalars up to 64 bits (sx's widest is `i64`/`u64`/`f64`) fit a
+//! register directly; structs/arrays/slices live in comptime memory and a
 //! register holds their address.
 //!
 //! Target-awareness lives in the EXECUTOR, not here: this module only moves raw
@@ -25,11 +37,11 @@
 //! `Machine` (arena-backed memory + scalar word read/write + byte views) holds the
 //! comptime stack + heap; `Frame` is the per-call register file. A `Frame` does NOT
 //! reclaim the machine's memory on exit — a callee can return an aggregate whose
-//! register holds an `Addr` into comptime memory, and reclaiming would dangle it. The
-//! legacy interpreter remains the live evaluator until the VM reaches parity.
+//! register holds an `Addr` into comptime memory, and reclaiming would dangle it.
 
 const std = @import("std");
 const inst_mod = @import("inst.zig");
+const comptime_async = @import("comptime_async.zig");
 const types = @import("types.zig");
 const intrinsics = @import("intrinsics.zig");
 const mod_mod = @import("module.zig");
@@ -50,7 +62,7 @@ const FuncId = inst_mod.FuncId;
 // The error return-trace buffer (sx_trace.c, linked into the compiler) — the same
 // one emit_llvm reads after a `#run` to render the comptime escape trace. A
 // comptime failable that raises emits `sx_trace_push(trace_frame())` as it unwinds;
-// the VM services those calls natively so the trace populates identically to legacy.
+// the VM services those calls natively so the escape trace populates as it unwinds.
 extern fn sx_trace_push(frame: u64) void;
 extern fn sx_trace_clear() void;
 const Span = inst_mod.Span;
@@ -58,7 +70,7 @@ const Span = inst_mod.Span;
 /// A comptime memory address — a REAL host pointer (`@intFromPtr`), since the
 /// machine allocates each object from an arena that never moves it. `null_addr` (0)
 /// is the null sentinel (no allocation is ever at address 0), so a zeroed register
-/// reads as null — mirroring how the legacy `Value` model distinguishes `null_val`.
+/// reads as null.
 /// Because addresses are absolute host pointers, a comptime pointer and an
 /// FFI-returned host pointer are the SAME kind of value: the FFI bridge hands them
 /// to / from real libc with no translation (Phase 4D).
@@ -102,8 +114,8 @@ pub const Machine = struct {
 
     /// Read a `size`-byte (1/2/4/8) little-endian scalar at `addr` into a register
     /// word (zero-extended). A null / oversized access returns `error.OutOfBounds`
-    /// (NOT a panic) so a malformed comptime run BAILS to the legacy fallback rather
-    /// than crashing. (Addresses are absolute host pointers, so there is no
+    /// (NOT a panic) so a malformed comptime run bails rather than crashing.
+    /// (Addresses are absolute host pointers, so there is no
     /// upper-bound check — a non-null wild address would fault; the `Frame` `bad_ref`
     /// guard catches the dominant malformed-IR vector before any such deref.)
     pub fn readWord(_: *const Machine, addr: Addr, size: usize) error{OutOfBounds}!Reg {
@@ -147,8 +159,8 @@ pub const Frame = struct {
     gpa: std.mem.Allocator,
     /// Set when `get`/`set` is handed an out-of-range Ref index — a malformed IR
     /// (e.g. a `ret Ref.none` left by an unresolved name during LOWERING-time
-    /// comptime eval). The `run` loop checks it after each instruction and bails
-    /// (→ legacy fallback), so the VM never panics on imperfect IR.
+    /// comptime eval). The `run` loop checks it after each instruction and bails,
+    /// so the VM never panics on imperfect IR.
     bad_ref: bool = false,
 
     pub fn init(gpa: std.mem.Allocator, num_regs: usize) Frame {
@@ -178,9 +190,8 @@ pub const Frame = struct {
     }
 };
 
-/// Why the most recent `tryEval` returned `null` (bailed to the legacy
-/// interpreter) — the bail `detail` (op name / one-line reason), or a fixed string
-/// for the structural skips. Mirrors the legacy interp's `last_bail_detail`; the
+/// Why the most recent `tryEval` returned `null` (a bail) — the bail `detail`
+/// (op name / one-line reason), or a fixed string for the structural skips. The
 /// host reads it under a coverage-trace gate to learn what to port next. Cleared at
 /// the top of every `tryEval`; meaningful only when `tryEval` returned `null`.
 pub var last_bail_reason: ?[]const u8 = null;
@@ -198,57 +209,217 @@ pub var last_bail_reason: ?[]const u8 = null;
 /// `null`; cleared at the top of every `tryEval`.
 pub var last_bail_was_bridge: bool = false;
 
-/// Wiring entry point: try to evaluate comptime function `func_id` entirely on the
-/// comptime VM and return its result as a legacy `Value`, or `null` if the VM
-/// can't handle it (unsupported op, no body, or any bail) — the caller then falls
-/// back to the legacy interpreter. The result is deep-copied into `gpa`, so it
-/// outlives the VM's comptime memory (freed here on return).
-///
-/// Safe for ARBITRARY host comptime functions: the `Machine` accessors are
-/// hardened to return `error.OutOfBounds` (not a debug panic) on a null/out-of-
-/// range/oversized access, so a malformed run bails to `null` (→ legacy fallback)
-/// rather than crashing the compiler. On a bail, `last_bail_reason` names the cause.
-pub fn tryEval(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.FuncId, build_config: ?*compiler_hooks.BuildConfig, source_map: ?*const std.StringHashMap([:0]const u8)) ?Value {
+// ── Fact-await seam ─────────────────────────────────────────────────────────
+//
+// A comptime evaluation can reach a question whose answer is not yet FINAL —
+// today only "which conformer arm implements this symbolic dispatch", since a
+// conformance admitted later still grows the routine's member set. Instead of
+// failing on the spot, the evaluation awaits that fact: it parks, the driver
+// asks the evaluation's own scheduler, and the same continuation resumes with
+// the answer. A scheduler that cannot answer YET leaves the evaluation parked
+// and its owner — the expansion worklist — resumes it once the fact fires.
+// With no scheduler every await answers `.unavailable` on the spot and the
+// evaluation refuses through its ordinary staged path.
+
+/// The fact a parked evaluation is waiting on.
+pub const FactRequest = struct {
+    kind: Kind,
+    /// The outlined dispatch routine whose conformer set is not final.
+    routine: FuncId,
+    /// The concrete type the receiver carries — the member the routine lacks.
+    concrete: TypeId,
+
+    pub const Kind = enum { conformer_arm };
+};
+
+/// The answer to an awaited fact. `.published` means it is now recorded in the
+/// module and the evaluation should re-read it; `.unavailable` means it never
+/// will be, and the evaluation fails through its ordinary path.
+pub const FactResolution = enum { published, unavailable };
+
+/// What a scheduler does with the fact a parked evaluation awaits: answer it
+/// now, or leave the evaluation parked for its owner to resume once the fact
+/// fires.
+pub const FactAnswer = union(enum) {
+    now: FactResolution,
+    later,
+};
+
+/// Resolves the fact a parked evaluation awaits, running whatever work that
+/// needs while the evaluation is suspended. Carried by the `Vm` that installed
+/// it, so two evaluations under different owners never share one.
+pub const FactScheduler = struct {
+    ctx: ?*anyopaque,
+    resolve: *const fn (ctx: ?*anyopaque, request: FactRequest) FactAnswer,
+};
+
+/// One OWNED comptime evaluation: the VM — its heap, globals, and VM-local
+/// Context — plus the native-async task every nested `run`/`invoke` frame lives
+/// on. `start` runs it to its result or to its first unanswered fact; a PARKED
+/// evaluation keeps all of that intact past the call that began it, so its owner
+/// can let other work proceed and resume the very same continuation later.
+pub const Evaluation = struct {
+    gpa: std.mem.Allocator,
+    module: *const Module,
+    func_id: FuncId,
+    /// The module's real (target) pointer width. VM aggregates hold host
+    /// pointers, so the table is switched to host width for the duration of a
+    /// RUN and switched back whenever control leaves the evaluation — a parked
+    /// evaluation hands the compiler its target ABI back until it resumes.
+    target_pointer_size: u8,
+    vm: Vm,
+    future: std.Io.Future(Error!Reg),
+    state: State,
+
+    pub const State = union(enum) {
+        /// Ran to its result, or bailed (`null`; `last_bail_reason` names why).
+        completed: ?Value,
+        /// Suspended at the awaiting instruction, on this fact.
+        parked: FactRequest,
+    };
+
+    /// The value this evaluation produced. Only an owner that installed a
+    /// scheduler can be handed a parked evaluation; every other caller reads
+    /// its result here.
+    pub fn completed(e: *const Evaluation) ?Value {
+        return switch (e.state) {
+            .completed => |v| v,
+            .parked => unreachable,
+        };
+    }
+
+    /// Hand the awaited fact's answer to the parked evaluation and run it on.
+    /// The resume lands AT the awaiting instruction, with every frame below it
+    /// the one that parked — nothing before it runs a second time.
+    pub fn resumeWith(e: *Evaluation, resolution: FactResolution) void {
+        @constCast(&e.module.types).pointer_size = @sizeOf(usize);
+        e.vm.deliverFact(resolution);
+        e.pump();
+    }
+
+    /// Release the evaluation and everything it owns. A still-parked one is
+    /// abandoned: its task never resumes, so its stack goes back to the pool
+    /// along with the heap it referenced.
+    pub fn destroy(e: *Evaluation) void {
+        if (e.state == .parked) comptime_async.abandon(e.vm.parked_task.?);
+        e.vm.deinit();
+        e.gpa.destroy(e);
+    }
+
+    /// Run until the task finishes or its scheduler leaves a fact unanswered.
+    /// Every nested frame lives on the task's stack, so a park suspends the
+    /// complete chain and each loop turn resumes the same continuation.
+    fn pump(e: *Evaluation) void {
+        while (e.vm.pending_fact) |request| {
+            const scheduler = e.vm.fact_scheduler.?;
+            switch (scheduler.resolve(scheduler.ctx, request)) {
+                .now => |resolution| e.vm.deliverFact(resolution),
+                .later => {
+                    e.restoreTargetWidth();
+                    e.state = .{ .parked = request };
+                    return;
+                },
+            }
+        }
+        e.finish();
+    }
+
+    fn finish(e: *Evaluation) void {
+        const reg = e.future.await(comptime_async.io()) catch |err| {
+            last_bail_reason = e.vm.detail orelse @errorName(err);
+            e.restoreTargetWidth();
+            e.state = .{ .completed = null };
+            return;
+        };
+        const func = e.module.getFunction(e.func_id);
+        // A void/noreturn entry (a `#run <expr>;` side-effect) produces no value —
+        // `regToValue` would bail on the void type, so yield `.void_val` directly.
+        const value: ?Value = if (func.ret == .void or func.ret == .noreturn)
+            .void_val
+        else
+            e.vm.regToValue(e.gpa, &e.module.types, reg, func.ret) catch |err| blk: {
+                // The body RAN; only the result bridge failed → mark this a BRIDGE
+                // bail so a body-local `#run` fold can tell a genuine "result can't
+                // be materialized" miscompile from a "VM can't run it" fallback
+                // (issue 0182).
+                last_bail_was_bridge = true;
+                last_bail_reason = e.vm.detail orelse @errorName(err);
+                break :blk null;
+            };
+        e.restoreTargetWidth();
+        e.state = .{ .completed = value };
+    }
+
+    fn restoreTargetWidth(e: *Evaluation) void {
+        @constCast(&e.module.types).pointer_size = e.target_pointer_size;
+    }
+};
+
+/// Begin an owned evaluation of `func_id` with `extra` explicit arg words.
+fn startEvaluation(
+    gpa: std.mem.Allocator,
+    module: *const Module,
+    func_id: FuncId,
+    build_config: ?*compiler_hooks.BuildConfig,
+    source_map: ?*const std.StringHashMap([:0]const u8),
+    extra: []const Reg,
+    scheduler: ?FactScheduler,
+) *Evaluation {
     last_bail_reason = null;
     last_bail_was_bridge = false;
-    // VM aggregates contain real host pointers, even while cross-compiling.
-    // Lay those temporary values out with the host pointer width; lowering and
-    // emission see the restored target width and retain the target ABI.
-    const target_pointer_size = module.types.pointer_size;
-    @constCast(&module.types).pointer_size = @sizeOf(usize);
-    defer @constCast(&module.types).pointer_size = target_pointer_size;
+    const e = gpa.create(Evaluation) catch @panic("comptime VM: out of memory (evaluation)");
+    e.* = .{
+        .gpa = gpa,
+        .module = module,
+        .func_id = func_id,
+        .target_pointer_size = module.types.pointer_size,
+        .vm = Vm.init(gpa),
+        .future = undefined,
+        .state = .{ .completed = null },
+    };
+    e.vm.table = &module.types;
+    e.vm.module = module;
+    e.vm.build_config = build_config;
+    e.vm.source_map = source_map;
+    e.vm.fact_scheduler = scheduler;
+
     const func = module.getFunction(func_id);
     if (func.is_extern or func.blocks.items.len == 0) {
         last_bail_reason = "extern / no body";
-        return null;
+        return e;
     }
-    var vm = Vm.init(gpa);
-    defer vm.deinit();
-    vm.table = &module.types;
-    vm.module = module;
-    vm.build_config = build_config;
-    vm.source_map = source_map;
+    // VM aggregates contain real host pointers, even while cross-compiling.
+    // Lay those temporary values out with the host pointer width; lowering and
+    // emission see the restored target width and retain the target ABI.
+    @constCast(&module.types).pointer_size = @sizeOf(usize);
+    e.future = comptime_async.io().async(evaluationTask, .{ &e.vm, func_id, extra });
+    e.pump();
+    return e;
+}
 
-    // `runEntry` materializes the implicit `*Context` (a comptime const-init /
-    // `#run` wrapper is nullary in user args, so the implicit ctx is its sole
-    // param) as a zeroed Context in comptime memory and runs. The common const body
-    // never reads the ctx; one that uses the allocator hits unported
-    // `call_indirect` → bails → legacy. Gate-ON corpus parity validates this.
-    const reg = vm.runEntry(func_id) catch |err| {
-        last_bail_reason = vm.detail orelse @errorName(err);
-        return null;
-    };
-    // A void/noreturn entry (a `#run <expr>;` side-effect) produces no value —
-    // `regToValue` would bail on the void type, so yield `.void_val` directly.
-    if (func.ret == .void or func.ret == .noreturn) return .void_val;
-    return vm.regToValue(gpa, &module.types, reg, func.ret) catch |err| {
-        // The body RAN; only the result bridge failed → mark this a BRIDGE bail
-        // so a body-local `#run` fold can tell a genuine "result can't be
-        // materialized" miscompile from a "VM can't run it" fallback (issue 0182).
-        last_bail_was_bridge = true;
-        last_bail_reason = vm.detail orelse @errorName(err);
-        return null;
-    };
+fn evaluationTask(vm: *Vm, func_id: FuncId, extra: []const Reg) Error!Reg {
+    return vm.runEntryArgs(func_id, extra);
+}
+
+/// Wiring entry point: evaluate comptime function `func_id` on the comptime VM
+/// and hand back the OWNED evaluation — completed with its result as a
+/// `Value` (or `null` on any bail: unsupported op, no body, malformed IR), or
+/// PARKED on a fact `scheduler` left unanswered. A parked evaluation belongs to
+/// the caller until it resumes or destroys it; nothing parks without a
+/// scheduler. The result is deep-copied into `gpa`, so it outlives the VM's
+/// comptime memory.
+///
+/// Safe for ARBITRARY host comptime functions: the `Machine` accessors are
+/// hardened to return `error.OutOfBounds` (not a debug panic) on a null/out-of-
+/// range/oversized access, so a malformed run bails rather than crashing the
+/// compiler. On a bail, `last_bail_reason` names the cause.
+///
+/// The evaluation materializes the implicit `*Context` (a comptime const-init /
+/// `#run` wrapper is nullary in user args, so the implicit ctx is its sole
+/// param) as a zeroed Context in its own comptime memory — VM-local, never
+/// shared with another evaluation, and alive for as long as this one is.
+pub fn tryEval(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.FuncId, build_config: ?*compiler_hooks.BuildConfig, source_map: ?*const std.StringHashMap([:0]const u8), scheduler: ?FactScheduler) *Evaluation {
+    return startEvaluation(gpa, module, func_id, build_config, source_map, &.{}, scheduler);
 }
 
 /// Run a post-link build callback on the VM (the post-codegen build driver — see
@@ -256,43 +427,18 @@ pub fn tryEval(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.
 /// opaque `BuildOptions` handle as an explicit arg (the `on_build(cb)` form,
 /// `cb: (opt: BuildOptions) -> bool`): when `pass_options` is set, the handle (a
 /// null sentinel — the real state is the threaded `BuildConfig`) is passed after
-/// the implicit ctx. Returns null on a bail (`last_bail_reason` names the cause).
-pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.FuncId, build_config: ?*compiler_hooks.BuildConfig, source_map: ?*const std.StringHashMap([:0]const u8), pass_options: bool) ?Value {
-    last_bail_reason = null;
-    const target_pointer_size = module.types.pointer_size;
-    @constCast(&module.types).pointer_size = @sizeOf(usize);
-    defer @constCast(&module.types).pointer_size = target_pointer_size;
-    const func = module.getFunction(func_id);
-    if (func.is_extern or func.blocks.items.len == 0) {
-        last_bail_reason = "extern / no body";
-        return null;
-    }
-    var vm = Vm.init(gpa);
-    defer vm.deinit();
-    vm.table = &module.types;
-    vm.module = module;
-    vm.build_config = build_config;
-    vm.source_map = source_map;
+/// the implicit ctx.
+pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: inst_mod.FuncId, build_config: ?*compiler_hooks.BuildConfig, source_map: ?*const std.StringHashMap([:0]const u8), pass_options: bool, scheduler: ?FactScheduler) *Evaluation {
     const extra: []const Reg = if (pass_options) &.{null_addr} else &.{};
-    const reg = vm.runEntryArgs(func_id, extra) catch |err| {
-        last_bail_reason = vm.detail orelse @errorName(err);
-        return null;
-    };
-    if (func.ret == .void or func.ret == .noreturn) return .void_val;
-    return vm.regToValue(gpa, &module.types, reg, func.ret) catch |err| {
-        last_bail_reason = vm.detail orelse @errorName(err);
-        return null;
-    };
+    return startEvaluation(gpa, module, func_id, build_config, source_map, extra, scheduler);
 }
 
 // ── Executor ────────────────────────────────────────────────────────────────
 //
-// Walks the SAME SSA IR the legacy interpreter (`interp.zig`) walks, but over
-// comptime frames: each SSA result is a `Reg` word (immediate scalar bits, or
-// an `Addr`). Scalar semantics MIRROR the legacy interp so the two evaluators
-// agree byte-for-byte (the parity goal): integer math is 64-bit wrapping/signed
-// (`+%`, `@divTrunc`, signed compares — the legacy's `.int` is i64 regardless of
-// the declared width), float math is f64. Memory/aggregate/call ops are not ported
+// Walks the SSA IR over comptime frames: each SSA result is a `Reg` word
+// (immediate scalar bits, or an `Addr`). Integer math is 64-bit wrapping/signed
+// (`+%`, `@divTrunc`, signed compares — a scalar `.int` is i64 regardless of the
+// declared width), float math is f64. Memory/aggregate/call ops are not ported
 // yet — they bail loudly (`error.Unsupported` + `detail`), never silently.
 
 pub const Error = error{ DivisionByZero, TypeError, Unsupported, OutOfBounds };
@@ -321,7 +467,7 @@ fn nominalIdentOf(info: types.TypeInfo) ?struct { name: types.StringId, nominal_
 const NamedMember = struct { name: types.StringId, ty: TypeId };
 
 /// A signed integer type narrower-or-equal to 64 bits — its loaded bytes must be
-/// SIGN-extended into the register (the legacy `.int` model is i64).
+/// SIGN-extended into the register (a scalar `.int` is i64).
 fn isSignedInt(ty: TypeId) bool {
     return switch (ty) {
         .i8, .i16, .i32, .i64, .isize => true,
@@ -336,7 +482,7 @@ fn signExtendWord(raw: Reg, sz: usize) Reg {
 }
 
 // ── BuildOptions target predicates (Phase 5.5) ───────────────────────────────
-// Computed from the `--target` triple, mirroring `compiler_hooks`'s legacy hooks
+// Computed from the `--target` triple, mirroring `compiler_hooks`'s hooks
 // (which mirror `TargetConfig.is{MacOS,IOS,IOSDevice,IOSSimulator}()`).
 
 fn tripleHas(triple: ?[]const u8, needle: []const u8) bool {
@@ -392,24 +538,52 @@ pub const Vm = struct {
     /// `file:line:col` + the source line. Null → line/col degrade to 1 / "".
     source_map: ?*const std.StringHashMap([:0]const u8) = null,
     /// Current call-recursion depth, guarded against host stack overflow on deep /
-    /// infinite comptime recursion (mirrors the legacy interp's `call_depth`).
+    /// infinite comptime recursion.
     depth: u32 = 0,
     /// Reason for the last `error.Unsupported` / `error.TypeError` bail — the op
-    /// tag name or a one-line explanation. Mirrors the legacy interp's
-    /// `last_bail_detail` so the host can surface a real message, not a bare error.
+    /// tag name or a one-line explanation, so the host can surface a real message,
+    /// not a bare error.
     detail: ?[]const u8 = null,
-    /// Per-global memo of comptime-evaluated globals (the legacy interp's
-    /// `global_values`): `global_get` caches a global's Reg so a chain of globals
+    /// Per-global memo of comptime-evaluated globals: `global_get` caches a
+    /// global's Reg so a chain of globals
     /// reading each other doesn't re-run inits (and so each runs at most once).
     global_cache: std.AutoHashMap(u32, Reg),
     /// Addressable storage for globals referenced through `@global`. Kept
     /// separate from value memoization so taking a scalar global's address
     /// never changes a later `global_get` into the pointer value.
     global_addr_cache: std.AutoHashMap(u32, Reg),
-    /// The active call chain of `FuncId`s (mirrors the legacy interp's
-    /// `call_chain`). `trace_frame` packs the top of this stack into a return-trace
+    /// The active call chain of `FuncId`s. `trace_frame` packs the top of this
+    /// stack into a return-trace
     /// frame; pushed by `invoke`/`runEntry`, popped on return.
     call_stack: std.ArrayList(FuncId) = .empty,
+    /// The fact this evaluation is parked on — read by the `evaluate` driver
+    /// while the task is suspended, cleared by `deliverFact`.
+    pending_fact: ?FactRequest = null,
+    /// The suspended task, valid exactly while `pending_fact` is set.
+    parked_task: ?*comptime_async.Task = null,
+    /// The answer `deliverFact` hands back to the awaiting instruction.
+    fact_resolution: FactResolution = .unavailable,
+    /// This evaluation's bookmark scheduler. Null → nothing ever parks and
+    /// every await answers `.unavailable` on the spot.
+    fact_scheduler: ?FactScheduler = null,
+    /// Every declared global this evaluation materialized, by the instance it
+    /// got in comptime memory. An escaping pointer is resolved against these:
+    /// an instance BASE is that global (relocate to its symbol), an address
+    /// inside one is compile-time state the image never sees.
+    global_instances: std.ArrayList(GlobalInstance) = .empty,
+    /// The image objects minted for comptime temporaries, keyed by the VM
+    /// object they materialize. The map is per-evaluation, which is exactly the
+    /// scope identity dedup has: two evaluations produce distinct objects.
+    image_objects: std.AutoHashMap(ObjectKey, *Value.ImageObject),
+
+    /// A declared global's comptime instance: `size` bytes at `base`.
+    pub const GlobalInstance = struct {
+        base: Addr,
+        size: u64,
+        gid: inst_mod.GlobalId,
+    };
+
+    const ObjectKey = struct { addr: Addr, ty: TypeId };
 
     pub const max_depth: u32 = 512;
 
@@ -419,12 +593,15 @@ pub const Vm = struct {
             .gpa = gpa,
             .global_cache = std.AutoHashMap(u32, Reg).init(gpa),
             .global_addr_cache = std.AutoHashMap(u32, Reg).init(gpa),
+            .image_objects = std.AutoHashMap(ObjectKey, *Value.ImageObject).init(gpa),
         };
     }
 
     pub fn deinit(self: *Vm) void {
         self.global_cache.deinit();
         self.global_addr_cache.deinit();
+        self.global_instances.deinit(self.gpa);
+        self.image_objects.deinit();
         self.call_stack.deinit(self.gpa);
         self.machine.deinit();
     }
@@ -474,9 +651,10 @@ pub const Vm = struct {
     /// drifts from the real protocol shape.
     fn materializeDefaultContext(self: *Vm, module: *const Module) Error!Addr {
         const table = self.table orelse return self.failMsg("comptime VM: default context needs a type table");
-        for (module.globals.items) |*g| {
+        for (module.globals.items, 0..) |*g, i| {
             if (!std.mem.eql(u8, module.types.getString(g.name), "__sx_default_context")) continue;
             const addr = self.machine.allocBytes(table.typeSizeBytes(g.ty), table.typeAlignBytes(g.ty)); // zeroed
+            self.recordGlobalInstance(addr, table.typeSizeBytes(g.ty), inst_mod.GlobalId.fromIndex(@intCast(i)));
             if (g.init_val) |iv| try self.layoutConst(table, iv, g.ty, addr);
             return addr;
         }
@@ -494,6 +672,10 @@ pub const Vm = struct {
             .float => |v| try self.writeField(table, addr, ty, @bitCast(v)),
             .func_ref => |fid| try self.writeField(table, addr, ty, funcRefWord(fid)),
             .global_ref => |gid| try self.writeField(table, addr, ty, try self.evalGlobalAddress(gid)),
+            // The VM's tag word is the conformer's own type, exactly what
+            // `tagged_tag_of` answers here — the dense number is a link-time
+            // artifact (§7.9).
+            .tagged_tag => |t| try self.writeField(table, addr, ty, @as(Reg, t.concrete.index())),
             .null_val, .zeroinit, .undef => {}, // destination already zeroed
             .aggregate => |fields| {
                 if (ty.isBuiltin()) return self.failMsg("comptime VM: const aggregate at a builtin type");
@@ -516,13 +698,27 @@ pub const Vm = struct {
                     else => return self.failMsg("comptime VM: const aggregate at an unsupported type"),
                 }
             },
-            .string, .vtable => return self.failMsg("comptime VM: const string/vtable not supported in layoutConst yet"),
+            .string => |sid| {
+                const module = self.module orelse return self.failMsg("comptime VM: const string needs a module");
+                try self.writeField(table, addr, ty, try self.makeStringValue(table, module.types.getString(sid)));
+            },
+            // A vtable global is a struct of function pointers; each slot holds
+            // the encoded func-ref an indirect comptime call dispatches through,
+            // and relocates to the function's symbol on escape.
+            .vtable => |fids| {
+                if (ty.isBuiltin() or table.get(ty) != .@"struct") return self.failMsg("comptime VM: vtable const at a non-struct type");
+                const s = table.get(ty).@"struct";
+                for (fids, 0..) |fid, i| {
+                    if (i >= s.fields.len) break;
+                    try self.writeField(table, addr + fieldOffset(table, ty, @intCast(i)), s.fields[i].ty, funcRefWord(fid));
+                }
+            },
         }
     }
 
     /// Evaluate comptime global `gid` to its Reg value — lazily running its
     /// `comptime_func` (with implicit-ctx bootstrap), or reading a scalar static
-    /// `init_val` — memoized in `global_cache`. The legacy `getGlobal` analogue.
+    /// `init_val` — memoized in `global_cache`.
     fn evalGlobal(self: *Vm, gid: inst_mod.GlobalId) Error!Reg {
         const module = self.module orelse return self.failMsg("comptime VM: global_get needs a module");
         const idx = gid.index();
@@ -572,12 +768,32 @@ pub const Vm = struct {
         const g = &module.globals.items[gid.index()];
         const table = try self.requireTable();
         if (kindOf(table, g.ty) == .aggregate) {
-            if (self.global_cache.get(gid.index())) |cached| return cached;
+            if (self.global_cache.get(gid.index())) |cached| {
+                self.recordGlobalInstance(cached, table.typeSizeBytes(g.ty), gid);
+                return cached;
+            }
         }
         const addr = self.machine.allocBytes(table.typeSizeBytes(g.ty), table.typeAlignBytes(g.ty));
+        self.recordGlobalInstance(addr, table.typeSizeBytes(g.ty), gid);
         if (g.init_val) |iv| try self.layoutConst(table, iv, g.ty, addr);
         self.global_addr_cache.put(gid.index(), addr) catch @panic("comptime VM: out of memory (global address cache)");
         return addr;
+    }
+
+    /// Note that `size` bytes at `base` ARE declared global `gid`'s comptime
+    /// instance, so an escaping pointer to them relocates instead of copying.
+    fn recordGlobalInstance(self: *Vm, base: Addr, size: usize, gid: inst_mod.GlobalId) void {
+        for (self.global_instances.items) |gi| if (gi.base == base) return;
+        self.global_instances.append(self.gpa, .{ .base = base, .size = size, .gid = gid }) catch
+            @panic("comptime VM: out of memory (global instances)");
+    }
+
+    /// The declared global whose instance `addr` falls in, if any.
+    fn globalInstanceAt(self: *Vm, addr: Addr) ?GlobalInstance {
+        for (self.global_instances.items) |gi| {
+            if (addr >= gi.base and addr < gi.base + @max(gi.size, 1)) return gi;
+        }
+        return null;
     }
 
     /// Run `func` with scalar `args` (one `Reg` word each, in param order) and
@@ -668,14 +884,30 @@ pub const Vm = struct {
             .const_null, .const_undef => return .{ .value = null_addr },
             // A `Type` literal: the 8-byte handle is the `TypeId` index in a word
             // (the `.type_value` representation). `regToValue` maps it back to a
-            // `.type_tag` Value at the legacy boundary.
+            // `.type_tag` Value.
             .const_type => |tid| return .{ .value = @as(Reg, tid.index()) },
+            // A comptime tagged value is SYMBOLIC: its second word is the
+            // conformer's own `TypeId`, never the dense tag (§7.9 — tags are
+            // assigned at whole-program link, after every evaluation).
+            .tagged_tag_of => |t| return .{ .value = @as(Reg, t.concrete.index()) },
+            // Which makes the concrete `Type` word the word itself: no table
+            // load, because the tag space the table is indexed by does not
+            // exist here.
+            .tagged_type_id => |t| return .{ .value = frame.get(t.tag.index()) },
+            // The probe's negative half: utterable only against a final set, so
+            // it is answered from the converged numbering — being numbered IS
+            // being in the set.
+            .tagged_conforms => |t| {
+                const module = self.module orelse return self.failMsg("comptime VM: a conformance probe needs a module");
+                if (!module.tagged_sets_final) return self.failMsg("comptime VM: a tagged conformance probe ran before the collection fixpoint converged");
+                return .{ .value = @intFromBool(module.tagged_tags.contains(.{ .proto = t.proto, .concrete = t.concrete })) };
+            },
 
             // ── Arithmetic ──────────────────────────────────────
             .add, .sub, .mul, .div, .mod => |b| return .{
                 .value = try arith(std.meta.activeTag(ins.op), ins.ty, frame.get(b.lhs.index()), frame.get(b.rhs.index())),
             },
-            // ── Bitwise + shift (i64, mirroring the legacy interp) ─
+            // ── Bitwise + shift (i64) ───────────────────────────
             .bit_and, .bit_or, .bit_xor, .shl, .shr => |b| return .{
                 .value = bitwise(std.meta.activeTag(ins.op), frame.get(b.lhs.index()), frame.get(b.rhs.index())),
             },
@@ -699,7 +931,7 @@ pub const Vm = struct {
 
             // ── Conversions ─────────────────────────────────────
             // widen/narrow/bitcast pass the bits through (comptime values don't
-            // truncate — matches the legacy interp). int↔float DO convert.
+            // truncate). int↔float DO convert.
             .widen, .narrow, .bitcast => |c| return .{ .value = frame.get(c.operand.index()) },
             .int_to_float => |c| return .{ .value = @bitCast(@as(f64, @floatFromInt(@as(i64, @bitCast(frame.get(c.operand.index())))))) },
             .float_to_int => |c| return .{ .value = @bitCast(@as(i64, @intFromFloat(@as(f64, @bitCast(frame.get(c.operand.index())))))) },
@@ -974,6 +1206,7 @@ pub const Vm = struct {
                 const child = table.get(ins.ty).optional.child; // ins.ty is ?T
                 const val = frame.get(u.operand.index());
                 if (optChildIsPtr(table, child)) return .{ .value = val }; // pointer optional: the pointer
+                if (optChildIsProtocol(table, child)) return .{ .value = val }; // sentinel-shaped: the handle itself
                 const addr = self.machine.allocBytes(table.typeSizeBytes(ins.ty), table.typeAlignBytes(ins.ty));
                 try self.writeField(table, addr, child, val); // payload @ 0
                 try self.machine.writeWord(addr + table.typeSizeBytes(child), 1, 1); // has_value flag = 1
@@ -988,7 +1221,7 @@ pub const Vm = struct {
                     return error.TypeError;
                 }
                 const child = table.get(opt_ty).optional.child;
-                if (optChildIsPtr(table, child)) return .{ .value = v };
+                if (optChildIsPtr(table, child) or optChildIsProtocol(table, child)) return .{ .value = v };
                 return .{ .value = try self.readField(table, v, child) };
             },
             .optional_has_value => |u| {
@@ -1001,7 +1234,7 @@ pub const Vm = struct {
                 const v = frame.get(b.lhs.index());
                 if (try self.optHas(table, opt_ty, v)) {
                     const child = table.get(opt_ty).optional.child;
-                    if (optChildIsPtr(table, child)) return .{ .value = v };
+                    if (optChildIsPtr(table, child) or optChildIsProtocol(table, child)) return .{ .value = v };
                     return .{ .value = try self.readField(table, v, child) };
                 }
                 return .{ .value = frame.get(b.rhs.index()) };
@@ -1082,21 +1315,20 @@ pub const Vm = struct {
             },
 
             // `is_comptime()` — always true on the comptime VM (folds to false in
-            // compiled code). Mirrors the legacy interp's `.is_comptime => true`.
+            // compiled code).
             .is_comptime => return .{ .value = @as(Reg, 1) },
 
             // A comptime return-trace frame: pack `(func_id << 32 | span.start)`
-            // from the top of the call chain (mirrors the legacy interp). The
+            // from the top of the call chain. The
             // failable-propagation lowering feeds this to `sx_trace_push`.
             .trace_frame => {
                 const fid: u64 = if (self.call_stack.items.len > 0) self.call_stack.items[self.call_stack.items.len - 1].index() else 0;
                 return .{ .value = (fid << 32) | @as(u64, ins.span.start) };
             },
             // Dump the comptime call-frame chain (`trace.print_interpreter_frames`) —
-            // the VM-native mirror of the legacy `printInterpFrames`. Walks the active
-            // `call_stack` (skipping the last frame, the `print_interpreter_frames`
-            // fn itself, like the legacy) and writes `  at <name>` lines straight to
-            // fd 1 (consistent with `out`'s now-direct libc `write`).
+            // walks the active `call_stack` (skipping the last frame, the
+            // `print_interpreter_frames` fn itself) and writes `  at <name>` lines
+            // straight to fd 1 (consistent with `out`'s now-direct libc `write`).
             .interp_print_frames => {
                 const module = self.module orelse return self.failMsg("comptime interp_print_frames: no module");
                 const n = self.call_stack.items.len;
@@ -1115,9 +1347,9 @@ pub const Vm = struct {
                 return .{ .value = null_addr };
             },
             // Unpack a comptime frame `(func_id << 32 | span.start)` and build a
-            // `Frame { file, line, col, func, line_text }` aggregate in comptime memory —
-            // the VM-native mirror of the legacy interp's `.trace_resolve`. `ins.ty`
-            // is the `Frame` struct, so each field's type/offset comes from the table.
+            // `Frame { file, line, col, func, line_text }` aggregate in comptime memory.
+            // `ins.ty` is the `Frame` struct, so each field's type/offset comes from
+            // the table.
             .trace_resolve => |u| {
                 const table = try self.requireTable();
                 const module = self.module orelse return self.failMsg("comptime trace_resolve: no module");
@@ -1146,7 +1378,7 @@ pub const Vm = struct {
                 const sfields = table.get(fty).@"struct".fields;
                 if (sfields.len != 5) return self.failMsg("comptime trace_resolve: Frame struct is not 5 fields");
                 const addr = self.machine.allocBytes(table.typeSizeBytes(fty), table.typeAlignBytes(fty));
-                // { file, line, col, func, line_text } — positional, matching the legacy build.
+                // { file, line, col, func, line_text } — positional field order.
                 try self.writeField(table, addr + fieldOffset(table, fty, 0), sfields[0].ty, try self.makeStringValue(table, file));
                 try self.writeField(table, addr + fieldOffset(table, fty, 1), sfields[1].ty, @bitCast(line));
                 try self.writeField(table, addr + fieldOffset(table, fty, 2), sfields[2].ty, @bitCast(col));
@@ -1156,7 +1388,7 @@ pub const Vm = struct {
             },
             // `error_tag_name(e)` — the runtime tag id (a word) → its name string via
             // the always-linked tag-name table. Pure: builds a `{ptr,len}` string in
-            // comptime memory. Mirrors the legacy interp's `error_tag_name_get`.
+            // comptime memory.
             .error_tag_name_get => |u| {
                 const table = try self.requireTable();
                 const id: u32 = @intCast(frame.get(u.operand.index()));
@@ -1204,14 +1436,14 @@ pub const Vm = struct {
             // ── Globals / function values ───────────────────────
             // Read another comptime global by lazily evaluating its init (its
             // `comptime_func` run on this same VM, or a scalar static value),
-            // memoized. Mirrors the legacy interp's `getGlobal`.
+            // memoized.
             .global_get => |gid| return .{ .value = try self.evalGlobal(gid) },
-            // `&global` — only `&__sx_default_context` is materialised at comptime
-            // (its address sees runtime use via the implicit-ctx plumbing). Return
-            // the context's comptime address — an aggregate value IS its address,
-            // so a later `load`/field read sees the materialised Context. Mirrors the
-            // legacy interp's `global_addr` (the sole supported global); any other
-            // global bails to legacy fallback.
+            // `&global` — the global's declared initializer laid into comptime
+            // memory, once per evaluation. The instance is VM-LOCAL: a store
+            // through it lands on compile-time state that is discarded, and only
+            // an escape relocates the address back to the global's symbol.
+            // `__sx_default_context` keeps its own materialization (the implicit
+            // ctx that every entry frame is handed).
             .global_addr => |gid| {
                 const module = self.module orelse return self.failMsg("comptime VM: global_addr needs a module");
                 if (gid.index() < module.globals.items.len and
@@ -1219,7 +1451,7 @@ pub const Vm = struct {
                 {
                     return .{ .value = try self.materializeDefaultContext(module) };
                 }
-                return self.failMsg("comptime global_addr: only `&__sx_default_context` is materialised at comptime");
+                return .{ .value = try self.evalGlobalAddress(gid) };
             },
             // A function value is its encoded func-ref word (see `funcRefWord`).
             .func_ref => |fid| return .{ .value = funcRefWord(fid) },
@@ -1234,7 +1466,7 @@ pub const Vm = struct {
 
             // ── Pointers ────────────────────────────────────────
             // `@x` — pass through: an aggregate value already IS its address, and a
-            // pointer value is already an address (mirrors the legacy interp).
+            // pointer value is already an address.
             .addr_of => |u| return .{ .value = frame.get(u.operand.index()) },
             // `p.*` — read the pointee (like `load`); `ins.ty` is the pointee type.
             .deref => |u| {
@@ -1250,8 +1482,7 @@ pub const Vm = struct {
             },
             // Multi-way branch on an integer discriminant: an enum/error tag, or a
             // type-category match where the operand is a `.type_value` whose word IS
-            // its `TypeId` index (so the same i64 compare covers both, mirroring the
-            // legacy `switch_br`'s `asInt orelse asTypeId().index()`).
+            // its `TypeId` index (so the same i64 compare covers both).
             .switch_br => |sb| {
                 const operand: i64 = @bitCast(frame.get(sb.operand.index()));
                 for (sb.cases) |case| {
@@ -1305,9 +1536,8 @@ pub const Vm = struct {
                 return .{ .value = addr };
             },
 
-            // Comptime metatype `intrinsic`s (`declare`/`define`). The VM-native
-            // mirror of the legacy `execBuiltin` arms; an unmodeled builtin returns
-            // null → bail with its name → legacy fallback (dual-path parity).
+            // Comptime metatype `intrinsic`s (`declare`/`define`). An unmodeled
+            // builtin returns null → bail with its name (never a silent default).
             .call_builtin => |bi| {
                 if (try self.callBuiltinVm(bi, ins.ty, frame, ref_types)) |r| return .{ .value = r };
                 self.detail = @tagName(bi.builtin);
@@ -1324,7 +1554,7 @@ pub const Vm = struct {
     }
 
     /// 64-bit integer (wrapping/signed) or f64 arithmetic, keyed on the result
-    /// type — mirrors the legacy `evalArith`.
+    /// type.
     fn arith(tag: OpTag, ty: TypeId, l: Reg, r: Reg) Error!Reg {
         if (isFloat(ty)) {
             const lf: f64 = @bitCast(l);
@@ -1352,10 +1582,9 @@ pub const Vm = struct {
         return @bitCast(res);
     }
 
-    /// 64-bit bitwise AND/OR/XOR and shifts — mirrors the legacy interp's i64
-    /// model exactly: shifts clamp the amount to `@min(rhs, 63)` and `shr` is an
-    /// ARITHMETIC right shift (signed `>>`, sign-extending), matching the legacy
-    /// `.int` representation.
+    /// 64-bit bitwise AND/OR/XOR and shifts over the i64 model: shifts clamp the
+    /// amount to `@min(rhs, 63)` and `shr` is an ARITHMETIC right shift (signed
+    /// `>>`, sign-extending).
     fn bitwise(tag: OpTag, l: Reg, r: Reg) Reg {
         const li: i64 = @bitCast(l);
         const ri: i64 = @bitCast(r);
@@ -1371,7 +1600,7 @@ pub const Vm = struct {
     }
 
     /// Comparison keyed on the operand type: f64 for floats, == / != only for
-    /// bool, else signed i64 — mirrors the legacy `evalCmp`.
+    /// bool, else signed i64.
     fn cmp(self: *Vm, tag: OpTag, lty: TypeId, l: Reg, r: Reg) Error!bool {
         if (isFloat(lty)) {
             const lf: f64 = @bitCast(l);
@@ -1438,9 +1667,9 @@ pub const Vm = struct {
 
     /// The IR type of operand `r`, bounds-checked. Lowering-time IR can carry an
     /// out-of-range / `Ref.none` operand (an unresolved name lowers to a dangling
-    /// ref); reading `ref_types` raw would panic, so bail instead — the host then
-    /// falls back to the legacy interpreter. The companion to `Frame.get`'s
-    /// `bad_ref` guard (which covers the value side; this covers the type side).
+    /// ref); reading `ref_types` raw would panic, so bail instead. The companion
+    /// to `Frame.get`'s `bad_ref` guard (which covers the value side; this covers
+    /// the type side).
     fn refTy(self: *Vm, ref_types: []const TypeId, r: Ref) Error!TypeId {
         if (r.index() >= ref_types.len) return self.badRef();
         return ref_types[r.index()];
@@ -1455,6 +1684,13 @@ pub const Vm = struct {
         const module = self.module orelse return self.failMsg("comptime VM: call needs a module (not provided)");
         if (fid.index() >= module.functions.items.len) return self.failMsg("comptime VM: call to an out-of-range function id");
         const callee = module.getFunction(fid);
+        const argbuf = self.gpa.alloc(Reg, args.len) catch @panic("comptime VM: out of memory (call args)");
+        defer self.gpa.free(argbuf);
+        for (args, 0..) |a, i| argbuf[i] = frame.get(a.index());
+        // A tagged dispatch routine resolves against the receiver's carried
+        // concrete type, published on demand — before its body exists, which is
+        // written only at whole-program emission.
+        if (try self.devirtualize(module, fid, argbuf)) |r| return r;
         if (callee.is_extern or callee.blocks.items.len == 0) {
             const name = module.types.getString(callee.name);
             // A curated set of libc MEMORY builtins is modeled natively on comptime
@@ -1481,17 +1717,89 @@ pub const Vm = struct {
             // translation. Aggregate/float args+returns aren't marshaled yet (4D.2).
             return self.callHostExtern(callee, name, args, frame, ref_types);
         }
-        const argbuf = self.gpa.alloc(Reg, args.len) catch @panic("comptime VM: out of memory (call args)");
-        defer self.gpa.free(argbuf);
-        for (args, 0..) |a, i| argbuf[i] = frame.get(a.index());
         self.call_stack.append(self.gpa, fid) catch @panic("comptime VM: out of memory (call stack)");
         defer _ = self.call_stack.pop();
         return self.run(callee, argbuf);
     }
 
+    /// Park this evaluation until `request` is answered. The park suspends the
+    /// task, so every interpreter frame below this call survives untouched and
+    /// the resume lands right here — the awaiting instruction runs on, it never
+    /// runs again. Outside a task (a direct `run`), or with no scheduler to ask,
+    /// the answer is `.unavailable` and nothing suspends.
+    fn awaitFact(self: *Vm, request: FactRequest) FactResolution {
+        if (self.fact_scheduler == null) return .unavailable;
+        const task = comptime_async.current() orelse return .unavailable;
+        self.parked_task = task;
+        self.pending_fact = request;
+        comptime_async.park();
+        return self.fact_resolution;
+    }
+
+    /// Hand `resolution` to the parked evaluation and run it on, from the driver
+    /// side. Returns once the evaluation parks again or finishes.
+    fn deliverFact(self: *Vm, resolution: FactResolution) void {
+        const task = self.parked_task.?;
+        self.fact_resolution = resolution;
+        self.pending_fact = null;
+        self.parked_task = null;
+        comptime_async.unpark(task);
+    }
+
+    /// A call to an outlined tagged dispatch routine, resolved against the
+    /// receiver's CARRIED concrete type instead of the routine's tag switch
+    /// (§7.9): the value's second word is a `TypeId` here, so the switch would
+    /// find no arm. Selecting the arm and calling it directly IS the
+    /// devirtualization — the same answer the switch gives at runtime.
+    /// Null when `fid` is not a dispatch routine.
+    fn devirtualize(self: *Vm, module: *const Module, fid: FuncId, args: []Reg) Error!?Reg {
+        if (dispatchEntry(module, fid) == null) return null;
+        const callee = module.getFunction(fid);
+        const value_slot: usize = if (callee.has_implicit_ctx) 1 else 0;
+        if (value_slot >= args.len) return self.failMsg("comptime VM: tagged dispatch routine called without its receiver");
+        const value = args[value_slot];
+        const concrete = TypeId.fromIndex(@intCast(try self.machine.readWord(value + 8, 8)));
+        const arm = dispatchArm(module, fid, concrete) orelse missing: {
+            // The conformer set is not final while the program is still being
+            // lowered, so a member the routine lacks now can still be admitted.
+            // Await that fact; publishing REPLACES the routine's entry, so the
+            // arm is looked up again on the resumed side.
+            if (self.awaitFact(.{ .kind = .conformer_arm, .routine = fid, .concrete = concrete }) == .published) {
+                if (dispatchArm(module, fid, concrete)) |a| break :missing a;
+            }
+            return self.failFmt("comptime VM: no '{s}' conformer arm for the value's concrete type", .{module.types.getString(callee.name)});
+        };
+        // The arm takes the receiver's ctx pointer where the routine took the
+        // whole value; every other argument passes through.
+        args[value_slot] = try self.machine.readWord(value, 8);
+        self.call_stack.append(self.gpa, arm) catch @panic("comptime VM: out of memory (call stack)");
+        defer _ = self.call_stack.pop();
+        return try self.run(module.getFunction(arm), args);
+    }
+
+    /// The dispatch record for routine `fid`, or null when `fid` is an ordinary
+    /// function. Looked up by id rather than held across a park: publishing a
+    /// conformance rewrites the record in place and can move the list.
+    fn dispatchEntry(module: *const Module, fid: FuncId) ?*const Module.TaggedDispatchEntry {
+        for (module.tagged_dispatch.items) |*e| {
+            if (e.routine == fid) return e;
+        }
+        return null;
+    }
+
+    /// The arm of routine `fid` implementing `concrete`, or null while no
+    /// admitted conformance carries that type.
+    fn dispatchArm(module: *const Module, fid: FuncId, concrete: TypeId) ?FuncId {
+        const entry = dispatchEntry(module, fid) orelse return null;
+        for (entry.members, entry.arms) |m, a| {
+            if (m == concrete) return a;
+        }
+        return null;
+    }
+
     /// Call a real extern (libc / host) function via dlsym + the `host_ffi`
-    /// trampolines — the comptime VM's host-FFI escape (the legacy `interp.callExtern`
-    /// equivalent). Marshalling is trivial here because `Addr` is already a host
+    /// trampolines — the comptime VM's host-FFI escape. Marshalling is trivial
+    /// here because `Addr` is already a host
     /// pointer: every WORD-kind arg (scalar OR pointer) passes as `usize` verbatim,
     /// and a pointer return is a valid `Addr`. Non-word (aggregate/string/float)
     /// args+returns bail loudly (4D.2 adds them) — never a silent miscall.
@@ -1563,8 +1871,8 @@ pub const Vm = struct {
     /// Marshal one extern arg (of IR type `aty`, register value `reg`) to the `usize`
     /// the host_ffi trampolines expect. A scalar/pointer WORD passes verbatim (a
     /// pointer Reg is already a host pointer). A string/slice fat-pointer is copied
-    /// into a NUL-terminated buffer and its `char*` passed (mirrors the legacy
-    /// `marshalExternArg`). Floats (no float trampoline) and non-fat-pointer
+    /// into a NUL-terminated buffer and its `char*` passed. Floats (no float
+    /// trampoline) and non-fat-pointer
     /// aggregates bail loudly — never a silent miscall.
     fn marshalExternArg(self: *Vm, table: *const types.TypeTable, aty: TypeId, reg: Reg) Error!usize {
         switch (kindOf(table, aty)) {
@@ -1589,8 +1897,8 @@ pub const Vm = struct {
     }
 
     /// Largest single comptime allocation the VM will service natively. A bogus /
-    /// pathological comptime `malloc` above this bails to the legacy path (which
-    /// calls real libc) rather than OOM-panicking the compiler via `allocBytes`.
+    /// pathological comptime `malloc` above this bails rather than OOM-panicking
+    /// the compiler via `allocBytes`.
     const max_builtin_alloc: usize = 1 << 28; // 256 MiB
 
     /// Read call arg `i` as a non-negative byte count (libc size/length arg).
@@ -1602,15 +1910,14 @@ pub const Vm = struct {
     /// Model a curated set of libc MEMORY builtins directly on comptime memory, so a
     /// comptime `malloc`/`free`/`memcpy`/… stays sandboxed (no host heap, no
     /// dlsym) and target-aware. Returns the result word, or `null` if `name` is
-    /// not one of them (the caller then bails to the legacy interpreter). libc
-    /// `malloc` returns 16-byte-aligned storage; we mirror that. The COMPUTED
-    /// result is byte-identical to the legacy path (which calls real libc) — only
-    /// the backing memory differs (comptime arena vs host heap), which the result can't see.
+    /// not one of them (the caller then bails). libc `malloc` returns
+    /// 16-byte-aligned storage; we match that. Only the backing memory differs
+    /// from a real libc call (comptime arena vs host heap), which the result can't see.
     fn callMemBuiltin(self: *Vm, name: []const u8, args: []const Ref, frame: *Frame) Error!?Reg {
         // Error return-trace runtime (sx_trace.c, linked into the compiler). A
         // comptime failable that raises emits `sx_trace_push(trace_frame())` as it
         // unwinds; service it natively so the trace buffer the host reads is
-        // populated identically to the legacy interp's dlsym path.
+        // populated.
         if (std.mem.eql(u8, name, "sx_trace_push")) {
             if (args.len >= 1) sx_trace_push(frame.get(args[0].index()));
             return @as(Reg, 0);
@@ -1658,14 +1965,14 @@ pub const Vm = struct {
             if (n > 0) @memset(try self.machine.bytes(dst, n), byte);
             return dst; // libc returns dst
         }
-        return null; // not a modeled builtin → caller bails to legacy
+        return null; // not a modeled builtin → caller bails
     }
 
     /// Service a welded `compiler`-library function natively on comptime memory — the
     /// comptime compiler-API (Phase 3 of `PLAN-COMPILER-VM.md`). Returns the result
-    /// word, or `null` for an unknown name (caller bails → legacy). Mirrors the
-    /// legacy `compiler_lib` handlers, but reads/writes comptime memory directly instead
-    /// of marshaling `Value`s. The seed pair is the string-pool round-trip:
+    /// word, or `null` for an unknown name (caller bails). Reads/writes comptime
+    /// memory directly instead of marshaling `Value`s. The seed pair is the
+    /// string-pool round-trip:
     ///   `intern(s: string) -> StringId` and `text_of(id: StringId) -> string`.
     /// Read compiler-call arg `i` as a u32 handle (a `StringId` / `TypeId` word),
     /// range-checked — never a silent truncation.
@@ -1691,8 +1998,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(s)));
             // The string pool is genuinely mutable; the VM holds the table `const`
             // (it never mutates TYPE layout — interning a string is pool-only, so it
-            // can't invalidate the cached type sizes the VM relies on). Same access
-            // the legacy `compiler_lib.mintTable` uses.
+            // can't invalidate the cached type sizes the VM relies on).
             const id = @constCast(table).internString(text);
             return @as(Reg, @intFromEnum(id));
         }
@@ -1717,8 +2023,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         if (intr == .raw_field_count) {
             if (args.len != 1) return self.failMsg("comptime type_field_count: expected one TypeId arg");
             const tid = try self.argTypeId(args, frame, 0);
-            // Same `TypeTable.memberCount` the legacy handler reads → no drift; a
-            // type with no member count bails loudly (no silent 0).
+            // `TypeTable.memberCount`; a type with no member count bails loudly
+            // (no silent 0).
             const count = table.memberCount(tid) orelse
                 return self.failMsg("comptime type_field_count: type has no field/variant count");
             return @as(Reg, @bitCast(count));
@@ -1763,8 +2069,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // These MINT into the type table via `@constCast(table)` — the same
         // mutable access the read-side `intern` uses (the table is genuinely
         // mutable; the VM merely holds it `const`). They take/return real `Type`
-        // values (`.type_value` words = `TypeId.index()`). Mirror the legacy
-        // `compiler_lib` handlers exactly so the dual paths can't drift.
+        // values (`.type_value` words = `TypeId.index()`).
         if (intr == .raw_declare_type) {
             if (args.len != 1) return self.failMsg("comptime declare_type: expected (name)");
             const s = frame.get(args[0].index()); // string fat-pointer Addr
@@ -1783,7 +2088,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // `build_options()` hands back an opaque, zero-field `BuildOptions` handle;
         // the real state lives on the threaded `BuildConfig`. Return the null
         // sentinel word (the handle is never dereferenced — every operation takes it
-        // as an ignored `self`). Mirrors the legacy `hookBuildOptions` (`.void_val`).
+        // as an ignored `self`).
         if (intr == .build_options) {
             return @as(Reg, null_addr);
         }
@@ -1967,7 +2272,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.target_framework_paths.len))));
         if (std.mem.eql(u8, name, "jni_main_count"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.jni_main_runtime_paths.len))));
-        // Indexed string getters (out-of-range → "", mirroring the legacy hooks).
+        // Indexed string getters (out-of-range → "").
         // Asset dirs are `{src,dest}` structs, so read the field directly.
         if (std.mem.eql(u8, name, "asset_dir_src_at") or std.mem.eql(u8, name, "asset_dir_dest_at")) {
             if (args.len != 2) return self.failMsg("comptime asset_dir getter: expected (self, i)");
@@ -1985,7 +2290,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return try self.indexedStr(args, frame, bc.jni_main_runtime_paths);
         if (std.mem.eql(u8, name, "jni_main_java_source_at"))
             return try self.indexedStr(args, frame, bc.jni_main_java_sources);
-        // Target predicates (computed from the triple — mirror the legacy hooks).
+        // Target predicates (computed from the triple).
         if (boolPredicate(name)) |pred| {
             if (args.len != 1) return self.failMsg("comptime BuildOptions predicate: expected (self)");
             return @as(Reg, if (pred(bc.target_triple)) 1 else 0);
@@ -1994,7 +2299,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     }
 
     /// Read index arg 1, bounds-check against `items`, and return the element
-    /// string (or "" when out of range — mirrors the legacy hook behavior).
+    /// string (or "" when out of range).
     fn indexedStr(self: *Vm, args: []const Ref, frame: *Frame, items: []const []const u8) Error!Reg {
         const table = try self.requireTable();
         if (args.len != 2) return self.failMsg("comptime BuildOptions indexed getter: expected (self, i)");
@@ -2113,7 +2418,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// `.type_value` word IS a `TypeId`; an Any box `{ data@0, type_id@8 }` yields
     /// its type_id (the boxed value's runtime type), unless it == `type_value` — a
     /// boxed Type (the `type_of(x)` shape) whose real id sits behind the data
-    /// pointer. The VM-native mirror of the legacy `Value.reflectTypeId`.
+    /// pointer.
     fn reflectArgTypeId(self: *Vm, aty: TypeId, w: Reg) Error!TypeId {
         // A `TypeId` index is a u32; a word that doesn't fit is a garbage/mis-read
         // value (e.g. a wrong slice stride yielding an `Any` element at the wrong
@@ -2141,10 +2446,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     }
 
     /// Service a comptime metatype `intrinsic` (`meta.sx`'s `declare`/`define`)
-    /// natively on comptime memory, the VM-native mirror of the legacy
-    /// `interp.execBuiltinInner` arms. Returns the result word, or `null` for a
-    /// builtin the VM doesn't model yet (caller bails → legacy fallback, so dual-path
-    /// parity holds). Keeps BOTH paths alive during the VM-default transition.
+    /// natively on comptime memory. Returns the result word, or `null` for a
+    /// builtin the VM doesn't model yet (caller bails).
     fn callBuiltinVm(self: *Vm, bi: inst_mod.BuiltinCall, ins_ty: TypeId, frame: *Frame, ref_types: []const TypeId) Error!?Reg {
         switch (bi.builtin) {
             // `declare(name)` and `define(handle, info)` are no longer builtins —
@@ -2154,7 +2457,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             // type_name(x) → the type's name as a string. The arg is a Type value
             // (`.type_value` word = a TypeId) or an Any box (`{tag@0, value@8}` whose
             // tag IS the boxed value's type, unless tag == type_value: then the boxed
-            // Type's id is in the value slot). Mirrors the legacy `reflectTypeId`.
+            // Type's id is in the value slot).
             .type_name => {
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime type_name: missing argument");
@@ -2163,8 +2466,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             // type_is_unsigned(x) → is x's type an unsigned int? Resolves the TypeId
             // the same way as type_name (a `.type_value` word, or an Any box whose tag
-            // IS the boxed value's type), then queries `isUnsignedInt`. Mirrors the
-            // legacy `type_is_unsigned` builtin (`reflectTypeId` + `isUnsignedInt`).
+            // IS the boxed value's type), then queries `isUnsignedInt`.
             .is_unsigned => {
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime type_is_unsigned: missing argument");
@@ -2243,7 +2545,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 return try self.buildTypeInfo(table, ins_ty, tid);
             },
-            else => return null, // not modeled on the VM yet → caller bails to legacy
+            else => return null, // not modeled on the VM yet → caller bails
         }
     }
 
@@ -2252,7 +2554,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// element/struct layouts come from the `result_ty` (= the metatype `TypeInfo`
     /// tagged union): variant tag `t` → payload struct `EnumInfo`/`StructInfo`/
     /// `TupleInfo` (one slice field) → the slice element (`EnumVariant`/`StructField`/
-    /// `Type`). Mirrors the legacy member shapes: a tagged-union/struct field and an
+    /// `Type`). The member shapes: a tagged-union/struct field and an
     /// enum variant reflect as `{ name, ty }` (a payloadless variant carries `void`);
     /// tuple elements are bare positional `Type`s. `define(declare(n), type_info(T))`
     /// round-trips to a byte-identical nominal copy.
@@ -2515,17 +2817,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         return pinfo;
     }
 
-    // ── Reg ↔ Value bridge (legacy-interop boundary) ────────────────────────
+    // ── Reg → Value bridge ──────────────────────────────────────────────────
     //
-    // The wiring step routes a comptime eval through the VM, falling back to the
-    // legacy `interp.zig` (tagged `Value` model) on `error.Unsupported`. The
-    // boundary converts host `Value` args → VM `Reg` words and the VM's result back
-    // → a `Value`. This IS a (de)serialization, but ONLY at the legacy boundary and
-    // ONLY for the shapes the VM handled — it is transitional, deleted once the VM
-    // owns comptime end-to-end. Covers scalars + strings + structs; other aggregate
-    // shapes bail loudly (added as wiring surfaces them).
+    // The VM computes over `Reg` words; the host consumes a comptime result as a
+    // first-class `Value`. This boundary converts the VM's result Reg (+ comptime
+    // memory) → a `Value`. Covers scalars + strings + structs; other aggregate
+    // shapes bail loudly (added as callers surface them).
 
-    /// Convert a VM `Reg` (+ comptime memory) of type `ty` back into a legacy `Value`.
+    /// Convert a VM `Reg` (+ comptime memory) of type `ty` into a `Value`.
     /// Strings/aggregates are deep-copied into `alloc` (they must outlive comptime memory).
     pub fn regToValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId) Error!Value {
         switch (kindOf(table, ty)) {
@@ -2533,15 +2832,20 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 if (isFloat(ty)) return .{ .float = @bitCast(reg) };
                 if (ty == .bool) return .{ .boolean = reg != 0 };
                 // A `Type` value word is a `TypeId` index → the first-class
-                // `.type_tag` Value the legacy interp/host uses for Type values.
+                // `.type_tag` Value the host uses for Type values.
                 if (ty == .type_value) return .{ .type_tag = TypeId.fromIndex(@intCast(reg)) };
                 // A function-typed word is an encoded func-ref; map it back to
                 // `.func_ref` (or `.null_val` for the null word) so the host
-                // serializes it identically to the legacy (e.g. the comptime-global
-                // func-ref rejection diagnostic).
+                // serializes it correctly (e.g. the comptime-global func-ref
+                // rejection diagnostic).
                 if (isFuncRefType(table, ty)) {
                     return if (funcRefToId(reg)) |fid| .{ .func_ref = fid } else .null_val;
                 }
+                // A pointer word is an address in comptime memory; the image
+                // wants a symbol, so it escapes (see the section below).
+                if (escapePointee(table, ty)) |pointee| return self.escapePointer(alloc, table, reg, pointee);
+                if (isPointerish(table, ty))
+                    return self.failFmt("escape: a '{s}' referent has no layout to walk", .{table.typeName(ty)});
                 return .{ .int = @bitCast(reg) };
             },
             .aggregate => {
@@ -2550,6 +2854,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                     return .{ .string = alloc.dupe(u8, src) catch return self.failMsg("reg→value: out of memory (string)") };
                 }
                 const info = table.get(ty);
+                if (info == .@"struct" and info.@"struct".is_protocol) return self.escapeProtocolValue(alloc, table, reg, ty);
                 if (info == .@"struct") {
                     const out = alloc.alloc(Value, info.@"struct".fields.len) catch return self.failMsg("reg→value: out of memory (struct)");
                     for (info.@"struct".fields, 0..) |f, i| {
@@ -2622,6 +2927,101 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             .unsupported => return self.failMsg("reg→value: unsupported type"),
         }
+    }
+
+    // ── Escape materialization ──────────────────────────────────────────────
+    //
+    // A comptime result carries pointers into the runtime image, and an address
+    // in comptime memory means nothing there. Each one resolves per its
+    // referent (specs.md §7.9): a DECLARED global relocates in place — nothing
+    // is copied, the image keeps the global's declared initializer, and the
+    // referent stays as mutable as it was written — while a comptime TEMPORARY
+    // materializes as an anonymous image global, one per VM object, so two
+    // handles that shared an object still share one global after the escape.
+    // The walk is type-directed: a referent's bytes are read by its concrete
+    // layout, nested handles and interior pointers recurse through the same
+    // resolution, and function references relocate to their symbols.
+
+    /// The type an escaping pointer word points AT, or null when `ty` is not a
+    /// pointer. A `?*T` is the same word with null as its absent sentinel.
+    fn escapePointee(table: *const types.TypeTable, ty: TypeId) ?TypeId {
+        if (ty.isBuiltin()) return null;
+        return switch (table.get(ty)) {
+            .pointer => |p| p.pointee,
+            .optional => |o| if (!o.child.isBuiltin() and table.get(o.child) == .pointer)
+                table.get(o.child).pointer.pointee
+            else
+                null,
+            else => null,
+        };
+    }
+
+    /// Resolve one escaping pointer to the symbol its referent lands on.
+    fn escapePointer(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, addr: Addr, pointee: TypeId) Error!Value {
+        if (addr == null_addr) return .null_val;
+        if (self.globalInstanceAt(addr)) |gi| {
+            if (addr != gi.base)
+                return self.failMsg("escape: the value points into a global's compile-time state, which is discarded");
+            return .{ .image_ref = .{ .global = gi.gid } };
+        }
+        return .{ .image_ref = .{ .object = try self.imageObject(alloc, table, addr, pointee) } };
+    }
+
+    /// The image object for the VM object of type `ty` at `addr`, minted once.
+    /// The record is registered BEFORE its bytes are walked, so a referent that
+    /// points back at itself resolves to the same object instead of recursing.
+    fn imageObject(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, addr: Addr, ty: TypeId) Error!*Value.ImageObject {
+        if (ty == .void or ty == .unresolved)
+            return self.failMsg("escape: a referent with no layout ('*void') cannot be materialized — carry the concrete type");
+        if (self.image_objects.get(.{ .addr = addr, .ty = ty })) |obj| return obj;
+        const obj = alloc.create(Value.ImageObject) catch return self.failMsg("escape: out of memory (image object)");
+        obj.* = .{ .ty = ty };
+        self.image_objects.put(.{ .addr = addr, .ty = ty }, obj) catch return self.failMsg("escape: out of memory (image object)");
+        obj.value = try self.regToValue(alloc, table, try self.readField(table, addr, ty), ty);
+        return obj;
+    }
+
+    /// The escape of a protocol handle. Its referent materializes by the
+    /// CONCRETE type the handle carries, and its numeric word resolves: a
+    /// tagged handle to the dense tag the converged numbering assigned, an
+    /// erased one to the stamped type id plus the vtable / fn-ptr symbols of
+    /// the impl it was erased with. A null ctx is the absent `?P` sentinel and
+    /// carries no referent at all.
+    fn escapeProtocolValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId) Error!Value {
+        const fields = table.get(ty).@"struct".fields;
+        if (fields.len < 2) return self.failMsg("escape: a protocol value carries at least its {ctx, tag} words");
+        const out = alloc.alloc(Value, fields.len) catch return self.failMsg("escape: out of memory (protocol value)");
+        const ctx = try self.machine.readWord(reg + fieldOffset(table, ty, 0), 8);
+        if (ctx == null_addr) {
+            @memset(out, .null_val);
+            return .{ .aggregate = out };
+        }
+        const carried = TypeId.fromIndex(@intCast(try self.machine.readWord(reg + fieldOffset(table, ty, 1), 8)));
+        out[0] = try self.escapePointer(alloc, table, ctx, carried);
+
+        if (std.mem.eql(u8, table.getString(fields[1].name), "__tag")) {
+            const module = self.module orelse return self.failMsg("escape: a tagged value needs a module to resolve its tag");
+            if (!module.tagged_sets_final)
+                return self.failMsg("escape: a tagged value cannot leave an evaluation that runs before the conformer sets converge");
+            const tag = module.tagged_tags.get(.{ .proto = ty, .concrete = carried }) orelse
+                return self.failFmt("escape: '{s}' is not in the final conformer set of '{s}'", .{ table.typeName(carried), table.typeName(ty) });
+            out[1] = .{ .int = tag };
+            return .{ .aggregate = out };
+        }
+
+        out[1] = .{ .type_tag = carried };
+        for (fields[2..], 2..) |f, i| {
+            const word = try self.machine.readWord(reg + fieldOffset(table, ty, @intCast(i)), 8);
+            // The vtable slot holds a declared global's instance; every other
+            // trailing slot of an erased value is one method's fn pointer.
+            out[i] = if (std.mem.eql(u8, table.getString(f.name), "__vtable"))
+                try self.escapePointer(alloc, table, word, .void)
+            else if (funcRefToId(word)) |fid|
+                .{ .func_ref = fid }
+            else
+                .null_val;
+        }
+        return .{ .aggregate = out };
     }
 
     /// How a value of type `ty` is held: a register word (scalar/pointer, ≤8
@@ -2699,6 +3099,15 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         };
     }
 
+    /// A `?P` over a protocol value is the protocol's own 16 bytes: the handle
+    /// with a null ctx IS the absent sentinel (specs.md §7.6), so there is no
+    /// flag byte to write and the value passes through wrap/unwrap unchanged.
+    fn optChildIsProtocol(table: *const types.TypeTable, child: TypeId) bool {
+        if (child.isBuiltin()) return false;
+        const info = table.get(child);
+        return info == .@"struct" and info.@"struct".is_protocol;
+    }
+
     /// Does an optional value `v` of type `opt_ty` hold a value? A pointer optional
     /// is present iff non-null; a `{T,i1}` optional is none when `v` is `null_addr`
     /// (the `const_null` form) else its flag byte (at offset `sizeof(child)`) is set.
@@ -2706,16 +3115,17 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         const child = table.get(opt_ty).optional.child;
         if (optChildIsPtr(table, child)) return v != null_addr;
         if (v == null_addr) return false;
+        if (optChildIsProtocol(table, child)) return (try self.machine.readWord(v, 8)) != null_addr;
         return (try self.machine.readWord(v + table.typeSizeBytes(child), 1)) != 0;
     }
 
     /// Read a value of type `ty` from comptime address `addr`: a scalar reads its
     /// bytes; an aggregate value IS its address (it lives inline at `addr`).
-    /// `f32` is special: float REGISTERS hold f64 bits (like the legacy interp's
-    /// `.float`), but memory holds the 4-byte IEEE-754 single — so read 4 bytes as
+    /// `f32` is special: float REGISTERS hold f64 bits, but memory holds the 4-byte
+    /// IEEE-754 single — so read 4 bytes as
     /// `f32` and widen to the f64 register form. A SIGNED sub-64-bit integer
-    /// (`i8`/`i16`/`i32`/`isize`) is SIGN-extended into the 64-bit register — the
-    /// legacy `.int` model is i64, so a stored-and-reloaded negative value must
+    /// (`i8`/`i16`/`i32`/`isize`) is SIGN-extended into the 64-bit register — a
+    /// scalar `.int` is i64, so a stored-and-reloaded negative value must
     /// stay negative (else e.g. `i32 -1` reloads as `0xFFFFFFFF` and `< 0` is false).
     fn readField(self: *Vm, table: *const types.TypeTable, addr: Addr, ty: TypeId) Error!Reg {
         if (ty == .f32) {
@@ -2745,7 +3155,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// all-zero representation IS none / `{ptr:0,len:0}` (flag byte 0 → not present).
     fn writeField(self: *Vm, table: *const types.TypeTable, addr: Addr, ty: TypeId, val: Reg) Error!void {
         // `f32`: the register holds f64 bits (see `readField`); narrow to a 4-byte
-        // IEEE-754 single for storage — mirrors the legacy interp's `@floatCast`.
+        // IEEE-754 single for storage (`@floatCast`).
         if (ty == .f32) {
             const f: f32 = @floatCast(@as(f64, @bitCast(val)));
             const bits: u32 = @bitCast(f);

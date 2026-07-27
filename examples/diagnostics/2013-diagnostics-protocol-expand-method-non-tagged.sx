@@ -1,0 +1,11 @@
+// The per-method form of `#expand` carries the same requirement as the
+// header form: the protocol must be the kind that generates a switch. A
+// `vtable` protocol reaches its method through a slot, and there is nothing
+// to expand at the call site.
+#import "modules/std.sx";
+
+Show :: protocol vtable {
+    fmt :: (self: *Self) -> i64 #expand;
+}
+
+main :: () { print("unreachable\n"); }

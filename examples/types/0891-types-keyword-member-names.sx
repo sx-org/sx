@@ -10,7 +10,7 @@
 // reserved TYPE-spelling exemption).
 #import "modules/std.sx";
 
-P :: protocol {
+P :: protocol vtable {
     push :: (self: *Self, v: i64) -> i64;
 }
 

@@ -1,0 +1,75 @@
+// The `tagged` kind's runtime model: a protocol value is a 16-byte BORROW
+// `{ctx, tag}` into the protocol's whole-program conformer set. Erasure is
+// implicit at every P-typed position and allocation-free — from a `*V`, from
+// an lvalue (in place), and from an rvalue (through a frame-scoped temp).
+// Dispatch goes through one outlined switch per method, so the call site is
+// set-independent.
+#import "modules/std.sx";
+
+View :: protocol tagged {
+    area  :: (self: *Self) -> i64;
+    label :: (self: *Self) -> string;
+}
+
+Widget :: struct { n: i64; }
+impl View for Widget {
+    area  :: (self: *Widget) -> i64 { self.n }
+    label :: (self: *Widget) -> string { "widget" }
+}
+
+Box :: struct { w: i64; h: i64; }
+impl View for Box {
+    area  :: (self: *Box) -> i64 { self.w * self.h }
+    label :: (self: *Box) -> string { "box" }
+}
+
+// Protocol-typed parameter, field, and return — all ordinary storable
+// positions over the 16-byte handle.
+Screen :: struct { root: View; }
+render :: (v: View) -> i64 { v.area() }
+name_of :: (v: View) -> string { v.label() }
+
+// Returning a borrow of a callee LOCAL is legal and unchecked — the
+// slice-of-a-local doctrine. This one borrows a GLOBAL, so it outlives the
+// frame and the result is sound.
+SHARED :: Box.{ w = 2, h = 3 };
+shared_view :: () -> View { SHARED }
+
+main :: () {
+    w := Widget.{ n = 7 };
+    b := Box.{ w = 4, h = 5 };
+
+    // The handle is two words, whatever the conformer and however many
+    // methods the protocol declares.
+    print("{}\n", size_of(View));
+
+    // From an lvalue: borrows the storage in place, so a later mutation of
+    // the original is visible through the value.
+    v : View = w;
+    print("{} {}\n", v.area(), v.label());
+    w.n = 9;
+    print("{}\n", v.area());
+
+    // From a pointer: the same borrow, spelled explicitly.
+    p := *b;
+    pv : View = p;
+    print("{}\n", pv.area());
+
+    // From an rvalue at an argument position: a frame-scoped temp holds the
+    // value and the handle borrows it.
+    print("{}\n", render(Widget.{ n = 11 }));
+    print("{}\n", name_of(b));
+
+    // A struct field and an array element are both just the handle.
+    s := Screen.{ root = pv };
+    print("{}\n", s.root.area());
+    vs : [2]View = .[w, b];
+    for vs (e) { print("{} {}\n", e.label(), e.area()); }
+
+    // Copying a tagged value copies the handle — both refer to one object.
+    v2 := v;
+    w.n = 21;
+    print("{} {}\n", v.area(), v2.area());
+
+    print("{}\n", shared_view().area());
+}

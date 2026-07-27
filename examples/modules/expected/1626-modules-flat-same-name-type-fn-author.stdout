@@ -1,0 +1,3 @@
+b head binds b.Make (mark): ok
+b alias head binds b.Make (mark): ok
+a head binds a.Make (tag): ok

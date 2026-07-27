@@ -202,8 +202,8 @@ fn isDefaultBuildPipeline(name: []const u8) bool {
 /// Lower all top-level declarations from a root node.
 /// Pass 1: Scan all declarations (register ASTs, types, extern stubs).
 /// Pass 2: Lower only `main` (everything else is lowered lazily on demand).
-pub fn lowerRoot(self: *Lowering, root: *const Node) void {
-    const decls = switch (root.data) {
+pub fn lowerRoot(self: *Lowering, root: *Node) void {
+    const source_decls = switch (root.data) {
         .root => |r| r.decls,
         else => return,
     };
@@ -212,9 +212,17 @@ pub fn lowerRoot(self: *Lowering, root: *const Node) void {
     // function gets the implicit `__sx_ctx` param. Otherwise the
     // implicit-ctx machinery stays fully disabled — programs that
     // call only libc directly keep their bare C ABI.
-    self.implicit_ctx_enabled = detectContextDecl(decls);
+    self.implicit_ctx_enabled = detectContextDecl(source_decls);
     self.module.has_implicit_ctx = self.implicit_ctx_enabled;
-    // Pass 0a: collect every `#context_extend` declaration program-wide into
+    // Pass 0a: fold every module-scope `inline if` / `inline for` and splice
+    // the selected group at the driver's own place, minting the pre-lowering
+    // facts (module scope, import graph, raw decls, DeclIds) that were built
+    // before a branch was selected. From here on `decls` IS the program's
+    // declaration list — the root carries it too, so every later consumer
+    // (extern-ref validation, C-import collection) sees the expanded program.
+    const decls = self.expandModuleDrivers(source_decls);
+    root.data.root.decls = decls;
+    // Pass 0b: collect every `#context_extend` declaration program-wide into
     // ProgramIndex (L6 order, L4/L5 validation). Runs UNCONDITIONALLY — in a
     // no-context build the declarations are inert (O3) but the collected list
     // still powers the registered-field diagnostic.
@@ -233,9 +241,7 @@ pub fn lowerRoot(self: *Lowering, root: *const Node) void {
     // cascading a field-not-found per use site. `core.zig` gates on
     // `hasErrors()` right after `lowerRoot` either way.
     if (self.context_structural_error) return;
-    // Pass 1b: inject compile-time constants (OS, ARCH, POINTER_SIZE) from target config
-    self.injectComptimeConstants();
-    // Pass 1c: emit the process-wide default Context global, statically
+    // Pass 1b: emit the process-wide default Context global, statically
     // initialised to a CAllocator-backed Allocator value. Used by FFI
     // wrappers in Step 4 and by the interp's `callWithDefaultContext`
     // entry. Only fires when the program imports `std.sx` (so Context +
@@ -311,6 +317,12 @@ pub fn lowerRoot(self: *Lowering, root: *const Node) void {
     // then the user-declared params (with type-erased pointers since JNI
     // doesn't carry sx-side types across the binding).
     self.synthesizeJniMainStubs();
+    // Pass 5a: converge the whole-program `tagged` conformer sets, then number
+    // the tags and emit each reached protocol's tag table and outlined
+    // dispatch routines. Runs after every body is lowered — an impl body
+    // monomorphized here can still enlarge a set, so the pass is a fixpoint —
+    // and before codegen, which is where the relocated tags are consumed.
+    self.convergeTaggedSets();
     // Pass 6: any impl block STILL unregistered has an unresolvable head or
     // types — every registration opportunity has run. Silence here let a
     // dead impl degrade its consumers (issue 0346).
@@ -406,55 +418,60 @@ pub fn checkRequiredEntryPoints(self: *Lowering) void {
 }
 
 /// Inject compile-time constants from target_config into comptime_constants.
-/// Called after scanDecls so that enum types (OperatingSystem, Architecture) are registered.
+/// `OS` / `ARCH` are compiler facts, so they exist whether or not the program
+/// declares the enum they are variants of: with `std/target.sx` in the program
+/// they carry the declared enum's tag (a runtime read of `OS` yields that
+/// constant); without it they carry the target's variant NAME, which is all a
+/// module-scope `inline if OS == .windows` needs — and every low-level backend
+/// selecting its platform arm depends on exactly that, since importing
+/// `target.sx` from inside the arm it selects would be circular.
 pub fn injectComptimeConstants(self: *Lowering) void {
     const tc = self.target_config orelse return;
 
-    // OS: OperatingSystem enum { macos; linux; windows; wasm; unknown; }
-    const os_name_id = self.module.types.internString("OperatingSystem");
-    if (self.module.types.findByName(os_name_id)) |os_ty| {
-        const os_info = self.module.types.get(os_ty);
-        if (os_info == .@"enum") {
-            const tag: u32 = if (tc.isWasm())
-                self.findVariantIndex(os_info.@"enum".variants, "wasm")
-            else if (tc.isWindows())
-                self.findVariantIndex(os_info.@"enum".variants, "windows")
-            else if (tc.isAndroid())
-                self.findVariantIndex(os_info.@"enum".variants, "android")
-            else if (tc.isLinux())
-                self.findVariantIndex(os_info.@"enum".variants, "linux")
-            else if (tc.isIOS())
-                self.findVariantIndex(os_info.@"enum".variants, "ios")
-            else if (tc.isMacOS())
-                self.findVariantIndex(os_info.@"enum".variants, "macos")
-            else
-                self.findVariantIndex(os_info.@"enum".variants, "unknown");
-            self.comptime_constants.put("OS", .{ .enum_tag = .{ .ty = os_ty, .tag = tag } }) catch {};
-        }
-    }
+    const os_variant: []const u8 = if (tc.isWasm())
+        "wasm"
+    else if (tc.isWindows())
+        "windows"
+    else if (tc.isAndroid())
+        "android"
+    else if (tc.isLinux())
+        "linux"
+    else if (tc.isIOS())
+        "ios"
+    else if (tc.isMacOS())
+        "macos"
+    else
+        "unknown";
+    putTargetConstant(self, "OS", "OperatingSystem", os_variant);
 
-    // ARCH: Architecture enum { aarch64; x86_64; wasm32; wasm64; unknown; }
-    const arch_name_id = self.module.types.internString("Architecture");
-    if (self.module.types.findByName(arch_name_id)) |arch_ty| {
-        const arch_info = self.module.types.get(arch_ty);
-        if (arch_info == .@"enum") {
-            const tag: u32 = if (tc.isWasm32())
-                self.findVariantIndex(arch_info.@"enum".variants, "wasm32")
-            else if (tc.isWasm64())
-                self.findVariantIndex(arch_info.@"enum".variants, "wasm64")
-            else if (tc.isAarch64())
-                self.findVariantIndex(arch_info.@"enum".variants, "aarch64")
-            else if (tc.isX86_64())
-                self.findVariantIndex(arch_info.@"enum".variants, "x86_64")
-            else
-                self.findVariantIndex(arch_info.@"enum".variants, "unknown");
-            self.comptime_constants.put("ARCH", .{ .enum_tag = .{ .ty = arch_ty, .tag = tag } }) catch {};
-        }
-    }
+    const arch_variant: []const u8 = if (tc.isWasm32())
+        "wasm32"
+    else if (tc.isWasm64())
+        "wasm64"
+    else if (tc.isAarch64())
+        "aarch64"
+    else if (tc.isX86_64())
+        "x86_64"
+    else
+        "unknown";
+    putTargetConstant(self, "ARCH", "Architecture", arch_variant);
 
     // POINTER_SIZE: i64 (4 for wasm32, 8 for wasm64 and other 64-bit targets)
     const ptr_size: i64 = if (tc.isWasm32()) 4 else 8;
     self.comptime_constants.put("POINTER_SIZE", .{ .int_val = ptr_size }) catch {};
+}
+
+fn putTargetConstant(self: *Lowering, name: []const u8, enum_name: []const u8, variant: []const u8) void {
+    const enum_name_id = self.module.types.internString(enum_name);
+    if (self.module.types.findByName(enum_name_id)) |enum_ty| {
+        const info = self.module.types.get(enum_ty);
+        if (info == .@"enum") {
+            const tag = self.findVariantIndex(info.@"enum".variants, variant);
+            self.comptime_constants.put(name, .{ .enum_tag = .{ .ty = enum_ty, .tag = tag } }) catch {};
+            return;
+        }
+    }
+    self.comptime_constants.put(name, .{ .target_variant = variant }) catch {};
 }
 
 pub fn findVariantIndex(self: *Lowering, variants: []const types.StringId, name: []const u8) u32 {
@@ -631,9 +648,11 @@ pub fn dropModuleConst(self: *Lowering, source: ?[]const u8, name: []const u8) v
     if (source orelse self.main_file) |src| self.program_index.removeModuleConstBySource(src, name);
 }
 
-/// Pass 1: Scan declarations — register ASTs and extern stubs, but don't lower bodies.
-pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
-    // Pass 0: register every numeric-literal module const (`N :: 16` and the
+/// Scan pass 0, also run by the module-scope expansion before it folds a
+/// driver: a condition may name a module constant, and a constant is a fact
+/// the expansion must already have.
+pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) void {
+    // Register every numeric-literal module const (`N :: 16` and the
     // typed `N : i64 : 16`, plus float-valued `N :: 4.0` / `N : f64 : 4.0`)
     // BEFORE any type alias is resolved below. A type alias whose dimension is
     // a named const (`Arr :: [N]T`) resolves its dimension eagerly here, on
@@ -688,6 +707,37 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
             else => {},
         }
     }
+}
+
+/// Registration is INCREMENTAL once a driver's comptime evaluation has already
+/// registered part of the declaration space: a declaration is scanned exactly
+/// once, whichever pass reached it first, so the whole-program pass adds only
+/// what the decided space did not already carry. Off entirely until an
+/// expansion-time scan arms it — a program without a driver evaluation
+/// registers through the untouched pass.
+fn freshDecls(self: *Lowering, decls: []const *const Node) []const *const Node {
+    if (!self.incremental_scan) return decls;
+    var out = std.ArrayList(*const Node).empty;
+    for (decls) |decl| {
+        // A namespaced module's list is not fixed while expansion runs — a
+        // driver written there still lands its group in it — so the node itself
+        // never counts as scanned; the recursion dedups on what it holds NOW.
+        if (decl.data == .namespace_decl) {
+            out.append(self.alloc, decl) catch {};
+            continue;
+        }
+        const gop = self.scanned_decls.getOrPut(decl) catch continue;
+        if (gop.found_existing) continue;
+        out.append(self.alloc, decl) catch {};
+    }
+    return out.toOwnedSlice(self.alloc) catch decls;
+}
+
+/// Pass 1: Scan declarations — register ASTs and extern stubs, but don't lower bodies.
+pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
+    const decls = freshDecls(self, all_decls);
+    if (decls.len == 0) return;
+    registerLiteralModuleConsts(self, decls);
     // Pass 0a': const ALIASES of consts (`B :: A`, chains of any depth /
     // declaration order). A bare-identifier RHS was never registered, so
     // `B` failed as "unresolved" at every value use — while the expression
@@ -893,8 +943,10 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
                                         .pending, .forward, .undeclared, .not_visible, .private_elsewhere, .ambiguous => {},
                                     }
                                 },
-                                .missing => |m| if (self.diagnostics) |d|
-                                    d.addFmt(.err, cd.value.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member }),
+                                .missing => |m| if (!self.namespaceMissWaits(m)) {
+                                    if (self.diagnostics) |d|
+                                        d.addFmt(.err, cd.value.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
+                                },
                                 .ambiguous => |alias| if (self.diagnostics) |d|
                                     d.addFmt(.err, cd.value.span, "namespace '{s}' is ambiguous: aliases from multiple flat-imported modules point at different targets; declare the alias locally", .{alias}),
                                 .not_qualified => {},
@@ -1105,9 +1157,10 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
         self.setCurrentSourceFile(decl.source_file);
         switch (decl.data) {
             .var_decl => self.registerTopLevelGlobal(&decl.data.var_decl),
-            .const_decl => |cd| if (cd.value.data == .array_literal)
-                self.registerConstArrayGlobal(&cd)
-            else {
+            .const_decl => |cd| if (cd.value.data == .array_literal) {
+                if (!self.registerComptimeTypeList(&cd)) self.registerConstArrayGlobal(&cd);
+            } else {
+                self.registerComptimeTypeListAlias(&cd);
                 self.registerTypedModuleConst(&cd);
                 self.maybeRegisterConstStructGlobal(&cd);
             },
@@ -1167,7 +1220,7 @@ pub fn scanDecls(self: *Lowering, decls: []const *const Node) void {
 /// (issue 0331 — no arbitrary round cap). An unresolvable or cyclic alias
 /// simply never registers; a cycle is diagnosed by `followAliasChain` during
 /// fn-alias registration and the use site still reports the unresolved name.
-fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
+pub fn registerConstAliases(self: *Lowering, decls: []const *const Node) void {
     var changed = true;
     while (changed) {
         changed = false;
@@ -1560,6 +1613,18 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
 /// which handles the optional `{payload, has_value}` layout before calling
 /// here). This is the raw payload serializer.
 pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const Node, var_ty: TypeId) ?inst_mod.ConstantValue {
+    // A borrow-kind protocol-typed global has exactly one static form — the
+    // identity erasure of a named global — so its arm runs before the shape
+    // dispatch below, which would otherwise serialize an rvalue initializer
+    // field-wise against the handle's layout.
+    switch (v.data) {
+        .undef_literal, .null_literal => {},
+        else => switch (self.protocolGlobalInit(vd, v, var_ty)) {
+            .not_applicable => {},
+            .folded => |cv| return cv,
+            .refused => return null,
+        },
+    }
     return switch (v.data) {
         .undef_literal => .zeroinit,
         .null_literal => .null_val,
@@ -1579,7 +1644,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         // global narrows only when integral.
         .unary_op => blk: {
             const u = v.data.unary_op;
-            // `xx <global>` at an #inline-protocol-typed global folds to the
+            // `xx <global>` at an `inline`-protocol-typed global folds to the
             // inline protocol constant (identity erasure of the global's
             // stable storage — L8 rider a). Non-protocol `xx` falls through
             // to the ordinary const-expr fold below.
@@ -1624,7 +1689,7 @@ pub fn globalInitValuePayload(self: *Lowering, vd: *const ast.VarDecl, v: *const
         .array_literal => |al| self.constArrayLiteral(al.elements, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
         .struct_literal => |sl| self.constStructLiteral(&sl, var_ty) orelse self.diagnoseNonConstGlobal(vd, v),
         .identifier => |id| blk: {
-            // A bare identifier at an #inline-PROTOCOL-typed global is an
+            // A bare identifier at an `inline`-PROTOCOL-typed global is an
             // identity erasure of the named global — the declared type states
             // the conversion, no `xx` needed. Same fold as the explicit
             // `xx <global>` in the unary arm.
@@ -2214,7 +2279,7 @@ pub fn lowerMainAndComptime(self: *Lowering, decls: []const *const Node) void {
     for (decls) |decl| {
         // A `#run` body lowers in its OWN module's source context: `NAME :: #run f()` written in an imported module must
         // resolve a bare `f` from that module's flat imports, not the main
-        // file's. Without this, `selectPlainCallableAuthor` runs with the main
+        // file's. Without this, `selectCallableAuthor` runs with the main
         // file's perspective and reports a genuine per-source author as
         // ambiguous. Mirrors `scanDecls` / `lowerDecls`, which already set
         // the source file per decl.
@@ -2334,9 +2399,28 @@ pub const BareCallee = union(enum) {
     /// ≥2 distinct flat authors are reachable from the caller and none is
     /// the caller's own — the bare call can't pick one; require a qualifier.
     ambiguous,
+    /// The visible author of the name denotes a VALUE, not a function — a
+    /// `var`, a literal const, or an alias chain terminating at one. The
+    /// spelling means that declaration here, so the name-keyed function map
+    /// must not answer for it; the reference resolves (or fails) through the
+    /// ordinary value path.
+    not_callable,
     /// 0 or 1 reachable author, or the resolved author IS the existing
     /// bare-name winner — defer to the existing path, byte-for-byte.
     none,
+};
+
+/// Which callable shapes an author selection admits.
+pub const CallableKinds = enum {
+    /// Plain free functions only (`isPlainFreeFn`) — the shapes that own a
+    /// name-keyed FuncId slot. Function VALUES and UFCS dispatch select over
+    /// this set: a generic / pack / comptime author has no callable slot to
+    /// bind and keeps its own monomorphizing dispatch.
+    plain_free,
+    /// Every sx-bodied free function: plain, generic, comptime and pack. A
+    /// bare CALL dispatches all four from the declaration itself, so all four
+    /// must be selected from the caller's own visible authors.
+    any_body,
 };
 
 /// The single bare-call author object (R5 §#3): the `*FnDecl` that defines
@@ -2407,77 +2491,109 @@ pub const TypeHeadResolution = union(enum) {
     ambiguous,
 };
 
-/// THE plain bare-name call selector. `resolveBareCallee`'s
-/// body verbatim, now over the Phase B author collector
-/// (`resolver.collectVisibleAuthors` — the ONE graph-walk) instead of a direct
-/// `module_decls` + `flat_import_graph` traversal. Routes a bare identifier
-/// call `name` from `caller_file` to the right same-name author when flat
-/// imports introduce a genuine collision. Every single-author / local /
-/// parameter / std / qualified name resolves through the EXISTING path
-/// unchanged: the selector returns `.none` whenever the outcome would match
-/// first-wins, so nothing on the common path is perturbed.
+/// The exact FUNCTION an author denotes: a fn author is its own terminal; a
+/// const ALIAS (`go :: target`, `go :: ns.target`) resolves through its chain —
+/// each hop from the hop author's own source, cycles diagnosed once — to the
+/// terminal declaration. Null when the chain terminates at a non-function or
+/// does not resolve. The returned source is the TERMINAL author's module, so
+/// the callee carries the visibility context of the body that runs.
+pub fn callableAuthorFn(self: *Lowering, author: resolver_mod.RawAuthor) ?SelectedFunc {
+    const terminal = self.followAliasChain(author) orelse return null;
+    const fd = fnDeclOfRaw(terminal.raw) orelse return null;
+    return .{ .decl = fd, .source = terminal.source };
+}
+
+/// TRUE when an author's alias chain terminates at a plain VALUE — a `var`, or
+/// a const bound to a literal / expression. Such a spelling denotes that value
+/// in this source, so a call on it can never mean a same-spelled function
+/// authored elsewhere. Type-shaped terminals (named types, type aliases,
+/// parameterized heads) are NOT value authors: the type-head paths own those
+/// spellings in call position.
+fn valueAuthor(self: *Lowering, author: resolver_mod.RawAuthor) bool {
+    const terminal = self.followAliasChain(author) orelse return false;
+    return switch (terminal.raw) {
+        .var_decl => true,
+        .const_decl => |cd| switch (cd.value.data) {
+            .int_literal, .float_literal, .string_literal, .bool_literal, .char_literal,
+            .array_literal, .struct_literal, .tuple_literal, .binary_op, .unary_op => true,
+            else => false,
+        },
+        else => false,
+    };
+}
+
+/// Whether a selected function may bind `kinds`. `extern` imports and
+/// intrinsics are dispatched name-keyed by the C symbol / the compiler and
+/// have no per-author sx body to select, so neither set admits them.
+fn selectableFn(fd: *const ast.FnDecl, kinds: CallableKinds) bool {
+    return switch (kinds) {
+        .plain_free => isPlainFreeFn(fd),
+        .any_body => fd.extern_export != .extern_ and fd.body.data != .intrinsic_expr,
+    };
+}
+
+/// THE bare-name callable selector, over the Phase B author collector
+/// (`resolver.collectVisibleAuthors` — the ONE graph-walk). Routes a bare
+/// reference to `name` from `caller_file` to the author that spelling actually
+/// denotes there, following `alias :: target` chains to their exact terminal
+/// declaration. Every single-author / local / parameter / std / qualified name
+/// resolves through the EXISTING path unchanged: the selector returns `.none`
+/// whenever the outcome would match first-wins.
 ///
-/// The collector returns RAW authors across ALL decl domains; this selector
-/// reproduces a fn-only author view by filtering each author through
-/// `fnDeclOfRaw` (a `const`-wrapped fn unwraps to its inner fn; every other
-/// domain drops out), preserving resolveBareCallee's negative space
-/// byte-for-byte.
-///
-/// - **own-author wins**: if `caller_file` authors `name` as a fn and the
-///   bare-name first-wins winner is a DIFFERENT author, select the caller's
-///   own author. (When the winner already IS the caller's own — the
-///   single-author and first-importer cases — `.none` lets the existing path
-///   bind it.)
+/// - **own-author wins**: if `caller_file` authors `name` as a fn (directly or
+///   through an alias chain) and the bare-name first-wins winner is a DIFFERENT
+///   declaration, select the caller's own author. (When the winner already IS
+///   the caller's own — the single-author and first-importer cases — `.none`
+///   lets the existing path bind it.)
 /// - else select among the authors reachable via `caller_file`'s FLAT import
 ///   edges (bare `#import` of a file or directory, never a namespaced
 ///   `ns :: #import`), deduped by author identity (a diamond import of the
 ///   same module is one author): `≥2 distinct` → `.ambiguous`; exactly one
-///   that DIFFERS from the winner → select it; otherwise `.none`.
+///   that DIFFERS from the winner → select it.
+/// - a visible author that denotes a VALUE (`valueAuthor`) yields
+///   `.not_callable`: the name-keyed function map may not answer for a name
+///   whose visible meaning here is a value.
 ///
-/// Generic / comptime / extern / builtin authors are never rerouted — the
-/// existing dispatch owns those shapes; `isPlainFreeFn` filters them out
-/// BEFORE the count gate (so a same-name collision of non-plain authors is
-/// NOT ambiguous), and the selector returns `.none`. No eager
-/// materialization: the returned `SelectedFunc` carries decl + source and
-/// `materialized = null`; a consumer fills the FuncId via `selectedFuncId`
-/// only when it truly needs it (0102d).
-pub fn selectPlainCallableAuthor(self: *Lowering, name: []const u8, caller_file: []const u8) BareCallee {
+/// `kinds` decides which function shapes participate; a shape outside the set
+/// (an `extern` symbol, an intrinsic, a generic under `.plain_free`) is not an
+/// eligible author at all — it neither wins nor counts toward ambiguity, and
+/// keeps its existing dispatch. No eager materialization: the returned
+/// `SelectedFunc` carries decl + source and `materialized = null`; a consumer
+/// fills the FuncId via `selectedFuncId` only when it truly needs it.
+pub fn selectCallableAuthor(self: *Lowering, name: []const u8, caller_file: []const u8, kinds: CallableKinds) BareCallee {
     const winner = self.program_index.fn_ast_map.get(name);
     var res = self.resolver();
     const set = res.collectVisibleAuthors(name, caller_file, .user_bare_flat);
     defer if (set.flat.len > 0) self.alloc.free(set.flat);
 
-    // own-author wins. The collector's `own` spans all domains; a non-fn
-    // (or a const not bound to a function) means `caller_file` has no fn
-    // `name` — fall through to the flat authors, exactly as a fn-only walk
-    // would.
     if (set.own) |own_author| {
-        if (fnDeclOfRaw(own_author.raw)) |own| {
-            if (winner != null and winner.? == own) return .none;
-            if (!isPlainFreeFn(own)) return .none;
-            return .{ .func = .{ .decl = own, .source = own_author.source } };
+        if (self.callableAuthorFn(own_author)) |own| {
+            if (winner != null and winner.? == own.decl) return .none;
+            if (!selectableFn(own.decl, kinds)) return .none;
+            return .{ .func = own };
         }
+        if (valueAuthor(self, own_author)) return .not_callable;
     }
 
     // Caller does not author `name` as a fn → its flat-reachable authors.
-    // Filter to plain free functions BEFORE counting: a same-name collision
-    // of non-plain authors (e.g. two flat-imported modules each `extern`ing
-    // the same symbol) is NOT counted as ambiguous — it falls through to
-    // `.none` and the existing first-wins path.
-    var the_one: ?*const ast.FnDecl = null;
-    var the_source: []const u8 = &.{};
+    // Filter by kind BEFORE counting: a same-name collision of ineligible
+    // authors (e.g. two flat-imported modules each `extern`ing the same
+    // symbol) is NOT ambiguous — it falls through to the existing path.
+    var the_one: ?SelectedFunc = null;
     var count: usize = 0;
     for (set.flat) |fa| {
-        const fd = fnDeclOfRaw(fa.raw) orelse continue;
-        if (!isPlainFreeFn(fd)) continue;
+        const sel = self.callableAuthorFn(fa) orelse continue;
+        if (!selectableFn(sel.decl, kinds)) continue;
         count += 1;
         if (count >= 2) return .ambiguous;
-        the_one = fd;
-        the_source = fa.source;
+        the_one = sel;
     }
-    if (count == 0) return .none;
-    if (winner != null and winner.? == the_one.?) return .none;
-    return .{ .func = .{ .decl = the_one.?, .source = the_source } };
+    const one = the_one orelse {
+        if (set.own == null and set.flat.len == 1 and valueAuthor(self, set.flat[0])) return .not_callable;
+        return .none;
+    };
+    if (winner != null and winner.? == one.decl) return .none;
+    return .{ .func = one };
 }
 
 /// Resolve an as-yet-unregistered alias author directly to a terminal named
@@ -2529,7 +2645,7 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
 }
 
 /// THE source-aware bare TYPE leaf (R5 §E, E1). The type-position analogue
-/// of `selectPlainCallableAuthor`: resolve a bare type name `name` referenced
+/// of `selectCallableAuthor`: resolve a bare type name `name` referenced
 /// from `from` by selecting its nominal author over the ONE graph-walk
 /// collector (`resolver.collectVisibleAuthors`) and reading the alias from the
 /// source-keyed cache (`type_aliases_by_source`, E0's write side) keyed by the
@@ -3014,28 +3130,19 @@ pub fn structMethodFn(sd: *const ast.StructDecl, method: []const u8) ?*const ast
     return null;
 }
 
-/// TRUE iff `ref` is a TYPE-FUNCTION head author — a `fn_decl` (or const-
-/// wrapped fn) declaring at least one `$`-parameter, i.e. instantiable as a
-/// bare type head (`Make(i64)` where `Make :: ($T) -> Type`). Mirrors the
-/// `fd.type_params.len > 0` gate every instantiation site uses to recognize a
-/// type-fn head, so an ORDINARY same-name function (`Make :: () -> i32`, zero
-/// type params) is NOT a type-fn author and does NOT vouch for a hidden 2-flat-
-/// hop type-fn head (E4 attempt-8: a `fn_decl != null` author view let any
-/// visible function — type-fn or not — authorize a type head).
-pub fn typeFnAuthor(ref: resolver_mod.RawDeclRef) bool {
-    const fd = fnDeclOfRaw(ref) orelse return false;
-    return fd.type_params.len > 0;
-}
-
-/// Materialize (lower-on-demand) the FuncId for a selected bare-call author,
+/// Materialize (lower-on-demand) the FuncId for a selected call author,
 /// caching into `sf.materialized`. Shadow-only: the winner owns the
 /// name-keyed slot and lowers through the lazy path, so
-/// `selectPlainCallableAuthor` returns `.none` for it and this is never asked
-/// to lower the winner (0102d). `name` is the call name (== the author's
-/// registered name); `sf.source` pins the author's own visibility context.
-pub fn selectedFuncId(self: *Lowering, sf: *SelectedFunc, name: []const u8) FuncId {
+/// `selectCallableAuthor` returns `.none` for it and this is never asked
+/// to lower the winner (0102d). `sf.source` pins the author's own visibility
+/// context. The slot is registered under the author's OWN declared name, not
+/// the spelling that reached it: an `alias :: target` call would otherwise
+/// register the terminal body under the ALIAS name and win that name-keyed
+/// slot ahead of the real alias winner, whose own lazy lowering then resolves
+/// to this body.
+pub fn selectedFuncId(self: *Lowering, sf: *SelectedFunc) FuncId {
     if (sf.materialized) |fid| return fid;
-    const fid = self.bareAuthorFuncId(sf.decl, name, sf.source);
+    const fid = self.bareAuthorFuncId(sf.decl, sf.decl.name, sf.source);
     sf.materialized = fid;
     return fid;
 }
@@ -3043,7 +3150,7 @@ pub fn selectedFuncId(self: *Lowering, sf: *SelectedFunc, name: []const u8) Func
 /// The FuncId for a resolved bare-call author, ensuring its body is lowered.
 /// Only ever called for a SHADOW (an author that is not the name-keyed
 /// winner): the winner owns the name-keyed slot and lowers through the
-/// normal lazy path, so `selectPlainCallableAuthor` returns `.none` for it. A shadow
+/// normal lazy path, so `selectCallableAuthor` returns `.none` for it. A shadow
 /// is declared a fresh same-name FuncId in its OWN module's visibility
 /// context and its body lowered into that slot via the identity-
 /// addressable `lowerFunctionBodyInto`. Idempotent: `lowered_fids` tracks
@@ -3145,6 +3252,7 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
     if (fd.type_params.len > 0) return;
 
     const ret_ty = self.resolveReturnType(fd);
+    if (fd.return_type) |rtn| _ = self.refuseValuelessProtocol(ret_ty, rtn.span, "declare a return of type");
 
     // A `$T`-generic return with NO parameter mentioning `$T`: the fn isn't
     // a template (the guard above runs on param-derived `type_params`) yet
@@ -3203,6 +3311,10 @@ pub fn declareFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8)
             self.protocol_impl_receiver_types.get(fd) orelse self.resolveParamType(&p)
         else
             self.resolveParamType(&p);
+        // `..xs: P` is the comptime heterogeneous pack — each element keeps
+        // its concrete type and calls monomorphize, so every kind takes part.
+        if (!p.is_pack and !p.is_comptime)
+            _ = self.refuseValuelessProtocol(pty, p.type_expr.span, "declare a parameter of type");
         params.append(self.alloc, .{
             .name = self.module.types.internString(p.name),
             .ty = pty,

@@ -8,7 +8,7 @@
 // bare struct literal or a positional argument captured fine.
 #import "modules/std.sx";
 
-Shape :: protocol { area :: (self: *Self) -> f32; }
+Shape :: protocol vtable { area :: (self: *Self) -> f32; }
 
 Box :: struct { w: f32; }
 impl Shape for Box { area :: (self: *Box) -> f32 { self.w } }

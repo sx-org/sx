@@ -35,7 +35,7 @@ impl Allocator for Tracer {
 // itself is `#identity` (borrow-only; rvalue erasure to it refuses,
 // pinned in diagnostics/1255), and erasure is impl-driven (issue 0176),
 // so a small owning protocol impl'd by Tracer stands in.
-Boxed :: protocol { count_of :: (self: *Self) -> i64; }
+Boxed :: protocol vtable { count_of :: (self: *Self) -> i64; }
 impl Boxed for Tracer {
     count_of :: (self: *Tracer) -> i64 { self.count }
 }

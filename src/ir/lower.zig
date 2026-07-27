@@ -37,9 +37,12 @@ const lower_comptime = @import("lower/comptime.zig");
 const lower_stmt = @import("lower/stmt.zig");
 const lower_control_flow = @import("lower/control_flow.zig");
 const lower_decl = @import("lower/decl.zig");
+const lower_expand = @import("lower/expand.zig");
+const lower_worklist = @import("lower/worklist.zig");
 const lower_context_ext = @import("lower/context_ext.zig");
 const lower_nominal = @import("lower/nominal.zig");
 const lower_protocol = @import("lower/protocol.zig");
+const lower_tagged = @import("lower/tagged.zig");
 const lower_coerce = @import("lower/coerce.zig");
 const lower_ffi = @import("lower/ffi.zig");
 const lower_objc_class = @import("lower/objc_class.zig");
@@ -471,6 +474,16 @@ pub const Lowering = struct {
     /// records each name's first author source to make that decision.
     nominal_name_authors: std.AutoHashMap(types.StringId, []const u8),
     next_nominal_id: u32 = 0,
+    /// Declaration-identity bookkeeping for every NAME-KEYED instantiation cache
+    /// (generic-struct layouts, type-function results, generic/pack monomorphs,
+    /// protocol registrations and their parameterized instances). A cache key
+    /// built from a display name alone collapses two same-spelled declarations
+    /// into one entry; `declIdentityName` appends a per-declaration `__d<id>`
+    /// so they cannot. The FIRST declaration to claim a spelling keeps the bare
+    /// name, so a single-author program mangles byte-identically.
+    decl_identity_first: std.StringHashMap(*const anyopaque),
+    decl_identity_ids: std.AutoHashMap(*const anyopaque, u32),
+    next_decl_identity: u32 = 0,
     /// Nominal plain-struct TypeId → the declaration that authored its layout.
     /// Same-display-name structs already receive distinct TypeIds; retaining the
     /// author here lets method dispatch select the body from that identity rather
@@ -606,6 +619,12 @@ pub const Lowering = struct {
     /// (possibly EARLY, from a scan-time type-fn eval; the assembly is
     /// reconciling, so this only gates default-context emission).
     context_assembled: bool = false,
+    /// Declarations already registered by a scan. Only consulted once
+    /// `incremental_scan` is armed — a driver's comptime evaluation registers
+    /// the DECIDED declaration space before it runs, and the whole-program pass
+    /// then adds exactly what the taken groups contributed since.
+    scanned_decls: std.AutoHashMap(*const Node, void),
+    incremental_scan: bool = false,
     /// Set when a Context STRUCTURAL error was diagnosed (L4 collision, L5
     /// missing default, unresolvable field type). Such an error poisons
     /// every downstream `context.field` access — `lowerRoot` halts after
@@ -657,7 +676,48 @@ pub const Lowering = struct {
     protocol_vtable_type_map: std.StringHashMap(TypeId), // protocol name → vtable struct TypeId
     protocol_vtable_type_by_type: std.AutoHashMap(TypeId, TypeId),
     protocol_vtable_global_map: std.AutoHashMap(ProtocolConcreteKey, inst_mod.GlobalId),
+    /// Whole-program `tagged` membership (lower/tagged.zig). `tagged_reached`
+    /// holds the value-used instantiations, `tagged_members` their conformer
+    /// sets, `tagged_tags` the numbering the collection fixpoint produces.
+    tagged_reached: std.AutoHashMap(TypeId, void),
+    tagged_members: std.AutoHashMap(TypeId, std.ArrayList(TypeId)),
+    tagged_tags: std.AutoHashMap(lower_tagged.PairKey, i64),
+    tagged_arms: std.AutoHashMap(lower_tagged.ArmKey, FuncId),
+    tagged_dispatch_fns: std.AutoHashMap(lower_tagged.MethodKey, FuncId),
+    tagged_type_id_tables: std.AutoHashMap(TypeId, inst_mod.GlobalId),
+    tagged_pending: std.ArrayList(lower_tagged.PendingRoutine),
+    /// Every declared impl site of a tagged `(protocol, conformer)` pair.
+    /// Tagged coherence is GLOBAL — a duplicate is an error regardless of
+    /// import visibility — but only for a REACHED instantiation, so the check
+    /// runs with the collection fixpoint rather than at registration.
+    tagged_impl_sites: std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)),
+    /// The one worklist every expansion driver registers on and is drained by
+    /// (lower/worklist.zig). Its unretired contributions are what finality —
+    /// `setFinal`, a namespace's member surface — reads before publishing.
+    expansion: lower_worklist.Worklist,
+    /// Tagged protocols an impl on a TEMPLATE target (`impl P for Box($T)`)
+    /// can still admit conformers into: one member per generic instance the
+    /// program spells, so such a set is never closed before publication.
+    tagged_template_impls: std.AutoHashMap(TypeId, void),
+    /// Dispatch routines whose arms are being materialized right now. An arm's
+    /// impl body can dispatch through the routine that is materializing it.
+    tagged_publishing: std.AutoHashMap(FuncId, void),
+    /// Which comptime phase the wrapper body being lowered belongs to, or null
+    /// outside every comptime body (§7.9's phase law). An EXPANSION-driving
+    /// body runs during lowering, so it reads the sets as they stand and can
+    /// carry no answer to finality. An ORDINARY `#run` runs after convergence
+    /// and sees the final sets.
+    comptime_phase: ?lower_comptime.ComptimePhase = null,
+    /// True while the operand of a `return` is being lowered. Erasing an
+    /// RVALUE into a tagged value there has nothing durable to borrow — the
+    /// frame is about to die (spec §6.2).
+    in_return_expr: bool = false,
     param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; list lets Phase 4/5 detect cross-module overlap)
+    /// One materialized instantiation of a parameterized protocol family, by
+    /// its protocol TypeId. The base identity name plus the canonical argument
+    /// tuple ARE the instantiation's identity: membership, tables, and
+    /// diagnostics are keyed per tuple (spec §6.7).
+    param_protocol_instances: std.AutoHashMap(TypeId, ParamProtocolInstance),
     /// Pack-variadic impl entries — separate map keyed by `"Proto\x00<arg_mangled>"`
     /// (NO source suffix) so a single impl `Closure(..$args) -> $R` can be
     /// matched against many concrete source shapes. Concrete impls in
@@ -710,6 +770,13 @@ pub const Lowering = struct {
     extern_name_map: std.StringHashMap([]const u8), // sx name → C name for #extern renames
     target_config: ?@import("../target.zig").TargetConfig = null, // compilation target (for inline if)
     comptime_constants: std.StringHashMap(ComptimeValue), // compile-time known constants (e.g. OS, ARCH)
+    /// Module constants bound to a comptime `[N]Type` list (`S :: .[A, B];`).
+    /// A type list has no runtime representation — it exists to drive
+    /// `inline for` expansion, so it never becomes a global.
+    comptime_type_lists: std.StringHashMap([]const TypeId),
+    /// `M :: L;` where `L` is a type list. Resolved lazily so declaration
+    /// order does not matter.
+    comptime_type_list_aliases: std.StringHashMap([]const u8),
     diagnostics: ?*errors.DiagnosticList = null, // error reporting with source locations
     xx_reentrancy: std.AutoHashMap(u64, void), // (src_ty, dst_ty) pairs currently being resolved through user-space Into; prevents infinite monomorphisation when a convert body re-enters the same xx
     /// Whole-program-converged inferred error sets (ERR E1.4b): top-level
@@ -738,6 +805,12 @@ pub const Lowering = struct {
     pub const ComptimeValue = union(enum) {
         int_val: i64,
         enum_tag: struct { ty: TypeId, tag: u32 },
+        /// A target fact (`OS` / `ARCH`) in a program that does not declare the
+        /// enum it is a variant of: the variant NAME the target selects. It
+        /// compares against an enum literal at comptime and has no runtime
+        /// reading — the declaration a runtime read needs is exactly the one
+        /// that would have given it a tag.
+        target_variant: []const u8,
     };
 
     pub const StructConstInfo = struct {
@@ -761,6 +834,19 @@ pub const Lowering = struct {
         target_args: []const TypeId,
         defining_module: []const u8,
         span: ast.Span,
+        /// The declaration itself. A blanket impl's head and source spell
+        /// binders whose resolved TypeIds say nothing about which position
+        /// each binder occupies, so conformer collection unifies against the
+        /// written shapes.
+        block: *const ast.ImplBlock,
+    };
+
+    /// A parameterized protocol instantiation: the family's declaration
+    /// identity plus the canonical argument tuple it was instantiated at.
+    pub const ParamProtocolInstance = struct {
+        base: []const u8,
+        args: []const TypeId,
+        decl: *const ast.ProtocolDecl,
     };
 
     const InlineReturnInfo = struct { slot: Ref, ret_ty: TypeId, done_bb: BlockId };
@@ -925,6 +1011,8 @@ pub const Lowering = struct {
             .global_decl_infos = std.AutoHashMap(*const ast.VarDecl, GlobalInfo).init(module.alloc),
             .lowered_fids = std.AutoHashMap(FuncId, void).init(module.alloc),
             .nominal_name_authors = std.AutoHashMap(types.StringId, []const u8).init(module.alloc),
+            .decl_identity_first = std.StringHashMap(*const anyopaque).init(module.alloc),
+            .decl_identity_ids = std.AutoHashMap(*const anyopaque, u32).init(module.alloc),
             .plain_struct_authors = std.AutoHashMap(TypeId, PlainStructAuthor).init(module.alloc),
             .protocol_impl_methods = std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod).init(module.alloc),
             .protocol_impl_decls = std.AutoHashMap(ProtocolConcreteKey, void).init(module.alloc),
@@ -934,6 +1022,7 @@ pub const Lowering = struct {
             .registered_protocol_decls = std.AutoHashMap(*const ast.ProtocolDecl, void).init(module.alloc),
             .protocol_info_by_type = std.AutoHashMap(TypeId, program_index_mod.ProtocolDeclInfo).init(module.alloc),
             .protocol_ast_by_type = std.AutoHashMap(TypeId, *const ast.ProtocolDecl).init(module.alloc),
+            .scanned_decls = std.AutoHashMap(*const ast.Node, void).init(module.alloc),
             .local_type_names = std.StringHashMap(std.StringHashMap(void)).init(module.alloc),
             .struct_defaults_map = std.StringHashMap([]const ?*const Node).init(module.alloc),
             .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
@@ -945,11 +1034,25 @@ pub const Lowering = struct {
             .protocol_vtable_type_map = std.StringHashMap(TypeId).init(module.alloc),
             .protocol_vtable_type_by_type = std.AutoHashMap(TypeId, TypeId).init(module.alloc),
             .protocol_vtable_global_map = std.AutoHashMap(ProtocolConcreteKey, inst_mod.GlobalId).init(module.alloc),
+            .tagged_reached = std.AutoHashMap(TypeId, void).init(module.alloc),
+            .tagged_members = std.AutoHashMap(TypeId, std.ArrayList(TypeId)).init(module.alloc),
+            .tagged_tags = std.AutoHashMap(lower_tagged.PairKey, i64).init(module.alloc),
+            .tagged_arms = std.AutoHashMap(lower_tagged.ArmKey, FuncId).init(module.alloc),
+            .tagged_dispatch_fns = std.AutoHashMap(lower_tagged.MethodKey, FuncId).init(module.alloc),
+            .tagged_type_id_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
+            .tagged_pending = std.ArrayList(lower_tagged.PendingRoutine).empty,
+            .tagged_impl_sites = std.AutoHashMap(lower_tagged.PairKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
+            .expansion = lower_worklist.Worklist.init(module.alloc),
+            .tagged_template_impls = std.AutoHashMap(TypeId, void).init(module.alloc),
+            .tagged_publishing = std.AutoHashMap(FuncId, void).init(module.alloc),
             .param_impl_map = std.StringHashMap(std.ArrayList(ParamImplEntry)).init(module.alloc),
+            .param_protocol_instances = std.AutoHashMap(TypeId, ParamProtocolInstance).init(module.alloc),
             .param_impl_pack_map = std.StringHashMap(std.ArrayList(PackParamImplEntry)).init(module.alloc),
             .struct_const_map = std.StringHashMap(StructConstInfo).init(module.alloc),
             .extern_name_map = std.StringHashMap([]const u8).init(module.alloc),
             .comptime_constants = std.StringHashMap(ComptimeValue).init(module.alloc),
+            .comptime_type_lists = std.StringHashMap([]const TypeId).init(module.alloc),
+            .comptime_type_list_aliases = std.StringHashMap([]const u8).init(module.alloc),
             .narrowed = std.StringHashMap(void).init(module.alloc),
             .diag_enclosing_seen = std.StringHashMap(void).init(module.alloc),
             .alias_cycle_diagnosed = std.AutoHashMap(usize, void).init(module.alloc),
@@ -1425,6 +1528,7 @@ pub const Lowering = struct {
                         return ty;
                     },
                     .missing => |m| {
+                        if (self.namespaceMissWaits(m)) return .unresolved;
                         if (self.diagnostics) |d|
                             d.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                         return .unresolved;
@@ -1560,6 +1664,7 @@ pub const Lowering = struct {
                             return ty;
                         },
                         .missing => |m| {
+                            if (self.namespaceMissWaits(m)) return .unresolved;
                             if (self.diagnostics) |d|
                                 d.addFmt(.err, node.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                             return .unresolved;
@@ -1694,7 +1799,7 @@ pub const Lowering = struct {
 
     /// A `Resolver` facade over the borrowed Phase A import facts (Phase B). Cheap
     /// by-value; `collectVisibleAuthors`'s `AuthorSet.flat` slice is backed by
-    /// `self.alloc` and owned by the caller (`selectPlainCallableAuthor` frees it).
+    /// `self.alloc` and owned by the caller (`selectCallableAuthor` frees it).
     pub fn resolver(self: *Lowering) resolver_mod.Resolver {
         return resolver_mod.Resolver.init(&self.program_index, self.alloc);
     }
@@ -2131,6 +2236,11 @@ pub const Lowering = struct {
         member: []const u8,
     };
 
+    /// A name a proved namespace does not declare. `scope` is the exact module
+    /// it would have to come from — which is what the discipline's name-lookup
+    /// wait is a claim about (§7.9).
+    pub const MissingMember = struct { namespace: []const u8, member: []const u8, scope: []const u8 };
+
     /// Diagnostic-free result of resolving a full dotted namespace-member
     /// path (`facade.engine_alias.Member`) from an explicit source authority.
     /// Intermediate segments are namespace aliases and obey the same carry
@@ -2142,7 +2252,7 @@ pub const Lowering = struct {
         /// continue with its non-namespace field/type interpretation.
         not_qualified,
         /// An already-proved namespace lacks the next alias/member.
-        missing: struct { namespace: []const u8, member: []const u8 },
+        missing: MissingMember,
         /// The named root/intermediate alias is carried from multiple direct
         /// flat imports to distinct targets.
         ambiguous: []const u8,
@@ -2224,14 +2334,14 @@ pub const Lowering = struct {
             target = switch (self.namespaceAliasVerdictFrom(segment, target.target_module_path)) {
                 .target => |t| t,
                 .ambiguous => return .{ .ambiguous = segment },
-                .none => return .{ .missing = .{ .namespace = namespace_name, .member = segment } },
+                .none => return .{ .missing = .{ .namespace = namespace_name, .member = segment, .scope = target.target_module_path } },
             };
             // Deep traversal keeps the ORIGINAL requester's authority: a
             // private intermediate alias belongs to the file that declared it
             // and is not part of that module's namespace surface for anyone
             // else.
             if (target.visibility == .private and !std.mem.eql(u8, from, target.importer_source)) {
-                return .{ .missing = .{ .namespace = namespace_name, .member = segment } };
+                return .{ .missing = .{ .namespace = namespace_name, .member = segment, .scope = target.target_module_path } };
             }
             namespace_name = segment;
             segment_start = dot + 1;
@@ -2242,15 +2352,29 @@ pub const Lowering = struct {
         if (member.len == 0) return .not_qualified;
         const author = self.namespaceOwnMember(target, member) orelse {
             if (self.namespaceOwnSpecialMember(target, member)) return .not_qualified;
-            return .{ .missing = .{ .namespace = namespace_name, .member = member } };
+            return .{ .missing = .{ .namespace = namespace_name, .member = member, .scope = target.target_module_path } };
         };
         // A private member is no member at all from any other source file —
         // judged against the ORIGINAL requester, and against the member's
         // exact declaring file (not a directory-import aggregate).
         if (author.visibility == .private and !std.mem.eql(u8, from, author.visAuthority())) {
-            return .{ .missing = .{ .namespace = namespace_name, .member = member } };
+            return .{ .missing = .{ .namespace = namespace_name, .member = member, .scope = target.target_module_path } };
         }
         return .{ .selected = .{ .target = target, .author = author, .member = member } };
+    }
+
+    /// A name-lookup MISS is the one non-monotone half of the declaration
+    /// namespace: a hit can never be taken back, but a miss is repaired by any
+    /// branch that has not been selected yet. Under the discipline the miss
+    /// waits until the exact scope it would have to come from is final (§7.9);
+    /// at finality the ordinary namespace diagnostic stands.
+    pub fn namespaceMissWaits(self: *Lowering, miss: MissingMember) bool {
+        if (!self.expansion.scheduled()) return false;
+        if (!self.expansion.mayDeclare(miss.scope, miss.member)) return false;
+        self.expansion.awaitFact(std.fmt.allocPrint(self.alloc, "'{s}' to declare '{s}'", .{
+            miss.namespace, miss.member,
+        }) catch "a module scope to be final");
+        return true;
     }
 
     pub fn qualifiedMemberVerdict(self: *Lowering, path: []const u8) QualifiedMemberVerdict {
@@ -2708,6 +2832,9 @@ pub const Lowering = struct {
     pub const evalComptimeString = lower_comptime.evalComptimeString;
     pub const evalComptimeType = lower_comptime.evalComptimeType;
     pub const evalComptimeTypeBody = lower_comptime.evalComptimeTypeBody;
+    pub const evalComptimeTypeList = lower_comptime.evalComptimeTypeList;
+    pub const registerComptimeTypeList = lower_comptime.registerComptimeTypeList;
+    pub const registerComptimeTypeListAlias = lower_comptime.registerComptimeTypeListAlias;
     pub const runComptimeTypeFunc = lower_comptime.runComptimeTypeFunc;
     pub const renameNominalType = lower_comptime.renameNominalType;
     pub const lowerComptimeGlobal = lower_comptime.lowerComptimeGlobal;
@@ -2837,6 +2964,7 @@ pub const Lowering = struct {
     pub const collectContextExtensions = lower_context_ext.collectContextExtensions;
     pub const assembleContext = lower_context_ext.assembleContext;
     pub const assembleContextEarly = lower_context_ext.assembleContextEarly;
+    pub const assembleContextIfReady = lower_context_ext.assembleContextIfReady;
     pub const contextExtensionDefault = lower_context_ext.contextExtensionDefault;
     pub const hasContextExtension = lower_context_ext.hasContextExtension;
     pub const contextFieldByName = lower_context_ext.contextFieldByName;
@@ -2844,6 +2972,9 @@ pub const Lowering = struct {
     pub const funcWantsImplicitCtx = lower_decl.funcWantsImplicitCtx;
     pub const fnPtrTypeWantsCtx = lower_decl.fnPtrTypeWantsCtx;
     pub const scanDecls = lower_decl.scanDecls;
+    pub const expandModuleDrivers = lower_expand.expandModuleDrivers;
+    pub const registerConstAliases = lower_decl.registerConstAliases;
+    pub const registerLiteralModuleConsts = lower_decl.registerLiteralModuleConsts;
     pub const registerTypedModuleConst = lower_decl.registerTypedModuleConst;
     pub const registerConstArrayGlobal = lower_decl.registerConstArrayGlobal;
     pub const maybeRegisterConstStructGlobal = lower_decl.maybeRegisterConstStructGlobal;
@@ -2868,7 +2999,9 @@ pub const Lowering = struct {
     pub const lowerFunction = lower_decl.lowerFunction;
     pub const lowerMainAndComptime = lower_decl.lowerMainAndComptime;
     pub const lowerRetainedSameNameAuthors = lower_decl.lowerRetainedSameNameAuthors;
-    pub const selectPlainCallableAuthor = lower_decl.selectPlainCallableAuthor;
+    pub const selectCallableAuthor = lower_decl.selectCallableAuthor;
+    pub const callableAuthorFn = lower_decl.callableAuthorFn;
+    pub const CallableKinds = lower_decl.CallableKinds;
     pub const selectNominalLeaf = lower_decl.selectNominalLeaf;
     pub const typeNodeLeavesReady = lower_decl.typeNodeLeavesReady;
     pub const isNamedTypeKind = lower_decl.isNamedTypeKind;
@@ -2884,7 +3017,6 @@ pub const Lowering = struct {
     pub const accessorEffName = lower_decl.accessorEffName;
     pub const accessorNameMatches = lower_decl.accessorNameMatches;
     pub const setter_eff_suffix = lower_decl.setter_eff_suffix;
-    pub const typeFnAuthor = lower_decl.typeFnAuthor;
     pub const selectedFuncId = lower_decl.selectedFuncId;
     pub const bareAuthorFuncId = lower_decl.bareAuthorFuncId;
     pub const putTypeAlias = lower_decl.putTypeAlias;
@@ -2923,6 +3055,7 @@ pub const Lowering = struct {
     pub const internNamedTypeDecl = lower_nominal.internNamedTypeDecl;
     pub const adoptsForwardStructStub = lower_nominal.adoptsForwardStructStub;
     pub const shadowNominalId = lower_nominal.shadowNominalId;
+    pub const declIdentityName = lower_nominal.declIdentityName;
     pub const nameHasMultipleTypeAuthors = lower_nominal.nameHasMultipleTypeAuthors;
     pub const rawNamedTypePtr = lower_nominal.rawNamedTypePtr;
     pub const buildGenericStructTemplate = lower_nominal.buildGenericStructTemplate;
@@ -2948,15 +3081,43 @@ pub const Lowering = struct {
     pub const emitDefaultContextGlobal = lower_protocol.emitDefaultContextGlobal;
     pub const emitDefaultContextGlobalEarly = lower_protocol.emitDefaultContextGlobalEarly;
     pub const protocolErasureConst = lower_protocol.protocolErasureConst;
+    pub const protocolGlobalInit = lower_protocol.protocolGlobalInit;
     pub const createProtocolThunk = lower_protocol.createProtocolThunk;
     pub const protocolDefaultDispatchDomain = lower_protocol.protocolDefaultDispatchDomain;
     pub const buildProtocolValue = lower_protocol.buildProtocolValue;
     pub const emitProtocolDispatch = lower_protocol.emitProtocolDispatch;
     pub const refuseProtocolAssertTargetOnAny = lower_protocol.refuseProtocolAssertTargetOnAny;
     pub const lowerOwningErasure = lower_protocol.lowerOwningErasure;
+    pub const refuseValuelessProtocol = lower_protocol.refuseValuelessProtocol;
+    pub const refuseNonConformer = lower_protocol.refuseNonConformer;
+    pub const protocolKindOf = lower_protocol.protocolKindOf;
+    pub const checkComptimeEscape = lower_protocol.checkComptimeEscape;
+
+    // ── tagged protocols (lower/tagged.zig) ──
+    pub const isTagged = lower_tagged.isTagged;
+    pub const taggedIn = lower_tagged.taggedIn;
+    pub const reachTagged = lower_tagged.reachTagged;
+    pub const seedTagged = lower_tagged.seedTagged;
+    pub const refuseEmptyTaggedSet = lower_tagged.refuseEmptySet;
+    pub const refuseNonMemberTagged = lower_tagged.refuseNonMember;
+    pub const buildTaggedValue = lower_tagged.buildTaggedValue;
+    pub const protocolTypeIdWord = lower_tagged.protocolTypeIdWord;
+    pub const emitTaggedDispatch = lower_tagged.emitTaggedDispatch;
+    pub const convergeTaggedSets = lower_tagged.convergeTaggedSets;
+    pub const taggedConformsNow = lower_tagged.taggedConformsNow;
+    pub const refuseUnstableMembership = lower_tagged.refuseUnstableMembership;
+    pub const noteTemplateTaggedImpl = lower_tagged.noteTemplateImpl;
+    pub const lowerProtocolProbe = lower_protocol.lowerProtocolProbe;
+    pub const recordTaggedImplSite = lower_tagged.recordImplSite;
+    pub const refuseOutOfSetDowncast = lower_tagged.refuseOutOfSetDowncast;
+    pub const lowerTaggedDowncast = lower_tagged.lowerTaggedDowncast;
+    pub const lowerSoftPointerRecovery = lower_tagged.lowerSoftPointerRecovery;
+    pub const warnDeadTypeSwitchArm = lower_tagged.warnDeadTypeSwitchArm;
     pub const allocViaAllocatorValue = lower_protocol.allocViaAllocatorValue;
     pub const resolveConcreteTypeName = lower_protocol.resolveConcreteTypeName;
     pub const computeHasImpl = lower_protocol.computeHasImpl;
+    pub const taggedMembershipOf = lower_protocol.taggedMembershipOf;
+    pub const factScheduler = lower_tagged.factScheduler;
 
     // --- moved to lower/coerce.zig (lower_coerce) ---
     pub const lowerXX = lower_coerce.lowerXX;
@@ -3108,6 +3269,8 @@ pub const Lowering = struct {
     pub const assertInstanceMapsCoincide = lower_generic.assertInstanceMapsCoincide;
     pub const isStaticTypeArg = lower_generic.isStaticTypeArg;
     pub const isTypeReturningCallNode = lower_generic.isTypeReturningCallNode;
+    pub const isGenericTypeConstructorCallNode = lower_generic.isGenericTypeConstructorCallNode;
+    pub const isGenericTypeConstructorHead = lower_generic.isGenericTypeConstructorHead;
     pub const isStaticTypeRef = lower_generic.isStaticTypeRef;
     pub const resolveTupleLiteralTypeArg = lower_generic.resolveTupleLiteralTypeArg;
     pub const resolveTypeArg = lower_generic.resolveTypeArg;
@@ -3133,6 +3296,7 @@ pub const Lowering = struct {
     pub const headFnLeak = lower_generic.headFnLeak;
     pub const flatFnAuthorAmbiguous = lower_generic.flatFnAuthorAmbiguous;
     pub const flatFnAuthorVisible = lower_generic.flatFnAuthorVisible;
+    pub const visibleTypeFnHead = lower_generic.visibleTypeFnHead;
     pub const resolveTypeCallWithBindings = lower_generic.resolveTypeCallWithBindings;
     pub const fieldTypeOf = lower_generic.fieldTypeOf;
     pub const resolveParameterizedWithBindings = lower_generic.resolveParameterizedWithBindings;

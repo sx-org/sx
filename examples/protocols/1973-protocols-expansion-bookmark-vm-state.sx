@@ -1,0 +1,45 @@
+// A real bookmark: an evaluation parks mid-dispatch, its VM-local state stays
+// exactly as it left it, and the resume lands at the awaiting instruction.
+//
+// `Box.draw`'s body is written when the conformer fixpoint materializes that
+// arm, and the `#insert` inside it therefore RUNS from inside that very
+// publication. What it dispatches — `Draw` on a `Dot` — needs an arm the
+// publication has not created yet, so the evaluation awaits the pair instead
+// of failing: the fact is answered by materializing exactly that arm while the
+// evaluation stays suspended, and the same continuation runs on.
+//
+// The `Dot` the evaluation built is mutated BEFORE the park, so the value the
+// resumed dispatch reads proves both halves at once: 10 is the preserved
+// state (`n` 2 raised to 5, doubled by the arm), 4 would be state lost across
+// the park, and 16 would be the pre-park mutation running a second time.
+#import "modules/std.sx";
+
+Draw :: protocol tagged { draw :: (self: *Self) -> i64; }
+
+Dot :: struct { n: i64; }
+Box :: struct { n: i64; }
+
+gen :: () -> string {
+    d := Dot.{ n = 2 };
+    d.n = d.n + 3;
+    v : Draw = d;
+    a := v.draw();
+    if a == 10 { return "bonus := 7;"; }
+    if a == 4 { return "bonus := 1;"; }
+    return "bonus := 2;";
+}
+
+impl Draw for Box {
+    draw :: (self: *Box) -> i64 {
+        #insert gen();
+        return self.n + bonus;
+    }
+}
+
+impl Draw for Dot { draw :: (self: *Dot) -> i64 { self.n * 2 } }
+
+main :: () {
+    b := Box.{ n = 1 };
+    d : Draw = b;
+    print("{}\n", d.draw());
+}

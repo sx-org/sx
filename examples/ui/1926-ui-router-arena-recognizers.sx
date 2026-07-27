@@ -51,7 +51,7 @@ home :: () -> View {
     vstack(0.0) {
         e := element_id().value;
         g_eid = e;
-        place(Pad.{ eid = e, w = 100.0, h = 50.0 }.(View));
+        place(Pad.{ eid = e, w = 100.0, h = 50.0 });
     }
 }
 

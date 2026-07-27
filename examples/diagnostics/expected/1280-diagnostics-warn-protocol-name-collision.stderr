@@ -1,0 +1,1 @@
+warning: protocol 'Boxed' declares type-arg and method both named 'value'; `..pack.value` resolves by position (type-arg in type position, method in value position)

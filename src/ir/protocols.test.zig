@@ -11,7 +11,6 @@ const errors = @import("../errors.zig");
 
 const ir_mod = @import("ir.zig");
 const TypeId = ir_mod.TypeId;
-const FuncId = ir_mod.FuncId;
 const Lowering = ir_mod.Lowering;
 const ProtocolResolver = ir_mod.ProtocolResolver;
 
@@ -60,7 +59,7 @@ test "protocols: getProtocolInfo resolves registered protocol structs only" {
     try std.testing.expect(l.getProtocolInfo(drawable_ty) != null);
 }
 
-test "protocols: hasImplPlain reflects materialized thunks for a (protocol, type) pair" {
+test "protocols: a tagged membership question reads declarations, arms coherence, emits no table" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -69,19 +68,32 @@ test "protocols: hasImplPlain reflects materialized thunks for a (protocol, type
     var l = Lowering.init(&module);
     const pr = ProtocolResolver{ .l = &l };
 
-    const circle = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Circle"), .fields = &.{} } });
+    const methods = [_]ast.ProtocolMethodDecl{protoMethodReq("area")};
+    const pd = ast.ProtocolDecl{ .name = "View", .methods = &methods, .kind = .tagged };
+    l.registerProtocolDecl(&pd);
+    const view = module.types.findByName(module.types.internString("View")).?;
+    const widget = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Widget"), .fields = &.{} } });
+    const loose = module.types.intern(.{ .@"struct" = .{ .name = module.types.internString("Loose"), .fields = &.{} } });
 
-    // No thunks yet → not materialized.
-    try std.testing.expect(!pr.hasImplPlain("Drawable", circle));
+    // The DECLARATION is membership — no thunk for the pair has been
+    // materialized, and membership does not wait for one.
+    l.protocol_impl_decls.put(pr.protocolConcreteKey(view, "View", widget), {}) catch unreachable;
+    try std.testing.expect(!l.protocol_thunk_map.contains(pr.protocolConcreteKey(view, "View", widget)));
+    try std.testing.expect(l.taggedConformsNow(view, widget) == .member);
 
-    // Materialize the (Drawable, Circle) thunk slot the way `getOrCreateThunks`
-    // does — by protocol + concrete TypeId. hasImplPlain must then see it.
-    const key = pr.protocolConcreteKey(null, "Drawable", circle);
-    l.protocol_thunk_map.put(key, &[_]FuncId{}) catch unreachable;
-    try std.testing.expect(pr.hasImplPlain("Drawable", circle));
+    // Nothing can still grow this set, so the negative is answerable.
+    try std.testing.expect(l.taggedConformsNow(view, loose) == .absent_final);
 
-    // A different protocol over the same type is still unmaterialized.
-    try std.testing.expect(!pr.hasImplPlain("Hash", circle));
+    // Asking armed the instantiation's coherence, and emitted no tag table:
+    // a question is not a value use.
+    try std.testing.expect(l.tagged_reached.contains(view));
+    try std.testing.expectEqual(@as(usize, 0), l.tagged_type_id_tables.count());
+
+    // An impl on a template target admits one member per generic instance the
+    // program spells, so the same negative stops being utterable.
+    l.noteTemplateTaggedImpl(view);
+    try std.testing.expect(l.taggedConformsNow(view, loose) == .absent_unstable);
+    try std.testing.expect(l.taggedConformsNow(view, widget) == .member);
 }
 
 test "protocols: packArgConformsTo at the impl-declaration level (non-parameterised)" {
@@ -280,8 +292,9 @@ test "protocols: findVisibleImpls filters by transitive import visibility" {
     var l = Lowering.init(&module);
     const pr = ProtocolResolver{ .l = &l };
 
-    const here_entry: Lowering.ParamImplEntry = .{ .methods = &.{}, .source_ty = .i64, .target_args = &.{}, .defining_module = "a.sx", .span = .{ .start = 0, .end = 0 } };
-    const other_entry: Lowering.ParamImplEntry = .{ .methods = &.{}, .source_ty = .i64, .target_args = &.{}, .defining_module = "b.sx", .span = .{ .start = 0, .end = 0 } };
+    const block: ast.ImplBlock = .{ .protocol_name = "P", .target_type = "i64", .methods = &.{} };
+    const here_entry: Lowering.ParamImplEntry = .{ .methods = &.{}, .source_ty = .i64, .target_args = &.{}, .defining_module = "a.sx", .span = .{ .start = 0, .end = 0 }, .block = &block };
+    const other_entry: Lowering.ParamImplEntry = .{ .methods = &.{}, .source_ty = .i64, .target_args = &.{}, .defining_module = "b.sx", .span = .{ .start = 0, .end = 0 }, .block = &block };
     const entries = [_]Lowering.ParamImplEntry{ here_entry, other_entry };
 
     // No source-file context → falls open (all entries visible).

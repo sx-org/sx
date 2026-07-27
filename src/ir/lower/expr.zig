@@ -851,6 +851,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     }
                 },
                 .missing => |m| {
+                    if (self.namespaceMissWaits(m)) return Ref.none;
                     if (self.diagnostics) |d|
                         d.addFmt(.err, CallResolver.pathSliceSpan(&full_node, full_path, m.member), "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                     return Ref.none;
@@ -922,6 +923,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
                     }
                 },
                 .missing => |m| {
+                    if (self.namespaceMissWaits(m)) return Ref.none;
                     if (self.diagnostics) |d|
                         d.addFmt(.err, fa.object.span, "namespace '{s}' has no member '{s}'", .{ m.namespace, m.member });
                     return Ref.none;
@@ -3074,6 +3076,9 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 switch (cv) {
                     .int_val => |iv| break :blk self.builder.constInt(iv, .i64),
                     .enum_tag => |et| break :blk self.builder.constInt(@intCast(et.tag), et.ty),
+                    // No enum type to read it as — fall through to the ordinary
+                    // name resolution, which reports the missing declaration.
+                    .target_variant => {},
                 }
             }
             // `context` resolves to a load through the lowering's
@@ -3147,7 +3152,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 std.mem.eql(u8, eff_fn_name, id.name) and
                 (if (self.scope) |scope| scope.lookup(id.name) == null else true) and
                 self.current_source_file != null and
-                self.selectPlainCallableAuthor(id.name, self.current_source_file.?) == .func;
+                self.selectCallableAuthor(id.name, self.current_source_file.?, .plain_free) == .func;
             if (self.program_index.fn_ast_map.contains(eff_fn_name) or fn_author_only) {
                 // Visibility check only for user-typed bare names (id.name
                 // == eff_fn_name) without a UFCS alias. Mangled local-
@@ -3168,7 +3173,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 // type-name string boxed as Any).
                 if (self.target_type == .any or self.target_type == .type_value) {
                     const fd_any: ?*const ast.FnDecl = self.program_index.fn_ast_map.get(eff_fn_name) orelse fd_blk: {
-                        switch (self.selectPlainCallableAuthor(id.name, self.current_source_file.?)) {
+                        switch (self.selectCallableAuthor(id.name, self.current_source_file.?, .plain_free)) {
                             .func => |sf| break :fd_blk sf.decl,
                             else => break :fd_blk null,
                         }
@@ -3200,16 +3205,19 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                         (if (self.scope) |scope| scope.lookup(id.name) == null else true))
                     {
                         if (self.current_source_file) |caller_file| {
-                            switch (self.selectPlainCallableAuthor(id.name, caller_file)) {
+                            switch (self.selectCallableAuthor(id.name, caller_file, .plain_free)) {
                                 .func => |sf| {
                                     var selected = sf;
-                                    break :blk_fv self.selectedFuncId(&selected, id.name);
+                                    break :blk_fv self.selectedFuncId(&selected);
                                 },
                                 .ambiguous => {
                                     if (self.diagnostics) |d|
                                         d.addFmt(.err, node.span, "'{s}' is ambiguous; declared by multiple imported modules — qualify the call", .{id.name});
                                     break :blk self.emitError(id.name, node.span);
                                 },
+                                // The visible author is a value: the name-keyed
+                                // winner is not what this spelling means here.
+                                .not_callable => break :blk_fv null,
                                 .none => {},
                             }
                         }
@@ -3657,9 +3665,25 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (recv_erased) delegate: {
                     const full_dst = self.resolveTypeArg(pc.type_expr);
                     if (full_dst == .unresolved) break :delegate; // diagnosed below
+                    // Tagged membership is whole-program and known here, so a
+                    // downcast to a non-conformer can never match: it is a
+                    // compile error, not a runtime false (spec §6.8).
+                    if (self.refuseOutOfSetDowncast(recv_ty, full_dst, pc.type_expr.span))
+                        break :blk self.builder.constUndef(full_dst);
+                    // `p.(?*T)` is the SOFT ctx recovery: a checked `p.(*T)`,
+                    // not a downcast to the POINTER type. Neither the any-view
+                    // helpers (whose type word is the concrete `T`) nor the tag
+                    // compare (whose set holds `T`) can answer for `*T`.
+                    if (self.lowerSoftPointerRecovery(&pc, recv_ty, full_dst)) |answer|
+                        break :blk answer;
                     switch (self.coercionResolver().classifyXX(recv_ty, full_dst)) {
                         .protocol_to_pointer, .protocol_to_raw, .protocol_to_any, .no_op, .erase_protocol, .erase_protocol_wrap => {},
                         else => {
+                            // Tagged receiver: the check is one immediate
+                            // compare against the constant tag (§6.8) — the
+                            // any-view helpers only serve the cold panic arm.
+                            if (self.isTagged(recv_ty) and self.scope != null)
+                                break :blk self.lowerTaggedDowncast(&pc, node, recv_ty, full_dst);
                             const xx_node = self.alloc.create(Node) catch unreachable;
                             xx_node.* = Node{ .data = .{ .unary_op = .{ .op = .xx, .operand = pc.operand } }, .span = pc.operand.span, .source_file = pc.operand.source_file };
                             if (pc.type_expr.data == .optional_type_expr) {
@@ -3691,6 +3715,15 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             {
                 const recv_t = self.inferExprType(pc.operand);
                 const recv_erased = recv_t == .any or self.getProtocolInfo(recv_t) != null;
+                // `x.(?P)` on a concrete receiver is the soft PROBE, not a
+                // conversion: it answers conformance, so a non-conformer is
+                // `null` rather than the erasure's error (§7.9).
+                if (!recv_erased and !dst.isBuiltin()) {
+                    const di = self.module.types.get(dst);
+                    if (di == .optional and self.getProtocolInfo(di.optional.child) != null) {
+                        if (self.lowerProtocolProbe(&pc, di.optional.child, dst)) |answer| break :blk answer;
+                    }
+                }
                 if (!recv_erased and self.getProtocolInfo(dst) != null) {
                     break :blk self.lowerOwningErasure(&pc, dst, node.span);
                 }

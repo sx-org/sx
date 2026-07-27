@@ -48,15 +48,15 @@ home :: () -> View {
     vstack(0.0) {
         a := element_id().value;
         g_a = a;
-        place(Field.{ eid = a, keyboard = false, w = 100.0, h = 20.0 }.(View));
+        place(Field.{ eid = a, keyboard = false, w = 100.0, h = 20.0 });
         b := element_id().value;
         g_b = b;
         g_b_focused_at_build = ui_is_focused(b);
-        place(Field.{ eid = b, keyboard = true, w = 100.0, h = 20.0 }.(View));
+        place(Field.{ eid = b, keyboard = true, w = 100.0, h = 20.0 });
         if g_show_c {
             cid := element_id().value;
             g_c = cid;
-            place(Field.{ eid = cid, keyboard = false, w = 100.0, h = 20.0 }.(View));
+            place(Field.{ eid = cid, keyboard = false, w = 100.0, h = 20.0 });
         }
     }
 }

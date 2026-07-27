@@ -420,7 +420,7 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
         const env_byte_size = self.computeEnvSize(capture_list);
         const env_size = self.builder.constInt(@intCast(env_byte_size), .i64);
         const ptr_void = self.module.types.ptrTo(.void);
-        const env_heap = self.allocViaContext(env_size, ptr_void);
+        const env_heap = self.allocViaContext(env_size);
         // memcpy(heap, stack_alloca, size)
         _ = self.callExtern("memcpy", &.{ env_heap, env_local, env_size }, ptr_void);
 

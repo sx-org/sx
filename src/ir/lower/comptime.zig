@@ -18,6 +18,7 @@ const FuncId = inst_mod.FuncId;
 const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
+const lower_tagged = @import("tagged.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const ConstFoldFrame = lower.ConstFoldFrame;
@@ -245,6 +246,14 @@ fn evalComptimeConditionDepth(self: *Lowering, node: *const Node, depth: u32) ?b
             const result = et.tag == variant_idx;
             return if (bo.op == .eq) result else !result;
         },
+        .target_variant => |tv| {
+            const variant_name = switch (bo.rhs.data) {
+                .enum_literal => |el| el.name,
+                else => return null,
+            };
+            const result = std.mem.eql(u8, tv, variant_name);
+            return if (bo.op == .eq) result else !result;
+        },
         .int_val => |iv| {
             // RHS must be an integer literal
             const rhs_val: i64 = switch (bo.rhs.data) {
@@ -401,6 +410,20 @@ pub fn evalComptimeMatch(self: *Lowering, me: *const ast.MatchExpr) ?*const Node
             }
             return null;
         },
+        .target_variant => |tv| {
+            for (me.arms) |arm| {
+                const pattern = arm.pattern orelse continue;
+                const variant_name = switch (pattern.data) {
+                    .enum_literal => |el| el.name,
+                    else => continue,
+                };
+                if (std.mem.eql(u8, tv, variant_name)) return arm.body;
+            }
+            for (me.arms) |arm| {
+                if (arm.pattern == null) return arm.body;
+            }
+            return null;
+        },
     }
 }
 
@@ -443,7 +466,10 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
     else
         expr_ty;
     const global_ty: TypeId = if (is_failable) self.failableSuccessType(expr_ty) else func_ret;
-    const func_id = self.createComptimeFunction(name, expr, func_ret);
+    // The result crosses into the runtime image, which is what makes this an
+    // escape site (specs.md §7.9).
+    self.checkComptimeEscape(global_ty, expr.span);
+    const func_id = self.createComptimeFunction(name, .ordinary, expr, func_ret);
 
     // Add a global constant whose initializer will be filled by the interpreter.
     const name_id = self.module.types.internString(name);
@@ -467,7 +493,7 @@ pub fn lowerComptimeSideEffect(self: *Lowering, expr: *const Node) void {
     // non-failable side effects stay `void`.
     const expr_ty = self.inferExprType(expr);
     const ret: TypeId = if (self.errorChannelOf(expr_ty) != null) expr_ty else .void;
-    _ = self.createComptimeFunction("__run", expr, ret);
+    _ = self.createComptimeFunction("__run", .ordinary, expr, ret);
 }
 
 /// Lower a `#run expr` that appears inline within an expression.
@@ -475,7 +501,7 @@ pub fn lowerComptimeSideEffect(self: *Lowering, expr: *const Node) void {
 /// interpreter can evaluate it and replace with the constant result.
 pub fn lowerInlineComptime(self: *Lowering, expr: *const Node) Ref {
     const ret_ty: TypeId = self.target_type orelse self.inferExprType(expr);
-    const func_id = self.createComptimeFunction("__ct", expr, ret_ty);
+    const func_id = self.createComptimeFunction("__ct", .ordinary, expr, ret_ty);
     // Carry the binding const's name (when this `#run` initializes one) onto the
     // wrapper so a comptime-init failure names the user const, not `__ct_N`.
     if (self.comptime_const_name) |cname| {
@@ -598,7 +624,7 @@ pub fn evalComptimeType(self: *Lowering, expr: *const Node) ?TypeId {
     // handle). The legacy path reads the result via `asTypeId` regardless, but the
     // VM path converts `func.ret` — `.type_value` → `.type_tag` (an `.any` return
     // would box the result and bail at the VM↔legacy boundary).
-    const func_id = self.createComptimeFunction("__ctype", expr, .type_value);
+    const func_id = self.createComptimeFunction("__ctype", .expansion, expr, .type_value);
     return self.runComptimeTypeFunc(func_id, expr.span);
 }
 
@@ -613,7 +639,7 @@ pub fn evalComptimeTypeBody(self: *Lowering, body: *const Node, ret_expr: *const
     preregisterForwardTypes(self, body);
     const prelude = preludeBeforeReturn(body);
     // Return type `.type_value` (a `Type` value) — see `evalComptimeType`.
-    const func_id = self.createComptimeFunctionWithPrelude("__ctype", prelude, ret_expr, .type_value);
+    const func_id = self.createComptimeFunctionWithPrelude("__ctype", .expansion, prelude, ret_expr, .type_value);
     return self.runComptimeTypeFunc(func_id, ret_expr.span);
 }
 
@@ -652,13 +678,13 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     // fallback. The VM is hardened against malformed lowering-time IR (it BAILS,
     // never panics; see `comptime_vm.refTy`/`badRef`), and bails BEFORE any table
     // mutation, so a failed mint never leaves a partial type.
-    const vm_result = comptime_vm.tryEval(self.alloc, self.module, func_id, null, null);
-    if (std.c.getenv("SX_COMPTIME_FLAT_TRACE") != null) {
-        if (vm_result != null)
-            std.debug.print("[comptime-vm] HANDLED  type-fn\n", .{})
-        else
-            std.debug.print("[comptime-vm] BAIL type-fn: {s}\n", .{comptime_vm.last_bail_reason orelse "<unknown>"});
+    const evaluation = comptime_vm.tryEval(self.alloc, self.module, func_id, null, null, self.factScheduler());
+    if (evaluation.state == .parked) {
+        self.expansion.parkEvaluation(evaluation, "this compile-time type construction", lower_tagged.describeFact(self, evaluation.state.parked), span);
+        return null;
     }
+    defer evaluation.destroy();
+    const vm_result = evaluation.completed();
     if (vm_result) |v| {
         const tid_vm = v.asTypeId() orelse return null;
         return checkComptimeTypeResult(self, tid_vm, span);
@@ -718,6 +744,125 @@ pub fn renameNominalType(self: *Lowering, tid: TypeId, name: []const u8) void {
     tbl.replaceKeyedInfo(tid, info);
 }
 
+/// Does this array literal spell a comptime `[N]Type` list? A single element
+/// naming a declared type settles it — the remaining elements are then held to
+/// the same kind, so a stray value diagnoses as the element-kind error it is
+/// instead of falling into numeric element-type inference.
+pub fn arrayLiteralIsTypeList(self: *Lowering, al: *const ast.ArrayLiteral) bool {
+    for (al.elements) |element| {
+        switch (element.data) {
+            .identifier => |id| if (self.isKnownTypeName(id.name)) return true,
+            .type_expr => |te| if (self.isKnownTypeName(te.name)) return true,
+            .parameterized_type_expr,
+            .pointer_type_expr,
+            .slice_type_expr,
+            .array_type_expr,
+            .optional_type_expr,
+            .many_pointer_type_expr,
+            => return true,
+            else => {},
+        }
+    }
+    return false;
+}
+
+/// Resolve one type-list element to canonical type identity. A value element,
+/// or one naming a protocol rather than a concrete type, is the element-kind
+/// error.
+fn resolveTypeListElement(self: *Lowering, element: *const Node) ?TypeId {
+    switch (element.data) {
+        .int_literal,
+        .float_literal,
+        .string_literal,
+        .bool_literal,
+        .char_literal,
+        .null_literal,
+        .enum_literal,
+        .struct_literal,
+        .array_literal,
+        .tuple_literal,
+        => {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, element.span, "a type list holds types — this element is a value", .{});
+            return null;
+        },
+        else => {},
+    }
+    const ty = self.resolveTypeWithBindings(element);
+    if (ty == .unresolved) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, element.span, "type-list element does not name a type", .{});
+        return null;
+    }
+    if (!ty.isBuiltin()) {
+        const info = self.module.types.get(ty);
+        if (info == .@"struct" and info.@"struct".is_protocol) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, element.span, "a type list holds concrete types — '{s}' is a protocol", .{self.module.types.typeName(ty)});
+            return null;
+        }
+    }
+    return ty;
+}
+
+/// Evaluate a comptime `[N]Type` iterable: an array literal written in place,
+/// or a constant (or alias chain) bound to one. Null when the node is not a
+/// type list; element-kind failures diagnose and also answer null.
+pub fn evalComptimeTypeList(self: *Lowering, node: *const Node) ?[]const TypeId {
+    switch (node.data) {
+        .array_literal => |al| {
+            if (!arrayLiteralIsTypeList(self, &al)) return null;
+            return resolveTypeListElements(self, al.elements);
+        },
+        .identifier => |id| return lookupTypeList(self, id.name, 0),
+        else => return null,
+    }
+}
+
+fn lookupTypeList(self: *Lowering, name: []const u8, depth: u8) ?[]const TypeId {
+    if (depth > 8) return null;
+    if (self.comptime_type_lists.get(name)) |list| return list;
+    const target = self.comptime_type_list_aliases.get(name) orelse return null;
+    return lookupTypeList(self, target, depth + 1);
+}
+
+fn resolveTypeListElements(self: *Lowering, elements: []const *Node) ?[]const TypeId {
+    const tys = self.alloc.alloc(TypeId, elements.len) catch return null;
+    for (elements, 0..) |element, i| {
+        tys[i] = resolveTypeListElement(self, element) orelse return null;
+    }
+    return tys;
+}
+
+/// Register `NAME :: .[A, B];` as a comptime type list. Returns true when the
+/// constant is one — the caller then skips the runtime-global path, since a
+/// list of types has no runtime bytes.
+pub fn registerComptimeTypeList(self: *Lowering, cd: *const ast.ConstDecl) bool {
+    if (cd.value.data != .array_literal) return false;
+    const al = &cd.value.data.array_literal;
+    if (!arrayLiteralIsTypeList(self, al) and !annotationIsTypeArray(self, cd.type_annotation)) return false;
+    // A list whose elements failed the kind check still registers — as empty,
+    // so its `inline for` sites read a type list (no cascade) and unroll
+    // nothing while the element diagnostic stands.
+    const tys = resolveTypeListElements(self, al.elements) orelse &[_]TypeId{};
+    self.comptime_type_lists.put(cd.name, tys) catch {};
+    return true;
+}
+
+/// Record `M :: L;` as a type-list alias. Names only — the target may not be
+/// registered yet, and the chain resolves at the `inline for` site.
+pub fn registerComptimeTypeListAlias(self: *Lowering, cd: *const ast.ConstDecl) void {
+    if (cd.value.data != .identifier) return;
+    self.comptime_type_list_aliases.put(cd.name, cd.value.data.identifier.name) catch {};
+}
+
+fn annotationIsTypeArray(self: *Lowering, annotation: ?*Node) bool {
+    const node = annotation orelse return false;
+    if (node.data != .array_type_expr) return false;
+    const ty = self.resolveTypeWithBindings(node.data.array_type_expr.element_type);
+    return ty == .type_value;
+}
+
 /// Evaluate an expression at compile time, returning its string value.
 /// Returns null if evaluation fails.
 pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
@@ -743,8 +888,14 @@ pub fn evalComptimeString(self: *Lowering, expr: *const Node) ?[:0]const u8 {
     // (the visibility error, …) was already emitted while lowering the inserted
     // expression. `regToValue` dupes the result string into `self.alloc`, so it
     // outlives the VM's arena.
-    const ct_func_id = self.createComptimeFunction("__insert", expr, .string);
-    const result = comptime_vm.tryEval(self.alloc, self.module, ct_func_id, null, null) orelse return null;
+    const ct_func_id = self.createComptimeFunction("__insert", .expansion, expr, .string);
+    const evaluation = comptime_vm.tryEval(self.alloc, self.module, ct_func_id, null, null, self.factScheduler());
+    if (evaluation.state == .parked) {
+        self.expansion.parkEvaluation(evaluation, "this `#insert`", lower_tagged.describeFact(self, evaluation.state.parked), expr.span);
+        return null;
+    }
+    defer evaluation.destroy();
+    const result = evaluation.completed() orelse return null;
     const str = switch (result) {
         .string => |s| s,
         else => return null,
@@ -1533,10 +1684,21 @@ pub fn fnBodyHasReturn(node: *const Node) bool {
     };
 }
 
+/// Which comptime phase a wrapper body belongs to (§7.9's phase law).
+pub const ComptimePhase = enum {
+    /// Evaluated DURING lowering, so its result can still add declarations:
+    /// a type-fn body, an `#insert`. Nothing it observes about a conformer
+    /// set is final.
+    expansion,
+    /// Evaluated after the conformer fixpoint — a `#run` constant, a `#run`
+    /// side effect, a body-local `#run`. Sees the final sets.
+    ordinary,
+};
+
 /// Creates a temporary function marked `is_comptime = true` that wraps
 /// the given expression as its return value. Returns the FuncId.
-pub fn createComptimeFunction(self: *Lowering, prefix: []const u8, expr: *const Node, ret_ty: TypeId) FuncId {
-    return self.createComptimeFunctionWithPrelude(prefix, &.{}, expr, ret_ty);
+pub fn createComptimeFunction(self: *Lowering, prefix: []const u8, phase: ComptimePhase, expr: *const Node, ret_ty: TypeId) FuncId {
+    return self.createComptimeFunctionWithPrelude(prefix, phase, &.{}, expr, ret_ty);
 }
 
 /// Like `createComptimeFunction`, but lowers `prelude` statements (e.g. a
@@ -1544,7 +1706,7 @@ pub fn createComptimeFunction(self: *Lowering, prefix: []const u8, expr: *const 
 /// the result `expr`, so the expr can reference names they bind. Used to
 /// comptime-evaluate a generic type-fn body that has locals before its `return`
 /// (the non-prelude path only sees the return expression).
-pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, prelude: []const *const Node, expr: *const Node, ret_ty: TypeId) FuncId {
+pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, phase: ComptimePhase, prelude: []const *const Node, expr: *const Node, ret_ty: TypeId) FuncId {
     // EVERY comptime wrapper body (type-fn, #run-at-scan, #insert, …) lowers
     // through here — and it (or a lazily-lowered callee) may read
     // `context.allocator`, which only exists once the Context is ASSEMBLED
@@ -1596,7 +1758,13 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, pr
     self.block_terminated = false;
     self.target_type = null;
     self.func_defer_base = self.defer_stack.items.len;
+    // A wrapper nested inside an expansion-driving body drives expansion too:
+    // its result feeds the outer one, which is still being evaluated during
+    // lowering.
+    const saved_phase = self.comptime_phase;
+    self.comptime_phase = if (saved_phase == .expansion) .expansion else phase;
     defer {
+        self.comptime_phase = saved_phase;
         self.current_ctx_ref = saved_ctx_ref;
         self.inline_return_target = saved_iri;
         self.pack_arg_nodes = saved_pan;
@@ -1872,7 +2040,7 @@ const ConstAuthor = union(enum) {
 
 /// The source-aware module-const author of `name` from the querying module
 /// (E2/F2) — the value-const analogue of `selectNominalLeaf` (types) and
-/// `selectPlainCallableAuthor` (functions). Selects over the ONE graph-walk
+/// `selectCallableAuthor` (functions). Selects over the ONE graph-walk
 /// collector and reads the value from the SELECTED author's per-source cache
 /// (`module_consts_by_source`), never the global last-wins `module_const_map`:
 ///

@@ -1,0 +1,5 @@
+// One author of the nullary `Q` — a single-slot vtable.
+Q :: protocol vtable { tag :: (self: *Self) -> i64; }
+Holder :: struct { v: i64; }
+impl Q for Holder { tag :: (self: *Holder) -> i64 => 100 + self.v; }
+own_tag :: () -> i64 { x : Q = xx Holder.{ v = 1 }; return x.tag(); }

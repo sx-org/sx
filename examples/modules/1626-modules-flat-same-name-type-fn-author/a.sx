@@ -1,0 +1,7 @@
+// a.sx is imported first, so its `Make` owns the name-keyed slot.
+Make :: ($T: Type) -> Type { return struct { value: T; tag: i64; }; }
+
+a_head :: () -> i64 {
+    v : Make(i64) = .{ value = 5, tag = 1 };
+    return v.tag;
+}

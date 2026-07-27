@@ -13,7 +13,7 @@
 
 #import "modules/std.sx";
 
-Speaker :: protocol { greet :: (self: *Self, x: i64) -> i64; }
+Speaker :: protocol vtable { greet :: (self: *Self, x: i64) -> i64; }
 
 Dog :: struct { n: i64 = 0; }
 impl Speaker for Dog { greet :: (self: *Dog, x: i64) -> i64 { return self.n + x; } }

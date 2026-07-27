@@ -1,0 +1,11 @@
+warning: Obj-C selector "description" (override for static call 'NSObject.gimme') has 0 keyword(s) but the call passes 1 argument(s); the runtime will dispatch but the colon count is inconsistent with the arity — double-check the selector string
+  --> examples/ffi-objc/1352-ffi-objc-dsl-08-selector-arity-warning.sx:23:14
+   |
+23 |         d := NSObject.gimme(7);
+   |              ^^^^^^^^^^^^^^
+
+warning: Obj-C selector "description" (override for 'NSDictionary.lookup') has 0 keyword(s) but the call passes 1 argument(s); the runtime will dispatch but the colon count is inconsistent with the arity — double-check the selector string
+  --> examples/ffi-objc/1352-ffi-objc-dsl-08-selector-arity-warning.sx:28:14
+   |
+28 |         r := inst.lookup(null);
+   |              ^^^^^^^^^^^

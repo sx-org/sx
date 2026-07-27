@@ -1,0 +1,30 @@
+// The design's flagship conformance-conditional: a `#run` that asks about a
+// set the branch it selects feeds.
+//
+// The run has a body, so it EXECUTES — and the probe inside it is a real
+// value-level membership question about `Serialize` and `GPA`. A positive
+// would be readable at once; this one is a negative, and a negative is
+// utterable only against a set nothing can still grow. The only driver in the
+// program is the one reading the run, and its taken branch would declare
+// exactly the impl in question, so the fact it awaits is one only it could
+// fire.
+//
+// Runnable work is exhausted with the bookmark still down. A state admitting
+// more than one consistent outcome is genuinely ambiguous, so sx refuses
+// rather than electing a fixpoint (specs.md §7.9).
+#import "modules/std.sx";
+
+Serialize :: protocol tagged { write :: (self: *Self) -> i64; }
+
+GPA :: struct { n: i64; }
+
+HAS :: #run { g := GPA.{ n = 1 }; g.(?Serialize) != null };
+
+inline if !HAS {
+    impl Serialize for GPA { write :: (self: *GPA) -> i64 { self.n } }
+}
+
+main :: () {
+    g := GPA.{ n = 3 };
+    print("{}\n", g.n);
+}

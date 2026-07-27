@@ -1,0 +1,5 @@
+// The protocol and the target the aliased module's own driver authors an impl
+// over.
+Mark :: protocol vtable { tag :: (self: *Self) -> i64; }
+
+Slot :: struct { n: i64; }

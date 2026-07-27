@@ -9,7 +9,7 @@
 
 Fmt :: enum { rgba8; bgra8; }
 
-P :: protocol {
+P :: protocol vtable {
     make :: (self: *Self, w: i64, fmt: Fmt) -> i64;
 }
 

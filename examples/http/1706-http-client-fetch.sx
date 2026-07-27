@@ -122,7 +122,7 @@ run :: () -> i32 {
     // dominating the 1s corpus run budget; still wide vs. the back-to-back
     // pooled fetches whose reuse it must NOT interrupt.
     cfg_a : http.Config = .{ port = PORT_A, timeout_request_ms = 5000,
-                             timeout_keepalive_ms = 400, max_conn = 16 };
+                             timeout_keepalive_ms = 250, max_conn = 16 };
     srv_a, se_a := http.Server.init(cfg_a, handler_a, 0);
     if se_a { return 2; }
     ta, tae := thread.Thread.spawn(srv_entry, xx *srv_a);
@@ -188,8 +188,8 @@ run :: () -> i32 {
     _ := rp2;
     st2 := srv_a.stats();
     if st2.accepted_total != base { pool.close(); return teardown(18, *srv_a, *ta, *srv_b, *tb); }   // reused, no new accept
-    // let the server evict the idle pooled conn (keepalive 400ms; 2x margin)...
-    sleep_ms(800);
+    // let the server evict the idle pooled conn (keepalive 250ms; 2x margin)...
+    sleep_ms(500);
     // ...then the pool must transparently redial.
     rp3, ep3 := pool.fetch("GET", "http://127.0.0.1:19027/hello", "", *buf[0], 8192);
     if ep3 { pool.close(); return teardown(98, *srv_a, *ta, *srv_b, *tb); }

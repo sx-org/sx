@@ -1,0 +1,2 @@
+true
+tagged dispatch failed: 'Shape.same' takes a 'Self' argument of the receiver's own conformer: the receiver is Circle, the argument is Square

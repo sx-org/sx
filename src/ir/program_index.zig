@@ -48,12 +48,32 @@ pub const ProtocolMethodInfo = struct {
     ret_type: TypeId, // a `Self` return is encoded as *void
     // Era-2 per-method erasability: true iff the signature is expressible
     // with `Self` unknown (`Self` only as the receiver). An excluded method
-    // has no vtable/#inline slot; erased dispatch refuses it and points at
+    // has no vtable / `inline` slot; erased dispatch refuses it and points at
     // the generic-bound path. Conformance still requires an impl for it.
     dispatchable: bool = true,
     // When !dispatchable: the first offending parameter's name, or null
     // when the return type is what mentions `Self`.
     self_param: ?[]const u8 = null,
+    // The DIRECT `Self` positions (§6.4): one flag per non-receiver
+    // parameter written exactly `Self`. Tagged dispatch expresses these —
+    // each arm knows `Self`, so the caller passes a `P` value and the arm
+    // takes its referent.
+    self_params: []const bool = &.{},
+    // The return type is written exactly `Self`.
+    returns_self: bool = false,
+    // Some `Self` mention sits under a composite (`*Self`, `[]Self`,
+    // `Box(Self)`, a fn type) — no caller-side type exists for it on any
+    // kind, so the method is excluded from dispatch through a value.
+    self_at_depth: bool = false,
+    // The signature a call THROUGH a protocol value sees. On tagged, a direct
+    // `Self` is the protocol type itself (the caller passes and receives a
+    // handle); everywhere else these equal the ABI-facing `param_types` /
+    // `ret_type`, where `Self` is the opaque `*void`.
+    dispatch_param_types: []const TypeId = &.{},
+    dispatch_ret_type: TypeId = .void,
+    // `#expand` reaches this method — written on it, or on the protocol header.
+    // Its dispatch routine expands at every call site (§6.3a).
+    expand: bool = false,
 };
 
 /// Where a protocol method's signature mentions `Self` outside the receiver:
@@ -123,6 +143,62 @@ pub fn protocolMethodSelfOccurrence(method: ast.ProtocolMethodDecl) ?SelfOccurre
     return null;
 }
 
+/// True when `node` names `Self` DIRECTLY — the bare leaf, no composite
+/// around it. The direct positions are the ones tagged dispatch expresses
+/// (§6.4); `*Self` / `[]Self` / `Box(Self)` are mentions at depth.
+pub fn typeNodeIsSelf(node: *const Node) bool {
+    return switch (node.data) {
+        .type_expr => |te| std.mem.eql(u8, te.name, "Self"),
+        .identifier => |id| std.mem.eql(u8, id.name, "Self"),
+        else => false,
+    };
+}
+
+/// Where `method` names `Self` outside the receiver, split by directness.
+/// `direct_params` is one flag per non-receiver parameter; the caller owns
+/// the slice.
+pub const SelfShape = struct {
+    direct_params: []const bool,
+    direct_return: bool,
+    at_depth: bool,
+};
+
+pub fn protocolMethodSelfShape(alloc: std.mem.Allocator, method: ast.ProtocolMethodDecl) SelfShape {
+    const flags = alloc.alloc(bool, method.params.len) catch @panic("out of memory");
+    var at_depth = false;
+    for (method.params, 0..) |p, i| {
+        flags[i] = typeNodeIsSelf(p);
+        if (!flags[i] and typeNodeContainsSelf(p)) at_depth = true;
+    }
+    var direct_return = false;
+    if (method.return_type) |rt| {
+        direct_return = typeNodeIsSelf(rt);
+        if (!direct_return and typeNodeContainsSelf(rt)) at_depth = true;
+    }
+    return .{ .direct_params = flags, .direct_return = direct_return, .at_depth = at_depth };
+}
+
+/// Fill a method's caller-facing dispatch signature. On tagged, a DIRECT
+/// `Self` position takes the protocol's own type — the caller passes a handle
+/// and each arm resolves it to its own conformer (§6.4). The other kinds
+/// dispatch only signatures free of `Self`, so both views coincide there.
+pub fn applyDispatchSignature(alloc: std.mem.Allocator, m: *ProtocolMethodInfo, kind: ast.ProtocolKind, proto_ty: TypeId) void {
+    m.dispatch_param_types = m.param_types;
+    m.dispatch_ret_type = m.ret_type;
+    if (kind != .tagged) return;
+    if (m.returns_self) m.dispatch_ret_type = proto_ty;
+    var has_direct = false;
+    for (m.self_params) |f| {
+        if (f) has_direct = true;
+    }
+    if (!has_direct) return;
+    const ptypes = alloc.dupe(TypeId, m.param_types) catch @panic("out of memory");
+    for (m.self_params, 0..) |f, i| {
+        if (f) ptypes[i] = proto_ty;
+    }
+    m.dispatch_param_types = ptypes;
+}
+
 /// Protocol ownership class ("P owns, *P views" model). The unmarked
 /// default is value/own; `#identity` marks borrow-only protocols — their
 /// values only ever BORROW the ctx (rvalue erasure refuses, free refuses).
@@ -133,9 +209,14 @@ pub const ProtocolOwnership = enum {
 
 pub const ProtocolDeclInfo = struct {
     name: []const u8,
-    is_inline: bool,
+    kind: ast.ProtocolKind,
     ownership: ProtocolOwnership = .value_own,
     methods: []const ProtocolMethodInfo,
+
+    /// True for the two kinds whose values are erased ({ctx, type_id, …}).
+    pub fn isErased(self: ProtocolDeclInfo) bool {
+        return self.kind == .vtable or self.kind == .@"inline";
+    }
 };
 
 pub const ModuleConstInfo = struct {
@@ -836,6 +917,10 @@ pub const ProgramIndex = struct {
     /// in parallel with the import facts. Borrowed view; nothing in lowering
     /// consumes it for selection yet (additive — S4 makes it the fact-store key).
     decl_table: ?*imports.DeclTable = null,
+    /// Every resolved module keyed by canonical path. A `#import` written
+    /// inside a module-scope expansion body resolves re-entrantly but stays
+    /// contained; the splice reads its module back out of here. Borrowed view.
+    module_cache: ?*const imports.ModuleCache = null,
     // ── Declaration maps ──
     /// Function name → AST decl.
     fn_ast_map: std.StringHashMap(*const ast.FnDecl),

@@ -68,8 +68,7 @@ fn typeContainsUnresolved(table: *const types.TypeTable, ty: TypeId) bool {
 /// Protocol / impl LOOKUP + REGISTRATION (architecture phase A4.2), extracted
 /// from `Lowering`. Owns:
 ///   - read-only conformance queries: `getProtocolInfo` (is a type a registered
-///     protocol + its method table), `hasImplPlain` (have a (protocol, type)
-///     pair's thunks been materialized), `packArgConformsTo` (impl-declaration
+///     protocol + its method table), `packArgConformsTo` (impl-declaration
 ///     conformance for protocol-pack `..xs: P` elements),
 ///   - registration: `registerProtocolDecl` (protocol struct + method table +
 ///     vtable type), `registerImplBlock` / `registerParamImpl` (populate the
@@ -113,18 +112,6 @@ pub const ProtocolResolver = struct {
         return self.canonicalProtocolName(written, source) != null;
     }
 
-    /// Have the thunks for (protocol `p_name`, concrete `ty`) been materialized?
-    /// `protocol_thunk_map` is populated lazily when a protocol VALUE is created
-    /// with `xx`, so this answers "has erasure already happened for this pair".
-    pub fn hasImplPlain(self: ProtocolResolver, p_name: []const u8, ty: TypeId) bool {
-        const proto = self.resolveProtocol(p_name, self.l.current_source_file);
-        return self.l.protocol_thunk_map.contains(self.protocolConcreteKey(
-            if (proto) |p| p.ty else null,
-            if (proto) |p| p.name else p_name,
-            ty,
-        ));
-    }
-
     pub fn protocolConcreteKey(self: ProtocolResolver, proto_ty: ?TypeId, p_name: []const u8, ty: TypeId) lower.ProtocolConcreteKey {
         return .{
             .protocol = proto_ty orelse .unresolved,
@@ -142,10 +129,19 @@ pub const ProtocolResolver = struct {
         };
     }
 
-    /// Internal runtime name for one parameterized protocol instance. Type
-    /// arguments use nominal-aware mangles, so `P(a.Thing)` and `P(b.Thing)`
-    /// cannot share a protocol type, impl key, thunk set, or vtable merely
-    /// because both arguments display as `Thing`.
+    /// The key spelling of a protocol DECLARATION: its display name plus a
+    /// declaration-identity suffix once another declaration has claimed that
+    /// spelling. Every protocol-keyed registry — the decl/ast maps, impl,
+    /// thunk and vtable keys, and parameterized instance names — is keyed with
+    /// it, so two modules authoring `P` cannot share any of them.
+    pub fn protocolIdentityName(self: ProtocolResolver, pd: *const ast.ProtocolDecl) []const u8 {
+        return self.l.declIdentityName(pd.name, pd);
+    }
+
+    /// Internal runtime name for one parameterized protocol instance. `p_name`
+    /// is the declaration's identity name and type arguments use nominal-aware
+    /// mangles, so neither two same-spelled protocols nor `P(a.Thing)` and
+    /// `P(b.Thing)` can share a protocol type, impl key, thunk set, or vtable.
     pub fn paramProtocolInstanceName(self: ProtocolResolver, p_name: []const u8, arg_tys: []const TypeId) []const u8 {
         var buf = std.ArrayList(u8).empty;
         buf.appendSlice(self.l.alloc, p_name) catch @panic("out of memory");
@@ -187,7 +183,7 @@ pub const ProtocolResolver = struct {
             self.l.setCurrentSourceFile(saved);
             protocol_ty = self.l.namedRefTid(terminal.raw, pd.name) orelse return null;
         }
-        return .{ .name = pd.name, .ty = protocol_ty, .decl = pd };
+        return .{ .name = self.protocolIdentityName(pd), .ty = protocol_ty, .decl = pd };
     }
 
     /// Resolve a written protocol head to its exact declaration and, for a
@@ -207,7 +203,7 @@ pub const ProtocolResolver = struct {
                 self.l.module.types.type_decl_tids.get(@ptrCast(pd)) orelse self.l.module.types.findByName(self.l.module.types.internString(pd.name))
             else
                 null;
-            return .{ .name = pd.name, .ty = ty, .decl = pd };
+            return .{ .name = self.protocolIdentityName(pd), .ty = ty, .decl = pd };
         }
         const src = source orelse self.l.current_source_file;
         if (src) |from| {
@@ -234,6 +230,20 @@ pub const ProtocolResolver = struct {
             return selected;
         }
         return null;
+    }
+
+    /// The exact PARAMETERIZED protocol declaration a written type head names.
+    /// A qualified head (`ns.P(i64)`) selects the namespace's own author; a bare
+    /// head selects the visible author (own wins, otherwise a single direct flat
+    /// author). Null when the head is not a parameterized protocol — the global
+    /// spelling map cannot decide this, since two modules may both author `P`.
+    pub fn resolveParamProtocolHead(self: ProtocolResolver, base_name: []const u8, qualified_path: ?[]const u8) ?*const ast.ProtocolDecl {
+        const resolved = if (qualified_path) |path| switch (self.l.qualifiedMemberVerdict(path)) {
+            .selected => |sel| self.resolvedProtocolAuthor(sel.author),
+            .not_qualified, .missing, .ambiguous => null,
+        } else self.resolveProtocol(base_name, self.l.current_source_file);
+        const pd = (resolved orelse return null).decl;
+        return if (pd.type_params.len > 0) pd else null;
     }
 
     fn canonicalProtocolName(self: ProtocolResolver, written: []const u8, source: ?[]const u8) ?[]const u8 {
@@ -501,7 +511,7 @@ pub const ProtocolResolver = struct {
         // (Source, Target) pair at xx resolution time. Stash the AST so
         // `param_impl_map` lookup can resolve method signatures lazily.
         if (pd.type_params.len > 0) {
-            self.l.program_index.protocol_ast_map.put(pd.name, pd) catch {};
+            self.l.program_index.protocol_ast_map.put(self.protocolIdentityName(pd), pd) catch {};
             return;
         }
 
@@ -517,17 +527,23 @@ pub const ProtocolResolver = struct {
         // the prefix through the any machinery. Dunder name: a protocol
         // METHOD named `type_id` must not collide (same reason as
         // `__vtable`); the public spelling is ProtocolRaw's `type_id`.
+        // A `tagged` value is {ctx, __tag} instead — 16 bytes, always: the
+        // dense conformer index replaces the stamped type id, and the
+        // concrete id is synthesized through the protocol's tag table.
         const void_ptr_ty = table.ptrTo(.void);
         fields.append(self.l.alloc, .{
             .name = table.internString("ctx"),
             .ty = void_ptr_ty,
         }) catch unreachable;
         fields.append(self.l.alloc, .{
-            .name = table.internString("__type_id"),
-            .ty = .type_value,
+            .name = table.internString(if (pd.kind == .tagged) "__tag" else "__type_id"),
+            .ty = if (pd.kind == .tagged) .i64 else .type_value,
         }) catch unreachable;
 
-        if (pd.is_inline) {
+        if (pd.kind == .tagged) {
+            // No third word: dispatch is an outlined switch on the tag,
+            // emitted at whole-program link.
+        } else if (pd.kind == .@"inline") {
             // One fn-ptr field per DISPATCHABLE protocol method (Era-2:
             // a method whose signature mentions `Self` past the receiver
             // has no slot — it is only callable through a generic bound).
@@ -585,32 +601,42 @@ pub const ProtocolResolver = struct {
                 break :blk self.l.resolveTypeInSource(pd.source_file, rt);
             } else .void;
             const self_occ = program_index_mod.protocolMethodSelfOccurrence(method);
-            method_infos.append(self.l.alloc, .{
+            const shape = program_index_mod.protocolMethodSelfShape(self.l.alloc, method);
+            var info: ProtocolMethodInfo = .{
                 .name = method.name,
                 .param_types = self.l.alloc.dupe(TypeId, ptypes.items) catch unreachable,
                 .ret_type = ret,
                 .dispatchable = self_occ == null,
                 .self_param = if (self_occ) |occ| occ.param_name else null,
-            }) catch unreachable;
+                .self_params = shape.direct_params,
+                .returns_self = shape.direct_return,
+                .self_at_depth = shape.at_depth,
+                .expand = pd.is_expand or method.is_expand,
+            };
+            program_index_mod.applyDispatchSignature(self.l.alloc, &info, pd.kind, protocol_ty);
+            method_infos.append(self.l.alloc, info) catch unreachable;
         }
+        const identity_name = self.protocolIdentityName(pd);
         const protocol_info: ProtocolDeclInfo = .{
-            .name = pd.name,
-            .is_inline = pd.is_inline,
+            .name = identity_name,
+            .kind = pd.kind,
             .ownership = if (pd.is_identity) .identity else .value_own,
             .methods = self.l.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
         };
         self.l.protocol_info_by_type.put(protocol_ty, protocol_info) catch @panic("out of memory");
         self.l.protocol_ast_by_type.put(protocol_ty, pd) catch @panic("out of memory");
-        // Compatibility/template discovery maps remain name-keyed. Runtime
-        // dispatch and ABI classification use the TypeId-keyed maps above.
-        if (!self.l.program_index.protocol_decl_map.contains(pd.name))
-            self.l.program_index.protocol_decl_map.put(pd.name, protocol_info) catch {};
-        if (!self.l.program_index.protocol_ast_map.contains(pd.name))
-            self.l.program_index.protocol_ast_map.put(pd.name, pd) catch {};
+        // Template-discovery maps are name-keyed on the DECLARATION identity, so
+        // a second author of the same spelling gets its own entry instead of
+        // losing to the first. Runtime dispatch and ABI classification use the
+        // TypeId-keyed maps above.
+        if (!self.l.program_index.protocol_decl_map.contains(identity_name))
+            self.l.program_index.protocol_decl_map.put(identity_name, protocol_info) catch {};
+        if (!self.l.program_index.protocol_ast_map.contains(identity_name))
+            self.l.program_index.protocol_ast_map.put(identity_name, pd) catch {};
 
         // For vtable protocols, create the vtable struct type — one slot per
-        // DISPATCHABLE method (Era-2), same filter as the #inline field list.
-        if (!pd.is_inline) {
+        // DISPATCHABLE method (Era-2), same filter as the `inline`-kind field list.
+        if (pd.kind != .@"inline" and pd.kind != .tagged) {
             var vtable_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
             for (pd.methods) |method| {
                 if (program_index_mod.protocolMethodSelfOccurrence(method) != null) continue;
@@ -619,12 +645,11 @@ pub const ProtocolResolver = struct {
                     .ty = void_ptr_ty,
                 }) catch unreachable;
             }
-            var vtable_name_buf: [128]u8 = undefined;
-            const vtable_name = std.fmt.bufPrint(&vtable_name_buf, "__{s}__Vtable", .{pd.name}) catch "__Vtable";
+            const vtable_name = std.fmt.allocPrint(self.l.alloc, "__{s}__Vtable", .{identity_name}) catch @panic("out of memory while naming a protocol vtable");
             const vtable_name_id = table.internString(vtable_name);
             const vtable_info: types.TypeInfo = .{ .@"struct" = .{ .name = vtable_name_id, .fields = vtable_fields.items } };
             const vtable_ty = table.intern(vtable_info);
-            self.l.protocol_vtable_type_map.put(pd.name, vtable_ty) catch {};
+            self.l.protocol_vtable_type_map.put(identity_name, vtable_ty) catch {};
             self.l.protocol_vtable_type_by_type.put(protocol_ty, vtable_ty) catch @panic("out of memory");
         }
     }
@@ -654,7 +679,23 @@ pub const ProtocolResolver = struct {
         // exact impl maps (issue 0320).
         if (ib.target_type_params.len == 0 and ib.target_type.len > 0 and concrete_ty == null) return;
         if (concrete_ty) |cty| {
+            // Protocols are not concrete types, so they never conform (§10).
+            // A curated `inline for` list that names one lands here.
+            if (!cty.isBuiltin() and self.l.module.types.get(cty) == .@"struct" and
+                self.l.module.types.get(cty).@"struct".is_protocol)
+            {
+                if (self.l.diagnostics) |d|
+                    d.addFmt(.err, decl.span, "'{s}' is a protocol, not a concrete type — an impl target names a type", .{ib.target_type});
+                self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
+                return;
+            }
             self.l.protocol_impl_decls.put(self.protocolConcreteKey(proto.ty, proto_name, cty), {}) catch @panic("out of memory");
+            if (proto.ty) |pty| self.l.recordTaggedImplSite(pty, cty, decl.span, source);
+        } else if (proto.ty) |pty| {
+            // A template target (`impl P for Box($T)`) names no one conformer:
+            // each generic instance the program spells joins the set, so a
+            // tagged set with such an impl stays open until publication.
+            self.l.noteTemplateTaggedImpl(pty);
         }
         // Collect explicitly implemented method names
         var impl_methods = std.StringHashMap(void).init(self.l.alloc);
@@ -810,6 +851,7 @@ pub const ProtocolResolver = struct {
             .target_args = self.l.alloc.dupe(TypeId, arg_tys.items) catch return,
             .defining_module = defining_module,
             .span = decl.span,
+            .block = ib,
         };
 
         const gop = self.l.param_impl_map.getOrPut(key) catch return;

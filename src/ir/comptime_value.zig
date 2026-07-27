@@ -9,6 +9,7 @@ const inst_mod = @import("inst.zig");
 
 const TypeId = types.TypeId;
 const FuncId = inst_mod.FuncId;
+const GlobalId = inst_mod.GlobalId;
 
 // ── Value ───────────────────────────────────────────────────────────────
 
@@ -26,6 +27,9 @@ pub const Value = union(enum) {
     closure: ClosureVal,
     type_tag: TypeId,
     heap_ptr: HeapPtr, // pointer into heap-allocated memory
+    /// A pointer word that resolves to a SYMBOL in the runtime image — the
+    /// escape of a comptime referent (specs.md §7.9).
+    image_ref: ImageRef,
     /// Byte-granular raw pointer. Produced by `index_gep` on a string /
     /// `[*]u8` aggregate whose data field is itself a raw integer pointer
     /// (e.g. from libc_malloc). Store/load through this variant operate
@@ -36,6 +40,24 @@ pub const Value = union(enum) {
     pub const ClosureVal = struct {
         func: FuncId,
         env: ?[]const Value,
+    };
+
+    /// Where an escaped pointer lands. A DECLARED global relocates in place:
+    /// nothing is copied, the image keeps the global's declared initializer,
+    /// and the referent stays as mutable as it was written. Anything else is a
+    /// comptime temporary and gets an anonymous image global of its own.
+    pub const ImageRef = union(enum) {
+        global: GlobalId,
+        object: *ImageObject,
+    };
+
+    /// One materialized comptime temporary. Identity is the record itself: the
+    /// walk hands the same `ImageObject` to every handle that shared the VM
+    /// object, so one anonymous global backs them all and borrow semantics
+    /// survive the escape.
+    pub const ImageObject = struct {
+        ty: TypeId,
+        value: Value = .undef,
     };
 
     /// A pointer to heap-allocated memory, with an optional byte offset.

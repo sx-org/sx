@@ -1,0 +1,5 @@
+error: a type list holds types — this element is a value
+  --> examples/protocols/1951-protocols-inline-for-element-kind.sx:8:20
+   |
+ 8 | SHAPES :: .[Point, 42];
+   |                    ^^

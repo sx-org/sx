@@ -1,0 +1,62 @@
+// A comptime protocol value that escapes into the image resolves per its
+// referent (specs.md §7.9). A referent that IS a declared global relocates to
+// that global's symbol: nothing is copied, the image keeps the global's own
+// initializer — so compile-time mutations of it vanish — and the referent stays
+// exactly as mutable at runtime as it was written.
+//
+// The escape is also a VALUE USE of the instantiation: `View` is named nowhere
+// else in runtime code, and its tag table and dispatch routine exist anyway
+// because the escaped handle carries one of its conformers.
+#import "modules/std.sx";
+
+View :: protocol tagged {
+    area :: (self: *Self) -> i64;
+}
+
+Widget :: struct { n: i64; }
+Native :: struct { n: i64; }
+impl View for Widget { area :: (self: *Widget) -> i64 { self.n * 10 } }
+impl View for Native { area :: (self: *Native) -> i64 { self.n + 1 } }
+
+g_widget := Widget.{ n = 4 };
+g_native := Native.{ n = 100 };
+
+// The comptime mutation is execution-local: it lands on the VM's own copy of
+// the global, which is discarded with the evaluation.
+pick_widget :: () -> View {
+    g_widget.n = 99;
+    return g_widget;
+}
+
+// Two evaluations that diverged on the same global both relocate to the one
+// symbol, and neither state wins — the global's declared initializer does.
+pick_native :: () -> View {
+    g_native.n = -1;
+    return g_native;
+}
+
+// An instantiation whose ONLY value use in runtime code is the escape itself:
+// nothing dispatches through `Slot`, and its tag table exists — the RTTI read
+// below answers through it — because the escaped handle carries a conformer.
+Slot :: protocol tagged { id :: (self: *Self) -> i64; }
+Anchor :: struct { k: i64; }
+impl Slot for Anchor { id :: (self: *Anchor) -> i64 { self.k } }
+g_anchor := Anchor.{ k = 9 };
+pick_slot :: () -> Slot { return g_anchor; }
+
+W :: #run pick_widget();
+N :: #run pick_native();
+S :: #run pick_slot();
+
+main :: () {
+    print("{} {}\n", W.area(), g_widget.n);
+    print("{} {}\n", N.area(), g_native.n);
+
+    // The relocated referent is the global itself: a runtime write through the
+    // name is a write through the escaped handle.
+    g_widget.n = 7;
+    g_native.n = 41;
+    print("{} {}\n", W.area(), N.area());
+
+    print("{}\n", type_name(type_of(S)));
+}

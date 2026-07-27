@@ -8,6 +8,7 @@ const program_index_mod = @import("../program_index.zig");
 const ProtocolDeclInfo = program_index_mod.ProtocolDeclInfo;
 const ProtocolMethodInfo = program_index_mod.ProtocolMethodInfo;
 const ProtocolResolver = @import("../protocols.zig").ProtocolResolver;
+const lower_tagged = @import("tagged.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -21,16 +22,37 @@ const ProtocolDefaultDispatchDomain = lower.ProtocolDefaultDispatchDomain;
 
 /// Shared implementation for the `has_impl(P, T)` builtin and its
 /// `tryConstBoolCondition` arm. The protocol expression is either:
-/// - Plain `Hash` (identifier / type_expr) → walks
-///   `protocol_thunk_map["Hash\x00<T>"]`.
-/// - Parameterised `Into(Block)` (call) → walks `param_impl_map`
-///   keyed by `"<P>\x00<arg_mangled>\x00<T_mangled>"`.
+/// - Plain `Hash` (identifier / type_expr) → tagged membership for a tagged
+///   declaration, else `protocol_thunk_map["Hash\x00<T>"]`.
+/// - Parameterised `Into(Block)` (call) → tagged membership of the queried
+///   instantiation for a tagged family, else `param_impl_map` keyed by
+///   `"<P>\x00<arg_mangled>\x00<T_mangled>"`.
 /// Returns false on any malformed protocol-arg shape (caller
 /// reports a diagnostic if it wants).
 pub fn computeHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
+    if (taggedProtocolOf(self, proto_node)) |pty| return taggedHasImpl(self, pty, ty, proto_node.span);
+    const answer = plainHasImpl(self, proto_node, ty);
+    if (spelledProtocolName(proto_node)) |name|
+        _ = implFactWaits(self, protocolTypeOf(self, proto_node), name, ty, answer);
+    return answer;
+}
+
+/// The impl-visibility answer itself, ahead of the discipline's wait. It is
+/// the same static fact that decides whether the site could ERASE (§7.9) —
+/// every protocol method reached by an impl — read off the declarations for a
+/// plain protocol and off the keyed entry for a parameterized one.
+fn plainHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
     switch (proto_node.data) {
-        .identifier => |id| return self.protocolResolver().hasImplPlain(id.name, ty),
-        .type_expr => |te| return self.protocolResolver().hasImplPlain(te.name, ty),
+        .identifier, .type_expr => {
+            const name: []const u8 = switch (proto_node.data) {
+                .identifier => |id| id.name,
+                else => proto_node.data.type_expr.name,
+            };
+            const p = self.protocolResolver().resolveProtocol(name, self.current_source_file) orelse return false;
+            const pty = p.ty orelse return false;
+            const cname = self.resolveConcreteTypeName(ty) orelse return false;
+            return firstUnimplementedMethod(self, pty, cname, ty) == null;
+        },
         .call => |c| {
             const p_name: []const u8 = switch (c.callee.data) {
                 .identifier => |id| id.name,
@@ -55,6 +77,127 @@ pub fn computeHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool
         },
         else => return false,
     }
+}
+
+/// The tagged instantiation a `has_impl`-shaped protocol spelling names, or
+/// null when it names something else — the other kinds answer site-local impl
+/// visibility, which is a different question. A parameterized family answers
+/// per instantiation: the query NAMES the instantiation, which materializes it
+/// exactly as any other mention would (§6.7).
+pub fn taggedProtocolOf(self: *Lowering, proto_node: *const Node) ?TypeId {
+    switch (proto_node.data) {
+        .identifier, .type_expr => {
+            const name: []const u8 = switch (proto_node.data) {
+                .identifier => |id| id.name,
+                else => proto_node.data.type_expr.name,
+            };
+            const p = self.protocolResolver().resolveProtocol(name, self.current_source_file) orelse return null;
+            const pty = p.ty orelse return null;
+            return if (lower_tagged.isTagged(self, pty)) pty else null;
+        },
+        .call => |c| {
+            const p_name: []const u8 = switch (c.callee.data) {
+                .identifier => |id| id.name,
+                .type_expr => |te| te.name,
+                else => return null,
+            };
+            const pd = self.protocolResolver().resolveParamProtocolHead(p_name, null) orelse return null;
+            if (pd.kind != .tagged) return null;
+            return instantiateParamProtocol(self, pd, c.args);
+        },
+        else => return null,
+    }
+}
+
+/// What the canonical membership source answers about a `has_impl`-shaped
+/// question, with the instantiation it resolved to — so a caller that can WAIT
+/// for the set to close names the right one in its bookmark. Null when the
+/// spelling names no tagged protocol.
+pub const TaggedQuery = struct { proto: TypeId, state: lower_tagged.Membership };
+
+pub fn taggedMembershipOf(self: *Lowering, proto_node: *const Node, ty: TypeId) ?TaggedQuery {
+    const proto_ty = taggedProtocolOf(self, proto_node) orelse return null;
+    return .{ .proto = proto_ty, .state = lower_tagged.taggedConformsNow(self, proto_ty, ty) };
+}
+
+/// `has_impl` on a tagged protocol is the canonical membership question asked
+/// at type level. A site that must decide NOW — one outside the expansion
+/// worklist, which has nowhere to park — refuses rather than reporting a
+/// `false` a later conformer could contradict.
+fn taggedHasImpl(self: *Lowering, proto_ty: TypeId, ty: TypeId, span: ast.Span) bool {
+    return switch (lower_tagged.taggedConformsNow(self, proto_ty, ty)) {
+        .member => true,
+        .absent_final => false,
+        .absent_unstable => blk: {
+            if (!membershipWaits(self, proto_ty, ty))
+                lower_tagged.refuseUnstableMembership(self, proto_ty, ty, span);
+            break :blk false;
+        },
+    };
+}
+
+/// A membership negative asked from inside a driver's fold WAITS: the fold is
+/// the one thing the drain can run again, so the read records the fact and the
+/// driver that reached it parks against the set closing. False where nothing
+/// can park, and the read takes its ordinary refusal.
+fn membershipWaits(self: *Lowering, proto_ty: TypeId, ty: TypeId) bool {
+    if (!self.expansion.scheduled()) return false;
+    const fact = std.fmt.allocPrint(self.alloc, "'{s}' membership of '{s}' to be final", .{
+        self.formatTypeName(proto_ty),
+        self.formatTypeName(ty),
+    });
+    self.expansion.awaitFact(fact catch "a tagged conformer set to be final");
+    return true;
+}
+
+/// The name an `impl` head would spell to reach the protocol `proto_node`
+/// names — the key the contribution ledger counts undecided drivers under.
+fn spelledProtocolName(proto_node: *const Node) ?[]const u8 {
+    return switch (proto_node.data) {
+        .identifier => |id| id.name,
+        .type_expr => |te| te.name,
+        .call => |c| switch (c.callee.data) {
+            .identifier => |id| id.name,
+            .type_expr => |te| te.name,
+            else => null,
+        },
+        else => null,
+    };
+}
+
+/// What the discipline owes a `constraint`/erased-kind impl read, and in which
+/// polarity. Impls are DECLARATIONS, so what an undecided driver could still
+/// write is the whole question — but the two kinds owe it differently. A
+/// `constraint` partition only ever grows, so a positive stands and only a
+/// negative waits. An erased target reads impl MULTIPLICITY (§7.4), which is
+/// monotone in NEITHER direction — a later impl repairs a miss exactly as
+/// readily as it destroys a program-unique success — so BOTH polarities wait,
+/// whether the count is zero, one, or already duplicated.
+fn implFactWaits(self: *Lowering, proto_ty: ?TypeId, proto_name: []const u8, ty: TypeId, answer: bool) bool {
+    if (!self.expansion.scheduled()) return false;
+    if (answer and !erasedKind(self, proto_ty)) return false;
+    if (!self.expansion.mayImpl(proto_name)) return false;
+    const fact = if (answer)
+        std.fmt.allocPrint(self.alloc, "'{s}' impls to be final before '{s}' is judged its unique conformer", .{ proto_name, self.formatTypeName(ty) })
+    else
+        std.fmt.allocPrint(self.alloc, "'{s}' impls to be final before '{s}' is judged a non-conformer", .{ proto_name, self.formatTypeName(ty) });
+    self.expansion.awaitFact(fact catch "an impl set to be final");
+    return true;
+}
+
+/// Does `proto_ty` carry a VALUE that stamps the impl it was erased with —
+/// the two kinds whose conversion facts depend on multiplicity?
+fn erasedKind(self: *Lowering, proto_ty: ?TypeId) bool {
+    const pty = proto_ty orelse return false;
+    const kind = protocolKindOf(self, pty) orelse return false;
+    return kind == .vtable or kind == .@"inline";
+}
+
+/// The protocol a `has_impl`-shaped spelling names, whatever its kind.
+fn protocolTypeOf(self: *Lowering, proto_node: *const Node) ?TypeId {
+    const name = spelledProtocolName(proto_node) orelse return null;
+    const p = self.protocolResolver().resolveProtocol(name, self.current_source_file) orelse return null;
+    return p.ty;
 }
 
 /// Register a protocol declaration as a struct type in the IR type table.
@@ -86,7 +229,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
         tb.put(tp.name, ty) catch {};
         arg_tys.append(self.alloc, ty) catch @panic("out of memory");
     }
-    const mangled = self.protocolResolver().paramProtocolInstanceName(pd.name, arg_tys.items);
+    const mangled = self.protocolResolver().paramProtocolInstanceName(self.protocolResolver().protocolIdentityName(pd), arg_tys.items);
     const name_id = table.internString(mangled);
     if (table.findByName(name_id)) |existing| {
         const info = table.get(existing);
@@ -98,8 +241,13 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     // registerProtocolDecl's layout.
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
     fields.append(self.alloc, .{ .name = table.internString("ctx"), .ty = void_ptr_ty }) catch unreachable;
-    fields.append(self.alloc, .{ .name = table.internString("__type_id"), .ty = .type_value }) catch unreachable;
-    if (pd.is_inline) {
+    fields.append(self.alloc, .{
+        .name = table.internString(if (pd.kind == .tagged) "__tag" else "__type_id"),
+        .ty = if (pd.kind == .tagged) .i64 else .type_value,
+    }) catch unreachable;
+    if (pd.kind == .tagged) {
+        // {ctx, __tag} — no dispatch word in the value.
+    } else if (pd.kind == .@"inline") {
         // Dispatchable methods only (Era-2) — mirrors registerProtocolDecl.
         for (pd.methods) |m| {
             if (program_index_mod.protocolMethodSelfOccurrence(m) != null) continue;
@@ -139,30 +287,45 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
             break :blk self.resolveTypeWithBindings(rt);
         } else .void;
         const self_occ = program_index_mod.protocolMethodSelfOccurrence(method);
-        method_infos.append(self.alloc, .{
+        const shape = program_index_mod.protocolMethodSelfShape(self.alloc, method);
+        var info: ProtocolMethodInfo = .{
             .name = method.name,
             .param_types = self.alloc.dupe(TypeId, ptypes.items) catch unreachable,
             .ret_type = ret,
             .dispatchable = self_occ == null,
             .self_param = if (self_occ) |occ| occ.param_name else null,
-        }) catch unreachable;
+            .self_params = shape.direct_params,
+            .returns_self = shape.direct_return,
+            .self_at_depth = shape.at_depth,
+            .expand = pd.is_expand or method.is_expand,
+        };
+        program_index_mod.applyDispatchSignature(self.alloc, &info, pd.kind, id);
+        method_infos.append(self.alloc, info) catch unreachable;
     }
     self.type_bindings = saved_tb;
 
     const owned = self.alloc.dupe(u8, mangled) catch return id;
     const protocol_info: ProtocolDeclInfo = .{
         .name = owned,
-        .is_inline = pd.is_inline,
+        .kind = pd.kind,
         .ownership = if (pd.is_identity) .identity else .value_own,
         .methods = self.alloc.dupe(ProtocolMethodInfo, method_infos.items) catch unreachable,
     };
     self.program_index.protocol_decl_map.put(owned, protocol_info) catch {};
     self.protocol_info_by_type.put(id, protocol_info) catch @panic("out of memory");
+    // The canonical argument tuple, kept alongside the family's declaration
+    // identity: conformer collection, coherence, and the empty-set diagnostic
+    // all key on this pair rather than on the instance's display name.
+    self.param_protocol_instances.put(id, .{
+        .base = self.protocolResolver().protocolIdentityName(pd),
+        .args = self.alloc.dupe(TypeId, arg_tys.items) catch unreachable,
+        .decl = pd,
+    }) catch @panic("out of memory");
     // Record the type-arg binding so projection (`xs.T`, `.value`) and
     // method-arg resolution on this instance can recover it.
     self.struct_instance_bindings.put(owned, tb) catch {};
 
-    if (!pd.is_inline) {
+    if (pd.kind != .@"inline" and pd.kind != .tagged) {
         var vtable_fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
         for (pd.methods) |m| {
             if (program_index_mod.protocolMethodSelfOccurrence(m) != null) continue;
@@ -226,6 +389,100 @@ pub fn isProtocolConstraint(self: *Lowering, written: []const u8, source: ?[]con
     return self.protocolResolver().isProtocolConstraint(written, source);
 }
 
+/// The declared kind of the protocol `ty` names, or null when `ty` is not a
+/// protocol type.
+pub fn protocolKindOf(self: *Lowering, ty: TypeId) ?ast.ProtocolKind {
+    if (ty.isBuiltin() or ty == .unresolved) return null;
+    const info = self.module.types.get(ty);
+    if (info != .@"struct" or !info.@"struct".is_protocol) return null;
+    const pd = self.getProtocolInfo(ty) orelse return null;
+    return pd.kind;
+}
+
+/// The protocol reached through `ty`'s composite spine (`*P`, `?P`, `[]P`,
+/// `[N]P`, `[*]P`) whose values do not exist — `constraint` alone. Struct
+/// FIELDS are not walked: each was checked at its own declaration.
+fn valuelessProtocolIn(self: *Lowering, ty: TypeId) ?TypeId {
+    if (ty.isBuiltin() or ty == .unresolved) return null;
+    const info = self.module.types.get(ty);
+    return switch (info) {
+        .pointer => |p| valuelessProtocolIn(self, p.pointee),
+        .many_pointer => |p| valuelessProtocolIn(self, p.element),
+        .optional => |o| valuelessProtocolIn(self, o.child),
+        .slice => |sl| valuelessProtocolIn(self, sl.element),
+        .array => |a| valuelessProtocolIn(self, a.element),
+        .@"struct" => |s| blk: {
+            if (!s.is_protocol) break :blk null;
+            const pd = self.getProtocolInfo(ty) orelse break :blk null;
+            break :blk if (pd.kind == .constraint) ty else null;
+        },
+        else => null,
+    };
+}
+
+/// Refuse a protocol whose kind has no runtime values at a position that
+/// would make or store one. `what` completes "cannot …" — "make a value of",
+/// "declare a field of type". Returns true when a diagnostic was emitted.
+pub fn refuseValuelessProtocol(self: *Lowering, ty: TypeId, span: ast.Span, what: []const u8) bool {
+    // A tagged protocol named in a storable position REACHES its
+    // instantiation — the tables materialize even when no value is ever made
+    // here (spec §6.6).
+    if (self.taggedIn(ty)) |p| self.reachTagged(p);
+    const offender = valuelessProtocolIn(self, ty) orelse return false;
+    const name = self.formatTypeName(offender);
+    const d = self.diagnostics orelse return true;
+    // The guidance is use-site only: stay concrete, or bind through a
+    // constraint. Whether the protocol should have runtime values is its
+    // author's decision, made at the declaration.
+    d.addFmt(.err, span, "cannot {s} '{s}' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/{s}') where polymorphism is needed", .{ what, name, name });
+    return true;
+}
+
+/// The escape rules for a comptime result that lands in the runtime image
+/// (specs.md §7.9), applied to the type it escapes AS.
+///
+/// An escape is a VALUE USE of every tagged instantiation it carries: which
+/// conformer comes out is decided by the evaluation, so the whole set is
+/// reached and seeded here and its tables and numbering exist by emission. An
+/// OWNING erased value cannot make the trip at all — no runtime allocator owns
+/// a compile-time copy — while a borrow (a view, an `#identity` handle) is only
+/// ever a pointer to storage the image already has.
+pub fn checkComptimeEscape(self: *Lowering, ty: TypeId, span: ast.Span) void {
+    var seen = std.ArrayList(TypeId).empty;
+    defer seen.deinit(self.alloc);
+    walkEscape(self, ty, span, true, &seen);
+}
+
+fn walkEscape(self: *Lowering, ty: TypeId, span: ast.Span, by_value: bool, seen: *std.ArrayList(TypeId)) void {
+    if (ty.isBuiltin() or ty == .unresolved) return;
+    for (seen.items) |s| if (s == ty) return;
+    seen.append(self.alloc, ty) catch @panic("out of memory");
+    switch (self.module.types.get(ty)) {
+        .pointer => |p| walkEscape(self, p.pointee, span, false, seen),
+        .many_pointer => |p| walkEscape(self, p.element, span, false, seen),
+        .optional => |o| walkEscape(self, o.child, span, by_value, seen),
+        .slice => |sl| walkEscape(self, sl.element, span, false, seen),
+        .array => |a| walkEscape(self, a.element, span, by_value, seen),
+        .tuple => |t| for (t.fields) |f| walkEscape(self, f, span, by_value, seen),
+        .@"struct" => |s| {
+            if (!s.is_protocol) {
+                for (s.fields) |f| walkEscape(self, f.ty, span, by_value, seen);
+                return;
+            }
+            const pd = self.getProtocolInfo(ty) orelse return;
+            if (pd.kind == .tagged) {
+                self.seedTagged(ty);
+                return;
+            }
+            if (!by_value or pd.kind == .constraint or pd.ownership == .identity) return;
+            if (self.diagnostics) |d| {
+                d.addFmt(.err, span, "a '{s}' value owns its storage and cannot escape a `#run` — no runtime allocator owns a compile-time copy; bind the concrete value, and let the owning erasure happen at runtime", .{self.formatTypeName(ty)});
+            }
+        },
+        else => {},
+    }
+}
+
 /// Get or create thunks for a (protocol, concrete_type) pair.
 /// Returns a slice of FuncIds, one per protocol method.
 pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) []const FuncId {
@@ -242,7 +499,7 @@ pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: 
     // EMISSION: materialize one thunk per DISPATCHABLE method (stays in
     // Lowering). Excluded methods (Era-2: `Self` past the receiver) have no
     // slot anywhere — the thunk list must align with the filtered
-    // vtable/#inline field lists built at protocol registration.
+    // vtable / `inline` field lists built at protocol registration.
     for (methods) |method| {
         if (!method.dispatchable) continue;
         const thunk_id = self.createProtocolThunk(proto_ty, pd.name, concrete_type_name, concrete_ty, method);
@@ -254,25 +511,28 @@ pub fn getOrCreateThunks(self: *Lowering, proto_ty: TypeId, concrete_type_name: 
     return owned;
 }
 
-/// Fold `xx <global>` at an `#inline`-PROTOCOL-typed static initializer into
-/// the inline protocol constant `{ ctx, __type_id, thunk fn-refs… }` — the
-/// spellable form of the default-context thunk tables (L8 rider a). Only an
+/// Fold `<global>` / `xx <global>` at a BORROW-kind protocol-typed static
+/// initializer into that kind's constant: `{ ctx, __type_id, thunk fn-refs… }`
+/// for `inline`, `{ ctx, __tag }` for `tagged` (L8 rider a). Only an
 /// IDENTIFIER naming a registered top-level global qualifies: the erasure
 /// BORROWS the global's stable storage (identity semantics), so ctx is the
 /// global's address — ALWAYS, stateless impls included (ruled 2026-07-19: no
 /// null-receiver shortcut; a null ctx is the `?Protocol` "absent" sentinel
-/// and must never appear in a live protocol value). Null result = not this
-/// shape / not resolvable; the caller falls through to its non-const
-/// diagnostic.
+/// and must never appear in a live protocol value). The tagged form's number
+/// is not known here at all — the pair travels in the constant and resolves
+/// where every other tag does (§7.9). Null result = not this shape / not
+/// resolvable; the caller falls through to its non-const diagnostic.
 pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: TypeId) ?inst_mod.ConstantValue {
     const tbl = &self.module.types;
     if (proto_ty.isBuiltin()) return null;
     const proto_ti = tbl.get(proto_ty);
     if (proto_ti != .@"struct" or !proto_ti.@"struct".is_protocol) return null;
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
-    // Non-#inline protocols carry a vtable pointer, not inline fn slots — a
-    // static form for those is a separate step. (Allocator / Io are #inline.)
-    if (!pd.is_inline) return null;
+    // Vtable-kind protocols carry a vtable pointer, not inline fn slots — a
+    // static form for those is a separate step. (The two capability protocols
+    // reaching here, `Allocator` and `Io`, are `inline`; a tagged one folds
+    // through the same path.)
+    if (pd.kind != .@"inline" and pd.kind != .tagged) return null;
     if (operand.data != .identifier) return null;
     const gname = operand.data.identifier.name;
     const g: program_index_mod.GlobalInfo = switch (self.selectGlobalAuthor(gname)) {
@@ -280,6 +540,13 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
         .untracked => self.program_index.global_names.get(gname) orelse return null,
         else => return null,
     };
+    if (pd.kind == .tagged) {
+        lower_tagged.admitTaggedValue(self, proto_ty, g.ty);
+        const fields = self.alloc.alloc(inst_mod.ConstantValue, 2) catch return null;
+        fields[0] = .{ .global_ref = g.id };
+        fields[1] = .{ .tagged_tag = .{ .proto = proto_ty, .concrete = g.ty } };
+        return .{ .aggregate = fields };
+    }
     const concrete_name = self.formatTypeName(g.ty);
     const thunks = self.getOrCreateThunks(proto_ty, concrete_name, g.ty);
     const want = dispatchableCount(pd.methods);
@@ -291,13 +558,60 @@ pub fn protocolErasureConst(self: *Lowering, operand: *const Node, proto_ty: Typ
     return .{ .aggregate = fields };
 }
 
+/// What the protocol-typed arm of the global-initializer serializer decided.
+pub const ProtocolGlobalInit = union(enum) {
+    /// Not a borrow-kind protocol-typed global — the ordinary serializer owns it.
+    not_applicable,
+    folded: inst_mod.ConstantValue,
+    /// Refused; the diagnostic is already out.
+    refused,
+};
+
+/// The static initializer of a borrow-kind protocol-typed global (§7.6): the
+/// identity erasure of a NAMED global instance, written `g` or `xx g`. A
+/// protocol value in static data is a borrow, and only a global has an
+/// address to borrow — so every other initializer shape is refused HERE,
+/// before the shape dispatch serializes it field-wise against the handle's
+/// layout and builds a value whose ctx word is a payload byte. `null` / `---`
+/// keep their own meaning and never reach this arm.
+pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Node, proto_ty: TypeId) ProtocolGlobalInit {
+    if (proto_ty.isBuiltin()) return .not_applicable;
+    const proto_ti = self.module.types.get(proto_ty);
+    if (proto_ti != .@"struct" or !proto_ti.@"struct".is_protocol) return .not_applicable;
+    const pd = self.getProtocolInfo(proto_ty) orelse return .not_applicable;
+    if (pd.kind != .@"inline" and pd.kind != .tagged) return .not_applicable;
+
+    const named: ?*const Node = switch (v.data) {
+        .identifier => v,
+        .unary_op => |u| if (u.op == .xx and u.operand.data == .identifier) u.operand else null,
+        else => null,
+    };
+    const operand = named orelse {
+        if (self.diagnostics) |d| {
+            const pname = self.formatTypeName(proto_ty);
+            d.addFmt(.err, v.span, "'{s}' is a '{s}' value, which borrows its receiver — its initializer must NAME a global instance to borrow ('{s} : {s} = the_instance;'), and this expression has no address to point at", .{ vd.name, pname, vd.name, pname });
+        }
+        return .refused;
+    };
+    const gname = operand.data.identifier.name;
+    const g: program_index_mod.GlobalInfo = switch (self.selectGlobalAuthor(gname)) {
+        .resolved => |sel| sel,
+        .untracked => self.program_index.global_names.get(gname) orelse return .not_applicable,
+        else => return .not_applicable,
+    };
+    if (refuseNonConformer(self, proto_ty, self.formatTypeName(g.ty), g.ty, v.span)) return .refused;
+    if (protocolErasureConst(self, operand, proto_ty)) |cv| return .{ .folded = cv };
+    return .not_applicable;
+}
+
 /// Emit the process-wide default Context as an LLVM static constant.
 ///
 ///   @__sx_default_context = internal constant %Context {
-///     %Allocator { ptr null, i64 <CAllocator type_id>,
+///     %Allocator { ptr null, i64 <CAllocator type_id>,      (each field in
 ///                  ptr @__thunk_CAllocator_Allocator_alloc_bytes,
 ///                  ptr @__thunk_CAllocator_Allocator_dealloc_bytes },
-///     %Io { … }, <each #context_extend field's evaluated default>
+///     %Io { … },                                     its protocol's own
+///     <each #context_extend field's evaluated default>   declared layout)
 ///   }
 ///
 /// The initializer is built by walking the ASSEMBLED Context's fields BY
@@ -883,23 +1197,20 @@ pub fn refuseProtocolAssertTargetOnAny(self: *Lowering, type_node: *const Node, 
     return true;
 }
 
-/// Allocate `size_ref` bytes through an ALLOCATOR VALUE (#inline layout
-/// {ctx, __type_id, alloc_fn, dealloc_fn}) — the named-allocator dual of
-/// `allocViaContext`, for the `.(P, alloc)` owning erasure.
+/// Allocate `size_ref` bytes through an ALLOCATOR VALUE — the named-allocator
+/// dual of `allocViaContext`, for the `.(P, alloc)` owning erasure. Goes
+/// through the ordinary method dispatch, so the allocator protocol's kind
+/// stays a property of its declaration.
 pub fn allocViaAllocatorValue(self: *Lowering, allocator: Ref, size_ref: Ref) Ref {
-    const void_ptr_ty = self.module.types.ptrTo(.void);
-    const alloc_ctx = self.builder.structGet(allocator, 0, void_ptr_ty);
-    const fn_ptr = self.builder.structGet(allocator, 2, void_ptr_ty);
-    const args = if (self.implicit_ctx_enabled)
-        self.alloc.dupe(Ref, &.{ self.current_ctx_ref, alloc_ctx, size_ref }) catch unreachable
-    else
-        self.alloc.dupe(Ref, &.{ alloc_ctx, size_ref }) catch unreachable;
-    return self.builder.emit(.{ .call_indirect = .{ .callee = fn_ptr, .args = args } }, void_ptr_ty);
+    const alloc_ty = self.builder.getRefType(allocator);
+    const pd = self.getProtocolInfo(alloc_ty) orelse return self.emitError("allocator", null);
+    const cs = self.builder.current_span;
+    return emitProtocolDispatch(self, allocator, pd, "alloc_bytes", &.{size_ref}, alloc_ty, .{ .start = cs.start, .end = cs.end });
 }
 
 fn erasureAlloc(self: *Lowering, alloc_val: ?Ref, size_ref: Ref) Ref {
     if (alloc_val) |a| return allocViaAllocatorValue(self, a, size_ref);
-    return self.allocViaContext(size_ref, self.module.types.ptrTo(.void));
+    return self.allocViaContext(size_ref);
 }
 
 /// Postfix OWNING erasure `expr.(P)` / `expr.(P, alloc)` — the ownership
@@ -915,8 +1226,21 @@ fn erasureAlloc(self: *Lowering, alloc_val: ?Ref, size_ref: Ref) Ref {
 /// The allocator argument must be an LVALUE naming an allocator; absent =
 /// context.allocator at the erasure.
 pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: TypeId, span: ast.Span) Ref {
+    if (self.refuseValuelessProtocol(dst_ty, span, "make a value of")) return self.builder.constUndef(dst_ty);
     const dst_pi = self.getProtocolInfo(dst_ty) orelse return self.builder.constUndef(dst_ty);
     const void_ptr_ty = self.module.types.ptrTo(.void);
+
+    // A tagged target has no owning form at all: postfix `.(P)` is exactly
+    // the implicit coercion, and there is nothing for an allocator to do.
+    if (dst_pi.kind == .tagged) {
+        if (pc.alloc_arg != null) {
+            if (self.diagnostics) |d|
+                d.addFmt(.err, span, "'.({s}, alloc)' on a tagged protocol — a tagged value is always a borrow and allocates nothing; write '.({s})', or the implicit coercion", .{ dst_pi.name, dst_pi.name });
+            return self.builder.constUndef(dst_ty);
+        }
+        const operand = self.lowerExpr(pc.operand);
+        return self.buildProtocolErasure(operand, pc.operand, self.builder.getRefType(operand), dst_ty);
+    }
 
     if (dst_pi.ownership == .identity) {
         if (pc.alloc_arg != null) {
@@ -1006,7 +1330,7 @@ pub fn lowerOwningErasure(self: *Lowering, pc: *const ast.PostfixCast, dst_ty: T
 }
 
 /// Number of Era-2 dispatchable methods — the slot count of the protocol's
-/// vtable / #inline fn-ptr fields and of its thunk list.
+/// vtable / `inline` fn-ptr fields and of its thunk list.
 pub fn dispatchableCount(methods: []const ProtocolMethodInfo) usize {
     var n: usize = 0;
     for (methods) |m| {
@@ -1024,32 +1348,12 @@ pub fn dispatchableCount(methods: []const ProtocolMethodInfo) usize {
 pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []const u8, concrete_type_name: []const u8, proto_ty: TypeId, concrete_ty: TypeId, heap_copy: bool) Ref {
     const pd = self.getProtocolInfo(proto_ty) orelse return concrete_ptr;
 
-    // Conformance gate: a concrete type may only be erased to a protocol it
-    // actually `impl`-ements. Without this, `getOrCreateThunks` below would
-    // happily synthesize a vtable whose thunks fall through to `unreachable`
-    // (no resolvable concrete method) — a SILENT SIGABRT at the first dispatch
-    // with no diagnostic (issue 0176). Surface it as a hard error instead.
-    if (firstUnimplementedMethod(self, proto_ty, concrete_type_name, concrete_ty)) |nc| {
-        if (self.diagnostics) |d| {
-            const cs = self.builder.current_span;
-            const span = ast.Span{ .start = cs.start, .end = cs.end };
-            switch (nc.kind) {
-                .missing => d.addFmt(.err, span, "'{s}' does not implement protocol '{s}': no `impl {s} for {s}` provides method '{s}' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)", .{ concrete_type_name, proto_name, proto_name, concrete_type_name, nc.method }),
-                .signature_mismatch => d.addFmt(.err, span, "'{s}' does not implement protocol '{s}': method '{s}' has a mismatched signature — a protocol-method impl must not introduce its own type parameters (e.g. `$T: Type`); it must match the protocol's signature exactly", .{ concrete_type_name, proto_name, nc.method }),
-                .type_mismatch => d.addFmt(.err, span, "'{s}' does not implement protocol '{s}': method '{s}' has a mismatched signature — {s} (a protocol-method impl must match the protocol's declared types exactly, with `Self` written as `{s}`)", .{ concrete_type_name, proto_name, nc.method, nc.detail, concrete_type_name }),
-                .arity_mismatch => d.addFmt(.err, span, "'{s}' does not implement protocol '{s}': method '{s}' {s}", .{ concrete_type_name, proto_name, nc.method, nc.detail }),
-            }
-        } else {
-            // Gap 2 — no diagnostics channel (e.g. a comptime sub-lowering that
-            // never set `self.diagnostics`). Emitting the placeholder here would
-            // ship LLVM `undef` with `hasErrors() == false`: a non-conforming
-            // erasure reaching codegen silently. That is a compiler-invariant
-            // violation, so trip loudly per CLAUDE.md's "hard tripwire" guidance
-            // rather than fall through to the placeholder. The normal
-            // compilation path always sets `diagnostics`, so this never fires
-            // there — it only catches a future caller that forgets to plumb one.
-            std.debug.panic("protocol-erasure conformance failure with no diagnostics channel: '{s}' does not implement '{s}' (method '{s}'); cannot surface to the user — refusing to ship undef", .{ concrete_type_name, proto_name, nc.method });
-        }
+    // Neither polarity of the multiplicity read is publishable while an
+    // undecided driver could still write another `impl` into this protocol.
+    if (implFactWaits(self, proto_ty, pd.name, concrete_ty, true))
+        return self.builder.emit(.{ .placeholder = self.module.types.internString("erasure-await") }, proto_ty);
+
+    if (refuseNonConformer(self, proto_ty, concrete_type_name, concrete_ty, null)) {
         // Return a placeholder TYPED AS THE PROTOCOL so a downstream coercion
         // doesn't re-attempt erasure (and re-report) on a mistyped result. The
         // build already has `hasErrors()`, so the placeholder never ships.
@@ -1069,16 +1373,117 @@ pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []cons
     if (heap_copy) {
         const concrete_size = self.module.types.typeSizeBytes(concrete_ty);
         const size_ref = self.builder.constInt(@intCast(concrete_size), .i64);
-        const heap_ptr = self.allocViaContext(size_ref, void_ptr_ty);
+        const heap_ptr = self.allocViaContext(size_ref);
         _ = self.callExtern("memcpy", &.{ heap_ptr, concrete_ptr, size_ref }, void_ptr_ty);
         ctx_ptr = heap_ptr;
     }
+    return buildErasedValue(self, ctx_ptr, proto_name, concrete_type_name, proto_ty, concrete_ty, thunks, pd);
+}
+
+/// The soft probe `x.(?P)` on a CONCRETE receiver (§7.9): under `?`, a
+/// protocol target on a concrete value asks conformance instead of
+/// converting, so a non-conformer answers `null` where the erasure would
+/// error. What it asks is per kind — site-local impl visibility on the
+/// constraint/erased kinds, whole-program membership on `tagged`. Returns
+/// null when the site is not a probe ANSWER: the pair conforms, and the
+/// ordinary soft erasure lowers it.
+pub fn lowerProtocolProbe(self: *Lowering, pc: *const ast.PostfixCast, proto_ty: TypeId, dst_ty: TypeId) ?Ref {
+    // A constraint protocol has no values at all, which is a different fact
+    // from this type not conforming — leave it to the valueless refusal.
+    if (valuelessProtocolIn(self, proto_ty) != null) return null;
+    const recv_ty = self.inferExprType(pc.operand);
+    if (recv_ty == .unresolved or recv_ty == .void) return null;
+    const concrete_ty = if (recv_ty.isBuiltin()) recv_ty else switch (self.module.types.get(recv_ty)) {
+        .pointer => |p| p.pointee,
+        else => recv_ty,
+    };
+    if (self.isTagged(proto_ty)) {
+        const membership = lower_tagged.taggedConformsNow(self, proto_ty, concrete_ty);
+        // A member erases: the ordinary soft erasure lowers the value.
+        if (membership == .member) return null;
+        // An expansion-driving body is EVALUATED here, so it cannot carry the
+        // negative to finality the way emitted code does. Under a driver's
+        // fold the answer is not owed yet: the body WAITS for the set to close
+        // and the driver holding it parks. Anywhere else there is nothing to
+        // park, so an open set refuses and a closed one answers null.
+        if (self.comptime_phase == .expansion) {
+            if (membership == .absent_unstable and !membershipWaits(self, proto_ty, concrete_ty))
+                lower_tagged.refuseUnstableMembership(self, proto_ty, concrete_ty, pc.type_expr.span);
+            _ = probeReceiverAddress(self, pc.operand, recv_ty);
+            return self.builder.constNull(dst_ty);
+        }
+        const ctx_ptr = probeReceiverAddress(self, pc.operand, recv_ty) orelse return null;
+        return lower_tagged.lowerTaggedProbe(self, ctx_ptr, proto_ty, concrete_ty, dst_ty);
+    }
+    const cname = self.resolveConcreteTypeName(concrete_ty) orelse return null;
+    if (firstUnimplementedMethod(self, proto_ty, cname, concrete_ty) == null) return null;
+    if (self.getProtocolInfo(proto_ty)) |pi| _ = implFactWaits(self, proto_ty, pi.name, concrete_ty, false);
+    return self.builder.constNull(dst_ty);
+}
+
+/// The storage the probe's answer would borrow. A pointer receiver IS the
+/// address; an lvalue borrows the storage its value was read through; an
+/// rvalue gets a frame temporary.
+fn probeReceiverAddress(self: *Lowering, node: *const ast.Node, recv_ty: TypeId) ?Ref {
+    if (recv_ty == .void) return null;
+    if (!recv_ty.isBuiltin() and self.module.types.get(recv_ty) == .pointer) return self.lowerExpr(node);
+    const val = self.lowerExpr(node);
+    if (self.isLvalueExpr(node)) {
+        if (self.refStorageAddress(val)) |addr| return addr;
+    }
+    const slot = self.builder.alloca(recv_ty);
+    self.builder.store(slot, val);
+    return slot;
+}
+
+/// The conformance gate shared by every erasure spelling: a concrete type may
+/// only become a protocol value of a protocol it actually `impl`-ements.
+/// Without it, thunk synthesis falls through to `unreachable` — a silent
+/// SIGABRT at the first dispatch with no diagnostic (issue 0176). `at`
+/// defaults to the builder's current span.
+pub fn refuseNonConformer(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId, at: ?ast.Span) bool {
+    const proto_name = self.getProtocolInfo(proto_ty).?.name;
+    // A tagged protocol nothing implements anywhere refuses first: no value
+    // of it can exist at all, which is a different fact from this one type
+    // not conforming.
+    const span = at orelse blk: {
+        const cs = self.builder.current_span;
+        break :blk ast.Span{ .start = cs.start, .end = cs.end };
+    };
+    if (self.refuseEmptyTaggedSet(proto_ty, span)) return true;
+    if (self.refuseNonMemberTagged(proto_ty, concrete_ty, span)) return true;
+    if (firstUnimplementedMethod(self, proto_ty, concrete_type_name, concrete_ty)) |nc| {
+        if (self.diagnostics) |d| {
+            switch (nc.kind) {
+                .missing => d.addFmt(.err, span, "'{s}' does not implement protocol '{s}': no `impl {s} for {s}` provides method '{s}' (protocol erasure is impl-driven — a plain or `ufcs` free function with a matching receiver does not satisfy a protocol)", .{ concrete_type_name, proto_name, proto_name, concrete_type_name, nc.method }),
+                .signature_mismatch => d.addFmt(.err, span, "'{s}' does not implement protocol '{s}': method '{s}' has a mismatched signature — a protocol-method impl must not introduce its own type parameters (e.g. `$T: Type`); it must match the protocol's signature exactly", .{ concrete_type_name, proto_name, nc.method }),
+                .type_mismatch => d.addFmt(.err, span, "'{s}' does not implement protocol '{s}': method '{s}' has a mismatched signature — {s} (a protocol-method impl must match the protocol's declared types exactly, with `Self` written as `{s}`)", .{ concrete_type_name, proto_name, nc.method, nc.detail, concrete_type_name }),
+                .arity_mismatch => d.addFmt(.err, span, "'{s}' does not implement protocol '{s}': method '{s}' {s}", .{ concrete_type_name, proto_name, nc.method, nc.detail }),
+            }
+        } else {
+            // Gap 2 — no diagnostics channel (e.g. a comptime sub-lowering that
+            // never set `self.diagnostics`). Emitting the placeholder here would
+            // ship LLVM `undef` with `hasErrors() == false`: a non-conforming
+            // erasure reaching codegen silently. That is a compiler-invariant
+            // violation, so trip loudly per CLAUDE.md's "hard tripwire" guidance
+            // rather than fall through to the placeholder. The normal
+            // compilation path always sets `diagnostics`, so this never fires
+            // there — it only catches a future caller that forgets to plumb one.
+            std.debug.panic("protocol-erasure conformance failure with no diagnostics channel: '{s}' does not implement '{s}' (method '{s}'); cannot surface to the user — refusing to ship undef", .{ concrete_type_name, proto_name, nc.method });
+        }
+        return true;
+    }
+    return false;
+}
+
+fn buildErasedValue(self: *Lowering, ctx_ptr: Ref, proto_name: []const u8, concrete_type_name: []const u8, proto_ty: TypeId, concrete_ty: TypeId, thunks: []const FuncId, pd: ProtocolDeclInfo) Ref {
+    const void_ptr_ty = self.module.types.ptrTo(.void);
 
     // RTTI: the concrete type's id, stamped at erasure (slot 1 of both
     // layouts). This is what the downcast / protocol type switch read.
     const type_id_ref = self.builder.constType(concrete_ty);
 
-    if (pd.is_inline) {
+    if (pd.kind == .@"inline") {
         // Inline: { ctx, __type_id, fn1, fn2, ... }
         var field_vals = std.ArrayList(Ref).empty;
         defer field_vals.deinit(self.alloc);
@@ -1094,7 +1499,7 @@ pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []cons
         // Vtable: { ctx, vtable_ptr }
         // Vtable is a global constant (same function pointers for every instance
         // of the same Protocol+ConcreteType pair). Cached per pair.
-        const vtable_ty = self.protocol_vtable_type_by_type.get(proto_ty) orelse return concrete_ptr;
+        const vtable_ty = self.protocol_vtable_type_by_type.get(proto_ty) orelse return ctx_ptr;
 
         const identity_ty: ?TypeId = if (self.protocol_ast_by_type.contains(proto_ty)) proto_ty else null;
         const key = self.protocolResolver().protocolConcreteKey(identity_ty, proto_name, concrete_ty);
@@ -1135,7 +1540,7 @@ pub fn buildProtocolValue(self: *Lowering, concrete_ptr: Ref, proto_name: []cons
 /// Returns the call result ref.
 pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: ProtocolDeclInfo, method_name: []const u8, args: []const Ref, proto_ty: TypeId, span: ast.Span) Ref {
     // Find the method and its slot among the DISPATCHABLE methods only —
-    // vtable/#inline layouts carry no slot for an excluded method (Era-2),
+    // vtable / `inline` layouts carry no slot for an excluded method (Era-2),
     // so the slot index counts dispatchable predecessors, not decl order.
     var method_info: ?ProtocolMethodInfo = null;
     var midx: usize = 0;
@@ -1151,8 +1556,26 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
     // Era-2 availability: a method whose signature mentions `Self` past the
     // receiver has no expressible type at an erased call site — it has no
     // slot, and calling it through P / *P is a compile error pointing at
-    // the generic-bound path (where Self IS known, as the bound `T`).
-    if (!mi.dispatchable) {
+    // the generic-bound path (where Self IS known, as the bound `T`). A
+    // TAGGED value dispatches the DIRECT `Self` positions (§6.4): every arm
+    // knows `Self`, so only a mention at depth — and a `Self` RETURN on an
+    // `#identity` protocol — stays excluded there.
+    if (!mi.dispatchable and proto_info.kind == .tagged) {
+        if (!lower_tagged.taggedDispatchable(proto_info, mi)) {
+            if (self.diagnostics) |d| {
+                if (mi.self_at_depth) {
+                    const where: []const u8 = if (mi.self_param) |pname|
+                        std.fmt.allocPrint(self.alloc, "its parameter '{s}'", .{pname}) catch "a parameter"
+                    else
+                        "its return type";
+                    d.addFmt(.err, span, "'{s}' is unavailable on a tagged '{s}' value — {s} mentions 'Self' under a composite ('*Self', '?Self', '[]Self', 'Box(Self)'), which has no caller-side type: a composite of 16-byte '{s}' handles is not a composite of any one conformer, and no per-element coercion exists; call it through a generic bound instead: `f :: (a: $T/{s}) {{ a.{s}(…); }}`", .{ method_name, proto_info.name, where, proto_info.name, proto_info.name, method_name });
+                } else {
+                    d.addFmt(.err, span, "'{s}' returns 'Self' and '{s}' is an '#identity' tagged protocol — an arm would materialize an anonymous frame-scoped instance, which the naming discipline refuses; call it on a concrete receiver, or through a generic bound: `f :: (a: $T/{s}) -> T {{ a.{s}() }}`", .{ method_name, proto_info.name, proto_info.name, method_name });
+                }
+            }
+            return Ref.none;
+        }
+    } else if (!mi.dispatchable) {
         if (self.diagnostics) |d| {
             if (mi.self_param) |pname| {
                 d.addFmt(.err, span, "'{s}' is unavailable on an erased '{s}' value — its parameter '{s}: Self' has no expressible type here ('Self' denotes no type through erasure); call it through a generic bound instead: `f :: (a: $T/{s}, b: T) {{ a.{s}(b); }}`", .{ method_name, proto_info.name, pname, proto_info.name, method_name });
@@ -1176,12 +1599,22 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
         return Ref.none;
     }
 
+    // A tagged value dispatches through its protocol's outlined switch — one
+    // call, set-independent at the site; the switch (and its single-conformer
+    // fold) lives inside the routine. A bare `-> Self` method is the one
+    // exception: its result ABI is the arm's, so the switch expands at the
+    // call site (§6.3).
+    if (proto_info.kind == .tagged) {
+        if (self.refuseEmptyTaggedSet(proto_ty, span)) return self.builder.constUndef(mi.dispatch_ret_type);
+        return self.emitTaggedDispatch(receiver, proto_info, proto_ty, mi, args, span);
+    }
+
     // Extract ctx from protocol struct (field 0)
     const void_ptr = self.module.types.ptrTo(.void);
     const ctx = self.builder.structGet(receiver, 0, void_ptr);
 
     // Extract fn_ptr
-    const fn_ptr = if (proto_info.is_inline) blk: {
+    const fn_ptr = if (proto_info.kind == .@"inline") blk: {
         // Inline: fn_ptr at field 2+method_idx ({ctx, __type_id, fns…})
         break :blk self.builder.structGet(receiver, @intCast(2 + midx), void_ptr);
     } else blk: {
@@ -1191,7 +1624,6 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
         const vtable = self.builder.emit(.{ .deref = .{ .operand = vtable_ptr } }, vtable_ty);
         break :blk self.builder.structGet(vtable, @intCast(midx), void_ptr);
     };
-    _ = proto_ty;
 
     // Build call args: [__sx_ctx]? + receiver_ctx + user args.
     // Protocol thunks are sx-side, so they carry the implicit __sx_ctx

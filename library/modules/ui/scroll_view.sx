@@ -66,18 +66,18 @@ impl View for ScrollView {
         self.clamp_offset();
 
         // Layout child offset by scroll position
-        self.child.computed_frame = Frame.make(
+        self.child.frame = Frame.make(
             bounds.origin.x - s.offset.x,
             bounds.origin.y - s.offset.y,
             s.content_size.width,
             s.content_size.height
         );
-        self.child.view.layout(self.child.computed_frame);
+        self.child.view.layout(self.child.frame);
     }
 
     render :: (self: *ScrollView, ctx: *RenderContext, frame: Frame) {
         ctx.push_clip(frame);
-        self.child.view.render(ctx, self.child.computed_frame);
+        self.child.view.render(ctx, self.child.frame);
         ctx.pop_clip();
     }
 }

@@ -849,6 +849,28 @@ pub fn emitObjcDefinedClassAllocImp(self: *Lowering, fcd: *const ast.RuntimeClas
     self.builder.finalize();
 }
 
+/// One Allocator method call on `allocator`, with the implicit context
+/// pinned to `ctx_addr`: an IMP runs on Apple's stack and carries whichever
+/// Context it was handed, not the ambient one. The dispatch itself is the
+/// ordinary one, so the allocator protocol's kind stays a property of its
+/// declaration.
+fn dispatchAllocator(
+    self: *Lowering,
+    allocator: Ref,
+    alloc_ty: types.TypeId,
+    method: []const u8,
+    args: []const Ref,
+    ctx_addr: Ref,
+) ?Ref {
+    const pd = self.getProtocolInfo(alloc_ty) orelse return null;
+    const saved = self.current_ctx_ref;
+    defer self.current_ctx_ref = saved;
+    self.current_ctx_ref = ctx_addr;
+    const cs = self.builder.current_span;
+    const out = self.emitProtocolDispatch(allocator, pd, method, args, alloc_ty, .{ .start = cs.start, .end = cs.end });
+    return if (out == Ref.none) null else out;
+}
+
 /// Shared inline sequence: allocate Obj-C instance + sx state struct,
 /// capture the allocator, bind to the `__sx_state` ivar. Used by both
 /// the `+alloc` IMP (ctx_addr = &__sx_default_context) and the sx-side
@@ -894,13 +916,7 @@ pub fn emitObjcDefinedAllocAndInit(
     };
     const ctx_val = self.builder.load(ctx_addr, ctx_ty);
     const allocator = self.builder.structGet(ctx_val, af.index, af.ty);
-    const alloc_ctx = self.builder.structGet(allocator, 0, ptr_void);
-    const alloc_fn_ptr = self.builder.structGet(allocator, 2, ptr_void);
-    const call_args = self.alloc.dupe(Ref, &.{ ctx_addr, alloc_ctx, size_const }) catch return null;
-    const state = self.builder.emit(.{ .call_indirect = .{
-        .callee = alloc_fn_ptr,
-        .args = call_args,
-    } }, ptr_void);
+    const state = dispatchAllocator(self, allocator, af.ty, "alloc_bytes", &.{self.builder.constInt(@intCast(state_size), .i64)}, ctx_addr) orelse return null;
 
     // (3) memset(state, 0, STATE_SIZE) — zero everything including the
     // allocator slot; the next store re-writes the allocator slot.
@@ -1193,13 +1209,7 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
         return;
     };
     const default_ctx_addr = self.builder.emit(.{ .global_addr = default_ctx_gi.id }, ptr_void);
-    const alloc_ctx = self.builder.structGet(allocator, 0, ptr_void);
-    const dealloc_fn_ptr = self.builder.structGet(allocator, 3, ptr_void);
-    const dealloc_args = self.alloc.dupe(Ref, &.{ default_ctx_addr, alloc_ctx, state }) catch return;
-    _ = self.builder.emit(.{ .call_indirect = .{
-        .callee = dealloc_fn_ptr,
-        .args = dealloc_args,
-    } }, .void);
+    _ = dispatchAllocator(self, allocator, allocator_ty, "dealloc_bytes", &.{state}, default_ctx_addr) orelse return;
 
     // (3) object_setIvar(self, ivar, null)
     const set_ivar_fid = self.ensureCRuntimeDecl("object_setIvar", &.{ ptr_void, ptr_void, ptr_void }, .void);

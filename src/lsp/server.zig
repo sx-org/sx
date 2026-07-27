@@ -728,6 +728,7 @@ pub const Server = struct {
             .{ .label = "is_unsigned", .detail = "(T | tp: Type) -> bool" },
             .{ .label = "is_flags", .detail = "(T | tp: Type) -> bool" },
             .{ .label = "is_identity", .detail = "($T: Type) -> bool — is T an #identity protocol (compile-time only)" },
+            .{ .label = "protocol_kind", .detail = "($T: Type) -> ProtocolKind — constraint / vtable / `inline / tagged (compile-time only)" },
             .{ .label = "is_struct", .detail = "($T: Type) -> bool" },
             .{ .label = "pointee_type", .detail = "($P: Type) -> Type — *X -> X" },
             .{ .label = "struct_field_count", .detail = "(T | tp: Type) -> i64 — struct/tuple fields" },
@@ -1820,8 +1821,8 @@ pub const Server = struct {
             .hash_source,
             .hash_define,
             .hash_flags,
-            .hash_inline,
             .hash_identity,
+            .hash_expand,
             .hash_objc_call,
             .hash_jni_call,
             .hash_jni_static_call,
@@ -3248,7 +3249,10 @@ pub const Server = struct {
             .protocol_decl => |pd| {
                 try buf.appendSlice(allocator, pd.name);
                 try buf.appendSlice(allocator, " :: protocol");
-                if (pd.is_inline) try buf.appendSlice(allocator, " #inline");
+                if (pd.kind != .constraint) {
+                    try buf.append(allocator, ' ');
+                    try buf.appendSlice(allocator, pd.kind.spelling());
+                }
                 if (pd.is_identity) try buf.appendSlice(allocator, " #identity");
                 try buf.appendSlice(allocator, " { ");
                 for (pd.methods, 0..) |method, mi| {

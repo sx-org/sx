@@ -133,11 +133,11 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         // FIELD-WISE — {ctx, __type_id} is the prefix of BOTH protocol
         // layouts, so the view can never carry a wrong word and the result
         // is a real value that works in any position (a bit reinterpret
-        // would width-mismatch on #inline values, which are wider).
+        // would width-mismatch on `inline`-kind values, which are wider).
         .protocol_to_raw => {
             const void_ptr_ty = self.module.types.ptrTo(.void);
             const ctx_ref = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr_ty);
-            const tid_ref = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 1 } }, .type_value);
+            const tid_ref = self.protocolTypeIdWord(src_ty, operand);
             var fields = [2]Ref{ ctx_ref, tid_ref };
             return self.builder.structInit(&fields, dst_ty);
         },
@@ -147,7 +147,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         .protocol_to_any => {
             const void_ptr_ty = self.module.types.ptrTo(.void);
             const ctx_ref = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr_ty);
-            const tid_ref = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 1 } }, .type_value);
+            const tid_ref = self.protocolTypeIdWord(src_ty, operand);
             return self.builder.makeAny(tid_ref, ctx_ref);
         },
         .coerce => {},
@@ -650,6 +650,7 @@ pub fn arrayToSliceView(self: *Lowering, val: Ref, src_ty: TypeId) ?Ref {
 pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const Node, src_ty: TypeId, dst_ty: TypeId) Ref {
     const dst_info = self.module.types.get(dst_ty);
     if (dst_info != .@"struct") return operand;
+    if (self.refuseValuelessProtocol(dst_ty, operand_node.span, "make a value of")) return self.builder.constUndef(dst_ty);
     const proto_name = self.module.types.getString(dst_info.@"struct".name);
 
     // Determine concrete type name and type — resolve through pointer if needed
@@ -664,13 +665,18 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
     // owning copy remains implicit. (The explicit owning spelling is the
     // postfix `.(P)` / `.(P, alloc)` — lowerOwningErasure.)
     const dst_identity = self.protocolIsIdentity(dst_ty);
+    // A tagged value is a borrow in every spelling, so it takes the identity
+    // arms below; it differs only at an rvalue, which materializes a
+    // frame-scoped temp instead of refusing (spec §6.2).
+    const dst_tagged = self.isTagged(dst_ty);
+    const dst_borrows = dst_identity or dst_tagged;
 
     if (!src_ty.isBuiltin()) {
         const src_info = self.module.types.get(src_ty);
         if (src_info == .pointer) {
             // Pointer operand (`xx @acc`): identity borrows the pointee;
             // value/own demands the snapshot or a view.
-            if (!dst_identity) return self.demandOwnedErasure(dst_ty, proto_name, operand_node, true);
+            if (!dst_borrows) return self.demandOwnedErasure(dst_ty, proto_name, operand_node, true);
             const pointee = src_info.pointer.pointee;
             concrete_type_name = self.resolveConcreteTypeName(pointee);
             concrete_ty = pointee;
@@ -694,7 +700,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
                 // user spelling exists to respell it.
                 const is_pack_temp = operand_node.data == .identifier and
                     std.mem.startsWith(u8, operand_node.data.identifier.name, "__pack_");
-                if (!dst_identity and !is_pack_temp) return self.demandOwnedErasure(dst_ty, proto_name, operand_node, false);
+                if (!dst_borrows and !is_pack_temp) return self.demandOwnedErasure(dst_ty, proto_name, operand_node, false);
                 if (self.isByValueBindingIdent(operand_node)) {
                     // A by-VALUE SSA binding (`for arr (x)`, a match/catch
                     // capture, a `::` const) is semantically a COPY of the
@@ -750,6 +756,18 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
         // class forbids — refuse instead.
         if (heap_copy and self.refuseIdentityRvalueErasure(dst_ty, operand_node.span)) {
             return self.builder.emit(.{ .placeholder = self.module.types.internString("identity-erasure") }, dst_ty);
+        }
+        if (dst_tagged) {
+            // At `return` the frame is about to die, so there is nothing to
+            // borrow the temp from — the one place tagged rvalue erasure is
+            // refused outright.
+            if (heap_copy and self.in_return_expr) {
+                if (self.diagnostics) |d| d.addFmt(.err, operand_node.span, "cannot erase an rvalue into tagged protocol '{s}' at a 'return' — the frame that would hold the temporary is about to die, so there is nothing durable to borrow beyond this frame; bind it, or place it in storage the caller owns", .{proto_name});
+                return self.builder.emit(.{ .placeholder = self.module.types.internString("tagged-return-erasure") }, dst_ty);
+            }
+            if (self.refuseNonConformer(dst_ty, ctn, concrete_ty, operand_node.span))
+                return self.builder.emit(.{ .placeholder = self.module.types.internString("tagged-erasure") }, dst_ty);
+            return self.buildTaggedValue(concrete_ptr, dst_ty, concrete_ty);
         }
         return self.buildProtocolValue(concrete_ptr, proto_name, ctn, dst_ty, concrete_ty, heap_copy);
     }
@@ -825,6 +843,15 @@ pub fn viewOfConcreteAddr(self: *Lowering, concrete_addr: Ref, concrete_ty: Type
     const proto_ty = vinfo.pointer.pointee;
     const proto_info = self.getProtocolInfo(proto_ty) orelse return null;
     const ctn = self.resolveConcreteTypeName(concrete_ty) orelse return null;
+    // A tagged value is already a borrow, so no view-building exists for it:
+    // the `*P` handle points at a 16-byte value the caller must name.
+    if (proto_info.kind == .tagged) {
+        if (self.diagnostics) |d| {
+            const cs = self.builder.current_span;
+            d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot build a '*{s}' view over '{s}' — a tagged protocol value is already a borrow, so no view is built for it; pass '{s}' itself, or take the address of a named '{s}' value", .{ proto_info.name, ctn, proto_info.name, proto_info.name });
+        }
+        return self.builder.constUndef(view_ptr_ty);
+    }
     const pv = self.buildProtocolValue(concrete_addr, proto_info.name, ctn, proto_ty, concrete_ty, false);
     const slot = self.builder.alloca(proto_ty);
     self.builder.store(slot, pv);
@@ -1536,7 +1563,11 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         .erase_protocol => {
             const proto_name = self.module.types.getString(self.module.types.get(dst_ty).@"struct".name);
             const ctn = self.resolveConcreteTypeName(src_ty).?;
+            // Both borrow-shaped classes take the same arms here; they part
+            // ways only at a genuine rvalue.
+            const node_less_tagged = self.isTagged(dst_ty);
             const node_less_identity = self.protocolIsIdentity(dst_ty);
+            const node_less_borrows = node_less_identity or node_less_tagged;
             // If src is a pointer, use directly; otherwise alloca+store + heap-copy
             var concrete_ptr = val;
             var concrete_ty = src_ty;
@@ -1545,7 +1576,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 // Pointer operand: identity borrows the pointee (the user
                 // owns its lifetime); value/own demands the explicit
                 // snapshot/view spelling.
-                if (!node_less_identity) return self.demandOwnedErasure(dst_ty, proto_name, null, true);
+                if (!node_less_borrows) return self.demandOwnedErasure(dst_ty, proto_name, null, true);
                 concrete_ty = self.module.types.get(src_ty).pointer.pointee;
                 heap_copy = false;
             } else {
@@ -1570,10 +1601,17 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 //   - value/own target: storage → the DEMAND error (an
                 //     implicit lvalue erasure would silently heap-copy);
                 //     genuine rvalue → the owning copy (the invariant).
-                if (node_less_identity) {
+                if (node_less_borrows) {
                     if (self.refStorageAddress(val)) |addr| {
                         concrete_ptr = addr;
                         heap_copy = false;
+                    } else if (node_less_tagged and !node_less_identity) {
+                        // A genuine rvalue at a tagged position borrows a
+                        // frame-scoped temp — the `any`-box placement rule.
+                        const slot = self.builder.alloca(src_ty);
+                        self.builder.store(slot, val);
+                        concrete_ptr = slot;
+                        heap_copy = true;
                     } else if (self.refuseIdentityRvalueErasure(dst_ty, null)) {
                         return self.builder.emit(.{ .placeholder = self.module.types.internString("identity-erasure") }, dst_ty);
                     } else {
@@ -1591,9 +1629,21 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                     heap_copy = true;
                 }
             }
+            if (node_less_tagged) {
+                if (heap_copy and self.in_return_expr) {
+                    if (self.diagnostics) |d| {
+                        const cs = self.builder.current_span;
+                        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot erase an rvalue into tagged protocol '{s}' at a 'return' — the frame that would hold the temporary is about to die, so there is nothing durable to borrow beyond this frame; bind it, or place it in storage the caller owns", .{proto_name});
+                    }
+                    return self.builder.emit(.{ .placeholder = self.module.types.internString("tagged-return-erasure") }, dst_ty);
+                }
+                if (self.refuseNonConformer(dst_ty, ctn, concrete_ty, null))
+                    return self.builder.emit(.{ .placeholder = self.module.types.internString("tagged-erasure") }, dst_ty);
+                return self.buildTaggedValue(concrete_ptr, dst_ty, concrete_ty);
+            }
             return self.buildProtocolValue(concrete_ptr, proto_name, ctn, dst_ty, concrete_ty, heap_copy);
         },
-        .int_to_float => return self.builder.emit(.{ .int_to_float = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
+        .int_to_float =>return self.builder.emit(.{ .int_to_float = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty),
         .float_to_int => {
             // Implicit float→int narrowing follows the unified rule (the
             // same `floatToIntExact` the array-dim / `$K: Count` paths use):

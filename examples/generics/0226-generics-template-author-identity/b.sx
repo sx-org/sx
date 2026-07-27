@@ -1,0 +1,5 @@
+// The other author — same four spellings, different layouts and results.
+Box :: struct($T: Type) { one: T; two: T; three: T; }
+Mk :: ($T: Type) -> Type { return struct { one: T; two: T; three: T; }; }
+pick :: (v: $T) -> i64 { return 2; }
+tally :: (..$args) -> i64 { return 2; }

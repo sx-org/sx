@@ -1,0 +1,22 @@
+// An interior pointer INTO a declared global's compile-time state refuses to
+// escape (specs.md §7.9). The global relocates as a whole — the image holds its
+// declared initializer, not the VM's copy of it — so an address partway into
+// that copy names nothing the image has.
+#import "modules/std.sx";
+
+Inner :: struct { n: i64; }
+Outer :: struct { head: i64; inner: Inner; }
+
+g_outer := Outer.{ head = 1, inner = Inner.{ n = 2 } };
+
+Box :: struct { p: *Inner; }
+
+make :: () -> Box {
+    return Box.{ p = *g_outer.inner };
+}
+
+B :: #run make();
+
+main :: () {
+    print("{}\n", B.p.n);
+}

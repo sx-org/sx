@@ -20,11 +20,11 @@ layout_vstack :: (children: *List(ViewChild), bounds: Frame, spacing: f32, align
             height = null
         });
         x_offset := align_h(alignment, child_size.width, content_width);
-        child.computed_frame = Frame.{
+        child.frame = Frame.{
             origin = Point.{ x = bounds.origin.x + x_offset, y = y },
             size = child_size
         };
-        child.view.layout(child.computed_frame);
+        child.view.layout(child.frame);
         y = y + child_size.height + spacing;
         i += 1;
     }
@@ -47,11 +47,11 @@ layout_hstack :: (children: *List(ViewChild), bounds: Frame, spacing: f32, align
             height = content_height
         });
         y_offset := align_v(alignment, child_size.height, content_height);
-        child.computed_frame = Frame.{
+        child.frame = Frame.{
             origin = Point.{ x = x, y = bounds.origin.y + y_offset },
             size = child_size
         };
-        child.view.layout(child.computed_frame);
+        child.view.layout(child.frame);
         x = x + child_size.width + spacing;
         i += 1;
     }
@@ -73,11 +73,11 @@ layout_zstack :: (children: *List(ViewChild), bounds: Frame, alignment: Alignmen
         child_size := child.view.size_that_fits(proposal);
         x_offset := align_h(alignment.h, child_size.width, bounds.size.width);
         y_offset := align_v(alignment.v, child_size.height, bounds.size.height);
-        child.computed_frame = Frame.{
+        child.frame = Frame.{
             origin = Point.{ x = bounds.origin.x + x_offset, y = bounds.origin.y + y_offset },
             size = child_size
         };
-        child.view.layout(child.computed_frame);
+        child.view.layout(child.frame);
         i += 1;
     }
 }
@@ -96,7 +96,7 @@ measure_vstack :: (children: *List(ViewChild), proposal: ProposedSize, spacing: 
     i := 0;
     while i < n {
         child_size := children.items[i].view.size_that_fits(child_proposal);
-        children.items[i].computed_frame.size = child_size;
+        children.items[i].frame.size = child_size;
         if child_size.width > max_width { max_width = child_size.width; }
         total_height = total_height + child_size.height;
         i += 1;
@@ -120,7 +120,7 @@ measure_hstack :: (children: *List(ViewChild), proposal: ProposedSize, spacing: 
     i := 0;
     while i < n {
         child_size := children.items[i].view.size_that_fits(child_proposal);
-        children.items[i].computed_frame.size = child_size;
+        children.items[i].frame.size = child_size;
         total_width = total_width + child_size.width;
         if child_size.height > max_height { max_height = child_size.height; }
         i += 1;
@@ -142,7 +142,7 @@ measure_zstack :: (children: *List(ViewChild), proposal: ProposedSize) -> Size {
     i := 0;
     while i < n {
         child_size := children.items[i].view.size_that_fits(proposal);
-        children.items[i].computed_frame.size = child_size;
+        children.items[i].frame.size = child_size;
         if child_size.width > max_width { max_width = child_size.width; }
         if child_size.height > max_height { max_height = child_size.height; }
         i += 1;

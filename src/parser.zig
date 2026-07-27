@@ -60,11 +60,13 @@ pub const Parser = struct {
     /// have been kept by dropping it). Null when the statement kept its value or
     /// wasn't a value expression. Read by `parseBlock` into `Block.discarded_semi`.
     last_stmt_semi_loc: ?ast.Span = null,
-    /// True while parsing the branches of a MODULE-SCOPE `inline if`: its
-    /// statements are top-level declarations after comptime flattening, so
-    /// `private` remains legal on them. Function/lambda bodies clear it — a
-    /// nested body's declarations are locals, never module scope.
-    in_module_inline_if: bool = false,
+    /// True while parsing the body of a MODULE-SCOPE expansion form — an
+    /// `inline if` branch or an `inline for` iteration group. Their statements
+    /// are top-level declarations after comptime flattening, so `private` and
+    /// the declaration-only forms (`impl`) remain legal on them.
+    /// Function/lambda bodies clear it — a nested body's declarations are
+    /// locals, never module scope.
+    in_module_expansion: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, source: [:0]const u8) Parser {
         var lexer = Lexer.init(source);
@@ -175,19 +177,30 @@ pub const Parser = struct {
             return self.parseImplBlock(start);
         }
 
-        // Top-level `inline if` — compile-time conditional
+        // Top-level `inline if` / `inline for` — compile-time expansion forms.
+        // Both bodies hold module-scope declarations, spliced into module scope
+        // by lowering's `expandModuleDrivers`.
         if (self.current.tag == .kw_inline) {
             if (self.peekNext() == .kw_if) {
                 self.advance(); // skip 'inline'
-                const saved_module_if = self.in_module_inline_if;
-                self.in_module_inline_if = true;
-                defer self.in_module_inline_if = saved_module_if;
+                const saved_module_expansion = self.in_module_expansion;
+                self.in_module_expansion = true;
+                defer self.in_module_expansion = saved_module_expansion;
                 const expr = try self.parseIfExpr();
                 if (expr.data == .if_expr) {
                     expr.data.if_expr.is_comptime = true;
                 } else if (expr.data == .match_expr) {
                     expr.data.match_expr.is_comptime = true;
                 }
+                return expr;
+            }
+            if (self.peekNext() == .kw_for) {
+                self.advance(); // skip 'inline'
+                const saved_module_expansion = self.in_module_expansion;
+                self.in_module_expansion = true;
+                defer self.in_module_expansion = saved_module_expansion;
+                const expr = try self.parseForExpr();
+                expr.data.for_expr.is_inline = true;
                 return expr;
             }
         }
@@ -199,29 +212,7 @@ pub const Parser = struct {
 
         // Top-level `#context_extend name: Type = default;` — declares a field
         // of the program's assembled Context.
-        if (self.current.tag == .hash_context_extend) {
-            self.advance();
-            if (!self.isIdentLike()) {
-                return self.fail("expected field name after '#context_extend'");
-            }
-            const field_name = self.tokenSlice(self.current);
-            const field_name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
-            self.advance();
-            try self.expect(.colon);
-            const type_node = try self.parseTypeExpr();
-            var default_node: ?*Node = null;
-            if (self.current.tag == .equal) {
-                self.advance();
-                default_node = try self.parseExpr();
-            }
-            try self.expect(.semicolon);
-            return try self.createNode(start, .{ .context_extend_decl = .{
-                .name = field_name,
-                .name_span = field_name_span,
-                .type_expr = type_node,
-                .default_expr = default_node,
-            } });
-        }
+        if (self.current.tag == .hash_context_extend) return self.parseContextExtend(start);
 
         // All top-level declarations start with an identifier
         if (!self.isIdentLike() and self.current.tag != .kw_Self) {
@@ -1315,17 +1306,46 @@ pub const Parser = struct {
             try self.expect(.r_paren);
         }
 
-        // Protocol attributes: #inline (layout) and #identity (ownership
-        // class) — mutually independent, either order.
-        var is_inline = false;
-        var is_identity = false;
-        while (self.current.tag == .hash_inline or self.current.tag == .hash_identity) {
-            if (self.current.tag == .hash_inline) {
-                if (is_inline) return self.fail("duplicate #inline on protocol");
-                is_inline = true;
+        // The kind slot, after the parameter list and before the attributes.
+        // `constraint` / `vtable` / `tagged` are CONTEXTUAL here — ordinary
+        // identifiers everywhere else; `inline` is the language keyword doing
+        // double duty. Absent ⇒ constraint. Nothing but a kind word or `{`
+        // may stand here, so an identifier is unambiguously a kind.
+        var kind: ast.ProtocolKind = .constraint;
+        if (self.current.tag == .kw_inline) {
+            kind = .@"inline";
+            self.advance();
+        } else if (self.current.tag == .identifier and !self.current.is_raw) {
+            const word = self.tokenSlice(self.current);
+            if (std.mem.eql(u8, word, "constraint")) {
+                kind = .constraint;
+            } else if (std.mem.eql(u8, word, "vtable")) {
+                kind = .vtable;
+            } else if (std.mem.eql(u8, word, "tagged")) {
+                kind = .tagged;
             } else {
+                return self.fail("expected a protocol kind ('constraint', 'vtable', 'inline', 'tagged') or '{' after the protocol head");
+            }
+            self.advance();
+        }
+
+        // Protocol attributes: #identity (ownership class), #expand (call-site
+        // dispatch expansion). Order between them is free.
+        var is_identity = false;
+        var is_expand = false;
+        while (self.current.tag == .hash_identity or self.current.tag == .hash_expand) {
+            if (self.current.tag == .hash_identity) {
                 if (is_identity) return self.fail("duplicate #identity on protocol");
+                if (kind == .constraint) {
+                    return self.fail("#identity is meaningless on a constraint protocol — there are no runtime values to classify");
+                }
                 is_identity = true;
+            } else {
+                if (is_expand) return self.fail("duplicate #expand on protocol");
+                if (kind != .tagged) {
+                    return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and kind '{s}' does not", .{kind.spelling()});
+                }
+                is_expand = true;
             }
             self.advance();
         }
@@ -1405,13 +1425,28 @@ pub const Parser = struct {
                 return_type = try self.parseFnReturnType();
             }
 
+            // Per-method `#expand`, in the same trailing attribute slot `#get` /
+            // `#set` occupy on an ordinary method.
+            var method_expand = false;
+            while (self.current.tag == .hash_expand) {
+                if (method_expand) return self.failFmt("duplicate #expand on method '{s}'", .{method_name});
+                if (kind != .tagged) {
+                    return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and '{s}' is declared '{s}'", .{ name, kind.spelling() });
+                }
+                if (is_expand) {
+                    return self.failFmt("'{s}' already carries #expand on its header, so every method's dispatch already expands at the call site — remove one", .{name});
+                }
+                method_expand = true;
+                self.advance();
+            }
+
             // Optional body (default method) or semicolon
             var default_body: ?*Node = null;
             if (self.current.tag == .l_brace) {
                 // A default-method body's declarations are locals.
-                const saved_module_if = self.in_module_inline_if;
-                self.in_module_inline_if = false;
-                defer self.in_module_inline_if = saved_module_if;
+                const saved_module_expansion = self.in_module_expansion;
+                self.in_module_expansion = false;
+                defer self.in_module_expansion = saved_module_expansion;
                 default_body = try self.parseBlock();
             } else {
                 if (self.current.tag == .semicolon) self.advance();
@@ -1432,6 +1467,7 @@ pub const Parser = struct {
                 .param_name_is_raw = all_param_name_is_raw[1..],
                 .return_type = return_type,
                 .default_body = default_body,
+                .is_expand = method_expand,
             });
         }
 
@@ -1440,8 +1476,9 @@ pub const Parser = struct {
         return try self.createNode(start_pos, .{ .protocol_decl = .{
             .name = name,
             .methods = try methods.toOwnedSlice(self.allocator),
-            .is_inline = is_inline,
+            .kind = kind,
             .is_identity = is_identity,
+            .is_expand = is_expand,
             .type_params = try type_params.toOwnedSlice(self.allocator),
             .is_raw = name_is_raw,
         } });
@@ -1745,9 +1782,9 @@ pub const Parser = struct {
             var body_node: ?*Node = null;
             if (self.current.tag == .l_brace) {
                 // A runtime-class method body's declarations are locals.
-                const saved_module_if = self.in_module_inline_if;
-                self.in_module_inline_if = false;
-                defer self.in_module_inline_if = saved_module_if;
+                const saved_module_expansion = self.in_module_expansion;
+                self.in_module_expansion = false;
+                defer self.in_module_expansion = saved_module_expansion;
                 body_node = try self.parseBlock();
             } else if (self.current.tag == .fat_arrow) {
                 self.advance();
@@ -2215,9 +2252,9 @@ pub const Parser = struct {
         // A function body is never module scope — even inside a module-level
         // `inline if` branch its declarations are locals, so `private` stops
         // being legal here.
-        const saved_module_if = self.in_module_inline_if;
-        self.in_module_inline_if = false;
-        defer self.in_module_inline_if = saved_module_if;
+        const saved_module_expansion = self.in_module_expansion;
+        self.in_module_expansion = false;
+        defer self.in_module_expansion = saved_module_expansion;
         var is_arrow = false;
         const body = if (extern_export == .extern_) blk: {
             const semi_start = self.current.loc.start;
@@ -2330,16 +2367,29 @@ pub const Parser = struct {
         // `#context_extend` is a top-level-only directive (L7): the Context is
         // assembled once per program, so a function-local declaration is
         // meaningless — reject it here with a placement error rather than
-        // letting it fall through to a generic expression-parse failure.
+        // letting it fall through to a generic expression-parse failure. A
+        // MODULE-SCOPE expansion body is top level, though: its statements
+        // become module-scope declarations, and a branch that declares a
+        // Context field is exactly what the expansion scheduler weighs.
         if (self.current.tag == .hash_context_extend) {
-            return self.fail("'#context_extend' is only allowed at top level (module scope)");
+            if (!self.in_module_expansion) {
+                return self.fail("'#context_extend' is only allowed at top level (module scope)");
+            }
+            return self.parseContextExtend(self.current.loc.start);
         }
-        // `private` on a statement: legal only inside a MODULE-SCOPE `inline if`
-        // branch, whose statements become top-level declarations after comptime
+        // `impl Protocol for T { … }` inside a MODULE-SCOPE expansion body is an
+        // ordinary module-scope declaration that the flatten pass surfaces to
+        // the top level (comptime-expanded conformance). A bare `impl` followed
+        // by a binding operator is the ordinary name.
+        if (self.current.tag == .kw_impl and self.in_module_expansion and self.peekNext() == .identifier) {
+            return self.parseImplBlock(self.current.loc.start);
+        }
+        // `private` on a statement: legal only inside a MODULE-SCOPE expansion
+        // body, whose statements become top-level declarations after comptime
         // flattening. Anywhere else (function/method/lambda bodies) the
         // declaration is a local — visibility does not apply.
         if (self.current.tag == .kw_private) {
-            if (!self.in_module_inline_if) {
+            if (!self.in_module_expansion) {
                 return self.fail("'private' is only allowed on module-scope declarations");
             }
             self.advance();
@@ -3980,6 +4030,32 @@ pub const Parser = struct {
         return try self.createNode(start, .{ .error_directive = .{ .message = message } });
     }
 
+    /// Parse `#context_extend name: Type = default;` — a field of the
+    /// program's assembled Context. `current` is the directive token.
+    fn parseContextExtend(self: *Parser, start: u32) anyerror!*Node {
+        self.advance();
+        if (!self.isIdentLike()) {
+            return self.fail("expected field name after '#context_extend'");
+        }
+        const field_name = self.tokenSlice(self.current);
+        const field_name_span = ast.Span{ .start = self.current.loc.start, .end = self.current.loc.end };
+        self.advance();
+        try self.expect(.colon);
+        const type_node = try self.parseTypeExpr();
+        var default_node: ?*Node = null;
+        if (self.current.tag == .equal) {
+            self.advance();
+            default_node = try self.parseExpr();
+        }
+        try self.expect(.semicolon);
+        return try self.createNode(start, .{ .context_extend_decl = .{
+            .name = field_name,
+            .name_span = field_name_span,
+            .type_expr = type_node,
+            .default_expr = default_node,
+        } });
+    }
+
     /// Parse a `.( ... )` tuple value literal. `current` is the `(`.
     /// A token that can only begin a VALUE literal, never a type. Used to give
     /// `Tuple(...)` a precise lowering-time "element is not a type" diagnostic
@@ -4303,15 +4379,15 @@ pub const Parser = struct {
         // a `defer` / `onfail` body. Restored after the body.
         const saved_onfail = self.in_onfail_body;
         const saved_defer = self.in_defer_body;
-        const saved_module_if = self.in_module_inline_if;
+        const saved_module_expansion = self.in_module_expansion;
         self.in_onfail_body = false;
         self.in_defer_body = false;
         // A closure body's declarations are locals, never module scope.
-        self.in_module_inline_if = false;
+        self.in_module_expansion = false;
         defer {
             self.in_onfail_body = saved_onfail;
             self.in_defer_body = saved_defer;
-            self.in_module_inline_if = saved_module_if;
+            self.in_module_expansion = saved_module_expansion;
         }
 
         // Two body forms:

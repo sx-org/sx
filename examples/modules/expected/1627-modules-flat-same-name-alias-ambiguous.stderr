@@ -1,0 +1,5 @@
+error: 'pick' is ambiguous; declared by multiple imported modules — qualify the call
+  --> examples/modules/1627-modules-flat-same-name-alias-ambiguous.sx:10:19
+   |
+10 |     print("{}\n", pick());
+   |                   ^^^^

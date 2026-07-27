@@ -1,0 +1,20 @@
+// A rejected branch retires the names of the module it imports.
+//
+// The reader below waits while the branch that could import `WIDE` is
+// undecided — the imported module authors that very name. Rejecting the branch
+// retires it: the module can never reach this scope, the absence becomes a
+// publishable fact, and the condition takes the ordinary unevaluable-condition
+// path. The wait ends in an answer, not in a deadlock.
+#import "modules/std.sx";
+
+inline if WIDE { A :: 1; } else { A :: 0; }
+
+inline if POINTER_SIZE == 0 {
+    #import "./1993-diagnostics-branch-import-wide.sx";
+} else {
+    NARROW :: 1;
+}
+
+main :: () {
+    print("{}\n", NARROW);
+}

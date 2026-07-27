@@ -1,0 +1,35 @@
+// A `#selector("...")` override whose keyword count disagrees with the
+// call-site arity is a WARNING, not an error: the user picked the selector
+// deliberately, so the build proceeds and the runtime dispatches. Both
+// override paths are covered — the static call (`lowerObjcStaticCall`) and
+// the instance call (`lowerObjcMethodCall`). The compile succeeds, so the
+// warnings only surface because diagnostics render on the success path
+// (issue 0283). The mismatching-arity ERROR arm (no override) is
+// examples/ffi-objc/1344-ffi-objc-dsl-04-mismatch.sx.
+#import "modules/std.sx";
+#import "modules/build.sx";
+
+NSObject :: #objc_class("NSObject") extern {
+    // "description" takes no keyword, the call passes one argument.
+    gimme :: (x: i64) -> *void #selector("description");
+}
+
+NSDictionary :: #objc_class("NSDictionary") extern {
+    lookup :: (self: *Self, key: *void) -> *void #selector("description");
+}
+
+main :: () -> i32 {
+    inline if OS == .macos {
+        d := NSObject.gimme(7);
+        print("static override non-null: {}\n", d != null);
+        // `objc_msgSend` on nil is defined to return nil — the point is the
+        // compile-time warning, not the dispatch.
+        inst : *NSDictionary = null;
+        r := inst.lookup(null);
+        print("instance override on nil: {}\n", r == null);
+    }
+    inline if OS != .macos {
+        print("skipped (not macos)\n");
+    }
+    0
+}

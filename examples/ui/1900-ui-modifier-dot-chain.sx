@@ -1,13 +1,15 @@
-// The modifier combinators (ui/modifier.sx) are ufcs: a view tree builds
-// as a dot-chain — each call wraps its receiver (an rvalue, so the owning
-// View erasure is implicit) in the next modifier struct. The pipe
-// spelling composes the same functions and keeps working; the two mix
-// freely in one expression.
+// The modifier surface is a fluent chain over ONE Mod (compose.sx `el`):
+// each link sets a field on the handle and `place` finalizes it into a
+// single ModBox. The box applies its fields in the canonical order —
+// margin → size → bg/border/corner → padding → content — so the chain's
+// own order is free; what the chain buys is the spelling, never a
+// dispatch level per link.
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/modifier.sx";
+#import "modules/ui/compose.sx";
 
 // A minimal concrete leaf: reports a fixed intrinsic size.
 Leaf :: struct { w, h: f32; }
@@ -20,27 +22,33 @@ impl View for Leaf {
 }
 
 main :: () {
+    u := Ui.{};
     flexible := ProposedSize.{ width = null, height = null };
 
-    // Dot-chain through four combinators; the fixed frame pins the
-    // chain's measured size, the padding grows it by its insets.
-    tree := Leaf.{ w = 10.0, h = 20.0 }
-        .with_opacity(0.5)
-        .clip(2.0)
-        .fixed_frame(30.0, 40.0)
-        .padding(EdgeInsets.all(8.0));
-    sz := tree.size_that_fits(flexible);
-    print("chain: {}x{}\n", sz.width, sz.height);
+    // Value mode: ui set, no sink — `place` returns without emitting.
+    push .{ ui = *u } {
+        // Four links: the fixed size pins the box, the margin grows the
+        // measured total around it.
+        tree := el(Leaf.{ w = 10.0, h = 20.0 })
+            .opacity(0.5)
+            .clip()
+            .size(30.0, 40.0)
+            .margin(EdgeInsets.all(8.0))
+            .place();
+        sz := tree.size_that_fits(flexible);
+        print("chain: {}x{}\n", sz.width, sz.height);
 
-    // hidden() collapses the measured size to zero.
-    h := Leaf.{ w = 10.0, h = 20.0 }.hidden(true);
-    hz := h.size_that_fits(flexible);
-    print("hidden: {}x{}\n", hz.width, hz.height);
+        // hidden collapses the measured size to zero.
+        h := el(Leaf.{ w = 10.0, h = 20.0 }).hidden(true).place();
+        hz := h.size_that_fits(flexible);
+        print("hidden: {}x{}\n", hz.width, hz.height);
 
-    // The pipe spelling still composes the same combinators — and mixes
-    // with the dot-chain in one expression.
-    mixed := (Leaf.{ w = 5.0, h = 5.0 } |> background(COLOR_RED, 1.0))
-        .padding(EdgeInsets.all(2.0));
-    ms := mixed.size_that_fits(flexible);
-    print("mixed: {}x{}\n", ms.width, ms.height);
+        // Padding sits INSIDE the background whichever link set it first.
+        mixed := el(Leaf.{ w = 5.0, h = 5.0 })
+            .bg(COLOR_RED, 1.0)
+            .padding(EdgeInsets.all(2.0))
+            .place();
+        ms := mixed.size_that_fits(flexible);
+        print("mixed: {}x{}\n", ms.width, ms.height);
+    }
 }
