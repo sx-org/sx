@@ -654,6 +654,49 @@ pub const ProtocolResolver = struct {
         }
     }
 
+    /// Import-scoped coherence (§3): one module declaring two impls of a
+    /// `(protocol-instantiation, concrete type)` pair. Reported at the first
+    /// impl, naming the other; `label` distinguishes the pack-shaped variant.
+    fn reportDuplicateImpl(
+        self: ProtocolResolver,
+        comptime label: []const u8,
+        proto_name: []const u8,
+        type_name: []const u8,
+        module: []const u8,
+        first: ast.Span,
+        other: ast.Span,
+    ) void {
+        const diags = self.l.diagnostics orelse return;
+        const id = diags.addFmtId(.err, first, "duplicate " ++ label ++ "impl '{s}' for source '{s}' in {s}", .{ proto_name, type_name, module });
+        diags.addNoteFmt(id, other, "also implemented here", .{});
+    }
+
+    /// Record one declared impl site of a concrete pair. Returns true when the
+    /// site duplicates one the same module already declared — it is reported
+    /// and dropped, so the cross-module and tagged checks keep seeing at most
+    /// one site per module and a same-module pair yields one diagnostic.
+    fn recordConcreteImplSite(
+        self: ProtocolResolver,
+        key: lower.ProtocolConcreteKey,
+        proto_name: []const u8,
+        concrete: TypeId,
+        span: ast.Span,
+        source: ?[]const u8,
+    ) bool {
+        const module = source orelse "";
+        const gop = self.l.protocol_impl_sites.getOrPut(key) catch @panic("out of memory");
+        if (!gop.found_existing) gop.value_ptr.* = .empty;
+        for (gop.value_ptr.items) |site| {
+            const site_module = site.source orelse "";
+            if (!std.mem.eql(u8, site_module, module)) continue;
+            if (site.span.start == span.start and site.span.end == span.end) return false;
+            self.reportDuplicateImpl("", proto_name, self.l.formatTypeName(concrete), module, site.span, span);
+            return true;
+        }
+        gop.value_ptr.append(self.l.alloc, .{ .span = span, .source = source }) catch @panic("out of memory");
+        return false;
+    }
+
     pub fn registerImplBlock(self: ProtocolResolver, ib: *const ast.ImplBlock, is_imported: bool, decl: *const Node) void {
         if (self.l.registered_protocol_impls.contains(ib)) return;
         const source = decl.source_file orelse self.l.current_source_file;
@@ -689,7 +732,16 @@ pub const ProtocolResolver = struct {
                 self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
                 return;
             }
-            self.l.protocol_impl_decls.put(self.protocolConcreteKey(proto.ty, proto_name, cty), {}) catch @panic("out of memory");
+            const key = self.protocolConcreteKey(proto.ty, proto_name, cty);
+            // A tagged pair's coherence is whole-program and belongs to the
+            // conformer fixpoint (lower/tagged.zig), which sees the same-module
+            // pair too — reporting it here as well would name it twice.
+            const is_tagged = if (proto.ty) |pty| self.l.isTagged(pty) else false;
+            if (!is_tagged and self.recordConcreteImplSite(key, proto_name, cty, decl.span, source)) {
+                self.l.registered_protocol_impls.put(ib, {}) catch @panic("out of memory");
+                return;
+            }
+            self.l.protocol_impl_decls.put(key, {}) catch @panic("out of memory");
             if (proto.ty) |pty| self.l.recordTaggedImplSite(pty, cty, decl.span, source);
         } else if (proto.ty) |pty| {
             // A template target (`impl P for Box($T)`) names no one conformer:
@@ -863,11 +915,7 @@ pub const ProtocolResolver = struct {
             // surface can be richer than any one file's view.
             for (gop.value_ptr.items) |existing| {
                 if (std.mem.eql(u8, existing.defining_module, defining_module)) {
-                    if (self.l.diagnostics) |diags| {
-                        diags.addFmt(.err, decl.span, "duplicate impl '{s}' for source '{s}' in {s}", .{
-                            proto_name, self.l.mangleTypeName(src_ty), defining_module,
-                        });
-                    }
+                    self.reportDuplicateImpl("", proto_name, self.l.mangleTypeName(src_ty), defining_module, existing.span, decl.span);
                     return;
                 }
             }
@@ -946,11 +994,7 @@ pub const ProtocolResolver = struct {
             } else {
                 for (pgop.value_ptr.items) |existing| {
                     if (std.mem.eql(u8, existing.defining_module, defining_module)) {
-                        if (self.l.diagnostics) |diags| {
-                            diags.addFmt(.err, decl.span, "duplicate pack impl '{s}' for source '{s}' in {s}", .{
-                                proto_name, self.l.mangleTypeName(src_ty), defining_module,
-                            });
-                        }
+                        self.reportDuplicateImpl("pack ", proto_name, self.l.mangleTypeName(src_ty), defining_module, existing.span, decl.span);
                         return;
                     }
                 }

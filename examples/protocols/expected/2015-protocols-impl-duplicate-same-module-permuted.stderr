@@ -1,0 +1,11 @@
+error: duplicate impl 'Show' for source 'Point' in examples/protocols/2015-protocols-impl-duplicate-same-module-permuted.sx
+  --> examples/protocols/2015-protocols-impl-duplicate-same-module-permuted.sx:8:1
+   |
+ 8 | impl Show for Point { show :: (self: *Point) -> i64 { self.v * 2 } }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: also implemented here
+  --> examples/protocols/2015-protocols-impl-duplicate-same-module-permuted.sx:9:1
+   |
+ 9 | impl Show for Point { show :: (self: *Point) -> i64 { self.v } }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

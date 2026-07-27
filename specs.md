@@ -846,13 +846,16 @@ impl Series($T) for Buffer(T) {            // blanket: one impl, a family of con
 - **Coherence.** For `constraint` and the erased kinds, duplicate
   `(protocol-instantiation, concrete type)` pairs follow
   import-scoped visibility: a duplicate within one compilation unit
-  is an error at the impls; duplicates across modules are diagnosed
-  at a use site that sees both. The `tagged` kind requires **global
-  coherence**: its conformer sets are whole-program, so a duplicate
-  pair is an error regardless of import visibility — diagnosed,
-  naming both impl sites, when the pair's instantiation is reached
-  (§6.6). Colliding blankets whose instantiations are never reached
-  are not diagnosed (nothing exists to collide at).
+  is an error at the impls, naming both; duplicates across modules
+  are diagnosed at a use site that sees both. The `tagged` kind
+  requires **global coherence**: its conformer sets are whole-program,
+  so a duplicate pair is an error regardless of import visibility —
+  diagnosed, naming both impl sites, when the pair's instantiation is
+  reached (§6.6). One module declaring both impls is the same-unit
+  error for every kind, tagged included, and needs no reached
+  instantiation. Colliding blankets, and cross-module collisions whose
+  instantiations are never reached, are not diagnosed (nothing exists
+  to collide at).
 
 **Comptime-expanded conformance.** `impl` blocks participate in the
 ordinary top-level comptime declaration forms. An `inline if` gates
@@ -2058,7 +2061,7 @@ conformer identity.
 | all methods `Self`-excluded (erased kind) | erases fine; every method call through the value diagnoses; concrete/bound calls fine |
 | single-conformer tagged protocol | fully devirtualizes inside the link-stage routine (single arm → direct call); downcasts stay symbol compares; module objects unaffected (§9) |
 | zero-conformer tagged instantiation | reaching use legal; erasure, method call, or downcast errors naming the implemented instantiations; a comptime SOFT probe against the final empty set answers null (§7.9) |
-| duplicate impl `(P-instantiation, T)` | constraint/erased: import-scoped (§3). tagged: global coherence — error at the first reached colliding instantiation, naming both impl sites; unreached collisions are not diagnosed |
+| duplicate impl `(P-instantiation, T)` | constraint/erased: import-scoped (§3). tagged: global coherence — error at the first reached colliding instantiation, naming both impl sites; unreached CROSS-MODULE collisions are not diagnosed. Both impls in one module: error at the impls on every kind, reached or not |
 | impl for a protocol type itself (`impl P for Q`) | protocols are not concrete types; refused |
 | impl for a structural type (`impl Series($T) for []T`) | legal — conformer identity is canonical type identity |
 | impl bounded by a constraint (`impl Show for $T/Ord`) | not a supported form; the `for` target names a type constructor |

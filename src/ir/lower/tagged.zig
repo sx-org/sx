@@ -64,10 +64,22 @@ pub fn recordImplSite(self: *Lowering, proto: TypeId, concrete: TypeId, span: as
     gop.value_ptr.append(self.alloc, .{ .span = span, .source = source }) catch @panic("out of memory");
 }
 
+/// Two impl sites of one pair declared in the SAME module. Import-scoped
+/// coherence (§3) refuses that for every kind, so a tagged pair is refused
+/// there too — reaching its instantiation is not what makes it ambiguous.
+fn sameModulePair(sites: []const ImplSite) bool {
+    for (sites, 0..) |a, i| {
+        for (sites[i + 1 ..]) |b| {
+            if (std.mem.eql(u8, a.source orelse "", b.source orelse "")) return true;
+        }
+    }
+    return false;
+}
+
 /// Global coherence (spec §3, §6.6): a duplicate `(tagged P, T)` pair is an
-/// error, diagnosed once the instantiation is reached and naming both impl
-/// sites. An unreached collision is not diagnosed — nothing exists to collide
-/// at.
+/// error, diagnosed once the instantiation is reached — or immediately when one
+/// module declares both — and naming both impl sites. An unreached collision
+/// across modules is not diagnosed: nothing exists to collide at.
 fn checkCoherence(self: *Lowering) void {
     checkParamCoherence(self);
     const d = self.diagnostics orelse return;
@@ -75,7 +87,7 @@ fn checkCoherence(self: *Lowering) void {
     while (it.next()) |entry| {
         const sites = entry.value_ptr.items;
         if (sites.len < 2) continue;
-        if (!self.tagged_reached.contains(entry.key_ptr.proto)) continue;
+        if (!self.tagged_reached.contains(entry.key_ptr.proto) and !sameModulePair(sites)) continue;
         const saved = d.current_source_file;
         defer d.current_source_file = saved;
         if (sites[0].source) |src| d.current_source_file = src;

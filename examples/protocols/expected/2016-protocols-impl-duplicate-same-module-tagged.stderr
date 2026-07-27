@@ -1,0 +1,11 @@
+error: duplicate impl of tagged protocol 'Beat' for 'Drum' — a tagged conformer set is whole-program, so its coherence is global: exactly one impl of a pair may exist, whatever the import visibility
+  --> examples/protocols/2016-protocols-impl-duplicate-same-module-tagged.sx:11:1
+   |
+11 | impl Beat for Drum { beat :: (self: *Drum) -> i64 { self.n } }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+note: also implemented here
+  --> examples/protocols/2016-protocols-impl-duplicate-same-module-tagged.sx:12:1
+   |
+12 | impl Beat for Drum { beat :: (self: *Drum) -> i64 { self.n + 1 } }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
