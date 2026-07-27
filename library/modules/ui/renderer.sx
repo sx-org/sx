@@ -9,9 +9,9 @@
 #import "modules/ui/glyph_cache.sx";
 #import "modules/ui/font.sx";
 
-// Vertex: pos(2) + uv(2) + color(4) + params(4) = 12 floats
-UI_VERTEX_FLOATS :i64: 12;
-UI_VERTEX_BYTES  :i64: 48;
+// Vertex: pos(2) + uv(2) + color(4) + params(4) + stroke(4) = 16 floats
+UI_VERTEX_FLOATS :i64: 16;
+UI_VERTEX_BYTES  :i64: 64;
 MAX_UI_VERTICES  :i64: 16384;
 
 UIRenderer :: struct {
@@ -105,6 +105,9 @@ UIRenderer :: struct {
             // params: corner_radius, border_width, rect_w, rect_h
             glVertexAttribPointer(3, 4, GL_FLOAT, 0, xx UI_VERTEX_BYTES, xx 32);
             glEnableVertexAttribArray(3);
+            // stroke color (4 floats)
+            glVertexAttribPointer(4, 4, GL_FLOAT, 0, xx UI_VERTEX_BYTES, xx 48);
+            glEnableVertexAttribArray(4);
 
             glBindVertexArray(0);
 
@@ -152,7 +155,7 @@ UIRenderer :: struct {
     }
 
     // Emit a quad (2 triangles = 6 vertices)
-    push_quad :: (self: *UIRenderer, frame: Frame, color: Color, radius: f32, border_w: f32) {
+    push_quad :: (self: *UIRenderer, frame: Frame, color: Color, stroke: Color, radius: f32, border_w: f32) {
         if self.vertex_count + 6 > MAX_UI_VERTICES {
             self.flush();
         }
@@ -161,26 +164,21 @@ UIRenderer :: struct {
         y0 := frame.origin.y;
         x1 := x0 + frame.size.width;
         y1 := y0 + frame.size.height;
-
-        r := color.rf();
-        g := color.gf();
-        b := color.bf();
-        a := color.af();
 
         w := frame.size.width;
         h := frame.size.height;
 
         // 6 vertices for quad: TL, TR, BL, TR, BR, BL
-        self.write_vertex(x0, y0, 0.0, 0.0, r, g, b, a, radius, border_w, w, h);
-        self.write_vertex(x1, y0, 1.0, 0.0, r, g, b, a, radius, border_w, w, h);
-        self.write_vertex(x0, y1, 0.0, 1.0, r, g, b, a, radius, border_w, w, h);
-        self.write_vertex(x1, y0, 1.0, 0.0, r, g, b, a, radius, border_w, w, h);
-        self.write_vertex(x1, y1, 1.0, 1.0, r, g, b, a, radius, border_w, w, h);
-        self.write_vertex(x0, y1, 0.0, 1.0, r, g, b, a, radius, border_w, w, h);
+        self.write_vertex(x0, y0, 0.0, 0.0, color, stroke, radius, border_w, w, h);
+        self.write_vertex(x1, y0, 1.0, 0.0, color, stroke, radius, border_w, w, h);
+        self.write_vertex(x0, y1, 0.0, 1.0, color, stroke, radius, border_w, w, h);
+        self.write_vertex(x1, y0, 1.0, 0.0, color, stroke, radius, border_w, w, h);
+        self.write_vertex(x1, y1, 1.0, 1.0, color, stroke, radius, border_w, w, h);
+        self.write_vertex(x0, y1, 0.0, 1.0, color, stroke, radius, border_w, w, h);
     }
 
     // Emit a quad with custom UV coordinates (for sprite sheet sub-textures)
-    push_quad_uv :: (self: *UIRenderer, frame: Frame, color: Color, radius: f32, border_w: f32, uv_min: Point, uv_max: Point) {
+    push_quad_uv :: (self: *UIRenderer, frame: Frame, color: Color, stroke: Color, radius: f32, border_w: f32, uv_min: Point, uv_max: Point) {
         if self.vertex_count + 6 > MAX_UI_VERTICES {
             self.flush();
         }
@@ -189,11 +187,6 @@ UIRenderer :: struct {
         y0 := frame.origin.y;
         x1 := x0 + frame.size.width;
         y1 := y0 + frame.size.height;
-
-        r := color.rf();
-        g := color.gf();
-        b := color.bf();
-        a := color.af();
 
         w := frame.size.width;
         h := frame.size.height;
@@ -203,28 +196,32 @@ UIRenderer :: struct {
         u_max := uv_max.x;
         v_max := uv_max.y;
 
-        self.write_vertex(x0, y0, u_min, v_min, r, g, b, a, radius, border_w, w, h);
-        self.write_vertex(x1, y0, u_max, v_min, r, g, b, a, radius, border_w, w, h);
-        self.write_vertex(x0, y1, u_min, v_max, r, g, b, a, radius, border_w, w, h);
-        self.write_vertex(x1, y0, u_max, v_min, r, g, b, a, radius, border_w, w, h);
-        self.write_vertex(x1, y1, u_max, v_max, r, g, b, a, radius, border_w, w, h);
-        self.write_vertex(x0, y1, u_min, v_max, r, g, b, a, radius, border_w, w, h);
+        self.write_vertex(x0, y0, u_min, v_min, color, stroke, radius, border_w, w, h);
+        self.write_vertex(x1, y0, u_max, v_min, color, stroke, radius, border_w, w, h);
+        self.write_vertex(x0, y1, u_min, v_max, color, stroke, radius, border_w, w, h);
+        self.write_vertex(x1, y0, u_max, v_min, color, stroke, radius, border_w, w, h);
+        self.write_vertex(x1, y1, u_max, v_max, color, stroke, radius, border_w, w, h);
+        self.write_vertex(x0, y1, u_min, v_max, color, stroke, radius, border_w, w, h);
     }
 
-    write_vertex :: (self: *UIRenderer, x: f32, y: f32, u: f32, v: f32, r: f32, g: f32, b: f32, a: f32, cr: f32, bw: f32, rw: f32, rh: f32) {
+    write_vertex :: (self: *UIRenderer, x: f32, y: f32, u: f32, v: f32, color: Color, stroke: Color, cr: f32, bw: f32, rw: f32, rh: f32) {
         off := self.vertex_count * UI_VERTEX_FLOATS;
         self.vertices[off + 0] = x;
         self.vertices[off + 1] = y;
         self.vertices[off + 2] = u;
         self.vertices[off + 3] = v;
-        self.vertices[off + 4] = r;
-        self.vertices[off + 5] = g;
-        self.vertices[off + 6] = b;
-        self.vertices[off + 7] = a;
+        self.vertices[off + 4] = color.rf();
+        self.vertices[off + 5] = color.gf();
+        self.vertices[off + 6] = color.bf();
+        self.vertices[off + 7] = color.af();
         self.vertices[off + 8] = cr;
         self.vertices[off + 9] = bw;
         self.vertices[off + 10] = rw;
         self.vertices[off + 11] = rh;
+        self.vertices[off + 12] = stroke.rf();
+        self.vertices[off + 13] = stroke.gf();
+        self.vertices[off + 14] = stroke.bf();
+        self.vertices[off + 15] = stroke.af();
         self.vertex_count += 1;
     }
 
@@ -235,10 +232,10 @@ UIRenderer :: struct {
             node := tree.nodes.items[i];
             if node.type == {
                 case .rect: {
-                    self.push_quad(node.frame, node.fill_color, 0.0, 0.0);
+                    self.push_quad(node.frame, node.fill_color, COLOR_TRANSPARENT, 0.0, 0.0);
                 }
                 case .rounded_rect: {
-                    self.push_quad(node.frame, node.fill_color, node.corner_radius, node.stroke_width);
+                    self.push_quad(node.frame, node.fill_color, node.stroke_color, node.corner_radius, node.stroke_width);
                 }
                 case .text: {
                     if g_font != null {
@@ -248,7 +245,7 @@ UIRenderer :: struct {
                 case .image: {
                     self.bind_texture(node.texture_id);
                     neg2 : f32 = 0.0 - 2.0;
-                    self.push_quad_uv(node.frame, COLOR_WHITE, neg2, 0.0, node.uv_min, node.uv_max);
+                    self.push_quad_uv(node.frame, COLOR_WHITE, COLOR_TRANSPARENT, neg2, 0.0, node.uv_min, node.uv_max);
                     // Re-bind font atlas after image
                     font := g_font;
                     if font != null {
@@ -355,11 +352,7 @@ UIRenderer :: struct {
         // current texture so the next flush samples the right one.
         self.bind_texture(font.texture_id);
 
-        r := node.text_color.rf();
-        g := node.text_color.gf();
-        b := node.text_color.bf();
-        a := node.text_color.af();
-
+        tc := node.text_color;
         ascent := font.get_ascent(node.font_size);
         raster_size := node.font_size * font.dpi_scale;
         inv_dpi := font.inv_dpi;
@@ -389,12 +382,12 @@ UIRenderer :: struct {
 
                     // corner_radius = -1.0 signals "text mode" to the fragment shader
                     neg1 : f32 = 0.0 - 1.0;
-                    self.write_vertex(gx0, gy0, u_min, v_min, r, g, b, a, neg1, 0.0, 0.0, 0.0);
-                    self.write_vertex(gx1, gy0, u_max, v_min, r, g, b, a, neg1, 0.0, 0.0, 0.0);
-                    self.write_vertex(gx0, gy1, u_min, v_max, r, g, b, a, neg1, 0.0, 0.0, 0.0);
-                    self.write_vertex(gx1, gy0, u_max, v_min, r, g, b, a, neg1, 0.0, 0.0, 0.0);
-                    self.write_vertex(gx1, gy1, u_max, v_max, r, g, b, a, neg1, 0.0, 0.0, 0.0);
-                    self.write_vertex(gx0, gy1, u_min, v_max, r, g, b, a, neg1, 0.0, 0.0, 0.0);
+                    self.write_vertex(gx0, gy0, u_min, v_min, tc, COLOR_TRANSPARENT, neg1, 0.0, 0.0, 0.0);
+                    self.write_vertex(gx1, gy0, u_max, v_min, tc, COLOR_TRANSPARENT, neg1, 0.0, 0.0, 0.0);
+                    self.write_vertex(gx0, gy1, u_min, v_max, tc, COLOR_TRANSPARENT, neg1, 0.0, 0.0, 0.0);
+                    self.write_vertex(gx1, gy0, u_max, v_min, tc, COLOR_TRANSPARENT, neg1, 0.0, 0.0, 0.0);
+                    self.write_vertex(gx1, gy1, u_max, v_max, tc, COLOR_TRANSPARENT, neg1, 0.0, 0.0, 0.0);
+                    self.write_vertex(gx0, gy1, u_min, v_max, tc, COLOR_TRANSPARENT, neg1, 0.0, 0.0, 0.0);
                 }
             }
             i += 1;
@@ -426,18 +419,21 @@ layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec2 aUV;
 layout(location = 2) in vec4 aColor;
 layout(location = 3) in vec4 aParams;
+layout(location = 4) in vec4 aStroke;
 
 uniform mat4 uProj;
 
 out vec2 vUV;
 out vec4 vColor;
 out vec4 vParams;
+out vec4 vStroke;
 
 void main() {
     gl_Position = uProj * vec4(aPos, 0.0, 1.0);
     vUV = aUV;
     vColor = aColor;
     vParams = aParams;
+    vStroke = aStroke;
 }
 GLSL;
 
@@ -446,6 +442,7 @@ UI_FRAG_SRC_CORE :: #string GLSL
 in vec2 vUV;
 in vec4 vColor;
 in vec4 vParams;
+in vec4 vStroke;
 
 uniform sampler2D uTex;
 
@@ -478,13 +475,19 @@ void main() {
         float aa = fwidth(dist);
         float alpha = 1.0 - smoothstep(-aa, aa, dist);
 
+        vec4 body = vColor;
         if (border > 0.0) {
+            // Stroke ring composited OVER the fill, source-over in straight
+            // alpha so a transparent fill leaves no dark halo at the seam.
             float inner = roundedBoxSDF(center, half_size - vec2(border), max(mode - border, 0.0));
-            float border_alpha = smoothstep(-aa, aa, inner);
-            alpha = alpha * max(border_alpha, 0.0);
+            float ring = clamp(smoothstep(-aa, aa, inner), 0.0, 1.0);
+            float sa = vStroke.a * ring;
+            float fa = vColor.a * (1.0 - sa);
+            float oa = sa + fa;
+            body = vec4((vStroke.rgb * sa + vColor.rgb * fa) / max(oa, 0.0001), oa);
         }
 
-        FragColor = vec4(vColor.rgb, vColor.a * alpha);
+        FragColor = vec4(body.rgb, body.a * alpha);
     } else {
         // Plain rect: vertex color only (no texture sample)
         FragColor = vColor;
@@ -501,18 +504,21 @@ layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec2 aUV;
 layout(location = 2) in vec4 aColor;
 layout(location = 3) in vec4 aParams;
+layout(location = 4) in vec4 aStroke;
 
 uniform mat4 uProj;
 
 out vec2 vUV;
 out vec4 vColor;
 out vec4 vParams;
+out vec4 vStroke;
 
 void main() {
     gl_Position = uProj * vec4(aPos, 0.0, 1.0);
     vUV = aUV;
     vColor = aColor;
     vParams = aParams;
+    vStroke = aStroke;
 }
 GLSL;
 
@@ -522,6 +528,7 @@ precision mediump float;
 in vec2 vUV;
 in vec4 vColor;
 in vec4 vParams;
+in vec4 vStroke;
 
 uniform sampler2D uTex;
 
@@ -554,13 +561,19 @@ void main() {
         float aa = fwidth(dist);
         float alpha = 1.0 - smoothstep(-aa, aa, dist);
 
+        vec4 body = vColor;
         if (border > 0.0) {
+            // Stroke ring composited OVER the fill, source-over in straight
+            // alpha so a transparent fill leaves no dark halo at the seam.
             float inner = roundedBoxSDF(center, half_size - vec2(border), max(mode - border, 0.0));
-            float border_alpha = smoothstep(-aa, aa, inner);
-            alpha = alpha * max(border_alpha, 0.0);
+            float ring = clamp(smoothstep(-aa, aa, inner), 0.0, 1.0);
+            float sa = vStroke.a * ring;
+            float fa = vColor.a * (1.0 - sa);
+            float oa = sa + fa;
+            body = vec4((vStroke.rgb * sa + vColor.rgb * fa) / max(oa, 0.0001), oa);
         }
 
-        FragColor = vec4(vColor.rgb, vColor.a * alpha);
+        FragColor = vec4(body.rgb, body.a * alpha);
     } else {
         // Plain rect: vertex color only
         FragColor = vColor;
@@ -570,10 +583,11 @@ GLSL;
 
 // --- Metal (MSL) — single library with vmain/fmain entry points ---
 //
-// `packed_float2 / packed_float4` keep the 12-float interleaved vertex
-// layout (pos2 / uv2 / color4 / params4 = 48 bytes) without padding —
-// MSL's default `float4` has 16-byte alignment and would force a 64-byte
-// struct (see examples/63-metal-clear.sx for the gotcha).
+// `packed_float2 / packed_float4` keep the 16-float interleaved vertex
+// layout (pos2 / uv2 / color4 / params4 / stroke4 = 64 bytes) without
+// padding — MSL's default `float4` has 16-byte alignment and would pad
+// the leading pos2/uv2 pair out (see examples/63-metal-clear.sx for the
+// gotcha).
 //
 // Uniform passing: GL uses `glUniformMatrix4fv("uProj", proj)`; Metal
 // receives the projection via `setVertexBytes:length:atIndex:1` (slot 0
@@ -589,6 +603,7 @@ struct UIVertex {
     packed_float2 uv;
     packed_float4 color;
     packed_float4 params;
+    packed_float4 stroke;
 };
 
 struct VOut {
@@ -596,6 +611,7 @@ struct VOut {
     float2 uv;
     float4 color;
     float4 params;
+    float4 stroke;
 };
 
 vertex VOut vmain(uint vid [[vertex_id]],
@@ -607,6 +623,7 @@ vertex VOut vmain(uint vid [[vertex_id]],
     o.uv = float2(v.uv);
     o.color = float4(v.color);
     o.params = float4(v.params);
+    o.stroke = float4(v.stroke);
     return o;
 }
 
@@ -637,12 +654,18 @@ fragment float4 fmain(VOut in [[stage_in]],
         float dist = roundedBoxSDF(center, half_size, mode);
         float aa = fwidth(dist);
         float alpha = 1.0 - smoothstep(-aa, aa, dist);
+        float4 body = in.color;
         if (border > 0.0) {
+            // Stroke ring composited OVER the fill, source-over in straight
+            // alpha so a transparent fill leaves no dark halo at the seam.
             float inner = roundedBoxSDF(center, half_size - float2(border), max(mode - border, 0.0));
-            float border_alpha = smoothstep(-aa, aa, inner);
-            alpha = alpha * max(border_alpha, 0.0);
+            float ring = clamp(smoothstep(-aa, aa, inner), 0.0, 1.0);
+            float sa = in.stroke.a * ring;
+            float fa = in.color.a * (1.0 - sa);
+            float oa = sa + fa;
+            body = float4((in.stroke.rgb * sa + in.color.rgb * fa) / max(oa, 0.0001), oa);
         }
-        return float4(in.color.rgb, in.color.a * alpha);
+        return float4(body.rgb, body.a * alpha);
     } else {
         // Plain rect: vertex color only
         return in.color;
