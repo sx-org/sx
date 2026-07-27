@@ -301,7 +301,24 @@ print_chain :: (ui: *Ui) {
 // storage the returned handle borrows: the view itself, or the ModBox
 // that holds it inline. Everything downstream — sinks, containers,
 // ViewChild — carries the 16-byte handle.
+//
+// The concrete type is the REQUIREMENT, not a convenience: `View` is a
+// tagged protocol, so a handle is a borrow with no owning form to copy
+// through (protocols.md §6.2). Placing an already-erased handle could
+// only forward a borrow of the caller's frame temp into a tree that
+// layout walks after that frame is gone — so the erased argument is
+// refused at the call site.
 place :: (v: $V/View, m: Mod = .{}) -> View {
+    inline if V == {
+        case View: {
+            #error("a 'View' handle is a borrow — `place` copies the CONCRETE view into frame-arena storage, and an already-erased handle has nothing left to copy. Drop the erasure (`place(v)`, not `place(v.(View))`); a helper composes by returning what `place` returned, not its own erasure.");
+            // The arm is already fatal; the `return` only terminates it so the
+            // body below stays un-lowered and its `View`-as-`V` type errors
+            // never reach the user on top of the refusal.
+            return v;
+        }
+        else: {}
+    }
     if context.ui == null {
         // The S2 contract message, line-stable on purpose: a module-internal
         // line number tells the user nothing (the failure is at THEIR call

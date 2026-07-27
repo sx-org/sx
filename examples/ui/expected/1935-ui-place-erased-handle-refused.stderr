@@ -1,0 +1,11 @@
+error: a 'View' handle is a borrow — `place` copies the CONCRETE view into frame-arena storage, and an already-erased handle has nothing left to copy. Drop the erasure (`place(v)`, not `place(v.(View))`); a helper composes by returning what `place` returned, not its own erasure.
+  --> examples/ui/1935-ui-place-erased-handle-refused.sx:31:5
+   |
+31 |     place(d.(View));
+   |     ^^^^^
+
+note: raised by '#error' here
+  --> library/modules/ui/compose.sx:314:13
+    |
+314 |             #error("a 'View' handle is a borrow — `place` copies the CONCRETE view into frame-arena storage, and an already-erased handle has nothing left to copy. Drop the erasure (`place(v)`, not `place(v.(View))`); a helper composes by returning what `place` returned, not its own erasure.");
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
