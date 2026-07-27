@@ -424,8 +424,8 @@ Router :: struct {
 // with an `Allow` header listing the methods registered for that path.
 //
 // Use it as:  srv, e := http.Server.init(cfg, http.dispatch, xx @router);
-dispatch :: (req: *types.Request, resp: *types.Response, ctx: *Router) {
-    self := ctx;
+dispatch :: (req: *types.Request, resp: *types.Response, ctx: usize) {
+    self : *Router = xx ctx;
     path := path_only(req.path);    
 
     rc : RouteCtx = .{ req = req, resp = resp, app_ctx = self.app_ctx };

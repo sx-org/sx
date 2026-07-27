@@ -1,0 +1,36 @@
+// A function value binds to a fn-pointer slot only when the signatures are
+// the same one — arity, parameter types, return type, calling convention.
+// These are the compatible bindings, one per position the language offers:
+// local decl, struct field, assignment, container element, call argument,
+// return, and a fn-typed value flowing into another fn-typed slot.
+//
+// `one` has a defaulted parameter: the default fills in at a DIRECT call,
+// while the value still occupies a `(i64) -> i64` slot (issue 0369).
+#import "modules/std.sx";
+
+one :: (x: i64 = 5) -> i64 { return x; }
+twice :: (x: i64) -> i64 { return x * 2; }
+cfn :: (x: i64) -> i64 abi(.c) { return x + 100; }
+
+Holder :: struct { f: (i64) -> i64; }
+
+pick :: () -> (i64) -> i64 { return twice; }
+apply :: (f: (i64) -> i64, v: i64) -> i64 { return f(v); }
+
+main :: () {
+    a : (i64) -> i64 = one;
+    h : Holder = .{ f = one };
+    b : (i64) -> i64 = a;
+    b = twice;
+    arr : [2]((i64) -> i64) = .[one, twice];
+    e := arr[1];
+    c : (i64) -> i64 abi(.c) = cfn;
+    p := pick();
+
+    print("{} {} {} {} {} {} {}\n", a(1), h.f(2), b(3), e(4), c(5), p(6), apply(one, 7));
+    print("{}\n", one());
+}
+
+// ** stdout **
+//1 2 6 8 105 12 7
+//5
