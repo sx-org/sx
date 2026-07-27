@@ -62,7 +62,7 @@ const FuncId = inst_mod.FuncId;
 // The error return-trace buffer (sx_trace.c, linked into the compiler) — the same
 // one emit_llvm reads after a `#run` to render the comptime escape trace. A
 // comptime failable that raises emits `sx_trace_push(trace_frame())` as it unwinds;
-// the VM services those calls natively so the trace populates identically to legacy.
+// the VM services those calls natively so the escape trace populates as it unwinds.
 extern fn sx_trace_push(frame: u64) void;
 extern fn sx_trace_clear() void;
 const Span = inst_mod.Span;
@@ -70,7 +70,7 @@ const Span = inst_mod.Span;
 /// A comptime memory address — a REAL host pointer (`@intFromPtr`), since the
 /// machine allocates each object from an arena that never moves it. `null_addr` (0)
 /// is the null sentinel (no allocation is ever at address 0), so a zeroed register
-/// reads as null — mirroring how the legacy `Value` model distinguishes `null_val`.
+/// reads as null.
 /// Because addresses are absolute host pointers, a comptime pointer and an
 /// FFI-returned host pointer are the SAME kind of value: the FFI bridge hands them
 /// to / from real libc with no translation (Phase 4D).
@@ -114,8 +114,8 @@ pub const Machine = struct {
 
     /// Read a `size`-byte (1/2/4/8) little-endian scalar at `addr` into a register
     /// word (zero-extended). A null / oversized access returns `error.OutOfBounds`
-    /// (NOT a panic) so a malformed comptime run BAILS to the legacy fallback rather
-    /// than crashing. (Addresses are absolute host pointers, so there is no
+    /// (NOT a panic) so a malformed comptime run bails rather than crashing.
+    /// (Addresses are absolute host pointers, so there is no
     /// upper-bound check — a non-null wild address would fault; the `Frame` `bad_ref`
     /// guard catches the dominant malformed-IR vector before any such deref.)
     pub fn readWord(_: *const Machine, addr: Addr, size: usize) error{OutOfBounds}!Reg {
@@ -159,8 +159,8 @@ pub const Frame = struct {
     gpa: std.mem.Allocator,
     /// Set when `get`/`set` is handed an out-of-range Ref index — a malformed IR
     /// (e.g. a `ret Ref.none` left by an unresolved name during LOWERING-time
-    /// comptime eval). The `run` loop checks it after each instruction and bails
-    /// (→ legacy fallback), so the VM never panics on imperfect IR.
+    /// comptime eval). The `run` loop checks it after each instruction and bails,
+    /// so the VM never panics on imperfect IR.
     bad_ref: bool = false,
 
     pub fn init(gpa: std.mem.Allocator, num_regs: usize) Frame {
@@ -190,9 +190,8 @@ pub const Frame = struct {
     }
 };
 
-/// Why the most recent `tryEval` returned `null` (bailed to the legacy
-/// interpreter) — the bail `detail` (op name / one-line reason), or a fixed string
-/// for the structural skips. Mirrors the legacy interp's `last_bail_detail`; the
+/// Why the most recent `tryEval` returned `null` (a bail) — the bail `detail`
+/// (op name / one-line reason), or a fixed string for the structural skips. The
 /// host reads it under a coverage-trace gate to learn what to port next. Cleared at
 /// the top of every `tryEval`; meaningful only when `tryEval` returned `null`.
 pub var last_bail_reason: ?[]const u8 = null;
@@ -403,7 +402,7 @@ fn evaluationTask(vm: *Vm, func_id: FuncId, extra: []const Reg) Error!Reg {
 }
 
 /// Wiring entry point: evaluate comptime function `func_id` on the comptime VM
-/// and hand back the OWNED evaluation — completed with its result as a legacy
+/// and hand back the OWNED evaluation — completed with its result as a
 /// `Value` (or `null` on any bail: unsupported op, no body, malformed IR), or
 /// PARKED on a fact `scheduler` left unanswered. A parked evaluation belongs to
 /// the caller until it resumes or destroys it; nothing parks without a
@@ -436,12 +435,10 @@ pub fn runBuildCallback(gpa: std.mem.Allocator, module: *const Module, func_id: 
 
 // ── Executor ────────────────────────────────────────────────────────────────
 //
-// Walks the SAME SSA IR the legacy interpreter (`interp.zig`) walks, but over
-// comptime frames: each SSA result is a `Reg` word (immediate scalar bits, or
-// an `Addr`). Scalar semantics MIRROR the legacy interp so the two evaluators
-// agree byte-for-byte (the parity goal): integer math is 64-bit wrapping/signed
-// (`+%`, `@divTrunc`, signed compares — the legacy's `.int` is i64 regardless of
-// the declared width), float math is f64. Memory/aggregate/call ops are not ported
+// Walks the SSA IR over comptime frames: each SSA result is a `Reg` word
+// (immediate scalar bits, or an `Addr`). Integer math is 64-bit wrapping/signed
+// (`+%`, `@divTrunc`, signed compares — a scalar `.int` is i64 regardless of the
+// declared width), float math is f64. Memory/aggregate/call ops are not ported
 // yet — they bail loudly (`error.Unsupported` + `detail`), never silently.
 
 pub const Error = error{ DivisionByZero, TypeError, Unsupported, OutOfBounds };
@@ -470,7 +467,7 @@ fn nominalIdentOf(info: types.TypeInfo) ?struct { name: types.StringId, nominal_
 const NamedMember = struct { name: types.StringId, ty: TypeId };
 
 /// A signed integer type narrower-or-equal to 64 bits — its loaded bytes must be
-/// SIGN-extended into the register (the legacy `.int` model is i64).
+/// SIGN-extended into the register (a scalar `.int` is i64).
 fn isSignedInt(ty: TypeId) bool {
     return switch (ty) {
         .i8, .i16, .i32, .i64, .isize => true,
@@ -485,7 +482,7 @@ fn signExtendWord(raw: Reg, sz: usize) Reg {
 }
 
 // ── BuildOptions target predicates (Phase 5.5) ───────────────────────────────
-// Computed from the `--target` triple, mirroring `compiler_hooks`'s legacy hooks
+// Computed from the `--target` triple, mirroring `compiler_hooks`'s hooks
 // (which mirror `TargetConfig.is{MacOS,IOS,IOSDevice,IOSSimulator}()`).
 
 fn tripleHas(triple: ?[]const u8, needle: []const u8) bool {
@@ -541,22 +538,22 @@ pub const Vm = struct {
     /// `file:line:col` + the source line. Null → line/col degrade to 1 / "".
     source_map: ?*const std.StringHashMap([:0]const u8) = null,
     /// Current call-recursion depth, guarded against host stack overflow on deep /
-    /// infinite comptime recursion (mirrors the legacy interp's `call_depth`).
+    /// infinite comptime recursion.
     depth: u32 = 0,
     /// Reason for the last `error.Unsupported` / `error.TypeError` bail — the op
-    /// tag name or a one-line explanation. Mirrors the legacy interp's
-    /// `last_bail_detail` so the host can surface a real message, not a bare error.
+    /// tag name or a one-line explanation, so the host can surface a real message,
+    /// not a bare error.
     detail: ?[]const u8 = null,
-    /// Per-global memo of comptime-evaluated globals (the legacy interp's
-    /// `global_values`): `global_get` caches a global's Reg so a chain of globals
+    /// Per-global memo of comptime-evaluated globals: `global_get` caches a
+    /// global's Reg so a chain of globals
     /// reading each other doesn't re-run inits (and so each runs at most once).
     global_cache: std.AutoHashMap(u32, Reg),
     /// Addressable storage for globals referenced through `@global`. Kept
     /// separate from value memoization so taking a scalar global's address
     /// never changes a later `global_get` into the pointer value.
     global_addr_cache: std.AutoHashMap(u32, Reg),
-    /// The active call chain of `FuncId`s (mirrors the legacy interp's
-    /// `call_chain`). `trace_frame` packs the top of this stack into a return-trace
+    /// The active call chain of `FuncId`s. `trace_frame` packs the top of this
+    /// stack into a return-trace
     /// frame; pushed by `invoke`/`runEntry`, popped on return.
     call_stack: std.ArrayList(FuncId) = .empty,
     /// The fact this evaluation is parked on — read by the `evaluate` driver
@@ -721,7 +718,7 @@ pub const Vm = struct {
 
     /// Evaluate comptime global `gid` to its Reg value — lazily running its
     /// `comptime_func` (with implicit-ctx bootstrap), or reading a scalar static
-    /// `init_val` — memoized in `global_cache`. The legacy `getGlobal` analogue.
+    /// `init_val` — memoized in `global_cache`.
     fn evalGlobal(self: *Vm, gid: inst_mod.GlobalId) Error!Reg {
         const module = self.module orelse return self.failMsg("comptime VM: global_get needs a module");
         const idx = gid.index();
@@ -887,7 +884,7 @@ pub const Vm = struct {
             .const_null, .const_undef => return .{ .value = null_addr },
             // A `Type` literal: the 8-byte handle is the `TypeId` index in a word
             // (the `.type_value` representation). `regToValue` maps it back to a
-            // `.type_tag` Value at the legacy boundary.
+            // `.type_tag` Value.
             .const_type => |tid| return .{ .value = @as(Reg, tid.index()) },
             // A comptime tagged value is SYMBOLIC: its second word is the
             // conformer's own `TypeId`, never the dense tag (§7.9 — tags are
@@ -910,7 +907,7 @@ pub const Vm = struct {
             .add, .sub, .mul, .div, .mod => |b| return .{
                 .value = try arith(std.meta.activeTag(ins.op), ins.ty, frame.get(b.lhs.index()), frame.get(b.rhs.index())),
             },
-            // ── Bitwise + shift (i64, mirroring the legacy interp) ─
+            // ── Bitwise + shift (i64) ───────────────────────────
             .bit_and, .bit_or, .bit_xor, .shl, .shr => |b| return .{
                 .value = bitwise(std.meta.activeTag(ins.op), frame.get(b.lhs.index()), frame.get(b.rhs.index())),
             },
@@ -934,7 +931,7 @@ pub const Vm = struct {
 
             // ── Conversions ─────────────────────────────────────
             // widen/narrow/bitcast pass the bits through (comptime values don't
-            // truncate — matches the legacy interp). int↔float DO convert.
+            // truncate). int↔float DO convert.
             .widen, .narrow, .bitcast => |c| return .{ .value = frame.get(c.operand.index()) },
             .int_to_float => |c| return .{ .value = @bitCast(@as(f64, @floatFromInt(@as(i64, @bitCast(frame.get(c.operand.index())))))) },
             .float_to_int => |c| return .{ .value = @bitCast(@as(i64, @intFromFloat(@as(f64, @bitCast(frame.get(c.operand.index())))))) },
@@ -1318,21 +1315,20 @@ pub const Vm = struct {
             },
 
             // `is_comptime()` — always true on the comptime VM (folds to false in
-            // compiled code). Mirrors the legacy interp's `.is_comptime => true`.
+            // compiled code).
             .is_comptime => return .{ .value = @as(Reg, 1) },
 
             // A comptime return-trace frame: pack `(func_id << 32 | span.start)`
-            // from the top of the call chain (mirrors the legacy interp). The
+            // from the top of the call chain. The
             // failable-propagation lowering feeds this to `sx_trace_push`.
             .trace_frame => {
                 const fid: u64 = if (self.call_stack.items.len > 0) self.call_stack.items[self.call_stack.items.len - 1].index() else 0;
                 return .{ .value = (fid << 32) | @as(u64, ins.span.start) };
             },
             // Dump the comptime call-frame chain (`trace.print_interpreter_frames`) —
-            // the VM-native mirror of the legacy `printInterpFrames`. Walks the active
-            // `call_stack` (skipping the last frame, the `print_interpreter_frames`
-            // fn itself, like the legacy) and writes `  at <name>` lines straight to
-            // fd 1 (consistent with `out`'s now-direct libc `write`).
+            // walks the active `call_stack` (skipping the last frame, the
+            // `print_interpreter_frames` fn itself) and writes `  at <name>` lines
+            // straight to fd 1 (consistent with `out`'s now-direct libc `write`).
             .interp_print_frames => {
                 const module = self.module orelse return self.failMsg("comptime interp_print_frames: no module");
                 const n = self.call_stack.items.len;
@@ -1351,9 +1347,9 @@ pub const Vm = struct {
                 return .{ .value = null_addr };
             },
             // Unpack a comptime frame `(func_id << 32 | span.start)` and build a
-            // `Frame { file, line, col, func, line_text }` aggregate in comptime memory —
-            // the VM-native mirror of the legacy interp's `.trace_resolve`. `ins.ty`
-            // is the `Frame` struct, so each field's type/offset comes from the table.
+            // `Frame { file, line, col, func, line_text }` aggregate in comptime memory.
+            // `ins.ty` is the `Frame` struct, so each field's type/offset comes from
+            // the table.
             .trace_resolve => |u| {
                 const table = try self.requireTable();
                 const module = self.module orelse return self.failMsg("comptime trace_resolve: no module");
@@ -1382,7 +1378,7 @@ pub const Vm = struct {
                 const sfields = table.get(fty).@"struct".fields;
                 if (sfields.len != 5) return self.failMsg("comptime trace_resolve: Frame struct is not 5 fields");
                 const addr = self.machine.allocBytes(table.typeSizeBytes(fty), table.typeAlignBytes(fty));
-                // { file, line, col, func, line_text } — positional, matching the legacy build.
+                // { file, line, col, func, line_text } — positional field order.
                 try self.writeField(table, addr + fieldOffset(table, fty, 0), sfields[0].ty, try self.makeStringValue(table, file));
                 try self.writeField(table, addr + fieldOffset(table, fty, 1), sfields[1].ty, @bitCast(line));
                 try self.writeField(table, addr + fieldOffset(table, fty, 2), sfields[2].ty, @bitCast(col));
@@ -1392,7 +1388,7 @@ pub const Vm = struct {
             },
             // `error_tag_name(e)` — the runtime tag id (a word) → its name string via
             // the always-linked tag-name table. Pure: builds a `{ptr,len}` string in
-            // comptime memory. Mirrors the legacy interp's `error_tag_name_get`.
+            // comptime memory.
             .error_tag_name_get => |u| {
                 const table = try self.requireTable();
                 const id: u32 = @intCast(frame.get(u.operand.index()));
@@ -1440,7 +1436,7 @@ pub const Vm = struct {
             // ── Globals / function values ───────────────────────
             // Read another comptime global by lazily evaluating its init (its
             // `comptime_func` run on this same VM, or a scalar static value),
-            // memoized. Mirrors the legacy interp's `getGlobal`.
+            // memoized.
             .global_get => |gid| return .{ .value = try self.evalGlobal(gid) },
             // `&global` — the global's declared initializer laid into comptime
             // memory, once per evaluation. The instance is VM-LOCAL: a store
@@ -1470,7 +1466,7 @@ pub const Vm = struct {
 
             // ── Pointers ────────────────────────────────────────
             // `@x` — pass through: an aggregate value already IS its address, and a
-            // pointer value is already an address (mirrors the legacy interp).
+            // pointer value is already an address.
             .addr_of => |u| return .{ .value = frame.get(u.operand.index()) },
             // `p.*` — read the pointee (like `load`); `ins.ty` is the pointee type.
             .deref => |u| {
@@ -1486,8 +1482,7 @@ pub const Vm = struct {
             },
             // Multi-way branch on an integer discriminant: an enum/error tag, or a
             // type-category match where the operand is a `.type_value` whose word IS
-            // its `TypeId` index (so the same i64 compare covers both, mirroring the
-            // legacy `switch_br`'s `asInt orelse asTypeId().index()`).
+            // its `TypeId` index (so the same i64 compare covers both).
             .switch_br => |sb| {
                 const operand: i64 = @bitCast(frame.get(sb.operand.index()));
                 for (sb.cases) |case| {
@@ -1541,9 +1536,8 @@ pub const Vm = struct {
                 return .{ .value = addr };
             },
 
-            // Comptime metatype `intrinsic`s (`declare`/`define`). The VM-native
-            // mirror of the legacy `execBuiltin` arms; an unmodeled builtin returns
-            // null → bail with its name → legacy fallback (dual-path parity).
+            // Comptime metatype `intrinsic`s (`declare`/`define`). An unmodeled
+            // builtin returns null → bail with its name (never a silent default).
             .call_builtin => |bi| {
                 if (try self.callBuiltinVm(bi, ins.ty, frame, ref_types)) |r| return .{ .value = r };
                 self.detail = @tagName(bi.builtin);
@@ -1560,7 +1554,7 @@ pub const Vm = struct {
     }
 
     /// 64-bit integer (wrapping/signed) or f64 arithmetic, keyed on the result
-    /// type — mirrors the legacy `evalArith`.
+    /// type.
     fn arith(tag: OpTag, ty: TypeId, l: Reg, r: Reg) Error!Reg {
         if (isFloat(ty)) {
             const lf: f64 = @bitCast(l);
@@ -1588,10 +1582,9 @@ pub const Vm = struct {
         return @bitCast(res);
     }
 
-    /// 64-bit bitwise AND/OR/XOR and shifts — mirrors the legacy interp's i64
-    /// model exactly: shifts clamp the amount to `@min(rhs, 63)` and `shr` is an
-    /// ARITHMETIC right shift (signed `>>`, sign-extending), matching the legacy
-    /// `.int` representation.
+    /// 64-bit bitwise AND/OR/XOR and shifts over the i64 model: shifts clamp the
+    /// amount to `@min(rhs, 63)` and `shr` is an ARITHMETIC right shift (signed
+    /// `>>`, sign-extending).
     fn bitwise(tag: OpTag, l: Reg, r: Reg) Reg {
         const li: i64 = @bitCast(l);
         const ri: i64 = @bitCast(r);
@@ -1607,7 +1600,7 @@ pub const Vm = struct {
     }
 
     /// Comparison keyed on the operand type: f64 for floats, == / != only for
-    /// bool, else signed i64 — mirrors the legacy `evalCmp`.
+    /// bool, else signed i64.
     fn cmp(self: *Vm, tag: OpTag, lty: TypeId, l: Reg, r: Reg) Error!bool {
         if (isFloat(lty)) {
             const lf: f64 = @bitCast(l);
@@ -1674,9 +1667,9 @@ pub const Vm = struct {
 
     /// The IR type of operand `r`, bounds-checked. Lowering-time IR can carry an
     /// out-of-range / `Ref.none` operand (an unresolved name lowers to a dangling
-    /// ref); reading `ref_types` raw would panic, so bail instead — the host then
-    /// falls back to the legacy interpreter. The companion to `Frame.get`'s
-    /// `bad_ref` guard (which covers the value side; this covers the type side).
+    /// ref); reading `ref_types` raw would panic, so bail instead. The companion
+    /// to `Frame.get`'s `bad_ref` guard (which covers the value side; this covers
+    /// the type side).
     fn refTy(self: *Vm, ref_types: []const TypeId, r: Ref) Error!TypeId {
         if (r.index() >= ref_types.len) return self.badRef();
         return ref_types[r.index()];
@@ -1805,8 +1798,8 @@ pub const Vm = struct {
     }
 
     /// Call a real extern (libc / host) function via dlsym + the `host_ffi`
-    /// trampolines — the comptime VM's host-FFI escape (the legacy `interp.callExtern`
-    /// equivalent). Marshalling is trivial here because `Addr` is already a host
+    /// trampolines — the comptime VM's host-FFI escape. Marshalling is trivial
+    /// here because `Addr` is already a host
     /// pointer: every WORD-kind arg (scalar OR pointer) passes as `usize` verbatim,
     /// and a pointer return is a valid `Addr`. Non-word (aggregate/string/float)
     /// args+returns bail loudly (4D.2 adds them) — never a silent miscall.
@@ -1878,8 +1871,8 @@ pub const Vm = struct {
     /// Marshal one extern arg (of IR type `aty`, register value `reg`) to the `usize`
     /// the host_ffi trampolines expect. A scalar/pointer WORD passes verbatim (a
     /// pointer Reg is already a host pointer). A string/slice fat-pointer is copied
-    /// into a NUL-terminated buffer and its `char*` passed (mirrors the legacy
-    /// `marshalExternArg`). Floats (no float trampoline) and non-fat-pointer
+    /// into a NUL-terminated buffer and its `char*` passed. Floats (no float
+    /// trampoline) and non-fat-pointer
     /// aggregates bail loudly — never a silent miscall.
     fn marshalExternArg(self: *Vm, table: *const types.TypeTable, aty: TypeId, reg: Reg) Error!usize {
         switch (kindOf(table, aty)) {
@@ -1904,8 +1897,8 @@ pub const Vm = struct {
     }
 
     /// Largest single comptime allocation the VM will service natively. A bogus /
-    /// pathological comptime `malloc` above this bails to the legacy path (which
-    /// calls real libc) rather than OOM-panicking the compiler via `allocBytes`.
+    /// pathological comptime `malloc` above this bails rather than OOM-panicking
+    /// the compiler via `allocBytes`.
     const max_builtin_alloc: usize = 1 << 28; // 256 MiB
 
     /// Read call arg `i` as a non-negative byte count (libc size/length arg).
@@ -1917,15 +1910,14 @@ pub const Vm = struct {
     /// Model a curated set of libc MEMORY builtins directly on comptime memory, so a
     /// comptime `malloc`/`free`/`memcpy`/… stays sandboxed (no host heap, no
     /// dlsym) and target-aware. Returns the result word, or `null` if `name` is
-    /// not one of them (the caller then bails to the legacy interpreter). libc
-    /// `malloc` returns 16-byte-aligned storage; we mirror that. The COMPUTED
-    /// result is byte-identical to the legacy path (which calls real libc) — only
-    /// the backing memory differs (comptime arena vs host heap), which the result can't see.
+    /// not one of them (the caller then bails). libc `malloc` returns
+    /// 16-byte-aligned storage; we match that. Only the backing memory differs
+    /// from a real libc call (comptime arena vs host heap), which the result can't see.
     fn callMemBuiltin(self: *Vm, name: []const u8, args: []const Ref, frame: *Frame) Error!?Reg {
         // Error return-trace runtime (sx_trace.c, linked into the compiler). A
         // comptime failable that raises emits `sx_trace_push(trace_frame())` as it
         // unwinds; service it natively so the trace buffer the host reads is
-        // populated identically to the legacy interp's dlsym path.
+        // populated.
         if (std.mem.eql(u8, name, "sx_trace_push")) {
             if (args.len >= 1) sx_trace_push(frame.get(args[0].index()));
             return @as(Reg, 0);
@@ -1973,14 +1965,14 @@ pub const Vm = struct {
             if (n > 0) @memset(try self.machine.bytes(dst, n), byte);
             return dst; // libc returns dst
         }
-        return null; // not a modeled builtin → caller bails to legacy
+        return null; // not a modeled builtin → caller bails
     }
 
     /// Service a welded `compiler`-library function natively on comptime memory — the
     /// comptime compiler-API (Phase 3 of `PLAN-COMPILER-VM.md`). Returns the result
-    /// word, or `null` for an unknown name (caller bails → legacy). Mirrors the
-    /// legacy `compiler_lib` handlers, but reads/writes comptime memory directly instead
-    /// of marshaling `Value`s. The seed pair is the string-pool round-trip:
+    /// word, or `null` for an unknown name (caller bails). Reads/writes comptime
+    /// memory directly instead of marshaling `Value`s. The seed pair is the
+    /// string-pool round-trip:
     ///   `intern(s: string) -> StringId` and `text_of(id: StringId) -> string`.
     /// Read compiler-call arg `i` as a u32 handle (a `StringId` / `TypeId` word),
     /// range-checked — never a silent truncation.
@@ -2006,8 +1998,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             const text = try self.machine.bytes(try self.sliceData(table, s), @intCast(try self.sliceLen(s)));
             // The string pool is genuinely mutable; the VM holds the table `const`
             // (it never mutates TYPE layout — interning a string is pool-only, so it
-            // can't invalidate the cached type sizes the VM relies on). Same access
-            // the legacy `compiler_lib.mintTable` uses.
+            // can't invalidate the cached type sizes the VM relies on).
             const id = @constCast(table).internString(text);
             return @as(Reg, @intFromEnum(id));
         }
@@ -2032,8 +2023,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         if (intr == .raw_field_count) {
             if (args.len != 1) return self.failMsg("comptime type_field_count: expected one TypeId arg");
             const tid = try self.argTypeId(args, frame, 0);
-            // Same `TypeTable.memberCount` the legacy handler reads → no drift; a
-            // type with no member count bails loudly (no silent 0).
+            // `TypeTable.memberCount`; a type with no member count bails loudly
+            // (no silent 0).
             const count = table.memberCount(tid) orelse
                 return self.failMsg("comptime type_field_count: type has no field/variant count");
             return @as(Reg, @bitCast(count));
@@ -2078,8 +2069,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // These MINT into the type table via `@constCast(table)` — the same
         // mutable access the read-side `intern` uses (the table is genuinely
         // mutable; the VM merely holds it `const`). They take/return real `Type`
-        // values (`.type_value` words = `TypeId.index()`). Mirror the legacy
-        // `compiler_lib` handlers exactly so the dual paths can't drift.
+        // values (`.type_value` words = `TypeId.index()`).
         if (intr == .raw_declare_type) {
             if (args.len != 1) return self.failMsg("comptime declare_type: expected (name)");
             const s = frame.get(args[0].index()); // string fat-pointer Addr
@@ -2098,7 +2088,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // `build_options()` hands back an opaque, zero-field `BuildOptions` handle;
         // the real state lives on the threaded `BuildConfig`. Return the null
         // sentinel word (the handle is never dereferenced — every operation takes it
-        // as an ignored `self`). Mirrors the legacy `hookBuildOptions` (`.void_val`).
+        // as an ignored `self`).
         if (intr == .build_options) {
             return @as(Reg, null_addr);
         }
@@ -2282,7 +2272,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.target_framework_paths.len))));
         if (std.mem.eql(u8, name, "jni_main_count"))
             return @as(Reg, @bitCast(@as(i64, @intCast(bc.jni_main_runtime_paths.len))));
-        // Indexed string getters (out-of-range → "", mirroring the legacy hooks).
+        // Indexed string getters (out-of-range → "").
         // Asset dirs are `{src,dest}` structs, so read the field directly.
         if (std.mem.eql(u8, name, "asset_dir_src_at") or std.mem.eql(u8, name, "asset_dir_dest_at")) {
             if (args.len != 2) return self.failMsg("comptime asset_dir getter: expected (self, i)");
@@ -2300,7 +2290,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             return try self.indexedStr(args, frame, bc.jni_main_runtime_paths);
         if (std.mem.eql(u8, name, "jni_main_java_source_at"))
             return try self.indexedStr(args, frame, bc.jni_main_java_sources);
-        // Target predicates (computed from the triple — mirror the legacy hooks).
+        // Target predicates (computed from the triple).
         if (boolPredicate(name)) |pred| {
             if (args.len != 1) return self.failMsg("comptime BuildOptions predicate: expected (self)");
             return @as(Reg, if (pred(bc.target_triple)) 1 else 0);
@@ -2309,7 +2299,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     }
 
     /// Read index arg 1, bounds-check against `items`, and return the element
-    /// string (or "" when out of range — mirrors the legacy hook behavior).
+    /// string (or "" when out of range).
     fn indexedStr(self: *Vm, args: []const Ref, frame: *Frame, items: []const []const u8) Error!Reg {
         const table = try self.requireTable();
         if (args.len != 2) return self.failMsg("comptime BuildOptions indexed getter: expected (self, i)");
@@ -2428,7 +2418,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// `.type_value` word IS a `TypeId`; an Any box `{ data@0, type_id@8 }` yields
     /// its type_id (the boxed value's runtime type), unless it == `type_value` — a
     /// boxed Type (the `type_of(x)` shape) whose real id sits behind the data
-    /// pointer. The VM-native mirror of the legacy `Value.reflectTypeId`.
+    /// pointer.
     fn reflectArgTypeId(self: *Vm, aty: TypeId, w: Reg) Error!TypeId {
         // A `TypeId` index is a u32; a word that doesn't fit is a garbage/mis-read
         // value (e.g. a wrong slice stride yielding an `Any` element at the wrong
@@ -2456,10 +2446,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     }
 
     /// Service a comptime metatype `intrinsic` (`meta.sx`'s `declare`/`define`)
-    /// natively on comptime memory, the VM-native mirror of the legacy
-    /// `interp.execBuiltinInner` arms. Returns the result word, or `null` for a
-    /// builtin the VM doesn't model yet (caller bails → legacy fallback, so dual-path
-    /// parity holds). Keeps BOTH paths alive during the VM-default transition.
+    /// natively on comptime memory. Returns the result word, or `null` for a
+    /// builtin the VM doesn't model yet (caller bails).
     fn callBuiltinVm(self: *Vm, bi: inst_mod.BuiltinCall, ins_ty: TypeId, frame: *Frame, ref_types: []const TypeId) Error!?Reg {
         switch (bi.builtin) {
             // `declare(name)` and `define(handle, info)` are no longer builtins —
@@ -2469,7 +2457,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             // type_name(x) → the type's name as a string. The arg is a Type value
             // (`.type_value` word = a TypeId) or an Any box (`{tag@0, value@8}` whose
             // tag IS the boxed value's type, unless tag == type_value: then the boxed
-            // Type's id is in the value slot). Mirrors the legacy `reflectTypeId`.
+            // Type's id is in the value slot).
             .type_name => {
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime type_name: missing argument");
@@ -2478,8 +2466,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             },
             // type_is_unsigned(x) → is x's type an unsigned int? Resolves the TypeId
             // the same way as type_name (a `.type_value` word, or an Any box whose tag
-            // IS the boxed value's type), then queries `isUnsignedInt`. Mirrors the
-            // legacy `type_is_unsigned` builtin (`reflectTypeId` + `isUnsignedInt`).
+            // IS the boxed value's type), then queries `isUnsignedInt`.
             .is_unsigned => {
                 const table = try self.requireTable();
                 if (bi.args.len < 1) return self.failMsg("comptime type_is_unsigned: missing argument");
@@ -2558,7 +2545,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 const tid = try self.reflectArgTypeId(try self.refTy(ref_types, bi.args[0]), frame.get(bi.args[0].index()));
                 return try self.buildTypeInfo(table, ins_ty, tid);
             },
-            else => return null, // not modeled on the VM yet → caller bails to legacy
+            else => return null, // not modeled on the VM yet → caller bails
         }
     }
 
@@ -2567,7 +2554,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// element/struct layouts come from the `result_ty` (= the metatype `TypeInfo`
     /// tagged union): variant tag `t` → payload struct `EnumInfo`/`StructInfo`/
     /// `TupleInfo` (one slice field) → the slice element (`EnumVariant`/`StructField`/
-    /// `Type`). Mirrors the legacy member shapes: a tagged-union/struct field and an
+    /// `Type`). The member shapes: a tagged-union/struct field and an
     /// enum variant reflect as `{ name, ty }` (a payloadless variant carries `void`);
     /// tuple elements are bare positional `Type`s. `define(declare(n), type_info(T))`
     /// round-trips to a byte-identical nominal copy.
@@ -2830,17 +2817,14 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         return pinfo;
     }
 
-    // ── Reg ↔ Value bridge (legacy-interop boundary) ────────────────────────
+    // ── Reg → Value bridge ──────────────────────────────────────────────────
     //
-    // The wiring step routes a comptime eval through the VM, falling back to the
-    // legacy `interp.zig` (tagged `Value` model) on `error.Unsupported`. The
-    // boundary converts host `Value` args → VM `Reg` words and the VM's result back
-    // → a `Value`. This IS a (de)serialization, but ONLY at the legacy boundary and
-    // ONLY for the shapes the VM handled — it is transitional, deleted once the VM
-    // owns comptime end-to-end. Covers scalars + strings + structs; other aggregate
-    // shapes bail loudly (added as wiring surfaces them).
+    // The VM computes over `Reg` words; the host consumes a comptime result as a
+    // first-class `Value`. This boundary converts the VM's result Reg (+ comptime
+    // memory) → a `Value`. Covers scalars + strings + structs; other aggregate
+    // shapes bail loudly (added as callers surface them).
 
-    /// Convert a VM `Reg` (+ comptime memory) of type `ty` back into a legacy `Value`.
+    /// Convert a VM `Reg` (+ comptime memory) of type `ty` into a `Value`.
     /// Strings/aggregates are deep-copied into `alloc` (they must outlive comptime memory).
     pub fn regToValue(self: *Vm, alloc: std.mem.Allocator, table: *const types.TypeTable, reg: Reg, ty: TypeId) Error!Value {
         switch (kindOf(table, ty)) {
@@ -2848,12 +2832,12 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 if (isFloat(ty)) return .{ .float = @bitCast(reg) };
                 if (ty == .bool) return .{ .boolean = reg != 0 };
                 // A `Type` value word is a `TypeId` index → the first-class
-                // `.type_tag` Value the legacy interp/host uses for Type values.
+                // `.type_tag` Value the host uses for Type values.
                 if (ty == .type_value) return .{ .type_tag = TypeId.fromIndex(@intCast(reg)) };
                 // A function-typed word is an encoded func-ref; map it back to
                 // `.func_ref` (or `.null_val` for the null word) so the host
-                // serializes it identically to the legacy (e.g. the comptime-global
-                // func-ref rejection diagnostic).
+                // serializes it correctly (e.g. the comptime-global func-ref
+                // rejection diagnostic).
                 if (isFuncRefType(table, ty)) {
                     return if (funcRefToId(reg)) |fid| .{ .func_ref = fid } else .null_val;
                 }
@@ -3137,11 +3121,11 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
 
     /// Read a value of type `ty` from comptime address `addr`: a scalar reads its
     /// bytes; an aggregate value IS its address (it lives inline at `addr`).
-    /// `f32` is special: float REGISTERS hold f64 bits (like the legacy interp's
-    /// `.float`), but memory holds the 4-byte IEEE-754 single — so read 4 bytes as
+    /// `f32` is special: float REGISTERS hold f64 bits, but memory holds the 4-byte
+    /// IEEE-754 single — so read 4 bytes as
     /// `f32` and widen to the f64 register form. A SIGNED sub-64-bit integer
-    /// (`i8`/`i16`/`i32`/`isize`) is SIGN-extended into the 64-bit register — the
-    /// legacy `.int` model is i64, so a stored-and-reloaded negative value must
+    /// (`i8`/`i16`/`i32`/`isize`) is SIGN-extended into the 64-bit register — a
+    /// scalar `.int` is i64, so a stored-and-reloaded negative value must
     /// stay negative (else e.g. `i32 -1` reloads as `0xFFFFFFFF` and `< 0` is false).
     fn readField(self: *Vm, table: *const types.TypeTable, addr: Addr, ty: TypeId) Error!Reg {
         if (ty == .f32) {
@@ -3171,7 +3155,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// all-zero representation IS none / `{ptr:0,len:0}` (flag byte 0 → not present).
     fn writeField(self: *Vm, table: *const types.TypeTable, addr: Addr, ty: TypeId, val: Reg) Error!void {
         // `f32`: the register holds f64 bits (see `readField`); narrow to a 4-byte
-        // IEEE-754 single for storage — mirrors the legacy interp's `@floatCast`.
+        // IEEE-754 single for storage (`@floatCast`).
         if (ty == .f32) {
             const f: f32 = @floatCast(@as(f64, @bitCast(val)));
             const bits: u32 = @bitCast(f);
