@@ -245,7 +245,15 @@ pub const GenericResolver = struct {
                 const matched = self.l.matchTypeParam(param.type_expr, tp.name);
                 if (matched) {
                     if (s2_arg_idx < args_ast.len) {
-                        const arg_ty = self.l.inferExprType(args_ast[s2_arg_idx]);
+                        const inferred = self.l.inferExprType(args_ast[s2_arg_idx]);
+                        // A bare fn NAME has no inferable expression type — it
+                        // is a value whose type lives in its declaration. Bind
+                        // `$F` to that signature so the instance's param is a
+                        // callable, not the legacy integer word (issue 0367).
+                        const arg_ty = if (inferred == .unresolved)
+                            self.l.bareFnNameSignature(args_ast[s2_arg_idx]) orelse inferred
+                        else
+                            inferred;
                         const extracted = self.l.extractTypeParam(param.type_expr, arg_ty, tp.name);
                         if (extracted) |ety| {
                             if (inferred_ty) |prev| {
