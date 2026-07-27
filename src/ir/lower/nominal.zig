@@ -851,44 +851,17 @@ pub fn bareVisibleStructTemplate(self: *Lowering, name: []const u8) ?StructTempl
 /// `.call` and `.parameterized_type_expr` const-decl alias branches and the
 /// qualified-head selection that precedes the bare `struct_template_map`
 /// fallback in each.
+/// The alias BINDS the instantiation's own TypeId — it does not mint a
+/// second nominal type. `BufF :: Buffer(f32)` and `Buffer(f32)` are the same
+/// interned type, so `type_eq`, a `case BufF:` arm, `v.(BufF)`, and an
+/// `impl … for BufF` head all agree with the instantiation spelling.
 pub fn registerGenericStructAlias(self: *Lowering, alias_name: []const u8, tmpl: *const StructTemplate, args: []const *const Node) void {
     const inst_id = self.instantiateGenericStruct(tmpl, args);
-    const alias_name_id = self.module.types.internString(alias_name);
-    const inst_info = self.module.types.get(inst_id);
-    if (inst_info != .@"struct") return;
-    const alias_info: types.TypeInfo = .{ .@"struct" = .{
-        .name = alias_name_id,
-        .fields = inst_info.@"struct".fields,
-    } };
-    const alias_id = if (self.module.types.findByName(alias_name_id)) |existing| existing else self.module.types.intern(alias_info);
-    self.module.types.updatePreservingKey(alias_id, alias_info);
+    if (self.module.types.get(inst_id) != .@"struct") return;
     // A generic-struct instantiation alias IS a type author: route it through
     // the unified writer so it lands in `type_aliases_by_source` and the
     // bare-TYPE gate treats it like any other alias.
-    self.putTypeAlias(self.current_source_file, alias_name, alias_id);
-    // CP-3: the alias display name (`ABox`) is the struct type name a receiver
-    // typed `x: ABox` reports, so method dispatch on it looks up the instance
-    // maps under `ABox`. Mirror the mangled instance's template/bindings/author
-    // onto the alias name so an alias-typed receiver is a first-class dispatch
-    // instance (runs the selected author's body + bindings), not a dead end.
-    const inst_name = self.formatTypeName(inst_id);
-    if (self.struct_instance_author.get(inst_name)) |author_decl| {
-        const tmpl_name = self.struct_instance_template.get(inst_name) orelse return;
-        const bindings = self.struct_instance_bindings.getPtr(inst_name) orelse return;
-        self.struct_instance_template.put(self.alloc.dupe(u8, alias_name) catch return, tmpl_name) catch {};
-        self.struct_instance_bindings.put(self.alloc.dupe(u8, alias_name) catch return, bindings.*) catch {};
-        self.struct_instance_author.put(self.alloc.dupe(u8, alias_name) catch return, author_decl) catch {};
-        // Mirror the instance's field DEFAULTS onto the alias name too (issue
-        // 0221 fold): the alias struct's stored type name is the ALIAS ('BI'
-        // for `BI :: Box(i64)`), so the literal path's defaults lookup keys on
-        // it — without this mirror an alias-typed literal zero-filled its
-        // defaulted fields while the direct `Box(i64)` spelling applied them.
-        // Bindings are mirrored above, so a DEPENDENT default (`size_of(T)`)
-        // monomorphizes identically through the alias.
-        if (self.struct_defaults_map.get(inst_name)) |defs| {
-            self.struct_defaults_map.put(self.alloc.dupe(u8, alias_name) catch return, defs) catch {};
-        }
-    }
+    self.putTypeAlias(self.current_source_file, alias_name, inst_id);
 }
 
 pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_file: ?[]const u8) void {

@@ -3949,7 +3949,14 @@ pub const Parser = struct {
                 const name = self.tokenSlice(self.current);
                 self.advance();
                 break :blk try self.createNode(arm_start, .{ .identifier = .{ .name = name } });
-            } else try self.parsePrimary(); // .variant
+            } else if (self.isIdentLike() and self.peekNext() == .l_paren)
+                // An instantiation spelling names a type in arm position
+                // (`case Buffer(f32):`, nested `case Buffer(Buffer(f32)):`).
+                // A name followed by `(` can only be a parameterized type
+                // here — the arm value grammar has no call form.
+                try self.parseTypeExpr()
+            else
+                try self.parsePrimary(); // .variant
             try self.expect(.colon);
 
             // Optional payload capture: `(ident)`. Disambiguated from a
