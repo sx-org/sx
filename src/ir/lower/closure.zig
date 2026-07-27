@@ -304,6 +304,12 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     // lambda inside a lambda) restores the enclosing context.
     const saved_in_lambda = self.in_lambda_body;
     self.in_lambda_body = true;
+    // The body is a separate function: the enclosing function's return
+    // position says nothing about it, and letting the flag leak in would
+    // refuse a frame temp that is legal inside the lambda (spec §6.2).
+    const saved_in_return_lam = self.in_return_expr;
+    self.in_return_expr = false;
+    defer self.in_return_expr = saved_in_return_lam;
     // The body types against the lambda's OWN return type, exactly as a
     // named fn's body does (lowerFunction): enum literals in an arrow body
     // resolve against `-> E`, and the enclosing expression's target — the

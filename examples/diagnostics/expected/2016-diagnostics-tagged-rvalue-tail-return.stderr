@@ -1,0 +1,17 @@
+error: cannot erase an rvalue into tagged protocol 'View' at a 'return' — the frame that would hold the temporary is about to die, so there is nothing durable to borrow beyond this frame; bind it, or place it in storage the caller owns
+  --> examples/diagnostics/2016-diagnostics-tagged-rvalue-tail-return.sx:13:35
+   |
+13 | by_keyword :: () -> View { return Widget.{ n = 1 }.(View); }
+   |                                   ^^^^^^^^^^^^^^^^
+
+error: cannot erase an rvalue into tagged protocol 'View' at a 'return' — the frame that would hold the temporary is about to die, so there is nothing durable to borrow beyond this frame; bind it, or place it in storage the caller owns
+  --> examples/diagnostics/2016-diagnostics-tagged-rvalue-tail-return.sx:15:25
+   |
+15 | by_tail :: () -> View { Widget.{ n = 2 }.(View) }
+   |                         ^^^^^^^^^^^^^^^^
+
+error: cannot erase an rvalue into tagged protocol 'View' at a 'return' — the frame that would hold the temporary is about to die, so there is nothing durable to borrow beyond this frame; bind it, or place it in storage the caller owns
+  --> examples/diagnostics/2016-diagnostics-tagged-rvalue-tail-return.sx:17:27
+   |
+17 | by_arrow :: () -> View => Widget.{ n = 3 }.(View);
+   |                           ^^^^^^^^^^^^^^^^

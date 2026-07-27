@@ -85,6 +85,28 @@ fn isNoElseValuelessIf(node: *const Node) bool {
         !node.data.if_expr.is_inline;
 }
 
+/// Lower a block's trailing value. When it is the one a function returns
+/// implicitly, it lowers in return position: the trailing-expression spelling
+/// of `return <expr>;` must reach the same §6.2 refusals, or a tagged rvalue
+/// erasure escapes its dying frame through the spelling that omits the keyword.
+fn lowerTailAsExpr(self: *Lowering, tail: *const Node) ?Ref {
+    if (self.implicit_return_tail != tail) return self.tryLowerAsExpr(tail);
+    const old_in_return = self.in_return_expr;
+    self.in_return_expr = true;
+    defer self.in_return_expr = old_in_return;
+    return self.tryLowerAsExpr(tail);
+}
+
+/// The node a value-returning body yields through its implicit return: the
+/// trailing statement of a block body, or an arrow body's whole expression.
+/// A body that discards its tail (`;`) yields nothing and has no such node.
+fn implicitReturnTail(body: *const Node) ?*const Node {
+    if (body.data != .block) return body;
+    const blk = body.data.block;
+    if (!blk.produces_value or blk.stmts.len == 0) return null;
+    return blk.stmts[blk.stmts.len - 1];
+}
+
 /// Lower a block and return the last expression's value (for implicit returns).
 pub fn lowerBlockValue(self: *Lowering, node: *const Node) ?Ref {
     // Set force_block_value so nested if-else expressions produce values
@@ -140,11 +162,11 @@ pub fn lowerBlockValue(self: *Lowering, node: *const Node) ?Ref {
             // value; a value-returning function's missing tail value is still
             // caught downstream by `lowerValueBody`'s "body produces no value".
             self.force_block_value = !isNoElseValuelessIf(last);
-            return self.tryLowerAsExpr(last);
+            return lowerTailAsExpr(self, last);
         },
         else => {
             // Single expression as body (arrow functions)
-            return self.tryLowerAsExpr(node);
+            return lowerTailAsExpr(self, node);
         },
     }
 }
@@ -161,7 +183,10 @@ pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
     // ObjC selector arity warning) must NOT suppress a genuine missing-value
     // error, or we'd ship an uninitialized return at exit 0.
     const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
+    const saved_tail = self.implicit_return_tail;
+    self.implicit_return_tail = implicitReturnTail(body);
     const body_val = self.lowerBlockValue(body);
+    self.implicit_return_tail = saved_tail;
     if (self.currentBlockHasTerminator()) return;
     if (body_val) |val| {
         const val_ty = self.builder.getRefType(val);
