@@ -654,7 +654,7 @@ test "comptime_vm exec: non-pointer optional wrap/unwrap/has_value/coalesce" {
 }
 
 test "comptime_vm exec: a negative i32 stored and reloaded stays negative (sign-extend)" {
-    // Regression (failable cluster): the legacy `.int` model is i64. Storing an
+    // Regression (failable cluster): a scalar `.int` is i64. Storing an
     // i32 -1 writes 0xFFFFFFFF; the load must SIGN-extend (not zero-extend, which
     // would read +4294967295 and make `< 0` false — the bug that hid `raise`).
     const alloc = std.testing.allocator;
@@ -833,7 +833,7 @@ test "comptime_vm exec: const_type yields a Type-value word; regToValue bridges 
     const word = try v.run(&fb.func, &.{});
     try std.testing.expectEqual(@as(u64, types.TypeId.u32.index()), word);
 
-    // The legacy boundary maps the word back to a first-class `.type_tag` Value.
+    // The Reg→Value bridge maps the word back to a first-class `.type_tag` Value.
     const val = try v.regToValue(alloc, &table, word, .type_value);
     try std.testing.expectEqual(types.TypeId.u32, val.type_tag);
 }
@@ -978,7 +978,7 @@ test "comptime_vm exec: global_get evaluates a comptime global (lazy + cached)" 
     try std.testing.expectEqual(@as(i64, 55), toI64(try v.run(module.getFunction(main_id), &.{})));
 }
 
-test "comptime_vm exec: compiler-fn intern/text_of round-trip (native, no legacy interp)" {
+test "comptime_vm exec: compiler-fn intern/text_of round-trip (native)" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
     defer module.deinit();
@@ -1478,7 +1478,7 @@ test "comptime_vm: a malformed operand TYPE ref bails (refTy), not a panic" {
     // A comparison whose lhs is `Ref.none` exercises the `ref_types` (type-side)
     // accessor `refTy` — the companion to the value-side `Frame.get` guard. Raw
     // `ref_types[Ref.none.index()]` would index out of bounds and panic; it must
-    // bail (error.Unsupported) so the host falls back to the legacy interpreter.
+    // bail (error.Unsupported) instead.
     var fb = Fb.init(std.testing.allocator, &.{}, .bool);
     defer fb.deinit();
     const b0 = fb.block(&.{});
@@ -1526,7 +1526,7 @@ test "comptime_vm tryEval: deref of a null pointer bails (null, not a crash)" {
     const bad_id = module.addFunction(fb.func);
 
     // The hardened accessors turn the null deref into error.OutOfBounds → run
-    // bails → the evaluation completes with null (legacy fallback), NOT a panic.
+    // bails → the evaluation completes with null, NOT a panic.
     const evaluation = vm.tryEval(alloc, &module, bad_id, null, null, null);
     defer evaluation.destroy();
     try std.testing.expect(evaluation.completed() == null);
