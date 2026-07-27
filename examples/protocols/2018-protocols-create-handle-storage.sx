@@ -1,0 +1,61 @@
+// A protocol handle is an ordinary copyable value (§5.3a), so heap storage
+// FOR one is ordinary storage: `create(P)` reinterprets the allocator's raw
+// `*void` as `*P` exactly like `alloc(P, n)` reinterprets it as `[]P`. The
+// `*void` source carries no type identity, so neither is a §5.5 view built
+// over a value of some conformer type — the handle is written into the
+// storage afterwards, and dispatch goes through the stored handle.
+#import "modules/std.sx";
+
+Shape :: protocol tagged {
+    area :: (self: *Self) -> i64;
+}
+
+Tally :: protocol vtable {
+    push :: (self: *Self, n: i64) -> i64;
+}
+
+Box :: struct { w: i64; h: i64; }
+impl Shape for Box {
+    area :: (self: *Box) -> i64 { self.w * self.h }
+}
+
+Disc :: struct { r: i64; }
+impl Shape for Disc {
+    area :: (self: *Disc) -> i64 { 3 * self.r * self.r }
+}
+
+Counter :: struct { total: i64; }
+impl Tally for Counter {
+    push :: (self: *Counter, n: i64) -> i64 { self.total = self.total + n; self.total }
+}
+
+main :: () {
+    a := context.allocator;
+
+    // tagged: create storage, store a handle into it, dispatch through it.
+    b := Box.{ w = 4, h = 5 };
+    sp := a.create(Shape);
+    sp.* = b;
+    print("{}\n", sp.area());
+    a.destroy(sp);
+
+    // vtable (erased): same shape, one indirection more at dispatch.
+    c := Counter.{ total = 10 };
+    kp := a.create(Tally);
+    kp.* = c.(Tally);
+    print("{}\n", kp.push(7));
+    owned := kp.*;
+    owned.free(a);
+    a.destroy(kp);
+
+    // The slice path stays working, and a handle copied out of a slice element
+    // into created storage dispatches identically from there.
+    xs := a.alloc(Shape, 2);
+    xs[0] = b;
+    xs[1] = Disc.{ r = 3 };
+    sp2 := a.create(Shape);
+    sp2.* = xs[1];
+    print("{} {} {}\n", xs[0].area(), xs[1].area(), sp2.area());
+    a.destroy(sp2);
+    xs.free(a);
+}

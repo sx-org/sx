@@ -833,15 +833,21 @@ pub fn refuseIdentityRvalueErasure(self: *Lowering, dst_ty: TypeId, span: ?ast.S
 /// the slot's address. The pointee protocol value ALIASES the concrete
 /// storage — mutations through the view are visible to the original; the
 /// slot itself is a frame temp whose lifetime covers the call/statement.
-/// Returns null when `view_ptr_ty` is not pointer-to-protocol or the
-/// concrete type name is not resolvable (caller falls through to its
-/// default path). Non-conformance is diagnosed inside buildProtocolValue.
+/// Returns null when `view_ptr_ty` is not pointer-to-protocol, the source is
+/// untyped raw storage, or the concrete type name is not resolvable (caller
+/// falls through to its default path). Non-conformance is diagnosed inside
+/// buildProtocolValue.
 pub fn viewOfConcreteAddr(self: *Lowering, concrete_addr: Ref, concrete_ty: TypeId, view_ptr_ty: TypeId) ?Ref {
     if (view_ptr_ty.isBuiltin()) return null;
     const vinfo = self.module.types.get(view_ptr_ty);
     if (vinfo != .pointer) return null;
     const proto_ty = vinfo.pointer.pointee;
     const proto_info = self.getProtocolInfo(proto_ty) orelse return null;
+    // `*void` is untyped raw storage — the allocator's bytes-level result, not
+    // an object of some conformer type. A view is BUILT over a value; storage
+    // is merely reinterpreted, so `*void → *P` is a pointer cast to room for a
+    // protocol handle (an ordinary copyable value, §5.3a).
+    if (concrete_ty == .void) return null;
     const ctn = self.resolveConcreteTypeName(concrete_ty) orelse return null;
     // A tagged value is already a borrow, so no view-building exists for it:
     // the `*P` handle points at a 16-byte value the caller must name.
