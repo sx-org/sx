@@ -3670,6 +3670,12 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     // compile error, not a runtime false (spec §6.8).
                     if (self.refuseOutOfSetDowncast(recv_ty, full_dst, pc.type_expr.span))
                         break :blk self.builder.constUndef(full_dst);
+                    // `p.(?*T)` is the SOFT ctx recovery: a checked `p.(*T)`,
+                    // not a downcast to the POINTER type. Neither the any-view
+                    // helpers (whose type word is the concrete `T`) nor the tag
+                    // compare (whose set holds `T`) can answer for `*T`.
+                    if (self.lowerSoftPointerRecovery(&pc, recv_ty, full_dst)) |answer|
+                        break :blk answer;
                     switch (self.coercionResolver().classifyXX(recv_ty, full_dst)) {
                         .protocol_to_pointer, .protocol_to_raw, .protocol_to_any, .no_op, .erase_protocol, .erase_protocol_wrap => {},
                         else => {

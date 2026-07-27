@@ -3147,6 +3147,16 @@ itself with `*p` instead),
 `ProtocolRaw`, `any` (the explicit concrete view `xx p : any`), and
 another protocol (re-erasure) — are conversions and pass through.
 
+`p.(?*T)` is the SOFT ctx recovery — the pointer target under the soft
+temperament. It asks the DOWNCAST's question (is the receiver a `T`?) and
+answers it with a pointer: `*T` addressing the receiver's own ctx on a
+match, `null` otherwise. It BORROWS where `p.(?T)` copies the value out,
+and it CHECKS where `p.(*T)` reinterprets ctx unconditionally. The pointee
+names the type to test, so it must be a concrete one: `?*void` and a
+pointer-to-protocol pointee are refused, and off a `tagged` receiver a
+non-conformer pointee is the same whole-program out-of-set error `p.(?T)`
+raises.
+
 On an **`any` receiver** the assertion has three temperaments:
 
 - **`.(T)` consumed via the error channel = graceful**: the assertion is

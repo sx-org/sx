@@ -3111,6 +3111,7 @@ pub const Lowering = struct {
     pub const recordTaggedImplSite = lower_tagged.recordImplSite;
     pub const refuseOutOfSetDowncast = lower_tagged.refuseOutOfSetDowncast;
     pub const lowerTaggedDowncast = lower_tagged.lowerTaggedDowncast;
+    pub const lowerSoftPointerRecovery = lower_tagged.lowerSoftPointerRecovery;
     pub const warnDeadTypeSwitchArm = lower_tagged.warnDeadTypeSwitchArm;
     pub const allocViaAllocatorValue = lower_protocol.allocViaAllocatorValue;
     pub const resolveConcreteTypeName = lower_protocol.resolveConcreteTypeName;

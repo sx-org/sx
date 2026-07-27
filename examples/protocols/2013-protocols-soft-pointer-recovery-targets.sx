@@ -1,0 +1,26 @@
+// The soft ctx recovery `p.(?*T)` tests T, so its pointee must NAME a
+// concrete type. A protocol pointee is the type lie the hard recovery
+// refuses (issue 0306); `void` names nothing to test; and off a TAGGED
+// receiver the conformer set is whole-program, so a non-conformer pointee
+// can never match and is refused exactly like `p.(?T)`.
+// The diagnostics are the success criterion.
+#import "modules/std.sx";
+
+Shape :: protocol tagged { area :: (self: *Self) -> i64; }
+Boxed :: protocol vtable { area :: (self: *Self) -> i64; }
+
+Rect :: struct { w: i64; h: i64; }
+impl Shape for Rect { area :: (self: *Rect) -> i64 { self.w * self.h } }
+impl Boxed for Rect { area :: (self: *Rect) -> i64 { self.w * self.h } }
+
+Timer :: struct { t: i64; }
+
+main :: () {
+    r := Rect.{ w = 2, h = 6 };
+    t : Shape = r;
+    b := r.(Boxed);
+
+    if p := t.(?*Timer) { print("{}\n", p.t); }
+    if p := t.(?*Shape) { print("{}\n", p.area()); }
+    if p := b.(?*void) { print("raw\n"); }
+}
