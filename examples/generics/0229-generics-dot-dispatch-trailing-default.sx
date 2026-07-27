@@ -1,0 +1,75 @@
+// Trailing parameter defaults must expand for a GENERIC callee reached
+// through dot-dispatch — both the ufcs form (`xs.free()`) and a generic
+// method on a struct (`b.bump(x)`).
+//
+// The value-arg list of a generic dot-call is built by walking the
+// declaration's params and skipping the type-decl slots, so a param index is
+// not an arg index and `appendDefaultArgs` (which assumes they match) cannot
+// serve it: each omitted slot is filled by parameter index instead. Without
+// that fill, `xs.free()` against
+// `free :: ufcs (x: $T, a: Allocator = context.allocator)` emitted a 2-arg
+// call into the 3-param monomorph — an LLVM verifier abort ("Incorrect
+// number of arguments passed to called function"), no diagnostic. The
+// direct-call forms (`free(xs)`, `gfn(xs)`) were never affected: their
+// defaults splice into the AST args before dispatch.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+Tracker :: struct {
+    allocs: i64;
+    deallocs: i64;
+}
+impl Allocator for Tracker {
+    alloc_bytes :: (self: *Tracker, size: i64) -> *void {
+        self.allocs += 1;
+        c.libc_malloc(size)
+    }
+    dealloc_bytes :: (self: *Tracker, ptr: *void) {
+        self.deallocs += 1;
+        c.libc_free(ptr);
+    }
+}
+
+// A default that owes nothing to the context: it pins the general mechanism
+// rather than the `context.allocator` path.
+head_scaled :: ufcs (xs: []$T, k: i64 = 3) -> i64 {
+    xs[0] * k
+}
+
+Box :: struct {
+    base: i64;
+
+    bump :: (self: *Box, x: $T, k: i64 = 5) -> i64 { self.base + k }
+}
+
+main :: () {
+    t := Tracker.{ allocs = 0, deallocs = 0 };
+    // Counts are read inside the push and printed after it: `print` itself
+    // allocates through the current context allocator.
+    dflt_a : i64 = 0; dflt_d : i64 = 0;
+    expl_a : i64 = 0; expl_d : i64 = 0;
+    push .{ allocator = t } {
+        // Defaulted spelling: the allocator arrives through the default.
+        xs := context.allocator.alloc(i64, 3);
+        xs.free();
+        dflt_a = t.allocs; dflt_d = t.deallocs;
+
+        // Explicit spelling: the same call with the allocator written out.
+        ys := context.allocator.alloc(i64, 3);
+        ys.free(context.allocator);
+        expl_a = t.allocs - dflt_a; expl_d = t.deallocs - dflt_d;
+    }
+    print("defaulted: {}/{}\n", dflt_a, dflt_d);
+    print("explicit:  {}/{}\n", expl_a, expl_d);
+
+    zs := context.allocator.alloc(i64, 2);
+    zs[0] = 7;
+    zs[1] = 9;
+    print("scaled: {} {} {}\n", zs.head_scaled(), zs.head_scaled(3), zs.head_scaled(2));
+
+    b := Box.{ base = 1 };
+    print("bump: {} {} {}\n", b.bump(zs), b.bump(zs, 5), b.bump(zs, 2));
+
+    zs.free();
+}

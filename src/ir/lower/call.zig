@@ -1877,13 +1877,16 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             gvalue_args.append(self.alloc, method_args.items[0]) catch unreachable;
                             const types_explicit = method_args.items.len == gen_fd.params.len;
                             var arg_idx: usize = 1;
-                            for (gen_fd.params[1..]) |p| {
+                            for (gen_fd.params[1..], 1..) |p, pi| {
                                 if (isTypeParamDecl(&p, gen_fd.type_params)) {
                                     if (types_explicit) arg_idx += 1;
                                     continue;
                                 }
                                 if (arg_idx < method_args.items.len) {
                                     gvalue_args.append(self.alloc, method_args.items[arg_idx]) catch unreachable;
+                                } else {
+                                    const dv = self.lowerDefaultArg(gen_fd, pi, c.callee) orelse break;
+                                    gvalue_args.append(self.alloc, dv) catch unreachable;
                                 }
                                 arg_idx += 1;
                             }
@@ -2057,13 +2060,16 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             gvalue_args.append(self.alloc, method_args.items[0]) catch unreachable;
                             const types_explicit = method_args.items.len == fd.params.len;
                             var arg_idx: usize = 1;
-                            for (fd.params[1..]) |p| {
+                            for (fd.params[1..], 1..) |p, pi| {
                                 if (isTypeParamDecl(&p, fd.type_params)) {
                                     if (types_explicit) arg_idx += 1;
                                     continue;
                                 }
                                 if (arg_idx < method_args.items.len) {
                                     gvalue_args.append(self.alloc, method_args.items[arg_idx]) catch unreachable;
+                                } else {
+                                    const dv = self.lowerDefaultArg(fd, pi, c.callee) orelse break;
+                                    gvalue_args.append(self.alloc, dv) catch unreachable;
                                 }
                                 arg_idx += 1;
                             }
@@ -3899,22 +3905,30 @@ pub fn appendDefaultArgs(self: *Lowering, fd: *const ast.FnDecl, args: *std.Arra
     if (args.items.len >= fd.params.len) return;
     var i: usize = args.items.len;
     while (i < fd.params.len) : (i += 1) {
-        const dflt = fd.params[i].default_expr orelse break;
-
-        // Defaults are argument expressions too: give aggregate/enum/null
-        // shorthand the declaration's parameter target instead of leaking an
-        // ambient target from the enclosing caller. Resolve the type in the
-        // function author's source (resolveDeclParamType owns that pin). The
-        // default cannot capture caller locals; contextual values such as
-        // `context.allocator` resolve through the implicit context channel.
-        const saved_target = self.target_type;
-        const param_ty = self.resolveDeclParamType(fd, i);
-        self.target_type = if (param_ty == .unresolved or param_ty == .void) null else param_ty;
-        const authored = defaultArgAtCall(self, dflt, fd.body.source_file, call_site) orelse break;
-        const v = self.lowerExpr(authored);
-        self.target_type = saved_target;
+        const v = self.lowerDefaultArg(fd, i, call_site) orelse break;
         args.append(self.alloc, v) catch unreachable;
     }
+}
+
+/// Lower `fd.params[idx]`'s `= default_expr` at this call site, or null when
+/// the param has no default. Generic dot-dispatch cannot use
+/// `appendDefaultArgs`: its value-arg list skips type-decl slots, so a param
+/// index is not an arg index — it fills each omitted slot by index instead.
+pub fn lowerDefaultArg(self: *Lowering, fd: *const ast.FnDecl, idx: usize, call_site: *const Node) ?Ref {
+    const dflt = fd.params[idx].default_expr orelse return null;
+
+    // Defaults are argument expressions too: give aggregate/enum/null
+    // shorthand the declaration's parameter target instead of leaking an
+    // ambient target from the enclosing caller. Resolve the type in the
+    // function author's source (resolveDeclParamType owns that pin). The
+    // default cannot capture caller locals; contextual values such as
+    // `context.allocator` resolve through the implicit context channel.
+    const saved_target = self.target_type;
+    defer self.target_type = saved_target;
+    const param_ty = self.resolveDeclParamType(fd, idx);
+    self.target_type = if (param_ty == .unresolved or param_ty == .void) null else param_ty;
+    const authored = defaultArgAtCall(self, dflt, fd.body.source_file, call_site) orelse return null;
+    return self.lowerExpr(authored);
 }
 
 /// Reject a direct call whose argument count cannot bind to the callee's
