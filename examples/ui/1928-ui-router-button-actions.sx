@@ -53,7 +53,7 @@ home :: () -> View {
         button("Beta", on_tap = () { g_b += 1; });
         e := element_id().value;
         g_pad_eid = e;
-        place(DoubleTapPad.{ eid = e, w = 80.0, h = 30.0 }.(View));
+        place(DoubleTapPad.{ eid = e, w = 80.0, h = 30.0 });
     }
 }
 

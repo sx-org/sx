@@ -10,6 +10,7 @@
 #import "modules/ui/view.sx";
 #import "modules/ui/stacks.sx";
 #import "modules/ui/label.sx";
+#import "modules/ui/button.sx";
 #import "modules/ui/modifier.sx";
 #import "modules/ui/compose.sx";
 
@@ -41,26 +42,25 @@ main :: () {
     }
 
     process.assert(root.items.len == 1, "one root emitted");
-    outer := root.items.items[0].(?ModBox);
+    // The wrapper is typed by its child: `ModBox(VStack)` names both the
+    // box and what it holds, so the child needs no second downcast.
+    outer := root.items.items[0].(?ModBox(VStack));
     process.assert(outer != null, "modified vstack wraps in one ModBox");
     if ob := outer {
-        vs := ob.child.view.(?VStack);
-        process.assert(vs != null, "the ModBox child is the VStack itself");
-        if v := vs {
-            process.assert(v.children.len == 6, "six children emitted");
-            process.assert(v.children.items[0].view.(?Label) != null, "default m: bare Label, no wrapper");
-            process.assert(v.children.items[1].view.(?ModBox) != null, "leaf m: one ModBox");
-            process.assert(v.children.items[2].view.(?ModBox) != null, "spacer m: one ModBox");
-            process.assert(v.children.items[3].view.(?ModBox) != null, "button m: one ModBox");
-            // chip("unstyled"): forwarded m is default → the component's
-            // root hstack passes through bare.
-            process.assert(v.children.items[4].view.(?HStack) != null, "unstyled chip: bare HStack root");
-            // chip with m: the forwarded Mod wraps the component's ROOT.
-            styled := v.children.items[5].view.(?ModBox);
-            process.assert(styled != null, "styled chip: forwarded m wraps the root");
-            if sb := styled {
-                process.assert(sb.child.view.(?HStack) != null, "…and the root is the chip's hstack");
-            }
+        v := ob.child;
+        process.assert(v.children.len == 6, "six children emitted");
+        process.assert(v.children.items[0].view.(?Label) != null, "default m: bare Label, no wrapper");
+        process.assert(v.children.items[1].view.(?ModBox(Label)) != null, "leaf m: one ModBox");
+        process.assert(v.children.items[2].view.(?ModBox(Spacer)) != null, "spacer m: one ModBox");
+        process.assert(v.children.items[3].view.(?ModBox(Button)) != null, "button m: one ModBox");
+        // chip("unstyled"): forwarded m is default → the component's
+        // root hstack passes through bare.
+        process.assert(v.children.items[4].view.(?HStack) != null, "unstyled chip: bare HStack root");
+        // chip with m: the forwarded Mod wraps the component's ROOT.
+        styled := v.children.items[5].view.(?ModBox(HStack));
+        process.assert(styled != null, "styled chip: forwarded m wraps the root");
+        if sb := styled {
+            process.assert(sb.child.spacing == 4.0, "…and the root is the chip's hstack");
         }
     }
     print("ok\n");

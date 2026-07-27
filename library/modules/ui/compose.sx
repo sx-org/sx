@@ -9,6 +9,7 @@
 // components as statements — placement already happened, the return is for
 // value position; never `place()` a dual component's return.
 #import "modules/std.sx";
+#import "modules/std/mem.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/stacks.sx";
@@ -295,7 +296,12 @@ print_chain :: (ui: *Ui) {
 // Modifier application: a default `m` adds NOTHING — the view passes
 // through untouched (0 wrappers); a non-default `m` wraps in exactly ONE
 // ModBox (single dispatch level) no matter how many fields are set.
-place :: (v: View, m: Mod = .{}) -> View {
+//
+// `v` arrives at its CONCRETE type and is copied exactly once, into the
+// storage the returned handle borrows: the view itself, or the ModBox
+// that holds it inline. Everything downstream — sinks, containers,
+// ViewChild — carries the 16-byte handle.
+place :: (v: $V/View, m: Mod = .{}) -> View {
     if context.ui == null {
         // The S2 contract message, line-stable on purpose: a module-internal
         // line number tells the user nothing (the failure is at THEIR call
@@ -303,23 +309,70 @@ place :: (v: View, m: Mod = .{}) -> View {
         print("panic: UI element used outside a frame build\n");
         process.exit(1);
     }
-    w := if m == MOD_DEFAULT then v else ModBox.{ child = .{ view = v }, m = m }.(View);
+    w : View = ---;
+    if m == MOD_DEFAULT {
+        p := context.allocator.create(V);
+        p.* = v;
+        w = p;
+    } else {
+        b := context.allocator.create(ModBox(V));
+        b.child = v;
+        b.m = m;
+        b.box_frame = .zero();
+        b.child_frame = .zero();
+        w = b;
+    }
     if context.ui_sink != null { context.ui_sink.emit(w); }
     w
 }
 
-// --- Scope containers and leaf elements (target spelling) ---
+// --- El — the fluent handle for a call-site-composed element ---
+//
+// `el(v)` opens a chain over a concrete view; each link sets one Mod
+// field and `place` finalizes it. The chain is call-order-free: the Mod
+// applies in the canonical order above, so `el(v).padding(p).bg(c)` and
+// `el(v).bg(c).padding(p)` are the same element — and the whole chain
+// still costs one wrapper.
+El :: struct ($V: Type) {
+    view: V;
+    m: Mod = .{};
 
-fold_vstack :: (items: []View, spacing: f32) -> View {
-    vs := VStack.{ spacing = spacing, alignment = .leading, children = .{} };
-    for items (v) { vs.children.append(.{ view = v }); }
-    vs.(View)
+    margin  :: (self: El(V), insets: EdgeInsets) -> El(V) { e := self; e.m.margin = insets; e }
+    size    :: (self: El(V), width: ?f32 = null, height: ?f32 = null) -> El(V) {
+        e := self;
+        e.m.width = width;
+        e.m.height = height;
+        e
+    }
+    bg      :: (self: El(V), color: Color, corner: f32 = 0.0) -> El(V) {
+        e := self;
+        e.m.bg = color;
+        e.m.corner = corner;
+        e
+    }
+    border  :: (self: El(V), stroke: Stroke) -> El(V) { e := self; e.m.border = stroke; e }
+    padding :: (self: El(V), insets: EdgeInsets) -> El(V) { e := self; e.m.padding = insets; e }
+    opacity :: (self: El(V), alpha: f32) -> El(V) { e := self; e.m.opacity = alpha; e }
+    clip    :: (self: El(V), on: bool = true) -> El(V) { e := self; e.m.clip = on; e }
+    hidden  :: (self: El(V), on: bool = true) -> El(V) { e := self; e.m.hidden = on; e }
+
+    place   :: (self: El(V)) -> View => place(self.view, self.m);
 }
 
-fold_hstack :: (items: []View, spacing: f32) -> View {
+el :: (v: $V/View) -> El(V) => .{ view = v };
+
+// --- Scope containers and leaf elements (target spelling) ---
+
+fold_vstack :: (items: []View, spacing: f32) -> VStack {
+    vs := VStack.{ spacing = spacing, alignment = .leading, children = .{} };
+    for items (v) { vs.children.append(.{ view = v }); }
+    vs
+}
+
+fold_hstack :: (items: []View, spacing: f32) -> HStack {
     hs := HStack.{ spacing = spacing, alignment = .center, children = .{} };
     for items (v) { hs.children.append(.{ view = v }); }
-    hs.(View)
+    hs
 }
 
 // Signature convention: `required…, m: Mod = .{}, site, closure-param
@@ -346,9 +399,9 @@ hstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location),
     place(fold_hstack(s.items.items, spacing), m)
 }
 
-text :: (s: string, m: Mod = .{}) -> View { place(Label.make(s).(View), m) }
+text :: (s: string, m: Mod = .{}) -> View { place(Label.make(s), m) }
 
-spacer :: (m: Mod = .{}) -> View { place(Spacer.{ min_length = 0.0 }.(View), m) }
+spacer :: (m: Mod = .{}) -> View { place(Spacer.{ min_length = 0.0 }, m) }
 
 ui_is_pressed :: (id: u64) -> bool {
     if context.ui == null { return false; }
@@ -372,5 +425,5 @@ button :: (label: string, m: Mod = .{}, site: SiteId = site_of(#caller_location)
         eid = eid.value,
         hovered = false,
         pressed = ui_is_pressed(eid.value),
-    }.(View), m)
+    }, m)
 }

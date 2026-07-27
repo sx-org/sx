@@ -435,6 +435,27 @@ pub fn isTypeReturningCallNode(self: *Lowering, node: *const Node) bool {
     return rt.data == .type_expr and std.mem.eql(u8, rt.data.type_expr.name, "Type");
 }
 
+/// True iff `node` is a generic type-CONSTRUCTOR head applied to arguments —
+/// `List(i64)`, `ModBox(V)`, `Series(f32)`. A type position parses that
+/// spelling as a `.parameterized_type_expr`; the value grammar of an argument
+/// slot parses it as a `.call`, which `resolveTypeArg` resolves through
+/// `resolveTypeCallWithBindings`'s gated choke-point. Recognizing the shape
+/// here is what lets `alloc.create(ModBox(V))` bind its `$T: Type` param —
+/// membership in the head maps only, so selection (visibility, ambiguity)
+/// stays with the choke-point.
+pub fn isGenericTypeConstructorCallNode(self: *Lowering, node: *const Node) bool {
+    if (node.data != .call) return false;
+    const head = headNameOfCallee(node.data.call.callee) orelse return false;
+    return self.isGenericTypeConstructorHead(head.name);
+}
+
+/// The head half of the predicate above: does `name` name a generic struct
+/// template or a parameterized protocol?
+pub fn isGenericTypeConstructorHead(self: *Lowering, name: []const u8) bool {
+    if (self.program_index.struct_template_map.contains(name)) return true;
+    return self.protocolResolver().resolveParamProtocolHead(name, null) != null;
+}
+
 pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
     // Prefix `*` (parsed address_of) over a type operand IS the pointer
     // type — `describe(*Padded)`, `List(*T)`-style args, recursively for

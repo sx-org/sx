@@ -403,7 +403,7 @@ impl View for DockPanel {
             bounds.size.width,
             bounds.size.height - self.header_height
         );
-        self.child.computed_frame = content_frame;
+        self.child.frame = content_frame;
         self.child.view.layout(content_frame);
     }
 
@@ -423,7 +423,7 @@ impl View for DockPanel {
         ctx.add_text(title_frame, self.title, 12.0, self.header_text_color);
 
         // Child content
-        self.child.view.render(ctx, self.child.computed_frame);
+        self.child.view.render(ctx, self.child.frame);
     }
 }
 
@@ -466,7 +466,10 @@ Dock :: struct {
 
     add_panel :: (self: *Dock, panel: DockPanel) {
         idx := self.children.len;
-        p := panel;
+        // The child handle borrows the panel, so the panel lives in storage
+        // the Dock outlives — never a local of this call.
+        p := context.allocator.create(DockPanel);
+        p.* = panel;
         p.dock_interaction = self.interaction;  // share heap pointer
         p.panel_index = idx;
         self.alignments.append(panel.dock);
@@ -521,8 +524,8 @@ impl View for Dock {
                     origin.y += interaction.drag_offset.y;
                 }
 
-                child.computed_frame = Frame.make(origin.x, origin.y, child_size.width, child_size.height);
-                child.view.layout(child.computed_frame);
+                child.frame = Frame.make(origin.x, origin.y, child_size.width, child_size.height);
+                child.view.layout(child.frame);
             } else {
                 // Docked: use alignment-based sizing
                 has_ovr : bool = interaction.has_alignment_override.items[i];
@@ -560,8 +563,8 @@ impl View for Dock {
                     interaction.child_bounds.items[i] = Frame.make(origin.x, origin.y, final_size.width, final_size.height);
                 }
 
-                child.computed_frame = Frame.make(origin.x, origin.y, final_size.width, final_size.height);
-                child.view.layout(child.computed_frame);
+                child.frame = Frame.make(origin.x, origin.y, final_size.width, final_size.height);
+                child.view.layout(child.frame);
             }
 
             i += 1;
@@ -582,7 +585,7 @@ impl View for Dock {
         i : i64 = 0;
         while i < self.children.len {
             child := *self.children.items[i];
-            child.view.render(ctx, child.computed_frame);
+            child.view.render(ctx, child.frame);
             i += 1;
         }
 

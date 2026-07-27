@@ -4,215 +4,13 @@
 #import "modules/ui/render.sx";
 #import "modules/ui/view.sx";
 
-// --- PaddingModifier ---
-
-PaddingModifier :: struct {
-    child: ViewChild;
-    insets: EdgeInsets;
-}
-
-impl View for PaddingModifier {
-    size_that_fits :: (self: *PaddingModifier, proposal: ProposedSize) -> Size {
-        iw: ?f32 = null;
-        ih: ?f32 = null;
-        if w := proposal.width { iw = w - self.insets.horizontal(); }
-        if h := proposal.height { ih = h - self.insets.vertical(); }
-        inner := ProposedSize.{ width = iw, height = ih };
-        child_size := self.child.view.size_that_fits(inner);
-        Size.{
-            width = child_size.width + self.insets.horizontal(),
-            height = child_size.height + self.insets.vertical()
-        }
-    }
-
-    layout :: (self: *PaddingModifier, bounds: Frame) {
-        self.child.computed_frame = bounds.inset(self.insets);
-        self.child.view.layout(self.child.computed_frame);
-    }
-
-    render :: (self: *PaddingModifier, ctx: *RenderContext, frame: Frame) {
-        self.child.view.render(ctx, self.child.computed_frame);
-    }
-}
-
-// --- FrameModifier ---
-
-FrameModifier :: struct {
-    child: ViewChild;
-    width: ?f32;
-    height: ?f32;
-}
-
-impl View for FrameModifier {
-    size_that_fits :: (self: *FrameModifier, proposal: ProposedSize) -> Size {
-        pw := self.width ?? proposal.width ?? 0.0;
-        ph := self.height ?? proposal.height ?? 0.0;
-        child_proposal := ProposedSize.{ width = pw, height = ph };
-        child_size := self.child.view.size_that_fits(child_proposal);
-        Size.{
-            width = self.width ?? child_size.width,
-            height = self.height ?? child_size.height
-        }
-    }
-
-    layout :: (self: *FrameModifier, bounds: Frame) {
-        child_size := self.child.view.size_that_fits(ProposedSize.{
-            width = self.width ?? bounds.size.width,
-            height = self.height ?? bounds.size.height
-        });
-        // Center child within bounds
-        cx := bounds.origin.x + (bounds.size.width - child_size.width) * 0.5;
-        cy := bounds.origin.y + (bounds.size.height - child_size.height) * 0.5;
-        self.child.computed_frame = Frame.make(cx, cy, child_size.width, child_size.height);
-        self.child.view.layout(self.child.computed_frame);
-    }
-
-    render :: (self: *FrameModifier, ctx: *RenderContext, frame: Frame) {
-        self.child.view.render(ctx, self.child.computed_frame);
-    }
-}
-
-// --- BackgroundModifier ---
-
-BackgroundModifier :: struct {
-    child: ViewChild;
-    color: Color;
-    corner_radius: f32;
-}
-
-impl View for BackgroundModifier {
-    size_that_fits :: (self: *BackgroundModifier, proposal: ProposedSize) -> Size {
-        self.child.view.size_that_fits(proposal)
-    }
-
-    layout :: (self: *BackgroundModifier, bounds: Frame) {
-        self.child.computed_frame = bounds;
-        self.child.view.layout(bounds);
-    }
-
-    render :: (self: *BackgroundModifier, ctx: *RenderContext, frame: Frame) {
-        if self.corner_radius > 0.0 {
-            ctx.add_rounded_rect(frame, self.color, self.corner_radius);
-        } else {
-            ctx.add_rect(frame, self.color);
-        }
-        self.child.view.render(ctx, self.child.computed_frame);
-    }
-}
-
-// --- OpacityModifier ---
-
-OpacityModifier :: struct {
-    child: ViewChild;
-    alpha: f32;
-}
-
-impl View for OpacityModifier {
-    size_that_fits :: (self: *OpacityModifier, proposal: ProposedSize) -> Size {
-        self.child.view.size_that_fits(proposal)
-    }
-
-    layout :: (self: *OpacityModifier, bounds: Frame) {
-        self.child.computed_frame = bounds;
-        self.child.view.layout(bounds);
-    }
-
-    render :: (self: *OpacityModifier, ctx: *RenderContext, frame: Frame) {
-        prev := ctx.opacity;
-        ctx.push_opacity(self.alpha);
-        self.child.view.render(ctx, self.child.computed_frame);
-        ctx.pop_opacity(prev);
-    }
-}
-
-// --- ClipModifier ---
-
-ClipModifier :: struct {
-    child: ViewChild;
-    corner_radius: f32;
-}
-
-impl View for ClipModifier {
-    size_that_fits :: (self: *ClipModifier, proposal: ProposedSize) -> Size {
-        self.child.view.size_that_fits(proposal)
-    }
-
-    layout :: (self: *ClipModifier, bounds: Frame) {
-        self.child.computed_frame = bounds;
-        self.child.view.layout(bounds);
-    }
-
-    render :: (self: *ClipModifier, ctx: *RenderContext, frame: Frame) {
-        ctx.push_clip(frame);
-        self.child.view.render(ctx, self.child.computed_frame);
-        ctx.pop_clip();
-    }
-}
-
-// --- HiddenModifier ---
-
-HiddenModifier :: struct {
-    child: ViewChild;
-    is_hidden: bool;
-}
-
-impl View for HiddenModifier {
-    size_that_fits :: (self: *HiddenModifier, proposal: ProposedSize) -> Size {
-        if self.is_hidden { return Size.zero(); }
-        self.child.view.size_that_fits(proposal)
-    }
-
-    layout :: (self: *HiddenModifier, bounds: Frame) {
-        if self.is_hidden { return; }
-        self.child.computed_frame = bounds;
-        self.child.view.layout(bounds);
-    }
-
-    render :: (self: *HiddenModifier, ctx: *RenderContext, frame: Frame) {
-        if self.is_hidden { return; }
-        self.child.view.render(ctx, self.child.computed_frame);
-    }
-}
-
-// --- Combinators ---
-//
-// ufcs, so a view tree reads as a dot-chain:
-//   label.padding(EdgeInsets.all(8.0)).background(color, 4.0)
-// The pipe spelling composes the same functions: `label |> padding(...)`.
-
-padding :: ufcs (view: View, insets: EdgeInsets) -> PaddingModifier {
-    PaddingModifier.{ child = .{ view = view }, insets = insets }
-}
-
-fixed_frame :: ufcs (view: View, width: ?f32, height: ?f32) -> FrameModifier {
-    FrameModifier.{ child = .{ view = view }, width = width, height = height }
-}
-
-background :: ufcs (view: View, color: Color, corner_radius: f32) -> BackgroundModifier {
-    BackgroundModifier.{ child = .{ view = view }, color = color, corner_radius = corner_radius }
-}
-
-with_opacity :: ufcs (view: View, alpha: f32) -> OpacityModifier {
-    OpacityModifier.{ child = .{ view = view }, alpha = alpha }
-}
-
-clip :: ufcs (view: View, corner_radius: f32) -> ClipModifier {
-    ClipModifier.{ child = .{ view = view }, corner_radius = corner_radius }
-}
-
-hidden :: ufcs (view: View, is_hidden: bool) -> HiddenModifier {
-    HiddenModifier.{ child = .{ view = view }, is_hidden = is_hidden }
-}
-
 // --- Mod + ModBox — the POD modifier surface of the emit core ---
 //
 // ONE canonical application order: margin → size → bg/border/corner →
 // padding → content. The margin/padding split expresses both
 // background-relative orders (chip: padding inside the bg; card: margin
-// outside it) without a chain or an ordering DSL. Exotic ordered
-// composition (transforms, stacked effects) stays a value pipeline over
-// the wrapper views above: `place(v |> clip(r) |> with_opacity(a))`.
-// Inherited style (font, colors, theme) is ambient — `context`, not Mod.
+// outside it) without a chain or an ordering DSL. Inherited style (font,
+// colors, theme) is ambient — `context`, not Mod.
 //
 // Surface doctrine: a component that owns a surface owns its content
 // padding via style/params (ButtonStyle.padding); the caller's forwarded
@@ -230,6 +28,7 @@ Mod :: struct {
     padding: EdgeInsets = .{};    // inside the background
     opacity: f32 = 1.0;
     clip:    bool = false;
+    hidden:  bool = false;        // measures zero, lays out and paints nothing
 }
 
 // The no-op Mod — `place` compares against it field-wise (`==`) to decide
@@ -238,16 +37,22 @@ MOD_DEFAULT :: Mod.{};
 
 // The single wrapper `place` applies for a non-default Mod: every set
 // field acts at ONE dispatch level, regardless of how many are set.
-ModBox :: struct {
-    child: ViewChild;
+//
+// The child is stored INLINE at its concrete type, so the box is one
+// allocation with the child in it and every call into the child is
+// static — the tagged handle is spent once, at the box itself.
+ModBox :: struct ($V: Type) {
+    child: V;
     m: Mod;
     // The background box (margin removed), set during layout — bg, border,
     // and clip act on this frame; padding insets the child within it.
     box_frame: Frame = .zero();
+    child_frame: Frame = .zero();
 }
 
-impl View for ModBox {
-    size_that_fits :: (self: *ModBox, proposal: ProposedSize) -> Size {
+impl View for ModBox($V) {
+    size_that_fits :: (self: *ModBox(V), proposal: ProposedSize) -> Size {
+        if self.m.hidden { return Size.zero(); }
         // Margin comes off the proposal; a fixed dimension overrides both.
         bw : ?f32 = self.m.width;
         bh : ?f32 = self.m.height;
@@ -258,7 +63,7 @@ impl View for ModBox {
         ch : ?f32 = null;
         if w := bw { cw = w - self.m.padding.horizontal(); }
         if h := bh { ch = h - self.m.padding.vertical(); }
-        child_size := self.child.view.size_that_fits(ProposedSize.{ width = cw, height = ch });
+        child_size := self.child.size_that_fits(ProposedSize.{ width = cw, height = ch });
         box_w := self.m.width ?? (child_size.width + self.m.padding.horizontal());
         box_h := self.m.height ?? (child_size.height + self.m.padding.vertical());
         Size.{
@@ -267,19 +72,21 @@ impl View for ModBox {
         }
     }
 
-    layout :: (self: *ModBox, bounds: Frame) {
+    layout :: (self: *ModBox(V), bounds: Frame) {
+        if self.m.hidden { return; }
         inner := bounds.inset(self.m.margin);
         bw := self.m.width ?? inner.size.width;
         bh := self.m.height ?? inner.size.height;
-        // A fixed dimension centers within the margin box (FrameModifier rule).
+        // A fixed dimension centers within the margin box.
         bx := inner.origin.x + (inner.size.width - bw) * 0.5;
         by := inner.origin.y + (inner.size.height - bh) * 0.5;
         self.box_frame = Frame.make(bx, by, bw, bh);
-        self.child.computed_frame = self.box_frame.inset(self.m.padding);
-        self.child.view.layout(self.child.computed_frame);
+        self.child_frame = self.box_frame.inset(self.m.padding);
+        self.child.layout(self.child_frame);
     }
 
-    render :: (self: *ModBox, ctx: *RenderContext, frame: Frame) {
+    render :: (self: *ModBox(V), ctx: *RenderContext, frame: Frame) {
+        if self.m.hidden { return; }
         prev := ctx.opacity;
         if self.m.opacity < 1.0 { ctx.push_opacity(self.m.opacity); }
         if s := self.m.border {
@@ -294,7 +101,7 @@ impl View for ModBox {
             }
         }
         if self.m.clip { ctx.push_clip(self.box_frame); }
-        self.child.view.render(ctx, self.child.computed_frame);
+        self.child.render(ctx, self.child_frame);
         if self.m.clip { ctx.pop_clip(); }
         if self.m.opacity < 1.0 { ctx.pop_opacity(prev); }
     }

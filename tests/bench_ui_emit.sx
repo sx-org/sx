@@ -1,0 +1,83 @@
+// UI-shaped emit-core canary — the ui counterpart of
+// bench_tagged_dispatch.sx. Runnable on demand:
+//
+//     ./zig-out/bin/sx build --opt 3 -o .sx-tmp/bench-ui \
+//         tests/bench_ui_emit.sx && .sx-tmp/bench-ui
+//
+// One frame = build (place + emit into sinks) → layout → project, driven
+// through the G3 frame core over a row list deep enough that placement and
+// dispatch dominate. The reported number is nanoseconds per frame, median
+// of SAMPLES runs of FRAMES frames.
+//
+// Deliberately NOT a corpus example: it runs for seconds by design.
+
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/modifier.sx";
+#import "modules/ui/runtime.sx";
+#import "modules/ui/frame.sx";
+
+ROWS    : i64 : 200;
+FRAMES  : i64 : 120;
+SAMPLES : i64 : 5;
+
+row :: () {
+    hstack(8.0, m = .{ padding = EdgeInsets.all(4.0), bg = COLOR_DARK_GRAY, corner = 3.0 }) {
+        text("row");
+        spacer();
+        text("value", .{ opacity = 0.5 });
+    }
+}
+
+screen :: () -> View {
+    vstack(4.0, m = .{ margin = EdgeInsets.all(6.0) }) {
+        i := 0;
+        while i < ROWS { row(); i += 1; }
+    }
+}
+
+mono_ns :: () -> i64 {
+    ts : time.Timespec = .{};
+    c.clock_gettime(time.CLOCK_MONOTONIC, *ts);
+    ts.sec * 1000000000 + ts.nsec
+}
+
+median :: (xs: []i64) -> i64 {
+    i := 1;
+    while i < xs.len {
+        k := xs[i];
+        j := i - 1;
+        while j >= 0 and xs[j] > k { xs[j + 1] = xs[j]; j = j - 1; }
+        xs[j + 1] = k;
+        i = i + 1;
+    }
+    xs[xs.len / 2]
+}
+
+main :: () {
+    samples := context.allocator.alloc(i64, SAMPLES);
+    nodes : i64 = 0;
+
+    s := 0;
+    while s < SAMPLES {
+        loop := FrameLoop.init();
+        root := UiRoot.init(.{ value = 1 });
+        t0 := mono_ns();
+        f := 0;
+        while f < FRAMES {
+            snap := loop.tick(*root, screen, 400.0, 800.0);
+            nodes = snap.scene.nodes.len;
+            f += 1;
+        }
+        samples[s] = (mono_ns() - t0) / FRAMES;
+        loop.deinit();
+        root.teardown();
+        s += 1;
+    }
+
+    print("ui frame {} ns\trows {}\tnodes {}\n", median(samples), ROWS, nodes);
+}
