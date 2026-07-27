@@ -1204,27 +1204,36 @@ fn implicitNoneMismatchExempt(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty:
     if (src_ty == .void or dst_ty == .void) return true;
     if (src_ty == .noreturn) return true;
     if (self.xx_passthrough_refs.contains(val)) return true;
-    if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
+    if (!self.noneReinterpretIsUnsafe(diagnosedSrcType(self, val, src_ty), dst_ty)) return true;
     if (self.externalErrorsExist()) return true;
     return false;
+}
+
+/// The SOURCE-LEVEL signature type of the lowered function `fid`: the implicit
+/// `__sx_ctx` parameter dropped and the declared calling convention kept, so it
+/// interns to the same `TypeId` as the equivalent written annotation
+/// (`(i64) -> i64`, `(i64) -> i64 abi(.c)`). A parameter with a default is an
+/// ordinary parameter here — a default is a call-site convenience, not part of
+/// the value's signature.
+fn functionSignatureType(self: *Lowering, fid: inst_mod.FuncId) ?TypeId {
+    const f = &self.module.functions.items[fid.index()];
+    var param_ids = std.ArrayList(TypeId).empty;
+    defer param_ids.deinit(self.alloc);
+    const skip: usize = if (f.has_implicit_ctx) 1 else 0;
+    for (f.params[skip..]) |p| param_ids.append(self.alloc, p.ty) catch return null;
+    return self.module.types.functionTypeCC(param_ids.items, f.ret, f.call_conv);
 }
 
 /// A bare-function VALUE is carried in the legacy integer-word IR type
 /// (`func_ref` typed `i64`/`isize` — issue 0237), which must never leak into
 /// a user-facing message as the value's type (issue 0338: "cannot coerce a
 /// value of type 'i64'" for a fn name). When `val` is a `func_ref`, recover
-/// the function's real signature type (implicit ctx param excluded — it is
-/// not part of the source-level signature); otherwise return `src_ty`.
+/// the function's real signature type; otherwise return `src_ty`.
 fn diagnosedSrcType(self: *Lowering, val: Ref, src_ty: TypeId) TypeId {
     if (src_ty != .i64 and src_ty != .isize) return src_ty;
     const op = self.builder.getRefOp(val) orelse return src_ty;
     if (op != .func_ref) return src_ty;
-    const f = &self.module.functions.items[op.func_ref.index()];
-    var param_ids = std.ArrayList(TypeId).empty;
-    defer param_ids.deinit(self.alloc);
-    const skip: usize = if (f.has_implicit_ctx) 1 else 0;
-    for (f.params[skip..]) |p| param_ids.append(self.alloc, p.ty) catch return src_ty;
-    return self.module.types.functionType(param_ids.items, f.ret);
+    return functionSignatureType(self, op.func_ref) orelse src_ty;
 }
 
 /// The central issue-0191 guard: an IMPLICIT coercion classified `.none` with
@@ -1278,6 +1287,14 @@ pub fn externalErrorsExist(self: *Lowering) bool {
 pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
     if (src_ty == dst_ty) return false;
     if (self.coercionResolver().classify(src_ty, dst_ty) != .none) return false;
+    // Two DIFFERENT function types are never a bit-compatible reinterpretation,
+    // width match or not: both sides are one code pointer, but the callee reads
+    // its arguments and return slot per the signature it was compiled for.
+    // Welding `(i64) -> i64` into a `() -> i64` slot makes the call read an
+    // argument register the caller never wrote (issue 0369). Signatures are
+    // interned, so "different TypeId" is exactly "incompatible signature" —
+    // arity, parameter types, return type, or calling convention.
+    if (isFunctionType(self, src_ty) and isFunctionType(self, dst_ty)) return true;
     // An unmodeled pair where exactly ONE side is an aggregate value
     // (struct/union/tagged union/array/tuple) is NEVER a legitimate
     // bit-reinterpretation, width match or not: the aggregate's bytes pun
@@ -1287,6 +1304,11 @@ pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) 
     // `i64 → isize`, fn-ref → fn slot).
     if (isAggregateValueKind(self, src_ty) != isAggregateValueKind(self, dst_ty)) return true;
     return !sameStoreWidth(self, src_ty, dst_ty);
+}
+
+fn isFunctionType(self: *Lowering, ty: TypeId) bool {
+    if (ty.isBuiltin()) return false;
+    return self.module.types.get(ty) == .function;
 }
 
 /// A type whose values are AGGREGATE-shaped at the IR level, for the pun

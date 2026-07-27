@@ -17,7 +17,7 @@ make_u :: () -> union { i: i64; f: f64; } {
     return r;
 }
 make_e :: () -> enum { S: i64; T: void; } { .S.{11} }
-FnAlias :: () -> struct { x: i64; };
+FnAlias :: () -> struct { x: i64; y: i64; };
 
 main :: () {
     m := make();
