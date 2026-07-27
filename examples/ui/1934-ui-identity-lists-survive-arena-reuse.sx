@@ -36,7 +36,7 @@ impl View for Blob {
 }
 
 row :: () -> View {
-    vstack(0.0) { place(Blob.{ eid = element_id().value }.(View)); }
+    vstack(0.0) { place(Blob.{ eid = element_id().value }); }
 }
 
 home :: () -> View {

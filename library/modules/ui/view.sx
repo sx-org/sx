@@ -4,7 +4,7 @@
 // Events do not dispatch through the tree (§6.9): interactive
 // elements declare hit regions during render; the router consumes
 // input against the committed snapshot's hit list.
-View :: protocol vtable {
+View :: protocol tagged {
     // Measure: given a size proposal, return desired size
     size_that_fits :: (self: *Self, proposal: ProposedSize) -> Size;
 
@@ -15,8 +15,10 @@ View :: protocol vtable {
     render :: (self: *Self, ctx: *RenderContext, frame: Frame);
 }
 
-// A child view with its computed frame (set during layout)
+// A child view with its computed frame (set during layout). The view is
+// a 16-byte borrow of storage the placement owns — a container holds
+// children, never their bytes.
 ViewChild :: struct {
     view: View;
-    computed_frame: Frame = .zero();
+    frame: Frame = .zero();
 }

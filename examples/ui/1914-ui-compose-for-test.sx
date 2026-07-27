@@ -104,6 +104,6 @@ main :: () {
     chip := t.build(() -> View {
         text("chip", .{ padding = EdgeInsets.all(4.0), bg = COLOR_BLUE, corner = 3.0 })
     });
-    process.assert(mod_child(chip).(?Label) != null, "one ModBox over the leaf");
+    process.assert(mod_child(chip, Label).(?Label) != null, "one ModBox over the leaf");
     print("chip ok\n");
 }

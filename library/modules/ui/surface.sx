@@ -9,7 +9,7 @@
 #import "modules/ui/render.sx";
 
 // One offscreen render target on the machine's real GPU stack.
-PixelSurface :: protocol {
+PixelSurface :: protocol vtable {
     // Render one committed scene into the target.
     render :: (self: *Self, tree: *RenderTree);
     // Tightly packed TOP-DOWN RGBA of the last render, owned by `alloc`

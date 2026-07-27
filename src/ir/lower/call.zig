@@ -1290,6 +1290,14 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     }
                 }
             }
+            // A generic type-CONSTRUCTOR head (`List(i64)`, `ModBox(V)`)
+            // parses as a call in the value grammar. Like every other type
+            // literal in expression position it lowers to a first-class
+            // `Type` value — which is what a `$T: Type` argument slot reads.
+            if (self.isGenericTypeConstructorHead(id.name)) {
+                const ty = self.resolveTypeCallWithBindings(c);
+                if (ty != .unresolved) return self.builder.constType(ty);
+            }
             // Unresolved function call
             return self.emitError(id.name, c.callee.span);
         },
@@ -1354,7 +1362,12 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     const resolved = if (self.scope) |scope| (scope.lookupFn(inner_name) orelse inner_name) else inner_name;
 
                     if (self.program_index.fn_ast_map.get(resolved)) |fd| {
-                        if (fd.type_params.len > 0) {
+                        // Only a `-> Type` generic is a type constructor. A
+                        // value-returning generic reaches here as an ordinary
+                        // method receiver (`el(Leaf.{…}).opacity(…)`), and
+                        // instantiating it as a type would resolve its VALUE
+                        // arguments in type position.
+                        if (fd.type_params.len > 0 and self.isTypeReturningCallNode(fa.object)) {
                             if (self.headFnLeak(inner_name, inner_call.callee.span)) return Ref.none;
                             // Try instantiate as type function
                             if (self.instantiateTypeFunction(inner_name, inner_name, fd, inner_call.args)) |result_ty| {

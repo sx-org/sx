@@ -219,7 +219,7 @@ pub const GenericResolver = struct {
             if (types_passed_explicitly) {
                 for (fd.params, 0..) |param, pi| {
                     if (std.mem.eql(u8, param.name, tp.name)) {
-                        if (pi < args_ast.len and (type_bridge.isTypeShapedAstNode(args_ast[pi], &self.l.module.types) or self.l.isTypeReturningCallNode(args_ast[pi]) or self.argIsBoundTypeParam(args_ast[pi]))) {
+                        if (pi < args_ast.len and (type_bridge.isTypeShapedAstNode(args_ast[pi], &self.l.module.types) or self.l.isTypeReturningCallNode(args_ast[pi]) or self.l.isGenericTypeConstructorCallNode(args_ast[pi]) or self.argIsBoundTypeParam(args_ast[pi]))) {
                             const ty = self.l.resolveTypeArg(args_ast[pi]);
                             bindings.put(tp.name, ty) catch {};
                             found = true;

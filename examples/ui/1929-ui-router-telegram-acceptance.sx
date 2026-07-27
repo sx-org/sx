@@ -73,10 +73,10 @@ home :: () -> View {
     vstack(0.0) {
         r := element_id().value;
         g_row = r;
-        place(Region.{ eid = r, bubble = false, w = 200.0, h = 40.0 }.(View));
+        place(Region.{ eid = r, bubble = false, w = 200.0, h = 40.0 });
         b := element_id().value;
         g_bubble = b;
-        place(Region.{ eid = b, bubble = true, w = 200.0, h = 40.0 }.(View));
+        place(Region.{ eid = b, bubble = true, w = 200.0, h = 40.0 });
     }
 }
 

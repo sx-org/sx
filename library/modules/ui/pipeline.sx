@@ -90,15 +90,15 @@ UIPipeline :: struct {
 
         proposal := ProposedSize.fixed(self.screen_width, self.screen_height);
         self.root.view.size_that_fits(proposal);
-        self.root.computed_frame = Frame.{
+        self.root.frame = Frame.{
             origin = Point.zero(),
             size = Size.{ width = self.screen_width, height = self.screen_height }
         };
-        self.root.view.layout(self.root.computed_frame);
+        self.root.view.layout(self.root.frame);
 
         self.render_tree.clear();
         ctx := RenderContext.init(*self.render_tree);
-        self.root.view.render(*ctx, self.root.computed_frame);
+        self.root.view.render(*ctx, self.root.frame);
 
         self.commit_gpu();
     }
@@ -116,16 +116,16 @@ UIPipeline :: struct {
 
         // Layout
         self.root.view.size_that_fits(proposal);
-        self.root.computed_frame = Frame.{
+        self.root.frame = Frame.{
             origin = Point.zero(),
             size = Size.{ width = self.screen_width, height = self.screen_height }
         };
-        self.root.view.layout(self.root.computed_frame);
+        self.root.view.layout(self.root.frame);
 
         // Render to tree
         self.render_tree.clear();
         ctx := RenderContext.init(*self.render_tree);
-        self.root.view.render(*ctx, self.root.computed_frame);
+        self.root.view.render(*ctx, self.root.frame);
 
         // Commit to GPU
         self.commit_gpu();
@@ -147,15 +147,15 @@ UIPipeline :: struct {
 
             proposal := ProposedSize.fixed(self.screen_width, self.screen_height);
             self.root.view.size_that_fits(proposal);
-            self.root.computed_frame = Frame.{
+            self.root.frame = Frame.{
                 origin = Point.zero(),
                 size = Size.{ width = self.screen_width, height = self.screen_height }
             };
-            self.root.view.layout(self.root.computed_frame);
+            self.root.view.layout(self.root.frame);
 
             self.render_tree.clear();
             ctx := RenderContext.init(*self.render_tree);
-            self.root.view.render(*ctx, self.root.computed_frame);
+            self.root.view.render(*ctx, self.root.frame);
 
             self.commit_gpu();
         }

@@ -48,7 +48,7 @@ home :: () -> View {
     n.set(n.get() + 1);
     g_counter = n.get();
     vstack(0.0) {
-        place(Tappable.{ eid = element_id().value, w = 40.0, h = 20.0 }.(View));
+        place(Tappable.{ eid = element_id().value, w = 40.0, h = 20.0 });
     }
 }
 

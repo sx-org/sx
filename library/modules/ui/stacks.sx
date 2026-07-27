@@ -28,7 +28,7 @@ impl View for VStack {
         i := 0;
         while i < self.children.len {
             child := *self.children.items[i];
-            child.view.render(ctx, child.computed_frame);
+            child.view.render(ctx, child.frame);
             i += 1;
         }
     }
@@ -57,7 +57,7 @@ impl View for HStack {
         i := 0;
         while i < self.children.len {
             child := *self.children.items[i];
-            child.view.render(ctx, child.computed_frame);
+            child.view.render(ctx, child.frame);
             i += 1;
         }
     }
@@ -86,7 +86,7 @@ impl View for ZStack {
         i := 0;
         while i < self.children.len {
             child := *self.children.items[i];
-            child.view.render(ctx, child.computed_frame);
+            child.view.render(ctx, child.frame);
             i += 1;
         }
     }
