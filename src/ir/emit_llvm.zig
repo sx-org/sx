@@ -32,7 +32,6 @@ const Module = ir_module.Module;
 const compiler_hooks = @import("compiler_hooks.zig");
 const Value = @import("comptime_value.zig").Value;
 const comptime_vm = @import("comptime_vm.zig");
-const build_opts = @import("build_opts");
 
 // The vendored error-trace ring buffer (library/vendors/sx_trace_runtime/sx_trace.c)
 // is linked into the compiler. Comptime `#run` evaluation pushes frames to it via
@@ -126,23 +125,6 @@ pub const LLVMEmitter = struct {
     /// Computed once at the top of `emit`; used to report the CALL PATH when a
     /// compile-time-only function turns out to be reachable from the binary.
     reach: ?@import("reachability.zig").Reachability = null,
-
-    // When set (env `SX_COMPTIME_FLAT`, → a `-Dcomptime-flat` build flag later),
-    // comptime const-init folds try the comptime VM (`comptime_vm.tryEval`)
-    // first and fall back to the legacy tagged interpreter on null. Default OFF so
-    // the corpus is unaffected until the VM reaches parity (Phase 1.final step d).
-    comptime_flat: bool = false,
-
-    // When set (env `SX_COMPTIME_FLAT_TRACE`, only meaningful with `comptime_flat`),
-    // each comptime const-init reports to stderr whether the VM handled it or fell
-    // back to the legacy interpreter (with the bail reason) — the coverage signal
-    // for porting the next ops. Default OFF.
-    comptime_flat_trace: bool = false,
-
-    // When set (`-Dcomptime-flat-strict` / env `SX_COMPTIME_FLAT_STRICT`), a VM bail
-    // does NOT fall back to the legacy interpreter — it becomes a build-gating error.
-    // The enumeration gate for retiring `interp.zig`. Implies `comptime_flat`.
-    comptime_flat_strict: bool = false,
 
     // Allocator for temporary bookkeeping
     alloc: Allocator,
@@ -399,12 +381,6 @@ pub const LLVMEmitter = struct {
             .build_config = .{},
             .di_files = std.StringHashMap(c.LLVMMetadataRef).init(alloc),
             .frame_str_cache = std.StringHashMap(c.LLVMValueRef).init(alloc),
-            // Enabled by the `-Dcomptime-flat` build flag OR the `SX_COMPTIME_FLAT`
-            // env var (either turns it on); default OFF (legacy interpreter).
-            .comptime_flat = build_opts.comptime_flat or std.c.getenv("SX_COMPTIME_FLAT") != null or
-                build_opts.comptime_flat_strict or std.c.getenv("SX_COMPTIME_FLAT_STRICT") != null,
-            .comptime_flat_trace = std.c.getenv("SX_COMPTIME_FLAT_TRACE") != null,
-            .comptime_flat_strict = build_opts.comptime_flat_strict or std.c.getenv("SX_COMPTIME_FLAT_STRICT") != null,
         };
     }
 

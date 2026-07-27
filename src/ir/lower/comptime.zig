@@ -685,12 +685,6 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     }
     defer evaluation.destroy();
     const vm_result = evaluation.completed();
-    if (std.c.getenv("SX_COMPTIME_FLAT_TRACE") != null) {
-        if (vm_result != null)
-            std.debug.print("[comptime-vm] HANDLED  type-fn\n", .{})
-        else
-            std.debug.print("[comptime-vm] BAIL type-fn: {s}\n", .{comptime_vm.last_bail_reason orelse "<unknown>"});
-    }
     if (vm_result) |v| {
         const tid_vm = v.asTypeId() orelse return null;
         return checkComptimeTypeResult(self, tid_vm, span);
