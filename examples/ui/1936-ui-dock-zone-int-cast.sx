@@ -1,0 +1,22 @@
+// `modules/ui/dock.sx` compiles and its ordinal→zone mapping runs.
+// `DockInteraction.get_hovered_dock_zone` returns `?DockZone` from a
+// tail `self.hovered_zone.(DockZone)` — the shape that kept the SOURCE
+// integer type before int→enum was a modeled conversion (issue 0396),
+// which is why the whole module had never compiled with anything
+// importing it.
+#import "modules/std.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/dock.sx";
+
+main :: () {
+    di : DockInteraction;
+    di.hovered_zone = 3;
+    if z := di.get_hovered_dock_zone() {
+        print("hovered: {}\n", z);
+        print("preview-w: {}\n", dock_zone_get_preview_frame(z, Frame.{ origin = Point.zero(), size = Size.{ width = 100.0, height = 80.0 } }).size.width);
+    }
+    di.set_hovered_dock_zone(DockZone.left);
+    print("ordinal: {}\n", di.hovered_zone);
+    di.hovered_zone = -1;
+    print("none: {}\n", di.get_hovered_dock_zone() == null);
+}
