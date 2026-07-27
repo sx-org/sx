@@ -151,7 +151,11 @@ pub const Ops = struct {
     /// The dense conformer tag, the one place a literal tag exists: the IR
     /// carries the pair symbolically and the numbering resolves here (§7.9).
     pub fn emitTaggedTagOf(self: Ops, t: TagOf) void {
-        const tag = self.e.ir_mod.tagged_tags.get(.{ .proto = t.proto, .concrete = t.concrete }) orelse 0;
+        const tag = self.e.ir_mod.tagged_tags.get(.{ .proto = t.proto, .concrete = t.concrete }) orelse
+            std.debug.panic("emitTaggedTagOf: '{s}' is not in the final conformer set of '{s}' — a pair that did not survive the numbering has no tag", .{
+                self.e.ir_mod.types.typeName(t.concrete),
+                self.e.ir_mod.types.typeName(t.proto),
+            });
         self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, @bitCast(tag), 0));
     }
 
@@ -2613,6 +2617,16 @@ pub const Ops = struct {
     }
 
     pub fn emitCondBr(self: Ops, cbr: CondBranch, func_idx: u32) void {
+        // A condition already answered at emission branches unconditionally;
+        // its dead arm is not a reachable block and was never emitted.
+        const func = &self.e.ir_mod.functions.items[func_idx];
+        if (self.e.constCondition(func, cbr.cond)) |taken| {
+            const live = if (taken) cbr.then_target else cbr.else_target;
+            _ = c.LLVMBuildBr(self.e.builder, self.e.getBlock(func_idx, live));
+            self.e.advanceRefCounter();
+            return;
+        }
+
         var cond = self.e.resolveRef(cbr.cond);
         const then_bb = self.e.getBlock(func_idx, cbr.then_target);
         const else_bb = self.e.getBlock(func_idx, cbr.else_target);
