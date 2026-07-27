@@ -32,11 +32,9 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
     // Concrete → any: node-aware boxing (an lvalue operand borrows its
     // storage, mirroring protocol erasure's borrow mode). Handled ahead
     // of the plan switch — the `.coerce` ladder's box arm is node-less
-    // and would always spill a copy. A PROTOCOL source is exempt: an
-    // explicit `xx p : any` is the CONCRETE view (protocol_to_any — the
-    // {ctx, type_id} prefix), not a box of the protocol value; implicit
-    // boxing (`av : any = s`) routes through boxAnyOf directly at its
-    // sites and stays a box.
+    // and would always spill a copy. A PROTOCOL source is exempt: it has
+    // no storage to borrow, and `xx p : any` is the CONCRETE view
+    // (protocol_to_any — the {ctx, type_id} prefix) rather than a box.
     if (dst_ty == .any and src_ty != .any and src_ty != .unresolved and
         self.getProtocolInfo(src_ty) == null)
     {
@@ -141,15 +139,9 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
             var fields = [2]Ref{ ctx_ref, tid_ref };
             return self.builder.structInit(&fields, dst_ty);
         },
-        // Protocol → any: the concrete view. The value's {ctx, __type_id}
-        // prefix IS an any {data, type_id} — read the two words and
-        // assemble the view (the downcast / protocol type switch base).
-        .protocol_to_any => {
-            const void_ptr_ty = self.module.types.ptrTo(.void);
-            const ctx_ref = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr_ty);
-            const tid_ref = self.protocolTypeIdWord(src_ty, operand);
-            return self.builder.makeAny(tid_ref, ctx_ref);
-        },
+        // Protocol → any: the concrete view (the downcast / protocol type
+        // switch base).
+        .protocol_to_any => return protocolToAnyView(self, operand, src_ty),
         .coerce => {},
     }
 
@@ -550,6 +542,17 @@ pub fn refStorageAddress(self: *Lowering, ref: Ref) ?Ref {
     }
 }
 
+/// The `any` view of a protocol value (§7.3): its `{ctx, __type_id}` prefix
+/// IS an any `{data, type_id}`, so the view names the CONCRETE receiver.
+/// `protocolTypeIdWord` supplies the word for every kind — the stamped slot
+/// on the erased kinds, the tag table on tagged.
+pub fn protocolToAnyView(self: *Lowering, operand: Ref, src_ty: TypeId) Ref {
+    const void_ptr_ty = self.module.types.ptrTo(.void);
+    const ctx_ref = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr_ty);
+    const tid_ref = self.protocolTypeIdWord(src_ty, operand);
+    return self.builder.makeAny(tid_ref, ctx_ref);
+}
+
 /// Box a concrete value into an `any` view `{tag, data}`. `any` is a
 /// type-erased BORROW: the data slot holds the value's ADDRESS.
 /// - An addressable lvalue operand (same discipline as protocol erasure:
@@ -563,6 +566,12 @@ pub fn refStorageAddress(self: *Lowering, ref: Ref) ?Ref {
 /// `size_of(tag)` valid bytes — the invariant every consumer (typed
 /// unbox loads, the raw layer's shallow copies) relies on.
 pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) Ref {
+    // A protocol source is never boxed as itself: the box of a protocol
+    // value is the concrete receiver's view (§7.3). Every implicit boxing
+    // position — declaration target, assignment, call argument, field
+    // init, container element, return — funnels through here, so they all
+    // agree with the explicit `xx p : any` conversion.
+    if (self.getProtocolInfo(src_ty) != null) return protocolToAnyView(self, val, src_ty);
     if (src_ty == .void) {
         // A void has no storage; the view is `{void, null}` (matches the
         // fieldless arm of field_value_get).

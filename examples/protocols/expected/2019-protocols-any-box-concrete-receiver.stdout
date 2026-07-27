@@ -1,0 +1,10 @@
+decl Cube Cube Cube
+xx Cube
+assign Cube
+arg Cube
+field Cube
+elem Cube Cube Cube
+ret Cube
+down 4 4 4
+direct Cube same true
+agree 4 4 4 4
