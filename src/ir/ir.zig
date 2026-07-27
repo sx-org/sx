@@ -92,6 +92,7 @@ pub const type_bridge_tests = @import("type_bridge.test.zig");
 pub const emit_llvm_tests = @import("emit_llvm.test.zig");
 pub const jni_descriptor_tests = @import("jni_descriptor.test.zig");
 pub const jni_java_emit_tests = @import("jni_java_emit.test.zig");
+pub const comptime_async_tests = @import("comptime_async.test.zig");
 pub const comptime_vm_tests = @import("comptime_vm.test.zig");
 pub const intrinsics_tests = @import("intrinsics.test.zig");
 

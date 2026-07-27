@@ -131,7 +131,15 @@ fn taskEntry() callconv(.naked) void {
 var current_task: ?*Task = null;
 var free_list: ?*Task = null;
 
-fn switchTo(save: *fiber.Context, target: *fiber.Context) void {
+/// Out of line, and it must stay that way: `fiber.contextSwitch` is an inline
+/// asm that declares the link register clobbered, and the aarch64 backend does
+/// not honor that clobber — it will happily keep a live value in `x30` across
+/// the switch, where the resumed side finds the other stack's leftover return
+/// address instead. Behind a call boundary the ordinary ABI covers every
+/// register class: the caller treats `x30` as call-clobbered, and this frame's
+/// own prologue/epilogue saves and restores the callee-saved registers the asm
+/// lists.
+noinline fn switchTo(save: *fiber.Context, target: *fiber.Context) void {
     var s: fiber.Switch = .{ .old = save, .new = target };
     _ = fiber.contextSwitch(&s);
 }
