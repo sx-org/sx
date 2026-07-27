@@ -1,0 +1,27 @@
+// Cross-set error-set VALUE rejections: a tag of `Broad` that is not a
+// member of `Narrow` cannot reach a `Narrow` slot implicitly. Both sets are
+// u32-backed, so these stores are same-width and the reinterpret guard lets
+// them through — the membership check is what rejects them.
+// The positive cases live in `examples/errors/1075-errors-cross-set-value-coercion.sx`.
+
+#import "modules/std.sx";
+
+Narrow :: error { Wide }
+Broad  :: error { Wide, Extra }
+
+broad_src :: () -> (i32, !Broad) { raise error.Extra; }
+
+take_narrow :: (n: Narrow) -> void { print("{}\n", n); }
+
+Holder :: struct { e: Narrow }
+
+main :: () -> i32 {
+    v, be := broad_src();
+
+    narrowed : Narrow = be;      // error: Extra is not a member of Narrow
+    take_narrow(be);             // error: same, in argument position
+    h := Holder.{ e = be };      // error: same, in field-init position
+
+    lit : Narrow = error.Extra;  // error: tag literal not in Narrow
+    return 0;
+}

@@ -5364,6 +5364,10 @@ if e == error.Empty { ... }               // compare against a literal
 - Against a **named-set** destination, `error.X` is valid only if `X ∈` the set
   (typo-checked). A comparison to a literal not in the set is a compile error
   (it could never be true). For **inferred** sets this check is skipped.
+- An error-set **value** crossing into a differently-typed named set follows
+  the same subset rule as the error channel: `A` coerces to `B` only if
+  `A ⊆ B`, in declaration, argument, and field-init positions alike. Each
+  escaping tag is diagnosed; `xx` forces a narrowing.
 - An error-set value compares (`==` / `!=`) only with an `error.X` literal or
   another error-set value — **never a raw integer** (`e == 42` is rejected).
   Coerce explicitly (`(xx e) == id`) to use the raw id.

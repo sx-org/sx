@@ -2799,6 +2799,7 @@ pub const Lowering = struct {
     pub const errorChannelOf = lower_error.errorChannelOf;
     pub const isInferredErrorSet = lower_error.isInferredErrorSet;
     pub const checkErrorSetSubset = lower_error.checkErrorSetSubset;
+    pub const checkErrorSetValueCoercion = lower_error.checkErrorSetValueCoercion;
     pub const diagTagsNotInSet = lower_error.diagTagsNotInSet;
     pub const lowerRaise = lower_error.lowerRaise;
     pub const lowerFailableSuccessReturn = lower_error.lowerFailableSuccessReturn;
