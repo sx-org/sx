@@ -1219,7 +1219,7 @@ fn implicitNoneMismatchExempt(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty:
     if (src_ty == .void or dst_ty == .void) return true;
     if (src_ty == .noreturn) return true;
     if (self.xx_passthrough_refs.contains(val)) return true;
-    if (!self.noneReinterpretIsUnsafe(diagnosedSrcType(self, val, src_ty), dst_ty)) return true;
+    if (!self.noneReinterpretIsUnsafe(valueTypeOfRef(self, val, src_ty), dst_ty)) return true;
     if (self.externalErrorsExist()) return true;
     return false;
 }
@@ -1230,7 +1230,7 @@ fn implicitNoneMismatchExempt(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty:
 /// (`(i64) -> i64`, `(i64) -> i64 abi(.c)`). A parameter with a default is an
 /// ordinary parameter here — a default is a call-site convenience, not part of
 /// the value's signature.
-fn functionSignatureType(self: *Lowering, fid: inst_mod.FuncId) ?TypeId {
+pub fn functionSignatureType(self: *Lowering, fid: inst_mod.FuncId) ?TypeId {
     const f = &self.module.functions.items[fid.index()];
     var param_ids = std.ArrayList(TypeId).empty;
     defer param_ids.deinit(self.alloc);
@@ -1240,15 +1240,40 @@ fn functionSignatureType(self: *Lowering, fid: inst_mod.FuncId) ?TypeId {
 }
 
 /// A bare-function VALUE is carried in the legacy integer-word IR type
-/// (`func_ref` typed `i64`/`isize` — issue 0237), which must never leak into
-/// a user-facing message as the value's type (issue 0338: "cannot coerce a
-/// value of type 'i64'" for a fn name). When `val` is a `func_ref`, recover
-/// the function's real signature type; otherwise return `src_ty`.
-fn diagnosedSrcType(self: *Lowering, val: Ref, src_ty: TypeId) TypeId {
+/// (`func_ref` typed `i64`/`isize` — issue 0237), which is not the value's
+/// TYPE: it must never leak into a user-facing message (issue 0338: "cannot
+/// coerce a value of type 'i64'" for a fn name), and it must never be what a
+/// generic type param or a comptime pack element binds to — the binding would
+/// carry the word instead of a callable signature (issues 0367 / 0368). When
+/// `val` is a `func_ref`, recover the function's real signature type;
+/// otherwise return `src_ty`.
+pub fn valueTypeOfRef(self: *Lowering, val: Ref, src_ty: TypeId) TypeId {
     if (src_ty != .i64 and src_ty != .isize) return src_ty;
     const op = self.builder.getRefOp(val) orelse return src_ty;
     if (op != .func_ref) return src_ty;
     return functionSignatureType(self, op.func_ref) orelse src_ty;
+}
+
+/// The signature type of an expression that NAMES a bare function used as a
+/// value (`apply(some_fn)`), or null when it names anything else. The generic
+/// type-param binder answers "what does this argument bind" BEFORE the argument
+/// is lowered, so it has no `Ref` to recover from (`valueTypeOfRef`) — the
+/// author's declared FuncId carries the same signature. A generic / pack /
+/// comptime-parameterized function has no single signature and never qualifies.
+pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
+    if (node.data != .identifier) return null;
+    const name = node.data.identifier.name;
+    if (self.scope) |scope| if (scope.lookup(name) != null) return null;
+    if (self.ufcsAliasTarget(name) != null) return null;
+    const fd: *const ast.FnDecl = switch (self.selectCallableAuthor(name, self.current_source_file orelse return null, .plain_free)) {
+        .func => |sf| sf.decl,
+        .none => self.program_index.fn_ast_map.get(name) orelse return null,
+        .ambiguous, .not_callable => return null,
+    };
+    if (fd.type_params.len > 0) return null;
+    for (fd.params) |p| if (p.is_pack or p.is_comptime) return null;
+    const fid = self.fn_decl_fids.get(fd) orelse return null;
+    return functionSignatureType(self, fid);
 }
 
 /// The central issue-0191 guard: an IMPLICIT coercion classified `.none` with
@@ -1261,7 +1286,7 @@ fn diagnoseUnmodeledCoercion(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: 
     if (implicitNoneMismatchExempt(self, val, src_ty, dst_ty)) return;
     if (self.diagnostics) |d| {
         const cs = self.builder.current_span;
-        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot coerce a value of type '{s}' to '{s}': no implicit conversion applies", .{ self.formatTypeName(diagnosedSrcType(self, val, src_ty)), self.formatTypeName(dst_ty) });
+        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot coerce a value of type '{s}' to '{s}': no implicit conversion applies", .{ self.formatTypeName(valueTypeOfRef(self, val, src_ty)), self.formatTypeName(dst_ty) });
         self.assignability_error_count += 1;
     }
 }
@@ -1275,7 +1300,7 @@ fn diagnoseUnmodeledCoercion(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: 
 pub fn checkReturnable(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
     if (implicitNoneMismatchExempt(self, val, src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "cannot return a value of type '{s}' where '{s}' is expected", .{ self.formatTypeName(diagnosedSrcType(self, val, src_ty)), self.formatTypeName(dst_ty) });
+        d.addFmt(.err, span, "cannot return a value of type '{s}' where '{s}' is expected", .{ self.formatTypeName(valueTypeOfRef(self, val, src_ty)), self.formatTypeName(dst_ty) });
         self.assignability_error_count += 1;
     }
     return false;

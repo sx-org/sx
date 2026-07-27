@@ -2253,20 +2253,28 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
             // Plain function-pointer indirect call. Use the callee's static
             // return type when known instead of a hardcoded `.i64` default.
-            if (!callee_ty.isBuiltin()) {
+            const fn_info: ?types.TypeInfo.FunctionInfo = if (!callee_ty.isBuiltin()) blk: {
                 const cti = self.module.types.get(callee_ty);
-                if (cti == .function) {
-                    // Exact-arity + spread-placeholder validation against the
-                    // callee expression's fn-pointer TYPE (issue 0188).
-                    if (checkCallableValueArgs(self, "function pointer", null, args.items, cti.function.params.len, cti.function.pack_start, c, c.callee.span)) return Ref.none;
-                }
+                break :blk if (cti == .function) cti.function else null;
+            } else null;
+            if (fn_info) |fi| {
+                // Exact-arity + spread-placeholder validation against the
+                // callee expression's fn-pointer TYPE (issue 0188).
+                if (checkCallableValueArgs(self, "function pointer", null, args.items, fi.params.len, fi.pack_start, c, c.callee.span)) return Ref.none;
+                coerceClosureCallArgs(self, args.items, fi.params);
             }
-            const ret_ty: TypeId = if (!callee_ty.isBuiltin()) blk: {
-                const cti = self.module.types.get(callee_ty);
-                break :blk if (cti == .function) cti.function.ret else .i64;
-            } else .i64;
+            const ret_ty: TypeId = if (fn_info) |fi| fi.ret else .i64;
             const callee_ref = self.lowerExpr(c.callee);
-            const owned = self.alloc.dupe(Ref, args.items) catch unreachable;
+            // An expression callee dispatches with the SAME ABI as a
+            // fn-pointer local / global / field: the implicit ctx is
+            // prepended when the pointee's convention wants it.
+            var final_args = std.ArrayList(Ref).empty;
+            defer final_args.deinit(self.alloc);
+            if (self.fnPtrTypeWantsCtx(callee_ty)) {
+                final_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
+            }
+            final_args.appendSlice(self.alloc, args.items) catch unreachable;
+            const owned = self.alloc.dupe(Ref, final_args.items) catch unreachable;
             return self.builder.emit(.{ .call_indirect = .{ .callee = callee_ref, .args = owned } }, ret_ty);
         },
     }

@@ -1048,7 +1048,10 @@ pub fn lowerPackFnCallNamed(
         pack_refs.append(self.alloc, r) catch return self.builder.constInt(0, .void);
         if (pack_is_comptime) {
             const it = self.inferExprType(a);
-            pack_arg_types.append(self.alloc, if (it == .unresolved) self.builder.getRefType(r) else it) catch return self.builder.constInt(0, .void);
+            // The lowered ref is the fallback type source, but a bare fn value
+            // rides in the legacy integer word — take its signature so the
+            // element stays callable in the mono (issue 0368).
+            pack_arg_types.append(self.alloc, if (it == .unresolved) self.valueTypeOfRef(r, self.builder.getRefType(r)) else it) catch return self.builder.constInt(0, .void);
         } else {
             pack_arg_types.append(self.alloc, self.builder.getRefType(r)) catch return self.builder.constInt(0, .void);
         }
