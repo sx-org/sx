@@ -3,13 +3,20 @@
 //     ./zig-out/bin/sx build --opt 3 -o .sx-tmp/bench-tagged \
 //         tests/bench_tagged_dispatch.sx && .sx-tmp/bench-tagged
 //
-// Two phases, measured separately, over one shared array of concrete
-// conformers:
-//   BUILD — fill an array of protocol values from the conformers. A tagged
-//           value is a 16-byte borrow written in place; a value/own vtable
-//           value heap-copies its receiver through `context.allocator`.
+// Three dispatch models over one shared array of concrete conformers:
+//   tagged      — `protocol tagged`, a 2-word borrow, outlined switch.
+//   vtable/own  — `protocol vtable`, value/own erasure.
+//   vtable/id   — `protocol vtable #identity`, borrowing erasure.
+//
+// Two phases, measured separately:
+//   BUILD — fill an array of protocol values from the conformers. The
+//           value/own vtable value heap-copies its receiver through
+//           `context.allocator` (and is freed per sample); the tagged value
+//           writes 16 bytes in place; the identity value writes a 3-word
+//           borrow in place (`free` refuses on it — there is no backing).
 //   WALK  — sum a dispatched method over the array, repeatedly. Tagged calls
-//           the outlined switch; vtable loads the table and calls indirect.
+//           the outlined switch; both vtable models load the table and call
+//           indirect.
 //
 // Deliberately NOT a corpus example: it runs for seconds by design.
 
@@ -22,6 +29,7 @@ SAMPLES : i64 : 5;
 
 Tagged :: protocol tagged { area :: (self: *Self) -> i64; }
 Vtab   :: protocol vtable { area :: (self: *Self) -> i64; }
+VtabId :: protocol vtable #identity { area :: (self: *Self) -> i64; }
 
 Sq  :: struct { s: i64; }
 Rc  :: struct { w: i64; h: i64; }
@@ -33,6 +41,9 @@ impl Tagged for Tri { area :: (self: *Tri) -> i64 { self.b * self.h / 2 } }
 impl Vtab   for Sq  { area :: (self: *Sq) -> i64 { self.s * self.s } }
 impl Vtab   for Rc  { area :: (self: *Rc) -> i64 { self.w * self.h } }
 impl Vtab   for Tri { area :: (self: *Tri) -> i64 { self.b * self.h / 2 } }
+impl VtabId for Sq  { area :: (self: *Sq) -> i64 { self.s * self.s } }
+impl VtabId for Rc  { area :: (self: *Rc) -> i64 { self.w * self.h } }
+impl VtabId for Tri { area :: (self: *Tri) -> i64 { self.b * self.h / 2 } }
 
 mono_ns :: () -> i64 {
     ts : time.Timespec = .{};
@@ -56,6 +67,12 @@ report :: (label: string, build_ns: i64, walk_ns: i64) {
     print("{}\tbuild {} ns\twalk {} ns\n", label, build_ns, walk_ns);
 }
 
+ratio :: (label: string, build_ns: i64, walk_ns: i64, base_build: i64, base_walk: i64) {
+    print("{}\tbuild x{}.{}\twalk x{}.{}\n", label,
+          build_ns / base_build, (build_ns * 10 / base_build) % 10,
+          walk_ns / base_walk, (walk_ns * 10 / base_walk) % 10);
+}
+
 main :: () {
     sqs  := context.allocator.alloc(Sq, N);
     rcs  := context.allocator.alloc(Rc, N);
@@ -70,14 +87,18 @@ main :: () {
 
     tv := context.allocator.alloc(Tagged, N);
     vv := context.allocator.alloc(Vtab, N);
+    iv := context.allocator.alloc(VtabId, N);
 
     tb := context.allocator.alloc(i64, SAMPLES);
     tw := context.allocator.alloc(i64, SAMPLES);
     vb := context.allocator.alloc(i64, SAMPLES);
     vw := context.allocator.alloc(i64, SAMPLES);
+    ib := context.allocator.alloc(i64, SAMPLES);
+    iw := context.allocator.alloc(i64, SAMPLES);
 
     tsink := 0;
     vsink := 0;
+    isink := 0;
     s := 0;
     while s < SAMPLES {
         // ── tagged: build (borrows) ──
@@ -101,7 +122,7 @@ main :: () {
         }
         t2 := mono_ns();
 
-        // ── vtable: build (owning erasure, one heap copy each) ──
+        // ── vtable/own: build (owning erasure, one heap copy each) ──
         i = 0;
         while i < N {
             m := i % 3;
@@ -112,7 +133,7 @@ main :: () {
         }
         t3 := mono_ns();
 
-        // ── vtable: walk (table load + indirect call) ──
+        // ── vtable/own: walk (table load + indirect call) ──
         k = 0;
         while k < WALKS {
             i = 0;
@@ -124,10 +145,33 @@ main :: () {
         i = 0;
         while i < N { free(vv[i]); i = i + 1; }
 
+        // ── vtable/id: build (identity erasure, borrows in place) ──
+        t5 := mono_ns();
+        i = 0;
+        while i < N {
+            m := i % 3;
+            if m == 0 { iv[i] = sqs[i]; }
+            else if m == 1 { iv[i] = rcs[i]; }
+            else { iv[i] = tris[i]; }
+            i = i + 1;
+        }
+        t6 := mono_ns();
+
+        // ── vtable/id: walk (table load + indirect call) ──
+        k = 0;
+        while k < WALKS {
+            i = 0;
+            while i < N { isink = isink + iv[i].area(); i = i + 1; }
+            k = k + 1;
+        }
+        t7 := mono_ns();
+
         tb[s] = t1 - t0;
         tw[s] = t2 - t1;
         vb[s] = t3 - t2;
         vw[s] = t4 - t3;
+        ib[s] = t6 - t5;
+        iw[s] = t7 - t6;
         s = s + 1;
     }
 
@@ -135,13 +179,18 @@ main :: () {
     twm := median(tw);
     vbm := median(vb);
     vwm := median(vw);
-    report("tagged", tbm, twm);
-    report("vtable", vbm, vwm);
-    print("build x{}.{}\twalk x{}.{}\n",
-          vbm / tbm, (vbm * 10 / tbm) % 10,
-          vwm / twm, (vwm * 10 / twm) % 10);
+    ibm := median(ib);
+    iwm := median(iw);
+    report("tagged    ", tbm, twm);
+    report("vtable/own", vbm, vwm);
+    report("vtable/id ", ibm, iwm);
+    ratio("own/tagged", vbm, vwm, tbm, twm);
+    ratio("id/tagged ", ibm, iwm, tbm, twm);
     // Same conformers, same walks: a checksum divergence means one model
     // dispatched a wrong body.
-    if tsink != vsink { print("CHECKSUM MISMATCH tagged {} vtable {}\n", tsink, vsink); c.exit(1); }
-    print("checksum {} (tagged == vtable)\n", tsink % 1000);
+    if tsink != vsink or tsink != isink {
+        print("CHECKSUM MISMATCH tagged {} vtable/own {} vtable/id {}\n", tsink, vsink, isink);
+        c.exit(1);
+    }
+    print("checksum {} (all three models agree)\n", tsink % 1000);
 }
