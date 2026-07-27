@@ -3223,6 +3223,7 @@ pub const Lowering = struct {
     pub const reflectionTypeArgGuard = lower_call.reflectionTypeArgGuard;
     pub const reflectionErrorSentinel = lower_call.reflectionErrorSentinel;
     pub const appendDefaultArgs = lower_call.appendDefaultArgs;
+    pub const lowerDefaultArg = lower_call.lowerDefaultArg;
     pub const checkCallArity = lower_call.checkCallArity;
     pub const expandCallDefaults = lower_call.expandCallDefaults;
     pub const userParamTypes = lower_call.userParamTypes;
