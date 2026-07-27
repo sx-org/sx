@@ -480,6 +480,16 @@ pub const ExprTyper = struct {
             },
             .struct_literal => |sl| {
                 if (sl.struct_name) |name| {
+                    // Source-aware first, so a head that is a type ALIAS
+                    // (`BoxI :: Box(i64)`) infers the type it names — the
+                    // global `findByName` below knows only registered type
+                    // NAMES and would mint a stub under the alias spelling.
+                    if (self.l.current_source_file) |from| {
+                        switch (self.l.selectNominalLeaf(name, from, false)) {
+                            .resolved => |tid| return tid,
+                            else => {},
+                        }
+                    }
                     const name_id = self.l.module.types.internString(name);
                     return self.l.module.types.findByName(name_id) orelse
                         self.l.module.types.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
