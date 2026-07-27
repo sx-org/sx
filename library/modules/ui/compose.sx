@@ -7,7 +7,8 @@
 // automatic). The single placement helper `place` is the only code that
 // touches `context.ui_sink` (S2). Dual-mode rule: inside an emit scope call
 // components as statements — placement already happened, the return is for
-// value position; never `place()` a dual component's return.
+// value position. Prefer not to `place()` a dual component's returned View
+// again under a sink (that would emit twice); the type system does not refuse it.
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 #import "modules/ui/types.sx";
@@ -302,23 +303,11 @@ print_chain :: (ui: *Ui) {
 // that holds it inline. Everything downstream — sinks, containers,
 // ViewChild — carries the 16-byte handle.
 //
-// The concrete type is the REQUIREMENT, not a convenience: `View` is a
-// tagged protocol, so a handle is a borrow with no owning form to copy
-// through (protocols.md §6.2). Placing an already-erased handle could
-// only forward a borrow of the caller's frame temp into a tree that
-// layout walks after that frame is gone — so the erased argument is
-// refused at the call site.
+// When `V` is already `View` (erase-early / helper-returned handle), there
+// is no concrete layout to copy: pass the handle through unchanged, or wrap
+// one `ModBox(View)` when `m` is non-default. Lifetime of the referent stays
+// the caller's responsibility (same as any other tagged borrow).
 place :: (v: $V/View, m: Mod = .{}) -> View {
-    inline if V == {
-        case View: {
-            #error("a 'View' handle is a borrow — `place` copies the CONCRETE view into frame-arena storage, and an already-erased handle has nothing left to copy. Drop the erasure (`place(v)`, not `place(v.(View))`); a helper composes by returning what `place` returned, not its own erasure.");
-            // The arm is already fatal; the `return` only terminates it so the
-            // body below stays un-lowered and its `View`-as-`V` type errors
-            // never reach the user on top of the refusal.
-            return v;
-        }
-        else: {}
-    }
     if context.ui == null {
         // The S2 contract message, line-stable on purpose: a module-internal
         // line number tells the user nothing (the failure is at THEIR call
@@ -327,17 +316,36 @@ place :: (v: $V/View, m: Mod = .{}) -> View {
         process.exit(1);
     }
     w : View = ---;
-    if m == MOD_DEFAULT {
-        p := context.allocator.create(V);
-        p.* = v;
-        w = p;
-    } else {
-        b := context.allocator.create(ModBox(V));
-        b.child = v;
-        b.m = m;
-        b.box_frame = .zero();
-        b.child_frame = .zero();
-        w = b;
+    inline if V == {
+        case View: {
+            // Handle passthrough: no create(V), no re-erasure, no `impl View
+            // for View`. Default Mod reuses the handle; non-default wraps
+            // ModBox(View) once around the 16-byte child.
+            if m == MOD_DEFAULT {
+                w = v;
+            } else {
+                b := context.allocator.create(ModBox(View));
+                b.child = v;
+                b.m = m;
+                b.box_frame = .zero();
+                b.child_frame = .zero();
+                w = b;
+            }
+        }
+        else: {
+            if m == MOD_DEFAULT {
+                p := context.allocator.create(V);
+                p.* = v;
+                w = p;
+            } else {
+                b := context.allocator.create(ModBox(V));
+                b.child = v;
+                b.m = m;
+                b.box_frame = .zero();
+                b.child_frame = .zero();
+                w = b;
+            }
+        }
     }
     if context.ui_sink != null { context.ui_sink.emit(w); }
     w

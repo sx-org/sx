@@ -38,9 +38,10 @@ MOD_DEFAULT :: Mod.{};
 // The single wrapper `place` applies for a non-default Mod: every set
 // field acts at ONE dispatch level, regardless of how many are set.
 //
-// The child is stored INLINE at its concrete type, so the box is one
-// allocation with the child in it and every call into the child is
-// static — the tagged handle is spent once, at the box itself.
+// The child is stored INLINE as type `V`. When `V` is a concrete view type,
+// calls into the child are static. When `V` is a tagged protocol handle
+// (`ModBox(View)` from erase-early place), the child is a 16-byte borrow and
+// dispatch through it is dynamic — the box does not own the child's storage.
 ModBox :: struct ($V: Type) {
     child: V;
     m: Mod;

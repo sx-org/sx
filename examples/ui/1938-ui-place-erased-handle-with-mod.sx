@@ -1,0 +1,37 @@
+// Non-default Mod on an erased View handle: one ModBox(View), and the box
+// can measure/layout/render through its protocol-typed child.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+#import "modules/ui/view.sx";
+#import "modules/ui/types.sx";
+#import "modules/ui/render.sx";
+#import "modules/ui/modifier.sx";
+
+Dot :: struct { s: f32; }
+impl View for Dot {
+    size_that_fits :: (self: *Dot, proposal: ProposedSize) -> Size {
+        Size.{ width = self.s, height = self.s }
+    }
+    layout :: (self: *Dot, bounds: Frame) {}
+    render :: (self: *Dot, ctx: *RenderContext, frame: Frame) {
+        ctx.add_rect(frame, COLOR_BLUE);
+    }
+}
+
+main :: () {
+    u := Ui.{};
+    push .{ ui = *u } {
+        d := Dot.{ s = 4.0 };
+        h := place(d.(View), Mod.{ opacity = 0.5 });
+        process.assert(h.(?ModBox(View)) != null, "mod path wraps ModBox(View)");
+        sz := h.size_that_fits(ProposedSize.flexible());
+        process.assert(sz.width == 4.0 and sz.height == 4.0, "ModBox(View) measures child");
+        bounds := Frame.make(0.0, 0.0, sz.width, sz.height);
+        h.layout(bounds);
+        tree := RenderTree.init();
+        ctx := RenderContext.init(*tree);
+        h.render(*ctx, bounds);
+        process.assert(tree.nodes.len >= 1, "ModBox(View) renders child");
+        print("ok\n");
+    }
+}
