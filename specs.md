@@ -4190,9 +4190,11 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   are not builtin type tokens are values, so `run(n) {}` and `Group(n) {}`
   are trailing blocks. A PascalCase *value* (e.g. a const `Limit`) is still
   read as a type name in this empty-`{}` position — write a non-empty body
-  (`run(Limit) { _ = 0; }`) if the callee is a function. A body with
-  statements, `;`, or control keywords is always a trailing block. Zero-arg
-  `f() {}` is always trailing (`T{}` covers empty non-parameterized aggregates).
+  (`run(Limit) { _ = 0; }`) if the callee is a function. The same PascalCase
+  caveat applies under compound forms: `render(*Screen) {}` on a PascalCase
+  *value* is read as an aggregate. A body with statements, `;`, or control
+  keywords is always a trailing block. Zero-arg `f() {}` is always trailing
+  (`T{}` covers empty non-parameterized aggregates).
 - **Header position**: inside an `if`/`while`/`for` header the form is
   disabled — `{` terminates the condition and opens the statement body;
   bind the closure explicitly there.

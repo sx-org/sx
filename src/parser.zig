@@ -4910,13 +4910,11 @@ pub const Parser = struct {
             .optional_type_expr,
             .array_type_expr,
             .many_pointer_type_expr,
-            .error_type_expr,
             .closure_type_expr,
-            .function_type_expr,
             => true,
-            // In value-call position `*T` / `?T` may parse as unary address_of
-            // or as type prefix forms that still surface as unary_op; treat a
+            // In value-call position `*T` parses as unary address_of; treat a
             // type-like operand as a type argument for empty-`{}` disambiguation.
+            // `?T` is already `.optional_type_expr` (not a unary op).
             .unary_op => |u| switch (u.op) {
                 .address_of => argLooksLikeTypeArg(u.operand),
                 else => false,
@@ -6396,12 +6394,13 @@ test "parse empty trailing block with PascalCase callee and identifier arg" {
 }
 
 test "parse parameterized aggregate with compound and PascalCase type args" {
-    // `[]u8` is a slice type expr in the call arg; `Move` is PascalCase.
-    // (Bare `*T` / `?T` in value-call arg position parse as unary ops, not
-    // type exprs — those forms go through type-position paths elsewhere.)
+    // `[]u8` → slice_type_expr; `*Node` → unary address_of of PascalCase;
+    // `?i64` → optional_type_expr; `Move` → PascalCase identifier.
     const source =
         \\main :: () {
         \\  xs := List([]u8){};
+        \\  ps := List(*Node){};
+        \\  os := List(?i64){};
         \\  ms := List(Move){};
         \\}
     ;
