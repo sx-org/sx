@@ -4182,19 +4182,19 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   on the next line is an ordinary scope block statement, never a trailing
   block.
 - **Empty block**: same-line empty `{}` (and comment-only bodies) after a call
-  is a **trailing block** unless every argument is a **type expression** —
-  builtin scalar type nodes (`i64`, `string`, …), compound type forms
-  (`[]u8`, `*T`, `?T`, `[N]T`), PascalCase type names, field paths to types,
-  or nested type apps — in which case it is a parameterized named aggregate:
-  `List(i64){}`, `List([]u8){}`, `Sink(View){}`. Lowercase identifiers that
-  are not builtin type tokens are values, so `run(n) {}` and `Group(n) {}`
-  are trailing blocks. A PascalCase *value* (e.g. a const `Limit`) is still
-  read as a type name in this empty-`{}` position — write a non-empty body
-  (`run(Limit) { _ = 0; }`) if the callee is a function. The same PascalCase
-  caveat applies under compound forms: `render(*Screen) {}` on a PascalCase
-  *value* is read as an aggregate. A body with statements, `;`, or control
-  keywords is always a trailing block. Zero-arg `f() {}` is always trailing
-  (`T{}` covers empty non-parameterized aggregates).
+  is a **trailing block** unless **at least one** argument is a **type
+  expression** (builtin scalar type nodes, compound forms `[]u8`/`*T`/`?T`/
+  `[N]T`, PascalCase type names, field paths to types, nested type apps, or
+  function types) **and** no argument is a lowercase value identifier — then
+  it is a parameterized named aggregate: `List(i64){}`, `List([]u8){}`,
+  `Vec(3, f32){}`, `Sink(View){}`. Value-only arg lists stay trailing:
+  `run(2) {}`, `Group(2) {}`, `run(n) {}`. A pure value-parameter app with no
+  type arg (`Buf(16){}`) is also trailing — bind an alias (`B :: Buf(16); B{}`)
+  or write a non-empty field body. A PascalCase *value* (e.g. const `Limit`)
+  still looks like a type name here (`run(Limit) {}`, `render(*Screen) {}` on a
+  value) — use a non-empty body. Bodies with statements/`;`/control keywords
+  are always trailing. Zero-arg `f() {}` is always trailing (`T{}` for empty
+  non-parameterized aggregates).
 - **Header position**: inside an `if`/`while`/`for` header the form is
   disabled — `{` terminates the condition and opens the statement body;
   bind the closure explicitly there.

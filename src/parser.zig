@@ -4930,12 +4930,28 @@ pub const Parser = struct {
         };
     }
 
+    fn isLowercaseValueIdent(expr: *const Node) bool {
+        return switch (expr.data) {
+            .identifier => |id| id.name.len > 0 and id.name[0] >= 'a' and id.name[0] <= 'z',
+            else => false,
+        };
+    }
+
+    /// Empty `{}` after a call is a type-application aggregate when at least
+    /// one arg is type-shaped and none are lowercase value identifiers.
+    /// - `List(i64){}`, `Vec(3, f32){}` → aggregate (type arg present)
+    /// - `run(2){}`, `Group(2){}` → trailing (only value literals)
+    /// - `run(n){}`, `Group(n){}` → trailing (lowercase value ident)
+    /// Pure value-param apps with no type arg (`Buf(16){}`) stay trailing;
+    /// spell a non-empty body or bind an alias (`B :: Buf(16); B{}`).
     fn callArgsLookLikeTypeApplication(call_args: []const *Node) bool {
         if (call_args.len == 0) return false; // `f(){}` is trailing, not a type app
+        var any_type = false;
         for (call_args) |a| {
-            if (!argLooksLikeTypeArg(a)) return false;
+            if (isLowercaseValueIdent(a)) return false;
+            if (argLooksLikeTypeArg(a)) any_type = true;
         }
-        return true;
+        return any_type;
     }
 
     /// With `current` on `{` after a call: true when the brace body looks
@@ -6397,8 +6413,7 @@ test "parse empty trailing block with PascalCase callee and identifier arg" {
 test "parse parameterized aggregate with compound and PascalCase type args" {
     // `[]u8` → slice_type_expr; `*Node` → unary address_of of PascalCase;
     // `?i64` → optional_type_expr; `Move` → PascalCase identifier;
-    // `(i64) -> i64` → function_type_expr (reachable when a later arg keeps
-    // isLambda from hijacking the paren group).
+    // `(i64) -> i64` → function_type_expr; `Vec(3, f32)` mixes value + type args.
     const source =
         \\main :: () {
         \\  xs := List([]u8){};
@@ -6406,6 +6421,7 @@ test "parse parameterized aggregate with compound and PascalCase type args" {
         \\  os := List(?i64){};
         \\  ms := List(Move){};
         \\  fs := Marker((i64) -> i64, [:0]u8){};
+        \\  vs := Vec(3, f32){};
         \\}
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
