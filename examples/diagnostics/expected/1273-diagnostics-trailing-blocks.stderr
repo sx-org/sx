@@ -1,5 +1,10 @@
-error: 'plain' cannot take a trailing block — its last parameter 'b' is not a `Closure`
+error: 'plain' cannot take a trailing block — its last parameter 'b' is 'i64', which is neither a `Closure` nor a `@BuildBlock(P)`
   --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:17:21
+   |
+17 |     _ = plain(1, 2) { print("x\n"); };
+   |                     ^^^^^^^^^^^^^^^^^
+
+help: declare 'b' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block
    |
 17 |     _ = plain(1, 2) { print("x\n"); };
    |                     ^^^^^^^^^^^^^^^^^
