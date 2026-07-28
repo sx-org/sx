@@ -452,7 +452,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
 
         const result = self.builder.structInit(fields.items, ty);
         if (sl.init_block) |ib| {
-            return self.lowerInitBlock(result, ty, ib);
+            if (sl.init_block_binds_self) return self.lowerInitBlock(result, ty, ib);
+            return self.lowerPostScopeBlock(result, ib);
         }
         return result;
     }
@@ -535,15 +536,22 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
 
     const result = self.builder.structInit(fields.items, ty);
 
-    // Lower init block if present
+    // Lower following block if present
     if (sl.init_block) |ib| {
-        return self.lowerInitBlock(result, ty, ib);
+        if (sl.init_block_binds_self) return self.lowerInitBlock(result, ty, ib);
+        return self.lowerPostScopeBlock(result, ib);
     }
 
     return result;
 }
 
-/// Lower an init block: store struct value to alloca, bind `self`, execute block, reload.
+/// Bare `T{…}{ stmts }`: run `stmts` in the enclosing scope (no `self`), yield T.
+pub fn lowerPostScopeBlock(self: *Lowering, struct_val: Ref, ib: *const Node) Ref {
+    self.lowerBlock(ib);
+    return struct_val;
+}
+
+/// Lower `T{…}.{ stmts }`: store struct value to alloca, bind `self`, execute block, reload.
 pub fn lowerInitBlock(self: *Lowering, struct_val: Ref, ty: TypeId, ib: *const Node) Ref {
     // Store struct value to a temporary alloca
     const ptr_ty = self.module.types.ptrTo(ty);
@@ -3091,7 +3099,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             }
             // `context` resolves to a load through the lowering's
             // current `__sx_ctx` pointer. Every sx function (and
-            // every `push .{...}` / `push (Context{...})` body) sets `current_ctx_ref`
+            // every `push .{...}` / `push Context{...})` body) sets `current_ctx_ref`
             // to a `*Context` it owns, so this is one indirection.
             if (std.mem.eql(u8, id.name, "context")) {
                 if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) {

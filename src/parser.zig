@@ -41,6 +41,12 @@ pub const Parser = struct {
     /// headers are covered by `in_if_condition`/`in_for_header`. Cleared
     /// inside nested paren/argument contexts alongside `in_for_header`.
     no_trailing_block: bool = false,
+    /// True while parsing the context expression of `push <expr> { body }`.
+    /// Named aggregates are allowed here (`push Context{ a = x } { body }`):
+    /// the optional second brace group is the struct `init_block`, which
+    /// `parsePushStmt` reclaims as the push body. Call trailing stays off
+    /// via `no_trailing_block`.
+    in_push_context: bool = false,
     /// When true (set while parsing an `onfail` body), a `raise` statement is
     /// rejected — an error during cleanup has no propagation target. E1.7
     /// extends this to the full {try, return, break, continue} set.
@@ -2086,8 +2092,11 @@ pub const Parser = struct {
         }
         try self.expect(.r_brace);
 
-        // Optional init block: T{ fields } { stmts }
-        const init_block: ?*Node = if (self.current.tag == .l_brace and !self.in_if_condition)
+        // Optional bare post-scope: T{ fields } { stmts } — construct T, then a
+        // plain block in the enclosing scope (no `self`). Taught self-trailing
+        // is `T{ fields }.{ stmts }` (attached in parsePostfix). Suppressed in
+        // if-conditions and push context expressions (`push Context{…} { body }`).
+        const init_block: ?*Node = if (self.current.tag == .l_brace and !self.in_if_condition and !self.in_push_context)
             try self.parseBlock()
         else
             null;
@@ -2097,6 +2106,7 @@ pub const Parser = struct {
             .type_expr = type_expr,
             .field_inits = try field_inits.toOwnedSlice(self.allocator),
             .init_block = init_block,
+            .init_block_binds_self = false,
         } });
     }
 
@@ -3059,10 +3069,12 @@ pub const Parser = struct {
                 } else {
                     expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                 }
-            } else if (self.current.tag == .l_brace and isNamedAggregatePrefix(expr) and self.namedAggregateAllowedHere()) {
+            } else if (self.current.tag == .l_brace and self.shouldParseNamedAggregate(expr)) {
                 // Named aggregate: Type{ ... }. Contextual `.{...}` still starts
                 // with a leading dot in parsePrimary. Header contexts reserve
                 // their final `{` for the statement body (`if cond {`).
+                // Body-shape rejects statement blocks so
+                // `push self.dctx { body }` keeps the brace as the push body.
                 if (expr.data == .identifier) {
                     expr = try self.parseStructLiteral(expr.data.identifier.name, null, expr.span.start);
                 } else {
@@ -3094,12 +3106,24 @@ pub const Parser = struct {
                     }
                     try self.expect(.r_paren);
                     expr = try self.createNode(expr.span.start, .{ .postfix_cast = .{ .operand = expr, .type_expr = target, .alloc_arg = alloc_arg } });
-                } else if (self.current.tag == .l_brace and isNamedAggregatePrefix(expr)) {
-                    // Separator-dot Type.{…} removed — name the type, then `{`.
-                    return self.failNamedAggregateDot();
                 } else if (self.current.tag == .l_brace) {
-                    // Not a type designator (e.g. call result): no Type.{…} form.
-                    return self.fail(named_aggregate_dot_msg);
+                    // `T{ fields }.{ stmts }` — self-trailing after a completed
+                    // aggregate (`self` binds to T). Bare `T{}{ stmts }` is a
+                    // plain post-scope without `self` (set in parseStructLiteral).
+                    // Separator-dot `Type.{…}` on a type designator is removed.
+                    if (expr.data == .struct_literal) {
+                        if (expr.data.struct_literal.init_block != null) {
+                            return self.fail("a struct literal already has a following block");
+                        }
+                        const block = try self.parseBlock();
+                        expr.data.struct_literal.init_block = block;
+                        expr.data.struct_literal.init_block_binds_self = true;
+                        expr.span.end = block.span.end;
+                    } else if (isNamedAggregatePrefix(expr)) {
+                        return self.failNamedAggregateDot();
+                    } else {
+                        return self.fail(named_aggregate_dot_msg);
+                    }
                 } else if (self.current.tag == .l_bracket) {
                     // Typed array/vector literal: Type.[elem, ...]
                     self.advance(); // skip '['
@@ -3956,21 +3980,19 @@ pub const Parser = struct {
         const start = self.current.loc.start;
         self.advance(); // skip 'push'
 
+        // No call trailing on the context expr (`push f() {` must not bind the
+        // body to `f`). Named aggregates ARE allowed so
+        // `push Context{ fields } { body }` parses; init_block attach is off
+        // during the context expr so the following `{ body }` is the push body.
         const saved_ntb = self.no_trailing_block;
+        const saved_push = self.in_push_context;
         self.no_trailing_block = true;
+        self.in_push_context = true;
         const context_expr = try self.parseExpr();
         self.no_trailing_block = saved_ntb;
+        self.in_push_context = saved_push;
 
-        // push (Context{ ... }) { body } — if parseExpr consumed the push body
-        // as a struct init block, steal it back as the push body.
-        // (if/while don't have this issue — they require bool/optional conditions)
-        const body = if (context_expr.data == .struct_literal and
-            context_expr.data.struct_literal.init_block != null)
-        body_blk: {
-            const ib = context_expr.data.struct_literal.init_block.?;
-            context_expr.data.struct_literal.init_block = null;
-            break :body_blk ib;
-        } else try self.parseBlock();
+        const body = try self.parseBlock();
 
         return try self.createNode(start, .{ .push_stmt = .{
             .context_expr = context_expr,
@@ -4881,11 +4903,15 @@ pub const Parser = struct {
         };
     }
 
-    /// Header contexts (`if cond {`, `while cond {`, `for … {`, `push expr {`)
-    /// reserve the final brace group for the statement body. A named aggregate
-    /// that ends a header expression must be parenthesized: `if (Button{}) {`.
+    /// Header contexts (`if cond {`, `while cond {`, `for … {`) reserve the
+    /// final brace group for the statement body — a bare `Type{}` at the end
+    /// of the condition would steal it, so parenthesize: `if (Button{}) {`.
+    /// `push` is different: `push Context{ fields } { body }` is legal; the
+    /// second group is init_block then reclaimed as the push body.
     fn namedAggregateAllowedHere(self: *const Parser) bool {
-        return !self.in_if_condition and !self.no_trailing_block and !self.in_for_header;
+        if (self.in_if_condition or self.in_for_header) return false;
+        if (self.in_push_context) return true;
+        return !self.no_trailing_block;
     }
 
     /// User type names are PascalCase. Builtin scalars reach this path as
@@ -4894,14 +4920,33 @@ pub const Parser = struct {
         return name.len > 0 and name[0] >= 'A' and name[0] <= 'Z';
     }
 
-    /// True when a call argument is type-application shaped. Bare lowercase
-    /// identifiers are *values* so `run(n) {}` stays a trailing block while
-    /// `List(i64){}` (type_expr), `List(Move){}` (PascalCase), and
-    /// `List([]u8){}` (slice type) stay aggregates.
-    fn argLooksLikeTypeArg(expr: *const Node) bool {
+    fn isLowercaseValueIdent(expr: *const Node) bool {
+        return switch (expr.data) {
+            .identifier => |id| id.name.len > 0 and id.name[0] >= 'a' and id.name[0] <= 'z',
+            else => false,
+        };
+    }
+
+    fn isValueLiteral(expr: *const Node) bool {
+        return switch (expr.data) {
+            .int_literal, .float_literal, .string_literal, .char_literal, .bool_literal => true,
+            else => false,
+        };
+    }
+
+    /// Soft type arg: PascalCase name (user type). May also name a PascalCase value.
+    fn argLooksLikeSoftType(expr: *const Node) bool {
         return switch (expr.data) {
             .identifier => |id| identifierLooksLikeTypeName(id.name),
             .field_access => |fa| identifierLooksLikeTypeName(fa.field),
+            else => false,
+        };
+    }
+
+    /// Hard type arg: builtin/compound/function type nodes, `*T` as address_of,
+    /// or a nested call that itself looks like a type application.
+    fn argLooksLikeHardType(expr: *const Node) bool {
+        return switch (expr.data) {
             .parameterized_type_expr,
             .type_expr,
             .tuple_type_expr,
@@ -4913,52 +4958,142 @@ pub const Parser = struct {
             .closure_type_expr,
             .function_type_expr,
             => true,
-            // In value-call position `*T` parses as unary address_of; treat a
-            // type-like operand as a type argument for empty-`{}` disambiguation.
-            // `?T` is already `.optional_type_expr` (not a unary op).
             .unary_op => |u| switch (u.op) {
-                .address_of => argLooksLikeTypeArg(u.operand),
+                .address_of => argLooksLikeHardType(u.operand) or argLooksLikeSoftType(u.operand),
                 else => false,
             },
-            .call => |c| blk: {
-                for (c.args) |a| {
-                    if (!argLooksLikeTypeArg(a)) break :blk false;
-                }
-                break :blk argLooksLikeTypeArg(c.callee);
-            },
+            .call => |c| callArgsLookLikeTypeApplication(c.args),
             else => false,
         };
     }
 
-    fn isLowercaseValueIdent(expr: *const Node) bool {
-        return switch (expr.data) {
-            .identifier => |id| id.name.len > 0 and id.name[0] >= 'a' and id.name[0] <= 'z',
-            else => false,
-        };
-    }
-
-    /// Empty `{}` after a call is a type-application aggregate when at least
-    /// one arg is type-shaped and none are lowercase value identifiers.
-    /// - `List(i64){}`, `Vec(3, f32){}` → aggregate (type arg present)
-    /// - `run(2){}`, `Group(2){}` → trailing (only value literals)
-    /// - `run(n){}`, `Group(n){}` → trailing (lowercase value ident)
-    /// Pure value-param apps with no type arg (`Buf(16){}`) stay trailing;
-    /// spell a non-empty body or bind an alias (`B :: Buf(16); B{}`).
+    /// Empty `{}` after a call is a type-application aggregate when:
+    /// - a hard type arg is present (and no lowercase value idents), or
+    /// - only soft type args / no value literals (`List(Move){}`).
+    /// Value-only and soft+literal lists stay trailing (`run(2){}`,
+    /// `run(2, Limit){}`). `Vec(3, f32){}` has hard `f32` → aggregate.
+    /// Nested `Holder(Vec(3, f32)){}` reuses the same predicate on the call arm.
     fn callArgsLookLikeTypeApplication(call_args: []const *Node) bool {
-        if (call_args.len == 0) return false; // `f(){}` is trailing, not a type app
-        var any_type = false;
+        if (call_args.len == 0) return false;
+        var any_hard = false;
+        var any_soft = false;
+        var any_literal = false;
         for (call_args) |a| {
             if (isLowercaseValueIdent(a)) return false;
-            if (argLooksLikeTypeArg(a)) any_type = true;
+            if (argLooksLikeHardType(a)) {
+                any_hard = true;
+            } else if (argLooksLikeSoftType(a)) {
+                any_soft = true;
+            } else if (isValueLiteral(a)) {
+                any_literal = true;
+            } else {
+                return false;
+            }
         }
-        return any_type;
+        if (any_hard) return true;
+        if (any_soft and !any_literal) return true;
+        return false;
+    }
+
+    /// Whether `{` after `expr` should start a named aggregate (vs a push body).
+    /// Outside `push`, any aggregate-prefix + allowed header context takes `{`
+    /// as `Type{…}`. Inside `push`, body shape decides so
+    /// `push self.dctx { stmts }` keeps the brace as the push body while
+    /// `push Context{ fields } { body }` still parses the fields aggregate.
+    fn shouldParseNamedAggregate(self: *Parser, expr: *const Node) bool {
+        if (!isNamedAggregatePrefix(expr) or !self.namedAggregateAllowedHere()) return false;
+        if (!self.in_push_context) return true;
+        if (!self.braceLooksLikeAggregateBody()) return false;
+        // Empty `{}` after a value field access is the push body, not Type{}.
+        if (self.braceIsEmpty() and expr.data == .field_access) return false;
+        return true;
+    }
+
+    fn braceIsEmpty(self: *Parser) bool {
+        if (self.current.tag != .l_brace) return false;
+        var lex = self.lexer;
+        const tok = lex.next();
+        return tok.tag == .r_brace;
+    }
+
+    /// Peek whether the brace group at `current` is aggregate-shaped (fields /
+    /// commas / empty) vs statement-shaped (`;`, `:=`, statement keywords).
+    fn braceLooksLikeAggregateBody(self: *Parser) bool {
+        if (self.current.tag != .l_brace) return false;
+        var lex = self.lexer;
+        var depth: u32 = 1;
+        var saw_non_ws = false;
+        var top_level_semi = false;
+        var top_level_stmt_kw = false;
+        var top_level_comma = false;
+        var top_level_field_eq = false;
+        var top_level_colon_eq = false;
+        var prev_was_name = false;
+        while (true) {
+            const tok = lex.next();
+            switch (tok.tag) {
+                .l_brace => {
+                    depth += 1;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .r_brace => {
+                    depth -= 1;
+                    prev_was_name = false;
+                    if (depth == 0) break;
+                },
+                .eof => break,
+                .semicolon => {
+                    if (depth == 1) top_level_semi = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .comma => {
+                    if (depth == 1) top_level_comma = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .colon_equal => {
+                    if (depth == 1) top_level_colon_eq = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .equal => {
+                    if (depth == 1 and prev_was_name) top_level_field_eq = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .kw_return, .kw_break, .kw_continue, .kw_defer, .kw_raise, .kw_onfail,
+                .kw_if, .kw_for, .kw_while, .kw_push,
+                => {
+                    if (depth == 1) top_level_stmt_kw = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .identifier => {
+                    if (depth == 1) prev_was_name = true else prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                else => {
+                    if (depth == 1 and getKeyword(self.source[tok.loc.start..tok.loc.end]) != null)
+                        prev_was_name = true
+                    else
+                        prev_was_name = false;
+                    saw_non_ws = true;
+                },
+            }
+        }
+        if (!saw_non_ws) return true; // empty `{}` is aggregate-shaped
+        if (top_level_semi or top_level_stmt_kw or top_level_colon_eq) return false;
+        if (top_level_field_eq or top_level_comma) return true;
+        return false;
     }
 
     /// With `current` on `{` after a call: true when the brace body looks
     /// like a named-aggregate body rather than a trailing-block statement
     /// list.
     ///
-    /// - empty `{}` → aggregate only when call args are all type-shaped (`List(T){}`)
+    /// - empty `{}` → aggregate only when call args look like a type app
     /// - top-level `;` or statement-lead keywords → trailing (`vstack() { a; }`)
     /// - top-level `name =` or top-level `,` → aggregate (`Plan{ x = 1 }`, `T{1, 2}`)
     /// - otherwise → trailing (statement blocks that omit `;` after `if`/`for`)
@@ -5029,8 +5164,8 @@ pub const Parser = struct {
             }
         }
         if (!saw_non_ws) {
-            // Empty / comment-only `{}`: type application (`List(i64){}`) vs
-            // empty trailing block (`run(2) {}`, `Group(n) {}`).
+            // Empty / comment-only `{}`: type application vs empty trailing block
+            // (see callArgsLookLikeTypeApplication).
             return callArgsLookLikeTypeApplication(call_args);
         }
         // Statement markers force trailing even when an assignment `x = e`
@@ -6449,6 +6584,64 @@ test "parse rejects separator-dot Type.{}" {
     try std.testing.expectError(error.ParseError, result);
     try std.testing.expect(parser.err_msg != null);
     try std.testing.expect(std.mem.indexOf(u8, parser.err_msg.?, "named aggregate") != null);
+}
+
+test "parse aggregate self-trailing via dot binds self flag" {
+    const source =
+        \\main :: () {
+        \\  b := Button{ label = "x" }.{
+        \\    self.label = "y";
+        \\  };
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
+    try std.testing.expect(init_expr.data == .struct_literal);
+    try std.testing.expect(init_expr.data.struct_literal.init_block != null);
+    try std.testing.expect(init_expr.data.struct_literal.init_block_binds_self);
+}
+
+test "parse aggregate bare post-scope does not bind self" {
+    const source =
+        \\main :: () {
+        \\  b := Button{ label = "x" } {
+        \\    x := 1;
+        \\  };
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
+    try std.testing.expect(init_expr.data == .struct_literal);
+    try std.testing.expect(init_expr.data.struct_literal.init_block != null);
+    try std.testing.expect(!init_expr.data.struct_literal.init_block_binds_self);
+}
+
+test "parse push Context{ fields } { body } without parens" {
+    const source =
+        \\main :: () {
+        \\  push Context{ allocator = context.allocator } {
+        \\    x := 1;
+        \\  }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const stmt = body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .push_stmt);
+    try std.testing.expect(stmt.data.push_stmt.context_expr.data == .struct_literal);
+    try std.testing.expect(stmt.data.push_stmt.context_expr.data.struct_literal.init_block == null);
+    try std.testing.expect(stmt.data.push_stmt.body.data == .block);
 }
 
 test "parse if cond { body } is not Type{}" {

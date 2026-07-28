@@ -598,7 +598,11 @@ pub const StructLiteral = struct {
     struct_name: ?[]const u8, // null for anonymous `.{ ... }`
     type_expr: ?*Node = null, // for GenericType(args){ ... }
     field_inits: []const StructFieldInit,
-    init_block: ?*Node = null, // optional `{ stmts }` block after struct literal
+    /// Optional block after the aggregate. With `init_block_binds_self`
+    /// (`T{…}.{…}`), `self` is bound to the value. Bare `T{…}{…}` is a plain
+    /// scope after construction — no `self`.
+    init_block: ?*Node = null,
+    init_block_binds_self: bool = false,
 };
 
 pub const Lambda = struct {

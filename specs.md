@@ -601,6 +601,32 @@ Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
 is a hard error with a fix-it to the compact spelling. Contextual `.{…}` is
 unchanged.
 
+After a completed aggregate, a following block may appear in two forms:
+
+```sx
+// Taught: self-trailing — stores the value, binds `self` to a pointer to it,
+// runs the block, yields the (possibly mutated) value.
+b := Button{ label = "Play" }.{
+    self.label = "Go";
+};
+
+// Legal, not taught: bare second brace group — construct T, then a plain
+// scope in the enclosing environment (no `self`). The value is still T.
+b2 := Button{ label = "Play" } {
+    print("built\n");
+};
+```
+
+Call trailing blocks stay bare after `)` (`f(args) { … }`) and are unrelated.
+
+`push` context expressions may be named aggregates; the body brace is the push
+scope (not a second competing trailing form):
+
+```sx
+push .{ allocator = a } { … }              // idiomatic
+push Context{ allocator = a } { … }        // explicit Context literal
+```
+
 #### Anonymous Structs
 
 An **untyped** `.{ … }` literal — no annotation, no type prefix, no target —

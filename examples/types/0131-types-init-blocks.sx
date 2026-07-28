@@ -64,7 +64,7 @@ main :: () {
 
     // IB1: basic init block with struct methods
     {
-        b := Builder{ total = 0, count = 0 } {
+        b := Builder{ total = 0, count = 0 }.{
             self.add(10);
             self.add(20);
             self.add(30);
@@ -74,9 +74,9 @@ main :: () {
 
     // IB2: nested init blocks (self shadows correctly)
     {
-        b1 := Builder{ total = 0, count = 0 } {
+        b1 := Builder{ total = 0, count = 0 }.{
             self.add(100);
-            b2 := Builder{ total = 0, count = 0 } {
+            b2 := Builder{ total = 0, count = 0 }.{
                 self.add(42);
             };
             self.add(b2.total);
@@ -86,14 +86,14 @@ main :: () {
 
     // IB3: empty init block
     {
-        b := Builder{ total = 5, count = 1 } {};
+        b := Builder{ total = 5, count = 1 }.{};
         print("IB3: {} {}\n", b.total, b.count);
     }
 
     // IB4: conditional inside init block
     {
         add_extra := true;
-        b := Builder{ total = 0, count = 0 } {
+        b := Builder{ total = 0, count = 0 }.{
             self.add(10);
             if add_extra {
                 self.add(90);
@@ -105,7 +105,7 @@ main :: () {
     // IB5: init block + auto type erasure combined
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
-        result := use_counter(SimpleCounter{ val = 0 } {
+        result := use_counter(SimpleCounter{ val = 0 }.{
             self.val = 50;
         });
         print("IB5: {}\n", result);

@@ -1,0 +1,27 @@
+// Struct self-trailing: after a named aggregate, `.{ stmts }` binds `self`.
+// Bare `T{ fields } { stmts }` is a plain post-scope (no `self`) — legal, untaught.
+// Expected: exit 0.
+
+#import "modules/std.sx";
+
+Button :: struct {
+    label: string = "";
+    n: i64 = 0;
+}
+
+main :: () -> i64 {
+    b := Button{ label = "x", n = 1 }.{
+        self.n = self.n + 1;
+        self.label = "y";
+    };
+    print("{} {}\n", b.label, b.n); // y 2
+
+    // Bare second brace group — plain scope after construction, no `self`.
+    outer : i64 = 0;
+    c := Button{ label = "a" } {
+        outer = 7;
+    };
+    print("{} {}\n", c.label, outer); // a 7
+
+    return 0;
+}
