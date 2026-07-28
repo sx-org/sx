@@ -8,7 +8,7 @@
 
 vstack :: (spacing: f32, content: Closure()) -> i64 { content(); 7 }
 plain :: (a: i64, b: i64) -> i64 { a + b }
-vari :: (n: i64, ..rest: []i64) { }
+vari :: (n: i64, ..rest: []i64) {}
 rower :: (row: Closure(i64)) { row(1); }
 scaffold :: (top_bar: ?Closure() = null, content: Closure()) { content(); }
 toolbar :: () { print("t\n"); }

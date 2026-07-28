@@ -69,7 +69,7 @@ main :: () {
     rb := ComposeTest.init(2);
     ra.build_void(() { bump(); });
     rb.build_void(() { bump(); });
-    rb.build_void(() { });          // B claims nothing — B's entry sweeps
+    rb.build_void(() {});          // B claims nothing — B's entry sweeps
     ra.build_void(() { bump(); });  // A continues: 2, untouched by B
     process.assert(ra.entry_count == 1 and rb.entry_count == 0, "stores are per root");
     process.assert(g_last == 2, "root A's state survived root B's sweep");

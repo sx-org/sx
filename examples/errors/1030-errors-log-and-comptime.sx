@@ -1,5 +1,5 @@
 // `log.sx` leveled logging + the `is_comptime()` builtin (ERR step E4.1,
-// slice 1). `log{warn,info,err,debug}` interpolate like `print` and write
+// slice 1). `log{ warn,info,err,debug}` interpolate like `print` and write
 // `LEVEL: <msg>` to stderr. `is_comptime()` is `true` under `#run` (the
 // comptime interpreter) and folds to `false` in compiled code, so a gated
 // branch dead-codes out of the runtime binary.

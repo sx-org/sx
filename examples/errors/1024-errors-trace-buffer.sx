@@ -34,7 +34,7 @@ main :: () -> i32 {
     print("after catch: len={}\n", sx_trace_len());     // 0 (absorbed at handler exit)
 
     // A success leaves the buffer empty (nothing pushed).
-    propagate(1) catch (e) { };
+    propagate(1) catch (e) {};
     print("after success: len={}\n", sx_trace_len());   // 0
     return 0;
 }

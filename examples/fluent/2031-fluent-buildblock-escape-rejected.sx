@@ -16,7 +16,7 @@ Drawable :: protocol constraint {
     draw :: (self: *Self) -> string;
 }
 
-elsewhere :: (n: i32) { }
+elsewhere :: (n: i32) {}
 
 hold :: (content: @BuildBlock(Drawable)) {
     saved := content;        // refused: a block is not storage

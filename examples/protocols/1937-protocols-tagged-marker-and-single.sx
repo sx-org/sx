@@ -6,12 +6,12 @@
 #import "modules/std.sx";
 
 // Marker: no methods at all, so the set membership IS the information.
-Tracked :: protocol tagged { }
+Tracked :: protocol tagged {}
 
 Node :: struct { id: i64; }
-impl Tracked for Node { }
+impl Tracked for Node {}
 Edge :: struct { from: i64; to: i64; }
-impl Tracked for Edge { }
+impl Tracked for Edge {}
 
 // Single conformer: the set has exactly one member for the whole program.
 Clock :: protocol tagged { now :: (self: *Self) -> i64; }

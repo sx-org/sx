@@ -9,8 +9,8 @@
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-Bundle  :: #jni_class("android/os/Bundle") extern { }
-JContext :: #jni_class("android/content/Context") extern { }
+Bundle  :: #jni_class("android/os/Bundle") extern {}
+JContext :: #jni_class("android/content/Context") extern {}
 
 SurfaceView :: #jni_class("android/view/SurfaceView") extern {
     new :: (ctx: *JContext) -> *Self;  // no `self: *Self` → class method

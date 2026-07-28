@@ -14,9 +14,9 @@ main :: () {
     print("=== 22. If-Struct ===\n");
     {
         flag := true;
-        p := if flag { Point{10, 20} } else { Point{30, 40} };
+        p := if flag { Point{ 10, 20} } else { Point{ 30, 40} };
         print("if-struct: {} {}\n", p.x, p.y);
-        q := if !flag { Point{10, 20} } else { Point{30, 40} };
+        q := if !flag { Point{ 10, 20} } else { Point{ 30, 40} };
         print("else-struct: {} {}\n", q.x, q.y);
     }
 }

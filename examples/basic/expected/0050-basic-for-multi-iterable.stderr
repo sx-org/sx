@@ -1,5 +1,0 @@
-error: expected ','
-  --> examples/basic/0050-basic-for-multi-iterable.sx:43:22
-   |
-43 |     for (make()) { n += 1; }
-   |                      ^^

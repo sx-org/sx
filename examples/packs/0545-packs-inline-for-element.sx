@@ -7,7 +7,7 @@
 //   inline for xs (x)            — element form
 //   inline for xs, 0.. (x, i)    — element + paired index
 //   inline for 0..xs.len, xs (i, x) — range driver, trailing pack
-//   inline for xs { }            — captureless; N=0 unrolls nothing
+//   inline for xs {}            — captureless; N=0 unrolls nothing
 
 #import "modules/std.sx";
 

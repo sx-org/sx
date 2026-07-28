@@ -43,7 +43,7 @@ main :: () {
     {
         print("=== Tuple Operators ===\n");
 
-        // Tuple operands must be TUPLE-typed: an untyped `.{ }` literal is
+        // Tuple operands must be TUPLE-typed: an untyped `.{}` literal is
         // an anonymous struct (aggregate ladder Step 1), and the exotic
         // tuple operators (`+`/`*`/`<`/`in`) exist on tuples only.
         t12 : Tuple(i64, i64) = .{1, 2};

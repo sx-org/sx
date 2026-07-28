@@ -1,5 +1,0 @@
-error: expected field name in struct
-  --> examples/types/0100-types-structs.sx:12:11
-   |
-12 |     } = .B{"hello"};
-   |           ^

@@ -32,7 +32,7 @@ main :: () -> i64 {
     print("{} {} {}\n", u.0, u.1, u.2);       // 1 2 3
 
     // Struct-value printing (anonymous display name).
-    print("{}\n", p);                          // __anon{x: 10, y: 2.500000}
+    print("{}\n", p);                          // __anon{ x: 10, y: 2.500000}
 
     // Reflection composes: anon structs are ordinary structs.
     print("{} {}\n", struct_field_count(type_of(u)), struct_field_name(type_of(p), 0));  // 3 x

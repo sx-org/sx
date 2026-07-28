@@ -48,7 +48,7 @@ main :: () -> i32 {
     o : ?i64 = 5;
     if o == {
         case .some: (ov) { ov = 9; }
-        case .none: { }
+        case .none: {}
     }
 
     // 4. catch error binding

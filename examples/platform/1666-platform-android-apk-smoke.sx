@@ -22,7 +22,7 @@
 #import "modules/std.sx";
 #import "modules/build.sx";
 
-Bundle :: #jni_class("android/os/Bundle") extern { }
+Bundle :: #jni_class("android/os/Bundle") extern {}
 
 SxApp :: #jni_main #jni_class("co/swipelab/sxapksmoke/SxApp") {
     onCreate :: (self: *Self, b: *Bundle) {

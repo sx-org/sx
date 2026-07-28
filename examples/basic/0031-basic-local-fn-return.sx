@@ -19,7 +19,7 @@ main :: () {
     // ========================================================
     print("=== 19. Local Fn Return ===\n");
     {
-        local_pt :: () -> Point { Point{42, 99} }
+        local_pt :: () -> Point { Point{ 42, 99} }
         lp := local_pt();
         print("local-struct: {} {}\n", lp.x, lp.y);
 

@@ -10,7 +10,7 @@
 //
 // Reflecting `Pair { lo: Point; hi: Point; }`: read each field's name, and the
 // nominal name of each field's type. Chains
-// raw_intern → raw_find_type → raw_field_{name,type} → (raw_type_name) → raw_text_of,
+// raw_intern → raw_find_type → raw_field_{ name,type} → (raw_type_name) → raw_text_of,
 // all folded at comptime, all serviced natively by the flat-memory VM.
 
 #import "modules/std.sx";

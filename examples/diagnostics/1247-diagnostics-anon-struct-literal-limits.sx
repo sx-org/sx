@@ -1,4 +1,4 @@
-// An untyped `.{ }` literal cannot MIX positional and named elements —
+// An untyped `.{}` literal cannot MIX positional and named elements —
 // the self-typing rule (aggregate ladder Step 1/2) is all-or-none:
 // `.{ 1, 2 }` mints positional fields, `.{ x = 1 }` named ones; a mix
 // has no coherent shape. Name all elements or none.

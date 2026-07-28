@@ -1,4 +1,4 @@
-// A MODULE-QUALIFIED struct literal — `m.Cfg{...}` — in a `:=`-inferred
+// A MODULE-QUALIFIED struct literal — `m.Cfg{ ...}` — in a `:=`-inferred
 // declaration resolves to the imported type `m.Cfg` (not an empty `{}` stub),
 // so the value passes correctly to a function taking that type.
 //
@@ -13,6 +13,6 @@
 m :: #import "0799-modules-qualified-struct-literal/lib.sx";
 
 main :: () -> i32 {
-    c := m.Cfg{p = 1, q = 2 };   // qualified Type{} via := → resolves to m.Cfg
+    c := m.Cfg{ p = 1, q = 2 };   // qualified Type{} via := → resolves to m.Cfg
     return xx m.use(c);            // 1 + 2 + 0 = 3
 }

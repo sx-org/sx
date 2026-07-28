@@ -19,13 +19,13 @@
 // `*Bundle` resolves through the class registry to `android.os.Bundle`
 // in the emitted Java — needed for `onCreate`'s @Override to match
 // NativeActivity's superclass signature.
-Bundle :: #jni_class("android/os/Bundle") extern { }
+Bundle :: #jni_class("android/os/Bundle") extern {}
 
 // `#jni_main` flags this as the launchable Android Activity class. The
 // `onCreate` body is empty for now — slice 4 wires `RegisterNatives`
 // so the `sx_onCreate` native delegate actually binds to a sx-side fn.
 SxApp :: #jni_main #jni_class("co/swipelab/sxjnimain/SxApp") {
-    onCreate :: (self: *Self, b: *Bundle) { }
+    onCreate :: (self: *Self, b: *Bundle) {}
 }
 
 main :: () -> i32 { 0 }

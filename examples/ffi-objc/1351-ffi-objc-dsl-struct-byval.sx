@@ -35,7 +35,7 @@ main :: () {
     cls := objc_allocateClassPair(ns_object, "SxStructProbe".ptr, 0);
     class_addMethod(cls, sel_registerName("takeRegion:".ptr), xx region_imp, "Q@:{ProbeRegion=QQQQQQ}".ptr);
     class_addMethod(cls, sel_registerName("takeSize:".ptr), xx size_imp, "d@:{ProbeSize=dd}".ptr);
-    class_addMethod(cls, sel_registerName("takeMixed:region:tail:".ptr), xx mixed_imp, "Q@:q{ProbeRegion=QQQQQQ}q".ptr);
+    class_addMethod(cls, sel_registerName("takeMixed:region:tail:".ptr), xx mixed_imp, "Q@:q{ ProbeRegion=QQQQQQ}q".ptr);
     objc_registerClassPair(cls);
 
     inst : *SxStructProbe = xx class_createInstance(cls, 0);
