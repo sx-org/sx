@@ -572,19 +572,18 @@ Foo :: struct {
 v1 : Vec4 = .{ 1, 2, 3, 0 };
 
 // Positional (with type prefix)
-v2 := Vec4.{ 4, 1, 1, 3 };
+v2 := Vec4{4, 1, 1, 3 };
 
 // Named fields (any order)
-v3 := Vec4.{ w=0, x=2, y=3, z=4 };
+v3 := Vec4{w=0, x=2, y=3, z=4 };
 
 // Mixed named + shorthand (bare identifier = field name matches variable name)
 z := 5.0;
 w := 6.0;
-v4 := Vec4.{ y=3, x=9, w, z };
+v4 := Vec4{y=3, x=9, w, z };
 
 // Trailing commas are allowed in all comma-separated lists
-v5 := Vec4.{
-    x = 1.0,
+v5 := Vec4{x = 1.0,
     y = 2.0,
     z = 3.0,
     w = 4.0,
@@ -655,7 +654,7 @@ individually). These mirror the rejection of the same shapes as bare top-level
 ```sx
 UBase :: struct { x: i32; y: i32; }
 UExt :: struct { #using UBase; z: i32; }
-e := UExt.{ x = 1, y = 2, z = 3 };
+e := UExt{x = 1, y = 2, z = 3 };
 print("{}\n", e.x);  // 1
 ```
 
@@ -664,7 +663,7 @@ print("{}\n", e.x);  // 1
 UPos :: struct { px: i32; py: i32; }
 UCol :: struct { r: i32; g: i32; }
 USprite :: struct { #using UPos; #using UCol; scale: i32; }
-s := USprite.{ px = 10, py = 20, r = 255, g = 128, scale = 1 };
+s := USprite{px = 10, py = 20, r = 255, g = 128, scale = 1 };
 ```
 
 The referenced struct must be declared before use. This is purely a compile-time field expansion — no runtime overhead.
@@ -685,7 +684,7 @@ Point :: struct {
     sum :: (self: *Point) -> i32 { self.x + self.y; }
 }
 
-p := Point.{ x = 3, y = 4 };
+p := Point{x = 3, y = 4 };
 print("{}\n", p.sum());  // 7
 ```
 
@@ -1099,7 +1098,7 @@ impl Sizable for Widget {
     size :: (self: *Widget) -> i64 { self.value }
 }
 
-w := Widget.{ value = 7 };
+w := Widget{value = 7 };
 s : Sizable = w;      // error: 'w' is an lvalue and 'Sizable' values own
                       // their storage — write the copy ('w.(Sizable)')
                       // or pass a view ('*Sizable') for transient use
@@ -1126,10 +1125,10 @@ impl Rng for Xorshift {
     }
 }
 
-rng := Xorshift.{ state = 42 };
+rng := Xorshift{state = 42 };
 a : Rng = rng;                      // borrow — no demand error, no copy
 b := rng.(Rng);                     // borrow, same value shape
-c : Rng = Xorshift.{ state = 7 };   // error: identity objects need a
+c : Rng = Xorshift{state = 7 };   // error: identity objects need a
                                     // name; bind it first
 ```
 
@@ -1179,10 +1178,10 @@ impl Sizable for Widget {
 }
 
 measure :: (v: *Sizable) -> i64 { v.size() }
-w := Widget.{ value = 7 };
+w := Widget{value = 7 };
 measure(w);                            // view in place — aliases w
 pv : *Sizable = w;                     // view over w, valid to end of frame
-pv : *Sizable = Widget.{ value = 1 };  // error: rvalue — nothing durable to borrow
+pv : *Sizable = Widget{value = 1 };  // error: rvalue — nothing durable to borrow
 ```
 
 ##### 5.6 Dispatchability (per method)
@@ -1220,8 +1219,8 @@ impl Eq for Point {
     }
 }
 
-p1 := Point.{ x = 1.0, y = 2.0 };
-p2 := Point.{ x = 3.0, y = 2.0 };
+p1 := Point{x = 1.0, y = 2.0 };
+p2 := Point{x = 3.0, y = 2.0 };
 e := p1.(Eq);
 e.eq(p2);            // error: 'eq' is unavailable on an erased 'Eq' value —
                      // its parameter 'other: Self' has no expressible type here
@@ -1331,7 +1330,7 @@ Arena :: struct {
 }
 impl Allocator for Arena { … }
 
-gpa := GPA.{ … };
+gpa := GPA{… };
 arena := Arena.init(gpa, 4096);
 push .{ allocator = arena } { … }              // borrow of a named arena
 push .{ allocator = Arena.init(gpa, 4096) } { … }
@@ -1468,7 +1467,7 @@ impl Shape for Circle {
     resized :: (self: Circle, k: f64) -> Circle { .{ r = self.r * k } }
 }
 
-c := Circle.{ r = 1.0 };
+c := Circle{r = 1.0 };
 s : Shape = c;
 big := s.resized(2.0);     // ← the note below fires here
 ```
@@ -1592,7 +1591,7 @@ The examples below share this context: `Series(T)` (§1, tagged:
 to nothing; no impl anywhere names `Series(bool)`.
 
 ```sx
-v : Series(f32) = Sine.{ freq = 0.5 };
+v : Series(f32) = Sine{freq = 0.5 };
 ```
 
 - **Empty set**: any value-consuming operation — erasure, method
@@ -1864,7 +1863,7 @@ dataflow discipline:
   ```sx
   GPA :: struct { … }
   Serialize :: protocol tagged { write :: (self: *Self, out: *Buf); }
-  HAS :: #run { g := GPA.{ … }; g.(?Serialize) != null };
+  HAS :: #run { g := GPA{… }; g.(?Serialize) != null };
   inline if !HAS { impl Serialize for GPA { … } }
   ```
   ```
@@ -2129,7 +2128,7 @@ single : Tuple(i64) = .{42};                   // 1-tuple value
 empty  : Tuple() = .{};                        // empty tuple value
 zeroed : Tuple(i32, i32) = ---;                // zero-initialized tuple
 
-// Explicitly typed value (like `Point.{...}`):
+// Explicitly typed value (like `Point{...}`):
 p := Tuple(i64, i64).{40, 2};
 n := Tuple(x: i64, y: i64).{x = 10, y = 20};
 ```
@@ -2424,7 +2423,7 @@ address never silently becomes a type. Infix `*` (multiplication) is
 untouched: after an operand `*` is binary, at expression head it is
 address-of (`a * *b` multiplies `a` by the address of `b`).
 ```sx
-v := Vec2.{ 1.0, 2.0 };
+v := Vec2{1.0, 2.0 };
 ptr := *v;             // *Vec2
 ```
 
@@ -2499,7 +2498,7 @@ Conversion discipline (Odin's model):
 - A string **literal** coerces to `cstring` implicitly — literal bytes
   are terminated constants in the binary, so the conversion is free.
 - Any **other** `string` does NOT coerce: it may be an unterminated view
-  (`string.{ptr, len}` windows, writer output). Materialize an owned,
+  (`string{ptr, len}` windows, writer output). Materialize an owned,
   terminated copy with `to_cstring(s)`.
 - `cstring` does not coerce to `string` implicitly — the length is an
   O(n) strlen the code must ask for. `from_cstring(c)` is the zero-copy
@@ -2615,7 +2614,7 @@ result := if opt == {
 #### Optional Chaining (`?.`)
 Short-circuits field access on optionals:
 ```sx
-x: ?Point = Point.{ x = 1, y = 2 };
+x: ?Point = Point{x = 1, y = 2 };
 y: ?Point = null;
 a := x?.x ?? 0;       // 1
 b := y?.x ?? 0;       // 0
@@ -2649,7 +2648,7 @@ Reassignment kills narrowing.
 Optional fields in structs default to `null`:
 ```sx
 Node :: struct { value: i32; next: ?i32; }
-n := Node.{ value = 10 };    // n.next is null
+n := Node{value = 10 };    // n.next is null
 ```
 
 #### Printing
@@ -3309,9 +3308,9 @@ elements of array constants.
 
 ```sx
 Color :: struct { r, g, b: i64; }
-LIT  :: Color.{ r = 255, g = 0, b = 0 };        // one global; uses GEP it
-EXPR :: Color.{ r = K + 1, g = K * 2, b = 0 };  // folds, also one global
-W : Color : Color.{ r = 1, g = 2, b = 3 };      // typed form, same storage
+LIT  :: Color{r = 255, g = 0, b = 0 };        // one global; uses GEP it
+EXPR :: Color{r = K + 1, g = K * 2, b = 0 };  // folds, also one global
+W : Color : Color{r = 1, g = 2, b = 3 };      // typed form, same storage
 ```
 
 A struct constant with a **non-serializable** initializer field (a call, a
@@ -3323,7 +3322,7 @@ value may differ between reads:
 ```sx
 counter : i64 = 0;
 bump :: () -> i64 { counter += 1; counter }
-CALL :: Color.{ r = bump(), g = 0, b = 0 };
+CALL :: Color{r = bump(), g = 0, b = 0 };
 
 print("{} {}\n", CALL.r, CALL.r);   // prints '1 2'; counter is now 2
 ```
@@ -4076,7 +4075,7 @@ Button :: struct {
     label: string;
     on_click: ?Closure(i64) -> void;
 }
-btn := Button.{ label = "OK", on_click = null };
+btn := Button{label = "OK", on_click = null };
 if handler := btn.on_click {
     handler(1);
 }
