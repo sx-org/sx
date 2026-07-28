@@ -1,0 +1,21 @@
+// The fluent_emit library module as a real product surface.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+#import "modules/fluent_emit.sx";
+
+main :: () -> i32 {
+    n := emit() {
+        EmitText{ body = "one" };
+        EmitMark{ tag = "!" };
+        EmitText{ body = "two" };
+    };
+    print("emitted {}\n", n);
+
+    sink := EmitSink{};
+    emit_into(*sink) {
+        EmitText{ body = "into" };
+        EmitMark{};
+    };
+    print("into count={}\n", sink.count);
+    0
+}

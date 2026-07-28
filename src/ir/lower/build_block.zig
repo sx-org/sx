@@ -14,8 +14,9 @@ const Lowering = lower.Lowering;
 /// `parseCompilerFormedType` is its only producer.
 pub const type_name = "@BuildBlock";
 
-/// The one operation a `@BuildBlock(P)` exposes (spec §9).
+/// Operations a `@BuildBlock(P)` exposes (spec §9–§10).
 pub const run_method = "run";
+pub const shape_method = "shape";
 
 /// The method a sink answers a reached expression with (spec §6.3). Resolved on
 /// the CONCRETE sink type, so `V` monomorphizes per reached expression and the
@@ -155,6 +156,115 @@ pub fn lowerRun(self: *Lowering, binding: Binding, args: []const *const Node, sp
     return self.builder.constInt(0, .void);
 }
 
+/// `content.shape()` — side-effect-free static facts about the block (spec §10).
+/// Lazy: only computed when this method is referenced. Emits an untyped
+/// `.{ … }` matching `BuildShape`'s fields so the library type supplies the
+/// name; the compiler never special-cases `Plan` / `make_plan`.
+pub fn lowerShape(self: *Lowering, binding: Binding, args: []const *const Node, span: ast.Span) Ref {
+    if (args.len != 0) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "'shape' takes no arguments", .{});
+        return Ref.none;
+    }
+    var facts = ShapeFacts{};
+    analyzeShapeBody(self, binding.lambda.data.lambda.body, binding.protocol, &facts);
+    const src = binding.source_file orelse self.current_source_file;
+    return self.lowerExpr(shapeLiteral(self, facts, span, src));
+}
+
+const ShapeFacts = struct {
+    static_expressions: i32 = 0,
+    dynamic_regions: i32 = 0,
+    known_bytes: i64 = 0,
+    max_alignment: i64 = 1,
+    bytes_known: bool = true,
+};
+
+fn analyzeShapeBody(self: *Lowering, body: *const Node, protocol: TypeId, facts: *ShapeFacts) void {
+    if (body.data != .block) return;
+    for (body.data.block.stmts) |stmt| {
+        analyzeShapeStmt(self, stmt, protocol, facts);
+    }
+}
+
+fn analyzeShapeStmt(self: *Lowering, stmt: *const Node, protocol: TypeId, facts: *ShapeFacts) void {
+    switch (stmt.data) {
+        .if_expr => |ie| {
+            if (ie.is_inline) {
+                // Inline if contributes selected structure; without a foldable
+                // condition both branches are walked (conservative upper bound).
+                analyzeShapeStmt(self, ie.then_branch, protocol, facts);
+                if (ie.else_branch) |eb| analyzeShapeStmt(self, eb, protocol, facts);
+            } else {
+                facts.dynamic_regions += 1;
+                facts.bytes_known = false;
+            }
+        },
+        .while_expr => {
+            facts.dynamic_regions += 1;
+            facts.bytes_known = false;
+        },
+        .for_expr => |fe| {
+            if (fe.is_inline) {
+                analyzeShapeBody(self, fe.body, protocol, facts);
+            } else {
+                facts.dynamic_regions += 1;
+                facts.bytes_known = false;
+            }
+        },
+        .block => analyzeShapeBody(self, stmt, protocol, facts),
+        // Non-expression statements never become reached build values.
+        .var_decl, .const_decl, .assignment, .multi_assign, .destructure_decl,
+        .return_stmt, .raise_stmt, .break_expr, .continue_expr,
+        .defer_stmt, .onfail_stmt, .fn_decl, .struct_decl, .enum_decl, .union_decl,
+        .error_set_decl, .protocol_decl, .impl_block, .push_stmt,
+        => {},
+        else => countStaticExpression(self, stmt, protocol, facts),
+    }
+}
+
+fn countStaticExpression(self: *Lowering, node: *const Node, protocol: TypeId, facts: *ShapeFacts) void {
+    const v = self.inferExprType(node);
+    if (v == .unresolved or v == .void or v == .noreturn) return;
+    const proto_name = if (self.getProtocolInfo(protocol)) |pi| pi.name else self.formatTypeName(protocol);
+    if (!self.protocolResolver().packArgConformsTo(proto_name, v)) return;
+    facts.static_expressions += 1;
+    if (!facts.bytes_known) return;
+    const sz: i64 = @intCast(self.module.types.sizeOf(v));
+    const al: i64 = @intCast(self.module.types.typeAlignBytes(v));
+    if (al > facts.max_alignment) facts.max_alignment = al;
+    // Align then add — same padding a packing sink would need for known rows.
+    if (facts.max_alignment > 0) {
+        const rem = @mod(facts.known_bytes, facts.max_alignment);
+        if (rem != 0) facts.known_bytes += facts.max_alignment - rem;
+    }
+    facts.known_bytes += sz;
+}
+
+fn shapeLiteral(self: *Lowering, facts: ShapeFacts, span: ast.Span, src: ?[]const u8) *Node {
+    var fields = std.ArrayList(ast.StructFieldInit).empty;
+    self.appendIntField(&fields, "static_expressions", facts.static_expressions, span, src);
+    self.appendIntField(&fields, "dynamic_regions", facts.dynamic_regions, span, src);
+    if (facts.bytes_known) {
+        fields.append(self.alloc, .{
+            .name = "known_bytes",
+            .value = self.synthNode(.{ .int_literal = .{ .value = facts.known_bytes } }, span, src),
+        }) catch {};
+    } else {
+        fields.append(self.alloc, .{
+            .name = "known_bytes",
+            .value = self.synthNode(.{ .null_literal = {} }, span, src),
+        }) catch {};
+    }
+    self.appendIntField(&fields, "max_alignment", facts.max_alignment, span, src);
+    // Named `BuildShape{ … }` so `known_bytes: ?i64` resolves against the
+    // library declaration rather than an anonymous struct.
+    return self.synthNode(.{ .struct_literal = .{
+        .struct_name = "BuildShape",
+        .field_inits = fields.toOwnedSlice(self.alloc) catch &.{},
+    } }, span, src);
+}
+
 /// The §7.2 interception rule, applied to one statement. Returns true when the
 /// statement WAS a reached build expression and has been handed to the sink;
 /// false leaves it to ordinary statement lowering.
@@ -230,15 +340,15 @@ fn siteId(scope: *const Scope) i64 {
     return @intCast(h.final() & 0x7FFF_FFFF_FFFF_FFFF);
 }
 
-/// Refuse every use of a build block other than `run`. A block is a compile-time
-/// value with no representation, so there is nothing for a binding, an argument,
-/// or a field to hold — and a stored one would replay a body whose locals are
-/// gone (spec §7.6).
+/// Refuse every use of a build block other than `run` / `shape`. A block is a
+/// compile-time value with no representation, so there is nothing for a binding,
+/// an argument, or a field to hold — and a stored one would replay a body whose
+/// locals are gone (spec §7.6).
 pub fn rejectValueUse(self: *Lowering, name: []const u8, span: ast.Span) void {
     const binding = lookup(self, name) orelse return;
     if (self.diagnostics) |d| {
         const proto = if (self.getProtocolInfo(binding.protocol)) |pi| pi.name else self.formatTypeName(binding.protocol);
-        const id = d.addFmtId(.err, span, "'{s}' is a @BuildBlock({s}) — its only operation is '.{s}(sink)'", .{ name, proto, run_method });
+        const id = d.addFmtId(.err, span, "'{s}' is a @BuildBlock({s}) — its only operations are '.{s}(sink)' and '.{s}()'", .{ name, proto, run_method, shape_method });
         d.addHelpFmt(id, span, null, "a build block is a compile-time value: it cannot be bound, stored, passed on, or returned", .{});
     }
 }

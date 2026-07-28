@@ -791,17 +791,20 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (self.initTargetOf(self.inferExprType(fa.object))) |target|
                 return self.lowerInitWrite(target, fa.object, c.args, c.callee.span);
         }
-        // `content.run(*sink)` — same rule for the build block's one operation.
+        // `content.run(*sink)` / `content.shape()` — build-block operations.
         // The receiver is a compile-time binding, not a value, so no ordinary
         // receiver path can resolve it.
         if (fa.object.data == .identifier) {
             const block_name = fa.object.data.identifier.name;
             if (self.buildBlockBinding(block_name)) |binding| {
-                if (!std.mem.eql(u8, fa.field, build_block.run_method)) {
-                    self.rejectBuildBlockValue(block_name, c.callee.span);
-                    return Ref.none;
+                if (std.mem.eql(u8, fa.field, build_block.run_method)) {
+                    return self.lowerBuildBlockRun(binding, c.args, c.callee.span);
                 }
-                return self.lowerBuildBlockRun(binding, c.args, c.callee.span);
+                if (std.mem.eql(u8, fa.field, build_block.shape_method)) {
+                    return self.lowerBuildBlockShape(binding, c.args, c.callee.span);
+                }
+                self.rejectBuildBlockValue(block_name, c.callee.span);
+                return Ref.none;
             }
         }
     }

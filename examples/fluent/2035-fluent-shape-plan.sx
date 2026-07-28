@@ -1,0 +1,70 @@
+// `content.shape()` + library `Plan` / `make_plan` (fluent spec §10).
+//
+// Shape is compiler-produced fact; Plan is ordinary library policy. A hybrid
+// accepter asks for the shape, reserves from the plan, then runs.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+Dot :: struct { n: i32 = 0; }
+impl Drawable for Dot {
+    draw :: (self: *Dot) -> string => ".";
+}
+
+// Capturing sink that also prints the plan it reserved for.
+Hold :: struct {
+    n: i32 = 0;
+    expression :: (self: *Hold, site: BuildSite, value: @Init($V/Drawable)) {
+        dest := context.allocator.create(V);
+        value.write(dest);
+        print("  kept #{} {}\n", site.ordinal, dest.draw());
+        self.n += 1;
+        context.allocator.destroy(dest);
+    }
+}
+
+panel :: (content: @BuildBlock(Drawable)) -> i32 {
+    shape: BuildShape = content.shape();
+    plan := make_plan(shape, .{
+        reserve_static = true,
+        dynamic_chunk = 8,
+    });
+    print("shape static={} dynamic={} known={} align={}\n",
+        shape.static_expressions,
+        shape.dynamic_regions,
+        shape.known_bytes ?? -1,
+        shape.max_alignment);
+    print("plan capacity={} reserved={} chunk={}\n",
+        plan.static_capacity,
+        plan.reserved_bytes,
+        plan.dynamic_chunk);
+    sink := Hold{};
+    content.run(*sink);
+    sink.n
+}
+
+main :: () -> i32 {
+    // Two static expressions, no dynamic regions.
+    a := panel() {
+        Label{ text = "A" };
+        Label{ text = "B" };
+    };
+    // A runtime loop is one dynamic region.
+    items := .["x", "y", "z"];
+    b := panel() {
+        for items (t) {
+            Label{ text = t };
+        }
+        Dot{ n = 1 };
+    };
+    print("reached {} {}\n", a, b);
+    0
+}

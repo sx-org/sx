@@ -4874,9 +4874,12 @@ pub const Parser = struct {
 
     /// With `current` on `{` after a call: true when the brace body looks
     /// like a named-aggregate body rather than a trailing-block statement
-    /// list. Empty braces are aggregates (`List(T){}`); a top-level `;` or
-    /// statement keyword marks a trailing block (`vstack(0) { a; b; }`).
-    /// Empty trailing blocks use a no-op statement (`f() {;}`) when needed.
+    /// list.
+    ///
+    /// - empty `{}` → aggregate (`List(T){}`)
+    /// - top-level `;` or statement-lead keywords → trailing (`vstack() { a; }`)
+    /// - top-level `name =` or top-level `,` → aggregate (`Plan{ x = 1 }`, `T{1, 2}`)
+    /// - otherwise → trailing (statement blocks that omit `;` after `if`/`for`)
     fn braceLooksLikeNamedAggregate(self: *Parser) bool {
         if (self.current.tag != .l_brace) return false;
         var lex = self.lexer;
@@ -4884,33 +4887,71 @@ pub const Parser = struct {
         var saw_non_ws = false;
         var top_level_semi = false;
         var top_level_stmt_kw = false;
+        var top_level_comma = false;
+        var top_level_field_eq = false;
+        var top_level_colon_eq = false;
+        var prev_was_name = false;
         while (true) {
             const tok = lex.next();
             switch (tok.tag) {
-                .l_brace => depth += 1,
+                .l_brace => {
+                    depth += 1;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
                 .r_brace => {
                     depth -= 1;
+                    prev_was_name = false;
                     if (depth == 0) break;
                 },
                 .eof => break,
                 .semicolon => {
                     if (depth == 1) top_level_semi = true;
+                    prev_was_name = false;
                     saw_non_ws = true;
                 },
-                .kw_if, .kw_for, .kw_while, .kw_return, .kw_break, .kw_continue,
-                .kw_defer, .kw_raise, .kw_try, .kw_onfail, .kw_else,
+                .comma => {
+                    if (depth == 1) top_level_comma = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .colon_equal => {
+                    // `bound := …` is a statement, never a field init.
+                    if (depth == 1) top_level_colon_eq = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .equal => {
+                    if (depth == 1 and prev_was_name) top_level_field_eq = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .kw_return, .kw_break, .kw_continue, .kw_defer, .kw_raise, .kw_onfail,
+                .kw_if, .kw_for, .kw_while,
                 => {
                     if (depth == 1) top_level_stmt_kw = true;
+                    prev_was_name = false;
                     saw_non_ws = true;
                 },
-                else => saw_non_ws = true,
+                .identifier => {
+                    if (depth == 1) prev_was_name = true else prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                else => {
+                    if (depth == 1 and getKeyword(self.source[tok.loc.start..tok.loc.end]) != null)
+                        prev_was_name = true
+                    else
+                        prev_was_name = false;
+                    saw_non_ws = true;
+                },
             }
         }
-        if (!saw_non_ws) return true; // empty `{}` → List(T){}
-        if (top_level_semi or top_level_stmt_kw) return false;
-        // Named fields, spreads, or comma positionals without `;` are
-        // aggregate-shaped. UI trailing blocks use `;`-terminated statements.
-        return true;
+        if (!saw_non_ws) return true; // empty `{}`
+        // Statement markers force trailing even when an assignment `x = e`
+        // looks like a field init (`slot = Label{…};` inside a build block).
+        if (top_level_semi or top_level_stmt_kw or top_level_colon_eq) return false;
+        if (top_level_field_eq or top_level_comma) return true;
+        return false;
     }
 
     /// Separator-dot `Type.{…}` was removed. Point at the `.` and offer the

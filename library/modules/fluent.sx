@@ -46,3 +46,42 @@ BuildSite :: struct {
 BuildSink :: protocol(P: Type) constraint {
     expression :: (self: *Self, site: BuildSite, value: @Init($V/P));
 }
+
+// Side-effect-free facts about a build block (spec §10). Produced only when
+// `content.shape()` is called — capturing-only programs do not pay for it.
+// Counts and sizes are protocol-independent; association with a block protocol
+// is by use site, not by a monomorphic type argument (constraint protocols are
+// not runtime type args).
+BuildShape :: struct {
+    static_expressions: i32 = 0;
+    dynamic_regions: i32 = 0;
+    known_bytes: ?i64 = null;
+    max_alignment: i64 = 1;
+}
+
+// Library policy over a `BuildShape` (spec §10.4). The compiler does not
+// recognize these names — they are ordinary library data.
+PlanPolicy :: struct {
+    reserve_static: bool = true;
+    dynamic_chunk: i32 = 64;
+}
+
+Plan :: struct {
+    shape: BuildShape = .{};
+    static_capacity: i32 = 0;
+    reserved_bytes: i64 = 0;
+    dynamic_chunk: i32 = 64;
+}
+
+make_plan :: (shape: BuildShape, policy: PlanPolicy) -> Plan {
+    reserved : i64 = if policy.reserve_static then shape.known_bytes ?? 0 else 0;
+    capacity : i32 = if policy.reserve_static then shape.static_expressions else 0;
+    Plan{
+        shape = shape,
+        static_capacity = capacity,
+        reserved_bytes = reserved,
+        dynamic_chunk = policy.dynamic_chunk,
+    }
+}
+
+
