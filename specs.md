@@ -4207,20 +4207,21 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
 - **Same line**: the `{` must sit on the same line as the call's `)`. A `{`
   on the next line is an ordinary scope block statement, never a trailing
   block.
-- **Empty block**: same-line empty `{}` (and comment-only bodies) after a call
-  is a **trailing block** unless **at least one** argument is a **type
-  expression** (builtin scalar type nodes, compound forms `[]u8`/`*T`/`?T`/
-  `[N]T`, PascalCase type names, field paths to types, nested type apps, or
-  function types) **and** no argument is a lowercase value identifier — then
-  it is a parameterized named aggregate: `List(i64){}`, `List([]u8){}`,
-  `Vec(3, f32){}`, `Sink(View){}`. Value-only arg lists stay trailing:
-  `run(2) {}`, `Group(2) {}`, `run(n) {}`. A pure value-parameter app with no
-  type arg (`Buf(16){}`) is also trailing — bind an alias (`B :: Buf(16); B{}`)
-  or write a non-empty field body. A PascalCase *value* (e.g. const `Limit`)
-  still looks like a type name here (`run(Limit) {}`, `render(*Screen) {}` on a
-  value) — use a non-empty body. Bodies with statements/`;`/control keywords
-  are always trailing. Zero-arg `f() {}` is always trailing (`T{}` for empty
-  non-parameterized aggregates).
+- **Empty block**: a same-line empty `{}` (comment-only bodies included) carries
+  no body shape, so the **brace spelling** decides. Written **tight** against
+  the `)` it is a parameterized named aggregate — `List(Move){}`,
+  `Sink(View){}`, `Box(pair){}`, `List(*Node){}`, `Buf(16){}`. Written with a
+  **space** it is a trailing block — `run(2) {}`, `Group(n) {}`,
+  `run(Limit) {}`, `render(*screen) {}` — unless at least one argument is
+  **unambiguously type syntax** (builtin scalar type nodes, compound forms
+  `[]u8`/`?T`/`[N]T`/`[*]T`, function types, or a nested type app carrying one),
+  which nothing but a type application can mean: `List(i64) {}`,
+  `Vec(3, f32) {}`, `Holder(Vec(3, f32)) {}`. Names never decide — neither the
+  callee's case nor an argument's, so a lowercase type (`pair`), a PascalCase
+  const (`Limit`), and `*x` (address-of, not `*T`) all take the spelling they
+  are written with. Zero-arg `f() {}` is always trailing, tight or not (`T{}`
+  is the empty non-parameterized aggregate). Bodies with statements/`;`/control
+  keywords are always trailing whatever the spelling.
 - **Header position**: inside an `if`/`while`/`for` header the form is
   disabled — `{` terminates the condition and opens the statement body;
   bind the closure explicitly there.

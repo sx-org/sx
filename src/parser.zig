@@ -3041,11 +3041,11 @@ pub const Parser = struct {
                 {
                     // Same-line `{` after a call: trailing block OR parameterized
                     // named aggregate `List(T){…}`. Prefer the aggregate when the
-                    // brace body is aggregate-shaped (fields / commas). Empty
-                    // `{}` is an aggregate only when every call arg looks like a
-                    // type (`List(i64){}`, `List(Move){}`); value identifiers
-                    // keep the trailing reading (`run(n) {}`, `Group(n) {}`).
-                    if (self.braceLooksLikeNamedAggregate(args.items)) {
+                    // brace body is aggregate-shaped (fields / commas). An empty
+                    // body carries no shape, so the spelling decides — see
+                    // emptyBraceIsTypeApplication.
+                    const brace_is_tight = rparen_end == self.current.loc.start;
+                    if (self.braceLooksLikeNamedAggregate(args.items, brace_is_tight)) {
                         expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                         // Fall through: next postfix iteration takes Type{}.
                     } else {
@@ -4913,38 +4913,12 @@ pub const Parser = struct {
         return !self.no_trailing_block;
     }
 
-    /// User type names are PascalCase. Builtin scalars reach this path as
-    /// `.type_expr` nodes (see `parsePrimary`), not bare identifiers.
-    fn identifierLooksLikeTypeName(name: []const u8) bool {
-        return name.len > 0 and name[0] >= 'A' and name[0] <= 'Z';
-    }
-
-    fn isLowercaseValueIdent(expr: *const Node) bool {
-        return switch (expr.data) {
-            .identifier => |id| id.name.len > 0 and id.name[0] >= 'a' and id.name[0] <= 'z',
-            else => false,
-        };
-    }
-
-    fn isValueLiteral(expr: *const Node) bool {
-        return switch (expr.data) {
-            .int_literal, .float_literal, .string_literal, .char_literal, .bool_literal => true,
-            else => false,
-        };
-    }
-
-    /// Soft type arg: PascalCase name (user type). May also name a PascalCase value.
-    fn argLooksLikeSoftType(expr: *const Node) bool {
-        return switch (expr.data) {
-            .identifier => |id| identifierLooksLikeTypeName(id.name),
-            .field_access => |fa| identifierLooksLikeTypeName(fa.field),
-            else => false,
-        };
-    }
-
-    /// Hard type arg: builtin/compound/function type nodes, `*T` as address_of,
-    /// or a nested call that itself looks like a type application.
-    fn argLooksLikeHardType(expr: *const Node) bool {
+    /// Unambiguous type syntax: nodes that can only be a type (builtin scalars
+    /// reach this path as `.type_expr`, see `parsePrimary`), or a nested type
+    /// application that itself carries one (`Holder(Vec(3, f32))`). A bare name
+    /// is deliberately excluded — `Limit` and `pair` are indistinguishable from
+    /// values here, and the brace spelling settles those.
+    fn argIsTypeExpr(expr: *const Node) bool {
         return switch (expr.data) {
             .parameterized_type_expr,
             .type_expr,
@@ -4957,41 +4931,28 @@ pub const Parser = struct {
             .closure_type_expr,
             .function_type_expr,
             => true,
-            .unary_op => |u| switch (u.op) {
-                .address_of => argLooksLikeHardType(u.operand) or argLooksLikeSoftType(u.operand),
-                else => false,
-            },
-            .call => |c| callArgsLookLikeTypeApplication(c.args),
+            .call => |c| argsHaveTypeExpr(c.args),
             else => false,
         };
     }
 
-    /// Empty `{}` after a call is a type-application aggregate when:
-    /// - a hard type arg is present (and no lowercase value idents), or
-    /// - only soft type args / no value literals (`List(Move){}`).
-    /// Value-only and soft+literal lists stay trailing (`run(2){}`,
-    /// `run(2, Limit){}`). `Vec(3, f32){}` has hard `f32` → aggregate.
-    /// Nested `Holder(Vec(3, f32)){}` reuses the same predicate on the call arm.
-    fn callArgsLookLikeTypeApplication(call_args: []const *Node) bool {
-        if (call_args.len == 0) return false;
-        var any_hard = false;
-        var any_soft = false;
-        var any_literal = false;
+    fn argsHaveTypeExpr(call_args: []const *Node) bool {
         for (call_args) |a| {
-            if (isLowercaseValueIdent(a)) return false;
-            if (argLooksLikeHardType(a)) {
-                any_hard = true;
-            } else if (argLooksLikeSoftType(a)) {
-                any_soft = true;
-            } else if (isValueLiteral(a)) {
-                any_literal = true;
-            } else {
-                return false;
-            }
+            if (argIsTypeExpr(a)) return true;
         }
-        if (any_hard) return true;
-        if (any_soft and !any_literal) return true;
         return false;
+    }
+
+    /// Empty `{}` after a call carries no body shape, so the spelling decides:
+    /// - `{` tight against `)` → parameterized aggregate (`Box(pair){}`,
+    ///   `Buf(16){}`, `Sink(View){}`);
+    /// - one space or more → trailing block (`run(n) {}`, `Group(2) {}`),
+    ///   unless an argument is unambiguous type syntax and can only be a type
+    ///   application (`List(i64) {}`, `Vec(3, f32) {}`).
+    /// Zero-arg `f() {}` is always trailing — `T{}` covers the empty aggregate.
+    fn emptyBraceIsTypeApplication(call_args: []const *Node, brace_is_tight: bool) bool {
+        if (call_args.len == 0) return false;
+        return brace_is_tight or argsHaveTypeExpr(call_args);
     }
 
     /// Whether `{` after `expr` should start a named aggregate (vs a push body).
@@ -5092,11 +5053,11 @@ pub const Parser = struct {
     /// like a named-aggregate body rather than a trailing-block statement
     /// list.
     ///
-    /// - empty `{}` → aggregate only when call args look like a type app
+    /// - empty `{}` → see `emptyBraceIsTypeApplication`
     /// - top-level `;` or statement-lead keywords → trailing (`vstack() { a; }`)
     /// - top-level `name =` or top-level `,` → aggregate (`Plan{ x = 1 }`, `T{1, 2}`)
     /// - otherwise → trailing (statement blocks that omit `;` after `if`/`for`)
-    fn braceLooksLikeNamedAggregate(self: *Parser, call_args: []const *Node) bool {
+    fn braceLooksLikeNamedAggregate(self: *Parser, call_args: []const *Node, brace_is_tight: bool) bool {
         if (self.current.tag != .l_brace) return false;
         var lex = self.lexer;
         var depth: u32 = 1;
@@ -5163,9 +5124,9 @@ pub const Parser = struct {
             }
         }
         if (!saw_non_ws) {
-            // Empty / comment-only `{}`: type application vs empty trailing block
-            // (see callArgsLookLikeTypeApplication).
-            return callArgsLookLikeTypeApplication(call_args);
+            // Empty / comment-only `{}`: type application vs empty trailing
+            // block (see emptyBraceIsTypeApplication).
+            return emptyBraceIsTypeApplication(call_args, brace_is_tight);
         }
         // Statement markers force trailing even when an assignment `x = e`
         // looks like a field init (`slot = Label{…};` inside a build block).
@@ -6457,7 +6418,7 @@ test "parse parameterized named aggregate List(T){}" {
 }
 
 test "parse empty trailing block after value-arg call" {
-    // `run(2) {}` must bind a trailing block, not invent a type `run`.
+    // `run(2) {}` is spaced with no type-expr arg — a trailing block.
     const source =
         \\run :: (n: i64, body: Closure()) { body(); }
         \\main :: () { run(2) {} }
@@ -6474,7 +6435,7 @@ test "parse empty trailing block after value-arg call" {
 }
 
 test "parse empty trailing block after capitalized value-arg call" {
-    // Capitalized callees with value args are still trailing blocks.
+    // The callee's case is not a signal — only the brace spelling is.
     const source =
         \\Group :: (n: i64, body: Closure()) { body(); }
         \\main :: () { Group(2) {} }
@@ -6507,7 +6468,7 @@ test "parse lowercase parameterized named aggregate list(T){}" {
 }
 
 test "parse empty trailing block with identifier value args" {
-    // `run(n) {}` must not be misread as aggregate just because `n` is a name.
+    // `run(n) {}` — a bare name is never a type signal; the space decides.
     const source =
         \\run :: (n: i64, body: Closure()) { body(); }
         \\main :: () {
@@ -6544,10 +6505,112 @@ test "parse empty trailing block with PascalCase callee and identifier arg" {
     try std.testing.expect(call.data.call.args[1].data == .trailing_block);
 }
 
+test "parse tight empty brace as aggregate regardless of arg spelling" {
+    // The tight `){}` spelling is the aggregate signal: a lowercase user type
+    // (`pair`), a PascalCase name, and a pure value parameter all qualify.
+    const source =
+        \\main :: () {
+        \\  b := Box(pair){};
+        \\  m := List(Move){};
+        \\  v := Buf(16){};
+        \\  g := Group(n){};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    for (body.data.block.stmts) |stmt| {
+        const init_expr = stmt.data.var_decl.value.?;
+        try std.testing.expect(init_expr.data == .struct_literal);
+        try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+    }
+}
+
+test "parse spaced empty brace with a type-expr arg as aggregate" {
+    // A space does not force trailing when an argument can only be a type.
+    const source =
+        \\main :: () {
+        \\  xs := List(i64) {};
+        \\  vs := Vec(3, f32) {};
+        \\  hs := Holder(Vec(3, f32)) {};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    for (body.data.block.stmts) |stmt| {
+        const init_expr = stmt.data.var_decl.value.?;
+        try std.testing.expect(init_expr.data == .struct_literal);
+        try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+    }
+}
+
+test "parse spaced empty brace with name-only args as trailing" {
+    // Bare names and `*x` are values here — `run(Limit) {}` and
+    // `render(*screen) {}` bind the block instead of inventing a type app.
+    const source =
+        \\Limit :: 7;
+        \\run :: (n: i64, body: Closure()) { body(); }
+        \\render :: (s: *Screen, body: Closure()) { body(); }
+        \\main :: () {
+        \\  run(Limit) {}
+        \\  render(*screen) {}
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[3].data.fn_decl.body;
+    for (body.data.block.stmts) |stmt| {
+        try std.testing.expect(stmt.data == .call);
+        const args = stmt.data.call.args;
+        try std.testing.expect(args[args.len - 1].data == .trailing_block);
+    }
+}
+
+test "parse zero-arg empty brace as trailing even when tight" {
+    // `f(){}` has no arguments to apply — `T{}` is the empty aggregate.
+    const source =
+        \\f :: (body: Closure()) { body(); }
+        \\main :: () { f(){} }
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[1].data.fn_decl.body;
+    const call = body.data.block.stmts[0];
+    try std.testing.expect(call.data == .call);
+    try std.testing.expect(call.data.call.args[0].data == .trailing_block);
+}
+
+test "parse comment-only body keeps the tight aggregate reading" {
+    // A comment-only body is still empty, so the brace spelling decides.
+    const source =
+        \\main :: () {
+        \\  b := Box(pair){ // nothing yet
+        \\  };
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
+    try std.testing.expect(init_expr.data == .struct_literal);
+    try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+}
+
 test "parse parameterized aggregate with compound and PascalCase type args" {
-    // `[]u8` → slice_type_expr; `*Node` → unary address_of of PascalCase;
-    // `?i64` → optional_type_expr; `Move` → PascalCase identifier;
-    // `(i64) -> i64` → function_type_expr; `Vec(3, f32)` mixes value + type args.
+    // `[]u8` → slice_type_expr; `?i64` → optional_type_expr;
+    // `(i64) -> i64` → function_type_expr; `Vec(3, f32)` mixes value + type
+    // args. `*Node` and `Move` are name-shaped and ride the tight spelling.
     const source =
         \\main :: () {
         \\  xs := List([]u8){};
