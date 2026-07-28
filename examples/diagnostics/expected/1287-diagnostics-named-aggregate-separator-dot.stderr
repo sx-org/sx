@@ -7,4 +7,4 @@ error: a named aggregate literal places '{' directly after its type
 help: write the type, then '{'
    |
 11 |     b := Button{ label = "Play" };
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |                ^^

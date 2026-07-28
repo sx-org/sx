@@ -596,6 +596,11 @@ type 'T'`) — it is never silently dropped, so a typo or a field removed by an
 `inline if OS` branch is caught. (Bare-identifier shorthand that happens to match
 no field is instead read as a *positional* element, not an error.)
 
+Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
+`List(i64){}`, `mod.Config{ port = 80 }`. The old separator-dot form `Type.{…}`
+is a hard error with a fix-it to the compact spelling. Contextual `.{…}` is
+unchanged.
+
 #### Anonymous Structs
 
 An **untyped** `.{ … }` literal — no annotation, no type prefix, no target —
@@ -4176,9 +4181,18 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
 - **Same line**: the `{` must sit on the same line as the call's `)`. A `{`
   on the next line is an ordinary scope block statement, never a trailing
   block.
+- **Empty block**: `f() {}` (and comment-only bodies) is a trailing block when
+  the callee is not a type head. Empty `{}` after a type application is a
+  named aggregate instead: `List(i64){}`, `Sink(View){}` (type heads follow
+  the leading-uppercase convention). A body with statements, `;`, or control
+  keywords is always a trailing block.
 - **Header position**: inside an `if`/`while`/`for` header the form is
   disabled — `{` terminates the condition and opens the statement body;
   bind the closure explicitly there.
+- **Named aggregates in headers**: a named aggregate that ends a header
+  expression must be parenthesized so the statement body keeps its `{`:
+  `if (Button{ label = "x" }.ready) { … }`, `push (Context{ io = my_io }) { … }`.
+  Contextual `push .{ … } { … }` is also valid.
 - **`return` is local**: a `return` inside the block returns from the
   closure, never from the enclosing function (no non-local return).
 - **Chain termination**: a trailing block ENDS the postfix chain —

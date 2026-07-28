@@ -753,7 +753,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
         }
     }
 
-    // Also try from the operand node for struct literals: xx Accumulator.{ total = 0 }
+    // Also try from the operand node for struct literals: xx Accumulator{ total = 0 }
     if (concrete_type_name == null) {
         concrete_type_name = self.inferConcreteTypeName(operand_node);
         if (concrete_type_name != null) heap_copy = true;

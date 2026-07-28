@@ -3069,16 +3069,16 @@ pub fn emitErrorCleanup(self: *Lowering, base: usize, err_tag: Ref) void {
 }
 
 pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
-    // push Context{...} { body } — allocates a fresh Context on the
+    // push (Context{...}) { body } — allocates a fresh Context on the
     // stack frame, rebinds the lowering's `current_ctx_ref` to it for
     // the body's lexical scope, then restores. No global, no walk.
     if (!self.implicit_ctx_enabled) {
-        _ = self.diagnoseMissingContext("`push Context{...}`");
+        _ = self.diagnoseMissingContext("`push .{...}` / `push (Context{...})`");
         self.lowerBlock(ps.body);
         return;
     }
     const ctx_ty = self.module.types.findByName(self.module.types.internString("Context")) orelse {
-        _ = self.diagnoseMissingContext("`push Context{...}`");
+        _ = self.diagnoseMissingContext("`push .{...}` / `push (Context{...})`");
         self.lowerBlock(ps.body);
         return;
     };
@@ -3087,14 +3087,14 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
 
     const slot = self.builder.alloca(ctx_ty);
 
-    // Inherit-omitted semantics: a `push Context{ ... }` is a CAPABILITY
+    // Inherit-omitted semantics: a `push (Context{ ... })` is a CAPABILITY
     // bag — fields the literal does NOT name are inherited from the ambient
     // context, not zero-inited. Zero-init would install a NULL `io`/
     // `allocator` vtable (a latent crash if the field is later used inside
     // the pushed scope). So seed the new slot from the ambient context,
     // then overwrite only the fields the literal explicitly names.
     //
-    // This applies only to a `Context{...}` struct-literal context-expr;
+    // This applies only to a parenthesized `Context{...}` (or contextual `.{...}`) context-expr;
     // any other form (e.g. `push some_ctx_value`) keeps the whole-value
     // store (no field-level merge to do).
     const lit: ?*const ast.StructLiteral = switch (ps.context_expr.data) {
@@ -3108,7 +3108,7 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
         const ambient = self.builder.load(self.current_ctx_ref, ctx_ty);
         self.builder.store(slot, ambient);
 
-        // 2. Overwrite only the named fields. `push Context{...}` always
+        // 2. Overwrite only the named fields. `push .{...}` / `push (Context{...})` always
         //    uses named field-inits (it is a Context literal); a positional
         //    init has no field name to target, so it is rejected loudly
         //    rather than silently writing the wrong field.
@@ -3116,7 +3116,7 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
         for (lit.?.field_inits) |fi| {
             const fname = fi.name orelse {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, ps.context_expr.span, "`push Context{{...}}` requires named fields (positional init not supported)", .{});
+                    d.addFmt(.err, ps.context_expr.span, "`push .{{...}}` / `push (Context{{...}})` requires named fields (positional init not supported)", .{});
                 continue;
             };
             const fl = self.fieldLvaluePtr(slot, ctx_ty, fname) orelse {

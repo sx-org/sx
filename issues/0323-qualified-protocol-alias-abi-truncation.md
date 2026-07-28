@@ -33,7 +33,7 @@ impl Alias for S { value :: (self: *S) -> i64 { self.n } }
 forward :: (item: Alias) -> i64 { item.value() }
 
 main :: () -> i32 {
-    item := S.{ n = 37 };
+    item := S{ n = 37 };
     if forward(xx item) == 37 then 0 else 1
 }
 ```

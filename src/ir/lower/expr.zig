@@ -28,7 +28,7 @@ const headNameOfCallee = Lowering.headNameOfCallee;
 const StructConstInfo = Lowering.StructConstInfo;
 
 pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
-    // Check for tagged enum construction: .Variant.{ payload_fields }
+    // Check for tagged enum construction: .Variant{ payload_fields }
     // This happens when type_expr is an enum_literal and target_type is a union
     if (sl.type_expr) |te| {
         if (te.data == .enum_literal) {
@@ -41,10 +41,10 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                 }
             }
         }
-        // Qualified variant construction: `Ev.key.{ ... }`. Here `type_expr`
+        // Qualified variant construction: `Ev.key{ ... }`. Here `type_expr`
         // is a field_access (`Ev.key`), not an `enum_literal` — `Ev` names the
         // tagged union and `key` the variant. Route it through the same path
-        // as the inferred `.key.{ ... }` form (issue 0281); without this the
+        // as the inferred `.key{ ... }` form (issue 0281); without this the
         // field_access falls to `resolveTypeWithBindings`, which cannot place
         // `Ev.key` in type position and returns `.unresolved` → LLVM panic.
         if (te.data == .field_access) {
@@ -67,8 +67,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                     else => null,
                 };
                 // Diagnostic-free PROBE: this pass only decides whether the
-                // head is a tagged union (`Ev.key.{...}` variant construction).
-                // The object may equally be a namespace alias (`m.Cfg.{...}`,
+                // head is a tagged union (`Ev.key{...}` variant construction).
+                // The object may equally be a namespace alias (`m.Cfg{...}`,
                 // issue 0334) — the real head resolution below owns the
                 // diagnostics, so a loud `resolveNominalLeaf` here would blast
                 // "unknown type 'm'" for a perfectly valid qualified literal
@@ -97,7 +97,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
 
     // `.{ name = ... }` against a tagged-union target_type. Reject:
     // the only valid construction forms are `.variant(payload)` and
-    // `.variant.{ field, ... }`. Falling through would lower the
+    // `.variant{ field, ... }`. Falling through would lower the
     // user's values straight into the `(tag, payload_bytes)` slot
     // pair and emit IR that LLVM later rejects.
     if (sl.type_expr == null and sl.struct_name == null) {
@@ -129,13 +129,13 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     const ty: TypeId = if (sl.struct_name) |name|
         // Source-aware (E2): a bare struct-literal type name resolves to the
         // querying source's OWN same-name author, not the global `findByName`
-        // first-match — so `Box.{...}` in module B builds B's `Box`, never a
+        // first-match — so `Box{...}` in module B builds B's `Box`, never a
         // flat-imported A's. `.undeclared`/`.pending` keep the empty-struct
         // stub (byte-identical to the legacy `findByName orelse intern`);
         // `.ambiguous`/`.not_visible` surface their loud diagnostic + poison.
         self.resolveNominalLeaf(name, false, span)
     else if (sl.type_expr) |te|
-        // Generic struct literal: Pair(i32).{ ... } — resolve type from type_expr
+        // Generic struct literal: Pair(i32){ ... } — resolve type from type_expr
         self.resolveTypeWithBindings(te)
     else
         self.target_type orelse .unresolved;
@@ -235,7 +235,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // positional paths below handle exactly: struct, tuple, array, vector,
     // the two {ptr, len} fat pointers — a slice (`sl : []T = .{ ptr = …,
     // len = … }`, used throughout the stdlib/corpus) and the builtin `string`
-    // (`string.{ ptr = …, len = … }` in fmt/hash/cli/sqlite) — and a closure
+    // (`string{ ptr = …, len = … }` in fmt/hash/cli/sqlite) — and a closure
     // (`c : Closure(i32) -> i32 = .{ fn_ptr = …, env = … }`, the {fn_ptr, env}
     // pair, exercised by examples/types/0129).
     // Any other resolved target — a scalar builtin (`x : i64 = .{ a = 1 }`),
@@ -326,7 +326,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // Check if any field_init has a name (named literal).
     //
     // The parser PUNS a bare identifier element `.{ x, ... }` into a named
-    // field `x = x` (the shorthand `Vec4.{ w, z }` form, specs §Struct
+    // field `x = x` (the shorthand `Vec4{ w, z }` form, specs §Struct
     // Literals), because it cannot know — without the struct definition —
     // whether `x` names a field or is a positional value. A POSITIONAL literal
     // whose first element is a bare variable (`.{ x, 2 }`, `x` not a field of
@@ -1836,7 +1836,7 @@ pub fn lowerErrorTagLiteral(self: *Lowering, tag_name: []const u8, span: ast.Spa
     return self.builder.constInt(@as(i64, @intCast(tag_id)), .u32);
 }
 
-/// Lower a tagged enum construction: .Variant.{ field_inits }
+/// Lower a tagged enum construction: .Variant{ field_inits }
 /// The struct literal provides the payload fields; we wrap them in an enum_init.
 pub fn lowerTaggedEnumLiteral(
     self: *Lowering,
@@ -1873,7 +1873,7 @@ pub fn lowerTaggedEnumLiteral(
     self.target_type = payload_ty;
     const payload_fields = self.getStructFields(payload_ty);
 
-    // Scalar (non-aggregate) payload: `.key.{ 42 }` where `key`'s payload is a
+    // Scalar (non-aggregate) payload: `.key{ 42 }` where `key`'s payload is a
     // plain i64 — the single field_init IS the payload value. There is no
     // struct to insertvalue into, so wrapping it in a structInit builds an
     // invalid `insertvalue i64 ...` (issue 0281). Emit the value directly.
@@ -3091,7 +3091,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             }
             // `context` resolves to a load through the lowering's
             // current `__sx_ctx` pointer. Every sx function (and
-            // every `push Context{...}` body) sets `current_ctx_ref`
+            // every `push .{...}` / `push (Context{...})` body) sets `current_ctx_ref`
             // to a `*Context` it owns, so this is one indirection.
             if (std.mem.eql(u8, id.name, "context")) {
                 if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) {

@@ -1071,7 +1071,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                         .float_literal => .f64,
                         .bool_literal => .bool,
                         .char_literal => .i64,
-                        // Complex constant expressions (e.g. COLOR_WHITE :: Color.{ r = 255, ... })
+                        // Complex constant expressions (e.g. COLOR_WHITE :: Color{ r = 255, ... })
                         .struct_literal => self.inferExprType(cd.value),
                         else => null,
                     };
@@ -1200,7 +1200,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         self.putModuleConst(decl.source_file, cd.name, .{ .value = cd.value, .ty = .i64 });
     }
     // Pass 2c: the const-alias fixpoint again. Its pass-0a' run can only see
-    // the LITERAL consts pass 0 registers; an aggregate const (`C :: S.{…}`,
+    // the LITERAL consts pass 0 registers; an aggregate const (`C :: S{…}`,
     // `A :: .[…]`) does not reach `module_const_map` until pass 1/2, so an
     // alias of one (`D :: C`) had no registered target back then. Re-running
     // here closes over those. Idempotent — the fixpoint skips a name already
@@ -1581,7 +1581,7 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
     // other (present) initializer is serialized against the CHILD type and
     // wrapped here into `{ <payload>, true }`. Recursing on the child type
     // also handles nested optionals (`?(?i64)`) and optional aggregates
-    // (`?S = S.{...}`), whose payloads are themselves structs/optionals.
+    // (`?S = S{...}`), whose payloads are themselves structs/optionals.
     if (!var_ty.isBuiltin() and self.module.types.get(var_ty) == .optional) {
         switch (v.data) {
             .null_literal => return .null_val,

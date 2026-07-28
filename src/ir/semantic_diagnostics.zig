@@ -807,7 +807,7 @@ pub const UnknownTypeChecker = struct {
                 // A NAMED struct-literal head (`Point{ … }`) names its type
                 // exactly like a declaration annotation — validate it through the
                 // same unknown-type walk. Without this, an undeclared literal type
-                // name (`NoSuchType.{ a = 1 }`) bypassed the checker (the main-file
+                // name (`NoSuchType{ a = 1 }`) bypassed the checker (the main-file
                 // diagnostic authority) and reached `resolveNominalLeaf`'s
                 // `.undeclared` main-file arm, which keeps the legacy empty-struct
                 // stub and defers to THIS checker — so nothing diagnosed it and the

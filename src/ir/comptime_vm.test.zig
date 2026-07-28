@@ -299,7 +299,7 @@ test "comptime_vm exec: nested struct (aggregate field copy + nested read)" {
     };
     const line = table.intern(.{ .@"struct" = .{ .name = table.internString("Line"), .fields = &lfields } });
 
-    // L := Line.{ a = Point{1,2}, b = Point{3,4} }; return L.a.x + L.b.y  → 1 + 4 = 5
+    // L := Line{ a = Point{1,2}, b = Point{3,4} }; return L.a.x + L.b.y  → 1 + 4 = 5
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});

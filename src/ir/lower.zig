@@ -565,7 +565,7 @@ pub const Lowering = struct {
     // default-conv sx function gains a synthetic `__sx_ctx: *void` param
     // at slot 0, and `current_ctx_ref` is bound to that param on each
     // function-body entry. `lowerCall` / `call_indirect` prepend this ref
-    // to the args of every sx-to-sx call. push Context{...} rebinds it
+    // to the args of every sx-to-sx call. push (Context{...}) rebinds it
     // to a stack-allocated Context for the lexical body. See
     // `~/.claude/plans/lets-see-options-for-merry-dijkstra.md`.
     implicit_ctx_enabled: bool = false,
@@ -1595,7 +1595,7 @@ pub const Lowering = struct {
         }
         // A qualified type reference reaching type position as an EXPRESSION
         // `field_access` node — e.g. `m.Cfg` written as a struct-literal prefix
-        // (`m.Cfg.{...}`, issue 0204). Resolve it the SAME way a dotted
+        // (`m.Cfg{...}`, issue 0204). Resolve it the SAME way a dotted
         // `type_expr` annotation (`x : m.Cfg`) does (see the `.type_expr` arm
         // below): the prefix is a namespace alias — pin the source to its target
         // module and resolve the leaf there. NOT `resolveNominalLeaf("m.Cfg")`,
@@ -2489,7 +2489,7 @@ pub const Lowering = struct {
     /// Reconstruct a dotted name from a pure identifier/field_access chain
     /// (`a.b.C` → "a.b.C"); null if any segment isn't a plain name. The caller
     /// owns and frees the returned slice. Used to resolve a qualified type
-    /// prefix written in expression position (`m.Cfg.{...}` — issue 0204).
+    /// prefix written in expression position (`m.Cfg{...}` — issue 0204).
     pub fn qualifiedTypeName(self: *Lowering, node: *const Node) ?[]const u8 {
         var parts = std.ArrayList([]const u8).empty;
         defer parts.deinit(self.alloc);

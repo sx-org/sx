@@ -494,12 +494,12 @@ pub const ExprTyper = struct {
                     return self.l.module.types.findByName(name_id) orelse
                         self.l.module.types.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
                 }
-                // A qualified (`m.Cfg.{…}`) or generic (`Pair(i32).{…}`) prefix
+                // A qualified (`m.Cfg{…}`) or generic (`Pair(i32){…}`) prefix
                 // carries its type as a NODE — resolve it the same way lowering
                 // does, so a `:=`-inferred decl gets the real struct type (issue
                 // 0204), not the empty `{}` it would fall to below.
                 if (sl.type_expr) |te| {
-                    // `Ev.key.{ ... }` — qualified tagged-union variant
+                    // `Ev.key{ ... }` — qualified tagged-union variant
                     // construction: the literal's TYPE is the tagged union
                     // `Ev`, not a resolvable `Ev.key` type. Recognize it here
                     // (side-effect-free `findByName`) so inference doesn't fall

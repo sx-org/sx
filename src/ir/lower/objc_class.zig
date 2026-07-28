@@ -797,7 +797,7 @@ pub fn emitObjcDefinedClassImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl
 ///
 /// Sx-side `Cls.alloc()` is intercepted at the call site (see
 /// `lowerObjcStaticCall`) and emits the same sequence inline with
-/// `current_ctx_ref` as the ctx — so `push Context{ allocator = ... }`
+/// `current_ctx_ref` as the ctx — so `push (Context{ allocator = ... })`
 /// flows through to per-instance allocator capture without going via
 /// the IMP.
 pub fn emitObjcDefinedClassAllocImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl) void {
@@ -1174,7 +1174,7 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
     //       allocator = load struct_gep(state, 0)   ← __sx_allocator field
     //       allocator.dealloc(state)                 ← inline-protocol fn-ptr at field 2
     // Compare to the old `free(state)` — that ignored the per-instance
-    // allocator and went straight to libc. Now `push Context{ allocator = arena }`
+    // allocator and went straight to libc. Now `push (Context{ allocator = arena })`
     // round-trips correctly: arena.alloc on construction, arena.dealloc here.
     if (self.module.types.findByName(self.module.types.internString("Context")) == null) {
         if (self.diagnostics) |d| {

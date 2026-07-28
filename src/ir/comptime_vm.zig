@@ -1034,7 +1034,7 @@ pub const Vm = struct {
                 const table = try self.requireTable();
                 const sty = ins.ty;
                 // `string`/`any` are builtin TWO-WORD aggregates (`{ptr@0, len@8}` /
-                // `{tag@0, value@8}`) — a literal like `string.{ ptr = p, len = n }`
+                // `{tag@0, value@8}`) — a literal like `string{ ptr = p, len = n }`
                 // (e.g. `from_cstring`) struct_inits one. Lay each operand as an
                 // 8-byte word; the other builtins have no aggregate literal form.
                 if (sty == .string or sty == .any) {

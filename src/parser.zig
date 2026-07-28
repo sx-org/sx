@@ -10,6 +10,8 @@ const errors = @import("errors.zig");
 const print = @import("print.zig");
 const unescape = @import("unescape.zig");
 
+const named_aggregate_dot_msg = "a named aggregate literal places '{' directly after its type";
+
 pub const Parser = struct {
     lexer: Lexer,
     current: Token,
@@ -2084,7 +2086,7 @@ pub const Parser = struct {
         }
         try self.expect(.r_brace);
 
-        // Optional init block: T.{ fields } { stmts }
+        // Optional init block: T{ fields } { stmts }
         const init_block: ?*Node = if (self.current.tag == .l_brace and !self.in_if_condition)
             try self.parseBlock()
         else
@@ -3030,9 +3032,11 @@ pub const Parser = struct {
                 {
                     // Same-line `{` after a call: trailing block OR parameterized
                     // named aggregate `List(T){…}`. Prefer the aggregate when the
-                    // brace body is aggregate-shaped (empty / fields / comma
-                    // positionals without `;`); otherwise trailing.
-                    if (self.braceLooksLikeNamedAggregate()) {
+                    // brace body is aggregate-shaped (fields / commas); empty
+                    // `{}` is an aggregate only when the callee looks like a
+                    // type head (`List`, `Sink`, `http.Config`), otherwise an
+                    // empty trailing block (`run(2) {}`).
+                    if (self.braceLooksLikeNamedAggregate(expr)) {
                         expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                         // Fall through: next postfix iteration takes Type{}.
                     } else {
@@ -3095,7 +3099,7 @@ pub const Parser = struct {
                     return self.failNamedAggregateDot();
                 } else if (self.current.tag == .l_brace) {
                     // Not a type designator (e.g. call result): no Type.{…} form.
-                    return self.fail("a named aggregate literal places '{' directly after its type");
+                    return self.fail(named_aggregate_dot_msg);
                 } else if (self.current.tag == .l_bracket) {
                     // Typed array/vector literal: Type.[elem, ...]
                     self.advance(); // skip '['
@@ -3397,7 +3401,7 @@ pub const Parser = struct {
     fn parsePrimary(self: *Parser) anyerror!*Node {
         const start = self.current.loc.start;
         // `@Init` is a type the compiler forms, never a value a program builds:
-        // there is no `@Init(T).{ … }` literal and no `@Init` expression.
+        // there is no `@Init(T){ … }` literal and no `@Init` expression.
         if (self.current.tag == .at_identifier) {
             return self.failFmt(
                 "'{s}' is a compiler-formed type — it has no literal form and cannot be named in an expression",
@@ -3957,7 +3961,7 @@ pub const Parser = struct {
         const context_expr = try self.parseExpr();
         self.no_trailing_block = saved_ntb;
 
-        // push Context{ ... } { body } — if parseExpr consumed the push body
+        // push (Context{ ... }) { body } — if parseExpr consumed the push body
         // as a struct init block, steal it back as the push body.
         // (if/while don't have this issue — they require bool/optional conditions)
         const body = if (context_expr.data == .struct_literal and
@@ -4884,15 +4888,27 @@ pub const Parser = struct {
         return !self.in_if_condition and !self.no_trailing_block and !self.in_for_header;
     }
 
+    /// True when a call head is a type application head (`List`, `mod.Sink`,
+    /// nested `List(T)`), by SX type-name convention (leading uppercase).
+    fn calleeLooksLikeTypeHead(expr: *const Node) bool {
+        return switch (expr.data) {
+            .identifier => |id| id.name.len > 0 and id.name[0] >= 'A' and id.name[0] <= 'Z',
+            .field_access => |fa| fa.field.len > 0 and fa.field[0] >= 'A' and fa.field[0] <= 'Z',
+            .parameterized_type_expr, .type_expr, .tuple_type_expr => true,
+            .call => |c| calleeLooksLikeTypeHead(c.callee),
+            else => false,
+        };
+    }
+
     /// With `current` on `{` after a call: true when the brace body looks
     /// like a named-aggregate body rather than a trailing-block statement
     /// list.
     ///
-    /// - empty `{}` → aggregate (`List(T){}`)
+    /// - empty `{}` → aggregate only for type heads (`List(T){}`); else trailing
     /// - top-level `;` or statement-lead keywords → trailing (`vstack() { a; }`)
     /// - top-level `name =` or top-level `,` → aggregate (`Plan{ x = 1 }`, `T{1, 2}`)
     /// - otherwise → trailing (statement blocks that omit `;` after `if`/`for`)
-    fn braceLooksLikeNamedAggregate(self: *Parser) bool {
+    fn braceLooksLikeNamedAggregate(self: *Parser, call_callee: *const Node) bool {
         if (self.current.tag != .l_brace) return false;
         var lex = self.lexer;
         var depth: u32 = 1;
@@ -4958,7 +4974,10 @@ pub const Parser = struct {
                 },
             }
         }
-        if (!saw_non_ws) return true; // empty `{}`
+        if (!saw_non_ws) {
+            // Empty / comment-only `{}`: type application aggregate vs empty trailing block.
+            return calleeLooksLikeTypeHead(call_callee);
+        }
         // Statement markers force trailing even when an assignment `x = e`
         // looks like a field init (`slot = Label{…};` inside a build block).
         if (top_level_semi or top_level_stmt_kw or top_level_colon_eq) return false;
@@ -4972,16 +4991,17 @@ pub const Parser = struct {
         // `current` is `{`; the separator `.` ends at `prev_end`.
         const dot_start = if (self.prev_end > 0) self.prev_end - 1 else self.current.loc.start;
         const dot_end = self.prev_end;
-        const msg = "a named aggregate literal places '{' directly after its type";
+        const msg = named_aggregate_dot_msg;
         self.err_msg = msg;
         self.err_offset = dot_start;
         self.err_end = self.current.loc.end;
         if (self.diagnostics) |diags| {
             const id = diags.addId(.err, msg, .{ .start = dot_start, .end = dot_end });
             // Rebuild the current line with the separator dot removed as fix-it.
-            const line_start = lineStartOf(self.source, dot_start);
-            const line_end = lineEndOf(self.source, self.current.loc.start);
-            const line = self.source[line_start..line_end];
+            // Help span covers the `.{` region so carets sit on the edit.
+            const line = errors.lineAt(self.source, dot_start);
+            var line_start: u32 = dot_start;
+            while (line_start > 0 and self.source[line_start - 1] != '\n') : (line_start -= 1) {}
             const rel_dot = dot_start - line_start;
             var fix_buf: std.ArrayList(u8) = .empty;
             defer fix_buf.deinit(self.allocator);
@@ -4989,24 +5009,12 @@ pub const Parser = struct {
                 fix_buf.appendSlice(self.allocator, line[0..rel_dot]) catch {};
                 fix_buf.appendSlice(self.allocator, line[rel_dot + 1 ..]) catch {};
                 const fix = fix_buf.toOwnedSlice(self.allocator) catch null;
-                diags.addHelp(id, .{ .start = line_start, .end = line_end }, "write the type, then '{'", fix);
+                diags.addHelp(id, .{ .start = dot_start, .end = self.current.loc.end }, "write the type, then '{'", fix);
             } else {
                 diags.addHelp(id, null, "write `Type{...}` — remove the separator dot", null);
             }
         }
         return error.ParseError;
-    }
-
-    fn lineStartOf(source: []const u8, pos: u32) u32 {
-        var i = pos;
-        while (i > 0 and source[i - 1] != '\n') : (i -= 1) {}
-        return i;
-    }
-
-    fn lineEndOf(source: []const u8, pos: u32) u32 {
-        var i = pos;
-        while (i < source.len and source[i] != '\n' and source[i] != '\r') : (i += 1) {}
-        return i;
     }
 
     /// Peek at the next token's tag without consuming.

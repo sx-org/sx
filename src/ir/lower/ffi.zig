@@ -504,7 +504,7 @@ pub fn lowerObjcStaticCall(
     // inline alloc-and-init sequence using the caller's `context.allocator`
     // instead of going through `objc_msgSend` (which would land in the
     // +alloc IMP and use `__sx_default_context.allocator`). This honors
-    // a surrounding `push Context{ allocator = ... }`.
+    // a surrounding `push (Context{ allocator = ... })`.
     if (!fcd.is_extern and
         fcd.runtime == .objc_class and
         method_args.len == 0 and

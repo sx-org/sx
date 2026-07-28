@@ -31,7 +31,7 @@ does not restrict it.
 Secret :: struct { value: i64; }
 
 make_secret :: (value: i64) -> Secret {
-    Secret.{ value = value }
+    Secret{ value = value }
 }
 ```
 
@@ -44,7 +44,7 @@ Wrapper :: struct {
     state: Secret;
 
     init :: (value: i64) -> Wrapper {
-        Wrapper.{ state = make_secret(value) }
+        Wrapper{ state = make_secret(value) }
     }
 
     get :: (self: *Wrapper) -> i64 { self.state.value }
