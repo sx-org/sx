@@ -42,10 +42,9 @@ pub const Parser = struct {
     /// inside nested paren/argument contexts alongside `in_for_header`.
     no_trailing_block: bool = false,
     /// True while parsing the context expression of `push <expr> { body }`.
-    /// Named aggregates are allowed here (`push Context{ a = x } { body }`):
-    /// the optional second brace group is the struct `init_block`, which
-    /// `parsePushStmt` reclaims as the push body. Call trailing stays off
-    /// via `no_trailing_block`.
+    /// Named aggregates are allowed here (`push Context{ a = x } { body }`);
+    /// the second brace group is the push body (init_block attach is off).
+    /// Call trailing stays off via `no_trailing_block`.
     in_push_context: bool = false,
     /// When true (set while parsing an `onfail` body), a `raise` statement is
     /// rejected — an error during cleanup has no propagation target. E1.7
@@ -4907,7 +4906,7 @@ pub const Parser = struct {
     /// final brace group for the statement body — a bare `Type{}` at the end
     /// of the condition would steal it, so parenthesize: `if (Button{}) {`.
     /// `push` is different: `push Context{ fields } { body }` is legal; the
-    /// second group is init_block then reclaimed as the push body.
+    /// second brace is the push body (not an init_block on the context expr).
     fn namedAggregateAllowedHere(self: *const Parser) bool {
         if (self.in_if_condition or self.in_for_header) return false;
         if (self.in_push_context) return true;

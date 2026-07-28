@@ -814,7 +814,7 @@ pub const UnknownTypeChecker = struct {
                 // literal silently compiled with a 0-field struct, dropping every
                 // field (issue 0220). `struct_name` is always a bare, non-raw
                 // identifier (the parser only sets it for the simple-name form;
-                // `mod.Type.{…}` and `Gen(args).{…}` carry `type_expr` instead,
+                // `mod.Type{…}` and `Gen(args){…}` carry `type_expr` instead,
                 // resolved+diagnosed on the lowering path). `reportIfUnknownType`
                 // skips forward-refs (`declared`), in-scope generics, value params,
                 // builtins, and aliases — so only genuinely-undeclared names fire,

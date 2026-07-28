@@ -4226,8 +4226,9 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   bind the closure explicitly there.
 - **Named aggregates in headers**: a named aggregate that ends a header
   expression must be parenthesized so the statement body keeps its `{`:
-  `if (Button{ label = "x" }.ready) { … }`, `push (Context{ io = my_io }) { … }`.
-  Contextual `push .{ … } { … }` is also valid.
+  `if (Button{ label = "x" }.ready) { … }`. Push is different — named aggregates
+  are legal in the context expr and the following brace is the push body:
+  `push Context{ io = my_io } { … }`. Idiomatic: `push .{ … } { … }`.
 - **`return` is local**: a `return` inside the block returns from the
   closure, never from the enclosing function (no non-local return).
 - **Chain termination**: a trailing block ENDS the postfix chain —

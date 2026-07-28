@@ -565,7 +565,7 @@ pub const Lowering = struct {
     // default-conv sx function gains a synthetic `__sx_ctx: *void` param
     // at slot 0, and `current_ctx_ref` is bound to that param on each
     // function-body entry. `lowerCall` / `call_indirect` prepend this ref
-    // to the args of every sx-to-sx call. push Context{...}) rebinds it
+    // to the args of every sx-to-sx call. push Context{...} rebinds it
     // to a stack-allocated Context for the lexical body. See
     // `~/.claude/plans/lets-see-options-for-merry-dijkstra.md`.
     implicit_ctx_enabled: bool = false,

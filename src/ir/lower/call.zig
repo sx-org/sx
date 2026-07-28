@@ -2325,7 +2325,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
 }
 
 /// Emit a diagnostic for code that needs `Context` (allocator
-/// protocol, `push .{...}` / `push Context{...})`, the `context` identifier) when
+/// protocol, `push .{...}` / `push Context{...}`, the `context` identifier) when
 /// the program hasn't registered the type — i.e. doesn't transitively
 /// import `modules/std.sx`. Returns a placeholder Ref so the lowering
 /// can keep going and surface any additional errors.

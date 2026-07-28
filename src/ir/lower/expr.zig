@@ -3099,7 +3099,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             }
             // `context` resolves to a load through the lowering's
             // current `__sx_ctx` pointer. Every sx function (and
-            // every `push .{...}` / `push Context{...})` body) sets `current_ctx_ref`
+            // every `push .{...}` / `push Context{...}` body) sets `current_ctx_ref`
             // to a `*Context` it owns, so this is one indirection.
             if (std.mem.eql(u8, id.name, "context")) {
                 if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) {
