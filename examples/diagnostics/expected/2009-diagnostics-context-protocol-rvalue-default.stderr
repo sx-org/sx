@@ -2,10 +2,10 @@ error: 'note' is a 'Chirp' value, which borrows its receiver — its initializer
   --> examples/diagnostics/2009-diagnostics-context-protocol-rvalue-default.sx:17:31
    |
 17 | #context_extend note: Chirp = Doubler{ k = 4 };
-   |                               ^^^^^^^^^^^^^^^^^
+   |                               ^^^^^^^^^^^^^^^^
 
 error: 'sink' is a 'Sink' value, which borrows its receiver — its initializer must NAME a global instance to borrow ('sink : Sink = the_instance;'), and this expression has no address to point at
   --> examples/diagnostics/2009-diagnostics-context-protocol-rvalue-default.sx:16:30
    |
 16 | #context_extend sink: Sink = Doubler{ k = 3 };
-   |                              ^^^^^^^^^^^^^^^^^
+   |                              ^^^^^^^^^^^^^^^^

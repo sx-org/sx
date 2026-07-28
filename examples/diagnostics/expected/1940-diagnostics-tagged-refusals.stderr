@@ -26,10 +26,10 @@ error: cannot erase an rvalue to '#identity' protocol 'Collector' — identity o
   --> examples/diagnostics/1940-diagnostics-tagged-refusals.sx:39:21
    |
 39 |     s : Collector = Accum{ sum = 0 };
-   |                     ^^^^^^^^^^^^^^^^^
+   |                     ^^^^^^^^^^^^^^^^
 
 error: cannot erase an rvalue into tagged protocol 'View' at a 'return' — the frame that would hold the temporary is about to die, so there is nothing durable to borrow beyond this frame; bind it, or place it in storage the caller owns
   --> examples/diagnostics/1940-diagnostics-tagged-refusals.sx:21:26
    |
 21 | escaping :: () -> View { return Widget{ n = 1 }; }
-   |                          ^^^^^^^^^^^^^^^^^^^^^^^^
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^

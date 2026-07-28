@@ -14,7 +14,7 @@ error: 'Buffer__bool' does not implement 'Series__f32' — a tagged conformer se
   --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:63:23
    |
 63 |     w : Series(f32) = Buffer(bool){ items = ba[0..] };
-   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: no impl of 'Series__string' exists in this program — a tagged conformer set is per instantiation and whole-program, and 'Series' is implemented at 'Series__f32' (2 impls) and 'Series__i64' (1 impl), so no value of this instantiation can exist
   --> examples/diagnostics/1283-diagnostics-tagged-protocol-value-refusal.sx:66:31

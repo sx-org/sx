@@ -14,7 +14,7 @@ error: cannot coerce error set 'Broad' to 'Narrow': tag 'error.Extra' is not a m
   --> examples/errors/1076-errors-cross-set-value-reject.sx:23:10
    |
 23 |     h := Holder{ e = be };      // error: same, in field-init position
-   |          ^^^^^^^^^^^^^^^^^
+   |          ^^^^^^^^^^^^^^^^
 
 error: error tag 'error.Extra' is not in error set 'Narrow'
   --> examples/errors/1076-errors-cross-set-value-reject.sx:25:20
@@ -35,10 +35,10 @@ error: error tag 'error.Extra' is not in error set 'Narrow'
    |                 ^^^^^^
 
 error: error tag 'error.Extra' is not in error set 'Narrow'
-  --> examples/errors/1076-errors-cross-set-value-reject.sx:31:24
+  --> examples/errors/1076-errors-cross-set-value-reject.sx:31:23
    |
 31 |     hs := Holder{ e = .Extra }; // error: same, in field-init position
-   |                        ^^^^^^
+   |                       ^^^^^^
 
 error: error tag 'error.Extra' is not in error set 'Narrow'
   --> examples/errors/1076-errors-cross-set-value-reject.sx:32:17

@@ -1,1 +1,5 @@
-
+error: expected ';'
+  --> examples/types/0867-types-inline-struct-return-type.sx:19:47
+   |
+19 | make_e :: () -> enum { S: i64; T: void; } { .S{11} }
+   |                                               ^

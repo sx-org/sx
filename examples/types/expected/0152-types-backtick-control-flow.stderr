@@ -1,1 +1,5 @@
-
+error: expected ';'
+  --> examples/types/0152-types-backtick-control-flow.sx:37:17
+   |
+37 |     xs := [3]i64{ 10, 20, 30 };
+   |                 ^

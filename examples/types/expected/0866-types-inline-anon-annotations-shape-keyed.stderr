@@ -1,1 +1,5 @@
-
+error: expected ';'
+  --> examples/types/0866-types-inline-anon-annotations-shape-keyed.sx:38:45
+   |
+38 |     e : enum { S: struct { a: i64; }; } = .S{ a = 4 };
+   |                                             ^

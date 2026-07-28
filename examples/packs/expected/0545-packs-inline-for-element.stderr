@@ -1,1 +1,5 @@
-
+error: expected ','
+  --> examples/packs/0545-packs-inline-for-element.sx:42:23
+   |
+42 |     inline for xs { n += 1; }
+   |                       ^^
