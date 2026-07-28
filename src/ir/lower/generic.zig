@@ -10,6 +10,7 @@ const resolver_mod = @import("../resolver.zig");
 const StructTemplate = program_index_mod.StructTemplate;
 const GenericResolver = @import("../generics.zig").GenericResolver;
 const init_plan = @import("init_plan.zig");
+const build_block = @import("build_block.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -33,8 +34,8 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     // Flow narrowing (issue 0179) is per-function: this monomorphized body has
     // its own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
-    var narrow_guard = Lowering.NarrowGuard.enter(self);
-    defer narrow_guard.restore();
+    var nested_guard = Lowering.NestedBodyGuard.enter(self);
+    defer nested_guard.restore();
 
     // Save builder state
     const saved_func = self.builder.func;
@@ -734,9 +735,9 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
             }
             break :blk buf.toOwnedSlice(self.alloc) catch "function";
         },
-        // `@Init(T)` renders through the type table's canonical spelling; a
-        // plain closure keeps the historical bare `closure` tag.
-        .closure => |co| if (co.init_target != null)
+        // A compiler-formed `@` type renders through the type table's canonical
+        // spelling; a plain closure keeps the historical bare `closure` tag.
+        .closure => |co| if (co.init_target != null or co.build_protocol != null)
             self.module.types.formatTypeName(self.alloc, ty)
         else
             @tagName(info),
@@ -1989,6 +1990,14 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
         const target = self.resolveTypeWithBindings(pt.args[0]);
         if (target == .unresolved) return .unresolved;
         return table.initPlanType(target);
+    }
+
+    // `@BuildBlock(P)` — compiler-formed (spec §7), same closed `@` name set.
+    if (std.mem.eql(u8, pt.name, build_block.type_name)) {
+        if (pt.args.len != 1) return .unresolved;
+        const protocol = self.resolveTypeWithBindings(pt.args[0]);
+        if (protocol == .unresolved) return .unresolved;
+        return table.buildBlockType(protocol);
     }
 
     // Vector(N, T) — built-in parameterized type. A backtick raw base

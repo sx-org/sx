@@ -1,0 +1,67 @@
+// An `@Init(T)`'s write-once rule is about the RECEIVER's body, not the
+// caller's (fluent spec §5.1). A receiver that writes exactly once is legal no
+// matter where it is called from — including from inside a loop, which is
+// exactly what a build block does when a `for` reaches an expression per
+// iteration.
+//
+// The rule is enforced per binding, and a binding lives as long as the function
+// body that declared it. So "consumed inside a loop" must mean a loop in the
+// RECEIVER: a monomorphized body cannot inherit the caller's loop context,
+// whose basic blocks belong to a different function entirely. (A loop in the
+// receiver's own body is still refused — it could re-run the single write.)
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Button :: struct { label: string = ""; n: i32 = 0; }
+impl Drawable for Button {
+    draw :: (self: *Button) -> string => self.label;
+}
+
+// A direct receiver, called from inside the caller's loop.
+store :: (value: @Init($T)) -> *T {
+    dest := context.allocator.create(T);
+    value.write(dest);
+    dest
+}
+
+// The same shape reached through a build block: the sink writes once per
+// handshake, and the loop performs one handshake per iteration.
+Echo :: struct {
+    expression :: (self: *Echo, site: BuildSite, value: @Init($V/Drawable)) {
+        dest := context.allocator.create(V);
+        value.write(dest);
+        print("reached {} {}\n", dest.draw(), dest.n);
+        context.allocator.destroy(dest);
+    }
+}
+
+column :: (content: @BuildBlock(Drawable)) {
+    sink := Echo.{};
+    content.run(*sink);
+}
+
+main :: () -> i32 {
+    for 0..3 (i) {
+        b := store(Button.{ label = "direct", n = xx i });
+        print("{} {}\n", b.label, b.n);
+        context.allocator.destroy(b);
+    }
+
+    column() {
+        for 0..2 (i) {
+            Button.{ label = "block", n = xx i };
+        }
+    };
+    0
+}
+
+// ** stdout **
+// direct 0
+// direct 1
+// direct 2
+// reached block 0
+// reached block 1

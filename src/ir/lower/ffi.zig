@@ -1173,8 +1173,8 @@ pub fn synthesizeJniMainStub(self: *Lowering, fcd: *const ast.RuntimeClassDecl, 
     // previous method's `narrowed_refs` indices falsely match this body's `Ref`s
     // and permit an unsound unwrap of a non-present optional. Clear on entry,
     // restore on exit — same contract as the closure / monomorphization paths.
-    var narrow_guard = Lowering.NarrowGuard.enter(self);
-    defer narrow_guard.restore();
+    var nested_guard = Lowering.NestedBodyGuard.enter(self);
+    defer nested_guard.restore();
 
     const mangled = jni_descriptor.jniMangleNativeName(self.alloc, fcd.runtime_path, md.name) catch return;
     const name_id = self.module.types.internString(mangled);

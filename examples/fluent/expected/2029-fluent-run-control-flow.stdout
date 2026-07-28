@@ -1,0 +1,7 @@
+  line 53 ordinal 0 occurrence 0 -> title
+  line 56 ordinal 1 occurrence 1 -> alpha
+  line 56 ordinal 1 occurrence 2 -> beta
+  -- replay --
+  line 53 ordinal 0 occurrence 0 -> title
+  line 56 ordinal 1 occurrence 1 -> alpha
+  line 56 ordinal 1 occurrence 2 -> beta

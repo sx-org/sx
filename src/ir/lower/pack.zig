@@ -1213,8 +1213,8 @@ pub fn monomorphizePackFn(
     // Flow narrowing (issue 0179) is per-function: this monomorphized pack body
     // has its own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
-    var narrow_guard = Lowering.NarrowGuard.enter(self);
-    defer narrow_guard.restore();
+    var nested_guard = Lowering.NestedBodyGuard.enter(self);
+    defer nested_guard.restore();
 
     // Find the pack param's name and position in fd.params, plus its
     // constraint protocol (`..xs: Box` ⇒ "Box"; comptime `..$args` has none).

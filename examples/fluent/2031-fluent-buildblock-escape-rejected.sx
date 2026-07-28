@@ -1,0 +1,30 @@
+// A `@BuildBlock(P)` is nonescaping, and it is nonescaping in the strongest
+// sense available: it is a COMPILE-TIME value with no representation at all
+// (fluent spec §7.6). What the parameter names is the block's body, which the
+// accepting call replays in place — so there is nothing for a binding, a call
+// argument, a field, or a return to hold.
+//
+// The type grammar already refuses every storage position (`@BuildBlock(P)` is
+// legal only as a parameter annotation, exactly like `@Init(T)`). What is left
+// is reaching for the value from inside a body, refused here. Its one operation
+// is `run`.
+// Expected: exit 1.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+elsewhere :: (n: i32) { }
+
+hold :: (content: @BuildBlock(Drawable)) {
+    saved := content;        // refused: a block is not storage
+    elsewhere(content);      // refused: a block is not an argument
+    content.shape();         // refused: `run` is the only operation
+}
+
+main :: () -> i32 {
+    hold() { };
+    0
+}

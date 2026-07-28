@@ -257,8 +257,14 @@ pub const DiagnosticList = struct {
         return n;
     }
 
-    fn resolveSourceAndFile(self: *const DiagnosticList, d: Diagnostic) struct { source: []const u8, file_name: []const u8 } {
-        if (d.source_file) |sf| {
+    const ResolvedSource = struct { source: []const u8, file_name: []const u8 };
+
+    fn resolveSourceAndFile(self: *const DiagnosticList, d: Diagnostic) ResolvedSource {
+        return self.resolveSource(d.source_file);
+    }
+
+    fn resolveSource(self: *const DiagnosticList, source_file: ?[]const u8) ResolvedSource {
+        if (source_file) |sf| {
             if (self.import_sources) |is| {
                 if (is.get(sf)) |src| {
                     return .{ .source = src, .file_name = sf };
@@ -266,6 +272,16 @@ pub const DiagnosticList = struct {
             }
         }
         return .{ .source = self.source, .file_name = self.file_name };
+    }
+
+    /// The reported file name and 1-based line/column of a byte offset in
+    /// `source_file` — the same resolution a rendered diagnostic uses, made
+    /// available to lowering so a compiler-formed source coordinate (a
+    /// `BuildSite`) agrees with what an error would print.
+    pub fn locate(self: *const DiagnosticList, source_file: ?[]const u8, byte_offset: u32) struct { file: []const u8, line: u32, col: u32 } {
+        const resolved = self.resolveSource(source_file);
+        const loc = SourceLoc.compute(resolved.source, byte_offset);
+        return .{ .file = resolved.file_name, .line = loc.line, .col = loc.col };
     }
 
     pub fn render(self: *const DiagnosticList, writer: anytype) !void {

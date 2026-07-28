@@ -1,0 +1,48 @@
+// Fluent build blocks — the library half of `@BuildBlock(P)` (fluent spec §6–§9).
+//
+// The compiler owns the block: which trailing blocks are build blocks, which
+// statements are reached expressions, and the lexical `BuildSite` each one
+// carries. Everything else — storage, ordering, erasure, identity, diagnostics —
+// belongs to the sink written here, in ordinary sx.
+//
+// A build-accepting function declares its block parameter last:
+//
+//     column :: (gap: f32, content: @BuildBlock(Drawable)) { ... }
+//
+// and replays it into a sink:
+//
+//     content.run(*sink);
+//
+// Each standalone expression in the block whose type conforms to the protocol
+// becomes one `sink.expression(site, initializer)` call. The initializer is an
+// `@Init(V)` over the CONCRETE `V`, so the sink reserves `size_of(V)` and writes
+// the expression straight into its own storage; nothing is materialized, copied,
+// or erased before the sink asks for it.
+
+// The lexical identity of one reached expression (spec §8.1). `id` is the stable
+// machine key — derived from the block and the expression's position inside it,
+// not from the run, the loop iteration, or the optimization level. `file` /
+// `line` / `column` are diagnostic coordinates, and `ordinal` separates
+// expressions the coordinates cannot (generated or compact source).
+//
+// A loop reports the SAME site every iteration: the site is lexical. A library
+// that needs per-item identity combines it with an explicit key or an occurrence
+// count of its own.
+BuildSite :: struct {
+    id: u64 = 0;
+    file: string = "";
+    line: i32 = 0;
+    column: i32 = 0;
+    ordinal: i32 = 0;
+}
+
+// What a sink promises (spec §6.3). An ordinary constraint protocol: no vtable,
+// no erasure — `expression` monomorphizes for each concrete `V` the block
+// reaches, which is what lets the sink see `V`'s size, alignment, and methods.
+//
+// The initializer may be written AT MOST ONCE, and a sink that returns without
+// writing leaves the source expression unevaluated. A sink that must materialize
+// everything simply writes unconditionally.
+BuildSink :: protocol(P: Type) constraint {
+    expression :: (self: *Self, site: BuildSite, value: @Init($V/P));
+}

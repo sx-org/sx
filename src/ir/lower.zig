@@ -52,6 +52,7 @@ const lower_generic = @import("lower/generic.zig");
 const lower_expr = @import("lower/expr.zig");
 const lower_closure = @import("lower/closure.zig");
 const lower_init_plan = @import("lower/init_plan.zig");
+const lower_build_block = @import("lower/build_block.zig");
 
 const TypeId = types.TypeId;
 const StringId = types.StringId;
@@ -431,6 +432,14 @@ pub const Lowering = struct {
     main_file: ?[]const u8 = null, // path of the main file; imported functions are declared extern
     resolved_root: ?*const Node = null, // full AST root (for building comptime modules)
     comptime_param_nodes: ?std.StringHashMap(*const Node) = null, // active comptime substitutions
+    /// `@BuildBlock(P)` parameters of the accepting call being inlined, bound to
+    /// the trailing block written at its call site. Owned per call and shadowed
+    /// by a nested one, exactly like `comptime_param_nodes`.
+    build_block_bindings: ?std.StringHashMap(lower_build_block.Binding) = null,
+    /// Active build replays, innermost last (spec §7.3). A standalone expression
+    /// statement is offered to the top scope's sink; an empty stack means no
+    /// interception at all.
+    build_scopes: std.ArrayList(lower_build_block.Scope) = .empty,
     target_type: ?TypeId = null, // target type for struct/enum literals without explicit names
     /// Synthetic call-default roots keyed by node identity. Unlike caller-owned
     /// comptime substitutions (which also carry `Node.source_file`), a declared
@@ -924,6 +933,10 @@ pub const Lowering = struct {
         narrowed: std.StringHashMap(void),
         narrowed_refs: std.AutoHashMap(Ref, void),
         xx_passthrough_refs: std.AutoHashMap(Ref, void),
+        break_target: ?BlockId,
+        continue_target: ?BlockId,
+        loop_defer_base: usize,
+        build_scopes: std.ArrayList(lower_build_block.Scope),
 
         pub fn enter(l: *Lowering) FnBodyReentry {
             const g = FnBodyReentry{
@@ -947,10 +960,20 @@ pub const Lowering = struct {
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
                 .xx_passthrough_refs = l.xx_passthrough_refs,
+                // Loop targets and build replays are lexical to one body for
+                // the same reasons `NestedBodyGuard` states.
+                .break_target = l.break_target,
+                .continue_target = l.continue_target,
+                .loop_defer_base = l.loop_defer_base,
+                .build_scopes = l.build_scopes,
             };
             l.narrowed = std.StringHashMap(void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.xx_passthrough_refs = std.AutoHashMap(Ref, void).init(l.alloc);
+            l.break_target = null;
+            l.continue_target = null;
+            l.loop_defer_base = 0;
+            l.build_scopes = .empty;
             // The `#jni_env` Ref stack is lexical to ONE function's instruction
             // stream; move the visible base to the current top. Pack-fn mono
             // state is likewise lexical to the pack-fn body — null it so a
@@ -988,38 +1011,74 @@ pub const Lowering = struct {
             l.narrowed_refs = g.narrowed_refs;
             l.xx_passthrough_refs.deinit();
             l.xx_passthrough_refs = g.xx_passthrough_refs;
+            l.break_target = g.break_target;
+            l.continue_target = g.continue_target;
+            l.loop_defer_base = g.loop_defer_base;
+            l.build_scopes.deinit(l.alloc);
+            l.build_scopes = g.build_scopes;
         }
     };
 
-    /// Save + clear + restore JUST the flow-narrowing state (issue 0179) around
-    /// a nested body lowering that does NOT go through `FnBodyReentry` —
-    /// closure literals, generic/pack/comptime monomorphization. Each lowers a
-    /// SEPARATE function whose `Ref` space (reset by `beginFunction`) OVERLAPS
-    /// the outer function's, so the outer `narrowed_refs` indices would falsely
-    /// match the nested body's `Ref`s and permit an UNSOUND unwrap of a
-    /// non-present optional. Clearing on entry isolates the nested body (it
-    /// builds its own narrowing from scratch); restore re-arms the outer.
-    pub const NarrowGuard = struct {
+    /// Save + clear + restore the state that is lexical to ONE function body,
+    /// around a nested body lowering that does NOT go through `FnBodyReentry` —
+    /// closure literals, generic/pack/comptime monomorphization, synthesized
+    /// stubs. Each lowers a SEPARATE function, so none of the enclosing body's
+    /// per-body state may be visible inside it:
+    ///
+    /// - flow narrowing (issue 0179): the nested body's `Ref` space (reset by
+    ///   `beginFunction`) OVERLAPS the outer function's, so the outer
+    ///   `narrowed_refs` indices would falsely match and permit an UNSOUND
+    ///   unwrap of a non-present optional;
+    /// - loop targets: `break_target` / `continue_target` name BASIC BLOCKS of
+    ///   the enclosing function. A `break` in the nested body would branch
+    ///   across a function boundary, and any rule reading "am I inside a loop?"
+    ///   — the `@Init` write-once check — would answer for the wrong body;
+    /// - build replays: a `@BuildBlock` scope intercepts expression statements
+    ///   of ITS OWN block only (spec §7.2), never of a function lowered while
+    ///   that replay happens to be on the stack.
+    pub const NestedBodyGuard = struct {
         l: *Lowering,
         narrowed: std.StringHashMap(void),
         narrowed_refs: std.AutoHashMap(Ref, void),
         xx_passthrough_refs: std.AutoHashMap(Ref, void),
+        break_target: ?BlockId,
+        continue_target: ?BlockId,
+        loop_defer_base: usize,
+        build_scopes: std.ArrayList(lower_build_block.Scope),
 
-        pub fn enter(l: *Lowering) NarrowGuard {
-            const g = NarrowGuard{ .l = l, .narrowed = l.narrowed, .narrowed_refs = l.narrowed_refs, .xx_passthrough_refs = l.xx_passthrough_refs };
+        pub fn enter(l: *Lowering) NestedBodyGuard {
+            const g = NestedBodyGuard{
+                .l = l,
+                .narrowed = l.narrowed,
+                .narrowed_refs = l.narrowed_refs,
+                .xx_passthrough_refs = l.xx_passthrough_refs,
+                .break_target = l.break_target,
+                .continue_target = l.continue_target,
+                .loop_defer_base = l.loop_defer_base,
+                .build_scopes = l.build_scopes,
+            };
             l.narrowed = std.StringHashMap(void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.xx_passthrough_refs = std.AutoHashMap(Ref, void).init(l.alloc);
+            l.break_target = null;
+            l.continue_target = null;
+            l.loop_defer_base = 0;
+            l.build_scopes = .empty;
             return g;
         }
 
-        pub fn restore(g: NarrowGuard) void {
+        pub fn restore(g: NestedBodyGuard) void {
             g.l.narrowed.deinit();
             g.l.narrowed = g.narrowed;
             g.l.narrowed_refs.deinit();
             g.l.narrowed_refs = g.narrowed_refs;
             g.l.xx_passthrough_refs.deinit();
             g.l.xx_passthrough_refs = g.xx_passthrough_refs;
+            g.l.break_target = g.break_target;
+            g.l.continue_target = g.continue_target;
+            g.l.loop_defer_base = g.loop_defer_base;
+            g.l.build_scopes.deinit(g.l.alloc);
+            g.l.build_scopes = g.build_scopes;
         }
     };
 
@@ -1887,6 +1946,14 @@ pub const Lowering = struct {
     }
 
     pub fn emitError(self: *Lowering, name: []const u8, span: ?ast.Span) Ref {
+        // A `@BuildBlock(P)` parameter has no value to resolve TO — it names a
+        // block body, not storage. Every way of reaching for one (binding it,
+        // passing it on, returning it, calling it) arrives here, so this is the
+        // one place the refusal has to be stated.
+        if (self.buildBlockBinding(name) != null) {
+            self.rejectBuildBlockValue(name, span orelse .{ .start = 0, .end = 0 });
+            return self.emitPlaceholder(name);
+        }
         if (self.diagnostics) |diags| {
             // The literal message carries the lowering's `current_source_file`
             // and enclosing function name. The diagnostic renderer's
@@ -3421,4 +3488,12 @@ pub const Lowering = struct {
     pub const lowerInitWrite = lower_init_plan.lowerInitWrite;
     pub const rejectInitBinding = lower_init_plan.rejectInitBinding;
     pub const rejectInitCapture = lower_init_plan.rejectInitCapture;
+
+    // --- lower/build_block.zig (`@BuildBlock(P)`) ---
+    pub const bindBuildBlockParam = lower_build_block.bindParam;
+    pub const buildBlockBinding = lower_build_block.lookup;
+    pub const lowerBuildBlockRun = lower_build_block.lowerRun;
+    pub const interceptBuildExpression = lower_build_block.interceptExpression;
+    pub const rejectBuildBlockValue = lower_build_block.rejectValueUse;
+    pub const appendIntField = lower_build_block.appendIntField;
 };

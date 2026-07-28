@@ -13,6 +13,7 @@ const ProtocolMethodInfo = program_index_mod.ProtocolMethodInfo;
 const GlobalInfo = program_index_mod.GlobalInfo;
 const CallResolver = @import("../calls.zig").CallResolver;
 const init_plan = @import("init_plan.zig");
+const build_block = @import("build_block.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -789,6 +790,19 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         if (std.mem.eql(u8, fa.field, init_plan.write_method)) {
             if (self.initTargetOf(self.inferExprType(fa.object))) |target|
                 return self.lowerInitWrite(target, fa.object, c.args, c.callee.span);
+        }
+        // `content.run(*sink)` — same rule for the build block's one operation.
+        // The receiver is a compile-time binding, not a value, so no ordinary
+        // receiver path can resolve it.
+        if (fa.object.data == .identifier) {
+            const block_name = fa.object.data.identifier.name;
+            if (self.buildBlockBinding(block_name)) |binding| {
+                if (!std.mem.eql(u8, fa.field, build_block.run_method)) {
+                    self.rejectBuildBlockValue(block_name, c.callee.span);
+                    return Ref.none;
+                }
+                return self.lowerBuildBlockRun(binding, c.args, c.callee.span);
+            }
         }
     }
 
@@ -4390,6 +4404,27 @@ pub fn mapNamedArgs(
                     continue;
                 }
                 const pty = self.resolveDeclParamType(fd, last);
+                // Dual bind (spec §7.1): a `@BuildBlock(P)` last parameter makes
+                // the SAME source block a build block instead of a closure. The
+                // block is zero-param by construction, and the accepting call is
+                // inlined, so the lambda is bound as the block's body rather
+                // than lowered — no closure shape to check here.
+                if (self.module.types.buildProtocol(pty) != null) {
+                    if (last < pos) {
+                        errored = true;
+                        if (self.diagnostics) |d|
+                            d.addFmt(.err, a.span, "parameter '{s}' is bound both by a positional argument and by the trailing block", .{p.name});
+                        continue;
+                    }
+                    if (slots[last] != null) {
+                        errored = true;
+                        if (self.diagnostics) |d|
+                            d.addFmt(.err, a.span, "parameter '{s}' is bound both by a named argument and by the trailing block", .{p.name});
+                        continue;
+                    }
+                    slots[last] = tb.lambda;
+                    continue;
+                }
                 const closure_ty: TypeId = blk: {
                     if (!pty.isBuiltin()) {
                         const info = self.module.types.get(pty);
@@ -4404,8 +4439,10 @@ pub fn mapNamedArgs(
                 };
                 if (closure_ty == .unresolved) {
                     errored = true;
-                    if (self.diagnostics) |d|
-                        d.addFmt(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '{s}' is not a `Closure`", .{ callee_name, p.name });
+                    if (self.diagnostics) |d| {
+                        const id = d.addFmtId(.err, a.span, "'{s}' cannot take a trailing block — its last parameter '{s}' is '{s}', which is neither a `Closure` nor a `@BuildBlock(P)`", .{ callee_name, p.name, self.formatTypeName(pty) });
+                        d.addHelpFmt(id, a.span, null, "declare '{s}' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block", .{p.name});
+                    }
                     continue;
                 }
                 if (self.module.types.get(closure_ty).closure.params.len != 0) {

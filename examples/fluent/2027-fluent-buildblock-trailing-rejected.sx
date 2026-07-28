@@ -1,0 +1,23 @@
+// A trailing block binds the callee's LAST declared parameter, and that
+// parameter must be able to receive one: a `Closure()` or a `@BuildBlock(P)`
+// (fluent spec §7.1). Any other type is refused, naming the parameter.
+//
+// A build block also cannot be written as a value argument — it is formed FROM
+// the block body, so there is nothing else to pass.
+// Expected: exit 1.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+plain :: (a: i64, b: i64) -> i64 { a + b }
+
+column :: (content: @BuildBlock(Drawable)) { }
+
+main :: () -> i32 {
+    _ = plain(1, 2) { 3; };   // refused: 'b' receives neither form
+    column(7);                // refused: a block is not a value argument
+    0
+}

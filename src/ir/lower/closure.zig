@@ -38,8 +38,8 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     // (unsound unwrap of a captured-but-not-proven-present optional). The body
     // builds its own narrowing from scratch; the outer state is restored on
     // return (re-arming narrowing for the rest of the enclosing expression).
-    var narrow_guard = Lowering.NarrowGuard.enter(self);
-    defer narrow_guard.restore();
+    var nested_guard = Lowering.NestedBodyGuard.enter(self);
+    defer nested_guard.restore();
 
     // Lower the lambda body as a new anonymous function
     var buf: [64]u8 = undefined;

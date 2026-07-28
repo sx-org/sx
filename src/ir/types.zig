@@ -207,6 +207,15 @@ pub const TypeInfo = union(enum) {
         /// DISTINCT from an ordinary `Closure(*T)` (so neither converts to the
         /// other) and drives the formation / write-once / escape rules.
         init_target: ?TypeId = null,
+        /// Non-null makes this the compiler-formed `@BuildBlock(P)` (spec §7):
+        /// the trailing block a build-accepting function receives, whose
+        /// standalone expressions conforming to `P` are offered to a sink. A
+        /// build block is a COMPILE-TIME value — its body binds as an AST node
+        /// and replays at `run`, so it has no runtime representation at all.
+        /// The empty closure shape (`params = []`, `ret = void`) exists only so
+        /// the parameter has a nameable, printable, interned type; the marker is
+        /// what every consumer classifies on.
+        build_protocol: ?TypeId = null,
     };
 
     pub const OptionalInfo = struct {
@@ -906,6 +915,22 @@ pub const TypeTable = struct {
         return info.closure.init_target;
     }
 
+    /// `@BuildBlock(protocol)` — the trailing block a build-accepting function
+    /// receives (spec §7). Compile-time only; the empty closure shape carries
+    /// no runtime value.
+    pub fn buildBlockType(self: *TypeTable, protocol: TypeId) TypeId {
+        return self.intern(.{ .closure = .{ .params = &.{}, .ret = .void, .build_protocol = protocol } });
+    }
+
+    /// The `P` of an `@BuildBlock(P)`, or null for any other type. THE single
+    /// build-block classifier.
+    pub fn buildProtocol(self: *const TypeTable, ty: TypeId) ?TypeId {
+        if (ty.isBuiltin()) return null;
+        const info = self.get(ty);
+        if (info != .closure) return null;
+        return info.closure.build_protocol;
+    }
+
     pub fn closureTypePack(self: *TypeTable, params: []const TypeId, ret: TypeId, pack_start: u32) TypeId {
         const owned_params = self.slice_arena.allocator().dupe(TypeId, params) catch unreachable;
         return self.intern(.{ .closure = .{ .params = owned_params, .ret = ret, .pack_start = pack_start } });
@@ -1318,6 +1343,9 @@ pub const TypeTable = struct {
                 if (co.init_target) |it| {
                     break :blk std.fmt.allocPrint(alloc, "@Init({s})", .{self.formatTypeName(alloc, it)}) catch "@Init(?)";
                 }
+                if (co.build_protocol) |bp| {
+                    break :blk std.fmt.allocPrint(alloc, "@BuildBlock({s})", .{self.formatTypeName(alloc, bp)}) catch "@BuildBlock(?)";
+                }
                 var buf = std.ArrayList(u8).empty;
                 defer buf.deinit(alloc);
                 buf.appendSlice(alloc, "Closure(") catch break :blk "Closure(?)";
@@ -1419,6 +1447,7 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
             h.update(&.{pack_present});
             if (c.pack_start) |ps| h.update(std.mem.asBytes(&ps));
             if (c.init_target) |it| h.update(std.mem.asBytes(&it));
+            if (c.build_protocol) |bp| h.update(std.mem.asBytes(&bp));
         },
         // Nominal arms key by display name; `nominal_id` joins the key only when
         // nonzero, so structural (legacy) interning hashes byte-identically.
@@ -1490,6 +1519,8 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
             if (c.pack_start) |cp| if (cp != d.pack_start.?) return false;
             if ((c.init_target == null) != (d.init_target == null)) return false;
             if (c.init_target) |ct| if (ct != d.init_target.?) return false;
+            if ((c.build_protocol == null) != (d.build_protocol == null)) return false;
+            if (c.build_protocol) |cb| if (cb != d.build_protocol.?) return false;
             return c.ret == d.ret;
         },
         // Nominal arms compare display name + nominal id. With both ids 0 this is

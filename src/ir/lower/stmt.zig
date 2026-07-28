@@ -495,6 +495,13 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
         },
         // Expression statement
         else => {
+            // Inside a `@BuildBlock(P)` replay, a standalone expression whose
+            // type conforms to `P` is the block's payload: it is offered to the
+            // sink as an `@Init(V)` instead of being evaluated here (spec §7.2).
+            // Every other statement form reached one of the arms above, which is
+            // exactly why a declaration, an assignment (`_ = e` included), and a
+            // `return` are never intercepted — their value belongs to them.
+            if (self.interceptBuildExpression(node)) return;
             const v = self.lowerExpr(node);
             // A statement-position expression that DIVERGES — a call to a
             // `-> noreturn` fn such as `proc.exit` — ends the basic block. A

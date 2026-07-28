@@ -68,12 +68,13 @@ pub const Parser = struct {
     /// locals, never module scope.
     in_module_expansion: bool = false,
     /// True for exactly one `parseTypeExpr` call: the TOP-LEVEL annotation of a
-    /// declared parameter. A compiler-formed `@Init(T)` is legal only there —
-    /// it is a nonescaping value that cannot be stored, returned, or nested
-    /// inside another type. `parseTypeExpr` consumes and clears the flag on
-    /// entry, so every recursive element position (`*@Init(T)`, `[]@Init(T)`,
-    /// a struct field, a return type) rejects it.
-    init_type_allowed: bool = false,
+    /// declared parameter. A compiler-formed type (`@Init(T)`, `@BuildBlock(P)`)
+    /// is legal only there — each is a nonescaping value that cannot be stored,
+    /// returned, or nested inside another type. `parseTypeExpr` consumes and
+    /// clears the flag on entry, so every recursive element position
+    /// (`*@Init(T)`, `[]@BuildBlock(P)`), struct field, and return type rejects
+    /// it.
+    compiler_type_allowed: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, source: [:0]const u8) Parser {
         var lexer = Lexer.init(source);
@@ -547,15 +548,15 @@ pub const Parser = struct {
 
     fn parseTypeExpr(self: *Parser) anyerror!*Node {
         const start = self.current.loc.start;
-        // Only the immediate call sees the `@Init` permission; every nested
-        // element position below resolves with it cleared.
-        const init_type_allowed = self.init_type_allowed;
-        self.init_type_allowed = false;
+        // Only the immediate call sees the `@` permission; every nested element
+        // position below resolves with it cleared.
+        const compiler_type_allowed = self.compiler_type_allowed;
+        self.compiler_type_allowed = false;
 
-        // Compiler-formed type: `@Init(T)`. The `@` name is not an identifier,
-        // so this is the one place the grammar accepts it.
+        // Compiler-formed type: `@Init(T)` / `@BuildBlock(P)`. The `@` name is
+        // not an identifier, so this is the one place the grammar accepts it.
         if (self.current.tag == .at_identifier) {
-            return self.parseCompilerFormedType(start, init_type_allowed);
+            return self.parseCompilerFormedType(start, compiler_type_allowed);
         }
 
         // Error channel type: bare `!` (inferred set) or `!Named` (named set).
@@ -956,27 +957,45 @@ pub const Parser = struct {
         return self.fail("expected type name");
     }
 
-    /// `@Init(T)` — a compiler-formed type (spec §4). The `@` names are a closed
-    /// compiler-owned set: a module may spell one in a parameter type but can
-    /// never declare another, because `at_identifier` is accepted nowhere else.
-    /// Lowers to the ordinary `parameterized_type_expr` carrying the `@` name,
-    /// so generic binding / substitution reuse the parameterized-head paths.
+    /// The compiler-formed types (spec §4): `@Init(T)` and `@BuildBlock(P)`. The
+    /// `@` names are a closed compiler-owned set — a module may spell one in a
+    /// parameter type but can never declare another, because `at_identifier` is
+    /// accepted nowhere else. Each lowers to the ordinary
+    /// `parameterized_type_expr` carrying the `@` name, so generic binding /
+    /// substitution reuse the parameterized-head paths.
+    /// Each entry is the `@` name and how it is SPELLED in a diagnostic — the
+    /// name alone would read as an incomplete type.
+    pub const compiler_formed_types = [_]struct { name: []const u8, spelling: []const u8 }{
+        .{ .name = "@Init", .spelling = "@Init(T)" },
+        .{ .name = "@BuildBlock", .spelling = "@BuildBlock(P)" },
+    };
+
     fn parseCompilerFormedType(self: *Parser, start: u32, allowed: bool) anyerror!*Node {
         const name_tok = self.current;
         const name = self.tokenSlice(name_tok);
         self.advance();
-        if (!std.mem.eql(u8, name, "@Init")) {
+        const spelling = for (compiler_formed_types) |t| {
+            if (std.mem.eql(u8, name, t.name)) break t.spelling;
+        } else {
             return self.failAt(name_tok.loc, try std.fmt.allocPrint(
                 self.allocator,
-                "unknown compiler-formed type '{s}' — the only one is '@Init(T)'",
+                "unknown compiler-formed type '{s}' — the only ones are '@Init(T)' and '@BuildBlock(P)'",
                 .{name},
             ));
-        }
+        };
         if (!allowed) {
-            return self.failAt(name_tok.loc, "'@Init(T)' may only be written as a parameter type: it is a nonescaping value that cannot be stored in a field, returned, or nested inside another type");
+            return self.failAt(name_tok.loc, try std.fmt.allocPrint(
+                self.allocator,
+                "'{s}' may only be written as a parameter type: it is a nonescaping value that cannot be stored in a field, returned, or nested inside another type",
+                .{spelling},
+            ));
         }
         if (self.current.tag != .l_paren) {
-            return self.fail("'@Init' needs its target type: write '@Init(T)'");
+            return self.failAt(name_tok.loc, try std.fmt.allocPrint(
+                self.allocator,
+                "'{s}' needs its type argument: write '{s}'",
+                .{ name, spelling },
+            ));
         }
         self.advance(); // skip '('
         const target = try self.parseTypeExpr();
@@ -1449,6 +1468,10 @@ pub const Parser = struct {
                 try param_name_is_raw.append(self.allocator, self.current.is_raw);
                 self.advance();
                 try self.expect(.colon);
+                // A protocol method declares parameters like any other function,
+                // so a compiler-formed `@` type is legal here too — `BuildSink`'s
+                // `value: @Init($V/P)` is the requirement it exists to state.
+                self.compiler_type_allowed = true;
                 const ptype = try self.parseTypeExpr();
                 try param_names.append(self.allocator, pname);
                 try param_types.append(self.allocator, ptype);
@@ -2123,10 +2146,16 @@ pub const Parser = struct {
                 continue;
             }
             self.advance(); // consume ':'
-            // A parameter annotation is the one position `@Init(T)` may occupy.
-            self.init_type_allowed = true;
+            // A parameter annotation is the one position a compiler-formed `@`
+            // type may occupy.
+            self.compiler_type_allowed = true;
             const param_type = try self.parseTypeExpr();
-            var is_comptime_param = false;
+            // A `@BuildBlock(P)` parameter is a COMPILE-TIME parameter: its
+            // argument is the trailing block's body, bound as an AST node and
+            // replayed by `run`, never lowered into a runtime closure value.
+            // Marking it here routes every call through the existing inline
+            // (comptime) dispatch, which is exactly the binding the block needs.
+            var is_comptime_param = isBuildBlockType(param_type);
             if (is_ct_param and param_type.data == .type_expr) {
                 const constraint_name = param_type.data.type_expr.name;
                 if (std.mem.eql(u8, constraint_name, "Type")) {
@@ -2172,6 +2201,12 @@ pub const Parser = struct {
         return try params.toOwnedSlice(self.allocator);
     }
 
+    /// True for a `@BuildBlock(P)` parameter annotation.
+    pub fn isBuildBlockType(node: *const Node) bool {
+        return node.data == .parameterized_type_expr and
+            std.mem.eql(u8, node.data.parameterized_type_expr.name, "@BuildBlock");
+    }
+
     /// Recursively find all generic type names ($T) in a type expression tree.
     fn collectGenericNames(node: *Node, list: *std.ArrayList([]const u8), allocator: std.mem.Allocator) void {
         switch (node.data) {
@@ -2210,6 +2245,10 @@ pub const Parser = struct {
         var type_params = std.ArrayList(ast.StructTypeParam).empty;
         var seen = std.StringHashMap(void).init(self.allocator);
         for (params) |param| {
+            // A `@BuildBlock(P)` param is comptime but is NOT a type parameter:
+            // it binds a block body, not a type. Listing it would make
+            // `isTypeParamDecl` claim its argument slot everywhere.
+            if (isBuildBlockType(param.type_expr)) continue;
             if (param.is_comptime) {
                 if (!seen.contains(param.name)) {
                     try seen.put(param.name, {});

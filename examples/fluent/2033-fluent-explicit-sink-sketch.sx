@@ -1,0 +1,90 @@
+// Library sketch: an EXPLICIT, caller-owned sink (fluent spec §9.5, §12.2,
+// §12.3).
+//
+// The block is nonescaping; what it produces need not be. Here the caller names
+// the arena and the sink, so the captured tree outlives the `capture(...)` call
+// and is walked and released on the caller's terms. Nothing was promoted to
+// compiler-chosen heap: every allocation went through storage the caller named.
+//
+// This is also the second half of §9.5 — there is no ambient sink. `run` takes
+// one explicitly, so "capture into this arena" and "count into this tally" are
+// two ordinary calls over one block, and a library never has to reach for a
+// global to learn where it is emitting.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+#import "modules/fluent.sx";
+
+View :: protocol tagged {
+    label :: (self: *Self) -> string;
+}
+
+Text :: struct { body: string = ""; }
+impl View for Text {
+    label :: (self: *Text) -> string => self.body;
+}
+
+Spacer :: struct { size: i32 = 0; }
+impl View for Spacer {
+    label :: (self: *Spacer) -> string => "<spacer>";
+}
+
+// The sink holds the storage it was GIVEN, plus the handles borrowing it.
+Roots :: struct {
+    storage: Allocator;
+    items: List(View) = .{};
+
+    expression :: (self: *Roots, site: BuildSite, value: @Init($V/View)) {
+        destination := self.storage.create(V);
+        value.write(destination);
+        handle : View = destination;
+        self.items.append(handle);
+    }
+}
+
+// A second sink over the same block: counts, never writes, so nothing is built.
+Tally :: struct {
+    n: i32 = 0;
+    expression :: (self: *Tally, site: BuildSite, value: @Init($V/View)) { self.n += 1; }
+}
+
+capture :: (into: *Roots, content: @BuildBlock(View)) {
+    content.run(into);
+}
+
+count :: (into: *Tally, content: @BuildBlock(View)) {
+    content.run(into);
+}
+
+main :: () -> i32 {
+    arena := Arena.init(context.allocator, 512);
+    roots := Roots.{ storage = xx arena };
+    rows := .["one", "two"];
+
+    capture(*roots) {
+        for rows (row) {
+            Text.{ body = row };
+        }
+        Spacer.{ size = 8 };
+    };
+
+    // The block is long gone; the captured tree is the caller's.
+    for roots.items.items (item) { print("root {}\n", item.label()); }
+    print("roots {}\n", roots.items.len);
+    roots.items.deinit();
+    arena.deinit();
+
+    tally := Tally.{};
+    count(*tally) {
+        Text.{ body = "never built" };
+        Spacer.{ size = 1 };
+    };
+    print("counted {} without building any of them\n", tally.n);
+    0
+}
+
+// ** stdout **
+// root one
+// root two
+// root <spacer>
+// roots 3
+// counted 2 without building any of them

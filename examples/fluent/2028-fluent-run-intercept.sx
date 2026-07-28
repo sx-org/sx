@@ -1,0 +1,77 @@
+// `content.run(*sink)` and the interception rule (fluent spec §7.2, §9).
+//
+// `run` replays the block body once. A statement is intercepted when it is a
+// STANDALONE expression statement whose static type conforms to `P`. Everything
+// else keeps its ordinary meaning, because its value already belongs to some
+// other construct:
+//
+//   local := e     the value is bound to a name
+//   target = e     the value is assigned
+//   _ = e          the source asked to discard it
+//   f(e)           the argument belongs to the call
+//   return e       the value belongs to the return
+//   42             does not conform to `P`
+//
+// The compiler never looks at what a call is NAMED. Only statement role,
+// ordinary type, conformance, and lexical scope matter.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+Echo :: struct {
+    n: i32 = 0;
+
+    expression :: (self: *Echo, site: BuildSite, value: @Init($V/Drawable)) {
+        dest := context.allocator.create(V);
+        value.write(dest);
+        print("  reached {}\n", dest.draw());
+        self.n += 1;
+        context.allocator.destroy(dest);
+    }
+}
+
+// A plain call whose RESULT conforms is eligible: eligibility is the type, not
+// the spelling.
+make :: (text: string) -> Label => Label.{ text = text };
+
+consume :: (l: Label) -> i32 => 0;
+
+column :: (content: @BuildBlock(Drawable)) -> i32 {
+    sink := Echo.{};
+    content.run(*sink);
+    sink.n
+}
+
+main :: () -> i32 {
+    slot := Label.{ text = "slot" };
+
+    n := column() {
+        Label.{ text = "standalone literal" };
+        make("standalone call");
+
+        bound := Label.{ text = "bound" };
+        slot = Label.{ text = "assigned" };
+        _ = Label.{ text = "discarded" };
+        _ = consume(Label.{ text = "argument" });
+        42;
+
+        print("  bound={} slot={}\n", bound.draw(), slot.draw());
+    };
+
+    print("  reached {} expression(s)\n", n);
+    0
+}
+
+// ** stdout **
+//   reached standalone literal
+//   reached standalone call
+//   bound=bound slot=assigned
+//   reached 2 expression(s)

@@ -1,0 +1,96 @@
+// `BuildSink(P)` is an ordinary constraint protocol, and `expression` is an
+// ordinary generic method (fluent spec §6.3, §9.1, §9.5).
+//
+//     BuildSink :: protocol(P: Type) constraint {
+//         expression :: (self: *Self, site: BuildSite, value: @Init($V/P));
+//     }
+//
+// The compiler does not erase the reached expression before offering it. It
+// instantiates `expression` for each concrete `V`, so the sink sees `size_of(V)`,
+// `align_of(V)`, and `V`'s own methods, and reserves storage for the exact type
+// before anything is built. Erasure — when a sink wants it — happens AFTER the
+// destination is initialized, which is why the handle is a borrow of the stored
+// value rather than a copy of it.
+//
+// There is no compiler-global "current sink" either: `run` takes the sink
+// explicitly, so the same block observed twice is just two ordinary calls.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol tagged {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+Rule :: struct { width: i32 = 0; }
+impl Drawable for Rule {
+    draw :: (self: *Rule) -> string => "----";
+}
+
+// Sink 1 — measures. It never writes, so no reached expression is evaluated at
+// all: a sink that returns without writing declines the value (§6.5).
+Measure :: struct {
+    bytes: i64 = 0;
+    count: i32 = 0;
+
+    expression :: (self: *Measure, site: BuildSite, value: @Init($V/Drawable)) {
+        self.bytes += size_of(V);
+        self.count += 1;
+    }
+}
+impl BuildSink(Drawable) for Measure {
+    expression :: (self: *Measure, site: BuildSite, value: @Init($V/Drawable)) {
+        self.bytes += size_of(V);
+        self.count += 1;
+    }
+}
+
+// Sink 2 — retains. Reserve `V`, write into it, THEN erase the stored value to a
+// handle; the concrete storage stays alive behind it.
+Capture :: struct {
+    items: List(Drawable) = .{};
+
+    expression :: (self: *Capture, site: BuildSite, value: @Init($V/Drawable)) {
+        destination := context.allocator.create(V);
+        value.write(destination);
+        handle : Drawable = destination;
+        self.items.append(handle);
+    }
+}
+impl BuildSink(Drawable) for Capture {
+    expression :: (self: *Capture, site: BuildSite, value: @Init($V/Drawable)) {
+        destination := context.allocator.create(V);
+        value.write(destination);
+        handle : Drawable = destination;
+        self.items.append(handle);
+    }
+}
+
+column :: (content: @BuildBlock(Drawable)) {
+    sized := Measure.{};
+    content.run(*sized);
+    print("measured {} expression(s), {} bytes of storage\n", sized.count, sized.bytes);
+
+    kept := Capture.{};
+    content.run(*kept);
+    for kept.items.items (item) { print("kept {}\n", item.draw()); }
+}
+
+main :: () -> i32 {
+    print("size_of(Label)={} size_of(Rule)={}\n", size_of(Label), size_of(Rule));
+    column() {
+        Label.{ text = "hello" };
+        Rule.{ width = 4 };
+    };
+    0
+}
+
+// ** stdout **
+// size_of(Label)=16 size_of(Rule)=4
+// measured 2 expression(s), 20 bytes of storage
+// kept hello
+// kept ----

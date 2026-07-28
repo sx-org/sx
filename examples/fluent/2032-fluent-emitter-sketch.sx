@@ -1,0 +1,90 @@
+// Library sketch: an EMITTER. Nothing is retained — each reached expression is
+// built into frame scratch, rendered, and dropped before `expression` returns
+// (fluent spec §6.4, §13.1).
+//
+// This is a sketch, not a standard-library product: `emit` / `rule` / `pad` are
+// this file's own helpers, and `Ascii` is this file's own sink. The language
+// contributes exactly two things — that a standalone conforming expression in
+// the block becomes a handshake, and that the handshake hands over an
+// `@Init(V)` so the sink chooses the storage first.
+//
+// Note what the emitter does NOT need: no allocator, no list, no erasure, no
+// identity table. A sink that renders immediately needs none of them, and the
+// same block would drive a retaining sink without changing a character.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Cell :: protocol constraint {
+    render :: (self: *Self, out: *Ascii);
+}
+
+// Frame scratch: one reusable buffer, big enough for any `Cell` this file has.
+Scratch :: struct {
+    bytes: [64]u8 = .{};
+
+    // The destination for a `V`, as a `*V` into the buffer. `create` on an
+    // allocator would do the same thing with a heap round-trip the emitter
+    // never needs.
+    slot :: (self: *Scratch, $V: Type) -> *V {
+        xx *self.bytes[0]
+    }
+}
+
+Ascii :: struct {
+    indent: i32 = 0;
+    scratch: Scratch = .{};
+
+    // The one method `BuildSink(Cell)` requires. `V` is concrete here, so the
+    // reservation is exact and `V`'s own `render` is a static call.
+    expression :: (self: *Ascii, site: BuildSite, value: @Init($V/Cell)) {
+        destination := self.scratch.slot(V);
+        value.write(destination);
+        destination.render(self);
+    }
+
+    write :: (self: *Ascii, text: string) {
+        for 0..self.indent (i) { print("  "); }
+        print("{}\n", text);
+    }
+}
+
+Text :: struct { body: string = ""; }
+impl Cell for Text {
+    render :: (self: *Text, out: *Ascii) { out.write(self.body); }
+}
+
+Divider :: struct { glyph: string = "-"; }
+impl Cell for Divider {
+    render :: (self: *Divider, out: *Ascii) { out.write("-----"); }
+}
+
+// This file's emit helpers — the "emitter API" a caller writes against.
+emit :: (title: string, content: @BuildBlock(Cell)) {
+    out := Ascii.{};
+    out.write(title);
+    out.indent += 1;
+    content.run(*out);
+}
+
+main :: () -> i32 {
+    show_divider := true;
+    lines := .["first", "second"];
+
+    emit("report") {
+        for lines (line) {
+            Text.{ body = line };
+        }
+        if show_divider {
+            Divider.{};
+        }
+        Text.{ body = "done" };
+    };
+    0
+}
+
+// ** stdout **
+// report
+//   first
+//   second
+//   -----
+//   done

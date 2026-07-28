@@ -89,6 +89,8 @@ pub const GenericResolver = struct {
             },
             .closure => |c| if (c.init_target) |it|
                 std.fmt.allocPrint(self.l.alloc, "init_{s}", .{self.mangleTypeName(it)}) catch @panic("out of memory while mangling type")
+            else if (c.build_protocol) |bp|
+                std.fmt.allocPrint(self.l.alloc, "block_{s}", .{self.mangleTypeName(bp)}) catch @panic("out of memory while mangling type")
             else
                 self.mangleParamList("cl", c.params, c.ret),
             .function => |f| self.mangleParamList("fn", f.params, f.ret),
