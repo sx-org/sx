@@ -4182,13 +4182,14 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   on the next line is an ordinary scope block statement, never a trailing
   block.
 - **Empty block**: same-line empty `{}` (and comment-only bodies) after a call
-  is a **trailing block** unless every argument is type-shaped (identifiers /
-  field paths / nested type apps), in which case it is a parameterized named
-  aggregate: `List(i64){}`, `Sink(View){}`, `map.HashMap(K, V){}`. Value
-  arguments (`run(2) {}`, `Group(n) {}`) always take the trailing-block
-  reading. A body with statements, `;`, or control keywords is always a
-  trailing block. Zero-arg `f() {}` is always trailing (`T{}` covers empty
-  non-parameterized aggregates).
+  is a **trailing block** unless every argument looks like a **type** — either
+  a PascalCase name, a nested type app, or a lowercase builtin scalar
+  (`i64`, `string`, `bool`, …) — in which case it is a parameterized named
+  aggregate: `List(i64){}`, `Sink(View){}`, `map.HashMap(K, V){}`. Ordinary
+  value arguments always take the trailing-block reading: `run(2) {}`,
+  `Group(n) {}`, `run(x.y) {}`. A body with statements, `;`, or control
+  keywords is always a trailing block. Zero-arg `f() {}` is always trailing
+  (`T{}` covers empty non-parameterized aggregates).
 - **Header position**: inside an `if`/`while`/`for` header the form is
   disabled — `{` terminates the condition and opens the statement body;
   bind the closure explicitly there.

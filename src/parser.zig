@@ -3033,9 +3033,9 @@ pub const Parser = struct {
                     // Same-line `{` after a call: trailing block OR parameterized
                     // named aggregate `List(T){…}`. Prefer the aggregate when the
                     // brace body is aggregate-shaped (fields / commas). Empty
-                    // `{}` is an aggregate only when every call arg is
-                    // type-shaped (`List(i64){}`); otherwise trailing
-                    // (`run(2) {}`, `Group(n) {}`).
+                    // `{}` is an aggregate only when every call arg looks like a
+                    // type (`List(i64){}`, `List(Move){}`); value identifiers
+                    // keep the trailing reading (`run(n) {}`, `Group(n) {}`).
                     if (self.braceLooksLikeNamedAggregate(args.items)) {
                         expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                         // Fall through: next postfix iteration takes Type{}.
@@ -4888,12 +4888,34 @@ pub const Parser = struct {
         return !self.in_if_condition and !self.no_trailing_block and !self.in_for_header;
     }
 
-    /// True when a call argument is type-application shaped (name, field path,
-    /// nested type app). Value-shaped args (literals, operators, calls with
-    /// values) force empty `{}` to be a trailing block, not `List(T){}`.
+    /// Builtin / reserved type spellings that are lowercase identifiers in
+    /// value position (`List(i64){}`). User type names are PascalCase.
+    fn identifierLooksLikeTypeName(name: []const u8) bool {
+        if (name.len == 0) return false;
+        if (name[0] >= 'A' and name[0] <= 'Z') return true;
+        // Lowercase scalar / common type words used as type arguments.
+        const builtins = [_][]const u8{
+            "i8",    "i16",   "i32",  "i64",  "i128",
+            "u8",    "u16",   "u32",  "u64",  "u128",
+            "f16",   "f32",   "f64",  "f128",
+            "bool",  "string", "void", "any",  "Type",
+            "usize", "isize", "never", "raw",
+        };
+        for (builtins) |b| {
+            if (std.mem.eql(u8, name, b)) return true;
+        }
+        return false;
+    }
+
+    /// True when a call argument is type-application shaped. Bare lowercase
+    /// identifiers that are not builtin type names are treated as *values*
+    /// so `run(n) {}` stays a trailing block while `List(i64){}` /
+    /// `List(Move){}` stay aggregates.
     fn argLooksLikeTypeArg(expr: *const Node) bool {
         return switch (expr.data) {
-            .identifier, .field_access, .parameterized_type_expr, .type_expr, .tuple_type_expr => true,
+            .identifier => |id| identifierLooksLikeTypeName(id.name),
+            .field_access => |fa| identifierLooksLikeTypeName(fa.field),
+            .parameterized_type_expr, .type_expr, .tuple_type_expr => true,
             .call => |c| blk: {
                 for (c.args) |a| {
                     if (!argLooksLikeTypeArg(a)) break :blk false;
@@ -6328,6 +6350,44 @@ test "parse lowercase parameterized named aggregate list(T){}" {
     const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
     try std.testing.expect(init_expr.data == .struct_literal);
     try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+}
+
+test "parse empty trailing block with identifier value args" {
+    // `run(n) {}` must not be misread as aggregate just because `n` is a name.
+    const source =
+        \\run :: (n: i64, body: Closure()) { body(); }
+        \\main :: () {
+        \\  n := 2;
+        \\  run(n) {}
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[1].data.fn_decl.body;
+    const call = body.data.block.stmts[1];
+    try std.testing.expect(call.data == .call);
+    try std.testing.expectEqual(@as(usize, 2), call.data.call.args.len);
+    try std.testing.expect(call.data.call.args[1].data == .trailing_block);
+}
+
+test "parse empty trailing block with PascalCase callee and identifier arg" {
+    const source =
+        \\Group :: (n: i64, body: Closure()) { body(); }
+        \\main :: () {
+        \\  n := 2;
+        \\  Group(n) {}
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[1].data.fn_decl.body;
+    const call = body.data.block.stmts[1];
+    try std.testing.expect(call.data == .call);
+    try std.testing.expect(call.data.call.args[1].data == .trailing_block);
 }
 
 test "parse rejects separator-dot Type.{}" {
