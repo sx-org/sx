@@ -14,7 +14,24 @@ const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 
+/// Where a capturing closure's environment lives.
+///   `.heap` — the ordinary closure: the value may outlive the forming frame,
+///             so the env is copied to `context.allocator` storage.
+///   `.stack` — a NONESCAPING closure (`@Init(T)`): the env stays in the
+///             forming frame's alloca. Valid only when the value provably
+///             cannot outlive that frame; the compiler never allocates for it
+///             (spec §12.1).
+pub const EnvStorage = enum { heap, stack };
+
 pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
+    return lowerLambdaTyped(self, lam, .heap, null);
+}
+
+/// `lowerLambda` with the two knobs a compiler-formed recipe needs: where the
+/// environment lives, and which type the resulting `{fn_ptr, env}` value
+/// carries. `result_ty` must have the same closure shape the lambda lowers to —
+/// it renames the value (`@Init(V)` instead of `Closure(*V)`), never reshapes it.
+pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: EnvStorage, result_ty: ?TypeId) Ref {
     // Flow narrowing (issue 0179) does NOT cross into the lambda body: the
     // body is a separate function whose `Ref` space overlaps the enclosing
     // function's, so the outer `narrowed_refs` would falsely match body `Ref`s
@@ -407,7 +424,7 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     for (params.items[skip_count..]) |p| {
         param_types_list.append(self.alloc, p.ty) catch unreachable;
     }
-    const closure_ty = self.module.types.closureType(param_types_list.items, ret_ty);
+    const closure_ty = result_ty orelse self.module.types.closureType(param_types_list.items, ret_ty);
 
     // Build env and closure in the caller's scope
     if (capture_list.len > 0) {
@@ -424,11 +441,15 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
             self.builder.store(gep, val);
         }
 
-        // Copy env to heap (so it outlives the stack frame).
-        // Route through `context.allocator.alloc` rather than calling
-        // libc malloc directly so closures respect a surrounding
-        // `push Context.{ allocator = ... }` and a tracker / arena
-        // counts the env allocation alongside everything else.
+        // A nonescaping closure keeps its env where it was built — no copy, no
+        // allocation. Everything else copies the env to heap so the value can
+        // outlive this frame. Route that through `context.allocator.alloc`
+        // rather than libc malloc, so closures respect a surrounding
+        // `push Context.{ allocator = ... }` and a tracker / arena counts the
+        // env allocation alongside everything else.
+        if (env_storage == .stack) {
+            return self.builder.closureCreate(func_id, env_local, closure_ty);
+        }
         const env_byte_size = self.computeEnvSize(capture_list);
         const env_size = self.builder.constInt(@intCast(env_byte_size), .i64);
         const ptr_void = self.module.types.ptrTo(.void);
@@ -640,6 +661,10 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             if (self.scope) |scope| {
                 if (scope.lookupNearest(id.name)) |nearest| switch (nearest) {
                     .binding => |binding| {
+                        // Refused, but still captured: the diagnostic already
+                        // halts before codegen, and binding it keeps the body
+                        // from cascading a second "unresolved" report.
+                        self.rejectInitCapture(binding.ty, id.name, node.span);
                         captures.append(self.alloc, .{
                             .name = id.name,
                             .ty = binding.ty,

@@ -87,7 +87,10 @@ pub const GenericResolver = struct {
                 const inner = self.mangleTypeName(v.element);
                 break :blk std.fmt.allocPrint(self.l.alloc, "vec_{d}_{s}", .{ v.length, inner }) catch @panic("out of memory while mangling type");
             },
-            .closure => |c| self.mangleParamList("cl", c.params, c.ret),
+            .closure => |c| if (c.init_target) |it|
+                std.fmt.allocPrint(self.l.alloc, "init_{s}", .{self.mangleTypeName(it)}) catch @panic("out of memory while mangling type")
+            else
+                self.mangleParamList("cl", c.params, c.ret),
             .function => |f| self.mangleParamList("fn", f.params, f.ret),
             .tuple => |t| blk: {
                 var buf = std.ArrayList(u8).empty;

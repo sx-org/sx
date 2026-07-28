@@ -9,6 +9,7 @@ const program_index_mod = @import("../program_index.zig");
 const resolver_mod = @import("../resolver.zig");
 const StructTemplate = program_index_mod.StructTemplate;
 const GenericResolver = @import("../generics.zig").GenericResolver;
+const init_plan = @import("init_plan.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -733,6 +734,12 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
             }
             break :blk buf.toOwnedSlice(self.alloc) catch "function";
         },
+        // `@Init(T)` renders through the type table's canonical spelling; a
+        // plain closure keeps the historical bare `closure` tag.
+        .closure => |co| if (co.init_target != null)
+            self.module.types.formatTypeName(self.alloc, ty)
+        else
+            @tagName(info),
         else => @tagName(info),
     };
 }
@@ -914,6 +921,15 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
             break :blk null;
         },
         .parameterized_type_expr => |pt| blk: {
+            // `@Init($T)` binds from the argument's ORDINARY type: the recipe is
+            // formed around an expression of type `V`, so `V` is what `$T` sees
+            // (spec §5.1.1). A FORWARDED initializer is the one argument that
+            // already carries an init type — unwrap it to the same `V`.
+            if (std.mem.eql(u8, pt.name, init_plan.type_name)) {
+                if (pt.args.len != 1) break :blk null;
+                const v = self.module.types.initTarget(arg_ty) orelse arg_ty;
+                break :blk self.extractTypeParam(pt.args[0], v, tp_name);
+            }
             // A generic-struct param head (`Box($T)`, also reached recursively
             // for a pointer-wrapped `*Box($T)`): the arg is a monomorphized
             // instance whose per-param bindings were recorded at instantiation
@@ -1964,6 +1980,15 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
         const callee_node = ast.Node{ .data = .{ .identifier = .{ .name = base_name } }, .span = sp };
         const syn = ast.Call{ .callee = @constCast(&callee_node), .args = pt.args };
         return self.resolveTypeCallWithBindings(&syn);
+    }
+
+    // `@Init(T)` — compiler-formed (spec §5). The `@` name reaches here only
+    // from `parseCompilerFormedType`, so there is no user type to shadow it.
+    if (std.mem.eql(u8, pt.name, init_plan.type_name)) {
+        if (pt.args.len != 1) return .unresolved;
+        const target = self.resolveTypeWithBindings(pt.args[0]);
+        if (target == .unresolved) return .unresolved;
+        return table.initPlanType(target);
     }
 
     // Vector(N, T) — built-in parameterized type. A backtick raw base

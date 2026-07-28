@@ -1846,7 +1846,7 @@ pub const Server = struct {
             .hash_context_extend,
             => ST.keyword,
 
-            .kw_f32, .kw_f64, .kw_Type, .kw_Self => ST.type_,
+            .kw_f32, .kw_f64, .kw_Type, .kw_Self, .at_identifier => ST.type_,
 
             .int_literal, .float_literal, .char_literal => ST.number,
             .string_literal, .raw_string_literal => null,

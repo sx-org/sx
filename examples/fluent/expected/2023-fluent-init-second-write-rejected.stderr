@@ -1,0 +1,10 @@
+error: 'value' is used again after it was consumed — an @Init value is written or forwarded once
+  --> examples/fluent/2023-fluent-init-second-write-rejected.sx:14:5
+   |
+14 |     value.write(second);   // refused: the recipe is already consumed
+   |     ^^^^^^^^^^^
+
+help: it was consumed here
+   |
+13 |     value.write(first);
+   |     ^^^^^^^^^^^

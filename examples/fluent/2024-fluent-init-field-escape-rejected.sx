@@ -1,0 +1,17 @@
+// An `@Init(T)` is nonescaping: it cannot be stored in a struct, array, list,
+// or global (spec §5.1). The type is legal in exactly one position — a
+// parameter annotation — so a field spelled `@Init(T)` is refused at the type.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+Button :: struct {
+    label: string = "";
+}
+
+Pending :: struct {
+    recipe: @Init(Button);   // refused: an initializer is not storage
+}
+
+main :: () -> i32 {
+    0
+}

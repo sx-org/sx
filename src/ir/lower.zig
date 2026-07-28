@@ -51,6 +51,7 @@ const lower_pack = @import("lower/pack.zig");
 const lower_generic = @import("lower/generic.zig");
 const lower_expr = @import("lower/expr.zig");
 const lower_closure = @import("lower/closure.zig");
+const lower_init_plan = @import("lower/init_plan.zig");
 
 const TypeId = types.TypeId;
 const StringId = types.StringId;
@@ -244,6 +245,11 @@ pub const Binding = struct {
     /// typing, and the interface-only constraint check.
     pack_elem: ?*ast.Node = null,
     origin: Origin = .other,
+    /// Span of the `write` that already consumed this `@Init` binding, if any.
+    /// The write-once contract (spec §5.1) is per binding, and a binding lives
+    /// exactly as long as the function body it was declared in — so the record
+    /// belongs here rather than in any lowering-wide table.
+    init_written: ?ast.Span = null,
 };
 
 // `init` / `deinit` / `put` are pub so collaborator unit tests (e.g.
@@ -283,6 +289,15 @@ pub const Scope = struct {
     pub fn lookup(self: *const Scope, name: []const u8) ?Binding {
         if (self.map.get(name)) |b| return b;
         if (self.parent) |p| return p.lookup(name);
+        return null;
+    }
+
+    /// `lookup` returning the binding IN PLACE, so a caller can record state on
+    /// it (the `@Init` write-once mark). The pointer is valid until the owning
+    /// scope's map is next mutated — read and write it in one step.
+    pub fn lookupPtr(self: *Scope, name: []const u8) ?*Binding {
+        if (self.map.getPtr(name)) |b| return b;
+        if (self.parent) |p| return p.lookupPtr(name);
         return null;
     }
 
@@ -3398,4 +3413,12 @@ pub const Lowering = struct {
     pub const createClosureToBareFnAdapter = lower_closure.createClosureToBareFnAdapter;
     pub const collectCaptures = lower_closure.collectCaptures;
     pub const computeEnvSize = lower_closure.computeEnvSize;
+
+    // --- lower/init_plan.zig (`@Init(T)`) ---
+    pub const synthNode = lower_tagged.synthNode;
+    pub const initTargetOf = lower_init_plan.initTargetOf;
+    pub const formInitPlan = lower_init_plan.formInitPlan;
+    pub const lowerInitWrite = lower_init_plan.lowerInitWrite;
+    pub const rejectInitBinding = lower_init_plan.rejectInitBinding;
+    pub const rejectInitCapture = lower_init_plan.rejectInitCapture;
 };

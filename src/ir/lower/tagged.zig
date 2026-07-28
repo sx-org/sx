@@ -1019,7 +1019,10 @@ fn emitSelfMismatchCall(self: *Lowering, pd: ProtocolDeclInfo, proto_ty: TypeId,
     _ = self.lowerCall(&call);
 }
 
-fn synthNode(self: *Lowering, data: ast.Node.Data, span: ast.Span, src: ?[]const u8) *ast.Node {
+/// A freshly allocated AST node for compiler-synthesized source (a dispatch
+/// call, an `@Init` recipe body). Lives on the lowering arena, so it outlives
+/// every deferred lowering that may still read it.
+pub fn synthNode(self: *Lowering, data: ast.Node.Data, span: ast.Span, src: ?[]const u8) *ast.Node {
     const n = self.alloc.create(ast.Node) catch @panic("out of memory");
     n.* = .{ .data = data, .span = span, .source_file = src };
     return n;

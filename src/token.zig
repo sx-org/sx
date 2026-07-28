@@ -8,6 +8,13 @@ pub const Tag = enum {
 
     // Identifiers and keywords
     identifier,
+    /// `@Name` — a compiler-formed type name (`@Init`). The `@` is part of the
+    /// name; the token is deliberately NOT an `.identifier`, so an `@` name can
+    /// only be written where the grammar explicitly accepts one (a type
+    /// position). Every other position — declarations, expressions — rejects it
+    /// through the ordinary "expected …" path, which is what makes `@` names
+    /// undeclarable by user code.
+    at_identifier,
     kw_if,
     kw_else,
     kw_then,

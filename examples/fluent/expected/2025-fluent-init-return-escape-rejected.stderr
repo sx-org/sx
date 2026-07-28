@@ -1,0 +1,5 @@
+error: '@Init(T)' may only be written as a parameter type: it is a nonescaping value that cannot be stored in a field, returned, or nested inside another type
+  --> examples/fluent/2025-fluent-init-return-escape-rejected.sx:12:31
+   |
+12 | keep :: (value: @Init($T)) -> @Init(T) {   // refused: not a parameter position
+   |                               ^^^^^

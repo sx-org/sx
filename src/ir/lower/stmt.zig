@@ -513,6 +513,7 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
 }
 
 pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
+    if (self.rejectInitBinding(vd.value, vd.name)) return;
     if (vd.value) |val| {
         if (val.data == .identifier and self.isPackName(val.data.identifier.name)) {
             const ph = self.diagPackAsValue(val.data.identifier.name, val.span, .storage);
@@ -834,6 +835,7 @@ pub fn lowerLocalFnDecl(self: *Lowering, fd: *const ast.FnDecl) void {
 }
 
 pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
+    if (self.rejectInitBinding(cd.value, cd.name)) return;
     // Handle local function declarations: fx :: (s:i3) -> i3 { ... }
     if (cd.value.data == .fn_decl) {
         const fd = &cd.value.data.fn_decl;

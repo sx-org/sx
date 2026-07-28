@@ -12,6 +12,7 @@ const program_index_mod = @import("../program_index.zig");
 const ProtocolMethodInfo = program_index_mod.ProtocolMethodInfo;
 const GlobalInfo = program_index_mod.GlobalInfo;
 const CallResolver = @import("../calls.zig").CallResolver;
+const init_plan = @import("init_plan.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -693,6 +694,12 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const tgt: ?TypeId = if (ai < arg_targets.items.len) arg_targets.items[ai] else null;
                         self.target_type = tgt;
                         const r = blk: {
+                            // An `@Init(T)` param forms its recipe instead of
+                            // evaluating the argument (same arm as the direct
+                            // path below).
+                            if (tgt) |ptv| {
+                                if (self.initTargetOf(ptv) != null) break :blk self.formInitPlan(arg, ptv);
+                            }
                             // Protocol param targets erase node-aware
                             // (same arm as the direct path).
                             if (tgt) |ptv| {
@@ -771,6 +778,17 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         return self.lowerComptimeGenericInstanceMethod(gm, fa.object, c.args, c.callee.span);
                 }
             }
+        }
+    }
+
+    // `value.write(dest)` on an `@Init(T)` owns its own argument, and must be
+    // decided before any name-keyed path: `write` is a common free / UFCS
+    // function name, and the recipe's own operation wins over all of them.
+    if (c.callee.data == .field_access) {
+        const fa = c.callee.data.field_access;
+        if (std.mem.eql(u8, fa.field, init_plan.write_method)) {
+            if (self.initTargetOf(self.inferExprType(fa.object))) |target|
+                return self.lowerInitWrite(target, fa.object, c.args, c.callee.span);
         }
     }
 
@@ -863,6 +881,15 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // Emitting the literal directly as T fixes both (the value is masked to
         if (enum_payload_ty) |ept| {
             if (ai == 0) self.target_type = ept;
+        }
+        // An `@Init(T)` parameter is destination-first (spec §5.2): the argument
+        // is NOT evaluated at the call boundary. Form the recipe and pass it;
+        // the callee decides when — and whether — the expression runs. This
+        // precedes every value-shaped arm below, all of which would evaluate.
+        if (ai < param_types.len and self.initTargetOf(param_types[ai]) != null) {
+            args.append(self.alloc, self.formInitPlan(arg, param_types[ai])) catch unreachable;
+            self.target_type = saved_target;
+            continue;
         }
         // Implicit float→int narrowing of a compile-time float argument
         // (incl. an expanded `param: T = expr` default) follows the unified

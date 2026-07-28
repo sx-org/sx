@@ -199,6 +199,14 @@ pub const TypeInfo = union(enum) {
         /// Pack-variadic shape marker — same semantics as FunctionInfo.
         /// `Closure(..$args) -> $R` => params = [], pack_start = 0.
         pack_start: ?u32 = null,
+        /// Non-null makes this the compiler-formed `@Init(T)` (spec §5): a
+        /// nonescaping construction recipe whose sole operation is
+        /// `write(dest: *T)`. Its representation IS the `{fn_ptr, env}` closure
+        /// pair — `params = [*T]`, `ret = void` — so layout, codegen, and the
+        /// indirect-call path are shared verbatim; the marker keeps the type
+        /// DISTINCT from an ordinary `Closure(*T)` (so neither converts to the
+        /// other) and drives the formation / write-once / escape rules.
+        init_target: ?TypeId = null,
     };
 
     pub const OptionalInfo = struct {
@@ -882,6 +890,22 @@ pub const TypeTable = struct {
         return self.intern(.{ .closure = .{ .params = owned_params, .ret = ret } });
     }
 
+    /// `@Init(target)` — the construction recipe for `target` (spec §5). Shares
+    /// the closure representation: `{fn_ptr, env}` calling `(dest: *target)`.
+    pub fn initPlanType(self: *TypeTable, target: TypeId) TypeId {
+        const owned_params = self.slice_arena.allocator().dupe(TypeId, &.{self.ptrTo(target)}) catch unreachable;
+        return self.intern(.{ .closure = .{ .params = owned_params, .ret = .void, .init_target = target } });
+    }
+
+    /// The `T` of an `@Init(T)`, or null for any other type (including an
+    /// ordinary `Closure(*T)`). THE single init-type classifier.
+    pub fn initTarget(self: *const TypeTable, ty: TypeId) ?TypeId {
+        if (ty.isBuiltin()) return null;
+        const info = self.get(ty);
+        if (info != .closure) return null;
+        return info.closure.init_target;
+    }
+
     pub fn closureTypePack(self: *TypeTable, params: []const TypeId, ret: TypeId, pack_start: u32) TypeId {
         const owned_params = self.slice_arena.allocator().dupe(TypeId, params) catch unreachable;
         return self.intern(.{ .closure = .{ .params = owned_params, .ret = ret, .pack_start = pack_start } });
@@ -1291,6 +1315,9 @@ pub const TypeTable = struct {
                 break :blk buf.toOwnedSlice(alloc) catch "(?)";
             },
             .closure => |co| blk: {
+                if (co.init_target) |it| {
+                    break :blk std.fmt.allocPrint(alloc, "@Init({s})", .{self.formatTypeName(alloc, it)}) catch "@Init(?)";
+                }
                 var buf = std.ArrayList(u8).empty;
                 defer buf.deinit(alloc);
                 buf.appendSlice(alloc, "Closure(") catch break :blk "Closure(?)";
@@ -1391,6 +1418,7 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
             const pack_present: u8 = if (c.pack_start != null) 1 else 0;
             h.update(&.{pack_present});
             if (c.pack_start) |ps| h.update(std.mem.asBytes(&ps));
+            if (c.init_target) |it| h.update(std.mem.asBytes(&it));
         },
         // Nominal arms key by display name; `nominal_id` joins the key only when
         // nonzero, so structural (legacy) interning hashes byte-identically.
@@ -1460,6 +1488,8 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
             }
             if ((c.pack_start == null) != (d.pack_start == null)) return false;
             if (c.pack_start) |cp| if (cp != d.pack_start.?) return false;
+            if ((c.init_target == null) != (d.init_target == null)) return false;
+            if (c.init_target) |ct| if (ct != d.init_target.?) return false;
             return c.ret == d.ret;
         },
         // Nominal arms compare display name + nominal id. With both ids 0 this is
