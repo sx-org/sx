@@ -2129,8 +2129,8 @@ empty  : Tuple() = .{};                        // empty tuple value
 zeroed : Tuple(i32, i32) = ---;                // zero-initialized tuple
 
 // Explicitly typed value (like `Point{...}`):
-p := Tuple(i64, i64).{40, 2};
-n := Tuple(x: i64, y: i64).{x = 10, y = 20};
+p := Tuple(i64, i64){40, 2};
+n := Tuple(x: i64, y: i64){x = 10, y = 20};
 ```
 
 A named tuple value uses `=` for its fields (`.{x = a, y = b}`); a named tuple
@@ -2148,7 +2148,7 @@ Tuple(..F(Ts))      // pack-spread tuple type (see Variadic Heterogeneous Type P
 `Tuple(...)` is strictly a **type** in every position — including `size_of(Tuple(...))`
 and `type_info(...)` arguments. A tuple **value** comes only from a `.{ ... }`
 literal against a tuple-typed target (`t : Tuple(A, B) = .{a, b}`) or the typed
-prefix (`Tuple(A, B).{a, b}`); a bare `Tuple(1, 2)` (non-type elements) is
+prefix (`Tuple(A, B){a, b}`); a bare `Tuple(1, 2)` (non-type elements) is
 rejected as a tuple type with non-type elements.
 
 Bare parentheses are grouping and never a tuple:
@@ -2228,7 +2228,7 @@ a != b   // true
 
 **Concatenation** (`+`) — creates a new tuple with fields from both sides:
 ```sx
-c := a + Tuple(i64, i64).{3, 4};   // c : Tuple(i64, i64, i64, i64)
+c := a + Tuple(i64, i64){3, 4};   // c : Tuple(i64, i64, i64, i64)
 c.0;                       // 1
 c.3;                       // 4
 ```
@@ -2243,7 +2243,7 @@ r.5;                 // 2
 **Lexicographic comparison** (`<`, `<=`, `>`, `>=`) — compares element-by-element left to right:
 ```sx
 a < b                            // true  (first fields equal, 2 < 3)
-Tuple(i64, i64).{2, 0} > Tuple(i64, i64).{1, 9}   // true  (2 > 1, rest ignored)
+Tuple(i64, i64){2, 0} > Tuple(i64, i64){1, 9}   // true  (2 > 1, rest ignored)
 a <= a                           // true  (all equal, <= allows tie)
 ```
 
@@ -2783,7 +2783,7 @@ through it:
 ```sx
 Box :: struct ($T: Type) { item: T; }
 BoxAlias :: Box;                          // same template
-b := BoxAlias(i64).{ item = 3 };
+b := BoxAlias(i64){ item = 3 };
 b2 : BoxAlias(string) = .{ item = "x" };  // annotation head too
 ```
 
@@ -4754,7 +4754,7 @@ main :: () {
     x : r.Thing = t;           // type annotation
     n := r.LIMIT;              // module const
     c := r.Color.green;        // enum variant
-    b := r.Box(i64).{ item = 3 };  // generic struct head
+    b := r.Box(i64){ item = 3 };  // generic struct head
 }
 ```
 

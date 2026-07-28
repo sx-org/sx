@@ -14,7 +14,7 @@ Point :: struct {
 }
 
 main :: () {
-    p := Point.{ x = 3, y = 4 };
+    p := Point{ x = 3, y = 4 };
     print("point: {}, magnitude: {}\n", p, p.magnitude());
 }
 ```
@@ -169,7 +169,7 @@ spelling:
 K : [4]i64 : .[11, 22, 33, 44];   // typed array const
 A :: .[1, 2, 3];                  // untyped — infers [3]i64
 M :: .[1, 2.2, 3];                // numeric mix promotes — [3]f64
-LIT :: Color.{ r = 255, g = 0, b = 0 };   // struct const
+LIT :: Color{ r = 255, g = 0, b = 0 };   // struct const
 
 N :: K[0] + K[3];     // 55 — const element reads fold at compile time
 D : [K.len]u8 = ---;  // .len folds in dimensions too
@@ -301,8 +301,8 @@ Vec3 :: struct {
     }
 }
 
-v := Vec3.{ x = 1, y = 2, z = 3 };
-v2 := Vec3.{ 1, 2, 3 };              // positional
+v := Vec3{ x = 1, y = 2, z = 3 };
+v2 := Vec3{ 1, 2, 3 };              // positional
 print("{}\n", v.length());
 ```
 
@@ -764,7 +764,7 @@ describe :: (tp: Type) {
     }
 }
 
-av : any = Packet.{ … };
+av : any = Packet{ … };
 describe(type_of(av));                          // works on an any's tag
 ```
 

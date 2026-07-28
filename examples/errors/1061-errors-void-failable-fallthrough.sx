@@ -16,7 +16,7 @@
 
 #import "modules/std.sx";
 
-noop :: () -> ! {}                 // success by fall-through, no `return;`
+noop :: () -> ! { }                 // success by fall-through, no `return;`
 
 main :: () -> ! {
     noop() catch (e) { print("phantom: {}\n", e); };   // must NOT fire

@@ -389,7 +389,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
     // would still see `Ref.fromIndex(0)` (the lambda's own ctx
     // param), which doesn't exist in the caller's frame and
     // silently routes through the default context instead of any
-    // surrounding `push Context.{ allocator = ... }`.
+    // surrounding `push Context{ allocator = ... }`.
     self.current_ctx_ref = saved_ctx_ref_lam;
 
     // Closure flowing into a BARE function-pointer slot (`(T) -> U`, no env):
@@ -445,7 +445,7 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
         // allocation. Everything else copies the env to heap so the value can
         // outlive this frame. Route that through `context.allocator.alloc`
         // rather than libc malloc, so closures respect a surrounding
-        // `push Context.{ allocator = ... }` and a tracker / arena counts the
+        // `push Context{ allocator = ... }` and a tracker / arena counts the
         // env allocation alongside everything else.
         if (env_storage == .stack) {
             return self.builder.closureCreate(func_id, env_local, closure_ty);
@@ -841,7 +841,7 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         },
         // A `push Context { … }` block inside a lambda body is a nested scope
         // whose statements can reference captures (the install-the-scheduler
-        // pattern `push Context.{ io = … } { worker() }`). Descend into both
+        // pattern `push Context{ io = … } { worker() }`). Descend into both
         // the context expression and the body.
         .push_stmt => |ps| {
             self.collectCaptures(ps.context_expr, param_names, captures);

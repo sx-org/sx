@@ -2640,7 +2640,7 @@ pub fn lowerTupleLiteral(self: *Lowering, tl: *const ast.TupleLiteral) Ref {
     }
 
     // Explicitly-typed construction `Tuple(A, B).( ... )`: the literal carries
-    // its tuple type, exactly like `Name.{ ... }` for structs. Resolve it and
+    // its tuple type, exactly like `Name{ ... }` for structs. Resolve it and
     // drive element lowering through it as the target tuple — the produced
     // value equals what the anonymous `.( ... )` form yields against that type.
     // An ambient contextual `target_type` (annotation / call slot), if present
@@ -3091,7 +3091,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             }
             // `context` resolves to a load through the lowering's
             // current `__sx_ctx` pointer. Every sx function (and
-            // every `push Context.{...}` body) sets `current_ctx_ref`
+            // every `push Context{...}` body) sets `current_ctx_ref`
             // to a `*Context` it owns, so this is one indirection.
             if (std.mem.eql(u8, id.name, "context")) {
                 if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) {

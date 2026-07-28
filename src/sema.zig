@@ -806,7 +806,7 @@ pub const Analyzer = struct {
                         if (self.struct_types.contains(target)) return .{ .struct_type = target };
                     }
                 } else if (sl.type_expr) |te| {
-                    // Handle parameterized struct: List(i32).{} parses as call node
+                    // Handle parameterized struct: List(i32){} parses as call node
                     if (te.data == .call) {
                         if (self.resolveCalleeName(te.data.call)) |callee| {
                             if (self.instantiateGeneric(callee, te.data.call.args)) |inst| return inst;
@@ -1335,7 +1335,7 @@ pub const Analyzer = struct {
             .struct_literal => |sl| {
                 if (sl.type_expr) |te| try self.analyzeNode(te);
                 // Index the literal's FIELD NAMES as member refs against the
-                // literal's resolved owner type (`Point.{ x = … }` → owner
+                // literal's resolved owner type (`Point{ x = … }` → owner
                 // "Point"), so go-to-definition / references work from literal
                 // field names, not just `obj.field` reads. An anonymous
                 // literal has no resolvable owner here — except as a `push`
@@ -2132,7 +2132,7 @@ test "sema: enum and struct declarations" {
 test "sema: var_decl infers struct type from parameterized struct literal" {
     const parser_mod = @import("parser.zig");
 
-    const source = "List :: struct { len: i64; } main :: () { list := List.{}; }";
+    const source = "List :: struct { len: i64; } main :: () { list := List{}; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2162,8 +2162,8 @@ test "sema: var_decl infers struct type from parameterized struct literal" {
 test "sema: var_decl infers struct type from parameterized call literal" {
     const parser_mod = @import("parser.zig");
 
-    // List(i32).{} — parser produces struct_literal with type_expr = call node
-    const source = "List :: struct { len: i64; } main :: () { list := List(i32).{}; }";
+    // List(i32){} — parser produces struct_literal with type_expr = call node
+    const source = "List :: struct { len: i64; } main :: () { list := List(i32){}; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2195,7 +2195,7 @@ test "sema: index into generic List(T).items resolves the element struct" {
     const source =
         "Move :: struct { score: i64; }" ++
         "List :: struct ($T: Type) { items: [*]T = null; len: i64; }" ++
-        "main :: () { legal := List(Move).{}; m := legal.items[0]; }";
+        "main :: () { legal := List(Move){}; m := legal.items[0]; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2239,7 +2239,7 @@ test "sema: generic index resolves with pre-registered (imported) struct types" 
     var it = lib_res.struct_types.iterator();
     while (it.next()) |e| try main_an.struct_types.put(e.key_ptr.*, e.value_ptr.*);
 
-    const main_src = "main :: () { legal := List(Move).{}; m := legal.items[0]; }";
+    const main_src = "main :: () { legal := List(Move){}; m := legal.items[0]; }";
     var main_parser = parser_mod.Parser.init(alloc, main_src);
     const main_root = try main_parser.parse();
     const main_res = try main_an.analyze(main_root);
@@ -2279,7 +2279,7 @@ test "sema: generic index resolves with realistic List/Move (methods, cross-refs
     var eit = lib_res.enum_types.iterator();
     while (eit.next()) |e| try main_an.enum_types.put(e.key_ptr.*, e.value_ptr.*);
 
-    const main_src = "main :: () { legal := List(Move).{}; m := legal.items[0]; f := m.from; }";
+    const main_src = "main :: () { legal := List(Move){}; m := legal.items[0]; f := m.from; }";
     var main_parser = parser_mod.Parser.init(alloc, main_src);
     const main_root = try main_parser.parse();
     const main_res = try main_an.analyze(main_root);

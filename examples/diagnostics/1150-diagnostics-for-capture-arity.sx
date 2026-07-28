@@ -5,5 +5,5 @@
 main :: () {
     xs : [2]i64 = .[1, 2];
     ys : [2]i64 = .[3, 4];
-    for xs, ys (x) {}
+    for xs, ys (x) { }
 }

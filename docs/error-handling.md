@@ -124,7 +124,7 @@ conditions:
 
 ```sx
 v := combine(try parse(a), try parse(b));      // short-circuits on first failure
-cfg := Config.{ port = try parse_port(s), host = try parse_host(s) };
+cfg := Config{ port = try parse_port(s), host = try parse_host(s) };
 if try is_ready(conn) { ... }
 ```
 
@@ -423,7 +423,7 @@ n := try parse(s) |> try validate() |> try normalize();
 
 ```sx
 parse_config :: (src: string) -> (Config, !ParseErr) {
-  return Config.{
+  return Config{
     name = try field(src, "name"),
     port = try field_int(src, "port"),
     host = try field(src, "host"),

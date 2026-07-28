@@ -232,7 +232,7 @@ test "comptime_vm exec: struct_init + struct_get round-trips a flat struct" {
     };
     const point = table.intern(.{ .@"struct" = .{ .name = table.internString("Point"), .fields = &pfields } });
 
-    // f() -> i64 { p := Point.{ x = 7, y = 9 }; return p.x + p.y }
+    // f() -> i64 { p := Point{ x = 7, y = 9 }; return p.x + p.y }
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
@@ -299,7 +299,7 @@ test "comptime_vm exec: nested struct (aggregate field copy + nested read)" {
     };
     const line = table.intern(.{ .@"struct" = .{ .name = table.internString("Line"), .fields = &lfields } });
 
-    // L := Line.{ a = Point.{1,2}, b = Point.{3,4} }; return L.a.x + L.b.y  → 1 + 4 = 5
+    // L := Line.{ a = Point{1,2}, b = Point{3,4} }; return L.a.x + L.b.y  → 1 + 4 = 5
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});
@@ -850,7 +850,7 @@ test "comptime_vm exec: deref a pointer; addr_of passes through a struct address
     const point = table.intern(.{ .@"struct" = .{ .name = table.internString("Point"), .fields = &pfields } });
 
     // p := alloca i64; *p = 77; v := p.*; (deref)
-    // pt := Point.{3,4}; pa := @pt; px := pa.x  (addr_of pass-through + field read)
+    // pt := Point{3,4}; pa := @pt; px := pa.x  (addr_of pass-through + field read)
     // return v + px  → 77 + 3 = 80
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();

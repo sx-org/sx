@@ -804,7 +804,7 @@ pub const UnknownTypeChecker = struct {
                 self.walkBodyTypes(ix.index, declared, in_scope, type_vals);
             },
             .struct_literal => |sl| {
-                // A NAMED struct-literal head (`Point.{ … }`) names its type
+                // A NAMED struct-literal head (`Point{ … }`) names its type
                 // exactly like a declaration annotation — validate it through the
                 // same unknown-type walk. Without this, an undeclared literal type
                 // name (`NoSuchType.{ a = 1 }`) bypassed the checker (the main-file

@@ -129,7 +129,7 @@ test "lower: bare function values use a pointer-width word on wasm32 (issue 0318
         \\main :: () -> i64 {
         \\    inferred := accept;
         \\    annotated : Callback = accept;
-        \\    holder := Holder.{ callback = accept };
+        \\    holder := Holder{ callback = accept };
         \\    holder.callback = accept;
         \\    return inferred(annotated(holder.callback(invoke(accept))));
         \\}
@@ -1172,7 +1172,7 @@ test "lower: assigning to a missing struct field emits field-not-found, no panic
 
     const span = ast.Span{ .start = 0, .end = 0 };
 
-    // main :: () { p := Point.{ x = 1 }; p.q = 2; }  — `q` is not a field of Point.
+    // main :: () { p := Point{ x = 1 }; p.q = 2; }  — `q` is not a field of Point.
     var x_val = Node{ .span = span, .data = .{ .int_literal = .{ .value = 1 } } };
     const field_inits = [_]ast.StructFieldInit{.{ .name = "x", .value = &x_val }};
     var lit = Node{ .span = span, .data = .{ .struct_literal = .{ .struct_name = "Point", .field_inits = &field_inits } } };
@@ -1531,7 +1531,7 @@ test "lower: multi-assign to a missing struct field emits field-not-found, no co
 
     const span = ast.Span{ .start = 0, .end = 0 };
 
-    // main :: () { p := Point.{ x = 1 }; y := 0; p.r, y = 3, 4; }  — `r` is not a field of Point.
+    // main :: () { p := Point{ x = 1 }; y := 0; p.r, y = 3, 4; }  — `r` is not a field of Point.
     var x_val = Node{ .span = span, .data = .{ .int_literal = .{ .value = 1 } } };
     const field_inits = [_]ast.StructFieldInit{.{ .name = "x", .value = &x_val }};
     var lit = Node{ .span = span, .data = .{ .struct_literal = .{ .struct_name = "Point", .field_inits = &field_inits } } };

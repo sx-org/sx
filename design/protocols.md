@@ -403,7 +403,7 @@ impl Sizable for Widget {
     size :: (self: *Widget) -> i64 { self.value }
 }
 
-w := Widget.{ value = 7 };
+w := Widget{ value = 7 };
 s : Sizable = w;      // error: 'w' is an lvalue and 'Sizable' values own
                       // their storage — write the copy ('w.(Sizable)')
                       // or pass a view ('*Sizable') for transient use
@@ -430,10 +430,10 @@ impl Rng for Xorshift {
     }
 }
 
-rng := Xorshift.{ state = 42 };
+rng := Xorshift{ state = 42 };
 a : Rng = rng;                      // borrow — no demand error, no copy
 b := rng.(Rng);                     // borrow, same value shape
-c : Rng = Xorshift.{ state = 7 };   // error: identity objects need a
+c : Rng = Xorshift{ state = 7 };   // error: identity objects need a
                                     // name; bind it first
 ```
 
@@ -483,10 +483,10 @@ impl Sizable for Widget {
 }
 
 measure :: (v: *Sizable) -> i64 { v.size() }
-w := Widget.{ value = 7 };
+w := Widget{ value = 7 };
 measure(w);                            // view in place — aliases w
 pv : *Sizable = w;                     // view over w, valid to end of frame
-pv : *Sizable = Widget.{ value = 1 };  // error: rvalue — nothing durable to borrow
+pv : *Sizable = Widget{ value = 1 };  // error: rvalue — nothing durable to borrow
 ```
 
 ### 5.6 Dispatchability (per method)
@@ -524,8 +524,8 @@ impl Eq for Point {
     }
 }
 
-p1 := Point.{ x = 1.0, y = 2.0 };
-p2 := Point.{ x = 3.0, y = 2.0 };
+p1 := Point{ x = 1.0, y = 2.0 };
+p2 := Point{ x = 3.0, y = 2.0 };
 e := p1.(Eq);
 e.eq(p2);            // error: 'eq' is unavailable on an erased 'Eq' value —
                      // its parameter 'other: Self' has no expressible type here
@@ -635,7 +635,7 @@ Arena :: struct {
 }
 impl Allocator for Arena { … }
 
-gpa := GPA.{ … };
+gpa := GPA{ … };
 arena := Arena.init(gpa, 4096);
 push .{ allocator = arena } { … }              // borrow of a named arena
 push .{ allocator = Arena.init(gpa, 4096) } { … }
@@ -818,7 +818,7 @@ impl Shape for Circle {
     resized :: (self: Circle, k: f64) -> Circle { .{ r = self.r * k } }
 }
 
-c := Circle.{ r = 1.0 };
+c := Circle{ r = 1.0 };
 s : Shape = c;
 big := s.resized(2.0);     // ← the note below fires here
 ```
@@ -942,7 +942,7 @@ The examples below share this context: `Series(T)` (§1, tagged:
 to nothing; no impl anywhere names `Series(bool)`.
 
 ```sx
-v : Series(f32) = Sine.{ freq = 0.5 };
+v : Series(f32) = Sine{ freq = 0.5 };
 ```
 
 - **Empty set**: any value-consuming operation — erasure, method
@@ -1211,7 +1211,7 @@ dataflow discipline:
   ```sx
   GPA :: struct { … }
   Serialize :: protocol tagged { write :: (self: *Self, out: *Buf); }
-  HAS :: #run { g := GPA.{ … }; g.(?Serialize) != null };
+  HAS :: #run { g := GPA{ … }; g.(?Serialize) != null };
   inline if !HAS { impl Serialize for GPA { … } }
   ```
   ```

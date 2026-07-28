@@ -596,7 +596,7 @@ pub const StructFieldInit = struct {
 
 pub const StructLiteral = struct {
     struct_name: ?[]const u8, // null for anonymous `.{ ... }`
-    type_expr: ?*Node = null, // for GenericType(args).{ ... }
+    type_expr: ?*Node = null, // for GenericType(args){ ... }
     field_inits: []const StructFieldInit,
     init_block: ?*Node = null, // optional `{ stmts }` block after struct literal
 };
@@ -976,7 +976,7 @@ pub const ReturnTypeExpr = struct {
 pub const TupleLiteral = struct {
     elements: []const TupleElement,
     // Explicit tuple type for the `Tuple(...).( ... )` typed-construction form
-    // (mirrors `StructLiteral.type_expr` for `Name.{ ... }`). null for the
+    // (mirrors `StructLiteral.type_expr` for `Name{ ... }`). null for the
     // anonymous, contextually-typed `.( ... )` form.
     type_expr: ?*Node = null,
 };

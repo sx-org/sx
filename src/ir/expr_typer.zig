@@ -584,7 +584,7 @@ pub const ExprTyper = struct {
             .tuple_literal => |tl| {
                 // Explicitly-typed `Tuple(A, B).( ... )`: the literal's type is
                 // the carried tuple type (preserves field names for the named
-                // form), exactly like `Name.{ ... }` infers to `Name`.
+                // form), exactly like `Name{ ... }` infers to `Name`.
                 if (tl.type_expr) |te| {
                     const tuple_ty = self.l.resolveTypeWithBindings(te);
                     if (tuple_ty != .unresolved) return tuple_ty;

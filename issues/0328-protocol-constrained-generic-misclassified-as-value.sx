@@ -8,14 +8,14 @@ Value :: struct { n: i64; }
 
 impl Combines for Value {
     combine :: (self: Value, other: Value) -> Value {
-        Value.{ n = self.n + other.n }
+        Value{ n = self.n + other.n }
     }
 }
 
 Box :: struct ($T: Combines) {
     value: T;
 
-    init :: (value: T) -> Box(T) { Box(T).{ value = value } }
+    init :: (value: T) -> Box(T) { Box(T){ value = value } }
 
     merge :: (self: *Box(T), other: T) {
         self.value = self.value.combine(other);

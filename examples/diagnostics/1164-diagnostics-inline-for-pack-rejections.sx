@@ -16,10 +16,10 @@ leak :: (..xs: Show) {
     }
 }
 borrow :: (..xs: Show) {
-    inline for xs (*x) {}
+    inline for xs (*x) { }
 }
 short :: (..xs: Show) {
-    inline for 0..5, xs (i, x) {}
+    inline for 0..5, xs (i, x) { }
 }
 
 main :: () {
@@ -27,5 +27,5 @@ main :: () {
     borrow(IntBox{ v = 5 });
     short(IntBox{ v = 1 }, IntBox{ v = 2 });
     arr := .[1, 2, 3];
-    inline for arr (x) {}
+    inline for arr (x) { }
 }

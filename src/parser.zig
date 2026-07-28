@@ -3513,7 +3513,7 @@ pub const Parser = struct {
                 // the type-demanding site), can stand alone as a `Type` value,
                 // and a postfix `.( ... )` (handled in `parsePostfix`)
                 // constructs a typed tuple VALUE of that type — exactly like
-                // `Name.{ ... }` for structs. A bare `Tuple` not followed by `(`
+                // `Name{ ... }` for structs. A bare `Tuple` not followed by `(`
                 // (or a backtick-raw `` `Tuple ``) stays an ordinary identifier.
                 if (!is_raw and std.mem.eql(u8, name, "Tuple") and self.peekNext() == .l_paren) {
                     self.advance(); // skip `Tuple`; `current` is now `(`
@@ -3957,7 +3957,7 @@ pub const Parser = struct {
         const context_expr = try self.parseExpr();
         self.no_trailing_block = saved_ntb;
 
-        // push Context.{ ... } { body } — if parseExpr consumed the push body
+        // push Context{ ... } { body } — if parseExpr consumed the push body
         // as a struct init block, steal it back as the push body.
         // (if/while don't have this issue — they require bool/optional conditions)
         const body = if (context_expr.data == .struct_literal and
@@ -4866,7 +4866,7 @@ pub const Parser = struct {
     /// Prefix shapes that may take a named aggregate body `Type{...}`:
     /// bare type name, qualified type, type application node, or a call that
     /// stands for a parameterized type designator `F(args)` in expression
-    /// position (same shape as `List(i64).{}` used to take).
+    /// position (same shape as `List(i64){}` used to take).
     fn isNamedAggregatePrefix(expr: *const Node) bool {
         return switch (expr.data) {
             // Enum/variant heads (`.key{…}`, `Ev.key{…}`) share the compact

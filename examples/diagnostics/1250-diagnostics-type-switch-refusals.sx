@@ -21,10 +21,10 @@ main :: () {
     }
     if av == {
         case i64: {}
-        case i64: {}                             // duplicate = unreachable
+        case i64: { }                             // duplicate = unreachable
     }
     if av == {
-        case 5: {}                               // value pattern
+        case 5: { }                               // value pattern
         else: {}
     }
 }

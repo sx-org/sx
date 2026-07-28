@@ -244,7 +244,7 @@ test "parser: .(a, b) is rejected after the cutover" {
 }
 
 // The typed-prefix form `Tuple(A, B).( … )` is rejected too — typed tuple
-// construction is `Tuple(A, B).{ … }`.
+// construction is `Tuple(A, B){ … }`.
 test "parser: Tuple(A, B).( ... ) is rejected after the cutover" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

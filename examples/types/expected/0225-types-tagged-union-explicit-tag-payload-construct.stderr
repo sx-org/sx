@@ -1,5 +1,0 @@
-error: expected ';'
-  --> examples/types/0225-types-tagged-union-explicit-tag-payload-construct.sx:46:19
-   |
-46 |     k2 : Ev = .key{ 7 };
-   |                   ^

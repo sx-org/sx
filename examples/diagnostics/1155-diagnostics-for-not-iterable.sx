@@ -8,5 +8,5 @@ f :: (n: i64) -> i64 { n }
 
 main :: () {
     n := 1;
-    for f(n) {}
+    for f(n) { }
 }

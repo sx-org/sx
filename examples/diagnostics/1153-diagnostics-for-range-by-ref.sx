@@ -4,5 +4,5 @@
 #import "modules/std.sx";
 
 main :: () {
-    for 0..3 (*i) {}
+    for 0..3 (*i) { }
 }

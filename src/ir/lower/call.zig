@@ -2325,7 +2325,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
 }
 
 /// Emit a diagnostic for code that needs `Context` (allocator
-/// protocol, `push Context.{...}`, the `context` identifier) when
+/// protocol, `push Context{...}`, the `context` identifier) when
 /// the program hasn't registered the type — i.e. doesn't transitively
 /// import `modules/std.sx`. Returns a placeholder Ref so the lowering
 /// can keep going and surface any additional errors.
@@ -2345,7 +2345,7 @@ pub fn diagnoseMissingContext(self: *Lowering, what: []const u8) Ref {
 /// compiler-driven heap copies (e.g. the `xx value` protocol-erasure
 /// path in `buildProtocolValue`). Routes through whatever allocator is
 /// currently installed in `context`, so a surrounding
-/// `push Context.{ allocator = my_alloc, ... }` actually backs every
+/// `push Context{ allocator = my_alloc, ... }` actually backs every
 /// allocation including the ones the compiler inserts.
 ///
 /// If `Context` isn't registered (the program doesn't import std.sx),
