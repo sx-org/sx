@@ -1,8 +1,8 @@
-// A positional struct literal `S.{ x, ... }` whose first element is a bare
+// A positional struct literal `S{ x, ... }` whose first element is a bare
 // VARIABLE reference stores the variable's value, not zero.
 //
 // Regression (issue 0175): the parser PUNS a leading bare identifier into a
-// named field `x = x` (the `Vec4.{ w, z }` shorthand), because it can't tell —
+// named field `x = x` (the `Vec4{ w, z }` shorthand), because it can't tell —
 // without the struct definition — whether `x` names a field or is a positional
 // value. A genuinely positional `.{ x, 2 }` (x not a field) arrived as a
 // spurious mixed named/positional literal and the named branch left every real

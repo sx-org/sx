@@ -9,9 +9,9 @@
 Color :: struct { r, g, b: i64; }
 K :: 10;
 A : [2]i64 : .[7, 8];
-LIT  :: Color.{ r = 255, g = 0, b = 0 };
-EXPR :: Color.{ r = K + 1, g = K * 2, b = A[1] };
-REF  :: Color.{ r = LIT.r, g = 1, b = 2 };
+LIT  :: Color{ r = 255, g = 0, b = 0 };
+EXPR :: Color{ r = K + 1, g = K * 2, b = A[1] };
+REF  :: Color{ r = LIT.r, g = 1, b = 2 };
 
 main :: () {
     print("lit={} expr={} {} {} ref={}\n", LIT.r, EXPR.r, EXPR.g, EXPR.b, REF.r);

@@ -31,7 +31,7 @@ Ord :: protocol constraint { cmp :: (self: *Self, o: *Self) -> i64; }
 Show :: protocol vtable { fmt :: (self: *Self) -> i64; }
 
 main :: () {
-    i := Item.{ n = 2 };
+    i := Item{ n = 2 };
     s := i.(Show);
     print("{} {} {} {}\n", REPAIRED, UNIQUE, PARTITION, s.fmt());
 }

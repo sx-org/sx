@@ -14,7 +14,7 @@ ButtonStyle :: struct {
     padding: EdgeInsets;
 
     default :: () -> ButtonStyle {
-        ButtonStyle.{
+        ButtonStyle{
             background = COLOR_BLUE,
             foreground = COLOR_WHITE,
             hover_bg = Color.rgb(0, 100, 220),
@@ -42,7 +42,7 @@ Button :: struct {
 impl View for Button {
     size_that_fits :: (self: *Button, proposal: ProposedSize) -> Size {
         text_size := measure_text(self.label, self.font_size);
-        Size.{
+        Size{
             width = text_size.width + self.style.padding.horizontal(),
             height = text_size.height + self.style.padding.vertical()
         }

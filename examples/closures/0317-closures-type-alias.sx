@@ -33,7 +33,7 @@ main :: () -> i32 {
     print("{}\n", apply2(xx add, 20, 22));  // 42
     print("{}\n", apply_b(xx dbl, 21));     // 42 (alias-of-alias)
 
-    h := Holder.{ cb = xx dbl };
+    h := Holder{ cb = xx dbl };
     print("{}\n", call_held(h, 21));        // 42 (struct field)
 
     f := make();                            // return type CB

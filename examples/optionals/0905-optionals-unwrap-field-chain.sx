@@ -21,7 +21,7 @@ S :: struct {
 }
 
 mk :: () -> ?S {
-    return S.{ id = "hello", n = 42, inner = Inner.{ tag = "deep", k = 7 } };
+    return S{ id = "hello", n = 42, inner = Inner{ tag = "deep", k = 7 } };
 }
 
 arr :: () -> ?[3]i64 {

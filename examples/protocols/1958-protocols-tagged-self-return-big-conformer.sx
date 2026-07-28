@@ -34,9 +34,9 @@ impl Bulk for Narrow {
 }
 
 main :: () {
-    w := Wide.{ head = 2, tail = 3 };
+    w := Wide{ head = 2, tail = 3 };
     w.cells[N - 1] = 5;
-    n := Narrow.{ n = 7 };
+    n := Narrow{ n = 7 };
 
     b : Bulk = w;
     c : Bulk = n;

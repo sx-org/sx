@@ -70,7 +70,7 @@ main :: () {
     }
 
     // type_of — struct
-    tst := Point.{ 1, 2 };
+    tst := Point{ 1, 2 };
     if type_of(tst) == {
         case struct: print("typeof-struct: struct\n");
         else: print("typeof-struct: other\n");
@@ -101,7 +101,7 @@ main :: () {
     print("fieldname-enum2: {}\n", variant_name(Color, 2));
 
     // struct_field_value (use any_to_string to avoid sext-on-any bug)
-    fv_pt := Point.{ 11, 22 };
+    fv_pt := Point{ 11, 22 };
     out("fieldval0: ");
     out(any_to_string(struct_field_value(fv_pt, 0)));
     out("\n");

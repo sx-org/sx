@@ -16,7 +16,7 @@ F : [2]f64 : .[1, 2.5];
 S :: .["alpha", "beta"];
 B :: .[true, false, true];
 P :: struct { x, y: i64; }
-PTS : [2]P : .[P.{ x = 1, y = 2 }, P.{ x = 3, y = 4 }];
+PTS : [2]P : .[P{ x = 1, y = 2 }, P{ x = 3, y = 4 }];
 GRID : [2][2]i64 : .[.[1, 2], .[3, 4]];
 
 sum :: (xs: [4]i64) -> i64 { xs[0] + xs[1] + xs[2] + xs[3] }

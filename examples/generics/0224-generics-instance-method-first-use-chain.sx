@@ -14,7 +14,7 @@ Box :: struct ($T: Type) {
     get :: (self: Box(T)) -> T { self.p.* }
 }
 
-mk :: ($T: Type, p: *T) -> Box(T) { Box(T).{ p = p } }
+mk :: ($T: Type, p: *T) -> Box(T) { Box(T){ p = p } }
 
 f1 :: (v: *Buf) -> i64 {
     b := mk(Buf, v);
@@ -24,6 +24,6 @@ f1 :: (v: *Buf) -> i64 {
 main :: () {
     d : []u8 = context.allocator.alloc(u8, 3);
     d[0] = 42;
-    v := Buf.{ data = d };
+    v := Buf{ data = d };
     print("{}\n", f1(*v));
 }

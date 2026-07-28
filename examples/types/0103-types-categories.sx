@@ -9,8 +9,8 @@ Color :: struct {
 }
 
 main :: () {
-    p := Point.{10, 20};
-    c := Color.{255, 128, 0};
+    p := Point{10, 20};
+    c := Color{255, 128, 0};
     pc := *p;
     print("p: {}\n", p);
     print("c: {}\n", c);

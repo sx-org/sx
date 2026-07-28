@@ -80,17 +80,17 @@ main :: () {
     print("struct-pos: {}\n", p1);
 
     // Type-prefix literal
-    p2 := Point.{ 3, 4 };
+    p2 := Point{ 3, 4 };
     print("struct-prefix: {}\n", p2);
 
     // Named fields
-    p3 := Point.{ y=10, x=20 };
+    p3 := Point{ y=10, x=20 };
     print("struct-named: {}\n", p3);
 
     // Shorthand (variable name = field name)
     x : i32 = 5;
     y : i32 = 6;
-    p4 := Point.{ x, y };
+    p4 := Point{ x, y };
     print("struct-shorthand: {}\n", p4);
 
     // Field defaults
@@ -98,7 +98,7 @@ main :: () {
     print("defaults: a={} b={}\n", d1.a, d1.b);
 
     // Field access and assignment
-    p5 := Point.{ 0, 0 };
+    p5 := Point{ 0, 0 };
     p5.x = 42;
     p5.y = 99;
     print("field-assign: {}\n", p5);
@@ -281,7 +281,7 @@ main :: () {
     write_to_ptr(*g_smoke_val);
     print("global-addr-of: {}\n", g_smoke_val);
 
-    pv := Point.{ 10, 20 };
+    pv := Point{ 10, 20 };
     ptr := *pv;
     print("deref: {}\n", ptr.*);
 
@@ -310,13 +310,13 @@ main :: () {
     // Pointer to nested struct field
     Inner3 :: struct { a: f32; b: f32; c: f32; }
     Outer3 :: struct { key: i32; inner: Inner3; }
-    out3 := Outer3.{ key = 42, inner = Inner3.{ a = 1.0, b = 2.0, c = 3.0 } };
+    out3 := Outer3{ key = 42, inner = Inner3{ a = 1.0, b = 2.0, c = 3.0 } };
     ip3 := *out3.inner;
     print("ptr-nested-field: {} {} {}\n", ip3.a, ip3.b, ip3.c);
 
     // Store to many-pointer field must not corrupt adjacent memory
     MpHolder :: struct { items: [*]i64; sentinel: i64; }
-    mph := MpHolder.{ items = xx 0, sentinel = 42 };
+    mph := MpHolder{ items = xx 0, sentinel = 42 };
     mph.items = xx 0;
     print("mp-store-sentinel: {}\n", mph.sentinel);
 

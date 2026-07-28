@@ -229,7 +229,7 @@ element_id :: (site: SiteId = site_of(#caller_location)) -> ElementId {
     gid := hash_site(ui.chain_hash, site);
     occurrence := ui.next_occurrence(gid);
     occ := occurrence;
-    ElementId.{ value = hash.fnv1a_fold(gid, xx *occ, size_of(i32)) }
+    ElementId{ value = hash.fnv1a_fold(gid, xx *occ, size_of(i32)) }
 }
 
 // --- keyed — THE dynamic-identity spelling ---
@@ -389,13 +389,13 @@ el :: (v: $V/View) -> El(V) => .{ view = v };
 // --- Scope containers and leaf elements (target spelling) ---
 
 fold_vstack :: (items: []View, spacing: f32) -> VStack {
-    vs := VStack.{ spacing = spacing, alignment = .leading, children = .{} };
+    vs := VStack{ spacing = spacing, alignment = .leading, children = .{} };
     for items (v) { vs.children.append(.{ view = v }); }
     vs
 }
 
 fold_hstack :: (items: []View, spacing: f32) -> HStack {
-    hs := HStack.{ spacing = spacing, alignment = .center, children = .{} };
+    hs := HStack{ spacing = spacing, alignment = .center, children = .{} };
     for items (v) { hs.children.append(.{ view = v }); }
     hs
 }
@@ -409,7 +409,7 @@ fold_hstack :: (items: []View, spacing: f32) -> HStack {
 // modifier.sx — content padding belongs to the component's style).
 
 vstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location), content: Closure()) -> View {
-    s := Sink(View).{};
+    s := Sink(View){};
     push .{ ui_sink = *s } {
         context.ui.scope_at(site, content);
     }
@@ -417,7 +417,7 @@ vstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location),
 }
 
 hstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location), content: Closure()) -> View {
-    s := Sink(View).{};
+    s := Sink(View){};
     push .{ ui_sink = *s } {
         context.ui.scope_at(site, content);
     }
@@ -426,7 +426,7 @@ hstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location),
 
 text :: (s: string, m: Mod = .{}) -> View { place(Label.make(s), m) }
 
-spacer :: (m: Mod = .{}) -> View { place(Spacer.{ min_length = 0.0 }, m) }
+spacer :: (m: Mod = .{}) -> View { place(Spacer{ min_length = 0.0 }, m) }
 
 ui_is_pressed :: (id: u64) -> bool {
     if context.ui == null { return false; }
@@ -442,7 +442,7 @@ ui_is_focused :: (id: u64) -> bool {
 
 button :: (label: string, m: Mod = .{}, site: SiteId = site_of(#caller_location), on_tap: ?Closure() = null) -> View {
     eid := element_id(site);
-    place(Button.{
+    place(Button{
         label = label,
         font_size = 14.0,
         style = ButtonStyle.default(),

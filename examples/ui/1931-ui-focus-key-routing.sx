@@ -40,7 +40,7 @@ Field :: struct {
 }
 impl View for Field {
     size_that_fits :: (self: *Field, proposal: ProposedSize) -> Size {
-        Size.{ width = self.w, height = self.h }
+        Size{ width = self.w, height = self.h }
     }
     layout :: (self: *Field, bounds: Frame) {}
     render :: (self: *Field, ctx: *RenderContext, frame: Frame) {
@@ -63,10 +63,10 @@ home :: () -> View {
     vstack(0.0) {
         a := element_id().value;
         g_a = a;
-        place(Field.{ eid = a, is_b = false, w = 100.0, h = 20.0 });
+        place(Field{ eid = a, is_b = false, w = 100.0, h = 20.0 });
         b := element_id().value;
         g_b = b;
-        place(Field.{ eid = b, is_b = true, w = 100.0, h = 20.0 });
+        place(Field{ eid = b, is_b = true, w = 100.0, h = 20.0 });
     }
 }
 

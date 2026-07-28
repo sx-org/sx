@@ -11,7 +11,7 @@ home :: () -> View {
 }
 
 main :: () {
-    u := Ui.{};
+    u := Ui{};
     push .{ ui = *u } {
         home();
     }

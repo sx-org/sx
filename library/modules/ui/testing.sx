@@ -20,7 +20,7 @@ ComposeTest :: struct {
     root: UiRoot;
 
     init :: (root: u64 = 1, gpa: Allocator = context.allocator) -> ComposeTest {
-        ComposeTest.{ root = UiRoot.init(.{ value = root }, gpa) }
+        ComposeTest{ root = UiRoot.init(.{ value = root }, gpa) }
     }
 
     // One headless build transaction: begin (store + identity state) →

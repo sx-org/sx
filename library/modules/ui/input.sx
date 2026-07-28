@@ -122,7 +122,7 @@ InputQueue :: struct {
     gpa: Allocator;
 
     init :: (gpa: Allocator = context.allocator) -> InputQueue {
-        InputQueue.{ gpa = gpa }
+        InputQueue{ gpa = gpa }
     }
 
     len :: (self: *InputQueue) -> i64 #get => self.events.len;

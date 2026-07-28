@@ -14,7 +14,7 @@ speak :: (self: *Dog) -> i64 { return self.n; }   // free fn — NOT an impl
 Holder :: struct { s: Speaker; b: i64 = 0; }
 
 main :: () {
-  d := Dog.{ n = 42 };
+  d := Dog{ n = 42 };
   h : Holder = .{ s = d.(Speaker), b = 5 };   // <- 'Dog' does not implement 'Speaker'
   print("{}\n", h.s.speak());
 }

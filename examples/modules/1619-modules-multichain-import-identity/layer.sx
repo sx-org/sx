@@ -4,5 +4,5 @@ Layer :: struct {
 }
 
 make_layer :: (id: i64) -> Layer {
-    Layer.{ id = id }
+    Layer{ id = id }
 }

@@ -18,7 +18,7 @@ inline if POINTER_SIZE == 8 {
 inline if has_impl(Mark, Slot) { ADMITTED :: 1; } else { ADMITTED :: 0; }
 
 main :: () {
-    s := Slot.{ n = 2 };
+    s := Slot{ n = 2 };
     m := s.(Mark);
     print("{} {}\n", ADMITTED, m.tag());
 }

@@ -258,7 +258,7 @@ test_gzip_metadata :: (alloc: Allocator) -> bool {
     capacity := gzip.bound(PLAIN.len, header) catch { alloc.dealloc_bytes(owned.ptr); return false; };
     storage_raw := alloc.alloc_bytes(capacity);
     if storage_raw == null { alloc.dealloc_bytes(owned.ptr); return false; }
-    storage := string.{ ptr = xx storage_raw, len = capacity };
+    storage := string{ ptr = xx storage_raw, len = capacity };
     borrowed := gzip.encode_into(PLAIN, storage, .{ level = 9 }, header, alloc) catch {
         alloc.dealloc_bytes(storage_raw); alloc.dealloc_bytes(owned.ptr); return false;
     };

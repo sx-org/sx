@@ -3,11 +3,11 @@ error: comptime type construction failed: comptime register_type: duplicate memb
    |
  8 | Bad :: define(declare("Bad"), .enum(.{ variants = .[
    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
- 9 |     EnumVariant.{ name = "value",  payload = i64 },
+ 9 |     EnumVariant{ name = "value",  payload = i64 },
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-10 |     EnumVariant.{ name = "closed", payload = void },
+10 |     EnumVariant{ name = "closed", payload = void },
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-11 |     EnumVariant.{ name = "value",  payload = f64 },   // duplicate name
+11 |     EnumVariant{ name = "value",  payload = f64 },   // duplicate name
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 12 | ] }));
    | ^^^^^

@@ -121,7 +121,7 @@ Loop :: struct {
     init :: () -> (Loop, !EventErr) {
         e := ep.ep_create();
         if e < 0 { raise error.Init; }
-        return Loop.{ epfd = e, regs = .{}, own = context.allocator };
+        return Loop{ epfd = e, regs = .{}, own = context.allocator };
     }
 
     close :: (self: *Loop) {
@@ -162,7 +162,7 @@ Loop :: struct {
             self.regs.items[idx].udata = udata;
             return ep.ep_ctl(self.epfd, ep.EPOLL_CTL_MOD, fd, mask);
         }
-        self.regs.append(Reg.{ fd = fd, mask = mask, udata = udata }, self.own);
+        self.regs.append(Reg{ fd = fd, mask = mask, udata = udata }, self.own);
         return ep.ep_ctl(self.epfd, ep.EPOLL_CTL_ADD, fd, mask);
     }
 
@@ -259,7 +259,7 @@ Loop :: struct {
     init :: () -> (Loop, !EventErr) {
         q := kqb.kqueue();
         if q < 0 { raise error.Init; }
-        return Loop.{ kq = q };
+        return Loop{ kq = q };
     }
 
     close :: (self: *Loop) {

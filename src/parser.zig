@@ -3019,32 +3019,51 @@ pub const Parser = struct {
                     !saved_ntb_args and !saved_hdr_args and !self.in_if_condition and
                     std.mem.indexOfScalar(u8, self.source[rparen_end..self.current.loc.start], '\n') == null)
                 {
-                    const block = try self.parseBlock();
-                    const lambda = try self.createNode(block.span.start, .{ .lambda = .{
-                        .params = &.{},
-                        .return_type = null,
-                        .body = block,
-                    } });
-                    try args.append(self.allocator, try self.createNode(block.span.start, .{ .trailing_block = .{ .lambda = lambda } }));
-                    expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
-                    // T7′: a trailing block TERMINATES the postfix chain —
-                    // chaining onto the emitted result would modify a
-                    // discarded copy.
-                    if (self.current.tag == .dot) {
-                        return self.fail("a trailing block ends the call chain — pass the modifier inside the call: `f(x, m = .{ … }) { … }`");
+                    // Same-line `{` after a call: trailing block OR parameterized
+                    // named aggregate `List(T){…}`. Prefer the aggregate when the
+                    // brace body is aggregate-shaped (empty / fields / comma
+                    // positionals without `;`); otherwise trailing.
+                    if (self.braceLooksLikeNamedAggregate()) {
+                        expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
+                        // Fall through: next postfix iteration takes Type{}.
+                    } else {
+                        const block = try self.parseBlock();
+                        const lambda = try self.createNode(block.span.start, .{ .lambda = .{
+                            .params = &.{},
+                            .return_type = null,
+                            .body = block,
+                        } });
+                        try args.append(self.allocator, try self.createNode(block.span.start, .{ .trailing_block = .{ .lambda = lambda } }));
+                        expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
+                        // T7′: a trailing block TERMINATES the postfix chain —
+                        // chaining onto the emitted result would modify a
+                        // discarded copy.
+                        if (self.current.tag == .dot) {
+                            return self.fail("a trailing block ends the call chain — pass the modifier inside the call: `f(x, m = .{ … }) { … }`");
+                        }
+                        break;
                     }
-                    break;
+                } else {
+                    expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                 }
-                expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
+            } else if (self.current.tag == .l_brace and isNamedAggregatePrefix(expr) and self.namedAggregateAllowedHere()) {
+                // Named aggregate: Type{ ... }. Contextual `.{...}` still starts
+                // with a leading dot in parsePrimary. Header contexts reserve
+                // their final `{` for the statement body (`if cond {`).
+                if (expr.data == .identifier) {
+                    expr = try self.parseStructLiteral(expr.data.identifier.name, null, expr.span.start);
+                } else {
+                    expr = try self.parseStructLiteral(null, expr, expr.span.start);
+                }
             } else if (self.current.tag == .dot) {
                 self.advance();
                 if (self.current.tag == .l_paren and expr.data == .tuple_type_expr) {
                     // `.( )` is GONE (aggregate ladder Step 1 cutover): the
                     // one aggregate literal is `.{ … }` — typed construction
-                    // is `Tuple(A, B).{ v1, v2 }`. A tuple-TYPE receiver can
+                    // is `Tuple(A, B){ v1, v2 }`. A tuple-TYPE receiver can
                     // only be the old literal spelling, so it keeps the
                     // migration message instead of parsing as a cast.
-                    return self.fail("'.( )' was removed — the aggregate literal is '.{ … }' (typed tuple construction: 'Tuple(A, B).{ v1, v2 }')");
+                    return self.fail("'.( )' was removed — the aggregate literal is '.{ … }' (typed tuple construction: 'Tuple(A, B){ v1, v2 }')");
                 } else if (self.current.tag == .l_paren) {
                     // Postfix cast `expr.(T)` (aggregate ladder Step 4) on
                     // the syntax freed by the Step-1 cutover. One type, plus
@@ -3062,23 +3081,12 @@ pub const Parser = struct {
                     }
                     try self.expect(.r_paren);
                     expr = try self.createNode(expr.span.start, .{ .postfix_cast = .{ .operand = expr, .type_expr = target, .alloc_arg = alloc_arg } });
+                } else if (self.current.tag == .l_brace and isNamedAggregatePrefix(expr)) {
+                    // Separator-dot Type.{…} removed — name the type, then `{`.
+                    return self.failNamedAggregateDot();
                 } else if (self.current.tag == .l_brace) {
-                    // Struct literal: Type.{ ... }
-                    if (expr.data == .identifier) {
-                        // Simple name: Vec4.{ ... }
-                        expr = try self.parseStructLiteral(expr.data.identifier.name, null, expr.span.start);
-                    } else if (expr.data == .field_access) {
-                        // Qualified name: std.Vec4.{ ... }. Carry the field_access
-                        // NODE as type_expr (NOT a flattened "m.Type" string in
-                        // struct_name) so lowering + inference resolve it through
-                        // the qualified-type resolver — a flattened string is
-                        // looked up as a bare type name, fails, and fabricates an
-                        // empty `{}` stub literally named "m.Type" (issue 0204).
-                        expr = try self.parseStructLiteral(null, expr, expr.span.start);
-                    } else {
-                        // Expression type: Vec(3, f32).{ ... }
-                        expr = try self.parseStructLiteral(null, expr, expr.span.start);
-                    }
+                    // Not a type designator (e.g. call result): no Type.{…} form.
+                    return self.fail("a named aggregate literal places '{' directly after its type");
                 } else if (self.current.tag == .l_bracket) {
                     // Typed array/vector literal: Type.[elem, ...]
                     self.advance(); // skip '['
@@ -3577,31 +3585,39 @@ pub const Parser = struct {
                 }
                 self.advance(); // skip '('
 
-                // A `(` here opens a grouping/tuple, so calls inside it parse
-                // normally even within a for header.
+                // A `(` opens a grouping, so nested calls / named aggregates parse
+                // normally even within for/if/push headers (`if (Button{}) {`).
                 const saved_hdr_grp = self.in_for_header;
+                const saved_if_grp = self.in_if_condition;
+                const saved_ntb_grp = self.no_trailing_block;
                 self.in_for_header = false;
-                defer self.in_for_header = saved_hdr_grp;
+                self.in_if_condition = false;
+                self.no_trailing_block = false;
+                defer {
+                    self.in_for_header = saved_hdr_grp;
+                    self.in_if_condition = saved_if_grp;
+                    self.no_trailing_block = saved_ntb_grp;
+                }
 
                 // Bare `(...)` is GROUPING ONLY. Tuple VALUES are written
-                // `.( … )` / `Tuple(T..).( … )`. A named element, an empty group,
-                // a leading spread, or a top-level comma all used to build a
+                // `.{ … }` with a `Tuple(…)` annotation. A named element, an empty
+                // group, a leading spread, or a top-level comma used to build a
                 // bare-paren `tuple_literal`; that grammar is gone.
                 if (self.current.tag == .identifier and self.peekNext() == .colon) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B).{a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
                 if (self.current.tag == .r_paren) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B).{a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
                 if (self.current.tag == .dot_dot) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B).{a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
 
                 const first = try self.parseExpr();
 
                 // A top-level comma was a tuple; now it is an error.
                 if (self.current.tag == .comma) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B).{a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
 
                 // No comma → grouping
@@ -4278,7 +4294,7 @@ pub const Parser = struct {
         } });
     }
 
-    /// `parsePostfix`, mirroring `Name.{ ... }` typed struct literals).
+    /// `parsePostfix`, mirroring `Name{ ... }` typed struct literals).
     ///   `Tuple(A, B)` / `Tuple(T)` / `Tuple()` / named `Tuple(x: A, y: B)` /
     ///   pack `Tuple(..Ts)` / `Tuple(..F(Ts))`. Lowers to the SAME
     ///   `tuple_type_expr` the inline `(A, B)` / `(x: A, y: B)` / `(..Ts)`
@@ -4836,6 +4852,108 @@ pub const Parser = struct {
             .less, .less_equal, .greater, .greater_equal, .equal_equal, .bang_equal => true,
             else => false,
         };
+    }
+
+    /// Prefix shapes that may take a named aggregate body `Type{...}`:
+    /// bare type name, qualified type, type application node, or a call that
+    /// stands for a parameterized type designator `F(args)` in expression
+    /// position (same shape as `List(i64).{}` used to take).
+    fn isNamedAggregatePrefix(expr: *const Node) bool {
+        return switch (expr.data) {
+            .identifier, .field_access, .parameterized_type_expr, .call, .type_expr, .tuple_type_expr => true,
+            else => false,
+        };
+    }
+
+    /// Header contexts (`if cond {`, `while cond {`, `push expr {`) reserve
+    /// the final brace group for the statement body. A named aggregate that
+    /// ends a header expression must be parenthesized: `if (Button{}) {`.
+    fn namedAggregateAllowedHere(self: *const Parser) bool {
+        return !self.in_if_condition and !self.no_trailing_block;
+    }
+
+    /// With `current` on `{` after a call: true when the brace body looks
+    /// like a named-aggregate body rather than a trailing-block statement
+    /// list. Empty braces are aggregates (`List(T){}`); a top-level `;` or
+    /// statement keyword marks a trailing block (`vstack(0) { a; b; }`).
+    /// Empty trailing blocks use a no-op statement (`f() {;}`) when needed.
+    fn braceLooksLikeNamedAggregate(self: *Parser) bool {
+        if (self.current.tag != .l_brace) return false;
+        var lex = self.lexer;
+        var depth: u32 = 1;
+        var saw_non_ws = false;
+        var top_level_semi = false;
+        var top_level_stmt_kw = false;
+        while (true) {
+            const tok = lex.next();
+            switch (tok.tag) {
+                .l_brace => depth += 1,
+                .r_brace => {
+                    depth -= 1;
+                    if (depth == 0) break;
+                },
+                .eof => break,
+                .semicolon => {
+                    if (depth == 1) top_level_semi = true;
+                    saw_non_ws = true;
+                },
+                .kw_if, .kw_for, .kw_while, .kw_return, .kw_break, .kw_continue,
+                .kw_defer, .kw_raise, .kw_try, .kw_onfail, .kw_else,
+                => {
+                    if (depth == 1) top_level_stmt_kw = true;
+                    saw_non_ws = true;
+                },
+                else => saw_non_ws = true,
+            }
+        }
+        if (!saw_non_ws) return true; // empty `{}` → List(T){}
+        if (top_level_semi or top_level_stmt_kw) return false;
+        // Named fields, spreads, or comma positionals without `;` are
+        // aggregate-shaped. UI trailing blocks use `;`-terminated statements.
+        return true;
+    }
+
+    /// Separator-dot `Type.{…}` was removed. Point at the `.` and offer the
+    /// compact `Type{…}` spelling.
+    fn failNamedAggregateDot(self: *Parser) error{ParseError} {
+        // `current` is `{`; the separator `.` ends at `prev_end`.
+        const dot_start = if (self.prev_end > 0) self.prev_end - 1 else self.current.loc.start;
+        const dot_end = self.prev_end;
+        const msg = "a named aggregate literal places '{' directly after its type";
+        self.err_msg = msg;
+        self.err_offset = dot_start;
+        self.err_end = self.current.loc.end;
+        if (self.diagnostics) |diags| {
+            const id = diags.addId(.err, msg, .{ .start = dot_start, .end = dot_end });
+            // Rebuild the current line with the separator dot removed as fix-it.
+            const line_start = lineStartOf(self.source, dot_start);
+            const line_end = lineEndOf(self.source, self.current.loc.start);
+            const line = self.source[line_start..line_end];
+            const rel_dot = dot_start - line_start;
+            var fix_buf: std.ArrayList(u8) = .empty;
+            defer fix_buf.deinit(self.allocator);
+            if (rel_dot < line.len and line[rel_dot] == '.') {
+                fix_buf.appendSlice(self.allocator, line[0..rel_dot]) catch {};
+                fix_buf.appendSlice(self.allocator, line[rel_dot + 1 ..]) catch {};
+                const fix = fix_buf.toOwnedSlice(self.allocator) catch null;
+                diags.addHelp(id, .{ .start = line_start, .end = line_end }, "write the type, then '{'", fix);
+            } else {
+                diags.addHelp(id, null, "write `Type{...}` — remove the separator dot", null);
+            }
+        }
+        return error.ParseError;
+    }
+
+    fn lineStartOf(source: []const u8, pos: u32) u32 {
+        var i = pos;
+        while (i > 0 and source[i - 1] != '\n') : (i -= 1) {}
+        return i;
+    }
+
+    fn lineEndOf(source: []const u8, pos: u32) u32 {
+        var i = pos;
+        while (i < source.len and source[i] != '\n' and source[i] != '\r') : (i += 1) {}
+        return i;
     }
 
     /// Peek at the next token's tag without consuming.
@@ -6039,4 +6157,83 @@ test "E0.3 full failable function parses end-to-end (all E0 forms)" {
     // the onfail flag was restored: the raise inside the (separate) if-block is allowed
     const then_block = stmts[3].data.if_expr.then_branch;
     try std.testing.expect(then_block.data.block.stmts[0].data == .raise_stmt);
+}
+
+test "parse named aggregate Type{ fields } without separator dot" {
+    const source =
+        \\Point :: struct { x: i64; y: i64; }
+        \\main :: () {
+        \\  p := Point{ x = 1, y = 2 };
+        \\  q := Point{};
+        \\  r: Point = .{};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[1].data.fn_decl.body;
+    const stmts = body.data.block.stmts;
+    try std.testing.expect(stmts[0].data == .var_decl);
+    const p_init = stmts[0].data.var_decl.value.?;
+    try std.testing.expect(p_init.data == .struct_literal);
+    try std.testing.expectEqualStrings("Point", p_init.data.struct_literal.struct_name.?);
+    try std.testing.expectEqual(@as(usize, 2), p_init.data.struct_literal.field_inits.len);
+    const q_init = stmts[1].data.var_decl.value.?;
+    try std.testing.expect(q_init.data == .struct_literal);
+    try std.testing.expectEqual(@as(usize, 0), q_init.data.struct_literal.field_inits.len);
+    // Contextual .{} remains
+    const r_init = stmts[2].data.var_decl.value.?;
+    try std.testing.expect(r_init.data == .struct_literal);
+    try std.testing.expect(r_init.data.struct_literal.struct_name == null);
+    try std.testing.expect(r_init.data.struct_literal.type_expr == null);
+}
+
+test "parse parameterized named aggregate List(T){}" {
+    const source =
+        \\main :: () {
+        \\  xs := List(i64){};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
+    try std.testing.expect(init_expr.data == .struct_literal);
+    try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+    try std.testing.expect(init_expr.data.struct_literal.type_expr.?.data == .call);
+}
+
+test "parse rejects separator-dot Type.{}" {
+    const source =
+        \\main :: () {
+        \\  p := Point.{ x = 1 };
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const result = parser.parse();
+    try std.testing.expectError(error.ParseError, result);
+    try std.testing.expect(parser.err_msg != null);
+    try std.testing.expect(std.mem.indexOf(u8, parser.err_msg.?, "named aggregate") != null);
+}
+
+test "parse if cond { body } is not Type{}" {
+    const source =
+        \\main :: () {
+        \\  if neg { x = 1; }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const ife = body.data.block.stmts[0];
+    try std.testing.expect(ife.data == .if_expr);
+    try std.testing.expect(ife.data.if_expr.condition.data == .identifier);
+    try std.testing.expectEqualStrings("neg", ife.data.if_expr.condition.data.identifier.name);
 }

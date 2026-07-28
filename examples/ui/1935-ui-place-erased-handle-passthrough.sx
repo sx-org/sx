@@ -15,7 +15,7 @@ Dot :: struct { s: f32; }
 
 impl View for Dot {
     size_that_fits :: (self: *Dot, proposal: ProposedSize) -> Size {
-        Size.{ width = self.s, height = self.s }
+        Size{ width = self.s, height = self.s }
     }
     layout :: (self: *Dot, bounds: Frame) {}
     render :: (self: *Dot, ctx: *RenderContext, frame: Frame) {
@@ -25,7 +25,7 @@ impl View for Dot {
 
 // Sound erase-early helper: place into frame arena, return that handle.
 erased_dot :: () -> View {
-    place(Dot.{ s = 4.0 })
+    place(Dot{ s = 4.0 })
 }
 
 measure_layout_render :: (v: View) -> i64 {
@@ -39,21 +39,21 @@ measure_layout_render :: (v: View) -> i64 {
 }
 
 main :: () {
-    u := Ui.{};
+    u := Ui{};
     push .{ ui = *u } {
         // Concrete path still works.
-        plain := place(Dot.{ s = 4.0 });
+        plain := place(Dot{ s = 4.0 });
         process.assert(plain.(?Dot) != null, "concrete place returns the leaf");
 
         // Erased handle from a living local, default Mod: passthrough.
-        d := Dot.{ s = 4.0 };
+        d := Dot{ s = 4.0 };
         h := place(d.(View));
         process.assert(h.(?ModBox(View)) == null, "default Mod on handle adds no wrapper");
         process.assert(h.(?Dot) != null, "passthrough still dispatches to Dot");
         process.assert(measure_layout_render(h) >= 1, "passthrough handle can measure/layout/render");
 
         // Erased handle, non-default Mod: one ModBox(View); dispatch through it.
-        hm := place(d.(View), Mod.{ opacity = 0.5 });
+        hm := place(d.(View), Mod{ opacity = 0.5 });
         boxed := hm.(?ModBox(View));
         process.assert(boxed != null, "non-default Mod wraps ModBox(View)");
         process.assert(measure_layout_render(hm) >= 1, "ModBox(View) can measure/layout/render");
@@ -61,7 +61,7 @@ main :: () {
         // Helper that returns a placed View (arena referent outlives the call).
         from_helper := place(erased_dot());
         process.assert(from_helper.(?Dot) != null, "place(helper()->View) passthrough");
-        from_helper_m := place(erased_dot(), Mod.{ opacity = 0.8 });
+        from_helper_m := place(erased_dot(), Mod{ opacity = 0.8 });
         process.assert(from_helper_m.(?ModBox(View)) != null, "place(helper(), mod) wraps once");
         process.assert(measure_layout_render(from_helper_m) >= 1, "helper+mod dispatches");
 

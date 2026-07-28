@@ -20,7 +20,7 @@ main :: () {
 
     // also via a closure stored in a struct field
     Holder :: struct { f: Closure(?i64) -> i64; }
-    h := Holder.{ f = pick };
+    h := Holder{ f = pick };
     print("h 5: {}\n", h.f(5));            // 5
     print("h null: {}\n", h.f(null));      // -1
 

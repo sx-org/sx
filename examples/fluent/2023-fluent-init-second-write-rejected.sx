@@ -16,7 +16,7 @@ store_twice :: (value: @Init($T)) -> *T {
 }
 
 main :: () -> i32 {
-    b := store_twice(Button.{ label = "Play" });
+    b := store_twice(Button{ label = "Play" });
     print("{}\n", b.label);
     0
 }

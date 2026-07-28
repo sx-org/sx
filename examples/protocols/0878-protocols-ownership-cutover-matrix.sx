@@ -22,11 +22,11 @@ impl Sizable for W {
     bump :: (self: *W) { self.v += 1; }
 }
 
-make :: () -> W { W.{ v = 5 } }
+make :: () -> W { W{ v = 5 } }
 
 main :: () {
     gpa := GPA.init();
-    w := W.{ v = 10 };
+    w := W{ v = 10 };
 
     // rvalue implicit erasure owns (heap copy via context.allocator).
     r : Sizable = xx make();

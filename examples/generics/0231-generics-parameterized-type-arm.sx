@@ -16,7 +16,7 @@ open :: (s: Series(f32)) {
 }
 
 main :: () {
-    a : Series(f32) = Buffer(f32).{ n = 7 };
+    a : Series(f32) = Buffer(f32){ n = 7 };
     open(a);
     //stdout: f32 arm 7
 
@@ -27,7 +27,7 @@ main :: () {
     // An `any` subject dispatches on the same tag; the i64 arm is live here
     // (no whole-program conformer set narrows it) and does not claim an f32
     // value.
-    v : any = Buffer(f32).{ n = 3 };
+    v : any = Buffer(f32){ n = 3 };
     if v == {
         case Buffer(i64): (x) { print("i64 arm {}\n", x.n); }
         case Buffer(f32): (x) { print("f32 arm {}\n", x.n); }
@@ -35,7 +35,7 @@ main :: () {
     }
     //stdout: f32 arm 3
 
-    w : any = Buffer(i64).{ n = 4 };
+    w : any = Buffer(i64){ n = 4 };
     if w == {
         case Buffer(f32): (x) { print("f32 arm {}\n", x.n); }
         else: { print("no f32 arm\n"); }
@@ -43,7 +43,7 @@ main :: () {
     //stdout: no f32 arm
 
     // Nested instantiation in arm and compare position.
-    z : any = Buffer(Buffer(f32)).{ n = 9 };
+    z : any = Buffer(Buffer(f32)){ n = 9 };
     if z == {
         case Buffer(Buffer(f32)): (x) { print("nested {}\n", x.n); }
         else: { print("nested miss\n"); }

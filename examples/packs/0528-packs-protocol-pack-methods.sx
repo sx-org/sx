@@ -22,10 +22,10 @@ pair_sum :: (..xs: Greeter) -> i64 {
 }
 
 main :: () -> i32 {
-    d := Dog.{ age = 3 };
-    c := Cat.{ lives = 9 };
+    d := Dog{ age = 3 };
+    c := Cat{ lives = 9 };
     print("dog+cat={}\n", pair_sum(d, c));   // 3 + 900 = 903 (heterogeneous)
     print("cat+dog={}\n", pair_sum(c, d));   // 900 + 3 = 903 (order swapped)
-    print("dog+dog={}\n", pair_sum(d, Dog.{ age = 4 })); // 3 + 4 = 7
+    print("dog+dog={}\n", pair_sum(d, Dog{ age = 4 })); // 3 + 4 = 7
     0
 }

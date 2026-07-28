@@ -22,7 +22,7 @@ sum_var :: (..xs: []i64) -> i64 {
 here :: (loc: Source_Location = #caller_location) -> i64 { return loc.line; }
 
 main :: () {
-    p := Point.{ x = 5 };
+    p := Point{ x = 5 };
     print("{}\n", p.scaled());        // default filled on method dispatch
     print("{}\n", p.scaled(3));       // explicit overrides
     print("{}\n", p.bump());          // default filled on ufcs dispatch

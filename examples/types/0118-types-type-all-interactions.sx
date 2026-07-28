@@ -106,8 +106,8 @@ main :: () -> i32 {
 
     // ── 8. Comptime-generated struct (Wrap($T)) ─────────────
     print("=== 8. Wrap($T) ===\n");
-    w_int := Wrap(i64).{ v = 42 };
-    w_str := Wrap(string).{ v = "wrapped" };
+    w_int := Wrap(i64){ v = 42 };
+    w_str := Wrap(string){ v = "wrapped" };
     print("Wrap(i64).v:    {}\n", w_int.v);
     print("Wrap(string).v: {}\n", w_str.v);
 
@@ -129,7 +129,7 @@ main :: () -> i32 {
 
     // ── 11. Type in struct field ────────────────────────────
     print("=== 11. Type in struct field ===\n");
-    h := TypeHolder.{ t = i64 };
+    h := TypeHolder{ t = i64 };
     print("h.t == i64:    {}\n", h.t == i64);
     print("h.t == string: {}\n", h.t == string);
     print("type_name(h.t): {}\n", type_name(h.t));

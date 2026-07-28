@@ -40,10 +40,10 @@ main :: () {
 
     inst : *SxStructProbe = xx class_createInstance(cls, 0);
 
-    r := ProbeRegion.{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6 };
+    r := ProbeRegion{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6 };
     print("region sum: {}\n", inst.take_region(r));
 
-    s := ProbeSize.{ w = 12.0, h = 34.0 };
+    s := ProbeSize{ w = 12.0, h = 34.0 };
     print("size packed: {}\n", inst.take_size(s));
 
     print("mixed: {}\n", inst.take_mixed(7, r, 9));

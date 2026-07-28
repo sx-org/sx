@@ -48,14 +48,14 @@ main :: () -> i32 {
     print("match none: {}\n", check(null));
 
     // Optional chaining
-    p: ?OptNode = OptNode.{ value = 10, next = 20 };
+    p: ?OptNode = OptNode{ value = 10, next = 20 };
     q: ?OptNode = null;
     print("p?.value = {}\n", p?.value ?? 0);
     print("q?.value = {}\n", q?.value ?? 0);
 
     // Deep chaining
-    o1 := OptOuter.{ inner = OptInner.{ val = 99 } };
-    o2 := OptOuter.{ inner = null };
+    o1 := OptOuter{ inner = OptInner{ val = 99 } };
+    o2 := OptOuter{ inner = null };
     print("o1.inner?.val = {}\n", o1.inner?.val ?? 0);
     print("o2.inner?.val = {}\n", o2.inner?.val ?? 0);
 
@@ -87,7 +87,7 @@ main :: () -> i32 {
     print("guard2: {}\n", guard2(3, 4));
 
     // Struct field defaults
-    n := OptNode.{ value = 10 };
+    n := OptNode{ value = 10 };
     print("default next: {}\n", n.next);
 
     // Comptime result

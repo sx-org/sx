@@ -9,7 +9,7 @@
 // working binary is still produced → "runtime main".
 
 build :: (opt: BuildOptions) -> bool {
-    names := List(string).{};
+    names := List(string){};
     names.append("alpha");
     names.append("beta");
     names.append("gamma");

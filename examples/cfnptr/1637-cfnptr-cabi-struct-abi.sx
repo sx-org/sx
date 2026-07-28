@@ -23,21 +23,21 @@ add_mid :: (m: Mid) -> i64 abi(.c) { return m.x + xx m.y; }
 add_big :: (b: Big) -> i64 abi(.c) { return b.x + b.y + b.z; }
 add_hfa :: (h: Hfa) -> f32 abi(.c) { return h.x + h.y; }
 str_len :: (s: string) -> i64 abi(.c) { return s.len; }
-mk_pt :: (x: i32, y: i32) -> Point abi(.c) { return Point.{ x = x, y = y }; }
-mk_big :: (x: i64) -> Big abi(.c) { return Big.{ x = x, y = x * 2, z = x * 3 }; }
+mk_pt :: (x: i32, y: i32) -> Point abi(.c) { return Point{ x = x, y = y }; }
+mk_big :: (x: i64) -> Big abi(.c) { return Big{ x = x, y = x * 2, z = x * 3 }; }
 
 main :: () -> i64 {
     // Param matrix through abi(.c) fn pointers.
     fp1 : (Point) -> i32 abi(.c) = add_pt;
-    print("pt: {}\n", fp1(Point.{ x = 1, y = 2 }));
+    print("pt: {}\n", fp1(Point{ x = 1, y = 2 }));
     fp2 : (Tiny) -> i32 abi(.c) = add_tiny;
-    print("tiny: {}\n", fp2(Tiny.{ a = 5, b = 6 }));
+    print("tiny: {}\n", fp2(Tiny{ a = 5, b = 6 }));
     fp3 : (Mid) -> i64 abi(.c) = add_mid;
-    print("mid: {}\n", fp3(Mid.{ x = 100, y = 20 }));
+    print("mid: {}\n", fp3(Mid{ x = 100, y = 20 }));
     fp4 : (Big) -> i64 abi(.c) = add_big;
-    print("big: {}\n", fp4(Big.{ x = 1, y = 2, z = 3 }));
+    print("big: {}\n", fp4(Big{ x = 1, y = 2, z = 3 }));
     fp5 : (Hfa) -> f32 abi(.c) = add_hfa;
-    print("hfa: {}\n", fp5(Hfa.{ x = 1.5, y = 2.5 }));
+    print("hfa: {}\n", fp5(Hfa{ x = 1.5, y = 2.5 }));
     fp6 : (string) -> i64 abi(.c) = str_len;
     print("str: {}\n", fp6("hello"));
 

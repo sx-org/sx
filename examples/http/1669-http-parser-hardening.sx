@@ -41,7 +41,7 @@ dial_port :: (port: i64) -> i32 {
 
 // True when buf[0..len] holds a complete response (headers + Content-Length body).
 resp_complete :: (buf: [*]u8, len: i64) -> bool {
-    s := string.{ ptr = buf, len = xx len };
+    s := string{ ptr = buf, len = xx len };
     he := -1;
     i := 0;
     while i + 3 < s.len {
@@ -82,8 +82,8 @@ roundtrip :: (srv: *http.Server, reqtext: string, scratch: [*]u8) -> string {
         srv.tick(5) catch {};
         n, re := socket.read_nb(fd, *scratch[total], xx (4096 - total));
         if !re { total += n; }
-        else if re == error.Closed { out = string.{ ptr = scratch, len = xx total }; break; }
-        if resp_complete(scratch, total) { out = string.{ ptr = scratch, len = xx total }; break; }
+        else if re == error.Closed { out = string{ ptr = scratch, len = xx total }; break; }
+        if resp_complete(scratch, total) { out = string{ ptr = scratch, len = xx total }; break; }
         tries += 1;
     }
     socket.close(fd);
@@ -182,7 +182,7 @@ main :: () -> i32 {
     big : [*]u8 = xx context.allocator.alloc_bytes(700);
     f := 0;
     while f < 700 { big[f] = 120; f += 1; }   // 'x'
-    longline := concat("GET /ok HTTP/1.1\r\nX-Big: ", concat(string.{ ptr = big, len = 700 }, "\r\n\r\n"));
+    longline := concat("GET /ok HTTP/1.1\r\nX-Big: ", concat(string{ ptr = big, len = 700 }, "\r\n\r\n"));
     r = roundtrip(*srv, longline, *buf[0]);
     if !contains(r, "HTTP/1.1 431 Request Header Fields Too Large") { print("long header: expected 431\n"); return 1; }
     print("over-long header line -> 431\n");

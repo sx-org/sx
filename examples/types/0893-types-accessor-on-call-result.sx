@@ -30,7 +30,7 @@ via_call  :: () -> i64 { g.ptr().xs.len }
 via_unwrap :: () -> i64 { g.opt()!.xs.len }
 
 main :: () {
-    g = Box.{};
+    g = Box{};
     g.a.n = 7;
     for 0..3 (i) { g.a.xs.append(i); }
 

@@ -18,7 +18,7 @@ main :: () {
     print("coalesce: {}\n", av.(?f64) ?? 9.5);
     if v := av.(?i64) { print("if-bind: {}\n", v); }
     if w := av.(?bool) { print("unreached: {}\n", w); } else { print("else-arm\n"); }
-    p := Point.{ x = 3, y = 4 };
+    p := Point{ x = 3, y = 4 };
     pv : any = p;
     if q := pv.(?Point) { print("struct: {} {}\n", q.x, q.y); }
     print("typed recv unchanged: {}\n", (5.(?i64)) != null);

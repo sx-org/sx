@@ -15,7 +15,7 @@ bump :: ufcs (c: *Counter) -> i32 { c.n += 1; return c.n; }
 reset :: ufcs (c: *Counter) { c.n = 0; }
 
 main :: () -> i32 {
-    c := Counter.{ n = 10 };
+    c := Counter{ n = 10 };
     a := c.bump();   // 11, mutates c
     b := c.bump();   // 12
     print("a={} b={} n={}\n", a, b, c.n);  // a=11 b=12 n=12

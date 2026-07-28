@@ -138,7 +138,7 @@ Pool :: struct {
     create :: (workers: i64, backlog: i64) -> (*Pool, !ThreadErr) {
         alloc := context.allocator;
         p : *Pool = xx alloc.alloc_bytes(size_of(Pool));
-        p.* = Pool.{};
+        p.* = Pool{};
         p.own_alloc = alloc;
         // Free-before-raise: nothing past `p` is allocated yet, so the
         // mutex-setup failure only needs to release `p`. The cond-setup
@@ -170,7 +170,7 @@ Pool :: struct {
             return false;
         }
         slot := (self.head + self.len) % self.cap;
-        self.tasks[slot] = PoolTask.{ f = f, arg = arg };
+        self.tasks[slot] = PoolTask{ f = f, arg = arg };
         self.len += 1;
         self.nonempty.signal();
         self.mu.unlock();

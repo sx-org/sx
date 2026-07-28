@@ -30,6 +30,6 @@ main :: () {
     print("global = {}\n", `u8);
     print("fn     = {}\n", `i2(21));   // calls the `i2 function
 
-    p := Point.{ `i2 = 2.5, `u16 = 9 };
+    p := Point{ `i2 = 2.5, `u16 = 9 };
     print("field  = {} {}\n", p.`i2, p.`u16);
 }

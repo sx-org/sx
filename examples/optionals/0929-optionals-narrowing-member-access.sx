@@ -71,7 +71,7 @@ addr_chain :: (w: *W) -> *i64 {
 }
 
 main :: () {
-    t := T.{};
+    t := T{};
     process.assert(read_scalar(*t) == 7 and read_scalar(null) == 0, "scalar");
     process.assert(read_nested(*t) == 3, "nested aggregate");
     process.assert(read_two_step(*t) == 3, "aggregate copy");
@@ -81,16 +81,16 @@ main :: () {
     call_method(*t);
     process.assert(t.n == 43, "method on narrowed receiver");
 
-    process.assert(value_optional(V.{}) == 9 and value_optional(null) == 0, "value optional");
+    process.assert(value_optional(V{}) == 9 and value_optional(null) == 0, "value optional");
 
     c := still_chains(*t);
     process.assert(c != null and c! == 43, "?. chain preserved");
 
-    v := V.{};
+    v := V{};
     process.assert(guard_or(*t, *v) == 52, "or-guard narrows both");
     process.assert(guard_or(null, *v) == 0, "or-guard rejects null");
 
-    w := W.{};
+    w := W{};
     w.xs.append(11);
     process.assert(accessor_chain(*w) == 1, "accessor chain");
     pp := addr_chain(*w);

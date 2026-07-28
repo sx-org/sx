@@ -64,7 +64,7 @@ Box :: struct ($T: Type) {
 }
 
 main :: () {
-    thing := Thing.{ base = 10 };
+    thing := Thing{ base = 10 };
 
     // `y` must resolve to the caller's x (9), not the already-staged formal
     // x (1). The receiver and both runtime args each evaluate once.
@@ -100,6 +100,6 @@ main :: () {
 
     // This used to evaluate next() in the ordinary call loop and again in the
     // generic-instance comptime helper.
-    box := Box(i64).{ value = 20 };
+    box := Box(i64){ value = 20 };
     print("generic={} calls={}\n", box.add(next(), .one), calls);
 }

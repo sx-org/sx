@@ -58,7 +58,7 @@ Region :: struct {
 }
 impl View for Region {
     size_that_fits :: (self: *Region, proposal: ProposedSize) -> Size {
-        Size.{ width = self.w, height = self.h }
+        Size{ width = self.w, height = self.h }
     }
     layout :: (self: *Region, bounds: Frame) {}
     render :: (self: *Region, ctx: *RenderContext, frame: Frame) {
@@ -73,10 +73,10 @@ home :: () -> View {
     vstack(0.0) {
         r := element_id().value;
         g_row = r;
-        place(Region.{ eid = r, bubble = false, w = 200.0, h = 40.0 });
+        place(Region{ eid = r, bubble = false, w = 200.0, h = 40.0 });
         b := element_id().value;
         g_bubble = b;
-        place(Region.{ eid = b, bubble = true, w = 200.0, h = 40.0 });
+        place(Region{ eid = b, bubble = true, w = 200.0, h = 40.0 });
     }
 }
 

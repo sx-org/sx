@@ -28,7 +28,7 @@ main :: () -> i32 {
     widened : Broad = ne;
     print("decl: {}\n", widened);
     take_broad(ne);
-    h := Holder.{ e = ne };
+    h := Holder{ e = ne };
     print("field: {}\n", h.e);
 
     // `xx` stays the escape hatch for a deliberate narrowing.
@@ -45,7 +45,7 @@ main :: () -> i32 {
     short : Broad = .Extra;
     print("shorthand decl: {}\n", short);
     take_broad(.Wide);
-    sh := Holder.{ e = .Extra };
+    sh := Holder{ e = .Extra };
     print("shorthand field: {}\n", sh.e);
     opt : ?Broad = .Wide;
     print("shorthand optional: {}\n", opt!);

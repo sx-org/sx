@@ -45,23 +45,23 @@ Kind :: enum {
 Pair :: struct { a, b: i64; }
 
 main :: () {
-    q := Q.{ if = 10, while = 1.5, for = 2.5, f32 = 9.5 };
+    q := Q{ if = 10, while = 1.5, for = 2.5, f32 = 9.5 };
     q.push(5);
     print("q {} {} {} {} {}\n", q.return(), q.while, q.for, q.f32, Q.case);
 
-    r := R.{};
+    r := R{};
     p : P = r.(P);
     print("impl {}\n", p.push(3));
 
-    o : ?Q = Q.{ if = 4 };
+    o : ?Q = Q{ if = 4 };
     print("chain {}\n", o?.if);
 
-    e := Esc.{};
+    e := Esc{};
     print("esc {}\n", e.inline);
 
     // The keyword-field literal path never eats a positional expression:
     x := 3;
-    pr := Pair.{ if x > 1 then 10 else 20, 2 };
+    pr := Pair{ if x > 1 then 10 else 20, 2 };
     print("pos {} {}\n", pr.a, pr.b);
 
     k : Kind = .struct(42);

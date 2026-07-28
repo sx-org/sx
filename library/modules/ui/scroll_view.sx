@@ -47,7 +47,7 @@ ScrollView :: struct {
 impl View for ScrollView {
     size_that_fits :: (self: *ScrollView, proposal: ProposedSize) -> Size {
         // ScrollView takes all proposed space (default 200 if unspecified)
-        Size.{
+        Size{
             width = proposal.width ?? 200.0,
             height = proposal.height ?? 200.0
         }
@@ -58,7 +58,7 @@ impl View for ScrollView {
         s.viewport_size = bounds.size;
 
         // Measure child with infinite space on scroll axes
-        child_proposal := ProposedSize.{
+        child_proposal := ProposedSize{
             width = if self.axes == .horizontal or self.axes == .both then null else bounds.size.width,
             height = if self.axes == .vertical or self.axes == .both then null else bounds.size.height
         };

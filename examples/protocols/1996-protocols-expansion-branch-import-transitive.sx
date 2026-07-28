@@ -18,7 +18,7 @@ inline if POINTER_SIZE == 8 {
 }
 
 main :: () {
-    c := Cell.{ n = 2 };
+    c := Cell{ n = 2 };
     t := c.(Tag);
     print("{} {}\n", ADMITTED, t.id());
 }

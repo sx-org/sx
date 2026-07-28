@@ -16,7 +16,7 @@ impl Boxed for Rect { area :: (self: *Rect) -> i64 { self.w * self.h } }
 Timer :: struct { t: i64; }
 
 main :: () {
-    r := Rect.{ w = 2, h = 6 };
+    r := Rect{ w = 2, h = 6 };
     t : Shape = r;
     b := r.(Boxed);
 

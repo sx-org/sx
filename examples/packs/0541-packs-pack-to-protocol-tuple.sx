@@ -23,6 +23,6 @@ build :: (..sources: VL) -> void {
 }
 
 main :: () -> i32 {
-    build(IntCell.{ v = 10 }, StrCell.{ s = "hi" });   // 10 hi
+    build(IntCell{ v = 10 }, StrCell{ s = "hi" });   // 10 hi
     0
 }

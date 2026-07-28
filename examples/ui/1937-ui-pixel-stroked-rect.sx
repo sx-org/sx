@@ -28,7 +28,7 @@
 #import "modules/ui/surface_select.sx";
 #import "modules/ui/pixeltest.sx";
 
-BACKDROP :: Color.{ r = 20, g = 20, b = 20, a = 255 };
+BACKDROP :: Color{ r = 20, g = 20, b = 20, a = 255 };
 
 // A sample is "the colour c" when every channel is within the same
 // budget the golden comparison uses, so AA jitter across drivers does

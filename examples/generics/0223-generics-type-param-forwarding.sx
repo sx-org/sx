@@ -31,11 +31,11 @@ Pair :: struct { a: i64; b: f32; }
 Nested :: struct { p: Pair; flag: bool; }
 
 Box :: struct ($T: Type) { v: T; }
-rebox :: ($T: Type, v: T) -> Box(T) { Box(T).{ v = v } }
+rebox :: ($T: Type, v: T) -> Box(T) { Box(T){ v = v } }
 
 main :: () {
     print("{} {}\n", outer(i64, 5), outer(f32, 1.0));
-    print("{} {}\n", walk(Pair, Pair.{ a = 1, b = 2.0 }), walk(Nested, Nested.{ p = .{ a = 1, b = 2.0 }, flag = true }));
+    print("{} {}\n", walk(Pair, Pair{ a = 1, b = 2.0 }), walk(Nested, Nested{ p = .{ a = 1, b = 2.0 }, flag = true }));
     b := rebox(i64, 42);
     print("{}\n", b.v);
 }

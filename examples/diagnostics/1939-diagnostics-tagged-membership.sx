@@ -20,7 +20,7 @@ Drawable :: protocol tagged { draw :: (self: *Self) -> i64; }
 reaching :: (d: Drawable) -> i64 { 0 }
 
 main :: () {
-    w := Widget.{ n = 3 };
+    w := Widget{ n = 3 };
     v : View = w;
 
     // Empty set: the erasure demands a member, and there is none.

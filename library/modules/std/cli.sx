@@ -113,7 +113,7 @@ os_args :: (buf: []string) -> []string {
                 cstr : [*]u8 = xx argv[i];
                 len := 0;
                 while cstr[len] != 0 { len += 1; }
-                buf[i] = string.{ ptr = cstr, len = len };
+                buf[i] = string{ ptr = cstr, len = len };
                 i += 1;
             }
             result : []string = ---;
@@ -174,10 +174,10 @@ os_args :: (buf: []string) -> []string {
 // Usage:
 //
 //     flags : []FlagSpec = .[
-//         FlagSpec.{ name = "out",     takes_value = true,  required = true },
-//         FlagSpec.{ name = "verbose", takes_value = false, required = false },
+//         FlagSpec{ name = "out",     takes_value = true,  required = true },
+//         FlagSpec{ name = "verbose", takes_value = false, required = false },
 //     ];
-//     cmds : []Command = .[ Command.{ group = "ci", command = "publish", flags = flags } ];
+//     cmds : []Command = .[ Command{ group = "ci", command = "publish", flags = flags } ];
 //     d : Diag = .{};
 //     p := try parse(args, cmds, @d);
 //     // p.group == "ci"; p.command == "publish";

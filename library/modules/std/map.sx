@@ -439,7 +439,7 @@ HashMap :: struct ($K: Type, $V: Type) {
     // its `pos` and every yielded key/value pointer dangle (UAF, UB). A
     // `remove` mid-iteration is safe (tombstone only, no realloc).
     iterator :: (self: *HashMap(K, V)) -> HashIter(K, V) {
-        HashIter(K, V).{ map = self, pos = 0 }
+        HashIter(K, V){ map = self, pos = 0 }
     }
 }
 
@@ -457,7 +457,7 @@ HashIter :: struct ($K: Type, $V: Type) {
         i := self.map.next_used(self.pos);
         if i >= self.map.cap { return null; }
         self.pos = i + 1;
-        return HashKV(K, V).{ key_ptr = *self.map.keys[i], value_ptr = *self.map.values[i] };
+        return HashKV(K, V){ key_ptr = *self.map.keys[i], value_ptr = *self.map.values[i] };
     }
 
     // Restart from the first live bucket.
@@ -467,7 +467,7 @@ HashIter :: struct ($K: Type, $V: Type) {
 // By-value construction (allocator-construction rule): the caller binds the
 // returned value to a local that IS the map's storage.
 hashmap_init :: ($K: Type, $V: Type) -> HashMap(K, V) {
-    HashMap(K, V).{}
+    HashMap(K, V){}
 }
 
 // =====================================================================
@@ -732,7 +732,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         if existing >= 0 { self.entries[existing].value = val; return; }
         h := map_hash_key(key);
         e := self.ecount;
-        self.entries[e] = IMEntry(K, V).{ hash = h, key = key, value = val };
+        self.entries[e] = IMEntry(K, V){ hash = h, key = key, value = val };
         self.ecount += 1;
         self.index_insert(h, e);
     }
@@ -747,7 +747,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
         }
         h := map_hash_key(key);
         e := self.ecount;
-        self.entries[e] = IMEntry(K, V).{ hash = h, key = key, value = val };
+        self.entries[e] = IMEntry(K, V){ hash = h, key = key, value = val };
         self.ecount += 1;
         self.index_insert(h, e);
         return null;
@@ -872,7 +872,7 @@ IndexMap :: struct ($K: Type, $V: Type) {
     //   it := m.iterator();
     //   while kv := it.next() { use(kv.key_ptr.*, kv.value_ptr.*); }
     iterator :: (self: *IndexMap(K, V)) -> IndexIter(K, V) {
-        IndexIter(K, V).{ map = self, pos = 0 }
+        IndexIter(K, V){ map = self, pos = 0 }
     }
 }
 
@@ -884,7 +884,7 @@ IndexIter :: struct ($K: Type, $V: Type) {
         if self.pos >= self.map.ecount { return null; }
         i := self.pos;
         self.pos = i + 1;
-        return HashKV(K, V).{ key_ptr = *self.map.entries[i].key, value_ptr = *self.map.entries[i].value };
+        return HashKV(K, V){ key_ptr = *self.map.entries[i].key, value_ptr = *self.map.entries[i].value };
     }
 
     reset :: (self: *IndexIter(K, V)) { self.pos = 0; }

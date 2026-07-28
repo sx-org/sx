@@ -13,7 +13,7 @@ main :: () {
     {
         // Struct literal with trailing comma
         Vec4 :: struct { x: f64; y: f64; z: f64; w: f64; }
-        v := Vec4.{
+        v := Vec4{
             x = 1.0,
             y = 2.0,
             z = 3.0,

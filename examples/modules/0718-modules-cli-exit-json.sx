@@ -27,10 +27,10 @@ report :: (label: string, ok: bool) {
 
 main :: () -> ! {
     publish_flags : []FlagSpec = .[
-        FlagSpec.{ name = "out", takes_value = true, required = true },
+        FlagSpec{ name = "out", takes_value = true, required = true },
     ];
     cmds : []Command = .[
-        Command.{ group = "ci", command = "publish", flags = publish_flags },
+        Command{ group = "ci", command = "publish", flags = publish_flags },
     ];
 
     // ── 1. Named exit-code constants (the dist contract) ──────────────

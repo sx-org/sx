@@ -20,7 +20,7 @@ named :: (v: any) -> string { type_name(type_of(v)) }
 returned :: (s: Sized) -> any { s }
 
 main :: () {
-    c := Cube.{ side = 4 };
+    c := Cube{ side = 4 };
 
     // Each kind's handle, boxed by a plain declaration.
     v := c.(Sized);
@@ -44,7 +44,7 @@ main :: () {
 
     // Call argument, field init, container element, return.
     print("arg {}\n", named(v));
-    h := Holder.{ seen = n };
+    h := Holder{ seen = n };
     print("field {}\n", named(h.seen));
     row : [3]any = .{ v, i, n };
     print("elem {} {} {}\n", named(row[0]), named(row[1]), named(row[2]));

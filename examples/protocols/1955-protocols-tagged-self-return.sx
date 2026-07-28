@@ -46,8 +46,8 @@ impl Tick for Clock {
 }
 
 main :: () {
-    c := Circle.{ r = 1.0 };
-    sq := Square.{ s = 2.0 };
+    c := Circle{ r = 1.0 };
+    sq := Square{ s = 2.0 };
     v : Shape = c;
     w : Shape = sq;
 
@@ -76,11 +76,11 @@ main :: () {
     }
     print("{}\n", total);
 
-    out := Circle.{ r = 0.0 };
+    out := Circle{ r = 0.0 };
     grow_into(*out, v, 4.0);
     print("{}\n", out.r);
 
-    k := Clock.{ t = 41 };
+    k := Clock{ t = 41 };
     t : Tick = k;
     print("{}\n", t.next().count());
 }

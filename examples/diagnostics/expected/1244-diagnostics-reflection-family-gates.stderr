@@ -31,7 +31,7 @@ error: struct_field_count is not for arrays/vectors — use `.len` on the value 
 error: variant_payload expects an enum or tagged-union value; 'Point' is not one — for struct/tuple fields use struct_field_value
   --> examples/diagnostics/1244-diagnostics-reflection-family-gates.sx:18:19
    |
-18 |     print("{}\n", variant_payload(Point.{ x = 1, y = 2 }, 0));  // struct value → struct_field_value
+18 |     print("{}\n", variant_payload(Point{ x = 1, y = 2 }, 0));  // struct value → struct_field_value
    |                   ^^^^^^^^^^^^^^^
 
 error: struct_field_value is not for arrays/vectors — index natively (`v[i]`, typed) instead

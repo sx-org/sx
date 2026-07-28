@@ -7,15 +7,15 @@ HAlignment :: enum { leading; center; trailing; }
 VAlignment :: enum { top; center; bottom; }
 Alignment :: struct { h: HAlignment; v: VAlignment; }
 
-ALIGN_CENTER          :: Alignment.{ h = .center,   v = .center };
-ALIGN_TOP             :: Alignment.{ h = .center,   v = .top };
-ALIGN_BOTTOM          :: Alignment.{ h = .center,   v = .bottom };
-ALIGN_LEADING         :: Alignment.{ h = .leading,  v = .center };
-ALIGN_TRAILING        :: Alignment.{ h = .trailing, v = .center };
-ALIGN_TOP_LEADING     :: Alignment.{ h = .leading,  v = .top };
-ALIGN_TOP_TRAILING    :: Alignment.{ h = .trailing, v = .top };
-ALIGN_BOTTOM_LEADING  :: Alignment.{ h = .leading,  v = .bottom };
-ALIGN_BOTTOM_TRAILING :: Alignment.{ h = .trailing, v = .bottom };
+ALIGN_CENTER          :: Alignment{ h = .center,   v = .center };
+ALIGN_TOP             :: Alignment{ h = .center,   v = .top };
+ALIGN_BOTTOM          :: Alignment{ h = .center,   v = .bottom };
+ALIGN_LEADING         :: Alignment{ h = .leading,  v = .center };
+ALIGN_TRAILING        :: Alignment{ h = .trailing, v = .center };
+ALIGN_TOP_LEADING     :: Alignment{ h = .leading,  v = .top };
+ALIGN_TOP_TRAILING    :: Alignment{ h = .trailing, v = .top };
+ALIGN_BOTTOM_LEADING  :: Alignment{ h = .leading,  v = .bottom };
+ALIGN_BOTTOM_TRAILING :: Alignment{ h = .trailing, v = .bottom };
 
 Zone :: enum {
     floating;

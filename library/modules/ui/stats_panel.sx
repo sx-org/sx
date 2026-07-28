@@ -23,7 +23,7 @@ impl View for StatsPanel {
         fps_size := measure_text("FPS: 0000", StatsPanel.VALUE_SIZE);
         w := max(title_size.width, fps_size.width) + StatsPanel.PADDING * 2.0;
         h := title_size.height + StatsPanel.LINE_SPACING + fps_size.height + StatsPanel.PADDING * 2.0;
-        Size.{ width = w, height = h }
+        Size{ width = w, height = h }
     }
 
     layout :: (self: *StatsPanel, bounds: Frame) {}

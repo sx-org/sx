@@ -37,7 +37,7 @@ inline for SHAPES (T) {
 }
 
 main :: () {
-    i := Item.{ n = 2 };
+    i := Item{ n = 2 };
     s := i.(Show);
     print("{} {} {} {}\n", REPAIRED, UNIQUE, PARTITION, s.fmt());
 }

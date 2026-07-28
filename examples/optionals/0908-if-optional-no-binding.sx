@@ -23,7 +23,7 @@ main :: () {
     check_i64(b);   // i64 present
 
     p_null : ?P = null;
-    p_some : ?P = P.{ x = 9 };
+    p_some : ?P = P{ x = 9 };
     check_p(p_null);   // P absent
     check_p(p_some);   // P present
 }

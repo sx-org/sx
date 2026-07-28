@@ -17,6 +17,6 @@ leak :: (..xs: Box) -> i64 {
 }
 
 main :: () -> i32 {
-    print("{}\n", leak(IntCell.{ v = 5 }));
+    print("{}\n", leak(IntCell{ v = 5 }));
     0
 }

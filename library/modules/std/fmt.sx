@@ -195,7 +195,7 @@ cstring_len :: (c: cstring) -> i64 {
 // shares C's buffer — `substr` it if it must outlive the source.
 from_cstring :: (c: cstring) -> string {
     p : [*]u8 = xx c;
-    string.{ ptr = p, len = cstring_len(c) }
+    string{ ptr = p, len = cstring_len(c) }
 }
 
 // An owned, terminated copy of `s` as a `cstring`.

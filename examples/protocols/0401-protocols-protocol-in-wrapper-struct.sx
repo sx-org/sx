@@ -25,7 +25,7 @@ Container :: struct {
 
     add :: (self: *Container, w: Widget) {
         p := w;  // local copy
-        self.items.append(Item.{ view = p.(Sizable) });  // explicit owning copy
+        self.items.append(Item{ view = p.(Sizable) });  // explicit owning copy
 
         // Works here: stack local `p` is still alive
         out("inside add: ");
@@ -35,8 +35,8 @@ Container :: struct {
 
 main :: () -> void {
     c : Container = .{};
-    c.add(Widget.{ value = 42 });
-    c.add(Widget.{ value = 99 });
+    c.add(Widget{ value = 42 });
+    c.add(Widget{ value = 99 });
 
     // BUG: items[0] should return 42, but returns 99 (reads items[1]'s stack slot)
     // Both protocol values point to the same stack address (the `p` local in add())

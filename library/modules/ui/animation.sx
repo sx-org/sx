@@ -30,7 +30,7 @@ AnimatedFloat :: struct {
     active: bool;
 
     make :: (value: f32) -> AnimatedFloat {
-        AnimatedFloat.{
+        AnimatedFloat{
             current = value,
             from = value,
             to = value,
@@ -75,7 +75,7 @@ SpringFloat :: struct {
     threshold: f32;
 
     make :: (value: f32) -> SpringFloat {
-        SpringFloat.{
+        SpringFloat{
             current = value,
             velocity = 0.0,
             target = value,
@@ -87,7 +87,7 @@ SpringFloat :: struct {
     }
 
     snappy :: (value: f32) -> SpringFloat {
-        SpringFloat.{
+        SpringFloat{
             current = value,
             velocity = 0.0,
             target = value,
@@ -124,7 +124,7 @@ Animated :: struct ($T: Lerpable) {
     active: bool;
 
     make :: (value: T) -> Animated(T) {
-        Animated(T).{
+        Animated(T){
             current = value,
             from = value,
             to = value,

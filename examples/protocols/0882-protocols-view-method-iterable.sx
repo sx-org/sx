@@ -24,7 +24,7 @@ impl P for C {
 }
 
 main :: () {
-    c := C.{};
+    c := C{};
     v : *P = c;
     for v.items() (*x) { print("{}\n", x.*); }
     // Parenthesized spelling too.

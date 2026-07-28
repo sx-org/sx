@@ -1,7 +1,7 @@
 error: use_state payload may not contain slices — use use_state_with under the entry allocator
   --> examples/diagnostics/1275-diagnostics-use-state-trivial.sx:16:13
    |
-16 |         _ = use_state(Held, Held.{ name_bytes = .[], n = 0 });
+16 |         _ = use_state(Held, Held{ name_bytes = .[], n = 0 });
    |             ^^^^^^^^^
 
 note: raised by '#error' here

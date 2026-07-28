@@ -44,7 +44,7 @@ inline if POINTER_SIZE == 8 {
 }
 
 main :: () {
-    d := Deep.{ n = 4 };
+    d := Deep{ n = 4 };
     v : Show = d;
     print("{} {} {}\n", MODE, context.depth, v.fmt());
 }

@@ -81,7 +81,7 @@ run :: (cmd: [:0]u8) -> ?ProcessResult {
             exit_code = 128 + (raw_status & 0x7F);
         }
     }
-    ProcessResult.{ exit_code = exit_code, stdout = out }
+    ProcessResult{ exit_code = exit_code, stdout = out }
 }
 
 // Read an environment variable. Returns null if unset; an empty

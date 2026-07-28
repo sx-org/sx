@@ -10,7 +10,7 @@ f :: (a: i64, b: i64 = 7, c: string = "x") -> i64 { print("{} {} {}\n", a, b, c)
 P :: struct {
     x: i64;
     scale :: (self: *P, by: i64 = 2, add: i64 = 0) -> i64 { self.x * by + add }
-    make :: (x: i64 = 5) -> P { P.{ x = x } }
+    make :: (x: i64 = 5) -> P { P{ x = x } }
 }
 
 pad :: ufcs (s: string, width: i64, fill: string = " ") -> i64 { s.len + width + fill.len }

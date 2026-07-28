@@ -28,7 +28,7 @@ impl P for S {
 
 H :: struct { arr: [2]S; }
 
-g_arr : [2]S = .[ S.{ v = 100 }, S.{ v = 200 } ];
+g_arr : [2]S = .[ S{ v = 100 }, S{ v = 200 } ];
 
 g_calls : i64 = 0;
 next_ret : i64 = 1;
@@ -42,9 +42,9 @@ main :: () -> i32 {
     fails : i64 = 0;
 
     arr : [3]S = ---;
-    arr[0] = S.{ v = 10 };
-    arr[1] = S.{ v = 20 };
-    arr[2] = S.{ v = 30 };
+    arr[0] = S{ v = 10 };
+    arr[1] = S{ v = 20 };
+    arr[2] = S{ v = 30 };
 
     // Plain P destination: one eval, right element, independent copy.
     g_calls = 0;
@@ -70,7 +70,7 @@ main :: () -> i32 {
     if pg.get() != 100 { print("global element {}\n", pg.get()); fails += 1; }
 
     // STRUCT-FIELD array base: one eval, right element.
-    h : H = .{ arr = .[ S.{ v = 300 }, S.{ v = 400 } ] };
+    h : H = .{ arr = .[ S{ v = 300 }, S{ v = 400 } ] };
     g_calls = 0;
     pf := h.arr[next()].(P);
     if g_calls != 1 { print("field evals {}\n", g_calls); fails += 1; }
@@ -78,7 +78,7 @@ main :: () -> i32 {
 
     // By-VALUE for capture: x is a per-iteration copy; the owning erasure
     // copies THE COPY — bumps land there, the array is untouched.
-    warr : [2]S = .[ S.{ v = 1 }, S.{ v = 2 } ];
+    warr : [2]S = .[ S{ v = 1 }, S{ v = 2 } ];
     total : i64 = 0;
     for warr (x) {
         pv := x.(P);

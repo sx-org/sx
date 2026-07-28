@@ -42,12 +42,12 @@ LazyHost :: struct {
 }
 impl View for LazyHost {
     size_that_fits :: (self: *LazyHost, proposal: ProposedSize) -> Size {
-        Size.{ width = 100.0, height = 20.0 }
+        Size{ width = 100.0, height = 20.0 }
     }
     layout :: (self: *LazyHost, bounds: Frame) {
         // The S1 subscope: an append-only emission scope, opened inside
         // layout, claiming state in the same build transaction.
-        s := Sink(View).{};
+        s := Sink(View){};
         push .{ ui = self.ui, ui_store = self.store, ui_sink = *s } {
             i := 0;
             while i < self.count {
@@ -80,7 +80,7 @@ home :: () -> View {
         g_mid_build_rev = -1;
     }
     vstack(0.0) {
-        place(LazyHost.{ ui = *g_root.ui, store = *g_root.store, count = 3 });
+        place(LazyHost{ ui = *g_root.ui, store = *g_root.store, count = 3 });
     }
 }
 

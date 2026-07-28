@@ -57,14 +57,14 @@ count :: (into: *Tally, content: @BuildBlock(View)) {
 
 main :: () -> i32 {
     arena := Arena.init(context.allocator, 512);
-    roots := Roots.{ storage = xx arena };
+    roots := Roots{ storage = xx arena };
     rows := .["one", "two"];
 
     capture(*roots) {
         for rows (row) {
-            Text.{ body = row };
+            Text{ body = row };
         }
-        Spacer.{ size = 8 };
+        Spacer{ size = 8 };
     };
 
     // The block is long gone; the captured tree is the caller's.
@@ -73,10 +73,10 @@ main :: () -> i32 {
     roots.items.deinit();
     arena.deinit();
 
-    tally := Tally.{};
+    tally := Tally{};
     count(*tally) {
-        Text.{ body = "never built" };
-        Spacer.{ size = 1 };
+        Text{ body = "never built" };
+        Spacer{ size = 1 };
     };
     print("counted {} without building any of them\n", tally.n);
     0

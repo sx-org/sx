@@ -36,5 +36,5 @@ vsync_val  :: #run raw_variant_value(raw_find_type(raw_intern("WindowFlags")), 0
 main :: () {
     print("Color kind = {}, Point kind = {}\n", color_kind, point_kind);
     print("Color.green = {}\n", green_val);
-    print("WindowFlags.{} = {}\n", vsync_name, vsync_val);
+    print("WindowFlags{} = {}\n", vsync_name, vsync_val);
 }

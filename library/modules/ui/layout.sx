@@ -15,13 +15,13 @@ layout_vstack :: (children: *List(ViewChild), bounds: Frame, spacing: f32, align
     i := 0;
     while i < n {
         child := *children.items[i];
-        child_size := child.view.size_that_fits(ProposedSize.{
+        child_size := child.view.size_that_fits(ProposedSize{
             width = content_width,
             height = null
         });
         x_offset := align_h(alignment, child_size.width, content_width);
-        child.frame = Frame.{
-            origin = Point.{ x = bounds.origin.x + x_offset, y = y },
+        child.frame = Frame{
+            origin = Point{ x = bounds.origin.x + x_offset, y = y },
             size = child_size
         };
         child.view.layout(child.frame);
@@ -42,13 +42,13 @@ layout_hstack :: (children: *List(ViewChild), bounds: Frame, spacing: f32, align
     i := 0;
     while i < n {
         child := *children.items[i];
-        child_size := child.view.size_that_fits(ProposedSize.{
+        child_size := child.view.size_that_fits(ProposedSize{
             width = null,
             height = content_height
         });
         y_offset := align_v(alignment, child_size.height, content_height);
-        child.frame = Frame.{
-            origin = Point.{ x = x, y = bounds.origin.y + y_offset },
+        child.frame = Frame{
+            origin = Point{ x = x, y = bounds.origin.y + y_offset },
             size = child_size
         };
         child.view.layout(child.frame);
@@ -62,7 +62,7 @@ layout_zstack :: (children: *List(ViewChild), bounds: Frame, alignment: Alignmen
     n := children.len;
     if n == 0 { return; }
 
-    proposal := ProposedSize.{
+    proposal := ProposedSize{
         width = bounds.size.width,
         height = bounds.size.height
     };
@@ -73,8 +73,8 @@ layout_zstack :: (children: *List(ViewChild), bounds: Frame, alignment: Alignmen
         child_size := child.view.size_that_fits(proposal);
         x_offset := align_h(alignment.h, child_size.width, bounds.size.width);
         y_offset := align_v(alignment.v, child_size.height, bounds.size.height);
-        child.frame = Frame.{
-            origin = Point.{ x = bounds.origin.x + x_offset, y = bounds.origin.y + y_offset },
+        child.frame = Frame{
+            origin = Point{ x = bounds.origin.x + x_offset, y = bounds.origin.y + y_offset },
             size = child_size
         };
         child.view.layout(child.frame);
@@ -92,7 +92,7 @@ measure_vstack :: (children: *List(ViewChild), proposal: ProposedSize, spacing: 
     total_height : f32 = 0.0;
 
     // Measure children: constrain width, leave height unspecified
-    child_proposal := ProposedSize.{ width = proposal.width, height = null };
+    child_proposal := ProposedSize{ width = proposal.width, height = null };
     i := 0;
     while i < n {
         child_size := children.items[i].view.size_that_fits(child_proposal);
@@ -105,7 +105,7 @@ measure_vstack :: (children: *List(ViewChild), proposal: ProposedSize, spacing: 
     total_height = total_height + spacing * xx (n - 1);
 
     result_width := min(proposal.width ?? max_width, max_width);
-    Size.{ width = result_width, height = total_height }
+    Size{ width = result_width, height = total_height }
 }
 
 measure_hstack :: (children: *List(ViewChild), proposal: ProposedSize, spacing: f32) -> Size {
@@ -116,7 +116,7 @@ measure_hstack :: (children: *List(ViewChild), proposal: ProposedSize, spacing: 
     max_height : f32 = 0.0;
 
     // Measure children: constrain height, leave width unspecified
-    child_proposal := ProposedSize.{ width = null, height = proposal.height };
+    child_proposal := ProposedSize{ width = null, height = proposal.height };
     i := 0;
     while i < n {
         child_size := children.items[i].view.size_that_fits(child_proposal);
@@ -129,7 +129,7 @@ measure_hstack :: (children: *List(ViewChild), proposal: ProposedSize, spacing: 
     total_width = total_width + spacing * xx (n - 1);
 
     result_height := min(proposal.height ?? max_height, max_height);
-    Size.{ width = total_width, height = result_height }
+    Size{ width = total_width, height = result_height }
 }
 
 measure_zstack :: (children: *List(ViewChild), proposal: ProposedSize) -> Size {
@@ -148,5 +148,5 @@ measure_zstack :: (children: *List(ViewChild), proposal: ProposedSize) -> Size {
         i += 1;
     }
 
-    Size.{ width = max_width, height = max_height }
+    Size{ width = max_width, height = max_height }
 }

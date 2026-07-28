@@ -37,15 +37,15 @@ wrapper :: (site: SiteId = site_of(#caller_location)) {
 }
 
 main :: () {
-    u := Ui.{};
-    root := Sink(View).{};
+    u := Ui{};
+    root := Sink(View){};
     push .{ ui = *u, ui_sink = *root } {
         home();
     }
     print("root {} depth {}\n", root.items.len, u.depth);
 
     // S2 value mode: ui set, NO sink — place returns without emitting.
-    v := Sink(View).{};
+    v := Sink(View){};
     push .{ ui = *u } {
         text("value-mode");
     }

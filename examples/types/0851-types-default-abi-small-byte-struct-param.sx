@@ -19,7 +19,7 @@ Frame :: struct {
     origin: Point;
     size: Size;
     make :: (x: f32, y: f32, w: f32, h: f32) -> Frame {
-        Frame.{ origin = Point.{ x = x, y = y }, size = Size.{ width = w, height = h } }
+        Frame{ origin = Point{ x = x, y = y }, size = Size{ width = w, height = h } }
     }
 }
 
@@ -56,8 +56,8 @@ probe_one_color :: (ctx: *i32, label: string, fg: Color) {
 
 main :: () -> i64 {
     n : i32 = 1;
-    bg := Color.{ r = 55, g = 55, b = 70, a = 255 };
-    fg := Color.{ r = 230, g = 230, b = 240, a = 255 };
+    bg := Color{ r = 55, g = 55, b = 70, a = 255 };
+    fg := Color{ r = 230, g = 230, b = 240, a = 255 };
     f := Frame.make(10.0, 20.0, 100.0, 40.0);
 
     probe_string_two_colors(*n, "New Game", bg, fg);

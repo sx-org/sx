@@ -63,7 +63,7 @@ FrameLoop :: struct {
     gpa: Allocator;
 
     init :: (gpa: Allocator = context.allocator) -> FrameLoop {
-        FrameLoop.{
+        FrameLoop{
             gpa = gpa,
             arena_a = Arena.init(gpa, 262144),
             arena_b = Arena.init(gpa, 262144),

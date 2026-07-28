@@ -29,7 +29,7 @@ inline if has_impl(Show, Chosen) {
 }
 
 main :: () {
-    w := Wide.{ n = 3 };
+    w := Wide{ n = 3 };
     v : Show = w;
     print("{} {}\n", OK, v.fmt());
 }

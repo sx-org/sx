@@ -19,7 +19,7 @@ Box :: struct ($V: Type) {
 
 Point :: struct { x: f64; y: f64; }
 
-hold :: (v: $V) -> Box(V) { Box(V).{ inner = v, tag = 0 } }
+hold :: (v: $V) -> Box(V) { Box(V){ inner = v, tag = 0 } }
 
 // The constructor reaches a `$T: Type` slot from inside a generic body too,
 // where its argument is the enclosing function's own type parameter.
@@ -44,9 +44,9 @@ main :: () {
     print("{} {}\n", t == Box(f64), size_of(Box(f64)));
 
     // Inside a generic body, over the body's own parameter.
-    q := new_box(Point.{ x = 1.0, y = 2.0 });
-    print("{} {} {}\n", q.inner.x, q.tag, boxed_size(Point.{ x = 0.0, y = 0.0 }));
+    q := new_box(Point{ x = 1.0, y = 2.0 });
+    print("{} {} {}\n", q.inner.x, q.tag, boxed_size(Point{ x = 0.0, y = 0.0 }));
 
     // A method on the result of a value-returning generic call.
-    print("{}\n", hold(Point.{ x = 3.0, y = 4.0 }).retag(9).tag);
+    print("{}\n", hold(Point{ x = 3.0, y = 4.0 }).retag(9).tag);
 }

@@ -20,7 +20,7 @@ Box :: struct ($R: Type) { value: R; }
 ResultOf :: ($T: Type) -> Type {
     vs : [struct_field_count(T)]EnumVariant = ---;
     inline for 0..struct_field_count(T) (i) {
-        vs[i] = EnumVariant.{
+        vs[i] = EnumVariant{
             name    = struct_field_name(T, i),                          // folded to a const string
             payload = struct_field_type(pointee_type(struct_field_type(T, i)), 0),  // *Box(A) -> Box(A) -> A
         };

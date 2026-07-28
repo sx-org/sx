@@ -20,7 +20,7 @@ Encoder :: struct {
         try validate_options(options);
         state := ZlibDeflater.init_strategy(options.level, options.strategy, alloc);
         if state.raw.allocation_failed { state.deinit(); raise error.AllocationFailed; }
-        Encoder.{ state = state }
+        Encoder{ state = state }
     }
 
     reset :: (self: *Encoder, options: Options = .{}) -> !Error {
@@ -65,7 +65,7 @@ Decoder :: struct {
         try validate_output_limit(max_output);
         state := ZlibInflater.init(max_output, alloc);
         if state.raw.window.ptr == null { state.deinit(); raise error.AllocationFailed; }
-        Decoder.{ state = state }
+        Decoder{ state = state }
     }
 
     reset :: (self: *Decoder, max_output: i64 = 1073741824) -> !Error {

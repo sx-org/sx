@@ -7,7 +7,7 @@ facade :: #import "0908-modules-nested-namespace-noncall-hidden/facade.sx";
 
 main :: () -> i32 {
     annotated : facade.engine_alias.Record = ---;
-    literal := facade.engine_alias.Record.{ value = 1 };
+    literal := facade.engine_alias.Record{ value = 1 };
     constant := facade.engine_alias.COUNT;
     variant := facade.engine_alias.Kind.selected;
     generic : facade.engine_alias.Box(i64) = ---;

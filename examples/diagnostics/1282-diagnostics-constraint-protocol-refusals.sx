@@ -20,5 +20,5 @@ main :: () {
     o : Ord = 5;                          // implicit erasure at a binding
     p := (7).(Ord);                       // the postfix erasure spelling
     v : *Ord = o;                         // the borrowed view
-    xs : List(Ord) = List(Ord).{};        // generic type argument
+    xs : List(Ord) = List(Ord){};        // generic type argument
 }

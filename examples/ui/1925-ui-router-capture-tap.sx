@@ -38,7 +38,7 @@ Stacked :: struct {
 }
 impl View for Stacked {
     size_that_fits :: (self: *Stacked, proposal: ProposedSize) -> Size {
-        Size.{ width = self.w, height = self.h }
+        Size{ width = self.w, height = self.h }
     }
     layout :: (self: *Stacked, bounds: Frame) {}
     render :: (self: *Stacked, ctx: *RenderContext, frame: Frame) {
@@ -54,7 +54,7 @@ Tappable :: struct {
 }
 impl View for Tappable {
     size_that_fits :: (self: *Tappable, proposal: ProposedSize) -> Size {
-        Size.{ width = self.w, height = self.h }
+        Size{ width = self.w, height = self.h }
     }
     layout :: (self: *Tappable, bounds: Frame) {}
     render :: (self: *Tappable, ctx: *RenderContext, frame: Frame) {
@@ -69,11 +69,11 @@ home :: () -> View {
         t := element_id().value;
         g_eid_bottom = b;
         g_eid_top = t;
-        place(Stacked.{ bottom = b, top = t, w = 40.0, h = 20.0 });
+        place(Stacked{ bottom = b, top = t, w = 40.0, h = 20.0 });
         if g_show_c {
             cid := element_id().value;
             g_eid_c = cid;
-            place(Tappable.{ eid = cid, w = 40.0, h = 20.0 });
+            place(Tappable{ eid = cid, w = 40.0, h = 20.0 });
         }
     }
 }

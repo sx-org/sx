@@ -9,6 +9,6 @@ Q :: struct {
 }
 
 main :: () {
-    q := Q.{};
+    q := Q{};
     print("{}\n", q.inline);
 }

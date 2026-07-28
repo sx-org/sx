@@ -15,6 +15,6 @@ main :: () {
     print("{} ", x.v);
     print("{} ", r.LIMIT);             // module const
     print("{} ", r.Color.green);       // enum variant
-    b := r.Box(i64).{ item = 3 };      // generic struct
+    b := r.Box(i64){ item = 3 };      // generic struct
     print("{}\n", b.item);
 }

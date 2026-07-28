@@ -27,7 +27,7 @@ tickit  :: (f: *Fast) -> i64    { f.tick() }
 
 main :: () {
     // concrete lvalue → *P: view in place, aliasing visible both ways
-    w := Widget.{ value = 7 };
+    w := Widget{ value = 7 };
     print("lvalue: {}\n", measure(w));
     bump(w);
     print("aliased: {}\n", w.value);
@@ -38,7 +38,7 @@ main :: () {
 
     // field lvalue → *P
     Holder :: struct { inner: Widget; }
-    h := Holder.{ inner = Widget.{ value = 3 } };
+    h := Holder{ inner = Widget{ value = 3 } };
     bump(h.inner);
     print("field: {}\n", h.inner.value);
 
@@ -47,7 +47,7 @@ main :: () {
     print("owned-view: {}\n", measure(*s));
 
     // `inline` layout dispatches through *P too, mutating the original
-    c := Clock.{ n = 0 };
+    c := Clock{ n = 0 };
     print("inline: {} {}\n", tickit(c), c.n);
 
     // decl-position view

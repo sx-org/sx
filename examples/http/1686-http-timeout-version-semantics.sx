@@ -67,7 +67,7 @@ drain_to_eof :: (srv: *http.Server, fd: i32, buf: [*]u8, cap: i64) -> string {
         }
         if got > 0 { stall = 0; } else { stall += 1; }
     }
-    return string.{ ptr = buf, len = xx total };
+    return string{ ptr = buf, len = xx total };
 }
 
 main :: () -> i32 {
@@ -112,7 +112,7 @@ main :: () -> i32 {
             failed = 1;
         }
         // exactly ONE response and nothing else: no 408, no extra status line
-        if contains(rb, "408") or contains(string.{ ptr = *rb.ptr[12], len = rb.len - 12 }, "HTTP/1.1") {
+        if contains(rb, "408") or contains(string{ ptr = *rb.ptr[12], len = rb.len - 12 }, "HTTP/1.1") {
             print("idle keepalive eviction was not silent\n");
             failed = 1;
         }

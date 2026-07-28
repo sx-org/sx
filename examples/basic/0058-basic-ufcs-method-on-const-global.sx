@@ -13,7 +13,7 @@ Counter :: struct {
     get  :: (self: *Counter) -> i64 { return self.n; } // read-only
 }
 
-G :: Counter.{ n = 10 };
+G :: Counter{ n = 10 };
 
 main :: () -> i32 {
     G.bump();

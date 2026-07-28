@@ -108,7 +108,7 @@ Reader :: struct {
 
     stream :: (self: *Reader, index: i64, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (EntryReader, !Error) {
         state := try std_zip_entry_reader(*self.state, index, false, max_output, alloc);
-        EntryReader.{ state = state }
+        EntryReader{ state = state }
     }
 
     stream_name :: (self: *Reader, name: string, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (EntryReader, !Error) {
@@ -119,7 +119,7 @@ Reader :: struct {
     // Raw compressed entry bytes, useful for archive-preserving tools.
     stream_compressed :: (self: *Reader, index: i64, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (EntryReader, !Error) {
         state := try std_zip_entry_reader(*self.state, index, true, max_output, alloc);
-        EntryReader.{ state = state }
+        EntryReader{ state = state }
     }
 
     extract_file :: (self: *Reader, index: i64, path: [:0]u8, max_output: i64 = 1073741824, alloc: Allocator = context.allocator) -> (i64, !Error) {
@@ -150,28 +150,28 @@ Reader :: struct {
 
 open :: (data: string, alloc: Allocator = context.allocator) -> (Reader, !Error) {
     state := try std_zip_reader_memory(data, alloc);
-    Reader.{ state = state }
+    Reader{ state = state }
 }
 
 // Finds an archive appended to an in-memory prefix, such as a self-extracting
 // payload. Plain open() deliberately requires the archive at offset zero.
 open_embedded :: (data: string, alloc: Allocator = context.allocator) -> (Reader, !Error) {
     state := try std_zip_reader_embedded(data, alloc);
-    Reader.{ state = state }
+    Reader{ state = state }
 }
 
 // source must outlive the returned Reader. max_metadata bounds resident
 // central-directory/name/extra/comment storage.
 open_source :: (source: Source, options: OpenOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !Error) {
     state := try std_zip_reader_source(source, options.max_metadata, alloc);
-    Reader.{ state = state }
+    Reader{ state = state }
 }
 
 open_file :: (path: [:0]u8, options: OpenFileOptions = .{}, alloc: Allocator = context.allocator) -> (Reader, !Error) {
     if options.start < 0 { raise error.InvalidOptions; }
     if options.size != null and options.size! < 0 { raise error.InvalidOptions; }
     state := try std_zip_reader_file(path, options.start, options.size ?? 0, options.max_metadata, alloc);
-    Reader.{ state = state }
+    Reader{ state = state }
 }
 
 Writer :: struct {
@@ -181,34 +181,34 @@ Writer :: struct {
     // Memory output. Call finish() and then take() to transfer ownership.
     init :: (options: WriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
         state := try std_zip_writer_memory(options.zip64, alloc);
-        Writer.{ state = state }
+        Writer{ state = state }
     }
 
     // target must outlive the Writer. Output is emitted incrementally; sink
     // errors poison the writer because accepted bytes cannot be rolled back.
     init_sink :: (target: Sink, options: WriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
         state := try std_zip_writer_sink(target, options.zip64, alloc);
-        Writer.{ state = state }
+        Writer{ state = state }
     }
 
     init_file :: (path: [:0]u8, options: FileWriterOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
         if options.reserve < 0 { raise error.InvalidOptions; }
         state := try std_zip_writer_file(path, options.reserve, options.zip64, alloc);
-        Writer.{ state = state }
+        Writer{ state = state }
     }
 
     // Copies existing local records into memory without recompressing them.
     // A null finish comment preserves the source archive comment.
     from_reader :: (source: *Reader, options: FromReaderOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
         state := try std_zip_writer_from_reader(*source.state, options.force_zip64, alloc);
-        Writer.{ state = state }
+        Writer{ state = state }
     }
 
     // Opens an existing archive for in-place append, or creates it when absent.
     // A null finish comment preserves an existing archive comment.
     append_file :: (path: [:0]u8, options: AppendOptions = .{}, alloc: Allocator = context.allocator) -> (Writer, !Error) {
         state := try std_zip_writer_append_file(path, options.force_zip64, options.max_metadata, alloc);
-        Writer.{ state = state }
+        Writer{ state = state }
     }
 
     len :: (self: *Writer) -> i64 { std_zip_writer_len(*self.state) }

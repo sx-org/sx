@@ -20,7 +20,7 @@ main :: () -> i32 {
 
     narrowed : Narrow = be;      // error: Extra is not a member of Narrow
     take_narrow(be);             // error: same, in argument position
-    h := Holder.{ e = be };      // error: same, in field-init position
+    h := Holder{ e = be };      // error: same, in field-init position
 
     lit : Narrow = error.Extra;  // error: tag literal not in Narrow
 
@@ -28,7 +28,7 @@ main :: () -> i32 {
     // reports the same diagnostic as the `error.Name` spelling.
     short : Narrow = .Extra;     // error: Extra not in Narrow
     take_narrow(.Extra);         // error: same, in argument position
-    hs := Holder.{ e = .Extra }; // error: same, in field-init position
+    hs := Holder{ e = .Extra }; // error: same, in field-init position
     if short == .Extra { return 1; }  // error: same, in comparison position
     bad_raise() catch {};        // force bad_raise to lower
     return 0;

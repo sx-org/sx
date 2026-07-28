@@ -21,7 +21,7 @@ Show :: protocol vtable { label :: (self: *Self) -> i64; }
 Marker :: struct { k: i64; }
 impl Show for Marker { label :: (self: *Marker) -> i64 { self.k * 3 } }
 
-g_marker := Marker.{ k = 5 };
+g_marker := Marker{ k = 5 };
 
 add :: (a: i64, b: i64) -> i64 { a + b }
 pick_fn :: () -> (i64, i64) -> i64 { return add; }
@@ -37,7 +37,7 @@ build :: () -> Tree {
     cell := context.allocator.create(i64);
     cell.* = 100;
     view : *Show = *g_marker;
-    return Tree.{ top = node, cell = cell, seen = view };
+    return Tree{ top = node, cell = cell, seen = view };
 }
 
 T  :: #run build();

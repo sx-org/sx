@@ -21,7 +21,7 @@ Marker :: struct { id: i64; }
 #context_extend marker: ?*Marker = null;
 
 main :: () -> i64 {
-    mk := Marker.{ id = 7 };
+    mk := Marker{ id = 7 };
     s := sched.Scheduler.init();
     ps := *s;
     print("outside: marker id = {}\n", mk.id);

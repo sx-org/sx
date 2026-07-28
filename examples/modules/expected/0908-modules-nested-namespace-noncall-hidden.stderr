@@ -7,7 +7,7 @@ error: namespace 'facade' has no member 'engine_alias'
 error: namespace 'facade' has no member 'engine_alias'
   --> examples/modules/0908-modules-nested-namespace-noncall-hidden.sx:10:16
    |
-10 |     literal := facade.engine_alias.Record.{ value = 1 };
+10 |     literal := facade.engine_alias.Record{ value = 1 };
    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 error: namespace 'facade' has no member 'engine_alias'

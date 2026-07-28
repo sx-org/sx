@@ -17,9 +17,9 @@ impl View for ImageView {
         // Maintain aspect ratio: fit within proposal
         aspect := self.width / self.height;
         if pw / ph > aspect {
-            Size.{ width = ph * aspect, height = ph }
+            Size{ width = ph * aspect, height = ph }
         } else {
-            Size.{ width = pw, height = pw / aspect }
+            Size{ width = pw, height = pw / aspect }
         }
     }
 

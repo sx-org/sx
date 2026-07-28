@@ -21,7 +21,7 @@ impl Boxed  for Square { area :: (self: *Square) -> i64 { self.side * self.side 
 impl Flat   for Square { area :: (self: *Square) -> i64 { self.side * self.side } }
 
 main :: () {
-    r := Rect.{ w = 2, h = 6 };
+    r := Rect{ w = 2, h = 6 };
 
     // --- tagged: the receiver borrows `r` in place ---
     t : Tagged = r;

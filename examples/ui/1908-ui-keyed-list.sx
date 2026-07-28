@@ -27,10 +27,10 @@ build :: (chats: []Chat, u: *Ui, store: *StateStore) {
 }
 
 main :: () {
-    u := Ui.{};
+    u := Ui{};
     store := StateStore.init(.{ value = 1 });
     push .{ ui = *u, ui_store = *store } {
-        a := Chat.{ id = 10 }; b := Chat.{ id = 20 }; z := Chat.{ id = 30 };
+        a := Chat{ id = 10 }; b := Chat{ id = 20 }; z := Chat{ id = 30 };
         l1 : []Chat = .[a, b, z];
         build(l1, *u, *store);
         // Reorder + remove: 30 and 10 keep their state; 20's entry sweeps.

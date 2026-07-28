@@ -10,7 +10,7 @@
 Dot :: struct { s: f32; }
 impl View for Dot {
     size_that_fits :: (self: *Dot, proposal: ProposedSize) -> Size {
-        Size.{ width = self.s, height = self.s }
+        Size{ width = self.s, height = self.s }
     }
     layout :: (self: *Dot, bounds: Frame) {}
     render :: (self: *Dot, ctx: *RenderContext, frame: Frame) {
@@ -19,10 +19,10 @@ impl View for Dot {
 }
 
 main :: () {
-    u := Ui.{};
+    u := Ui{};
     push .{ ui = *u } {
-        d := Dot.{ s = 4.0 };
-        h := place(d.(View), Mod.{ opacity = 0.5 });
+        d := Dot{ s = 4.0 };
+        h := place(d.(View), Mod{ opacity = 0.5 });
         process.assert(h.(?ModBox(View)) != null, "mod path wraps ModBox(View)");
         sz := h.size_that_fits(ProposedSize.flexible());
         process.assert(sz.width == 4.0 and sz.height == 4.0, "ModBox(View) measures child");

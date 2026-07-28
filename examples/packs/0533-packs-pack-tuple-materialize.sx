@@ -19,7 +19,7 @@ snapshot :: (..xs: Box) -> void {
 }
 
 main :: () -> i32 {
-    snapshot(IntCell.{ v = 42 }, StrCell.{ s = "hi" });
-    snapshot(StrCell.{ s = "x" }, IntCell.{ v = 7 });   // order swapped → (string, i64)
+    snapshot(IntCell{ v = 42 }, StrCell{ s = "hi" });
+    snapshot(StrCell{ s = "x" }, IntCell{ v = 7 });   // order swapped → (string, i64)
     0
 }

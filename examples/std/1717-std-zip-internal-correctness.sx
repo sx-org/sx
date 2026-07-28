@@ -64,7 +64,7 @@ same :: (left: string, right: string) -> bool {
 }
 
 make_archive :: (data: string, method: zip.ZipMethod, alloc: Allocator) -> string {
-    sink := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     writer := zip.ZipStreamWriter.init(.{ ctx = xx *sink, write = sink_write }, alloc);
     writer.add_options("data.bin", data, .{
         method = method,
@@ -85,7 +85,7 @@ test_bounded_validation :: (alloc: Allocator) -> bool {
     archive := make_archive(plain[..], .deflate, alloc);
     if archive.ptr == null { return false; }
     reader := zip.open_zip(archive) catch { alloc.dealloc_bytes(archive.ptr); return false; };
-    capped := CappedAllocator.{ parent = alloc, maximum = 65536 };
+    capped := CappedAllocator{ parent = alloc, maximum = 65536 };
     reader.validate_entry(0, false, false, capped) catch {
         alloc.dealloc_bytes(archive.ptr);
         return false;
@@ -131,7 +131,7 @@ test_force_zip64 :: (alloc: Allocator) -> bool {
     source := zip.open_zip(base) catch { alloc.dealloc_bytes(base.ptr); return false; };
     local_size := source.central_relative_offset;
 
-    sink_state := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    sink_state := SinkState{ out = codec.ByteWriter.init(alloc) };
     sink_state.out.put_bytes(base[..local_size]);
     stream := zip.ZipStreamWriter.init_from_reader(
         *source,
@@ -155,9 +155,9 @@ test_force_zip64 :: (alloc: Allocator) -> bool {
 }
 
 test_source_contract :: (alloc: Allocator) -> bool {
-    strict_state := SourceState.{ data = "abc", chunk = 2 };
-    strict_source := zip.ZipInputSource.{ ctx = xx *strict_state, size = 3, read = source_read };
-    sink_state := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    strict_state := SourceState{ data = "abc", chunk = 2 };
+    strict_source := zip.ZipInputSource{ ctx = xx *strict_state, size = 3, read = source_read };
+    sink_state := SinkState{ out = codec.ByteWriter.init(alloc) };
     writer := zip.ZipStreamWriter.init(.{ ctx = xx *sink_state, write = sink_write }, alloc);
     writer.add_source("tiny", strict_source, .{
         method = .deflate,
@@ -176,9 +176,9 @@ test_source_contract :: (alloc: Allocator) -> bool {
     alloc.dealloc_bytes(plain.ptr);
     alloc.dealloc_bytes(archive.ptr);
 
-    early_state := SourceState.{ data = "abc" };
-    early_source := zip.ZipInputSource.{ ctx = xx *early_state, size = 5, read = source_read };
-    early_sink := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    early_state := SourceState{ data = "abc" };
+    early_source := zip.ZipInputSource{ ctx = xx *early_state, size = 5, read = source_read };
+    early_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     early := zip.ZipStreamWriter.init(.{ ctx = xx *early_sink, write = sink_write }, alloc);
     store_failed := false;
     early.add_source("short-store", early_source, .{ method = .store, time_mode = .none }) catch (e) {
@@ -187,9 +187,9 @@ test_source_contract :: (alloc: Allocator) -> bool {
     early.deinit();
     early_sink.out.deinit();
 
-    deflate_state := SourceState.{ data = "abc" };
-    deflate_source := zip.ZipInputSource.{ ctx = xx *deflate_state, size = 5, read = source_read };
-    deflate_sink := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    deflate_state := SourceState{ data = "abc" };
+    deflate_source := zip.ZipInputSource{ ctx = xx *deflate_state, size = 5, read = source_read };
+    deflate_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     deflate_writer := zip.ZipStreamWriter.init(.{ ctx = xx *deflate_sink, write = sink_write }, alloc);
     deflate_failed := false;
     deflate_writer.add_source("short-deflate", deflate_source, .{
@@ -207,14 +207,14 @@ test_empty_descriptor_modes :: (alloc: Allocator) -> bool {
         auto_store_small = false,
         time_mode = .none,
     };
-    expected_sink := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    expected_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     memory := zip.ZipStreamWriter.init(.{ ctx = xx *expected_sink, write = sink_write }, alloc);
     memory.add_options("empty", "", options) catch { memory.deinit(); expected_sink.out.deinit(); return false; };
     memory.finish() catch { memory.deinit(); expected_sink.out.deinit(); return false; };
     memory.deinit();
     expected := expected_sink.out.take();
 
-    direct_sink := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    direct_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     direct := zip.ZipStreamWriter.init(.{ ctx = xx *direct_sink, write = sink_write }, alloc);
     direct.add_options("empty", "", options) catch {
         direct.deinit(); direct_sink.out.deinit(); alloc.dealloc_bytes(expected.ptr); return false;
@@ -226,9 +226,9 @@ test_empty_descriptor_modes :: (alloc: Allocator) -> bool {
     direct_bytes := direct_sink.out.take();
     direct_exact := same(direct_bytes, expected);
 
-    callback_sink := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    callback_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     callback := zip.ZipStreamWriter.init(.{ ctx = xx *callback_sink, write = sink_write }, alloc);
-    empty_source := zip.ZipInputSource.{ ctx = null, size = 0, read = null };
+    empty_source := zip.ZipInputSource{ ctx = null, size = 0, read = null };
     callback.add_source("empty", empty_source, options) catch {
         callback.deinit(); callback_sink.out.deinit(); alloc.dealloc_bytes(direct_bytes.ptr); alloc.dealloc_bytes(expected.ptr); return false;
     };
@@ -253,7 +253,7 @@ test_empty_descriptor_modes :: (alloc: Allocator) -> bool {
 
 test_extra_validation :: (alloc: Allocator) -> bool {
     malformed : [1]u8 = .[0];
-    memory_sink := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    memory_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     memory := zip.ZipStreamWriter.init(.{ ctx = xx *memory_sink, write = sink_write }, alloc);
     malformed_failed := false;
     memory.add_options("bad", "x", .{ method = .store, extra = malformed[..], time_mode = .none }) catch (e) {
@@ -264,7 +264,7 @@ test_extra_validation :: (alloc: Allocator) -> bool {
     memory_sink.out.deinit();
 
     reserved : [4]u8 = .[1, 0, 0, 0];
-    reserved_sink := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    reserved_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     reserved_writer := zip.ZipStreamWriter.init(.{ ctx = xx *reserved_sink, write = sink_write }, alloc);
     reserved_failed := false;
     reserved_writer.add_options("bad", "x", .{ method = .store, extra = reserved[..], time_mode = .none }) catch (e) {
@@ -280,7 +280,7 @@ test_extra_validation :: (alloc: Allocator) -> bool {
         large[at] = 2; large[at + 1] = 0; large[at + 2] = 0; large[at + 3] = 0;
         at += 4;
     }
-    large_sink := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    large_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     large_writer := zip.ZipStreamWriter.init(.{ ctx = xx *large_sink, write = sink_write }, alloc);
     large_writer.offset = 0xffffffff;
     combined_failed := false;
@@ -330,8 +330,8 @@ test_metadata_bound :: (alloc: Allocator) -> bool {
     archive := make_archive("metadata", .store, alloc);
     if archive.ptr == null { return false; }
     memory_reader := zip.open_zip(archive) catch { alloc.dealloc_bytes(archive.ptr); return false; };
-    source_state := SourceState.{ data = archive };
-    source := zip.ZipReadSource.{ ctx = xx *source_state, size = archive.len, read = source_read };
+    source_state := SourceState{ data = archive };
+    source := zip.ZipReadSource{ ctx = xx *source_state, size = archive.len, read = source_read };
     if !metadata_limit_rejected(source, memory_reader.central_size - 1, alloc) {
         alloc.dealloc_bytes(archive.ptr); return false;
     }
@@ -346,7 +346,7 @@ test_timestamps :: (alloc: Allocator) -> bool {
     valid_time, valid_date, modern_valid := zip.zip_unix_time_to_dos(1700000000);
     if epoch_valid or !modern_valid { return false; }
 
-    specified_sink := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    specified_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     specified := zip.ZipStreamWriter.init(.{ ctx = xx *specified_sink, write = sink_write }, alloc);
     specified_failed := false;
     specified.add_options("old", "x", .{
@@ -362,7 +362,7 @@ test_timestamps :: (alloc: Allocator) -> bool {
     fs.delete_file(path);
     if !fs.write_file(path, "x") { return false; }
     if !fs.set_modified_seconds(path, 0) { fs.delete_file(path); return false; }
-    from_file_sink := SinkState.{ out = codec.ByteWriter.init(alloc) };
+    from_file_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     from_file := zip.ZipStreamWriter.init(.{ ctx = xx *from_file_sink, write = sink_write }, alloc);
     file_failed := false;
     from_file.add_file("old", path, .{ method = .store }) catch (e) { file_failed = e == error.InvalidOptions; };

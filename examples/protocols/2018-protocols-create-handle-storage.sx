@@ -33,14 +33,14 @@ main :: () {
     a := context.allocator;
 
     // tagged: create storage, store a handle into it, dispatch through it.
-    b := Box.{ w = 4, h = 5 };
+    b := Box{ w = 4, h = 5 };
     sp := a.create(Shape);
     sp.* = b;
     print("{}\n", sp.area());
     a.destroy(sp);
 
     // vtable (erased): same shape, one indirection more at dispatch.
-    c := Counter.{ total = 10 };
+    c := Counter{ total = 10 };
     kp := a.create(Tally);
     kp.* = c.(Tally);
     print("{}\n", kp.push(7));
@@ -52,7 +52,7 @@ main :: () {
     // into created storage dispatches identically from there.
     xs := a.alloc(Shape, 2);
     xs[0] = b;
-    xs[1] = Disc.{ r = 3 };
+    xs[1] = Disc{ r = 3 };
     sp2 := a.create(Shape);
     sp2.* = xs[1];
     print("{} {} {}\n", xs[0].area(), xs[1].area(), sp2.area());

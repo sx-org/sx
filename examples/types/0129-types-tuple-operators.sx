@@ -298,9 +298,9 @@ main :: () {
 
     // Struct field defaults for ?T
     {
-        n := OptNode.{ value = 10 };
+        n := OptNode{ value = 10 };
         print("opt field default: {}\n", n.next);           // opt field default: null
-        m := OptNode.{ value = 20, next = 42 };
+        m := OptNode{ value = 20, next = 42 };
         print("opt field set: {}\n", m.next);               // opt field set: 42
     }
 
@@ -348,7 +348,7 @@ main :: () {
 
     // Optional chaining (?.)
     {
-        p: ?OptNode = OptNode.{ value = 10, next = 20 };
+        p: ?OptNode = OptNode{ value = 10, next = 20 };
         q: ?OptNode = null;
         print("chain some: {}\n", p?.value ?? 0);           // chain some: 10
         print("chain none: {}\n", q?.value ?? 0);           // chain none: 0
@@ -356,8 +356,8 @@ main :: () {
         print("chain null: {}\n", q?.next);                  // chain null: null
 
         // Chained: obj.field?.field
-        o1 := OptOuter.{ inner = OptInner.{ val = 99 } };
-        o2 := OptOuter.{ inner = null };
+        o1 := OptOuter{ inner = OptInner{ val = 99 } };
+        o2 := OptOuter{ inner = null };
         print("deep chain 1: {}\n", o1.inner?.val ?? 0);    // deep chain 1: 99
         print("deep chain 2: {}\n", o2.inner?.val ?? 0);    // deep chain 2: 0
     }
@@ -485,7 +485,7 @@ main :: () {
         }
         // xx cast: (*MyEnv, i32) -> i32  →  (*void, i32) -> i32
         f : (*void, i32) -> i32 = xx typed_fn;
-        env := MyEnv.{ n = 100 };
+        env := MyEnv{ n = 100 };
         print("xx-fnptr: {}\n", f(xx *env, 42));  // xx-fnptr: 142
     }
 
@@ -508,7 +508,7 @@ main :: () {
             e : *Env = xx env;
             return x + e.n;
         }
-        env := Env.{ n = 5 };
+        env := Env{ n = 5 };
         fn_ptr : *void = xx impl_fn;
         env_ptr : *void = xx *env;
         c : Closure(i32) -> i32 = .{ fn_ptr = fn_ptr, env = env_ptr };
@@ -634,7 +634,7 @@ main :: () {
         print("closure-factory: {} {}\n", add5(100), add10(100));
 
         // C5.A5: capture struct
-        origin := Point.{ x = 10, y = 20 };
+        origin := Point{ x = 10, y = 20 };
         f_st := () {
             print("closure-struct: {} {}\n", origin.x, origin.y);
         };
@@ -674,8 +674,8 @@ main :: () {
         btn_cl := (id: i64) {
             print("opt-closure-btn: {} {}\n", id, btn_x);
         };
-        btn1 := Btn.{ label = "OK", on_click = btn_cl };
-        btn2 := Btn.{ label = "Cancel", on_click = null };
+        btn1 := Btn{ label = "OK", on_click = btn_cl };
+        btn2 := Btn{ label = "Cancel", on_click = null };
         if h := btn1.on_click { h(1); }
         if h := btn2.on_click { h(2); } else { print("opt-closure-btn: null\n"); }
 
@@ -697,9 +697,9 @@ main :: () {
         print("closure-rstr: {}\n", f_c4("ok"));
 
         // C5.C5: return struct
-        off_c5 := Point.{ x = 10, y = 20 };
-        f_c5 := (p: Point) -> Point => Point.{ x = p.x + off_c5.x, y = p.y + off_c5.y };
-        res_c5 := f_c5(Point.{ x = 1, y = 2 });
+        off_c5 := Point{ x = 10, y = 20 };
+        f_c5 := (p: Point) -> Point => Point{ x = p.x + off_c5.x, y = p.y + off_c5.y };
+        res_c5 := f_c5(Point{ x = 1, y = 2 });
         print("closure-rstruct: {} {}\n", res_c5.x, res_c5.y);
 
         // C5.G2: factory with multiple captures
@@ -833,7 +833,7 @@ main :: () {
         // C5.E4: auto-promotion in struct field assignment
         Widget :: struct { transform: Closure(i32) -> i32; }
         negate_fn :: (x: i32) -> i32 { return 0 - x; }
-        w_e4 := Widget.{ transform = negate_fn };
+        w_e4 := Widget{ transform = negate_fn };
         print("closure-struct-field: {}\n", w_e4.transform(5));
 
         // C5.F1: single closure callback in struct
@@ -845,7 +845,7 @@ main :: () {
         btn_cb := (id: i32) {
             print("closure-btn: {} {}\n", id, btn_x2);
         };
-        btn3 := Button.{ label = "OK", on_press = btn_cb };
+        btn3 := Button{ label = "OK", on_press = btn_cb };
         btn3.on_press(1);
 
         // C5.J1: stateful counter via pointer capture
@@ -883,9 +883,9 @@ main :: () {
         print("closure-reassign: {}\n", f_m3(10));
 
         // C5.M6b: snapshot verified with struct capture
-        pt_m6 := Point.{ x = 5, y = 10 };
+        pt_m6 := Point{ x = 5, y = 10 };
         f_m6 := () -> i32 => pt_m6.x + pt_m6.y;
-        pt_m6 = Point.{ x = 99, y = 99 };
+        pt_m6 = Point{ x = 99, y = 99 };
         print("closure-snapstruct: {}\n", f_m6());
 
         // C5.M2: closure capturing auto-promoted closure
@@ -903,12 +903,12 @@ main :: () {
 
         // C5.F2: optional callback (none)
         Toggle :: struct { on_change: ?Closure(bool) -> void; }
-        t_f2 := Toggle.{ on_change = null };
+        t_f2 := Toggle{ on_change = null };
         if h := t_f2.on_change { h(true); } else { print("closure-toggle: none\n"); }
 
         // C5.F3: optional callback (some)
         t_f3_cb := (enabled: bool) { print("closure-toggle: {}\n", enabled); };
-        t_f3 := Toggle.{ on_change = t_f3_cb };
+        t_f3 := Toggle{ on_change = t_f3_cb };
         if h := t_f3.on_change { h(true); }
 
         // C5.F5: callback receiving caller context
@@ -919,7 +919,7 @@ main :: () {
         p_f5_cb := (title: string, w: i32, h: i32) {
             print("closure-panel: {} {}x{}\n", title, w, h);
         };
-        p_f5 := Panel.{ title = "main", on_resize = p_f5_cb };
+        p_f5 := Panel{ title = "main", on_resize = p_f5_cb };
         p_f5.on_resize(p_f5.title, 800, 600);
 
         // C5.E6: protocol value passed through multiple function calls
@@ -962,7 +962,7 @@ main :: () {
         }
         msg_f4 := "submitted";
         sub_cb := () { print("closure-form: {}\n", msg_f4); };
-        form_f4 := Form.{ on_submit = sub_cb, on_cancel = null };
+        form_f4 := Form{ on_submit = sub_cb, on_cancel = null };
         if h := form_f4.on_submit { h(); }
         if h := form_f4.on_cancel { h(); } else { print("closure-form: no cancel\n"); }
 
@@ -1085,7 +1085,7 @@ main :: () {
         print("closure-zerocap: {} {}\n", no_cap(7), no_cap.env == null);
 
         // C5.E10: closure capturing and calling struct method
-        pt_e10 := Point.{ x = 3, y = 4 };
+        pt_e10 := Point{ x = 3, y = 4 };
         p_e10 := *pt_e10;
         get_xy := () -> i32 => p_e10.x + p_e10.y;
         print("closure-struct-method: {}\n", get_xy());

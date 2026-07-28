@@ -34,6 +34,6 @@ main :: () -> i32 {
     for 2..5 (j) { print("j={}\n", j); }
 
     // Inline unroll over a heterogeneous pack.
-    each(A.{ x = 1 }, B.{ s = "hi" }, A.{ x = 3 });
+    each(A{ x = 1 }, B{ s = "hi" }, A{ x = 3 });
     0
 }

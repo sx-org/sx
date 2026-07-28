@@ -65,7 +65,7 @@ roundtrip2 :: (s1: *http.Server, s2: *http.Server, req: string, buf: [*]u8, cap:
         if got > 0 { stall = 0; } else { stall += 1; }
     }
     socket.close(fd);
-    return string.{ ptr = buf, len = xx total };
+    return string{ ptr = buf, len = xx total };
 }
 
 main :: () -> i32 {

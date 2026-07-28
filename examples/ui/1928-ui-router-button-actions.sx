@@ -36,7 +36,7 @@ DoubleTapPad :: struct {
 }
 impl View for DoubleTapPad {
     size_that_fits :: (self: *DoubleTapPad, proposal: ProposedSize) -> Size {
-        Size.{ width = self.w, height = self.h }
+        Size{ width = self.w, height = self.h }
     }
     layout :: (self: *DoubleTapPad, bounds: Frame) {}
     render :: (self: *DoubleTapPad, ctx: *RenderContext, frame: Frame) {
@@ -53,7 +53,7 @@ home :: () -> View {
         button("Beta", on_tap = () { g_b += 1; });
         e := element_id().value;
         g_pad_eid = e;
-        place(DoubleTapPad.{ eid = e, w = 80.0, h = 30.0 });
+        place(DoubleTapPad{ eid = e, w = 80.0, h = 30.0 });
     }
 }
 
@@ -79,7 +79,7 @@ up :: (x: f32, y: f32, t_ms: u64) {
 }
 
 center :: (f: Frame) -> Point {
-    Point.{ x = f.origin.x + f.size.width * 0.5, y = f.origin.y + f.size.height * 0.5 }
+    Point{ x = f.origin.x + f.size.width * 0.5, y = f.origin.y + f.size.height * 0.5 }
 }
 
 main :: () {

@@ -7,7 +7,7 @@
 Box :: struct { p: *void; }
 
 make :: () -> Box {
-    return Box.{ p = context.allocator.alloc_bytes(8) };
+    return Box{ p = context.allocator.alloc_bytes(8) };
 }
 
 B :: #run make();

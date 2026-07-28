@@ -26,13 +26,13 @@ with_buf :: () -> i64 {
     b := use_state_with(Buf, (a: Allocator) -> Buf {
         d := a.alloc(u8, 3);
         d[0] = 42;
-        Buf.{ data = d }
+        Buf{ data = d }
     });
     xx b.get().data[0]
 }
 
 main :: () {
-    u := Ui.{};
+    u := Ui{};
     store := StateStore.init(.{ value = 1 });
     push .{ ui = *u, ui_store = *store } {
         // Build 1: two keyed rows + two same-site occurrences + transient + arena entry.

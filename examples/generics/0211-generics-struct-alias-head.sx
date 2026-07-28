@@ -19,12 +19,12 @@ ChainAlias :: LocalAlias;
 
 main :: () {
     // Same-file alias: instantiation + field + method.
-    b := LocalAlias(i64).{ item = 3 };
+    b := LocalAlias(i64){ item = 3 };
     print("field: {}\n", b.item);
     print("method: {}\n", b.get());
 
     // Alias chain terminates at the template.
-    c := ChainAlias(i64).{ item = 11 };
+    c := ChainAlias(i64){ item = 11 };
     print("chain: {}\n", c.item);
 
     // Alias as a type annotation head.
@@ -36,7 +36,7 @@ main :: () {
     print("helper: {}\n", helper());
     t := Thing.init();
     print("thing: {}\n", t.v);
-    f := Box(i64).{ item = 7 };
+    f := Box(i64){ item = 7 };
     print("facade: {}\n", f.get());
     x : Box(string) = .{ item = "qq" };
     print("facade-annot: {}\n", x.item);

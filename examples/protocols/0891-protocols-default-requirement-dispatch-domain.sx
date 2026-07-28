@@ -27,7 +27,7 @@ impl P for Thing {
 }
 
 main :: () -> i32 {
-    thing := Thing.{};
+    thing := Thing{};
     if thing.value() != 1 { return 1; }
     if thing.inherent_doubled() != 2 { return 2; }
 

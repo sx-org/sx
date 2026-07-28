@@ -27,7 +27,7 @@ Blob :: struct {
 
 impl View for Blob {
     size_that_fits :: (self: *Blob, proposal: ProposedSize) -> Size {
-        Size.{ width = 1.0, height = 1.0 }
+        Size{ width = 1.0, height = 1.0 }
     }
     layout :: (self: *Blob, bounds: Frame) {}
     render :: (self: *Blob, ctx: *RenderContext, frame: Frame) {
@@ -36,7 +36,7 @@ impl View for Blob {
 }
 
 row :: () -> View {
-    vstack(0.0) { place(Blob.{ eid = element_id().value }); }
+    vstack(0.0) { place(Blob{ eid = element_id().value }); }
 }
 
 home :: () -> View {

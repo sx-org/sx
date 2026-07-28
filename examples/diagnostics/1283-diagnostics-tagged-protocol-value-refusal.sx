@@ -45,8 +45,8 @@ hold  :: (s: Series(string)) -> i64 { 0 }
 count_flags :: (s: Series(string)) -> i64 { s.count() }
 
 main :: () {
-    sn := Sine.{ freq = 0.5 };
-    ct := Counter.{ n = 3 };
+    sn := Sine{ freq = 0.5 };
+    ct := Counter{ n = 3 };
     v : Series(f32) = sn;
     print("{} {}\n", v.count(), size_of(Flags));
 
@@ -60,7 +60,7 @@ main :: () {
     // `Buffer(bool)` is a member of `Series(bool)`, which the blanket admits
     // it at — not of this instantiation.
     ba : [2]bool = .[true, false];
-    w : Series(f32) = Buffer(bool).{ items = ba[0..] };
+    w : Series(f32) = Buffer(bool){ items = ba[0..] };
 
     // The empty set refuses at the consuming site.
     print("{}\n", count_flags(ct));

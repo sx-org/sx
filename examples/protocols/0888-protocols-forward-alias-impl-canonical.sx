@@ -15,7 +15,7 @@ impl Alias for Thing {
 Alias :: P;
 
 main :: () -> i32 {
-    value := Thing.{ n = 42 };
+    value := Thing{ n = 42 };
     erased : P = xx value;
     if erased.value() != 42 { return 1; }
     0

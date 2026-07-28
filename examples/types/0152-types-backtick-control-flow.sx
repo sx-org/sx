@@ -34,7 +34,7 @@ main :: () -> i32 {
     }
 
     // for capture + index names
-    xs := [3]i64.{ 10, 20, 30 };
+    xs := [3]i64{ 10, 20, 30 };
     for xs, 0.. (`bool, `u16) {
         print("for   = {} @ {}\n", `bool, `u16);
     }
@@ -51,7 +51,7 @@ main :: () -> i32 {
     print("call  = {} {}\n", i2(10), `i2(10));
 
     // struct field named with a reserved spelling: bare + backtick member access
-    q := Quad.{ `i1 = 7, `i2 = 9 };
+    q := Quad{ `i1 = 7, `i2 = 9 };
     print("field = {} {} | {} {}\n", q.i1, q.i2, q.`i1, q.`i2);
     return 0;
 }

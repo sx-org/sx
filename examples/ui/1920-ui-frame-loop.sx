@@ -33,7 +33,7 @@ Tappable :: struct {
 }
 impl View for Tappable {
     size_that_fits :: (self: *Tappable, proposal: ProposedSize) -> Size {
-        Size.{ width = self.w, height = self.h }
+        Size{ width = self.w, height = self.h }
     }
     layout :: (self: *Tappable, bounds: Frame) {}
     render :: (self: *Tappable, ctx: *RenderContext, frame: Frame) {
@@ -48,7 +48,7 @@ home :: () -> View {
     n.set(n.get() + 1);
     g_counter = n.get();
     vstack(0.0) {
-        place(Tappable.{ eid = element_id().value, w = 40.0, h = 20.0 });
+        place(Tappable{ eid = element_id().value, w = 40.0, h = 20.0 });
     }
 }
 

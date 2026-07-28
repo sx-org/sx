@@ -18,7 +18,7 @@
 Leaf :: struct { w, h: f32; fill: Color; }
 impl View for Leaf {
     size_that_fits :: (self: *Leaf, proposal: ProposedSize) -> Size {
-        Size.{ width = self.w, height = self.h }
+        Size{ width = self.w, height = self.h }
     }
     layout :: (self: *Leaf, bounds: Frame) {}
     render :: (self: *Leaf, ctx: *RenderContext, frame: Frame) {
@@ -26,7 +26,7 @@ impl View for Leaf {
     }
 }
 
-leaf :: () -> Leaf { Leaf.{ w = 10.0, h = 20.0, fill = COLOR_RED } }
+leaf :: () -> Leaf { Leaf{ w = 10.0, h = 20.0, fill = COLOR_RED } }
 
 print_frame :: (tag: string, f: Frame) {
     print("{} {} {} {} {}\n", tag, f.origin.x, f.origin.y, f.size.width, f.size.height);
@@ -49,7 +49,7 @@ show :: (v: View, tag: string) {
 }
 
 main :: () {
-    u := Ui.{};
+    u := Ui{};
 
     // Everything below runs in S2 value mode: ui set, no sink.
     push .{ ui = *u } {
@@ -101,11 +101,11 @@ main :: () {
         show(sized, "sized");
 
         // A border renders even without a fill; the stroke sits on the box.
-        stroked := place(leaf(), .{ border = Stroke.{ color = COLOR_WHITE, width = 2.0 } });
+        stroked := place(leaf(), .{ border = Stroke{ color = COLOR_WHITE, width = 2.0 } });
         show(stroked, "stroked");
     }
 
-    process.assert(Mod.{} == MOD_DEFAULT, "empty literal is the default Mod");
-    process.assert(Mod.{ padding = EdgeInsets.all(1.0) } != MOD_DEFAULT, "any set field is non-default");
+    process.assert(Mod{} == MOD_DEFAULT, "empty literal is the default Mod");
+    process.assert(Mod{ padding = EdgeInsets.all(1.0) } != MOD_DEFAULT, "any set field is non-default");
     print("ok\n");
 }

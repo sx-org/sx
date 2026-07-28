@@ -89,7 +89,7 @@ write_chunked :: (fd: i32, data: string) -> bool {
     hex : [18]u8 = ---;
     n := hex_into(data.len, *hex[0]);
     hex[n] = '\r'; hex[n + 1] = '\n';
-    return write_all(fd, string.{ ptr = *hex[0], len = n + 2 })
+    return write_all(fd, string{ ptr = *hex[0], len = n + 2 })
         and write_all(fd, data) and write_all(fd, "\r\n0\r\n\r\n");
 }
 

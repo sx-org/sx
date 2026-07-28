@@ -4,4 +4,4 @@ Thing :: struct {
     #using Base;
     x: i64 = 10;
 }
-mk :: () -> Thing { return Thing.{ ca = 1, cb = 2 }; }
+mk :: () -> Thing { return Thing{ ca = 1, cb = 2 }; }

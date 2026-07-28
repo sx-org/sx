@@ -13,7 +13,7 @@ main :: () {
     // ========================================================
     print("=== 18. Array of Structs ===\n");
     {
-        spts : [2]Point = .[Point.{1, 2}, Point.{3, 4}];
+        spts : [2]Point = .[Point{1, 2}, Point{3, 4}];
         spt2 := spts[1];
         print("arr-struct-x: {}\n", spt2.x);
         for spts (it) {

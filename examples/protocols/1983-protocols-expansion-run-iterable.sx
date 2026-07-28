@@ -22,8 +22,8 @@ inline for #run pick_list() (T) {
 }
 
 main :: () {
-    d := Dot.{ n = 2 };
-    b := Bar.{ n = 5 };
+    d := Dot{ n = 2 };
+    b := Bar{ n = 5 };
     v : Show = d;
     w : Show = b;
     print("{} {}\n", v.fmt(), w.fmt());

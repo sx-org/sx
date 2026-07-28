@@ -25,11 +25,11 @@ impl Alias for Counter {
 qualified :: (item: foreign.P) -> i64 { item.bump() }
 
 main :: () -> i32 {
-    counter := Counter.{ n = 1 };
+    counter := Counter{ n = 1 };
 
     if forward(xx counter) != 2 { return 1; }
 
-    holder := Holder.{ item = xx counter };
+    holder := Holder{ item = xx counter };
     if holder.item.bump() != 3 { return 2; }
 
     optional : ?Nested = xx counter;
@@ -41,10 +41,10 @@ main :: () -> i32 {
     if roundtrip(xx counter).bump() != 6 { return 5; }
     if qualified(xx counter) != 7 { return 6; }
 
-    optional_holder := OptionalHolder.{ item = xx counter };
+    optional_holder := OptionalHolder{ item = xx counter };
     if optional_holder.item.bump() != 8 { return 7; }
 
-    view_holder := ViewHolder.{ item = counter, optional = view };
+    view_holder := ViewHolder{ item = counter, optional = view };
     if view_holder.item.bump() != 9 { return 8; }
     if view_holder.optional.bump() != 10 { return 9; }
     if counter.n != 10 { return 10; }

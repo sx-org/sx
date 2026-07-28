@@ -115,7 +115,7 @@ StateStore :: struct {
     in_build: bool = false;
 
     init :: (root: UiRootId, gpa: Allocator = context.allocator) -> StateStore {
-        StateStore.{ root = root, gpa = gpa }
+        StateStore{ root = root, gpa = gpa }
     }
 
     // Open a build transaction: nothing is claimed yet; every group's
@@ -330,7 +330,7 @@ claim_entry :: (store: *StateStore, ui: *Ui, $T: Type, tier: StateTier, loc: Sou
     // New entry: stable pointer, store-owned identity copy; the caller
     // initialises the payload exactly once (fresh == true).
     ne : *StateEntry = xx store.gpa.alloc_bytes(size_of(StateEntry));
-    ne.* = StateEntry.{
+    ne.* = StateEntry{
         id_hash = h,
         chain = copy_chain(ui.chain.items, store.gpa),
         loc_file = loc.file,
@@ -360,7 +360,7 @@ use_state :: ($T: Type, default: T, loc: Source_Location = #caller_location) -> 
         d := default;
         c.memcpy(e.data, xx *d, size_of(T));
     }
-    State(T).{ ptr = xx e.data }
+    State(T){ ptr = xx e.data }
 }
 
 // Chrome tier (K4): occurrence identity, NO count-change detection — for
@@ -373,7 +373,7 @@ use_transient :: ($T: Type, default: T, loc: Source_Location = #caller_location)
         d := default;
         c.memcpy(e.data, xx *d, size_of(T));
     }
-    State(T).{ ptr = xx e.data }
+    State(T){ ptr = xx e.data }
 }
 
 // Nontrivial tier (C3): the initializer runs under a LAZY per-entry arena
@@ -390,5 +390,5 @@ use_state_with :: ($T: Type, init: Closure(Allocator) -> T, loc: Source_Location
         v := init(e.arena.(Allocator));
         c.memcpy(e.data, xx *v, size_of(T));
     }
-    State(T).{ ptr = xx e.data }
+    State(T){ ptr = xx e.data }
 }

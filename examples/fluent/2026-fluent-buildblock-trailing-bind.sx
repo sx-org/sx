@@ -38,7 +38,7 @@ Echo :: struct {
 // Build-block acceptor: the block replays into a sink of this function's choice.
 column :: (title: string, content: @BuildBlock(Drawable)) -> i32 {
     print("{}:\n", title);
-    sink := Echo.{};
+    sink := Echo{};
     content.run(*sink);
     sink.n
 }
@@ -50,8 +50,8 @@ repeat :: (times: i32, body: Closure()) {
 
 main :: () -> i32 {
     n := column("build block") {
-        Label.{ text = "A" };
-        Label.{ text = "B" };
+        Label{ text = "A" };
+        Label{ text = "B" };
     };
     print("  reached {}\n", n);
 

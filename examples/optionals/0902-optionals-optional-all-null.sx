@@ -24,16 +24,16 @@ impl Sizable for Widget {
 }
 
 main :: () -> void {
-    w := Widget.{};
+    w := Widget{};
     s := w.(Sizable);
 
     // These work:
-    r1 := s.size(ProposedSize.{ width = 50.0, height = null });
+    r1 := s.size(ProposedSize{ width = 50.0, height = null });
     print("r1 = {}\n", r1);
-    r2 := s.size(ProposedSize.{ width = null, height = 50.0 });
+    r2 := s.size(ProposedSize{ width = null, height = 50.0 });
     print("r2 = {}\n", r2);
 
     // This fails with "scalar-to-vector conversion failed":
-    r3 := s.size(ProposedSize.{ width = null, height = null });
+    r3 := s.size(ProposedSize{ width = null, height = null });
     print("r3 = {}\n", r3);
 }

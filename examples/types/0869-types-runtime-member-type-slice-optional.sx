@@ -11,7 +11,7 @@
 Pair :: struct { a: i32; b: f64; }
 
 main :: () {
-    p := Pair.{ a = 1, b = 2.5 };
+    p := Pair{ a = 1, b = 2.5 };
     pv : any = p;
     print("struct: {} -> {}\n", type_name(type_of(pv)), type_name(struct_field_type(type_of(pv), 0)));
 

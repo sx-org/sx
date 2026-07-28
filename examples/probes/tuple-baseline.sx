@@ -46,7 +46,7 @@ main :: () -> i32 {
 // ── GAPS (Feature 1 work — intentionally NOT exercised above) ──────
 //
 //   G1. Tuple field projection across elements:
-//         t := .(Listenable.{value=1}, Listenable.{value=2});
+//         t := .(Listenable{value=1}, Listenable{value=2});
 //         v := t.value;        // expected: .(1, 2)   — Decision 3 "tuple.field"
 //       Today: `error: field 'value' not found on type 'tuple'`.
 //       Needed by canonical `self.sources.value`.

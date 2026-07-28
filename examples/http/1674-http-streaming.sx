@@ -188,7 +188,7 @@ main :: () -> i32 {
                     if chunked_complete(rbuf, total) { done = true; }
                     tries += 1;
                 }
-                resp := string.{ ptr = rbuf, len = xx total };
+                resp := string{ ptr = rbuf, len = xx total };
                 if !done { print("chunked response never completed (got {} bytes)\n", total); rc = 1; }
                 else if !contains(resp, "Transfer-Encoding: chunked") { print("missing chunked TE header\n"); rc = 1; }
                 else if !contains(resp, "HTTP/1.1 200 OK") { print("chunked: bad status\n"); rc = 1; }
@@ -224,11 +224,11 @@ main :: () -> i32 {
                         n, re := socket.read_nb(c2, *rbuf[total], xx (cap - total));
                         if !re { total += n; }
                         else if re == error.Closed { break; }
-                        s := string.{ ptr = rbuf, len = xx total };
+                        s := string{ ptr = rbuf, len = xx total };
                         if contains(s, "hello fixed body") { got = true; }
                         tries += 1;
                     }
-                    s := string.{ ptr = rbuf, len = xx total };
+                    s := string{ ptr = rbuf, len = xx total };
                     if !got { print("fixed body never arrived\n"); rc = 1; }
                     else if !contains(s, "HTTP/1.1 200 OK") { print("fixed: bad status\n"); rc = 1; }
                     else if !contains(s, "Content-Length: 16") { print("fixed: wrong content-length\n"); rc = 1; }
@@ -256,7 +256,7 @@ main :: () -> i32 {
                         if chunked_complete(rbuf, total) { done = true; }
                         tries += 1;
                     }
-                    r1 := string.{ ptr = rbuf, len = xx total };
+                    r1 := string{ ptr = rbuf, len = xx total };
                     if !done or !contains(r1, "Connection: keep-alive") { print("keep-alive: first chunked response failed\n"); rc = 1; }
                     else {
                         dl := dechunk(rbuf, total, dbuf, BODY_LEN + 16);
@@ -274,7 +274,7 @@ main :: () -> i32 {
                             n, re := socket.read_nb(c3, *rbuf[total], xx (cap - total));
                             if !re { total += n; }
                             else if re == error.Closed { break; }
-                            s := string.{ ptr = rbuf, len = xx total };
+                            s := string{ ptr = rbuf, len = xx total };
                             if contains(s, "hello fixed body") { got = true; }
                             tries += 1;
                         }

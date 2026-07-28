@@ -24,7 +24,7 @@ vec3 :: (x:f32, y:f32, z:f32) -> Vector(3,f32) {
 Foo :: Complex(u32);
 
 main :: () {
-    v1 := Vec3.{data = .[1,3,2]};
+    v1 := Vec3{data = .[1,3,2]};
     print("v1: {}\n", v1);
     //stdout: Vec(3,f32){data: [1.0, 3.0, 2.0]}
     //

@@ -13,8 +13,8 @@ A :: struct { inner: struct { x: i64; }; }
 B :: struct { inner: struct { y: i64; z: i64; }; }
 
 main :: () -> i32 {
-    a := A.{ inner = .{ x = 1 } };
-    b := B.{ inner = .{ y = 2, z = 3 } };
+    a := A{ inner = .{ x = 1 } };
+    b := B{ inner = .{ y = 2, z = 3 } };
     print("{} {} {}\n", a.inner.x, b.inner.y, b.inner.z);
     0
 }

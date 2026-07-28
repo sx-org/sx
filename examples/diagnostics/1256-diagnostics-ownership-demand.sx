@@ -22,7 +22,7 @@ use_val :: (s: Sizable) -> i64 { s.size() }
 mk_gpa :: () -> GPA { GPA.init() }
 
 main :: () {
-    w := W.{ v = 1 };
+    w := W{ v = 1 };
 
     a : Sizable = w;            // implicit lvalue at a decl → demand
     _ = a;

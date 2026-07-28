@@ -23,7 +23,7 @@ with_buf :: () {
     b := use_state_with(Buf, (a: Allocator) -> Buf {
         d := a.alloc(u8, 3);
         d[0] = 42;
-        Buf.{ data = d }
+        Buf{ data = d }
     });
     g_buf = xx b.get().data[0];
 }

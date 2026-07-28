@@ -60,7 +60,7 @@ impl Cell for Divider {
 
 // This file's emit helpers — the "emitter API" a caller writes against.
 emit :: (title: string, content: @BuildBlock(Cell)) {
-    out := Ascii.{};
+    out := Ascii{};
     out.write(title);
     out.indent += 1;
     content.run(*out);
@@ -72,12 +72,12 @@ main :: () -> i32 {
 
     emit("report") {
         for lines (line) {
-            Text.{ body = line };
+            Text{ body = line };
         }
         if show_divider {
-            Divider.{};
+            Divider{};
         }
-        Text.{ body = "done" };
+        Text{ body = "done" };
     };
     0
 }

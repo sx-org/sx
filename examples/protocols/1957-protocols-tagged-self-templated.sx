@@ -34,9 +34,9 @@ twice :: (s: Scale(i64)) -> i64 {
 }
 
 main :: () {
-    f := Fixed.{ n = 5 };
-    ci := Cell(i64).{ v = 3 };
-    cf := Cell(f64).{ v = 1.5 };
+    f := Fixed{ n = 5 };
+    ci := Cell(i64){ v = 3 };
+    cf := Cell(f64){ v = 1.5 };
 
     a : Scale(i64) = f;
     b : Scale(i64) = ci;
@@ -50,7 +50,7 @@ main :: () {
 
     // The tag check is per instantiation: two `Cell(i64)` handles agree,
     // and a `Fixed` handle is a different conformer of the SAME space.
-    ci2 := Cell(i64).{ v = 3 };
+    ci2 := Cell(i64){ v = 3 };
     b2 : Scale(i64) = ci2;
     print("{}\n", b.equal(b2));
     print("{}\n", a.equal(f));

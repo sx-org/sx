@@ -32,7 +32,7 @@ png_encode_bytes :: (
 ) -> (string, !Error) {
     filtered_raw := alloc.alloc_bytes(filtered_len);
     if filtered_raw == null { raise error.AllocationFailed; }
-    filtered := string.{ ptr = xx filtered_raw, len = filtered_len };
+    filtered := string{ ptr = xx filtered_raw, len = filtered_len };
     filtered_row_bytes := row_bytes + 1;
 
     row := 0;
@@ -100,7 +100,7 @@ png_encode_bytes :: (
     ihdr[10] = 0;
     ihdr[11] = 0;
     ihdr[12] = 0;
-    png_write_chunk(*out, "IHDR", string.{ ptr = *ihdr[0], len = ihdr.len });
+    png_write_chunk(*out, "IHDR", string{ ptr = *ihdr[0], len = ihdr.len });
 
     at := 0;
     while at < compressed.len {
@@ -202,7 +202,7 @@ png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !) {
     if idat_total < 1 { raise error.TruncatedData; }
     idat_raw := alloc.alloc_bytes(idat_total);
     if idat_raw == null { raise error.AllocationFailed; }
-    idat := string.{ ptr = xx idat_raw, len = idat_total };
+    idat := string{ ptr = xx idat_raw, len = idat_total };
     at := 0;
     off = 8;
     while true {
@@ -238,7 +238,7 @@ png_decode_bytes :: (data: string, alloc: Allocator) -> (DecodedPng, !) {
         alloc.dealloc_bytes(filtered.ptr);
         raise error.AllocationFailed;
     }
-    out := string.{ ptr = xx out_raw, len = row_bytes * height };
+    out := string{ ptr = xx out_raw, len = row_bytes * height };
 
     bpp := channels;
     r := 0;

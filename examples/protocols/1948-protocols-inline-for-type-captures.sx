@@ -46,8 +46,8 @@ main :: () {
     }
     print("\n");
 
-    p := Pair.{ a = 1, b = 2 };
-    t := Trip.{ a = 1, b = 2, c = 3 };
+    p := Pair{ a = 1, b = 2 };
+    t := Trip{ a = 1, b = 2, c = 3 };
     s : Sized = p;
     u : Sized = t;
     print("{} {}\n", s.footprint(), u.footprint());

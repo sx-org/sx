@@ -22,7 +22,7 @@ screen_keyed :: (route: i64) {
 }
 
 main :: () {
-    u := Ui.{};
+    u := Ui{};
     store := StateStore.init(.{ value = 1 });
     push .{ ui = *u, ui_store = *store } {
         store.begin_build(); u.begin_build();
@@ -32,7 +32,7 @@ main :: () {
         print("unkeyed B {}\n", screen_unkeyed(1));
         store.commit_build();
     }
-    ub := Ui.{};
+    ub := Ui{};
     storeb := StateStore.init(.{ value = 2 });
     push .{ ui = *ub, ui_store = *storeb } {
         storeb.begin_build(); ub.begin_build();

@@ -44,7 +44,7 @@ Box :: struct {
 }
 
 main :: () {
-    t := Tracker.{ allocs = 0, deallocs = 0 };
+    t := Tracker{ allocs = 0, deallocs = 0 };
     // Counts are read inside the push and printed after it: `print` itself
     // allocates through the current context allocator.
     dflt_a : i64 = 0; dflt_d : i64 = 0;
@@ -68,7 +68,7 @@ main :: () {
     zs[1] = 9;
     print("scaled: {} {} {}\n", zs.head_scaled(), zs.head_scaled(3), zs.head_scaled(2));
 
-    b := Box.{ base = 1 };
+    b := Box{ base = 1 };
     print("bump: {} {} {}\n", b.bump(zs), b.bump(zs, 5), b.bump(zs, 2));
 
     zs.free();

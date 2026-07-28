@@ -18,7 +18,7 @@ impl Mark for Dot { mark :: (self: *Dot) -> i64 { self.n * 3 } }
 // Reached only from the arm body below, so it is evaluated while the fixpoint
 // is running — and it dispatches through `Mark`, admitting `Dot` there.
 tally :: () -> string {
-    d := Dot.{ n = 2 };
+    d := Dot{ n = 2 };
     m : Mark = d;
     if m.mark() == 6 { return "bonus := 10;"; }
     return "bonus := 0;";
@@ -33,7 +33,7 @@ impl Draw for Box {
 }
 
 main :: () {
-    b := Box.{ n = 1 };
+    b := Box{ n = 1 };
     d : Draw = b;
     print("{}\n", d.draw());
 }

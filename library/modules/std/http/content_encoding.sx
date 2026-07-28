@@ -510,7 +510,7 @@ EncodedProducer :: struct {
             alloc.dealloc_bytes(input);
             raise e;
         };
-        EncodedProducer.{
+        EncodedProducer{
             source = source,
             source_ctx = source_ctx,
             source_off = 0,
@@ -528,15 +528,15 @@ EncodedProducer :: struct {
     // means forward progress without output and is never confused with EOF;
     // event-loop callers yield before asking for another step.
     next :: (self: *EncodedProducer, output: string) -> (EncodedProduceStep, !Error) {
-        if self.finished { return EncodedProduceStep.{ status = EncodedProduceStatus.done }; }
+        if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
         if self.input_at < self.input_len {
-            input := string.{ ptr = *self.input[self.input_at], len = self.input_len - self.input_at };
+            input := string{ ptr = *self.input[self.input_at], len = self.input_len - self.input_at };
             progress := try self.encoder.write(input, output);
             self.input_at += progress.consumed;
             if progress.status == .done { self.finished = true; }
-            if progress.produced > 0 { return EncodedProduceStep.{ produced = progress.produced, status = EncodedProduceStatus.data }; }
-            if self.finished { return EncodedProduceStep.{ status = EncodedProduceStatus.done }; }
-            if progress.consumed > 0 { return EncodedProduceStep.{ status = EncodedProduceStatus.pending }; }
+            if progress.produced > 0 { return EncodedProduceStep{ produced = progress.produced, status = EncodedProduceStatus.data }; }
+            if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
+            if progress.consumed > 0 { return EncodedProduceStep{ status = EncodedProduceStatus.pending }; }
             raise error.InvalidData;
         }
 
@@ -547,15 +547,15 @@ EncodedProducer :: struct {
                 self.source_off += n;
                 self.input_at = 0;
                 self.input_len = n;
-                return EncodedProduceStep.{ status = EncodedProduceStatus.pending };
+                return EncodedProduceStep{ status = EncodedProduceStatus.pending };
             }
             self.source_eof = true;
         }
 
         progress := try self.encoder.finish(output);
         if progress.status == .done { self.finished = true; }
-        if progress.produced > 0 { return EncodedProduceStep.{ produced = progress.produced, status = EncodedProduceStatus.data }; }
-        if self.finished { return EncodedProduceStep.{ status = EncodedProduceStatus.done }; }
+        if progress.produced > 0 { return EncodedProduceStep{ produced = progress.produced, status = EncodedProduceStatus.data }; }
+        if self.finished { return EncodedProduceStep{ status = EncodedProduceStatus.done }; }
         raise error.InvalidData;
     }
 

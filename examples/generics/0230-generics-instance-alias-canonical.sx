@@ -2,7 +2,7 @@
 // binds the alias name to the instantiation's own TypeId — it does not mint a
 // second nominal type — so every consumer position agrees with the
 // `Buffer(f32)` spelling: `type_eq`, `type_name`, a `case BufF:` arm, a
-// `v.(BufF)` downcast, an `impl … for BufF` head, and a `BufF.{ … }` literal.
+// `v.(BufF)` downcast, an `impl … for BufF` head, and a `BufF{ … }` literal.
 // Distinct instantiations stay distinct.
 #import "modules/std.sx";
 
@@ -34,7 +34,7 @@ main :: () {
     print("{} {}\n", type_eq(Buffer(f32), Buffer(i64)), type_eq(BufF, BufI));
     //stdout: false false
 
-    a : Series(f32) = Buffer(f32).{ n = 7 };
+    a : Series(f32) = Buffer(f32){ n = 7 };
 
     // The arm names the alias and matches the instantiation's value.
     if a == {
@@ -47,10 +47,10 @@ main :: () {
     //stdout: 7 7
 
     // A literal spelled through the alias carries the instantiation's type.
-    b := BoxI.{ v = 5 };
-    print("{} {}\n", type_name(type_of(b)), type_name(type_of(BoxI.{ v = 6 })));
+    b := BoxI{ v = 5 };
+    print("{} {}\n", type_name(type_of(b)), type_name(type_of(BoxI{ v = 6 })));
     //stdout: Box__i64 Box__i64
 
-    print("{} {}\n", seen(Box(i64).{ v = 1 }), seen(BoxI.{ v = 2 }));
+    print("{} {}\n", seen(Box(i64){ v = 1 }), seen(BoxI{ v = 2 }));
     //stdout: 1 2
 }

@@ -22,6 +22,6 @@ inline if !has_impl(Tally, Panel) {
 }
 
 main :: () {
-    w := Widget.{ n = 1 };
+    w := Widget{ n = 1 };
     print("{}\n", w.n);
 }

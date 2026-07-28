@@ -10,22 +10,22 @@ View :: protocol tagged { area :: (self: *Self) -> i64; }
 Widget :: struct { n: i64; }
 impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
 
-by_keyword :: () -> View { return Widget.{ n = 1 }.(View); }
+by_keyword :: () -> View { return Widget{ n = 1 }.(View); }
 
-by_tail :: () -> View { Widget.{ n = 2 }.(View) }
+by_tail :: () -> View { Widget{ n = 2 }.(View) }
 
-by_arrow :: () -> View => Widget.{ n = 3 }.(View);
+by_arrow :: () -> View => Widget{ n = 3 }.(View);
 
 // A lambda is its own function: the same escape refuses for the same
 // reason (issue 0406 coverage of lowerLambda).
 by_lambda_arrow :: () {
-    f : Closure() -> View = () => Widget.{ n = 5 }.(View);
+    f : Closure() -> View = () => Widget{ n = 5 }.(View);
     _ = f;
 }
 
 by_lambda_tail :: () {
     f : Closure() -> View = () {
-        Widget.{ n = 6 }.(View)
+        Widget{ n = 6 }.(View)
     };
     _ = f;
 }
@@ -33,7 +33,7 @@ by_lambda_tail :: () {
 // A frame temp OFF the return position stays legal: the borrow dies with
 // this frame, and nothing here outlives it.
 local_temp :: () -> i64 {
-    v := Widget.{ n = 4 }.(View);
+    v := Widget{ n = 4 }.(View);
     v.area()
 }
 
@@ -41,7 +41,7 @@ local_temp :: () -> i64 {
 // erasing inside the guard must stay legal (the temp does not escape).
 guard_ok :: () -> i64 {
     if true {
-        v := Widget.{ n = 7 }.(View);
+        v := Widget{ n = 7 }.(View);
         _ = v.area();
     }
     0

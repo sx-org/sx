@@ -40,27 +40,27 @@ Echo :: struct {
 
 // A plain call whose RESULT conforms is eligible: eligibility is the type, not
 // the spelling.
-make :: (text: string) -> Label => Label.{ text = text };
+make :: (text: string) -> Label => Label{ text = text };
 
 consume :: (l: Label) -> i32 => 0;
 
 column :: (content: @BuildBlock(Drawable)) -> i32 {
-    sink := Echo.{};
+    sink := Echo{};
     content.run(*sink);
     sink.n
 }
 
 main :: () -> i32 {
-    slot := Label.{ text = "slot" };
+    slot := Label{ text = "slot" };
 
     n := column() {
-        Label.{ text = "standalone literal" };
+        Label{ text = "standalone literal" };
         make("standalone call");
 
-        bound := Label.{ text = "bound" };
-        slot = Label.{ text = "assigned" };
-        _ = Label.{ text = "discarded" };
-        _ = consume(Label.{ text = "argument" });
+        bound := Label{ text = "bound" };
+        slot = Label{ text = "assigned" };
+        _ = Label{ text = "discarded" };
+        _ = consume(Label{ text = "argument" });
         42;
 
         print("  bound={} slot={}\n", bound.draw(), slot.draw());

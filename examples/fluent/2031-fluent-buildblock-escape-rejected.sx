@@ -25,6 +25,6 @@ hold :: (content: @BuildBlock(Drawable)) {
 }
 
 main :: () -> i32 {
-    hold() { };
+    hold() { false; };
     0
 }

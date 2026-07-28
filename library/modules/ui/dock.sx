@@ -123,15 +123,15 @@ DockInteraction :: struct {
         self.child_count = 0;
         self.parent_allocator = context.allocator;  // capture GPA at init time
 
-        self.natural_sizes = List(Size).{};
-        self.alignment_overrides = List(Alignment).{};
-        self.has_alignment_override = List(bool).{};
-        self.is_floating = List(bool).{};
-        self.is_fill = List(bool).{};
-        self.floating_positions = List(Point).{};
-        self.child_bounds = List(Frame).{};
-        self.anim_sizes = List(Animated(Size)).{};
-        self.header_pressed = List(bool).{};
+        self.natural_sizes = List(Size){};
+        self.alignment_overrides = List(Alignment){};
+        self.has_alignment_override = List(bool){};
+        self.is_floating = List(bool){};
+        self.is_fill = List(bool){};
+        self.floating_positions = List(Point){};
+        self.child_bounds = List(Frame){};
+        self.anim_sizes = List(Animated(Size)){};
+        self.header_pressed = List(bool){};
     }
 
     ensure_capacity :: (self: *DockInteraction, count: i64) {
@@ -262,7 +262,7 @@ calculate_origin :: (bounds: Frame, child_size: Size, alignment: Alignment) -> P
         y = bounds.origin.y + bounds.size.height - child_size.height;
     }
 
-    Point.{ x = x, y = y }
+    Point{ x = x, y = y }
 }
 
 get_size_proposal_for_alignment :: (alignment: Alignment, bounds_size: Size, is_fill: bool) -> ProposedSize {
@@ -271,12 +271,12 @@ get_size_proposal_for_alignment :: (alignment: Alignment, bounds_size: Size, is_
     // Edge docking: constrain one axis, leave other natural
     if alignment.h == .leading or alignment.h == .trailing {
         if alignment.v == .center {
-            return ProposedSize.{ width = null, height = bounds_size.height };
+            return ProposedSize{ width = null, height = bounds_size.height };
         }
     }
     if alignment.v == .top or alignment.v == .bottom {
         if alignment.h == .center {
-            return ProposedSize.{ width = bounds_size.width, height = null };
+            return ProposedSize{ width = bounds_size.width, height = null };
         }
     }
     // Center or corners: natural size
@@ -289,13 +289,13 @@ get_final_size_for_alignment :: (alignment: Alignment, child_size: Size, bounds_
     // Left/Right edges: fill height
     if alignment.h == .leading or alignment.h == .trailing {
         if alignment.v == .center {
-            return Size.{ width = child_size.width, height = bounds_size.height };
+            return Size{ width = child_size.width, height = bounds_size.height };
         }
     }
     // Top/Bottom edges: fill width
     if alignment.v == .top or alignment.v == .bottom {
         if alignment.h == .center {
-            return Size.{ width = bounds_size.width, height = child_size.height };
+            return Size{ width = bounds_size.width, height = child_size.height };
         }
     }
     // Center or corners: natural size
@@ -373,7 +373,7 @@ DockPanel :: struct {
     DEFAULT_HEADER_H   :f32: 28.0;
 
     make :: (title: string, dock: Alignment, content: View) -> DockPanel {
-        DockPanel.{
+        DockPanel{
             child = .{ view = content },
             title = title,
             dock = dock,
@@ -391,9 +391,9 @@ DockPanel :: struct {
 
 impl View for DockPanel {
     size_that_fits :: (self: *DockPanel, proposal: ProposedSize) -> Size {
-        content_size := self.child.view.size_that_fits(ProposedSize.{ width = proposal.width, height = null });
+        content_size := self.child.view.size_that_fits(ProposedSize{ width = proposal.width, height = null });
         w := if pw := proposal.width { min(content_size.width, pw) } else { content_size.width };
-        Size.{ width = w, height = content_size.height + self.header_height }
+        Size{ width = w, height = content_size.height + self.header_height }
     }
 
     layout :: (self: *DockPanel, bounds: Frame) {
@@ -448,9 +448,9 @@ Dock :: struct {
     on_dock: ?Closure(i64, DockZone);
 
     make :: (interaction: *DockInteraction, delta_time: *f32) -> Dock {
-        Dock.{
-            children = List(ViewChild).{},
-            alignments = List(Alignment).{},
+        Dock{
+            children = List(ViewChild){},
+            alignments = List(Alignment){},
             interaction = interaction,
             delta_time = delta_time,
             background = null,
@@ -485,7 +485,7 @@ Dock :: struct {
 
 impl View for Dock {
     size_that_fits :: (self: *Dock, proposal: ProposedSize) -> Size {
-        Size.{
+        Size{
             width = proposal.width ?? 800.0,
             height = proposal.height ?? 600.0
         }

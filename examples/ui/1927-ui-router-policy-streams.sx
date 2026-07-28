@@ -66,7 +66,7 @@ Overlay :: struct {
 }
 impl View for Overlay {
     size_that_fits :: (self: *Overlay, proposal: ProposedSize) -> Size {
-        Size.{ width = self.w, height = self.h }
+        Size{ width = self.w, height = self.h }
     }
     layout :: (self: *Overlay, bounds: Frame) {}
     render :: (self: *Overlay, ctx: *RenderContext, frame: Frame) {
@@ -86,7 +86,7 @@ DoubleZone :: struct {
 }
 impl View for DoubleZone {
     size_that_fits :: (self: *DoubleZone, proposal: ProposedSize) -> Size {
-        Size.{ width = self.w, height = self.h }
+        Size{ width = self.w, height = self.h }
     }
     layout :: (self: *DoubleZone, bounds: Frame) {}
     render :: (self: *DoubleZone, ctx: *RenderContext, frame: Frame) {
@@ -104,7 +104,7 @@ Pad :: struct {
 }
 impl View for Pad {
     size_that_fits :: (self: *Pad, proposal: ProposedSize) -> Size {
-        Size.{ width = self.w, height = self.h }
+        Size{ width = self.w, height = self.h }
     }
     layout :: (self: *Pad, bounds: Frame) {}
     render :: (self: *Pad, ctx: *RenderContext, frame: Frame) {
@@ -121,18 +121,18 @@ home :: () -> View {
         at := element_id().value;
         g_a_bottom = ab;
         g_a_top = at;
-        place(Overlay.{ bottom = ab, top = at, w = 100.0, h = 30.0 });
+        place(Overlay{ bottom = ab, top = at, w = 100.0, h = 30.0 });
         if g_show_b {
             b := element_id().value;
             g_b = b;
-            place(DoubleZone.{ eid = b, split = 50.0, w = 100.0, h = 30.0 });
+            place(DoubleZone{ eid = b, split = 50.0, w = 100.0, h = 30.0 });
         }
         cid := element_id().value;
         g_c = cid;
-        place(Pad.{ eid = cid, hold = true, w = 100.0, h = 30.0 });
+        place(Pad{ eid = cid, hold = true, w = 100.0, h = 30.0 });
         d := element_id().value;
         g_d = d;
-        place(Pad.{ eid = d, hold = false, w = 100.0, h = 30.0 });
+        place(Pad{ eid = d, hold = false, w = 100.0, h = 30.0 });
     }
 }
 

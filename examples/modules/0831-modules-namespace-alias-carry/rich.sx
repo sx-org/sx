@@ -1,6 +1,6 @@
 Thing :: struct {
     v: i64;
-    init :: () -> Thing { Thing.{ v = 5 } }
+    init :: () -> Thing { Thing{ v = 5 } }
     get :: (self: *Thing) -> i64 { self.v }
 }
 Color :: enum { red; green; }

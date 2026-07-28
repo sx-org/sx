@@ -152,7 +152,7 @@ Router :: struct {
     simultaneity: List(SimultaneityPair) = .{};
 
     init :: (gpa: Allocator = context.allocator) -> Router {
-        Router.{ gpa = gpa }
+        Router{ gpa = gpa }
     }
 
     // Top-most hit at a point = the LAST containing region in paint

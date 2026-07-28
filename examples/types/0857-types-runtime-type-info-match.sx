@@ -24,9 +24,9 @@ kind_of :: (tp: Type) -> string {
 }
 
 main :: () {
-    print("{}\n", kind_of(type_of(Padded.{ a = 1, b = 2, c = 3 })));
+    print("{}\n", kind_of(type_of(Padded{ a = 1, b = 2, c = 3 })));
     print("{}\n", kind_of(type_of(Color.red)));
-    av : any = Overlay.{ as_int = 5 };
+    av : any = Overlay{ as_int = 5 };
     print("{}\n", kind_of(type_of(av)));
     ts : [3]Type = .[i16, [4]f32, string];
     k := 0;

@@ -9,7 +9,7 @@
 Color :: struct { r, g, b: i64; }
 counter : i64 = 0;
 bump :: () -> i64 { counter += 1; counter }
-CALL :: Color.{ r = bump(), g = 0, b = 0 };
+CALL :: Color{ r = bump(), g = 0, b = 0 };
 
 main :: () {
     print("use1={}\n", CALL.r);

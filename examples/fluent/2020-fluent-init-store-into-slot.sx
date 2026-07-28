@@ -33,15 +33,15 @@ count_only :: (value: @Init($T)) -> i32 {
 main :: () -> i32 {
     alpha := 0.8;
 
-    b := store(Button.{ label = "Play", alpha = alpha });
+    b := store(Button{ label = "Play", alpha = alpha });
     print("stored: {} {}\n", b.label, b.alpha);
     context.allocator.destroy(b);
 
-    f := store_via(Button.{ label = "Forwarded" });
+    f := store_via(Button{ label = "Forwarded" });
     print("forwarded: {} {}\n", f.label, f.alpha);
     context.allocator.destroy(f);
 
-    print("declined: {}\n", count_only(Button.{ label = "never built" }));
+    print("declined: {}\n", count_only(Button{ label = "never built" }));
     0
 }
 

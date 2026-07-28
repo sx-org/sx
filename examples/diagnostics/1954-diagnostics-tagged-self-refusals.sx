@@ -44,7 +44,7 @@ grow :: (v: Shape) -> Shape { return v.resized(2.0); }
 bound_ok :: (a: $T/Shape) -> bool { a.twin(*a) }
 
 main :: () {
-    c := Circle.{ r = 1.0 };
+    c := Circle{ r = 1.0 };
     arr : [1]Circle = .[c];
     v : Shape = c;
 
@@ -52,7 +52,7 @@ main :: () {
     v.maybe();
     v.twin(*c);
 
-    p := Port.{ n = 3 };
+    p := Port{ n = 3 };
     h : Handle = p;
     h.rebound(2);
 

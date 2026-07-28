@@ -15,21 +15,21 @@
 Leaf :: struct { w, h: f32; }
 impl View for Leaf {
     size_that_fits :: (self: *Leaf, proposal: ProposedSize) -> Size {
-        Size.{ width = self.w, height = self.h }
+        Size{ width = self.w, height = self.h }
     }
     layout :: (self: *Leaf, bounds: Frame) {}
     render :: (self: *Leaf, ctx: *RenderContext, frame: Frame) {}
 }
 
 main :: () {
-    u := Ui.{};
-    flexible := ProposedSize.{ width = null, height = null };
+    u := Ui{};
+    flexible := ProposedSize{ width = null, height = null };
 
     // Value mode: ui set, no sink — `place` returns without emitting.
     push .{ ui = *u } {
         // Four links: the fixed size pins the box, the margin grows the
         // measured total around it.
-        tree := el(Leaf.{ w = 10.0, h = 20.0 })
+        tree := el(Leaf{ w = 10.0, h = 20.0 })
             .opacity(0.5)
             .clip()
             .size(30.0, 40.0)
@@ -39,12 +39,12 @@ main :: () {
         print("chain: {}x{}\n", sz.width, sz.height);
 
         // hidden collapses the measured size to zero.
-        h := el(Leaf.{ w = 10.0, h = 20.0 }).hidden(true).place();
+        h := el(Leaf{ w = 10.0, h = 20.0 }).hidden(true).place();
         hz := h.size_that_fits(flexible);
         print("hidden: {}x{}\n", hz.width, hz.height);
 
         // Padding sits INSIDE the background whichever link set it first.
-        mixed := el(Leaf.{ w = 5.0, h = 5.0 })
+        mixed := el(Leaf{ w = 5.0, h = 5.0 })
             .bg(COLOR_RED, 1.0)
             .padding(EdgeInsets.all(2.0))
             .place();

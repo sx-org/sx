@@ -8,7 +8,7 @@
 main :: () -> i32 {
     ok := exposed();
     v := secret();
-    h : Hidden = Hidden.{ v = 1 };
+    h : Hidden = Hidden{ v = 1 };
     print("{}\n", ok + v + h.v);
     return 0;
 }

@@ -52,7 +52,7 @@ kind :: (x: $T) -> string {
 }
 
 main :: () {
-    tu := TU.{ i = 5 };
+    tu := TU{ i = 5 };
     print("untagged: {}\n", only_union(type_of(tu)));
     print("enum: {}\n", only_union(type_of(E.a)));
     print("tagged: {}\n", only_union(type_of(Shape.none)));
@@ -61,8 +61,8 @@ main :: () {
     print("both tagged: {}\n", both(type_of(Shape.none)));
     print("both enum: {}\n", both(type_of(E.a)));
 
-    print("concrete first: {}\n", pick(type_of(Point.{ x = 1, y = 2 })));
-    print("category rest: {}\n", pick(type_of(Size2.{ w = 3, h = 4 })));
+    print("concrete first: {}\n", pick(type_of(Point{ x = 1, y = 2 })));
+    print("category rest: {}\n", pick(type_of(Size2{ w = 3, h = 4 })));
 
     print("static untagged: {}\n", kind(tu));
     print("static enum: {}\n", kind(E.a));

@@ -306,7 +306,7 @@ Cloneable :: protocol {
 
 impl Cloneable for Point {
     clone :: (self: *Point) -> Point {
-        Point.{ x = self.x, y = self.y }
+        Point{ x = self.x, y = self.y }
     }
 }
 
@@ -408,7 +408,7 @@ main :: () {
 
     // P1.1: Basic protocol + impl, direct call on concrete type
     {
-        sc := SimpleCounter.{ val = 0 };
+        sc := SimpleCounter{ val = 0 };
         sc.inc();
         sc.inc();
         sc.inc();
@@ -417,13 +417,13 @@ main :: () {
 
     // P1.2: impl in separate scope (retroactive conformance)
     {
-        p := Point.{ x = 10, y = 20 };
+        p := Point{ x = 10, y = 20 };
         print("P1.2: {}\n", p.sum());
     }
 
     // P2.1: `inline`-kind protocol — xx conversion + dynamic dispatch
     {
-        acc := Accumulator.{ total = 0 };
+        acc := Accumulator{ total = 0 };
         a := acc.(Adder);              // owning copy (postfix erasure)
         a.add(10);
         a.add(20);
@@ -437,15 +437,15 @@ main :: () {
             a.add(n);
             a.value()
         }
-        acc := Accumulator.{ total = 100 };
+        acc := Accumulator{ total = 100 };
         result := use_adder(acc.(Adder), 50);
         print("P2.2: {}\n", result);
     }
 
     // P2.3: different impls through same protocol type
     {
-        acc := Accumulator.{ total = 0 };
-        dbl := Doubler.{ val = 0 };
+        acc := Accumulator{ total = 0 };
+        dbl := Doubler{ val = 0 };
         a1 := acc.(Adder);
         a2 := dbl.(Adder);
         a1.add(5);
@@ -455,7 +455,7 @@ main :: () {
 
     // P3.1: vtable-pointer protocol
     {
-        sc := SimpleCounter.{ val = 0 };
+        sc := SimpleCounter{ val = 0 };
         c := sc.(Counter);
         c.inc();
         c.inc();
@@ -472,21 +472,21 @@ main :: () {
             c.inc();
             c.get()
         }
-        sc := SimpleCounter.{ val = 10 };
+        sc := SimpleCounter{ val = 10 };
         result := use_counter(sc.(Counter));
         print("P3.2: {}\n", result);
     }
 
     // P4.1: default method calls required method (static dispatch)
     {
-        pr := Printer.{ count = 0 };
+        pr := Printer{ count = 0 };
         pr.say_twice("hi ");
         print("\nP4.1: {}\n", pr.count);
     }
 
     // P4.2: default method via dynamic dispatch (vtable)
     {
-        pr := Printer.{ count = 0 };
+        pr := Printer{ count = 0 };
         r : *Repeater = *pr;          // borrowed VIEW — mutations reach pr
         r.say_twice("yo ");
         print("\nP4.2: {}\n", pr.count);
@@ -494,7 +494,7 @@ main :: () {
 
     // P4.3: chained default→default calls via vtable
     {
-        ci := ChainImpl.{ val = 0 };
+        ci := ChainImpl{ val = 0 };
         ch : *Chained = *ci;          // view — ci.val is asserted below
         // double_wrap calls wrap twice, wrap calls base once each
         // base("hi") returns 2 (len), wrap adds 1 → 3, double_wrap = 3 + 3 = 6
@@ -505,15 +505,15 @@ main :: () {
 
     // P5.1: Self type in protocol — static dispatch
     {
-        p1 := Point.{ x = 1, y = 2 };
-        p2 := Point.{ x = 1, y = 2 };
-        p3 := Point.{ x = 3, y = 4 };
+        p1 := Point{ x = 1, y = 2 };
+        p2 := Point{ x = 1, y = 2 };
+        p3 := Point{ x = 3, y = 4 };
         print("P5.1: {} {}\n", p1.eq(p2), p1.eq(p3));
     }
 
     // P5.2: Self in return position
     {
-        p := Point.{ x = 10, y = 20 };
+        p := Point{ x = 10, y = 20 };
         p2 := p.clone();
         print("P5.2: {} {}\n", p2.x, p2.y);
     }
@@ -534,17 +534,17 @@ main :: () {
     // the old erased form passed it UNCHECKED); the generic bound keeps
     // Self known. The refusal itself is pinned in diagnostics/1253.
     {
-        p1 := Point.{ x = 1, y = 2 };
-        p2 := Point.{ x = 1, y = 2 };
-        p3 := Point.{ x = 3, y = 4 };
+        p1 := Point{ x = 1, y = 2 };
+        p2 := Point{ x = 1, y = 2 };
+        p3 := Point{ x = 3, y = 4 };
         print("P5.3: {} {}\n", are_equal(p1, p2), are_equal(p1, p3));
     }
 
     // P6.1: Single constraint — constrained generic function
     {
-        p1 := Point.{ x = 1, y = 2 };
-        p2 := Point.{ x = 1, y = 2 };
-        p3 := Point.{ x = 3, y = 4 };
+        p1 := Point{ x = 1, y = 2 };
+        p2 := Point{ x = 1, y = 2 };
+        p3 := Point{ x = 3, y = 4 };
         print("P6.1: {} {}\n", are_equal(p1, p2), are_equal(p1, p3));
     }
 
@@ -555,36 +555,36 @@ main :: () {
 
     // P6.3: Multiple constraints
     {
-        p1 := Point.{ x = 1, y = 2 };
-        p2 := Point.{ x = 1, y = 2 };
-        p3 := Point.{ x = 3, y = 4 };
+        p1 := Point{ x = 1, y = 2 };
+        p2 := Point{ x = 1, y = 2 };
+        p3 := Point{ x = 3, y = 4 };
         print("P6.3: {} {}\n", eq_and_hash(p1, p2), eq_and_hash(p1, p3));
     }
 
     // P6.4: inline constraint syntax ($T/Protocol)
     {
         // sum_of_inline uses $T/Summable inline (not $T: Type/Summable)
-        p1 := Point.{ x = 10, y = 20 };
-        p2 := Point.{ x = 3, y = 7 };
+        p1 := Point{ x = 10, y = 20 };
+        p2 := Point{ x = 3, y = 7 };
         print("P6.4: {}\n", sum_of_inline(p1, p2));
     }
 
     // P6.5: Struct type param constraints ($T: Type/Summable)
     {
-        box := SumBox(Point).{ val = Point.{ x = 5, y = 15 } };
+        box := SumBox(Point){ val = Point{ x = 5, y = 15 } };
         print("P6.5: {}\n", box.val.sum());
     }
 
     // P7.1: impl for generic struct
     {
-        p := Pair(i32).{ a = 10, b = 20 };
+        p := Pair(i32){ a = 10, b = 20 };
         print("P7.1: {}\n", p.sum());
     }
 
     // P7.2: generic struct impl with different type arg
     {
-        p1 := Pair(i32).{ a = 3, b = 7 };
-        p2 := Pair(i64).{ a = 100, b = 200 };
+        p1 := Pair(i32){ a = 3, b = 7 };
+        p2 := Pair(i64){ a = 100, b = 200 };
         print("P7.2: {} {}\n", p1.sum(), p2.sum());
     }
 
@@ -594,8 +594,8 @@ main :: () {
     // P2.6: protocol values in arrays — each element OWNS its copy
     // (the cutover: reads go through the erased values, not the sources).
     {
-        acc := Accumulator.{ total = 0 };
-        dbl := Doubler.{ val = 0 };
+        acc := Accumulator{ total = 0 };
+        dbl := Doubler{ val = 0 };
         adders : [2]Adder = .[acc.(Adder), dbl.(Adder)];
         i := 0;
         while i < 2 {
@@ -608,14 +608,14 @@ main :: () {
     // P2.7: xx on inline struct literal (no intermediate variable)
     {
         use_adder :: (a: Adder) -> i32 { a.add(10); a.value() }
-        result := use_adder(xx Accumulator.{ total = 5 });
+        result := use_adder(xx Accumulator{ total = 5 });
         print("P2.7: {}\n", result);
     }
 
     // P3.3: xx on inline struct literal with vtable protocol
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
-        result := use_counter(xx SimpleCounter.{ val = 100 });
+        result := use_counter(xx SimpleCounter{ val = 100 });
         print("P3.3: {}\n", result);
     }
 }

@@ -35,7 +35,7 @@ Box :: struct {
 free_take :: (n: *i64, xs: []$T) -> i64 { xs.len }
 
 main :: () -> i64 {
-    b := Box.{ n = 1 };
+    b := Box{ n = 1 };
     a : [4]i64 = .[10, 20, 30, 40];
 
     print("{}\n", Box.take(*b, a));   // explicit form

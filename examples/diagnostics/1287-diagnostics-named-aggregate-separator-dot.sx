@@ -1,0 +1,13 @@
+// Separator-dot named aggregates `Type.{…}` were removed. The compact form is
+// `Type{…}`; contextual construction remains `.{…}`.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+Button :: struct {
+    label: string = "";
+}
+
+main :: () {
+    b := Button.{ label = "Play" };
+    _ := b;
+}

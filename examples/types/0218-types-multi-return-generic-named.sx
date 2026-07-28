@@ -33,7 +33,7 @@ main :: () -> i64 {
     r := fallible(3, false) catch { return 9; };
     print("{} {}\n", r.x, r.y);      // 3 false
 
-    bx := Box(i32).{ v = 10 };
+    bx := Box(i32){ v = 10 };
     m, n := bx.pair();
     print("{} {}\n", m, n);          // 10 11
     return 0;

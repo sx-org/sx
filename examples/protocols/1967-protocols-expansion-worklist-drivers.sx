@@ -53,9 +53,9 @@ inline if POINTER_SIZE == 8 {
 }
 
 main :: () {
-    w := Widget.{ n = 4 };
-    p := Panel.{ n = 5 };
-    l := Loose.{ n = 6 };
+    w := Widget{ n = 4 };
+    p := Panel{ n = 5 };
+    l := Loose{ n = 6 };
     v : View = p;
     t : Tally = w;
     u : Tally = l;

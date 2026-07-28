@@ -7,7 +7,7 @@ set_x :: (p: *Vec2, val: f32) {
 }
 
 main :: () {
-    v := Vec2.{ 1.0, 2.0 };
+    v := Vec2{ 1.0, 2.0 };
     print("before: {}\n", v);
 
     set_x(*v, 99.0);

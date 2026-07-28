@@ -44,7 +44,7 @@ main :: () {
     yn : i64 = f64.true_min + 0.5;  // non-integral numeric-limit float expr → error
     ym : i64 = 5.5 % 2.0;           // non-integral float `%` remainder (1.5) → error
     ad : [F + 0.25]i64 = ---;  // non-integral float-const-LEAF array DIMENSION → error
-    b := Bad.{};
+    b := Bad{};
     print("{} {} {}\n", b.f, b.fe, b.ff);
     print("{} {} {}\n", badLit(), badExpr(), badFlt());
     print("{} {} {} {} {} {}\n", y, ye, yf, yn, ym, ad.len);

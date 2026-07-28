@@ -29,8 +29,8 @@ kind_of :: (t: Tracked) -> string {
 tick :: (c: Clock) -> i64 { c.now() }
 
 main :: () {
-    n := Node.{ id = 1 };
-    e := Edge.{ from = 1, to = 2 };
+    n := Node{ id = 1 };
+    e := Edge{ from = 1, to = 2 };
     print("{} {}\n", kind_of(n), kind_of(e));
 
     // The marker still carries full RTTI and a downcast.
@@ -38,7 +38,7 @@ main :: () {
     print("{} {}\n", type_name(type_of(tn)), tn.(Node).id);
     print("{}\n", size_of(Tracked));
 
-    s := Steady.{ t = 21 };
+    s := Steady{ t = 21 };
     print("{}\n", tick(s));
     c : Clock = s;
     print("{} {}\n", c.now(), c.(Steady).t);

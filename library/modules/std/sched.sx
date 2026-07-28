@@ -178,7 +178,7 @@ Scheduler :: struct {
         // partial literal zero-fills it, and it is written by the first
         // `swap_context` before ever being read. `kq = -1` is the lazy sentinel
         // (opened by the first `block_on_fd`).
-        return Scheduler.{
+        return Scheduler{
             current = null, ready_head = null, ready_tail = null,
             own_allocator = context.allocator,
             next_id = 0, n_spawned = 0, n_suspended = 0,
@@ -1079,7 +1079,7 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 RaceResult :: ($T: Type) -> Type {
     vs : [struct_field_count(T)]EnumVariant = ---;
     inline for 0..struct_field_count(T) (i) {
-        vs[i] = EnumVariant.{
+        vs[i] = EnumVariant{
             name    = struct_field_name(T, i),                          // tuple label → variant name
             payload = struct_field_type(pointee_type(struct_field_type(T, i)), 0),  // *Future(R) -> Future(R) -> R
         };

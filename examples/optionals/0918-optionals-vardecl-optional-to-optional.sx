@@ -50,7 +50,7 @@ main :: () {
     if nsl { print("arr2slice-null: present\n"); } else { print("arr2slice-null: absent\n"); }
 
     // Aggregate payload: ?Sq → ?Shape (presence-preserving protocol erasure).
-    sq : ?Sq = Sq.{ s = 4 };
+    sq : ?Sq = Sq{ s = 4 };
     sh : ?Shape = sq;
     if x := sh { print("erase-pres: area={}\n", x.area()); }
     nsq : ?Sq = null;

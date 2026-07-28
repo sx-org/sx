@@ -201,7 +201,7 @@ test_memory_reader :: (alloc: Allocator) -> bool {
     limited := false;
     unexpected := reader.extract(1, repeated.len - 1, alloc) catch (e) {
         limited = e == error.OutputLimit;
-        string.{ ptr = null, len = 0 }
+        string{ ptr = null, len = 0 }
     };
     if !limited {
         if unexpected.ptr != null { alloc.dealloc_bytes(unexpected.ptr); }
@@ -219,7 +219,7 @@ test_memory_reader :: (alloc: Allocator) -> bool {
     alloc.dealloc_bytes(compressed.ptr);
     if !compressed_ok { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; }
 
-    sink := Collector.{};
+    sink := Collector{};
     made := reader.extract_to(1, xx sink, 1024, alloc) catch {
         reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false;
     };
@@ -236,7 +236,7 @@ test_memory_reader :: (alloc: Allocator) -> bool {
 test_sources_and_sinks :: (alloc: Allocator) -> bool {
     archive := make_archive(alloc);
     if archive.ptr == null { return false; }
-    source := MemorySource.{ data = archive };
+    source := MemorySource{ data = archive };
     reader := zip.open_source(xx source, .{ max_metadata = 65536 }, alloc) catch { alloc.dealloc_bytes(archive.ptr); return false; };
     plain := reader.extract_name("stored.txt", 64, alloc) catch {
         reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false;
@@ -246,13 +246,13 @@ test_sources_and_sinks :: (alloc: Allocator) -> bool {
     reader.deinit();
     if !source_ok { alloc.dealloc_bytes(archive.ptr); return false; }
 
-    limited_source := MemorySource.{ data = archive };
+    limited_source := MemorySource{ data = archive };
     tiny_limit_failed := metadata_limit_rejected(xx limited_source, 1, alloc);
     if !tiny_limit_failed { alloc.dealloc_bytes(archive.ptr); return false; }
 
     payload := "source source source source source source";
-    input := MemorySource.{ data = payload, max_chunk = 5 };
-    output := Collector.{};
+    input := MemorySource{ data = payload, max_chunk = 5 };
+    output := Collector{};
     writer := zip.Writer.init_sink(xx output, .{}, alloc) catch { alloc.dealloc_bytes(archive.ptr); return false; };
     writer.add_source("source.txt", xx input, .{ method = .deflate, level = 6, store_small = false }) catch {
         writer.deinit(); alloc.dealloc_bytes(archive.ptr); return false;
@@ -275,7 +275,7 @@ test_entry_streams :: (alloc: Allocator) -> bool {
     archive := make_archive(alloc);
     if archive.ptr == null { return false; }
 
-    source := MemorySource.{ data = archive, max_chunk = 7 };
+    source := MemorySource{ data = archive, max_chunk = 7 };
     reader := zip.open_source(xx source, .{ max_metadata = 65536 }, alloc) catch {
         alloc.dealloc_bytes(archive.ptr); return false;
     };
@@ -387,7 +387,7 @@ test_terminal_checksum_errors :: (alloc: Allocator) -> bool {
     if !deflated_ok { alloc.dealloc_bytes(archive.ptr); return false; }
 
     archive[deflated_at + 16] ^= 1;
-    source := MemorySource.{ data = archive, max_chunk = 7 };
+    source := MemorySource{ data = archive, max_chunk = 7 };
     source_reader := zip.open_source(xx source, .{ max_metadata = 65536 }, alloc) catch {
         archive[deflated_at + 16] ^= 1; alloc.dealloc_bytes(archive.ptr); return false;
     };
@@ -419,12 +419,12 @@ test_terminal_checksum_errors :: (alloc: Allocator) -> bool {
 test_transfer_errors_and_cleanup :: (alloc: Allocator) -> bool {
     archive := make_archive(alloc);
     if archive.ptr == null { return false; }
-    source := MemorySource.{ data = archive };
+    source := MemorySource{ data = archive };
     reader := zip.open_source(xx source, .{ max_metadata = 65536 }, alloc) catch {
         alloc.dealloc_bytes(archive.ptr); return false;
     };
 
-    tracking := TrackingAllocator.{ parent = alloc };
+    tracking := TrackingAllocator{ parent = alloc };
     before := tracking.live;
     source.fail_at = 0;
     source.failure = error.UnexpectedEnd;
@@ -445,7 +445,7 @@ test_transfer_errors_and_cleanup :: (alloc: Allocator) -> bool {
     }
 
     source.fail_at = -1;
-    target := Collector.{ fail_after = 0, failure = error.OutputLimit };
+    target := Collector{ fail_after = 0, failure = error.OutputLimit };
     sink_writer := zip.Writer.init_sink(xx target, .{}, alloc) catch {
         reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false;
     };
@@ -669,7 +669,7 @@ test_errors_and_poison :: (alloc: Allocator) -> bool {
     old_time.deinit();
     if !time_failed { return false; }
 
-    failing := Collector.{ fail_after = 1 };
+    failing := Collector{ fail_after = 1 };
     writer := zip.Writer.init_sink(xx failing, .{}, alloc) catch { return false; };
     first_failed := false;
     writer.add("payload", "payload payload payload", .{ store_small = false }) catch (e) { first_failed = e == error.Io; };
@@ -770,7 +770,7 @@ test_add_from_failures :: (alloc: Allocator) -> bool {
     // Rollback + reuse: memory writer, source fails on the payload read
     // (offset 32 allows the 30-byte local header at offset 0, blocks the
     // name/payload reads that follow).
-    flaky := MemorySource.{ data = archive, failure = error.NotFound };
+    flaky := MemorySource{ data = archive, failure = error.NotFound };
     reader := zip.open_source(xx *flaky, .{}, alloc) catch { alloc.dealloc_bytes(archive.ptr); return false; };
     keep_index := reader.find("keep.txt") catch { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; };
     fail_index := reader.find("fail.txt") catch { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; };
@@ -811,7 +811,7 @@ test_add_from_failures :: (alloc: Allocator) -> bool {
 
     // Borrowed sink cannot roll back: the writer poisons; further adds and
     // finish raise instead of emitting over a half-written record.
-    sink := Collector.{};
+    sink := Collector{};
     sink_writer := zip.Writer.init_sink(xx *sink, .{}, alloc) catch { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; };
     flaky.fail_at = 30;
     poisoned_error := false;
@@ -828,7 +828,7 @@ test_add_from_failures :: (alloc: Allocator) -> bool {
 
     // Simultaneous target + source failure: the sink rejects the header emit
     // before the payload read can fail — the TARGET error surfaces.
-    dual_sink := Collector.{ fail_after = 0 };
+    dual_sink := Collector{ fail_after = 0 };
     dual_writer := zip.Writer.init_sink(xx *dual_sink, .{}, alloc) catch { reader.deinit(); alloc.dealloc_bytes(archive.ptr); return false; };
     flaky.fail_at = 30;
     target_won := false;
@@ -895,7 +895,7 @@ test_add_from_failures :: (alloc: Allocator) -> bool {
     saw_failure := false;
     saw_success := false;
     while n < 128 {
-        failing := FailingAllocator.{ parent = alloc, fail_at = n };
+        failing := FailingAllocator{ parent = alloc, fail_at = n };
         provisional, pe := zip.Writer.from_reader(*reader, .{}, xx *failing);
         if pe { saw_failure = true; }
         else {

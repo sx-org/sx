@@ -187,11 +187,11 @@ RouteCtx :: struct {
         // writer reports overflow rather than truncating.
         cap : i64 = 65536;
         buf : [*]u8 = xx context.allocator.alloc_bytes(cap);
-        n, e := json.write_to_buffer(v, string.{ ptr = buf, len = cap });
+        n, e := json.write_to_buffer(v, string{ ptr = buf, len = cap });
         if e { return false; }
         self.resp.status = status;
         self.resp.content_type = "application/json";
-        self.resp.body = string.{ ptr = buf, len = n };
+        self.resp.body = string{ ptr = buf, len = n };
         return true;
     }
 }
@@ -227,7 +227,7 @@ ci_eq :: (a: string, b: string) -> bool {
 path_only :: (path: string) -> string {
     i := 0;
     while i < path.len {
-        if path[i] == '?' { return string.{ ptr = path.ptr, len = i }; }
+        if path[i] == '?' { return string{ ptr = path.ptr, len = i }; }
         i += 1;
     }
     return path;
@@ -238,7 +238,7 @@ query_string_of :: (path: string) -> string {
     i := 0;
     while i < path.len {
         if path[i] == '?' {
-            return string.{ ptr = *path[i + 1], len = path.len - i - 1 };
+            return string{ ptr = *path[i + 1], len = path.len - i - 1 };
         }
         i += 1;
     }
@@ -298,7 +298,7 @@ decode_token :: (s: string) -> string {
     if !needs_decode(s) { return s; }
     buf : [*]u8 = xx context.allocator.alloc_bytes(if s.len > 0 then s.len else 1);
     n := url_decode_into(s, buf);
-    return string.{ ptr = buf, len = n };
+    return string{ ptr = buf, len = n };
 }
 
 // Parse `a=1&b=two&flag` into up to `cap` decoded KV pairs at `out`.
@@ -311,7 +311,7 @@ parse_pairs :: (s: string, out: [*]KV, cap: i64) -> i64 {
         // one segment runs to the next '&'
         seg_start := i;
         while i < s.len and s[i] != '&' { i += 1; }
-        seg := string.{ ptr = *s[seg_start], len = i - seg_start };
+        seg := string{ ptr = *s[seg_start], len = i - seg_start };
         if i < s.len { i += 1; }   // skip '&'
 
         if seg.len == 0 { continue; }   // empty segment ("&&")
@@ -328,10 +328,10 @@ parse_pairs :: (s: string, out: [*]KV, cap: i64) -> i64 {
         if eq < 0 {
             key = seg;
         } else {
-            key = string.{ ptr = seg.ptr, len = eq };
-            val = string.{ ptr = *seg[eq + 1], len = seg.len - eq - 1 };
+            key = string{ ptr = seg.ptr, len = eq };
+            val = string{ ptr = *seg[eq + 1], len = seg.len - eq - 1 };
         }
-        out[n] = KV.{ name = decode_token(key), value = decode_token(val) };
+        out[n] = KV{ name = decode_token(key), value = decode_token(val) };
         n += 1;
     }
     return n;
@@ -359,14 +359,14 @@ match_pattern :: (pattern: string, path: string, params: [*]KV) -> (bool, i64 = 
         // grab one segment from each
         ps := pi;
         while pi < pattern.len and pattern[pi] != '/' { pi += 1; }
-        pseg := string.{ ptr = *pattern[ps], len = pi - ps };
+        pseg := string{ ptr = *pattern[ps], len = pi - ps };
         xs := xi;
         while xi < path.len and path[xi] != '/' { xi += 1; }
-        xseg := string.{ ptr = *path[xs], len = xi - xs };
+        xseg := string{ ptr = *path[xs], len = xi - xs };
         if pseg.len > 0 and pseg[0] == ':' {   // param segment
             if n < MAX_PARAMS {
-                name := string.{ ptr = *pseg[1], len = pseg.len - 1 };
-                params[n] = KV.{ name = name, value = xseg };
+                name := string{ ptr = *pseg[1], len = pseg.len - 1 };
+                params[n] = KV{ name = name, value = xseg };
                 n += 1;
             }
         } else {
@@ -395,7 +395,7 @@ Router :: struct {
     // (fixed MAX_ROUTES), so the Router needs no owning allocator and never
     // grows the heap. Bind the result to a local; `xx router` is the ctx.
     init :: (app_ctx: usize) -> Router {
-        Router.{ app_ctx = app_ctx, n_routes = 0, not_found = null }
+        Router{ app_ctx = app_ctx, n_routes = 0, not_found = null }
     }
 
     // Register (method, pattern) → handler. Method is matched case-
@@ -403,7 +403,7 @@ Router :: struct {
     // Silently ignores registration past MAX_ROUTES (bounded table).
     route :: (self: *Router, method: string, pattern: string, h: RouteHandler) {
         if self.n_routes >= MAX_ROUTES { return; }
-        self.routes[self.n_routes] = Route.{ method = method, pattern = pattern, handler = h };
+        self.routes[self.n_routes] = Route{ method = method, pattern = pattern, handler = h };
         self.n_routes += 1;
     }
 

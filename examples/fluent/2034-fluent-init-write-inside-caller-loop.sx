@@ -40,20 +40,20 @@ Echo :: struct {
 }
 
 column :: (content: @BuildBlock(Drawable)) {
-    sink := Echo.{};
+    sink := Echo{};
     content.run(*sink);
 }
 
 main :: () -> i32 {
     for 0..3 (i) {
-        b := store(Button.{ label = "direct", n = xx i });
+        b := store(Button{ label = "direct", n = xx i });
         print("{} {}\n", b.label, b.n);
         context.allocator.destroy(b);
     }
 
     column() {
         for 0..2 (i) {
-            Button.{ label = "block", n = xx i };
+            Button{ label = "block", n = xx i };
         }
     };
     0

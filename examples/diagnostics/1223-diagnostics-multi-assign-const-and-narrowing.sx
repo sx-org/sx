@@ -14,7 +14,7 @@
 #import "modules/std.sx";
 
 P :: struct { x: i64 = 0; y: i64 = 0; }
-CP :: P.{ x = 1, y = 2 };
+CP :: P{ x = 1, y = 2 };
 CARR :: .[1, 2, 3];
 
 main :: () -> i32 {

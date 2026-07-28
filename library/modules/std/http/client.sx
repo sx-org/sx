@@ -262,7 +262,7 @@ parse_status_line :: (line: string) -> (i64, string) {
     }
     if digits == 0 { return 0, ""; }
     if p < line.len and line.ptr[p] == ' ' { p += 1; }
-    reason := string.{ ptr = *line.ptr[p], len = line.len - p };
+    reason := string{ ptr = *line.ptr[p], len = line.len - p };
     return code, reason;
 }
 
@@ -364,11 +364,11 @@ parse_url :: (url: string) -> (Url, bool) {
     if starts_with(url, "http://") {
         u.https = false;
         u.port = 80;
-        rest = string.{ ptr = *url.ptr[7], len = url.len - 7 };
+        rest = string{ ptr = *url.ptr[7], len = url.len - 7 };
     } else if starts_with(url, "https://") {
         u.https = true;
         u.port = 443;
-        rest = string.{ ptr = *url.ptr[8], len = url.len - 8 };
+        rest = string{ ptr = *url.ptr[8], len = url.len - 8 };
     } else {
         return u, false;
     }
@@ -380,11 +380,11 @@ parse_url :: (url: string) -> (Url, bool) {
         he = 1;
         while he < rest.len and rest[he] != ']' { he += 1; }
         if he >= rest.len { return u, false; }
-        u.host = string.{ ptr = *rest.ptr[1], len = he - 1 };
+        u.host = string{ ptr = *rest.ptr[1], len = he - 1 };
         ps = he + 1;
     } else {
         while he < rest.len and rest[he] != ':' and rest[he] != '/' { he += 1; }
-        u.host = string.{ ptr = rest.ptr, len = he };
+        u.host = string{ ptr = rest.ptr, len = he };
         ps = he;
     }
     if u.host.len == 0 { return u, false; }
@@ -404,14 +404,14 @@ parse_url :: (url: string) -> (Url, bool) {
     }
     if ps < rest.len {
         if rest[ps] != '/' { return u, false; }   // junk between port and path
-        u.path = string.{ ptr = *rest.ptr[ps], len = rest.len - ps };
+        u.path = string{ ptr = *rest.ptr[ps], len = rest.len - ps };
     }
     // review L4 (RFC 9112): the fragment is never part of the request
     // target — strip it here so neither fetch loop sends one on the wire.
     fi : i64 = 0;
     while fi < u.path.len {
         if u.path[fi] == '#' {
-            u.path = string.{ ptr = u.path.ptr, len = fi };
+            u.path = string{ ptr = u.path.ptr, len = fi };
             break;
         }
         fi += 1;
@@ -451,7 +451,7 @@ strip_fragment :: (s: string) -> string {
         i += 1;
     }
     if i == 0 { return "/"; }
-    return string.{ ptr = s.ptr, len = i };
+    return string{ ptr = s.ptr, len = i };
 }
 
 connection_says_close :: (v: string) -> bool {
@@ -530,7 +530,7 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         hbp : [*]u8 = xx *hostb[0];
         if u.host.ptr != hbp {
             clib.memcpy(hbp, u.host.ptr, xx u.host.len);
-            u.host = string.{ ptr = hbp, len = u.host.len };
+            u.host = string{ ptr = hbp, len = u.host.len };
         }
         hu := u;
 
@@ -559,7 +559,7 @@ fetch :: (method: string, url: string, body: string, opts: ClientOpts, buf: [*]u
         // location out, then re-parse.
         np : [*]u8 = xx context.allocator.alloc_bytes(loc.len);
         clib.memcpy(np, loc.ptr, xx loc.len);
-        locv := string.{ ptr = np, len = loc.len };
+        locv := string{ ptr = np, len = loc.len };
         close_conn(*c);
         if freeing { context.allocator.dealloc_bytes(xx pathp); }
         pathp = np;
@@ -634,7 +634,7 @@ normalize_decoded_headers :: (raw: [*]u8, len: i64) -> i64 {
         while colon < line_end and raw[colon] != ':' { colon += 1; }
         remove := false;
         if colon < line_end {
-            field := string.{ ptr = *raw[read_at], len = colon - read_at };
+            field := string{ ptr = *raw[read_at], len = colon - read_at };
             remove = ce_ascii_ieq(field, "content-encoding")
                 or ce_ascii_ieq(field, "content-length");
         }
@@ -708,10 +708,10 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
             while take > 0 {
                 output : string = "";
                 if output_at < output_cap {
-                    output = string.{ ptr = *buf[head_end + output_at], len = output_cap - output_at };
+                    output = string{ ptr = *buf[head_end + output_at], len = output_cap - output_at };
                 }
                 consumed, produced, done := try feed_content_decoder(*decoder,
-                    string.{ ptr = *wire[wire_at], len = take }, output);
+                    string{ ptr = *wire[wire_at], len = take }, output);
                 wire_at += consumed;
                 take -= consumed;
                 if content_len >= 0 { fixed_left -= consumed; }
@@ -736,10 +736,10 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
             while take > 0 {
                 output : string = "";
                 if output_at < output_cap {
-                    output = string.{ ptr = *buf[head_end + output_at], len = output_cap - output_at };
+                    output = string{ ptr = *buf[head_end + output_at], len = output_cap - output_at };
                 }
                 consumed, produced, done := try feed_content_decoder(*decoder,
-                    string.{ ptr = *wire[wire_at], len = take }, output);
+                    string{ ptr = *wire[wire_at], len = take }, output);
                 wire_at += consumed;
                 take -= consumed;
                 chunk_left -= consumed;
@@ -838,7 +838,7 @@ recv_encoded_body :: (c: *ClientConn, buf: [*]u8, cap: i64, head_end: i64,
     while !decoder_done {
         output : string = "";
         if output_at < output_cap {
-            output = string.{ ptr = *buf[head_end + output_at], len = output_cap - output_at };
+            output = string{ ptr = *buf[head_end + output_at], len = output_cap - output_at };
         }
         produced, done := try finish_content_decoder(*decoder, output);
         output_at += produced;
@@ -902,7 +902,7 @@ recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr
             sl : i64 = 0;
             while sl + 1 < head_end and !(buf[sl] == '\r' and buf[sl+1] == '\n') { sl += 1; }
             if sl + 1 >= head_end { raise error.BadStatus; }
-            code, reason := parse_status_line(string.{ ptr = buf, len = sl });
+            code, reason := parse_status_line(string{ ptr = buf, len = sl });
             if code == 0 { raise error.BadStatus; }
 
             if code >= 100 and code < 200 {
@@ -917,7 +917,7 @@ recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr
             final_status = code;
             final_reason = reason;
             header_start = sl + 2;
-            hdrs := string.{ ptr = *buf[header_start], len = head_end - 2 - header_start };
+            hdrs := string{ ptr = *buf[header_start], len = head_end - 2 - header_start };
 
             if !(request_was_head or code == 204 or code == 304) {
                 tmp : types.Request = .{ headers_raw = hdrs };
@@ -947,7 +947,7 @@ recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr
                         if encoding == .unacceptable { raise error.Recv; }
                     }
                     if encoding != .identity {
-                        initial := string.{ ptr = *buf[head_end], len = total - head_end };
+                        initial := string{ ptr = *buf[head_end], len = total - head_end };
                         decoded = try recv_encoded_body(c, buf, cap, head_end,
                             initial, content_len, chunked, encoding);
                         decoded_from = if encoding == .gzip then types.ContentCoding.gzip else types.ContentCoding.deflate;
@@ -1001,11 +1001,11 @@ recv_on :: (c: *ClientConn, buf: [*]u8, cap: i64) -> (ClientResponse, !ClientErr
     body_len := if decoded >= 0 then decoded
                 else if content_len >= 0 then content_len
                 else total - head_end;
-    return ClientResponse.{
+    return ClientResponse{
         status = final_status,
         reason = final_reason,
-        headers_raw = string.{ ptr = *buf[header_start], len = if normalized_headers_len >= 0 then normalized_headers_len else head_end - 2 - header_start },
-        body = string.{ ptr = *buf[head_end], len = body_len },
+        headers_raw = string{ ptr = *buf[header_start], len = if normalized_headers_len >= 0 then normalized_headers_len else head_end - 2 - header_start },
+        body = string{ ptr = *buf[head_end], len = body_len },
         decoded_from = decoded_from,
     };
 }
@@ -1065,7 +1065,7 @@ ClientPool :: struct {
             hbp : [*]u8 = xx *hostb[0];
             if u.host.ptr != hbp {
                 clib.memcpy(hbp, u.host.ptr, xx u.host.len);
-                u.host = string.{ ptr = hbp, len = u.host.len };
+                u.host = string{ ptr = hbp, len = u.host.len };
             }
             r, he := self.hop(u, m, b, first, buf, cap);
             if he { if freeing { context.allocator.dealloc_bytes(xx pathp); } raise he; }
@@ -1085,7 +1085,7 @@ ClientPool :: struct {
             }
             np : [*]u8 = xx context.allocator.alloc_bytes(loc.len);
             clib.memcpy(np, loc.ptr, xx loc.len);
-            locv := string.{ ptr = np, len = loc.len };
+            locv := string{ ptr = np, len = loc.len };
             if freeing { context.allocator.dealloc_bytes(xx pathp); }
             pathp = np;
             freeing = true;

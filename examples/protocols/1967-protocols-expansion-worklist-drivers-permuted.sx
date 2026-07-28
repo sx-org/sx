@@ -25,9 +25,9 @@ inline if POINTER_SIZE == 8 {
 inline if has_impl(View, Loose) { SEEN :: 1; } else { SEEN :: 0; }
 
 main :: () {
-    w := Widget.{ n = 4 };
-    p := Panel.{ n = 5 };
-    l := Loose.{ n = 6 };
+    w := Widget{ n = 4 };
+    p := Panel{ n = 5 };
+    l := Loose{ n = 6 };
     v : View = p;
     t : Tally = w;
     u : Tally = l;

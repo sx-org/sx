@@ -13,7 +13,7 @@ main :: () {
     di.hovered_zone = 3;
     if z := di.get_hovered_dock_zone() {
         print("hovered: {}\n", z);
-        print("preview-w: {}\n", dock_zone_get_preview_frame(z, Frame.{ origin = Point.zero(), size = Size.{ width = 100.0, height = 80.0 } }).size.width);
+        print("preview-w: {}\n", dock_zone_get_preview_frame(z, Frame{ origin = Point.zero(), size = Size{ width = 100.0, height = 80.0 } }).size.width);
     }
     di.set_hovered_dock_zone(DockZone.left);
     print("ordinal: {}\n", di.hovered_zone);

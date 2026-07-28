@@ -331,9 +331,9 @@ GlyphCache :: struct {
 
         // Zero-size glyph (e.g. space) — cache with advance only
         if glyph_w == 0 or glyph_h == 0 {
-            entry := GlyphEntry.{
+            entry := GlyphEntry{
                 key = key,
-                glyph = CachedGlyph.{
+                glyph = CachedGlyph{
                     uv_x = 0.0, uv_y = 0.0, uv_w = 0.0, uv_h = 0.0,
                     width = 0.0, height = 0.0,
                     offset_x = xx x0, offset_y = xx y0,
@@ -369,9 +369,9 @@ GlyphCache :: struct {
         atlas_wf : f32 = xx self.atlas_width;
         atlas_hf : f32 = xx self.atlas_height;
 
-        entry := GlyphEntry.{
+        entry := GlyphEntry{
             key = key,
-            glyph = CachedGlyph.{
+            glyph = CachedGlyph{
                 uv_x = xx pack.x / atlas_wf,
                 uv_y = xx pack.y / atlas_hf,
                 uv_w = xx glyph_w / atlas_wf,
@@ -468,7 +468,7 @@ GlyphCache :: struct {
         // Try fitting on the current shelf
         eff_h := if self.shelf_height > padded_h then self.shelf_height else padded_h;
         if self.cursor_x + padded_w <= self.atlas_width and self.shelf_y + eff_h <= self.atlas_height {
-            result := PackResult.{ x = self.cursor_x, y = self.shelf_y };
+            result := PackResult{ x = self.cursor_x, y = self.shelf_y };
             self.cursor_x += padded_w;
             if padded_h > self.shelf_height {
                 self.shelf_height = padded_h;
@@ -482,11 +482,11 @@ GlyphCache :: struct {
             self.shelf_y = new_shelf_y;
             self.shelf_height = padded_h;
             self.cursor_x = padded_w;
-            return PackResult.{ x = 0, y = new_shelf_y };
+            return PackResult{ x = 0, y = new_shelf_y };
         }
 
         // No space
-        PackResult.{ x = 0 - 1, y = 0 - 1 }
+        PackResult{ x = 0 - 1, y = 0 - 1 }
     }
 
     // Grow the atlas by doubling dimensions
@@ -606,7 +606,7 @@ GlyphCache :: struct {
             stbtt_GetGlyphHMetrics(self.font_info, xx glyph_index, *advance_i, *lsb_i);
             adv : f32 = xx advance_i * scale;
 
-            self.shaped_buf.append(ShapedGlyph.{
+            self.shaped_buf.append(ShapedGlyph{
                 glyph_index = glyph_index,
                 x = total,
                 y = 0.0,
@@ -644,7 +644,7 @@ GlyphCache :: struct {
                 gy : f32 = xx glyph_ptr.offset_y * scale;
                 adv : f32 = xx glyph_ptr.advance_x * scale;
 
-                self.shaped_buf.append(ShapedGlyph.{
+                self.shaped_buf.append(ShapedGlyph{
                     glyph_index = glyph_ptr.id,
                     x = gx,
                     y = gy,
@@ -665,6 +665,6 @@ GlyphCache :: struct {
             width += self.shaped_buf.items[i].advance;
             i += 1;
         }
-        Size.{ width = width, height = self.get_line_height(font_size) }
+        Size{ width = width, height = self.get_line_height(font_size) }
     }
 }

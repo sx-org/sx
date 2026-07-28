@@ -8,4 +8,4 @@ LeftCell :: struct { v: i64; }
 impl Series(i64) for LeftCell { at :: (self: *LeftCell, i: i64) -> i64 { self.v + i } }
 
 left_at :: (s: Series(i64), i: i64) -> i64 { s.at(i) }
-left    :: () -> i64 { c := LeftCell.{ v = 10 }; left_at(c, 1) }
+left    :: () -> i64 { c := LeftCell{ v = 10 }; left_at(c, 1) }

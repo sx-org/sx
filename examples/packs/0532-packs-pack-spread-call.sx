@@ -20,7 +20,7 @@ via2 :: (..xs: Box) -> i64 { return add2(..xs.get); }
 via3 :: (..xs: Box) -> i64 { return add3(..xs.get); }
 
 main :: () -> i32 {
-    print("two={}\n", via2(IntCell.{ v = 10 }, Dbl.{ n = 5 }));            // 10 + 10 = 20
-    print("three={}\n", via3(Dbl.{ n = 1 }, IntCell.{ v = 2 }, Dbl.{ n = 3 })); // 2 + 2 + 6 = 10
+    print("two={}\n", via2(IntCell{ v = 10 }, Dbl{ n = 5 }));            // 10 + 10 = 20
+    print("three={}\n", via3(Dbl{ n = 1 }, IntCell{ v = 2 }, Dbl{ n = 3 })); // 2 + 2 + 6 = 10
     0
 }

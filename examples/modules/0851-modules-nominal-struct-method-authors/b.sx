@@ -6,15 +6,15 @@ Ord :: enum { one; two; }
 Thing :: struct {
     state: BState;
 
-    init :: () -> Thing { Thing.{ state = .{ b = true } } }
+    init :: () -> Thing { Thing{ state = .{ b = true } } }
     from :: (arg: BArg = .{ enabled = false }) -> Thing {
-        Thing.{ state = .{ b = arg.enabled } }
+        Thing{ state = .{ b = arg.enabled } }
     }
-    reset :: (self: *Thing) { self.state = BState.{ b = false }; }
+    reset :: (self: *Thing) { self.state = BState{ b = false }; }
     value :: (self: *Thing) -> bool #get { self.state.b }
     value :: (self: *Thing, v: bool) #set { self.state.b = v; }
     wrap :: (self: *Thing, $T: Type, v: T) -> BResult {
-        BResult.{ value = self.state.b and size_of(T) > 0 }
+        BResult{ value = self.state.b and size_of(T) > 0 }
     }
     pick :: (self: *Thing, $o: Ord) -> bool {
         if o == .one { return self.state.b; }

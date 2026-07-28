@@ -43,7 +43,7 @@ Drawer :: struct ($T: Type) {
 }
 
 main :: () {
-    b := Box(i64).{ value = 10 };
+    b := Box(i64){ value = 10 };
     print("{}\n", b.pick(.a));      // 11
     print("{}\n", b.pick(.b));      // 12
     print("{}\n", b.pick(.c));      // 13
@@ -51,7 +51,7 @@ main :: () {
     print("{}\n", b.size_for(.b));  // tag 1 → [1]i64 → 1
     print("{}\n", b.size_for(.c));  // tag 2 → [2]i64 → 2
 
-    d := Drawer(i64).{};
+    d := Drawer(i64){};
     print("{}\n", d.area(.circle(2.0)));  // 1
     print("{}\n", d.area(.point));        // 0
 }

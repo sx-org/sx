@@ -37,10 +37,10 @@ Roster :: struct {
 }
 
 column :: (content: @BuildBlock(Drawable)) {
-    first := Roster.{};
+    first := Roster{};
     content.run(*first);
     print("  -- replay --\n");
-    second := Roster.{};
+    second := Roster{};
     content.run(*second);
 }
 
@@ -50,10 +50,10 @@ main :: () -> i32 {
 
     column() {
         if show_title {
-            Label.{ text = "title" };
+            Label{ text = "title" };
         }
         for rows (row) {
-            Label.{ text = row };
+            Label{ text = row };
         }
     };
     0

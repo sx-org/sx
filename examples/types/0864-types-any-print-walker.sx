@@ -75,7 +75,7 @@ Packet :: struct {
 }
 
 main :: () {
-    pkt := Packet.{
+    pkt := Packet{
         header  = .{ magic = 0x1234, flags = 255 },
         name    = "hello",
         kind    = -2,

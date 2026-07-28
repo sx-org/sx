@@ -19,7 +19,7 @@ Point :: struct {
 }
 
 make_point :: () -> Point {
-    return Point.{ x = 7, y = 13 };
+    return Point{ x = 7, y = 13 };
 }
 
 POINT :: #run make_point();

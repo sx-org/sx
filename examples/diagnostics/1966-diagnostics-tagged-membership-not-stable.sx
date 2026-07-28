@@ -23,7 +23,7 @@ NO :: #run has_impl(Series(i64), Loose);
 
 // A `-> Type` body: `View`'s set holds only what is declared so far.
 pick :: () -> Type {
-    l := Loose.{ k = 1 };
+    l := Loose{ k = 1 };
     if l.(?View) != null { return f64; }
     return i64;
 }

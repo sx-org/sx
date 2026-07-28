@@ -10,7 +10,7 @@
 Point :: struct { x: i64; y: i16; }
 
 main :: () -> i64 {
-    p := Point.{ x = 1, y = 2 };
+    p := Point{ x = 1, y = 2 };
 
     // Take views of both fields, THEN mutate the struct.
     vx := struct_field_value(p, 0);
@@ -24,14 +24,14 @@ main :: () -> i64 {
 
     // A view of a nested field composes through the GEP chain.
     Outer :: struct { p: Point; tag: i64; }
-    o := Outer.{ p = .{ x = 5, y = 6 }, tag = 9 };
+    o := Outer{ p = .{ x = 5, y = 6 }, tag = 9 };
     vp := struct_field_value(o.p, 1);
     o.p.y = 100;
     print("{}\n", vp);                   // 100
 
     // An RVALUE receiver spills to a frame temp — the view is of the
     // temp (stable, but aliases nothing).
-    mk :: () -> Point { Point.{ x = 10, y = 20 } }
+    mk :: () -> Point { Point{ x = 10, y = 20 } }
     vr := struct_field_value(mk(), 0);
     print("{}\n", vr);                   // 10
     return 0;

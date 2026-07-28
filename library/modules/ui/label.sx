@@ -10,7 +10,7 @@ Label :: struct {
     color: Color;
 
     make :: (text: string) -> Label {
-        Label.{
+        Label{
             text = text,
             font_size = 14.0,
             color = COLOR_WHITE

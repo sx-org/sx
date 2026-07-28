@@ -11,7 +11,7 @@ either :: (first: bool, loc: Source_Location = #caller_location) {
 }
 
 main :: () {
-    u := Ui.{};
+    u := Ui{};
     store := StateStore.init(.{ value = 1 });
     push .{ ui = *u, ui_store = *store } {
         b := 0;

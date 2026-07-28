@@ -33,14 +33,14 @@ sum :: (base: i64, ..$args) -> i64 {
 }
 
 main :: () {
-    t := Thing.{ n = 5 };
+    t := Thing{ n = 5 };
     t.bump(7);
     print("instance={}\n", t.n);
     Thing.bump_static(t, 8);
     print("static={}\n", t.n);
     bump_free(t, 9);
     print("free={} sum={}\n", t.n, sum(10, 20, 30));
-    box := Box.{ inner = .{ n = 40 } };
+    box := Box{ inner = .{ n = 40 } };
     box.inner.bump_one(1);
     box.inner.bump(2);
     print("nested={}\n", box.inner.n);

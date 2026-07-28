@@ -10,7 +10,7 @@ Outer :: struct { inner: Inner; tag: i64; }
 bump :: (p: *i64) { p.* = p.* + 100; }
 
 main :: () {
-    o := Outer.{ inner = Inner.{ a = 1, b = 2 }, tag = 9 };
+    o := Outer{ inner = Inner{ a = 1, b = 2 }, tag = 9 };
     o.inner.a = 11;          // nested struct field store via lowerExprAsPtr
     o.inner.b = 22;
     o.tag = 33;              // direct struct field store

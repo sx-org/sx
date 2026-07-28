@@ -23,8 +23,8 @@ impl Shape for Square {
 }
 
 main :: () {
-    c := Circle.{ r = 1.0 };
-    sq := Square.{ s = 2.0 };
+    c := Circle{ r = 1.0 };
+    sq := Square{ s = 2.0 };
     v : Shape = c;
     w : Shape = sq;
 

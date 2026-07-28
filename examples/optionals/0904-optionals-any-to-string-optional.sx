@@ -23,9 +23,9 @@ S :: struct {
 }
 
 main :: () {
-    filled := S.{ a = 42, b = "hi", c = true };
+    filled := S{ a = 42, b = "hi", c = true };
     print("{}\n", filled);
-    empty := S.{ a = null, b = null, c = null };
+    empty := S{ a = null, b = null, c = null };
     print("{}\n", empty);
     0;
 }

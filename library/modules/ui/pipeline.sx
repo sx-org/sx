@@ -90,9 +90,9 @@ UIPipeline :: struct {
 
         proposal := ProposedSize.fixed(self.screen_width, self.screen_height);
         self.root.view.size_that_fits(proposal);
-        self.root.frame = Frame.{
+        self.root.frame = Frame{
             origin = Point.zero(),
-            size = Size.{ width = self.screen_width, height = self.screen_height }
+            size = Size{ width = self.screen_width, height = self.screen_height }
         };
         self.root.view.layout(self.root.frame);
 
@@ -116,9 +116,9 @@ UIPipeline :: struct {
 
         // Layout
         self.root.view.size_that_fits(proposal);
-        self.root.frame = Frame.{
+        self.root.frame = Frame{
             origin = Point.zero(),
-            size = Size.{ width = self.screen_width, height = self.screen_height }
+            size = Size{ width = self.screen_width, height = self.screen_height }
         };
         self.root.view.layout(self.root.frame);
 
@@ -147,9 +147,9 @@ UIPipeline :: struct {
 
             proposal := ProposedSize.fixed(self.screen_width, self.screen_height);
             self.root.view.size_that_fits(proposal);
-            self.root.frame = Frame.{
+            self.root.frame = Frame{
                 origin = Point.zero(),
-                size = Size.{ width = self.screen_width, height = self.screen_height }
+                size = Size{ width = self.screen_width, height = self.screen_height }
             };
             self.root.view.layout(self.root.frame);
 

@@ -40,8 +40,8 @@ inline for SHAPES (T) {
 }
 
 main :: () {
-    w := Widget.{ n = 4 };
-    p := Panel.{ n = 5 };
+    w := Widget{ n = 4 };
+    p := Panel{ n = 5 };
     v : View = w;
     t : Tally = p;
     print("{} {} {} {}\n", FIRST, SECOND, v.area(), t.count());

@@ -24,7 +24,7 @@ impl P for C {
 g : *P = null;
 
 main :: () {
-    c := C.{};
+    c := C{};
     v1 : *P = c;                       // lvalue decl view
     print("lvalue view   = {}\n", v1.n());
 

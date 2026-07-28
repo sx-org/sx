@@ -21,9 +21,9 @@ Named :: protocol vtable {
 Widget :: struct { base: i32; }
 
 impl Measurable for Widget {
-    measure :: (self: *Widget) -> Size { return Size.{ w = self.base, h = self.base * 2 }; }
+    measure :: (self: *Widget) -> Size { return Size{ w = self.base, h = self.base * 2 }; }
     scaled  :: (self: *Widget, factor: i32) -> Size {
-        return Size.{ w = self.base * factor, h = self.base * 2 * factor };
+        return Size{ w = self.base * factor, h = self.base * 2 * factor };
     }
 }
 

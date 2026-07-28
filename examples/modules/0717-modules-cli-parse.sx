@@ -42,15 +42,15 @@ raises :: (args: []string, cmds: []Command, want: CliError) -> bool {
 main :: () -> ! {
     // ── Command table (caller storage; flag specs passed as views) ────
     publish_flags : []FlagSpec = .[
-        FlagSpec.{ name = "out",     takes_value = true,  required = true  },
-        FlagSpec.{ name = "verbose", takes_value = false, required = false },
+        FlagSpec{ name = "out",     takes_value = true,  required = true  },
+        FlagSpec{ name = "verbose", takes_value = false, required = false },
     ];
     status_flags : []FlagSpec = .[
-        FlagSpec.{ name = "verbose", takes_value = false, required = false },
+        FlagSpec{ name = "verbose", takes_value = false, required = false },
     ];
     cmds : []Command = .[
-        Command.{ group = "ci", command = "publish", flags = publish_flags },
-        Command.{ group = "ci", command = "status",  flags = status_flags  },
+        Command{ group = "ci", command = "publish", flags = publish_flags },
+        Command{ group = "ci", command = "status",  flags = status_flags  },
     ];
 
     // ── 1. Valid: <group> <command> --flag v --bool --json ───────────
@@ -120,25 +120,25 @@ main :: () -> ! {
     // truncating. 17 specs (> 16) trips the check right after dispatch
     // matches (group, command), before any flag is read.
     over_flags : []FlagSpec = .[
-        FlagSpec.{ name = "f00", takes_value = false, required = false },
-        FlagSpec.{ name = "f01", takes_value = false, required = false },
-        FlagSpec.{ name = "f02", takes_value = false, required = false },
-        FlagSpec.{ name = "f03", takes_value = false, required = false },
-        FlagSpec.{ name = "f04", takes_value = false, required = false },
-        FlagSpec.{ name = "f05", takes_value = false, required = false },
-        FlagSpec.{ name = "f06", takes_value = false, required = false },
-        FlagSpec.{ name = "f07", takes_value = false, required = false },
-        FlagSpec.{ name = "f08", takes_value = false, required = false },
-        FlagSpec.{ name = "f09", takes_value = false, required = false },
-        FlagSpec.{ name = "f10", takes_value = false, required = false },
-        FlagSpec.{ name = "f11", takes_value = false, required = false },
-        FlagSpec.{ name = "f12", takes_value = false, required = false },
-        FlagSpec.{ name = "f13", takes_value = false, required = false },
-        FlagSpec.{ name = "f14", takes_value = false, required = false },
-        FlagSpec.{ name = "f15", takes_value = false, required = false },
-        FlagSpec.{ name = "f16", takes_value = false, required = false },
+        FlagSpec{ name = "f00", takes_value = false, required = false },
+        FlagSpec{ name = "f01", takes_value = false, required = false },
+        FlagSpec{ name = "f02", takes_value = false, required = false },
+        FlagSpec{ name = "f03", takes_value = false, required = false },
+        FlagSpec{ name = "f04", takes_value = false, required = false },
+        FlagSpec{ name = "f05", takes_value = false, required = false },
+        FlagSpec{ name = "f06", takes_value = false, required = false },
+        FlagSpec{ name = "f07", takes_value = false, required = false },
+        FlagSpec{ name = "f08", takes_value = false, required = false },
+        FlagSpec{ name = "f09", takes_value = false, required = false },
+        FlagSpec{ name = "f10", takes_value = false, required = false },
+        FlagSpec{ name = "f11", takes_value = false, required = false },
+        FlagSpec{ name = "f12", takes_value = false, required = false },
+        FlagSpec{ name = "f13", takes_value = false, required = false },
+        FlagSpec{ name = "f14", takes_value = false, required = false },
+        FlagSpec{ name = "f15", takes_value = false, required = false },
+        FlagSpec{ name = "f16", takes_value = false, required = false },
     ];
-    over_cmds : []Command = .[ Command.{ group = "big", command = "cmd", flags = over_flags } ];
+    over_cmds : []Command = .[ Command{ group = "big", command = "cmd", flags = over_flags } ];
     over_args : []string  = .["big", "cmd"];
 
     report("err-zero-args",       raises(a_zero_args,     cmds,      error.UnknownCommand));

@@ -5,7 +5,7 @@
 #import "modules/std.sx";
 #import "dep.sx";
 
-make :: () -> Needs => Needs.{ v = 7 };
+make :: () -> Needs => Needs{ v = 7 };
 
 // Control: a plain (non-pack) fn with the same fixed param already resolves in
 // its defining module — the cross-module call-arg typing path is source-pinned.

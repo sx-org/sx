@@ -197,7 +197,7 @@ https_roundtrip :: (srv: *http.Server, cl: *TlsClient) -> i32 {
         r := mbedtls.mbedtls_ssl_read(*cl.ssl, xx *rbuf[total], xx (4096 - total));
         if r > 0 {
             total += r;
-            s := string.{ ptr = xx *rbuf[0], len = xx total };
+            s := string{ ptr = xx *rbuf[0], len = xx total };
             if contains(s, "\r\n\r\n") { got = true; }
         } else if r == mbedtls.MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY or r == 0 {
             got = true;
@@ -206,7 +206,7 @@ https_roundtrip :: (srv: *http.Server, cl: *TlsClient) -> i32 {
         }
         k += 1;
     }
-    resp := string.{ ptr = xx *rbuf[0], len = xx total };
+    resp := string{ ptr = xx *rbuf[0], len = xx total };
     if !contains(resp, "HTTP/1.1 200 OK") { return 15; }
     if !contains(resp, "secure-ok")       { return 16; }
     return 0;

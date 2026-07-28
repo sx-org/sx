@@ -11,7 +11,7 @@ Pol :: enum { a; b; }
 Region :: struct { policy: ?Closure(f32) -> Pol = null; }
 
 sink :: (policy: ?Closure(f32) -> Pol = null) -> Region {
-    Region.{ policy = policy }
+    Region{ policy = policy }
 }
 
 main :: () {

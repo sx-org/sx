@@ -16,7 +16,7 @@ build :: (n: i64, u: *Ui, store: *StateStore) {
 }
 
 main :: () {
-    u := Ui.{};
+    u := Ui{};
     store := StateStore.init(.{ value = 1 });
     push .{ ui = *u, ui_store = *store } {
         build(2, *u, *store);

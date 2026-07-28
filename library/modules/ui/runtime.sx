@@ -46,7 +46,7 @@ UiRoot :: struct {
     surface_gen: u64 = 0;
 
     init :: (id: UiRootId, gpa: Allocator = context.allocator) -> UiRoot {
-        UiRoot.{ id = id, store = StateStore.init(id, gpa), input = InputQueue.init(gpa) }
+        UiRoot{ id = id, store = StateStore.init(id, gpa), input = InputQueue.init(gpa) }
     }
 
     // One build transaction against this root's identity + store.
@@ -60,7 +60,7 @@ UiRoot :: struct {
     }
 
     surface :: (self: *UiRoot) -> SurfaceGeneration {
-        SurfaceGeneration.{ root = self.id, gen = self.surface_gen }
+        SurfaceGeneration{ root = self.id, gen = self.surface_gen }
     }
 
     // The native surface died and came back. Only the generation moves —
@@ -134,12 +134,12 @@ AppRuntime :: struct {
     gpa: Allocator;
 
     init :: (gpa: Allocator = context.allocator) -> AppRuntime {
-        AppRuntime.{ gpa = gpa }
+        AppRuntime{ gpa = gpa }
     }
 
     create_scene :: (self: *AppRuntime) -> *Scene {
         s : *Scene = xx self.gpa.alloc_bytes(size_of(Scene));
-        s.* = Scene.{
+        s.* = Scene{
             id = .{ runtime = self.id, value = self.next_scene },
             gpa = self.gpa,
         };

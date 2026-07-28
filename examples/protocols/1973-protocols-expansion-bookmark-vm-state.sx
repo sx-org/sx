@@ -20,7 +20,7 @@ Dot :: struct { n: i64; }
 Box :: struct { n: i64; }
 
 gen :: () -> string {
-    d := Dot.{ n = 2 };
+    d := Dot{ n = 2 };
     d.n = d.n + 3;
     v : Draw = d;
     a := v.draw();
@@ -39,7 +39,7 @@ impl Draw for Box {
 impl Draw for Dot { draw :: (self: *Dot) -> i64 { self.n * 2 } }
 
 main :: () {
-    b := Box.{ n = 1 };
+    b := Box{ n = 1 };
     d : Draw = b;
     print("{}\n", d.draw());
 }

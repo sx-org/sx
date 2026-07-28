@@ -7,5 +7,5 @@ P :: protocol {
 }
 Impl :: struct { x: i64 = 0; }
 impl P for Impl {
-    get :: (self: *Impl) -> ?Q { Q.{ v = 42 } }
+    get :: (self: *Impl) -> ?Q { Q{ v = 42 } }
 }

@@ -87,7 +87,7 @@ roundtrip :: (srv: *http.Server, port: i64, req: string, buf: [*]u8, cap: i64) -
         if got > 0 { stall = 0; } else { stall += 1; }
     }
     socket.close(fd);
-    return string.{ ptr = buf, len = xx total };
+    return string{ ptr = buf, len = xx total };
 }
 
 check :: (r: string, frag: string, label: string, failed: *i64) {
@@ -145,7 +145,7 @@ date_epoch_of :: (r: string) -> i64 {
         i += 1;
     }
     if ds < 0 { return -1; }
-    v := string.{ ptr = *r[ds], len = 29 };
+    v := string{ ptr = *r[ds], len = 29 };
     // "Www, DD Mmm YYYY HH:MM:SS GMT"
     wd := name_index(WDAYS, v, 0);
     if wd < 0 { return -1; }

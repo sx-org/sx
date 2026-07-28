@@ -18,8 +18,8 @@ impl View for Native { area :: (self: *Native) -> i64 { self.n + 1 } }
 // Erase, then dispatch — twice over, so the answer cannot come from a
 // single-conformer devirtualization at the call site.
 both :: () -> i64 {
-    w := Widget.{ n = 4 };
-    n := Native.{ n = 4 };
+    w := Widget{ n = 4 };
+    n := Native{ n = 4 };
     v : View = w;
     u : View = n;
     return v.area() + u.area();
@@ -28,7 +28,7 @@ both :: () -> i64 {
 // RTTI over the symbolic word: the downcast compares the carried type, and
 // `type_of` answers it directly instead of reading the tag table.
 narrowed :: () -> i64 {
-    n := Native.{ n = 7 };
+    n := Native{ n = 7 };
     u : View = n;
     if u.(?Widget) { return -1; }
     got := u.(?Native);
@@ -37,7 +37,7 @@ narrowed :: () -> i64 {
 }
 
 named :: () -> string {
-    w := Widget.{ n = 1 };
+    w := Widget{ n = 1 };
     v : View = w;
     return type_name(type_of(v));
 }
@@ -46,7 +46,7 @@ named :: () -> string {
 // keeps its symbolic word across the call boundary.
 twice :: (v: View) -> i64 { v.area() + v.area() }
 relayed :: () -> i64 {
-    n := Native.{ n = 20 };
+    n := Native{ n = 20 };
     u : View = n;
     return twice(u);
 }

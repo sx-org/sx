@@ -14,7 +14,7 @@ Alias :: Thing;
 Thing :: struct { n: i64; }
 
 main :: () -> i32 {
-    value := Thing.{ n = 42 };
+    value := Thing{ n = 42 };
     erased : Value(i64) = xx value;
     if erased.get() != 42 { return 1; }
     0

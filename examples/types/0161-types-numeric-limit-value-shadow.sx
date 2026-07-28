@@ -28,17 +28,17 @@ UBox :: struct { max: i64; }
 
 // GLOBAL raw value binding whose spelling shadows the builtin `f32`. Reachable
 // via `program_index.global_names`, not lexical scope (issue 0093).
-`f32 := FBox.{ epsilon = 44, max = 55, min_positive = 66 };
+`f32 := FBox{ epsilon = 44, max = 55, min_positive = 66 };
 
 // MODULE-CONST raw value binding whose spelling shadows the builtin `i16`.
 // Reachable via `program_index.module_const_map` (issue 0093, const variant).
-`i16 :: IBox.{ max = 99, min = -99 };
+`i16 :: IBox{ max = 99, min = -99 };
 
 main :: () -> i32 {
     // LOCAL raw value bindings whose spelling shadows a builtin numeric type name.
-    `f64 := FBox.{ epsilon = 11, max = 22, min_positive = 33 };
-    `i32 := IBox.{ max = 78, min = -78 };
-    `u8  := UBox.{ max = 7 };
+    `f64 := FBox{ epsilon = 11, max = 22, min_positive = 33 };
+    `i32 := IBox{ max = 78, min = -78 };
+    `u8  := UBox{ max = 7 };
 
     // Raw receiver → ordinary field READ (the value), never the numeric limit.
     print("local f64: epsilon={} max={} min_positive={}\n",

@@ -38,7 +38,7 @@ Pad :: struct {
 }
 impl View for Pad {
     size_that_fits :: (self: *Pad, proposal: ProposedSize) -> Size {
-        Size.{ width = self.w, height = self.h }
+        Size{ width = self.w, height = self.h }
     }
     layout :: (self: *Pad, bounds: Frame) {}
     render :: (self: *Pad, ctx: *RenderContext, frame: Frame) {
@@ -51,7 +51,7 @@ home :: () -> View {
     vstack(0.0) {
         e := element_id().value;
         g_eid = e;
-        place(Pad.{ eid = e, w = 100.0, h = 50.0 });
+        place(Pad{ eid = e, w = 100.0, h = 50.0 });
     }
 }
 
