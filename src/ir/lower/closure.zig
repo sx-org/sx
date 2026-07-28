@@ -839,7 +839,7 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             for (ma.targets) |t| self.collectCaptures(t, param_names, captures);
             for (ma.values) |v| self.collectCaptures(v, param_names, captures);
         },
-        // A `push Context { … }` block inside a lambda body is a nested scope
+        // A `push (Context{ … })` block inside a lambda body is a nested scope
         // whose statements can reference captures (the install-the-scheduler
         // pattern `push (Context{ io = … }) { worker() }`). Descend into both
         // the context expression and the body.

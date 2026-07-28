@@ -1,7 +1,7 @@
 // Stream B2/A1 — a fiber INHERITS the dynamic `context` in force when it was
 // spawned. Previously a fiber body ran under the static `__sx_default_context`
 // (the `abi(.c)` `fib_dispatch` dropped the implicit context), so a
-// `push Context { … }` around `spawn` was invisible inside the fiber. Now
+// `push (Context{ … })` around `spawn` was invisible inside the fiber. Now
 // `Scheduler.spawn` snapshots `context` into the fiber and `fib_dispatch`
 // re-pushes it around the body — so a capability installed before `spawn`
 // (here a typed `#context_extend marker` field) is visible to the worker.

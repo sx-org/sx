@@ -3032,11 +3032,11 @@ pub const Parser = struct {
                 {
                     // Same-line `{` after a call: trailing block OR parameterized
                     // named aggregate `List(T){…}`. Prefer the aggregate when the
-                    // brace body is aggregate-shaped (fields / commas); empty
-                    // `{}` is an aggregate only when the callee looks like a
-                    // type head (`List`, `Sink`, `http.Config`), otherwise an
-                    // empty trailing block (`run(2) {}`).
-                    if (self.braceLooksLikeNamedAggregate(expr)) {
+                    // brace body is aggregate-shaped (fields / commas). Empty
+                    // `{}` is an aggregate only when every call arg is
+                    // type-shaped (`List(i64){}`); otherwise trailing
+                    // (`run(2) {}`, `Group(n) {}`).
+                    if (self.braceLooksLikeNamedAggregate(args.items)) {
                         expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                         // Fall through: next postfix iteration takes Type{}.
                     } else {
@@ -4888,27 +4888,39 @@ pub const Parser = struct {
         return !self.in_if_condition and !self.no_trailing_block and !self.in_for_header;
     }
 
-    /// True when a call head is a type application head (`List`, `mod.Sink`,
-    /// nested `List(T)`), by SX type-name convention (leading uppercase).
-    fn calleeLooksLikeTypeHead(expr: *const Node) bool {
+    /// True when a call argument is type-application shaped (name, field path,
+    /// nested type app). Value-shaped args (literals, operators, calls with
+    /// values) force empty `{}` to be a trailing block, not `List(T){}`.
+    fn argLooksLikeTypeArg(expr: *const Node) bool {
         return switch (expr.data) {
-            .identifier => |id| id.name.len > 0 and id.name[0] >= 'A' and id.name[0] <= 'Z',
-            .field_access => |fa| fa.field.len > 0 and fa.field[0] >= 'A' and fa.field[0] <= 'Z',
-            .parameterized_type_expr, .type_expr, .tuple_type_expr => true,
-            .call => |c| calleeLooksLikeTypeHead(c.callee),
+            .identifier, .field_access, .parameterized_type_expr, .type_expr, .tuple_type_expr => true,
+            .call => |c| blk: {
+                for (c.args) |a| {
+                    if (!argLooksLikeTypeArg(a)) break :blk false;
+                }
+                break :blk argLooksLikeTypeArg(c.callee);
+            },
             else => false,
         };
+    }
+
+    fn callArgsLookLikeTypeApplication(call_args: []const *Node) bool {
+        if (call_args.len == 0) return false; // `f(){}` is trailing, not a type app
+        for (call_args) |a| {
+            if (!argLooksLikeTypeArg(a)) return false;
+        }
+        return true;
     }
 
     /// With `current` on `{` after a call: true when the brace body looks
     /// like a named-aggregate body rather than a trailing-block statement
     /// list.
     ///
-    /// - empty `{}` → aggregate only for type heads (`List(T){}`); else trailing
+    /// - empty `{}` → aggregate only when call args are all type-shaped (`List(T){}`)
     /// - top-level `;` or statement-lead keywords → trailing (`vstack() { a; }`)
     /// - top-level `name =` or top-level `,` → aggregate (`Plan{ x = 1 }`, `T{1, 2}`)
     /// - otherwise → trailing (statement blocks that omit `;` after `if`/`for`)
-    fn braceLooksLikeNamedAggregate(self: *Parser, call_callee: *const Node) bool {
+    fn braceLooksLikeNamedAggregate(self: *Parser, call_args: []const *Node) bool {
         if (self.current.tag != .l_brace) return false;
         var lex = self.lexer;
         var depth: u32 = 1;
@@ -4975,8 +4987,9 @@ pub const Parser = struct {
             }
         }
         if (!saw_non_ws) {
-            // Empty / comment-only `{}`: type application aggregate vs empty trailing block.
-            return calleeLooksLikeTypeHead(call_callee);
+            // Empty / comment-only `{}`: type application (`List(i64){}`) vs
+            // empty trailing block (`run(2) {}`, `Group(n) {}`).
+            return callArgsLookLikeTypeApplication(call_args);
         }
         // Statement markers force trailing even when an assignment `x = e`
         // looks like a field init (`slot = Label{…};` inside a build block).
@@ -6265,6 +6278,56 @@ test "parse parameterized named aggregate List(T){}" {
     try std.testing.expect(init_expr.data == .struct_literal);
     try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
     try std.testing.expect(init_expr.data.struct_literal.type_expr.?.data == .call);
+}
+
+test "parse empty trailing block after value-arg call" {
+    // `run(2) {}` must bind a trailing block, not invent a type `run`.
+    const source =
+        \\run :: (n: i64, body: Closure()) { body(); }
+        \\main :: () { run(2) {} }
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[1].data.fn_decl.body;
+    const call = body.data.block.stmts[0];
+    try std.testing.expect(call.data == .call);
+    try std.testing.expectEqual(@as(usize, 2), call.data.call.args.len);
+    try std.testing.expect(call.data.call.args[1].data == .trailing_block);
+}
+
+test "parse empty trailing block after capitalized value-arg call" {
+    // Capitalized callees with value args are still trailing blocks.
+    const source =
+        \\Group :: (n: i64, body: Closure()) { body(); }
+        \\main :: () { Group(2) {} }
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[1].data.fn_decl.body;
+    const call = body.data.block.stmts[0];
+    try std.testing.expect(call.data == .call);
+    try std.testing.expectEqual(@as(usize, 2), call.data.call.args.len);
+    try std.testing.expect(call.data.call.args[1].data == .trailing_block);
+}
+
+test "parse lowercase parameterized named aggregate list(T){}" {
+    const source =
+        \\main :: () {
+        \\  xs := list(i64){};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
+    try std.testing.expect(init_expr.data == .struct_literal);
+    try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
 }
 
 test "parse rejects separator-dot Type.{}" {
