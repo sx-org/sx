@@ -2975,10 +2975,15 @@ pub const Parser = struct {
                 self.advance();
                 const saved_hdr_args = self.in_for_header;
                 const saved_ntb_args = self.no_trailing_block;
+                const saved_if_args = self.in_if_condition;
                 self.in_for_header = false;
                 self.no_trailing_block = false;
+                // Arguments may contain `Type{…}` / `string{…}` even when the
+                // call sits in an if/while header (`if f(Point{…}) {`).
+                self.in_if_condition = false;
                 defer self.in_for_header = saved_hdr_args;
                 defer self.no_trailing_block = saved_ntb_args;
+                defer self.in_if_condition = saved_if_args;
                 var args = std.ArrayList(*Node).empty;
                 while (self.current.tag != .r_paren and self.current.tag != .eof) {
                     if (args.items.len > 0) {
@@ -3015,8 +3020,12 @@ pub const Parser = struct {
                 // zero-param closure literal in a `trailing_block` marker
                 // appended as the last argument; the mapping pass binds it to
                 // the callee's last declared param (T1/T3/N4 live there).
+                // Use the OUTER if-header flag (`saved_if_args`), not the
+                // cleared `self.in_if_condition`: args may parse Type{} freely,
+                // but `if f(x) { body }` must not steal the if-body as a trailing
+                // block on `f`.
                 if (self.current.tag == .l_brace and
-                    !saved_ntb_args and !saved_hdr_args and !self.in_if_condition and
+                    !saved_ntb_args and !saved_hdr_args and !saved_if_args and
                     std.mem.indexOfScalar(u8, self.source[rparen_end..self.current.loc.start], '\n') == null)
                 {
                     // Same-line `{` after a call: trailing block OR parameterized
