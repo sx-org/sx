@@ -4869,16 +4869,19 @@ pub const Parser = struct {
     /// position (same shape as `List(i64).{}` used to take).
     fn isNamedAggregatePrefix(expr: *const Node) bool {
         return switch (expr.data) {
-            .identifier, .field_access, .parameterized_type_expr, .call, .type_expr, .tuple_type_expr => true,
+            // Enum/variant heads (`.key{…}`, `Ev.key{…}`) share the compact
+            // aggregate body; contextual `.{…}` still starts with a leading dot alone.
+            .identifier, .field_access, .parameterized_type_expr, .call, .type_expr,
+            .tuple_type_expr, .enum_literal => true,
             else => false,
         };
     }
 
-    /// Header contexts (`if cond {`, `while cond {`, `push expr {`) reserve
-    /// the final brace group for the statement body. A named aggregate that
-    /// ends a header expression must be parenthesized: `if (Button{}) {`.
+    /// Header contexts (`if cond {`, `while cond {`, `for … {`, `push expr {`)
+    /// reserve the final brace group for the statement body. A named aggregate
+    /// that ends a header expression must be parenthesized: `if (Button{}) {`.
     fn namedAggregateAllowedHere(self: *const Parser) bool {
-        return !self.in_if_condition and !self.no_trailing_block;
+        return !self.in_if_condition and !self.no_trailing_block and !self.in_for_header;
     }
 
     /// With `current` on `{` after a call: true when the brace body looks

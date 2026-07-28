@@ -156,7 +156,7 @@ test_force_zip64 :: (alloc: Allocator) -> bool {
 
 test_source_contract :: (alloc: Allocator) -> bool {
     strict_state := SourceState{ data = "abc", chunk = 2 };
-    strict_source := zip.ZipInputSource{ ctx = xx *strict_state, size = 3, read = source_read };
+    strict_source := zip.ZipInputSource{ctx = xx *strict_state, size = 3, read = source_read };
     sink_state := SinkState{ out = codec.ByteWriter.init(alloc) };
     writer := zip.ZipStreamWriter.init(.{ ctx = xx *sink_state, write = sink_write }, alloc);
     writer.add_source("tiny", strict_source, .{
@@ -177,7 +177,7 @@ test_source_contract :: (alloc: Allocator) -> bool {
     alloc.dealloc_bytes(archive.ptr);
 
     early_state := SourceState{ data = "abc" };
-    early_source := zip.ZipInputSource{ ctx = xx *early_state, size = 5, read = source_read };
+    early_source := zip.ZipInputSource{ctx = xx *early_state, size = 5, read = source_read };
     early_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     early := zip.ZipStreamWriter.init(.{ ctx = xx *early_sink, write = sink_write }, alloc);
     store_failed := false;
@@ -188,7 +188,7 @@ test_source_contract :: (alloc: Allocator) -> bool {
     early_sink.out.deinit();
 
     deflate_state := SourceState{ data = "abc" };
-    deflate_source := zip.ZipInputSource{ ctx = xx *deflate_state, size = 5, read = source_read };
+    deflate_source := zip.ZipInputSource{ctx = xx *deflate_state, size = 5, read = source_read };
     deflate_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     deflate_writer := zip.ZipStreamWriter.init(.{ ctx = xx *deflate_sink, write = sink_write }, alloc);
     deflate_failed := false;
@@ -228,7 +228,7 @@ test_empty_descriptor_modes :: (alloc: Allocator) -> bool {
 
     callback_sink := SinkState{ out = codec.ByteWriter.init(alloc) };
     callback := zip.ZipStreamWriter.init(.{ ctx = xx *callback_sink, write = sink_write }, alloc);
-    empty_source := zip.ZipInputSource{ ctx = null, size = 0, read = null };
+    empty_source := zip.ZipInputSource{ctx = null, size = 0, read = null };
     callback.add_source("empty", empty_source, options) catch {
         callback.deinit(); callback_sink.out.deinit(); alloc.dealloc_bytes(direct_bytes.ptr); alloc.dealloc_bytes(expected.ptr); return false;
     };
@@ -331,7 +331,7 @@ test_metadata_bound :: (alloc: Allocator) -> bool {
     if archive.ptr == null { return false; }
     memory_reader := zip.open_zip(archive) catch { alloc.dealloc_bytes(archive.ptr); return false; };
     source_state := SourceState{ data = archive };
-    source := zip.ZipReadSource{ ctx = xx *source_state, size = archive.len, read = source_read };
+    source := zip.ZipReadSource{ctx = xx *source_state, size = archive.len, read = source_read };
     if !metadata_limit_rejected(source, memory_reader.central_size - 1, alloc) {
         alloc.dealloc_bytes(archive.ptr); return false;
     }

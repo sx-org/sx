@@ -23,8 +23,8 @@ main :: () -> i32 {
     print("consts: a={} b={}\n", a.Thing.SIZE, b.Thing.SIZE);
 
     // #using embeds each module's OWN Base: a's {ca,cb}, b's {da}.
-    va := a.Thing{ ca = 3, cb = 4 };
-    vb := b.Thing{ da = 6 };
+    va := a.Thing{ca = 3, cb = 4 };
+    vb := b.Thing{da = 6 };
     print("using: a=({},{}) b={}\n", va.ca, va.cb, vb.da);
 
     // Alignment (0335): default after a #using embed.

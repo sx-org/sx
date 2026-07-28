@@ -1609,8 +1609,7 @@ zip_unix_time_to_dos :: (seconds: i64) -> (i64, i64, bool) {
 }
 
 zip_dos_time_to_unix :: (dos_time: i64, dos_date: i64) -> (i64, bool) {
-    civil := time.CivilTime{
-        year = ((dos_date >> 9) & 127) + 1980,
+    civil := time.CivilTime{year = ((dos_date >> 9) & 127) + 1980,
         month = (dos_date >> 5) & 15,
         day = dos_date & 31,
         hour = (dos_time >> 11) & 31,

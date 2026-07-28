@@ -1,4 +1,4 @@
-// A namespace-qualified struct-literal head (`t.Civil{ … }`) resolves in its
+// A namespace-qualified struct-literal head (`t.Civil{… }`) resolves in its
 // declaring module's context regardless of how that module is reached: flat,
 // namespaced, or through a facade. Regression (issue 0334): the tagged-union
 // literal pre-pass probed the head's object with a LOUD nominal resolution,

@@ -9,7 +9,7 @@ Complex :: struct {
         B: struct {
             val: string;
         };
-    } = .B{"hello"};
+    } = .B(.{val = "hello"});
 }
 
 main :: () {
