@@ -4911,6 +4911,7 @@ pub const Parser = struct {
             .array_type_expr,
             .many_pointer_type_expr,
             .closure_type_expr,
+            .function_type_expr,
             => true,
             // In value-call position `*T` parses as unary address_of; treat a
             // type-like operand as a type argument for empty-`{}` disambiguation.
@@ -6395,13 +6396,16 @@ test "parse empty trailing block with PascalCase callee and identifier arg" {
 
 test "parse parameterized aggregate with compound and PascalCase type args" {
     // `[]u8` → slice_type_expr; `*Node` → unary address_of of PascalCase;
-    // `?i64` → optional_type_expr; `Move` → PascalCase identifier.
+    // `?i64` → optional_type_expr; `Move` → PascalCase identifier;
+    // `(i64) -> i64` → function_type_expr (reachable when a later arg keeps
+    // isLambda from hijacking the paren group).
     const source =
         \\main :: () {
         \\  xs := List([]u8){};
         \\  ps := List(*Node){};
         \\  os := List(?i64){};
         \\  ms := List(Move){};
+        \\  fs := Marker((i64) -> i64, [:0]u8){};
         \\}
     ;
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
