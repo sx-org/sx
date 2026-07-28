@@ -4888,34 +4888,39 @@ pub const Parser = struct {
         return !self.in_if_condition and !self.no_trailing_block and !self.in_for_header;
     }
 
-    /// Builtin / reserved type spellings that are lowercase identifiers in
-    /// value position (`List(i64){}`). User type names are PascalCase.
+    /// User type names are PascalCase. Builtin scalars reach this path as
+    /// `.type_expr` nodes (see `parsePrimary`), not bare identifiers.
     fn identifierLooksLikeTypeName(name: []const u8) bool {
-        if (name.len == 0) return false;
-        if (name[0] >= 'A' and name[0] <= 'Z') return true;
-        // Lowercase scalar / common type words used as type arguments.
-        const builtins = [_][]const u8{
-            "i8",    "i16",   "i32",  "i64",  "i128",
-            "u8",    "u16",   "u32",  "u64",  "u128",
-            "f16",   "f32",   "f64",  "f128",
-            "bool",  "string", "void", "any",  "Type",
-            "usize", "isize", "never", "raw",
-        };
-        for (builtins) |b| {
-            if (std.mem.eql(u8, name, b)) return true;
-        }
-        return false;
+        return name.len > 0 and name[0] >= 'A' and name[0] <= 'Z';
     }
 
     /// True when a call argument is type-application shaped. Bare lowercase
-    /// identifiers that are not builtin type names are treated as *values*
-    /// so `run(n) {}` stays a trailing block while `List(i64){}` /
-    /// `List(Move){}` stay aggregates.
+    /// identifiers are *values* so `run(n) {}` stays a trailing block while
+    /// `List(i64){}` (type_expr), `List(Move){}` (PascalCase), and
+    /// `List([]u8){}` (slice type) stay aggregates.
     fn argLooksLikeTypeArg(expr: *const Node) bool {
         return switch (expr.data) {
             .identifier => |id| identifierLooksLikeTypeName(id.name),
             .field_access => |fa| identifierLooksLikeTypeName(fa.field),
-            .parameterized_type_expr, .type_expr, .tuple_type_expr => true,
+            .parameterized_type_expr,
+            .type_expr,
+            .tuple_type_expr,
+            .slice_type_expr,
+            .pointer_type_expr,
+            .optional_type_expr,
+            .array_type_expr,
+            .many_pointer_type_expr,
+            .error_type_expr,
+            .closure_type_expr,
+            .function_type_expr,
+            => true,
+            // In value-call position `*T` / `?T` may parse as unary address_of
+            // or as type prefix forms that still surface as unary_op; treat a
+            // type-like operand as a type argument for empty-`{}` disambiguation.
+            .unary_op => |u| switch (u.op) {
+                .address_of => argLooksLikeTypeArg(u.operand),
+                else => false,
+            },
             .call => |c| blk: {
                 for (c.args) |a| {
                     if (!argLooksLikeTypeArg(a)) break :blk false;
@@ -6388,6 +6393,28 @@ test "parse empty trailing block with PascalCase callee and identifier arg" {
     const call = body.data.block.stmts[1];
     try std.testing.expect(call.data == .call);
     try std.testing.expect(call.data.call.args[1].data == .trailing_block);
+}
+
+test "parse parameterized aggregate with compound and PascalCase type args" {
+    // `[]u8` is a slice type expr in the call arg; `Move` is PascalCase.
+    // (Bare `*T` / `?T` in value-call arg position parse as unary ops, not
+    // type exprs — those forms go through type-position paths elsewhere.)
+    const source =
+        \\main :: () {
+        \\  xs := List([]u8){};
+        \\  ms := List(Move){};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    for (body.data.block.stmts) |stmt| {
+        const init_expr = stmt.data.var_decl.value.?;
+        try std.testing.expect(init_expr.data == .struct_literal);
+        try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+    }
 }
 
 test "parse rejects separator-dot Type.{}" {
