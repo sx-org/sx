@@ -401,12 +401,12 @@ fn spellType(alloc: std.mem.Allocator, node: *const Node) anyerror![]const u8 {
         },
         // Const-expr forms reachable in type positions (array dimensions,
         // value args of parameterized types) carry distinguishing structure.
-        .binary_op => |o| return std.fmt.allocPrint(alloc, "{s}{s}{s}", .{
+        .binary_op => |o| return std.fmt.allocPrint(alloc, "({s}){s}({s})", .{
             try spellType(alloc, o.lhs),
             @tagName(o.op),
             try spellType(alloc, o.rhs),
         }),
-        .unary_op => |o| return std.fmt.allocPrint(alloc, "{s}{s}", .{
+        .unary_op => |o| return std.fmt.allocPrint(alloc, "{s}({s})", .{
             @tagName(o.op),
             try spellType(alloc, o.operand),
         }),
