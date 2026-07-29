@@ -563,8 +563,14 @@ pub const Parser = struct {
             if (isCompilerFormedTypeName(self.tokenSlice(self.current))) {
                 return self.parseCompilerFormedType(start, compiler_type_allowed);
             }
-            const at_name = self.tokenSlice(self.current);
+            const at_tok = self.current;
+            const at_name = self.tokenSlice(at_tok);
             self.advance();
+            // A type-argument list is what a compiler-formed type takes; a
+            // declared contract is a plain type name.
+            if (self.current.tag == .l_paren) {
+                return self.failAt(at_tok.loc, try self.unknownCompilerFormedTypeMsg(at_name));
+            }
             return try self.createNode(start, .{ .type_expr = .{ .name = at_name } });
         }
 
@@ -1021,6 +1027,14 @@ pub const Parser = struct {
         .{ .name = "@BuildBlock", .spelling = "@BuildBlock(P)" },
     };
 
+    fn unknownCompilerFormedTypeMsg(self: *Parser, name: []const u8) ![]const u8 {
+        return std.fmt.allocPrint(
+            self.allocator,
+            "unknown compiler-formed type '{s}' — the only ones are '@Init(T)' and '@BuildBlock(P)'",
+            .{name},
+        );
+    }
+
     /// True for the `@` names the compiler FORMS (never declared, never
     /// constructed). The rest of the `@` namespace is stdlib declarations.
     fn isCompilerFormedTypeName(name: []const u8) bool {
@@ -1037,11 +1051,7 @@ pub const Parser = struct {
         const spelling = for (compiler_formed_types) |t| {
             if (std.mem.eql(u8, name, t.name)) break t.spelling;
         } else {
-            return self.failAt(name_tok.loc, try std.fmt.allocPrint(
-                self.allocator,
-                "unknown compiler-formed type '{s}' — the only ones are '@Init(T)' and '@BuildBlock(P)'",
-                .{name},
-            ));
+            return self.failAt(name_tok.loc, try self.unknownCompilerFormedTypeMsg(name));
         };
         if (!allowed) {
             return self.failAt(name_tok.loc, try std.fmt.allocPrint(

@@ -99,9 +99,11 @@ site := @SourceSite{ file = "fake.sx", declaration = "tests.fake", line = 1 };
 ```
 
 Which `@` names exist, and which module owns each canonical declaration, is a
-compiler registry. An `@` declaration in any other module is rejected — the
-compiler recognizes a contract by that declaring-module **identity**, never by
-a name-and-field-shape test a lookalike could satisfy:
+compiler registry. An `@` declaration in any other file is rejected. The owning
+module is the one resolved from a **library root**, matched by identity on disk
+— never by a name-and-field-shape test, and never by what a path spells, so
+neither a nested `…/modules/std/core.sx` nor a project-local file that shadows
+the import can stand in for the canonical declaration:
 
 ```sx
 @Site :: struct { … }         // ERROR: not a compiler-maintained contract

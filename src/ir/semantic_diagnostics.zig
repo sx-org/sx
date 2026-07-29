@@ -89,12 +89,13 @@ pub const UnknownTypeChecker = struct {
         {
             const saved = self.diagnostics.current_source_file;
             defer self.diagnostics.current_source_file = saved;
+            const roots: []const []const u8 = if (self.lowering) |l| l.stdlib_paths else &.{};
             for (decls) |decl| {
                 const name = declaredName(decl) orelse continue;
                 if (!contracts.isAtName(name)) continue;
                 const file = decl.source_file orelse self.main_file;
                 const contract = contracts.find(name);
-                if (contract != null and contracts.declaredIn(contract.?, file)) continue;
+                if (contract != null and contracts.declaredIn(self.alloc, contract.?, file, roots)) continue;
                 if (file) |f| self.diagnostics.current_source_file = f;
                 const span = ast.Span{ .start = decl.span.start, .end = decl.span.start + @as(u32, @intCast(name.len)) };
                 if (contract) |c| {
@@ -1160,6 +1161,11 @@ pub const UnknownTypeChecker = struct {
     /// field to drift from `node.span`. `is_raw` is REQUIRED, exactly as in
     /// `checkBindingName`: a backtick raw / `#import c` extern name is exempt
     /// by construction.
+    fn checkDeclName(self: UnknownTypeChecker, node: *const Node, name: []const u8, is_raw: bool) void {
+        const span = ast.Span{ .start = node.span.start, .end = node.span.start + @as(u32, @intCast(name.len)) };
+        self.checkBindingName(name, span, is_raw);
+    }
+
     /// The name a module-scope declaration BINDS, or null for a node that
     /// binds none (`impl`, a flat `#import`, a statement).
     fn declaredName(node: *const Node) ?[]const u8 {
@@ -1180,11 +1186,6 @@ pub const UnknownTypeChecker = struct {
             .namespace_decl => |nd| nd.name,
             else => null,
         };
-    }
-
-    fn checkDeclName(self: UnknownTypeChecker, node: *const Node, name: []const u8, is_raw: bool) void {
-        const span = ast.Span{ .start = node.span.start, .end = node.span.start + @as(u32, @intCast(name.len)) };
-        self.checkBindingName(name, span, is_raw);
     }
 };
 

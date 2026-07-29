@@ -1,0 +1,5 @@
+error: '@SourceSite' is a compiler-maintained contract declared by 'modules/std/core.sx' — this module cannot declare it
+  --> examples/diagnostics/2023-diagnostics-at-contract-foreign-module/modules/std/core.sx:4:1
+   |
+ 4 | @SourceSite :: struct {
+   | ^^^^^^^^^^^

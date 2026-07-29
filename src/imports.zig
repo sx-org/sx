@@ -146,7 +146,7 @@ pub fn canonicalizeEntryPath(allocator: std.mem.Allocator, path: []const u8) []c
 /// Do two path spellings name the SAME file on disk? Symlink-following libc
 /// stat identity (st_dev + st_ino). Any stat failure → false — the caller
 /// keeps the spelling that was actually probed.
-fn sameFileIdentity(allocator: std.mem.Allocator, a: []const u8, b: []const u8) bool {
+pub fn sameFileIdentity(allocator: std.mem.Allocator, a: []const u8, b: []const u8) bool {
     const az = allocator.dupeZ(u8, a) catch return false;
     const bz = allocator.dupeZ(u8, b) catch return false;
     var sa: std.c.Stat = undefined;

@@ -1,0 +1,6 @@
+// A lookalike whose PATH ends in the canonical module's path. Recognition is
+// by identity on disk against a resolved library root, so the spelling buys
+// this file nothing.
+@SourceSite :: struct {
+    evil: i64 = 7;
+}

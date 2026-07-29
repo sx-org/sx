@@ -430,6 +430,9 @@ pub const Lowering = struct {
     /// lowering; null for a bare inline `#run`.
     comptime_const_name: ?[]const u8 = null,
     main_file: ?[]const u8 = null, // path of the main file; imported functions are declared extern
+    /// The library roots import resolution searched. `contracts` needs them to
+    /// tell a canonical `@` declaration from a same-named file elsewhere.
+    stdlib_paths: []const []const u8 = &.{},
     resolved_root: ?*const Node = null, // full AST root (for building comptime modules)
     comptime_param_nodes: ?std.StringHashMap(*const Node) = null, // active comptime substitutions
     /// `@BuildBlock(P)` parameters of the accepting call being inlined, bound to
