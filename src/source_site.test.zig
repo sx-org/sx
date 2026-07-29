@@ -458,6 +458,88 @@ test "the index exposes the declaration prefix a site was built from" {
     );
 }
 
+test "distinct parameterized impls keep distinct paths and ids" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const decls = try parse(a,
+        \\impl Into(Alpha) for i64 {
+        \\    conv :: (self: *i64) -> i64 { first(); }
+        \\}
+        \\impl Into(Beta) for i64 {
+        \\    conv :: (self: *i64) -> i64 { second(); }
+        \\}
+    );
+    var idx = try site.build(a, decls, .{ .main_file = "app/main.sx" });
+    defer idx.deinit();
+    const alpha = try callSitesOf(a, &idx, "app.main.Into(Alpha)#i64.conv");
+    const beta = try callSitesOf(a, &idx, "app.main.Into(Beta)#i64.conv");
+    try std.testing.expectEqual(@as(usize, 1), alpha.len);
+    try std.testing.expectEqual(@as(usize, 1), beta.len);
+    try std.testing.expect(alpha[0].id != beta[0].id);
+}
+
+test "protocol default bodies number in their own method scope" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const decls = try parse(a,
+        \\Ord :: protocol constraint {
+        \\    less :: (self: *Self, other: Self) -> bool { one(); }
+        \\    more :: (self: *Self, other: Self) -> bool { two(); }
+        \\}
+    );
+    var idx = try site.build(a, decls, .{ .main_file = "app/main.sx" });
+    defer idx.deinit();
+    const less = try callSitesOf(a, &idx, "app.main.Ord.less");
+    const more = try callSitesOf(a, &idx, "app.main.Ord.more");
+    try std.testing.expectEqual(@as(usize, 1), less.len);
+    try std.testing.expectEqual(@as(usize, 1), more.len);
+    try std.testing.expect(less[0].id != more[0].id);
+}
+
+test "numbering is zero-based" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const decls = try parse(a,
+        \\z :: () { only(); }
+    );
+    var idx = try site.build(a, decls, .{ .main_file = "app/main.sx" });
+    defer idx.deinit();
+    const s = try sitesOf(a, &idx, "app.main.z");
+    try std.testing.expect(s.len > 0);
+    try std.testing.expectEqual(@as(u64, 0), s[0].ordinal);
+}
+
+test "param types and defaults interleave in lexical order" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const decls = try parse(a,
+        \\f :: (x: i64 = seed(), ys: [dim()]i64) -> i64 { body(); }
+    );
+    var idx = try site.build(a, decls, .{ .main_file = "app/main.sx" });
+    defer idx.deinit();
+    const s = try callSitesOf(a, &idx, "app.main.f");
+    try std.testing.expectEqual(@as(usize, 3), s.len);
+    // callSitesOf sorts by ordinal; lexical order is seed(), dim(), body().
+    var prev: u32 = 0;
+    var seen = false;
+    for (s) |one| {
+        const key = blk: {
+            var it = idx.sites.iterator();
+            while (it.next()) |e| {
+                if (e.value_ptr.id == one.id) break :blk e.key_ptr.*.span.start;
+            }
+            unreachable;
+        };
+        if (seen) try std.testing.expect(prev < key);
+        prev = key;
+        seen = true;
+    }
+}
+
 // ── Independent reference implementation of the normative encoding ──────────
 
 const REF_BASIS: u64 = 0xcbf29ce484222325;

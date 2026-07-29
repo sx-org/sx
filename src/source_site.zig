@@ -257,8 +257,10 @@ fn walkDecl(b: *Builder, node: *const Node) anyerror!void {
     switch (node.data) {
         .fn_decl => |fd| {
             var inner = try b.enter(fd.name);
-            for (fd.params) |p| try walk(&inner, p.type_expr);
-            for (fd.params) |p| if (p.default_expr) |d| try walk(&inner, d);
+            for (fd.params) |p| {
+                try walk(&inner, p.type_expr);
+                if (p.default_expr) |d| try walk(&inner, d);
+            }
             if (fd.return_type) |rt| try walk(&inner, rt);
             try walk(&inner, fd.body);
         },
@@ -270,19 +272,52 @@ fn walkDecl(b: *Builder, node: *const Node) anyerror!void {
         },
         .protocol_decl => |pd| {
             var inner = try b.enter(pd.name);
-            for (pd.methods) |m| if (m.default_body) |body| try walk(&inner, body);
+            for (pd.methods) |m| if (m.default_body) |body| {
+                var method = try inner.enter(m.name);
+                try walk(&method, body);
+            };
         },
         .impl_block => |ib| {
-            // An impl's methods hang off the pair it implements, so the same
-            // method name on two targets keeps two distinct paths.
-            const segment = try std.fmt.allocPrint(b.alloc, "{s}#{s}", .{ ib.protocol_name, ib.target_type });
-            var inner = try b.enter(segment);
+            // An impl's methods hang off the impl's STRUCTURAL identity —
+            // protocol name + its type arguments + the structural target —
+            // so two impl blocks never share a path. `ib.target_type` alone
+            // is a back-compat display string ("" for non-identifier
+            // targets) and would conflate `impl Into(Alpha) for i64` with
+            // `impl Into(Beta) for i64`.
+            var seg = std.ArrayList(u8).empty;
+            try seg.appendSlice(b.alloc, ib.protocol_name);
+            if (ib.protocol_type_args.len > 0) {
+                try seg.append(b.alloc, '(');
+                for (ib.protocol_type_args, 0..) |arg, i| {
+                    if (i > 0) try seg.append(b.alloc, ',');
+                    try seg.appendSlice(b.alloc, try spellType(b.alloc, arg));
+                }
+                try seg.append(b.alloc, ')');
+            }
+            try seg.append(b.alloc, '#');
+            if (ib.target_type_expr) |te| {
+                try seg.appendSlice(b.alloc, try spellType(b.alloc, te));
+            } else {
+                try seg.appendSlice(b.alloc, ib.target_type);
+                if (ib.target_type_params.len > 0) {
+                    try seg.append(b.alloc, '(');
+                    for (ib.target_type_params, 0..) |tp, i| {
+                        if (i > 0) try seg.append(b.alloc, ',');
+                        try seg.appendSlice(b.alloc, tp.name);
+                    }
+                    try seg.append(b.alloc, ')');
+                }
+            }
+            var inner = try b.enter(try seg.toOwnedSlice(b.alloc));
             for (ib.methods) |m| try walkDecl(&inner, m);
         },
         .runtime_class_decl => |rc| {
             var inner = try b.enter(rc.name);
             for (rc.members) |m| switch (m) {
-                .method => |md| if (md.body) |body| try walk(&inner, body),
+                .method => |md| if (md.body) |body| {
+                    var method = try inner.enter(md.name);
+                    try walk(&method, body);
+                },
                 .field, .extends, .implements => {},
             };
         },
@@ -302,6 +337,72 @@ fn walkDecl(b: *Builder, node: *const Node) anyerror!void {
         // Anything else at module scope carries no name of its own; its sites
         // belong to the enclosing declaration.
         else => try walk(b, node),
+    }
+}
+
+/// Deterministic structural spelling of a type expression, for declaration
+/// segments. The segment is identity, not display: distinct source spellings
+/// must yield distinct strings.
+fn spellType(alloc: std.mem.Allocator, node: *const Node) anyerror![]const u8 {
+    switch (node.data) {
+        .type_expr => |t| return alloc.dupe(u8, t.name),
+        .parameterized_type_expr => |p| {
+            var out = std.ArrayList(u8).empty;
+            try out.appendSlice(alloc, p.name);
+            try out.append(alloc, '(');
+            for (p.args, 0..) |a, i| {
+                if (i > 0) try out.append(alloc, ',');
+                try out.appendSlice(alloc, try spellType(alloc, a));
+            }
+            try out.append(alloc, ')');
+            return out.toOwnedSlice(alloc);
+        },
+        .pointer_type_expr => |p| return std.fmt.allocPrint(alloc, "*{s}", .{try spellType(alloc, p.pointee_type)}),
+        .many_pointer_type_expr => |m| return std.fmt.allocPrint(alloc, "[*]{s}", .{try spellType(alloc, m.element_type)}),
+        .optional_type_expr => |o| return std.fmt.allocPrint(alloc, "?{s}", .{try spellType(alloc, o.inner_type)}),
+        .slice_type_expr => |s| return std.fmt.allocPrint(alloc, "[]{s}", .{try spellType(alloc, s.element_type)}),
+        .array_type_expr => |a| return std.fmt.allocPrint(alloc, "[{s}]{s}", .{ try spellType(alloc, a.length), try spellType(alloc, a.element_type) }),
+        .int_literal => |il| return std.fmt.allocPrint(alloc, "{d}", .{il.value}),
+        .function_type_expr => |f| {
+            var out = std.ArrayList(u8).empty;
+            try out.append(alloc, '(');
+            for (f.param_types, 0..) |p, i| {
+                if (i > 0) try out.append(alloc, ',');
+                try out.appendSlice(alloc, try spellType(alloc, p));
+            }
+            try out.appendSlice(alloc, ")->");
+            if (f.return_type) |r| try out.appendSlice(alloc, try spellType(alloc, r)) else try out.appendSlice(alloc, "void");
+            return out.toOwnedSlice(alloc);
+        },
+        .closure_type_expr => |c| {
+            var out = std.ArrayList(u8).empty;
+            try out.appendSlice(alloc, "Closure(");
+            for (c.param_types, 0..) |p, i| {
+                if (i > 0) try out.append(alloc, ',');
+                try out.appendSlice(alloc, try spellType(alloc, p));
+            }
+            try out.appendSlice(alloc, ")->");
+            if (c.return_type) |r| try out.appendSlice(alloc, try spellType(alloc, r)) else try out.appendSlice(alloc, "void");
+            return out.toOwnedSlice(alloc);
+        },
+        .tuple_type_expr => |t| {
+            var out = std.ArrayList(u8).empty;
+            try out.appendSlice(alloc, "Tuple(");
+            for (t.field_types, 0..) |f, i| {
+                if (i > 0) try out.append(alloc, ',');
+                if (t.field_names) |names| {
+                    try out.appendSlice(alloc, names[i]);
+                    try out.append(alloc, ':');
+                }
+                try out.appendSlice(alloc, try spellType(alloc, f));
+            }
+            try out.append(alloc, ')');
+            return out.toOwnedSlice(alloc);
+        },
+        else => {
+            if (ast.bareName(node)) |n| return alloc.dupe(u8, n);
+            return alloc.dupe(u8, @tagName(node.data));
+        },
     }
 }
 
@@ -337,8 +438,10 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
         // Anonymous scopes fold into the enclosing named declaration.
         .block => |bl| for (bl.stmts) |s| try walk(b, s),
         .lambda => |l| {
-            for (l.params) |p| try walk(b, p.type_expr);
-            for (l.params) |p| if (p.default_expr) |d| try walk(b, d);
+            for (l.params) |p| {
+                try walk(b, p.type_expr);
+                if (p.default_expr) |d| try walk(b, d);
+            }
             if (l.return_type) |rt| try walk(b, rt);
             try walk(b, l.body);
         },
@@ -406,8 +509,8 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
         },
         .slice_type_expr => |s| try walk(b, s.element_type),
         .array_literal => |a| {
-            for (a.elements) |e| try walk(b, e);
             if (a.type_expr) |t| try walk(b, t);
+            for (a.elements) |e| try walk(b, e);
         },
         .parameterized_type_expr => |p| for (p.args) |a| try walk(b, a),
         .index_expr => |i| {
