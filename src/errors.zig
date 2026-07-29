@@ -277,7 +277,7 @@ pub const DiagnosticList = struct {
     /// The reported file name and 1-based line/column of a byte offset in
     /// `source_file` — the same resolution a rendered diagnostic uses, made
     /// available to lowering so a compiler-formed source coordinate (a
-    /// `BuildSite`) agrees with what an error would print.
+    /// `@SourceSite`) agrees with what an error would print.
     pub fn locate(self: *const DiagnosticList, source_file: ?[]const u8, byte_offset: u32) struct { file: []const u8, line: u32, col: u32 } {
         const resolved = self.resolveSource(source_file);
         const loc = SourceLoc.compute(resolved.source, byte_offset);

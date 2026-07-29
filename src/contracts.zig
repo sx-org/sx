@@ -8,22 +8,35 @@
 //! that (module, name) identity rather than by a name-and-field-shape test a
 //! lookalike could satisfy.
 //!
-//! Separate from `Parser.compiler_formed_types` (`@Init`, `@BuildBlock`): those
-//! are FORMED by the compiler at a parameter type and are never declared or
-//! constructed, so they have no stdlib declaration to key on.
+//! The `@` namespace holds two classes, both registered here so one lookup
+//! answers for either:
+//!
+//!   - `.declared` — stdlib owns the canonical declaration, and the compiler
+//!     recognizes it by (module, name) identity plus, for a struct, its field
+//!     shape. `@SourceSite`, `@BuildSink`, `@BuildShape`.
+//!   - `.compiler_formed` — the compiler FORMS the type at a parameter
+//!     annotation; there is no declaration anywhere, so declaring the name is
+//!     an error wherever it appears. `@Init`, `@BuildBlock`.
 
 const std = @import("std");
 const imports = @import("imports.zig");
 
+pub const Kind = enum { declared, compiler_formed };
+
 pub const Contract = struct {
     /// The declared name, `@` included.
     name: []const u8,
+    kind: Kind = .declared,
     /// The module that owns the canonical declaration, as an import path
-    /// suffix (matched against the declaring file).
-    module: []const u8,
+    /// suffix (matched against the declaring file). Empty when
+    /// `kind == .compiler_formed`.
+    module: []const u8 = "",
     /// The shape the compiler depends on, in declaration order. Empty for a
     /// contract that is not a struct.
     fields: []const Field = &.{},
+    /// How a compiler-formed name is SPELLED in a diagnostic — the bare name
+    /// would read as an incomplete type.
+    spelling: []const u8 = "",
 };
 
 /// One field of a contract's required shape, in declaration order.
@@ -47,7 +60,51 @@ pub const entries = [_]Contract{
             .{ .name = "id", .type_name = "u64" },
         },
     },
+    // The build contracts. `@BuildSink` is a protocol, so it has no field
+    // shape; `@BuildShape` is a fact record the compiler synthesizes values of.
+    .{ .name = "@BuildSink", .module = "modules/fluent.sx" },
+    .{
+        .name = "@BuildShape",
+        .module = "modules/fluent.sx",
+        .fields = &.{
+            .{ .name = "static_expressions", .type_name = "i32" },
+            .{ .name = "dynamic_regions", .type_name = "i32" },
+            .{ .name = "known_bytes", .type_name = "?i64" },
+            .{ .name = "max_alignment", .type_name = "i64" },
+        },
+    },
+    // Formed, never declared.
+    .{ .name = "@Init", .kind = .compiler_formed, .spelling = "@Init(T)" },
+    .{ .name = "@BuildBlock", .kind = .compiler_formed, .spelling = "@BuildBlock(P)" },
 };
+
+/// True for a name the compiler FORMS. `parseCompilerFormedType` is its only
+/// producer, so these names never reach a declaration or a value.
+pub fn isCompilerFormed(name: []const u8) bool {
+    const c = find(name) orelse return false;
+    return c.kind == .compiler_formed;
+}
+
+/// Every compiler-formed spelling, joined for the diagnostic that lists them.
+pub fn compilerFormedList(alloc: std.mem.Allocator) ![]const u8 {
+    var out = std.ArrayList(u8).empty;
+    var n: usize = 0;
+    for (entries) |e| {
+        if (e.kind != .compiler_formed) continue;
+        if (n > 0) try out.appendSlice(alloc, if (n + 1 == compilerFormedCount()) " and " else ", ");
+        try out.print(alloc, "'{s}'", .{e.spelling});
+        n += 1;
+    }
+    return out.toOwnedSlice(alloc);
+}
+
+pub fn compilerFormedCount() usize {
+    var n: usize = 0;
+    for (entries) |e| {
+        if (e.kind == .compiler_formed) n += 1;
+    }
+    return n;
+}
 
 pub fn find(name: []const u8) ?Contract {
     for (entries) |e| {

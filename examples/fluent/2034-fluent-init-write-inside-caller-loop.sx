@@ -31,7 +31,7 @@ store :: (value: @Init($T)) -> *T {
 // The same shape reached through a build block: the sink writes once per
 // handshake, and the loop performs one handshake per iteration.
 Echo :: struct {
-    expression :: (self: *Echo, site: BuildSite, value: @Init($V/Drawable)) {
+    expression :: (self: *Echo, value: @Init($V/Drawable)) {
         dest := context.allocator.create(V);
         value.write(dest);
         print("reached {} {}\n", dest.draw(), dest.n);

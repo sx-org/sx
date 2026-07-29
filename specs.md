@@ -2911,8 +2911,8 @@ ordinary type expression, so it may introduce a binder of its own, with its
 own bounds: `$I/@Init($V/Drawable)`.
 
 Bounds belong to the binder, not to the type built around it, so a type
-constructor may wrap a bound binder: `*$S/BuildSink(P)` is a pointer to some
-`S` conforming to `BuildSink(P)`.
+constructor may wrap a bound binder: `*$S/@BuildSink(P)` is a pointer to some
+`S` conforming to `@BuildSink(P)`.
 
 A `/` with no head, and an empty argument list (`$T/Eq()`), are errors.
 

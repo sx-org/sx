@@ -34,9 +34,9 @@ Ascii :: struct {
     indent: i32 = 0;
     scratch: Scratch = .{};
 
-    // The one method `BuildSink(Cell)` requires. `V` is concrete here, so the
+    // The one method `@BuildSink(Cell)` requires. `V` is concrete here, so the
     // reservation is exact and `V`'s own `render` is a static call.
-    expression :: (self: *Ascii, site: BuildSite, value: @Init($V/Cell)) {
+    expression :: (self: *Ascii, value: @Init($V/Cell)) {
         destination := self.scratch.slot(V);
         value.write(destination);
         destination.render(self);

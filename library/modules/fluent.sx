@@ -1,9 +1,9 @@
 // Fluent build blocks — the library half of `@BuildBlock(P)` (fluent spec §6–§9).
 //
 // The compiler owns the block: which trailing blocks are build blocks, which
-// statements are reached expressions, and the lexical `BuildSite` each one
-// carries. Everything else — storage, ordering, erasure, identity, diagnostics —
-// belongs to the sink written here, in ordinary sx.
+// statements are reached expressions, and the `@SourceSite` each one carries.
+// Everything else — storage, ordering, erasure, identity, diagnostics — belongs
+// to the sink written here, in ordinary sx.
 //
 // A build-accepting function declares its block parameter last:
 //
@@ -14,74 +14,39 @@
 //     content.run(*sink);
 //
 // Each standalone expression in the block whose type conforms to the protocol
-// becomes one `sink.expression(site, initializer)` call. The initializer is an
+// becomes one `sink.expression(initializer)` call. The initializer is an
 // `@Init(V)` over the CONCRETE `V`, so the sink reserves `size_of(V)` and writes
 // the expression straight into its own storage; nothing is materialized, copied,
-// or erased before the sink asks for it.
+// or erased before the sink asks for it. Provenance rides on the initializer:
+// `value.site()`.
 
-// The lexical identity of one reached expression (spec §8.1). `id` is the stable
-// machine key — derived from the block and the expression's position inside it,
-// not from the run, the loop iteration, or the optimization level. `file` /
-// `line` / `column` are diagnostic coordinates, and `ordinal` separates
-// expressions the coordinates cannot (generated or compact source).
+// What a sink promises (spec §6.1). A compiler-maintained contract, and an
+// ordinary constraint protocol: no vtable, no erasure — `expression`
+// monomorphizes for each concrete `V` the block reaches, which is what lets the
+// sink see `V`'s size, alignment, and methods.
 //
-// A loop reports the SAME site every iteration: the site is lexical. A library
-// that needs per-item identity combines it with an explicit key or an occurrence
-// count of its own.
-BuildSite :: struct {
-    id: u64 = 0;
-    file: string = "";
-    line: i32 = 0;
-    column: i32 = 0;
-    ordinal: i32 = 0;
+// There is no site parameter: the initializer is the single source of expression
+// provenance, so a sink that wants it asks `value.site()` and cannot be handed a
+// site belonging to some other expression.
+//
+// A sink that returns without writing leaves the source expression unevaluated.
+// One that must materialize everything simply writes unconditionally.
+@BuildSink :: protocol(P: Type) constraint {
+    expression :: (self: *Self, value: @Init($V/P));
 }
 
-// What a sink promises (spec §6.3). An ordinary constraint protocol: no vtable,
-// no erasure — `expression` monomorphizes for each concrete `V` the block
-// reaches, which is what lets the sink see `V`'s size, alignment, and methods.
-//
-// The initializer may be written AT MOST ONCE, and a sink that returns without
-// writing leaves the source expression unevaluated. A sink that must materialize
-// everything simply writes unconditionally.
-BuildSink :: protocol(P: Type) constraint {
-    expression :: (self: *Self, site: BuildSite, value: @Init($V/P));
-}
-
-// Side-effect-free facts about a build block (spec §10). Produced only when
-// `content.shape()` is called — capturing-only programs do not pay for it.
-// Counts and sizes are protocol-independent; association with a block protocol
-// is by use site, not by a monomorphic type argument (constraint protocols are
-// not runtime type args).
-BuildShape :: struct {
+// Side-effect-free facts about a build block (spec §7). A compiler-maintained
+// contract: the compiler synthesizes these values, so the field set is a
+// compiler + stdlib contract. Produced only when `content.shape()` is called —
+// capturing-only programs do not pay for it. Counts and sizes are
+// protocol-independent; association with a block protocol is by use site, not by
+// a monomorphic type argument (constraint protocols are not runtime type args).
+@BuildShape :: struct {
     static_expressions: i32 = 0;
     dynamic_regions: i32 = 0;
     known_bytes: ?i64 = null;
     max_alignment: i64 = 1;
 }
 
-// Library policy over a `BuildShape` (spec §10.4). The compiler does not
-// recognize these names — they are ordinary library data.
-PlanPolicy :: struct {
-    reserve_static: bool = true;
-    dynamic_chunk: i32 = 64;
-}
-
-Plan :: struct {
-    shape: BuildShape = .{};
-    static_capacity: i32 = 0;
-    reserved_bytes: i64 = 0;
-    dynamic_chunk: i32 = 64;
-}
-
-make_plan :: (shape: BuildShape, policy: PlanPolicy) -> Plan {
-    reserved : i64 = if policy.reserve_static then shape.known_bytes ?? 0 else 0;
-    capacity : i32 = if policy.reserve_static then shape.static_expressions else 0;
-    Plan{
-        shape = shape,
-        static_capacity = capacity,
-        reserved_bytes = reserved,
-        dynamic_chunk = policy.dynamic_chunk,
-    }
-}
 
 

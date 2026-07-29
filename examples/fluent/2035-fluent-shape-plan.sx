@@ -1,12 +1,39 @@
-// `content.shape()` + library `Plan` / `make_plan` (fluent spec §10).
+// `content.shape()` plus example-owned planning (fluent spec §7).
 //
-// Shape is compiler-produced fact; Plan is ordinary library policy. A hybrid
-// accepter asks for the shape, reserves from the plan, then runs.
+// `@BuildShape` is compiler-produced FACT and lives in stdlib. Planning is
+// ordinary library POLICY over those facts, so `Plan` / `PlanPolicy` /
+// `make_plan` are declared right here rather than in stdlib — nothing about
+// them is a language contract. A hybrid accepter asks for the shape, reserves
+// from the plan, then runs.
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 
 Drawable :: protocol constraint {
     draw :: (self: *Self) -> string;
+}
+
+// Example-owned planning policy over the compiler's facts.
+PlanPolicy :: struct {
+    reserve_static: bool = true;
+    dynamic_chunk: i32 = 64;
+}
+
+Plan :: struct {
+    shape: @BuildShape = .{};
+    static_capacity: i32 = 0;
+    reserved_bytes: i64 = 0;
+    dynamic_chunk: i32 = 64;
+}
+
+make_plan :: (shape: @BuildShape, policy: PlanPolicy) -> Plan {
+    reserved : i64 = if policy.reserve_static then shape.known_bytes ?? 0 else 0;
+    capacity : i32 = if policy.reserve_static then shape.static_expressions else 0;
+    Plan{
+        shape = shape,
+        static_capacity = capacity,
+        reserved_bytes = reserved,
+        dynamic_chunk = policy.dynamic_chunk,
+    }
 }
 
 Label :: struct { text: string = ""; }
@@ -22,17 +49,17 @@ impl Drawable for Dot {
 // Capturing sink that also prints the plan it reserved for.
 Hold :: struct {
     n: i32 = 0;
-    expression :: (self: *Hold, site: BuildSite, value: @Init($V/Drawable)) {
+    expression :: (self: *Hold, value: @Init($V/Drawable)) {
         dest := context.allocator.create(V);
         value.write(dest);
-        print("  kept #{} {}\n", site.ordinal, dest.draw());
+        print("  kept #{} {}\n", self.n, dest.draw());
         self.n += 1;
         context.allocator.destroy(dest);
     }
 }
 
 panel :: (content: @BuildBlock(Drawable)) -> i32 {
-    shape: BuildShape = content.shape();
+    shape: @BuildShape = content.shape();
     plan := make_plan(shape, .{
         reserve_static = true,
         dynamic_chunk = 8,

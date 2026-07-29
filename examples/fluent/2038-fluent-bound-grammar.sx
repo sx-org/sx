@@ -15,10 +15,10 @@ impl Drawable for Label {
 }
 
 // The binder is introduced UNDER the pointer constructor, against the shipped
-// parameterized constraint protocol `BuildSink(P)`.
+// parameterized constraint protocol `@BuildSink(P)`.
 Tally :: struct { seen: i32 = 0; }
 
-count_into :: (sink: *$S/BuildSink(Drawable), n: i32) -> i32 {
+count_into :: (sink: *$S/@BuildSink(Drawable), n: i32) -> i32 {
     sink.seen += n;
     sink.seen
 }

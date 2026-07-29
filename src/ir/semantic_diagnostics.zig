@@ -95,14 +95,17 @@ pub const UnknownTypeChecker = struct {
                 if (!contracts.isAtName(name)) continue;
                 const file = decl.source_file orelse self.main_file;
                 const contract = contracts.find(name);
-                if (contract != null and contracts.declaredIn(self.alloc, contract.?, file, roots)) {
+                if (contract != null and contract.?.kind == .declared and
+                    contracts.declaredIn(self.alloc, contract.?, file, roots))
+                {
                     self.checkContractShape(decl, contract.?, file);
                     continue;
                 }
                 if (file) |f| self.diagnostics.current_source_file = f;
                 const span = ast.Span{ .start = decl.span.start, .end = decl.span.start + @as(u32, @intCast(name.len)) };
-                if (contract) |c| {
-                    self.diagnostics.addFmt(.err, span, "'{s}' is a compiler-maintained contract declared by '{s}' — this module cannot declare it", .{ name, c.module });
+                if (contract) |c| switch (c.kind) {
+                    .compiler_formed => self.diagnostics.addFmt(.err, span, "'{s}' is formed by the compiler and has no declaration — it cannot be declared anywhere", .{name}),
+                    .declared => self.diagnostics.addFmt(.err, span, "'{s}' is a compiler-maintained contract declared by '{s}' — this module cannot declare it", .{ name, c.module }),
                 } else {
                     self.diagnostics.addFmt(.err, span, "'{s}' is not a compiler-maintained contract — '@' names belong to the compiler; a declaration name is an ordinary identifier", .{name});
                 }
@@ -1205,12 +1208,23 @@ pub const UnknownTypeChecker = struct {
                 });
                 return;
             }
-            const spelled = if (sd.field_types[i].data == .type_expr) sd.field_types[i].data.type_expr.name else "";
-            if (!std.mem.eql(u8, spelled, want.type_name)) {
+            if (!fieldTypeMatches(sd.field_types[i], want.type_name)) {
                 self.diagnostics.addFmt(.err, span, "'{s}.{s}' must be '{s}'", .{ contract.name, want.name, want.type_name });
                 return;
             }
         }
+    }
+
+    /// Does a contract field's declared type spell `want`? A contract's fields
+    /// are primitives and optionals of primitives, so the spelling is the whole
+    /// check.
+    fn fieldTypeMatches(node: *const Node, want: []const u8) bool {
+        return switch (node.data) {
+            .type_expr => |te| std.mem.eql(u8, te.name, want),
+            .optional_type_expr => |ote| want.len > 1 and want[0] == '?' and
+                fieldTypeMatches(ote.inner_type, want[1..]),
+            else => false,
+        };
     }
 
     /// The name a module-scope declaration BINDS, or null for a node that

@@ -1,0 +1,11 @@
+error: '@Init' is formed by the compiler and has no declaration — it cannot be declared anywhere
+  --> examples/diagnostics/2026-diagnostics-at-contract-classes.sx:7:1
+   |
+ 7 | @Init :: struct {
+   | ^^^^^
+
+error: '@BuildSink' is a compiler-maintained contract declared by 'modules/fluent.sx' — this module cannot declare it
+  --> examples/diagnostics/2026-diagnostics-at-contract-classes.sx:11:1
+   |
+11 | @BuildSink :: protocol(P: Type) constraint {
+   | ^^^^^^^^^^

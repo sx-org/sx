@@ -3508,6 +3508,7 @@ pub const Lowering = struct {
     pub const buildBlockBinding = lower_build_block.lookup;
     pub const lowerBuildBlockRun = lower_build_block.lowerRun;
     pub const lowerBuildBlockShape = lower_build_block.lowerShape;
+    pub const lowerBuildBlockSite = lower_build_block.lowerSite;
     pub const interceptBuildExpression = lower_build_block.interceptExpression;
     pub const rejectBuildBlockValue = lower_build_block.rejectValueUse;
     pub const appendIntField = lower_build_block.appendIntField;

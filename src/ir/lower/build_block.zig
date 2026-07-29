@@ -8,6 +8,7 @@ const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
 
 const lower = @import("../lower.zig");
+const source_site = @import("../../source_site.zig");
 const Lowering = lower.Lowering;
 
 /// The compiler-formed `@` type name for a trailing build block.
@@ -17,6 +18,9 @@ pub const type_name = "@BuildBlock";
 /// Operations a `@BuildBlock(P)` exposes (spec §9–§10).
 pub const run_method = "run";
 pub const shape_method = "shape";
+
+/// `content.site()` — the block's own source site.
+pub const site_method = "site";
 
 /// The method a sink answers a reached expression with (spec §6.3). Resolved on
 /// the CONCRETE sink type, so `V` monomorphizes per reached expression and the
@@ -32,7 +36,7 @@ pub const Binding = struct {
     /// The zero-param lambda the trailing block parsed to.
     lambda: *const Node,
     protocol: TypeId,
-    /// Where the block was WRITTEN — the file a `BuildSite` reports, which is
+    /// Where the block was WRITTEN — the file its site reports, which is
     /// the caller's, not the accepting function's.
     source_file: ?[]const u8,
 };
@@ -47,10 +51,7 @@ pub const Scope = struct {
     /// evaluated ONCE, into this binding; every handshake re-reads it.
     sink_name: []const u8,
     /// The block's own lexical identity — the file it was written in and the
-    /// byte offset of its `{`. A `BuildSite.id` derives from this plus the
-    /// expression's ordinal, so replaying the same block twice, running under
-    /// `-O2`, or instantiating the enclosing generic again all report the same
-    /// site.
+    /// byte offset of its `{`.
     file: ?[]const u8,
     block_offset: u32,
     /// Reached-expression counter, restarted per `run` so two replays of one
@@ -137,8 +138,8 @@ pub fn lowerRun(self: *Lowering, binding: Binding, args: []const *const Node, sp
     if (self.plainStructMethod(sink_ty, sink_method) == null) {
         const sink_name_str = self.formatTypeName(self.module.types.get(sink_ty).pointer.pointee);
         if (self.diagnostics) |d| {
-            const id = d.addFmtId(.err, args[0].span, "'{s}' cannot receive this block: it has no '{s}' method, so it does not implement 'BuildSink({s})'", .{ sink_name_str, sink_method, proto_name });
-            d.addHelpFmt(id, args[0].span, null, "declare `{s} :: (self: *{s}, site: BuildSite, value: @Init($V/{s}))`", .{ sink_method, sink_name_str, proto_name });
+            const id = d.addFmtId(.err, args[0].span, "'{s}' cannot receive this block: it has no '{s}' method, so it does not implement '@BuildSink({s})'", .{ sink_name_str, sink_method, proto_name });
+            d.addHelpFmt(id, args[0].span, null, "declare `{s} :: (self: *{s}, value: @Init($V/{s}))`", .{ sink_method, sink_name_str, proto_name });
         }
         return Ref.none;
     }
@@ -158,8 +159,8 @@ pub fn lowerRun(self: *Lowering, binding: Binding, args: []const *const Node, sp
 
 /// `content.shape()` — side-effect-free static facts about the block (spec §10).
 /// Lazy: only computed when this method is referenced. Emits an untyped
-/// `.{ … }` matching `BuildShape`'s fields so the library type supplies the
-/// name; the compiler never special-cases `Plan` / `make_plan`.
+/// `@BuildShape{ … }` so the library type supplies the
+/// name; planning policy is the library's, never the compiler's.
 pub fn lowerShape(self: *Lowering, binding: Binding, args: []const *const Node, span: ast.Span) Ref {
     if (args.len != 0) {
         if (self.diagnostics) |d|
@@ -257,10 +258,10 @@ fn shapeLiteral(self: *Lowering, facts: ShapeFacts, span: ast.Span, src: ?[]cons
         }) catch {};
     }
     self.appendIntField(&fields, "max_alignment", facts.max_alignment, span, src);
-    // Named `BuildShape{ … }` so `known_bytes: ?i64` resolves against the
+    // Named `@BuildShape{ … }` so `known_bytes: ?i64` resolves against the
     // library declaration rather than an anonymous struct.
     return self.synthNode(.{ .struct_literal = .{
-        .struct_name = "BuildShape",
+        .struct_name = "@BuildShape",
         .field_inits = fields.toOwnedSlice(self.alloc) catch &.{},
     } }, span, src);
 }
@@ -281,10 +282,9 @@ pub fn interceptExpression(self: *Lowering, node: *const Node) bool {
     if (!self.protocolResolver().packArgConformsTo(scope.protocol_name, v)) return false;
 
     const src = node.source_file orelse self.current_source_file;
-    const site = siteLiteral(self, scope, node.span, src);
     const recv = self.synthNode(.{ .identifier = .{ .name = scope.sink_name } }, node.span, src);
     const callee = self.synthNode(.{ .field_access = .{ .object = recv, .field = sink_method } }, node.span, src);
-    const call_args = self.alloc.dupe(*Node, &.{ site, @constCast(node) }) catch return false;
+    const call_args = self.alloc.dupe(*Node, &.{@constCast(node)}) catch return false;
     scope.ordinal += 1;
     const call = ast.Call{ .callee = callee, .args = call_args };
     _ = self.lowerCall(&call);
@@ -299,45 +299,36 @@ pub fn appendIntField(self: *Lowering, list: *std.ArrayList(ast.StructFieldInit)
     }) catch {};
 }
 
-/// The `BuildSite` for one reached expression (spec §8), written as an untyped
-/// `.{ … }` so it types against the sink's own declared `site` parameter — the
-/// compiler never has to know the library type by name.
-fn siteLiteral(self: *Lowering, scope: *const Scope, span: ast.Span, src: ?[]const u8) *Node {
-    var file: []const u8 = src orelse "";
-    var line: i64 = 0;
-    var column: i64 = 0;
-    if (self.diagnostics) |d| {
-        const loc = d.locate(src, span.start);
-        file = loc.file;
-        line = loc.line;
-        column = loc.col;
+/// `content.site()` — the trailing block's own `@SourceSite` (spec §6.2), or
+/// null when the block has no indexed site. The block is a compile-time
+/// binding, so this resolves to a constant: the site the P3c index recorded for
+/// the lambda the trailing block parsed to.
+pub fn lowerSite(self: *Lowering, binding: Binding, args: []const *const Node, span: ast.Span) Ref {
+    if (args.len != 0) {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "'{s}' takes no arguments", .{site_method});
+        return Ref.none;
     }
-    var fields = std.ArrayList(ast.StructFieldInit).empty;
-    self.appendIntField(&fields, "id", siteId(scope), span, src);
-    fields.append(self.alloc, .{
-        .name = "file",
-        .value = self.synthNode(.{ .string_literal = .{ .raw = file, .is_raw = true } }, span, src),
-    }) catch {};
-    self.appendIntField(&fields, "line", line, span, src);
-    self.appendIntField(&fields, "column", column, span, src);
-    self.appendIntField(&fields, "ordinal", scope.ordinal, span, src);
-    return self.synthNode(.{ .struct_literal = .{
-        .struct_name = null,
-        .field_inits = fields.toOwnedSlice(self.alloc) catch &.{},
-    } }, span, src);
-}
-
-/// The stable machine key of a lexical build site (spec §8.1): the block's own
-/// identity (file + the offset of its `{`) plus the expression's ordinal within
-/// it. It does not vary with replay count, loop iteration, optimization level,
-/// or how many times the enclosing generic was instantiated. Masked to 63 bits
-/// so the value survives the `i64` literal it is emitted as.
-fn siteId(scope: *const Scope) i64 {
-    var h = std.hash.Wyhash.init(0);
-    h.update(scope.file orelse "");
-    h.update(std.mem.asBytes(&scope.block_offset));
-    h.update(std.mem.asBytes(&scope.ordinal));
-    return @intCast(h.final() & 0x7FFF_FFFF_FFFF_FFFF);
+    const tid = self.sourceSiteType() orelse {
+        if (self.diagnostics) |d|
+            d.addFmt(.err, span, "'{s}' needs '{s}' in scope", .{ site_method, source_site.contract_name });
+        return Ref.none;
+    };
+    const opt_ty = self.module.types.optionalOf(tid);
+    const idx = self.site_index orelse return self.builder.constNull(opt_ty);
+    const site = idx.get(binding.lambda) orelse return self.builder.constNull(opt_ty);
+    const src = binding.source_file orelse self.current_source_file;
+    const loc = if (self.diagnostics) |d| d.locate(src, binding.lambda.span.start) else null;
+    var fields = [_]Ref{
+        self.builder.constString(self.module.types.internString(site.file)),
+        self.builder.constString(self.module.types.internString(site.declaration)),
+        self.builder.constInt(if (loc) |l| @intCast(l.line) else 0, .i32),
+        self.builder.constInt(if (loc) |l| @intCast(l.col) else 0, .i32),
+        self.builder.constInt(@bitCast(site.ordinal), .u64),
+        self.builder.constInt(@bitCast(site.id), .u64),
+    };
+    const value = self.builder.emit(.{ .struct_init = .{ .fields = self.alloc.dupe(Ref, &fields) catch unreachable } }, tid);
+    return self.builder.emit(.{ .optional_wrap = .{ .operand = value } }, opt_ty);
 }
 
 /// Refuse every use of a build block other than `run` / `shape`. A block is a
@@ -348,7 +339,7 @@ pub fn rejectValueUse(self: *Lowering, name: []const u8, span: ast.Span) void {
     const binding = lookup(self, name) orelse return;
     if (self.diagnostics) |d| {
         const proto = if (self.getProtocolInfo(binding.protocol)) |pi| pi.name else self.formatTypeName(binding.protocol);
-        const id = d.addFmtId(.err, span, "'{s}' is a @BuildBlock({s}) — its only operations are '.{s}(sink)' and '.{s}()'", .{ name, proto, run_method, shape_method });
+        const id = d.addFmtId(.err, span, "'{s}' is a @BuildBlock({s}) — its only operations are '.{s}(sink)', '.{s}()', and '.{s}()'", .{ name, proto, run_method, shape_method, site_method });
         d.addHelpFmt(id, span, null, "a build block is a compile-time value: it cannot be bound, stored, passed on, or returned", .{});
     }
 }

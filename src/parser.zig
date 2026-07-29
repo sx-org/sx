@@ -4,6 +4,7 @@ const Tag = @import("token.zig").Tag;
 const getKeyword = @import("token.zig").getKeyword;
 const Lexer = @import("lexer.zig").Lexer;
 const ast = @import("ast.zig");
+const contracts = @import("contracts.zig");
 const Node = ast.Node;
 const Type = @import("types.zig").Type;
 const errors = @import("errors.zig");
@@ -1017,48 +1018,34 @@ pub const Parser = struct {
         } });
     }
 
-    /// The compiler-formed types (spec §4): `@Init(T)` and `@BuildBlock(P)`. The
-    /// `@` names are a closed compiler-owned set — a module may spell one in a
-    /// parameter type but can never declare another, because `at_identifier` is
-    /// accepted nowhere else. Each lowers to the ordinary
-    /// `parameterized_type_expr` carrying the `@` name, so generic binding /
-    /// substitution reuse the parameterized-head paths.
-    /// Each entry is the `@` name and how it is SPELLED in a diagnostic — the
-    /// name alone would read as an incomplete type.
-    pub const compiler_formed_types = [_]struct { name: []const u8, spelling: []const u8 }{
-        .{ .name = "@Init", .spelling = "@Init(T)" },
-        .{ .name = "@BuildBlock", .spelling = "@BuildBlock(P)" },
-    };
-
     fn unknownCompilerFormedTypeMsg(self: *Parser, name: []const u8) ![]const u8 {
+        const list = try contracts.compilerFormedList(self.allocator);
         return std.fmt.allocPrint(
             self.allocator,
-            "unknown compiler-formed type '{s}' — the only ones are '@Init(T)' and '@BuildBlock(P)'",
-            .{name},
+            "unknown compiler-formed type '{s}' — the only ones are {s}",
+            .{ name, list },
         );
     }
 
     /// The compiler-provided default-parameter value (spec: `@caller`).
     pub const caller_site_name = "@caller";
 
-    /// True for the `@` names the compiler FORMS (never declared, never
-    /// constructed). The rest of the `@` namespace is stdlib declarations.
+    /// True for the `@` names the compiler FORMS at a parameter annotation —
+    /// `contracts` is the single registry for both `@` classes, so the formed
+    /// set and the declared set cannot drift apart.
     fn isCompilerFormedTypeName(name: []const u8) bool {
-        for (compiler_formed_types) |t| {
-            if (std.mem.eql(u8, name, t.name)) return true;
-        }
-        return false;
+        return contracts.isCompilerFormed(name);
     }
 
     fn parseCompilerFormedType(self: *Parser, start: u32, allowed: bool) anyerror!*Node {
         const name_tok = self.current;
         const name = self.tokenSlice(name_tok);
         self.advance();
-        const spelling = for (compiler_formed_types) |t| {
-            if (std.mem.eql(u8, name, t.name)) break t.spelling;
-        } else {
+        const contract = contracts.find(name);
+        const spelling = if (contract != null and contract.?.kind == .compiler_formed)
+            contract.?.spelling
+        else
             return self.failAt(name_tok.loc, try self.unknownCompilerFormedTypeMsg(name));
-        };
         if (!allowed) {
             return self.failAt(name_tok.loc, try std.fmt.allocPrint(
                 self.allocator,
@@ -1537,7 +1524,7 @@ pub const Parser = struct {
                 self.advance();
                 try self.expect(.colon);
                 // A protocol method declares parameters like any other function,
-                // so a compiler-formed `@` type is legal here too — `BuildSink`'s
+                // so a compiler-formed `@` type is legal here too — `@BuildSink`'s
                 // `value: @Init($V/P)` is the requirement it exists to state.
                 self.compiler_type_allowed = true;
                 const ptype = try self.parseTypeExpr();
@@ -1975,8 +1962,9 @@ pub const Parser = struct {
     fn parseImplBlock(self: *Parser, start_pos: u32) anyerror!*Node {
         self.advance(); // skip 'impl'
 
-        // Protocol name
-        if (self.current.tag != .identifier) {
+        // Protocol name. A contract protocol (`impl @BuildSink(P) for …`) is an
+        // ordinary protocol here — the `@` is part of its name.
+        if (self.current.tag != .identifier and self.current.tag != .at_identifier) {
             return self.fail("expected protocol name after 'impl'");
         }
         const protocol_name = self.tokenSlice(self.current);

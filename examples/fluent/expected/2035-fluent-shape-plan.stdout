@@ -1,0 +1,11 @@
+shape static=2 dynamic=0 known=32 align=8
+plan capacity=2 reserved=32 chunk=8
+  kept #0 A
+  kept #1 B
+shape static=1 dynamic=1 known=-1 align=1
+plan capacity=1 reserved=0 chunk=8
+  kept #0 x
+  kept #1 y
+  kept #2 z
+  kept #3 .
+reached 2 4

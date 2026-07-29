@@ -803,6 +803,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 if (std.mem.eql(u8, fa.field, build_block.shape_method)) {
                     return self.lowerBuildBlockShape(binding, c.args, c.callee.span);
                 }
+                if (std.mem.eql(u8, fa.field, build_block.site_method)) {
+                    return self.lowerBuildBlockSite(binding, c.args, c.callee.span);
+                }
                 self.rejectBuildBlockValue(block_name, c.callee.span);
                 return Ref.none;
             }

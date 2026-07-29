@@ -26,10 +26,10 @@ impl Drawable for Label {
 Echo :: struct {
     n: i32 = 0;
 
-    expression :: (self: *Echo, site: BuildSite, value: @Init($V/Drawable)) {
+    expression :: (self: *Echo, value: @Init($V/Drawable)) {
         dest := context.allocator.create(V);
         value.write(dest);
-        print("  expression #{} -> {}\n", site.ordinal, dest.draw());
+        print("  expression #{} -> {}\n", self.n, dest.draw());
         self.n += 1;
         context.allocator.destroy(dest);
     }

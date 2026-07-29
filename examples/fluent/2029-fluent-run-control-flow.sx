@@ -1,4 +1,4 @@
-// Ordinary control flow inside a build block, and what a `BuildSite` identifies
+// Ordinary control flow inside a build block, and what a build site identifies
 // (fluent spec §7.4, §7.5, §8).
 //
 // `if` / `for` / `while` execute when `run` executes — the block is replayed,
@@ -25,12 +25,13 @@ impl Drawable for Label {
 
 Roster :: struct {
     seen: i32 = 0;
-    // The site's `id` is a stable machine key; printing it would pin a hash, so
-    // the example reports the coordinates it derives from instead.
-    expression :: (self: *Roster, site: BuildSite, value: @Init($V/Drawable)) {
+    // Which lexical expression each publication came from is the initializer's
+    // to report (`value.site()`); this sink only counts occurrences, which is
+    // what distinguishes a loop's repeats from separate statements.
+    expression :: (self: *Roster, value: @Init($V/Drawable)) {
         dest := context.allocator.create(V);
         value.write(dest);
-        print("  line {} ordinal {} occurrence {} -> {}\n", site.line, site.ordinal, self.seen, dest.draw());
+        print("  occurrence {} -> {}\n", self.seen, dest.draw());
         self.seen += 1;
         context.allocator.destroy(dest);
     }
