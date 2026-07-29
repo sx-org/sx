@@ -1,0 +1,9 @@
+// `@caller` IS the call site, so it can only be written where a call supplies
+// one — a parameter's default. Anywhere else there is no caller to name.
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+
+main :: () {
+    here := @caller;
+    print("{}\n", here.line);
+}

@@ -1,0 +1,5 @@
+error: '@caller' is only legal in a parameter's default value: `site: @SourceSite = @caller`
+  --> examples/diagnostics/2024-diagnostics-caller-outside-default.sx:7:13
+   |
+ 7 |     here := @caller;
+   |             ^^^^^^^

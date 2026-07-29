@@ -21,10 +21,32 @@ pub const Contract = struct {
     /// The module that owns the canonical declaration, as an import path
     /// suffix (matched against the declaring file).
     module: []const u8,
+    /// The shape the compiler depends on, in declaration order. Empty for a
+    /// contract that is not a struct.
+    fields: []const Field = &.{},
+};
+
+/// One field of a contract's required shape, in declaration order.
+pub const Field = struct {
+    name: []const u8,
+    /// The type as SPELLED in the declaration. A contract's fields are
+    /// primitives, so the spelling is the whole check.
+    type_name: []const u8,
 };
 
 pub const entries = [_]Contract{
-    .{ .name = "@SourceSite", .module = "modules/std/core.sx" },
+    .{
+        .name = "@SourceSite",
+        .module = "modules/std/core.sx",
+        .fields = &.{
+            .{ .name = "file", .type_name = "string" },
+            .{ .name = "declaration", .type_name = "string" },
+            .{ .name = "line", .type_name = "i32" },
+            .{ .name = "column", .type_name = "i32" },
+            .{ .name = "ordinal", .type_name = "u64" },
+            .{ .name = "id", .type_name = "u64" },
+        },
+    },
 };
 
 pub fn find(name: []const u8) ?Contract {
@@ -72,6 +94,25 @@ test "every contract is found by its own name" {
         try std.testing.expect(isAtName(e.name));
     }
     try std.testing.expect(find("@NotAContract") == null);
+}
+
+test "the @SourceSite shape is the one lowering builds" {
+    // `lowerCallerSite` emits these six fields, in this order. Changing either
+    // side alone mis-lowers every `@caller`, so the table is the lock.
+    const c = find("@SourceSite").?;
+    const want = [_]Field{
+        .{ .name = "file", .type_name = "string" },
+        .{ .name = "declaration", .type_name = "string" },
+        .{ .name = "line", .type_name = "i32" },
+        .{ .name = "column", .type_name = "i32" },
+        .{ .name = "ordinal", .type_name = "u64" },
+        .{ .name = "id", .type_name = "u64" },
+    };
+    try std.testing.expectEqual(want.len, c.fields.len);
+    for (want, c.fields) |a, b| {
+        try std.testing.expectEqualStrings(a.name, b.name);
+        try std.testing.expectEqualStrings(a.type_name, b.type_name);
+    }
 }
 
 test "candidatePath joins a root to the owning module" {

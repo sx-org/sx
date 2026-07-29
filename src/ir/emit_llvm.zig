@@ -526,7 +526,7 @@ pub const LLVMEmitter = struct {
     }
 
     /// Source text for `file` via the diagnostics' file→source map (the
-    /// same map `#caller_location` uses). Empty when unavailable —
+    /// same map `@caller` uses). Empty when unavailable —
     /// line:col then degrades to 1:1 rather than crash.
     pub fn sourceForFile(self: *LLVMEmitter, file: []const u8) []const u8 {
         const is = self.import_sources orelse return "";

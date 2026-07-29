@@ -123,13 +123,13 @@ test "a library module reports its import path" {
     const roots = [_][]const u8{"/opt/sx/library"};
     try std.testing.expectEqualStrings(
         "modules/std/core.sx",
-        site.normalizeModulePath("/opt/sx/library/modules/std/core.sx", &roots, null),
+        site.normalizeModulePath("/opt/sx/library/modules/std/core.sx", &roots),
     );
     // A trailing slash on the root is not a different root.
     const slashed = [_][]const u8{"/opt/sx/library/"};
     try std.testing.expectEqualStrings(
         "modules/std/core.sx",
-        site.normalizeModulePath("/opt/sx/library/modules/std/core.sx", &slashed, null),
+        site.normalizeModulePath("/opt/sx/library/modules/std/core.sx", &slashed),
     );
 }
 
@@ -137,18 +137,18 @@ test "a path that merely shares a prefix is not stripped" {
     const roots = [_][]const u8{"/opt/sx/lib"};
     try std.testing.expectEqualStrings(
         "/opt/sx/library/modules/std/core.sx",
-        site.normalizeModulePath("/opt/sx/library/modules/std/core.sx", &roots, null),
+        site.normalizeModulePath("/opt/sx/library/modules/std/core.sx", &roots),
     );
 }
 
-test "a non-library file is relative to the compilation root" {
+test "a non-library file keeps the spelling it was named with" {
     try std.testing.expectEqualStrings(
-        "app/main.sx",
-        site.normalizeModulePath("/work/proj/app/main.sx", &.{}, "/work/proj"),
+        "examples/errors/1033.sx",
+        site.normalizeModulePath("examples/errors/1033.sx", &.{}),
     );
     try std.testing.expectEqualStrings(
         "/elsewhere/main.sx",
-        site.normalizeModulePath("/elsewhere/main.sx", &.{}, "/work/proj"),
+        site.normalizeModulePath("/elsewhere/main.sx", &.{}),
     );
 }
 

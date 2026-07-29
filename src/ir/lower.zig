@@ -32,6 +32,8 @@ const ErrorAnalysis = @import("error_analysis.zig").ErrorAnalysis;
 const ErrorFlow = @import("error_flow.zig").ErrorFlow;
 const ObjcLowering = @import("ffi_objc.zig").ObjcLowering;
 const semantic_diagnostics = @import("semantic_diagnostics.zig");
+const source_site = @import("../source_site.zig");
+const contracts = @import("../contracts.zig");
 const lower_error = @import("lower/error.zig");
 const lower_comptime = @import("lower/comptime.zig");
 const lower_stmt = @import("lower/stmt.zig");
@@ -64,13 +66,16 @@ const Module = mod_mod.Module;
 const Builder = mod_mod.Builder;
 
 /// Call-site provenance retained while a declaration-authored default AST is
-/// evaluated. Nested `#caller_location` markers use this instead of the
-/// default expression's lexical source; ordinary names still resolve in the
-/// function author's module.
+/// evaluated. Nested `@caller` markers use this instead of the default
+/// expression's lexical source; ordinary names still resolve in the function
+/// author's module.
 pub const DefaultCallSite = struct {
     source: ?[]const u8,
     span: ast.Span,
     caller_func: ?FuncId,
+    /// The call expression itself, which is what the source-site index is
+    /// keyed by. Null for a synthesized call with no source node.
+    node: ?*const ast.Node = null,
 };
 
 /// The declaration and source that author a concrete, non-generic struct
@@ -430,6 +435,9 @@ pub const Lowering = struct {
     /// lowering; null for a bare inline `#run`.
     comptime_const_name: ?[]const u8 = null,
     main_file: ?[]const u8 = null, // path of the main file; imported functions are declared extern
+    /// Source-site index over the program's declarations, built once (see
+    /// `src/source_site.zig`). `@caller` reads a call's site from it.
+    site_index: ?*const source_site.SiteIndex = null,
     /// The library roots import resolution searched. `contracts` needs them to
     /// tell a canonical `@` declaration from a same-named file elsewhere.
     stdlib_paths: []const []const u8 = &.{},
@@ -2898,7 +2906,8 @@ pub const Lowering = struct {
     pub const emitTupleRet = lower_error.emitTupleRet;
     pub const diagRaiseNotFailable = lower_error.diagRaiseNotFailable;
     pub const exprIsFailable = lower_error.exprIsFailable;
-    pub const lowerCallerLocation = lower_error.lowerCallerLocation;
+    pub const lowerCallerSite = lower_error.lowerCallerSite;
+    pub const sourceSiteType = lower_error.sourceSiteType;
     pub const sourceForFile = lower_error.sourceForFile;
     pub const currentFunctionName = lower_error.currentFunctionName;
     pub const lowerTry = lower_error.lowerTry;

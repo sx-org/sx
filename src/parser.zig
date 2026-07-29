@@ -82,6 +82,9 @@ pub const Parser = struct {
     /// (`*@Init(T)`, `[]@BuildBlock(P)`), struct field, and return type rejects
     /// it.
     compiler_type_allowed: bool = false,
+    /// True while parsing a parameter's default expression — the one place
+    /// `@caller` may be written.
+    in_param_default: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, source: [:0]const u8) Parser {
         var lexer = Lexer.init(source);
@@ -1034,6 +1037,9 @@ pub const Parser = struct {
             .{name},
         );
     }
+
+    /// The compiler-provided default-parameter value (spec: `@caller`).
+    pub const caller_site_name = "@caller";
 
     /// True for the `@` names the compiler FORMS (never declared, never
     /// constructed). The rest of the `@` namespace is stdlib declarations.
@@ -2237,6 +2243,9 @@ pub const Parser = struct {
             var default_expr: ?*Node = null;
             if (self.current.tag == .equal) {
                 self.advance(); // consume '='
+                const saved_in_default = self.in_param_default;
+                self.in_param_default = true;
+                defer self.in_param_default = saved_in_default;
                 default_expr = try self.parseExpr();
             }
             // Protocol-constrained variadic pack: `..xs: Protocol` — a bare
@@ -3478,6 +3487,15 @@ pub const Parser = struct {
                     .{at_name},
                 );
             }
+            if (std.mem.eql(u8, at_name, caller_site_name)) {
+                // `@caller` is the call site itself, so it can only be written
+                // where a call supplies one: a parameter's default.
+                if (!self.in_param_default) {
+                    return self.fail("'@caller' is only legal in a parameter's default value: `site: @SourceSite = @caller`");
+                }
+                self.advance();
+                return try self.createNode(start, .{ .caller_site = {} });
+            }
             self.advance();
             return try self.createNode(start, .{ .identifier = .{ .name = at_name } });
         }
@@ -3771,10 +3789,6 @@ pub const Parser = struct {
                 self.advance(); // skip '#run'
                 const inner = try self.parseExpr();
                 return try self.createNode(start, .{ .comptime_expr = .{ .expr = inner } });
-            },
-            .hash_caller_location => {
-                self.advance();
-                return try self.createNode(start, .{ .caller_location = {} });
             },
             .hash_objc_call, .hash_jni_call, .hash_jni_static_call => {
                 return try self.parseFfiIntrinsicCall();

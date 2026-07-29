@@ -29,7 +29,6 @@ SliceRaw        :: core.SliceRaw;
 StringRaw       :: core.StringRaw;
 ProtocolRaw     :: core.ProtocolRaw;
 AnyRaw          :: core.AnyRaw;
-Source_Location :: core.Source_Location;
 
 // --- Type system & reflection intrinsics ---
 // (no aliases: an intrinsic is a compiler feature, not a library export. The

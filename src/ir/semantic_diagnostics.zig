@@ -95,7 +95,10 @@ pub const UnknownTypeChecker = struct {
                 if (!contracts.isAtName(name)) continue;
                 const file = decl.source_file orelse self.main_file;
                 const contract = contracts.find(name);
-                if (contract != null and contracts.declaredIn(self.alloc, contract.?, file, roots)) continue;
+                if (contract != null and contracts.declaredIn(self.alloc, contract.?, file, roots)) {
+                    self.checkContractShape(decl, contract.?, file);
+                    continue;
+                }
                 if (file) |f| self.diagnostics.current_source_file = f;
                 const span = ast.Span{ .start = decl.span.start, .end = decl.span.start + @as(u32, @intCast(name.len)) };
                 if (contract) |c| {
@@ -466,7 +469,7 @@ pub const UnknownTypeChecker = struct {
             .many_pointer_type_expr,
             .optional_type_expr,
             .error_type_expr,
-            .caller_location,
+            .caller_site,
             .error_directive,
             .pack_index_type_expr,
             .comptime_pack_ref,
@@ -1164,6 +1167,50 @@ pub const UnknownTypeChecker = struct {
     fn checkDeclName(self: UnknownTypeChecker, node: *const Node, name: []const u8, is_raw: bool) void {
         const span = ast.Span{ .start = node.span.start, .end = node.span.start + @as(u32, @intCast(name.len)) };
         self.checkBindingName(name, span, is_raw);
+    }
+
+    /// Bootstrap check for the canonical declaration of a contract: the
+    /// compiler builds and reads these fields positionally, so a stdlib that
+    /// renamed, reordered, retyped, or dropped one must say so here rather than
+    /// mis-lower every construction of it.
+    fn checkContractShape(
+        self: UnknownTypeChecker,
+        decl: *const Node,
+        contract: contracts.Contract,
+        file: ?[]const u8,
+    ) void {
+        if (contract.fields.len == 0) return;
+        const saved = self.diagnostics.current_source_file;
+        defer self.diagnostics.current_source_file = saved;
+        if (file) |f| self.diagnostics.current_source_file = f;
+        const span = ast.Span{ .start = decl.span.start, .end = decl.span.start + @as(u32, @intCast(contract.name.len)) };
+        if (decl.data != .struct_decl) {
+            self.diagnostics.addFmt(.err, span, "'{s}' must be declared as a struct", .{contract.name});
+            return;
+        }
+        const sd = decl.data.struct_decl;
+        if (sd.field_names.len != contract.fields.len) {
+            self.diagnostics.addFmt(.err, span, "'{s}' must declare exactly {d} field{s}, not {d}", .{
+                contract.name,
+                contract.fields.len,
+                if (contract.fields.len == 1) "" else "s",
+                sd.field_names.len,
+            });
+            return;
+        }
+        for (contract.fields, 0..) |want, i| {
+            if (!std.mem.eql(u8, sd.field_names[i], want.name)) {
+                self.diagnostics.addFmt(.err, span, "'{s}' field {d} must be '{s}', not '{s}' — the compiler reads these fields in order", .{
+                    contract.name, i, want.name, sd.field_names[i],
+                });
+                return;
+            }
+            const spelled = if (sd.field_types[i].data == .type_expr) sd.field_types[i].data.type_expr.name else "";
+            if (!std.mem.eql(u8, spelled, want.type_name)) {
+                self.diagnostics.addFmt(.err, span, "'{s}.{s}' must be '{s}'", .{ contract.name, want.name, want.type_name });
+                return;
+            }
+        }
     }
 
     /// The name a module-scope declaration BINDS, or null for a node that

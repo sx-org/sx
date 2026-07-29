@@ -2,7 +2,7 @@
 // its rows share one occurrence group, so a call site vanishing between
 // builds is indistinguishable from misbinding (2 -> 1 instances) — K2b
 // panics at the flip, and the fix-it offers BOTH repairs: key the rows,
-// or give the wrapper `site: SiteId = site_of(#caller_location)` so each
+// or give the wrapper `site: SiteId = site_of(@caller)` so each
 // call site becomes its own scope (the 1914 titled_box shape, which
 // makes the same removal legal).
 #import "modules/std.sx";

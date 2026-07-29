@@ -1842,7 +1842,6 @@ pub const Server = struct {
             .hash_property,
             .hash_get,
             .hash_set,
-            .hash_caller_location,
             .hash_context_extend,
             => ST.keyword,
 

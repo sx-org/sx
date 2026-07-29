@@ -1286,7 +1286,7 @@ pub const Analyzer = struct {
             .try_expr => |te| {
                 try self.analyzeNode(te.operand);
             },
-            .caller_location => {}, // leaf marker (ERR E4.1b) — no sub-nodes
+            .caller_site => {}, // leaf marker — no sub-nodes
             .error_directive => {}, // leaf marker — module-scope expansion owns the emit
             .catch_expr => |ce| {
                 try self.analyzeNode(ce.operand);
@@ -1790,7 +1790,7 @@ pub fn findNodeAtOffset(node: *Node, offset: u32) ?*Node {
             if (findNodeAtOffset(tb.lambda, offset)) |found| return found;
         },
         .break_expr, .continue_expr => {},
-        .caller_location => {},
+        .caller_site => {},
         .error_directive => {},
         .assignment => |asgn| {
             if (findNodeAtOffset(asgn.target, offset)) |found| return found;

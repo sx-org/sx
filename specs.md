@@ -3597,6 +3597,45 @@ Defaults are only consulted for **trailing** missing positional args; once
 a position is provided, all earlier positions must also be provided. There
 is no named-argument syntax for skipping middle defaults.
 
+#### `@caller`
+
+`@caller` is a compiler-provided value legal **only inside a parameter's
+default expression**, where it resolves to the CALL site's `@SourceSite`.
+Written anywhere else there is no caller to name, and it is refused.
+
+```sx
+report :: (message: string, site: @SourceSite = @caller) {
+    print("{}:{}:{}: {}\n", site.file, site.line, site.column, message);
+}
+
+report("invalid width");        // site = this line, in this declaration
+```
+
+A caller may pass the parameter explicitly, which is how a wrapper forwards
+its own site inward and how a test supplies a fixed one:
+
+```sx
+report("from a test", @SourceSite{ file = "test.sx", declaration = "tests.report", line = 20 });
+```
+
+The fields the compiler fills:
+
+| Field | Value |
+|---|---|
+| `file` | the call's module import path, independent of the working directory |
+| `declaration` | fully qualified nearest named declaration containing the call; a generic specialization reports its **template**'s path |
+| `line`, `column` | the call's one-based source position |
+| `ordinal` | zero-based lexical occurrence within that declaration |
+| `id` | compile-time fingerprint of (`file`, `declaration`, `ordinal`) |
+
+`ordinal` and `id` are **lexical**, so a call in a loop reports one site
+however many times it runs, and they are unchanged by instantiation order,
+optimization level, or edits to unrelated declarations. A library that needs
+per-iteration identity combines the site with an occurrence count or an
+explicit key. `id` is exactly `source_site_key_id(source_site_key(site))` —
+`modules/std/source_site.sx` states that computation in ordinary sx, and the
+compiler must agree with it.
+
 ### Enum Definition
 
 ```sx

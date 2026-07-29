@@ -40,12 +40,12 @@ main :: () -> i32 {
     if a.one.two.three.engine.choose(.chosen) != 91 { return 8; }
     if b.one.two.three.engine.choose(.chosen) != 102 { return 9; }
 
-    // The marker is nested in a declaration-authored struct-literal default:
-    // names resolve in the engine module, while location remains this call.
+    // `@caller` is nested in a declaration-authored struct-literal default:
+    // names resolve in the engine module, while the site remains this call.
     aloc := a.one.two.three.engine.caller();
     bloc := b.one.two.three.engine.caller();
-    if aloc.func != "main" or bloc.func != "main" { return 10; }
+    if aloc.declaration != "examples.modules.0911-modules-deep-qualified-call-identity.main" or bloc.declaration != aloc.declaration { return 10; }
     if aloc.file != "examples/modules/0911-modules-deep-qualified-call-identity.sx" or bloc.file != aloc.file { return 11; }
-    if aloc.line != 45 or aloc.col != 13 or bloc.line != 46 or bloc.col != 13 { return 15; }
+    if aloc.line != 45 or aloc.column != 13 or bloc.line != 46 or bloc.column != 13 { return 15; }
     0
 }

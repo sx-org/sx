@@ -74,11 +74,11 @@ pub const Node = struct {
         try_expr: TryExpr,
         catch_expr: CatchExpr,
         onfail_stmt: OnFailStmt,
-        /// `#caller_location` — a marker that, as a parameter default, resolves
-        /// to a `Source_Location` of the call site (ERR E4.1b). The node's
-        /// `span`/`source_file` carry the location (rewritten to the call site
-        /// during default expansion). No payload.
-        caller_location: void,
+        /// `@caller` — a marker legal only inside a parameter's default
+        /// expression, where it resolves to the CALL site's `@SourceSite`. The
+        /// node's `span`/`source_file` carry that site (rewritten during default
+        /// expansion). No payload.
+        caller_site: void,
         pack_index_type_expr: PackIndexTypeExpr,
         comptime_pack_ref: ComptimePackRef,
         force_unwrap: ForceUnwrap,

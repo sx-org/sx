@@ -5,6 +5,7 @@
 // distinct, the same site in a loop hashes the same, and the chain
 // restores after every scope.
 #import "modules/std.sx";
+#import "modules/std/core.sx";
 #import "modules/ui/compose.sx";
 #import "modules/ui/view.sx";
 
@@ -32,7 +33,7 @@ record_hash :: () {
     g_count += 1;
 }
 
-wrapper :: (site: SiteId = site_of(#caller_location)) {
+wrapper :: (site: SiteId = site_of(@caller)) {
     context.ui.scope_at(site, record_hash);
 }
 

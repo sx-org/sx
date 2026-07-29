@@ -10,6 +10,7 @@
 // value position. Prefer not to `place()` a dual component's returned View
 // again under a sink (that would emit twice); the type system does not refuse it.
 #import "modules/std.sx";
+#import "modules/std/core.sx";   // @SourceSite
 #import "modules/std/mem.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/view.sx";
@@ -34,7 +35,7 @@ Sink :: struct ($T: Type) {
 // --- Identity: scope sites and keys (K1) ---
 
 // A comptime per-call-site constant: containers declare
-// `site: SiteId = site_of(#caller_location)` so every CALL SITE becomes its
+// `site: SiteId = site_of(@caller)` so every CALL SITE becomes its
 // own scope segment — no keys needed for repeated wrappers, and K2 messages
 // print file:line natively. The site param sits BEFORE the closure param
 // (T1 binds a trailing block to the LAST param); named arguments reach it
@@ -44,7 +45,7 @@ SiteId :: struct {
     line: i32;
 }
 
-site_of :: (loc: Source_Location) -> SiteId => .{ file = loc.file, line = loc.line };
+site_of :: (site: @SourceSite) -> SiteId => .{ file = site.file, line = site.line };
 
 // Dynamic identity for list items, conditional presence, and K3
 // discriminators. Compare with `eq` — payload-enum `==` is tag-only by spec
@@ -220,7 +221,7 @@ ElementCapture :: struct {
 // Derive the calling element's id inside a build. Same-site siblings
 // disambiguate by occurrence (K1's last tuple element) — the id is
 // stable across rebuilds as long as the element's identity tuple is.
-element_id :: (site: SiteId = site_of(#caller_location)) -> ElementId {
+element_id :: (site: SiteId = site_of(@caller)) -> ElementId {
     if context.ui == null {
         print("panic: element_id used outside a frame build\n");
         process.exit(1);
@@ -408,7 +409,7 @@ fold_hstack :: (items: []View, spacing: f32) -> HStack {
 // forwarded Mod styles OUTSIDE the component's surface (doctrine in
 // modifier.sx — content padding belongs to the component's style).
 
-vstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location), content: Closure()) -> View {
+vstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(@caller), content: Closure()) -> View {
     s := Sink(View){};
     push .{ ui_sink = *s } {
         context.ui.scope_at(site, content);
@@ -416,7 +417,7 @@ vstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location),
     place(fold_vstack(s.items.items, spacing), m)
 }
 
-hstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(#caller_location), content: Closure()) -> View {
+hstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(@caller), content: Closure()) -> View {
     s := Sink(View){};
     push .{ ui_sink = *s } {
         context.ui.scope_at(site, content);
@@ -440,7 +441,7 @@ ui_is_focused :: (id: u64) -> bool {
     false
 }
 
-button :: (label: string, m: Mod = .{}, site: SiteId = site_of(#caller_location), on_tap: ?Closure() = null) -> View {
+button :: (label: string, m: Mod = .{}, site: SiteId = site_of(@caller), on_tap: ?Closure() = null) -> View {
     eid := element_id(site);
     place(Button{
         label = label,

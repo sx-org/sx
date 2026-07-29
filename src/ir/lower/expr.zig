@@ -3896,7 +3896,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
 
         .try_expr => |te| self.lowerTry(te.operand, node.span),
         .catch_expr => |ce| self.lowerCatch(&ce, node.span),
-        .caller_location => self.lowerCallerLocation(node),
+        .caller_site => self.lowerCallerSite(node),
         .asm_expr => |ae| self.lowerAsmExpr(&ae, node.span),
         // `#error("msg");` that survived comptime pruning into live code —
         // fire at lower time (specs: the directive fires when REACHED; a

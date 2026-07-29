@@ -8,6 +8,7 @@
 // containers; a wrapper WITH the site param repeats keylessly and one
 // call site's removal never shifts another's state).
 #import "modules/std.sx";
+#import "modules/std/core.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/stacks.sx";
@@ -35,7 +36,7 @@ two_rows :: () {
 }
 
 // A wrapper WITH the site param: every call site is its own scope.
-titled_box :: (site: SiteId = site_of(#caller_location), content: Closure()) -> View {
+titled_box :: (site: SiteId = site_of(@caller), content: Closure()) -> View {
     vstack(0.0, site = site) {
         content();
     }

@@ -3922,8 +3922,11 @@ pub fn reflectionErrorSentinel(self: *Lowering, name: []const u8) Ref {
 
 /// Clone one declared default into this call. Ordinary defaults carry the
 /// function author's source so `lowerExpr` resolves their bare names under the
-/// signature's authority. `#caller_location` is the deliberate exception: it
-/// is re-authored at the call site, preserving caller file/span/function.
+/// signature's authority. `@caller` is the deliberate exception: it is
+/// re-authored at the call site, preserving caller file/span/function.
+///
+/// Either way the call-site provenance is retained, because a `@caller` nested
+/// inside a larger default has no other route to the caller's identity.
 fn defaultArgAtCall(
     self: *Lowering,
     dflt: *const Node,
@@ -3932,18 +3935,19 @@ fn defaultArgAtCall(
 ) ?*Node {
     const n = self.alloc.create(Node) catch return null;
     n.* = dflt.*;
-    if (dflt.data == .caller_location) {
+    const caller_site = lower.DefaultCallSite{
+        .source = call_site.source_file orelse self.current_source_file,
+        .span = call_site.span,
+        .caller_func = self.builder.func,
+        .node = call_site,
+    };
+    if (dflt.data == .caller_site) {
         n.span = call_site.span;
         n.source_file = call_site.source_file orelse self.current_source_file;
-    } else {
-        const caller_site = lower.DefaultCallSite{
-            .source = call_site.source_file orelse self.current_source_file,
-            .span = call_site.span,
-            .caller_func = self.builder.func,
-        };
-        if (author_source orelse self.current_source_file) |src| n.source_file = src;
-        self.authored_call_defaults.put(n, caller_site) catch return null;
+    } else if (author_source orelse self.current_source_file) |src| {
+        n.source_file = src;
     }
+    self.authored_call_defaults.put(n, caller_site) catch return null;
     return n;
 }
 

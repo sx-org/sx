@@ -1409,7 +1409,7 @@ fn publishTags(self: *Lowering) void {
 /// the hot path. The failure arm is cold: the soft form yields `null`
 /// outright; the panic form materializes the `any` view there (the only
 /// table read) and re-enters `__sx_cast_or_panic`, so the message, the
-/// `#caller_location`, and the exit path stay byte-identical to the other
+/// `@caller`, and the exit path stay byte-identical to the other
 /// kinds. The receiver is lowered exactly once; the cold call sees it
 /// through a synthetic scope binding, never a re-evaluation. The graceful
 /// (`try`) temperament still routes through `__sx_cast_assert`'s any view

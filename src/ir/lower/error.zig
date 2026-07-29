@@ -5,6 +5,8 @@ const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 const mod_mod = @import("../module.zig");
 const errors = @import("../../errors.zig");
+const contracts = @import("../../contracts.zig");
+const source_site = @import("../../source_site.zig");
 const ErrorAnalysis = @import("../error_analysis.zig").ErrorAnalysis;
 
 const TypeId = types.TypeId;
@@ -631,20 +633,25 @@ pub fn exprIsFailable(self: *Lowering, node: *const Node) bool {
 /// callees, propagation from a value-carrying caller, and `try` inside an
 /// `or` chain need the error-channel tuple ABI / fallback routing — those
 /// land in E1.4b/E2, so we bail loudly here.
-/// Synthesize a `Source_Location` value for a `#caller_location` marker
-/// (ERR E4.1b). The node's `span`/`source_file` are the CALL site (rewritten
-/// by `expandCallDefaults`); resolve them to file / line:col against the
-/// source text and stamp the enclosing (caller) function name.
-pub fn lowerCallerLocation(self: *Lowering, node: *const Node) Ref {
-    const sl_tid = self.module.types.findByName(self.module.types.internString("Source_Location")) orelse {
-        if (self.diagnostics) |d| d.addFmt(.err, node.span, "`#caller_location` needs `Source_Location` (from std.sx) in scope", .{});
+/// Build the `@SourceSite` a `@caller` marker stands for.
+///
+/// `file` / `declaration` / `ordinal` / `id` come from the source-site index,
+/// which keyed them off the CALL expression — so a generic specialization
+/// reports its template's path, and a loop reports one site however many times
+/// it runs. `line` / `column` are the call span resolved against the source
+/// text, one-based, and are the only fields that are position-dependent.
+pub fn lowerCallerSite(self: *Lowering, node: *const Node) Ref {
+    const tid = self.sourceSiteType() orelse {
+        if (self.diagnostics) |d| {
+            const contract = contracts.find(source_site.contract_name).?;
+            d.addFmt(.err, node.span, "'@caller' needs '{s}' in scope — #import \"{s}\"", .{ source_site.contract_name, contract.module });
+        }
         return self.builder.constInt(0, .void);
     };
-    // A caller-location marker may be nested inside a larger declared default
-    // expression. That root evaluates under the callee's lexical source, so
-    // consult the separately retained call-site provenance before the node /
-    // current source. A marker which is itself the whole default was cloned
-    // directly onto the call site and reaches the same fallback path.
+    // The marker may sit inside a larger declared default, whose root evaluates
+    // under the callee's lexical source; the retained provenance is the only
+    // place the caller's identity survives that. A marker that IS the whole
+    // default was re-authored onto the call site and reads the same way.
     const call_site = if (self.active_default_call_site) |site|
         if (site.caller_func == self.builder.func) site else null
     else
@@ -656,17 +663,51 @@ pub fn lowerCallerLocation(self: *Lowering, node: *const Node) Ref {
     const location_span = if (call_site) |site| site.span else node.span;
     const src = self.sourceForFile(file);
     const loc = errors.SourceLoc.compute(src, location_span.start);
-    const func_name = self.currentFunctionName();
+
+    const site = callerSiteIdentity(self, file, if (call_site) |cs| cs.node else null);
     var fields = [_]Ref{
-        self.builder.constString(self.module.types.internString(file)),
+        self.builder.constString(self.module.types.internString(site.file)),
+        self.builder.constString(self.module.types.internString(site.declaration)),
         self.builder.constInt(@intCast(loc.line), .i32),
         self.builder.constInt(@intCast(loc.col), .i32),
-        self.builder.constString(self.module.types.internString(func_name)),
+        self.builder.constInt(@bitCast(site.ordinal), .u64),
+        self.builder.constInt(@bitCast(site.id), .u64),
     };
-    return self.builder.emit(.{ .struct_init = .{ .fields = self.alloc.dupe(Ref, &fields) catch unreachable } }, sl_tid);
+    return self.builder.emit(.{ .struct_init = .{ .fields = self.alloc.dupe(Ref, &fields) catch unreachable } }, tid);
+}
+
+/// The indexed identity of the call `node`, or — for a call the site pass never
+/// saw (a synthesized one) — the enclosing declaration at ordinal 0, so the
+/// site still names where it came from.
+fn callerSiteIdentity(self: *Lowering, file: []const u8, node: ?*const Node) source_site.Site {
+    if (node) |n| {
+        if (self.site_index) |idx| {
+            if (idx.get(n)) |site| return site;
+        }
+    }
+    const module_path = source_site.normalizeModulePath(file, self.stdlib_paths);
+    const prefix = source_site.modulePrefix(self.alloc, module_path) catch module_path;
+    const func = self.currentFunctionName();
+    const declaration = if (func.len == 0)
+        prefix
+    else
+        std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ prefix, func }) catch prefix;
+    return .{
+        .file = module_path,
+        .declaration = declaration,
+        .ordinal = 0,
+        .id = source_site.computeId(module_path, declaration, 0),
+    };
 }
 
 /// The source text for `file`, via the diagnostics' file→source map (which
+/// The registered `@SourceSite` type. Looked up by the registry's contract
+/// name, not a bare spelling, so the type a `@caller` builds is the one the
+/// canonical declaration registered.
+pub fn sourceSiteType(self: *Lowering) ?TypeId {
+    return self.module.types.findByName(self.module.types.internString(source_site.contract_name));
+}
+
 /// includes the main file). Empty if unavailable — line:col then degrade to
 /// 1:1 rather than crash.
 pub fn sourceForFile(self: *Lowering, file: []const u8) []const u8 {
@@ -678,7 +719,7 @@ pub fn sourceForFile(self: *Lowering, file: []const u8) []const u8 {
 }
 
 /// Name of the function currently being lowered (the caller, at a
-/// `#caller_location` site), or "" outside any function.
+/// `@caller` site), or "" outside any function.
 pub fn currentFunctionName(self: *Lowering) []const u8 {
     const fid = self.builder.func orelse return "";
     return self.module.types.getString(self.module.functions.items[@intFromEnum(fid)].name);

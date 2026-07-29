@@ -108,7 +108,6 @@ const directive_whitelist = [_][]const u8{
     "#property",
     "#get",
     "#set",
-    "#caller_location",
 };
 
 fn isWhitelistedDirective(word: []const u8) bool {

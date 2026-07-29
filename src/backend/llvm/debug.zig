@@ -14,7 +14,7 @@ const Span = ir_inst.Span;
 /// `DIBuilder` lifecycle, the compile unit, per-function `DISubprogram` scopes,
 /// and per-instruction `DILocation`s. The mutable DI state (`di_builder`/
 /// `di_cu`/`di_files`/`di_scope`/`current_func_file`) + the shared source map
-/// (`import_sources`/`main_file`, also read by `#caller_location`) stay on
+/// (`import_sources`/`main_file`, also read by `@caller`) stay on
 /// `LLVMEmitter`; this reads/writes them via `self.e.*`. `LLVMEmitter.emit`
 /// drives the pass order and calls in via `self.debugInfo()`.
 pub const DebugInfo = struct {

@@ -135,7 +135,6 @@ pub const Lexer = struct {
                 .{ "#property", Tag.hash_property },
                 .{ "#get", Tag.hash_get },
                 .{ "#set", Tag.hash_set },
-                .{ "#caller_location", Tag.hash_caller_location },
                 .{ "#context_extend", Tag.hash_context_extend },
             };
             inline for (directives) |d| {

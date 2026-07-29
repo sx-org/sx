@@ -5,7 +5,7 @@ error: use_state payload may not contain slices — use use_state_with under the
    |             ^^^^^^^^^
 
 note: raised by '#error' here
-  --> library/modules/ui/store.sx:39:21
+  --> library/modules/ui/store.sx:40:21
    |
-39 |         case slice: #error("use_state payload may not contain slices — use use_state_with under the entry allocator");
+40 |         case slice: #error("use_state payload may not contain slices — use use_state_with under the entry allocator");
    |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

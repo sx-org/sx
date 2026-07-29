@@ -109,7 +109,7 @@ pub const ExprTyper = struct {
                 }
                 break :blk .unresolved;
             },
-            .caller_location => self.l.module.types.findByName(self.l.module.types.internString("Source_Location")) orelse .unresolved,
+            .caller_site => self.l.sourceSiteType() orelse .unresolved,
             .if_expr => |ie| {
                 // If-else types as its branches' unified type. A `noreturn`
                 // branch (one that diverges — `return` / `raise` / `break` /

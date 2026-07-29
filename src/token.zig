@@ -152,7 +152,6 @@ pub const Tag = enum {
     hash_property, // `#property[(modifier, ...)]` field directive — synthesizes getter/setter dispatch (M2.2)
     hash_get, // `name :: (self) -> R #get => expr;` — a no-paren property accessor method (read via field syntax)
     hash_set, // `name :: (self, value) #set { ... }` — the write counterpart of #get (`obj.name = rhs` dispatches here)
-    hash_caller_location, // `#caller_location` — as a param default, synthesizes the call site's Source_Location (ERR E4.1b)
     hash_jni_env, // `#jni_env(env) { body }` block-form env-scoping intrinsic
     hash_jni_main, // `#jni_main #jni_class(...) { ... }` — class is the launchable Android Activity
     hash_context_extend, // `#context_extend name: Type = default;` — top-level Context field declaration

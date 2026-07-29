@@ -28,6 +28,9 @@ pub const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
 pub const FNV_PRIME: u64 = 0x100000001b3;
 pub const VERSION = "sx.source-site.v1";
 
+/// The stdlib contract this pass describes.
+pub const contract_name = "@SourceSite";
+
 /// The version string's own domain separation, folded once.
 pub const Hasher = struct {
     state: u64 = FNV_OFFSET_BASIS,
@@ -104,19 +107,15 @@ pub fn computeId(file: []const u8, declaration: []const u8, ordinal: u64) u64 {
 ///
 /// A library module resolves under one of the roots the compiler searched, so
 /// stripping that root yields exactly the import path (`modules/std/core.sx`)
-/// and the result no longer depends on where the compiler was invoked from.
-/// A file under no root keeps its own spelling, made relative to the
-/// compilation root's directory for the same reason.
+/// whether the library sits in a dev tree or an install prefix. Every other
+/// file keeps the spelling the compiler already keys it by — that is the path
+/// it was named with, and the one its diagnostics print.
 pub fn normalizeModulePath(
     file: []const u8,
     stdlib_roots: []const []const u8,
-    main_dir: ?[]const u8,
 ) []const u8 {
     for (stdlib_roots) |root| {
         if (stripDirPrefix(file, root)) |rel| return rel;
-    }
-    if (main_dir) |dir| {
-        if (stripDirPrefix(file, dir)) |rel| return rel;
     }
     return file;
 }
@@ -190,8 +189,6 @@ pub const SiteIndex = struct {
 pub const Options = struct {
     /// Library roots import resolution searched, for normalizing module paths.
     stdlib_roots: []const []const u8 = &.{},
-    /// Directory of the compilation's main file.
-    main_dir: ?[]const u8 = null,
     /// Module path for declarations the parser left unstamped (the main file).
     main_file: ?[]const u8 = null,
 };
@@ -243,7 +240,7 @@ pub fn build(alloc: std.mem.Allocator, decls: []const *const Node, opts: Options
     var root = Builder{ .alloc = alloc, .opts = opts, .index = &index };
     for (decls) |decl| {
         const raw_file = decl.source_file orelse opts.main_file orelse "";
-        const module_path = normalizeModulePath(raw_file, opts.stdlib_roots, opts.main_dir);
+        const module_path = normalizeModulePath(raw_file, opts.stdlib_roots);
         root.file = module_path;
         root.declaration = try modulePrefix(alloc, module_path);
         try walkDecl(&root, decl);
@@ -634,7 +631,7 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
         .framework_decl,
         .ufcs_alias,
         .error_type_expr,
-        .caller_location,
+        .caller_site,
         .pack_index_type_expr,
         .comptime_pack_ref,
         .null_literal,

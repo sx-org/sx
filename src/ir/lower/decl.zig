@@ -19,6 +19,7 @@ const CallResolver = @import("../calls.zig").CallResolver;
 const ProtocolResolver = @import("../protocols.zig").ProtocolResolver;
 const ErrorFlow = @import("../error_flow.zig").ErrorFlow;
 const semantic_diagnostics = @import("../semantic_diagnostics.zig");
+const source_site = @import("../../source_site.zig");
 
 const TypeId = types.TypeId;
 const StringId = types.StringId;
@@ -282,6 +283,20 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
         };
         checker.run(decls);
     }
+    // Pass 1f': index every source site, so `@caller` can read a call's
+    // (file, declaration, ordinal, id) without consulting lowering state — the
+    // index is a function of the parsed declarations alone, which is what makes
+    // a site stable across instantiation order and optimization level.
+    if (source_site.build(self.alloc, decls, .{
+        .stdlib_roots = self.stdlib_paths,
+        .main_file = self.main_file,
+    })) |built| {
+        const owned = self.alloc.create(source_site.SiteIndex) catch null;
+        if (owned) |p| {
+            p.* = built;
+            self.site_index = p;
+        }
+    } else |_| {}
     // Pass 1g: reject infinitely-sized types — a nominal aggregate that contains
     // ITSELF (or a mutual peer) BY VALUE has no finite layout and would otherwise
     // infinite-loop `typeSizeBytes` into a stack overflow during body lowering.
