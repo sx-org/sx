@@ -1,0 +1,46 @@
+// The extended generic-bound grammar (specs: Generic bounds). A bound is a
+// protocol head with an optional type-argument list; the head may be an `@`
+// name; an argument may introduce a binder carrying its own bounds; and the
+// bound binder may sit under a type constructor.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+// The binder is introduced UNDER the pointer constructor, against the shipped
+// parameterized constraint protocol `BuildSink(P)`.
+Tally :: struct { seen: i32 = 0; }
+
+count_into :: (sink: *$S/BuildSink(Drawable), n: i32) -> i32 {
+    sink.seen += n;
+    sink.seen
+}
+
+// Bare multi-bound — the shipped spelling, unchanged.
+bare :: (a: $T/Eq/Hashable) -> string { "bare" }
+
+// `@` heads: open type arg, fixed type arg, nested binder with its own bound.
+open   :: (v: $I/@Init($T)) -> string { "open" }
+fixed  :: (v: $I/@Init(Drawable)) -> string { "fixed" }
+nested :: (v: $I/@Init($V/Drawable)) -> string { "nested" }
+block  :: (v: $B/@BuildBlock(Drawable)) -> string { "block" }
+sunk   :: (s: *$S/@BuildSink(Drawable)) -> string { "sunk" }
+
+// The explicit binder form takes the same bounds.
+lift :: ($T: Type/@Init($V/Drawable), x: T) -> T { x }
+
+main :: () -> i32 {
+    l := Label{ text = "hi" };
+    t := Tally{};
+    print("{} {} {} {} {} {}\n", bare(1), open(l), fixed(l), nested(l), block(l), sunk(*t));
+    print("count {} {}\n", count_into(*t, 3), count_into(*t, 4));
+    print("lift {} {}\n", lift(i32, 5), l.draw());
+    0
+}

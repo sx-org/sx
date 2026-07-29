@@ -1,0 +1,5 @@
+error: expected protocol name after '/'
+  --> examples/diagnostics/2021-diagnostics-bound-missing-head.sx:5:17
+   |
+ 5 | first :: (a: $T/) -> i32 { 1 }
+   |                 ^

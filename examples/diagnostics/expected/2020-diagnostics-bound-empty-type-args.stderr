@@ -1,0 +1,5 @@
+error: the bound 'Eq' has an empty type-argument list — write 'Eq' for the bare head, or give it arguments
+  --> examples/diagnostics/2020-diagnostics-bound-empty-type-args.sx:9:18
+   |
+ 9 | same :: (a: $T/Eq(), b: T) -> bool { true }
+   |                  ^

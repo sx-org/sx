@@ -664,17 +664,7 @@ pub const Parser = struct {
                     .index = idx_val,
                 } });
             }
-            // Parse optional protocol constraints: $T/Eq/Hashable
-            var constraints = std.ArrayList([]const u8).empty;
-            while (self.current.tag == .slash) {
-                self.advance(); // skip '/'
-                if (self.current.tag != .identifier) {
-                    return self.fail("expected protocol name after '/'");
-                }
-                try constraints.append(self.allocator, self.tokenSlice(self.current));
-                self.advance();
-            }
-            const pc = try constraints.toOwnedSlice(self.allocator);
+            const pc = try self.parseBoundList();
             return try self.createNode(start, .{ .type_expr = .{ .name = name, .is_generic = true, .protocol_constraints = pc } });
         }
         // Function type: (ParamTypes) -> ReturnType
@@ -964,6 +954,58 @@ pub const Parser = struct {
         return self.fail("expected type name");
     }
 
+    /// The bounds trailing a type-variable binder: `('/' BoundExpr)*`.
+    fn parseBoundList(self: *Parser) anyerror![]const *Node {
+        var bounds = std.ArrayList(*Node).empty;
+        while (self.current.tag == .slash) {
+            self.advance(); // skip '/'
+            try bounds.append(self.allocator, try self.parseBoundExpr());
+        }
+        return try bounds.toOwnedSlice(self.allocator);
+    }
+
+    /// One generic bound (specs: Generic bounds):
+    /// `ProtocolHead [ '(' TypeExpr (',' TypeExpr)* ')' ]`, where the head is a
+    /// bare name or an `@` name. The head is an ordinary name reference, NOT
+    /// the closed compiler-formed set that `parseCompilerFormedType` guards, so
+    /// an `@` head naming no declaration resolves — and fails — in sema. Type
+    /// arguments are full type expressions, so a bound argument may introduce
+    /// its own binder with its own bounds (`@Init($V/P)`).
+    fn parseBoundExpr(self: *Parser) anyerror!*Node {
+        const start = self.current.loc.start;
+        if (self.current.tag != .identifier and self.current.tag != .at_identifier) {
+            return self.fail("expected protocol name after '/'");
+        }
+        const head = self.tokenSlice(self.current);
+        self.advance();
+        if (self.current.tag != .l_paren) {
+            return try self.createNode(start, .{ .type_expr = .{ .name = head } });
+        }
+        const l_paren_loc = self.current.loc;
+        self.advance(); // skip '('
+        var args = std.ArrayList(*Node).empty;
+        while (self.current.tag != .r_paren and self.current.tag != .eof) {
+            if (args.items.len > 0) {
+                try self.expect(.comma);
+                if (self.current.tag == .r_paren) break;
+            }
+            // A bound argument may itself bind: `@Init($V/P)`.
+            try args.append(self.allocator, try self.parseTypeExpr());
+        }
+        if (args.items.len == 0) {
+            return self.failAt(l_paren_loc, try std.fmt.allocPrint(
+                self.allocator,
+                "the bound '{s}' has an empty type-argument list — write '{s}' for the bare head, or give it arguments",
+                .{ head, head },
+            ));
+        }
+        try self.expect(.r_paren);
+        return try self.createNode(start, .{ .parameterized_type_expr = .{
+            .name = head,
+            .args = try args.toOwnedSlice(self.allocator),
+        } });
+    }
+
     /// The compiler-formed types (spec §4): `@Init(T)` and `@BuildBlock(P)`. The
     /// `@` names are a closed compiler-owned set — a module may spell one in a
     /// parameter type but can never declare another, because `at_identifier` is
@@ -1203,19 +1245,11 @@ pub const Parser = struct {
                 self.advance();
                 try self.expect(.colon);
                 const constraint = try self.parseTypeExpr();
-                // Parse optional protocol constraints: $T: Type/Eq/Hashable
-                var pc_list = std.ArrayList([]const u8).empty;
-                if (constraint.data == .type_expr and std.mem.eql(u8, constraint.data.type_expr.name, "Type")) {
-                    while (self.current.tag == .slash) {
-                        self.advance(); // skip '/'
-                        if (self.current.tag != .identifier) {
-                            return self.fail("expected protocol name after '/'");
-                        }
-                        try pc_list.append(self.allocator, self.tokenSlice(self.current));
-                        self.advance();
-                    }
-                }
-                const pc = try pc_list.toOwnedSlice(self.allocator);
+                // Bounds on the explicit form: `$T: Type/Eq/Hashable`.
+                const pc: []const *Node = if (constraint.data == .type_expr and std.mem.eql(u8, constraint.data.type_expr.name, "Type"))
+                    try self.parseBoundList()
+                else
+                    &.{};
                 try type_params.append(self.allocator, .{ .name = param_name, .constraint = constraint, .protocol_constraints = pc, .is_variadic = is_variadic });
             }
             try self.expect(.r_paren);
@@ -2170,17 +2204,8 @@ pub const Parser = struct {
             if (is_ct_param and param_type.data == .type_expr) {
                 const constraint_name = param_type.data.type_expr.name;
                 if (std.mem.eql(u8, constraint_name, "Type")) {
-                    // Parse optional protocol constraints: $T: Type/Eq/Hashable
-                    var constraints = std.ArrayList([]const u8).empty;
-                    while (self.current.tag == .slash) {
-                        self.advance(); // skip '/'
-                        if (self.current.tag != .identifier) {
-                            return self.fail("expected protocol name after '/'");
-                        }
-                        try constraints.append(self.allocator, self.tokenSlice(self.current));
-                        self.advance();
-                    }
-                    const pc = try constraints.toOwnedSlice(self.allocator);
+                    // Bounds on the explicit form: `$T: Type/Eq/Hashable`.
+                    const pc = try self.parseBoundList();
                     param_type.data = .{ .type_expr = .{ .name = param_name, .is_generic = true, .protocol_constraints = pc } };
                 } else {
                     is_comptime_param = true;
@@ -2273,10 +2298,10 @@ pub const Parser = struct {
                     if (!seen.contains(gen_name)) {
                         try seen.put(gen_name, {});
                         // Propagate protocol constraints from the TypeExpr if present
-                        const pc = if (param.type_expr.data == .type_expr)
+                        const pc: []const *Node = if (param.type_expr.data == .type_expr)
                             param.type_expr.data.type_expr.protocol_constraints
                         else
-                            &[_][]const u8{};
+                            &.{};
                         const type_constraint = self.createNode(param.type_expr.span.start, .{ .type_expr = .{ .name = "Type" } }) catch continue;
                         type_params.append(self.allocator, .{ .name = gen_name, .constraint = type_constraint, .protocol_constraints = pc }) catch {};
                     }

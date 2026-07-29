@@ -549,7 +549,8 @@ pub const ErrorSetDecl = struct {
 pub const StructTypeParam = struct {
     name: []const u8, // e.g. "N" or "T" (without $)
     constraint: *Node, // type_expr: "u32" for value param, "Type" for type param
-    protocol_constraints: []const []const u8 = &.{}, // e.g. ["Eq", "Hashable"] for $T/Eq/Hashable
+    /// Generic bounds — see `TypeExpr.protocol_constraints`.
+    protocol_constraints: []const *Node = &.{},
     /// `..$Ts: []Type` — a pack type-param binding the remaining type args as a
     /// sequence (must be last). Field types reference it via `(..$Ts)` etc.
     is_variadic: bool = false,
@@ -616,7 +617,12 @@ pub const Lambda = struct {
 pub const TypeExpr = struct {
     name: []const u8,
     is_generic: bool = false,
-    protocol_constraints: []const []const u8 = &.{}, // e.g. ["Eq", "Hashable"] for $T/Eq/Hashable
+    /// Generic bounds after the binder: `$T/Eq/Hashable`, `$I/@Init($V/P)`.
+    /// Each is one bound expression — a `type_expr` holding a bare protocol
+    /// head, or a `parameterized_type_expr` holding a head plus its type
+    /// arguments. The head may be an `@` name; type arguments are ordinary
+    /// type expressions and may introduce their own binders.
+    protocol_constraints: []const *Node = &.{},
     /// True when written as a backtick raw identifier in type position
     /// (`` `i2 ``). Such a reference is the LITERAL name `i2` used as a type —
     /// resolution skips the builtin/reserved classifier and looks up a
