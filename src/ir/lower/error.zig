@@ -685,7 +685,7 @@ fn callerSiteIdentity(self: *Lowering, file: []const u8, node: ?*const Node) sou
             if (idx.get(n)) |site| return site;
         }
     }
-    const module_path = source_site.normalizeModulePath(file, self.stdlib_paths);
+    const module_path = source_site.normalizeModulePath(file, self.stdlib_paths, self.mainDir());
     const prefix = source_site.modulePrefix(self.alloc, module_path) catch module_path;
     const func = self.currentFunctionName();
     const declaration = if (func.len == 0)
@@ -706,6 +706,15 @@ fn callerSiteIdentity(self: *Lowering, file: []const u8, node: ?*const Node) sou
 /// canonical declaration registered.
 pub fn sourceSiteType(self: *Lowering) ?TypeId {
     return self.module.types.findByName(self.module.types.internString(source_site.contract_name));
+}
+
+/// The compilation root: the main file's directory. `main_file` already came
+/// through `imports.canonicalizePath`, so this is spelled the way resolved
+/// module paths are.
+pub fn mainDir(self: *Lowering) ?[]const u8 {
+    const mf = self.main_file orelse return null;
+    const idx = std.mem.lastIndexOfScalar(u8, mf, '/') orelse return null;
+    return mf[0..idx];
 }
 
 /// includes the main file). Empty if unavailable — line:col then degrade to

@@ -44,8 +44,8 @@ main :: () -> i32 {
     // names resolve in the engine module, while the site remains this call.
     aloc := a.one.two.three.engine.caller();
     bloc := b.one.two.three.engine.caller();
-    if aloc.declaration != "examples.modules.0911-modules-deep-qualified-call-identity.main" or bloc.declaration != aloc.declaration { return 10; }
-    if aloc.file != "examples/modules/0911-modules-deep-qualified-call-identity.sx" or bloc.file != aloc.file { return 11; }
+    if aloc.declaration != "0911-modules-deep-qualified-call-identity.main" or bloc.declaration != aloc.declaration { return 10; }
+    if aloc.file != "0911-modules-deep-qualified-call-identity.sx" or bloc.file != aloc.file { return 11; }
     if aloc.line != 45 or aloc.column != 13 or bloc.line != 46 or bloc.column != 13 { return 15; }
     0
 }

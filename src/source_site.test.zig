@@ -6,6 +6,7 @@
 
 const std = @import("std");
 const ast = @import("ast.zig");
+const imports = @import("imports.zig");
 const Parser = @import("parser.zig").Parser;
 const site = @import("source_site.zig");
 
@@ -123,13 +124,13 @@ test "a library module reports its import path" {
     const roots = [_][]const u8{"/opt/sx/library"};
     try std.testing.expectEqualStrings(
         "modules/std/core.sx",
-        site.normalizeModulePath("/opt/sx/library/modules/std/core.sx", &roots),
+        site.normalizeModulePath("/opt/sx/library/modules/std/core.sx", &roots, null),
     );
     // A trailing slash on the root is not a different root.
     const slashed = [_][]const u8{"/opt/sx/library/"};
     try std.testing.expectEqualStrings(
         "modules/std/core.sx",
-        site.normalizeModulePath("/opt/sx/library/modules/std/core.sx", &slashed),
+        site.normalizeModulePath("/opt/sx/library/modules/std/core.sx", &slashed, null),
     );
 }
 
@@ -137,18 +138,56 @@ test "a path that merely shares a prefix is not stripped" {
     const roots = [_][]const u8{"/opt/sx/lib"};
     try std.testing.expectEqualStrings(
         "/opt/sx/library/modules/std/core.sx",
-        site.normalizeModulePath("/opt/sx/library/modules/std/core.sx", &roots),
+        site.normalizeModulePath("/opt/sx/library/modules/std/core.sx", &roots, null),
     );
 }
 
-test "a non-library file keeps the spelling it was named with" {
+test "a root spelled with '..' matches only after canonicalization" {
+    // How discovery actually spells a root: built from the exe dir, so it
+    // carries `..` hops. Compared raw against a resolved (normalized) file it
+    // matches nothing, which is why the roots go through `canonicalizePath`.
+    const raw_root = "/opt/sx-test/zig-out/bin/../../library";
+    const file = "/opt/sx-test/library/modules/std/core.sx";
+    const raw = [_][]const u8{raw_root};
+    try std.testing.expectEqualStrings(file, site.normalizeModulePath(file, &raw, null));
+
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const canon = try imports.canonicalizePath(arena.allocator(), raw_root);
+    const canon_roots = [_][]const u8{canon};
     try std.testing.expectEqualStrings(
-        "examples/errors/1033.sx",
-        site.normalizeModulePath("examples/errors/1033.sx", &.{}),
+        "modules/std/core.sx",
+        site.normalizeModulePath(file, &canon_roots, null),
+    );
+}
+
+test "the compilation root makes a file invocation-independent" {
+    // The same source reached from two cwds: relative under the root, and the
+    // absolute spelling. Both strip to one module path, so the id agrees.
+    try std.testing.expectEqualStrings(
+        "app/main.sx",
+        site.normalizeModulePath("proj/app/main.sx", &.{}, "proj"),
     );
     try std.testing.expectEqualStrings(
+        "app/main.sx",
+        site.normalizeModulePath("/work/proj/app/main.sx", &.{}, "/work/proj"),
+    );
+}
+
+test "a library root wins over the compilation root" {
+    const roots = [_][]const u8{"library"};
+    // A stdlib module under the project tree reports its IMPORT path, not its
+    // path relative to the main file.
+    try std.testing.expectEqualStrings(
+        "modules/ui/store.sx",
+        site.normalizeModulePath("library/modules/ui/store.sx", &roots, "examples/ui"),
+    );
+}
+
+test "a non-library file outside the compilation root keeps its spelling" {
+    try std.testing.expectEqualStrings(
         "/elsewhere/main.sx",
-        site.normalizeModulePath("/elsewhere/main.sx", &.{}),
+        site.normalizeModulePath("/elsewhere/main.sx", &.{}, "/work/proj"),
     );
 }
 

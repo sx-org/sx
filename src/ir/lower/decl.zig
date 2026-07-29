@@ -289,6 +289,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // a site stable across instantiation order and optimization level.
     if (source_site.build(self.alloc, decls, .{
         .stdlib_roots = self.stdlib_paths,
+        .main_dir = self.mainDir(),
         .main_file = self.main_file,
     })) |built| {
         const owned = self.alloc.create(source_site.SiteIndex) catch null;

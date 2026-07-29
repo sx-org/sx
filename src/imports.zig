@@ -218,6 +218,13 @@ pub fn discoverStdlibPaths(allocator: std.mem.Allocator) ![]const []const u8 {
     try out.append(allocator, try std.fmt.allocPrint(allocator, "{s}/../library", .{exe_dir}));
     // Alongside the binary.
     try out.append(allocator, try std.fmt.allocPrint(allocator, "{s}/library", .{exe_dir}));
+    // Through the same chokepoint resolved file paths take, so a root and the
+    // files under it are spelled the same way. Built from `exe_dir`, these carry
+    // `..` hops and stay absolute; a resolved file is lexically normalized and
+    // cwd-relativized, so without this no root ever prefixes any file.
+    for (out.items) |*p| {
+        p.* = canonicalizePath(allocator, p.*) catch p.*;
+    }
     if (c_getenv("SX_DEBUG_STDLIB") != null) {
         std.debug.print("[sx] exe_path={s}\n", .{exe_path});
         for (out.items, 0..) |p, i| std.debug.print("[sx] stdlib_paths[{d}]={s}\n", .{ i, p });

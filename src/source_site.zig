@@ -103,19 +103,29 @@ pub fn computeId(file: []const u8, declaration: []const u8, ordinal: u64) u64 {
     return idFromPrefix(declarationPrefix(file, declaration), ordinal);
 }
 
-/// The module path a site reports: the path an `#import` would spell.
+/// The module path a site reports, which must not depend on how the compiler
+/// was invoked (§4.2). Two rules, in order:
 ///
-/// A library module resolves under one of the roots the compiler searched, so
-/// stripping that root yields exactly the import path (`modules/std/core.sx`)
-/// whether the library sits in a dev tree or an install prefix. Every other
-/// file keeps the spelling the compiler already keys it by — that is the path
-/// it was named with, and the one its diagnostics print.
+///  1. A library module resolves under one of the roots the compiler searched,
+///     so stripping that root yields the import path (`modules/std/core.sx`)
+///     whether the library sits in a dev tree or an install prefix.
+///  2. Everything else is relative to the compilation root — the main file's
+///     directory — so the same source names one path whatever directory `sx`
+///     ran from and whether the entry was spelled relatively or absolutely.
+///
+/// Both inputs must already have been through `imports.canonicalizePath`: the
+/// roots are built with `..` hops and the files are lexically normalized and
+/// cwd-relativized, so comparing raw spellings matches nothing.
 pub fn normalizeModulePath(
     file: []const u8,
     stdlib_roots: []const []const u8,
+    main_dir: ?[]const u8,
 ) []const u8 {
     for (stdlib_roots) |root| {
         if (stripDirPrefix(file, root)) |rel| return rel;
+    }
+    if (main_dir) |dir| {
+        if (stripDirPrefix(file, dir)) |rel| return rel;
     }
     return file;
 }
@@ -187,8 +197,10 @@ pub const SiteIndex = struct {
 };
 
 pub const Options = struct {
-    /// Library roots import resolution searched, for normalizing module paths.
+    /// Library roots import resolution searched, canonicalized.
     stdlib_roots: []const []const u8 = &.{},
+    /// The compilation root: the main file's directory, canonicalized.
+    main_dir: ?[]const u8 = null,
     /// Module path for declarations the parser left unstamped (the main file).
     main_file: ?[]const u8 = null,
 };
@@ -240,7 +252,7 @@ pub fn build(alloc: std.mem.Allocator, decls: []const *const Node, opts: Options
     var root = Builder{ .alloc = alloc, .opts = opts, .index = &index };
     for (decls) |decl| {
         const raw_file = decl.source_file orelse opts.main_file orelse "";
-        const module_path = normalizeModulePath(raw_file, opts.stdlib_roots);
+        const module_path = normalizeModulePath(raw_file, opts.stdlib_roots, opts.main_dir);
         root.file = module_path;
         root.declaration = try modulePrefix(alloc, module_path);
         try walkDecl(&root, decl);

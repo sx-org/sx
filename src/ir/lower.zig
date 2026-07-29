@@ -2908,6 +2908,7 @@ pub const Lowering = struct {
     pub const exprIsFailable = lower_error.exprIsFailable;
     pub const lowerCallerSite = lower_error.lowerCallerSite;
     pub const sourceSiteType = lower_error.sourceSiteType;
+    pub const mainDir = lower_error.mainDir;
     pub const sourceForFile = lower_error.sourceForFile;
     pub const currentFunctionName = lower_error.currentFunctionName;
     pub const lowerTry = lower_error.lowerTry;
