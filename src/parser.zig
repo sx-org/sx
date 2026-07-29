@@ -3057,13 +3057,10 @@ pub const Parser = struct {
                         } });
                         try args.append(self.allocator, try self.createNode(block.span.start, .{ .trailing_block = .{ .lambda = lambda } }));
                         expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
-                        // T7′: a trailing block TERMINATES the postfix chain —
-                        // chaining onto the emitted result would modify a
-                        // discarded copy.
-                        if (self.current.tag == .dot) {
-                            return self.fail("a trailing block ends the call chain — pass the modifier inside the call: `f(x, m = .{ … }) { … }`");
-                        }
-                        break;
+                        // T7′: after the block's `}` only DOT-led postfix
+                        // continues the chain (`f() { … }.map()`); every other
+                        // token ends it.
+                        if (self.current.tag != .dot) break;
                     }
                 } else {
                     expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });

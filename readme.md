@@ -286,9 +286,9 @@ vstack(8.0) {
 scaffold(top_bar = toolbar) { chat_list(); }   // named slots + block
 ```
 
-The `{` must sit on the same line as the `)`; one block per call; the block
-ends the call chain (pass modifiers inside the call). A capture-free block
-promotes to a null-env thunk — zero allocation.
+The `{` must sit on the same line as the `)`; one block per call; after the
+block's `}` a dot continues the chain (`vstack(8.0) { … }.padded()`). A
+capture-free block promotes to a null-env thunk — zero allocation.
 
 ### Structs
 

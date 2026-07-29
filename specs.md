@@ -4232,10 +4232,12 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   `push Context{ io = my_io } { … }`. Idiomatic: `push .{ … } { … }`.
 - **`return` is local**: a `return` inside the block returns from the
   closure, never from the enclosing function (no non-local return).
-- **Chain termination**: a trailing block ENDS the postfix chain —
-  `f(x) { … }.modifier()` is a parse error ("a trailing block ends the call
-  chain — pass the modifier inside the call: `f(x, m = .{ … }) { … }`").
-  Chaining onto the emitted result would silently modify a discarded copy.
+- **Chain continuation**: after the block's closing `}`, **dot-led** postfix
+  continues the chain — member access, UFCS call, and `.(T)` cast all apply to
+  the call's result: `f(x) { … }.modifier()`, `emit.column(4) { … }.emit();`.
+  The `.` may sit on the next line. Only `.` continues — every other token
+  ends the chain. A chained call may take its own trailing block, each block
+  re-applying this rule: `f() { … }.map() { … }`.
 - **Duplicate with a named argument**: a trailing block binds the last
   parameter, so also naming that parameter is the duplicate-binding error
   ("parameter 'content' is bound both by a named argument and by the
