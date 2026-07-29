@@ -479,6 +479,31 @@ test "distinct parameterized impls keep distinct paths and ids" {
     try std.testing.expect(alpha[0].id != beta[0].id);
 }
 
+test "const-expr array dimensions keep distinct impl paths" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const decls = try parse(a,
+        \\impl Show(K) for [N + 1]f32 {
+        \\    go :: (self: *[N + 1]f32) { first(); }
+        \\}
+        \\impl Show(K) for [N + 2]f32 {
+        \\    go :: (self: *[N + 2]f32) { second(); }
+        \\}
+    );
+    var idx = try site.build(a, decls, .{ .main_file = "app/main.sx" });
+    defer idx.deinit();
+    var paths = std.StringHashMapUnmanaged(u64){};
+    defer paths.deinit(a);
+    var it = idx.sites.iterator();
+    while (it.next()) |e| {
+        if (e.key_ptr.*.data != .call) continue;
+        try paths.put(a, e.value_ptr.declaration, e.value_ptr.id);
+    }
+    // Two impl blocks, two declaration paths, two ids.
+    try std.testing.expectEqual(@as(usize, 2), paths.count());
+}
+
 test "protocol default bodies number in their own method scope" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

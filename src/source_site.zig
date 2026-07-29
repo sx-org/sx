@@ -399,6 +399,32 @@ fn spellType(alloc: std.mem.Allocator, node: *const Node) anyerror![]const u8 {
             try out.append(alloc, ')');
             return out.toOwnedSlice(alloc);
         },
+        // Const-expr forms reachable in type positions (array dimensions,
+        // value args of parameterized types) carry distinguishing structure.
+        .binary_op => |o| return std.fmt.allocPrint(alloc, "{s}{s}{s}", .{
+            try spellType(alloc, o.lhs),
+            @tagName(o.op),
+            try spellType(alloc, o.rhs),
+        }),
+        .unary_op => |o| return std.fmt.allocPrint(alloc, "{s}{s}", .{
+            @tagName(o.op),
+            try spellType(alloc, o.operand),
+        }),
+        .call => |c| {
+            var out = std.ArrayList(u8).empty;
+            try out.appendSlice(alloc, try spellType(alloc, c.callee));
+            try out.append(alloc, '(');
+            for (c.args, 0..) |a, i| {
+                if (i > 0) try out.append(alloc, ',');
+                try out.appendSlice(alloc, try spellType(alloc, a));
+            }
+            try out.append(alloc, ')');
+            return out.toOwnedSlice(alloc);
+        },
+        .field_access => |fa| return std.fmt.allocPrint(alloc, "{s}.{s}", .{
+            try spellType(alloc, fa.object),
+            fa.field,
+        }),
         else => {
             if (ast.bareName(node)) |n| return alloc.dupe(u8, n);
             return alloc.dupe(u8, @tagName(node.data));
