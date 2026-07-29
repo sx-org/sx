@@ -1,0 +1,61 @@
+// `@SourceSite` — the compiler-maintained source descriptor stdlib declares —
+// and the reviewable identity algorithm behind its `id` field. User code
+// constructs sites (a diagnostic-only fake leaves `id = 0`) and computes the
+// canonical id with `source_site_key_id`, whose encoding is normative: the
+// vectors below are the specification, not an observation.
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+#import "modules/std/source_site.sx";
+
+// The contract is an ordinary type: it names parameters and returns.
+relabel :: (site: @SourceSite, declaration: string) -> @SourceSite {
+    @SourceSite{
+        file = site.file,
+        declaration = declaration,
+        line = site.line,
+        column = site.column,
+        ordinal = site.ordinal,
+        id = 0,
+    }
+}
+
+canonical :: (site: @SourceSite) -> u64 => source_site_key_id(source_site_key(site));
+
+main :: () -> i32 {
+    site := @SourceSite{
+        file = "a.sx",
+        declaration = "m.f",
+        line = 3,
+        column = 5,
+        ordinal = 2,
+        id = 0,
+    };
+    print("{}:{}:{} {} {}\n", site.file, site.line, site.column, site.declaration, site.ordinal);
+
+    // Every field defaults, so a partial literal is a legal fake.
+    empty := @SourceSite{};
+    print("empty {} {} {} {}\n", empty.file == "", empty.line, empty.ordinal, empty.id);
+
+    // `line` / `column` are diagnostics only — the key drops them, so two
+    // sites differing only in position share an id.
+    moved := @SourceSite{ file = "a.sx", declaration = "m.f", line = 99, column = 1, ordinal = 2 };
+    print("id {} {} {}\n", canonical(site), canonical(site) == canonical(moved), canonical(empty));
+
+    // The ordinal is what separates lexical occurrences.
+    next := @SourceSite{ file = "a.sx", declaration = "m.f", ordinal = 3 };
+    print("ordinal {} {}\n", canonical(next), canonical(next) != canonical(site));
+
+    // A resumed hasher extends the precomputed state: the same result as one
+    // continuous hash over the source encoding plus the runtime suffix.
+    seeded := relabel(site, "m.f");
+    stamped := @SourceSite{
+        file = seeded.file,
+        declaration = seeded.declaration,
+        ordinal = seeded.ordinal,
+        id = canonical(seeded),
+    };
+    h := source_site_hasher(stamped, "ui.compose.child.v1");
+    h.write_u64_le(7);
+    print("extended {}\n", h.state);
+    0
+}

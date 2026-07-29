@@ -10,6 +10,7 @@ pub const types = @import("types.zig");
 pub const target = @import("target.zig");
 pub const target_tests = @import("target.test.zig");
 pub const builtins = @import("builtins.zig");
+pub const contracts = @import("contracts.zig");
 pub const errors = @import("errors.zig");
 pub const errors_tests = @import("errors.test.zig");
 pub const trace_runtime_tests = @import("runtime_trace.test.zig");

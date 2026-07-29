@@ -86,6 +86,32 @@ i2 :: struct { x: i64; }            // ERROR — and a type-declaration name
 everywhere. `string` and `Vector` are language primitives — the compiler resolves
 them by name, they are declared nowhere, and they cannot be re-bound.)
 
+#### The `@` namespace
+
+A leading `@` marks a **compiler-maintained contract**: a declaration whose
+shape the compiler depends on, so changing it is a coordinated compiler and
+stdlib revision. The sigil grants no privilege — an `@` declaration is
+ordinary, source-visible sx, and user code constructs its values like any
+other type:
+
+```sx
+site := @SourceSite{ file = "fake.sx", declaration = "tests.fake", line = 1 };
+```
+
+Which `@` names exist, and which module owns each canonical declaration, is a
+compiler registry. An `@` declaration in any other module is rejected — the
+compiler recognizes a contract by that declaring-module **identity**, never by
+a name-and-field-shape test a lookalike could satisfy:
+
+```sx
+@Site :: struct { … }         // ERROR: not a compiler-maintained contract
+@SourceSite :: struct { … }   // ERROR: 'modules/std/core.sx' declares it
+```
+
+Separately, a few `@` names are **compiler-formed types** — `@Init(T)` and
+`@BuildBlock(P)`. Those are formed at a parameter type, never declared and
+never constructed, so they have no stdlib declaration and no literal form.
+
 #### Backtick raw-identifier escape
 
 A leading backtick makes the following token a **raw identifier**: `` `name `` is

@@ -1,0 +1,90 @@
+// =====================================================================
+// source_site.sx — the identity algorithm behind `@SourceSite.id`.
+//
+// The compiler fills `id` at compile time, but the value is not opaque:
+// this file IS the specification. A compiler-created site satisfies
+//
+//     site.id == source_site_key_id(source_site_key(site))
+//
+// and the compiler must produce the same result as the ordinary sx below.
+//
+// The hashing contract:
+//   - length-prefix every string;
+//   - encode integers little-endian, fixed width;
+//   - never hash pointer identities or struct padding; and
+//   - stay stable across optimization levels and compiler runs.
+//
+// At runtime a library EXTENDS the precomputed state instead of hashing the
+// source fields again — `site.id` is the intermediate FNV state after them, so
+//
+//     hasher := source_site_hasher(site, "ui.compose.child.v1");
+//     hasher.write_u64_le(runtime_occurrence);
+//     hasher.write_string(application_key);
+//     identity := hasher.state;
+//
+// gives exactly one continuous hash over the source encoding plus the runtime
+// suffix, and costs only the domain and the appended fields. The domain comes
+// first so unrelated libraries never share an identity space.
+//
+// These are FINGERPRINTS, not proof of equality: code that needs
+// collision-free correctness stores and compares `SourceSiteKey` plus its own
+// dynamic key fields.
+// =====================================================================
+#import "modules/std/core.sx";
+hash :: #import "modules/std/hash.sx";
+
+// The source fields `id` is computed from — the whole of a site's identity.
+// `line` and `column` are diagnostics, so they are deliberately absent.
+SourceSiteKey :: struct {
+    file: string;
+    declaration: string;
+    ordinal: u64;
+}
+
+// The writers are methods, not free functions: `write_string` is far too
+// common a bare name to take in the flat prelude namespace.
+SourceSiteHasher :: struct {
+    state: u64 = hash.FNV_OFFSET_BASIS;
+
+    write_byte :: (self: *SourceSiteHasher, value: u8) {
+        self.state = (self.state ^ value.(u64)) * hash.FNV_PRIME;
+    }
+
+    write_u64_le :: (self: *SourceSiteHasher, value: u64) {
+        inline for 0..8 (index) {
+            self.write_byte((value >> (index * 8).(u64)).(u8));
+        }
+    }
+
+    write_string :: (self: *SourceSiteHasher, value: string) {
+        self.write_u64_le(value.len.(u64));
+        self.state = hash.fnv1a_fold(self.state, value.ptr, value.len);
+    }
+}
+
+source_site_key :: (site: @SourceSite) -> SourceSiteKey {
+    SourceSiteKey{
+        file = site.file,
+        declaration = site.declaration,
+        ordinal = site.ordinal,
+    }
+}
+
+// The normative encoding. The version string both versions the format and
+// domain-separates source-site fingerprints from every other key space.
+source_site_key_id :: (key: SourceSiteKey) -> u64 {
+    hasher := SourceSiteHasher{};
+    hasher.write_string("sx.source-site.v1");
+    hasher.write_string(key.file);
+    hasher.write_string(key.declaration);
+    hasher.write_u64_le(key.ordinal);
+    hasher.state
+}
+
+// A hasher resumed from the source fields the compiler already folded, then
+// domain-separated. Append dynamic fields after this returns.
+source_site_hasher :: (site: @SourceSite, domain: string) -> SourceSiteHasher {
+    hasher := SourceSiteHasher{ state = site.id };
+    hasher.write_string(domain);
+    hasher
+}

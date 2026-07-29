@@ -128,6 +128,37 @@ Source_Location :: struct {
     col: i32;
     func: string;
 }
+
+// One source descriptor for diagnostics and for library identity. A
+// compiler-maintained contract: the compiler recognizes THIS declaration by
+// module identity, so the field set is a compiler + stdlib contract, not a
+// shape any lookalike can satisfy. User code may construct values — `id = 0`
+// is enough for a diagnostic-only fake; a test that exercises identity
+// computes the matching value with `source_site_key_id`
+// (modules/std/source_site.sx).
+@SourceSite :: struct {
+    // Normalized source file identity, independent of the working directory.
+    file: string = "";
+
+    // Fully qualified source declaration containing this site — a source-level
+    // name, never an internal AST address.
+    declaration: string = "";
+
+    // One-based source line. Zero means unavailable.
+    line: i32 = 0;
+
+    // One-based source column. Zero means unavailable.
+    column: i32 = 0;
+
+    // Zero-based lexical occurrence within `declaration`, including a
+    // deterministic inline-expansion path. Runtime loop iterations reuse it.
+    ordinal: u64 = 0;
+
+    // Compile-time fingerprint of (file, declaration, ordinal), exactly
+    // `source_site_key_id(source_site_key(site))`. It contains no line,
+    // column, pointer, padding, compiler-process, or runtime state.
+    id: u64 = 0;
+}
 // --- Allocator protocol (impls live in std/mem.sx) ---
 
 // Bytes-level primitives carry the `_bytes` suffix so the typed

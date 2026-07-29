@@ -229,16 +229,12 @@ pub const Parser = struct {
         // of the program's assembled Context.
         if (self.current.tag == .hash_context_extend) return self.parseContextExtend(start);
 
-        // All top-level declarations start with an identifier
-        if (!self.isIdentLike() and self.current.tag != .kw_Self) {
-            // `@` names are the compiler's own: a module may spell one in a
-            // parameter type but can never declare one.
-            if (self.current.tag == .at_identifier) {
-                return self.failFmt(
-                    "'{s}' cannot be declared — '@' names belong to the compiler; a declaration name is an ordinary identifier",
-                    .{self.tokenSlice(self.current)},
-                );
-            }
+        // All top-level declarations start with an identifier. An `@` name is
+        // one too: the compiler-maintained contracts are ordinary stdlib
+        // declarations, source-visible and reviewable. Which `@` names exist
+        // and which module owns each is `contracts`' registry, checked after
+        // parsing where the declaring file is known.
+        if (!self.isIdentLike() and self.current.tag != .kw_Self and self.current.tag != .at_identifier) {
             return self.fail("expected identifier at top level");
         }
         return self.parseTopLevelNamedDecl();
@@ -560,10 +556,16 @@ pub const Parser = struct {
         const compiler_type_allowed = self.compiler_type_allowed;
         self.compiler_type_allowed = false;
 
-        // Compiler-formed type: `@Init(T)` / `@BuildBlock(P)`. The `@` name is
-        // not an identifier, so this is the one place the grammar accepts it.
+        // Compiler-formed type: `@Init(T)` / `@BuildBlock(P)`. Every other `@`
+        // name in type position names a compiler-maintained stdlib declaration
+        // (`@SourceSite`) and resolves like any other type name.
         if (self.current.tag == .at_identifier) {
-            return self.parseCompilerFormedType(start, compiler_type_allowed);
+            if (isCompilerFormedTypeName(self.tokenSlice(self.current))) {
+                return self.parseCompilerFormedType(start, compiler_type_allowed);
+            }
+            const at_name = self.tokenSlice(self.current);
+            self.advance();
+            return try self.createNode(start, .{ .type_expr = .{ .name = at_name } });
         }
 
         // Error channel type: bare `!` (inferred set) or `!Named` (named set).
@@ -1018,6 +1020,15 @@ pub const Parser = struct {
         .{ .name = "@Init", .spelling = "@Init(T)" },
         .{ .name = "@BuildBlock", .spelling = "@BuildBlock(P)" },
     };
+
+    /// True for the `@` names the compiler FORMS (never declared, never
+    /// constructed). The rest of the `@` namespace is stdlib declarations.
+    fn isCompilerFormedTypeName(name: []const u8) bool {
+        for (compiler_formed_types) |t| {
+            if (std.mem.eql(u8, name, t.name)) return true;
+        }
+        return false;
+    }
 
     fn parseCompilerFormedType(self: *Parser, start: u32, allowed: bool) anyerror!*Node {
         const name_tok = self.current;
@@ -3446,12 +3457,19 @@ pub const Parser = struct {
     fn parsePrimary(self: *Parser) anyerror!*Node {
         const start = self.current.loc.start;
         // `@Init` is a type the compiler forms, never a value a program builds:
-        // there is no `@Init(T){ … }` literal and no `@Init` expression.
+        // there is no `@Init(T){ … }` literal and no `@Init` expression. A
+        // declared `@` contract is an ordinary type, so it names values and
+        // takes an aggregate literal (`@SourceSite{ … }`) like any other.
         if (self.current.tag == .at_identifier) {
-            return self.failFmt(
-                "'{s}' is a compiler-formed type — it has no literal form and cannot be named in an expression",
-                .{self.tokenSlice(self.current)},
-            );
+            const at_name = self.tokenSlice(self.current);
+            if (isCompilerFormedTypeName(at_name)) {
+                return self.failFmt(
+                    "'{s}' is a compiler-formed type — it has no literal form and cannot be named in an expression",
+                    .{at_name},
+                );
+            }
+            self.advance();
+            return try self.createNode(start, .{ .identifier = .{ .name = at_name } });
         }
         // Pack references in expression position:
         //   `$<pack_name>[<int_literal>]` → `pack_index_type_expr`

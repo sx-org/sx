@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
+const contracts = @import("../contracts.zig");
 const errors = @import("../errors.zig");
 const types = @import("types.zig");
 const name_class = @import("../types.zig");
@@ -81,6 +82,28 @@ pub const UnknownTypeChecker = struct {
         // `current_source_file`, saved/restored per node) so an imported-module
         // diagnostic renders against that module's text.
         for (decls) |decl| self.checkBindingNames(decl);
+
+        // `@` contract identity: an `@`-named declaration is legal only in the
+        // module the registry says owns it, so a lookalike cannot stand in for
+        // the canonical declaration. Every module is checked.
+        {
+            const saved = self.diagnostics.current_source_file;
+            defer self.diagnostics.current_source_file = saved;
+            for (decls) |decl| {
+                const name = declaredName(decl) orelse continue;
+                if (!contracts.isAtName(name)) continue;
+                const file = decl.source_file orelse self.main_file;
+                const contract = contracts.find(name);
+                if (contract != null and contracts.declaredIn(contract.?, file)) continue;
+                if (file) |f| self.diagnostics.current_source_file = f;
+                const span = ast.Span{ .start = decl.span.start, .end = decl.span.start + @as(u32, @intCast(name.len)) };
+                if (contract) |c| {
+                    self.diagnostics.addFmt(.err, span, "'{s}' is a compiler-maintained contract declared by '{s}' — this module cannot declare it", .{ name, c.module });
+                } else {
+                    self.diagnostics.addFmt(.err, span, "'{s}' is not a compiler-maintained contract — '@' names belong to the compiler; a declaration name is an ordinary identifier", .{name});
+                }
+            }
+        }
 
         // Unknown-type diagnostic: main-file decls only; imported
         // and library modules are trusted, matching `checkErrorFlow`.
@@ -1137,6 +1160,28 @@ pub const UnknownTypeChecker = struct {
     /// field to drift from `node.span`. `is_raw` is REQUIRED, exactly as in
     /// `checkBindingName`: a backtick raw / `#import c` extern name is exempt
     /// by construction.
+    /// The name a module-scope declaration BINDS, or null for a node that
+    /// binds none (`impl`, a flat `#import`, a statement).
+    fn declaredName(node: *const Node) ?[]const u8 {
+        return switch (node.data) {
+            .fn_decl => |fd| fd.name,
+            .struct_decl => |sd| sd.name,
+            .enum_decl => |ed| ed.name,
+            .union_decl => |ud| ud.name,
+            .protocol_decl => |pd| pd.name,
+            .error_set_decl => |esd| esd.name,
+            .const_decl => |cd| cd.name,
+            .var_decl => |vd| vd.name,
+            .ufcs_alias => |ua| ua.name,
+            .library_decl => |ld| ld.name,
+            .framework_decl => |fd| fd.name,
+            .import_decl => |imp| imp.name,
+            .c_import_decl => |cid| cid.name,
+            .namespace_decl => |nd| nd.name,
+            else => null,
+        };
+    }
+
     fn checkDeclName(self: UnknownTypeChecker, node: *const Node, name: []const u8, is_raw: bool) void {
         const span = ast.Span{ .start = node.span.start, .end = node.span.start + @as(u32, @intCast(name.len)) };
         self.checkBindingName(name, span, is_raw);

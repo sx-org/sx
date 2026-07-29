@@ -1,0 +1,11 @@
+error: '@Site' is not a compiler-maintained contract — '@' names belong to the compiler; a declaration name is an ordinary identifier
+  --> examples/diagnostics/2022-diagnostics-at-contract-identity.sx:7:1
+   |
+ 7 | @Site :: struct {
+   | ^^^^^
+
+error: '@SourceSite' is a compiler-maintained contract declared by 'modules/std/core.sx' — this module cannot declare it
+  --> examples/diagnostics/2022-diagnostics-at-contract-identity.sx:12:1
+   |
+12 | @SourceSite :: struct {
+   | ^^^^^^^^^^^
