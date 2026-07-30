@@ -835,8 +835,12 @@ pub const LLVMEmitter = struct {
             const llvm_ty = self.toLLVMType(ty);
             const llvm_size = c.LLVMABISizeOfType(dl, llvm_ty);
             const ir_size = self.ir_mod.types.typeSizeBytes(ty);
-            if (llvm_size != ir_size) std.debug.print("SIZEMISMATCH {s} llvm={d} ir={d}\n", .{ self.ir_mod.types.formatTypeName(self.ir_mod.types.alloc, ty), llvm_size, ir_size });
-            std.debug.assert(llvm_size == ir_size);
+            // A disagreement here is a compiler bug in one of the two layout
+            // rules, and the type is the only useful thing to know about it.
+            if (llvm_size != ir_size) std.debug.panic(
+                "layout disagreement for '{s}': llvm={d} ir={d}",
+                .{ self.ir_mod.types.formatTypeName(self.ir_mod.types.alloc, ty), llvm_size, ir_size },
+            );
         }
     }
 
