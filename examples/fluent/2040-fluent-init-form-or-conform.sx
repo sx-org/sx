@@ -1,0 +1,91 @@
+// An `$I/@Init(T)` parameter either FORMS an initializer from the argument or
+// takes one that already conforms (fluent spec §5.2).
+//
+// Forming is what an ordinary expression gets: nothing is evaluated at the call,
+// and `$I` binds to the initializer the compiler minted for that expression. The
+// bound's type argument may be FIXED (`@Init(Button)`) or OPEN (`@Init($T)`,
+// `@Init($V/Drawable)`, inferred from the argument's own type).
+//
+// An argument that is already an initializer for the same type is passed through
+// by identity — the receiver hands over the single write instead of wrapping the
+// recipe in a second one. Provenance is the proof: a forwarded initializer still
+// reports the site of the expression it was formed from, which a wrapper could
+// not do.
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+
+Button :: struct {
+    label: string = "";
+}
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+impl Drawable for Button {
+    draw :: (self: *Button) -> string => self.label;
+}
+
+// FIXED type argument: this parameter accepts initializers for `Button` only.
+fill_button :: (value: $I/@Init(Button)) -> string {
+    slot: Button = ---;
+    value.write(*slot);
+    slot.label
+}
+
+// OPEN type argument with its own bound: `V` is the argument's concrete type,
+// and it has to be `Drawable` because the body draws it.
+fill_drawable :: (value: $I/@Init($V/Drawable)) -> string {
+    slot: V = ---;
+    value.write(*slot);
+    slot.draw()
+}
+
+// OPEN and unconstrained: the recipe is written into a caller-visible slot.
+fill :: (value: $I/@Init($T), into: *T) {
+    value.write(into);
+}
+
+// Forwarding: the initializer received here is the one passed on, so the write
+// happens exactly once and the reported site is still the original expression's.
+forward :: (value: $I/@Init($T), into: *T) -> i32 {
+    fill(value, into);
+    line_of(value)
+}
+
+line_of :: (value: $I/@Init($T)) -> i32 {
+    s := value.site();
+    if s != null { s!.line } else { 0 }
+}
+
+main :: () -> i32 {
+    print("{}\n", fill_button(Button{ label = "fixed" }));
+    print("{}\n", fill_drawable(Button{ label = "open" }));
+
+    slot: Button = ---;
+    // The expression this initializer is formed from is written on THIS line;
+    // `forward` reports the site through one hand-over.
+    forwarded_line := forward(Button{ label = "forwarded" }, *slot);
+    print("{} formed at line {}\n", slot.label, forwarded_line);
+
+    // Nothing evaluates until a write: this counter stays at zero.
+    print("evaluations {}\n", never_written(bump()));
+    print("bumps {}\n", bumps);
+    0
+}
+
+bumps : i32 = 0;
+
+bump :: () -> Button {
+    bumps += 1;
+    Button{ label = "built" }
+}
+
+never_written :: (value: $I/@Init($T)) -> i32 { 0 }
+
+// ** stdout **
+// fixed
+// open
+// forwarded formed at line 67
+// evaluations 0
+// bumps 0
+//

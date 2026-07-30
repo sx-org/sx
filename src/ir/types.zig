@@ -199,14 +199,21 @@ pub const TypeInfo = union(enum) {
         /// Pack-variadic shape marker — same semantics as FunctionInfo.
         /// `Closure(..$args) -> $R` => params = [], pack_start = 0.
         pack_start: ?u32 = null,
-        /// Non-null makes this the compiler-formed `@Init(T)` (spec §5): a
-        /// deferred construction recipe whose sole operation is
-        /// `write(dest: *T)`, re-evaluated on each call. Its representation IS
-        /// the `{fn_ptr, env}` closure pair — `params = [*T]`, `ret = void` — so
+        /// Non-null makes this an `@Init(T)` type (spec §5): a deferred
+        /// construction recipe whose operations are `write(dest: *T)` — re-run
+        /// on each call — and `site()`. Its representation IS the
+        /// `{fn_ptr, env}` closure pair — `params = [*T]`, `ret = void` — so
         /// layout, codegen, and the indirect-call path are shared verbatim; the
         /// marker keeps the type DISTINCT from an ordinary `Closure(*T)` (so
-        /// neither converts to the other) and is what formation keys on.
+        /// neither converts to the other) and is what the operations key on.
         init_target: ?TypeId = null,
+        /// Which `@Init(T)` this is. `0` is the FORMATION REQUEST a
+        /// `$I/@Init(T)` parameter resolves to before an argument is formed
+        /// against it — never the type of a value. A nonzero id indexes
+        /// `Lowering.init_sites`: one per formation site, so two sites forming
+        /// the same `T` are distinct types, each with its own `site()` and its
+        /// own monomorphizations.
+        init_site: u32 = 0,
         /// Non-null makes this the compiler-formed `@BuildBlock(P)` (spec §7):
         /// the trailing block a build-accepting function receives, whose
         /// standalone expressions conforming to `P` are offered to a sink. A
@@ -899,11 +906,25 @@ pub const TypeTable = struct {
         return self.intern(.{ .closure = .{ .params = owned_params, .ret = ret } });
     }
 
-    /// `@Init(target)` — the construction recipe for `target` (spec §5). Shares
-    /// the closure representation: `{fn_ptr, env}` calling `(dest: *target)`.
+    /// The `@Init(target)` FORMATION REQUEST (spec §5.2): what a
+    /// `$I/@Init(target)` parameter resolves to while its binder is still
+    /// unbound. No value ever has this type — an argument at such a parameter
+    /// forms (or passes through) into a per-site implementor.
     pub fn initPlanType(self: *TypeTable, target: TypeId) TypeId {
+        return self.initImplementorType(target, 0);
+    }
+
+    /// The `@Init(target)` implementor minted for formation site `site`
+    /// (nonzero). Shares the closure representation: `{fn_ptr, env}` calling
+    /// `(dest: *target)`, so the site costs no storage.
+    pub fn initImplementorType(self: *TypeTable, target: TypeId, site: u32) TypeId {
         const owned_params = self.slice_arena.allocator().dupe(TypeId, &.{self.ptrTo(target)}) catch unreachable;
-        return self.intern(.{ .closure = .{ .params = owned_params, .ret = .void, .init_target = target } });
+        return self.intern(.{ .closure = .{
+            .params = owned_params,
+            .ret = .void,
+            .init_target = target,
+            .init_site = site,
+        } });
     }
 
     /// The `T` of an `@Init(T)`, or null for any other type (including an
@@ -913,6 +934,16 @@ pub const TypeTable = struct {
         const info = self.get(ty);
         if (info != .closure) return null;
         return info.closure.init_target;
+    }
+
+    /// The formation site an `@Init(T)` was minted for: nonzero for an
+    /// implementor, `0` for the formation request, null for any other type.
+    pub fn initSiteOf(self: *const TypeTable, ty: TypeId) ?u32 {
+        if (ty.isBuiltin()) return null;
+        const info = self.get(ty);
+        if (info != .closure) return null;
+        if (info.closure.init_target == null) return null;
+        return info.closure.init_site;
     }
 
     /// `@BuildBlock(protocol)` — the trailing block a build-accepting function
@@ -1446,7 +1477,10 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
             const pack_present: u8 = if (c.pack_start != null) 1 else 0;
             h.update(&.{pack_present});
             if (c.pack_start) |ps| h.update(std.mem.asBytes(&ps));
-            if (c.init_target) |it| h.update(std.mem.asBytes(&it));
+            if (c.init_target) |it| {
+                h.update(std.mem.asBytes(&it));
+                h.update(std.mem.asBytes(&c.init_site));
+            }
             if (c.build_protocol) |bp| h.update(std.mem.asBytes(&bp));
         },
         // Nominal arms key by display name; `nominal_id` joins the key only when
@@ -1518,7 +1552,10 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
             if ((c.pack_start == null) != (d.pack_start == null)) return false;
             if (c.pack_start) |cp| if (cp != d.pack_start.?) return false;
             if ((c.init_target == null) != (d.init_target == null)) return false;
-            if (c.init_target) |ct| if (ct != d.init_target.?) return false;
+            if (c.init_target) |ct| {
+                if (ct != d.init_target.?) return false;
+                if (c.init_site != d.init_site) return false;
+            }
             if ((c.build_protocol == null) != (d.build_protocol == null)) return false;
             if (c.build_protocol) |cb| if (cb != d.build_protocol.?) return false;
             return c.ret == d.ret;

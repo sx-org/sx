@@ -14,9 +14,11 @@
 //!   - `.declared` — stdlib owns the canonical declaration, and the compiler
 //!     recognizes it by (module, name) identity plus, for a struct, its field
 //!     shape. `@SourceSite`, `@BuildSink`, `@BuildShape`.
-//!   - `.compiler_formed` — the compiler FORMS the type at a parameter
-//!     annotation; there is no declaration anywhere, so declaring the name is
-//!     an error wherever it appears. `@Init`, `@BuildBlock`.
+//!   - `.compiler_formed` — the compiler FORMS the type for a parameter; there
+//!     is no declaration anywhere, so declaring the name is an error wherever
+//!     it appears. `@Init`, `@BuildBlock`. A formed contract is written either
+//!     as the parameter's annotation (`@BuildBlock(P)`) or, when `bound_only`,
+//!     only as a generic bound on it (`$I/@Init(T)`).
 
 const std = @import("std");
 const imports = @import("imports.zig");
@@ -37,6 +39,13 @@ pub const Contract = struct {
     /// How a compiler-formed name is SPELLED in a diagnostic — the bare name
     /// would read as an incomplete type.
     spelling: []const u8 = "",
+    /// A contract that is only ever a generic BOUND head: it names a
+    /// constraint, so no position — parameter annotation included — may write
+    /// it as a type. Set for `@Init`, whose implementors are minted per
+    /// formation site and are not spellable.
+    bound_only: bool = false,
+    /// The bound this contract is written as, when `bound_only`.
+    bound_spelling: []const u8 = "",
 };
 
 /// One field of a contract's required shape, in declaration order.
@@ -74,9 +83,20 @@ pub const entries = [_]Contract{
         },
     },
     // Formed, never declared.
-    .{ .name = "@Init", .kind = .compiler_formed, .spelling = "@Init(T)" },
+    .{
+        .name = "@Init",
+        .kind = .compiler_formed,
+        .spelling = "@Init(T)",
+        .bound_only = true,
+        .bound_spelling = "$I/@Init(T)",
+    },
     .{ .name = "@BuildBlock", .kind = .compiler_formed, .spelling = "@BuildBlock(P)" },
 };
+
+/// The bound whose type argument the compiler INFERS from the argument an
+/// initializer is formed from, so a binder written inside it (`$I/@Init($T)`)
+/// is one of the declaration's type parameters.
+pub const init_bound = "@Init";
 
 /// True for a name the compiler FORMS. `parseCompilerFormedType` is its only
 /// producer, so these names never reach a declaration or a value.

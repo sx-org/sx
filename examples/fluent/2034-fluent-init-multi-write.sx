@@ -27,7 +27,7 @@ next_text :: () -> string {
 
 // Two writes, two destinations: each one re-runs the recipe, so the two slots
 // hold the results of two separate evaluations.
-pair :: (value: @Init($V/Drawable)) -> string {
+pair :: (value: $I/@Init($V/Drawable)) -> string {
     a: V = ---;
     b: V = ---;
     value.write(*a);
@@ -37,11 +37,11 @@ pair :: (value: @Init($V/Drawable)) -> string {
 
 // Zero writes: the expression never runs at all, which is how a measuring sink
 // declines to build anything.
-skip :: (value: @Init($V/Drawable)) -> i32 { 0 }
+skip :: (value: $I/@Init($V/Drawable)) -> i32 { 0 }
 
 // The same recipe written once per loop iteration. Nothing about the caller's
 // or the receiver's control flow limits how often a write may happen.
-repeat :: (value: @Init($V/Drawable), times: i32) -> i32 {
+repeat :: (value: $I/@Init($V/Drawable), times: i32) -> i32 {
     i : i32 = 0;
     for 0..times (_unused) {
         slot: V = ---;

@@ -16,7 +16,7 @@ impl Drawable for Label {
 
 Bag :: struct ($T: Type) { children: List(T); }
 impl @BuildSink($T) for Bag($T) {
-    expression :: (self: *Bag, value: @Init($V/T)) { }
+    expression :: (self: *Bag, value: $I/@Init($V/T)) { }
 }
 
 collect :: (content: @BuildBlock(Drawable)) -> i64 {

@@ -1,21 +1,21 @@
 error: 'content' is a @BuildBlock(Drawable) — its only operations are '.run(sink)', '.shape()', and '.site()'
-  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:22:14
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:21:14
    |
-22 |     saved := content;        // refused: a block is not storage
+21 |     saved := content;        // refused: a block is not storage
    |              ^^^^^^^
 
 help: a build block is a compile-time value: it cannot be bound, stored, passed on, or returned
    |
-22 |     saved := content;        // refused: a block is not storage
+21 |     saved := content;        // refused: a block is not storage
    |              ^^^^^^^
 
 error: 'content' is a @BuildBlock(Drawable) — its only operations are '.run(sink)', '.shape()', and '.site()'
-  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:23:15
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:22:15
    |
-23 |     elsewhere(content);      // refused: a block is not an argument
+22 |     elsewhere(content);      // refused: a block is not an argument
    |               ^^^^^^^
 
 help: a build block is a compile-time value: it cannot be bound, stored, passed on, or returned
    |
-23 |     elsewhere(content);      // refused: a block is not an argument
+22 |     elsewhere(content);      // refused: a block is not an argument
    |               ^^^^^^^

@@ -29,7 +29,7 @@ impl Drawable for Label {
 Echo :: struct {
     n: i32 = 0;
 
-    expression :: (self: *Echo, value: @Init($V/Drawable)) {
+    expression :: (self: *Echo, value: $I/@Init($V/Drawable)) {
         dest := context.allocator.create(V);
         value.write(dest);
         print("  reached {}\n", dest.draw());

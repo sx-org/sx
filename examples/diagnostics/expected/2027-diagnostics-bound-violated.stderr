@@ -96,3 +96,14 @@ help: 'i64' has no 'val' for 'Summable'
    |
 50 | relay :: ($P: Type, v: $V/P) -> i32 { 1 }
    |                           ^
+
+error: 'Plain' does not satisfy the bound 'Summable' on '$V'
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:55:31
+   |
+55 | nested :: (value: $I/@Init($V/Summable)) -> i32 { 1 }
+   |                               ^^^^^^^^
+
+help: 'Plain' has no 'val' for 'Summable'
+   |
+55 | nested :: (value: $I/@Init($V/Summable)) -> i32 { 1 }
+   |                               ^^^^^^^^

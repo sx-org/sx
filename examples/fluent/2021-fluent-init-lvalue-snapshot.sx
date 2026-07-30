@@ -9,7 +9,7 @@ Button :: struct {
     alpha: f64 = 1.0;
 }
 
-store :: (value: @Init($T)) -> *T {
+store :: (value: $I/@Init($T)) -> *T {
     dest := context.allocator.create(T);
     value.write(dest);
     dest

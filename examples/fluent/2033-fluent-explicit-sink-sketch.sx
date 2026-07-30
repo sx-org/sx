@@ -33,7 +33,7 @@ Roots :: struct {
     storage: Allocator;
     items: List(View) = .{};
 
-    expression :: (self: *Roots, value: @Init($V/View)) {
+    expression :: (self: *Roots, value: $I/@Init($V/View)) {
         destination := self.storage.create(V);
         value.write(destination);
         handle : View = destination;
@@ -44,7 +44,7 @@ Roots :: struct {
 // A second sink over the same block: counts, never writes, so nothing is built.
 Tally :: struct {
     n: i32 = 0;
-    expression :: (self: *Tally, value: @Init($V/View)) { self.n += 1; }
+    expression :: (self: *Tally, value: $I/@Init($V/View)) { self.n += 1; }
 }
 
 capture :: (into: *Roots, content: @BuildBlock(View)) {

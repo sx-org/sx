@@ -25,13 +25,16 @@ impl Drawable for Label {
 
 Roster :: struct {
     seen: i32 = 0;
-    // Which lexical expression each publication came from is the initializer's
-    // to report (`value.site()`); this sink only counts occurrences, which is
-    // what distinguishes a loop's repeats from separate statements.
-    expression :: (self: *Roster, value: @Init($V/Drawable)) {
+    // Which lexical expression a publication came from is the INITIALIZER's to
+    // report (`value.site()`); the sink adds the occurrence count, which is what
+    // distinguishes a loop's repeats from separate statements.
+    expression :: (self: *Roster, value: $I/@Init($V/Drawable)) {
         dest := context.allocator.create(V);
         value.write(dest);
-        print("  occurrence {} -> {}\n", self.seen, dest.draw());
+        s := value.site();
+        if s != null {
+            print("  line {} ordinal {} occurrence {} -> {}\n", s!.line, s!.ordinal, self.seen, dest.draw());
+        }
         self.seen += 1;
         context.allocator.destroy(dest);
     }
@@ -61,10 +64,10 @@ main :: () -> i32 {
 }
 
 // ** stdout **
-//   line 53 ordinal 0 occurrence 0 -> title
-//   line 56 ordinal 1 occurrence 1 -> alpha
-//   line 56 ordinal 1 occurrence 2 -> beta
+//   line 57 ordinal 16 occurrence 0 -> title
+//   line 60 ordinal 21 occurrence 1 -> alpha
+//   line 60 ordinal 21 occurrence 2 -> beta
 //   -- replay --
-//   line 53 ordinal 0 occurrence 0 -> title
-//   line 56 ordinal 1 occurrence 1 -> alpha
-//   line 56 ordinal 1 occurrence 2 -> beta
+//   line 57 ordinal 16 occurrence 0 -> title
+//   line 60 ordinal 21 occurrence 1 -> alpha
+//   line 60 ordinal 21 occurrence 2 -> beta

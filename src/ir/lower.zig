@@ -438,6 +438,12 @@ pub const Lowering = struct {
     /// statement is offered to the top scope's sink; an empty stack means no
     /// interception at all.
     build_scopes: std.ArrayList(lower_build_block.Scope) = .empty,
+    /// `@Init` formation sites, in mint order; a per-site implementor type
+    /// carries its one-based index (`TypeInfo.ClosureInfo.init_site`).
+    init_sites: std.ArrayList(lower_init_plan.Site) = .empty,
+    /// The site id minted for a source expression, so two monomorphizations of
+    /// one enclosing generic function form at the SAME site (§4.2).
+    init_site_ids: std.AutoHashMapUnmanaged(*const Node, u32) = .empty,
     target_type: ?TypeId = null, // target type for struct/enum literals without explicit names
     /// Synthetic call-default roots keyed by node identity. Unlike caller-owned
     /// comptime substitutions (which also carry `Node.source_file`), a declared
@@ -1307,6 +1313,14 @@ pub const Lowering = struct {
         // return type — not a parameter value type (use `Tuple(…)`).
         if (self.rejectMultiReturnValueType(p.type_expr, "parameter")) return .unresolved;
         const declared_ty = self.resolveTypeWithBindings(p.type_expr);
+        // A `$I/@Init(T)` parameter whose binder is not yet bound resolves to
+        // the FORMATION REQUEST for `T` (§5.2): argument lowering keys on it and
+        // forms the implementor that binds `$I`. Once bound — inside the
+        // monomorphized body, or at a forwarding call — the binder resolves to
+        // that implementor above and this arm is not reached.
+        if (declared_ty == .unresolved and !p.is_variadic) {
+            if (lower_init_plan.formationRequest(self, p)) |request| return request;
+        }
         if (p.is_variadic) {
             // Two surface forms:
             //   - legacy `name: ..T` — declared_ty is the element type;
@@ -2928,6 +2942,7 @@ pub const Lowering = struct {
     pub const exprIsFailable = lower_error.exprIsFailable;
     pub const lowerCallerSite = lower_error.lowerCallerSite;
     pub const sourceSiteType = lower_error.sourceSiteType;
+    pub const sourceSiteValue = lower_error.sourceSiteValue;
     pub const mainDir = lower_error.mainDir;
     pub const sourceForFile = lower_error.sourceForFile;
     pub const currentFunctionName = lower_error.currentFunctionName;
@@ -3520,8 +3535,10 @@ pub const Lowering = struct {
     // --- lower/init_plan.zig (`@Init(T)`) ---
     pub const synthNode = lower_tagged.synthNode;
     pub const initTargetOf = lower_init_plan.initTargetOf;
+    pub const initBinderType = lower_init_plan.binderType;
     pub const formInitPlan = lower_init_plan.formInitPlan;
     pub const lowerInitWrite = lower_init_plan.lowerInitWrite;
+    pub const lowerInitSite = lower_init_plan.lowerInitSite;
 
     // --- lower/build_block.zig (`@BuildBlock(P)`) ---
     pub const bindBuildBlockParam = lower_build_block.bindParam;

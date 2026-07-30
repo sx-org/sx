@@ -32,7 +32,7 @@
 // A sink that returns without writing leaves the source expression unevaluated.
 // One that must materialize everything simply writes unconditionally.
 @BuildSink :: protocol(P: Type) constraint {
-    expression :: (self: *Self, value: @Init($V/P));
+    expression :: (self: *Self, value: $I/@Init($V/P));
 }
 
 // Side-effect-free facts about a build block (spec §7). A compiler-maintained

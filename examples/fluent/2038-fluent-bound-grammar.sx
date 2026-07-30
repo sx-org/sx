@@ -21,7 +21,7 @@ impl Drawable for Label {
 Tally :: struct { seen: i32 = 0; }
 
 impl @BuildSink(Drawable) for Tally {
-    expression :: (self: *Tally, value: @Init($V/Drawable)) { self.seen += 1; }
+    expression :: (self: *Tally, value: $I/@Init($V/Drawable)) { self.seen += 1; }
 }
 
 // Marker protocols so `Eq` / `Hashable` below name something: a bound head must
@@ -38,20 +38,22 @@ count_into :: (sink: *$S/@BuildSink(Drawable), n: i32) -> i32 {
 bare :: (a: $T/Eq/Hashable) -> string { "bare" }
 
 // `@` heads: open type arg, fixed type arg, nested binder with its own bound.
+// An `@Init` bound is what makes the parameter form an initializer, so its type
+// argument names what a `write` would fill — a concrete type, not a constraint.
 open   :: (v: $I/@Init($T)) -> string { "open" }
-fixed  :: (v: $I/@Init(Drawable)) -> string { "fixed" }
+fixed  :: (v: $I/@Init(Label)) -> string { "fixed" }
 nested :: (v: $I/@Init($V/Drawable)) -> string { "nested" }
 block  :: (v: $B/@BuildBlock(Drawable)) -> string { "block" }
 sunk   :: (s: *$S/@BuildSink(Drawable)) -> string { "sunk" }
 
 // The explicit binder form takes the same bounds.
-lift :: ($T: Type/@Init($V/Drawable), x: T) -> T { x }
+lift :: ($T: Type/Drawable, x: T) -> string { x.draw() }
 
 main :: () -> i32 {
     l := Label{ text = "hi" };
     t := Tally{};
     print("{} {} {} {} {} {}\n", bare(1), open(l), fixed(l), nested(l), block(l), sunk(*t));
     print("count {} {}\n", count_into(*t, 3), count_into(*t, 4));
-    print("lift {} {}\n", lift(i32, 5), l.draw());
+    print("lift {} {}\n", lift(Label, l), l.draw());
     0
 }

@@ -49,6 +49,11 @@ both :: (a: $T/Summable, b: $T/Show) -> i32 { 1 }
 // that parameter, and is asked there.
 relay :: ($P: Type, v: $V/P) -> i32 { 1 }
 
+// A binder introduced inside another bound's type-argument list carries its own
+// bound, and that one constrains too: the initializer here writes some `V`, and
+// `V` has to be `Summable`.
+nested :: (value: $I/@Init($V/Summable)) -> i32 { 1 }
+
 pair :: () -> Tuple(i64, i64) { Tuple(i64, i64){ 1, 2 } }
 
 main :: () {
@@ -67,4 +72,6 @@ main :: () {
     print("{}\n", both(h, h));
 
     print("{}\n", relay(Summable, 7));
+
+    print("{}\n", nested(Plain{ n = 8 }));
 }

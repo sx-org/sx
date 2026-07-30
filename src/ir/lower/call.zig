@@ -695,11 +695,11 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         const tgt: ?TypeId = if (ai < arg_targets.items.len) arg_targets.items[ai] else null;
                         self.target_type = tgt;
                         const r = blk: {
-                            // An `@Init(T)` param forms its recipe instead of
+                            // A `$I/@Init(T)` param forms its recipe instead of
                             // evaluating the argument (same arm as the direct
                             // path below).
                             if (tgt) |ptv| {
-                                if (self.initTargetOf(ptv) != null) break :blk self.formInitPlan(arg, ptv);
+                                if (self.initTargetOf(ptv)) |target| break :blk self.formInitPlan(arg, target);
                             }
                             // Protocol param targets erase node-aware
                             // (same arm as the direct path).
@@ -790,6 +790,13 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         if (std.mem.eql(u8, fa.field, init_plan.write_method)) {
             if (self.initTargetOf(self.inferExprType(fa.object))) |target|
                 return self.lowerInitWrite(target, fa.object, c.args, c.callee.span);
+        }
+        // `value.site()` — the initializer's own provenance, baked per formation
+        // site. Decided here for the same reason `write` is.
+        if (std.mem.eql(u8, fa.field, init_plan.site_method)) {
+            const recv_ty = self.inferExprType(fa.object);
+            if (self.initTargetOf(recv_ty) != null)
+                return self.lowerInitSite(recv_ty, c.args, c.callee.span);
         }
         // `content.run(*sink)` / `content.shape()` — build-block operations.
         // The receiver is a compile-time binding, not a value, so no ordinary
@@ -902,14 +909,16 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         if (enum_payload_ty) |ept| {
             if (ai == 0) self.target_type = ept;
         }
-        // An `@Init(T)` parameter is destination-first (spec §5.2): the argument
-        // is NOT evaluated at the call boundary. Form the recipe and pass it;
-        // the callee decides when — and whether — the expression runs. This
-        // precedes every value-shaped arm below, all of which would evaluate.
-        if (ai < param_types.len and self.initTargetOf(param_types[ai]) != null) {
-            args.append(self.alloc, self.formInitPlan(arg, param_types[ai])) catch unreachable;
-            self.target_type = saved_target;
-            continue;
+        // A `$I/@Init(T)` parameter is destination-first (spec §5.2): the
+        // argument is NOT evaluated at the call boundary. Form the recipe and
+        // pass it; the callee decides when — and whether — the expression runs.
+        // This precedes every value-shaped arm below, all of which would evaluate.
+        if (ai < param_types.len) {
+            if (self.initTargetOf(param_types[ai])) |target| {
+                args.append(self.alloc, self.formInitPlan(arg, target)) catch unreachable;
+                self.target_type = saved_target;
+                continue;
+            }
         }
         // Implicit float→int narrowing of a compile-time float argument
         // (incl. an expanded `param: T = expr` default) follows the unified

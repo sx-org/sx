@@ -1047,6 +1047,15 @@ pub const Parser = struct {
             contract.?.spelling
         else
             return self.failAt(name_tok.loc, try self.unknownCompilerFormedTypeMsg(name));
+        // A bound-only contract names a constraint: its implementors are minted
+        // per formation site, so no type position can name one.
+        if (contract.?.bound_only) {
+            return self.failAt(name_tok.loc, try std.fmt.allocPrint(
+                self.allocator,
+                "'{s}' is a generic bound, not a type — write the parameter as '{s}'",
+                .{ spelling, contract.?.bound_spelling },
+            ));
+        }
         if (!allowed) {
             return self.failAt(name_tok.loc, try std.fmt.allocPrint(
                 self.allocator,
@@ -2262,6 +2271,21 @@ pub const Parser = struct {
             std.mem.eql(u8, node.data.parameterized_type_expr.name, "@BuildBlock");
     }
 
+    /// The type arguments of the `@Init` bound on `node`, empty when it carries
+    /// none. That bound's argument is inferred from the argument an initializer
+    /// is formed from, so a binder written there belongs to the declaration
+    /// exactly as one written in the annotation does.
+    fn initBoundArgs(node: *const Node) []const *Node {
+        if (node.data != .type_expr) return &.{};
+        for (node.data.type_expr.protocol_constraints) |bound| {
+            if (bound.data != .parameterized_type_expr) continue;
+            const pte = bound.data.parameterized_type_expr;
+            if (!std.mem.eql(u8, pte.name, contracts.init_bound)) continue;
+            return pte.args;
+        }
+        return &.{};
+    }
+
     /// Recursively find all generic type names ($T) in a type expression tree.
     /// Every bound the `$name` binder carries inside `node`, searching each
     /// element position a type constructor can nest one in — `*$S/@BuildSink(P)`
@@ -2273,6 +2297,9 @@ pub const Parser = struct {
             .type_expr => |te| {
                 if (te.is_generic and std.mem.eql(u8, te.name, name))
                     out.appendSlice(self.allocator, te.protocol_constraints) catch {};
+                // A binder introduced INSIDE an `@Init` bound (`$I/@Init($V/P)`)
+                // carries its own bounds, which belong to it and not to `$I`.
+                for (initBoundArgs(node)) |a| collectBinderBounds(self, a, name, out);
             },
             .pointer_type_expr => |p| collectBinderBounds(self, p.pointee_type, name, out),
             .many_pointer_type_expr => |m| collectBinderBounds(self, m.element_type, name, out),
@@ -2297,6 +2324,10 @@ pub const Parser = struct {
         switch (node.data) {
             .type_expr => |te| {
                 if (te.is_generic) list.append(allocator, te.name) catch {};
+                // A binder written inside an `@Init` bound (`$I/@Init($T)`,
+                // `$I/@Init($V/View)`) is one of this declaration's type
+                // parameters.
+                for (initBoundArgs(node)) |a| collectGenericNames(a, list, allocator);
             },
             .pointer_type_expr => |pte| collectGenericNames(pte.pointee_type, list, allocator),
             .many_pointer_type_expr => |mpte| collectGenericNames(mpte.element_type, list, allocator),

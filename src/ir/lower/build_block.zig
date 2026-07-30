@@ -162,7 +162,7 @@ pub fn lowerRun(self: *Lowering, binding: Binding, args: []const *const Node, sp
         const sink_name_str = self.formatTypeName(self.module.types.get(sink_ty).pointer.pointee);
         if (self.diagnostics) |d| {
             const id = d.addFmtId(.err, args[0].span, "'{s}' cannot receive this block: it has no '{s}' method, so it does not implement '@BuildSink({s})'", .{ sink_name_str, sink_method, proto_name });
-            d.addHelpFmt(id, args[0].span, null, "declare `{s} :: (self: *{s}, value: @Init($V/{s}))`", .{ sink_method, sink_name_str, proto_name });
+            d.addHelpFmt(id, args[0].span, null, "declare `{s} :: (self: *{s}, value: $I/@Init($V/{s}))`", .{ sink_method, sink_name_str, proto_name });
         }
         return Ref.none;
     }
@@ -342,15 +342,7 @@ pub fn lowerSite(self: *Lowering, binding: Binding, args: []const *const Node, s
     const site = idx.get(binding.lambda) orelse return self.builder.constNull(opt_ty);
     const src = binding.source_file orelse self.current_source_file;
     const loc = if (self.diagnostics) |d| d.locate(src, binding.lambda.span.start) else null;
-    var fields = [_]Ref{
-        self.builder.constString(self.module.types.internString(site.file)),
-        self.builder.constString(self.module.types.internString(site.declaration)),
-        self.builder.constInt(if (loc) |l| @intCast(l.line) else 0, .i32),
-        self.builder.constInt(if (loc) |l| @intCast(l.col) else 0, .i32),
-        self.builder.constInt(@bitCast(site.ordinal), .u64),
-        self.builder.constInt(@bitCast(site.id), .u64),
-    };
-    const value = self.builder.emit(.{ .struct_init = .{ .fields = self.alloc.dupe(Ref, &fields) catch unreachable } }, tid);
+    const value = self.sourceSiteValue(tid, site, if (loc) |l| @intCast(l.line) else 0, if (loc) |l| @intCast(l.col) else 0);
     return self.builder.emit(.{ .optional_wrap = .{ .operand = value } }, opt_ty);
 }
 

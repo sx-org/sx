@@ -24,7 +24,7 @@ impl Drawable for Label {
 
 Tally :: struct {
     n: i32 = 0;
-    expression :: (self: *Tally, value: @Init($V/Drawable)) { self.n += 1; }
+    expression :: (self: *Tally, value: $I/@Init($V/Drawable)) { self.n += 1; }
 }
 
 panel :: (tag: string, content: @BuildBlock(Drawable)) -> i32 {

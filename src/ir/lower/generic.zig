@@ -773,7 +773,7 @@ pub fn formatFnTypeString(self: *Lowering, fd: *const ast.FnDecl) []const u8 {
 /// Check if a param type expression references a type param name (possibly nested).
 pub fn matchTypeParam(_: *Lowering, type_node: *const Node, tp_name: []const u8) bool {
     return switch (type_node.data) {
-        .type_expr => |te| std.mem.eql(u8, te.name, tp_name),
+        .type_expr => |te| std.mem.eql(u8, te.name, tp_name) or initBoundMatches(type_node, tp_name),
         .identifier => |id| std.mem.eql(u8, id.name, tp_name),
         .slice_type_expr => |st| matchTypeParamStatic(st.element_type, tp_name),
         .pointer_type_expr => |pt| matchTypeParamStatic(pt.pointee_type, tp_name),
@@ -800,9 +800,17 @@ pub fn matchTypeParam(_: *Lowering, type_node: *const Node, tp_name: []const u8)
     };
 }
 
+/// A binder carrying an `@Init(X)` bound also introduces whatever binder `X`
+/// writes (`$I/@Init($T)` declares `$T` too), and that one is inferred from the
+/// argument the initializer is formed from — so both matchers see it.
+fn initBoundMatches(type_node: *const Node, tp_name: []const u8) bool {
+    const target = init_plan.boundTargetNode(type_node) orelse return false;
+    return matchTypeParamStatic(target, tp_name);
+}
+
 pub fn matchTypeParamStatic(type_node: *const Node, tp_name: []const u8) bool {
     return switch (type_node.data) {
-        .type_expr => |te| std.mem.eql(u8, te.name, tp_name),
+        .type_expr => |te| std.mem.eql(u8, te.name, tp_name) or initBoundMatches(type_node, tp_name),
         .identifier => |id| std.mem.eql(u8, id.name, tp_name),
         .slice_type_expr => |st| matchTypeParamStatic(st.element_type, tp_name),
         .pointer_type_expr => |pt| matchTypeParamStatic(pt.pointee_type, tp_name),
@@ -832,7 +840,22 @@ pub fn matchTypeParamStatic(type_node: *const Node, tp_name: []const u8) bool {
 /// E.g., param type []$T with arg type []i64 → T = i64.
 pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId, tp_name: []const u8) ?TypeId {
     return switch (type_node.data) {
-        .type_expr => |te| if (std.mem.eql(u8, te.name, tp_name)) arg_ty else null,
+        .type_expr => |te| blk: {
+            const init_target = init_plan.boundTargetNode(type_node);
+            if (std.mem.eql(u8, te.name, tp_name)) {
+                // An `@Init`-bounded binder binds only to an IMPLEMENTOR: an
+                // ordinary expression is formed first, and the formed type is
+                // what arrives here (§5.2). Leaving it unbound is what makes
+                // the parameter resolve to the formation request.
+                if (init_target != null) break :blk if (init_plan.conforms(self, null, arg_ty)) arg_ty else null;
+                break :blk arg_ty;
+            }
+            // The init's own type argument, inferred from the argument's
+            // ordinary type — or, for a forwarded initializer, from its target.
+            const target_node = init_target orelse break :blk null;
+            const value_ty = self.module.types.initTarget(arg_ty) orelse arg_ty;
+            break :blk self.extractTypeParam(target_node, value_ty, tp_name);
+        },
         .identifier => |id| if (std.mem.eql(u8, id.name, tp_name)) arg_ty else null,
         .slice_type_expr => |st| blk: {
             // arg_ty should be a slice → extract element type. An array
@@ -927,15 +950,6 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
             break :blk null;
         },
         .parameterized_type_expr => |pt| blk: {
-            // `@Init($T)` binds from the argument's ORDINARY type: the recipe is
-            // formed around an expression of type `V`, so `V` is what `$T` sees
-            // (spec §5.1.1). A FORWARDED initializer is the one argument that
-            // already carries an init type — unwrap it to the same `V`.
-            if (std.mem.eql(u8, pt.name, init_plan.type_name)) {
-                if (pt.args.len != 1) break :blk null;
-                const v = self.module.types.initTarget(arg_ty) orelse arg_ty;
-                break :blk self.extractTypeParam(pt.args[0], v, tp_name);
-            }
             // A generic-struct param head (`Box($T)`, also reached recursively
             // for a pointer-wrapped `*Box($T)`): the arg is a monomorphized
             // instance whose per-param bindings were recorded at instantiation
@@ -1986,15 +2000,6 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
         const callee_node = ast.Node{ .data = .{ .identifier = .{ .name = base_name } }, .span = sp };
         const syn = ast.Call{ .callee = @constCast(&callee_node), .args = pt.args };
         return self.resolveTypeCallWithBindings(&syn);
-    }
-
-    // `@Init(T)` — compiler-formed (spec §5). The `@` name reaches here only
-    // from `parseCompilerFormedType`, so there is no user type to shadow it.
-    if (std.mem.eql(u8, pt.name, init_plan.type_name)) {
-        if (pt.args.len != 1) return .unresolved;
-        const target = self.resolveTypeWithBindings(pt.args[0]);
-        if (target == .unresolved) return .unresolved;
-        return table.initPlanType(target);
     }
 
     // `@BuildBlock(P)` — compiler-formed (spec §7), same closed `@` name set.

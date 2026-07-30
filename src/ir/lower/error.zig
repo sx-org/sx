@@ -665,15 +665,7 @@ pub fn lowerCallerSite(self: *Lowering, node: *const Node) Ref {
     const loc = errors.SourceLoc.compute(src, location_span.start);
 
     const site = callerSiteIdentity(self, file, if (call_site) |cs| cs.node else null);
-    var fields = [_]Ref{
-        self.builder.constString(self.module.types.internString(site.file)),
-        self.builder.constString(self.module.types.internString(site.declaration)),
-        self.builder.constInt(@intCast(loc.line), .i32),
-        self.builder.constInt(@intCast(loc.col), .i32),
-        self.builder.constInt(@bitCast(site.ordinal), .u64),
-        self.builder.constInt(@bitCast(site.id), .u64),
-    };
-    return self.builder.emit(.{ .struct_init = .{ .fields = self.alloc.dupe(Ref, &fields) catch unreachable } }, tid);
+    return sourceSiteValue(self, tid, site, @intCast(loc.line), @intCast(loc.col));
 }
 
 /// The indexed identity of the call `node`, or — for a call the site pass never
@@ -706,6 +698,23 @@ fn callerSiteIdentity(self: *Lowering, file: []const u8, node: ?*const Node) sou
 /// canonical declaration registered.
 pub fn sourceSiteType(self: *Lowering) ?TypeId {
     return self.module.types.findByName(self.module.types.internString(source_site.contract_name));
+}
+
+/// Build a `@SourceSite` value of type `tid` from an indexed site plus the
+/// one-based `line` / `column` that only the source text can answer. THE single
+/// place the contract's field order is written down, so every producer
+/// (`@caller`, a build block's `site()`, an initializer's `site()`) emits the
+/// same shape.
+pub fn sourceSiteValue(self: *Lowering, tid: TypeId, site: source_site.Site, line: i32, column: i32) Ref {
+    var fields = [_]Ref{
+        self.builder.constString(self.module.types.internString(site.file)),
+        self.builder.constString(self.module.types.internString(site.declaration)),
+        self.builder.constInt(line, .i32),
+        self.builder.constInt(column, .i32),
+        self.builder.constInt(@bitCast(site.ordinal), .u64),
+        self.builder.constInt(@bitCast(site.id), .u64),
+    };
+    return self.builder.emit(.{ .struct_init = .{ .fields = self.alloc.dupe(Ref, &fields) catch unreachable } }, tid);
 }
 
 /// The compilation root: the main file's directory. `main_file` already came

@@ -23,7 +23,7 @@ EmitSink :: struct {
     count: i32 = 0;
     last_label: string = "";
 
-    expression :: (self: *EmitSink, value: @Init($V/EmitCell)) {
+    expression :: (self: *EmitSink, value: $I/@Init($V/EmitCell)) {
         dest := context.allocator.create(V);
         value.write(dest);
         self.last_label = dest.emit_label();

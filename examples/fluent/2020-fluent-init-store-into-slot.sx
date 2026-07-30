@@ -1,6 +1,6 @@
 // `@Init(T)` — destination construction (fluent spec §5.1, §5.2).
 //
-// A function that takes `@Init($T)` opts into destination-first construction:
+// A parameter bounded `$I/@Init($T)` opts into destination-first construction:
 // the argument expression is NOT evaluated at the call boundary. The callee
 // picks the storage, then `value.write(dest)` runs the expression once,
 // directly into it. A callee that never writes never evaluates the expression
@@ -13,20 +13,20 @@ Button :: struct {
 }
 
 // The §5.1 shape: reserve, write, hand back the pointer.
-store :: (value: @Init($T)) -> *T {
+store :: (value: $I/@Init($T)) -> *T {
     dest := context.allocator.create(T);
     value.write(dest);
     dest
 }
 
-// Forwarding an initializer to another `@Init(T)` parameter is synchronous and
+// Forwarding an initializer to another `$I/@Init(T)` parameter is synchronous and
 // hands over the single write — it does not wrap the recipe in a second one.
-store_via :: (value: @Init($T)) -> *T {
+store_via :: (value: $I/@Init($T)) -> *T {
     store(value)
 }
 
 // A receiver may decline to write. Then the expression never runs.
-count_only :: (value: @Init($T)) -> i32 {
+count_only :: (value: $I/@Init($T)) -> i32 {
     3
 }
 

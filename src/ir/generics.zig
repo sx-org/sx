@@ -87,8 +87,11 @@ pub const GenericResolver = struct {
                 const inner = self.mangleTypeName(v.element);
                 break :blk std.fmt.allocPrint(self.l.alloc, "vec_{d}_{s}", .{ v.length, inner }) catch @panic("out of memory while mangling type");
             },
+            // The formation site joins the key: two sites forming the same `T`
+            // are distinct implementors, and a shared mono would bake the first
+            // site's `site()` into the second's writes.
             .closure => |c| if (c.init_target) |it|
-                std.fmt.allocPrint(self.l.alloc, "init_{s}", .{self.mangleTypeName(it)}) catch @panic("out of memory while mangling type")
+                std.fmt.allocPrint(self.l.alloc, "init{d}_{s}", .{ c.init_site, self.mangleTypeName(it) }) catch @panic("out of memory while mangling type")
             else if (c.build_protocol) |bp|
                 std.fmt.allocPrint(self.l.alloc, "block_{s}", .{self.mangleTypeName(bp)}) catch @panic("out of memory while mangling type")
             else
@@ -259,7 +262,12 @@ pub const GenericResolver = struct {
                             self.l.bareFnNameSignature(args_ast[s2_arg_idx]) orelse inferred
                         else
                             inferred;
-                        const extracted = self.l.extractTypeParam(param.type_expr, arg_ty, tp.name);
+                        // An `@Init`-bounded binder binds to the IMPLEMENTOR the
+                        // argument forms into, not to the argument's own type
+                        // (§5.2); the init's type argument still binds from the
+                        // ordinary type through `extractTypeParam` below.
+                        const extracted = self.l.initBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
+                            self.l.extractTypeParam(param.type_expr, arg_ty, tp.name);
                         if (extracted) |ety| {
                             if (inferred_ty) |prev| {
                                 if (ety == .f64 and prev != .f64) {

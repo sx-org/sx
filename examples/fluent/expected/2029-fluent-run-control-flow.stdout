@@ -1,7 +1,7 @@
-  occurrence 0 -> title
-  occurrence 1 -> alpha
-  occurrence 2 -> beta
+  line 57 ordinal 16 occurrence 0 -> title
+  line 60 ordinal 21 occurrence 1 -> alpha
+  line 60 ordinal 21 occurrence 2 -> beta
   -- replay --
-  occurrence 0 -> title
-  occurrence 1 -> alpha
-  occurrence 2 -> beta
+  line 57 ordinal 16 occurrence 0 -> title
+  line 60 ordinal 21 occurrence 1 -> alpha
+  line 60 ordinal 21 occurrence 2 -> beta

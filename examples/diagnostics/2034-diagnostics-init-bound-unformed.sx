@@ -1,0 +1,39 @@
+// An `@Init` bound is satisfied by FORMATION, and by nothing else (fluent spec
+// §5.2). The binder holds the initializer the compiler minted at the argument, so
+// these are all refused, and none of them passes for want of something to check:
+//
+//   - a binding that never went through formation at all — an explicit
+//     `$T: Type` binder takes a type the caller spells, and no initializer is
+//     spellable;
+//   - an initializer for a DIFFERENT type than the bound asks for, which is what
+//     a hand-over into a fixed-target parameter can get wrong;
+//   - a bound that does not say what a `write` fills: `@Init` names one type
+//     argument, and any other spelling targets nothing.
+//
+// Expected: exit 1.
+#import "modules/std.sx";
+
+Button :: struct { label: string = ""; }
+Label  :: struct { text: string = ""; }
+
+// The explicit binder form: `T` is whatever type the call passes, which can
+// never be a formed initializer.
+lift :: ($T: Type/@Init(Button), x: T) -> T { x }
+
+// A hand-over into a parameter whose target is fixed to `Label`.
+into_label :: (value: $I/@Init(Label)) -> i32 { 0 }
+
+relay :: (value: $I/@Init($T)) -> i32 {
+    into_label(value)
+}
+
+// Bounds that name no single target: too many arguments, and none at all.
+two   :: (value: $I/@Init(Button, Label)) -> i32 { 0 }
+bare  :: (value: $I/@Init) -> i32 { 0 }
+
+main :: () {
+    print("{}\n", lift(i64, 5));
+    print("{}\n", relay(Button{ label = "b" }));
+    print("{}\n", two(Button{ label = "t" }));
+    print("{}\n", bare(Button{ label = "n" }));
+}

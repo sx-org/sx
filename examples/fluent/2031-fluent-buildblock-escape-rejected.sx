@@ -4,10 +4,9 @@
 // accepting call replays in place — so there is nothing for a binding, a call
 // argument, a field, or a return to hold.
 //
-// The type grammar already refuses every storage position (`@BuildBlock(P)` is
-// legal only as a parameter annotation, exactly like `@Init(T)`). What is left
-// is reaching for the value from inside a body, refused here. Its one operation
-// is `run`.
+// The type grammar already refuses every storage position: `@BuildBlock(P)` is
+// legal only as a parameter annotation. What is left is reaching for the value
+// from inside a body, refused here. Its one operation is `run`.
 // Expected: exit 1.
 #import "modules/std.sx";
 #import "modules/fluent.sx";

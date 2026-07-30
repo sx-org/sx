@@ -30,7 +30,7 @@ tag :: (n: i32) -> i32 {
     n
 }
 
-store :: (n: i32, value: @Init($T)) -> *T {
+store :: (n: i32, value: $I/@Init($T)) -> *T {
     print("entered store({})\n", n);
     dest := context.allocator.create(T);
     print("reserved destination\n");

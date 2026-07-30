@@ -110,9 +110,12 @@ the import can stand in for the canonical declaration:
 @SourceSite :: struct { … }   // ERROR: 'modules/std/core.sx' declares it
 ```
 
-Separately, a few `@` names are **compiler-formed types** — `@Init(T)` and
-`@BuildBlock(P)`. Those are formed at a parameter type, never declared and
-never constructed, so they have no stdlib declaration and no literal form.
+Separately, a few `@` names are **compiler-formed** — `@Init(T)` and
+`@BuildBlock(P)`. Those are formed for a parameter, never declared and never
+constructed, so they have no stdlib declaration and no literal form.
+`@BuildBlock(P)` is written as the parameter's type; `@Init(T)` is a constraint,
+so it is written only as a bound on it (`value: $I/@Init(T)` — see
+[`@Init(T)`](#initt)).
 
 #### Backtick raw-identifier escape
 
@@ -2906,7 +2909,7 @@ lift      :: ($T: Type/Ord, x: T) -> T { … }            // explicit form
 A head names the protocol required of the binder: a declared protocol, an
 enclosing type parameter, or a compiler-owned `@` contract (`@Init`,
 `@BuildBlock`). A parameterized protocol takes its type arguments in the
-bound — `$B/@BuildBlock(View)`, `$I/@Init(Drawable)`. An argument is an
+bound — `$B/@BuildBlock(View)`, `$I/@Init(Button)`. An argument is an
 ordinary type expression, so it may introduce a binder of its own, with its
 own bounds: `$I/@Init($V/Drawable)`.
 
@@ -2928,7 +2931,8 @@ Where the check lands depends on what the head names:
 | a declared protocol | the binding implements every method |
 | a parameterized protocol (`Into(i32)`) | a visible `impl Into(i32) for <binding>` exists, or a **blanket** impl covers it |
 | the declaration's own type parameter (`$V/P`) | deferred — asked again wherever `P` is bound: as **conformance** when `P` is a protocol, as **identity** when `P` is a concrete type |
-| a compiler-formed contract (`@Init`, `@BuildBlock`) | the argument is formable into an implementor |
+| `@Init(T)` | the binder holds an initializer the compiler formed for `T` — see [`@Init(T)`](#initt) |
+| `@BuildBlock(P)` | the parameter is bound to a trailing block |
 
 A protocol satisfies its own bound: binding `$V/View` to `View` is the identity
 case, not a request that `View` implement itself.
@@ -3680,6 +3684,56 @@ per-iteration identity combines the site with an occurrence count or an
 explicit key. `id` is exactly `source_site_key_id(source_site_key(site))` —
 `modules/std/source_site.sx` states that computation in ordinary sx, and the
 compiler must agree with it.
+
+#### `@Init(T)`
+
+`@Init(T)` is a compiler-maintained **constraint**: an initializer for `T`, a
+recipe that fills a destination the receiver chooses. It is not a type, so it is
+never a variable, field, or return type — a parameter accepts an initializer by
+carrying it as a **bound**:
+
+```sx
+store :: (value: $I/@Init($T)) -> *T {
+    dest := context.allocator.create(T);
+    value.write(dest);
+    dest
+}
+
+button := store(Button{ label = "Play" });
+```
+
+The argument is **not evaluated at the call**. The compiler forms an initializer
+from the expression and binds `$I` to it; the expression runs when — and each
+time — the receiver calls `write`. A receiver that never writes never evaluates
+it at all.
+
+The bound's type argument is what a `write` fills. It may be **fixed**
+(`$I/@Init(Button)`) or left open, inferred from the argument's own type
+(`$I/@Init($T)`, `$I/@Init($V/View)` when the type must also satisfy `View`).
+
+An argument that is **already** an initializer for the same type passes through
+unchanged: a helper taking `$I/@Init($T)` may hand its own `value` to another
+such parameter, which hands over the single write rather than wrapping it. A
+binder bounded by `@Init` can hold nothing else — a binding that is not a formed
+initializer fails the bound.
+
+The operations:
+
+| Operation | Meaning |
+|---|---|
+| `write(destination: *T)` | evaluate the expression into `destination`, which is **exactly** `*T` |
+| `site() -> ?@SourceSite` | the source site of the expression the initializer was formed from |
+
+`write` may be called zero, one, or many times: each call re-evaluates the
+expression, side effects included. The compiler does not count writes, does not
+require one, and does not check that a receiver publishes only what it wrote —
+that protocol belongs to the library that accepts the initializer.
+
+Each formation site is its own implementor type, so `write` and `site` are
+resolved per site with nothing dispatched at runtime and no storage beyond the
+expression's own captures. `site()` reports the site the way `@caller` does: a
+lexical position, with a generic specialization reporting its **template**'s
+declaration path.
 
 ### Enum Definition
 

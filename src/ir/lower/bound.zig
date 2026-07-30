@@ -12,8 +12,8 @@
 //!     whichever call fixes that parameter — and is asked again there, against
 //!     the concrete binding.
 //!   - a COMPILER-FORMED contract (`@Init`, `@BuildBlock`). There is no
-//!     declaration to check: the argument satisfies the bound by being formable
-//!     into an implementor, which formation decides at the call.
+//!     declaration to check: the binder holds what formation produced at the
+//!     argument, and the check is that it did.
 //!
 //! An unresolved head is an ordinary unknown-name error. There is no tolerated
 //! middle state: a bound that names nothing constrains nothing, which is the one
@@ -99,7 +99,7 @@ pub fn checkBindings(
         if (bound_ty == .unresolved) continue;
         for (tp.protocol_constraints) |bound| {
             switch (resolveHead(self, bound, source, names.items)) {
-                .formed => {},
+                .formed => |name| checkFormed(self, bound, name, tp.name, bound_ty),
                 // The named parameter may be bound by this very
                 // monomorphization; when it is, the deferral has arrived and the
                 // question is asked here against that binding.
@@ -176,6 +176,56 @@ fn checkOne(
     const missing = self.firstUnimplementedProtocolMethod(pty, concrete_name, bound_ty) orelse return;
     reportViolation(self, bound, p.name, param, bound_ty,
         "'{s}' has no '{s}' for '{s}'", .{ self.formatTypeName(bound_ty), missing, p.name });
+}
+
+/// A compiler-formed bound. There is no impl to look up: the binding satisfies
+/// `@Init(T)` by BEING an implementor the compiler minted for `T` at a formation
+/// site, which is what this checks. A binder that took the argument's own type
+/// instead — a parameter whose argument was never formed — fails here rather
+/// than compiling into a lost deferral.
+///
+/// `@BuildBlock` binds a block body rather than a value; its conformance
+/// question is answered where the block is bound, not here.
+fn checkFormed(
+    self: *Lowering,
+    bound: *const Node,
+    name: []const u8,
+    param: []const u8,
+    bound_ty: TypeId,
+) void {
+    if (!std.mem.eql(u8, name, contracts.init_bound)) return;
+    const spelled_args: usize = switch (bound.data) {
+        .parameterized_type_expr => |pte| pte.args.len,
+        else => 0,
+    };
+    // An `@Init` bound names what a `write` fills, so exactly one type argument
+    // says what that is. Any other spelling names no initializer, and formation
+    // has nothing to target.
+    if (spelled_args != 1) {
+        const d0 = self.diagnostics orelse return;
+        const id0 = d0.addFmtId(.err, bound.span, "the bound '{s}' on '${s}' takes one type argument, but {d} {s} written", .{
+            name, param, spelled_args, if (spelled_args == 1) "is" else "are",
+        });
+        d0.addHelpFmt(id0, bound.span, null, "write '${s}/{s}(T)' with the type a 'write' fills", .{ param, name });
+        return;
+    }
+    const target_node = bound.data.parameterized_type_expr.args[0];
+    const want = self.resolveTypeWithBindings(target_node);
+    const spelled = if (want == .unresolved) name else spelledHead(self, bound, name);
+    const actual = self.module.types.initTarget(bound_ty) orelse {
+        const d = self.diagnostics orelse return;
+        const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
+            self.formatTypeName(bound_ty), spelled, param,
+        });
+        d.addHelpFmt(id, bound.span, null, "an initializer is formed at the argument of a value parameter — '${s}' can only bind what formation produced", .{param});
+        return;
+    };
+    if (want == .unresolved or actual == want) return;
+    const d = self.diagnostics orelse return;
+    const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
+        self.formatTypeName(bound_ty), spelled, param,
+    });
+    d.addHelpFmt(id, bound.span, null, "this initializer writes '{s}', and the bound asks for '{s}'", .{ self.formatTypeName(actual), self.formatTypeName(want) });
 }
 
 /// The deferred question, arriving: `$V/P` where `P` is bound by this same

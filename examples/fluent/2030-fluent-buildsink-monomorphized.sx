@@ -2,7 +2,7 @@
 // ordinary generic method (fluent spec §6.3, §9.1, §9.5).
 //
 //     @BuildSink :: protocol(P: Type) constraint {
-//         expression :: (self: *Self, value: @Init($V/P));
+//         expression :: (self: *Self, value: $I/@Init($V/P));
 //     }
 //
 // The compiler does not erase the reached expression before offering it. It
@@ -37,13 +37,13 @@ Measure :: struct {
     bytes: i64 = 0;
     count: i32 = 0;
 
-    expression :: (self: *Measure, value: @Init($V/Drawable)) {
+    expression :: (self: *Measure, value: $I/@Init($V/Drawable)) {
         self.bytes += size_of(V);
         self.count += 1;
     }
 }
 impl @BuildSink(Drawable) for Measure {
-    expression :: (self: *Measure, value: @Init($V/Drawable)) {
+    expression :: (self: *Measure, value: $I/@Init($V/Drawable)) {
         self.bytes += size_of(V);
         self.count += 1;
     }
@@ -54,7 +54,7 @@ impl @BuildSink(Drawable) for Measure {
 Capture :: struct {
     items: List(Drawable) = .{};
 
-    expression :: (self: *Capture, value: @Init($V/Drawable)) {
+    expression :: (self: *Capture, value: $I/@Init($V/Drawable)) {
         destination := context.allocator.create(V);
         value.write(destination);
         handle : Drawable = destination;
@@ -62,7 +62,7 @@ Capture :: struct {
     }
 }
 impl @BuildSink(Drawable) for Capture {
-    expression :: (self: *Capture, value: @Init($V/Drawable)) {
+    expression :: (self: *Capture, value: $I/@Init($V/Drawable)) {
         destination := context.allocator.create(V);
         value.write(destination);
         handle : Drawable = destination;
