@@ -3766,18 +3766,8 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // that set (or a `P` already). Anything else has nothing to lift, and
             // an explicit cast must not pass the bytes through as if it did.
             if (self.isOpenSet(dst)) {
-                const recv_ty = self.inferExprType(pc.operand);
-                if (recv_ty != dst and recv_ty != .unresolved and !self.openSetDeclaresMembership(recv_ty, self.openSetOf(dst).?.decl.name)) {
-                    if (self.diagnostics) |d| {
-                        const id = d.addFmtId(.err, node.span, "'{s}' cannot be converted to '{s}': it is not a member of it", .{ self.formatTypeName(recv_ty), self.formatTypeName(dst) });
-                        if (self.openSetOfMember(recv_ty)) |other| {
-                            d.addHelpFmt(id, node.span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatTypeName(recv_ty), other.decl.name });
-                        } else {
-                            d.addHelpFmt(id, node.span, null, "a type joins by declaring itself into the set: '{s} :: @OpenVariant({s}) {{ … }}'", .{ self.formatTypeName(recv_ty), self.formatTypeName(dst) });
-                        }
-                    }
+                if (self.refuseOpenSetNonMember(self.inferExprType(pc.operand), dst, node.span))
                     break :blk self.builder.constUndef(dst);
-                }
             }
             if (pc.alloc_arg != null) {
                 if (self.diagnostics) |d| {

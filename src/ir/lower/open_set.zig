@@ -902,6 +902,26 @@ pub fn setOfMember(self: *Lowering, member: TypeId) ?*Set {
     return self.open_sets.getPtr(joined);
 }
 
+/// Refuse a conversion of `src_ty` into the set `set_ty` when `src_ty` never
+/// declared itself into it — true when refused, and the caller yields a value of
+/// the set instead of converting. Membership is a declaration, so a non-member has
+/// nothing to lift and its bytes are not a set value in any spelling; a member of
+/// ANOTHER set is told it belongs to one (spec: Open Sets — formation).
+pub fn refuseNonMember(self: *Lowering, src_ty: TypeId, set_ty: TypeId, span: ast.Span) bool {
+    if (src_ty == set_ty or src_ty == .unresolved) return false;
+    const set = setOf(self, set_ty) orelse return false;
+    if (declaresMembership(self, src_ty, set.decl.name)) return false;
+    if (self.diagnostics) |d| {
+        const id = d.addFmtId(.err, span, "'{s}' cannot be converted to '{s}': it is not a member of it", .{ self.formatTypeName(src_ty), self.formatTypeName(set_ty) });
+        if (setOfMember(self, src_ty)) |other| {
+            d.addHelpFmt(id, span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatTypeName(src_ty), other.decl.name });
+        } else {
+            d.addHelpFmt(id, span, null, "a type joins by declaring itself into the set: '{s} :: @OpenVariant({s}) {{ … }}'", .{ self.formatTypeName(src_ty), self.formatTypeName(set_ty) });
+        }
+    }
+    return true;
+}
+
 /// The set's required method of that name, or null when the set does not require
 /// one. A method with a default body is not dispatched through the set — nothing
 /// in this packet declares one.

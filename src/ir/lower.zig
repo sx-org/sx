@@ -3616,6 +3616,7 @@ pub const Lowering = struct {
     pub const refuseUnfrozenLayout = lower_open_set.refuseUnfrozenLayout;
     pub const openSetDeclaresMembership = lower_open_set.declaresMembership;
     pub const openSetOfMember = lower_open_set.setOfMember;
+    pub const refuseOpenSetNonMember = lower_open_set.refuseNonMember;
     pub const coerceMemberToSet = lower_open_set.coerceMemberToSet;
     pub const emitOpenSetDispatch = lower_open_set.emitDispatch;
     pub const materializeOpenSetArms = lower_open_set.materializeArms;

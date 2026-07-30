@@ -7,6 +7,8 @@
 //   - a type that never declared itself into the set is not a member, and no
 //     conversion can stand in for a declaration — including a member of a
 //     DIFFERENT set, since a type belongs to one;
+//   - `xx` names the same conversion, so it refuses exactly what the expected
+//     type and `.(View)` refuse — an explicit cast is not a way past membership;
 //   - `.(P, alloc)` does not exist for a set: the active member lives inline in
 //     the slot, so nothing allocates and there is no allocator to pass; and
 //   - `write` takes exactly `*T` for its own type argument. An `@Init(Label)`
@@ -58,6 +60,11 @@ main :: () -> i32 {
     // The explicit conversion asks the same question.
     converted := Plain{ text = "no" }.(View);
     print("{}\n", converted.render());
+
+    // And so does `xx`, for a non-member and for a member of another set.
+    cast_plain: View = xx Plain{ text = "still not a member" };
+    cast_alien: View = xx Alien{ text = "still another set" };
+    print("{} {}\n", cast_plain.render(), cast_alien.render());
 
     // An allocator has nothing to fund here.
     allocated := Label{ text = "x" }.(View, context.allocator);

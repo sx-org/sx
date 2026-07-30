@@ -3985,6 +3985,7 @@ What formation **refuses**:
 | `v: View = .{ … }` | a contextual literal names no type, so there is no member to lift |
 | `v: View = Plain{}` | `Plain` never declared itself into `View`; no conversion stands in for a declaration |
 | `v: View = Alien{}` | `Alien` is a member of another set, and a type belongs to one |
+| `v: View = xx Plain{}` | a cast asks for the same conversion, and is not a way past a declaration |
 | `value.(View, alloc)` | not a conversion that allocates — the active member lives **inline** in the slot, so there is no allocator to pass and none is invented |
 
 An open set sits outside protocol conversion entirely: there is no `xx`-style

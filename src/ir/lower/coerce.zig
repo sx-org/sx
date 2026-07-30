@@ -145,6 +145,17 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         .coerce => {},
     }
 
+    // The ladder reaches a set destination through its formation arm, which lifts
+    // a MEMBER into the slot; nothing else has a tag to write. An explicit cast
+    // asks for the same conversion formation performs, so a non-member is refused
+    // here rather than falling to the reinterpreting arms below, which would type
+    // its bytes as a set (spec: Open Sets — formation).
+    if (target_explicit and self.isOpenSet(dst_ty)) {
+        const cs = self.builder.current_span;
+        if (self.refuseOpenSetNonMember(src_ty, dst_ty, .{ .start = cs.start, .end = cs.end }))
+            return self.builder.constUndef(dst_ty);
+    }
+
     const result = self.coerceExplicit(operand, src_ty, dst_ty);
 
     // User-space fallback via `impl Into(Target) for Source`. Only fires
