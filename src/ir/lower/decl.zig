@@ -341,7 +341,9 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // the tags and emit each reached protocol's tag table and outlined
     // dispatch routines. Runs after every body is lowered — an impl body
     // monomorphized here can still enlarge a set, so the pass is a fixpoint —
-    // and before codegen, which is where the relocated tags are consumed.
+    // and before codegen, which is where the relocated tags are consumed. The
+    // open sets freeze in the same fixpoint: their last member can arrive from
+    // the same monomorphization, and their layout is what codegen reads.
     self.convergeTaggedSets();
     // Pass 6: any impl block STILL unregistered has an unresolvable head or
     // types — every registration opportunity has run. Silence here let a
@@ -608,6 +610,7 @@ fn admitOpenVariants(self: *Lowering, decls: []const *const Node) void {
             else => {},
         }
     }
+    self.open_set_decls_admitted = true;
 }
 
 /// Detect whether `Context :: struct {...}` is declared anywhere in the

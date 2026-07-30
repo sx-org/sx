@@ -151,6 +151,13 @@ fn printInst(instruction: *const Inst, ref_idx: u32, tt: *const TypeTable, write
         .tagged_tag_of => |t| try writer.print("tag_of({s}, {s}) : ", .{ tt.typeName(t.proto), tt.typeName(t.concrete) }),
         .tagged_conforms => |t| try writer.print("conforms({s}, {s}) : ", .{ tt.typeName(t.proto), tt.typeName(t.concrete) }),
         .tagged_type_id => |t| try writer.print("tagged_type_id %{d}, @{d} : ", .{ t.tag.index(), t.table.index() }),
+        .open_set_layout => |q| try writer.print("{s}({s}) : ", .{
+            switch (q.query) {
+                .size => "set_size_of",
+                .alignment => "set_align_of",
+            },
+            tt.typeName(q.measured),
+        }),
 
         // ── Arithmetic ──────────────────────────────────────────
         .add => |b| try writer.print("add %{d}, %{d} : ", .{ b.lhs.index(), b.rhs.index() }),

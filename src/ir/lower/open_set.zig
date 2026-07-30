@@ -31,6 +31,15 @@
 //! growth is transitive: a member holding another set by value changes size when
 //! that set does, which re-lays-out the set it belongs to and re-checks it against
 //! its own ceiling (`relayout` → `cascade`).
+//!
+//! Which is why a set's size is not a source literal. The last member can arrive
+//! at any point up to the FREEZE — the point the `tagged` conformer sets converge
+//! at — so `size_of(P)` lowers to an `open_set_layout` op that each world resolves
+//! against the frozen layout, and one program has ONE answer wherever it asks. A
+//! position that must be folded EARLIER than the freeze — an array dimension, a
+//! `::` constant — is refused instead of answered against a layout that is not
+//! there yet. The freeze also numbers each set's members densely in the set's own
+//! tag space and writes its `tag → member Type` table.
 
 const std = @import("std");
 const ast = @import("../../ast.zig");
@@ -40,6 +49,8 @@ const types = @import("../types.zig");
 const TypeId = types.TypeId;
 
 const program_index = @import("../program_index.zig");
+const inst_mod = @import("../inst.zig");
+const comptime_vm = @import("../comptime_vm.zig");
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 
@@ -79,7 +90,8 @@ pub const Set = struct {
     declared_align: u32,
     span: ast.Span,
     source_file: ?[]const u8,
-    /// Members, in declaration order — which is tag order.
+    /// Members, in admission order until the freeze numbers them — from there,
+    /// in tag order.
     members: std.ArrayList(TypeId) = .empty,
 };
 
@@ -253,9 +265,24 @@ pub fn admitVariant(
         if (m == variant) return;
     }
     set.members.append(self.alloc, variant) catch return;
+    self.open_set_epoch += 1;
     self.open_variant_of.put(variant, set_name) catch {};
     recordDependencies(self, sd, variant, set_name, span);
     relayout(self, set);
+}
+
+/// Record that `set_name` has a GENERIC member declaration. The template has no
+/// layout of its own; each instantiation the program spells is another member,
+/// and the program is not finished spelling them — which is exactly what keeps
+/// the set's layout open past the declaration pass.
+pub fn noteGenericMember(self: *Lowering, set_name: []const u8) void {
+    self.open_set_generic_members.put(set_name, {}) catch {};
+}
+
+/// Can a generic member still be instantiated into `set`?
+fn mayGrowGenerically(self: *Lowering, set: TypeId) bool {
+    const name = self.open_set_by_type.get(set) orelse return false;
+    return self.open_set_generic_members.contains(name);
 }
 
 /// Does the member fit the set's ceiling and alignment? `grown` names the set
@@ -438,6 +465,14 @@ fn collectSetsByValue(self: *Lowering, ty: TypeId, out: *std.AutoHashMap(TypeId,
 /// finiteness check), and a cycle BETWEEN sets is caught here — two sets whose
 /// layouts each depend on the other have no finite answer.
 pub fn relayout(self: *Lowering, set: *Set) void {
+    layoutFields(self, set);
+    cascade(self, set);
+}
+
+/// The layout itself: the payload is the largest member, and the interned shape
+/// carries the members in the order the set holds them — which the freeze turns
+/// into tag order, so from there `fields[tag]` is the member that tag selects.
+fn layoutFields(self: *Lowering, set: *Set) void {
     var payload: u32 = 0;
     for (set.members.items) |m| {
         const size: u32 = @intCast(self.module.types.typeSizeBytes(m));
@@ -455,7 +490,6 @@ pub fn relayout(self: *Lowering, set: *Set) void {
     updated.tagged_union.fields = self.alloc.dupe(types.TypeInfo.StructInfo.Field, fields.items) catch return;
     updated.tagged_union.backing_type = backingType(self, payload, set.alignment);
     self.module.types.updatePreservingKey(set.ty, updated);
-    cascade(self, set);
 }
 
 /// Re-lay-out every set whose members hold `grown` by value.
@@ -513,4 +547,206 @@ fn payloadElement(self: *Lowering, alignment: u32) TypeId {
 fn alignUp(value: u32, alignment: u32) u32 {
     if (alignment == 0) return value;
     return (value + alignment - 1) & ~(alignment - 1);
+}
+
+// ── Finality (spec: Open Sets — when the layout is final) ────────────────
+
+/// Is `ty` a type an open set's layout decides — the set itself, or anything
+/// holding one by value at any depth? Those are the sizes that do not exist
+/// until the sets freeze.
+pub fn layoutDependsOnSet(self: *Lowering, ty: TypeId) bool {
+    if (self.open_set_by_type.count() == 0) return false;
+    var seen = std.AutoHashMap(TypeId, void).init(self.alloc);
+    defer seen.deinit();
+    collectSetsByValue(self, ty, &seen, 0);
+    return seen.count() > 0;
+}
+
+/// Can the layout of any set `ty` is measured through still change?
+///
+/// A set grows only when a member is declared into it. Once the declaration pass
+/// has admitted every member it can see, the one remaining source of growth is a
+/// GENERIC member's instantiation — of the set itself, or of any set whose growth
+/// cascades into it (`relayout` → `cascade`). A set that no generic member can
+/// reach is therefore already final, and a read of its size is answerable well
+/// before the freeze.
+pub fn layoutFinal(self: *Lowering, ty: TypeId) bool {
+    if (self.module.open_sets_final) return true;
+    if (!self.open_set_decls_admitted) return false;
+    // No generic member anywhere in the program: the declaration pass admitted the
+    // last member any set will ever have.
+    if (self.open_set_generic_members.count() == 0) return true;
+    var seen = std.AutoHashMap(TypeId, void).init(self.alloc);
+    defer seen.deinit();
+    collectSetsByValue(self, ty, &seen, 0);
+
+    var pending = std.ArrayList(TypeId).empty;
+    defer pending.deinit(self.alloc);
+    var it = seen.keyIterator();
+    while (it.next()) |k| pending.append(self.alloc, k.*) catch return false;
+
+    var visited = std.AutoHashMap(TypeId, void).init(self.alloc);
+    defer visited.deinit();
+    while (pending.pop()) |set| {
+        const gop = visited.getOrPut(set) catch return false;
+        if (gop.found_existing) continue;
+        if (mayGrowGenerically(self, set)) return false;
+        for (growersOf(self, set)) |grown| pending.append(self.alloc, grown) catch return false;
+    }
+    return true;
+}
+
+/// Every set whose growth reaches `set`: the sets `set`'s own members hold by
+/// value, read off the dependency edges the cascade replays.
+fn growersOf(self: *Lowering, set: TypeId) []const TypeId {
+    var out = std.ArrayList(TypeId).empty;
+    var it = self.open_set_dependents.iterator();
+    while (it.next()) |e| {
+        for (e.value_ptr.items) |dep| {
+            const owner = self.open_sets.getPtr(dep.set_name) orelse continue;
+            if (owner.ty != set) continue;
+            out.append(self.alloc, e.key_ptr.*) catch {};
+            break;
+        }
+    }
+    return out.toOwnedSlice(self.alloc) catch &.{};
+}
+
+/// The answer a parked comptime evaluation awaits: the sets have frozen, so the
+/// layout it asked for exists. Answered the instant nothing can grow the set
+/// (`layoutFinal`); otherwise the evaluation stays parked, and quiescence with it
+/// still parked is the expansion deadlock — a program whose set layout depends on
+/// a compile-time answer that depends on the layout.
+pub fn resolveLayoutFact(self: *Lowering, measured: TypeId) comptime_vm.FactAnswer {
+    if (!layoutFinal(self, measured)) return .later;
+    self.module.open_set_layouts.put(measured, .{
+        .size = @intCast(self.module.types.typeSizeBytes(measured)),
+        .alignment = @intCast(self.module.types.typeAlignBytes(measured)),
+    }) catch {};
+    return .{ .now = .published };
+}
+
+// ── The freeze ──────────────────────────────────────────────────────────
+
+/// Freeze the program's open sets, at the same point the `tagged` conformer sets
+/// converge: number every member densely inside its OWN set's tag space, write
+/// each set's `tag → member Type` table, and publish the layouts. From here an
+/// open set has a size, and it is the same one wherever the program asks.
+pub fn freezeSets(self: *Lowering) void {
+    for (setsByName(self)) |set| {
+        numberMembers(self, set);
+        // The interned shape follows the numbering, so `fields[tag]` names the
+        // member that tag selects.
+        layoutFields(self, set);
+        emitTypeIdTable(self, set);
+    }
+    publish(self);
+}
+
+/// The declared sets, ordered by name, so the tables emit in an order the
+/// program's text decides rather than a hash's.
+fn setsByName(self: *Lowering) []const *Set {
+    var out = std.ArrayList(*Set).empty;
+    var it = self.open_sets.valueIterator();
+    while (it.next()) |set| out.append(self.alloc, set) catch {};
+    const Ctx = struct {
+        fn lt(_: void, a: *Set, b: *Set) bool {
+            return std.mem.order(u8, a.decl.name, b.decl.name) == .lt;
+        }
+    };
+    std.mem.sort(*Set, out.items, {}, Ctx.lt);
+    return out.toOwnedSlice(self.alloc) catch &.{};
+}
+
+/// The dense tags, from 0, in the members' canonical identity order — their
+/// nominal-aware mangle, so two same-spelled members from different modules order
+/// deterministically. Each set numbers its own space: a member's tag indexes the
+/// set it joined and nothing else.
+fn numberMembers(self: *Lowering, set: *Set) void {
+    const Ctx = struct {
+        l: *Lowering,
+        fn lt(ctx: @This(), a: TypeId, b: TypeId) bool {
+            return std.mem.order(u8, ctx.l.mangleTypeName(a), ctx.l.mangleTypeName(b)) == .lt;
+        }
+    };
+    std.mem.sort(TypeId, set.members.items, Ctx{ .l = self }, Ctx.lt);
+    for (set.members.items, 0..) |member, tag| {
+        self.open_set_tags.put(.{ .set = set.ty, .member = member }, @intCast(tag)) catch {};
+    }
+}
+
+/// The set's `tag → member Type` table: what a raw view, a type switch, and the
+/// `any` bridge read to recover the active member's type from a slot's tag word.
+/// One row per member, in tag order; a memberless set still gets its one zero row
+/// so the symbol exists.
+fn emitTypeIdTable(self: *Lowering, set: *Set) void {
+    const members = set.members.items;
+    const rows = self.alloc.alloc(inst_mod.ConstantValue, @max(members.len, 1)) catch return;
+    rows[0] = .{ .int = 0 };
+    for (members, 0..) |member, i| rows[i] = .{ .int = @intCast(member.index()) };
+    const name = std.fmt.allocPrint(self.alloc, "__sx_set_{s}_type_ids", .{tableName(self, set)}) catch return;
+    const gid = self.module.addGlobal(.{
+        .name = self.module.types.internString(name),
+        .ty = self.module.types.arrayOf(.type_value, @intCast(@max(members.len, 1))),
+        .init_val = .{ .aggregate = rows },
+        .is_const = true,
+    });
+    self.open_set_tables.put(set.ty, gid) catch {};
+}
+
+/// The set's name, sanitized for a symbol.
+fn tableName(self: *Lowering, set: *const Set) []const u8 {
+    const out = self.alloc.dupe(u8, set.decl.name) catch return "set";
+    for (out) |*ch| {
+        if (!std.ascii.isAlphanumeric(ch.*) and ch.* != '_') ch.* = '_';
+    }
+    return out;
+}
+
+/// Publish the frozen layouts: the numbering crosses into the module, and the
+/// flag is what every reader of a set's size gates on.
+fn publish(self: *Lowering) void {
+    self.module.open_sets_final = true;
+    var it = self.open_set_tags.iterator();
+    while (it.next()) |e| {
+        self.module.open_set_tags.put(
+            .{ .set = e.key_ptr.set, .member = e.key_ptr.member },
+            e.value_ptr.*,
+        ) catch {};
+    }
+}
+
+/// A position that must be folded BEFORE the freeze asked for a size an open set
+/// has not settled: an array dimension, a `::` constant, an `inline for` bound.
+/// Such a position is fixed where it is written, and a set's members are declared
+/// anywhere in the program, so there is no number to answer with — the refusal is
+/// the answer.
+pub fn refuseUnfrozenLayout(self: *Lowering, measured: TypeId, span: ast.Span) void {
+    const d = self.diagnostics orelse return;
+    const set_name = firstSetName(self, measured) orelse return;
+    const before = d.items.items.len;
+    const id = if (isOpenSet(self, measured))
+        d.addFmtId(.err, span, "the layout of the open set '{s}' is not final here", .{set_name})
+    else
+        d.addFmtId(.err, span, "the layout of '{s}' is not final here: it holds the open set '{s}' by value", .{ self.formatTypeName(measured), set_name });
+    // One position folds more than once; the refusal deduplicates, and the helps
+    // belong to the one that stands.
+    if (d.items.items.len == before) return;
+    d.addHelpFmt(id, span, null, "a set's members are declared anywhere in the program, and this position is fixed where it is written — a member declared later would contradict the number", .{});
+    d.addHelpFmt(id, span, null, "read the size where it is a VALUE ('n := size_of(…)'), or bind it with '#run size_of(…)' — both are answered from the frozen layout", .{});
+}
+
+/// The set `measured`'s layout depends on, named for the refusal.
+fn firstSetName(self: *Lowering, measured: TypeId) ?[]const u8 {
+    if (self.open_set_by_type.get(measured)) |name| return name;
+    var seen = std.AutoHashMap(TypeId, void).init(self.alloc);
+    defer seen.deinit();
+    collectSetsByValue(self, measured, &seen, 0);
+    var best: ?[]const u8 = null;
+    var it = seen.keyIterator();
+    while (it.next()) |k| {
+        const name = self.open_set_by_type.get(k.*) orelse continue;
+        if (best == null or std.mem.order(u8, name, best.?) == .lt) best = name;
+    }
+    return best;
 }

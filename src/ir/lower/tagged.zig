@@ -28,6 +28,7 @@ const lower = @import("../lower.zig");
 const mod_mod = @import("../module.zig");
 const comptime_vm = @import("../comptime_vm.zig");
 const program_index_mod = @import("../program_index.zig");
+const lower_open_set = @import("open_set.zig");
 
 const Lowering = lower.Lowering;
 const TypeId = types.TypeId;
@@ -888,6 +889,7 @@ fn resolveFact(ctx: ?*anyopaque, request: comptime_vm.FactRequest) comptime_vm.F
     const self: *Lowering = @ptrCast(@alignCast(ctx.?));
     return switch (request.kind) {
         .conformer_arm => publishConformerArm(self, request.routine, request.concrete),
+        .set_layout => lower_open_set.resolveLayoutFact(self, request.concrete),
     };
 }
 
@@ -923,6 +925,9 @@ fn pendingRoutine(self: *Lowering, routine: FuncId) ?PendingRoutine {
 /// The fact a parked evaluation awaits, rendered for the deadlock diagnostic.
 pub fn describeFact(self: *Lowering, request: comptime_vm.FactRequest) []const u8 {
     switch (request.kind) {
+        .set_layout => return std.fmt.allocPrint(self.alloc, "the program's open sets to freeze, so the layout of '{s}' is final", .{
+            self.formatTypeName(request.concrete),
+        }) catch "an open set's layout",
         .conformer_arm => {
             const proto = if (pendingRoutine(self, request.routine)) |job| self.formatTypeName(job.proto) else "a tagged protocol";
             return std.fmt.allocPrint(self.alloc, "'{s}' to take in '{s}' so the dispatch it reached has an arm", .{
@@ -1151,7 +1156,9 @@ fn callSiteMembers(self: *Lowering, proto: TypeId) []const TypeId {
 
 /// Run the conformer fixpoint and emit every reached protocol's tables and
 /// dispatch routines, then number the tags and relocate every deferred
-/// `tagged_tag_of`. Called once, after all bodies are lowered.
+/// `tagged_tag_of`. Called once, after all bodies are lowered. The program's
+/// OPEN SETS freeze in the same fixpoint and at the same instant: the last
+/// member of a set can arrive from the same monomorphization a conformer does.
 ///
 /// The loop is a fixpoint because materializing a member's thunks
 /// monomorphizes its impl bodies, which may erase into further protocols or
@@ -1164,6 +1171,7 @@ pub fn convergeTaggedSets(self: *Lowering) void {
     self.expansion.pushRound();
     while (self.expansion.takeRound()) {
         var changed = false;
+        const epoch = self.open_set_epoch;
 
         var reached = std.ArrayList(TypeId).empty;
         defer reached.deinit(self.alloc);
@@ -1183,8 +1191,16 @@ pub fn convergeTaggedSets(self: *Lowering) void {
             if (materializeArms(self, job.proto, job.pd, job.method)) changed = true;
             pending = self.tagged_pending.items;
         }
+        // Open sets join the same fixpoint: monomorphizing an impl body can
+        // instantiate a generic member, which grows a set — and the cascade can
+        // grow the sets that hold it. A round that moved an epoch is a round that
+        // changed something, so the loop runs until the layouts settle too.
+        if (self.open_set_epoch != epoch) changed = true;
         if (changed) self.expansion.pushRound();
     }
+    // Every member that will ever be admitted is in: the sets freeze here, and
+    // the reads that awaited a layout are answerable from this point on.
+    self.freezeOpenSets();
     // The fixpoint is the last driver class to drain, so its quiescence is the
     // worklist's: anything still parked here never had a fact coming.
     self.expansion.reportDeadlock(self.diagnostics);

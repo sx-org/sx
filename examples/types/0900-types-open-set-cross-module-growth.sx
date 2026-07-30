@@ -1,0 +1,29 @@
+// Importing a module that declares a larger member GROWS the set (spec: Open
+// Sets — membership). The registry is the declarations, under whole-program
+// enrollment: `Panel` lives in another file, and importing that file is what puts
+// it in `View`.
+//
+// This is the documented, accepted cost of an open set — and it is observable
+// exactly where it should be. `view.sx` declares the set and one 16-byte member;
+// on its own `View` would be 24 bytes (8 tag + 16). With `panel.sx` in the program
+// the payload is `Panel`'s 40, so every `size_of(View)` in the program — including
+// the one inside `view.sx`, which cannot see `Panel` at all — answers 48.
+#import "modules/std.sx";
+#import "0900-types-open-set-cross-module-growth/view.sx";
+#import "0900-types-open-set-cross-module-growth/panel.sx";
+
+main :: () -> i32 {
+    print("set {} align {}\n", size_of(View), align_of(View));
+    print("members {} {}\n", size_of(Label), size_of(Panel));
+    // The set's own module measures the same set: one program, one answer.
+    print("from view.sx {}\n", here());
+    print("render {} {}\n", Label{ text = "l" }.render(), Panel{ title = "p" }.render());
+    0
+}
+
+// ** stdout **
+// set 48 align 8
+// members 16 40
+// from view.sx 48
+// render l p
+//

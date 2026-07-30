@@ -450,6 +450,22 @@ pub const Lowering = struct {
     /// Sets whose layout is being recomputed right now — a re-entry is a
     /// layout cycle between two sets, which has no finite answer.
     open_set_relayout: std.AutoHashMap(TypeId, void),
+    /// Sets with a GENERIC member declaration, by the name the member's head
+    /// spells. The template has no layout; each instantiation the program spells is
+    /// another member, so such a set's layout stays open past the declaration pass.
+    /// Keyed by name because a member is registered whether or not its set is —
+    /// a member may be written before the set it joins.
+    open_set_generic_members: std.StringHashMap(void),
+    /// The member tags each set's freeze assigned, in the set's own space.
+    open_set_tags: std.AutoHashMap(mod_mod.Module.OpenSetMember, i64),
+    /// Each set's `tag → member Type` table global, written at the freeze.
+    open_set_tables: std.AutoHashMap(TypeId, inst_mod.GlobalId),
+    /// Bumped by every member admission. The convergence fixpoint compares it
+    /// across a round: a set that grew is a round that changed something.
+    open_set_epoch: u32 = 0,
+    /// True once the declaration pass has admitted every member it can see. From
+    /// there only a generic member's instantiation can still grow a set.
+    open_set_decls_admitted: bool = false,
     /// `@BuildBlock` formation sites, in mint order; a per-site implementor type
     /// carries its one-based index as its nominal id.
     block_sites: std.ArrayList(lower_build_block.Site) = .empty,
@@ -1174,6 +1190,9 @@ pub const Lowering = struct {
             .open_variant_of = std.AutoHashMap(TypeId, []const u8).init(module.alloc),
             .open_set_dependents = std.AutoHashMap(TypeId, std.ArrayList(lower_open_set.Dependent)).init(module.alloc),
             .open_set_relayout = std.AutoHashMap(TypeId, void).init(module.alloc),
+            .open_set_generic_members = std.StringHashMap(void).init(module.alloc),
+            .open_set_tags = std.AutoHashMap(mod_mod.Module.OpenSetMember, i64).init(module.alloc),
+            .open_set_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
             .struct_instance_bindings = std.StringHashMap(std.StringHashMap(TypeId)).init(module.alloc),
             .struct_instance_template = std.StringHashMap([]const u8).init(module.alloc),
             .struct_instance_author = std.StringHashMap(*const ast.StructDecl).init(module.alloc),
@@ -1523,6 +1542,15 @@ pub const Lowering = struct {
         // `field_count` of a resolved non-aggregate is 0 (matches the value path
         // in lower/call.zig), NOT a fold failure.
         if (is_fc) return self.module.types.memberCount(ty) orelse 0;
+        // An open set's layout is not a number yet unless nothing can still grow
+        // it: a folded position is fixed WHERE IT IS WRITTEN, so answering it here
+        // would bake a size a member declared later contradicts.
+        if (self.openSetLayoutDependsOnSet(ty) and !self.openSetLayoutFinal(ty)) {
+            self.refuseUnfrozenLayout(ty, node.span);
+            // Refused, not unfoldable: the measurement as it stands keeps the
+            // type it dimensions well-formed for the rest of the pass, and the
+            // build stops on the error before any of it is emitted.
+        }
         if (is_sz) return @intCast(self.typeSizeBytes(ty));
         return @intCast(self.typeAlignBytes(ty));
     }
@@ -3567,6 +3595,11 @@ pub const Lowering = struct {
     pub const admitOpenVariant = lower_open_set.admitVariant;
     pub const openSetOf = lower_open_set.setOf;
     pub const isOpenSet = lower_open_set.isOpenSet;
+    pub const noteOpenSetGenericMember = lower_open_set.noteGenericMember;
+    pub const openSetLayoutDependsOnSet = lower_open_set.layoutDependsOnSet;
+    pub const openSetLayoutFinal = lower_open_set.layoutFinal;
+    pub const freezeOpenSets = lower_open_set.freezeSets;
+    pub const refuseUnfrozenLayout = lower_open_set.refuseUnfrozenLayout;
 
     pub const blockProtocolOf = lower_build_block.blockProtocolOf;
     pub const blockBinderType = lower_build_block.binderType;

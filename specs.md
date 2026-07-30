@@ -3913,6 +3913,42 @@ at the instantiation site, since another instantiation may be admissible. An
 instantiation the program never materializes is not a member: membership follows
 what the program builds, exactly as it does for `protocol tagged`.
 
+**When the layout is final.** Because growth follows the declarations, a set's last
+member can arrive at any point up to the **freeze** — the point the whole-program
+`tagged` conformer sets converge at, after every body is lowered, since the same
+monomorphization that admits a conformer can instantiate a generic member. The
+freeze also numbers each set's members densely from 0 in the set's **own** tag space
+and writes its `tag → member Type` table.
+
+So `size_of(P)` is **not a literal baked where it is written**. Wherever it is a
+value — a body, a `#run`, an argument — it is answered from the frozen layout, and
+one program therefore has **one** answer for it everywhere: a body lowered before a
+generic member's instantiation and a body lowered after it agree. The same holds for
+any type whose layout a set decides, such as a plain struct with a `P` field.
+
+A position the compiler must fold **earlier** than the freeze is **refused** rather
+than answered:
+
+```sx
+Slot :: struct {
+    bytes: [size_of(View)]u8 = ---;   // error: the layout of the open set 'View'
+}                                     //        is not final here
+```
+
+An array dimension is fixed where it is written, and the struct that carries it is
+registered on the spot — a member declared later in the program (or in a module the
+program imports) would contradict the number, in a layout that cannot be measured
+again. Read the size where it is a value, or bind it with `#run size_of(P)`. A set
+that **no generic member can reach** settles as soon as the declarations are
+admitted, and a dimension over that set inside a body folds normally.
+
+A compile-time evaluation that runs **during** lowering — `#insert`, a comptime type
+construction — may ask for a set's size, and **waits** when nothing can answer yet
+(§7.9). It is answered the moment nothing can grow the set. If the answer needs the
+freeze and the freeze needs the program that evaluation is still writing, the drain
+goes quiet with a bookmark down: that is the expansion deadlock, and sx refuses it
+instead of electing one of the outcomes.
+
 ### Enum Definition
 
 ```sx

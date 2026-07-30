@@ -1,0 +1,16 @@
+error: expansion deadlock — nothing can run: every compile-time unit still waiting needs a fact only another waiting unit could publish, so the expansion depends negatively on a set it feeds
+  --> examples/diagnostics/2038-diagnostics-open-set-layout-deadlock.sx:47:13
+   |
+47 |     #insert line();
+   |             ^^^^^^
+
+note: this `#insert` awaits the program's open sets to freeze, so the layout of 'View' is final
+  --> examples/diagnostics/2038-diagnostics-open-set-layout-deadlock.sx:47:13
+   |
+47 |     #insert line();
+   |             ^^^^^^
+
+help: decide the declaration outside the set it queries — a question whose answer changes what it asks about has no single answer
+   |
+47 |     #insert line();
+   |             ^^^^^^

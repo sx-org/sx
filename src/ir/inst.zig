@@ -134,6 +134,13 @@ pub const Op = union(enum) {
     /// concrete type directly (§7.9 — tags are link-stage artifacts), so the
     /// operand IS the answer. One op, so both worlds read RTTI the same way.
     tagged_type_id: TaggedTypeId,
+    /// The size or alignment of a type an OPEN SET's layout decides — the set
+    /// itself, or anything holding one by value. An open set's layout follows
+    /// the members declared anywhere in the program, so neither number exists
+    /// until the set freezes: the op carries the type and each world resolves
+    /// it against the frozen layout, so one program has ONE answer wherever it
+    /// is asked (spec: Open Sets — when the layout is final).
+    open_set_layout: SetLayoutOf,
 
     // ── Arithmetic ──────────────────────────────────────────────────
     add: BinOp,
@@ -308,6 +315,14 @@ pub const TagOf = struct {
 pub const TaggedTypeId = struct {
     tag: Ref,
     table: GlobalId,
+};
+
+/// Which measurement of `measured` the frozen layout answers.
+pub const SetLayoutOf = struct {
+    measured: TypeId,
+    query: Query,
+
+    pub const Query = enum { size, alignment };
 };
 
 pub const UnaryOp = struct {

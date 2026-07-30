@@ -224,12 +224,19 @@ pub var last_bail_was_bridge: bool = false;
 /// The fact a parked evaluation is waiting on.
 pub const FactRequest = struct {
     kind: Kind,
-    /// The outlined dispatch routine whose conformer set is not final.
+    /// `.conformer_arm`: the outlined dispatch routine whose conformer set is
+    /// not final. `.set_layout`: the routine the reading evaluation is in.
     routine: FuncId,
-    /// The concrete type the receiver carries — the member the routine lacks.
+    /// `.conformer_arm`: the concrete type the receiver carries — the member the
+    /// routine lacks. `.set_layout`: the type whose measurement waits.
     concrete: TypeId,
 
-    pub const Kind = enum { conformer_arm };
+    pub const Kind = enum {
+        conformer_arm,
+        /// An open set's layout, which an evaluation reads before the program's
+        /// sets froze: a member declared later would change the answer.
+        set_layout,
+    };
 };
 
 /// The answer to an awaited fact. `.published` means it is now recorded in the
@@ -901,6 +908,18 @@ pub const Vm = struct {
                 const module = self.module orelse return self.failMsg("comptime VM: a conformance probe needs a module");
                 if (!module.tagged_sets_final) return self.failMsg("comptime VM: a tagged conformance probe ran before the collection fixpoint converged");
                 return .{ .value = @intFromBool(module.tagged_tags.contains(.{ .proto = t.proto, .concrete = t.concrete })) };
+            },
+            // An open set's layout: the members declared anywhere in the
+            // program decide it, so the number is readable only once the sets
+            // froze. Before that the evaluation AWAITS the freeze rather than
+            // reading a size a later member would contradict.
+            .open_set_layout => |q| {
+                const module = self.module orelse return self.failMsg("comptime VM: an open set's layout needs a module");
+                if (settledSetLayout(module, q)) |v| return .{ .value = @bitCast(v) };
+                const here = if (self.call_stack.items.len > 0) self.call_stack.items[self.call_stack.items.len - 1] else @as(FuncId, @enumFromInt(0));
+                _ = self.awaitFact(.{ .kind = .set_layout, .routine = here, .concrete = q.measured });
+                if (settledSetLayout(module, q)) |v| return .{ .value = @bitCast(v) };
+                return self.failFmt("comptime VM: the layout of '{s}' is not final — an open set's members are declared anywhere in the program, so its size exists only once they all are", .{module.types.typeName(q.measured)});
             },
 
             // ── Arithmetic ──────────────────────────────────────
@@ -1720,6 +1739,21 @@ pub const Vm = struct {
         self.call_stack.append(self.gpa, fid) catch @panic("comptime VM: out of memory (call stack)");
         defer _ = self.call_stack.pop();
         return self.run(callee, argbuf);
+    }
+
+    /// The measurement of a type an open set's layout decides, or null while it
+    /// can still change. After the freeze the type table holds the final layout;
+    /// before it, only a measurement published as settled is readable.
+    fn settledSetLayout(module: *const Module, q: inst_mod.SetLayoutOf) ?i64 {
+        if (module.open_sets_final) return switch (q.query) {
+            .size => @intCast(module.types.typeSizeBytes(q.measured)),
+            .alignment => @intCast(module.types.typeAlignBytes(q.measured)),
+        };
+        const settled = module.open_set_layouts.get(q.measured) orelse return null;
+        return switch (q.query) {
+            .size => settled.size,
+            .alignment => settled.alignment,
+        };
     }
 
     /// Park this evaluation until `request` is answered. The park suspends the

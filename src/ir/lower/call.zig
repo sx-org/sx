@@ -3227,6 +3227,11 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             return self.builder.callBuiltin(.rt_size_of, args_owned, .i64);
         }
         const ty = self.resolveTypeArg(c.args[0]);
+        // An open set's layout follows the members declared anywhere in the
+        // program, so its size is not a literal here: the op carries the type and
+        // the frozen layout answers it (spec: Open Sets).
+        if (self.openSetLayoutDependsOnSet(ty))
+            return self.builder.emit(.{ .open_set_layout = .{ .measured = ty, .query = .size } }, .i64);
         const size: i64 = @intCast(self.typeSizeBytes(ty));
         return self.builder.constInt(size, .i64);
     }
@@ -3237,6 +3242,8 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             return self.builder.callBuiltin(.rt_align_of, args_owned, .i64);
         }
         const ty = self.resolveTypeArg(c.args[0]);
+        if (self.openSetLayoutDependsOnSet(ty))
+            return self.builder.emit(.{ .open_set_layout = .{ .measured = ty, .query = .alignment } }, .i64);
         const a: i64 = @intCast(self.module.types.typeAlignBytes(ty));
         return self.builder.constInt(a, .i64);
     }

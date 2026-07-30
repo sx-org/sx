@@ -61,6 +61,19 @@ pub const Module = struct {
     /// Before that the map is simply empty, which reads the same as "nothing
     /// conforms" — so every consumer of a final-set fact gates on this.
     tagged_sets_final: bool = false,
+    /// The dense member tags of every declared open set, assigned when the
+    /// program's sets freeze. A set's own numbering space, so a member's tag is
+    /// an index into ITS set and nothing else.
+    open_set_tags: std.AutoHashMap(OpenSetMember, i64),
+    /// True once the sets have frozen and the numbering above is published.
+    /// From there the type table holds every set's final layout, so a size is
+    /// measured straight off it.
+    open_sets_final: bool = false,
+    /// Measurements published BEFORE the freeze, for types whose sets nothing can
+    /// still grow. A published measurement is the program's final answer for that
+    /// type — which is what lets a compile-time evaluation read a set's size
+    /// without waiting for the freeze it cannot reach.
+    open_set_layouts: std.AutoHashMap(TypeId, SetLayout),
     /// The outlined tagged dispatch routines, one entry per emitted routine.
     /// Runtime dispatch switches on the dense tag inside the routine; the
     /// comptime VM cannot, because a comptime tagged value carries its
@@ -85,6 +98,12 @@ pub const Module = struct {
     has_implicit_ctx: bool = false,
 
     pub const TaggedPair = struct { proto: TypeId, concrete: TypeId };
+
+    /// One member of one open set — the key of the set's own tag space.
+    pub const OpenSetMember = struct { set: TypeId, member: TypeId };
+
+    /// A settled measurement of a type an open set's layout decides.
+    pub const SetLayout = struct { size: i64, alignment: i64 };
 
     /// `arms[i]` implements the routine for conformer `members[i]`.
     pub const TaggedDispatchEntry = struct {
@@ -130,6 +149,8 @@ pub const Module = struct {
             .objc_class_cache = std.ArrayList(ObjcClassEntry).empty,
             .objc_defined_class_cache = std.ArrayList(ObjcDefinedClassEntry).empty,
             .tagged_tags = std.AutoHashMap(TaggedPair, i64).init(alloc),
+            .open_set_tags = std.AutoHashMap(OpenSetMember, i64).init(alloc),
+            .open_set_layouts = std.AutoHashMap(TypeId, SetLayout).init(alloc),
             .tagged_dispatch = std.ArrayList(TaggedDispatchEntry).empty,
             .global_asm = std.ArrayList([]const u8).empty,
             .alloc = alloc,

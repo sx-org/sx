@@ -25,6 +25,7 @@ const GlobalId = ir_inst.GlobalId;
 const GlobalSet = ir_inst.GlobalSet;
 const TaggedTypeId = ir_inst.TaggedTypeId;
 const TagOf = ir_inst.TagOf;
+const SetLayoutOf = ir_inst.SetLayoutOf;
 const FuncId = ir_inst.FuncId;
 const Call = ir_inst.Call;
 const CallIndirect = ir_inst.CallIndirect;
@@ -157,6 +158,22 @@ pub const Ops = struct {
                 self.e.ir_mod.types.typeName(t.proto),
             });
         self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, @bitCast(tag), 0));
+    }
+
+    /// The size or alignment of a type an open set's layout decides. The IR
+    /// carries the type and the number is read HERE, from the frozen layout, so
+    /// the whole program agrees on one answer.
+    pub fn emitOpenSetLayout(self: Ops, q: SetLayoutOf) void {
+        if (!self.e.ir_mod.open_sets_final)
+            std.debug.panic("emitOpenSetLayout: '{s}' is measured before the program's open sets froze", .{
+                self.e.ir_mod.types.typeName(q.measured),
+            });
+        const table = &self.e.ir_mod.types;
+        const value: i64 = switch (q.query) {
+            .size => @intCast(table.typeSizeBytes(q.measured)),
+            .alignment => @intCast(table.typeAlignBytes(q.measured)),
+        };
+        self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, @bitCast(value), 0));
     }
 
     /// The soft probe's answer: being in the converged numbering IS being in
