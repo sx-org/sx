@@ -1,0 +1,49 @@
+error: 'any' cannot be converted to 'View': an 'any' never holds a set value — boxing a set boxes the member it carries
+  --> examples/diagnostics/2043-diagnostics-open-set-from-any.sx:44:15
+   |
+44 |     direct := a.(View);
+   |               ^^^^^^^^
+
+help: name the member as the target instead, or open the box with a type switch — its arms bind the member
+   |
+44 |     direct := a.(View);
+   |               ^^^^^^^^
+
+error: 'any' cannot be converted to 'View': an 'any' never holds a set value — boxing a set boxes the member it carries
+  --> examples/diagnostics/2043-diagnostics-open-set-from-any.sx:30:41
+   |
+30 | assert_it :: ($T: Type, a: any) -> T => a.(T);
+   |                                         ^^^^^
+
+help: name the member as the target instead, or open the box with a type switch — its arms bind the member
+   |
+30 | assert_it :: ($T: Type, a: any) -> T => a.(T);
+   |                                         ^^^^^
+
+error: 'any' cannot be converted to 'View': an 'any' never holds a set value — boxing a set boxes the member it carries
+  --> examples/diagnostics/2043-diagnostics-open-set-from-any.sx:53:16
+   |
+53 |     reached := chained?.(View);
+   |                ^^^^^^^^^^^^^^^
+
+help: name the member as the target instead, or open the box with a type switch — its arms bind the member
+   |
+53 |     reached := chained?.(View);
+   |                ^^^^^^^^^^^^^^^
+
+error: 'any' cannot be converted to 'View': an 'any' never holds a set value — boxing a set boxes the member it carries
+  --> examples/diagnostics/2043-diagnostics-open-set-from-any.sx:35:14
+   |
+35 |     v := try a.(View);
+   |              ^^^^^^^^
+
+help: name the member as the target instead, or open the box with a type switch — its arms bind the member
+   |
+35 |     v := try a.(View);
+   |              ^^^^^^^^
+
+error: `try` requires a failable expression; operand has type 'View'
+  --> examples/diagnostics/2043-diagnostics-open-set-from-any.sx:35:10
+   |
+35 |     v := try a.(View);
+   |          ^^^^^^^^^^^^

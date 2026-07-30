@@ -4040,6 +4040,17 @@ an `any` local, an `any` argument, a formatted value — so a set value is never
 as the set anywhere `any` is. A set is not a protocol handle: it has no
 `ProtocolRaw` view, and `any` is the one it has.
 
+Because a box holds the member, **no `any` holds a set value**, and each assertion
+form answers from its own contract. `av.(View)` states that a box holds one, which
+nothing can make true, so it is refused where it is written — through a type
+parameter instantiated at a set, through a `?any` chain, and in the consumed forms
+(`try av.(View)`, `av.(View) or …`), which are that same assertion with a failure
+channel. `av.(?View)` is a question, not a statement, so it stays total and
+answers `null` for every box, as does the chained `o?.(?View)`: generic code that
+probes keeps working when it is instantiated at a set. An **optional** of a set is
+an ordinary value — a box of `?View` holds what it was given, and `xx` recovers it
+as that.
+
 The numbering is written at the freeze, so a compile-time evaluation that asks
 what a set value is **waits** for it (§7.9) and reads the same answer the running
 program reads.

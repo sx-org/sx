@@ -3586,6 +3586,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (child == .any) {
                     if (self.refuseProtocolAssertTargetOnAny(pc.type_expr, node.span))
                         break :blk self.builder.constUndef(.unresolved);
+                    if (lowerAnyAssertAtSet(self, &pc, node.span, true)) |answer| break :blk answer;
                     // Assertion regime through the chain: soft target →
                     // conflating maybe-helper; concrete target unconsumed →
                     // panic helper (consumers claim the failable form via
@@ -3670,6 +3671,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 }
                 if (self.refuseProtocolAssertTargetOnAny(pc.type_expr, node.span))
                     break :blk self.builder.constUndef(.unresolved);
+                if (lowerAnyAssertAtSet(self, &pc, node.span, false)) |answer| break :blk answer;
                 // `.(?T)` is the SOFT assertion: mismatch is a value
                 // (`null`), never a failure — the optional IS the check.
                 // The asserted type is the INNER T; the result is `?T`.
@@ -3958,6 +3960,25 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         },
         else => self.emitError("unknown_expr", node.span),
     };
+}
+
+/// An assertion on an `any` receiver whose target is a BARE open set, answered
+/// here rather than through the checked-cast helpers: an `any` never holds a set
+/// value, since boxing a set boxes the member it carries, so no box can ever
+/// supply the conversion those helpers would ask for. Each form answers from its
+/// own contract — the soft `.(?P)` is a question whose answer is null for every
+/// box, and an assertion states what cannot hold, so it is refused where it is
+/// written. Null for a target that is not a bare set: the ordinary route stands.
+fn lowerAnyAssertAtSet(self: *Lowering, pc: *const ast.PostfixCast, span: ast.Span, chained: bool) ?Ref {
+    const soft = pc.type_expr.data == .optional_type_expr;
+    const target_node = if (soft) pc.type_expr.data.optional_type_expr.inner_type else pc.type_expr;
+    const target = self.resolveTypeArg(target_node);
+    if (target == .unresolved or !self.isOpenSet(target)) return null;
+    const optional_ty = self.module.types.optionalOf(target);
+    if (soft) return self.builder.constNull(optional_ty);
+    if (self.refuseSetFromAny(target, span))
+        return self.builder.constUndef(if (chained) optional_ty else target);
+    return null;
 }
 
 /// The single register a constraint pins, or null for a register-class /

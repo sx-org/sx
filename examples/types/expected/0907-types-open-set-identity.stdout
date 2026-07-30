@@ -4,4 +4,8 @@ through a pointer Panel and the pointer itself *View
 view Label box Label argument Label
 formatted {text: viewed}
 opened viewed
+set probe true member probe false
+chain set probe true
+chain member viewed
+boxed ?View holds optional
 comptime Panel

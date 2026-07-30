@@ -1182,6 +1182,15 @@ pub fn desugarErasedAssert(self: *Lowering, node: *const Node) ?*const Node {
             break :blk ri == .optional and ri.optional.child == .any;
         });
         if (any_recv and self.refuseProtocolAssertTargetOnAny(pc.type_expr, node.span)) return null;
+        // A bare open set as the target is the same shape of impossible: an
+        // `any` never holds a set value. The assertion is answered where it is
+        // written rather than desugared, so the helper is never asked for a
+        // conversion no box can supply.
+        if (any_recv and pc.type_expr.data != .optional_type_expr) {
+            const target = self.resolveTypeArg(pc.type_expr);
+            if (target != .unresolved and self.isOpenSet(target) and
+                self.refuseSetFromAny(target, node.span)) return null;
+        }
     }
     const helper: []const u8 = if (pc.is_optional_chain) "__sx_chain_cast_assert" else "__sx_cast_assert";
     const callee = self.alloc.create(Node) catch unreachable;
