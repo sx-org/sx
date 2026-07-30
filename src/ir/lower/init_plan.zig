@@ -145,19 +145,6 @@ fn siteFor(self: *Lowering, arg: *const Node) u32 {
 pub fn formInitPlan(self: *Lowering, arg: *const Node, target: TypeId) Ref {
     const arg_ty = self.inferExprType(arg);
     if (conforms(self, target, arg_ty)) return self.lowerExpr(arg);
-    // What an initializer writes is exactly its target, so an expression that
-    // cannot become one is refused HERE — at the expression the program spelled,
-    // in the terms the target decides by — rather than inside the write the
-    // receiver performs later.
-    if (self.isOpenSet(target) and arg_ty != target and arg_ty != .unresolved and
-        !self.openSetDeclaresMembership(arg_ty, self.openSetOf(target).?.decl.name))
-    {
-        if (self.diagnostics) |d| {
-            const id = d.addFmtId(.err, arg.span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatSourceTypeName(arg_ty), self.formatTypeName(target) });
-            self.openSetMembershipHelp(d, id, arg_ty, target, arg.span);
-        }
-        return self.builder.constUndef(self.module.types.initImplementorType(target, siteFor(self, arg)));
-    }
 
     const impl_ty = self.module.types.initImplementorType(target, siteFor(self, arg));
 
@@ -186,6 +173,11 @@ pub fn formInitPlan(self: *Lowering, arg: *const Node, target: TypeId) Ref {
     const saved_target = self.target_type;
     self.target_type = impl_ty;
     defer self.target_type = saved_target;
+    // The write the thunk performs is FORMATION, not a store the program wrote:
+    // what cannot become the target is refused in those terms (spec §5.2).
+    const saved_forming = self.forming_init_target;
+    self.forming_init_target = target;
+    defer self.forming_init_target = saved_forming;
     return lower_closure.lowerLambdaTyped(self, &lam, .stack, impl_ty);
 }
 

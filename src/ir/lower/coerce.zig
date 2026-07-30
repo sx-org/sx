@@ -1262,7 +1262,10 @@ pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
         if (self.diagnostics) |d| {
             // The value is named the way the program spells it, and the fact reads
             // as it does at every other set refusal (spec: Open Sets).
-            const id = d.addFmtId(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatTypeName(dst_ty), self.formatSourceTypeName(src_ty) });
+            const id = if (formingFor(self, dst_ty))
+                d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatSourceTypeName(src_ty), self.formatTypeName(dst_ty) })
+            else
+                d.addFmtId(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatTypeName(dst_ty), self.formatSourceTypeName(src_ty) });
             self.openSetMembershipHelp(d, id, src_ty, dst_ty, span);
             self.noteOpenSetInstantiation(d, id);
             self.assignability_error_count += 1;
@@ -1271,10 +1274,22 @@ pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     }
     if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatTypeName(dst_ty), self.formatTypeName(src_ty) });
+        if (formingFor(self, dst_ty)) {
+            d.addFmt(.err, span, "'{s}' cannot form an initializer for '{s}': no conversion applies", .{ self.formatSourceTypeName(src_ty), self.formatTypeName(dst_ty) });
+        } else {
+            d.addFmt(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatTypeName(dst_ty), self.formatTypeName(src_ty) });
+        }
         self.assignability_error_count += 1;
     }
     return false;
+}
+
+/// Is this store the WRITE of an initializer being formed for `dst_ty`? Then it is
+/// formation, and a refusal names the expression rather than a destination the
+/// program never wrote.
+fn formingFor(self: *Lowering, dst_ty: TypeId) bool {
+    const t = self.forming_init_target orelse return false;
+    return t == dst_ty;
 }
 
 /// The shared "this implicit passthrough is exempt" gate for the unmodeled-

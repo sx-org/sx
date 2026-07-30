@@ -897,7 +897,17 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // the call is the ordinary spelling of itself and lowers as one. Decided
         // HERE, before the receiver or any argument is lowered, because evaluating
         // them at the boundary is precisely what the parameter forbids.
-        if (!author_declines) {
+        // ...and only when the callee is a VALUE-receiver dot-call. A type prefix
+        // (`Box.emit(3)`) or a namespace path (`lib.emit(6)`) is a qualified name
+        // whose left side is not an argument at all — the qualified branch owns
+        // those. `.never_qualified` is admitted with `.value_receiver`: a receiver
+        // that is an expression rather than a name (`Label{ … }.emit()`) never had
+        // a qualified reading to consider.
+        const value_receiver_call = switch (qualified_call_verdict) {
+            .never_qualified, .value_receiver => true,
+            .type_prefix, .func, .callable_value, .non_callable, .missing, .not_visible, .ambiguous => false,
+        };
+        if (value_receiver_call and !author_declines) {
             if (destinationFirstUfcs(self, &fa, c.args)) |target_name| {
                 const syn_args = self.alloc.alloc(*Node, c.args.len + 1) catch unreachable;
                 syn_args[0] = @constCast(fa.object);

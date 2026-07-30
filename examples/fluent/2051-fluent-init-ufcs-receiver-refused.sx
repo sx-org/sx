@@ -8,7 +8,8 @@
 // later, which is a store no one wrote.
 //
 // A type that carries no declaration of its own cannot be told to declare itself
-// into anything, so it is told what is true instead.
+// into anything, so it is told what is true instead. And a target that is not a set
+// says the same thing in its own terms: what cannot become it cannot form one.
 // Expected: exit 1.
 #import "modules/std.sx";
 #import "modules/std/list.sx";
@@ -25,6 +26,14 @@ Label :: @OpenVariant(View) {
 // A member of nothing.
 Plain :: struct {
     text: string = "";
+}
+
+// A plain data target, so the vocabulary is not the set's alone.
+Box :: struct { v: i64 = 0; }
+
+take :: ufcs (value: $I/@Init(Box)) {
+    slot: Box = ---;
+    value.write(*slot);
 }
 
 #context_extend ui_out: *List(View) = null;
@@ -48,6 +57,10 @@ main :: () -> i32 {
         // A builtin has no declaration to join a set with.
         "a string".emit();
         emit(41);
+
+        // A plain target refuses in the same voice.
+        Plain{ text = "not a Box" }.take();
+        take(Plain{ text = "not a Box" });
     }
     print("{}\n", out.len);
     0

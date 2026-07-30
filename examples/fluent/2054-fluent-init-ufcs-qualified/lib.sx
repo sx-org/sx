@@ -1,0 +1,5 @@
+// A module reached by name: its `publish` is a plain function, and the name in
+// front of it says where the function lives.
+#import "modules/std.sx";
+
+publish :: (n: i64) -> string => "namespace";

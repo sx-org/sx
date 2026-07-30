@@ -460,6 +460,10 @@ pub const Lowering = struct {
     open_set_tags: std.AutoHashMap(mod_mod.Module.OpenSetMember, i64),
     /// Each set's `tag → member Type` table global, written at the freeze.
     open_set_tables: std.AutoHashMap(TypeId, inst_mod.GlobalId),
+    /// The target an `@Init` write thunk is being formed for, while its body is
+    /// lowered: the store it performs is formation, and what cannot become that
+    /// target is refused in those terms rather than as a store the program wrote.
+    forming_init_target: ?TypeId = null,
     /// Bumped by every member admission. The convergence fixpoint compares it
     /// across a round: a set that grew is a round that changed something.
     open_set_epoch: u32 = 0,

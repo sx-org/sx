@@ -11,6 +11,10 @@
 // The receiver is an argument, so it is evaluated exactly as an argument is: once,
 // when the callee writes — and the other arguments once each, whichever spelling
 // the call uses.
+//
+// And a dot on a NAME is not a receiver at all: a type prefix and a namespace path
+// are qualified spellings whose left side names where the function lives, not what
+// it is called with.
 #import "modules/std.sx";
 #import "modules/std/list.sx";
 
@@ -50,6 +54,10 @@ impl Drawable for Box { draw :: (self: *Box) -> string => "impl method"; }
 Crate :: struct {
     v: i64 = 0;
     stow :: (self: *Crate) -> string => "own method";
+
+    // A STATIC on the same type, sharing the free function's name: `Crate.emit_at`
+    // names this one, and its arguments are its own.
+    emit_at :: (n: i64) -> string => "static";
 }
 
 // A protocol value dispatches to its conformer.
@@ -82,6 +90,9 @@ main :: () -> i32 {
     }
     print("emitted {}\n", out.len);
 
+    // A dot on a name: the type prefix names the static, not the free function.
+    print("type prefix {}\n", Crate.emit_at(3));
+
     // The receiver's type answers first, however it declares the method.
     b := Box{ v = 1 };
     c := Crate{ v = 2 };
@@ -97,5 +108,6 @@ main :: () -> i32 {
 // argument spelling: 2 evaluations
 // receiver evaluated: true
 // emitted 3
+// type prefix static
 // impl impl method own own method through a pointer own method protocol round
 //
