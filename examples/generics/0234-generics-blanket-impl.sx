@@ -6,9 +6,9 @@
 // is registered under the protocol name and matched at the use site, where the
 // request's own arguments and the source instantiation's bindings decide.
 //
-// Lookup is a specificity rule: a concrete impl answers first, and a blanket
-// impl only when nothing concrete matches. `Cell` below proves the concrete
-// arm still wins for its own instantiation.
+// A concrete impl for a DIFFERENT carrier coexists: the two never cover the same
+// type, so nothing is ambiguous. One carrier covered by both a blanket and a
+// concrete impl is refused instead — see the diagnostics pin.
 #import "modules/std.sx";
 
 Series :: protocol(T: Type) constraint {
@@ -17,8 +17,10 @@ Series :: protocol(T: Type) constraint {
 
 Buffer :: struct($T: Type) { n: i64; }
 
-// Covers EVERY instantiation of `Buffer`.
-impl Series($T) for Buffer($T) {
+// Covers EVERY instantiation of `Buffer`. The binder is matched by POSITION, so
+// the impl spells its own name for it — `$U` here — without needing to know that
+// the template calls the same parameter `$T`.
+impl Series($U) for Buffer($U) {
     count :: (self: *Buffer) -> i64 { self.n }
 }
 

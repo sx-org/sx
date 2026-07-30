@@ -775,6 +775,9 @@ pub const Lowering = struct {
     /// matches — at which point the request's own type arguments and source
     /// instantiation are what bind the impl's binders.
     param_impl_generic_map: std.StringHashMap(std.ArrayList(GenericParamImplEntry)),
+    /// Overlaps already reported, so one ambiguous carrier is named once however
+    /// many times conformance is asked about it.
+    reported_impl_overlaps: std.StringHashMap(void),
     /// Active pack bindings during monomorphisation. Mirrors `type_bindings`
     /// but for variadic pack names: `args → [T1, T2, ...]`. Read by
     /// `resolveTypeWithBindings` on closure_type_expr to substitute
@@ -899,9 +902,13 @@ pub const Lowering = struct {
     /// matched at the use site, where the concrete request supplies the binding.
     pub const GenericParamImplEntry = struct {
         methods: []const *const ast.FnDecl,
-        /// Protocol type arguments AS WRITTEN — a binder here is resolved
-        /// against the source instantiation's own bindings when matching.
+        /// Protocol type arguments AS WRITTEN.
         arg_nodes: []const *const ast.Node,
+        /// For each protocol argument that is a binder, WHERE it sits in the
+        /// carrier's argument list; null for a concrete argument. Matching goes
+        /// through the position because the impl spells its own binder name and
+        /// the template spells another.
+        arg_positions: []const ?usize,
         /// The template the source spells (`Buffer` of `Buffer($T)`).
         target_template: []const u8,
         defining_module: []const u8,
@@ -1168,6 +1175,7 @@ pub const Lowering = struct {
             .param_protocol_instances = std.AutoHashMap(TypeId, ParamProtocolInstance).init(module.alloc),
             .param_impl_pack_map = std.StringHashMap(std.ArrayList(PackParamImplEntry)).init(module.alloc),
             .param_impl_generic_map = std.StringHashMap(std.ArrayList(GenericParamImplEntry)).init(module.alloc),
+            .reported_impl_overlaps = std.StringHashMap(void).init(module.alloc),
             .struct_const_map = std.StringHashMap(StructConstInfo).init(module.alloc),
             .extern_name_map = std.StringHashMap([]const u8).init(module.alloc),
             .comptime_constants = std.StringHashMap(ComptimeValue).init(module.alloc),

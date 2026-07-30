@@ -1,0 +1,30 @@
+// A blanket impl of `@BuildSink` conforms, but cannot yet receive a block: its
+// `expression` signature still spells the impl's own binder, so replay would
+// reach an unsubstituted type. Refused at `run` rather than admitted into it.
+#import "modules/std.sx";
+#import "modules/std/list.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol tagged {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+Bag :: struct ($T: Type) { children: List(T); }
+impl @BuildSink($T) for Bag($T) {
+    expression :: (self: *Bag, value: @Init($V/T)) { }
+}
+
+collect :: (content: @BuildBlock(Drawable)) -> i64 {
+    sk := Bag(Drawable){ children = List(Drawable){} };
+    content.run(*sk);
+    1
+}
+
+main :: () {
+    print("{}\n", collect() { Label{ text = "a" }; });
+}

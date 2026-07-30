@@ -2936,10 +2936,21 @@ case, not a request that `View` implement itself.
 **Blanket impls.** An impl may write the protocol's type arguments as its own
 binders — `impl Series($T) for Buffer($T)` covers every instantiation of
 `Buffer` at the matching argument. Such an impl has no concrete argument tuple
-to be keyed by, so it is matched at the use site against the request's
-arguments and the source instantiation. Lookup is a **specificity** rule: a
-concrete impl answers first, and a blanket impl only when no concrete one
-matches.
+to be keyed by, so it is matched at the use site against the request's arguments
+and the carrier's own instantiation. The binder is matched by POSITION, not by
+name: `impl Series($U) for Buffer($U)` works without knowing what the template
+calls its parameter.
+
+**One carrier, one impl.** A carrier covered by both a blanket impl and a
+concrete impl of the same protocol at the same arguments is an error at the
+overlap — nothing in either declaration says which body applies. Drop one.
+
+For a **constraint** protocol, an impl that could never be selected is refused
+where it is written: a binder in the protocol arguments needs a carrier
+instantiation to bind it (`impl P($T) for Plain` has none), and a generic carrier
+needs its binder spelled among the protocol arguments (`impl P(i64) for
+Carrier($T)` does not). A **tagged** family collects members by whole-program
+membership instead, where both shapes are ordinary.
 
 ### Variadic Functions
 Functions can accept a variable number of arguments using `..name: []Type` syntax:

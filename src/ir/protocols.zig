@@ -851,16 +851,74 @@ fn registerGenericParamImpl(
     proto_name: []const u8,
     defining_module: []const u8,
 ) void {
-    var any_binder = false;
+    var any_proto_binder = false;
     for (ib.protocol_type_args) |a| {
-        if (nodeIsBinder(a)) any_binder = true;
+        if (nodeIsBinder(a)) any_proto_binder = true;
     }
-    if (!any_binder) return;
-    // The source must be an instantiation of a template, since matching recovers
-    // the binding from the instantiation's own record.
-    const target = ib.target_type_expr orelse return;
-    if (target.data != .parameterized_type_expr) return;
-    const template = target.data.parameterized_type_expr.name;
+    const target = ib.target_type_expr;
+    const target_args: []const *const Node = if (target) |t|
+        (if (t.data == .parameterized_type_expr) t.data.parameterized_type_expr.args else &.{})
+    else
+        &.{};
+    var any_target_binder = false;
+    for (target_args) |a| {
+        if (nodeIsBinder(a)) any_target_binder = true;
+    }
+    if (!any_proto_binder and !any_target_binder) return;
+
+    // A TAGGED family collects its members through whole-program membership, not
+    // through this keyed index, so shapes that are unreachable here are ordinary
+    // there — `impl Series(f32) for Repeat($U)` is one member per instantiated
+    // `Repeat`. Only the keyed kinds are refused below.
+    const is_tagged = if (self.resolveProtocol(proto_name, decl.source_file)) |rp|
+        rp.decl.kind == .tagged
+    else
+        false;
+
+    // Two shapes register nowhere findable, so they are refused rather than
+    // accepted-and-dead: a binder in the protocol arguments needs the carrier to
+    // be an instantiation for the binding to come from, and a carrier binder
+    // needs the protocol arguments to say where it is bound.
+    if (!is_tagged and any_proto_binder and target_args.len == 0) {
+        if (self.l.diagnostics) |d| {
+            const id = d.addFmtId(.err, decl.span, "'impl {s}' binds a type parameter the carrier cannot supply", .{proto_name});
+            d.addHelpFmt(id, decl.span, null, "a blanket impl's carrier must be an instantiation spelling the same binder, as in 'for Carrier($T)'", .{});
+        }
+        return;
+    }
+    if (!is_tagged and any_target_binder and !any_proto_binder) {
+        if (self.l.diagnostics) |d| {
+            const id = d.addFmtId(.err, decl.span, "'impl {s}' names a generic carrier but no binder among its type arguments", .{proto_name});
+            d.addHelpFmt(id, decl.span, null, "spell the carrier's binder in the protocol arguments too ('impl {s}($T) for …($T)'), or give the carrier a concrete instantiation", .{proto_name});
+        }
+        return;
+    }
+    const template = target.?.data.parameterized_type_expr.name;
+
+    // Where each protocol argument's binder sits in the CARRIER's argument list.
+    // Resolution has to be positional: an impl author spells their own binder
+    // name (`$U`) and cannot be expected to know the template's (`$T`).
+    var positions = std.ArrayList(?usize).empty;
+    for (ib.protocol_type_args) |a| {
+        var found: ?usize = null;
+        if (nodeIsBinder(a)) {
+            const want = a.data.type_expr.name;
+            for (target_args, 0..) |t, i| {
+                if (nodeIsBinder(t) and std.mem.eql(u8, t.data.type_expr.name, want)) {
+                    found = i;
+                    break;
+                }
+            }
+            if (found == null) {
+                if (self.l.diagnostics) |d| {
+                    const id = d.addFmtId(.err, decl.span, "'impl {s}' binds '${s}', which its carrier never spells", .{ proto_name, want });
+                    d.addHelpFmt(id, decl.span, null, "every binder in the protocol arguments must appear in the carrier's arguments", .{});
+                }
+                return;
+            }
+        }
+        positions.append(self.l.alloc, found) catch return;
+    }
 
     var methods = std.ArrayList(*const ast.FnDecl).empty;
     for (ib.methods) |m| {
@@ -869,6 +927,7 @@ fn registerGenericParamImpl(
     const entry: Lowering.GenericParamImplEntry = .{
         .methods = self.l.alloc.dupe(*const ast.FnDecl, methods.items) catch return,
         .arg_nodes = self.l.alloc.dupe(*const ast.Node, ib.protocol_type_args) catch return,
+        .arg_positions = self.l.alloc.dupe(?usize, positions.items) catch return,
         .target_template = template,
         .defining_module = defining_module,
         .span = decl.span,
@@ -891,17 +950,67 @@ pub fn paramImplExists(
     arg_tys: []const TypeId,
     src_ty: TypeId,
 ) bool {
+    return paramImplKind(self, proto_name, arg_tys, src_ty) != .none;
+}
+
+/// Which KIND of parameterized impl answers, in the specificity order. Callers
+/// that can only consume one kind (a build sink needs a substituted method body,
+/// which a blanket impl does not yet have) branch on this instead of re-deriving
+/// the lookup.
+pub const ParamImplKind = enum { none, concrete, blanket };
+
+pub fn paramImplKind(
+    self: ProtocolResolver,
+    proto_name: []const u8,
+    arg_tys: []const TypeId,
+    src_ty: TypeId,
+) ParamImplKind {
     var key_buf = std.ArrayList(u8).empty;
     defer key_buf.deinit(self.l.alloc);
-    key_buf.appendSlice(self.l.alloc, proto_name) catch return false;
+    key_buf.appendSlice(self.l.alloc, proto_name) catch return .none;
     for (arg_tys) |t| {
-        key_buf.append(self.l.alloc, 0) catch return false;
-        key_buf.appendSlice(self.l.alloc, self.l.mangleTypeName(t)) catch return false;
+        key_buf.append(self.l.alloc, 0) catch return .none;
+        key_buf.appendSlice(self.l.alloc, self.l.mangleTypeName(t)) catch return .none;
     }
-    key_buf.append(self.l.alloc, 0) catch return false;
-    key_buf.appendSlice(self.l.alloc, self.l.mangleTypeName(src_ty)) catch return false;
-    if (self.l.param_impl_map.contains(key_buf.items)) return true;
-    return matchGenericParamImpl(self, proto_name, arg_tys, src_ty);
+    key_buf.append(self.l.alloc, 0) catch return .none;
+    key_buf.appendSlice(self.l.alloc, self.l.mangleTypeName(src_ty)) catch return .none;
+    const concrete = self.l.param_impl_map.contains(key_buf.items);
+    const blanket = matchGenericParamImpl(self, proto_name, arg_tys, src_ty);
+    // Same carrier covered twice, once concretely and once by a blanket impl.
+    // Method dispatch does not follow the specificity order, so which body runs
+    // would be decided by nothing the source states.
+    if (concrete and blanket) {
+        reportOverlappingImpls(self, proto_name, arg_tys, src_ty);
+        return .concrete;
+    }
+    if (concrete) return .concrete;
+    if (blanket) return .blanket;
+    return .none;
+}
+
+/// Refuse a concrete/blanket overlap on one carrier, once per (protocol,
+/// arguments, carrier).
+fn reportOverlappingImpls(
+    self: ProtocolResolver,
+    proto_name: []const u8,
+    arg_tys: []const TypeId,
+    src_ty: TypeId,
+) void {
+    const d = self.l.diagnostics orelse return;
+    var key = std.ArrayList(u8).empty;
+    key.appendSlice(self.l.alloc, proto_name) catch return;
+    for (arg_tys) |t| {
+        key.append(self.l.alloc, 0) catch return;
+        key.appendSlice(self.l.alloc, self.l.mangleTypeName(t)) catch return;
+    }
+    key.append(self.l.alloc, 0) catch return;
+    key.appendSlice(self.l.alloc, self.l.mangleTypeName(src_ty)) catch return;
+    const gop = self.l.reported_impl_overlaps.getOrPut(key.items) catch return;
+    if (gop.found_existing) return;
+    const entries = self.l.param_impl_generic_map.get(proto_name) orelse return;
+    const span = if (entries.items.len > 0) entries.items[0].span else ast.Span{ .start = 0, .end = 0 };
+    const id = d.addFmtId(.err, span, "'{s}' has both a concrete and a blanket 'impl {s}' — which one applies is not stated by either", .{ self.l.formatTypeName(src_ty), proto_name });
+    d.addHelpFmt(id, span, null, "drop one of them: a blanket impl covers every instantiation of its carrier, so a concrete impl for the same one is a second answer", .{});
 }
 
 /// Does a blanket impl of `proto_name` cover `src_ty` at `arg_tys`?
@@ -920,15 +1029,18 @@ pub fn matchGenericParamImpl(
     const src_name = self.l.mangleTypeName(src_ty);
     const template = self.l.struct_instance_template.get(src_name) orelse return false;
     const binds = self.l.struct_instance_bindings.getPtr(src_name) orelse return false;
+    // The template's own parameter names, which is what the instantiation keyed
+    // its bindings by.
+    const tmpl_decl = self.l.program_index.struct_template_map.get(template) orelse return false;
     for (entries.items) |entry| {
         if (entry.arg_nodes.len != arg_tys.len) continue;
         if (!std.mem.eql(u8, entry.target_template, template)) continue;
         var all = true;
-        for (entry.arg_nodes, arg_tys) |node, want| {
-            const got: TypeId = if (nodeIsBinder(node))
-                (binds.get(node.data.type_expr.name) orelse .unresolved)
-            else
-                self.l.resolveTypeArg(node);
+        for (entry.arg_nodes, entry.arg_positions, arg_tys) |node, pos, want| {
+            const got: TypeId = if (pos) |p| blk: {
+                if (p >= tmpl_decl.type_params.len) break :blk .unresolved;
+                break :blk binds.get(tmpl_decl.type_params[p].name) orelse .unresolved;
+            } else self.l.resolveTypeArg(node);
             if (got != want) {
                 all = false;
                 break;

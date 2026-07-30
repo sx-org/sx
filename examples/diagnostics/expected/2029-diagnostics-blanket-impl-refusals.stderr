@@ -1,0 +1,37 @@
+error: 'impl Series' binds a type parameter the carrier cannot supply
+  --> examples/diagnostics/2029-diagnostics-blanket-impl-refusals.sx:17:1
+   |
+17 | impl Series($U) for Plain {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+18 |     count :: (self: *Plain) -> i64 { self.n }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+19 | }
+   | ^
+
+help: a blanket impl's carrier must be an instantiation spelling the same binder, as in 'for Carrier($T)'
+   |
+17 | impl Series($U) for Plain {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+18 |     count :: (self: *Plain) -> i64 { self.n }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+19 | }
+   | ^
+
+error: 'impl Series' names a generic carrier but no binder among its type arguments
+  --> examples/diagnostics/2029-diagnostics-blanket-impl-refusals.sx:22:1
+   |
+22 | impl Series(i64) for Buffer($T) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+23 |     count :: (self: *Buffer) -> i64 { 1 }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+24 | }
+   | ^
+
+help: spell the carrier's binder in the protocol arguments too ('impl Series($T) for …($T)'), or give the carrier a concrete instantiation
+   |
+22 | impl Series(i64) for Buffer($T) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+23 |     count :: (self: *Buffer) -> i64 { 1 }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+24 | }
+   | ^

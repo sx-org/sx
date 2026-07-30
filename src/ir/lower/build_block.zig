@@ -142,12 +142,23 @@ pub fn lowerRun(self: *Lowering, binding: Binding, args: []const *const Node, sp
     // which is why this asks the shared conformance query rather than reading
     // the struct's own members only.
     const pointee = self.module.types.get(sink_ty).pointer.pointee;
-    const conforms = self.protocolResolver().paramImplExists(
+    const impl_kind = self.protocolResolver().paramImplKind(
         contracts_build_sink,
         &.{binding.protocol},
         pointee,
     );
-    if (!conforms and self.plainStructMethod(sink_ty, sink_method) == null) {
+    // A blanket impl's method signature still spells the impl's own binder, so
+    // replay would reach an unsubstituted `@Init($V/T)` and emit an unresolved
+    // type. Refused here rather than admitted into that.
+    if (impl_kind == .blanket) {
+        if (self.diagnostics) |d| {
+            const sink_name_str = self.formatTypeName(pointee);
+            const id = d.addFmtId(.err, args[0].span, "'{s}' conforms to '@BuildSink' only through a blanket impl, which cannot receive a block yet", .{sink_name_str});
+            d.addHelpFmt(id, args[0].span, null, "declare '{s}' on the struct, or write a concrete 'impl @BuildSink(…) for {s}'", .{ sink_method, sink_name_str });
+        }
+        return Ref.none;
+    }
+    if (impl_kind == .none and self.plainStructMethod(sink_ty, sink_method) == null) {
         const sink_name_str = self.formatTypeName(self.module.types.get(sink_ty).pointer.pointee);
         if (self.diagnostics) |d| {
             const id = d.addFmtId(.err, args[0].span, "'{s}' cannot receive this block: it has no '{s}' method, so it does not implement '@BuildSink({s})'", .{ sink_name_str, sink_method, proto_name });
