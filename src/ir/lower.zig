@@ -294,15 +294,6 @@ pub const Scope = struct {
         return null;
     }
 
-    /// `lookup` returning the binding IN PLACE, so a caller can record state on
-    /// it (the `@Init` write-once mark). The pointer is valid until the owning
-    /// scope's map is next mutated — read and write it in one step.
-    pub fn lookupPtr(self: *Scope, name: []const u8) ?*Binding {
-        if (self.map.getPtr(name)) |b| return b;
-        if (self.parent) |p| return p.lookupPtr(name);
-        return null;
-    }
-
     /// A value-binding lookup that also reports whether the binding was reached
     /// only by crossing a nested-fn boundary (`is_fn_boundary`). A static nested
     /// `::` fn has no environment, so such a binding is an enclosing
@@ -1069,9 +1060,8 @@ pub const Lowering = struct {
     ///   `narrowed_refs` indices would falsely match and permit an UNSOUND
     ///   unwrap of a non-present optional;
     /// - loop targets: `break_target` / `continue_target` name BASIC BLOCKS of
-    ///   the enclosing function. A `break` in the nested body would branch
-    ///   across a function boundary, and any rule reading "am I inside a loop?"
-    ///   — the `@Init` write-once check — would answer for the wrong body;
+    ///   the enclosing function, so a `break` in the nested body would branch
+    ///   across a function boundary;
     /// - build replays: a `@BuildBlock` scope intercepts expression statements
     ///   of ITS OWN block only (spec §7.2), never of a function lowered while
     ///   that replay happens to be on the stack.

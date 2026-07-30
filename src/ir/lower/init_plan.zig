@@ -28,16 +28,15 @@ pub fn initTargetOf(self: *Lowering, ty: TypeId) ?TypeId {
     return self.module.types.initTarget(ty);
 }
 
-/// Form the nonescaping `@Init(V)` recipe for `arg` (spec §5.2). The argument is
-/// NOT evaluated here: it becomes the body of a thunk `(dest: *V) { dest.* =
-/// <arg>; }`, so it runs when — and only when — the receiver calls `write`.
+/// Form the `@Init(V)` recipe for `arg` (spec §5.2). The argument is NOT
+/// evaluated here: it becomes the body of a thunk `(dest: *V) { dest.* =
+/// <arg>; }`, so it runs when — and each time — the receiver calls `write`.
 ///
 /// The closure lowerer does the work: capture collection, env layout, and body
 /// lowering are the ordinary lambda paths. Two things differ, both carried by
-/// `lowerLambdaTyped`: the environment stays on the caller's stack (a recipe is
-/// nonescaping, and §12.1 forbids the compiler from choosing heap storage), and
-/// the result is typed `@Init(V)` rather than the structurally identical
-/// `Closure(*V)`.
+/// `lowerLambdaTyped`: the environment stays on the caller's stack (§12.1
+/// forbids the compiler from choosing heap storage for it), and the result is
+/// typed `@Init(V)` rather than the structurally identical `Closure(*V)`.
 pub fn formInitPlan(self: *Lowering, arg: *const Node, init_ty: TypeId) Ref {
     // Already a recipe for this target: the argument is a synchronous FORWARD
     // to another `@Init(T)` parameter (spec §5.1), which hands over the single

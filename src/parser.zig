@@ -77,8 +77,8 @@ pub const Parser = struct {
     in_module_expansion: bool = false,
     /// True for exactly one `parseTypeExpr` call: the TOP-LEVEL annotation of a
     /// declared parameter. A compiler-formed type (`@Init(T)`, `@BuildBlock(P)`)
-    /// is legal only there — each is a nonescaping value that cannot be stored,
-    /// returned, or nested inside another type. `parseTypeExpr` consumes and
+    /// is legal only there: the compiler forms it AT a parameter, so there is no
+    /// other position where one could come from. `parseTypeExpr` consumes and
     /// clears the flag on entry, so every recursive element position
     /// (`*@Init(T)`, `[]@BuildBlock(P)`), struct field, and return type rejects
     /// it.
@@ -1050,7 +1050,7 @@ pub const Parser = struct {
         if (!allowed) {
             return self.failAt(name_tok.loc, try std.fmt.allocPrint(
                 self.allocator,
-                "'{s}' may only be written as a parameter type: it is a nonescaping value that cannot be stored in a field, returned, or nested inside another type",
+                "'{s}' may only be written as a parameter type: the compiler forms one AT a parameter, so no field, return type, or nested position can name it",
                 .{spelling},
             ));
         }

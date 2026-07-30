@@ -200,12 +200,12 @@ pub const TypeInfo = union(enum) {
         /// `Closure(..$args) -> $R` => params = [], pack_start = 0.
         pack_start: ?u32 = null,
         /// Non-null makes this the compiler-formed `@Init(T)` (spec §5): a
-        /// nonescaping construction recipe whose sole operation is
-        /// `write(dest: *T)`. Its representation IS the `{fn_ptr, env}` closure
-        /// pair — `params = [*T]`, `ret = void` — so layout, codegen, and the
-        /// indirect-call path are shared verbatim; the marker keeps the type
-        /// DISTINCT from an ordinary `Closure(*T)` (so neither converts to the
-        /// other) and drives the formation / write-once / escape rules.
+        /// deferred construction recipe whose sole operation is
+        /// `write(dest: *T)`, re-evaluated on each call. Its representation IS
+        /// the `{fn_ptr, env}` closure pair — `params = [*T]`, `ret = void` — so
+        /// layout, codegen, and the indirect-call path are shared verbatim; the
+        /// marker keeps the type DISTINCT from an ordinary `Closure(*T)` (so
+        /// neither converts to the other) and is what formation keys on.
         init_target: ?TypeId = null,
         /// Non-null makes this the compiler-formed `@BuildBlock(P)` (spec §7):
         /// the trailing block a build-accepting function receives, whose
