@@ -2926,12 +2926,20 @@ Where the check lands depends on what the head names:
 | Head | Satisfied when |
 |---|---|
 | a declared protocol | the binding implements every method |
-| a parameterized protocol (`Into(i32)`) | a visible `impl Into(i32) for <binding>` exists |
+| a parameterized protocol (`Into(i32)`) | a visible `impl Into(i32) for <binding>` exists, or a **blanket** impl covers it |
 | the declaration's own type parameter (`$V/P`) | deferred — asked again wherever `P` is bound |
 | a compiler-formed contract (`@Init`, `@BuildBlock`) | the argument is formable into an implementor |
 
 A protocol satisfies its own bound: binding `$V/View` to `View` is the identity
 case, not a request that `View` implement itself.
+
+**Blanket impls.** An impl may write the protocol's type arguments as its own
+binders — `impl Series($T) for Buffer($T)` covers every instantiation of
+`Buffer` at the matching argument. Such an impl has no concrete argument tuple
+to be keyed by, so it is matched at the use site against the request's
+arguments and the source instantiation. Lookup is a **specificity** rule: a
+concrete impl answers first, and a blanket impl only when no concrete one
+matches.
 
 ### Variadic Functions
 Functions can accept a variable number of arguments using `..name: []Type` syntax:

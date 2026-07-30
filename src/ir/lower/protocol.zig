@@ -68,21 +68,12 @@ fn plainHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
                 .call => |c| c.args,
                 else => return false,
             };
-            // Resolve protocol type args. Each goes through
-            // `resolveTypeArg` so type aliases / generics / pack-
-            // indexed types all work as protocol args.
-            var arg_mangles = std.ArrayList(u8).empty;
-            defer arg_mangles.deinit(self.alloc);
-            for (args, 0..) |a, i| {
-                if (i > 0) arg_mangles.append(self.alloc, 0) catch return false;
-                const aty = self.resolveTypeArg(a);
-                arg_mangles.appendSlice(self.alloc, self.mangleTypeName(aty)) catch return false;
-            }
-            const ty_mangled = self.mangleTypeName(ty);
-            const key = std.fmt.allocPrint(self.alloc, "{s}\x00{s}\x00{s}", .{
-                p_name, arg_mangles.items, ty_mangled,
-            }) catch return false;
-            return self.param_impl_map.contains(key);
+            // Resolve protocol type args. Each goes through `resolveTypeArg` so
+            // type aliases / generics / pack-indexed types all work as args.
+            var arg_tys = std.ArrayList(TypeId).empty;
+            defer arg_tys.deinit(self.alloc);
+            for (args) |a| arg_tys.append(self.alloc, self.resolveTypeArg(a)) catch return false;
+            return self.protocolResolver().paramImplExists(p_name, arg_tys.items, ty);
         },
         else => return false,
     }

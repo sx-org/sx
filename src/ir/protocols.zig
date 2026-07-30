@@ -835,6 +835,110 @@ pub const ProtocolResolver = struct {
         }
     }
 
+/// True when `node` spells one of the impl's own binders rather than a concrete
+/// type — `$T` in `impl Series($T) for Buffer($T)`.
+fn nodeIsBinder(node: *const ast.Node) bool {
+    return node.data == .type_expr and node.data.type_expr.is_generic;
+}
+
+/// Record a blanket impl under its protocol name. Only impls with at least one
+/// binder among the protocol's type arguments qualify — a fully concrete impl is
+/// already findable by its own key.
+fn registerGenericParamImpl(
+    self: ProtocolResolver,
+    ib: *const ast.ImplBlock,
+    decl: *const Node,
+    proto_name: []const u8,
+    defining_module: []const u8,
+) void {
+    var any_binder = false;
+    for (ib.protocol_type_args) |a| {
+        if (nodeIsBinder(a)) any_binder = true;
+    }
+    if (!any_binder) return;
+    // The source must be an instantiation of a template, since matching recovers
+    // the binding from the instantiation's own record.
+    const target = ib.target_type_expr orelse return;
+    if (target.data != .parameterized_type_expr) return;
+    const template = target.data.parameterized_type_expr.name;
+
+    var methods = std.ArrayList(*const ast.FnDecl).empty;
+    for (ib.methods) |m| {
+        if (m.data == .fn_decl) methods.append(self.l.alloc, &m.data.fn_decl) catch {};
+    }
+    const entry: Lowering.GenericParamImplEntry = .{
+        .methods = self.l.alloc.dupe(*const ast.FnDecl, methods.items) catch return,
+        .arg_nodes = self.l.alloc.dupe(*const ast.Node, ib.protocol_type_args) catch return,
+        .target_template = template,
+        .defining_module = defining_module,
+        .span = decl.span,
+        .block = ib,
+    };
+    const gop = self.l.param_impl_generic_map.getOrPut(proto_name) catch return;
+    if (!gop.found_existing) gop.value_ptr.* = std.ArrayList(Lowering.GenericParamImplEntry).empty;
+    for (gop.value_ptr.items) |existing| {
+        if (existing.block == ib) return;
+    }
+    gop.value_ptr.append(self.l.alloc, entry) catch return;
+}
+
+/// Is there ANY parameterized impl of `proto_name` at `arg_tys` for `src_ty`?
+/// The one conformance question for a parameterized protocol, in the specificity
+/// order: the concrete key first, a blanket impl only if nothing concrete matches.
+pub fn paramImplExists(
+    self: ProtocolResolver,
+    proto_name: []const u8,
+    arg_tys: []const TypeId,
+    src_ty: TypeId,
+) bool {
+    var key_buf = std.ArrayList(u8).empty;
+    defer key_buf.deinit(self.l.alloc);
+    key_buf.appendSlice(self.l.alloc, proto_name) catch return false;
+    for (arg_tys) |t| {
+        key_buf.append(self.l.alloc, 0) catch return false;
+        key_buf.appendSlice(self.l.alloc, self.l.mangleTypeName(t)) catch return false;
+    }
+    key_buf.append(self.l.alloc, 0) catch return false;
+    key_buf.appendSlice(self.l.alloc, self.l.mangleTypeName(src_ty)) catch return false;
+    if (self.l.param_impl_map.contains(key_buf.items)) return true;
+    return matchGenericParamImpl(self, proto_name, arg_tys, src_ty);
+}
+
+/// Does a blanket impl of `proto_name` cover `src_ty` at `arg_tys`?
+///
+/// The source instantiation carries its own template name and type-parameter
+/// bindings, so matching is: same template, then every protocol argument the
+/// impl wrote must resolve — a binder through those bindings, anything else
+/// concretely — to the argument the request asked for.
+pub fn matchGenericParamImpl(
+    self: ProtocolResolver,
+    proto_name: []const u8,
+    arg_tys: []const TypeId,
+    src_ty: TypeId,
+) bool {
+    const entries = self.l.param_impl_generic_map.get(proto_name) orelse return false;
+    const src_name = self.l.mangleTypeName(src_ty);
+    const template = self.l.struct_instance_template.get(src_name) orelse return false;
+    const binds = self.l.struct_instance_bindings.getPtr(src_name) orelse return false;
+    for (entries.items) |entry| {
+        if (entry.arg_nodes.len != arg_tys.len) continue;
+        if (!std.mem.eql(u8, entry.target_template, template)) continue;
+        var all = true;
+        for (entry.arg_nodes, arg_tys) |node, want| {
+            const got: TypeId = if (nodeIsBinder(node))
+                (binds.get(node.data.type_expr.name) orelse .unresolved)
+            else
+                self.l.resolveTypeArg(node);
+            if (got != want) {
+                all = false;
+                break;
+            }
+        }
+        if (all) return true;
+    }
+    return false;
+}
+
     /// Register a parameterised-protocol impl into `param_impl_map`.
     /// Resolves the protocol's type args + the source type, mangles them, and
     /// stashes the impl's method fn_decls for later monomorphisation by
@@ -905,6 +1009,11 @@ pub const ProtocolResolver = struct {
             .span = decl.span,
             .block = ib,
         };
+
+        // A blanket impl also lands in the generic map: its concrete key above
+        // mangles binders, which no request can ever spell, so that key alone
+        // would make the impl unfindable.
+        registerGenericParamImpl(self, ib, decl, proto_name, defining_module);
 
         const gop = self.l.param_impl_map.getOrPut(key) catch return;
         if (!gop.found_existing) {

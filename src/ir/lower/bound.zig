@@ -142,7 +142,6 @@ fn checkOne(
     param: []const u8,
     bound_ty: TypeId,
 ) void {
-    const d = self.diagnostics orelse return;
     const spelled_args: usize = switch (bound.data) {
         .parameterized_type_expr => |pte| pte.args.len,
         else => 0,
@@ -176,8 +175,7 @@ fn checkOne(
     };
     const missing = self.firstUnimplementedProtocolMethod(pty, concrete_name, bound_ty) orelse return;
     reportViolation(self, bound, p.name, param, bound_ty,
-        "'{s}' has no '{s}' for '{s}'", .{ concrete_name, missing, p.name });
-    _ = d;
+        "'{s}' has no '{s}' for '{s}'", .{ self.formatTypeName(bound_ty), missing, p.name });
 }
 
 /// The deferred question, arriving: `$V/P` where `P` is bound by this same
@@ -205,7 +203,7 @@ fn checkAgainstSibling(
     };
     const missing = self.firstUnimplementedProtocolMethod(sib_ty, concrete_name, bound_ty) orelse return;
     reportViolation(self, bound, proto_name, param, bound_ty,
-        "'{s}' has no '{s}' for '{s}'", .{ concrete_name, missing, proto_name });
+        "'{s}' has no '{s}' for '{s}'", .{ self.formatTypeName(bound_ty), missing, proto_name });
 }
 
 fn reportViolation(

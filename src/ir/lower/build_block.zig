@@ -27,6 +27,9 @@ pub const site_method = "site";
 /// value stays concrete until the sink itself erases it.
 pub const sink_method = "expression";
 
+/// The contract a sink implements.
+const contracts_build_sink = "@BuildSink";
+
 /// A `@BuildBlock(P)` parameter bound to the trailing block written at a call
 /// site. A build block has no runtime value: what the parameter carries is the
 /// block's BODY, as the AST the caller wrote. `run` replays that body into the
@@ -134,8 +137,17 @@ pub fn lowerRun(self: *Lowering, binding: Binding, args: []const *const Node, sp
 
     const proto_name = if (self.getProtocolInfo(binding.protocol)) |pi| pi.name else self.formatTypeName(binding.protocol);
     // A sink that cannot answer a handshake is a static error at `run`, not a
-    // per-expression cascade later.
-    if (self.plainStructMethod(sink_ty, sink_method) == null) {
+    // per-expression cascade later. Either the method is on the struct, or the
+    // sink conforms to `@BuildSink(P)` through an impl — including a blanket one,
+    // which is why this asks the shared conformance query rather than reading
+    // the struct's own members only.
+    const pointee = self.module.types.get(sink_ty).pointer.pointee;
+    const conforms = self.protocolResolver().paramImplExists(
+        contracts_build_sink,
+        &.{binding.protocol},
+        pointee,
+    );
+    if (!conforms and self.plainStructMethod(sink_ty, sink_method) == null) {
         const sink_name_str = self.formatTypeName(self.module.types.get(sink_ty).pointer.pointee);
         if (self.diagnostics) |d| {
             const id = d.addFmtId(.err, args[0].span, "'{s}' cannot receive this block: it has no '{s}' method, so it does not implement '@BuildSink({s})'", .{ sink_name_str, sink_method, proto_name });
