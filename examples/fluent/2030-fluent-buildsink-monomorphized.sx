@@ -70,7 +70,7 @@ impl @BuildSink(Drawable) for Capture {
     }
 }
 
-column :: (content: @BuildBlock(Drawable)) {
+column :: (content: $B/@BuildBlock(Drawable)) {
     sized := Measure{};
     content.run(*sized);
     print("measured {} expression(s), {} bytes of storage\n", sized.count, sized.bytes);

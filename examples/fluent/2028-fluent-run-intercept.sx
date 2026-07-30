@@ -44,7 +44,7 @@ make :: (text: string) -> Label => Label{ text = text };
 
 consume :: (l: Label) -> i32 => 0;
 
-column :: (content: @BuildBlock(Drawable)) -> i32 {
+column :: (content: $B/@BuildBlock(Drawable)) -> i32 {
     sink := Echo{};
     content.run(*sink);
     sink.n

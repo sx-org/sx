@@ -47,11 +47,11 @@ Tally :: struct {
     expression :: (self: *Tally, value: $I/@Init($V/View)) { self.n += 1; }
 }
 
-capture :: (into: *Roots, content: @BuildBlock(View)) {
+capture :: (into: *Roots, content: $B/@BuildBlock(View)) {
     content.run(into);
 }
 
-count :: (into: *Tally, content: @BuildBlock(View)) {
+count :: (into: *Tally, content: $B/@BuildBlock(View)) {
     content.run(into);
 }
 

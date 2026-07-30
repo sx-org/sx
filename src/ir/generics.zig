@@ -267,6 +267,7 @@ pub const GenericResolver = struct {
                         // (§5.2); the init's type argument still binds from the
                         // ordinary type through `extractTypeParam` below.
                         const extracted = self.l.initBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
+                            self.l.blockBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
                             self.l.extractTypeParam(param.type_expr, arg_ty, tp.name);
                         if (extracted) |ety| {
                             if (inferred_ty) |prev| {

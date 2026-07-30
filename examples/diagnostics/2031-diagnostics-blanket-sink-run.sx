@@ -19,7 +19,7 @@ impl @BuildSink($T) for Bag($T) {
     expression :: (self: *Bag, value: $I/@Init($V/T)) { }
 }
 
-collect :: (content: @BuildBlock(Drawable)) -> i64 {
+collect :: (content: $B/@BuildBlock(Drawable)) -> i64 {
     sk := Bag(Drawable){ children = List(Drawable){} };
     content.run(*sk);
     1

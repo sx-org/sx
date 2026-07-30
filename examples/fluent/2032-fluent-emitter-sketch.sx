@@ -59,7 +59,7 @@ impl Cell for Divider {
 }
 
 // This file's emit helpers — the "emitter API" a caller writes against.
-emit :: (title: string, content: @BuildBlock(Cell)) {
+emit :: (title: string, content: $B/@BuildBlock(Cell)) {
     out := Ascii{};
     out.write(title);
     out.indent += 1;

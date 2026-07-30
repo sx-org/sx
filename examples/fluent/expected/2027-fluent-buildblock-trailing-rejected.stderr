@@ -1,21 +1,27 @@
 error: 'plain' cannot take a trailing block — its last parameter 'b' is 'i64', which is neither a `Closure` nor a `@BuildBlock(P)`
-  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:20:21
+  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:28:21
    |
-20 |     _ = plain(1, 2) { 3; };   // refused: 'b' receives neither form
+28 |     _ = plain(1, 2) { 3; };   // refused: 'b' receives neither form
    |                     ^^^^^^
 
 help: declare 'b' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block
    |
-20 |     _ = plain(1, 2) { 3; };   // refused: 'b' receives neither form
+28 |     _ = plain(1, 2) { 3; };   // refused: 'b' receives neither form
    |                     ^^^^^^
 
-error: 'column' takes a build block for 'content' — pass it as a trailing block
-  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:21:12
+error: a '@BuildBlock(Drawable)' parameter takes a build block — pass it as a trailing block
+  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:29:12
    |
-21 |     column(7);                // refused: a block is not a value argument
+29 |     column(7);                // refused: a value is not a build block
    |            ^
 
-help: write `column(…) { … }`; a @BuildBlock(Drawable) is formed from the block body, not from a value
+help: write the call with a trailing `{ … }`, or pass on a block this call already received
    |
-21 |     column(7);                // refused: a block is not a value argument
+29 |     column(7);                // refused: a value is not a build block
    |            ^
+
+error: parameter 'content' is bound both by a positional argument and by the trailing block
+  --> examples/fluent/2027-fluent-buildblock-trailing-rejected.sx:24:21
+   |
+24 |     column(content) { false; };
+   |                     ^^^^^^^^^^

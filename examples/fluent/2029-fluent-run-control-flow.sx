@@ -40,7 +40,7 @@ Roster :: struct {
     }
 }
 
-column :: (content: @BuildBlock(Drawable)) {
+column :: (content: $B/@BuildBlock(Drawable)) {
     first := Roster{};
     content.run(*first);
     print("  -- replay --\n");

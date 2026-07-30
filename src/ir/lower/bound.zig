@@ -193,7 +193,9 @@ fn checkFormed(
     param: []const u8,
     bound_ty: TypeId,
 ) void {
-    if (!std.mem.eql(u8, name, contracts.init_bound)) return;
+    const is_init = std.mem.eql(u8, name, contracts.init_bound);
+    const is_block = std.mem.eql(u8, name, contracts.build_block_bound);
+    if (!is_init and !is_block) return;
     const spelled_args: usize = switch (bound.data) {
         .parameterized_type_expr => |pte| pte.args.len,
         else => 0,
@@ -206,12 +208,20 @@ fn checkFormed(
         const id0 = d0.addFmtId(.err, bound.span, "the bound '{s}' on '${s}' takes one type argument, but {d} {s} written", .{
             name, param, spelled_args, if (spelled_args == 1) "is" else "are",
         });
-        d0.addHelpFmt(id0, bound.span, null, "write '${s}/{s}(T)' with the type a 'write' fills", .{ param, name });
+        if (is_init) {
+            d0.addHelpFmt(id0, bound.span, null, "write '${s}/{s}(T)' with the type a 'write' fills", .{ param, name });
+        } else {
+            d0.addHelpFmt(id0, bound.span, null, "write '${s}/{s}(P)' with the type its expressions are intercepted at", .{ param, name });
+        }
         return;
     }
     const target_node = bound.data.parameterized_type_expr.args[0];
     const want = self.resolveTypeWithBindings(target_node);
     const spelled = if (want == .unresolved) name else spelledHead(self, bound, name);
+    if (is_block) {
+        checkFormedBlock(self, bound, spelled, param, bound_ty, want);
+        return;
+    }
     const actual = self.module.types.initTarget(bound_ty) orelse {
         const d = self.diagnostics orelse return;
         const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
@@ -226,6 +236,32 @@ fn checkFormed(
         self.formatTypeName(bound_ty), spelled, param,
     });
     d.addHelpFmt(id, bound.span, null, "this initializer writes '{s}', and the bound asks for '{s}'", .{ self.formatTypeName(actual), self.formatTypeName(want) });
+}
+
+/// The `@BuildBlock` half: the binding must be a block the compiler formed, for
+/// the same interception type the bound names.
+fn checkFormedBlock(
+    self: *Lowering,
+    bound: *const Node,
+    spelled: []const u8,
+    param: []const u8,
+    bound_ty: TypeId,
+    want: TypeId,
+) void {
+    const protocol = self.blockProtocolOf(bound_ty) orelse {
+        const d = self.diagnostics orelse return;
+        const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
+            self.formatTypeName(bound_ty), spelled, param,
+        });
+        d.addHelpFmt(id, bound.span, null, "a build block is formed from a trailing block at the call — '${s}' can only bind one of those", .{param});
+        return;
+    };
+    if (want == .unresolved or protocol == want) return;
+    const d = self.diagnostics orelse return;
+    const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
+        self.formatTypeName(bound_ty), spelled, param,
+    });
+    d.addHelpFmt(id, bound.span, null, "this block is intercepted at '{s}', and the bound asks for '{s}'", .{ self.formatTypeName(protocol), self.formatTypeName(want) });
 }
 
 /// The deferred question, arriving: `$V/P` where `P` is bound by this same

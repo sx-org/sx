@@ -32,11 +32,11 @@ EmitSink :: struct {
     }
 }
 
-emit_into :: (sink: *EmitSink, content: @BuildBlock(EmitCell)) {
+emit_into :: (sink: *EmitSink, content: $B/@BuildBlock(EmitCell)) {
     content.run(sink);
 }
 
-emit :: (content: @BuildBlock(EmitCell)) -> i32 {
+emit :: (content: $B/@BuildBlock(EmitCell)) -> i32 {
     sink := EmitSink{};
     content.run(*sink);
     sink.count

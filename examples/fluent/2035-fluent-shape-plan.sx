@@ -58,7 +58,7 @@ Hold :: struct {
     }
 }
 
-panel :: (content: @BuildBlock(Drawable)) -> i32 {
+panel :: (content: $B/@BuildBlock(Drawable)) -> i32 {
     shape: @BuildShape = content.shape();
     plan := make_plan(shape, .{
         reserve_static = true,

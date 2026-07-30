@@ -7,7 +7,7 @@
 //
 // A build-accepting function declares its block parameter last:
 //
-//     column :: (gap: f32, content: @BuildBlock(Drawable)) { ... }
+//     column :: (gap: f32, content: $B/@BuildBlock(Drawable)) { ... }
 //
 // and replays it into a sink:
 //

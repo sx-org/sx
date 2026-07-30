@@ -16,9 +16,9 @@
 //!     shape. `@SourceSite`, `@BuildSink`, `@BuildShape`.
 //!   - `.compiler_formed` — the compiler FORMS the type for a parameter; there
 //!     is no declaration anywhere, so declaring the name is an error wherever
-//!     it appears. `@Init`, `@BuildBlock`. A formed contract is written either
-//!     as the parameter's annotation (`@BuildBlock(P)`) or, when `bound_only`,
-//!     only as a generic bound on it (`$I/@Init(T)`).
+//!     it appears. `@Init`, `@BuildBlock`. Both are constraints, so both are
+//!     `bound_only`: they are written as a generic bound on the parameter
+//!     (`$I/@Init(T)`, `$B/@BuildBlock(P)`), never as its type.
 
 const std = @import("std");
 const imports = @import("imports.zig");
@@ -41,8 +41,8 @@ pub const Contract = struct {
     spelling: []const u8 = "",
     /// A contract that is only ever a generic BOUND head: it names a
     /// constraint, so no position — parameter annotation included — may write
-    /// it as a type. Set for `@Init`, whose implementors are minted per
-    /// formation site and are not spellable.
+    /// it as a type. Its implementors are minted per formation site and are not
+    /// spellable.
     bound_only: bool = false,
     /// The bound this contract is written as, when `bound_only`.
     bound_spelling: []const u8 = "",
@@ -90,13 +90,22 @@ pub const entries = [_]Contract{
         .bound_only = true,
         .bound_spelling = "$I/@Init(T)",
     },
-    .{ .name = "@BuildBlock", .kind = .compiler_formed, .spelling = "@BuildBlock(P)" },
+    .{
+        .name = "@BuildBlock",
+        .kind = .compiler_formed,
+        .spelling = "@BuildBlock(P)",
+        .bound_only = true,
+        .bound_spelling = "$B/@BuildBlock(P)",
+    },
 };
 
 /// The bound whose type argument the compiler INFERS from the argument an
 /// initializer is formed from, so a binder written inside it (`$I/@Init($T)`)
 /// is one of the declaration's type parameters.
 pub const init_bound = "@Init";
+
+/// The bound naming the trailing-block contract.
+pub const build_block_bound = "@BuildBlock";
 
 /// True for a name the compiler FORMS. `parseCompilerFormedType` is its only
 /// producer, so these names never reach a declaration or a value.

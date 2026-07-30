@@ -1,21 +1,43 @@
-error: 'content' is a @BuildBlock(Drawable) — its only operations are '.run(sink)', '.shape()', and '.site()'
-  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:21:14
+error: 'saved' cannot bind a '@BuildBlock(Drawable)' — a build block is valid only within the call that received it
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:30:14
    |
-21 |     saved := content;        // refused: a block is not storage
+30 |     saved := content;        // refused: a block is not storage
    |              ^^^^^^^
 
-help: a build block is a compile-time value: it cannot be bound, stored, passed on, or returned
+help: call '.run(*sink)' here, or pass it to another '@BuildBlock' parameter
    |
-21 |     saved := content;        // refused: a block is not storage
+30 |     saved := content;        // refused: a block is not storage
    |              ^^^^^^^
 
-error: 'content' is a @BuildBlock(Drawable) — its only operations are '.run(sink)', '.shape()', and '.site()'
-  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:22:15
+error: a '@BuildBlock(Drawable)' cannot be returned — it is valid only within the call that received it
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:34:5
    |
-22 |     elsewhere(content);      // refused: a block is not an argument
-   |               ^^^^^^^
+34 |     content                  // refused: the frame it points at ends here
+   |     ^^^^^^^
 
-help: a build block is a compile-time value: it cannot be bound, stored, passed on, or returned
+help: run it here and return what the sink collected
    |
-22 |     elsewhere(content);      // refused: a block is not an argument
-   |               ^^^^^^^
+34 |     content                  // refused: the frame it points at ends here
+   |     ^^^^^^^
+
+error: 'content' is a '@BuildBlock(Drawable)' and cannot be captured by a closure
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:38:32
+   |
+38 |     later := () => { elsewhere(content.shape().static_expressions); };
+   |                                ^^^^^^^
+
+help: replay it where it was received ('.run(*sink)'), or collect what you need into storage the closure can reach
+   |
+38 |     later := () => { elsewhere(content.shape().static_expressions); };
+   |                                ^^^^^^^
+
+error: '@BuildBlock(Drawable)' has no 'replay' — a build block's operations are '.run(sink)', '.shape()', and '.site()'
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:42:5
+   |
+42 |     content.replay();        // refused: not one of its operations
+   |     ^^^^^^^^^^^^^^
+
+help: the block's own body is what it carries; nothing else reads it
+   |
+42 |     content.replay();        // refused: not one of its operations
+   |     ^^^^^^^^^^^^^^

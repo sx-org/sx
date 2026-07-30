@@ -430,10 +430,12 @@ pub const Lowering = struct {
     stdlib_paths: []const []const u8 = &.{},
     resolved_root: ?*const Node = null, // full AST root (for building comptime modules)
     comptime_param_nodes: ?std.StringHashMap(*const Node) = null, // active comptime substitutions
-    /// `@BuildBlock(P)` parameters of the accepting call being inlined, bound to
-    /// the trailing block written at its call site. Owned per call and shadowed
-    /// by a nested one, exactly like `comptime_param_nodes`.
-    build_block_bindings: ?std.StringHashMap(lower_build_block.Binding) = null,
+    /// `@BuildBlock` formation sites, in mint order; a per-site implementor type
+    /// carries its one-based index as its nominal id.
+    block_sites: std.ArrayList(lower_build_block.Site) = .empty,
+    /// The site id minted for a source block, so two monomorphizations of one
+    /// enclosing generic function form at the SAME site (§4.2).
+    block_site_ids: std.AutoHashMapUnmanaged(*const Node, u32) = .empty,
     /// Active build replays, innermost last (spec §7.3). A standalone expression
     /// statement is offered to the top scope's sink; an empty stack means no
     /// interception at all.
@@ -1320,6 +1322,7 @@ pub const Lowering = struct {
         // that implementor above and this arm is not reached.
         if (declared_ty == .unresolved and !p.is_variadic) {
             if (lower_init_plan.formationRequest(self, p)) |request| return request;
+            if (lower_build_block.formationRequest(self, p)) |request| return request;
         }
         if (p.is_variadic) {
             // Two surface forms:
@@ -1991,14 +1994,6 @@ pub const Lowering = struct {
     }
 
     pub fn emitError(self: *Lowering, name: []const u8, span: ?ast.Span) Ref {
-        // A `@BuildBlock(P)` parameter has no value to resolve TO — it names a
-        // block body, not storage. Every way of reaching for one (binding it,
-        // passing it on, returning it, calling it) arrives here, so this is the
-        // one place the refusal has to be stated.
-        if (self.buildBlockBinding(name) != null) {
-            self.rejectBuildBlockValue(name, span orelse .{ .start = 0, .end = 0 });
-            return self.emitPlaceholder(name);
-        }
         if (self.diagnostics) |diags| {
             // The literal message carries the lowering's `current_source_file`
             // and enclosing function name. The diagnostic renderer's
@@ -3541,12 +3536,16 @@ pub const Lowering = struct {
     pub const lowerInitSite = lower_init_plan.lowerInitSite;
 
     // --- lower/build_block.zig (`@BuildBlock(P)`) ---
-    pub const bindBuildBlockParam = lower_build_block.bindParam;
-    pub const buildBlockBinding = lower_build_block.lookup;
+    pub const blockProtocolOf = lower_build_block.blockProtocolOf;
+    pub const blockBinderType = lower_build_block.binderType;
+    pub const formBuildBlock = lower_build_block.formBlock;
     pub const lowerBuildBlockRun = lower_build_block.lowerRun;
     pub const lowerBuildBlockShape = lower_build_block.lowerShape;
     pub const lowerBuildBlockSite = lower_build_block.lowerSite;
     pub const interceptBuildExpression = lower_build_block.interceptExpression;
-    pub const rejectBuildBlockValue = lower_build_block.rejectValueUse;
+    pub const rejectBlockBinding = lower_build_block.rejectBinding;
+    pub const blockBindingTypeOf = lower_build_block.bindingTypeOf;
+    pub const rejectBlockCapture = lower_build_block.rejectCapture;
+    pub const rejectBlockReturn = lower_build_block.rejectReturn;
     pub const appendIntField = lower_build_block.appendIntField;
 };

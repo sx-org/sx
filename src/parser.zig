@@ -75,14 +75,6 @@ pub const Parser = struct {
     /// Function/lambda bodies clear it — a nested body's declarations are
     /// locals, never module scope.
     in_module_expansion: bool = false,
-    /// True for exactly one `parseTypeExpr` call: the TOP-LEVEL annotation of a
-    /// declared parameter. A compiler-formed type (`@Init(T)`, `@BuildBlock(P)`)
-    /// is legal only there: the compiler forms it AT a parameter, so there is no
-    /// other position where one could come from. `parseTypeExpr` consumes and
-    /// clears the flag on entry, so every recursive element position
-    /// (`*@Init(T)`, `[]@BuildBlock(P)`), struct field, and return type rejects
-    /// it.
-    compiler_type_allowed: bool = false,
     /// True while parsing a parameter's default expression — the one place
     /// `@caller` may be written.
     in_param_default: bool = false,
@@ -555,17 +547,13 @@ pub const Parser = struct {
 
     fn parseTypeExpr(self: *Parser) anyerror!*Node {
         const start = self.current.loc.start;
-        // Only the immediate call sees the `@` permission; every nested element
-        // position below resolves with it cleared.
-        const compiler_type_allowed = self.compiler_type_allowed;
-        self.compiler_type_allowed = false;
-
-        // Compiler-formed type: `@Init(T)` / `@BuildBlock(P)`. Every other `@`
-        // name in type position names a compiler-maintained stdlib declaration
-        // (`@SourceSite`) and resolves like any other type name.
+        // A compiler-formed contract (`@Init`, `@BuildBlock`) is a CONSTRAINT: it
+        // names a bound, never a type, and `parseCompilerFormedType` says so.
+        // Every other `@` name in type position names a compiler-maintained
+        // stdlib declaration (`@SourceSite`) and resolves like any other type.
         if (self.current.tag == .at_identifier) {
             if (isCompilerFormedTypeName(self.tokenSlice(self.current))) {
-                return self.parseCompilerFormedType(start, compiler_type_allowed);
+                return self.parseCompilerFormedType(start);
             }
             const at_tok = self.current;
             const at_name = self.tokenSlice(at_tok);
@@ -1038,7 +1026,7 @@ pub const Parser = struct {
         return contracts.isCompilerFormed(name);
     }
 
-    fn parseCompilerFormedType(self: *Parser, start: u32, allowed: bool) anyerror!*Node {
+    fn parseCompilerFormedType(self: *Parser, start: u32) anyerror!*Node {
         const name_tok = self.current;
         const name = self.tokenSlice(name_tok);
         self.advance();
@@ -1054,13 +1042,6 @@ pub const Parser = struct {
                 self.allocator,
                 "'{s}' is a generic bound, not a type — write the parameter as '{s}'",
                 .{ spelling, contract.?.bound_spelling },
-            ));
-        }
-        if (!allowed) {
-            return self.failAt(name_tok.loc, try std.fmt.allocPrint(
-                self.allocator,
-                "'{s}' may only be written as a parameter type: the compiler forms one AT a parameter, so no field, return type, or nested position can name it",
-                .{spelling},
             ));
         }
         if (self.current.tag != .l_paren) {
@@ -1533,10 +1514,6 @@ pub const Parser = struct {
                 try param_name_is_raw.append(self.allocator, self.current.is_raw);
                 self.advance();
                 try self.expect(.colon);
-                // A protocol method declares parameters like any other function,
-                // so a compiler-formed `@` type is legal here too — `@BuildSink`'s
-                // `value: @Init($V/P)` is the requirement it exists to state.
-                self.compiler_type_allowed = true;
                 const ptype = try self.parseTypeExpr();
                 try param_names.append(self.allocator, pname);
                 try param_types.append(self.allocator, ptype);
@@ -2216,16 +2193,8 @@ pub const Parser = struct {
                 continue;
             }
             self.advance(); // consume ':'
-            // A parameter annotation is the one position a compiler-formed `@`
-            // type may occupy.
-            self.compiler_type_allowed = true;
             const param_type = try self.parseTypeExpr();
-            // A `@BuildBlock(P)` parameter is a COMPILE-TIME parameter: its
-            // argument is the trailing block's body, bound as an AST node and
-            // replayed by `run`, never lowered into a runtime closure value.
-            // Marking it here routes every call through the existing inline
-            // (comptime) dispatch, which is exactly the binding the block needs.
-            var is_comptime_param = isBuildBlockType(param_type);
+            var is_comptime_param = false;
             if (is_ct_param and param_type.data == .type_expr) {
                 const constraint_name = param_type.data.type_expr.name;
                 if (std.mem.eql(u8, constraint_name, "Type")) {
@@ -2263,12 +2232,6 @@ pub const Parser = struct {
         }
         try self.expect(.r_paren);
         return try params.toOwnedSlice(self.allocator);
-    }
-
-    /// True for a `@BuildBlock(P)` parameter annotation.
-    pub fn isBuildBlockType(node: *const Node) bool {
-        return node.data == .parameterized_type_expr and
-            std.mem.eql(u8, node.data.parameterized_type_expr.name, "@BuildBlock");
     }
 
     /// The type arguments of the `@Init` bound on `node`, empty when it carries
@@ -2361,10 +2324,6 @@ pub const Parser = struct {
         var type_params = std.ArrayList(ast.StructTypeParam).empty;
         var seen = std.StringHashMap(void).init(self.allocator);
         for (params) |param| {
-            // A `@BuildBlock(P)` param is comptime but is NOT a type parameter:
-            // it binds a block body, not a type. Listing it would make
-            // `isTypeParamDecl` claim its argument slot everywhere.
-            if (isBuildBlockType(param.type_expr)) continue;
             if (param.is_comptime) {
                 if (!seen.contains(param.name)) {
                     try seen.put(param.name, {});
@@ -2390,7 +2349,7 @@ pub const Parser = struct {
         for (type_params.items) |*tp| {
             var bounds = std.ArrayList(*Node).empty;
             for (params) |param| {
-                if (param.is_comptime or isBuildBlockType(param.type_expr)) continue;
+                if (param.is_comptime) continue;
                 collectBinderBounds(self, param.type_expr, tp.name, &bounds);
             }
             if (bounds.items.len > 0)

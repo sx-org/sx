@@ -113,9 +113,9 @@ the import can stand in for the canonical declaration:
 Separately, a few `@` names are **compiler-formed** — `@Init(T)` and
 `@BuildBlock(P)`. Those are formed for a parameter, never declared and never
 constructed, so they have no stdlib declaration and no literal form.
-`@BuildBlock(P)` is written as the parameter's type; `@Init(T)` is a constraint,
-so it is written only as a bound on it (`value: $I/@Init(T)` — see
-[`@Init(T)`](#initt)).
+Both are constraints, so both are written only as a bound on the parameter
+(`value: $I/@Init(T)`, `content: $B/@BuildBlock(P)`) — see
+[`@Init(T)`](#initt) and [`@BuildBlock(P)`](#buildblockp).
 
 #### Backtick raw-identifier escape
 
@@ -2932,7 +2932,7 @@ Where the check lands depends on what the head names:
 | a parameterized protocol (`Into(i32)`) | a visible `impl Into(i32) for <binding>` exists, or a **blanket** impl covers it |
 | the declaration's own type parameter (`$V/P`) | deferred — asked again wherever `P` is bound: as **conformance** when `P` is a protocol, as **identity** when `P` is a concrete type |
 | `@Init(T)` | the binder holds an initializer the compiler formed for `T` — see [`@Init(T)`](#initt) |
-| `@BuildBlock(P)` | the parameter is bound to a trailing block |
+| `@BuildBlock(P)` | the binder holds a build block the compiler formed for `P` — see [`@BuildBlock(P)`](#buildblockp) |
 
 A protocol satisfies its own bound: binding `$V/View` to `View` is the identity
 case, not a request that `View` implement itself.
@@ -3735,6 +3735,63 @@ expression's own captures. `site()` reports the site the way `@caller` does: a
 lexical position, with a generic specialization reporting its **template**'s
 declaration path.
 
+#### `@BuildBlock(P)`
+
+`@BuildBlock(P)` is a compiler-maintained **constraint**: a block of statements
+the receiving call may **replay**, offering each statement whose type conforms to
+`P` to a sink it chooses. Like `@Init`, it is not a type — a parameter accepts a
+build block by carrying it as a **bound**, and it is the callee's **last**
+parameter:
+
+```sx
+collect :: (content: $B/@BuildBlock(View)) -> List(View) {
+    sink := Sink(View){ children = .{} };
+    content.run(*sink);
+    sink.children
+}
+
+rows := collect() {
+    Label{ text = "Status" };
+    for items (item) { Row{ value = item }; }
+};
+```
+
+The parameter is satisfied in **exactly one** of two ways per call:
+
+1. **the call's trailing block** — the compiler forms a block from that body and
+   binds `$B` to it; or
+2. **a build block the caller already received** — passed as an ordinary
+   argument, which is how a container forwards its own block inward.
+
+Supplying both at once is the duplicate-binding error, and an ordinary value is
+neither.
+
+The operations:
+
+| Operation | Meaning |
+|---|---|
+| `run(sink: *S)` | replay the body once, offering each conforming statement to `sink.expression` |
+| `shape() -> @BuildShape` | side-effect-free static facts about the body |
+| `site() -> ?@SourceSite` | where the block was written |
+
+`run` may be called more than once: each call replays the body, so its side
+effects repeat. Replay is ordinary code — an `if` or `for` in the body is a
+runtime `if` or `for` wherever the block is replayed, and no part of it is
+deferred to run time in the compiler.
+
+**A build block is frame-bound.** What the value carries is the environment of
+the frame that formed it, captured **by reference**: forming allocates nothing,
+a replay further down the call chain reads those locals live, and a second `run`
+observes what the first one changed. It is therefore valid only within the call
+that received it — binding it to a local, capturing it in a closure, and
+returning it are all refused. Take a `Closure()` parameter instead when the body
+must be stored or run later; that is the model that copies its captures into an
+allocated environment and outlives the frame.
+
+`P` is the type the body's statements are intercepted at, and the sink is not
+part of the block's type: `run` takes any `*S` implementing `@BuildSink(P)`, so
+one block can be replayed into two different sinks.
+
 ### Enum Definition
 
 ```sx
@@ -4391,9 +4448,11 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
 ```
 
 - **Binding**: the block binds the last declared parameter, which must be a
-  non-variadic `Closure` type — otherwise a targeted error names the
-  parameter ("'f' cannot take a trailing block — its last parameter 'x' is
-  not a `Closure`", or "… its last parameter '..xs' is variadic").
+  non-variadic `Closure` type — or a **build block** parameter, which gives the
+  same source block a second meaning (see [`@BuildBlock(P)`](#buildblockp)).
+  Otherwise a targeted error names the parameter ("'f' cannot take a trailing
+  block — its last parameter 'x' is not a `Closure`", or "… its last parameter
+  '..xs' is variadic").
 - **One block**: at most one trailing block per call. Other closure
   arguments are named args or ordinary positional slots.
 - **Zero-param only**: the block is a `Closure()` literal; a parameterized
@@ -4439,7 +4498,10 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
 
 No `inline` keyword exists or is needed: a capture-free block promotes to a
 null-env static thunk (zero allocation); a capturing block allocates its
-environment through `context.allocator` like any closure literal.
+environment through `context.allocator` like any closure literal. A block bound
+to a **build block** parameter allocates nothing at all, and captures by
+reference instead — that is the difference the two parameter kinds buy
+([`@BuildBlock(P)`](#buildblockp)).
 
 ### UFCS (Uniform Function Call Syntax)
 ```sx

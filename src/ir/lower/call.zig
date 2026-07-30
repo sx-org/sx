@@ -700,6 +700,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             // path below).
                             if (tgt) |ptv| {
                                 if (self.initTargetOf(ptv)) |target| break :blk self.formInitPlan(arg, target);
+                                // A `$B/@BuildBlock(P)` param forms its block from
+                                // the trailing body, or takes one already formed.
+                                if (self.blockProtocolOf(ptv)) |protocol| break :blk self.formBuildBlock(arg, protocol);
                             }
                             // Protocol param targets erase node-aware
                             // (same arm as the direct path).
@@ -798,22 +801,26 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             if (self.initTargetOf(recv_ty) != null)
                 return self.lowerInitSite(recv_ty, c.args, c.callee.span);
         }
-        // `content.run(*sink)` / `content.shape()` — build-block operations.
-        // The receiver is a compile-time binding, not a value, so no ordinary
-        // receiver path can resolve it.
-        if (fa.object.data == .identifier) {
-            const block_name = fa.object.data.identifier.name;
-            if (self.buildBlockBinding(block_name)) |binding| {
+        // `content.run(*sink)` / `content.shape()` / `content.site()` — the
+        // build-block operations, decided on the receiver's TYPE before any
+        // name-keyed path, exactly as `write` is: the body they replay belongs to
+        // the block's formation site, not to any declaration.
+        {
+            const recv_ty = self.inferExprType(fa.object);
+            if (self.module.types.blockSite(recv_ty) != null) {
                 if (std.mem.eql(u8, fa.field, build_block.run_method)) {
-                    return self.lowerBuildBlockRun(binding, c.args, c.callee.span);
+                    return self.lowerBuildBlockRun(fa.object, recv_ty, c.args, c.callee.span);
                 }
                 if (std.mem.eql(u8, fa.field, build_block.shape_method)) {
-                    return self.lowerBuildBlockShape(binding, c.args, c.callee.span);
+                    return self.lowerBuildBlockShape(recv_ty, c.args, c.callee.span);
                 }
                 if (std.mem.eql(u8, fa.field, build_block.site_method)) {
-                    return self.lowerBuildBlockSite(binding, c.args, c.callee.span);
+                    return self.lowerBuildBlockSite(recv_ty, c.args, c.callee.span);
                 }
-                self.rejectBuildBlockValue(block_name, c.callee.span);
+                if (self.diagnostics) |d| {
+                    const id = d.addFmtId(.err, c.callee.span, "'{s}' has no '{s}' — a build block's operations are '.{s}(sink)', '.{s}()', and '.{s}()'", .{ self.formatTypeName(recv_ty), fa.field, build_block.run_method, build_block.shape_method, build_block.site_method });
+                    d.addHelpFmt(id, c.callee.span, null, "the block's own body is what it carries; nothing else reads it", .{});
+                }
                 return Ref.none;
             }
         }
@@ -916,6 +923,14 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         if (ai < param_types.len) {
             if (self.initTargetOf(param_types[ai])) |target| {
                 args.append(self.alloc, self.formInitPlan(arg, target)) catch unreachable;
+                self.target_type = saved_target;
+                continue;
+            }
+            // A `$B/@BuildBlock(P)` parameter takes the trailing block's body
+            // (§6.2 rule 1) or a block already formed (rule 2). Neither is an
+            // ordinary value, so this precedes every value-shaped arm below.
+            if (self.blockProtocolOf(param_types[ai])) |protocol| {
+                args.append(self.alloc, self.formBuildBlock(arg, protocol)) catch unreachable;
                 self.target_type = saved_target;
                 continue;
             }
@@ -4423,12 +4438,15 @@ pub fn mapNamedArgs(
                     continue;
                 }
                 const pty = self.resolveDeclParamType(fd, last);
-                // Dual bind (spec §7.1): a `@BuildBlock(P)` last parameter makes
-                // the SAME source block a build block instead of a closure. The
-                // block is zero-param by construction, and the accepting call is
-                // inlined, so the lambda is bound as the block's body rather
-                // than lowered — no closure shape to check here.
-                if (self.module.types.buildProtocol(pty) != null) {
+                // Dual bind (spec §7.1): a `$B/@BuildBlock(P)` last parameter
+                // makes the SAME source block a build block instead of a
+                // closure. The block is zero-param by construction, and
+                // formation owns the lambda, so there is no closure shape to
+                // check here. Asked through the shared classifier: the binder may
+                // already be bound to an implementor at this call (a block
+                // forwarded from the caller), and that is still a block
+                // parameter.
+                if (self.blockProtocolOf(pty) != null) {
                     if (last < pos) {
                         errored = true;
                         if (self.diagnostics) |d|

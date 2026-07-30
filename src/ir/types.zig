@@ -214,14 +214,12 @@ pub const TypeInfo = union(enum) {
         /// the same `T` are distinct types, each with its own `site()` and its
         /// own monomorphizations.
         init_site: u32 = 0,
-        /// Non-null makes this the compiler-formed `@BuildBlock(P)` (spec §7):
-        /// the trailing block a build-accepting function receives, whose
-        /// standalone expressions conforming to `P` are offered to a sink. A
-        /// build block is a COMPILE-TIME value — its body binds as an AST node
-        /// and replays at `run`, so it has no runtime representation at all.
-        /// The empty closure shape (`params = []`, `ret = void`) exists only so
-        /// the parameter has a nameable, printable, interned type; the marker is
-        /// what every consumer classifies on.
+        /// Non-null makes this the `@BuildBlock(P)` FORMATION REQUEST (spec §7):
+        /// what a `$B/@BuildBlock(P)` parameter resolves to while its binder is
+        /// unbound. No value has this type — the trailing block at such a
+        /// parameter forms (or passes through) into a per-site implementor,
+        /// which is a nominal struct rather than a closure
+        /// (`TypeTable.buildBlockImplementorType`).
         build_protocol: ?TypeId = null,
     };
 
@@ -946,20 +944,60 @@ pub const TypeTable = struct {
         return info.closure.init_site;
     }
 
-    /// `@BuildBlock(protocol)` — the trailing block a build-accepting function
-    /// receives (spec §7). Compile-time only; the empty closure shape carries
-    /// no runtime value.
+    /// The `@BuildBlock(protocol)` FORMATION REQUEST (spec §7): what a
+    /// `$B/@BuildBlock(protocol)` parameter resolves to before a trailing block
+    /// is formed against it. The empty closure shape carries no value.
     pub fn buildBlockType(self: *TypeTable, protocol: TypeId) TypeId {
         return self.intern(.{ .closure = .{ .params = &.{}, .ret = .void, .build_protocol = protocol } });
     }
 
-    /// The `P` of an `@BuildBlock(P)`, or null for any other type. THE single
-    /// build-block classifier.
+    /// The `@BuildBlock(protocol)` implementor minted for formation site `site`
+    /// (nonzero): a nominal struct holding the by-reference capture environment
+    /// of the frame that formed it, and nothing else. The block's BODY belongs
+    /// to the site (`Lowering.block_sites`), so it costs no storage, and `run`
+    /// replays it wherever the value is received.
+    ///
+    /// Every site displays as `@BuildBlock(P)` and is distinguished by its
+    /// nominal id, so two blocks over one `P` are distinct types that print the
+    /// same way — the `@Init` rule (`initImplementorType`) for the same reason.
+    pub fn buildBlockImplementorType(self: *TypeTable, protocol: TypeId, site: u32) TypeId {
+        const fields = self.slice_arena.allocator().dupe(TypeInfo.StructInfo.Field, &.{.{
+            .name = self.internString(block_env_field),
+            .ty = self.ptrTo(.void),
+        }}) catch unreachable;
+        const name = std.fmt.allocPrint(self.alloc, "@BuildBlock({s})", .{self.formatTypeName(self.alloc, protocol)}) catch "@BuildBlock";
+        return self.intern(.{ .@"struct" = .{
+            .name = self.internString(name),
+            .fields = fields,
+            .nominal_id = site,
+        } });
+    }
+
+    /// The field a block implementor carries its capture environment in. Named
+    /// unspellably: the struct has no declaration, so nothing may reach it.
+    pub const block_env_field = "__block_env";
+
+    /// The `P` of an `@BuildBlock(P)` FORMATION REQUEST, or null for anything
+    /// else — an implementor included, which is classified by
+    /// `Lowering.blockSiteOf` instead.
     pub fn buildProtocol(self: *const TypeTable, ty: TypeId) ?TypeId {
         if (ty.isBuiltin()) return null;
         const info = self.get(ty);
         if (info != .closure) return null;
         return info.closure.build_protocol;
+    }
+
+    /// The formation site of a block implementor: its nominal id, or null when
+    /// `ty` is not one. A struct named `@BuildBlock(…)` has no declaration, so
+    /// the name is proof the compiler minted it.
+    pub fn blockSite(self: *const TypeTable, ty: TypeId) ?u32 {
+        if (ty.isBuiltin()) return null;
+        const info = self.get(ty);
+        if (info != .@"struct") return null;
+        if (info.@"struct".nominal_id == 0) return null;
+        const name = self.getString(info.@"struct".name);
+        if (!std.mem.startsWith(u8, name, "@BuildBlock(")) return null;
+        return info.@"struct".nominal_id;
     }
 
     pub fn closureTypePack(self: *TypeTable, params: []const TypeId, ret: TypeId, pack_start: u32) TypeId {

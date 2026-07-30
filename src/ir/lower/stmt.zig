@@ -188,6 +188,7 @@ pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
                 }
                 break :blk body.span;
             };
+            if (self.rejectBlockReturn(val_ty, span)) return;
             // Value-carrying failable `-> (T..., !)`: a trailing success
             // EXPRESSION (no explicit `return`) yields just the value part —
             // the compiler must append the success error slot (0). Mirror the
@@ -520,6 +521,7 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
 }
 
 pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
+    if (self.rejectBlockBinding(vd.value, vd.name)) return;
     if (vd.value) |val| {
         if (val.data == .identifier and self.isPackName(val.data.identifier.name)) {
             const ph = self.diagPackAsValue(val.data.identifier.name, val.span, .storage);
@@ -841,6 +843,7 @@ pub fn lowerLocalFnDecl(self: *Lowering, fd: *const ast.FnDecl) void {
 }
 
 pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
+    if (self.rejectBlockBinding(cd.value, cd.name)) return;
     // Handle local function declarations: fx :: (s:i3) -> i3 { ... }
     if (cd.value.data == .fn_decl) {
         const fd = &cd.value.data.fn_decl;
@@ -1067,6 +1070,9 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt) void {
         .i64;
     const rs_value: ?*const Node = if (rs.value) |val| tupleFormOfBareBraceLiteral(self, val, norm_ret_ty) else null;
     if (rs_value) |val| {
+        if (self.blockBindingTypeOf(val)) |bt| {
+            if (self.rejectBlockReturn(bt, val.span)) return;
+        }
         if (val.data == .identifier and self.isPackName(val.data.identifier.name)) {
             _ = self.diagPackAsValue(val.data.identifier.name, val.span, .return_value);
             return;

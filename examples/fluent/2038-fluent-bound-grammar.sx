@@ -43,6 +43,8 @@ bare :: (a: $T/Eq/Hashable) -> string { "bare" }
 open   :: (v: $I/@Init($T)) -> string { "open" }
 fixed  :: (v: $I/@Init(Label)) -> string { "fixed" }
 nested :: (v: $I/@Init($V/Drawable)) -> string { "nested" }
+// A `@BuildBlock` bound makes the parameter take the call's trailing block, so
+// it is the last parameter and the call writes `{ … }`.
 block  :: (v: $B/@BuildBlock(Drawable)) -> string { "block" }
 sunk   :: (s: *$S/@BuildSink(Drawable)) -> string { "sunk" }
 
@@ -52,7 +54,8 @@ lift :: ($T: Type/Drawable, x: T) -> string { x.draw() }
 main :: () -> i32 {
     l := Label{ text = "hi" };
     t := Tally{};
-    print("{} {} {} {} {} {}\n", bare(1), open(l), fixed(l), nested(l), block(l), sunk(*t));
+    print("{} {} {} {} {}\n", bare(1), open(l), fixed(l), nested(l), sunk(*t));
+    print("{}\n", block() { Label{ text = "in a block" }; });
     print("count {} {}\n", count_into(*t, 3), count_into(*t, 4));
     print("lift {} {}\n", lift(Label, l), l.draw());
     0

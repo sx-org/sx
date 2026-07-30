@@ -36,7 +36,7 @@ Echo :: struct {
 }
 
 // Build-block acceptor: the block replays into a sink of this function's choice.
-column :: (title: string, content: @BuildBlock(Drawable)) -> i32 {
+column :: (title: string, content: $B/@BuildBlock(Drawable)) -> i32 {
     print("{}:\n", title);
     sink := Echo{};
     content.run(*sink);

@@ -842,6 +842,13 @@ pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId,
     return switch (type_node.data) {
         .type_expr => |te| blk: {
             const init_target = init_plan.boundTargetNode(type_node);
+            // A `@BuildBlock`-bounded binder binds only to a block the compiler
+            // formed; an ordinary value leaves it unbound, so the parameter
+            // resolves to the formation request and the argument is diagnosed
+            // there rather than silently binding its own type.
+            if (build_block.boundProtocolNode(type_node) != null and std.mem.eql(u8, te.name, tp_name)) {
+                break :blk if (self.module.types.blockSite(arg_ty) != null) arg_ty else null;
+            }
             if (std.mem.eql(u8, te.name, tp_name)) {
                 // An `@Init`-bounded binder binds only to an IMPLEMENTOR: an
                 // ordinary expression is formed first, and the formed type is
@@ -2000,14 +2007,6 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
         const callee_node = ast.Node{ .data = .{ .identifier = .{ .name = base_name } }, .span = sp };
         const syn = ast.Call{ .callee = @constCast(&callee_node), .args = pt.args };
         return self.resolveTypeCallWithBindings(&syn);
-    }
-
-    // `@BuildBlock(P)` — compiler-formed (spec §7), same closed `@` name set.
-    if (std.mem.eql(u8, pt.name, build_block.type_name)) {
-        if (pt.args.len != 1) return .unresolved;
-        const protocol = self.resolveTypeWithBindings(pt.args[0]);
-        if (protocol == .unresolved) return .unresolved;
-        return table.buildBlockType(protocol);
     }
 
     // Vector(N, T) — built-in parameterized type. A backtick raw base

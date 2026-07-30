@@ -19,7 +19,6 @@ const Function = inst_mod.Function;
 
 const lower = @import("../lower.zig");
 const lower_tagged = @import("tagged.zig");
-const build_block = @import("build_block.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 const ConstFoldFrame = lower.ConstFoldFrame;
@@ -1212,10 +1211,6 @@ fn lowerComptimeCallArgsMode(
 
     // Build comptime param substitution map: param_name → call_site AST node
     var cpn = std.StringHashMap(*const Node).init(self.alloc);
-    // `@BuildBlock(P)` params of this call, alongside `cpn` and with the same
-    // ownership: each call owns its own map, a nested call shadows it.
-    var bbb = std.StringHashMap(build_block.Binding).init(self.alloc);
-    defer bbb.deinit();
     var call_arg_idx: usize = 0;
     var runtime_args = std.ArrayList(StagedRuntimeArg).empty;
     defer runtime_args.deinit(self.alloc);
@@ -1281,10 +1276,6 @@ fn lowerComptimeCallArgsMode(
         } else param.default_expr orelse break;
         if (param.is_comptime) {
             self.stampCallerSource(@constCast(arg_node));
-            // A `@BuildBlock(P)` param binds the trailing block's BODY rather
-            // than substituting a node into the callee's expressions; `run` is
-            // the only thing that reads it.
-            _ = build_block.bindParam(self, fd, &param, param_idx, arg_node, &bbb);
             cpn.put(param.name, arg_node) catch {};
         } else {
             const pty = self.resolveDeclParamType(fd, param_idx);
@@ -1370,14 +1361,11 @@ fn lowerComptimeCallArgsMode(
     // intercept them (spec §7.2: an expression belongs to the nearest active
     // block scope, and this body is in none). The callee's own `run` pushes
     // its scope onto the cleared stack.
-    const saved_bbb = self.build_block_bindings;
     const saved_build_scopes = self.build_scopes;
-    self.build_block_bindings = bbb;
     self.build_scopes = .empty;
     defer {
         self.build_scopes.deinit(self.alloc);
         self.build_scopes = saved_build_scopes;
-        self.build_block_bindings = saved_bbb;
     }
 
     // Install pack-arg-node binding. Mirrors `comptime_param_nodes`:

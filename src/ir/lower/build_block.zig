@@ -1,6 +1,7 @@
 const std = @import("std");
 const ast = @import("../../ast.zig");
 const Node = ast.Node;
+const contracts = @import("../../contracts.zig");
 const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 
@@ -9,11 +10,11 @@ const Ref = inst_mod.Ref;
 
 const lower = @import("../lower.zig");
 const source_site = @import("../../source_site.zig");
+const lower_closure = @import("closure.zig");
 const Lowering = lower.Lowering;
 
-/// The compiler-formed `@` type name for a trailing build block.
-/// `parseCompilerFormedType` is its only producer.
-pub const type_name = "@BuildBlock";
+/// The `@` contract name. It is a BOUND head only: `content: $B/@BuildBlock(P)`.
+pub const type_name = contracts.build_block_bound;
 
 /// Operations a `@BuildBlock(P)` exposes (spec §9–§10).
 pub const run_method = "run";
@@ -30,18 +31,25 @@ pub const sink_method = "expression";
 /// The contract a sink implements.
 const contracts_build_sink = "@BuildSink";
 
-/// A `@BuildBlock(P)` parameter bound to the trailing block written at a call
-/// site. A build block has no runtime value: what the parameter carries is the
-/// block's BODY, as the AST the caller wrote. `run` replays that body into the
-/// receiving function, so the block's free names stay the caller's ordinary
-/// locals and nothing is captured into compiler-chosen storage (spec §7.6).
-pub const Binding = struct {
+/// One formation site: what the compiler minted a block implementor FOR. The
+/// body belongs to the site rather than to the value, so the value carries only
+/// the capture environment and `run` can replay the body wherever it is received.
+pub const Site = struct {
     /// The zero-param lambda the trailing block parsed to.
     lambda: *const Node,
     protocol: TypeId,
-    /// Where the block was WRITTEN — the file its site reports, which is
-    /// the caller's, not the accepting function's.
+    /// Where the block was WRITTEN — the file its site reports, which is the
+    /// forming caller's, not the accepting function's.
     source_file: ?[]const u8,
+    /// Locals the body reads, captured BY REFERENCE (N49): the environment holds
+    /// their addresses, so a replay in another frame reads them live and a
+    /// second `run` observes a mutation.
+    captures: []const lower_closure.CaptureInfo,
+    /// The environment struct — one `*T` field per capture.
+    env_ty: TypeId,
+    indexed: ?source_site.Site,
+    line: i32,
+    column: i32,
 };
 
 /// One active replay: pushed by `run`, popped when the block body is done. The
@@ -62,55 +70,169 @@ pub const Scope = struct {
     ordinal: i32 = 0,
 };
 
-/// Register a `@BuildBlock(P)` parameter's binding for the accepting call being
-/// inlined. Returns false when `param` is not a build block, so the ordinary
-/// comptime-parameter path keeps it.
-pub fn bindParam(
-    self: *Lowering,
-    fd: *const ast.FnDecl,
-    param: *const ast.Param,
-    param_idx: usize,
-    arg_node: *const Node,
-    out: *std.StringHashMap(Binding),
-) bool {
-    if (!isBuildBlockParam(param)) return false;
-    const pty = self.resolveDeclParamType(fd, param_idx);
-    const protocol = self.module.types.buildProtocol(pty) orelse return false;
-    // The trailing-block mapping hands over the lambda; an explicitly written
-    // argument (`f(spacing, some_value)`) is not a block at all.
-    if (arg_node.data != .lambda) {
-        if (self.diagnostics) |d| {
-            const id = d.addFmtId(.err, arg_node.span, "'{s}' takes a build block for '{s}' — pass it as a trailing block", .{ fd.name, param.name });
-            d.addHelpFmt(id, arg_node.span, null, "write `{s}(…) {{ … }}`; a {s} is formed from the block body, not from a value", .{ fd.name, self.formatTypeName(pty) });
-        }
-        return true;
+/// The `P` of a `@BuildBlock(P)` implementor (or of the formation request), else
+/// null. THE single build-block classifier: it answers for both, so every
+/// consumer that only needs "is this a block" asks once.
+pub fn blockProtocolOf(self: *Lowering, ty: TypeId) ?TypeId {
+    if (self.module.types.blockSite(ty)) |site| return self.block_sites.items[site - 1].protocol;
+    return self.module.types.buildProtocol(ty);
+}
+
+/// The formation site record behind a block implementor type.
+pub fn siteRecord(self: *Lowering, ty: TypeId) ?*const Site {
+    const site = self.module.types.blockSite(ty) orelse return null;
+    return &self.block_sites.items[site - 1];
+}
+
+/// The `@BuildBlock(P)` bound written on a binder parameter, as the `P` node.
+/// Null for any parameter that is not `name: $B/@BuildBlock(P)`.
+///
+/// This is THE formation trigger: a parameter accepts a build block by carrying
+/// this bound, never by annotating a type (§6.2, §19.3).
+pub fn boundProtocolNode(param_type: *const Node) ?*const Node {
+    if (param_type.data != .type_expr) return null;
+    const te = param_type.data.type_expr;
+    if (!te.is_generic) return null;
+    for (te.protocol_constraints) |bound| {
+        if (bound.data != .parameterized_type_expr) continue;
+        const pte = bound.data.parameterized_type_expr;
+        if (!std.mem.eql(u8, pte.name, type_name)) continue;
+        if (pte.args.len != 1) continue;
+        return pte.args[0];
     }
-    out.put(param.name, .{
-        .lambda = arg_node,
+    return null;
+}
+
+/// The formation request a `$B/@BuildBlock(P)` parameter resolves to while `$B`
+/// is unbound. Argument mapping and argument lowering both key on it.
+pub fn formationRequest(self: *Lowering, p: *const ast.Param) ?TypeId {
+    const protocol_node = boundProtocolNode(p.type_expr) orelse return null;
+    const protocol = self.resolveTypeWithBindings(protocol_node);
+    if (protocol == .unresolved) return null;
+    return self.module.types.buildBlockType(protocol);
+}
+
+/// What a `@BuildBlock`-bounded binder binds to at this argument: the
+/// implementor an already-formed block passes through as, or the one formation
+/// will mint for the trailing block. Null when `param_type` is not `tp_name`
+/// carrying the bound.
+pub fn binderType(
+    self: *Lowering,
+    param_type: *const Node,
+    tp_name: []const u8,
+    arg: *const Node,
+    arg_ty: TypeId,
+) ?TypeId {
+    if (param_type.data != .type_expr) return null;
+    if (!std.mem.eql(u8, param_type.data.type_expr.name, tp_name)) return null;
+    const protocol_node = boundProtocolNode(param_type) orelse return null;
+    // An argument that is already a block implementor is passed on as itself
+    // (N45 rule 2) — the same body, replayed by whoever receives it.
+    if (self.module.types.blockSite(arg_ty) != null) return arg_ty;
+    const protocol = self.resolveTypeWithBindings(protocol_node);
+    if (protocol == .unresolved) return null;
+    // Not a block at all: bind the REQUEST so inference completes and argument
+    // lowering owns the diagnostic — the parameter is what was misused, and one
+    // report of it is enough.
+    if (arg.data != .lambda) return self.module.types.buildBlockType(protocol);
+    return self.module.types.buildBlockImplementorType(protocol, siteFor(self, arg, protocol));
+}
+
+/// The formation site for the trailing block `arg`, minted once per source
+/// block: two monomorphizations of one enclosing generic function form at the
+/// same site (§4.2).
+fn siteFor(self: *Lowering, arg: *const Node, protocol: TypeId) u32 {
+    if (self.block_site_ids.get(arg)) |id| return id;
+    const src = arg.source_file orelse self.current_source_file;
+    const loc = if (self.diagnostics) |d| d.locate(src, arg.span.start) else null;
+    const indexed = if (self.site_index) |idx| idx.get(arg) else null;
+
+    // The body's free names, captured by ADDRESS. A binding that is not an
+    // alloca has no address of its own, so it is spilled to one — it is an
+    // immutable value binding, so nothing can observe the copy.
+    var param_names = std.StringHashMap(void).init(self.alloc);
+    var captures = std.ArrayList(lower_closure.CaptureInfo).empty;
+    self.collectCaptures(arg.data.lambda.body, &param_names, &captures);
+    var deduped = std.ArrayList(lower_closure.CaptureInfo).empty;
+    for (captures.items) |cap| {
+        var seen = false;
+        for (deduped.items) |d| {
+            if (std.mem.eql(u8, d.name, cap.name)) seen = true;
+        }
+        if (!seen) deduped.append(self.alloc, cap) catch unreachable;
+    }
+    var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
+    for (deduped.items) |cap| {
+        fields.append(self.alloc, .{
+            .name = self.module.types.internString(cap.name),
+            .ty = self.module.types.ptrTo(cap.ty),
+        }) catch unreachable;
+    }
+    const env_ty = self.module.types.internAnonStruct(fields.toOwnedSlice(self.alloc) catch &.{});
+
+    self.block_sites.append(self.alloc, .{
+        .lambda = arg,
         .protocol = protocol,
-        .source_file = arg_node.source_file orelse self.current_source_file,
-    }) catch {};
-    return true;
+        .source_file = src,
+        .captures = deduped.toOwnedSlice(self.alloc) catch &.{},
+        .env_ty = env_ty,
+        .indexed = indexed,
+        .line = if (loc) |l| @intCast(l.line) else 0,
+        .column = if (loc) |l| @intCast(l.col) else 0,
+    }) catch unreachable;
+    // Site ids are one-based: 0 is the formation request.
+    const id: u32 = @intCast(self.block_sites.items.len);
+    self.block_site_ids.put(self.alloc, arg, id) catch unreachable;
+    return id;
 }
 
-/// True for a `content: @BuildBlock(P)` parameter declaration.
-pub fn isBuildBlockParam(param: *const ast.Param) bool {
-    return param.type_expr.data == .parameterized_type_expr and
-        std.mem.eql(u8, param.type_expr.data.parameterized_type_expr.name, type_name);
-}
+/// Form the implementor for the trailing block `arg` at a parameter whose
+/// formation request names `protocol` (§6.2 rule 1). The body is NOT lowered
+/// here: it belongs to the site, and each `run` replays it. What the value
+/// carries is the capture environment — addresses of the forming frame's locals,
+/// in a stack struct, so forming allocates nothing (N49).
+///
+/// An argument that already IS an implementor is passed through unchanged
+/// (rule 2), which is how a block is handed down without being re-formed.
+pub fn formBlock(self: *Lowering, arg: *const Node, protocol: TypeId) Ref {
+    if (self.module.types.blockSite(self.inferExprType(arg)) != null) return self.lowerExpr(arg);
+    if (arg.data != .lambda) {
+        if (self.diagnostics) |d| {
+            const id = d.addFmtId(.err, arg.span, "a '@BuildBlock({s})' parameter takes a build block — pass it as a trailing block", .{self.formatTypeName(protocol)});
+            d.addHelpFmt(id, arg.span, null, "write the call with a trailing `{{ … }}`, or pass on a block this call already received", .{});
+        }
+        return Ref.none;
+    }
+    const site = siteFor(self, arg, protocol);
+    const block_ty = self.module.types.buildBlockImplementorType(protocol, site);
+    const record = &self.block_sites.items[site - 1];
 
-/// The binding a name refers to, if it names a build block in the accepting
-/// call currently being inlined.
-pub fn lookup(self: *Lowering, name: []const u8) ?Binding {
-    const m = self.build_block_bindings orelse return null;
-    return m.get(name);
+    const env_ptr = blk: {
+        if (record.captures.len == 0) break :blk self.builder.constNull(self.module.types.ptrTo(.void));
+        const env = self.builder.alloca(record.env_ty);
+        for (record.captures, 0..) |cap, i| {
+            const addr = if (cap.is_alloca) cap.ref else spill: {
+                const slot = self.builder.alloca(cap.ty);
+                self.builder.store(slot, cap.ref);
+                break :spill slot;
+            };
+            const field_ptr = self.builder.structGepTyped(env, @intCast(i), self.module.types.ptrTo(self.module.types.ptrTo(cap.ty)), record.env_ty);
+            self.builder.store(field_ptr, addr);
+        }
+        break :blk env;
+    };
+    const fields = self.alloc.dupe(Ref, &.{env_ptr}) catch unreachable;
+    return self.builder.emit(.{ .struct_init = .{ .fields = fields } }, block_ty);
 }
 
 /// `content.run(*sink)` — replay the block body once, with each reached
 /// expression handed to `sink.expression` (spec §9). The body lowers HERE, in
-/// the accepting function's instruction stream: control flow is ordinary sx
-/// control flow, and the block's captures are the caller's own locals.
-pub fn lowerRun(self: *Lowering, binding: Binding, args: []const *const Node, span: ast.Span) Ref {
+/// the RECEIVING function's instruction stream: control flow is ordinary sx
+/// control flow, and the block's free names are read through the environment the
+/// forming frame handed over, so a replay one call down still reads that frame's
+/// locals (N49).
+pub fn lowerRun(self: *Lowering, block: *const Node, block_ty: TypeId, args: []const *const Node, span: ast.Span) Ref {
+    const record = siteRecord(self, block_ty) orelse return Ref.none;
     if (args.len != 1) {
         if (self.diagnostics) |d|
             d.addFmt(.err, span, "'run' takes exactly one argument — a pointer to the sink that receives this block's expressions", .{});
@@ -129,13 +251,11 @@ pub fn lowerRun(self: *Lowering, binding: Binding, args: []const *const Node, sp
         return Ref.none;
     }
 
-    const scope = self.scope orelse return Ref.none;
     const sink_name = std.fmt.allocPrint(self.alloc, "__build_sink{d}", .{self.build_scopes.items.len}) catch return Ref.none;
     const slot = self.builder.alloca(sink_ty);
     self.builder.store(slot, sink_ref);
-    scope.put(sink_name, .{ .ref = slot, .ty = sink_ty, .is_alloca = true });
 
-    const proto_name = if (self.getProtocolInfo(binding.protocol)) |pi| pi.name else self.formatTypeName(binding.protocol);
+    const proto_name = if (self.getProtocolInfo(record.protocol)) |pi| pi.name else self.formatTypeName(record.protocol);
     // A sink that cannot answer a handshake is a static error at `run`, not a
     // per-expression cascade later. Either the method is on the struct, or the
     // sink conforms to `@BuildSink(P)` through an impl — including a blanket one,
@@ -144,7 +264,7 @@ pub fn lowerRun(self: *Lowering, binding: Binding, args: []const *const Node, sp
     const pointee = self.module.types.get(sink_ty).pointer.pointee;
     const impl_kind = self.protocolResolver().paramImplKind(
         contracts_build_sink,
-        &.{binding.protocol},
+        &.{record.protocol},
         pointee,
     );
     // A blanket impl's method signature still spells the impl's own binder, so
@@ -168,31 +288,95 @@ pub fn lowerRun(self: *Lowering, binding: Binding, args: []const *const Node, sp
     }
 
     self.build_scopes.append(self.alloc, .{
-        .protocol = binding.protocol,
+        .protocol = record.protocol,
         .protocol_name = proto_name,
         .sink_name = sink_name,
-        .file = binding.source_file,
-        .block_offset = binding.lambda.span.start,
+        .file = record.source_file,
+        .block_offset = record.lambda.span.start,
     }) catch return Ref.none;
     defer _ = self.build_scopes.pop();
 
-    self.lowerBlock(binding.lambda.data.lambda.body);
+    replayBody(self, block, record, sink_name, slot, sink_ty);
     return self.builder.constInt(0, .void);
+}
+
+/// Lower the block's body in the current function, with its captures bound to
+/// the addresses the environment carries. The scope has NO parent: the body's
+/// free names are exactly its captures, so a same-named local of the receiving
+/// function can neither shadow a capture nor be picked up in place of a global.
+fn replayBody(
+    self: *Lowering,
+    block: *const Node,
+    record: *const Site,
+    sink_name: []const u8,
+    sink_slot: Ref,
+    sink_ty: TypeId,
+) void {
+    const saved_scope = self.scope;
+    var body_scope = lower.Scope.init(self.alloc, null);
+    defer {
+        body_scope.deinit();
+        self.scope = saved_scope;
+    }
+    // Function names resolve lexically wherever the body was written; carry the
+    // chain the ordinary closure-body lowering carries.
+    if (saved_scope) |outer| {
+        var s: ?*lower.Scope = outer;
+        while (s) |sc| : (s = sc.parent) {
+            var it = sc.fn_names.iterator();
+            while (it.next()) |e| {
+                if (!body_scope.fn_names.contains(e.key_ptr.*)) {
+                    body_scope.fn_names.put(e.key_ptr.*, e.value_ptr.*) catch {};
+                }
+            }
+        }
+    }
+    body_scope.put(sink_name, .{ .ref = sink_slot, .ty = sink_ty, .is_alloca = true });
+
+    if (record.captures.len > 0) {
+        const block_ptr = blockValue(self, block);
+        const block_struct_ty = self.module.types.get(self.builder.getRefType(block_ptr)).pointer.pointee;
+        const ptr_void = self.module.types.ptrTo(.void);
+        const env_field = self.builder.structGepTyped(block_ptr, 0, self.module.types.ptrTo(ptr_void), block_struct_ty);
+        const env = self.builder.load(env_field, ptr_void);
+        for (record.captures, 0..) |cap, i| {
+            const field_ptr = self.builder.structGepTyped(env, @intCast(i), self.module.types.ptrTo(self.module.types.ptrTo(cap.ty)), record.env_ty);
+            const addr = self.builder.load(field_ptr, self.module.types.ptrTo(cap.ty));
+            // Bound as the local itself: reads and writes go straight through
+            // the address, which is what "captured by reference" means.
+            body_scope.put(cap.name, .{ .ref = addr, .ty = cap.ty, .is_alloca = true });
+        }
+    }
+
+    self.scope = &body_scope;
+    self.lowerBlock(record.lambda.data.lambda.body);
+}
+
+/// The block value as an addressable aggregate: `struct_gep` needs a pointer, so
+/// a value-shaped receiver is spilled to a slot first.
+fn blockValue(self: *Lowering, block: *const Node) Ref {
+    const ref = self.lowerExpr(block);
+    const ty = self.builder.getRefType(ref);
+    if (!ty.isBuiltin() and self.module.types.get(ty) == .pointer) return ref;
+    const slot = self.builder.alloca(ty);
+    self.builder.store(slot, ref);
+    return slot;
 }
 
 /// `content.shape()` — side-effect-free static facts about the block (spec §10).
 /// Lazy: only computed when this method is referenced. Emits an untyped
 /// `@BuildShape{ … }` so the library type supplies the
 /// name; planning policy is the library's, never the compiler's.
-pub fn lowerShape(self: *Lowering, binding: Binding, args: []const *const Node, span: ast.Span) Ref {
+pub fn lowerShape(self: *Lowering, block_ty: TypeId, args: []const *const Node, span: ast.Span) Ref {
     if (args.len != 0) {
         if (self.diagnostics) |d|
             d.addFmt(.err, span, "'shape' takes no arguments", .{});
         return Ref.none;
     }
+    const record = siteRecord(self, block_ty) orelse return Ref.none;
     var facts = ShapeFacts{};
-    analyzeShapeBody(self, binding.lambda.data.lambda.body, binding.protocol, &facts);
-    const src = binding.source_file orelse self.current_source_file;
+    analyzeShapeBody(self, record.lambda.data.lambda.body, record.protocol, &facts);
+    const src = record.source_file orelse self.current_source_file;
     return self.lowerExpr(shapeLiteral(self, facts, span, src));
 }
 
@@ -326,7 +510,7 @@ pub fn appendIntField(self: *Lowering, list: *std.ArrayList(ast.StructFieldInit)
 /// null when the block has no indexed site. The block is a compile-time
 /// binding, so this resolves to a constant: the site the P3c index recorded for
 /// the lambda the trailing block parsed to.
-pub fn lowerSite(self: *Lowering, binding: Binding, args: []const *const Node, span: ast.Span) Ref {
+pub fn lowerSite(self: *Lowering, block_ty: TypeId, args: []const *const Node, span: ast.Span) Ref {
     if (args.len != 0) {
         if (self.diagnostics) |d|
             d.addFmt(.err, span, "'{s}' takes no arguments", .{site_method});
@@ -338,23 +522,59 @@ pub fn lowerSite(self: *Lowering, binding: Binding, args: []const *const Node, s
         return Ref.none;
     };
     const opt_ty = self.module.types.optionalOf(tid);
-    const idx = self.site_index orelse return self.builder.constNull(opt_ty);
-    const site = idx.get(binding.lambda) orelse return self.builder.constNull(opt_ty);
-    const src = binding.source_file orelse self.current_source_file;
-    const loc = if (self.diagnostics) |d| d.locate(src, binding.lambda.span.start) else null;
-    const value = self.sourceSiteValue(tid, site, if (loc) |l| @intCast(l.line) else 0, if (loc) |l| @intCast(l.col) else 0);
+    const record = siteRecord(self, block_ty) orelse return self.builder.constNull(opt_ty);
+    const indexed = record.indexed orelse return self.builder.constNull(opt_ty);
+    const value = self.sourceSiteValue(tid, indexed, record.line, record.column);
     return self.builder.emit(.{ .optional_wrap = .{ .operand = value } }, opt_ty);
 }
 
-/// Refuse every use of a build block other than `run` / `shape`. A block is a
-/// compile-time value with no representation, so there is nothing for a binding,
-/// an argument, or a field to hold — and a stored one would replay a body whose
-/// locals are gone (spec §7.6).
-pub fn rejectValueUse(self: *Lowering, name: []const u8, span: ast.Span) void {
-    const binding = lookup(self, name) orelse return;
+// ── Frame-bound values (§6.2, N49) ─────────────────────────────────────────
+// A block implementor holds the ADDRESSES of the forming frame's locals, so it
+// is valid exactly as long as that frame. Handing it to a callee is what N45
+// rule 2 is for — the callee runs within the call. Everything that would outlive
+// the call is refused: a local binding, a closure capture, and a return.
+
+/// Refuse binding a block to a local (`saved := content`). The value would
+/// outlive nothing by itself, but a name is what a closure captures and what a
+/// later statement can return, so the block stays parameter-shaped.
+pub fn rejectBinding(self: *Lowering, value: ?*const Node, name: []const u8) bool {
+    const val = value orelse return false;
+    // Only a bare name can produce a block: it arrives as a parameter and every
+    // other position is refused, so an identifier is the whole surface. Asking
+    // any expression for its type here would type every initializer twice.
+    const ty = bindingTypeOf(self, val) orelse return false;
+    if (self.module.types.blockSite(ty) == null) return false;
     if (self.diagnostics) |d| {
-        const proto = if (self.getProtocolInfo(binding.protocol)) |pi| pi.name else self.formatTypeName(binding.protocol);
-        const id = d.addFmtId(.err, span, "'{s}' is a @BuildBlock({s}) — its only operations are '.{s}(sink)', '.{s}()', and '.{s}()'", .{ name, proto, run_method, shape_method, site_method });
-        d.addHelpFmt(id, span, null, "a build block is a compile-time value: it cannot be bound, stored, passed on, or returned", .{});
+        const id = d.addFmtId(.err, val.span, "'{s}' cannot bind a '{s}' — a build block is valid only within the call that received it", .{ name, self.formatTypeName(ty) });
+        d.addHelpFmt(id, val.span, null, "call '.run(*sink)' here, or pass it to another '@BuildBlock' parameter", .{});
     }
+    return true;
+}
+
+/// Refuse capturing a block into a closure: the closure may outlive the frame
+/// whose locals the block's environment points at.
+pub fn rejectCapture(self: *Lowering, ty: TypeId, name: []const u8, span: ast.Span) void {
+    if (self.module.types.blockSite(ty) == null) return;
+    if (self.diagnostics) |d| {
+        const id = d.addFmtId(.err, span, "'{s}' is a '{s}' and cannot be captured by a closure", .{ name, self.formatTypeName(ty) });
+        d.addHelpFmt(id, span, null, "replay it where it was received ('.run(*sink)'), or collect what you need into storage the closure can reach", .{});
+    }
+}
+
+/// The type a bare name is bound to, if `node` is one.
+pub fn bindingTypeOf(self: *Lowering, node: *const Node) ?TypeId {
+    if (node.data != .identifier) return null;
+    const scope = self.scope orelse return null;
+    const binding = scope.lookup(node.data.identifier.name) orelse return null;
+    return binding.ty;
+}
+
+/// Refuse returning a block. The value would name a frame that has ended.
+pub fn rejectReturn(self: *Lowering, ty: TypeId, span: ast.Span) bool {
+    if (self.module.types.blockSite(ty) == null) return false;
+    if (self.diagnostics) |d| {
+        const id = d.addFmtId(.err, span, "a '{s}' cannot be returned — it is valid only within the call that received it", .{self.formatTypeName(ty)});
+        d.addHelpFmt(id, span, null, "run it here and return what the sink collected", .{});
+    }
+    return true;
 }

@@ -27,7 +27,7 @@ Tally :: struct {
     expression :: (self: *Tally, value: $I/@Init($V/Drawable)) { self.n += 1; }
 }
 
-panel :: (tag: string, content: @BuildBlock(Drawable)) -> i32 {
+panel :: (tag: string, content: $B/@BuildBlock(Drawable)) -> i32 {
     s := content.site();
     if s != null {
         print("{} block {}:{} in {} parity={}\n", tag, s!.file, s!.line, s!.declaration,
