@@ -11,14 +11,26 @@
 //! than from a second layout rule:
 //!
 //!     payload_size      = max(size_of(V) for each declared V)   (≤ max)
-//!     payload_alignment = the DECLARED align                    (not a max)
+//!     payload_alignment = max(declared align, align_of(tag))    (not a max over V)
 //!     payload_offset    = align_up(size_of(tag), payload_alignment)
 //!     size_of(P)        = align_up(payload_offset + payload_size, payload_alignment)
 //!
+//! The tag's own alignment is a FLOOR: a set declared `align = 4` is laid out at
+//! 8, because the tag word is in the same value. The payload is an array of an
+//! element whose alignment IS the payload alignment, so the offset guarantee and
+//! `align_of(P)` are delivered by the shape rather than assumed by whoever reads
+//! it.
+//!
 //! `max` is a ceiling, not a reservation: a set whose largest member is small is
-//! small. Every member is checked against `max` and `align` AT ITS DECLARATION,
-//! so an oversize or over-aligned type cannot be a member at all — there is no
+//! small, and a set with no members at all is just its tag word. Every member is
+//! checked against `max` and the effective alignment AT ITS DECLARATION, so an
+//! oversize or over-aligned type cannot be a member at all — there is no
 //! conversion-time size check, and no silent spill to heap.
+//!
+//! Layout follows the members declared, so it GROWS as declarations arrive, and
+//! growth is transitive: a member holding another set by value changes size when
+//! that set does, which re-lays-out the set it belongs to and re-checks it against
+//! its own ceiling (`relayout` → `cascade`).
 
 const std = @import("std");
 const ast = @import("../../ast.zig");
@@ -43,13 +55,28 @@ const tag_field = "tag";
 /// guarantee, which is what a `List(P)` can honour today.
 pub const default_align: u32 = 8;
 
+/// A member whose own size depends on another set's layout: it holds that set BY
+/// VALUE, so growing that set grows this member — and therefore the set THIS
+/// member belongs to. Recorded at admission (the finiteness walk already visits
+/// exactly these edges) and replayed by `relayout`.
+pub const Dependent = struct {
+    decl: *const ast.StructDecl,
+    member: TypeId,
+    /// The set this member belongs to, which has to be laid out again.
+    set_name: []const u8,
+    span: ast.Span,
+};
+
 /// One declared set, as its declaration states it.
 pub const Set = struct {
     decl: *const ast.OpenSetDecl,
     /// The interned set type.
     ty: TypeId,
     max: u32,
+    /// The alignment the layout uses: the declared option floored by the tag's.
     alignment: u32,
+    /// The option as written, for the diagnostic that quotes the declaration.
+    declared_align: u32,
     span: ast.Span,
     source_file: ?[]const u8,
     /// Members, in declaration order — which is tag order.
@@ -59,6 +86,13 @@ pub const Set = struct {
 /// Register `P :: @OpenSet(.{ … }) { … }`: read the options, intern the type with
 /// an empty member set, and record it. Members register themselves later, and the
 /// layout is recomputed as each arrives.
+/// The alignment the slot is actually laid out at: the declared option, floored by
+/// the tag word's own alignment (the tag lives in the same value).
+pub fn effectiveAlign(self: *Lowering, declared: u32) u32 {
+    const tag_align: u32 = @intCast(self.module.types.typeAlignBytes(tag_type));
+    return if (declared > tag_align) declared else tag_align;
+}
+
 pub fn registerSetDecl(self: *Lowering, decl: *const ast.OpenSetDecl, node: *const Node) void {
     if (self.open_sets.getPtr(decl.name) != null) {
         if (self.diagnostics) |d|
@@ -72,14 +106,15 @@ pub fn registerSetDecl(self: *Lowering, decl: *const ast.OpenSetDecl, node: *con
         .name = name_id,
         .fields = &.{},
         .tag_type = tag_type,
-        .backing_type = backingType(self, 0, options.alignment),
+        .backing_type = backingType(self, 0, effectiveAlign(self, options.alignment)),
     } }, self.shadowNominalId(name_id));
     table.type_decl_tids.put(@ptrCast(decl), ty) catch {};
     self.open_sets.put(decl.name, .{
         .decl = decl,
         .ty = ty,
         .max = options.max,
-        .alignment = options.alignment,
+        .alignment = effectiveAlign(self, options.alignment),
+        .declared_align = options.alignment,
         .span = node.span,
         .source_file = node.source_file orelse self.current_source_file,
     }) catch return;
@@ -205,19 +240,7 @@ pub fn admitVariant(
         return;
     }
 
-    const size = self.module.types.typeSizeBytes(variant);
-    const alignment = self.module.types.typeAlignBytes(variant);
-    if (size > set.max) {
-        reportOversize(self, sd, set, variant, size, span);
-        return;
-    }
-    if (alignment > set.alignment) {
-        if (self.diagnostics) |d| {
-            const id = d.addFmtId(.err, span, "'{s}' cannot be a member of '{s}': it needs {d}-byte alignment, and the set's payload alignment is {d}", .{ sd.name, set_name, alignment, set.alignment });
-            d.addHelpFmt(id, span, null, "raise 'align' on the '{s}' declaration — every storage path for it must honour that alignment — or drop the over-aligned field", .{set_name});
-        }
-        return;
-    }
+    if (!fits(self, sd, set, variant, span, null)) return;
     if (missingMethod(self, set, variant)) |missing| {
         if (self.diagnostics) |d| {
             const id = d.addFmtId(.err, span, "'{s}' cannot be a member of '{s}': it has no '{s}'", .{ sd.name, set_name, missing });
@@ -231,7 +254,35 @@ pub fn admitVariant(
     }
     set.members.append(self.alloc, variant) catch return;
     self.open_variant_of.put(variant, set_name) catch {};
+    recordDependencies(self, sd, variant, set_name, span);
     relayout(self, set);
+}
+
+/// Does the member fit the set's ceiling and alignment? `grown` names the set
+/// whose growth prompted a re-measure, so the refusal can say what changed.
+fn fits(
+    self: *Lowering,
+    sd: *const ast.StructDecl,
+    set: *const Set,
+    variant: TypeId,
+    span: ast.Span,
+    grown: ?[]const u8,
+) bool {
+    const size = self.module.types.typeSizeBytes(variant);
+    const alignment = self.module.types.typeAlignBytes(variant);
+    const set_name = self.module.types.getString(self.module.types.get(set.ty).tagged_union.name);
+    if (size > set.max) {
+        reportOversize(self, sd, set, variant, size, span, grown);
+        return false;
+    }
+    if (alignment > set.alignment) {
+        if (self.diagnostics) |d| {
+            const id = d.addFmtId(.err, span, "'{s}' cannot be a member of '{s}': it needs {d}-byte alignment, and the set's payload alignment is {d}", .{ sd.name, set_name, alignment, set.alignment });
+            d.addHelpFmt(id, span, null, "raise 'align' on the '{s}' declaration — every storage path for it must honour that alignment — or drop the over-aligned field", .{set_name});
+        }
+        return false;
+    }
+    return true;
 }
 
 fn reportOversize(
@@ -241,9 +292,13 @@ fn reportOversize(
     variant: TypeId,
     size: usize,
     span: ast.Span,
+    grown: ?[]const u8,
 ) void {
     const d = self.diagnostics orelse return;
     const id = d.addFmtId(.err, span, "'{s}' cannot be a member of '{s}': it is {d} bytes, and the set's payload ceiling is {d}", .{ sd.name, self.module.types.getString(self.module.types.get(set.ty).tagged_union.name), size, set.max });
+    if (grown) |g| {
+        d.addHelpFmt(id, span, null, "it grew when '{s}' did — a set's layout follows the largest member declared anywhere in the program", .{g});
+    }
     // The fields that account for the size are what the author has to act on.
     if (largestField(self, variant)) |big| {
         d.addHelpFmt(id, span, null, "the largest field is '{s}' at {d} bytes — hold bulk state elsewhere and borrow it, or raise 'max' on the set", .{ big.name, big.size });
@@ -324,9 +379,64 @@ fn missingMethod(self: *Lowering, set: *const Set, variant: TypeId) ?[]const u8 
     return null;
 }
 
+/// Record every OTHER set this member holds by value. Those edges are what makes
+/// growth transitive: a member of `R` holding a `Q` grows when `Q` grows, so `R`
+/// has to be laid out again — and re-checked, since the member may no longer fit.
+fn recordDependencies(
+    self: *Lowering,
+    sd: *const ast.StructDecl,
+    variant: TypeId,
+    set_name: []const u8,
+    span: ast.Span,
+) void {
+    var seen = std.AutoHashMap(TypeId, void).init(self.alloc);
+    defer seen.deinit();
+    collectSetsByValue(self, variant, &seen, 0);
+    var it = seen.keyIterator();
+    while (it.next()) |other| {
+        const gop = self.open_set_dependents.getOrPut(other.*) catch continue;
+        if (!gop.found_existing) gop.value_ptr.* = std.ArrayList(Dependent).empty;
+        for (gop.value_ptr.items) |d| {
+            if (d.member == variant) break;
+        } else {
+            gop.value_ptr.append(self.alloc, .{
+                .decl = sd,
+                .member = variant,
+                .set_name = set_name,
+                .span = span,
+            }) catch {};
+        }
+    }
+}
+
+/// Every open set `ty` contains by value, at any depth. The same walk the
+/// finiteness check performs, collecting instead of answering yes/no.
+fn collectSetsByValue(self: *Lowering, ty: TypeId, out: *std.AutoHashMap(TypeId, void), depth: u32) void {
+    if (depth > 32 or ty.isBuiltin()) return;
+    if (isOpenSet(self, ty)) {
+        out.put(ty, {}) catch {};
+        // A set's own payload is bytes, not the members: growth stops here.
+        return;
+    }
+    switch (self.module.types.get(ty)) {
+        .@"struct" => |st| for (st.fields) |f| collectSetsByValue(self, f.ty, out, depth + 1),
+        .tuple => |t| for (t.fields) |f| collectSetsByValue(self, f, out, depth + 1),
+        .array => |a| collectSetsByValue(self, a.element, out, depth + 1),
+        .optional => |o| collectSetsByValue(self, o.child, out, depth + 1),
+        .@"union" => |u| for (u.fields) |f| collectSetsByValue(self, f.ty, out, depth + 1),
+        .tagged_union => |u| for (u.fields) |f| collectSetsByValue(self, f.ty, out, depth + 1),
+        else => {},
+    }
+}
+
 /// Recompute the set's layout from its current members and re-intern the backing
-/// shape. Called as each member is admitted: the payload is the largest member so
-/// far, which is why a later, larger member grows `size_of(P)`.
+/// shape, then CASCADE: any member of another set that holds this one by value
+/// just changed size, so that set is laid out again too — and the member is
+/// re-checked against its own set's ceiling, because growth can push it over.
+///
+/// The cascade terminates: a member may not hold its own set by value (the
+/// finiteness check), and a cycle BETWEEN sets is caught here — two sets whose
+/// layouts each depend on the other have no finite answer.
 pub fn relayout(self: *Lowering, set: *Set) void {
     var payload: u32 = 0;
     for (set.members.items) |m| {
@@ -345,30 +455,59 @@ pub fn relayout(self: *Lowering, set: *Set) void {
     updated.tagged_union.fields = self.alloc.dupe(types.TypeInfo.StructInfo.Field, fields.items) catch return;
     updated.tagged_union.backing_type = backingType(self, payload, set.alignment);
     self.module.types.updatePreservingKey(set.ty, updated);
+    cascade(self, set);
+}
+
+/// Re-lay-out every set whose members hold `grown` by value.
+fn cascade(self: *Lowering, grown: *Set) void {
+    const deps = self.open_set_dependents.getPtr(grown.ty) orelse return;
+    if (deps.items.len == 0) return;
+    const grown_name = self.module.types.getString(self.module.types.get(grown.ty).tagged_union.name);
+    if (self.open_set_relayout.contains(grown.ty)) {
+        if (self.diagnostics) |d| {
+            const id = d.addFmtId(.err, grown.span, "'{s}' has no finite layout: it holds a set by value that holds '{s}' by value", .{ grown_name, grown_name });
+            d.addHelpFmt(id, grown.span, null, "break the cycle with a pointer on one side", .{});
+        }
+        return;
+    }
+    self.open_set_relayout.put(grown.ty, {}) catch return;
+    defer _ = self.open_set_relayout.remove(grown.ty);
+    for (deps.items) |dep| {
+        const owner = self.open_sets.getPtr(dep.set_name) orelse continue;
+        // The member is measured again through the grown set; its verdict can
+        // change, and the ceiling it now fails is reported where it is declared.
+        if (!fits(self, dep.decl, owner, dep.member, dep.span, grown_name)) continue;
+        relayout(self, owner);
+    }
 }
 
 /// The explicit backing shape the layout is stated with: `{ tag: i64, payload:
-/// [payload_size]u8 }`, padded so the payload starts on the declared alignment.
-/// Handing the backend a written-down shape is what keeps set layout out of the
-/// backend entirely.
+/// [k]Elem }`, where `Elem`'s own alignment IS the payload alignment. Stating the
+/// shape is what keeps set layout out of the backend: the aggregate rules place
+/// the payload at `align_up(size_of(tag), align)` and give the whole value that
+/// alignment, so both are delivered rather than promised.
 fn backingType(self: *Lowering, payload_size: u32, alignment: u32) TypeId {
     const table = &self.module.types;
-    const tag_size: u32 = @intCast(table.typeSizeBytes(tag_type));
-    const payload_offset = alignUp(tag_size, alignment);
-    const pad = payload_offset - tag_size;
+    const elem = payloadElement(self, alignment);
+    const elem_size: u32 = @intCast(table.typeSizeBytes(elem));
+    const bytes = alignUp(payload_size, elem_size);
     var fields = std.ArrayList(types.TypeInfo.StructInfo.Field).empty;
     fields.append(self.alloc, .{ .name = table.internString(tag_field), .ty = tag_type }) catch return tag_type;
-    if (pad > 0) {
-        fields.append(self.alloc, .{
-            .name = table.internString("__pad"),
-            .ty = table.arrayOf(.u8, pad),
-        }) catch return tag_type;
-    }
     fields.append(self.alloc, .{
         .name = table.internString(payload_field),
-        .ty = table.arrayOf(.u8, alignUp(payload_size, alignment)),
+        .ty = table.arrayOf(elem, bytes / elem_size),
     }) catch return tag_type;
     return table.internAnonStruct(self.alloc.dupe(types.TypeInfo.StructInfo.Field, fields.items) catch return tag_type);
+}
+
+/// A payload element whose size and alignment are both `alignment`: the tag word
+/// for the default 8, and a vector of tag words above it. `alignment` is always a
+/// power of two ≥ the tag's own, so the division is exact.
+fn payloadElement(self: *Lowering, alignment: u32) TypeId {
+    const table = &self.module.types;
+    const tag_size: u32 = @intCast(table.typeSizeBytes(tag_type));
+    if (alignment <= tag_size) return tag_type;
+    return table.vectorOf(tag_type, alignment / tag_size);
 }
 
 fn alignUp(value: u32, alignment: u32) u32 {

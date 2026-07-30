@@ -3868,15 +3868,27 @@ above 8 is only safe if every storage path for those values honours it.
 **Layout** is a function of the members the program declares, not of `max`:
 
 ```text
-payload    = max(size_of(member))          // ≤ max; a ceiling, not a reservation
-alignment  = the declared align            // not a max over members
-size_of(P) = align_up(align_up(size_of(tag), align) + payload, align)
+payload    = max(size_of(member))              // ≤ max; a ceiling, not a reservation
+alignment  = max(declared align, align_of(tag))  // not a max over members
+size_of(P) = align_up(align_up(size_of(tag), alignment) + payload, alignment)
 ```
 
+The tag's own alignment is a **floor**: it lives in the same value, so a set
+declared `align = 4` is laid out at 8. Above the floor the declared alignment is
+delivered — `align_of(P)` is that value, and an array of `P` keeps every element's
+payload on it.
+
 So a set declared `max = 256` whose largest member is 24 bytes is 32 bytes, not
-264. Because layout follows the declared members, **importing a module that
-declares a larger member grows the set** — an accepted cost, stated here because
-it is observable in `size_of(P)` and in every `List(P)`.
+264, and a set with **no members** is just its tag word. Because layout follows the
+declared members, **importing a module that declares a larger member grows the
+set** — an accepted cost, stated here because it is observable in `size_of(P)` and
+in every `List(P)`.
+
+Growth is **transitive**: a member of one set may hold another set by value, so
+growing the held set grows that member and re-lays-out the set it belongs to. A
+member that no longer fits its own ceiling after such growth is refused at its
+declaration, naming the set whose growth changed it. (Two sets that each hold the
+other by value have no finite layout and are refused.)
 
 **Admission is checked at the member's declaration**, so a type that cannot be
 represented is never a member and no conversion site needs a second check:
@@ -3884,7 +3896,7 @@ represented is never a member and no conversion site needs a second check:
 | Requirement | Refused when |
 |---|---|
 | `size_of(V) ≤ max` | the member is larger than the ceiling — the diagnostic names the field that accounts for it |
-| `align_of(V) ≤ align` | the member needs more alignment than the payload has |
+| `align_of(V) ≤ alignment` | the member needs more alignment than the payload has (the effective value above, not the raw option) |
 | finite size | the member contains the set **by value** at any depth (a field, a nested struct, an array, an optional) |
 | every required method | the member does not declare one |
 | one set per type | a type is already a member of another set |

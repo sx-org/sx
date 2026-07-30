@@ -50,6 +50,26 @@ Loose :: @OpenSet(.{ align = 8 }) {
     render :: (self: *Self) -> string;
 }
 
+// A member that FITS when it is declared and stops fitting when another set grows:
+// it holds a `Held` slot by value, so `Held`'s later, larger member pushes it over
+// its own set's ceiling. The refusal is at this declaration, and says what changed.
+Held :: @OpenSet(.{ max = 64 }) { value :: (self: *Self) -> i64; }
+Tight :: @OpenSet(.{ max = 24 }) { total :: (self: *Self) -> i64; }
+Wrapper :: @OpenVariant(Tight) {
+    inner: Held = ---;
+    total :: (self: *Wrapper) -> i64 => 0;
+}
+HeldSmall :: @OpenVariant(Held) {
+    a: i64 = 0;
+    value :: (self: *HeldSmall) -> i64 => self.a;
+}
+HeldBig :: @OpenVariant(Held) {
+    a: i64 = 0;
+    b: i64 = 0;
+    c: i64 = 0;
+    value :: (self: *HeldBig) -> i64 => self.a;
+}
+
 // A head that names something that is not a set.
 Plain :: struct { n: i64 = 0; }
 Confused :: @OpenVariant(Plain) {

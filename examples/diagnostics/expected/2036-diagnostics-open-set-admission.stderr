@@ -120,13 +120,47 @@ help: every member declares every method the set requires; 'render' is declared 
 46 | }
    | ^
 
-error: 'Plain' is not an open set
-  --> examples/diagnostics/2036-diagnostics-open-set-admission.sx:55:26
+error: 'Wrapper' cannot be a member of 'Tight': it is 32 bytes, and the set's payload ceiling is 24
+  --> examples/diagnostics/2036-diagnostics-open-set-admission.sx:58:1
    |
-55 | Confused :: @OpenVariant(Plain) {
+58 | Wrapper :: @OpenVariant(Tight) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+59 |     inner: Held = ---;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+60 |     total :: (self: *Wrapper) -> i64 => 0;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+61 | }
+   | ^
+
+help: it grew when 'Held' did — a set's layout follows the largest member declared anywhere in the program
+   |
+58 | Wrapper :: @OpenVariant(Tight) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+59 |     inner: Held = ---;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+60 |     total :: (self: *Wrapper) -> i64 => 0;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+61 | }
+   | ^
+
+help: the largest field is 'inner' at 32 bytes — hold bulk state elsewhere and borrow it, or raise 'max' on the set
+   |
+58 | Wrapper :: @OpenVariant(Tight) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+59 |     inner: Held = ---;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+60 |     total :: (self: *Wrapper) -> i64 => 0;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+61 | }
+   | ^
+
+error: 'Plain' is not an open set
+  --> examples/diagnostics/2036-diagnostics-open-set-admission.sx:75:26
+   |
+75 | Confused :: @OpenVariant(Plain) {
    |                          ^^^^^
 
 help: a member joins a set declared 'Plain :: @OpenSet(.{ max = … }) { … }'
    |
-55 | Confused :: @OpenVariant(Plain) {
+75 | Confused :: @OpenVariant(Plain) {
    |                          ^^^^^

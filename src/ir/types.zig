@@ -1274,7 +1274,12 @@ pub const TypeTable = struct {
                 }
                 break :blk max_a;
             },
-            .@"union", .tagged_union => 8,
+            .@"union" => 8,
+            // A stated backing shape IS the layout, so its alignment is the
+            // union's — that is how an open set delivers its declared payload
+            // alignment. Without one, the default `{tag, [N]u8}` shape aligns to
+            // the tag word.
+            .tagged_union => |u| if (u.backing_type) |bt| self.typeAlignBytes(bt) else 8,
             .error_set => 4, // u32 tag id
             .@"enum" => |e| {
                 if (e.backing_type) |bt| return self.typeAlignBytes(bt);

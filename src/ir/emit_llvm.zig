@@ -835,6 +835,7 @@ pub const LLVMEmitter = struct {
             const llvm_ty = self.toLLVMType(ty);
             const llvm_size = c.LLVMABISizeOfType(dl, llvm_ty);
             const ir_size = self.ir_mod.types.typeSizeBytes(ty);
+            if (llvm_size != ir_size) std.debug.print("SIZEMISMATCH {s} llvm={d} ir={d}\n", .{ self.ir_mod.types.formatTypeName(self.ir_mod.types.alloc, ty), llvm_size, ir_size });
             std.debug.assert(llvm_size == ir_size);
         }
     }

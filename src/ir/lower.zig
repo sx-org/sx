@@ -444,6 +444,12 @@ pub const Lowering = struct {
     open_set_by_type: std.AutoHashMap(TypeId, []const u8),
     /// The set a member type joins — one per type.
     open_variant_of: std.AutoHashMap(TypeId, []const u8),
+    /// Members that hold a set BY VALUE, keyed by the set they hold: growing that
+    /// set grows them, and therefore the sets they belong to.
+    open_set_dependents: std.AutoHashMap(TypeId, std.ArrayList(lower_open_set.Dependent)),
+    /// Sets whose layout is being recomputed right now — a re-entry is a
+    /// layout cycle between two sets, which has no finite answer.
+    open_set_relayout: std.AutoHashMap(TypeId, void),
     /// `@BuildBlock` formation sites, in mint order; a per-site implementor type
     /// carries its one-based index as its nominal id.
     block_sites: std.ArrayList(lower_build_block.Site) = .empty,
@@ -1166,6 +1172,8 @@ pub const Lowering = struct {
             .open_sets = std.StringHashMap(lower_open_set.Set).init(module.alloc),
             .open_set_by_type = std.AutoHashMap(TypeId, []const u8).init(module.alloc),
             .open_variant_of = std.AutoHashMap(TypeId, []const u8).init(module.alloc),
+            .open_set_dependents = std.AutoHashMap(TypeId, std.ArrayList(lower_open_set.Dependent)).init(module.alloc),
+            .open_set_relayout = std.AutoHashMap(TypeId, void).init(module.alloc),
             .struct_instance_bindings = std.StringHashMap(std.StringHashMap(TypeId)).init(module.alloc),
             .struct_instance_template = std.StringHashMap([]const u8).init(module.alloc),
             .struct_instance_author = std.StringHashMap(*const ast.StructDecl).init(module.alloc),

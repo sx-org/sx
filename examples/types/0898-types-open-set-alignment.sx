@@ -1,0 +1,69 @@
+// The payload alignment an open set declares is DELIVERED, and the tag word's own
+// alignment is a floor (spec: Open Sets).
+//
+//     payload_alignment = max(declared align, align_of(tag))
+//
+// The slot is laid out with a payload whose element alignment IS that value, so
+// `align_of(P)` is the declared alignment, the payload's offset is aligned to it,
+// and an array of the set keeps every element's payload aligned. Declaring less
+// than the tag's alignment asks for nothing: the tag is in the same value, so the
+// floor applies and the set is laid out at the tag's alignment.
+//
+// A member's own alignment is checked against the same effective value, which is
+// what makes the promise to members real.
+#import "modules/std.sx";
+
+// Above the floor: 16-byte payload alignment, delivered.
+Wide :: @OpenSet(.{ max = 64, align = 16 }) {
+    lanes :: (self: *Self) -> f64;
+}
+
+Vec2 :: @OpenVariant(Wide) {
+    v: Vector(2, f64) = .{};
+    lanes :: (self: *Vec2) -> f64 => 2.0;
+}
+
+// Below the floor: clamped to the tag's 8.
+Narrow :: @OpenSet(.{ max = 64, align = 4 }) {
+    n :: (self: *Self) -> i32;
+}
+
+Small :: @OpenVariant(Narrow) {
+    v: i32 = 0;
+    n :: (self: *Small) -> i32 => self.v;
+}
+
+// The default: no `align` option at all.
+Plain :: @OpenSet(.{ max = 64 }) {
+    n :: (self: *Self) -> i32;
+}
+
+Word :: @OpenVariant(Plain) {
+    v: i64 = 0;
+    n :: (self: *Word) -> i32 => 1;
+}
+
+main :: () -> i32 {
+    // 8 tag + 8 padding to reach the 16-byte payload + 16 payload.
+    print("wide {} align {}\n", size_of(Wide), align_of(Wide));
+    // An array keeps each element's payload on the declared alignment.
+    print("wide pair {}\n", size_of([2]Wide));
+
+    // align = 4 is below the tag's 8, so the layout uses 8.
+    print("narrow {} align {}\n", size_of(Narrow), align_of(Narrow));
+    print("plain {} align {}\n", size_of(Plain), align_of(Plain));
+
+    v := Vec2{};
+    s := Small{ v = 3 };
+    w := Word{ v = 4 };
+    print("members {} {} {}\n", v.lanes(), s.n(), w.n());
+    0
+}
+
+// ** stdout **
+// wide 32 align 16
+// wide pair 64
+// narrow 16 align 8
+// plain 16 align 8
+// members 2.000000 3 1
+//
