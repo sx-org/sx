@@ -661,10 +661,6 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             if (self.scope) |scope| {
                 if (scope.lookupNearest(id.name)) |nearest| switch (nearest) {
                     .binding => |binding| {
-                        // Refused, but still captured: the diagnostic already
-                        // halts before codegen, and binding it keeps the body
-                        // from cascading a second "unresolved" report.
-                        self.rejectInitCapture(binding.ty, id.name, node.span);
                         captures.append(self.alloc, .{
                             .name = id.name,
                             .ty = binding.ty,

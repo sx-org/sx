@@ -35,8 +35,12 @@ impl Into(i32) for Celsius {
 degrees :: (c: $C/Into(i32)) -> i32 { xx c }
 
 // A head naming a SIBLING type parameter: nothing is known about `P` in the
-// template, so the bound defers — and is asked at the call that binds `P`.
+// template, so the bound defers — and is asked at the call that binds `P`. What
+// it asks depends on what `P` landed on: conformance for a protocol, IDENTITY
+// for a concrete type, which collapses the family to its one member.
 relay :: ($P: Type, v: $V/P) -> i32 { v.val() }
+
+exact :: ($P: Type, v: $V/P) -> i32 { 1 }
 
 // TWO bounds on one binder, spelled across two parameters. Both are the
 // declaration's, so a binding must satisfy both.
@@ -61,6 +65,9 @@ main :: () -> i32 {
     // arrives and is answered.
     print("{}\n", relay(Summable, Box{ n = 1 }));
     print("{}\n", both(Pair{ a = 1, b = 1 }, Pair{ a = 2, b = 2 }));
+    // `P` binds to a concrete type, so the bound is an identity: `i64` is the
+    // only `V` that satisfies it.
+    print("{}\n", exact(i64, 5));
     h := Holder(Box){ item = Box{ n = 9 } };
     print("{}\n", h.item.val());
     0

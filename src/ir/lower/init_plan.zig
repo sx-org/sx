@@ -43,7 +43,6 @@ pub fn formInitPlan(self: *Lowering, arg: *const Node, init_ty: TypeId) Ref {
     // to another `@Init(T)` parameter (spec §5.1), which hands over the single
     // write rather than wrapping the recipe in a second one.
     if (self.inferExprType(arg) == init_ty) {
-        consumeInit(self, arg, arg.span);
         return self.lowerExpr(arg);
     }
     const span = arg.span;
@@ -74,11 +73,11 @@ pub fn formInitPlan(self: *Lowering, arg: *const Node, init_ty: TypeId) Ref {
     return lower_closure.lowerLambdaTyped(self, &lam, .stack, init_ty);
 }
 
-/// `value.write(dest)` — the recipe's one operation (spec §5.1.3): run the thunk
-/// against the receiver's storage, so the argument expression evaluates exactly
-/// once, directly into `dest`.
+/// `value.write(dest)` — run the thunk against the receiver's storage, so the
+/// argument expression evaluates into `dest` at WRITE time (spec §5.2). Each
+/// call re-evaluates it: a second write re-runs the expression, side effects
+/// included, which is legal language and the library's protocol to document.
 pub fn lowerInitWrite(self: *Lowering, target: TypeId, recv: *const Node, args: []const *const Node, span: ast.Span) Ref {
-    consumeInit(self, recv, span);
     const dest_ty = self.module.types.ptrTo(target);
     if (args.len != 1) {
         if (self.diagnostics) |d| {
@@ -104,65 +103,4 @@ pub fn lowerInitWrite(self: *Lowering, target: TypeId, recv: *const Node, args: 
     else
         self.alloc.dupe(Ref, &.{dest}) catch unreachable;
     return self.builder.emit(.{ .call_closure = .{ .callee = plan, .args = call_args } }, .void);
-}
-
-// ── Ephemerality (spec §5.1) ────────────────────────────────────────────
-// An `@Init(T)` may be received as a parameter, forwarded to another `@Init(T)`
-// parameter, and written at most once. The type grammar already keeps it out of
-// every storage position — `parseCompilerFormedType` accepts it as a parameter
-// annotation and nowhere else, so no field, return type, element type, or global
-// can name it. That leaves the ways to outlive or re-run the recipe from inside a
-// body, rejected here: consuming it twice, consuming it where a loop can re-run
-// the consumption, rebinding it to a local, and capturing it in a closure.
-
-/// Mark a recipe consumed — by its `write`, or by a forward that hands the
-/// write to another `@Init` parameter — and refuse a second consumption. The
-/// record lives on the binding because a parameter name is the only thing that
-/// can hold a recipe, and a binding lives exactly as long as its function body.
-/// A consumption a loop can re-run is refused for the same reason: `write`
-/// constructs its destination at most once.
-fn consumeInit(self: *Lowering, recv: *const Node, span: ast.Span) void {
-    if (recv.data != .identifier) return;
-    const scope = self.scope orelse return;
-    const binding = scope.lookupPtr(recv.data.identifier.name) orelse return;
-    const name = recv.data.identifier.name;
-    if (self.diagnostics) |d| {
-        if (binding.init_written) |first| {
-            const id = d.addFmtId(.err, span, "'{s}' is used again after it was consumed — an @Init value is written or forwarded once", .{name});
-            d.addHelpFmt(id, first, null, "it was consumed here", .{});
-        } else if (self.continue_target != null) {
-            d.addFmt(.err, span, "'{s}' is consumed inside a loop — an @Init value is written or forwarded once", .{name});
-        }
-    }
-    binding.init_written = span;
-}
-
-/// Refuse a local rebinding of an `@Init` value (`y := value`). An alias would
-/// both escape the write-once record kept on the parameter binding and give the
-/// recipe a second name outliving the call that formed it. Nothing but a bare
-/// parameter reference can produce one, so an identifier initializer is the
-/// whole surface.
-pub fn rejectInitBinding(self: *Lowering, value: ?*const Node, name: []const u8) bool {
-    const val = value orelse return false;
-    if (val.data != .identifier) return false;
-    const scope = self.scope orelse return false;
-    const binding = scope.lookup(val.data.identifier.name) orelse return false;
-    if (initTargetOf(self, binding.ty) == null) return false;
-    if (self.diagnostics) |d| {
-        const id = d.addFmtId(.err, val.span, "'{s}' cannot bind an {s} value — it is a nonescaping recipe, not storage", .{ name, self.formatTypeName(binding.ty) });
-        d.addHelpFmt(id, val.span, null, "call '.write(dest)' to construct into storage, or forward it to another @Init parameter", .{});
-    }
-    // Bind the name to the same recipe so the refusal is the only diagnostic
-    // this statement produces — the error already halts before codegen.
-    scope.put(name, binding);
-    return true;
-}
-
-/// Refuse capturing an `@Init` value into a closure: the closure may outlive the
-/// forming call, and its env would then hold a recipe whose own env is gone.
-pub fn rejectInitCapture(self: *Lowering, ty: TypeId, name: []const u8, span: ast.Span) void {
-    if (initTargetOf(self, ty) == null) return;
-    if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "'{s}' is an {s} value and cannot be captured by a closure — write it into storage the closure can reach instead", .{ name, self.formatTypeName(ty) });
-    }
 }

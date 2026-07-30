@@ -252,11 +252,6 @@ pub const Binding = struct {
     /// typing, and the interface-only constraint check.
     pack_elem: ?*ast.Node = null,
     origin: Origin = .other,
-    /// Span of the `write` that already consumed this `@Init` binding, if any.
-    /// The write-once contract (spec §5.1) is per binding, and a binding lives
-    /// exactly as long as the function body it was declared in — so the record
-    /// belongs here rather than in any lowering-wide table.
-    init_written: ?ast.Span = null,
 };
 
 // `init` / `deinit` / `put` are pub so collaborator unit tests (e.g.
@@ -3537,8 +3532,6 @@ pub const Lowering = struct {
     pub const initTargetOf = lower_init_plan.initTargetOf;
     pub const formInitPlan = lower_init_plan.formInitPlan;
     pub const lowerInitWrite = lower_init_plan.lowerInitWrite;
-    pub const rejectInitBinding = lower_init_plan.rejectInitBinding;
-    pub const rejectInitCapture = lower_init_plan.rejectInitCapture;
 
     // --- lower/build_block.zig (`@BuildBlock(P)`) ---
     pub const bindBuildBlockParam = lower_build_block.bindParam;

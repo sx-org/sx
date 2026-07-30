@@ -2927,11 +2927,16 @@ Where the check lands depends on what the head names:
 |---|---|
 | a declared protocol | the binding implements every method |
 | a parameterized protocol (`Into(i32)`) | a visible `impl Into(i32) for <binding>` exists, or a **blanket** impl covers it |
-| the declaration's own type parameter (`$V/P`) | deferred — asked again wherever `P` is bound |
+| the declaration's own type parameter (`$V/P`) | deferred — asked again wherever `P` is bound: as **conformance** when `P` is a protocol, as **identity** when `P` is a concrete type |
 | a compiler-formed contract (`@Init`, `@BuildBlock`) | the argument is formable into an implementor |
 
 A protocol satisfies its own bound: binding `$V/View` to `View` is the identity
 case, not a request that `View` implement itself.
+
+A sibling head bound to a **concrete** type collapses the bound's family to that
+one member: `$V/P` with `P = i64` admits `i64` and nothing else. A bound's
+type-argument list is validated against the arity of whatever the sibling landed
+on, before the binding is considered.
 
 **Blanket impls.** An impl may write the protocol's type arguments as its own
 binders — `impl Series($T) for Buffer($T)` covers every instantiation of

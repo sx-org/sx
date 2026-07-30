@@ -191,10 +191,43 @@ fn checkAgainstSibling(
 ) void {
     const sib_ty = bindings.get(sibling) orelse return;
     if (sib_ty == .unresolved) return;
+    // The SPELLING is checked before the binding: a bound whose type-argument
+    // list cannot be right is malformed whether or not this particular binding
+    // would have satisfied it.
+    const proto = self.getProtocolInfo(sib_ty);
+    const spelled_args: usize = switch (bound.data) {
+        .parameterized_type_expr => |pte| pte.args.len,
+        else => 0,
+    };
+    // The sibling landed on a NON-PROTOCOL type, so the bound is not a
+    // conformance question: `$V/P` with `P = i64` collapses the family to its one
+    // member, and the binding has to be exactly that type.
+    if (proto == null) {
+        if (spelled_args > 0) {
+            const d0 = self.diagnostics orelse return;
+            const id = d0.addFmtId(.err, bound.span, "the bound on '${s}' spells type arguments, but '${s}' is bound to '{s}', which takes none", .{ param, sibling, self.formatTypeName(sib_ty) });
+            d0.addHelpFmt(id, bound.span, null, "a bound on a concrete type is an identity, not an instantiation — write '${s}/{s}'", .{ param, sibling });
+            return;
+        }
+        if (bound_ty == sib_ty) return;
+        const d0 = self.diagnostics orelse return;
+        const id = d0.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound on '${s}'", .{ self.formatTypeName(bound_ty), param });
+        d0.addHelpFmt(id, bound.span, null, "'${s}' is bound to '{s}', so '${s}' must be '{s}'", .{ sibling, self.formatTypeName(sib_ty), param, self.formatTypeName(sib_ty) });
+        return;
+    }
+    // The sibling landed on a protocol: its own arity decides whether the
+    // spelling was well formed.
+    if (self.protocol_ast_by_type.get(sib_ty)) |pd| {
+        if (spelled_args != pd.type_params.len) {
+            const d0 = self.diagnostics orelse return;
+            const id = d0.addFmtId(.err, bound.span, "the bound on '${s}' writes {d} type argument{s}, but '${s}' is bound to '{s}', which takes {d}", .{
+                param, spelled_args, if (spelled_args == 1) "" else "s", sibling, self.formatTypeName(sib_ty), pd.type_params.len,
+            });
+            d0.addHelpFmt(id, bound.span, null, "the arity is the bound protocol's, and '${s}' is only known at the call that binds it", .{sibling});
+            return;
+        }
+    }
     if (bound_ty == sib_ty) return;
-    // A sibling bound to something that is not a protocol constrains nothing:
-    // `$V/P` with `P = i64` is not a conformance question.
-    if (self.getProtocolInfo(sib_ty) == null) return;
     const proto_name = self.formatTypeName(sib_ty);
     const concrete_name = self.resolveConcreteTypeName(bound_ty) orelse {
         reportViolation(self, bound, proto_name, param, bound_ty,

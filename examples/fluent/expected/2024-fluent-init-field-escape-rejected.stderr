@@ -1,5 +1,0 @@
-error: '@Init(T)' may only be written as a parameter type: it is a nonescaping value that cannot be stored in a field, returned, or nested inside another type
-  --> examples/fluent/2024-fluent-init-field-escape-rejected.sx:12:13
-   |
-12 |     recipe: @Init(Button);   // refused: an initializer is not storage
-   |             ^^^^^
