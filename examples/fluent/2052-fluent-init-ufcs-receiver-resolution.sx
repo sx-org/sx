@@ -60,6 +60,19 @@ Crate :: struct {
     emit_at :: (n: i64) -> string => "static";
 }
 
+// A GENERIC instance's own method: its declaration is stamped per instantiation,
+// so the value it prints is what proves the method ran rather than a free function
+// reading the receiver's bits.
+Crated :: struct ($T: Type) {
+    v: $T = ---;
+    emit_at :: (self: *Crated(T), a: i64, b: i64) -> string => "generic method";
+}
+
+// A CALLABLE field named like a free function: calling it calls the field.
+Obj :: struct {
+    stow: Closure() -> string = ---;
+}
+
 // A protocol value dispatches to its conformer.
 Shape :: protocol tagged { name :: (self: *Self) -> string; }
 Round :: struct { s: string = "round"; }
@@ -90,6 +103,17 @@ main :: () -> i32 {
     }
     print("emitted {}\n", out.len);
 
+    // A generic instance answers with its own method, by value and through a
+    // pointer — and `v` proves it: a free function reading these bits would print
+    // the receiver's address.
+    g := Crated(i64){ v = 7 };
+    pg := *g;
+    print("generic {} {} v={}\n", g.emit_at(1, 2), pg.emit_at(1, 2), g.v);
+
+    // A callable field is called, and the free function of that name still forms.
+    o := Obj{ stow = () => "field closure" };
+    print("field {} free {}\n", o.stow(), 5.stow());
+
     // A dot on a name: the type prefix names the static, not the free function.
     print("type prefix {}\n", Crate.emit_at(3));
 
@@ -108,6 +132,8 @@ main :: () -> i32 {
 // argument spelling: 2 evaluations
 // receiver evaluated: true
 // emitted 3
+// generic generic method generic method v=7
+// field field closure free free stow
 // type prefix static
 // impl impl method own own method through a pointer own method protocol round
 //

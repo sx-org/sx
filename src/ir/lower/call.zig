@@ -94,7 +94,10 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
         }
         // The receiver chose an author the NAME does not: an ordinary call resolves
         // by name, so re-spelling this one would call the other declaration. The
-        // dispatch arm keeps it.
+        // dispatch arm keeps it — and cannot form the receiver there, so a case that
+        // REACHES this line is a hole. Two destination-first declarations present
+        // the same first-parameter shape, so the ranking above cannot separate them
+        // and lands on `amb` first; that is what makes this unreachable today.
         if (fd != fd0) return null;
     }
     if (fd.params.len == 0) return null;
@@ -102,16 +105,44 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
     return eff_field;
 }
 
-/// Does a value of `ty` answer `name` itself? A method on the type's own
-/// declaration, one an `impl` contributed, a protocol's method on an erased value,
-/// a set's required method — and through a pointer or an optional, which dispatch
-/// reaches the same way.
+/// Does a value of `ty` answer `name` ITSELF — as a member of any kind the
+/// method-call path can resolve? The gate re-spells a dot-call as a free call only
+/// when this is false, so every kind the path handles has to be asked about here.
+///
+/// There is no single query that answers it: the path resolves members from five
+/// separate registries, in arms spread across this function. The census below
+/// mirrors those arms one for one, with the line each answers for — a member kind
+/// added to the path without a line here is a dot-call the gate would steal.
+///
+///   - a FIELD of that name, whatever its type — the callable-field arm calls it
+///     instead of dispatching a method (`o.flush()` on a `Closure()` field);
+///   - a method the type's own declaration carries (`plainStructMethod`);
+///   - a method of a GENERIC instance, which carries a separate author stamp and
+///     is intentionally absent from `plainStructMethod` (`genericInstanceMethod`);
+///   - a method an `impl` contributed, keyed `<Type>.<name>` in the function map;
+///   - a runtime-class member (`#jni_class` and its parallels);
+///   - a protocol's method, on an erased value;
+///   - a set's required method, on a set value;
+///   - and any of these through a POINTER or an OPTIONAL, which the path reaches
+///     by loading or narrowing first.
 fn receiverProvidesMethod(self: *Lowering, ty: TypeId, name: []const u8) bool {
     if (ty == .unresolved) return false;
+
+    // A field of that name — any type. The path calls a callable field rather
+    // than looking for a method, and a non-callable one is its own error there.
+    if (!ty.isBuiltin()) {
+        const field_name_id = self.module.types.internString(name);
+        for (self.getStructFields(ty)) |f| {
+            if (f.name == field_name_id) return true;
+        }
+    }
+
     if (self.plainStructMethod(ty, name) != null) return true;
     if (self.getStructTypeName(ty)) |sname| {
+        if (self.genericInstanceMethod(sname, name) != null) return true;
         const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sname, name }) catch return true;
         if (self.program_index.fn_ast_map.get(qualified) != null) return true;
+        if (self.program_index.runtime_class_map.get(sname) != null) return true;
     }
     if (self.getProtocolInfo(ty)) |pi| {
         if (protocolHasMethod(pi, name)) return true;

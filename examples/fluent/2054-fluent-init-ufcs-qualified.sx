@@ -7,6 +7,11 @@
 // parentheses is the whole of what it is called with.
 //
 // All three spellings share one name here, and each reaches what it names.
+//
+// Which module declares which matters: the ufcs is flat-imported and the plain
+// function is reached by name, because a name declared BOTH here and in a
+// flat-imported module collapses to one winner, and the dot-call would then report
+// whichever declaration won rather than the spelling under test.
 #import "modules/std.sx";
 #import "modules/std/list.sx";
 #import "2054-fluent-init-ufcs-qualified/emitter.sx";
