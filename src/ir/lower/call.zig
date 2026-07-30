@@ -16,6 +16,8 @@ const init_plan = @import("init_plan.zig");
 const build_block = @import("build_block.zig");
 const lower_generic = @import("generic.zig");
 const lower_open_set = @import("open_set.zig");
+const lower_init_plan = @import("init_plan.zig");
+const lower_build_block = @import("build_block.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -61,6 +63,39 @@ fn selectedDispatchName(self: *Lowering, sf: *const SelectedFunc) []const u8 {
         out.appendSlice(self.alloc, ordinal_fragment) catch @panic("out of memory while mangling selected function");
     }
     return out.toOwnedSlice(self.alloc) catch @panic("out of memory while mangling selected function");
+}
+
+
+/// The ufcs function `obj.field(…)` resolves to when its FIRST parameter is
+/// destination-first, or null. A method declared on the receiver's own type wins
+/// over a ufcs free function, so that case answers null and the ordinary method
+/// path takes it.
+fn destinationFirstUfcs(self: *Lowering, fa: ast.FieldAccess) ?[]const u8 {
+    const alias_target = self.ufcsAliasTarget(fa.field);
+    const eff_field = alias_target orelse fa.field;
+    const fd = self.program_index.fn_ast_map.get(eff_field) orelse return null;
+    if (alias_target == null and !fd.is_ufcs) return null;
+    if (fd.params.len == 0) return null;
+    const first = fd.params[0].type_expr;
+    if (lower_init_plan.boundTargetNode(first) == null and
+        lower_build_block.boundProtocolNode(first) == null) return null;
+    const recv_ty = self.inferExprType(fa.object);
+    if (declaresOwnMethod(self, recv_ty, fa.field)) return null;
+    return eff_field;
+}
+
+/// Does `ty`'s own declaration carry a method of this name?
+fn declaresOwnMethod(self: *Lowering, ty: TypeId, name: []const u8) bool {
+    if (ty == .unresolved) return false;
+    if (self.plain_struct_authors.get(ty)) |author| {
+        if (Lowering.structMethodFn(author.decl, name) != null) return true;
+    }
+    if (self.getStructTypeName(ty)) |inst| {
+        if (self.struct_instance_author.get(inst)) |author| {
+            if (Lowering.structMethodFn(author, name) != null) return true;
+        }
+    }
+    return false;
 }
 
 /// True iff every type-parameter of generic ufcs/free-fn `fd` binds to a
@@ -1716,6 +1751,22 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     }
                 }
                 return self.emitError(func_name, c.callee.span);
+            }
+
+            // A ufcs target whose first parameter is DESTINATION-FIRST — `$I/@Init(T)`
+            // or `$B/@BuildBlock(P)` — never takes an evaluated receiver: the
+            // parameter wants the expression, not its value (spec §5.2). The
+            // receiver IS that first argument, so the call is the ordinary spelling
+            // of itself and lowers as one, forming exactly where an argument in that
+            // position forms.
+            if (destinationFirstUfcs(self, fa)) |target_name| {
+                var syn_args = std.ArrayList(*Node).empty;
+                defer syn_args.deinit(self.alloc);
+                syn_args.append(self.alloc, @constCast(fa.object)) catch unreachable;
+                for (c.args) |a| syn_args.append(self.alloc, a) catch unreachable;
+                const callee = self.synthNode(.{ .identifier = .{ .name = target_name } }, c.callee.span, c.callee.source_file);
+                const syn_call = ast.Call{ .callee = callee, .args = self.alloc.dupe(*Node, syn_args.items) catch unreachable };
+                return self.lowerCall(&syn_call);
             }
 
             // Method call: obj.method(args) → prepend obj (or &obj for *Self receivers)

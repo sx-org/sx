@@ -1,0 +1,46 @@
+// A receiver forms exactly where an argument in that position forms — including
+// when it cannot (fluent spec §5.2).
+//
+// `emit` takes `$I/@Init(View)`, a FIXED target: what the initializer writes is a
+// complete `View`. A receiver that cannot become one is refused at the call that
+// spelled it, with the fact that decides it — membership, for an open set — and
+// not somewhere inside the function that accepted the initializer.
+// Expected: exit 1.
+#import "modules/std.sx";
+#import "modules/std/list.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+// A member of nothing.
+Plain :: struct {
+    text: string = "";
+}
+
+#context_extend ui_out: *List(View) = null;
+
+emit :: ufcs (value: $I/@Init(View)) {
+    item: View = ---;
+    value.write(*item);
+    context.ui_out.append(item);
+}
+
+main :: () -> i32 {
+    out : List(View) = .{};
+    push .{ ui_out = *out } {
+        // A member: forms, as the dot-call and the ordinary call both do.
+        Label{ text = "fine" }.emit();
+
+        // Not a member: refused as the receiver, and refused as an argument.
+        Plain{ text = "as a receiver" }.emit();
+        emit(Plain{ text = "as an argument" });
+    }
+    print("{}\n", out.len);
+    0
+}

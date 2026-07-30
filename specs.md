@@ -3705,7 +3705,10 @@ button := store(Button{ label = "Play" });
 The argument is **not evaluated at the call**. The compiler forms an initializer
 from the expression and binds `$I` to it; the expression runs when — and each
 time — the receiver calls `write`. A receiver that never writes never evaluates
-it at all.
+it at all. A `ufcs` first parameter carrying the bound is reached the same way
+through a dot-call: the receiver **is** that first argument, and it forms exactly
+as it would spelled as one (`v.publish()` and `publish(v)` form the same
+initializer).
 
 The bound's type argument is what a `write` fills. It may be **fixed**
 (`$I/@Init(Button)`) or left open, inferred from the argument's own type
