@@ -9,7 +9,9 @@
 //     DIFFERENT set, since a type belongs to one;
 //   - `xx` names the same conversion, so it refuses exactly what the expected
 //     type and `.(View)` refuse — an explicit cast is not a way past membership;
-//   - a refusal raised inside a generic body names the call that instantiated it;
+//   - a refusal raised inside a generic body names the call that instantiated it,
+//     at the expected type as well as at a cast, and a generic member is named the
+//     way the program spells it;
 //   - an `any` holds no set value at all, since boxing a set boxes the member it
 //     carries, so there is nothing at a set destination for an unbox to read;
 //   - `.(P, alloc)` does not exist for a set: the active member lives inline in
@@ -38,12 +40,30 @@ Alien :: @OpenVariant(Elsewhere) {
     render :: (self: *Alien) -> string => self.text;
 }
 
+Pair :: struct ($A: Type, $B: Type) {
+    a: $A = ---;
+    b: $B = ---;
+}
+
+// A generic member of that other set: an instantiation is named the way the
+// program spells it, arguments and all.
+Boxed :: @OpenVariant(Elsewhere) ($T: Type) {
+    held: $T = ---;
+    render :: (self: *Boxed) -> string => "boxed";
+}
+
 Plain :: struct {
     text: string = "";
 }
 
 // One body, refused per instantiation: the fault is the call that spelled this one.
 lift :: ($T: Type, x: $S) -> T => xx x;
+
+// The same, at the expected type rather than a cast.
+form :: (x: $S) -> View {
+    v: View = x;
+    return v;
+}
 
 // No widening arm: this init's type argument is `Label`, so `write` takes `*Label`.
 into_label :: (value: $I/@Init(Label)) -> string {
@@ -57,6 +77,14 @@ main :: () -> i32 {
     plain: View = Plain{ text = "not a member" };
     alien: View = Alien{ text = "another set" };
     print("{} {}\n", plain.render(), alien.render());
+
+    // A generic member of another set, named as the program spells it.
+    nested: View = Boxed(Pair(i64, i64)){ };
+    print("{}\n", nested.render());
+
+    // The expected type inside a generic body, refused for this instantiation.
+    formed := form(Plain{ text = "through a generic" });
+    print("{}\n", formed.render());
 
     // A contextual literal, empty and with fields.
     empty: View = .{};

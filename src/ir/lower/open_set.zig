@@ -949,7 +949,7 @@ pub fn noteInstantiation(self: *Lowering, d: *errors.DiagnosticList, id: usize) 
 /// Why a type is not a member, in the terms the declarations state it: a type that
 /// joined ANOTHER set is told it belongs to one, and any other type is shown the
 /// declaration that would make it a member.
-fn membershipHelp(self: *Lowering, d: *errors.DiagnosticList, id: usize, member_ty: TypeId, set_ty: TypeId, span: ast.Span) void {
+pub fn membershipHelp(self: *Lowering, d: *errors.DiagnosticList, id: usize, member_ty: TypeId, set_ty: TypeId, span: ast.Span) void {
     if (setOfMember(self, member_ty)) |other| {
         d.addHelpFmt(id, span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatSourceTypeName(member_ty), other.decl.name });
     } else {
