@@ -9,6 +9,9 @@
 //     DIFFERENT set, since a type belongs to one;
 //   - `xx` names the same conversion, so it refuses exactly what the expected
 //     type and `.(View)` refuse — an explicit cast is not a way past membership;
+//   - membership is asked before width: a non-member the size of the slot is still
+//     not the slot, and the fact reads the same at a field, an argument, and a
+//     return as it does at a local;
 //   - a refusal raised inside a generic body names the call that instantiated it,
 //     at the expected type as well as at a cast, and a generic member is named the
 //     way the program spells it;
@@ -65,6 +68,18 @@ form :: (x: $S) -> View {
     return v;
 }
 
+// The expected type at a field, an argument, and a return: one fact, wherever the
+// value is going.
+Holder :: struct {
+    v: View = ---;
+}
+
+takes :: (v: View) -> string => v.render();
+gives :: () -> View { return Plain{ text = "a return" }; }
+
+// And through a generic body, where the note names the call.
+hand :: (x: $S) -> View { return x; }
+
 // No widening arm: this init's type argument is `Label`, so `write` takes `*Label`.
 into_label :: (value: $I/@Init(Label)) -> string {
     slot: View = ---;
@@ -78,13 +93,20 @@ main :: () -> i32 {
     alien: View = Alien{ text = "another set" };
     print("{} {}\n", plain.render(), alien.render());
 
-    // A generic member of another set, named as the program spells it.
-    nested: View = Boxed(Pair(i64, i64)){ };
+    // A generic member of another set, named as the program spells it — and
+    // exactly the size of a 'View' slot, which changes nothing: what may fill a
+    // slot is what declared itself into the set, not what happens to fit it.
+    nested: View = Boxed(Pair(i64, string)){ };
     print("{}\n", nested.render());
 
     // The expected type inside a generic body, refused for this instantiation.
     formed := form(Plain{ text = "through a generic" });
     print("{}\n", formed.render());
+
+    // A field, an argument, a return, and a return from inside a generic body.
+    held := Holder{ v = Plain{ text = "a field" } };
+    print("{} {}\n", takes(Plain{ text = "an argument" }), held.v.render());
+    print("{} {}\n", gives().render(), hand(Plain{ text = "a generic return" }).render());
 
     // A contextual literal, empty and with fields.
     empty: View = .{};

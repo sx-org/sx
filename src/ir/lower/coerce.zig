@@ -1193,6 +1193,30 @@ fn initIsExplicitCast(node: *const Node) bool {
     };
 }
 
+/// Is this weld into a set slot one that membership refuses? A set destination is
+/// decided by the source's DECLARATION: `any` holds a member rather than a set, a
+/// non-member is not what the slot carries, and a member never fails — whatever the
+/// two widths are. Width decides bit-compatibility, and no number of matching bytes
+/// makes a non-member a slot (spec: Open Sets — formation).
+fn setWeldRefused(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    if (!self.isOpenSet(dst_ty)) return false;
+    if (src_ty == dst_ty or src_ty == .unresolved or src_ty == .void or src_ty == .noreturn) return false;
+    if (src_ty == .any) return true;
+    return !self.openSetDeclaresMembership(src_ty, self.openSetOf(dst_ty).?.decl.name);
+}
+
+/// The membership fact at an implicit weld — a field initializer, an argument, a
+/// return. True when refused, and the caller stops before the value is welded.
+fn refuseSetWeld(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
+    if (!setWeldRefused(self, src_ty, dst_ty)) return false;
+    const refused = if (src_ty == .any)
+        self.refuseSetFromAny(dst_ty, span)
+    else
+        self.refuseOpenSetNonMember(src_ty, dst_ty, span);
+    if (refused) self.assignability_error_count += 1;
+    return refused;
+}
+
 /// Guard a store into an explicitly-annotated slot against a silent bit-mangle.
 /// When the initializer/RHS type `src_ty` has NO modeled coercion to the
 /// destination slot type `dst_ty`, the classifier yields `.none` and
@@ -1226,19 +1250,28 @@ pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     // An explicit `xx`/`.(T)` is the user opting into a reinterpretation that
     // has no standard coercion — leave the escape hatch intact, width be damned.
     if (init_node) |n| if (initIsExplicitCast(n)) return true;
-    if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
-    if (self.diagnostics) |d| {
-        // An open set is formed from a MEMBER, and membership is a declaration — no
-        // conversion can stand in for one, so the value is named the way the program
-        // spells it and the fact reads as it does at every other set refusal
-        // (spec: Open Sets).
-        const set_dst = self.isOpenSet(dst_ty);
-        const shown = if (set_dst) self.formatSourceTypeName(src_ty) else self.formatTypeName(src_ty);
-        const id = d.addFmtId(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatTypeName(dst_ty), shown });
-        if (set_dst) {
+    // A set slot is filled by MEMBERSHIP, and that question is asked BEFORE the
+    // same-width reinterpretation this guard allows everywhere else: a non-member
+    // of the slot's own size is still not the slot, and passing its bytes through
+    // types them as a set the program then dispatches on.
+    if (setWeldRefused(self, src_ty, dst_ty)) {
+        if (src_ty == .any) {
+            if (self.refuseSetFromAny(dst_ty, span)) self.assignability_error_count += 1;
+            return false;
+        }
+        if (self.diagnostics) |d| {
+            // The value is named the way the program spells it, and the fact reads
+            // as it does at every other set refusal (spec: Open Sets).
+            const id = d.addFmtId(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatTypeName(dst_ty), self.formatSourceTypeName(src_ty) });
             self.openSetMembershipHelp(d, id, src_ty, dst_ty, span);
             self.noteOpenSetInstantiation(d, id);
+            self.assignability_error_count += 1;
         }
+        return false;
+    }
+    if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
+    if (self.diagnostics) |d| {
+        d.addFmt(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatTypeName(dst_ty), self.formatTypeName(src_ty) });
         self.assignability_error_count += 1;
     }
     return false;
@@ -1324,6 +1357,10 @@ pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
 /// the type-mismatch error; the caller still passes the value through (the
 /// build aborts via hasErrors before the IR could reach codegen).
 fn diagnoseUnmodeledCoercion(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) void {
+    {
+        const cs = self.builder.current_span;
+        if (refuseSetWeld(self, valueTypeOfRef(self, val, src_ty), dst_ty, .{ .start = cs.start, .end = cs.end })) return;
+    }
     if (implicitNoneMismatchExempt(self, val, src_ty, dst_ty)) return;
     if (self.diagnostics) |d| {
         const cs = self.builder.current_span;
@@ -1339,6 +1376,7 @@ fn diagnoseUnmodeledCoercion(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: 
 /// diagnostic for the same weld. Shares `assignability_error_count` so the
 /// external-error suppression keeps working across both guards.
 pub fn checkReturnable(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
+    if (refuseSetWeld(self, valueTypeOfRef(self, val, src_ty), dst_ty, span)) return false;
     if (implicitNoneMismatchExempt(self, val, src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
         d.addFmt(.err, span, "cannot return a value of type '{s}' where '{s}' is expected", .{ self.formatTypeName(valueTypeOfRef(self, val, src_ty)), self.formatTypeName(dst_ty) });
