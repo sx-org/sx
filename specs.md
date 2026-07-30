@@ -3899,6 +3899,7 @@ represented is never a member and no conversion site needs a second check:
 | `align_of(V) ≤ alignment` | the member needs more alignment than the payload has (the effective value above, not the raw option) |
 | finite size | the member contains the set **by value** at any depth (a field, a nested struct, an array, an optional) |
 | every required method | the member does not declare one |
+| every required method's SIGNATURE | the member answers one at other types — arity, a parameter type, or the return type. The set's declaration states them once, and `Self` there denotes the member (`(self: *Self, other: Self) -> Self` is answered by `(self: *Ok, other: Ok) -> Ok`) |
 | one set per type | a type is already a member of another set |
 
 A member may hold the set behind a **pointer** (`child: *View`) or in a list whose
@@ -3949,10 +3950,11 @@ freeze and the freeze needs the program that evaluation is still writing, the dr
 goes quiet with a bookmark down: that is the expansion deadlock, and sx refuses it
 instead of electing one of the outcomes.
 
-**A member value becomes a set value.** Writing a member where the set is expected
-forms the slot: the member's frozen tag in the tag word, a **copy** of its bytes in
-the payload. It is an ordinary by-value formation — the source is untouched, and
-neither one's later writes reach the other:
+**A member value becomes a set value.** Formation is **type-directed** and
+allocator-free. Writing a member where the set is expected forms the slot: the
+member's frozen tag in the tag word, a **copy** of its bytes in the payload. It is
+an ordinary by-value formation — the source is untouched, and neither one's later
+writes reach the other:
 
 ```sx
 source := Label{ text = "label" };
@@ -3960,7 +3962,33 @@ v: View = source;   // an independent slot carrying Label
 ```
 
 The same coercion applies wherever a set is the expected type: an assignment, an
-argument, a `return`, a field initializer.
+argument, a `return`, a field initializer. `value.(P)` is the **explicit** spelling
+of that same conversion — never required where the expected type already supplies
+`P`, and accepting exactly what formation accepts.
+
+A set value is an ordinary value of its size, so **copying one copies the slot**.
+`b := a` is an independent set value; passing one by value hands the callee its own
+slot. Two set values never share the member they carry, and a dispatched method that
+writes through `self` writes the slot it was called on:
+
+```sx
+a: View = Label{ n = 1 };
+b := a;            // an independent slot
+_ = a.bump(10);    // writes a's payload
+                   // b is untouched
+```
+
+What formation **refuses**:
+
+| Spelling | Why |
+|---|---|
+| `v: View = .{ … }` | a contextual literal names no type, so there is no member to lift |
+| `v: View = Plain{}` | `Plain` never declared itself into `View`; no conversion stands in for a declaration |
+| `v: View = Alien{}` | `Alien` is a member of another set, and a type belongs to one |
+| `value.(View, alloc)` | not a conversion that allocates — the active member lives **inline** in the slot, so there is no allocator to pass and none is invented |
+
+An open set sits outside protocol conversion entirely: there is no `xx`-style
+erasure, no heap box, and no compiler-selected storage anywhere in formation.
 
 **Dispatch.** Calling a required method on a set value dispatches on the tag word.
 Each `(set, method)` pair gets one outlined routine whose switch is **total** over
@@ -4009,6 +4037,40 @@ a generic member's instantiation carries its template's declaration. A type that
 declares itself into no set fails the bound — and so does a member of a *different*
 set, since a type belongs to one. A set takes no type arguments, so a head spelled
 with any names no set.
+
+**`@Init(P)` into a set slot.** A `$I/@Init(T)` parameter accepts an initializer
+whose `write` fills exactly `*T`. Both ways of naming `T` reach a set:
+
+```sx
+store :: (value: $I/@Init(View)) {        // FIXED target: T is the set
+    slot: View = ---;
+    value.write(*slot);                   // a complete slot, either way
+}
+
+store(Label{ text = "x" });               // the member is typed at expected View
+already: View = Panel{};
+store(already);                           // already a View — a plain slot copy
+```
+
+At a **fixed** `@Init(P)` the expression is type-checked at expected `P`, so the
+allocator-free lift is part of giving it that type and the initializer's target is
+`P` — not the member's. When the expression's type already **is** `P`, `write` is a
+plain slot copy of a complete value: no tag recomputation and no size check.
+
+An **open** type argument takes the expression's own type instead, and the set is
+reached afterwards by ordinary expected-type formation:
+
+```sx
+store_as_view :: (value: $I/@Init($V/View)) -> View {
+    item: V = ---;
+    value.write(*item);   // writes exactly *V
+    item                  // returned at expected View: lift + slot copy
+}
+```
+
+There is **no widening arm**: `write` takes exactly `*T` for the init's own type
+argument, so an `@Init(Label)` writes `*Label` and never a `*View`. A set slot is
+written through the set's own initializer.
 
 ### Enum Definition
 

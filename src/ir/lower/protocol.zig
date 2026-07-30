@@ -1024,7 +1024,7 @@ const containsSelf = program_index_mod.typeNodeContainsSelf;
 /// this, `[]Self` would resolve to a real `.slice` named `[]Self` ≠ `[]T` and
 /// the conformance gate would FALSELY reject a correct `[]T` impl (the gap from
 /// the 0178 adversarial review).
-fn resolveProtoTypeSubSelf(self: *Lowering, node: *const Node, concrete_ty: TypeId, proto_src: ?[]const u8) TypeId {
+pub fn resolveProtoTypeSubSelf(self: *Lowering, node: *const Node, concrete_ty: TypeId, proto_src: ?[]const u8) TypeId {
     switch (node.data) {
         .type_expr => |te| {
             if (std.mem.eql(u8, te.name, "Self")) return concrete_ty;
@@ -1172,7 +1172,7 @@ fn typeContainsUnresolved(self: *Lowering, ty: TypeId) bool {
 /// substitute), returns false, so we never flag a shape outside our resolver's
 /// reach. A REAL mismatch between two fully-resolved compounds (e.g. `[]i64` vs
 /// `[]i32`) still has a distinct interned TypeId and IS caught.
-fn typesClearlyDiffer(self: *Lowering, a: TypeId, b: TypeId) bool {
+pub fn typesClearlyDiffer(self: *Lowering, a: TypeId, b: TypeId) bool {
     if (typeContainsUnresolved(self, a) or typeContainsUnresolved(self, b)) return false;
     return a != b;
 }

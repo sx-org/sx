@@ -255,11 +255,8 @@ pub fn admitVariant(
     }
 
     if (!fits(self, sd, set, variant, span, null)) return;
-    if (missingMethod(self, set, variant)) |missing| {
-        if (self.diagnostics) |d| {
-            const id = d.addFmtId(.err, span, "'{s}' cannot be a member of '{s}': it has no '{s}'", .{ sd.name, set_name, missing });
-            d.addHelpFmt(id, span, null, "every member declares every method the set requires; '{s}' is declared on '{s}'", .{ missing, set_name });
-        }
+    if (nonConformance(self, set, variant)) |nc| {
+        reportNonConformance(self, sd, set, variant, nc, span);
         return;
     }
 
@@ -392,20 +389,136 @@ fn containsByValue(self: *Lowering, ty: TypeId, set: TypeId, depth: u32) bool {
     };
 }
 
-/// The first required method `variant` does not declare, or null. A generic
-/// member's methods hang off its instance author, so both lookups are asked —
-/// the requirement is on the member, however it was declared.
-fn missingMethod(self: *Lowering, set: *const Set, variant: TypeId) ?[]const u8 {
+/// How a member fails a required method, or null when it answers every one of
+/// them as the set declared it.
+const NonConformance = struct {
+    method: []const u8,
+    kind: enum { missing, arity, param, ret },
+    detail: []const u8 = "",
+};
+
+/// Does `variant` answer every method the set requires, at the types the set
+/// declared them? Membership is what makes a member dispatchable and what a
+/// membership bound promises, so the signature is part of admission — not
+/// something the first call site discovers.
+///
+/// `Self` in a required method denotes the MEMBER, so it is substituted before
+/// comparing: the set's `(self: *Self, other: Self) -> Self` is answered by
+/// `(self: *Label, other: Label) -> Label`. The receiver is not compared — a
+/// generic member spells it as its template (`self: *Padded`), which only the
+/// instance machinery can resolve.
+///
+/// Comparison is by canonical TypeId and only flags when BOTH sides resolve, so
+/// a signature this cannot fully resolve is never a false refusal.
+fn nonConformance(self: *Lowering, set: *const Set, variant: TypeId) ?NonConformance {
     const inst = self.getStructTypeName(variant);
     for (set.decl.methods) |m| {
         if (m.default_body != null) continue;
-        if (self.plainStructMethod(variant, m.name) != null) continue;
-        if (inst) |name| {
-            if (self.genericInstanceMethod(name, m.name) != null) continue;
-        }
-        return m.name;
+        var bindings: ?*const std.StringHashMap(TypeId) = null;
+        const impl: *const ast.FnDecl = blk: {
+            if (self.plainStructMethod(variant, m.name)) |pm| break :blk pm.fd;
+            if (inst) |name| {
+                if (self.genericInstanceMethod(name, m.name)) |gm| {
+                    // A generic member's method spells the template's parameters
+                    // (`-> $T`); the instantiation is what says what they are, so
+                    // its bindings resolve the signature being admitted.
+                    bindings = gm.bindings;
+                    break :blk gm.fd;
+                }
+            }
+            return .{ .method = m.name, .kind = .missing };
+        };
+        if (signatureFault(self, set, m, impl, variant, bindings)) |nc| return nc;
     }
     return null;
+}
+
+/// The member's implementation of one required method, compared against the
+/// declaration. Returns the first clear fault.
+fn signatureFault(
+    self: *Lowering,
+    set: *const Set,
+    declared: ast.ProtocolMethodDecl,
+    impl: *const ast.FnDecl,
+    variant: TypeId,
+    bindings: ?*const std.StringHashMap(TypeId),
+) ?NonConformance {
+    // The receiver occupies params[0]; everything after it is what the set states.
+    if (impl.params.len == 0) return null;
+    const extra = impl.params[1..];
+    if (extra.len != declared.params.len) {
+        return .{
+            .method = declared.name,
+            .kind = .arity,
+            .detail = std.fmt.allocPrint(self.alloc, "the set declares {d} argument{s} after the receiver, and this takes {d}", .{
+                declared.params.len, if (declared.params.len == 1) "" else "s", extra.len,
+            }) catch "",
+        };
+    }
+    const impl_src = impl.body.source_file;
+    const saved = self.type_bindings;
+    defer self.type_bindings = saved;
+    if (bindings) |b| self.type_bindings = b.*;
+    for (declared.params, extra) |want_node, got| {
+        const want = self.resolveDeclaredTypeSubSelf(want_node, variant, set.source_file);
+        const got_ty = resolveMemberTypeIn(self, impl_src, got.type_expr, bindings != null);
+        if (!self.typesClearlyDiffer(want, got_ty)) continue;
+        return .{
+            .method = declared.name,
+            .kind = .param,
+            .detail = std.fmt.allocPrint(self.alloc, "'{s}' is '{s}', and the set declares '{s}'", .{
+                got.name, self.formatTypeName(got_ty), self.formatTypeName(want),
+            }) catch "",
+        };
+    }
+    const want_ret: TypeId = if (declared.return_type) |rt| self.resolveDeclaredTypeSubSelf(rt, variant, set.source_file) else .void;
+    const got_ret: TypeId = if (impl.return_type) |rt| resolveMemberTypeIn(self, impl_src, rt, bindings != null) else .void;
+    if (self.typesClearlyDiffer(want_ret, got_ret)) {
+        return .{
+            .method = declared.name,
+            .kind = .ret,
+            .detail = std.fmt.allocPrint(self.alloc, "it returns '{s}', and the set declares '{s}'", .{
+                self.formatTypeName(got_ret), self.formatTypeName(want_ret),
+            }) catch "",
+        };
+    }
+    return null;
+}
+
+/// One type in a member's method signature. A generic member's spelling is
+/// resolved against the instantiation's bindings; a plain member's in its own
+/// module, where a module-local type name is visible.
+fn resolveMemberTypeIn(self: *Lowering, src: ?[]const u8, node: *const Node, bound: bool) TypeId {
+    if (!bound) return self.resolveTypeInSource(src, node);
+    const saved = self.current_source_file;
+    defer self.setCurrentSourceFile(saved);
+    self.setCurrentSourceFile(src);
+    return self.resolveTypeWithBindings(node);
+}
+
+fn reportNonConformance(
+    self: *Lowering,
+    sd: *const ast.StructDecl,
+    set: *const Set,
+    variant: TypeId,
+    nc: NonConformance,
+    span: ast.Span,
+) void {
+    const d = self.diagnostics orelse return;
+    const set_name = set.decl.name;
+    if (nc.kind == .missing) {
+        const id = d.addFmtId(.err, span, "'{s}' cannot be a member of '{s}': it has no '{s}'", .{ sd.name, set_name, nc.method });
+        d.addHelpFmt(id, span, null, "every member declares every method the set requires; '{s}' is declared on '{s}'", .{ nc.method, set_name });
+        return;
+    }
+    const spelled = self.formatTypeName(variant);
+    const id = d.addFmtId(.err, span, "'{s}' cannot be a member of '{s}': its '{s}' is not the '{s}' the set declares", .{ spelled, set_name, nc.method, nc.method });
+    d.addHelpFmt(id, span, null, "{s}", .{nc.detail});
+    d.addHelpFmt(id, span, null, "every member answers a required method at the SAME types — the set's declaration states them, and 'Self' there denotes the member ('{s}')", .{spelled});
+    // A generic member is admitted per instantiation: the declaration is not at
+    // fault, since another instantiation may answer correctly.
+    if (!std.mem.eql(u8, spelled, sd.name))
+        d.addHelpFmt(id, span, null, "'{s}' is declared '@OpenVariant({s})'; this instantiation is the one that does not answer", .{ sd.name, set_name });
 }
 
 /// Record every OTHER set this member holds by value. Those edges are what makes
@@ -1017,9 +1130,8 @@ pub fn materializeArms(self: *Lowering) bool {
             const key = ArmKey{ .set = job.set_ty, .member = member, .method = self.module.types.internString(job.method.name) };
             if (self.open_set_arms.contains(key)) continue;
             const before = self.open_set_epoch;
-            const impl = memberMethod(self, member, job.method.name) orelse continue;
-            const usable = armMatchesRequirement(self, job, member, impl);
-            self.open_set_arms.put(key, if (usable) impl.fid else null) catch {};
+            const fid = memberMethod(self, member, job.method.name) orelse continue;
+            self.open_set_arms.put(key, fid) catch {};
             changed = true;
             if (self.open_set_epoch != before) break;
         }
@@ -1027,73 +1139,15 @@ pub fn materializeArms(self: *Lowering) bool {
     return changed;
 }
 
-const MemberImpl = struct { fid: FuncId, fd: *const ast.FnDecl, source: ?[]const u8 };
-
 /// The member's own implementation of `name`, lowered. A member declares its
 /// methods in its own body, so this is the ordinary struct-method lookup — asked
-/// of a plain member and of a generic instance alike.
-fn memberMethod(self: *Lowering, member: TypeId, name: []const u8) ?MemberImpl {
-    if (self.plainStructMethod(member, name)) |m| {
-        return .{ .fid = self.ensurePlainStructMethodLowered(m), .fd = m.fd, .source = m.source };
-    }
+/// of a plain member and of a generic instance alike. Admission already proved the
+/// signature is the one the set declares, so the arm is a direct call.
+fn memberMethod(self: *Lowering, member: TypeId, name: []const u8) ?FuncId {
+    if (self.plainStructMethod(member, name)) |m| return self.ensurePlainStructMethodLowered(m);
     const inst = self.getStructTypeName(member) orelse return null;
-    if (self.genericInstanceMethod(inst, name)) |gm| {
-        const fid = self.ensureGenericInstanceMethodLowered(gm) orelse return null;
-        return .{ .fid = fid, .fd = gm.fd, .source = null };
-    }
+    if (self.genericInstanceMethod(inst, name)) |gm| return self.ensureGenericInstanceMethodLowered(gm);
     return null;
-}
-
-/// Does the member's implementation answer at the types the SET declared? The
-/// routine's signature is the set's statement of the method, and every arm returns
-/// through the same slot — so a member answering at other types is not an arm of
-/// this switch. Refused here, where the arm would otherwise be welded in and the
-/// caller would read the wrong bytes back.
-fn armMatchesRequirement(self: *Lowering, job: PendingDispatch, member: TypeId, impl: MemberImpl) bool {
-    const routine = self.module.functions.items[@intFromEnum(job.fid)];
-    const callee = self.module.functions.items[@intFromEnum(impl.fid)];
-    const skip: usize = if (self.implicit_ctx_enabled) 2 else 1;
-    const want = routine.params[skip..];
-    const got = if (callee.params.len >= skip) callee.params[skip..] else &[_]inst_mod.Function.Param{};
-    if (callee.ret != job.ret) {
-        reportArmMismatch(self, job, member, impl, "it returns '{s}', and '{s}' is declared '{s}'", .{
-            self.formatTypeName(callee.ret), job.method.name, self.formatTypeName(job.ret),
-        });
-        return false;
-    }
-    if (want.len != got.len) {
-        reportArmMismatch(self, job, member, impl, "it takes {d} argument(s), and '{s}' is declared with {d}", .{
-            got.len, job.method.name, want.len,
-        });
-        return false;
-    }
-    for (want, got) |w, g| {
-        if (w.ty == g.ty) continue;
-        reportArmMismatch(self, job, member, impl, "its '{s}' is '{s}', and '{s}' declares '{s}'", .{
-            self.module.types.getString(g.name), self.formatTypeName(g.ty), job.method.name, self.formatTypeName(w.ty),
-        });
-        return false;
-    }
-    return true;
-}
-
-fn reportArmMismatch(
-    self: *Lowering,
-    job: PendingDispatch,
-    member: TypeId,
-    impl: MemberImpl,
-    comptime detail: []const u8,
-    args: anytype,
-) void {
-    const d = self.diagnostics orelse return;
-    const saved = d.current_source_file;
-    defer d.current_source_file = saved;
-    if (impl.source) |src| d.current_source_file = src;
-    const id = d.addFmtId(.err, impl.fd.name_span, "'{s}' does not answer '{s}' as '{s}' requires it", .{
-        self.formatTypeName(member), job.method.name, job.set_name,
-    });
-    d.addHelpFmt(id, impl.fd.name_span, null, detail, args);
-    d.addHelpFmt(id, impl.fd.name_span, null, "every member of a set answers its required methods at the SAME types — the set's declaration states them, and one switch returns through one slot", .{});
 }
 
 /// Write every declared routine's body: a total switch over the frozen tag space,
@@ -1166,7 +1220,7 @@ fn emitDispatchBody(self: *Lowering, job: PendingDispatch) void {
 
 fn emitArm(self: *Lowering, job: PendingDispatch, member: TypeId, recv: Ref, user_base: u32) void {
     const key = ArmKey{ .set = job.set_ty, .member = member, .method = self.module.types.internString(job.method.name) };
-    const callee = (self.open_set_arms.get(key) orelse null) orelse {
+    const callee = self.open_set_arms.get(key) orelse {
         _ = self.builder.emit(.{ .@"unreachable" = {} }, .void);
         return;
     };

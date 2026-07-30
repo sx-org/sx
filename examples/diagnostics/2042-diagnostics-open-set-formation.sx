@@ -1,0 +1,68 @@
+// What forming an open-set value refuses (spec: Open Sets — formation).
+//
+// Formation is type-directed: a MEMBER value where the set is expected becomes a
+// set value. Everything below fails one half of that sentence.
+//
+//   - a contextual literal names no type at all, so there is no member to lift;
+//   - a type that never declared itself into the set is not a member, and no
+//     conversion can stand in for a declaration — including a member of a
+//     DIFFERENT set, since a type belongs to one;
+//   - `.(P, alloc)` does not exist for a set: the active member lives inline in
+//     the slot, so nothing allocates and there is no allocator to pass; and
+//   - `write` takes exactly `*T` for its own type argument. An `@Init(Label)`
+//     writes `*Label` and never a `*View` — there is no widening arm, so a set
+//     slot is written through `@Init(View)` identity.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Elsewhere :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Alien :: @OpenVariant(Elsewhere) {
+    text: string = "";
+    render :: (self: *Alien) -> string => self.text;
+}
+
+Plain :: struct {
+    text: string = "";
+}
+
+// No widening arm: this init's type argument is `Label`, so `write` takes `*Label`.
+into_label :: (value: $I/@Init(Label)) -> string {
+    slot: View = ---;
+    value.write(*slot);
+    slot.render()
+}
+
+main :: () -> i32 {
+    // Not a member, and a member of another set.
+    plain: View = Plain{ text = "not a member" };
+    alien: View = Alien{ text = "another set" };
+    print("{} {}\n", plain.render(), alien.render());
+
+    // A contextual literal, empty and with fields.
+    empty: View = .{};
+    fielded: View = .{ text = "which member?" };
+    print("{} {}\n", empty.render(), fielded.render());
+
+    // The explicit conversion asks the same question.
+    converted := Plain{ text = "no" }.(View);
+    print("{}\n", converted.render());
+
+    // An allocator has nothing to fund here.
+    allocated := Label{ text = "x" }.(View, context.allocator);
+    print("{}\n", allocated.render());
+
+    print("{}\n", into_label(Label{ text = "widen" }));
+    0
+}

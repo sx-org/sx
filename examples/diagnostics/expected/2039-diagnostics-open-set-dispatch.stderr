@@ -1,37 +1,21 @@
 error: 'merge' cannot be dispatched on a 'Fold' value: its signature names a type that no set value has
-  --> examples/diagnostics/2039-diagnostics-open-set-dispatch.sx:37:35
+  --> examples/diagnostics/2039-diagnostics-open-set-dispatch.sx:24:35
    |
-37 |     merge :: (self: *Self, other: Self) -> i64;
+24 |     merge :: (self: *Self, other: Self) -> i64;
    |                                   ^^^^
 
 help: 'Self' in a required method denotes the MEMBER, and a set value is not any one member — call it through a membership bound instead: 'f :: (v: $V/Fold) { v.merge(…); }'
    |
-37 |     merge :: (self: *Self, other: Self) -> i64;
+24 |     merge :: (self: *Self, other: Self) -> i64;
    |                                   ^^^^
 
-error: 'Loud' does not answer 'render' as 'Shown' requires it
-  --> examples/diagnostics/2039-diagnostics-open-set-dispatch.sx:32:5
-   |
-32 |     render :: (self: *Loud) -> i64 => self.n;
-   |     ^^^^^^
-
-help: it returns 'i64', and 'render' is declared 'string'
-   |
-32 |     render :: (self: *Loud) -> i64 => self.n;
-   |     ^^^^^^
-
-help: every member of a set answers its required methods at the SAME types — the set's declaration states them, and one switch returns through one slot
-   |
-32 |     render :: (self: *Loud) -> i64 => self.n;
-   |     ^^^^^^
-
 error: 'name' cannot be called on a 'Empty' value: nothing is a member of 'Empty', so no value of it exists
-  --> examples/diagnostics/2039-diagnostics-open-set-dispatch.sx:47:19
+  --> examples/diagnostics/2039-diagnostics-open-set-dispatch.sx:39:19
    |
-47 |     print("{}\n", e.name());
+39 |     print("{}\n", e.name());
    |                   ^^^^^^
 
 help: a type joins the set by declaring itself into it: 'YourType :: @OpenVariant(Empty) { … }'
    |
-47 |     print("{}\n", e.name());
+39 |     print("{}\n", e.name());
    |                   ^^^^^^

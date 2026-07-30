@@ -199,6 +199,17 @@ pub fn lowerInitWrite(self: *Lowering, target: TypeId, recv: *const Node, args: 
         if (self.diagnostics) |d| {
             const id = d.addFmtId(.err, args[0].span, "'write' needs a '{s}' destination, but this is '{s}'", .{ self.formatTypeName(dest_ty), self.formatTypeName(dest_actual) });
             if (dest_actual == target) d.addHelpFmt(id, args[0].span, null, "take its address with `*` to write into it", .{});
+            // An open set has no widening arm (§5.4): a member's initializer writes
+            // that member, and a set slot is written through the set's own.
+            if (!dest_actual.isBuiltin()) {
+                const pointee = self.module.types.get(dest_actual);
+                if (pointee == .pointer and self.isOpenSet(pointee.pointer.pointee)) {
+                    const set = self.openSetOf(pointee.pointer.pointee).?;
+                    if (self.openSetDeclaresMembership(target, set.decl.name)) {
+                        d.addHelpFmt(id, args[0].span, null, "'{s}' is a member of '{s}', and an initializer writes exactly its own type — take the set's initializer ('$I/@Init({s})') to write a set slot", .{ self.formatTypeName(target), set.decl.name, set.decl.name });
+                    }
+                }
+            }
         }
         return Ref.none;
     }

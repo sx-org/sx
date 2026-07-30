@@ -471,10 +471,8 @@ pub const Lowering = struct {
     open_set_dispatch: std.AutoHashMap(lower_open_set.MethodKey, usize),
     /// Declared routines awaiting their body, in declaration order.
     open_set_pending: std.ArrayList(lower_open_set.PendingDispatch) = .empty,
-    /// The member's own implementation each arm calls, or null when the member
-    /// does not answer the method as the set requires. Being IN the map is the
-    /// decision having been made — which is what keeps the fixpoint finite.
-    open_set_arms: std.AutoHashMap(lower_open_set.ArmKey, ?inst_mod.FuncId),
+    /// The member's own implementation each arm calls.
+    open_set_arms: std.AutoHashMap(lower_open_set.ArmKey, inst_mod.FuncId),
     /// `@BuildBlock` formation sites, in mint order; a per-site implementor type
     /// carries its one-based index as its nominal id.
     block_sites: std.ArrayList(lower_build_block.Site) = .empty,
@@ -1203,7 +1201,7 @@ pub const Lowering = struct {
             .open_set_tags = std.AutoHashMap(mod_mod.Module.OpenSetMember, i64).init(module.alloc),
             .open_set_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
             .open_set_dispatch = std.AutoHashMap(lower_open_set.MethodKey, usize).init(module.alloc),
-            .open_set_arms = std.AutoHashMap(lower_open_set.ArmKey, ?inst_mod.FuncId).init(module.alloc),
+            .open_set_arms = std.AutoHashMap(lower_open_set.ArmKey, inst_mod.FuncId).init(module.alloc),
             .struct_instance_bindings = std.StringHashMap(std.StringHashMap(TypeId)).init(module.alloc),
             .struct_instance_template = std.StringHashMap([]const u8).init(module.alloc),
             .struct_instance_author = std.StringHashMap(*const ast.StructDecl).init(module.alloc),
@@ -3303,6 +3301,11 @@ pub const Lowering = struct {
     pub const lowerOwningErasure = lower_protocol.lowerOwningErasure;
     pub const refuseValuelessProtocol = lower_protocol.refuseValuelessProtocol;
     pub const refuseNonConformer = lower_protocol.refuseNonConformer;
+    /// The declared-signature comparison pair, shared by protocol conformance and
+    /// open-set member admission: both ask whether an implementation answers at
+    /// the types a declaration states, with `Self` standing for the implementor.
+    pub const resolveDeclaredTypeSubSelf = lower_protocol.resolveProtoTypeSubSelf;
+    pub const typesClearlyDiffer = lower_protocol.typesClearlyDiffer;
     pub const protocolKindOf = lower_protocol.protocolKindOf;
     pub const checkComptimeEscape = lower_protocol.checkComptimeEscape;
 

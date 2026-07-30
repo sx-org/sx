@@ -95,6 +95,23 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         }
     }
 
+    // A contextual literal against an OPEN SET target. A set slot's contents are
+    // whichever MEMBER it carries, and a contextual literal names no type at all —
+    // so there is nothing for the expected type to lift (spec: Open Sets —
+    // formation). Refused before the tagged-union arms below, whose "variant"
+    // vocabulary is not the set's.
+    if (sl.type_expr == null and sl.struct_name == null) {
+        if (self.target_type) |target| {
+            if (self.isOpenSet(target)) {
+                if (self.diagnostics) |d| {
+                    const id = d.addFmtId(.err, span, "a contextual literal cannot form a '{s}' value: it names no member", .{self.formatTypeName(target)});
+                    d.addHelpFmt(id, span, null, "a set value is formed FROM a member — name it ('YourMember{{ … }}'), and the expected '{s}' lifts it into the slot", .{self.formatTypeName(target)});
+                }
+                return self.builder.constUndef(target);
+            }
+        }
+    }
+
     // `.{ name = ... }` against a tagged-union target_type. Reject:
     // the only valid construction forms are `.variant(payload)` and
     // `.variant{ field, ... }`. Falling through would lower the
@@ -3744,9 +3761,37 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     break :blk self.lowerOwningErasure(&pc, dst, node.span);
                 }
             }
+            // `value.(P)` on an OPEN SET is the explicit spelling of ordinary set
+            // formation, so it accepts exactly what formation accepts: a member of
+            // that set (or a `P` already). Anything else has nothing to lift, and
+            // an explicit cast must not pass the bytes through as if it did.
+            if (self.isOpenSet(dst)) {
+                const recv_ty = self.inferExprType(pc.operand);
+                if (recv_ty != dst and recv_ty != .unresolved and !self.openSetDeclaresMembership(recv_ty, self.openSetOf(dst).?.decl.name)) {
+                    if (self.diagnostics) |d| {
+                        const id = d.addFmtId(.err, node.span, "'{s}' cannot be converted to '{s}': it is not a member of it", .{ self.formatTypeName(recv_ty), self.formatTypeName(dst) });
+                        if (self.openSetOfMember(recv_ty)) |other| {
+                            d.addHelpFmt(id, node.span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatTypeName(recv_ty), other.decl.name });
+                        } else {
+                            d.addHelpFmt(id, node.span, null, "a type joins by declaring itself into the set: '{s} :: @OpenVariant({s}) {{ … }}'", .{ self.formatTypeName(recv_ty), self.formatTypeName(dst) });
+                        }
+                    }
+                    break :blk self.builder.constUndef(dst);
+                }
+            }
             if (pc.alloc_arg != null) {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, node.span, "an allocator argument only applies to an owning protocol erasure — '.({s}, alloc)' needs a protocol target and a concrete receiver", .{self.formatTypeName(dst)});
+                if (self.diagnostics) |d| {
+                    // An open set is not a protocol conversion at all: the active
+                    // member lives INLINE in the slot, so forming one is ordinary
+                    // value formation and there is nothing an allocator could fund
+                    // (spec: Open Sets — formation).
+                    if (self.isOpenSet(dst)) {
+                        const id = d.addFmtId(.err, node.span, "'.({s}, alloc)' is not a conversion that allocates: '{s}' holds its member inline", .{ self.formatTypeName(dst), self.formatTypeName(dst) });
+                        d.addHelpFmt(id, node.span, null, "forming a set value is ordinary value formation — write '.({s})', or let the expected type form it", .{self.formatTypeName(dst)});
+                    } else {
+                        d.addFmt(.err, node.span, "an allocator argument only applies to an owning protocol erasure — '.({s}, alloc)' needs a protocol target and a concrete receiver", .{self.formatTypeName(dst)});
+                    }
+                }
                 break :blk self.builder.constUndef(dst);
             }
             const saved_target = self.target_type;

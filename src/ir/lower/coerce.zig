@@ -1197,7 +1197,16 @@ pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     if (init_node) |n| if (initIsExplicitCast(n)) return true;
     if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatTypeName(dst_ty), self.formatTypeName(src_ty) });
+        const id = d.addFmtId(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatTypeName(dst_ty), self.formatTypeName(src_ty) });
+        // An open set is formed from a MEMBER, and membership is a declaration —
+        // no conversion can stand in for one (spec: Open Sets).
+        if (self.isOpenSet(dst_ty)) {
+            if (self.openSetOfMember(src_ty)) |other| {
+                d.addHelpFmt(id, span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatTypeName(src_ty), other.decl.name });
+            } else {
+                d.addHelpFmt(id, span, null, "'{s}' is not a member of '{s}' — a type joins by declaring itself into it: '{s} :: @OpenVariant({s}) {{ … }}'", .{ self.formatTypeName(src_ty), self.formatTypeName(dst_ty), self.formatTypeName(src_ty), self.formatTypeName(dst_ty) });
+            }
+        }
         self.assignability_error_count += 1;
     }
     return false;

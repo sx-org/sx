@@ -1,0 +1,11 @@
+local local
+assigned assigned
+argument argument
+return returned
+field field
+explicit explicit
+copy a=11 b=1
+by value 111 then a=11
+init lifted lifted
+init identity identity
+init open open

@@ -1,14 +1,16 @@
-// What set dispatch refuses (spec: Open Sets — dispatch).
+// What set DISPATCH refuses — the two facts that are about the call, not about
+// the member (spec: Open Sets — dispatch).
 //
-// The switch is total over the frozen members, every arm returns through one
-// slot, and each arm hands the member its own storage. Each refusal here is one of
-// those three sentences failing:
+// Whether a member answers a required method correctly is settled at its
+// declaration (examples/diagnostics/2041). What is left here is what only a call
+// site can be wrong about:
 //
-//   - nothing is a member, so no receiver value can exist;
-//   - a member answers the method at other types, so it is not an arm of this
-//     switch;
-//   - the method's signature names `Self`, which denotes the MEMBER — a set value
-//     is not any one member, so there is no caller-side type for it.
+//   - nothing is a member, so no receiver value can exist; and
+//   - the method's signature names `Self` past the receiver. `Self` denotes the
+//     MEMBER, and a set value is not any one member, so there is no caller-side
+//     type for that argument. The method is still perfectly callable through a
+//     membership bound, where `Self` IS a type — which is why this cannot be a
+//     refusal at the member's declaration.
 // Expected: exit 1.
 #import "modules/std.sx";
 
@@ -17,39 +19,29 @@ Empty :: @OpenSet(.{ max = 64 }) {
     name :: (self: *Self) -> string;
 }
 
-Shown :: @OpenSet(.{ max = 64 }) {
-    render :: (self: *Self) -> string;
-}
-
-Good :: @OpenVariant(Shown) {
-    text: string = "";
-    render :: (self: *Good) -> string => self.text;
-}
-
-// Answers at its own types instead of the set's.
-Loud :: @OpenVariant(Shown) {
-    n: i64 = 0;
-    render :: (self: *Loud) -> i64 => self.n;
-}
-
 // A required method whose signature mentions `Self` past the receiver.
 Fold :: @OpenSet(.{ max = 64 }) {
     merge :: (self: *Self, other: Self) -> i64;
 }
 
+// A conforming member: it answers `merge` with `Self` substituted for itself, so
+// admission is satisfied.
 Pair :: @OpenVariant(Fold) {
     n: i64 = 0;
     merge :: (self: *Pair, other: Pair) -> i64 => self.n + other.n;
 }
 
+// The route the refusal names, and it works: through the bound, `Self` is `V`.
+fold :: (a: $V/Fold, b: V) -> i64 => a.merge(b);
+
 main :: () -> i32 {
     e: Empty = ---;
     print("{}\n", e.name());
 
-    s: Shown = Good{ text = "good" };
-    print("{}\n", s.render());
-
     f: Fold = Pair{ n = 1 };
+    // Refused: no caller-side type for `other`.
     print("{}\n", f.merge(Pair{ n = 2 }));
+    // Accepted: the same method through the membership bound.
+    print("{}\n", fold(Pair{ n = 1 }, Pair{ n = 2 }));
     0
 }
