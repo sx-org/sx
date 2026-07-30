@@ -1457,6 +1457,10 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
             return self.builder.emit(.{ .unbox_any = .{ .operand = val } }, dst_ty);
         },
+        // A member value into its set's slot: the tag the freeze numbers plus a
+        // COPY of the member's bytes. An independent slot — the set is an inline
+        // value, so nothing is shared with the source afterwards.
+        .member_to_open_set => return self.coerceMemberToSet(val, src_ty, dst_ty),
         // Box concrete → any. Node-less coercion site: always a spill
         // (the node-aware borrow path is `boxAnyOf` at lowerXX / the
         // variadic pack / the decl-init hooks).

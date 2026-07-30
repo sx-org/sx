@@ -3949,6 +3949,67 @@ freeze and the freeze needs the program that evaluation is still writing, the dr
 goes quiet with a bookmark down: that is the expansion deadlock, and sx refuses it
 instead of electing one of the outcomes.
 
+**A member value becomes a set value.** Writing a member where the set is expected
+forms the slot: the member's frozen tag in the tag word, a **copy** of its bytes in
+the payload. It is an ordinary by-value formation — the source is untouched, and
+neither one's later writes reach the other:
+
+```sx
+source := Label{ text = "label" };
+v: View = source;   // an independent slot carrying Label
+```
+
+The same coercion applies wherever a set is the expected type: an assignment, an
+argument, a `return`, a field initializer.
+
+**Dispatch.** Calling a required method on a set value dispatches on the tag word.
+Each `(set, method)` pair gets one outlined routine whose switch is **total** over
+the frozen tag space — there is no default arm, because the tags *are* the frozen
+members — and whose arms call each member's own method directly, handing it the
+payload's address as its `*Member`:
+
+```sx
+v: View = Panel{ title = "panel" };
+v.render();       // the Panel arm
+v.bump(10);       // writes through `self` into v's own slot
+```
+
+There is no vtable, no boxing, and no indirection through a function pointer. A
+`*P` receiver dispatches through the same routine — it already is the slot's
+address. Because the arm receives that address, a method that writes through `self`
+writes the **receiver's** storage.
+
+A set with exactly **one** member has one tag, so its routine loads no tag and
+branches nowhere: dispatch devirtualizes completely. A set **nothing** is a member
+of has no values at all, so a required-method call on one is refused.
+
+Every member must answer a required method at the types the **set's declaration**
+states — one switch returns through one slot. A member answering at its own types
+is refused where its implementation is written. A required method whose signature
+mentions `Self` past the receiver has no caller-side type on a set value (`Self`
+denotes the member, and a set value is not any one member); call it through the
+membership bound instead.
+
+**The membership bound `$V/P`.** A set is not a protocol and carries no impls, so a
+bound whose head names a set asks the set's own question: **is the binding a
+member?** This is the one head in the bound grammar that is not a conformance
+question.
+
+```sx
+show :: (v: $V/View) -> string => v.render();
+
+show(Label{ text = "label" });   // a member — resolves on Label, monomorphically
+show(slot);                      // the set satisfies its own bound; this dispatches
+```
+
+Inside the body the parameter is the **concrete member**, so calls on it resolve
+monomorphically and the bound is what guarantees the method is there. Membership is
+the member's own declaration, so the answer never depends on when it is asked, and
+a generic member's instantiation carries its template's declaration. A type that
+declares itself into no set fails the bound — and so does a member of a *different*
+set, since a type belongs to one. A set takes no type arguments, so a head spelled
+with any names no set.
+
 ### Enum Definition
 
 ```sx

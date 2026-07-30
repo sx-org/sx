@@ -40,6 +40,7 @@ pub const CoercionResolver = struct {
         optional_to_optional, // ?A → ?B (presence-preserving payload coercion)
         optional_wrap, // concrete → ?T
         erase_protocol, // concrete → protocol value
+        member_to_open_set, // a member VALUE → its open set's inline slot
         int_to_float,
         float_to_int,
         int_to_enum, // int → payload-less enum (through the enum's backing type)
@@ -70,6 +71,15 @@ pub const CoercionResolver = struct {
             const di = self.l.module.types.get(dst_ty);
             if (di == .many_pointer and (di.many_pointer.element == .u8 or di.many_pointer.element == .i8)) {
                 return .string_to_cstring;
+            }
+        }
+        // A member of an open set, where the set is expected: the value goes INTO
+        // the slot — its tag in the tag word, its bytes in the payload. Classified
+        // before the generic aggregate arms, since a set and its member are two
+        // unrelated aggregates as far as those are concerned.
+        if (!dst_ty.isBuiltin() and self.l.isOpenSet(dst_ty)) {
+            if (self.l.openSetOf(dst_ty)) |set| {
+                if (self.l.openSetDeclaresMembership(src_ty, set.decl.name)) return .member_to_open_set;
             }
         }
         if (src_ty == .cstring and dst_ty == .string) return .cstring_to_string_reject;

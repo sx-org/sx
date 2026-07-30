@@ -53,6 +53,8 @@ const inst_mod = @import("../inst.zig");
 const comptime_vm = @import("../comptime_vm.zig");
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
+const Ref = inst_mod.Ref;
+const FuncId = inst_mod.FuncId;
 
 /// The tag word: the shipped payload-enum tag type, so dispatch and layout reuse
 /// the tagged-union machinery unchanged.
@@ -641,6 +643,9 @@ pub fn freezeSets(self: *Lowering) void {
         emitTypeIdTable(self, set);
     }
     publish(self);
+    // The routines every call site already calls: their switch is total over the
+    // numbering just assigned, and every arm's callee was lowered in the fixpoint.
+    emitDispatchBodies(self);
 }
 
 /// The declared sets, ordered by name, so the tables emit in an order the
@@ -749,4 +754,442 @@ fn firstSetName(self: *Lowering, measured: TypeId) ?[]const u8 {
         if (best == null or std.mem.order(u8, name, best.?) == .lt) best = name;
     }
     return best;
+}
+
+// ── Membership as the declarations state it ──────────────────────────────
+
+/// Is `ty` a member of the set named `set_name`? Membership IS the member's
+/// declaration (spec: Open Sets), so the question is answered from the
+/// declarations rather than from the admitted list: an ADMITTED type is a member,
+/// and so is one whose declaration joins the set but whose admission has not run
+/// yet. That keeps the answer independent of when it is asked — there is no point
+/// at which a declared member reads as a non-member and a later pass contradicts
+/// it.
+pub fn declaresMembership(self: *Lowering, ty: TypeId, set_name: []const u8) bool {
+    if (self.open_variant_of.get(ty)) |joined| return std.mem.eql(u8, joined, set_name);
+    const decl = memberDecl(self, ty) orelse return false;
+    const joined = decl.open_variant_of orelse return false;
+    return std.mem.eql(u8, joined, set_name);
+}
+
+/// The struct declaration `ty` was written as — its own, or the template a
+/// generic instance was stamped from.
+fn memberDecl(self: *Lowering, ty: TypeId) ?*const ast.StructDecl {
+    const name = self.getStructTypeName(ty) orelse return null;
+    if (self.struct_instance_author.get(name)) |author| return author;
+    if (self.plain_struct_authors.get(ty)) |author| return author.decl;
+    return null;
+}
+
+/// The set `member` joins, when it joins one.
+pub fn setOfMember(self: *Lowering, member: TypeId) ?*Set {
+    if (self.open_variant_of.get(member)) |name| return self.open_sets.getPtr(name);
+    const decl = memberDecl(self, member) orelse return null;
+    const joined = decl.open_variant_of orelse return null;
+    return self.open_sets.getPtr(joined);
+}
+
+/// The set's required method of that name, or null when the set does not require
+/// one. A method with a default body is not dispatched through the set — nothing
+/// in this packet declares one.
+pub fn requiredMethod(set: *const Set, name: []const u8) ?ast.ProtocolMethodDecl {
+    for (set.decl.methods) |m| {
+        if (std.mem.eql(u8, m.name, name)) return m;
+    }
+    return null;
+}
+
+// ── Formation: a member value becomes a set value ────────────────────────
+
+/// Write `value` into the set slot `slot` points at: the member's tag in the tag
+/// word, the member's bytes in the payload. The payload is addressed through the
+/// backing shape, so the member lands exactly where the layout promised.
+pub fn writeMemberInto(self: *Lowering, slot: Ref, value: Ref, member_ty: TypeId, set_ty: TypeId) void {
+    const table = &self.module.types;
+    const tag_ptr = self.builder.structGepTyped(slot, 0, table.ptrTo(tag_type), set_ty);
+    self.builder.store(tag_ptr, self.builder.emit(.{ .open_set_tag_of = .{ .set = set_ty, .member = member_ty } }, tag_type));
+    self.builder.store(payloadAddress(self, slot, set_ty, member_ty), value);
+}
+
+/// The active member's storage inside the slot, typed as that member.
+fn payloadAddress(self: *Lowering, slot: Ref, set_ty: TypeId, member_ty: TypeId) Ref {
+    const table = &self.module.types;
+    const info = table.get(set_ty).tagged_union;
+    const payload_ty = table.get(info.backing_type.?).@"struct".fields[1].ty;
+    const bytes = self.builder.structGepTyped(slot, 1, table.ptrTo(payload_ty), set_ty);
+    const want = table.ptrTo(member_ty);
+    return self.builder.emit(.{ .bitcast = .{
+        .operand = bytes,
+        .from = table.ptrTo(payload_ty),
+        .to = want,
+    } }, want);
+}
+
+/// A member VALUE where the set is expected: an independent slot holding this
+/// member's tag and a copy of its bytes. The set is an inline slot, so this is a
+/// by-value formation — the source is untouched and later writes through either
+/// one do not reach the other.
+pub fn coerceMemberToSet(self: *Lowering, value: Ref, member_ty: TypeId, set_ty: TypeId) Ref {
+    const slot = self.builder.alloca(set_ty);
+    writeMemberInto(self, slot, value, member_ty, set_ty);
+    return self.builder.load(slot, set_ty);
+}
+
+// ── Dispatch ────────────────────────────────────────────────────────────
+
+/// One outlined dispatch routine: `__sx_set_<P>_<m>(v: *P, args…) -> ret`.
+/// Declared at the first call site — its FuncId is what the site calls — and
+/// BODIED at the freeze, where the member set is final and the tags are numbered.
+pub const PendingDispatch = struct {
+    set_name: []const u8,
+    set_ty: TypeId,
+    method: ast.ProtocolMethodDecl,
+    fid: FuncId,
+    ret: TypeId,
+    /// The first site that called it, for the diagnostic a memberless set earns.
+    site: ast.Span,
+    source_file: ?[]const u8,
+};
+
+pub const MethodKey = struct { set: TypeId, method: types.StringId };
+pub const ArmKey = struct { set: TypeId, member: TypeId, method: types.StringId };
+
+/// Call a required method on a set value: one call into the set's outlined
+/// routine, which switches on the tag. `recv_addr` is the slot's address — the
+/// arm hands it to the member's own method as `*Member`, so a method that writes
+/// through `self` writes into this very slot.
+pub fn emitDispatch(
+    self: *Lowering,
+    recv_addr: Ref,
+    set: *Set,
+    method: ast.ProtocolMethodDecl,
+    args: []const Ref,
+    span: ast.Span,
+) Ref {
+    const job = dispatchRoutine(self, set, method, span) orelse return Ref.none;
+    if (args.len != method.params.len) {
+        if (self.diagnostics) |d| {
+            const s: []const u8 = if (method.params.len == 1) "" else "s";
+            const verb: []const u8 = if (args.len == 1) "was" else "were";
+            d.addFmt(.err, span, "'{s}' expects {d} argument{s}, but {d} {s} given", .{ method.name, method.params.len, s, args.len, verb });
+        }
+        return self.builder.constUndef(job.ret);
+    }
+    var call_args = std.ArrayList(Ref).empty;
+    defer call_args.deinit(self.alloc);
+    if (self.implicit_ctx_enabled) call_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
+    call_args.append(self.alloc, recv_addr) catch unreachable;
+    const params = self.module.functions.items[@intFromEnum(job.fid)].params;
+    const first_user: usize = if (self.implicit_ctx_enabled) 2 else 1;
+    for (args, 0..) |a, i| {
+        const want = if (first_user + i < params.len) params[first_user + i].ty else self.builder.getRefType(a);
+        call_args.append(self.alloc, self.coerceToType(a, self.builder.getRefType(a), want)) catch unreachable;
+    }
+    const owned = self.alloc.dupe(Ref, call_args.items) catch unreachable;
+    return self.builder.call(job.fid, owned, job.ret);
+}
+
+/// The routine for one (set, method), created once. Its signature comes from the
+/// SET's declaration — the one statement of what the method is — so every member
+/// answers at the same types whatever its own body says.
+fn dispatchRoutine(self: *Lowering, set: *Set, method: ast.ProtocolMethodDecl, span: ast.Span) ?PendingDispatch {
+    const key = MethodKey{ .set = set.ty, .method = self.module.types.internString(method.name) };
+    if (self.open_set_dispatch.get(key)) |at| return self.open_set_pending.items[at];
+    const saved = self.current_source_file;
+    defer self.setCurrentSourceFile(saved);
+    self.setCurrentSourceFile(set.source_file);
+
+    const void_ptr = self.module.types.ptrTo(.void);
+    var params = std.ArrayList(inst_mod.Function.Param).empty;
+    defer params.deinit(self.alloc);
+    if (self.implicit_ctx_enabled)
+        params.append(self.alloc, .{ .name = self.module.types.internString("__sx_ctx"), .ty = void_ptr }) catch unreachable;
+    params.append(self.alloc, .{
+        .name = self.module.types.internString("v"),
+        .ty = self.module.types.ptrTo(set.ty),
+    }) catch unreachable;
+    for (method.params, 0..) |pnode, i| {
+        if (spellsSelf(pnode, 0)) {
+            refuseUndispatchable(self, set, method, pnode.span);
+            return null;
+        }
+        const pty = self.resolveTypeWithBindings(pnode);
+        if (pty == .unresolved) {
+            refuseUndispatchable(self, set, method, pnode.span);
+            return null;
+        }
+        const pname = if (i < method.param_names.len) method.param_names[i] else "a";
+        params.append(self.alloc, .{ .name = self.module.types.internString(pname), .ty = pty }) catch unreachable;
+    }
+    const ret: TypeId = if (method.return_type) |rt| blk: {
+        if (spellsSelf(rt, 0)) {
+            refuseUndispatchable(self, set, method, rt.span);
+            return null;
+        }
+        const rty = self.resolveTypeWithBindings(rt);
+        if (rty == .unresolved) {
+            refuseUndispatchable(self, set, method, rt.span);
+            return null;
+        }
+        break :blk rty;
+    } else .void;
+
+    const fname = std.fmt.allocPrint(self.alloc, "__sx_set_{s}_{s}", .{ symbolName(self, set), method.name }) catch return null;
+    var func = inst_mod.Function.init(
+        self.module.types.internString(fname),
+        self.alloc.dupe(inst_mod.Function.Param, params.items) catch return null,
+        ret,
+    );
+    func.has_implicit_ctx = self.implicit_ctx_enabled;
+    const fid = self.module.addFunction(func);
+    self.open_set_dispatch.put(key, self.open_set_pending.items.len) catch {};
+    const job = PendingDispatch{
+        .set_name = set.decl.name,
+        .set_ty = set.ty,
+        .method = method,
+        .fid = fid,
+        .ret = ret,
+        .site = span,
+        .source_file = saved,
+    };
+    self.open_set_pending.append(self.alloc, job) catch {};
+    return job;
+}
+
+/// Does this type expression name `Self` anywhere? `Self` in a required method
+/// denotes the MEMBER, so a signature mentioning it has no caller-side type on a
+/// set value — whatever composite it is written under.
+fn spellsSelf(node: *const Node, depth: u8) bool {
+    if (depth > 8) return false;
+    return switch (node.data) {
+        .type_expr => |te| std.mem.eql(u8, te.name, "Self"),
+        .pointer_type_expr => |p| spellsSelf(p.pointee_type, depth + 1),
+        .many_pointer_type_expr => |p| spellsSelf(p.element_type, depth + 1),
+        .optional_type_expr => |o| spellsSelf(o.inner_type, depth + 1),
+        .slice_type_expr => |sl| spellsSelf(sl.element_type, depth + 1),
+        .array_type_expr => |a| spellsSelf(a.element_type, depth + 1),
+        .parameterized_type_expr => |pte| blk: {
+            if (std.mem.eql(u8, pte.name, "Self")) break :blk true;
+            for (pte.args) |a| {
+                if (spellsSelf(a, depth + 1)) break :blk true;
+            }
+            break :blk false;
+        },
+        else => false,
+    };
+}
+
+/// A required method whose signature has no caller-side type on a set value —
+/// `Self` past the receiver names the MEMBER, and a set value is not any one
+/// member. The generic bound is where `Self` is a type.
+fn refuseUndispatchable(self: *Lowering, set: *const Set, method: ast.ProtocolMethodDecl, span: ast.Span) void {
+    const d = self.diagnostics orelse return;
+    const before = d.items.items.len;
+    const id = d.addFmtId(.err, span, "'{s}' cannot be dispatched on a '{s}' value: its signature names a type that no set value has", .{ method.name, set.decl.name });
+    // Every call site asks again; the refusal deduplicates, and the help belongs to
+    // the one that stands.
+    if (d.items.items.len == before) return;
+    d.addHelpFmt(id, span, null, "'Self' in a required method denotes the MEMBER, and a set value is not any one member — call it through a membership bound instead: 'f :: (v: $V/{s}) {{ v.{s}(…); }}'", .{ set.decl.name, method.name });
+}
+
+/// The set's name, sanitized for a symbol.
+fn symbolName(self: *Lowering, set: *const Set) []const u8 {
+    const out = self.alloc.dupe(u8, set.decl.name) catch return "set";
+    for (out) |*ch| {
+        if (!std.ascii.isAlphanumeric(ch.*) and ch.* != '_') ch.* = '_';
+    }
+    return out;
+}
+
+/// Lower every member's implementation of every called method, so the arms exist
+/// before the tags are numbered. Returns true when doing so grew anything — the
+/// convergence fixpoint's signal to run another round, since lowering a member's
+/// method can instantiate a generic member of this or another set.
+pub fn materializeArms(self: *Lowering) bool {
+    var changed = false;
+    var i: usize = 0;
+    while (i < self.open_set_pending.items.len) : (i += 1) {
+        const job = self.open_set_pending.items[i];
+        const set = self.open_sets.getPtr(job.set_name) orelse continue;
+        var m: usize = 0;
+        while (m < set.members.items.len) : (m += 1) {
+            const member = set.members.items[m];
+            const key = ArmKey{ .set = job.set_ty, .member = member, .method = self.module.types.internString(job.method.name) };
+            if (self.open_set_arms.contains(key)) continue;
+            const before = self.open_set_epoch;
+            const impl = memberMethod(self, member, job.method.name) orelse continue;
+            const usable = armMatchesRequirement(self, job, member, impl);
+            self.open_set_arms.put(key, if (usable) impl.fid else null) catch {};
+            changed = true;
+            if (self.open_set_epoch != before) break;
+        }
+    }
+    return changed;
+}
+
+const MemberImpl = struct { fid: FuncId, fd: *const ast.FnDecl, source: ?[]const u8 };
+
+/// The member's own implementation of `name`, lowered. A member declares its
+/// methods in its own body, so this is the ordinary struct-method lookup — asked
+/// of a plain member and of a generic instance alike.
+fn memberMethod(self: *Lowering, member: TypeId, name: []const u8) ?MemberImpl {
+    if (self.plainStructMethod(member, name)) |m| {
+        return .{ .fid = self.ensurePlainStructMethodLowered(m), .fd = m.fd, .source = m.source };
+    }
+    const inst = self.getStructTypeName(member) orelse return null;
+    if (self.genericInstanceMethod(inst, name)) |gm| {
+        const fid = self.ensureGenericInstanceMethodLowered(gm) orelse return null;
+        return .{ .fid = fid, .fd = gm.fd, .source = null };
+    }
+    return null;
+}
+
+/// Does the member's implementation answer at the types the SET declared? The
+/// routine's signature is the set's statement of the method, and every arm returns
+/// through the same slot — so a member answering at other types is not an arm of
+/// this switch. Refused here, where the arm would otherwise be welded in and the
+/// caller would read the wrong bytes back.
+fn armMatchesRequirement(self: *Lowering, job: PendingDispatch, member: TypeId, impl: MemberImpl) bool {
+    const routine = self.module.functions.items[@intFromEnum(job.fid)];
+    const callee = self.module.functions.items[@intFromEnum(impl.fid)];
+    const skip: usize = if (self.implicit_ctx_enabled) 2 else 1;
+    const want = routine.params[skip..];
+    const got = if (callee.params.len >= skip) callee.params[skip..] else &[_]inst_mod.Function.Param{};
+    if (callee.ret != job.ret) {
+        reportArmMismatch(self, job, member, impl, "it returns '{s}', and '{s}' is declared '{s}'", .{
+            self.formatTypeName(callee.ret), job.method.name, self.formatTypeName(job.ret),
+        });
+        return false;
+    }
+    if (want.len != got.len) {
+        reportArmMismatch(self, job, member, impl, "it takes {d} argument(s), and '{s}' is declared with {d}", .{
+            got.len, job.method.name, want.len,
+        });
+        return false;
+    }
+    for (want, got) |w, g| {
+        if (w.ty == g.ty) continue;
+        reportArmMismatch(self, job, member, impl, "its '{s}' is '{s}', and '{s}' declares '{s}'", .{
+            self.module.types.getString(g.name), self.formatTypeName(g.ty), job.method.name, self.formatTypeName(w.ty),
+        });
+        return false;
+    }
+    return true;
+}
+
+fn reportArmMismatch(
+    self: *Lowering,
+    job: PendingDispatch,
+    member: TypeId,
+    impl: MemberImpl,
+    comptime detail: []const u8,
+    args: anytype,
+) void {
+    const d = self.diagnostics orelse return;
+    const saved = d.current_source_file;
+    defer d.current_source_file = saved;
+    if (impl.source) |src| d.current_source_file = src;
+    const id = d.addFmtId(.err, impl.fd.name_span, "'{s}' does not answer '{s}' as '{s}' requires it", .{
+        self.formatTypeName(member), job.method.name, job.set_name,
+    });
+    d.addHelpFmt(id, impl.fd.name_span, null, detail, args);
+    d.addHelpFmt(id, impl.fd.name_span, null, "every member of a set answers its required methods at the SAME types — the set's declaration states them, and one switch returns through one slot", .{});
+}
+
+/// Write every declared routine's body: a total switch over the frozen tag space,
+/// each arm a direct call to that member's own method through the payload. The
+/// switch is total by construction — the tags ARE the frozen members — so the
+/// default arm is unreachable rather than a fallback. A single-member set has no
+/// switch at all: the call devirtualizes completely.
+pub fn emitDispatchBodies(self: *Lowering) void {
+    for (self.open_set_pending.items) |job| emitDispatchBody(self, job);
+}
+
+fn emitDispatchBody(self: *Lowering, job: PendingDispatch) void {
+    const set = self.open_sets.getPtr(job.set_name) orelse return;
+    if (set.members.items.len == 0) {
+        refuseMemberlessDispatch(self, job);
+        return;
+    }
+    const saved_func = self.builder.func;
+    const saved_block = self.builder.current_block;
+    const saved_counter = self.builder.inst_counter;
+    const saved_ctx = self.current_ctx_ref;
+    defer {
+        self.builder.func = saved_func;
+        self.builder.current_block = saved_block;
+        self.builder.inst_counter = saved_counter;
+        self.current_ctx_ref = saved_ctx;
+    }
+
+    const has_ctx = self.implicit_ctx_enabled;
+    const nparams = self.module.functions.items[@intFromEnum(job.fid)].params.len;
+    self.builder.func = job.fid;
+    self.builder.inst_counter = @intCast(nparams);
+    if (has_ctx) self.current_ctx_ref = Ref.fromIndex(0);
+    const entry = self.builder.appendBlock(self.module.types.internString("entry"), &.{});
+    self.builder.switchToBlock(entry);
+
+    const recv = Ref.fromIndex(if (has_ctx) 1 else 0);
+    const user_base: u32 = if (has_ctx) 2 else 1;
+
+    if (set.members.items.len == 1) {
+        emitArm(self, job, set.members.items[0], recv, user_base);
+        self.builder.finalize();
+        return;
+    }
+
+    const tag_ptr = self.builder.structGepTyped(recv, 0, self.module.types.ptrTo(tag_type), job.set_ty);
+    const tag = self.builder.load(tag_ptr, tag_type);
+    var cases = std.ArrayList(inst_mod.SwitchBranch.Case).empty;
+    defer cases.deinit(self.alloc);
+    var arms = std.ArrayList(inst_mod.BlockId).empty;
+    defer arms.deinit(self.alloc);
+    for (set.members.items) |member| {
+        const b = self.freshBlock("set.arm");
+        arms.append(self.alloc, b) catch unreachable;
+        const value = self.open_set_tags.get(.{ .set = job.set_ty, .member = member }) orelse 0;
+        cases.append(self.alloc, .{ .value = @intCast(value), .target = b, .args = &.{} }) catch unreachable;
+    }
+    const unr = self.freshBlock("set.unr");
+    self.builder.switchBr(tag, cases.items, unr, &.{});
+    for (set.members.items, 0..) |member, i| {
+        self.builder.switchToBlock(arms.items[i]);
+        emitArm(self, job, member, recv, user_base);
+    }
+    // Total over the frozen tag space: every tag a value can carry has an arm,
+    // so this block is reached by no tag the program can produce.
+    self.builder.switchToBlock(unr);
+    _ = self.builder.emit(.{ .@"unreachable" = {} }, .void);
+    self.builder.finalize();
+}
+
+fn emitArm(self: *Lowering, job: PendingDispatch, member: TypeId, recv: Ref, user_base: u32) void {
+    const key = ArmKey{ .set = job.set_ty, .member = member, .method = self.module.types.internString(job.method.name) };
+    const callee = (self.open_set_arms.get(key) orelse null) orelse {
+        _ = self.builder.emit(.{ .@"unreachable" = {} }, .void);
+        return;
+    };
+    const self_ptr = payloadAddress(self, recv, job.set_ty, member);
+    var call_args = std.ArrayList(Ref).empty;
+    defer call_args.deinit(self.alloc);
+    if (self.implicit_ctx_enabled) call_args.append(self.alloc, self.current_ctx_ref) catch unreachable;
+    call_args.append(self.alloc, self_ptr) catch unreachable;
+    for (job.method.params, 0..) |_, i| {
+        call_args.append(self.alloc, Ref.fromIndex(@intCast(user_base + i))) catch unreachable;
+    }
+    const owned = self.alloc.dupe(Ref, call_args.items) catch unreachable;
+    const result = self.builder.call(callee, owned, job.ret);
+    if (job.ret == .void) self.builder.retVoid() else self.builder.ret(result, job.ret);
+}
+
+/// A required method was called on a set nothing is a member of. No value of that
+/// set can exist, so there is no receiver the call could have had.
+fn refuseMemberlessDispatch(self: *Lowering, job: PendingDispatch) void {
+    const d = self.diagnostics orelse return;
+    const saved = d.current_source_file;
+    defer d.current_source_file = saved;
+    if (job.source_file) |src| d.current_source_file = src;
+    const id = d.addFmtId(.err, job.site, "'{s}' cannot be called on a '{s}' value: nothing is a member of '{s}', so no value of it exists", .{ job.method.name, job.set_name, job.set_name });
+    d.addHelpFmt(id, job.site, null, "a type joins the set by declaring itself into it: 'YourType :: @OpenVariant({s}) {{ … }}'", .{job.set_name});
 }

@@ -26,6 +26,7 @@ const GlobalSet = ir_inst.GlobalSet;
 const TaggedTypeId = ir_inst.TaggedTypeId;
 const TagOf = ir_inst.TagOf;
 const SetLayoutOf = ir_inst.SetLayoutOf;
+const SetMemberOf = ir_inst.SetMemberOf;
 const FuncId = ir_inst.FuncId;
 const Call = ir_inst.Call;
 const CallIndirect = ir_inst.CallIndirect;
@@ -174,6 +175,17 @@ pub const Ops = struct {
             .alignment => @intCast(table.typeAlignBytes(q.measured)),
         };
         self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, @bitCast(value), 0));
+    }
+
+    /// The member's tag inside its set: the one place a literal set tag exists.
+    /// The IR carries the pair and the freeze's numbering resolves it here.
+    pub fn emitOpenSetTagOf(self: Ops, t: SetMemberOf) void {
+        const tag = self.e.ir_mod.open_set_tags.get(.{ .set = t.set, .member = t.member }) orelse
+            std.debug.panic("emitOpenSetTagOf: '{s}' has no tag in '{s}' — a type that is not a member of the frozen set has no tag", .{
+                self.e.ir_mod.types.typeName(t.member),
+                self.e.ir_mod.types.typeName(t.set),
+            });
+        self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, @bitCast(tag), 0));
     }
 
     /// The soft probe's answer: being in the converged numbering IS being in

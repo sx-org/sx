@@ -1191,6 +1191,9 @@ pub fn convergeTaggedSets(self: *Lowering) void {
             if (materializeArms(self, job.proto, job.pd, job.method)) changed = true;
             pending = self.tagged_pending.items;
         }
+        // Lowering a member's implementation of a dispatched method is itself a
+        // driver: it can instantiate a generic member, of this set or another.
+        if (self.materializeOpenSetArms()) changed = true;
         // Open sets join the same fixpoint: monomorphizing an impl body can
         // instantiate a generic member, which grows a set — and the cascade can
         // grow the sets that hold it. A round that moved an epoch is a round that

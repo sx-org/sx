@@ -1,0 +1,92 @@
+// Calling a required method on an open-set value dispatches on its TAG (spec:
+// Open Sets — dispatch).
+//
+// A member value written where the set is expected forms the slot: the member's
+// frozen tag in the tag word, a COPY of its bytes in the payload. The call then
+// goes through one outlined routine per (set, method) — a total switch over the
+// frozen tag space whose arms call each member's own method directly, handing it
+// its own storage inside the slot. There is no vtable, no boxing, and no
+// indirection through a function pointer.
+//
+// Because the arm receives the payload's address, a method that writes through
+// `self` writes the RECEIVER's slot — and the source the slot was formed from is
+// untouched, because the slot is an independent value.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 256, align = 8 }) {
+    render :: (self: *Self) -> string;
+    bump :: (self: *Self, by: i64) -> i64;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    n: i64 = 0;
+    render :: (self: *Label) -> string => self.text;
+    bump :: (self: *Label, by: i64) -> i64 {
+        self.n = self.n + by;
+        return self.n;
+    }
+}
+
+Panel :: @OpenVariant(View) {
+    title: string = "";
+    w: i64 = 0;
+    n: i64 = 0;
+    render :: (self: *Panel) -> string => self.title;
+    bump :: (self: *Panel, by: i64) -> i64 {
+        self.n = self.n + by * 2;
+        return self.n;
+    }
+}
+
+// A generic member is a member per instantiation, and each instantiation is its
+// own arm with its own tag.
+Padded :: @OpenVariant(View) ($T: Type) {
+    inner: $T = ---;
+    n: i64 = 0;
+    render :: (self: *Padded) -> string => "padded";
+    bump :: (self: *Padded, by: i64) -> i64 {
+        self.n = self.n + by * 3;
+        return self.n;
+    }
+}
+
+// The set as a parameter: the value is passed as any aggregate of its size is,
+// and the callee dispatches on the tag it carries.
+describe :: (v: View) -> string => v.render();
+
+// A `*P` receiver dispatches through the same routine — it IS the slot address.
+tick :: (v: *View) -> i64 => v.bump(1);
+
+main :: () -> i32 {
+    source := Label{ text = "label", n = 1 };
+    // Formation: the member's bytes are copied into an independent slot.
+    v: View = source;
+    print("label {} {} {}\n", v.render(), v.bump(10), v.bump(10));
+    // The slot was mutated twice; the value it was formed from was not.
+    print("source {}\n", source.n);
+
+    p: View = Panel{ title = "panel", w = 2, n = 100 };
+    q: View = Padded(i64){ inner = 5, n = 1000 };
+    print("panel {} {}\n", p.render(), p.bump(10));
+    print("padded {} {}\n", q.render(), q.bump(10));
+
+    // Every arm reached through one parameter, and through a pointer.
+    print("passed {} {} {}\n", describe(v), describe(p), describe(q));
+    print("ticked {} {} {}\n", tick(*v), tick(*p), tick(*q));
+
+    // Reassignment forms the slot again — a different member, a different tag.
+    v = Panel{ title = "now a panel", n = 7 };
+    print("reassigned {} {}\n", v.render(), v.bump(10));
+    0
+}
+
+// ** stdout **
+// label label 11 21
+// source 1
+// panel panel 120
+// padded padded 1030
+// passed label panel padded
+// ticked 22 122 1033
+// reassigned now a panel 27
+//

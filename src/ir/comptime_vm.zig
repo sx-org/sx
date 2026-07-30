@@ -921,6 +921,19 @@ pub const Vm = struct {
                 if (settledSetLayout(module, q)) |v| return .{ .value = @bitCast(v) };
                 return self.failFmt("comptime VM: the layout of '{s}' is not final — an open set's members are declared anywhere in the program, so its size exists only once they all are", .{module.types.typeName(q.measured)});
             },
+            // A member's tag: the dense numbering is assigned at the freeze, and
+            // a late member RENUMBERS the space, so unlike a conformer's type
+            // word there is nothing symbolic to answer with beforehand.
+            .open_set_tag_of => |t| {
+                const module = self.module orelse return self.failMsg("comptime VM: an open set's tag needs a module");
+                if (!module.open_sets_final)
+                    _ = self.awaitFact(.{ .kind = .set_layout, .routine = if (self.call_stack.items.len > 0) self.call_stack.items[self.call_stack.items.len - 1] else @as(FuncId, @enumFromInt(0)), .concrete = t.set });
+                if (!module.open_sets_final)
+                    return self.failFmt("comptime VM: the tags of '{s}' are not numbered yet — an open set's tag space is assigned when the sets freeze, and a member admitted later renumbers it", .{module.types.typeName(t.set)});
+                const tag = module.open_set_tags.get(.{ .set = t.set, .member = t.member }) orelse
+                    return self.failFmt("comptime VM: '{s}' has no tag in '{s}'", .{ module.types.typeName(t.member), module.types.typeName(t.set) });
+                return .{ .value = @bitCast(tag) };
+            },
 
             // ── Arithmetic ──────────────────────────────────────
             .add, .sub, .mul, .div, .mod => |b| return .{
@@ -3223,7 +3236,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         // share the same two-8-byte-field layout.
         if (sty == .string or sty == .any or (!sty.isBuiltin() and table.get(sty) == .slice))
             return if (idx == 0) 0 else 8;
-        const fields = table.get(sty).@"struct".fields;
+        const fields = structFields(table, sty);
         var off: usize = 0;
         for (fields, 0..) |f, i| {
             off = std.mem.alignForward(usize, off, table.typeAlignBytes(f.ty));
@@ -3231,6 +3244,18 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             off += table.typeSizeBytes(f.ty);
         }
         return @intCast(off);
+    }
+
+    /// The fields a field access reads offsets from. A type that STATES its
+    /// backing shape — an open set's `{tag, payload}` — is accessed through that
+    /// shape, the same one the backend lowers it as, so both worlds put the tag and
+    /// the payload at the same offsets.
+    fn structFields(table: *const types.TypeTable, sty: TypeId) []const types.TypeInfo.StructInfo.Field {
+        const info = table.get(sty);
+        if (info == .tagged_union) {
+            if (info.tagged_union.backing_type) |bt| return table.get(bt).@"struct".fields;
+        }
+        return info.@"struct".fields;
     }
 
     /// The struct type a `FieldAccess` operates on: the explicit `base_type` when

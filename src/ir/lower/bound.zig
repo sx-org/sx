@@ -14,6 +14,11 @@
 //!   - a COMPILER-FORMED contract (`@Init`, `@BuildBlock`). There is no
 //!     declaration to check: the binder holds what formation produced at the
 //!     argument, and the check is that it did.
+//!   - an OPEN SET. The deliberate narrow exception to the scheme above: a set is
+//!     not a protocol and carries no impls, so `$V/View` asks a different
+//!     question — is the binding a MEMBER of that set? Membership is the member's
+//!     own declaration, so the answer is read off the declarations and never
+//!     depends on when it is asked.
 //!
 //! An unresolved head is an ordinary unknown-name error. There is no tolerated
 //! middle state: a bound that names nothing constrains nothing, which is the one
@@ -45,6 +50,8 @@ pub const Head = union(enum) {
     /// declaration to check against — satisfaction is decided by formation at
     /// the argument, not by an impl.
     formed: []const u8,
+    /// A declared open set. The bound asks for MEMBERSHIP, not conformance.
+    open_set: struct { ty: TypeId, name: []const u8 },
     /// Names nothing in scope.
     unknown: []const u8,
 };
@@ -74,6 +81,7 @@ pub fn resolveHead(
     if (self.protocolResolver().resolveProtocol(name, source)) |p| {
         return .{ .protocol = .{ .ty = p.ty, .name = name, .params = p.decl.type_params.len } };
     }
+    if (self.open_sets.getPtr(name)) |set| return .{ .open_set = .{ .ty = set.ty, .name = name } };
     return .{ .unknown = name };
 }
 
@@ -105,6 +113,7 @@ pub fn checkBindings(
                 // question is asked here against that binding.
                 .type_param => |sibling| checkAgainstSibling(self, bound, sibling, tp.name, bound_ty, bindings),
                 .unknown => |name| reportUnknownHead(self, bound, name, tp.name),
+                .open_set => |set| checkMember(self, bound, set, tp.name, bound_ty),
                 .protocol => |p| checkOne(self, bound, p, tp.name, bound_ty),
             }
         }
@@ -132,7 +141,47 @@ fn spelledHead(self: *Lowering, bound: *const Node, proto_name: []const u8) []co
 fn reportUnknownHead(self: *Lowering, bound: *const Node, name: []const u8, param: []const u8) void {
     const d = self.diagnostics orelse return;
     const id = d.addFmtId(.err, bound.span, "unknown protocol '{s}' in the bound on '${s}'", .{ name, param });
-    d.addHelpFmt(id, bound.span, null, "a bound names a protocol in scope, or one of this declaration's own type parameters", .{});
+    d.addHelpFmt(id, bound.span, null, "a bound names a protocol in scope, an open set, or one of this declaration's own type parameters", .{});
+}
+
+/// An OPEN SET bound: the binding must be a MEMBER of the set. Nothing here asks
+/// about impls — a set has none. Membership is the member's own declaration
+/// (`V :: @OpenVariant(P)`), so the question has one answer whenever it is asked,
+/// and a generic member's instantiation carries its template's declaration.
+///
+/// A set binds its own bound: `$V/View` bound to `View` is the identity case,
+/// which is how a body that takes the whole set writes the same signature.
+fn checkMember(
+    self: *Lowering,
+    bound: *const Node,
+    head: @FieldType(Head, "open_set"),
+    param: []const u8,
+    bound_ty: TypeId,
+) void {
+    const set_name = head.name;
+    const spelled_args: usize = switch (bound.data) {
+        .parameterized_type_expr => |pte| pte.args.len,
+        else => 0,
+    };
+    if (spelled_args != 0) {
+        const d = self.diagnostics orelse return;
+        const id = d.addFmtId(.err, bound.span, "the bound '{s}' on '${s}' takes no type arguments, but {d} {s} written", .{
+            set_name, param, spelled_args, if (spelled_args == 1) "is" else "are",
+        });
+        d.addHelpFmt(id, bound.span, null, "an open set is not parameterized — write '${s}/{s}'", .{ param, set_name });
+        return;
+    }
+    if (bound_ty == head.ty) return;
+    if (self.openSetDeclaresMembership(bound_ty, set_name)) return;
+    const d = self.diagnostics orelse return;
+    const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
+        self.formatTypeName(bound_ty), set_name, param,
+    });
+    if (self.openSetOfMember(bound_ty)) |other| {
+        d.addHelpFmt(id, bound.span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatTypeName(bound_ty), other.decl.name });
+    } else {
+        d.addHelpFmt(id, bound.span, null, "a type joins '{s}' by declaring itself into it: '{s} :: @OpenVariant({s}) {{ … }}'", .{ set_name, self.formatTypeName(bound_ty), set_name });
+    }
 }
 
 fn checkOne(

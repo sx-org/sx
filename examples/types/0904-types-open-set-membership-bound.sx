@@ -1,0 +1,64 @@
+// `$V/View` — the generic bound that asks for MEMBERSHIP of an open set (spec:
+// Open Sets — the membership bound).
+//
+// Every other bound head names something a type can `impl`. A set is not a
+// protocol and carries no impls, so this head asks the set's own question instead:
+// is the binding a member? Membership is the member's own declaration, so the
+// answer does not depend on when it is asked — and inside the body the parameter
+// is the CONCRETE member, so every call resolves monomorphically. The bound is
+// what guarantees the method is there to call.
+//
+// The set itself satisfies its own bound, so one signature covers both a
+// monomorphic call on a member and a dynamic call through the slot.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128, align = 8 }) {
+    render :: (self: *Self) -> string;
+    weight :: (self: *Self) -> i64;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+    weight :: (self: *Label) -> i64 => 1;
+}
+
+Panel :: @OpenVariant(View) {
+    title: string = "";
+    rows: i64 = 0;
+    render :: (self: *Panel) -> string => self.title;
+    weight :: (self: *Panel) -> i64 => self.rows;
+}
+
+Padded :: @OpenVariant(View) ($T: Type) {
+    inner: $T = ---;
+    render :: (self: *Padded) -> string => "padded";
+    weight :: (self: *Padded) -> i64 => 100;
+}
+
+// Monomorphized per member: no tag is read, and `render` resolves on the concrete
+// type — the bound is the promise that it exists.
+show :: (v: $V/View) -> string => v.render();
+
+// Several parameters over the same set, and a bound used with the set's own
+// methods on both.
+heavier :: (a: $A/View, b: $B/View) -> i64 {
+    if a.weight() > b.weight() { return a.weight(); }
+    return b.weight();
+}
+
+main :: () -> i32 {
+    print("members {} {} {}\n", show(Label{ text = "label" }), show(Panel{ title = "panel" }), show(Padded(i64){ inner = 1 }));
+    print("weights {} {}\n", heavier(Label{}, Panel{ rows = 9 }), heavier(Padded(i64){}, Panel{ rows = 9 }));
+    // The set satisfies its own bound: the argument is a slot, and the body's
+    // `v.render()` is the tag dispatch.
+    slot: View = Panel{ title = "through the slot" };
+    print("set {}\n", show(slot));
+    0
+}
+
+// ** stdout **
+// members label panel padded
+// weights 9 100
+// set through the slot
+//

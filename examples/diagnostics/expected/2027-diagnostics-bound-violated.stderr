@@ -26,7 +26,7 @@ error: unknown protocol 'NoSuchProtocol' in the bound on '$T'
 36 | mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
    |                   ^^^^^^^^^^^^^^
 
-help: a bound names a protocol in scope, or one of this declaration's own type parameters
+help: a bound names a protocol in scope, an open set, or one of this declaration's own type parameters
    |
 36 | mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
    |                   ^^^^^^^^^^^^^^

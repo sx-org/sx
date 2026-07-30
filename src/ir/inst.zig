@@ -141,6 +141,11 @@ pub const Op = union(enum) {
     /// it against the frozen layout, so one program has ONE answer wherever it
     /// is asked (spec: Open Sets — when the layout is final).
     open_set_layout: SetLayoutOf,
+    /// The tag word `member` carries inside open set `set`. Like
+    /// `tagged_tag_of` it stays a PAIR in the IR: the dense numbering is
+    /// assigned when the sets freeze, so no site can spell the number, and each
+    /// world resolves the pair against the published numbering.
+    open_set_tag_of: SetMemberOf,
 
     // ── Arithmetic ──────────────────────────────────────────────────
     add: BinOp,
@@ -315,6 +320,12 @@ pub const TagOf = struct {
 pub const TaggedTypeId = struct {
     tag: Ref,
     table: GlobalId,
+};
+
+/// One member inside one open set — a pair the freeze's numbering answers.
+pub const SetMemberOf = struct {
+    set: TypeId,
+    member: TypeId,
 };
 
 /// Which measurement of `measured` the frozen layout answers.

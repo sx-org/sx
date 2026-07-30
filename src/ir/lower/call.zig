@@ -15,6 +15,7 @@ const CallResolver = @import("../calls.zig").CallResolver;
 const init_plan = @import("init_plan.zig");
 const build_block = @import("build_block.zig");
 const lower_generic = @import("generic.zig");
+const lower_open_set = @import("open_set.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -1797,6 +1798,19 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                             const owned = self.alloc.dupe(Ref, final_args.items) catch unreachable;
                             return self.builder.emit(.{ .call_indirect = .{ .callee = fp_val, .args = owned } }, fti.function.ret);
                         }
+                    }
+                }
+            }
+
+            // Receiver is an OPEN SET (or a pointer to one) and the field names a
+            // method the set requires: dispatch on the tag word. The arm hands the
+            // member its own storage INSIDE the slot, so a method that writes
+            // through `self` writes into the receiver (spec: Open Sets — dispatch).
+            if (openSetReceiver(self, obj_ty)) |set_ty| {
+                if (self.openSetOf(set_ty)) |set| {
+                    if (lower_open_set.requiredMethod(set, fa.field)) |method| {
+                        const addr = openSetReceiverAddress(self, obj, obj_ty, set_ty, fa.object);
+                        return self.emitOpenSetDispatch(addr, set, method, args.items, c.callee.span);
                     }
                 }
             }
@@ -5221,4 +5235,28 @@ pub fn resolveCallParamTypes(
     }
 
     return &.{};
+}
+
+/// The open set a method-call receiver of type `ty` names — the set itself, or the
+/// set a `*P` receiver points at. Dispatch reads the slot through a pointer, so
+/// both spellings reach the same routine.
+fn openSetReceiver(self: *Lowering, ty: TypeId) ?TypeId {
+    if (self.isOpenSet(ty)) return ty;
+    if (ty.isBuiltin()) return null;
+    const info = self.module.types.get(ty);
+    if (info != .pointer) return null;
+    return if (self.isOpenSet(info.pointer.pointee)) info.pointer.pointee else null;
+}
+
+/// The address of the slot to dispatch on. A `*P` receiver IS that address; an
+/// lvalue set value is dispatched in place, so a method writing through `self`
+/// writes the receiver's own storage. An rvalue has no storage, so it gets a
+/// temporary — the value is about to be discarded either way.
+fn openSetReceiverAddress(self: *Lowering, obj: Ref, obj_ty: TypeId, set_ty: TypeId, obj_node: *const Node) Ref {
+    if (obj_ty != set_ty) return obj;
+    if (self.refStorageAddress(obj)) |addr| return addr;
+    if (self.isLvalueExpr(obj_node)) return self.lowerExprAsPtr(obj_node);
+    const slot = self.builder.alloca(set_ty);
+    self.builder.store(slot, obj);
+    return slot;
 }

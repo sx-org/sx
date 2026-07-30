@@ -1806,6 +1806,7 @@ pub const LLVMEmitter = struct {
             .tagged_conforms => |t| self.ops().emitTaggedConforms(t),
             .tagged_type_id => |t| self.ops().emitTaggedTypeId(instruction, t),
             .open_set_layout => |q| self.ops().emitOpenSetLayout(q),
+            .open_set_tag_of => |t| self.ops().emitOpenSetTagOf(t),
 
             // ── Arithmetic ─────────────────────────────────────────
             .add => |bin| self.ops().emitAdd(instruction, bin),

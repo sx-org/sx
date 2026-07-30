@@ -466,6 +466,15 @@ pub const Lowering = struct {
     /// True once the declaration pass has admitted every member it can see. From
     /// there only a generic member's instantiation can still grow a set.
     open_set_decls_admitted: bool = false,
+    /// Where each (set, required method)'s routine sits in `open_set_pending` —
+    /// an index, so the declared routine and its pending body can never diverge.
+    open_set_dispatch: std.AutoHashMap(lower_open_set.MethodKey, usize),
+    /// Declared routines awaiting their body, in declaration order.
+    open_set_pending: std.ArrayList(lower_open_set.PendingDispatch) = .empty,
+    /// The member's own implementation each arm calls, or null when the member
+    /// does not answer the method as the set requires. Being IN the map is the
+    /// decision having been made — which is what keeps the fixpoint finite.
+    open_set_arms: std.AutoHashMap(lower_open_set.ArmKey, ?inst_mod.FuncId),
     /// `@BuildBlock` formation sites, in mint order; a per-site implementor type
     /// carries its one-based index as its nominal id.
     block_sites: std.ArrayList(lower_build_block.Site) = .empty,
@@ -1193,6 +1202,8 @@ pub const Lowering = struct {
             .open_set_generic_members = std.StringHashMap(void).init(module.alloc),
             .open_set_tags = std.AutoHashMap(mod_mod.Module.OpenSetMember, i64).init(module.alloc),
             .open_set_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
+            .open_set_dispatch = std.AutoHashMap(lower_open_set.MethodKey, usize).init(module.alloc),
+            .open_set_arms = std.AutoHashMap(lower_open_set.ArmKey, ?inst_mod.FuncId).init(module.alloc),
             .struct_instance_bindings = std.StringHashMap(std.StringHashMap(TypeId)).init(module.alloc),
             .struct_instance_template = std.StringHashMap([]const u8).init(module.alloc),
             .struct_instance_author = std.StringHashMap(*const ast.StructDecl).init(module.alloc),
@@ -3600,6 +3611,11 @@ pub const Lowering = struct {
     pub const openSetLayoutFinal = lower_open_set.layoutFinal;
     pub const freezeOpenSets = lower_open_set.freezeSets;
     pub const refuseUnfrozenLayout = lower_open_set.refuseUnfrozenLayout;
+    pub const openSetDeclaresMembership = lower_open_set.declaresMembership;
+    pub const openSetOfMember = lower_open_set.setOfMember;
+    pub const coerceMemberToSet = lower_open_set.coerceMemberToSet;
+    pub const emitOpenSetDispatch = lower_open_set.emitDispatch;
+    pub const materializeOpenSetArms = lower_open_set.materializeArms;
 
     pub const blockProtocolOf = lower_build_block.blockProtocolOf;
     pub const blockBinderType = lower_build_block.binderType;
