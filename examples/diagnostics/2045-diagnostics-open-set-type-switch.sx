@@ -12,6 +12,8 @@
 //   - over an `any` subject a set arm is the same mistake from the other side: a
 //     box holds the member, so it never holds the set.
 //
+// A refusal raised inside a generic body names the call that instantiated it.
+//
 // And `free` is not part of a set's story at all: the active member lives inline
 // in the slot, so there is no allocation the value stands for.
 // Expected: exit 1.
@@ -45,6 +47,14 @@ Plain :: struct {
     text: string = "";
 }
 
+// One body, one switch, refused for the instantiation that reached it.
+classify :: ($T: Type, v: T) -> i32 {
+    if v == {
+        case Label: { return 1; }
+    }
+    return 0;
+}
+
 main :: () -> i32 {
     v: View = Label{ text = "label" };
 
@@ -74,6 +84,9 @@ main :: () -> i32 {
         case View: { print("never\n"); }
         else: { print("other\n"); }
     }
+
+    // Through a generic body: the refusal names the call that instantiated it.
+    print("{}\n", classify(View, v));
 
     // The payload IS the value; there is no allocation to release.
     free(v);

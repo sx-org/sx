@@ -512,7 +512,7 @@ fn reportNonConformance(
         d.addHelpFmt(id, span, null, "every member declares every method the set requires; '{s}' is declared on '{s}'", .{ nc.method, set_name });
         return;
     }
-    const spelled = self.formatTypeName(variant);
+    const spelled = self.formatSourceTypeName(variant);
     const id = d.addFmtId(.err, span, "'{s}' cannot be a member of '{s}': its '{s}' is not the '{s}' the set declares", .{ spelled, set_name, nc.method, nc.method });
     d.addHelpFmt(id, span, null, "{s}", .{nc.detail});
     d.addHelpFmt(id, span, null, "every member answers a required method at the SAME types — the set's declaration states them, and 'Self' there denotes the member ('{s}')", .{spelled});
@@ -520,6 +520,7 @@ fn reportNonConformance(
     // fault, since another instantiation may answer correctly.
     if (!std.mem.eql(u8, spelled, sd.name))
         d.addHelpFmt(id, span, null, "'{s}' is declared '@OpenVariant({s})'; this instantiation is the one that does not answer", .{ sd.name, set_name });
+    noteInstantiation(self, d, id);
 }
 
 /// Record every OTHER set this member holds by value. Those edges are what makes
@@ -925,10 +926,24 @@ pub fn refuseNonMember(self: *Lowering, src_ty: TypeId, set_ty: TypeId, span: as
     const set = setOf(self, set_ty) orelse return false;
     if (declaresMembership(self, src_ty, set.decl.name)) return false;
     if (self.diagnostics) |d| {
-        const id = d.addFmtId(.err, span, "'{s}' cannot be converted to '{s}': it is not a member of it", .{ self.formatTypeName(src_ty), self.formatTypeName(set_ty) });
+        const id = d.addFmtId(.err, span, "'{s}' cannot be converted to '{s}': it is not a member of it", .{ self.formatSourceTypeName(src_ty), self.formatTypeName(set_ty) });
         membershipHelp(self, d, id, src_ty, set_ty, span);
+        noteInstantiation(self, d, id);
     }
     return true;
+}
+
+/// A refusal raised while a generic body is being monomorphized names the call
+/// that forced this instantiation: the body is written once and refused per
+/// instantiation, so the site that spelled this one is where the fault is answered
+/// — and for a caller in another module it is the only span it can act on.
+pub fn noteInstantiation(self: *Lowering, d: *errors.DiagnosticList, id: usize) void {
+    if (self.mono_sites.items.len == 0) return;
+    const site = self.mono_sites.items[0];
+    const saved = d.current_source_file;
+    d.current_source_file = site.source;
+    d.addNoteFmt(id, site.span, "instantiated from here", .{});
+    d.current_source_file = saved;
 }
 
 /// Why a type is not a member, in the terms the declarations state it: a type that
@@ -936,9 +951,9 @@ pub fn refuseNonMember(self: *Lowering, src_ty: TypeId, set_ty: TypeId, span: as
 /// declaration that would make it a member.
 fn membershipHelp(self: *Lowering, d: *errors.DiagnosticList, id: usize, member_ty: TypeId, set_ty: TypeId, span: ast.Span) void {
     if (setOfMember(self, member_ty)) |other| {
-        d.addHelpFmt(id, span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatTypeName(member_ty), other.decl.name });
+        d.addHelpFmt(id, span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatSourceTypeName(member_ty), other.decl.name });
     } else {
-        d.addHelpFmt(id, span, null, "a type joins by declaring itself into the set: '{s} :: @OpenVariant({s}) {{ … }}'", .{ self.formatTypeName(member_ty), self.formatTypeName(set_ty) });
+        d.addHelpFmt(id, span, null, "a type joins by declaring itself into the set: '{s} :: @OpenVariant({s}) {{ … }}'", .{ self.formatSourceTypeName(member_ty), self.formatTypeName(set_ty) });
     }
 }
 
@@ -951,6 +966,7 @@ pub fn refuseSetFromAny(self: *Lowering, set_ty: TypeId, span: ast.Span) bool {
     if (self.diagnostics) |d| {
         const id = d.addFmtId(.err, span, "'any' cannot be converted to '{s}': an 'any' never holds a set value — boxing a set boxes the member it carries", .{self.formatTypeName(set_ty)});
         d.addHelpFmt(id, span, null, "name the member as the target instead, or open the box with a type switch — its arms bind the member", .{});
+        noteInstantiation(self, d, id);
     }
     return true;
 }
@@ -1111,8 +1127,9 @@ pub fn lowerDowncast(
 /// value of that type, whatever tag it carries.
 pub fn refuseNonMemberTarget(self: *Lowering, set_ty: TypeId, target: TypeId, span: ast.Span) bool {
     if (self.diagnostics) |d| {
-        const id = d.addFmtId(.err, span, "a '{s}' value is never '{s}': it is not a member of it", .{ self.formatTypeName(set_ty), self.formatTypeName(target) });
+        const id = d.addFmtId(.err, span, "a '{s}' value is never '{s}': it is not a member of it", .{ self.formatTypeName(set_ty), self.formatSourceTypeName(target) });
         membershipHelp(self, d, id, target, set_ty, span);
+        noteInstantiation(self, d, id);
     }
     return true;
 }
@@ -1124,6 +1141,7 @@ pub fn refuseSetArm(self: *Lowering, subject_ty: TypeId, arm_ty: TypeId, span: a
     if (self.diagnostics) |d| {
         const id = d.addFmtId(.err, span, "a switch on '{s}' opens the member the value carries, and '{s}' is a set — never a member of one", .{ self.formatTypeName(subject_ty), self.formatTypeName(arm_ty) });
         d.addHelpFmt(id, span, null, "name the members this code handles ('case <Member>:'), and let 'else:' answer for the rest", .{});
+        noteInstantiation(self, d, id);
     }
     return true;
 }
@@ -1132,8 +1150,9 @@ pub fn refuseSetArm(self: *Lowering, subject_ty: TypeId, arm_ty: TypeId, span: a
 /// downcast, and it can fail — which `xx` has no way to say. True when refused.
 pub fn refuseUntemperedDowncast(self: *Lowering, set_ty: TypeId, member: TypeId, span: ast.Span) bool {
     if (self.diagnostics) |d| {
-        const id = d.addFmtId(.err, span, "'{s}' holds one member at a time, so reading a '{s}' out of it can fail, and 'xx' does not say what happens then", .{ self.formatTypeName(set_ty), self.formatTypeName(member) });
-        d.addHelpFmt(id, span, null, "ask with a temperament: '.({s})' panics on another member, '.(?{s})' answers null", .{ self.formatTypeName(member), self.formatTypeName(member) });
+        const id = d.addFmtId(.err, span, "'{s}' holds one member at a time, so reading a '{s}' out of it can fail, and 'xx' does not say what happens then", .{ self.formatTypeName(set_ty), self.formatSourceTypeName(member) });
+        d.addHelpFmt(id, span, null, "ask with a temperament: '.({s})' panics on another member, '.(?{s})' answers null", .{ self.formatSourceTypeName(member), self.formatSourceTypeName(member) });
+        noteInstantiation(self, d, id);
     }
     return true;
 }

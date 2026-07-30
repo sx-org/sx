@@ -15,6 +15,12 @@ error: 'any' cannot be converted to 'View': an 'any' never holds a set value —
 30 | assert_it :: ($T: Type, a: any) -> T => a.(T);
    |                                         ^^^^^
 
+note: instantiated from here
+  --> examples/diagnostics/2043-diagnostics-open-set-from-any.sx:48:16
+   |
+48 |     generic := assert_it(View, a);
+   |                ^^^^^^^^^
+
 help: name the member as the target instead, or open the box with a type switch — its arms bind the member
    |
 30 | assert_it :: ($T: Type, a: any) -> T => a.(T);

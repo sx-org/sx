@@ -77,9 +77,16 @@ Wrap :: @OpenVariant(View) ($T: Type) {
     twin :: (self: *Wrap, other: Wrap($T)) -> Wrap($T) => other;
 }
 
+// The same instantiation, reached from a generic body: the member is named as the
+// instantiation, and the call that forced it is named too.
+wrap :: ($T: Type, v: $T) -> View {
+    return Wrap(T){ inner = v };
+}
+
 main :: () -> i32 {
     good := Wrap(string){ inner = "fine" };
     bad := Wrap(i64){ inner = 7 };
-    print("{} {}\n", good.inner, bad.inner);
+    through := wrap(f64, 1.5);
+    print("{} {} {}\n", good.inner, bad.inner, through.render());
     0
 }

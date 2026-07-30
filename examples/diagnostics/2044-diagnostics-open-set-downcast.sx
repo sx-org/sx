@@ -9,7 +9,8 @@
 //   - `xx` cannot ask the question at all: reading a member out can fail, and
 //     `xx` states no temperament, so the spellings that do are named instead.
 //
-// The same holds through an alias, which names the type it aliases.
+// The same holds through an alias, which names the type it aliases, and a refusal
+// raised inside a generic body names the call that instantiated it.
 // Expected: exit 1.
 #import "modules/std.sx";
 
@@ -39,6 +40,9 @@ Stranger :: Plain;
 
 takes :: (l: Label) -> string => l.text;
 
+// Asked once, answered per instantiation.
+peek :: ($T: Type, v: View) -> T => v.(T);
+
 main :: () -> i32 {
     v: View = Label{ text = "label" };
 
@@ -53,6 +57,10 @@ main :: () -> i32 {
     // An alias names the type it aliases, so it is refused as that type.
     stranger := v.(Stranger);
     print("{}\n", stranger.text);
+
+    // Through a generic body: the refusal names the call that asked for it.
+    peeked := peek(Plain, v);
+    print("{}\n", peeked.text);
 
     // `xx` has no temperament to offer, for a member or for anything else.
     forced: Label = xx v;

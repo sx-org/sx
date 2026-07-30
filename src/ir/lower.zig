@@ -3620,6 +3620,7 @@ pub const Lowering = struct {
     pub const refuseSetFromAny = lower_open_set.refuseSetFromAny;
     pub const refuseOpenSetNonMemberTarget = lower_open_set.refuseNonMemberTarget;
     pub const refuseOpenSetArm = lower_open_set.refuseSetArm;
+    pub const noteOpenSetInstantiation = lower_open_set.noteInstantiation;
     pub const refuseUntemperedDowncast = lower_open_set.refuseUntemperedDowncast;
     pub const lowerOpenSetDowncast = lower_open_set.lowerDowncast;
     pub const coerceMemberToSet = lower_open_set.coerceMemberToSet;

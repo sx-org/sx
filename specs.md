@@ -3918,6 +3918,11 @@ at the instantiation site, since another instantiation may be admissible. An
 instantiation the program never materializes is not a member: membership follows
 what the program builds, exactly as it does for `protocol tagged`.
 
+Every refusal a set earns inside a **generic body** reads the same way: the body is
+written once and refused per instantiation, so it names the instantiation as the
+program spells it and carries a note at the call that forced this one — the
+OUTERMOST call, which for a caller in another module is the only span it can act on.
+
 **When the layout is final.** Because growth follows the declarations, a set's last
 member can arrive at any point up to the **freeze** — the point the whole-program
 `tagged` conformer sets converge at, after every body is lowered, since the same

@@ -9,6 +9,7 @@
 //     DIFFERENT set, since a type belongs to one;
 //   - `xx` names the same conversion, so it refuses exactly what the expected
 //     type and `.(View)` refuse — an explicit cast is not a way past membership;
+//   - a refusal raised inside a generic body names the call that instantiated it;
 //   - an `any` holds no set value at all, since boxing a set boxes the member it
 //     carries, so there is nothing at a set destination for an unbox to read;
 //   - `.(P, alloc)` does not exist for a set: the active member lives inline in
@@ -41,6 +42,9 @@ Plain :: struct {
     text: string = "";
 }
 
+// One body, refused per instantiation: the fault is the call that spelled this one.
+lift :: ($T: Type, x: $S) -> T => xx x;
+
 // No widening arm: this init's type argument is `Label`, so `write` takes `*Label`.
 into_label :: (value: $I/@Init(Label)) -> string {
     slot: View = ---;
@@ -67,6 +71,10 @@ main :: () -> i32 {
     cast_plain: View = xx Plain{ text = "still not a member" };
     cast_alien: View = xx Alien{ text = "still another set" };
     print("{} {}\n", cast_plain.render(), cast_alien.render());
+
+    // Written once, refused for this instantiation — and named at the call.
+    lifted := lift(View, Plain{ text = "through a generic" });
+    print("{}\n", lifted.render());
 
     // A box of a set holds the member, so there is no set in it to unbox.
     slot: View = Label{ text = "boxed" };

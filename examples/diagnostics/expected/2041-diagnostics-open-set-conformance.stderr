@@ -209,23 +209,50 @@ help: every member declares every method the set requires; 'twin' is declared on
 68 | }
    | ^
 
-error: 'Wrap__i64' cannot be a member of 'View': its 'render' is not the 'render' the set declares
-  --> examples/diagnostics/2041-diagnostics-open-set-conformance.sx:82:17
+error: 'Wrap(i64)' cannot be a member of 'View': its 'render' is not the 'render' the set declares
+  --> examples/diagnostics/2041-diagnostics-open-set-conformance.sx:88:17
    |
-82 |     bad := Wrap(i64){ inner = 7 };
+88 |     bad := Wrap(i64){ inner = 7 };
    |                 ^^^
 
 help: it returns 'i64', and the set declares 'string'
    |
-82 |     bad := Wrap(i64){ inner = 7 };
+88 |     bad := Wrap(i64){ inner = 7 };
    |                 ^^^
 
-help: every member answers a required method at the SAME types — the set's declaration states them, and 'Self' there denotes the member ('Wrap__i64')
+help: every member answers a required method at the SAME types — the set's declaration states them, and 'Self' there denotes the member ('Wrap(i64)')
    |
-82 |     bad := Wrap(i64){ inner = 7 };
+88 |     bad := Wrap(i64){ inner = 7 };
    |                 ^^^
 
 help: 'Wrap' is declared '@OpenVariant(View)'; this instantiation is the one that does not answer
    |
-82 |     bad := Wrap(i64){ inner = 7 };
+88 |     bad := Wrap(i64){ inner = 7 };
    |                 ^^^
+
+error: 'Wrap(f64)' cannot be a member of 'View': its 'render' is not the 'render' the set declares
+  --> examples/diagnostics/2041-diagnostics-open-set-conformance.sx:83:17
+   |
+83 |     return Wrap(T){ inner = v };
+   |                 ^
+
+note: instantiated from here
+  --> examples/diagnostics/2041-diagnostics-open-set-conformance.sx:89:16
+   |
+89 |     through := wrap(f64, 1.5);
+   |                ^^^^
+
+help: it returns 'f64', and the set declares 'string'
+   |
+83 |     return Wrap(T){ inner = v };
+   |                 ^
+
+help: every member answers a required method at the SAME types — the set's declaration states them, and 'Self' there denotes the member ('Wrap(f64)')
+   |
+83 |     return Wrap(T){ inner = v };
+   |                 ^
+
+help: 'Wrap' is declared '@OpenVariant(View)'; this instantiation is the one that does not answer
+   |
+83 |     return Wrap(T){ inner = v };
+   |                 ^

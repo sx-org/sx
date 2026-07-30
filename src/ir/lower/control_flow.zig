@@ -1629,6 +1629,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
             if (self.diagnostics) |d| {
                 const id = d.addFmtId(.err, me.subject.span, "a switch over '{s}' needs an 'else:' arm: the set is open, so a member beyond these arms may reach it", .{self.formatTypeName(sst)});
                 d.addHelpFmt(id, me.subject.span, null, "name the members this code handles and let 'else:' answer for the rest — a set's members are declared anywhere in the program", .{});
+                self.noteOpenSetInstantiation(d, id);
             }
         }
     }
