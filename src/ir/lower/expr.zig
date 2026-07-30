@@ -3637,6 +3637,30 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     break :blk self.builder.constUndef(.unresolved);
                 }
             }
+            // A set VALUE asked for a member: the tag decides which member the
+            // slot carries, so the answer is that member's own value — and a
+            // target that never declared itself into the set is refused, since
+            // no value of the set is ever one (spec: Open Sets — the downcast).
+            {
+                const recv_ty = self.inferExprType(pc.operand);
+                if (self.isOpenSet(recv_ty) and pc.alloc_arg == null) {
+                    const soft = pc.type_expr.data == .optional_type_expr;
+                    const target_node = if (soft) pc.type_expr.data.optional_type_expr.inner_type else pc.type_expr;
+                    const target = self.resolveTypeArg(target_node);
+                    if (target != .unresolved and target != .any and target != recv_ty) {
+                        const set_name = self.openSetOf(recv_ty).?.decl.name;
+                        if (self.openSetDeclaresMembership(target, set_name) and self.scope != null) {
+                            const value = self.lowerExpr(pc.operand);
+                            break :blk self.lowerOpenSetDowncast(recv_ty, target, value, pc.operand, target_node, soft, node.span);
+                        }
+                        if (!self.openSetDeclaresMembership(target, set_name) and
+                            self.refuseOpenSetNonMemberTarget(recv_ty, target, node.span))
+                        {
+                            break :blk self.builder.constUndef(if (soft) self.module.types.optionalOf(target) else target);
+                        }
+                    }
+                }
+            }
             // An `any` receiver is the checked-assertion regime. Reaching
             // THIS arm means no graceful consumer claimed it (`try` / `or` /
             // `catch` desugar their direct assertion operands via

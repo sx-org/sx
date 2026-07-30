@@ -50,6 +50,7 @@ const TypeId = types.TypeId;
 
 const program_index = @import("../program_index.zig");
 const inst_mod = @import("../inst.zig");
+const errors = @import("../../errors.zig");
 const comptime_vm = @import("../comptime_vm.zig");
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
@@ -925,13 +926,20 @@ pub fn refuseNonMember(self: *Lowering, src_ty: TypeId, set_ty: TypeId, span: as
     if (declaresMembership(self, src_ty, set.decl.name)) return false;
     if (self.diagnostics) |d| {
         const id = d.addFmtId(.err, span, "'{s}' cannot be converted to '{s}': it is not a member of it", .{ self.formatTypeName(src_ty), self.formatTypeName(set_ty) });
-        if (setOfMember(self, src_ty)) |other| {
-            d.addHelpFmt(id, span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatTypeName(src_ty), other.decl.name });
-        } else {
-            d.addHelpFmt(id, span, null, "a type joins by declaring itself into the set: '{s} :: @OpenVariant({s}) {{ … }}'", .{ self.formatTypeName(src_ty), self.formatTypeName(set_ty) });
-        }
+        membershipHelp(self, d, id, src_ty, set_ty, span);
     }
     return true;
+}
+
+/// Why a type is not a member, in the terms the declarations state it: a type that
+/// joined ANOTHER set is told it belongs to one, and any other type is shown the
+/// declaration that would make it a member.
+fn membershipHelp(self: *Lowering, d: *errors.DiagnosticList, id: usize, member_ty: TypeId, set_ty: TypeId, span: ast.Span) void {
+    if (setOfMember(self, member_ty)) |other| {
+        d.addHelpFmt(id, span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatTypeName(member_ty), other.decl.name });
+    } else {
+        d.addHelpFmt(id, span, null, "a type joins by declaring itself into the set: '{s} :: @OpenVariant({s}) {{ … }}'", .{ self.formatTypeName(member_ty), self.formatTypeName(set_ty) });
+    }
 }
 
 /// Refuse a conversion of an `any` into the set `set_ty` — always true, and the
@@ -1025,8 +1033,12 @@ pub fn memberTypeId(self: *Lowering, set_ty: TypeId, slot_addr: Ref) Ref {
 /// member's own `Type`. The view borrows the slot, so it answers for the member
 /// carried there and lives exactly as long as that slot does.
 pub fn anyView(self: *Lowering, set_ty: TypeId, value: Ref, node: ?*const Node) Ref {
+    return anyViewOfSlot(self, set_ty, slotAddress(self, set_ty, value, node));
+}
+
+/// The same view over a slot already addressed.
+fn anyViewOfSlot(self: *Lowering, set_ty: TypeId, slot: Ref) Ref {
     const table = &self.module.types;
-    const slot = slotAddress(self, set_ty, value, node);
     const info = table.get(set_ty).tagged_union;
     const payload_ty = table.get(info.backing_type.?).@"struct".fields[1].ty;
     const bytes = self.builder.structGepTyped(slot, 1, table.ptrTo(payload_ty), set_ty);
@@ -1037,6 +1049,82 @@ pub fn anyView(self: *Lowering, set_ty: TypeId, value: Ref, node: ?*const Node) 
         .to = void_ptr,
     } }, void_ptr);
     return self.builder.makeAny(memberTypeId(self, set_ty, slot), data);
+}
+
+/// A set value asked for one of its members: the tag decides. `member` is a member
+/// of `set_ty`, so the question is one compare against that member's constant tag,
+/// and the answer is a COPY of the member read out of the payload. The soft form
+/// answers `null` on the other members; the hard form panics through the same
+/// helper every checked cast panics through, over the view that names the member
+/// actually carried.
+pub fn lowerDowncast(
+    self: *Lowering,
+    set_ty: TypeId,
+    member: TypeId,
+    value: Ref,
+    value_node: *const Node,
+    type_node: *const Node,
+    soft: bool,
+    span: ast.Span,
+) Ref {
+    const table = &self.module.types;
+    const result_ty = if (soft) table.optionalOf(member) else member;
+    const slot = slotAddress(self, set_ty, value, value_node);
+    const tag_ptr = self.builder.structGepTyped(slot, 0, table.ptrTo(tag_type), set_ty);
+    const tag = self.builder.load(tag_ptr, tag_type);
+    const want = self.builder.emit(.{ .open_set_tag_of = .{ .set = set_ty, .member = member } }, tag_type);
+    const matches = self.builder.emit(.{ .cmp_eq = .{ .lhs = tag, .rhs = want } }, .bool);
+
+    const ok_bb = self.freshBlock("setcast.ok");
+    const fail_bb = self.freshBlock("setcast.fail");
+    const merge_bb = self.freshBlockWithParams("setcast.merge", &.{result_ty});
+    self.builder.condBr(matches, ok_bb, &.{}, fail_bb, &.{});
+
+    self.builder.switchToBlock(ok_bb);
+    const held = self.builder.load(payloadAddress(self, slot, set_ty, member), member);
+    self.builder.br(merge_bb, &.{if (soft) self.builder.optionalWrap(held, result_ty) else held});
+
+    self.builder.switchToBlock(fail_bb);
+    if (soft) {
+        self.builder.br(merge_bb, &.{self.builder.constNull(result_ty)});
+    } else {
+        const view = anyViewOfSlot(self, set_ty, slot);
+        var buf: [40]u8 = undefined;
+        const nm = std.fmt.bufPrint(&buf, "$setcast_{d}", .{self.block_counter}) catch "$setcast";
+        self.block_counter += 1;
+        const owned = self.alloc.dupe(u8, nm) catch @panic("out of memory");
+        self.scope.?.put(owned, .{ .ref = view, .ty = .any, .is_alloca = false });
+        const src = value_node.source_file;
+        const recv_id = self.synthNode(.{ .identifier = .{ .name = owned } }, span, src);
+        const callee = self.synthNode(.{ .identifier = .{ .name = "__sx_cast_or_panic" } }, span, src);
+        const args = self.alloc.dupe(*Node, &.{ recv_id, @constCast(type_node) }) catch @panic("out of memory");
+        const call = ast.Call{ .callee = callee, .args = args };
+        self.builder.br(merge_bb, &.{self.lowerCall(&call)});
+    }
+
+    self.builder.switchToBlock(merge_bb);
+    return self.builder.blockParam(merge_bb, 0, result_ty);
+}
+
+/// Refuse asking a set value for a type that never declared itself into the set —
+/// true when refused. Membership is a declaration, so no value of the set is ever a
+/// value of that type, whatever tag it carries.
+pub fn refuseNonMemberTarget(self: *Lowering, set_ty: TypeId, target: TypeId, span: ast.Span) bool {
+    if (self.diagnostics) |d| {
+        const id = d.addFmtId(.err, span, "a '{s}' value is never '{s}': it is not a member of it", .{ self.formatTypeName(set_ty), self.formatTypeName(target) });
+        membershipHelp(self, d, id, target, set_ty, span);
+    }
+    return true;
+}
+
+/// Refuse `xx` between a set value and one of its members: the conversion is the
+/// downcast, and it can fail — which `xx` has no way to say. True when refused.
+pub fn refuseUntemperedDowncast(self: *Lowering, set_ty: TypeId, member: TypeId, span: ast.Span) bool {
+    if (self.diagnostics) |d| {
+        const id = d.addFmtId(.err, span, "'{s}' holds one member at a time, so reading a '{s}' out of it can fail, and 'xx' does not say what happens then", .{ self.formatTypeName(set_ty), self.formatTypeName(member) });
+        d.addHelpFmt(id, span, null, "ask with a temperament: '.({s})' panics on another member, '.(?{s})' answers null", .{ self.formatTypeName(member), self.formatTypeName(member) });
+    }
+    return true;
 }
 
 // ── Dispatch ────────────────────────────────────────────────────────────

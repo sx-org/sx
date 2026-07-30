@@ -4055,6 +4055,31 @@ The numbering is written at the freeze, so a compile-time evaluation that asks
 what a set value is **waits** for it (§7.9) and reads the same answer the running
 program reads.
 
+**Reading a member back out.** A slot carries one member and its tag says which, so
+asking a set value for a member is one compare against that member's tag, and the
+answer is the member's own value — a **copy** read out of the payload, with its own
+fields and its own methods. The two temperaments are the ones every checked
+conversion has: `v.(Label)` **states** that the slot carries a `Label` and panics on
+another member, naming the member actually carried; `v.(?Label)` **asks**, and
+answers `null` on another member.
+
+```sx
+v: View = Panel{ title = "panel" };
+p := v.(Panel);        // the Panel it carries
+v.(?Label);            // null — it carries a Panel
+v.(Label);             // panics: expected Label, got Panel
+```
+
+A target that never declared itself into the set is refused: membership is a
+declaration, so no tag ever selects that type and no value of the set is ever one.
+`xx` cannot spell this conversion at all — reading a member out can fail, and `xx`
+states no temperament — so the spellings that do are what the refusal names.
+
+The downcast is also how a method the set cannot dispatch is reached: a required
+method mentioning `Self` past the receiver has no caller-side type on a set value,
+and on the member a downcast produced it is an ordinary call on a concrete type —
+the second route alongside the membership bound.
+
 **The membership bound `$V/P`.** A set is not a protocol and carries no impls, so a
 bound whose head names a set asks the set's own question: **is the binding a
 member?** This is the one head in the bound grammar that is not a conformance

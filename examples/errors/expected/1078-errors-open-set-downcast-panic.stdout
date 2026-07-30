@@ -1,0 +1,2 @@
+before
+type assertion failed at 1078-errors-open-set-downcast-panic.sx:24: expected Label, got Panel

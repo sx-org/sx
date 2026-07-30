@@ -55,6 +55,18 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         if (self.refuseOpenSetNonMember(src_ty, dst_ty, span)) return self.builder.constUndef(dst_ty);
     }
 
+    // Out of a set: the only conversion is to the member the slot carries, and it
+    // can fail. `xx` states no temperament, so it cannot spell that question —
+    // and a type that is not a member is not an answer to it at all.
+    if (target_explicit and self.isOpenSet(src_ty) and dst_ty != src_ty and dst_ty != .any and dst_ty != .unresolved) {
+        const cs = self.builder.current_span;
+        const span = ast.Span{ .start = cs.start, .end = cs.end };
+        if (self.openSetDeclaresMembership(dst_ty, self.openSetOf(src_ty).?.decl.name)) {
+            if (self.refuseUntemperedDowncast(src_ty, dst_ty, span)) return self.builder.constUndef(dst_ty);
+        }
+        if (self.refuseOpenSetNonMemberTarget(src_ty, dst_ty, span)) return self.builder.constUndef(dst_ty);
+    }
+
     // PLANNING: the `xx`-head decision (conversions.zig). `.coerce` falls
     // through to the built-in ladder + the user-`Into` fallback below.
     switch (self.coercionResolver().classifyXX(src_ty, dst_ty)) {
