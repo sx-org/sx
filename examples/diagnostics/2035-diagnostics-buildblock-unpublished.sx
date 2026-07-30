@@ -8,8 +8,8 @@
 //
 // Three shapes are exempt, and this file has one of each so the rule cannot creep:
 // a void trailing expression (nothing to publish), a value-POSITION block (its
-// value is used), and the body's own top level (ordinary block-value typing
-// already rejects a trailing expression there, since `run` returns void).
+// value is used), and the body's own top level, where a trailing expression is a
+// child like any other and publishes — so there is nothing for the rule to catch.
 // Expected: exit 1.
 #import "modules/std.sx";
 #import "modules/fluent.sx";

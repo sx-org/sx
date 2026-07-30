@@ -3810,8 +3810,9 @@ help: publish it as a statement (end it with `;`) or discard it (`_ = …;`)
 That value would be the inner block's value, which the enclosing statement
 discards — a child lost with no signal. A void trailing expression is exempt, a
 value-**position** block is unaffected (`x := if c { … } else { … };` stays
-legal), and the body's own top level needs no rule: `run` returns void, so
-ordinary block-value typing already rejects a trailing expression there.
+legal), and the body's own top level needs no rule for the opposite reason: a
+trailing expression there is a child like any other and publishes, so nothing
+vanishes.
 
 **A build block is frame-bound.** What the value carries is the environment of
 the frame that formed it, captured **by reference**: forming allocates nothing,
@@ -3880,6 +3881,8 @@ A member is an ordinary standalone type: constructible (`Label{ text = "x" }`),
 with its own `size_of`, its own methods, and no wrapper around it. `Self` inside
 the set declaration denotes the member type; each required method is monomorphized
 per member, and a member spells its own concrete receiver (`self: *Label`).
+
+#### Declaring a set and its members
 
 **Options.** `max` is the largest admitted member payload, in bytes, and has no
 default. `align` is the payload's alignment and defaults to `8` — what ordinary
@@ -3976,6 +3979,8 @@ freeze and the freeze needs the program that evaluation is still writing, the dr
 goes quiet with a bookmark down: that is the expansion deadlock, and sx refuses it
 instead of electing one of the outcomes.
 
+#### Forming a set value
+
 **A member value becomes a set value.** Formation is **type-directed** and
 allocator-free. Writing a member where the set is expected forms the slot: the
 member's frozen tag in the tag word, a **copy** of its bytes in the payload. It is
@@ -4016,6 +4021,14 @@ What formation **refuses**:
 
 An open set sits outside protocol conversion entirely: there is no `xx`-style
 erasure, no heap box, and no compiler-selected storage anywhere in formation.
+
+What may fill a set slot is decided by **membership, never by width**: a non-member
+the size of the slot is still not the slot. The question is asked the same way
+wherever the value is going — an annotated slot, an assignment, a **field
+initializer**, an **argument**, a **return** — so a type that never declared itself
+into the set is refused at each of them rather than reinterpreted into one.
+
+#### Consuming a set value
 
 **Dispatch.** Calling a required method on a set value dispatches on the tag word.
 Each `(set, method)` pair gets one outlined routine whose switch is **total** over
@@ -4144,6 +4157,8 @@ for `free` to release and it refuses a set value. What a member's fields point a
 a `List`'s backing, a string buffer — is ordinary field data with ordinary
 lifetimes; reclaim it by resetting the allocator or arena those allocations came
 from, not through the set value.
+
+#### Sets in signatures
 
 **The membership bound `$V/P`.** A set is not a protocol and carries no impls, so a
 bound whose head names a set asks the set's own question: **is the binding a
@@ -4494,11 +4509,13 @@ if av == {
   reverse order, or a duplicate — is a compile error, never a silently
   dead arm. Value patterns (`case 5:`) are a compile error: the payload is
   never the scrutinee.
-- **Subjects**: `any` and PROTOCOL values. An erased protocol subject
-  switches through its `{ctx, type_id}` prefix view; a tagged subject
-  switches on its tag (an arm naming a non-conformer is warned dead —
-  see Protocols) — same arms, same captures, over the concrete value
-  the protocol erases. A `?any` composes through the optional match
+- **Subjects**: `any`, PROTOCOL values, and OPEN SET values. An erased
+  protocol subject switches through its `{ctx, type_id}` prefix view; a
+  tagged subject switches on its tag (an arm naming a non-conformer is
+  warned dead — see Protocols); a set subject switches on the member its
+  tag names, and its arms name members with an `else:` arm REQUIRED
+  (see Open Sets) — same arms, same captures, over the concrete value
+  behind the subject. A `?any` composes through the optional match
   (`case .some: (av) { … }`).
 - Division of labor: the type switch dispatches on CONCRETE types and
   binds typed values; kind-only dispatch also exists as the category match

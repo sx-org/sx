@@ -487,6 +487,34 @@ conformer keeps a single arm and pays nothing for the protocol.
 Gauge :: protocol tagged #expand { read :: (self: *Self) -> i64; }
 ```
 
+### Open Sets
+
+A set whose members declare **themselves** into it, carried inline in a tagged
+slot — not a protocol, and no registry to enroll with.
+
+```sx
+View :: @OpenSet(.{ max = 256 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {                 // a member joins by declaring it
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+v: View = Label{ text = "hi" };               // formation: no allocator, no box
+v.render();                                   // dispatch on the tag word
+if v == {
+    case Label: (l) { print("{}\n", l.text); }
+    else: { }                                 // a set is open — `else` is required
+}
+```
+
+`max` is a payload ceiling, not a reservation: `size_of(View)` follows the
+members the program actually declares, and importing a module that declares a
+bigger one grows it. `type_of(v)` answers the member, `v.(Label)` reads it back
+(and `v.(?Label)` asks instead), and `$V/View` bounds a generic on membership.
+
 ### Pattern Matching
 
 ```sx
