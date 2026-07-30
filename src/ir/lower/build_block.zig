@@ -245,7 +245,7 @@ pub fn lowerRun(self: *Lowering, block: *const Node, block_ty: TypeId, args: []c
     // everything the sink recorded.
     if (sink_ty.isBuiltin() or self.module.types.get(sink_ty) != .pointer) {
         if (self.diagnostics) |d| {
-            const id = d.addFmtId(.err, args[0].span, "'run' needs a pointer to the sink, but this is '{s}'", .{self.formatTypeName(sink_ty)});
+            const id = d.addFmtId(.err, args[0].span, "'run' needs a pointer to the sink, but this is '{s}'", .{self.formatSourceTypeName(sink_ty)});
             d.addHelpFmt(id, args[0].span, null, "take its address with `*` so the sink records into your storage", .{});
         }
         return Ref.none;
@@ -257,32 +257,13 @@ pub fn lowerRun(self: *Lowering, block: *const Node, block_ty: TypeId, args: []c
 
     const proto_name = if (self.getProtocolInfo(record.protocol)) |pi| pi.name else self.formatTypeName(record.protocol);
     // A sink that cannot answer a handshake is a static error at `run`, not a
-    // per-expression cascade later. Either the method is on the struct, or the
-    // sink conforms to `@BuildSink(P)` through an impl — including a blanket one,
-    // which is why this asks the shared conformance query rather than reading
-    // the struct's own members only.
+    // per-expression cascade later.
     const pointee = self.module.types.get(sink_ty).pointer.pointee;
-    const impl_kind = self.protocolResolver().paramImplKind(
-        contracts_build_sink,
-        &.{record.protocol},
-        pointee,
-    );
-    // A blanket impl's method signature still spells the impl's own binder, so
-    // replay would reach an unsubstituted `@Init($V/T)` and emit an unresolved
-    // type. Refused here rather than admitted into that.
-    if (impl_kind == .blanket) {
+    if (!sinkAccepts(self, pointee, record.protocol)) {
         if (self.diagnostics) |d| {
-            const sink_name_str = self.formatTypeName(pointee);
-            const id = d.addFmtId(.err, args[0].span, "'{s}' conforms to '@BuildSink' only through a blanket impl, which cannot receive a block yet", .{sink_name_str});
-            d.addHelpFmt(id, args[0].span, null, "declare '{s}' on the struct, or write a concrete 'impl @BuildSink(…) for {s}'", .{ sink_method, sink_name_str });
-        }
-        return Ref.none;
-    }
-    if (impl_kind == .none and self.plainStructMethod(sink_ty, sink_method) == null) {
-        const sink_name_str = self.formatTypeName(self.module.types.get(sink_ty).pointer.pointee);
-        if (self.diagnostics) |d| {
-            const id = d.addFmtId(.err, args[0].span, "'{s}' cannot receive this block: it has no '{s}' method, so it does not implement '@BuildSink({s})'", .{ sink_name_str, sink_method, proto_name });
-            d.addHelpFmt(id, args[0].span, null, "declare `{s} :: (self: *{s}, value: $I/@Init($V/{s}))`", .{ sink_method, sink_name_str, proto_name });
+            const shown = self.formatSourceTypeName(pointee);
+            const id = d.addFmtId(.err, args[0].span, "'{s}' cannot receive this block: it does not implement '@BuildSink({s})'", .{ shown, proto_name });
+            d.addHelpFmt(id, args[0].span, null, "declare `{s} :: (self: *{s}, value: $I/@Init($V/{s}))` on it, or write an 'impl @BuildSink({s}) for {s}'", .{ sink_method, shown, proto_name, proto_name, shown });
         }
         return Ref.none;
     }
@@ -298,6 +279,35 @@ pub fn lowerRun(self: *Lowering, block: *const Node, block_ty: TypeId, args: []c
 
     replayBody(self, block, record, sink_name, slot, sink_ty);
     return self.builder.constInt(0, .void);
+}
+
+/// Does `sink` accept a block intercepted at `protocol`? THE sink gate: both ways
+/// a type can answer live here, so reach and message cannot disagree —
+///
+///   - the `expression` method declared on the struct itself, or
+///   - an `impl @BuildSink(P)`, concrete or blanket, whose method it dispatches.
+///
+/// A blanket impl is admitted like any other: its method's own binders are
+/// substituted at monomorphization, so replay reaches a resolved signature.
+pub fn sinkAccepts(self: *Lowering, sink: TypeId, protocol: TypeId) bool {
+    if (self.protocolResolver().paramImplKind(contracts_build_sink, &.{protocol}, sink) != .none) return true;
+    return sinkDeclaresMethod(self, sink);
+}
+
+/// Is `expression` declared on the sink's own struct? The method-on-the-struct
+/// path, asked of the DECLARATION rather than the flat method namespace: a method
+/// an impl block contributed belongs to that impl's protocol, and whether it
+/// answers for THIS `P` is the conformance question above.
+fn sinkDeclaresMethod(self: *Lowering, sink: TypeId) bool {
+    if (self.plain_struct_authors.get(sink)) |author| {
+        if (Lowering.structMethodFn(author.decl, sink_method) != null) return true;
+    }
+    if (self.getStructTypeName(sink)) |inst| {
+        if (self.struct_instance_author.get(inst)) |author| {
+            if (Lowering.structMethodFn(author, sink_method) != null) return true;
+        }
+    }
+    return false;
 }
 
 /// Lower the block's body in the current function, with its captures bound to
@@ -494,8 +504,29 @@ pub fn interceptExpression(self: *Lowering, node: *const Node) bool {
     const call_args = self.alloc.dupe(*Node, &.{@constCast(node)}) catch return false;
     scope.ordinal += 1;
     const call = ast.Call{ .callee = callee, .args = call_args };
+    // A sink whose conformance comes from a BLANKET impl answers with a method
+    // that spells the impl's own binders, so the dispatch carries what the
+    // carrier's instantiation bound them to. A sink with the method on itself
+    // (or through a concrete impl) needs no seed: name lookup finds it.
+    var seed = blanketSeed(self, scope);
+    defer if (seed) |*s| s.deinit();
+    const saved_seed = self.impl_binder_seed;
+    if (seed) |*s| self.impl_binder_seed = s;
+    defer self.impl_binder_seed = saved_seed;
     _ = self.lowerCall(&call);
     return true;
+}
+
+/// The impl-binder bindings a blanket sink's `expression` must monomorphize
+/// with, or null when the sink answers without one.
+fn blanketSeed(self: *Lowering, scope: *const Scope) ?std.StringHashMap(TypeId) {
+    const binding = if (self.scope) |sc| sc.lookup(scope.sink_name) orelse return null else return null;
+    if (binding.ty.isBuiltin()) return null;
+    const info = self.module.types.get(binding.ty);
+    if (info != .pointer) return null;
+    const sink = info.pointer.pointee;
+    const found = self.protocolResolver().blanketMethod(contracts_build_sink, &.{scope.protocol}, sink, sink_method) orelse return null;
+    return found.bindings;
 }
 
 /// One named `int` field of a synthesized struct literal.
@@ -537,12 +568,8 @@ pub fn lowerSite(self: *Lowering, block_ty: TypeId, args: []const *const Node, s
 /// Refuse binding a block to a local (`saved := content`). The value would
 /// outlive nothing by itself, but a name is what a closure captures and what a
 /// later statement can return, so the block stays parameter-shaped.
-pub fn rejectBinding(self: *Lowering, value: ?*const Node, name: []const u8) bool {
+pub fn rejectBinding(self: *Lowering, value: ?*const Node, name: []const u8, ty: TypeId) bool {
     const val = value orelse return false;
-    // Only a bare name can produce a block: it arrives as a parameter and every
-    // other position is refused, so an identifier is the whole surface. Asking
-    // any expression for its type here would type every initializer twice.
-    const ty = bindingTypeOf(self, val) orelse return false;
     if (self.module.types.blockSite(ty) == null) return false;
     if (self.diagnostics) |d| {
         const id = d.addFmtId(.err, val.span, "'{s}' cannot bind a '{s}' — a build block is valid only within the call that received it", .{ name, self.formatTypeName(ty) });
@@ -559,14 +586,6 @@ pub fn rejectCapture(self: *Lowering, ty: TypeId, name: []const u8, span: ast.Sp
         const id = d.addFmtId(.err, span, "'{s}' is a '{s}' and cannot be captured by a closure", .{ name, self.formatTypeName(ty) });
         d.addHelpFmt(id, span, null, "replay it where it was received ('.run(*sink)'), or collect what you need into storage the closure can reach", .{});
     }
-}
-
-/// The type a bare name is bound to, if `node` is one.
-pub fn bindingTypeOf(self: *Lowering, node: *const Node) ?TypeId {
-    if (node.data != .identifier) return null;
-    const scope = self.scope orelse return null;
-    const binding = scope.lookup(node.data.identifier.name) orelse return null;
-    return binding.ty;
 }
 
 /// Refuse returning a block. The value would name a frame that has ended.

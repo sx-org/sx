@@ -14,6 +14,7 @@ const GlobalInfo = program_index_mod.GlobalInfo;
 const CallResolver = @import("../calls.zig").CallResolver;
 const init_plan = @import("init_plan.zig");
 const build_block = @import("build_block.zig");
+const lower_generic = @import("generic.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -1898,6 +1899,33 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     // comptime-value-param binding (`bindComptimeValueParams`).
                     if (hasComptimeParams(gm.fd)) {
                         return self.lowerComptimeGenericInstanceMethod(gm, effective_obj_node, c.args, c.callee.span);
+                    }
+                    // Binders of the method's own: monomorphize over the
+                    // instance's bindings PLUS what this call's arguments bind,
+                    // so one instance can answer at several argument types.
+                    if (instanceMethodNeedsArgBinding(gm)) {
+                        const saved_seed = self.impl_binder_seed;
+                        defer self.impl_binder_seed = saved_seed;
+                        self.impl_binder_seed = gm.bindings;
+                        var eff_args = std.ArrayList(*const Node).empty;
+                        defer eff_args.deinit(self.alloc);
+                        eff_args.append(self.alloc, effective_obj_node) catch unreachable;
+                        for (c.args) |a| eff_args.append(self.alloc, a) catch unreachable;
+                        var gbindings = self.genericResolver().buildTypeBindings(gm.fd, eff_args.items);
+                        defer gbindings.deinit();
+                        const base = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ gm.inst_name, self.accessorEffName(gm.fd) }) catch fa.field;
+                        const gmangled = self.genericResolver().mangleGenericName(base, gm.fd, &gbindings);
+                        if (!self.lowered_functions.contains(gmangled)) {
+                            self.monomorphizeFunction(gm.fd, gmangled, &gbindings);
+                        }
+                        if (self.resolveFuncByName(gmangled)) |fid| {
+                            const func = &self.module.functions.items[@intFromEnum(fid)];
+                            self.fixupMethodReceiver(&method_args, func, effective_obj_node, obj_ty);
+                            self.appendDefaultArgs(gm.fd, &method_args, c.callee);
+                            const final_args = self.prependCtxIfNeeded(func, method_args.items);
+                            self.coerceCallArgs(final_args, func.params);
+                            return self.builder.call(fid, final_args, func.ret);
+                        }
                     }
                     if (self.ensureGenericInstanceMethodLowered(gm)) |fid| {
                         const func = &self.module.functions.items[@intFromEnum(fid)];
@@ -4791,6 +4819,18 @@ fn coerceClosureCallArgs(self: *Lowering, args: []Ref, params: []const TypeId) v
     }
 }
 
+/// Type parameters the method declares that the INSTANCE's bindings do not
+/// cover: a generic-instance method may spell binders of its own
+/// (`expression :: (self: *Sink($T), value: $I/@Init($V/T))`), and those bind
+/// from the call's arguments, not from the instantiation.
+fn instanceMethodNeedsArgBinding(gm: lower_generic.GenericStructMethod) bool {
+    for (gm.fd.type_params) |tp| {
+        if (tp.is_variadic) continue;
+        if (!gm.bindings.contains(tp.name)) return true;
+    }
+    return false;
+}
+
 fn astCalleeParamTypes(self: *Lowering, fd: *const ast.FnDecl, args: []const *const Node) []const TypeId {
     const saved_bindings = self.type_bindings;
     defer self.type_bindings = saved_bindings;
@@ -4997,6 +5037,22 @@ pub fn resolveCallParamTypes(
                 }
             }
 
+            // Generic-instance method with binders of its own: the instance's
+            // bindings seed them, the call's arguments supply the rest. Asked
+            // before the plain-struct path because that one cannot see a method
+            // an impl block registered under the TEMPLATE's name.
+            if (self.genericInstanceMethod(sname, fa.field)) |gm| {
+                if (instanceMethodNeedsArgBinding(gm)) {
+                    const eff_args = self.alloc.alloc(*const Node, c.args.len + 1) catch return &.{};
+                    eff_args[0] = fa.object;
+                    for (c.args, 0..) |a, i| eff_args[i + 1] = a;
+                    const saved_seed = self.impl_binder_seed;
+                    defer self.impl_binder_seed = saved_seed;
+                    self.impl_binder_seed = gm.bindings;
+                    const all = astCalleeParamTypes(self, gm.fd, eff_args);
+                    return if (all.len > 0) all[1..] else &.{};
+                }
+            }
             // Plain nominal struct: resolve the selected author's signature,
             // with the receiver prepended for generic binding, then elide the
             // receiver slot from the user-argument target types.

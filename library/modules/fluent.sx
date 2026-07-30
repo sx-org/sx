@@ -19,6 +19,7 @@
 // the expression straight into its own storage; nothing is materialized, copied,
 // or erased before the sink asks for it. Provenance rides on the initializer:
 // `value.site()`.
+#import "modules/std/list.sx";
 
 // What a sink promises (spec §6.1). A compiler-maintained contract, and an
 // ordinary constraint protocol: no vtable, no erasure — `expression`
@@ -48,5 +49,29 @@
     max_alignment: i64 = 1;
 }
 
+// The collecting sink every package can build on (spec §6.2): it keeps what the
+// block published, in source order, in a list it owns.
+//
+// One blanket impl covers every instantiation. `expression` monomorphizes for
+// each concrete `V` the block reaches: it reserves storage for exactly that `V`
+// through `context.allocator`, writes the expression straight into it, and only
+// then appends the handle — nothing is exposed before the write returns, and
+// nothing is copied through an intermediate.
+//
+// `T` is the interception type, and the elements are `T` values borrowing the
+// payloads this sink allocated. So `T` is a type whose values can hold one — a
+// `tagged` protocol today — and the payloads live as long as the allocator that
+// gave them: an arena or frame allocator resets them all at once, which is the
+// recommended lifetime for collected children (spec §8).
+Sink :: struct ($T: Type) {
+    children: List(T) = .{};
+}
 
-
+impl @BuildSink($T) for Sink($T) {
+    expression :: (self: *Sink($T), value: $I/@Init($V/T)) {
+        destination := context.allocator.create(V);
+        value.write(destination);
+        handle : T = destination;
+        self.children.append(handle);
+    }
+}

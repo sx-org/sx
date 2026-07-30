@@ -750,6 +750,29 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
     };
 }
 
+/// A type's SOURCE spelling, for diagnostics: a generic instance is rendered as
+/// the template applied to its arguments (`Sink(i64)`), never as the mangled
+/// instance name that keys it internally. Everything else formats as usual.
+pub fn formatSourceTypeName(self: *Lowering, ty: TypeId) []const u8 {
+    const inst = self.getStructTypeName(ty) orelse return self.formatTypeName(ty);
+    const template = self.struct_instance_template.get(inst) orelse return self.formatTypeName(ty);
+    const author = self.struct_instance_author.get(inst) orelse return self.formatTypeName(ty);
+    const binds = self.struct_instance_bindings.getPtr(inst) orelse return self.formatTypeName(ty);
+    var out = std.ArrayList(u8).empty;
+    out.appendSlice(self.alloc, template) catch return self.formatTypeName(ty);
+    out.append(self.alloc, '(') catch return self.formatTypeName(ty);
+    var n: usize = 0;
+    for (author.type_params) |tp| {
+        const bound = binds.get(tp.name) orelse continue;
+        if (n > 0) out.appendSlice(self.alloc, ", ") catch return self.formatTypeName(ty);
+        out.appendSlice(self.alloc, self.formatSourceTypeName(bound)) catch return self.formatTypeName(ty);
+        n += 1;
+    }
+    if (n == 0) return self.formatTypeName(ty);
+    out.append(self.alloc, ')') catch return self.formatTypeName(ty);
+    return out.items;
+}
+
 /// Format a function type string like "() -> i32" or "(i32, i32) -> i32".
 pub fn formatFnTypeString(self: *Lowering, fd: *const ast.FnDecl) []const u8 {
     var buf = std.ArrayList(u8).empty;

@@ -1,0 +1,43 @@
+error: 'Empty' cannot receive this block: it does not implement '@BuildSink(Drawable)'
+  --> examples/diagnostics/2031-diagnostics-sink-nonconforming.sx:37:17
+   |
+37 |     content.run(*sink);
+   |                 ^^^^^
+
+help: declare `expression :: (self: *Empty, value: $I/@Init($V/Drawable))` on it, or write an 'impl @BuildSink(Drawable) for Empty'
+   |
+37 |     content.run(*sink);
+   |                 ^^^^^
+
+error: 'Wrong' cannot receive this block: it does not implement '@BuildSink(Drawable)'
+  --> examples/diagnostics/2031-diagnostics-sink-nonconforming.sx:42:17
+   |
+42 |     content.run(*sink);
+   |                 ^^^^^
+
+help: declare `expression :: (self: *Wrong, value: $I/@Init($V/Drawable))` on it, or write an 'impl @BuildSink(Drawable) for Wrong'
+   |
+42 |     content.run(*sink);
+   |                 ^^^^^
+
+error: 'Sink(Other)' cannot receive this block: it does not implement '@BuildSink(Drawable)'
+  --> examples/diagnostics/2031-diagnostics-sink-nonconforming.sx:48:17
+   |
+48 |     content.run(*sink);
+   |                 ^^^^^
+
+help: declare `expression :: (self: *Sink(Other), value: $I/@Init($V/Drawable))` on it, or write an 'impl @BuildSink(Drawable) for Sink(Other)'
+   |
+48 |     content.run(*sink);
+   |                 ^^^^^
+
+error: 'run' needs a pointer to the sink, but this is 'Sink(Drawable)'
+  --> examples/diagnostics/2031-diagnostics-sink-nonconforming.sx:53:17
+   |
+53 |     content.run(sink);
+   |                 ^^^^
+
+help: take its address with `*` so the sink records into your storage
+   |
+53 |     content.run(sink);
+   |                 ^^^^

@@ -1,0 +1,61 @@
+// `run` needs a sink that implements `@BuildSink(P)`, and one report says so
+// however the sink fails to: no `expression` at all, and an `expression` for a
+// DIFFERENT interception type. Both go through the one gate, so the message and
+// the fixit name the same requirement — and they name the sink the way the source
+// spells it, never the mangled instance key.
+//
+// The pointer requirement is separate and reported on its own: a sink recorded
+// through a copy would record nothing.
+// Expected: exit 1.
+#import "modules/std.sx";
+#import "modules/std/list.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol tagged {
+    draw :: (self: *Self) -> string;
+}
+Other :: protocol tagged {
+    tag :: (self: *Self) -> i32;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+// No `expression` anywhere.
+Empty :: struct { n: i32 = 0; }
+
+// An `expression`, but for the wrong interception type.
+Wrong :: struct { n: i32 = 0; }
+impl @BuildSink(Other) for Wrong {
+    expression :: (self: *Wrong, value: $I/@Init($V/Other)) { self.n += 1; }
+}
+
+missing :: (content: $B/@BuildBlock(Drawable)) {
+    sink := Empty{};
+    content.run(*sink);
+}
+
+wrong_protocol :: (content: $B/@BuildBlock(Drawable)) {
+    sink := Wrong{};
+    content.run(*sink);
+}
+
+// A generic instance names itself the way it was written.
+instance :: (content: $B/@BuildBlock(Drawable)) {
+    sink := Sink(Other){};
+    content.run(*sink);
+}
+
+by_value :: (content: $B/@BuildBlock(Drawable)) {
+    sink := Sink(Drawable){};
+    content.run(sink);
+}
+
+main :: () {
+    missing() { Label{ text = "a" }; };
+    wrong_protocol() { Label{ text = "b" }; };
+    instance() { Label{ text = "c" }; };
+    by_value() { Label{ text = "d" }; };
+}

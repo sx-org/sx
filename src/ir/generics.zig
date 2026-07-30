@@ -285,6 +285,12 @@ pub const GenericResolver = struct {
             }
             if (inferred_ty) |ty| {
                 bindings.put(tp.name, ty) catch {};
+                continue;
+            }
+            // A binder the arguments cannot speak for: a blanket impl's method
+            // names the IMPL's binders, which the carrier's instantiation bound.
+            if (self.l.impl_binder_seed) |seed| {
+                if (seed.get(tp.name)) |ty| bindings.put(tp.name, ty) catch {};
             }
         }
         return bindings;

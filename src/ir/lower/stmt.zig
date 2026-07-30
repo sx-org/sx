@@ -521,7 +521,6 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
 }
 
 pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
-    if (self.rejectBlockBinding(vd.value, vd.name)) return;
     if (vd.value) |val| {
         if (val.data == .identifier and self.isPackName(val.data.identifier.name)) {
             const ph = self.diagPackAsValue(val.data.identifier.name, val.span, .storage);
@@ -592,6 +591,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
             var ref = self.lowerExpr(val);
             self.target_type = saved_target;
             self.force_block_value = saved_fbv;
+            if (self.rejectBlockBinding(val, vd.name, self.builder.getRefType(ref))) return;
             // If target is optional and value isn't null, wrap with optional_wrap
             // — UNLESS the value is already that optional (e.g. a `?T`-returning
             // call, or a struct literal that lowered straight to `?T`); wrapping
@@ -793,6 +793,9 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         // integer (issue 0237).  Keep the emitted ref unchanged and specialize
         // only this declaration-inference boundary.
         const ty = inferBareFnBindingType(self, val) orelse self.builder.getRefType(ref);
+        // Asked on the LOWERED type, so every shape a block can arrive through
+        // is covered — a bare name, an `if` that yields one, anything.
+        if (self.rejectBlockBinding(val, vd.name, ty)) return;
         const slot = self.builder.alloca(ty);
         self.builder.store(slot, ref);
         if (self.scope) |scope| {
@@ -843,7 +846,6 @@ pub fn lowerLocalFnDecl(self: *Lowering, fd: *const ast.FnDecl) void {
 }
 
 pub fn lowerConstDecl(self: *Lowering, cd: *const ast.ConstDecl) void {
-    if (self.rejectBlockBinding(cd.value, cd.name)) return;
     // Handle local function declarations: fx :: (s:i3) -> i3 { ... }
     if (cd.value.data == .fn_decl) {
         const fd = &cd.value.data.fn_decl;
@@ -1070,9 +1072,6 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt) void {
         .i64;
     const rs_value: ?*const Node = if (rs.value) |val| tupleFormOfBareBraceLiteral(self, val, norm_ret_ty) else null;
     if (rs_value) |val| {
-        if (self.blockBindingTypeOf(val)) |bt| {
-            if (self.rejectBlockReturn(bt, val.span)) return;
-        }
         if (val.data == .identifier and self.isPackName(val.data.identifier.name)) {
             _ = self.diagPackAsValue(val.data.identifier.name, val.span, .return_value);
             return;
@@ -1134,6 +1133,9 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt) void {
     // returns and for the inline-comptime case (ret_ty_for_target carries the
     // right tuple either way).
     const ret_val = if (rs_value) |val| self.lowerExpr(reorderNamedReturn(self, val, ret_ty_for_target)) else null;
+    if (ret_val) |rv| {
+        if (self.rejectBlockReturn(self.builder.getRefType(rv), (rs_value orelse rs.value.?).span)) return;
+    }
     self.force_block_value = saved_fbv_ret;
     self.target_type = old_target;
 

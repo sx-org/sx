@@ -3792,6 +3792,20 @@ allocated environment and outlives the frame.
 part of the block's type: `run` takes any `*S` implementing `@BuildSink(P)`, so
 one block can be replayed into two different sinks.
 
+A type implements `@BuildSink(P)` in either of two ways, and `run` accepts both
+by the same question:
+
+- it **declares** `expression` itself, on the struct; or
+- an `impl @BuildSink(P) for S` supplies it — including a **blanket** impl
+  (`impl @BuildSink($T) for S($T)`), whose method spells the impl's own binder
+  and is monomorphized with what the carrier's instantiation bound it to.
+
+A method inherited from an impl of some OTHER protocol does not answer for this
+one; the refusal names the requirement and the sink as the source spells it.
+`modules/fluent.sx` ships `Sink($T)` with such a blanket impl: it reserves
+storage for each published expression through `context.allocator`, writes into
+it, and appends the result to a list it owns.
+
 ### Enum Definition
 
 ```sx

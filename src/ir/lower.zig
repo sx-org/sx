@@ -430,6 +430,12 @@ pub const Lowering = struct {
     stdlib_paths: []const []const u8 = &.{},
     resolved_root: ?*const Node = null, // full AST root (for building comptime modules)
     comptime_param_nodes: ?std.StringHashMap(*const Node) = null, // active comptime substitutions
+    /// Impl binders to seed a monomorphization with: a blanket impl's method
+    /// signature spells the impl's own binders (`$T` in
+    /// `impl @BuildSink($T) for Sink($T)`), and only the carrier's
+    /// instantiation can say what they are. Set around a dispatch to such a
+    /// method; null everywhere else.
+    impl_binder_seed: ?*const std.StringHashMap(TypeId) = null,
     /// `@BuildBlock` formation sites, in mint order; a per-site implementor type
     /// carries its one-based index as its nominal id.
     block_sites: std.ArrayList(lower_build_block.Site) = .empty,
@@ -3429,6 +3435,7 @@ pub const Lowering = struct {
     pub const resolveTupleLiteralTypeArg = lower_generic.resolveTupleLiteralTypeArg;
     pub const resolveTypeArg = lower_generic.resolveTypeArg;
     pub const formatTypeName = lower_generic.formatTypeName;
+    pub const formatSourceTypeName = lower_generic.formatSourceTypeName;
     pub const formatFnTypeString = lower_generic.formatFnTypeString;
     pub const matchTypeParam = lower_generic.matchTypeParam;
     pub const matchTypeParamStatic = lower_generic.matchTypeParamStatic;
@@ -3544,7 +3551,6 @@ pub const Lowering = struct {
     pub const lowerBuildBlockSite = lower_build_block.lowerSite;
     pub const interceptBuildExpression = lower_build_block.interceptExpression;
     pub const rejectBlockBinding = lower_build_block.rejectBinding;
-    pub const blockBindingTypeOf = lower_build_block.bindingTypeOf;
     pub const rejectBlockCapture = lower_build_block.rejectCapture;
     pub const rejectBlockReturn = lower_build_block.rejectReturn;
     pub const appendIntField = lower_build_block.appendIntField;

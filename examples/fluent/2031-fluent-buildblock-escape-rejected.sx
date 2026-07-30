@@ -5,7 +5,8 @@
 // outliving the call is refused:
 //
 //   - binding it to a local, which is what a later statement or a closure would
-//     reach through;
+//     reach through — however the value arrives there, an `if` that yields one
+//     and an annotated binding included;
 //   - capturing it in a closure, which may run after that frame is gone;
 //   - returning it, which names a frame that has ended.
 //
@@ -30,6 +31,13 @@ hold :: (content: $B/@BuildBlock(Drawable)) {
     saved := content;        // refused: a block is not storage
 }
 
+// The refusal is on the TYPE, not on the spelling: an expression that yields a
+// block is refused where a bare name is.
+hold_indirect :: (flag: bool, content: $B/@BuildBlock(Drawable)) {
+    saved := if flag { content } else { content };
+    kept : B = content;
+}
+
 leak :: (content: $B/@BuildBlock(Drawable)) -> B {
     content                  // refused: the frame it points at ends here
 }
@@ -44,6 +52,7 @@ reach :: (content: $B/@BuildBlock(Drawable)) {
 
 main :: () -> i32 {
     hold() { Label{ text = "a" }; };
+    hold_indirect(true) { Label{ text = "a2" }; };
     _l := leak() { Label{ text = "b" }; };
     capture() { Label{ text = "c" }; };
     reach() { Label{ text = "d" }; };

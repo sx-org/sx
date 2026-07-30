@@ -1,0 +1,105 @@
+// Every way a sink can answer a block — and one that cannot (fluent spec §6.1).
+//
+// `run` needs a `*S` that implements `@BuildSink(P)`, and a type may implement it
+// three ways. All three go through one gate, so what `run` accepts and what a
+// reached expression dispatches to can never disagree:
+//
+//   1. the `expression` method declared on the sink struct itself;
+//   2. a concrete `impl @BuildSink(P) for Sink`;
+//   3. a BLANKET `impl @BuildSink($T) for Carrier($T)`, whose method spells the
+//      impl's own binder — substituted from the carrier's instantiation, so the
+//      replay reaches a resolved signature.
+//
+// The stdlib `Sink($T)` is case 3, and this pins it end to end: the block
+// publishes, the sink writes each expression into storage it owns, and the
+// children come back in source order.
+//
+// `P` is `tagged` here because the sink KEEPS what it collected: a tagged
+// protocol's values are storable handles, while a `constraint` protocol has no
+// runtime values to put in a list.
+#import "modules/std.sx";
+#import "modules/std/list.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol tagged {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+Dot :: struct { n: i32 = 0; }
+impl Drawable for Dot {
+    draw :: (self: *Dot) -> string => "dot";
+}
+
+// (1) the method on the struct.
+Member :: struct {
+    n: i32 = 0;
+    expression :: (self: *Member, value: $I/@Init($V/Drawable)) {
+        slot: V = ---;
+        value.write(*slot);
+        print("  member {}\n", slot.draw());
+        self.n += 1;
+    }
+}
+
+// (2) a concrete impl, with nothing on the struct.
+Concrete :: struct { n: i32 = 0; }
+impl @BuildSink(Drawable) for Concrete {
+    expression :: (self: *Concrete, value: $I/@Init($V/Drawable)) {
+        slot: V = ---;
+        value.write(*slot);
+        print("  concrete {}\n", slot.draw());
+        self.n += 1;
+    }
+}
+
+// (3) the blanket impl the stdlib ships, over any interception type.
+collect :: (content: $B/@BuildBlock(Drawable)) -> List(Drawable) {
+    sink := Sink(Drawable){};
+    content.run(*sink);
+    sink.children
+}
+
+// One block, three sinks: `run` is monomorphized per sink, so the same body is
+// replayed into each.
+three_ways :: (content: $B/@BuildBlock(Drawable)) -> i32 {
+    member := Member{};
+    content.run(*member);
+    concrete := Concrete{};
+    content.run(*concrete);
+    member.n + concrete.n
+}
+
+main :: () -> i32 {
+    print("counted {}\n", three_ways() {
+        Label{ text = "a" };
+        Dot{ n = 1 };
+    });
+
+    kept := collect() {
+        Label{ text = "kept" };
+        Dot{ n = 2 };
+        Label{ text = "last" };
+    };
+    print("collected {}\n", kept.len);
+    for kept (child) {
+        print("  {}\n", child.draw());
+    }
+    0
+}
+
+// ** stdout **
+//   member a
+//   member dot
+//   concrete a
+//   concrete dot
+// counted 4
+// collected 3
+//   kept
+//   dot
+//   last
+//

@@ -1054,6 +1054,65 @@ pub fn matchGenericParamImpl(
     return false;
 }
 
+/// The method a BLANKET impl supplies for `carrier`, with the impl's own binders
+/// bound to what the carrier's instantiation gives them (`$T` → `Drawable` for
+/// `impl @BuildSink($T) for Bag($T)` at `Bag(Drawable)`).
+///
+/// Dispatch needs both halves: the declaration to call, and those bindings —
+/// without them the method's signature still spells `$T` and monomorphization
+/// would stamp an unresolved type.
+pub const BlanketMethod = struct {
+    fd: *const ast.FnDecl,
+    /// Impl binder name → concrete type, to seed the monomorphization with.
+    bindings: std.StringHashMap(TypeId),
+    defining_module: ?[]const u8,
+};
+
+pub fn blanketMethod(
+    self: ProtocolResolver,
+    proto_name: []const u8,
+    arg_tys: []const TypeId,
+    carrier: TypeId,
+    method: []const u8,
+) ?BlanketMethod {
+    const entries = self.l.param_impl_generic_map.get(proto_name) orelse return null;
+    const src_name = self.l.mangleTypeName(carrier);
+    const template = self.l.struct_instance_template.get(src_name) orelse return null;
+    const binds = self.l.struct_instance_bindings.getPtr(src_name) orelse return null;
+    const tmpl_decl = self.l.program_index.struct_template_map.get(template) orelse return null;
+    for (entries.items) |entry| {
+        if (entry.arg_nodes.len != arg_tys.len) continue;
+        if (!std.mem.eql(u8, entry.target_template, template)) continue;
+        if (entry.target_arg_nodes.len != tmpl_decl.type_params.len) continue;
+        if (!carrierMatches(self, entry, tmpl_decl, binds)) continue;
+        var all = true;
+        for (entry.arg_nodes, entry.arg_positions, arg_tys) |node, pos, want| {
+            const got: TypeId = if (pos) |p| blk: {
+                if (p >= tmpl_decl.type_params.len) break :blk .unresolved;
+                break :blk binds.get(tmpl_decl.type_params[p].name) orelse .unresolved;
+            } else self.l.resolveTypeArg(node);
+            if (got != want) {
+                all = false;
+                break;
+            }
+        }
+        if (!all) continue;
+        for (entry.methods) |fd| {
+            if (!std.mem.eql(u8, fd.name, method)) continue;
+            // The impl's binders, read off the carrier's own instantiation by
+            // position — the same reading `carrierMatches` just accepted.
+            var seed = std.StringHashMap(TypeId).init(self.l.alloc);
+            for (entry.target_arg_nodes, 0..) |node, i| {
+                if (!nodeIsBinder(node)) continue;
+                const bound = binds.get(tmpl_decl.type_params[i].name) orelse continue;
+                seed.put(node.data.type_expr.name, bound) catch {};
+            }
+            return .{ .fd = fd, .bindings = seed, .defining_module = entry.defining_module };
+        }
+    }
+    return null;
+}
+
 /// Does the CARRIER the impl spelled describe this instantiation?
 ///
 /// A concrete slot constrains the impl just as a binder does: `for Map2(i64, $W)`
