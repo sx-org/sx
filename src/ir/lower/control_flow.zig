@@ -1177,6 +1177,17 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
         subject = self.builder.makeAny(tid_ref, ctx_ref);
         subject_ty = .any;
     }
+    // An OPEN SET subject switches on the member its tag names, through the same
+    // view `v.(any)` gives: the member's address inside the slot and the member's
+    // own type. From there the arms, the captures, and the first-wins rule are the
+    // any switch's. Non-null for a set subject — a set is OPEN, so what its arms
+    // may name and what the switch must cover are both decided by membership.
+    var set_subject_ty: ?TypeId = null;
+    if (self.isOpenSet(subject_ty)) {
+        set_subject_ty = subject_ty;
+        subject = self.openSetAnyView(subject_ty, subject, me.subject);
+        subject_ty = .any;
+    }
     const is_any_switch = subject_ty == .any;
     if (is_any_switch) is_type_match = true;
     const is_optional_match = blk: {
@@ -1400,6 +1411,20 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
                 const ty = self.resolveTypeArg(pat);
                 if (ty == .unresolved) break :blk_rt &.{}; // resolveTypeArg diagnosed
                 if (protocol_subject_ty) |pst| self.warnDeadTypeSwitchArm(pst, ty, pat.span);
+                if (set_subject_ty) |sst| {
+                    // Membership decides what a set value can be, so an arm
+                    // naming anything else names nothing this subject reaches.
+                    if (self.isOpenSet(ty)) {
+                        if (self.refuseOpenSetArm(sst, ty, pat.span)) break :blk_rt &.{};
+                    }
+                    if (!self.openSetDeclaresMembership(ty, self.openSetOf(sst).?.decl.name)) {
+                        if (self.refuseOpenSetNonMemberTarget(sst, ty, pat.span)) break :blk_rt &.{};
+                    }
+                } else if (self.isOpenSet(ty)) {
+                    // A box holds the member a set carries, so no `any` ever
+                    // reaches an arm naming the set itself.
+                    if (self.refuseSetFromAny(ty, pat.span)) break :blk_rt &.{};
+                }
                 arm_concrete.items[i] = ty;
                 const one = self.alloc.alloc(u64, 1) catch break :blk_rt &.{};
                 one[0] = ty.index();
@@ -1593,6 +1618,18 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
                 .target = arm_blocks.items[i],
                 .args = &.{},
             }) catch unreachable;
+        }
+    }
+
+    // A set is OPEN: a member declared anywhere in the program — or in a module
+    // this one has not seen — carries a tag no arm here names, so the arms are
+    // never the whole of it and the switch must say what it does with the rest.
+    if (set_subject_ty) |sst| {
+        if (default_bb == null) {
+            if (self.diagnostics) |d| {
+                const id = d.addFmtId(.err, me.subject.span, "a switch over '{s}' needs an 'else:' arm: the set is open, so a member beyond these arms may reach it", .{self.formatTypeName(sst)});
+                d.addHelpFmt(id, me.subject.span, null, "name the members this code handles and let 'else:' answer for the rest — a set's members are declared anywhere in the program", .{});
+            }
         }
     }
 

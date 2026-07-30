@@ -1,0 +1,81 @@
+// What switching on an open set value refuses (spec: Open Sets — the type switch),
+// and the one thing a set value is never handed to.
+//
+// A switch over a set opens the member its tag names, so:
+//
+//   - the arms are never the whole set — a member declared elsewhere carries a tag
+//     none of them names — and an `else:` arm is required to say so;
+//   - an arm naming a type that never declared itself into the set names nothing
+//     the subject reaches, a member of a DIFFERENT set included;
+//   - an arm naming a SET names what a slot is declared as, never what it holds,
+//     the subject's own set included; and
+//   - over an `any` subject a set arm is the same mistake from the other side: a
+//     box holds the member, so it never holds the set.
+//
+// And `free` is not part of a set's story at all: the active member lives inline
+// in the slot, so there is no allocation the value stands for.
+// Expected: exit 1.
+#import "modules/std.sx";
+#import "modules/std/mem.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Panel :: @OpenVariant(View) {
+    title: string = "";
+    render :: (self: *Panel) -> string => self.title;
+}
+
+Elsewhere :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Alien :: @OpenVariant(Elsewhere) {
+    text: string = "";
+    render :: (self: *Alien) -> string => self.text;
+}
+
+Plain :: struct {
+    text: string = "";
+}
+
+main :: () -> i32 {
+    v: View = Label{ text = "label" };
+
+    // Every member named, and still not the whole set.
+    if v == {
+        case Label: (l) { print("{}\n", l.text); }
+        case Panel: (p) { print("{}\n", p.title); }
+    }
+
+    // Types the subject never reaches.
+    if v == {
+        case Plain: { print("plain\n"); }
+        case Alien: { print("alien\n"); }
+        else: { print("other\n"); }
+    }
+
+    // A set names what the slot is declared as, not what it holds.
+    if v == {
+        case Elsewhere: { print("another set\n"); }
+        case View: { print("its own set\n"); }
+        else: { print("other\n"); }
+    }
+
+    // The same mistake through a box.
+    a: any = v;
+    if a == {
+        case View: { print("never\n"); }
+        else: { print("other\n"); }
+    }
+
+    // The payload IS the value; there is no allocation to release.
+    free(v);
+    0
+}

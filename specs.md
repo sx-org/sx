@@ -4080,6 +4080,45 @@ method mentioning `Self` past the receiver has no caller-side type on a set valu
 and on the member a downcast produced it is an ordinary call on a concrete type —
 the second route alongside the membership bound.
 
+**Switching on the member.** A type switch over a set subject opens the member its
+tag names: the arms name members, a capture binds that member's own value, and the
+arms are read first-wins exactly as they are over an `any`. An **`else:` arm is
+required** — a set is open, so a member declared elsewhere in the program carries a
+tag no arm here names, and the arms are never the whole of it.
+
+```sx
+if v == {
+    case Label: (l) { print("{}\n", l.text); }
+    case Panel: (p) { print("{}\n", p.title); }
+    else: { … }                  // a member beyond these arms may reach it
+}
+```
+
+An arm naming a type that never declared itself into the set is refused, and so is
+one naming a **set** — a set is what a slot is declared as, never what it holds,
+the subject's own set included. Over an `any` subject a set arm is refused for the
+same reason from the other side: a box holds the member.
+
+A capture is a **copy**. Dispatch writes through the slot it was called on, so a
+method that mutates `self` mutates the receiver; the value an arm binds was read out
+of the slot and is unmoved by that.
+
+**Unwritten slots.** A set-typed location left `---` has an undefined tag until
+formation or an `@Init.write` fills it, and consulting that tag — dispatch,
+`type_of`, a type switch, a downcast, `.(any)` — is **undefined behavior**. There is
+no poison tag, no default-arm trap, and no dispatch-time check; writing before
+publishing is the discipline. The other way to reach a tag that means nothing is a
+wrong `xx` force from an `any` (`xx a : ?View` where the box holds something else),
+which reinterprets whatever the box points at — the `xx` forms that could produce
+one out of a set value itself are refused.
+
+**`free` is not part of a set's story.** The active member lives **inline** in the
+slot: the payload IS the value, not a handle to an allocation, so there is nothing
+for `free` to release and it refuses a set value. What a member's fields point at —
+a `List`'s backing, a string buffer — is ordinary field data with ordinary
+lifetimes; reclaim it by resetting the allocator or arena those allocations came
+from, not through the set value.
+
 **The membership bound `$V/P`.** A set is not a protocol and carries no impls, so a
 bound whose head names a set asks the set's own question: **is the binding a
 member?** This is the one head in the bound grammar that is not a conformance

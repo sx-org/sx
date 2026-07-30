@@ -1,0 +1,77 @@
+error: a switch over 'View' needs an 'else:' arm: the set is open, so a member beyond these arms may reach it
+  --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:52:8
+   |
+52 |     if v == {
+   |        ^
+
+help: name the members this code handles and let 'else:' answer for the rest — a set's members are declared anywhere in the program
+   |
+52 |     if v == {
+   |        ^
+
+error: a 'View' value is never 'Plain': it is not a member of it
+  --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:59:14
+   |
+59 |         case Plain: { print("plain\n"); }
+   |              ^^^^^
+
+help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
+   |
+59 |         case Plain: { print("plain\n"); }
+   |              ^^^^^
+
+error: a 'View' value is never 'Alien': it is not a member of it
+  --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:60:14
+   |
+60 |         case Alien: { print("alien\n"); }
+   |              ^^^^^
+
+help: 'Alien' is a member of 'Elsewhere', and a type belongs to one set
+   |
+60 |         case Alien: { print("alien\n"); }
+   |              ^^^^^
+
+error: a switch on 'View' opens the member the value carries, and 'Elsewhere' is a set — never a member of one
+  --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:66:14
+   |
+66 |         case Elsewhere: { print("another set\n"); }
+   |              ^^^^^^^^^
+
+help: name the members this code handles ('case <Member>:'), and let 'else:' answer for the rest
+   |
+66 |         case Elsewhere: { print("another set\n"); }
+   |              ^^^^^^^^^
+
+error: a switch on 'View' opens the member the value carries, and 'View' is a set — never a member of one
+  --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:67:14
+   |
+67 |         case View: { print("its own set\n"); }
+   |              ^^^^
+
+help: name the members this code handles ('case <Member>:'), and let 'else:' answer for the rest
+   |
+67 |         case View: { print("its own set\n"); }
+   |              ^^^^
+
+error: 'any' cannot be converted to 'View': an 'any' never holds a set value — boxing a set boxes the member it carries
+  --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:74:14
+   |
+74 |         case View: { print("never\n"); }
+   |              ^^^^
+
+help: name the member as the target instead, or open the box with a type switch — its arms bind the member
+   |
+74 |         case View: { print("never\n"); }
+   |              ^^^^
+
+error: free expects a protocol value, a closure, or a slice
+  --> examples/diagnostics/2045-diagnostics-open-set-type-switch.sx:79:5
+   |
+79 |     free(v);
+   |     ^^^^
+
+note: raised by '#error' here
+  --> library/modules/std/mem.sx:76:24
+   |
+76 |         else:          #error("free expects a protocol value, a closure, or a slice");
+   |                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

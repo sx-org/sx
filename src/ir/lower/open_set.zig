@@ -1117,6 +1117,17 @@ pub fn refuseNonMemberTarget(self: *Lowering, set_ty: TypeId, target: TypeId, sp
     return true;
 }
 
+/// Refuse a type-switch arm that names a SET over a set subject — true when
+/// refused. The switch opens the member a value carries, and a set is what a slot
+/// is declared as, never what it holds: its own set included.
+pub fn refuseSetArm(self: *Lowering, subject_ty: TypeId, arm_ty: TypeId, span: ast.Span) bool {
+    if (self.diagnostics) |d| {
+        const id = d.addFmtId(.err, span, "a switch on '{s}' opens the member the value carries, and '{s}' is a set — never a member of one", .{ self.formatTypeName(subject_ty), self.formatTypeName(arm_ty) });
+        d.addHelpFmt(id, span, null, "name the members this code handles ('case <Member>:'), and let 'else:' answer for the rest", .{});
+    }
+    return true;
+}
+
 /// Refuse `xx` between a set value and one of its members: the conversion is the
 /// downcast, and it can fail — which `xx` has no way to say. True when refused.
 pub fn refuseUntemperedDowncast(self: *Lowering, set_ty: TypeId, member: TypeId, span: ast.Span) bool {

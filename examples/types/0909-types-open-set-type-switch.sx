@@ -1,0 +1,114 @@
+// Switching on the member an open set value carries (spec: Open Sets — the type
+// switch).
+//
+// A set value's tag names its member, so a switch over one opens that member: the
+// arms name members, a capture binds the member's own value, and the arms are read
+// first-wins exactly as they are over an `any`. The capture is a COPY out of the
+// slot — dispatch writes through the slot it was called on, a switch capture does
+// not.
+//
+// An `else:` arm is REQUIRED. A set is open: a member declared elsewhere in the
+// program, or in a module this one never sees, carries a tag no arm here names, so
+// the arms are never the whole of the set.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128, align = 8 }) {
+    render :: (self: *Self) -> string;
+    bump :: (self: *Self, by: i64) -> i64;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    n: i64 = 0;
+    render :: (self: *Label) -> string => self.text;
+    bump :: (self: *Label, by: i64) -> i64 {
+        self.n = self.n + by;
+        return self.n;
+    }
+}
+
+Panel :: @OpenVariant(View) {
+    title: string = "";
+    rows: i64 = 0;
+    render :: (self: *Panel) -> string => self.title;
+    bump :: (self: *Panel, by: i64) -> i64 => self.rows + by;
+}
+
+// Each instantiation is its own member, and an arm names the instantiation.
+Padded :: @OpenVariant(View) ($T: Type) {
+    inner: $T = ---;
+    render :: (self: *Padded) -> string => "padded";
+    bump :: (self: *Padded, by: i64) -> i64 => by;
+}
+
+describe :: (v: View) -> string {
+    if v == {
+        case Label: (l) { return l.text; }
+        case Panel: (p) { return p.title; }
+        else: { return "some other member"; }
+    }
+    return "unreached";
+}
+
+// The numbering the arms compare against is written at the freeze, so a switch
+// asked before it waits for it — including for a member instantiated later than
+// the question.
+CT_ANSWER :: #run early_switch();
+
+early_switch :: () -> string {
+    v: View = Padded(i64){ inner = 7 };
+    if v == {
+        case Label: { return "label"; }
+        case Padded(i64): { return "padded at comptime"; }
+        else: { return "other"; }
+    }
+    return "unreached";
+}
+
+main :: () -> i32 {
+    v: View = Label{ text = "label", n = 1 };
+
+    // The capture is the member's own value, with its own fields.
+    if v == {
+        case Label: (l) { print("label {} n {}\n", l.text, l.n); }
+        case Panel: (p) { print("panel {} rows {}\n", p.title, p.rows); }
+        else: { print("other\n"); }
+    }
+
+    // The capture is a copy: dispatch writes through the slot it was called on,
+    // and what the arm holds is unmoved by it.
+    if v == {
+        case Label: (l) {
+            print("slot bumped to {}\n", v.bump(10));
+            print("capture still {}\n", l.n);
+        }
+        else: { print("other\n"); }
+    }
+
+    // The same switch, over the member the slot carries after an assignment.
+    print("described {}\n", describe(v));
+    v = Panel{ title = "panel", rows = 4 };
+    print("described {}\n", describe(v));
+    v = Padded(i64){ inner = 3 };
+    print("described {}\n", describe(v));
+
+    // An arm naming a generic member's instantiation.
+    if v == {
+        case Padded(i64): { print("an instantiation arm\n"); }
+        else: { print("other\n"); }
+    }
+
+    print("comptime {}\n", CT_ANSWER);
+    0
+}
+
+// ** stdout **
+// label label n 1
+// slot bumped to 11
+// capture still 1
+// described label
+// described panel
+// described some other member
+// an instantiation arm
+// comptime padded at comptime
+//
