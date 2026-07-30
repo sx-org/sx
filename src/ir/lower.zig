@@ -3617,6 +3617,7 @@ pub const Lowering = struct {
     pub const openSetDeclaresMembership = lower_open_set.declaresMembership;
     pub const openSetOfMember = lower_open_set.setOfMember;
     pub const refuseOpenSetNonMember = lower_open_set.refuseNonMember;
+    pub const refuseSetFromAny = lower_open_set.refuseSetFromAny;
     pub const coerceMemberToSet = lower_open_set.coerceMemberToSet;
     pub const openSetSlotAddress = lower_open_set.slotAddress;
     pub const openSetMemberTypeId = lower_open_set.memberTypeId;

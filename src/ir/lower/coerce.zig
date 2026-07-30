@@ -41,6 +41,20 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         return boxAnyOf(self, operand, src_ty, operand_node);
     }
 
+    // A set destination is reached from a MEMBER and from nothing else: the
+    // formation arm lifts the member into the slot, and no other source has a tag
+    // to write. An explicit cast asks for that same conversion, so what cannot
+    // form a set is refused here rather than reaching an arm that would type
+    // foreign bytes as one (spec: Open Sets — formation).
+    if (target_explicit and self.isOpenSet(dst_ty)) {
+        const cs = self.builder.current_span;
+        const span = ast.Span{ .start = cs.start, .end = cs.end };
+        if (src_ty == .any) {
+            if (self.refuseSetFromAny(dst_ty, span)) return self.builder.constUndef(dst_ty);
+        }
+        if (self.refuseOpenSetNonMember(src_ty, dst_ty, span)) return self.builder.constUndef(dst_ty);
+    }
+
     // PLANNING: the `xx`-head decision (conversions.zig). `.coerce` falls
     // through to the built-in ladder + the user-`Into` fallback below.
     switch (self.coercionResolver().classifyXX(src_ty, dst_ty)) {
@@ -143,17 +157,6 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
         // switch base).
         .protocol_to_any => return protocolToAnyView(self, operand, src_ty),
         .coerce => {},
-    }
-
-    // The ladder reaches a set destination through its formation arm, which lifts
-    // a MEMBER into the slot; nothing else has a tag to write. An explicit cast
-    // asks for the same conversion formation performs, so a non-member is refused
-    // here rather than falling to the reinterpreting arms below, which would type
-    // its bytes as a set (spec: Open Sets — formation).
-    if (target_explicit and self.isOpenSet(dst_ty)) {
-        const cs = self.builder.current_span;
-        if (self.refuseOpenSetNonMember(src_ty, dst_ty, .{ .start = cs.start, .end = cs.end }))
-            return self.builder.constUndef(dst_ty);
     }
 
     const result = self.coerceExplicit(operand, src_ty, dst_ty);

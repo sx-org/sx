@@ -934,6 +934,19 @@ pub fn refuseNonMember(self: *Lowering, src_ty: TypeId, set_ty: TypeId, span: as
     return true;
 }
 
+/// Refuse a conversion of an `any` into the set `set_ty` — always true, and the
+/// caller yields a value of the set instead of converting. Boxing a set boxes the
+/// MEMBER it carries, so no `any` in the program holds a set value: there is
+/// nothing at a set destination for an unbox to read (spec: Open Sets — what a set
+/// value answers about itself).
+pub fn refuseSetFromAny(self: *Lowering, set_ty: TypeId, span: ast.Span) bool {
+    if (self.diagnostics) |d| {
+        const id = d.addFmtId(.err, span, "'any' cannot be converted to '{s}': an 'any' never holds a set value — boxing a set boxes the member it carries", .{self.formatTypeName(set_ty)});
+        d.addHelpFmt(id, span, null, "name the member as the target instead, or open the box with a type switch — its arms bind the member", .{});
+    }
+    return true;
+}
+
 /// The set's required method of that name, or null when the set does not require
 /// one. A method with a default body is not dispatched through the set — nothing
 /// in this packet declares one.

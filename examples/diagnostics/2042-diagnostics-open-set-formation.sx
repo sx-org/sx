@@ -9,6 +9,8 @@
 //     DIFFERENT set, since a type belongs to one;
 //   - `xx` names the same conversion, so it refuses exactly what the expected
 //     type and `.(View)` refuse — an explicit cast is not a way past membership;
+//   - an `any` holds no set value at all, since boxing a set boxes the member it
+//     carries, so there is nothing at a set destination for an unbox to read;
 //   - `.(P, alloc)` does not exist for a set: the active member lives inline in
 //     the slot, so nothing allocates and there is no allocator to pass; and
 //   - `write` takes exactly `*T` for its own type argument. An `@Init(Label)`
@@ -65,6 +67,12 @@ main :: () -> i32 {
     cast_plain: View = xx Plain{ text = "still not a member" };
     cast_alien: View = xx Alien{ text = "still another set" };
     print("{} {}\n", cast_plain.render(), cast_alien.render());
+
+    // A box of a set holds the member, so there is no set in it to unbox.
+    slot: View = Label{ text = "boxed" };
+    boxed: any = slot;
+    unboxed: View = xx boxed;
+    print("{}\n", unboxed.render());
 
     // An allocator has nothing to fund here.
     allocated := Label{ text = "x" }.(View, context.allocator);

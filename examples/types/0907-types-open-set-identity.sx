@@ -59,6 +59,7 @@ main :: () -> i32 {
     view := l.(any);
     a: any = l;
     print("view {} box {} argument {}\n", type_of(view), type_of(a), boxed(l));
+    print("formatted {}\n", l);
 
     // The view addresses the member itself, so the type switch opens it and the
     // capture is the member's own value.
@@ -77,6 +78,7 @@ main :: () -> i32 {
 // after assignment Panel
 // through a pointer Panel and the pointer itself *View
 // view Label box Label argument Label
+// formatted {text: viewed}
 // opened viewed
 // comptime Panel
 //
