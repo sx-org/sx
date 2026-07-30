@@ -1,0 +1,26 @@
+// The three ways a bound can fail. Each is reported against the binding the
+// call fixed, not against the template.
+#import "modules/std.sx";
+
+Summable :: protocol constraint {
+    val :: (self: *Self) -> i32;
+}
+
+// Satisfies nothing.
+Plain :: struct { n: i32 = 0; }
+
+// A declared head the binding does not implement.
+total :: (x: $T/Summable) -> i32 { 1 }
+
+// A parameterized head with no visible impl for the binding.
+degrees :: (c: $C/Into(i32)) -> i32 { 1 }
+
+// A head that names nothing at all — not a protocol in scope, not one of this
+// declaration's own type parameters.
+mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
+
+main :: () {
+    print("{}\n", total(Plain{ n = 1 }));
+    print("{}\n", degrees(Plain{ n = 2 }));
+    print("{}\n", mystery(Plain{ n = 3 }));
+}

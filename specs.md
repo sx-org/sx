@@ -2916,6 +2916,23 @@ constructor may wrap a bound binder: `*$S/@BuildSink(P)` is a pointer to some
 
 A `/` with no head, and an empty argument list (`$T/Eq()`), are errors.
 
+**A bound constrains.** Each bound is checked per monomorphized instance,
+against the concrete type that instance binds — the template itself constrains
+nothing, so one call may satisfy a bound and another fail it. A head that names
+nothing in scope is an unknown-name error, whichever way it is spelled.
+
+Where the check lands depends on what the head names:
+
+| Head | Satisfied when |
+|---|---|
+| a declared protocol | the binding implements every method |
+| a parameterized protocol (`Into(i32)`) | a visible `impl Into(i32) for <binding>` exists |
+| the declaration's own type parameter (`$V/P`) | deferred — asked again wherever `P` is bound |
+| a compiler-formed contract (`@Init`, `@BuildBlock`) | the argument is formable into an implementor |
+
+A protocol satisfies its own bound: binding `$V/View` to `View` is the identity
+case, not a request that `View` implement itself.
+
 ### Variadic Functions
 Functions can accept a variable number of arguments using `..name: []Type` syntax:
 ```sx

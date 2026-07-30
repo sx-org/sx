@@ -979,10 +979,11 @@ pub const Parser = struct {
     /// One generic bound (specs: Generic bounds):
     /// `ProtocolHead [ '(' TypeExpr (',' TypeExpr)* ')' ]`, where the head is a
     /// bare name or an `@` name. The head is an ordinary name reference, NOT
-    /// the closed compiler-formed set that `parseCompilerFormedType` guards, so
-    /// an `@` head naming no declaration resolves — and fails — in sema. Type
-    /// arguments are full type expressions, so a bound argument may introduce
-    /// its own binder with its own bounds (`@Init($V/P)`).
+    /// the closed compiler-formed set that `parseCompilerFormedType` guards:
+    /// `lower/bound.zig` resolves it, and a head naming nothing is an
+    /// unknown-name error there. Type arguments are full type expressions, so a
+    /// bound argument may introduce its own binder with its own bounds
+    /// (`@Init($V/P)`).
     fn parseBoundExpr(self: *Parser) anyerror!*Node {
         const start = self.current.loc.start;
         if (self.current.tag != .identifier and self.current.tag != .at_identifier) {
@@ -2262,6 +2263,46 @@ pub const Parser = struct {
     }
 
     /// Recursively find all generic type names ($T) in a type expression tree.
+    /// The bounds carried by the `$name` binder inside `node`, searching every
+    /// element position a type constructor can nest one in. Empty when the
+    /// binder carries none.
+    fn binderBounds(node: *const Node, name: []const u8) []const *Node {
+        switch (node.data) {
+            .type_expr => |te| {
+                if (te.is_generic and std.mem.eql(u8, te.name, name)) return te.protocol_constraints;
+            },
+            .pointer_type_expr => |p| return binderBounds(p.pointee_type, name),
+            .many_pointer_type_expr => |m| return binderBounds(m.element_type, name),
+            .slice_type_expr => |s| return binderBounds(s.element_type, name),
+            .array_type_expr => |a| return binderBounds(a.element_type, name),
+            .optional_type_expr => |o| return binderBounds(o.inner_type, name),
+            .parameterized_type_expr => |p| for (p.args) |a| {
+                const found = binderBounds(a, name);
+                if (found.len > 0) return found;
+            },
+            .tuple_type_expr => |t| for (t.field_types) |f| {
+                const found = binderBounds(f, name);
+                if (found.len > 0) return found;
+            },
+            .closure_type_expr => |c| {
+                for (c.param_types) |p| {
+                    const found = binderBounds(p, name);
+                    if (found.len > 0) return found;
+                }
+                if (c.return_type) |r| return binderBounds(r, name);
+            },
+            .function_type_expr => |f| {
+                for (f.param_types) |p| {
+                    const found = binderBounds(p, name);
+                    if (found.len > 0) return found;
+                }
+                if (f.return_type) |r| return binderBounds(r, name);
+            },
+            else => {},
+        }
+        return &.{};
+    }
+
     fn collectGenericNames(node: *Node, list: *std.ArrayList([]const u8), allocator: std.mem.Allocator) void {
         switch (node.data) {
             .type_expr => |te| {
@@ -2315,11 +2356,11 @@ pub const Parser = struct {
                 for (generic_names.items) |gen_name| {
                     if (!seen.contains(gen_name)) {
                         try seen.put(gen_name, {});
-                        // Propagate protocol constraints from the TypeExpr if present
-                        const pc: []const *Node = if (param.type_expr.data == .type_expr)
-                            param.type_expr.data.type_expr.protocol_constraints
-                        else
-                            &.{};
+                        // The binder's bounds, wherever in the annotation it was
+                        // introduced — `*$S/@BuildSink(P)` binds `S` under a
+                        // pointer, and its bounds belong to `S`, not to the
+                        // pointer around it.
+                        const pc = binderBounds(param.type_expr, gen_name);
                         const type_constraint = self.createNode(param.type_expr.span.start, .{ .type_expr = .{ .name = "Type" } }) catch continue;
                         type_params.append(self.allocator, .{ .name = gen_name, .constraint = type_constraint, .protocol_constraints = pc }) catch {};
                     }

@@ -53,10 +53,19 @@ fn plainHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
             const cname = self.resolveConcreteTypeName(ty) orelse return false;
             return firstUnimplementedMethod(self, pty, cname, ty) == null;
         },
-        .call => |c| {
-            const p_name: []const u8 = switch (c.callee.data) {
-                .identifier => |id| id.name,
-                .type_expr => |te| te.name,
+        .call, .parameterized_type_expr => {
+            const p_name: []const u8 = switch (proto_node.data) {
+                .parameterized_type_expr => |pte| pte.name,
+                .call => |c| switch (c.callee.data) {
+                    .identifier => |id| id.name,
+                    .type_expr => |te| te.name,
+                    else => return false,
+                },
+                else => return false,
+            };
+            const args: []const *Node = switch (proto_node.data) {
+                .parameterized_type_expr => |pte| pte.args,
+                .call => |c| c.args,
                 else => return false,
             };
             // Resolve protocol type args. Each goes through
@@ -64,7 +73,7 @@ fn plainHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
             // indexed types all work as protocol args.
             var arg_mangles = std.ArrayList(u8).empty;
             defer arg_mangles.deinit(self.alloc);
-            for (c.args, 0..) |a, i| {
+            for (args, 0..) |a, i| {
                 if (i > 0) arg_mangles.append(self.alloc, 0) catch return false;
                 const aty = self.resolveTypeArg(a);
                 arg_mangles.appendSlice(self.alloc, self.mangleTypeName(aty)) catch return false;
@@ -954,6 +963,13 @@ const NonConformance = struct {
 /// type params are bound by the instance, not introduced by the method, and
 /// `monomorphizeFunction` always registers it. Conformance is IMPL-DRIVEN, so a
 /// type satisfying the method only via a free / `ufcs` function does NOT conform.
+/// The name of the first protocol method `concrete_ty` fails to provide, or
+/// null when it satisfies the protocol. The bound checker wants the name only.
+pub fn firstUnimplementedProtocolMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?[]const u8 {
+    const nc = firstUnimplementedMethod(self, proto_ty, concrete_type_name, concrete_ty) orelse return null;
+    return nc.method;
+}
+
 fn firstUnimplementedMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?NonConformance {
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
     const proto_name = pd.name;

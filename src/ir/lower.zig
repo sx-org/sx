@@ -55,6 +55,7 @@ const lower_expr = @import("lower/expr.zig");
 const lower_closure = @import("lower/closure.zig");
 const lower_init_plan = @import("lower/init_plan.zig");
 const lower_build_block = @import("lower/build_block.zig");
+const lower_bound = @import("lower/bound.zig");
 
 const TypeId = types.TypeId;
 const StringId = types.StringId;
@@ -3233,7 +3234,9 @@ pub const Lowering = struct {
     pub const lowerSoftPointerRecovery = lower_tagged.lowerSoftPointerRecovery;
     pub const warnDeadTypeSwitchArm = lower_tagged.warnDeadTypeSwitchArm;
     pub const allocViaAllocatorValue = lower_protocol.allocViaAllocatorValue;
+    pub const firstUnimplementedProtocolMethod = lower_protocol.firstUnimplementedProtocolMethod;
     pub const resolveConcreteTypeName = lower_protocol.resolveConcreteTypeName;
+    pub const checkBoundBindings = lower_bound.checkBindings;
     pub const computeHasImpl = lower_protocol.computeHasImpl;
     pub const taggedMembershipOf = lower_protocol.taggedMembershipOf;
     pub const factScheduler = lower_tagged.factScheduler;

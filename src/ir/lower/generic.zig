@@ -88,6 +88,11 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     defer self.setCurrentSourceFile(saved_source_mono);
     if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
 
+    // The bounds this instance's bindings have to satisfy. Asked here rather
+    // than at the call site because this is where the concrete binding for each
+    // type parameter exists; the template itself constrains nothing.
+    self.checkBoundBindings(fd.type_params, bindings, self.current_source_file);
+
     // Resolve return type with type bindings active. The body's tail
     // expression inherits this as its target_type so bare `.{...}`
     // literals resolve to the monomorphised return type instead of

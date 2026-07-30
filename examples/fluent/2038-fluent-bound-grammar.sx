@@ -9,14 +9,25 @@ Drawable :: protocol constraint {
     draw :: (self: *Self) -> string;
 }
 
+
 Label :: struct { text: string = ""; }
 impl Drawable for Label {
     draw :: (self: *Label) -> string => self.text;
 }
 
 // The binder is introduced UNDER the pointer constructor, against the shipped
-// parameterized constraint protocol `@BuildSink(P)`.
+// parameterized constraint protocol `@BuildSink(P)`. The bound CONSTRAINS: the
+// impl below is what makes `Tally` a legal binding for `$S`.
 Tally :: struct { seen: i32 = 0; }
+
+impl @BuildSink(Drawable) for Tally {
+    expression :: (self: *Tally, value: @Init($V/Drawable)) { self.seen += 1; }
+}
+
+// Marker protocols so `Eq` / `Hashable` below name something: a bound head must
+// resolve. An empty body partitions types and costs nothing.
+Eq :: protocol constraint {}
+Hashable :: protocol constraint {}
 
 count_into :: (sink: *$S/@BuildSink(Drawable), n: i32) -> i32 {
     sink.seen += n;

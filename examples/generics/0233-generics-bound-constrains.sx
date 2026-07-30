@@ -1,0 +1,53 @@
+// A bound CONSTRAINS the binding (specs: Generic bounds). The check happens per
+// monomorphized instance, against the concrete type each call binds — the
+// template itself constrains nothing.
+//
+// What a head may name: a declared protocol, a parameterized protocol
+// (conformance is the keyed `impl` question), or one of the declaration's OWN
+// type parameters, in which case the question defers to whoever binds that
+// parameter.
+#import "modules/std.sx";
+
+Summable :: protocol constraint {
+    val :: (self: *Self) -> i32;
+}
+
+Box :: struct { n: i32 = 0; }
+impl Summable for Box {
+    val :: (self: *Box) -> i32 { self.n }
+}
+
+Pair :: struct { a: i32 = 0; b: i32 = 0; }
+impl Summable for Pair {
+    val :: (self: *Pair) -> i32 { self.a + self.b }
+}
+
+// A plain declared head, satisfied by two different bindings.
+total :: (x: $T/Summable) -> i32 { x.val() }
+
+// A parameterized head. `Into` is the shipped parameterized constraint; the
+// bound is satisfied by the visible impl, not by shape.
+Celsius :: struct { deg: i32 = 0; }
+impl Into(i32) for Celsius {
+    convert :: (self: *Celsius) -> i32 { self.deg }
+}
+
+degrees :: (c: $C/Into(i32)) -> i32 { xx c }
+
+// A head naming an ENCLOSING type parameter: nothing is known about `P` here,
+// so the bound defers to the binding `P` gets at the call.
+relay :: ($P: Type, v: $V/P) -> i32 { 1 }
+
+// A bound on a struct head, carried on the template's type parameter.
+Holder :: struct ($T: Type/Summable) {
+    item: T;
+}
+
+main :: () -> i32 {
+    print("{} {}\n", total(Box{ n = 4 }), total(Pair{ a = 2, b = 5 }));
+    print("{}\n", degrees(Celsius{ deg = 21 }));
+    print("{}\n", relay(Box, Box{ n = 1 }));
+    h := Holder(Box){ item = Box{ n = 9 } };
+    print("{}\n", h.item.val());
+    0
+}

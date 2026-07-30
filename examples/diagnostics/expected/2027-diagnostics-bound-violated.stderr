@@ -1,0 +1,32 @@
+error: 'Plain' does not satisfy the bound 'Summable' on '$T'
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:13:17
+   |
+13 | total :: (x: $T/Summable) -> i32 { 1 }
+   |                 ^^^^^^^^
+
+help: 'Plain' has no 'val' for 'Summable'
+   |
+13 | total :: (x: $T/Summable) -> i32 { 1 }
+   |                 ^^^^^^^^
+
+error: 'Plain' does not satisfy the bound 'Into' on '$C'
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:16:19
+   |
+16 | degrees :: (c: $C/Into(i32)) -> i32 { 1 }
+   |                   ^^^^^^^^^
+
+help: no 'impl Into(i32) for Plain' is visible here
+   |
+16 | degrees :: (c: $C/Into(i32)) -> i32 { 1 }
+   |                   ^^^^^^^^^
+
+error: unknown protocol 'NoSuchProtocol' in the bound on '$T'
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:20:19
+   |
+20 | mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
+   |                   ^^^^^^^^^^^^^^
+
+help: a bound names a protocol in scope, or one of this declaration's own type parameters
+   |
+20 | mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
+   |                   ^^^^^^^^^^^^^^
