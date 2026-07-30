@@ -19,13 +19,8 @@
 #import "modules/std/core.sx";   // @SourceSite
 #import "modules/std/mem.sx";
 #import "modules/std/meta.sx";
+#import "modules/ui/types.sx";
 #import "modules/ui/compose.sx";
-
-// --- Identity hierarchy (minimal G4 slice; §4) ---
-
-AppRuntimeId :: struct { value: u64; }
-SceneId :: struct { runtime: AppRuntimeId = .{ value = 0 }; value: u64; }
-UiRootId :: struct { scene: SceneId = .{ value = 0 }; value: u64; }
 
 // --- TrivialState (C2): comptime kind check ---
 

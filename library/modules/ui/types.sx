@@ -223,3 +223,12 @@ impl Lerpable for Size {
         Size{ width = self.width + (b.width - self.width) * t, height = self.height + (b.height - self.height) * t }
     }
 }
+
+// --- Identity hierarchy (§4) ---
+// A runtime hosts scenes, a scene hosts UI roots. The ids are values, not
+// handles: what they name lives in whatever structure owns it, and code that
+// only routes or records identity never needs that structure.
+
+AppRuntimeId :: struct { value: u64; }
+SceneId :: struct { runtime: AppRuntimeId = .{ value = 0 }; value: u64; }
+UiRootId :: struct { scene: SceneId = .{ value = 0 }; value: u64; }
