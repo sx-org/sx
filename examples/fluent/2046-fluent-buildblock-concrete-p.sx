@@ -1,0 +1,66 @@
+// `P` may be ANY type (fluent spec §6.2, H8). A build block is not a UI feature:
+// with `P = i64` the block is a general list builder, and the sink's `expression`
+// takes `$I/@Init(i64)` — a fixed target, since there is no family of variants to
+// stay open over.
+//
+// With a concrete `P` the interception rule is IDENTITY (§6.3 rule 2): a statement
+// publishes when its type IS `P`. A statement of any other type is an ordinary
+// statement — it runs, in source order, and the sink never sees it. That is the
+// same rule a protocol `P` uses for a value that already is a `P`; nothing widens
+// or converts on the way in.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+#import "modules/std/list.sx";
+
+Total :: struct {
+    n: i32 = 0;
+    sum: i64 = 0;
+    seen: List(i64) = .{};
+
+    expression :: (self: *Total, value: $I/@Init(i64)) {
+        slot: i64 = ---;
+        value.write(*slot);
+        self.seen.append(slot);
+        self.sum += slot;
+        self.n += 1;
+    }
+}
+
+// A statement that is NOT an i64: it runs where it is written, and stays out of
+// the sink.
+note :: (what: string) -> f64 {
+    print("  ran {}\n", what);
+    2.5
+}
+
+collect :: (content: $B/@BuildBlock(i64)) -> i64 {
+    sink := Total{};
+    content.run(*sink);
+    print("  published {} values\n", sink.n);
+    for sink.seen (v) {
+        print("    {}\n", v);
+    }
+    sink.sum
+}
+
+main :: () -> i32 {
+    base : i64 = 10;
+    print("sum {}\n", collect() {
+        41;                    // i64 → published
+        note("a side effect"); // f64 → ordinary statement, not published
+        42;                    // i64 → published
+        base + 7;              // i64 → published
+        note("another one");   // f64 → ordinary statement
+    });
+    0
+}
+
+// ** stdout **
+//   ran a side effect
+//   ran another one
+//   published 3 values
+//     41
+//     42
+//     17
+// sum 100
+//

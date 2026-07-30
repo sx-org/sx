@@ -3779,6 +3779,36 @@ effects repeat. Replay is ordinary code — an `if` or `for` in the body is a
 runtime `if` or `for` wherever the block is replayed, and no part of it is
 deferred to run time in the compiler.
 
+**What publishes.** Only a standalone expression **statement** is offered to the
+sink, and only when its type answers to `P`:
+
+- `P` a protocol: the statement's type implements it — or **is** it, which is the
+  identity case. A value that already is a `P` is written into the sink's slot as
+  itself: no second formation, no re-erasure.
+- `P` any other type: the statement's type **is** `P`. A type that merely converts
+  to `P` does not publish.
+
+So `P` is not restricted to protocols — `$B/@BuildBlock(i64)` is a general list
+builder whose children are `i64` statements. Everything else in the body is
+ordinary code: a binding, an assignment, a call whose value is discarded, and a
+statement of any other type all run where they are written and are not published.
+A subexpression never publishes, whatever its type.
+
+**A child that would vanish is refused.** Inside a build body, a
+statement-position block — an `if`/`else` branch, a loop body, bare braces —
+whose trailing expression has no `;` and is non-void is an error:
+
+```text
+error: this value is neither published nor used
+help: publish it as a statement (end it with `;`) or discard it (`_ = …;`)
+```
+
+That value would be the inner block's value, which the enclosing statement
+discards — a child lost with no signal. A void trailing expression is exempt, a
+value-**position** block is unaffected (`x := if c { … } else { … };` stays
+legal), and the body's own top level needs no rule: `run` returns void, so
+ordinary block-value typing already rejects a trailing expression there.
+
 **A build block is frame-bound.** What the value carries is the environment of
 the frame that formed it, captured **by reference**: forming allocates nothing,
 a replay further down the call chain reads those locals live, and a second `run`

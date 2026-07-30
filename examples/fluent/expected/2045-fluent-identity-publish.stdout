@@ -1,0 +1,5 @@
+  published leaf as Label
+  published built as Drawable
+  published start as Drawable
+  count 3
+through the kept handle: mutated after publish

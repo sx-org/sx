@@ -1,0 +1,86 @@
+// A statement whose type already IS the interception type publishes by IDENTITY
+// (fluent spec §6.3 rule 2, A1).
+//
+// The sink's `expression` is monomorphized per published type, so a value that is
+// already a `P` arrives with `V = P`: the initializer writes the `P` it was formed
+// from into the sink's slot as itself. No second formation of a formed thing, no
+// re-erasure, no allocation the compiler chose. A concrete leaf published in the
+// same block still arrives as its own type, which is what lets a sink see the
+// leaf's size and methods.
+//
+// Identity is observable: a tagged handle carries the address of its payload, so
+// mutating the payload after publishing shows through the handle the sink kept —
+// it copied the handle, not the value behind it. The payload is allocator-owned,
+// which is what a handle a sink RETAINS requires (spec §8): a handle borrowing a
+// caller local would outlive it.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol tagged {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+// A helper whose RETURN type is the interception type: its result is a `Drawable`
+// value, and publishing it does not build a second one.
+header :: (text: string) -> Drawable {
+    payload := context.allocator.create(Label);
+    payload.text = text;
+    handle : Drawable = payload;
+    handle
+}
+
+Keep :: struct {
+    n: i32 = 0;
+    last: ?Drawable = null;
+
+    expression :: (self: *Keep, value: $I/@Init($V/Drawable)) {
+        slot: V = ---;
+        value.write(*slot);
+        print("  published {} as {}\n", slot.draw(), type_name(V));
+        self.n += 1;
+        // Only a value that IS a `Drawable` can be kept as one without erasing
+        // anything: that is the identity case, and this is where it shows.
+        handle : Drawable = slot;
+        self.last = handle;
+    }
+}
+
+collect :: (content: $B/@BuildBlock(Drawable)) -> ?Drawable {
+    sink := Keep{};
+    content.run(*sink);
+    print("  count {}\n", sink.n);
+    sink.last
+}
+
+main :: () -> i32 {
+    owned := context.allocator.create(Label);
+    owned.text = "start";
+
+    kept := collect() {
+        Label{ text = "leaf" };        // concrete leaf → published as Label
+        header("built");               // already a Drawable → identity publish
+        handle : Drawable = owned;     // bind only — not published
+        handle;                        // identity publish of an existing handle
+    };
+
+    // The kept handle borrows `owned`, so a later mutation shows through it: the
+    // sink stored the handle itself, not a copy of the label behind it.
+    owned.text = "mutated after publish";
+    if kept != null {
+        print("through the kept handle: {}\n", kept!.draw());
+    }
+    0
+}
+
+// ** stdout **
+//   published leaf as Label
+//   published built as Drawable
+//   published start as Drawable
+//   count 3
+// through the kept handle: mutated after publish
+//

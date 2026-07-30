@@ -183,7 +183,56 @@ fn siteFor(self: *Lowering, arg: *const Node, protocol: TypeId) u32 {
     // Site ids are one-based: 0 is the formation request.
     const id: u32 = @intCast(self.block_sites.items.len);
     self.block_site_ids.put(self.alloc, arg, id) catch unreachable;
+    // Once per source block, whether or not anything ever replays it.
+    checkBodyStatements(self, arg.data.lambda.body);
     return id;
+}
+
+// ── N48: a child that vanishes (§6.3) ──────────────────────────────────────
+// Inside a build body, a STATEMENT-POSITION block whose trailing expression has
+// no `;` and is non-void is an error: that value is the inner block's value,
+// which the enclosing statement discards — a child that disappears with no
+// signal. Value-position blocks are unaffected (the walk only ever visits
+// statement lists), void trailing expressions are exempt, and the body's own top
+// level needs no rule: `run` returns void, so ordinary block-value typing already
+// rejects a trailing expression there.
+
+fn checkBodyStatements(self: *Lowering, body: *const Node) void {
+    if (body.data != .block) return;
+    for (body.data.block.stmts) |stmt| checkBodyStmt(self, stmt);
+}
+
+fn checkBodyStmt(self: *Lowering, stmt: *const Node) void {
+    switch (stmt.data) {
+        .if_expr => |ie| {
+            checkNestedBlock(self, ie.then_branch);
+            if (ie.else_branch) |eb| checkNestedBlock(self, eb);
+        },
+        .while_expr => |we| checkNestedBlock(self, we.body),
+        .for_expr => |fe| checkNestedBlock(self, fe.body),
+        .block => checkNestedBlock(self, stmt),
+        else => {},
+    }
+}
+
+fn checkNestedBlock(self: *Lowering, node: *const Node) void {
+    // An `else if` chains another `if` rather than opening a block.
+    if (node.data != .block) {
+        checkBodyStmt(self, node);
+        return;
+    }
+    const b = node.data.block;
+    if (b.produces_value and b.stmts.len > 0) {
+        const last = b.stmts[b.stmts.len - 1];
+        const ty = self.inferExprType(last);
+        if (ty != .void and ty != .noreturn and ty != .unresolved) {
+            if (self.diagnostics) |d| {
+                const id = d.addFmtId(.err, last.span, "this value is neither published nor used", .{});
+                d.addHelpFmt(id, last.span, null, "publish it as a statement (end it with `;`) or discard it (`_ = …;`)", .{});
+            }
+        }
+    }
+    for (b.stmts) |stmt| checkBodyStmt(self, stmt);
 }
 
 /// Form the implementor for the trailing block `arg` at a parameter whose
@@ -496,7 +545,7 @@ pub fn interceptExpression(self: *Lowering, node: *const Node) bool {
     const scope = &self.build_scopes.items[self.build_scopes.items.len - 1];
     const v = self.inferExprType(node);
     if (v == .unresolved or v == .void or v == .noreturn) return false;
-    if (!self.protocolResolver().packArgConformsTo(scope.protocol_name, v)) return false;
+    if (!publishesAt(self, scope.protocol, scope.protocol_name, v)) return false;
 
     const src = node.source_file orelse self.current_source_file;
     const recv = self.synthNode(.{ .identifier = .{ .name = scope.sink_name } }, node.span, src);
@@ -527,6 +576,20 @@ fn blanketSeed(self: *Lowering, scope: *const Scope) ?std.StringHashMap(TypeId) 
     const sink = info.pointer.pointee;
     const found = self.protocolResolver().blanketMethod(contracts_build_sink, &.{scope.protocol}, sink, sink_method) orelse return null;
     return found.bindings;
+}
+
+/// Does a statement of type `v` publish to a block intercepting at `protocol`
+/// (§6.3 rule 2)? `P` may be ANY type (H8):
+///
+///   - a PROTOCOL: the statement's type conforms to it — or IS it, which is the
+///     identity publish (A1): a value that already is a `P` is written into the
+///     sink's slot as itself, with no second formation and no re-erasure.
+///   - anything else: the statement's type IS `P`. Identity only — a type that
+///     merely converts to `P` is an ordinary statement, not a child.
+fn publishesAt(self: *Lowering, protocol: TypeId, protocol_name: []const u8, v: TypeId) bool {
+    if (v == protocol) return true;
+    if (self.getProtocolInfo(protocol) == null) return false;
+    return self.protocolResolver().packArgConformsTo(protocol_name, v);
 }
 
 /// One named `int` field of a synthesized struct literal.
