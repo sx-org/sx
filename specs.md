@@ -3836,9 +3836,26 @@ by the same question:
 
 A method inherited from an impl of some OTHER protocol does not answer for this
 one; the refusal names the requirement and the sink as the source spells it.
-`modules/fluent.sx` ships `Sink($T)` with such a blanket impl: it reserves
-storage for each published expression through `context.allocator`, writes into
-it, and appends the result to a list it owns.
+**The initializer's target — two shapes.** `expression` takes the published child as
+an initializer, and the target that initializer names is what `write` fills. Which
+shape a sink may spell follows from what `P` can carry:
+
+- `$I/@Init(P)` — the **fixed** target — where `P` is a **by-value carrier**: it
+  holds the value itself, so a complete `P` is what the initializer writes. An open
+  set holds its member inline; a plain data type IS the value. `write` fills a `*P`
+  and the sink keeps what it wrote.
+- `$I/@Init($V/P)` — the **open** target — where `P` cannot carry the value: a
+  `tagged` protocol is a handle into storage it does not own, so the sink is told
+  the member `V` the block reached and decides where that lives (`modules/fluent.sx`
+  funds it from `context.allocator`, which is why its elements outlive the call). A
+  **constraint** protocol has no runtime values at all, so no `*P` exists for a
+  write to fill — the fixed shape names a target that cannot exist and is refused,
+  naming that fact.
+
+`modules/fluent.sx` ships `Sink($T)` with a blanket impl covering both: where `T`
+carries its own storage the published value is written into a slot the list owns
+and nothing is allocated; where `T` is a handle the payload is funded from
+`context.allocator` first, so what the list holds still points at something.
 
 ### Open Sets
 

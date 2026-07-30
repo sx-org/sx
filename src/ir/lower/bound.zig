@@ -338,6 +338,13 @@ fn checkAgainstSibling(
     // conformance question: `$V/P` with `P = i64` collapses the family to its one
     // member, and the binding has to be exactly that type.
     if (proto == null) {
+        // A sibling bound to an open SET asks the set's own question wherever the
+        // head is spelled: membership, not identity. A binder that reached the set
+        // itself satisfies it too (spec: Open Sets — the membership bound).
+        if (self.openSetOf(sib_ty)) |set| {
+            checkMember(self, bound, .{ .ty = sib_ty, .name = set.decl.name }, param, bound_ty);
+            return;
+        }
         if (spelled_args > 0) {
             const d0 = self.diagnostics orelse return;
             const id = d0.addFmtId(.err, bound.span, "the bound on '${s}' spells type arguments, but '${s}' is bound to '{s}', which takes none", .{ param, sibling, self.formatTypeName(sib_ty) });

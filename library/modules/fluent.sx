@@ -58,10 +58,12 @@
 // then appends the handle — nothing is exposed before the write returns, and
 // nothing is copied through an intermediate.
 //
-// `T` is the interception type, and the elements are `T` values borrowing the
-// payloads this sink allocated. So `T` is a type whose values can hold one — a
-// `tagged` protocol today — and the payloads live as long as the allocator that
-// gave them: an arena or frame allocator resets them all at once, which is the
+// `T` is the interception type and what the list holds. Where `T` carries its own
+// storage — an open set, a plain data type — an element IS the published value,
+// held inline, and nothing is allocated. Where `T` is a handle into storage it does
+// not own — a `tagged` protocol — the payload must outlive this call, so the sink
+// funds it from `context.allocator` and the elements live as long as that allocator
+// does: an arena or frame allocator resets them all at once, which is the
 // recommended lifetime for collected children (spec §8).
 Sink :: struct ($T: Type) {
     children: List(T) = .{};
@@ -69,9 +71,19 @@ Sink :: struct ($T: Type) {
 
 impl @BuildSink($T) for Sink($T) {
     expression :: (self: *Sink($T), value: $I/@Init($V/T)) {
-        destination := context.allocator.create(V);
-        value.write(destination);
-        handle : T = destination;
-        self.children.append(handle);
+        inline if T == {
+            case protocol: {
+                payload := context.allocator.create(V);
+                value.write(payload);
+                handle : T = payload;
+                self.children.append(handle);
+            }
+            else: {
+                item : V = ---;
+                value.write(*item);
+                held : T = item;
+                self.children.append(held);
+            }
+        }
     }
 }

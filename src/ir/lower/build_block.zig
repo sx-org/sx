@@ -11,6 +11,7 @@ const Ref = inst_mod.Ref;
 const lower = @import("../lower.zig");
 const source_site = @import("../../source_site.zig");
 const lower_closure = @import("closure.zig");
+const lower_init_plan = @import("init_plan.zig");
 const Lowering = lower.Lowering;
 
 /// The `@` contract name. It is a BOUND head only: `content: $B/@BuildBlock(P)`.
@@ -317,6 +318,14 @@ pub fn lowerRun(self: *Lowering, block: *const Node, block_ty: TypeId, args: []c
         return Ref.none;
     }
 
+    // A sink may take the initializer at the interception type itself — the shape a
+    // by-value carrier wants, since the value it writes IS a `P`. A CONSTRAINT `P`
+    // has no values for it to write, so the initializer has no target and the sink
+    // can only take the member (`$V/P`) the block reached.
+    if (fixedInitTarget(self, pointee)) |target| {
+        if (self.refuseValuelessProtocol(target, args[0].span, "form an initializer for")) return Ref.none;
+    }
+
     self.build_scopes.append(self.alloc, .{
         .protocol = record.protocol,
         .protocol_name = proto_name,
@@ -341,6 +350,23 @@ pub fn lowerRun(self: *Lowering, block: *const Node, block_ty: TypeId, args: []c
 pub fn sinkAccepts(self: *Lowering, sink: TypeId, protocol: TypeId) bool {
     if (self.protocolResolver().paramImplKind(contracts_build_sink, &.{protocol}, sink) != .none) return true;
     return sinkDeclaresMethod(self, sink);
+}
+
+
+/// The FIXED target of a sink's `expression` initializer — `$I/@Init(P)` — or null
+/// when it takes the open form (`$I/@Init($V/P)`, whose target is the argument's
+/// own type and so resolves to nothing here).
+fn fixedInitTarget(self: *Lowering, sink: TypeId) ?TypeId {
+    const decl = blk: {
+        if (self.plain_struct_authors.get(sink)) |author| break :blk author.decl;
+        const inst = self.getStructTypeName(sink) orelse return null;
+        break :blk self.struct_instance_author.get(inst) orelse return null;
+    };
+    const method = Lowering.structMethodFn(decl, sink_method) orelse return null;
+    if (method.params.len < 2) return null;
+    const target_node = lower_init_plan.boundTargetNode(method.params[1].type_expr) orelse return null;
+    const target = self.resolveTypeWithBindings(target_node);
+    return if (target == .unresolved) null else target;
 }
 
 /// Is `expression` declared on the sink's own struct? The method-on-the-struct
