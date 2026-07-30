@@ -911,6 +911,9 @@ pub const Lowering = struct {
         arg_positions: []const ?usize,
         /// The template the source spells (`Buffer` of `Buffer($T)`).
         target_template: []const u8,
+        /// The carrier's type arguments AS WRITTEN. A concrete one constrains
+        /// which instantiations the impl covers just as much as a binder does.
+        target_arg_nodes: []const *const ast.Node,
         defining_module: []const u8,
         span: ast.Span,
         block: *const ast.ImplBlock,

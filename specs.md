@@ -2939,18 +2939,22 @@ binders — `impl Series($T) for Buffer($T)` covers every instantiation of
 to be keyed by, so it is matched at the use site against the request's arguments
 and the carrier's own instantiation. The binder is matched by POSITION, not by
 name: `impl Series($U) for Buffer($U)` works without knowing what the template
-calls its parameter.
+calls its parameter. A carrier may mix binders with CONCRETE arguments, and each
+constrains coverage equally — `impl Series($W) for Map2(i64, $W)` covers
+`Map2(i64, W)` for any `W` and nothing whose first argument differs.
 
 **One carrier, one impl.** A carrier covered by both a blanket impl and a
 concrete impl of the same protocol at the same arguments is an error at the
 overlap — nothing in either declaration says which body applies. Drop one.
 
-For a **constraint** protocol, an impl that could never be selected is refused
-where it is written: a binder in the protocol arguments needs a carrier
-instantiation to bind it (`impl P($T) for Plain` has none), and a generic carrier
-needs its binder spelled among the protocol arguments (`impl P(i64) for
-Carrier($T)` does not). A **tagged** family collects members by whole-program
-membership instead, where both shapes are ordinary.
+An impl that could never be selected is refused where it is written. A binder in
+the protocol arguments needs a carrier instantiation to bind it from
+(`impl P($T) for Plain` has none), and every such binder must appear among the
+carrier's arguments to have a position to resolve through — both hold for every
+protocol kind. A generic carrier whose binder the protocol arguments never
+mention (`impl P(i64) for Carrier($T)`) is refused for a **constraint** protocol,
+but is ordinary for a **tagged** family, which collects one member per
+instantiated carrier through whole-program membership.
 
 ### Variadic Functions
 Functions can accept a variable number of arguments using `..name: []Type` syntax:

@@ -866,20 +866,20 @@ fn registerGenericParamImpl(
     }
     if (!any_proto_binder and !any_target_binder) return;
 
-    // A TAGGED family collects its members through whole-program membership, not
-    // through this keyed index, so shapes that are unreachable here are ordinary
-    // there — `impl Series(f32) for Repeat($U)` is one member per instantiated
-    // `Repeat`. Only the keyed kinds are refused below.
+    // A TAGGED family collects members through whole-program membership rather
+    // than this keyed index, so a GENERIC CARRIER whose binder the head never
+    // mentions is ordinary there — `impl Series(f32) for Repeat($U)` is one
+    // member per instantiated `Repeat`. That exemption covers only that shape.
     const is_tagged = if (self.resolveProtocol(proto_name, decl.source_file)) |rp|
         rp.decl.kind == .tagged
     else
         false;
 
-    // Two shapes register nowhere findable, so they are refused rather than
-    // accepted-and-dead: a binder in the protocol arguments needs the carrier to
-    // be an instantiation for the binding to come from, and a carrier binder
-    // needs the protocol arguments to say where it is bound.
-    if (!is_tagged and any_proto_binder and target_args.len == 0) {
+    // A binder in the protocol arguments with no carrier instantiation to bind it
+    // from is unreachable under EITHER machinery: keyed lookup has no binding to
+    // read, and membership would be an open-ended family rather than one member
+    // per instantiation. Refused for every protocol kind.
+    if (any_proto_binder and target_args.len == 0) {
         if (self.l.diagnostics) |d| {
             const id = d.addFmtId(.err, decl.span, "'impl {s}' binds a type parameter the carrier cannot supply", .{proto_name});
             d.addHelpFmt(id, decl.span, null, "a blanket impl's carrier must be an instantiation spelling the same binder, as in 'for Carrier($T)'", .{});
@@ -929,6 +929,7 @@ fn registerGenericParamImpl(
         .arg_nodes = self.l.alloc.dupe(*const ast.Node, ib.protocol_type_args) catch return,
         .arg_positions = self.l.alloc.dupe(?usize, positions.items) catch return,
         .target_template = template,
+        .target_arg_nodes = self.l.alloc.dupe(*const ast.Node, target_args) catch return,
         .defining_module = defining_module,
         .span = decl.span,
         .block = ib,
@@ -1035,6 +1036,8 @@ pub fn matchGenericParamImpl(
     for (entries.items) |entry| {
         if (entry.arg_nodes.len != arg_tys.len) continue;
         if (!std.mem.eql(u8, entry.target_template, template)) continue;
+        if (entry.target_arg_nodes.len != tmpl_decl.type_params.len) continue;
+        if (!carrierMatches(self, entry, tmpl_decl, binds)) continue;
         var all = true;
         for (entry.arg_nodes, entry.arg_positions, arg_tys) |node, pos, want| {
             const got: TypeId = if (pos) |p| blk: {
@@ -1049,6 +1052,36 @@ pub fn matchGenericParamImpl(
         if (all) return true;
     }
     return false;
+}
+
+/// Does the CARRIER the impl spelled describe this instantiation?
+///
+/// A concrete slot constrains the impl just as a binder does: `for Map2(i64, $W)`
+/// covers only instantiations whose first argument is `i64`. A binder repeated
+/// across slots additionally has to bind consistently.
+fn carrierMatches(
+    self: ProtocolResolver,
+    entry: Lowering.GenericParamImplEntry,
+    tmpl_decl: anytype,
+    binds: *const std.StringHashMap(TypeId),
+) bool {
+    var seen = std.StringHashMap(TypeId).init(self.l.alloc);
+    defer seen.deinit();
+    for (entry.target_arg_nodes, 0..) |node, i| {
+        const bound = binds.get(tmpl_decl.type_params[i].name) orelse return false;
+        if (nodeIsBinder(node)) {
+            const name = node.data.type_expr.name;
+            const gop = seen.getOrPut(name) catch return false;
+            if (gop.found_existing) {
+                if (gop.value_ptr.* != bound) return false;
+            } else {
+                gop.value_ptr.* = bound;
+            }
+            continue;
+        }
+        if (self.l.resolveTypeArg(node) != bound) return false;
+    }
+    return true;
 }
 
     /// Register a parameterised-protocol impl into `param_impl_map`.

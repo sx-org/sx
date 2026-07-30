@@ -1,0 +1,10 @@
+error: 'Map2__f32__f32' does not satisfy the bound 'Series(f32)' on '$B'
+  --> examples/diagnostics/2032-diagnostics-blanket-carrier-slot.sx:16:17
+   |
+16 | tally :: (b: $B/Series(f32)) -> i64 { 1 }
+   |                 ^^^^^^^^^^^
+
+help: no 'impl Series(f32) for Map2__f32__f32' is visible here
+   |
+16 | tally :: (b: $B/Series(f32)) -> i64 { 1 }
+   |                 ^^^^^^^^^^^

@@ -36,9 +36,18 @@ tally :: (b: $B/Series(i64)) -> i64 { b.count() }
 // A second instantiation of the same template, at a different argument.
 tally_f32 :: (b: $B/Series(f32)) -> i64 { b.count() }
 
+// A carrier may mix CONCRETE slots with binders. The concrete slot constrains
+// which instantiations are covered exactly as the binder does: this impl covers
+// `Map2(i64, W)` for any `W`, and nothing whose first argument is not `i64`.
+Map2 :: struct($K: Type, $V: Type) { n: i64; }
+impl Series($W) for Map2(i64, $W) {
+    count :: (self: *Map2) -> i64 { self.n }
+}
+
 main :: () -> i32 {
     print("{}\n", tally(Buffer(i64){ n = 7 }));
     print("{}\n", tally(Cell{ v = 3 }));
     print("{}\n", tally_f32(Buffer(f32){ n = 9 }));
+    print("{}\n", tally_f32(Map2(i64, f32){ n = 4 }));
     0
 }
