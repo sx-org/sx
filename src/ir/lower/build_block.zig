@@ -584,10 +584,15 @@ fn blanketSeed(self: *Lowering, scope: *const Scope) ?std.StringHashMap(TypeId) 
 ///   - a PROTOCOL: the statement's type conforms to it — or IS it, which is the
 ///     identity publish (A1): a value that already is a `P` is written into the
 ///     sink's slot as itself, with no second formation and no re-erasure.
+///   - an OPEN SET: its MEMBERS publish too. A set carries its member inside the
+///     slot, so a member statement type-checked at the expected `P` IS a complete
+///     `P` value — the same allocator-free formation the expected type performs
+///     anywhere else, not a sink-side widening (A1, spec: Open Sets — formation).
 ///   - anything else: the statement's type IS `P`. Identity only — a type that
 ///     merely converts to `P` is an ordinary statement, not a child.
 fn publishesAt(self: *Lowering, protocol: TypeId, protocol_name: []const u8, v: TypeId) bool {
     if (v == protocol) return true;
+    if (self.openSetOf(protocol)) |set| return self.openSetDeclaresMembership(v, set.decl.name);
     if (self.getProtocolInfo(protocol) == null) return false;
     return self.protocolResolver().packArgConformsTo(protocol_name, v);
 }

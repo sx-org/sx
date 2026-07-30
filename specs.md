@@ -3785,6 +3785,10 @@ sink, and only when its type answers to `P`:
 - `P` a protocol: the statement's type implements it — or **is** it, which is the
   identity case. A value that already is a `P` is written into the sink's slot as
   itself: no second formation, no re-erasure.
+- `P` an **open set**: its **members** publish too. A set carries its member inside
+  the slot, so a member statement type-checked at the expected `P` is a complete
+  `P` value — the same allocator-free formation the expected type performs at a
+  local, an argument, or a return, decided by membership rather than by shape.
 - `P` any other type: the statement's type **is** `P`. A type that merely converts
   to `P` does not publish.
 
