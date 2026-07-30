@@ -981,6 +981,7 @@ pub const LLVMEmitter = struct {
                         .global_get, .global_addr => |gid| used.put(gid.index(), {}) catch {},
                         .global_set => |gs| used.put(gs.global.index(), {}) catch {},
                         .tagged_type_id => |t| used.put(t.table.index(), {}) catch {},
+                        .open_set_type_id => |t| used.put(t.table.index(), {}) catch {},
                         else => {},
                     }
                 }
@@ -1807,6 +1808,7 @@ pub const LLVMEmitter = struct {
             .tagged_type_id => |t| self.ops().emitTaggedTypeId(instruction, t),
             .open_set_layout => |q| self.ops().emitOpenSetLayout(q),
             .open_set_tag_of => |t| self.ops().emitOpenSetTagOf(t),
+            .open_set_type_id => |t| self.ops().emitOpenSetTypeId(instruction, t),
 
             // ── Arithmetic ─────────────────────────────────────────
             .add => |bin| self.ops().emitAdd(instruction, bin),

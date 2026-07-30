@@ -4019,6 +4019,31 @@ mentions `Self` past the receiver has no caller-side type on a set value (`Self`
 denotes the member, and a set value is not any one member); call it through the
 membership bound instead.
 
+**What a set value answers about itself.** A slot is declared as the set and
+carries a member, so `type_of` answers the **member**: the tag word names it, and
+the set's own numbering turns that tag into the member's type. Writing another
+member into the same slot changes the answer — the answer was never the
+declaration.
+
+```sx
+v: View = Label{ text = "label" };
+type_of(v);        // Label
+v = Panel{ title = "panel" };
+type_of(v);        // Panel
+```
+
+`v.(any)` is the raw polymorphic view a set has: the member's address **inside the
+slot**, and the member's own type. Nothing allocates and no payload is copied — the
+view borrows the slot, so it answers for the member carried there and is valid
+exactly as long as that slot is. Every boxing position agrees with that spelling —
+an `any` local, an `any` argument, a formatted value — so a set value is never seen
+as the set anywhere `any` is. A set is not a protocol handle: it has no
+`ProtocolRaw` view, and `any` is the one it has.
+
+The numbering is written at the freeze, so a compile-time evaluation that asks
+what a set value is **waits** for it (§7.9) and reads the same answer the running
+program reads.
+
 **The membership bound `$V/P`.** A set is not a protocol and carries no impls, so a
 bound whose head names a set asks the set's own question: **is the binding a
 member?** This is the one head in the bound grammar that is not a conformance

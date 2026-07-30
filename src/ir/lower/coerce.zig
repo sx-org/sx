@@ -583,6 +583,11 @@ pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) R
     // init, container element, return — funnels through here, so they all
     // agree with the explicit `xx p : any` conversion.
     if (self.getProtocolInfo(src_ty) != null) return protocolToAnyView(self, val, src_ty);
+    // An open set is never boxed as the set: the view is of the MEMBER it
+    // carries — the member's address inside the slot, and the member's own type
+    // (spec: Open Sets — what a set value answers about itself). Every boxing
+    // position funnels through here, so they all agree with `v.(any)`.
+    if (self.isOpenSet(src_ty)) return self.openSetAnyView(src_ty, val, node);
     if (src_ty == .void) {
         // A void has no storage; the view is `{void, null}` (matches the
         // fieldless arm of field_value_get).

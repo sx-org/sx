@@ -146,6 +146,12 @@ pub const Op = union(enum) {
     /// assigned when the sets freeze, so no site can spell the number, and each
     /// world resolves the pair against the published numbering.
     open_set_tag_of: SetMemberOf,
+    /// The `Type` of the member an open set value carries, from its tag word:
+    /// one indexed load through the set's `tag → member Type` table. The SET
+    /// travels with the op because a set's tag is a dense index the freeze
+    /// assigns rather than the member's own type word, so neither world can
+    /// read the answer off the tag itself.
+    open_set_type_id: OpenSetTypeId,
 
     // ── Arithmetic ──────────────────────────────────────────────────
     add: BinOp,
@@ -326,6 +332,14 @@ pub const TaggedTypeId = struct {
 pub const SetMemberOf = struct {
     set: TypeId,
     member: TypeId,
+};
+
+/// The member an open set value carries, named by the tag word read from its
+/// slot and resolved through the set's own numbering.
+pub const OpenSetTypeId = struct {
+    set: TypeId,
+    tag: Ref,
+    table: GlobalId,
 };
 
 /// Which measurement of `measured` the frozen layout answers.

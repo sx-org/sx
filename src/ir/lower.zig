@@ -3618,6 +3618,9 @@ pub const Lowering = struct {
     pub const openSetOfMember = lower_open_set.setOfMember;
     pub const refuseOpenSetNonMember = lower_open_set.refuseNonMember;
     pub const coerceMemberToSet = lower_open_set.coerceMemberToSet;
+    pub const openSetSlotAddress = lower_open_set.slotAddress;
+    pub const openSetMemberTypeId = lower_open_set.memberTypeId;
+    pub const openSetAnyView = lower_open_set.anyView;
     pub const emitOpenSetDispatch = lower_open_set.emitDispatch;
     pub const materializeOpenSetArms = lower_open_set.materializeArms;
 

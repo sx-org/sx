@@ -934,6 +934,23 @@ pub const Vm = struct {
                     return self.failFmt("comptime VM: '{s}' has no tag in '{s}'", .{ module.types.typeName(t.member), module.types.typeName(t.set) });
                 return .{ .value = @bitCast(tag) };
             },
+            // The member a tag names. The table's rows are written at the freeze
+            // too, so the answer comes from the same numbering the rows will
+            // carry rather than from the global.
+            .open_set_type_id => |t| {
+                const module = self.module orelse return self.failMsg("comptime VM: an open set's member type needs a module");
+                if (!module.open_sets_final)
+                    _ = self.awaitFact(.{ .kind = .set_layout, .routine = if (self.call_stack.items.len > 0) self.call_stack.items[self.call_stack.items.len - 1] else @as(FuncId, @enumFromInt(0)), .concrete = t.set });
+                if (!module.open_sets_final)
+                    return self.failFmt("comptime VM: the members of '{s}' are not numbered yet — an open set's tag space is assigned when the sets freeze, and a member admitted later renumbers it", .{module.types.typeName(t.set)});
+                const tag: i64 = @bitCast(frame.get(t.tag.index()));
+                var it = module.open_set_tags.iterator();
+                while (it.next()) |e| {
+                    if (e.key_ptr.set == t.set and e.value_ptr.* == tag)
+                        return .{ .value = @as(Reg, e.key_ptr.member.index()) };
+                }
+                return self.failFmt("comptime VM: '{s}' has no member numbered {d}", .{ module.types.typeName(t.set), tag });
+            },
 
             // ── Arithmetic ──────────────────────────────────────
             .add, .sub, .mul, .div, .mod => |b| return .{

@@ -753,7 +753,7 @@ pub fn freezeSets(self: *Lowering) void {
         // The interned shape follows the numbering, so `fields[tag]` names the
         // member that tag selects.
         layoutFields(self, set);
-        emitTypeIdTable(self, set);
+        fillTypeIdTable(self, set);
     }
     publish(self);
     // The routines every call site already calls: their switch is total over the
@@ -793,23 +793,35 @@ fn numberMembers(self: *Lowering, set: *Set) void {
     }
 }
 
-/// The set's `tag → member Type` table: what a raw view, a type switch, and the
-/// `any` bridge read to recover the active member's type from a slot's tag word.
-/// One row per member, in tag order; a memberless set still gets its one zero row
-/// so the symbol exists.
-fn emitTypeIdTable(self: *Lowering, set: *Set) void {
+/// The set's `tag → member Type` table: what `type_of`, the `any` view, and the
+/// type switch read to recover the active member's type from a slot's tag word.
+/// Created EMPTY at the first site that reads it — a site lowers long before the
+/// numbering exists — and filled here, at the freeze, one row per member in tag
+/// order. A set nothing consumes needs no table.
+fn fillTypeIdTable(self: *Lowering, set: *Set) void {
+    const gid = self.open_set_tables.get(set.ty) orelse return;
     const members = set.members.items;
     const rows = self.alloc.alloc(inst_mod.ConstantValue, @max(members.len, 1)) catch return;
     rows[0] = .{ .int = 0 };
     for (members, 0..) |member, i| rows[i] = .{ .int = @intCast(member.index()) };
-    const name = std.fmt.allocPrint(self.alloc, "__sx_set_{s}_type_ids", .{tableName(self, set)}) catch return;
+    const g = &self.module.globals.items[@intFromEnum(gid)];
+    g.ty = self.module.types.arrayOf(.type_value, @intCast(@max(members.len, 1)));
+    g.init_val = .{ .aggregate = rows };
+}
+
+/// The set's table global, minted on first read with a single zero row so the
+/// site has a symbol to index; `fillTypeIdTable` writes the rows at the freeze.
+fn typeIdTable(self: *Lowering, set: *const Set) inst_mod.GlobalId {
+    if (self.open_set_tables.get(set.ty)) |gid| return gid;
+    const name = std.fmt.allocPrint(self.alloc, "__sx_set_{s}_type_ids", .{tableName(self, set)}) catch @panic("out of memory");
     const gid = self.module.addGlobal(.{
         .name = self.module.types.internString(name),
-        .ty = self.module.types.arrayOf(.type_value, @intCast(@max(members.len, 1))),
-        .init_val = .{ .aggregate = rows },
+        .ty = self.module.types.arrayOf(.type_value, 1),
+        .init_val = .{ .zeroinit = {} },
         .is_const = true,
     });
-    self.open_set_tables.put(set.ty, gid) catch {};
+    self.open_set_tables.put(set.ty, gid) catch @panic("out of memory");
+    return gid;
 }
 
 /// The set's name, sanitized for a symbol.
@@ -966,6 +978,52 @@ pub fn coerceMemberToSet(self: *Lowering, value: Ref, member_ty: TypeId, set_ty:
     const slot = self.builder.alloca(set_ty);
     writeMemberInto(self, slot, value, member_ty, set_ty);
     return self.builder.load(slot, set_ty);
+}
+
+// ── What a set value answers about itself ───────────────────────────────
+
+/// The address of the slot `value` is. An lvalue answers with its own storage, so
+/// what is read is the value itself; an rvalue gets a temporary, which is all a
+/// value about to be discarded needs.
+pub fn slotAddress(self: *Lowering, set_ty: TypeId, value: Ref, node: ?*const Node) Ref {
+    if (self.refStorageAddress(value)) |addr| return addr;
+    if (node) |n| if (self.isLvalueExpr(n)) return self.lowerExprAsPtr(n);
+    const slot = self.builder.alloca(set_ty);
+    self.builder.store(slot, value);
+    return slot;
+}
+
+/// The `Type` of the member the slot at `slot_addr` carries: its tag word, read
+/// through the set's own numbering. Everything that answers what a set value IS —
+/// `type_of`, the `any` view — goes through here.
+pub fn memberTypeId(self: *Lowering, set_ty: TypeId, slot_addr: Ref) Ref {
+    const set = setOf(self, set_ty) orelse return self.builder.constType(set_ty);
+    const table = &self.module.types;
+    const tag_ptr = self.builder.structGepTyped(slot_addr, 0, table.ptrTo(tag_type), set_ty);
+    const tag = self.builder.load(tag_ptr, tag_type);
+    return self.builder.emit(.{ .open_set_type_id = .{
+        .set = set_ty,
+        .tag = tag,
+        .table = typeIdTable(self, set),
+    } }, .type_value);
+}
+
+/// A set value's `any` view: the member's address INSIDE the slot, and the
+/// member's own `Type`. The view borrows the slot, so it answers for the member
+/// carried there and lives exactly as long as that slot does.
+pub fn anyView(self: *Lowering, set_ty: TypeId, value: Ref, node: ?*const Node) Ref {
+    const table = &self.module.types;
+    const slot = slotAddress(self, set_ty, value, node);
+    const info = table.get(set_ty).tagged_union;
+    const payload_ty = table.get(info.backing_type.?).@"struct".fields[1].ty;
+    const bytes = self.builder.structGepTyped(slot, 1, table.ptrTo(payload_ty), set_ty);
+    const void_ptr = table.ptrTo(.void);
+    const data = self.builder.emit(.{ .bitcast = .{
+        .operand = bytes,
+        .from = table.ptrTo(payload_ty),
+        .to = void_ptr,
+    } }, void_ptr);
+    return self.builder.makeAny(memberTypeId(self, set_ty, slot), data);
 }
 
 // ── Dispatch ────────────────────────────────────────────────────────────

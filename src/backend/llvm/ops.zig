@@ -27,6 +27,7 @@ const TaggedTypeId = ir_inst.TaggedTypeId;
 const TagOf = ir_inst.TagOf;
 const SetLayoutOf = ir_inst.SetLayoutOf;
 const SetMemberOf = ir_inst.SetMemberOf;
+const OpenSetTypeId = ir_inst.OpenSetTypeId;
 const FuncId = ir_inst.FuncId;
 const Call = ir_inst.Call;
 const CallIndirect = ir_inst.CallIndirect;
@@ -186,6 +187,17 @@ pub const Ops = struct {
                 self.e.ir_mod.types.typeName(t.set),
             });
         self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, @bitCast(tag), 0));
+    }
+
+    pub fn emitOpenSetTypeId(self: Ops, instruction: *const Inst, t: OpenSetTypeId) void {
+        const llvm_global = self.e.global_map.get(t.table.index()) orelse {
+            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            return;
+        };
+        const tag = self.e.resolveRef(t.tag);
+        var idx = [_]c.LLVMValueRef{tag};
+        const slot = c.LLVMBuildInBoundsGEP2(self.e.builder, self.e.cached_i64, llvm_global, &idx, 1, "set.tid.slot");
+        self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, self.e.cached_i64, slot, "set.tid"));
     }
 
     /// The soft probe's answer: being in the converged numbering IS being in

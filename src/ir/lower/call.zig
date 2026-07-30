@@ -3676,6 +3676,13 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             // 8-byte `.type_value` handle.
             const val = self.lowerExpr(c.args[0]);
             return self.builder.structGet(val, 1, .type_value);
+        } else if (self.isOpenSet(arg_ty)) {
+            // An open set value answers with the MEMBER it carries, read from
+            // its tag word — the set is what the slot is declared as, never
+            // what it holds.
+            const val = self.lowerExpr(c.args[0]);
+            const slot = self.openSetSlotAddress(arg_ty, val, c.args[0]);
+            return self.openSetMemberTypeId(arg_ty, slot);
         } else if (self.getProtocolInfo(arg_ty) != null) {
             // A PROTOCOL value answers its CONCRETE type — the type_id
             // word at slot 1 (RTTI Option B), same position as an any's;
@@ -5254,9 +5261,5 @@ fn openSetReceiver(self: *Lowering, ty: TypeId) ?TypeId {
 /// temporary — the value is about to be discarded either way.
 fn openSetReceiverAddress(self: *Lowering, obj: Ref, obj_ty: TypeId, set_ty: TypeId, obj_node: *const Node) Ref {
     if (obj_ty != set_ty) return obj;
-    if (self.refStorageAddress(obj)) |addr| return addr;
-    if (self.isLvalueExpr(obj_node)) return self.lowerExprAsPtr(obj_node);
-    const slot = self.builder.alloca(set_ty);
-    self.builder.store(slot, obj);
-    return slot;
+    return self.openSetSlotAddress(set_ty, obj, obj_node);
 }
