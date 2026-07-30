@@ -88,6 +88,13 @@ fn plainHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
     }
 }
 
+/// The name of the first protocol method `concrete_ty` fails to provide, or null
+/// when it satisfies the protocol. The bound checker wants the name only.
+pub fn firstUnimplementedProtocolMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?[]const u8 {
+    const nc = firstUnimplementedMethod(self, proto_ty, concrete_type_name, concrete_ty) orelse return null;
+    return nc.method;
+}
+
 /// The tagged instantiation a `has_impl`-shaped protocol spelling names, or
 /// null when it names something else — the other kinds answer site-local impl
 /// visibility, which is a different question. A parameterized family answers
@@ -963,13 +970,6 @@ const NonConformance = struct {
 /// type params are bound by the instance, not introduced by the method, and
 /// `monomorphizeFunction` always registers it. Conformance is IMPL-DRIVEN, so a
 /// type satisfying the method only via a free / `ufcs` function does NOT conform.
-/// The name of the first protocol method `concrete_ty` fails to provide, or
-/// null when it satisfies the protocol. The bound checker wants the name only.
-pub fn firstUnimplementedProtocolMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?[]const u8 {
-    const nc = firstUnimplementedMethod(self, proto_ty, concrete_type_name, concrete_ty) orelse return null;
-    return nc.method;
-}
-
 fn firstUnimplementedMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?NonConformance {
     const pd = self.getProtocolInfo(proto_ty) orelse return null;
     const proto_name = pd.name;

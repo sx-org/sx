@@ -2263,44 +2263,34 @@ pub const Parser = struct {
     }
 
     /// Recursively find all generic type names ($T) in a type expression tree.
-    /// The bounds carried by the `$name` binder inside `node`, searching every
-    /// element position a type constructor can nest one in. Empty when the
-    /// binder carries none.
-    fn binderBounds(node: *const Node, name: []const u8) []const *Node {
+    /// Every bound the `$name` binder carries inside `node`, searching each
+    /// element position a type constructor can nest one in — `*$S/@BuildSink(P)`
+    /// binds `S` under a pointer, and the bounds belong to `S`, not to the
+    /// pointer around it. Appends, so one binder's bounds accumulate across
+    /// every spelling of it.
+    fn collectBinderBounds(self: *Parser, node: *const Node, name: []const u8, out: *std.ArrayList(*Node)) void {
         switch (node.data) {
             .type_expr => |te| {
-                if (te.is_generic and std.mem.eql(u8, te.name, name)) return te.protocol_constraints;
+                if (te.is_generic and std.mem.eql(u8, te.name, name))
+                    out.appendSlice(self.allocator, te.protocol_constraints) catch {};
             },
-            .pointer_type_expr => |p| return binderBounds(p.pointee_type, name),
-            .many_pointer_type_expr => |m| return binderBounds(m.element_type, name),
-            .slice_type_expr => |s| return binderBounds(s.element_type, name),
-            .array_type_expr => |a| return binderBounds(a.element_type, name),
-            .optional_type_expr => |o| return binderBounds(o.inner_type, name),
-            .parameterized_type_expr => |p| for (p.args) |a| {
-                const found = binderBounds(a, name);
-                if (found.len > 0) return found;
-            },
-            .tuple_type_expr => |t| for (t.field_types) |f| {
-                const found = binderBounds(f, name);
-                if (found.len > 0) return found;
-            },
+            .pointer_type_expr => |p| collectBinderBounds(self, p.pointee_type, name, out),
+            .many_pointer_type_expr => |m| collectBinderBounds(self, m.element_type, name, out),
+            .slice_type_expr => |s| collectBinderBounds(self, s.element_type, name, out),
+            .array_type_expr => |a| collectBinderBounds(self, a.element_type, name, out),
+            .optional_type_expr => |o| collectBinderBounds(self, o.inner_type, name, out),
+            .parameterized_type_expr => |p| for (p.args) |a| collectBinderBounds(self, a, name, out),
+            .tuple_type_expr => |t| for (t.field_types) |f| collectBinderBounds(self, f, name, out),
             .closure_type_expr => |c| {
-                for (c.param_types) |p| {
-                    const found = binderBounds(p, name);
-                    if (found.len > 0) return found;
-                }
-                if (c.return_type) |r| return binderBounds(r, name);
+                for (c.param_types) |p| collectBinderBounds(self, p, name, out);
+                if (c.return_type) |r| collectBinderBounds(self, r, name, out);
             },
             .function_type_expr => |f| {
-                for (f.param_types) |p| {
-                    const found = binderBounds(p, name);
-                    if (found.len > 0) return found;
-                }
-                if (f.return_type) |r| return binderBounds(r, name);
+                for (f.param_types) |p| collectBinderBounds(self, p, name, out);
+                if (f.return_type) |r| collectBinderBounds(self, r, name, out);
             },
             else => {},
         }
-        return &.{};
     }
 
     fn collectGenericNames(node: *Node, list: *std.ArrayList([]const u8), allocator: std.mem.Allocator) void {
@@ -2356,16 +2346,24 @@ pub const Parser = struct {
                 for (generic_names.items) |gen_name| {
                     if (!seen.contains(gen_name)) {
                         try seen.put(gen_name, {});
-                        // The binder's bounds, wherever in the annotation it was
-                        // introduced — `*$S/@BuildSink(P)` binds `S` under a
-                        // pointer, and its bounds belong to `S`, not to the
-                        // pointer around it.
-                        const pc = binderBounds(param.type_expr, gen_name);
                         const type_constraint = self.createNode(param.type_expr.span.start, .{ .type_expr = .{ .name = "Type" } }) catch continue;
-                        type_params.append(self.allocator, .{ .name = gen_name, .constraint = type_constraint, .protocol_constraints = pc }) catch {};
+                        type_params.append(self.allocator, .{ .name = gen_name, .constraint = type_constraint }) catch {};
                     }
                 }
             }
+        }
+        // Bounds are gathered after the names, over EVERY parameter: one binder
+        // may be spelled in several of them (`(a: $T/Ord, b: $T/Show)`), and each
+        // spelling's bounds are the declaration's. Keeping only the first
+        // spelling's would discard a written constraint.
+        for (type_params.items) |*tp| {
+            var bounds = std.ArrayList(*Node).empty;
+            for (params) |param| {
+                if (param.is_comptime or isBuildBlockType(param.type_expr)) continue;
+                collectBinderBounds(self, param.type_expr, tp.name, &bounds);
+            }
+            if (bounds.items.len > 0)
+                tp.protocol_constraints = bounds.toOwnedSlice(self.allocator) catch tp.protocol_constraints;
         }
         return try type_params.toOwnedSlice(self.allocator);
     }

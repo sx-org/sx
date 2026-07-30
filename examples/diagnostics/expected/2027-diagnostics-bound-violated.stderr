@@ -1,32 +1,98 @@
 error: 'Plain' does not satisfy the bound 'Summable' on '$T'
-  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:13:17
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:29:17
    |
-13 | total :: (x: $T/Summable) -> i32 { 1 }
+29 | total :: (x: $T/Summable) -> i32 { 1 }
    |                 ^^^^^^^^
 
 help: 'Plain' has no 'val' for 'Summable'
    |
-13 | total :: (x: $T/Summable) -> i32 { 1 }
+29 | total :: (x: $T/Summable) -> i32 { 1 }
    |                 ^^^^^^^^
 
-error: 'Plain' does not satisfy the bound 'Into' on '$C'
-  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:16:19
+error: 'Plain' does not satisfy the bound 'Into(i32)' on '$C'
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:32:19
    |
-16 | degrees :: (c: $C/Into(i32)) -> i32 { 1 }
+32 | degrees :: (c: $C/Into(i32)) -> i32 { 1 }
    |                   ^^^^^^^^^
 
 help: no 'impl Into(i32) for Plain' is visible here
    |
-16 | degrees :: (c: $C/Into(i32)) -> i32 { 1 }
+32 | degrees :: (c: $C/Into(i32)) -> i32 { 1 }
    |                   ^^^^^^^^^
 
 error: unknown protocol 'NoSuchProtocol' in the bound on '$T'
-  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:20:19
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:36:19
    |
-20 | mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
+36 | mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
    |                   ^^^^^^^^^^^^^^
 
 help: a bound names a protocol in scope, or one of this declaration's own type parameters
    |
-20 | mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
+36 | mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
    |                   ^^^^^^^^^^^^^^
+
+error: the bound 'Into2' on '$T' takes 1 type argument, but 0 are written
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:40:17
+   |
+40 | arity :: (v: $T/Into2) -> i32 { 1 }
+   |                 ^^^^^
+
+help: 'Into2' is parameterized — write 'Into2(…)' with its type argument
+   |
+40 | arity :: (v: $T/Into2) -> i32 { 1 }
+   |                 ^^^^^
+
+error: '[]i64' does not satisfy the bound 'Summable' on '$T'
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:43:22
+   |
+43 | structural :: (v: $T/Summable) -> i32 { 1 }
+   |                      ^^^^^^^^
+
+help: '[]i64' is a structural type and can carry no 'impl'
+   |
+43 | structural :: (v: $T/Summable) -> i32 { 1 }
+   |                      ^^^^^^^^
+
+error: 'closure' does not satisfy the bound 'Summable' on '$T'
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:43:22
+   |
+43 | structural :: (v: $T/Summable) -> i32 { 1 }
+   |                      ^^^^^^^^
+
+help: 'closure' is a structural type and can carry no 'impl'
+   |
+43 | structural :: (v: $T/Summable) -> i32 { 1 }
+   |                      ^^^^^^^^
+
+error: '(i64, i64)' does not satisfy the bound 'Summable' on '$T'
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:43:22
+   |
+43 | structural :: (v: $T/Summable) -> i32 { 1 }
+   |                      ^^^^^^^^
+
+help: '(i64, i64)' is a structural type and can carry no 'impl'
+   |
+43 | structural :: (v: $T/Summable) -> i32 { 1 }
+   |                      ^^^^^^^^
+
+error: 'Half' does not satisfy the bound 'Show' on '$T'
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:46:32
+   |
+46 | both :: (a: $T/Summable, b: $T/Show) -> i32 { 1 }
+   |                                ^^^^
+
+help: 'Half' has no 'show' for 'Show'
+   |
+46 | both :: (a: $T/Summable, b: $T/Show) -> i32 { 1 }
+   |                                ^^^^
+
+error: 'i64' does not satisfy the bound 'Summable' on '$V'
+  --> examples/diagnostics/2027-diagnostics-bound-violated.sx:50:27
+   |
+50 | relay :: ($P: Type, v: $V/P) -> i32 { 1 }
+   |                           ^
+
+help: 'i64' has no 'val' for 'Summable'
+   |
+50 | relay :: ($P: Type, v: $V/P) -> i32 { 1 }
+   |                           ^

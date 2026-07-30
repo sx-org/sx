@@ -34,9 +34,20 @@ impl Into(i32) for Celsius {
 
 degrees :: (c: $C/Into(i32)) -> i32 { xx c }
 
-// A head naming an ENCLOSING type parameter: nothing is known about `P` here,
-// so the bound defers to the binding `P` gets at the call.
-relay :: ($P: Type, v: $V/P) -> i32 { 1 }
+// A head naming a SIBLING type parameter: nothing is known about `P` in the
+// template, so the bound defers — and is asked at the call that binds `P`.
+relay :: ($P: Type, v: $V/P) -> i32 { v.val() }
+
+// TWO bounds on one binder, spelled across two parameters. Both are the
+// declaration's, so a binding must satisfy both.
+Showable :: protocol constraint {
+    show :: (self: *Self) -> string;
+}
+impl Showable for Pair {
+    show :: (self: *Pair) -> string { "pair" }
+}
+
+both :: (a: $T/Summable, b: $T/Showable) -> string { b.show() }
 
 // A bound on a struct head, carried on the template's type parameter.
 Holder :: struct ($T: Type/Summable) {
@@ -46,7 +57,10 @@ Holder :: struct ($T: Type/Summable) {
 main :: () -> i32 {
     print("{} {}\n", total(Box{ n = 4 }), total(Pair{ a = 2, b = 5 }));
     print("{}\n", degrees(Celsius{ deg = 21 }));
-    print("{}\n", relay(Box, Box{ n = 1 }));
+    // `P` binds to `Summable`, and `Box` implements it — the deferred question
+    // arrives and is answered.
+    print("{}\n", relay(Summable, Box{ n = 1 }));
+    print("{}\n", both(Pair{ a = 1, b = 1 }, Pair{ a = 2, b = 2 }));
     h := Holder(Box){ item = Box{ n = 9 } };
     print("{}\n", h.item.val());
     0

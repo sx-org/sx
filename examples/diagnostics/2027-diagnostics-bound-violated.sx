@@ -1,13 +1,29 @@
-// The three ways a bound can fail. Each is reported against the binding the
-// call fixed, not against the template.
+// Every way a bound can fail. Each is reported against the binding the call
+// fixed, not against the template — and none of them passes silently: a bound
+// that cannot be satisfied is never treated as satisfied for want of something
+// to look up.
 #import "modules/std.sx";
 
 Summable :: protocol constraint {
     val :: (self: *Self) -> i32;
 }
 
+Show :: protocol constraint {
+    show :: (self: *Self) -> string;
+}
+
+Into2 :: protocol(T: Type) constraint {
+    conv :: (self: *Self) -> T;
+}
+
 // Satisfies nothing.
 Plain :: struct { n: i32 = 0; }
+
+// Satisfies the FIRST of two bounds written on one binder.
+Half :: struct { n: i32 = 0; }
+impl Summable for Half {
+    val :: (self: *Half) -> i32 { self.n }
+}
 
 // A declared head the binding does not implement.
 total :: (x: $T/Summable) -> i32 { 1 }
@@ -19,8 +35,36 @@ degrees :: (c: $C/Into(i32)) -> i32 { 1 }
 // declaration's own type parameters.
 mystery :: (v: $T/NoSuchProtocol) -> i32 { 1 }
 
+// A parameterized protocol spelled WITHOUT its type arguments names no
+// instantiation, so it could not constrain anything.
+arity :: (v: $T/Into2) -> i32 { 1 }
+
+// A STRUCTURAL binding — slice, closure, tuple — has nowhere to hang an `impl`.
+structural :: (v: $T/Summable) -> i32 { 1 }
+
+// Two bounds on ONE binder: both are the declaration's, so both are checked.
+both :: (a: $T/Summable, b: $T/Show) -> i32 { 1 }
+
+// A head naming a SIBLING type parameter: the question defers to whatever binds
+// that parameter, and is asked there.
+relay :: ($P: Type, v: $V/P) -> i32 { 1 }
+
+pair :: () -> Tuple(i64, i64) { Tuple(i64, i64){ 1, 2 } }
+
 main :: () {
     print("{}\n", total(Plain{ n = 1 }));
     print("{}\n", degrees(Plain{ n = 2 }));
     print("{}\n", mystery(Plain{ n = 3 }));
+    print("{}\n", arity(Plain{ n = 4 }));
+
+    xs := [3]i64.[1, 2, 3];
+    print("{}\n", structural(xs[..]));
+    c := () => 5;
+    print("{}\n", structural(c));
+    print("{}\n", structural(pair()));
+
+    h := Half{ n = 6 };
+    print("{}\n", both(h, h));
+
+    print("{}\n", relay(Summable, 7));
 }

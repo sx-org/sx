@@ -34,8 +34,10 @@ const Lowering = lower.Lowering;
 pub const Head = union(enum) {
     /// A declared protocol. `ty` is null for a PARAMETERIZED protocol
     /// (`@BuildSink(P)`, `Into(T)`), which has no base TypeId — its conformance
-    /// lives in the keyed parameterized-impl index instead.
-    protocol: struct { ty: ?TypeId, name: []const u8 },
+    /// lives in the keyed parameterized-impl index instead. `params` is how many
+    /// type parameters the declaration takes, so a head spelled with the wrong
+    /// number of arguments is caught rather than silently constraining nothing.
+    protocol: struct { ty: ?TypeId, name: []const u8, params: usize },
     /// An enclosing type parameter: the conformance question defers to the call
     /// that binds it.
     type_param: []const u8,
@@ -70,7 +72,7 @@ pub fn resolveHead(
     }
     if (contracts.isCompilerFormed(name)) return .{ .formed = name };
     if (self.protocolResolver().resolveProtocol(name, source)) |p| {
-        return .{ .protocol = .{ .ty = p.ty, .name = name } };
+        return .{ .protocol = .{ .ty = p.ty, .name = name, .params = p.decl.type_params.len } };
     }
     return .{ .unknown = name };
 }
@@ -97,9 +99,13 @@ pub fn checkBindings(
         if (bound_ty == .unresolved) continue;
         for (tp.protocol_constraints) |bound| {
             switch (resolveHead(self, bound, source, names.items)) {
-                .type_param, .formed => {},
+                .formed => {},
+                // The named parameter may be bound by this very
+                // monomorphization; when it is, the deferral has arrived and the
+                // question is asked here against that binding.
+                .type_param => |sibling| checkAgainstSibling(self, bound, sibling, tp.name, bound_ty, bindings),
                 .unknown => |name| reportUnknownHead(self, bound, name, tp.name),
-                .protocol => |p| checkOne(self, bound, p.ty, p.name, tp.name, bound_ty),
+                .protocol => |p| checkOne(self, bound, p, tp.name, bound_ty),
             }
         }
     }
@@ -132,31 +138,108 @@ fn reportUnknownHead(self: *Lowering, bound: *const Node, name: []const u8, para
 fn checkOne(
     self: *Lowering,
     bound: *const Node,
-    proto_ty: ?TypeId,
-    proto_name: []const u8,
+    p: @FieldType(Head, "protocol"),
     param: []const u8,
     bound_ty: TypeId,
 ) void {
     const d = self.diagnostics orelse return;
-    // A parameterized head names an instantiation, whose conformance is the
-    // keyed impl question `has_impl` already answers.
-    if (bound.data == .parameterized_type_expr) {
-        if (self.computeHasImpl(bound, bound_ty)) return;
-        const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
-            self.formatTypeName(bound_ty), proto_name, param,
-        });
-        d.addHelpFmt(id, bound.span, null, "no 'impl {s} for {s}' is visible here", .{ spelledHead(self, bound, proto_name), self.formatTypeName(bound_ty) });
+    const spelled_args: usize = switch (bound.data) {
+        .parameterized_type_expr => |pte| pte.args.len,
+        else => 0,
+    };
+    // A head spelled with the wrong number of type arguments names no
+    // instantiation, so there is nothing it could constrain.
+    if (spelled_args != p.params) {
+        reportArity(self, bound, p, param, spelled_args);
         return;
     }
-    const pty = proto_ty orelse return;
+    // A parameterized head names an instantiation, whose conformance is the
+    // keyed impl question `has_impl` already answers.
+    if (p.params > 0) {
+        if (self.computeHasImpl(bound, bound_ty)) return;
+        reportViolation(self, bound, spelledHead(self, bound, p.name), param, bound_ty,
+            "no 'impl {s} for {s}' is visible here", .{ spelledHead(self, bound, p.name), self.formatTypeName(bound_ty) });
+        return;
+    }
+    const pty = p.ty orelse return;
     // A protocol satisfies its own bound: `$V/View` bound to `View` is the
     // identity case, and asking whether `View` implements `View` would ask the
     // protocol to impl itself.
     if (bound_ty == pty) return;
-    const concrete_name = self.resolveConcreteTypeName(bound_ty) orelse return;
+    // Only a NOMINAL type can carry an impl. A structural binding — slice,
+    // closure, tuple, function — has nowhere to hang one, so it fails the bound
+    // rather than escaping the check for want of a name to look up.
+    const concrete_name = self.resolveConcreteTypeName(bound_ty) orelse {
+        reportViolation(self, bound, p.name, param, bound_ty,
+            "'{s}' is a structural type and can carry no 'impl'", .{self.formatTypeName(bound_ty)});
+        return;
+    };
     const missing = self.firstUnimplementedProtocolMethod(pty, concrete_name, bound_ty) orelse return;
+    reportViolation(self, bound, p.name, param, bound_ty,
+        "'{s}' has no '{s}' for '{s}'", .{ concrete_name, missing, p.name });
+    _ = d;
+}
+
+/// The deferred question, arriving: `$V/P` where `P` is bound by this same
+/// monomorphization. An unbound sibling still defers — it is answered wherever
+/// that parameter is fixed.
+fn checkAgainstSibling(
+    self: *Lowering,
+    bound: *const Node,
+    sibling: []const u8,
+    param: []const u8,
+    bound_ty: TypeId,
+    bindings: *const std.StringHashMap(TypeId),
+) void {
+    const sib_ty = bindings.get(sibling) orelse return;
+    if (sib_ty == .unresolved) return;
+    if (bound_ty == sib_ty) return;
+    // A sibling bound to something that is not a protocol constrains nothing:
+    // `$V/P` with `P = i64` is not a conformance question.
+    if (self.getProtocolInfo(sib_ty) == null) return;
+    const proto_name = self.formatTypeName(sib_ty);
+    const concrete_name = self.resolveConcreteTypeName(bound_ty) orelse {
+        reportViolation(self, bound, proto_name, param, bound_ty,
+            "'{s}' is a structural type and can carry no 'impl'", .{self.formatTypeName(bound_ty)});
+        return;
+    };
+    const missing = self.firstUnimplementedProtocolMethod(sib_ty, concrete_name, bound_ty) orelse return;
+    reportViolation(self, bound, proto_name, param, bound_ty,
+        "'{s}' has no '{s}' for '{s}'", .{ concrete_name, missing, proto_name });
+}
+
+fn reportViolation(
+    self: *Lowering,
+    bound: *const Node,
+    proto_name: []const u8,
+    param: []const u8,
+    bound_ty: TypeId,
+    comptime help_fmt: []const u8,
+    help_args: anytype,
+) void {
+    const d = self.diagnostics orelse return;
     const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
         self.formatTypeName(bound_ty), proto_name, param,
     });
-    d.addHelpFmt(id, bound.span, null, "'{s}' has no '{s}' for '{s}'", .{ concrete_name, missing, proto_name });
+    d.addHelpFmt(id, bound.span, null, help_fmt, help_args);
+}
+
+fn reportArity(
+    self: *Lowering,
+    bound: *const Node,
+    p: @FieldType(Head, "protocol"),
+    param: []const u8,
+    spelled: usize,
+) void {
+    const d = self.diagnostics orelse return;
+    const id = d.addFmtId(.err, bound.span, "the bound '{s}' on '${s}' takes {d} type argument{s}, but {d} {s} written", .{
+        p.name, param, p.params, if (p.params == 1) "" else "s", spelled, if (spelled == 1) "is" else "are",
+    });
+    if (p.params > 0) {
+        d.addHelpFmt(id, bound.span, null, "'{s}' is parameterized — write '{s}(…)' with its type argument{s}", .{
+            p.name, p.name, if (p.params == 1) "" else "s",
+        });
+    } else {
+        d.addHelpFmt(id, bound.span, null, "'{s}' takes no type arguments — write it bare", .{p.name});
+    }
 }
