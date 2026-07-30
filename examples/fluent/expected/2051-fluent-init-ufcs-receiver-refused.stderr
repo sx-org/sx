@@ -1,21 +1,43 @@
-error: cannot assign 'target' of type 'View' with a value of type 'Plain'
-  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:41:9
+error: 'Plain' cannot form an initializer for 'View': it is not a member of the set
+  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:45:9
    |
-41 |         Plain{ text = "as a receiver" }.emit();
+45 |         Plain{ text = "as a receiver" }.emit();
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-41 |         Plain{ text = "as a receiver" }.emit();
+45 |         Plain{ text = "as a receiver" }.emit();
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error: cannot assign 'target' of type 'View' with a value of type 'Plain'
-  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:42:14
+error: 'Plain' cannot form an initializer for 'View': it is not a member of the set
+  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:46:14
    |
-42 |         emit(Plain{ text = "as an argument" });
+46 |         emit(Plain{ text = "as an argument" });
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
    |
-42 |         emit(Plain{ text = "as an argument" });
+46 |         emit(Plain{ text = "as an argument" });
    |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: 'string' cannot form an initializer for 'View': it is not a member of the set
+  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:49:9
+   |
+49 |         "a string".emit();
+   |         ^^^^^^^^^^
+
+help: 'string' is a builtin and cannot declare itself into a set — a member is a type the program declares: 'YourType :: @OpenVariant(View) { … }'
+   |
+49 |         "a string".emit();
+   |         ^^^^^^^^^^
+
+error: 'i64' cannot form an initializer for 'View': it is not a member of the set
+  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:50:14
+   |
+50 |         emit(41);
+   |              ^^
+
+help: 'i64' is a builtin and cannot declare itself into a set — a member is a type the program declares: 'YourType :: @OpenVariant(View) { … }'
+   |
+50 |         emit(41);
+   |              ^^

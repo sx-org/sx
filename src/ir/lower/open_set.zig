@@ -952,6 +952,10 @@ pub fn noteInstantiation(self: *Lowering, d: *errors.DiagnosticList, id: usize) 
 pub fn membershipHelp(self: *Lowering, d: *errors.DiagnosticList, id: usize, member_ty: TypeId, set_ty: TypeId, span: ast.Span) void {
     if (setOfMember(self, member_ty)) |other| {
         d.addHelpFmt(id, span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatSourceTypeName(member_ty), other.decl.name });
+    } else if (member_ty.isBuiltin() or self.getStructTypeName(member_ty) == null) {
+        // A builtin carries no declaration of its own, so there is no spelling
+        // that would make it a member — only a type the program declares can be.
+        d.addHelpFmt(id, span, null, "'{s}' is a builtin and cannot declare itself into a set — a member is a type the program declares: 'YourType :: @OpenVariant({s}) {{ … }}'", .{ self.formatSourceTypeName(member_ty), self.formatTypeName(set_ty) });
     } else {
         d.addHelpFmt(id, span, null, "a type joins by declaring itself into the set: '{s} :: @OpenVariant({s}) {{ … }}'", .{ self.formatSourceTypeName(member_ty), self.formatTypeName(set_ty) });
     }

@@ -16,8 +16,6 @@ const init_plan = @import("init_plan.zig");
 const build_block = @import("build_block.zig");
 const lower_generic = @import("generic.zig");
 const lower_open_set = @import("open_set.zig");
-const lower_init_plan = @import("init_plan.zig");
-const lower_build_block = @import("build_block.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -65,35 +63,66 @@ fn selectedDispatchName(self: *Lowering, sf: *const SelectedFunc) []const u8 {
     return out.toOwnedSlice(self.alloc) catch @panic("out of memory while mangling selected function");
 }
 
-
-/// The ufcs function `obj.field(…)` resolves to when its FIRST parameter is
-/// destination-first, or null. A method declared on the receiver's own type wins
-/// over a ufcs free function, so that case answers null and the ordinary method
-/// path takes it.
-fn destinationFirstUfcs(self: *Lowering, fa: ast.FieldAccess) ?[]const u8 {
+/// The ufcs function a dot-call resolves to when its FIRST parameter is
+/// destination-first (`$I/@Init(T)`), or null when the dot-call is anything else.
+/// Answers the same questions the ufcs dispatch arm asks, in the same order — the
+/// receiver's own type answers first, an alias names its target, and a generic
+/// family is selected by the receiver — so a call only re-spells itself where that
+/// arm would have taken it anyway.
+fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: []const *Node) ?[]const u8 {
     const alias_target = self.ufcsAliasTarget(fa.field);
     const eff_field = alias_target orelse fa.field;
-    const fd = self.program_index.fn_ast_map.get(eff_field) orelse return null;
-    if (alias_target == null and !fd.is_ufcs) return null;
+    const fd0 = self.program_index.fn_ast_map.get(eff_field) orelse return null;
+    if (alias_target == null and !fd0.is_ufcs) return null;
+
+    // A method the receiver's own type provides wins over a free function.
+    if (receiverProvidesMethod(self, self.inferExprType(fa.object), fa.field)) return null;
+
+    var fd = fd0;
+    if (fd0.type_params.len > 0) {
+        var eff_args = std.ArrayList(*const Node).empty;
+        defer eff_args.deinit(self.alloc);
+        eff_args.append(self.alloc, fa.object) catch return null;
+        for (call_args) |a| eff_args.append(self.alloc, a) catch return null;
+        var amb = false;
+        if (self.selectUfcsGenericByReceiver(eff_field, eff_args.items, &amb, fd0)) |sel| {
+            fd = sel;
+        } else if (amb or !self.ufcsGenericBindsAll(fd0, eff_args.items)) {
+            // The dispatch arm owns both refusals; it says them with the receiver
+            // in hand.
+            return null;
+        }
+        // The receiver chose an author the NAME does not: an ordinary call resolves
+        // by name, so re-spelling this one would call the other declaration. The
+        // dispatch arm keeps it.
+        if (fd != fd0) return null;
+    }
     if (fd.params.len == 0) return null;
-    const first = fd.params[0].type_expr;
-    if (lower_init_plan.boundTargetNode(first) == null and
-        lower_build_block.boundProtocolNode(first) == null) return null;
-    const recv_ty = self.inferExprType(fa.object);
-    if (declaresOwnMethod(self, recv_ty, fa.field)) return null;
+    if (init_plan.boundTargetNode(fd.params[0].type_expr) == null) return null;
     return eff_field;
 }
 
-/// Does `ty`'s own declaration carry a method of this name?
-fn declaresOwnMethod(self: *Lowering, ty: TypeId, name: []const u8) bool {
+/// Does a value of `ty` answer `name` itself? A method on the type's own
+/// declaration, one an `impl` contributed, a protocol's method on an erased value,
+/// a set's required method — and through a pointer or an optional, which dispatch
+/// reaches the same way.
+fn receiverProvidesMethod(self: *Lowering, ty: TypeId, name: []const u8) bool {
     if (ty == .unresolved) return false;
-    if (self.plain_struct_authors.get(ty)) |author| {
-        if (Lowering.structMethodFn(author.decl, name) != null) return true;
+    if (self.plainStructMethod(ty, name) != null) return true;
+    if (self.getStructTypeName(ty)) |sname| {
+        const qualified = std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ sname, name }) catch return true;
+        if (self.program_index.fn_ast_map.get(qualified) != null) return true;
     }
-    if (self.getStructTypeName(ty)) |inst| {
-        if (self.struct_instance_author.get(inst)) |author| {
-            if (Lowering.structMethodFn(author, name) != null) return true;
-        }
+    if (self.getProtocolInfo(ty)) |pi| {
+        if (protocolHasMethod(pi, name)) return true;
+    }
+    if (self.openSetOf(ty)) |set| {
+        if (lower_open_set.requiredMethod(set, name) != null) return true;
+    }
+    if (!ty.isBuiltin()) {
+        const info = self.module.types.get(ty);
+        if (info == .pointer) return receiverProvidesMethod(self, info.pointer.pointee, name);
+        if (info == .optional) return receiverProvidesMethod(self, info.optional.child, name);
     }
     return false;
 }
@@ -859,6 +888,23 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     d.addHelpFmt(id, c.callee.span, null, "the block's own body is what it carries; nothing else reads it", .{});
                 }
                 return Ref.none;
+            }
+        }
+
+        // A ufcs function whose FIRST parameter is DESTINATION-FIRST — bounded by
+        // `@Init(T)` — never takes an evaluated receiver: that parameter wants the
+        // expression, not its value (§5.2). The receiver IS that first argument, so
+        // the call is the ordinary spelling of itself and lowers as one. Decided
+        // HERE, before the receiver or any argument is lowered, because evaluating
+        // them at the boundary is precisely what the parameter forbids.
+        if (!author_declines) {
+            if (destinationFirstUfcs(self, &fa, c.args)) |target_name| {
+                const syn_args = self.alloc.alloc(*Node, c.args.len + 1) catch unreachable;
+                syn_args[0] = @constCast(fa.object);
+                @memcpy(syn_args[1..], c.args);
+                const callee = self.synthNode(.{ .identifier = .{ .name = target_name } }, c.callee.span, c.callee.source_file);
+                const syn_call = ast.Call{ .callee = callee, .args = syn_args };
+                return self.lowerCall(&syn_call);
             }
         }
     }
@@ -1751,22 +1797,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     }
                 }
                 return self.emitError(func_name, c.callee.span);
-            }
-
-            // A ufcs target whose first parameter is DESTINATION-FIRST — `$I/@Init(T)`
-            // or `$B/@BuildBlock(P)` — never takes an evaluated receiver: the
-            // parameter wants the expression, not its value (spec §5.2). The
-            // receiver IS that first argument, so the call is the ordinary spelling
-            // of itself and lowers as one, forming exactly where an argument in that
-            // position forms.
-            if (destinationFirstUfcs(self, fa)) |target_name| {
-                var syn_args = std.ArrayList(*Node).empty;
-                defer syn_args.deinit(self.alloc);
-                syn_args.append(self.alloc, @constCast(fa.object)) catch unreachable;
-                for (c.args) |a| syn_args.append(self.alloc, a) catch unreachable;
-                const callee = self.synthNode(.{ .identifier = .{ .name = target_name } }, c.callee.span, c.callee.source_file);
-                const syn_call = ast.Call{ .callee = callee, .args = self.alloc.dupe(*Node, syn_args.items) catch unreachable };
-                return self.lowerCall(&syn_call);
             }
 
             // Method call: obj.method(args) → prepend obj (or &obj for *Self receivers)

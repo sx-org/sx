@@ -1,0 +1,101 @@
+// A dot-call at a destination-first parameter is still a dot-call: it resolves the
+// way every other one does, and only then re-spells itself (fluent spec §5.2).
+//
+// `@Init` decides HOW the receiver reaches the callee — unevaluated, formed — not
+// WHICH callee it reaches. So everything that answers before a free function still
+// answers first: a method the receiver's type declares, one an `impl` contributed,
+// a protocol's method on an erased value, a method reached through a pointer. And
+// what a receiver cannot decide alone stays refused: two imported declarations of
+// the same name are ambiguous whether the call is spelled with a dot or not.
+//
+// The receiver is an argument, so it is evaluated exactly as an argument is: once,
+// when the callee writes — and the other arguments once each, whichever spelling
+// the call uses.
+#import "modules/std.sx";
+#import "modules/std/list.sx";
+
+View :: @OpenSet(.{ max = 128 }) { render :: (self: *Self) -> string; }
+Label :: @OpenVariant(View) { text: string = ""; render :: (self: *Label) -> string => self.text; }
+
+#context_extend ui_out: *List(View) = null;
+#context_extend ticks: *i64 = null;
+
+// A destination-first ufcs with two ordinary arguments after the receiver.
+emit_at :: ufcs (value: $I/@Init(View), a: i64, b: i64) {
+    item: View = ---;
+    value.write(*item);
+    context.ui_out.append(item);
+}
+
+tick :: () -> i64 {
+    context.ticks.* += 1;
+    return context.ticks.*;
+}
+
+// A receiver with a side effect: an initializer runs it when it writes, once.
+counted :: () -> Label {
+    context.ticks.* += 100;
+    return Label{ text = "counted" };
+}
+
+// --- What answers before a free function ---
+
+Drawable :: protocol constraint { draw :: (self: *Self) -> string; }
+
+// An impl contributes the method — it is not in the struct's body.
+Box :: struct { v: i64 = 0; }
+impl Drawable for Box { draw :: (self: *Box) -> string => "impl method"; }
+
+// A method the struct declares itself, reached through a value AND a pointer.
+Crate :: struct {
+    v: i64 = 0;
+    stow :: (self: *Crate) -> string => "own method";
+}
+
+// A protocol value dispatches to its conformer.
+Shape :: protocol tagged { name :: (self: *Self) -> string; }
+Round :: struct { s: string = "round"; }
+impl Shape for Round { name :: (self: *Round) -> string => self.s; }
+
+// Free ufcs functions with the SAME names and destination-first first parameters.
+draw :: ufcs (value: $I/@Init($V/Drawable)) -> string => "free draw";
+stow :: ufcs (value: $I/@Init(i64)) -> string => "free stow";
+name :: ufcs (value: $I/@Init($V/Shape)) -> string => "free name";
+
+main :: () -> i32 {
+    out : List(View) = .{};
+    n : i64 = 0;
+
+    push .{ ui_out = *out, ticks = *n } {
+        // Two arguments, spelled both ways: each evaluated once, each time.
+        Label{ text = "receiver" }.emit_at(tick(), tick());
+        print("receiver spelling: {} evaluations\n", n);
+
+        n = 0;
+        emit_at(Label{ text = "argument" }, tick(), tick());
+        print("argument spelling: {} evaluations\n", n);
+
+        // The receiver's own side effect runs once, inside the write.
+        n = 0;
+        counted().emit_at(0, 0);
+        print("receiver evaluated: {}\n", n == 100);
+    }
+    print("emitted {}\n", out.len);
+
+    // The receiver's type answers first, however it declares the method.
+    b := Box{ v = 1 };
+    c := Crate{ v = 2 };
+    pc := *c;
+    r := Round{};
+    h : Shape = *r;
+    print("impl {} own {} through a pointer {} protocol {}\n", b.draw(), c.stow(), pc.stow(), h.name());
+    0
+}
+
+// ** stdout **
+// receiver spelling: 2 evaluations
+// argument spelling: 2 evaluations
+// receiver evaluated: true
+// emitted 3
+// impl impl method own own method through a pointer own method protocol round
+//
