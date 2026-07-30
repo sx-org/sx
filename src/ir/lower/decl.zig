@@ -230,6 +230,10 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     self.collectContextExtensions(decls);
     // Pass 1: scan — register all function ASTs, struct types, extern stubs
     self.scanDecls(decls);
+    // Pass 1a: admit open-set members. Every declaration is registered by now, so
+    // a member declared before its set still finds it, and every member has the
+    // layout the admission checks measure.
+    admitOpenVariants(self, decls);
     // Pass 1a': assemble the program Context — append the collected
     // `#context_extend` fields to the registered Context struct. Must run
     // after `scanDecls` (every named type an extension can reference is
@@ -555,6 +559,9 @@ pub fn lowerDecls(self: *Lowering, decls: []const *const Node) void {
             .protocol_decl => {
                 self.registerProtocolDecl(&decl.data.protocol_decl);
             },
+            .open_set_decl => {
+                self.registerOpenSetDecl(&decl.data.open_set_decl, decl);
+            },
             .impl_block => {
                 self.protocolResolver().registerImplBlock(&decl.data.impl_block, is_imported, decl);
             },
@@ -567,6 +574,36 @@ pub fn lowerDecls(self: *Lowering, decls: []const *const Node) void {
                     self.registerNamespaceQualifiedFns(ns.name, ns.own_decls);
                     self.lowerDecls(ns.decls);
                 }
+            },
+            else => {},
+        }
+    }
+}
+
+/// Admit every `V :: @OpenVariant(P)` declaration into its set, after every
+/// declaration in this list is registered: a member may be written before the set
+/// it joins, and its own layout has to exist before it can be measured.
+fn admitOpenVariants(self: *Lowering, decls: []const *const Node) void {
+    for (decls) |decl| {
+        switch (decl.data) {
+            .struct_decl => |sd| {
+                if (sd.open_variant_of == null) continue;
+                // A generic member is measured per instantiation, at the
+                // instantiation site — the template itself has no layout.
+                if (sd.type_params.len > 0) continue;
+                self.setCurrentSourceFile(decl.source_file);
+                const ty = self.resolveName(sd.name);
+                if (ty == .unresolved) continue;
+                self.admitOpenVariant(&decl.data.struct_decl, ty, decl.span);
+            },
+            .const_decl => |cd| {
+                if (cd.value.data != .struct_decl) continue;
+                const sd = cd.value.data.struct_decl;
+                if (sd.open_variant_of == null or sd.type_params.len > 0) continue;
+                self.setCurrentSourceFile(decl.source_file);
+                const ty = self.resolveName(sd.name);
+                if (ty == .unresolved) continue;
+                self.admitOpenVariant(&cd.value.data.struct_decl, ty, decl.span);
             },
             else => {},
         }
@@ -1113,6 +1150,9 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             },
             .protocol_decl => {
                 self.registerProtocolDecl(&decl.data.protocol_decl);
+            },
+            .open_set_decl => {
+                self.registerOpenSetDecl(&decl.data.open_set_decl, decl);
             },
             .impl_block => {
                 self.protocolResolver().registerImplBlock(&decl.data.impl_block, is_imported, decl);

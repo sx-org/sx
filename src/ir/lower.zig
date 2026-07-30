@@ -55,6 +55,7 @@ const lower_expr = @import("lower/expr.zig");
 const lower_closure = @import("lower/closure.zig");
 const lower_init_plan = @import("lower/init_plan.zig");
 const lower_build_block = @import("lower/build_block.zig");
+const lower_open_set = @import("lower/open_set.zig");
 const lower_bound = @import("lower/bound.zig");
 
 const TypeId = types.TypeId;
@@ -436,6 +437,13 @@ pub const Lowering = struct {
     /// instantiation can say what they are. Set around a dispatch to such a
     /// method; null everywhere else.
     impl_binder_seed: ?*const std.StringHashMap(TypeId) = null,
+    /// Declared open sets, by name (spec: Open Sets). The declarations ARE the
+    /// registry: there is no enrollment API.
+    open_sets: std.StringHashMap(lower_open_set.Set),
+    /// Reverse lookup: the set a type IS.
+    open_set_by_type: std.AutoHashMap(TypeId, []const u8),
+    /// The set a member type joins — one per type.
+    open_variant_of: std.AutoHashMap(TypeId, []const u8),
     /// `@BuildBlock` formation sites, in mint order; a per-site implementor type
     /// carries its one-based index as its nominal id.
     block_sites: std.ArrayList(lower_build_block.Site) = .empty,
@@ -1155,6 +1163,9 @@ pub const Lowering = struct {
             .struct_defaults_map = std.StringHashMap([]const ?*const Node).init(module.alloc),
             .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
             .struct_const_by_tid = std.AutoHashMap(StructConstTidKey, StructConstInfo).init(module.alloc),
+            .open_sets = std.StringHashMap(lower_open_set.Set).init(module.alloc),
+            .open_set_by_type = std.AutoHashMap(TypeId, []const u8).init(module.alloc),
+            .open_variant_of = std.AutoHashMap(TypeId, []const u8).init(module.alloc),
             .struct_instance_bindings = std.StringHashMap(std.StringHashMap(TypeId)).init(module.alloc),
             .struct_instance_template = std.StringHashMap([]const u8).init(module.alloc),
             .struct_instance_author = std.StringHashMap(*const ast.StructDecl).init(module.alloc),
@@ -3543,6 +3554,12 @@ pub const Lowering = struct {
     pub const lowerInitSite = lower_init_plan.lowerInitSite;
 
     // --- lower/build_block.zig (`@BuildBlock(P)`) ---
+    // --- lower/open_set.zig (`@OpenSet` / `@OpenVariant`) ---
+    pub const registerOpenSetDecl = lower_open_set.registerSetDecl;
+    pub const admitOpenVariant = lower_open_set.admitVariant;
+    pub const openSetOf = lower_open_set.setOf;
+    pub const isOpenSet = lower_open_set.isOpenSet;
+
     pub const blockProtocolOf = lower_build_block.blockProtocolOf;
     pub const blockBinderType = lower_build_block.binderType;
     pub const formBuildBlock = lower_build_block.formBlock;

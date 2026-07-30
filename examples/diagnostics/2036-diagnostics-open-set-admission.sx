@@ -1,0 +1,59 @@
+// A member is admitted — or refused — at its OWN declaration (spec: Open Sets).
+// The set states a payload ceiling, a payload alignment, and the methods every
+// member must have; a type that fails any of those is not a member at all, so no
+// conversion site ever needs a second check and nothing is ever spilled to heap
+// to make it fit.
+//
+// Each refusal names the set, what the set allows, the member, and what the
+// member is — for a size failure, the field that accounts for it.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 32, align = 8 }) {
+    render :: (self: *Self) -> string;
+}
+
+// Over the payload ceiling: the array alone is 648 bytes.
+Board :: @OpenVariant(View) {
+    cells: [81]u64 = .{};
+    render :: (self: *Board) -> string => "board";
+}
+
+// Needs more alignment than the set's payload has.
+Loud :: @OpenVariant(View) {
+    lanes: Vector(4, f64) = .{};
+    render :: (self: *Loud) -> string => "loud";
+}
+
+// Contains the set BY VALUE, so its size would depend on its own size.
+Nested :: @OpenVariant(View) {
+    child: View = ---;
+    render :: (self: *Nested) -> string => "nested";
+}
+
+// Same equation one level down: a plain struct in between changes nothing.
+Inner :: struct {
+    a: View = ---;
+}
+Holder :: @OpenVariant(View) {
+    pair: Inner = .{};
+    render :: (self: *Holder) -> string => "holder";
+}
+
+// Missing a required method.
+Quiet :: @OpenVariant(View) {
+    n: i64 = 0;
+}
+
+// A set that never states its ceiling.
+Loose :: @OpenSet(.{ align = 8 }) {
+    render :: (self: *Self) -> string;
+}
+
+// A head that names something that is not a set.
+Plain :: struct { n: i64 = 0; }
+Confused :: @OpenVariant(Plain) {
+    render :: (self: *Confused) -> string => "confused";
+}
+
+main :: () -> i32 { 0 }

@@ -1,0 +1,132 @@
+error: the open set's options are incomplete
+  --> examples/diagnostics/2036-diagnostics-open-set-admission.sx:49:19
+   |
+49 | Loose :: @OpenSet(.{ align = 8 }) {
+   |                   ^^^^^^^^^^^^^^^
+
+help: 'max' has no default — state the payload ceiling in bytes
+   |
+49 | Loose :: @OpenSet(.{ align = 8 }) {
+   |                   ^^^^^^^^^^^^^^^
+
+error: 'Board' cannot be a member of 'View': it is 648 bytes, and the set's payload ceiling is 32
+  --> examples/diagnostics/2036-diagnostics-open-set-admission.sx:17:1
+   |
+17 | Board :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+18 |     cells: [81]u64 = .{};
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
+19 |     render :: (self: *Board) -> string => "board";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+20 | }
+   | ^
+
+help: the largest field is 'cells' at 648 bytes — hold bulk state elsewhere and borrow it, or raise 'max' on the set
+   |
+17 | Board :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+18 |     cells: [81]u64 = .{};
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^
+19 |     render :: (self: *Board) -> string => "board";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+20 | }
+   | ^
+
+error: 'Loud' cannot be a member of 'View': it needs 32-byte alignment, and the set's payload alignment is 8
+  --> examples/diagnostics/2036-diagnostics-open-set-admission.sx:23:1
+   |
+23 | Loud :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+24 |     lanes: Vector(4, f64) = .{};
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+25 |     render :: (self: *Loud) -> string => "loud";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+26 | }
+   | ^
+
+help: raise 'align' on the 'View' declaration — every storage path for it must honour that alignment — or drop the over-aligned field
+   |
+23 | Loud :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+24 |     lanes: Vector(4, f64) = .{};
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+25 |     render :: (self: *Loud) -> string => "loud";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+26 | }
+   | ^
+
+error: 'Nested' cannot be a member of 'View': it contains 'View' by value, so its size would be infinite
+  --> examples/diagnostics/2036-diagnostics-open-set-admission.sx:29:1
+   |
+29 | Nested :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+30 |     child: View = ---;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+31 |     render :: (self: *Nested) -> string => "nested";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+32 | }
+   | ^
+
+help: hold it behind a pointer ('*View') or in a list whose elements live outside the value
+   |
+29 | Nested :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+30 |     child: View = ---;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+31 |     render :: (self: *Nested) -> string => "nested";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+32 | }
+   | ^
+
+error: 'Holder' cannot be a member of 'View': it contains 'View' by value, so its size would be infinite
+  --> examples/diagnostics/2036-diagnostics-open-set-admission.sx:38:1
+   |
+38 | Holder :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+39 |     pair: Inner = .{};
+   | ^^^^^^^^^^^^^^^^^^^^^^
+40 |     render :: (self: *Holder) -> string => "holder";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 | }
+   | ^
+
+help: hold it behind a pointer ('*View') or in a list whose elements live outside the value
+   |
+38 | Holder :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+39 |     pair: Inner = .{};
+   | ^^^^^^^^^^^^^^^^^^^^^^
+40 |     render :: (self: *Holder) -> string => "holder";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 | }
+   | ^
+
+error: 'Quiet' cannot be a member of 'View': it has no 'render'
+  --> examples/diagnostics/2036-diagnostics-open-set-admission.sx:44:1
+   |
+44 | Quiet :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+45 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+46 | }
+   | ^
+
+help: every member declares every method the set requires; 'render' is declared on 'View'
+   |
+44 | Quiet :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+45 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+46 | }
+   | ^
+
+error: 'Plain' is not an open set
+  --> examples/diagnostics/2036-diagnostics-open-set-admission.sx:55:26
+   |
+55 | Confused :: @OpenVariant(Plain) {
+   |                          ^^^^^
+
+help: a member joins a set declared 'Plain :: @OpenSet(.{ max = … }) { … }'
+   |
+55 | Confused :: @OpenVariant(Plain) {
+   |                          ^^^^^

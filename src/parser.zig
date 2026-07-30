@@ -345,6 +345,19 @@ pub const Parser = struct {
             return self.parseProtocolDecl(name, start_pos, name_is_raw);
         }
 
+        // Open-set declaration heads. Both are `@` names with an argument list,
+        // and both open a body, so they are declaration FORMS — neither a
+        // stdlib-declared contract nor a compiler-formed type.
+        if (self.current.tag == .at_identifier) {
+            const at_name = self.tokenSlice(self.current);
+            if (std.mem.eql(u8, at_name, contracts.open_set_head)) {
+                return self.parseOpenSetDecl(name, start_pos, name_is_raw);
+            }
+            if (std.mem.eql(u8, at_name, contracts.open_variant_head)) {
+                return self.parseOpenVariantDecl(name, start_pos, name_is_raw);
+            }
+        }
+
         // Runtime-class binding with an optional `#jni_main` prefix modifier:
         //   [#jni_main]* (#jni_class / #jni_interface / #objc_class /
         //   #objc_protocol / #swift_class / #swift_struct / #swift_protocol) ("path") { body }
@@ -1212,6 +1225,20 @@ pub const Parser = struct {
 
     fn parseStructDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
         self.advance(); // skip 'struct'
+        return self.parseStructTail(name, start_pos, name_is_raw, null, null);
+    }
+
+    /// Everything after the declaration's head word. `open_variant_of` names the
+    /// set a `@OpenVariant(P)` head bound this declaration to: the body grammar is
+    /// the struct grammar, because a variant IS a struct.
+    fn parseStructTail(
+        self: *Parser,
+        name: []const u8,
+        start_pos: u32,
+        name_is_raw: bool,
+        open_variant_of: ?[]const u8,
+        open_variant_span: ?ast.Span,
+    ) anyerror!*Node {
 
         // Optional welded-binding annotation: `struct abi(.zig) extern <lib> { … }`.
         // `abi(...)` (the ABI/layout selector) sits before the `extern` linkage
@@ -1400,7 +1427,172 @@ pub const Parser = struct {
             .abi = struct_abi,
             .extern_lib = struct_extern_lib,
             .is_raw = name_is_raw,
+            .open_variant_of = open_variant_of,
+            .open_variant_span = open_variant_span,
         } });
+    }
+
+    /// `V :: @OpenVariant(P) [($T: Type)] { fields + the set's methods }`.
+    fn parseOpenVariantDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
+        self.advance(); // skip '@OpenVariant'
+        try self.expect(.l_paren);
+        const set_tok = self.current;
+        if (self.current.tag != .identifier) {
+            return self.fail("expected the open set's name in '@OpenVariant(…)'");
+        }
+        const set_name = self.tokenSlice(set_tok);
+        self.advance();
+        try self.expect(.r_paren);
+        return self.parseStructTail(name, start_pos, name_is_raw, set_name, .{ .start = set_tok.loc.start, .end = set_tok.loc.end });
+    }
+
+    /// `P :: @OpenSet(.{ max = …, align = … }) { required methods }`.
+    fn parseOpenSetDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
+        self.advance(); // skip '@OpenSet'
+        try self.expect(.l_paren);
+        const opt_start = self.current.loc.start;
+        const options = try self.parseExpr();
+        const opt_end = self.current.loc.end;
+        try self.expect(.r_paren);
+        try self.expect(.l_brace);
+
+        var methods = std.ArrayList(ast.ProtocolMethodDecl).empty;
+        try self.parseRequiredMethods(&methods, .{ .owner = name, .kind_spelling = "@OpenSet" });
+        try self.expect(.r_brace);
+
+        return try self.createNode(start_pos, .{ .open_set_decl = .{
+            .name = name,
+            .methods = try methods.toOwnedSlice(self.allocator),
+            .options = options,
+            .options_span = .{ .start = opt_start, .end = opt_end },
+            .is_raw = name_is_raw,
+        } });
+    }
+
+    /// The shared `{ name :: (params) -> T; … }` member list of a protocol and of
+    /// an open set: both declare REQUIRED methods, with `Self` denoting the
+    /// implementing type, and both monomorphize them per member.
+    /// What the enclosing declaration allows its methods to carry.
+    const RequiredMethodsCtx = struct {
+        /// The declaration's name, for diagnostics.
+        owner: []const u8,
+        /// `#expand` is a tagged-protocol attribute; every other owner refuses it.
+        expand_allowed: bool = false,
+        /// The owner already carries `#expand` on its header.
+        header_expand: bool = false,
+        /// How the owner's kind is spelled in the refusal.
+        kind_spelling: []const u8 = "",
+    };
+
+    fn parseRequiredMethods(self: *Parser, methods: *std.ArrayList(ast.ProtocolMethodDecl), ctx: RequiredMethodsCtx) anyerror!void {
+        while (self.current.tag != .r_brace and self.current.tag != .eof) {
+            // Method: name :: (params) -> type;  or  name :: (params) -> type { body }
+            if (!self.isMemberDeclName()) {
+                return self.failMemberDeclName("expected method name in protocol body");
+            }
+            const method_name = self.tokenSlice(self.current);
+            self.advance();
+            try self.expect(.colon_colon);
+            try self.expect(.l_paren);
+
+            var param_types = std.ArrayList(*Node).empty;
+            var param_names = std.ArrayList([]const u8).empty;
+            var param_name_spans = std.ArrayList(ast.Span).empty;
+            var param_name_is_raw = std.ArrayList(bool).empty;
+
+            while (self.current.tag != .r_paren and self.current.tag != .eof) {
+                if (param_types.items.len > 0) {
+                    try self.expect(.comma);
+                    if (self.current.tag == .r_paren) break;
+                }
+                // Parse: name: type
+                if (self.current.tag != .identifier and self.current.tag != .kw_Self) {
+                    return self.fail("expected parameter name in protocol method");
+                }
+                const pname = self.tokenSlice(self.current);
+                try param_name_spans.append(self.allocator, .{ .start = self.current.loc.start, .end = self.current.loc.end });
+                try param_name_is_raw.append(self.allocator, self.current.is_raw);
+                self.advance();
+                try self.expect(.colon);
+                const ptype = try self.parseTypeExpr();
+                try param_names.append(self.allocator, pname);
+                try param_types.append(self.allocator, ptype);
+            }
+            try self.expect(.r_paren);
+
+            // Every protocol method must declare its receiver EXPLICITLY as the
+            // first parameter — `self: *Self` (or `self: Self`) — matching how
+            // `impl` methods and ordinary methods are written. This removes the
+            // old implicit-receiver ambiguity (was the first listed param the
+            // receiver, or an extra arg?). The receiver is validated and then
+            // stripped here, so downstream lowering sees only the EXTRA-arg
+            // params, exactly as it did under the implicit form.
+            if (param_names.items.len == 0 or !std.mem.eql(u8, param_names.items[0], "self")) {
+                return self.fail("protocol method must declare its receiver as the first parameter: `self: *Self` (or `self: Self`)");
+            }
+            {
+                const rtype = param_types.items[0];
+                const is_self_val = rtype.data == .type_expr and std.mem.eql(u8, rtype.data.type_expr.name, "Self");
+                const is_self_ptr = rtype.data == .pointer_type_expr and
+                    rtype.data.pointer_type_expr.pointee_type.data == .type_expr and
+                    std.mem.eql(u8, rtype.data.pointer_type_expr.pointee_type.data.type_expr.name, "Self");
+                if (!is_self_val and !is_self_ptr) {
+                    return self.fail("protocol method receiver must be typed `*Self` or `Self`");
+                }
+            }
+
+            // Optional return type
+            var return_type: ?*Node = null;
+            if (self.current.tag == .arrow) {
+                self.advance();
+                return_type = try self.parseFnReturnType();
+            }
+
+            // Per-method `#expand`, in the same trailing attribute slot `#get` /
+            // `#set` occupy on an ordinary method.
+            var method_expand = false;
+            while (self.current.tag == .hash_expand) {
+                if (method_expand) return self.failFmt("duplicate #expand on method '{s}'", .{method_name});
+                if (!ctx.expand_allowed) {
+                    return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and '{s}' is declared '{s}'", .{ ctx.owner, ctx.kind_spelling });
+                }
+                if (ctx.header_expand) {
+                    return self.failFmt("'{s}' already carries #expand on its header, so every method's dispatch already expands at the call site — remove one", .{ctx.owner});
+                }
+                method_expand = true;
+                self.advance();
+            }
+
+            // Optional body (default method) or semicolon
+            var default_body: ?*Node = null;
+            if (self.current.tag == .l_brace) {
+                // A default-method body's declarations are locals.
+                const saved_module_expansion = self.in_module_expansion;
+                self.in_module_expansion = false;
+                defer self.in_module_expansion = saved_module_expansion;
+                default_body = try self.parseBlock();
+            } else {
+                if (self.current.tag == .semicolon) self.advance();
+            }
+
+            // Strip the receiver (index 0) — the method's stored params are the
+            // extra args only.
+            const all_param_types = try param_types.toOwnedSlice(self.allocator);
+            const all_param_names = try param_names.toOwnedSlice(self.allocator);
+            const all_param_name_spans = try param_name_spans.toOwnedSlice(self.allocator);
+            const all_param_name_is_raw = try param_name_is_raw.toOwnedSlice(self.allocator);
+
+            try methods.append(self.allocator, .{
+                .name = method_name,
+                .params = all_param_types[1..],
+                .param_names = all_param_names[1..],
+                .param_name_spans = all_param_name_spans[1..],
+                .param_name_is_raw = all_param_name_is_raw[1..],
+                .return_type = return_type,
+                .default_body = default_body,
+                .is_expand = method_expand,
+            });
+        }
     }
 
     fn parseProtocolDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
@@ -1485,114 +1677,12 @@ pub const Parser = struct {
 
         var methods = std.ArrayList(ast.ProtocolMethodDecl).empty;
 
-        while (self.current.tag != .r_brace and self.current.tag != .eof) {
-            // Method: name :: (params) -> type;  or  name :: (params) -> type { body }
-            if (!self.isMemberDeclName()) {
-                return self.failMemberDeclName("expected method name in protocol body");
-            }
-            const method_name = self.tokenSlice(self.current);
-            self.advance();
-            try self.expect(.colon_colon);
-            try self.expect(.l_paren);
-
-            var param_types = std.ArrayList(*Node).empty;
-            var param_names = std.ArrayList([]const u8).empty;
-            var param_name_spans = std.ArrayList(ast.Span).empty;
-            var param_name_is_raw = std.ArrayList(bool).empty;
-
-            while (self.current.tag != .r_paren and self.current.tag != .eof) {
-                if (param_types.items.len > 0) {
-                    try self.expect(.comma);
-                    if (self.current.tag == .r_paren) break;
-                }
-                // Parse: name: type
-                if (self.current.tag != .identifier and self.current.tag != .kw_Self) {
-                    return self.fail("expected parameter name in protocol method");
-                }
-                const pname = self.tokenSlice(self.current);
-                try param_name_spans.append(self.allocator, .{ .start = self.current.loc.start, .end = self.current.loc.end });
-                try param_name_is_raw.append(self.allocator, self.current.is_raw);
-                self.advance();
-                try self.expect(.colon);
-                const ptype = try self.parseTypeExpr();
-                try param_names.append(self.allocator, pname);
-                try param_types.append(self.allocator, ptype);
-            }
-            try self.expect(.r_paren);
-
-            // Every protocol method must declare its receiver EXPLICITLY as the
-            // first parameter — `self: *Self` (or `self: Self`) — matching how
-            // `impl` methods and ordinary methods are written. This removes the
-            // old implicit-receiver ambiguity (was the first listed param the
-            // receiver, or an extra arg?). The receiver is validated and then
-            // stripped here, so downstream lowering sees only the EXTRA-arg
-            // params, exactly as it did under the implicit form.
-            if (param_names.items.len == 0 or !std.mem.eql(u8, param_names.items[0], "self")) {
-                return self.fail("protocol method must declare its receiver as the first parameter: `self: *Self` (or `self: Self`)");
-            }
-            {
-                const rtype = param_types.items[0];
-                const is_self_val = rtype.data == .type_expr and std.mem.eql(u8, rtype.data.type_expr.name, "Self");
-                const is_self_ptr = rtype.data == .pointer_type_expr and
-                    rtype.data.pointer_type_expr.pointee_type.data == .type_expr and
-                    std.mem.eql(u8, rtype.data.pointer_type_expr.pointee_type.data.type_expr.name, "Self");
-                if (!is_self_val and !is_self_ptr) {
-                    return self.fail("protocol method receiver must be typed `*Self` or `Self`");
-                }
-            }
-
-            // Optional return type
-            var return_type: ?*Node = null;
-            if (self.current.tag == .arrow) {
-                self.advance();
-                return_type = try self.parseFnReturnType();
-            }
-
-            // Per-method `#expand`, in the same trailing attribute slot `#get` /
-            // `#set` occupy on an ordinary method.
-            var method_expand = false;
-            while (self.current.tag == .hash_expand) {
-                if (method_expand) return self.failFmt("duplicate #expand on method '{s}'", .{method_name});
-                if (kind != .tagged) {
-                    return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and '{s}' is declared '{s}'", .{ name, kind.spelling() });
-                }
-                if (is_expand) {
-                    return self.failFmt("'{s}' already carries #expand on its header, so every method's dispatch already expands at the call site — remove one", .{name});
-                }
-                method_expand = true;
-                self.advance();
-            }
-
-            // Optional body (default method) or semicolon
-            var default_body: ?*Node = null;
-            if (self.current.tag == .l_brace) {
-                // A default-method body's declarations are locals.
-                const saved_module_expansion = self.in_module_expansion;
-                self.in_module_expansion = false;
-                defer self.in_module_expansion = saved_module_expansion;
-                default_body = try self.parseBlock();
-            } else {
-                if (self.current.tag == .semicolon) self.advance();
-            }
-
-            // Strip the receiver (index 0) — the method's stored params are the
-            // extra args only.
-            const all_param_types = try param_types.toOwnedSlice(self.allocator);
-            const all_param_names = try param_names.toOwnedSlice(self.allocator);
-            const all_param_name_spans = try param_name_spans.toOwnedSlice(self.allocator);
-            const all_param_name_is_raw = try param_name_is_raw.toOwnedSlice(self.allocator);
-
-            try methods.append(self.allocator, .{
-                .name = method_name,
-                .params = all_param_types[1..],
-                .param_names = all_param_names[1..],
-                .param_name_spans = all_param_name_spans[1..],
-                .param_name_is_raw = all_param_name_is_raw[1..],
-                .return_type = return_type,
-                .default_body = default_body,
-                .is_expand = method_expand,
-            });
-        }
+        try self.parseRequiredMethods(&methods, .{
+            .owner = name,
+            .expand_allowed = kind == .tagged,
+            .header_expand = is_expand,
+            .kind_spelling = kind.spelling(),
+        });
 
         try self.expect(.r_brace);
 

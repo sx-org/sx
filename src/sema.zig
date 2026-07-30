@@ -1390,6 +1390,22 @@ pub const Analyzer = struct {
             .tuple_type_expr,
             .return_type_expr,
             => {},
+            // An open set is a type the editor can name; its required methods
+            // carry the same optional default bodies a protocol's do.
+            .open_set_decl => |sd| {
+                try self.addSymbol(sd.name, .struct_type, null, node.span);
+                for (sd.methods) |method| {
+                    if (method.default_body) |body| {
+                        try self.pushScope();
+                        try self.addSymbol("self", .param, null, node.span);
+                        for (method.param_names) |pname| {
+                            try self.addSymbol(pname, .param, null, node.span);
+                        }
+                        try self.analyzeNode(body);
+                        self.popScope();
+                    }
+                }
+            },
             .protocol_decl => |pd| {
                 try self.addSymbol(pd.name, .protocol_type, null, node.span);
                 // Recurse into default method bodies
@@ -1898,6 +1914,16 @@ pub fn findNodeAtOffset(node: *Node, offset: u32) ?*Node {
         },
         .protocol_decl => |pd| {
             for (pd.methods) |method| {
+                if (method.default_body) |body| {
+                    if (findNodeAtOffset(body, offset)) |found| return found;
+                }
+                for (method.params) |param| {
+                    if (findNodeAtOffset(param, offset)) |found| return found;
+                }
+            }
+        },
+        .open_set_decl => |sd| {
+            for (sd.methods) |method| {
                 if (method.default_body) |body| {
                     if (findNodeAtOffset(body, offset)) |found| return found;
                 }

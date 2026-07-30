@@ -3836,6 +3836,71 @@ one; the refusal names the requirement and the sink as the source spells it.
 storage for each published expression through `context.allocator`, writes into
 it, and appends the result to a list it owns.
 
+### Open Sets
+
+```sx
+View :: @OpenSet(.{ max = 256, align = 8 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+```
+
+An **open set** is an inline tagged slot whose members declare **themselves** into
+it. It is not a protocol: `@OpenSet` states a payload **ceiling** and the methods
+every member must have, and `@OpenVariant(P)` is how a type joins `P`. There is no
+registry API and no enrollment statement — the declarations are the registry, so a
+plain `struct` stays out.
+
+A member is an ordinary standalone type: constructible (`Label{ text = "x" }`),
+with its own `size_of`, its own methods, and no wrapper around it. `Self` inside
+the set declaration denotes the member type; each required method is monomorphized
+per member, and a member spells its own concrete receiver (`self: *Label`).
+
+**Options.** `max` is the largest admitted member payload, in bytes, and has no
+default. `align` is the payload's alignment and defaults to `8` — what ordinary
+allocators guarantee, and therefore what a `List(P)` can honour. Raising `align`
+above 8 is only safe if every storage path for those values honours it.
+
+**Layout** is a function of the members the program declares, not of `max`:
+
+```text
+payload    = max(size_of(member))          // ≤ max; a ceiling, not a reservation
+alignment  = the declared align            // not a max over members
+size_of(P) = align_up(align_up(size_of(tag), align) + payload, align)
+```
+
+So a set declared `max = 256` whose largest member is 24 bytes is 32 bytes, not
+264. Because layout follows the declared members, **importing a module that
+declares a larger member grows the set** — an accepted cost, stated here because
+it is observable in `size_of(P)` and in every `List(P)`.
+
+**Admission is checked at the member's declaration**, so a type that cannot be
+represented is never a member and no conversion site needs a second check:
+
+| Requirement | Refused when |
+|---|---|
+| `size_of(V) ≤ max` | the member is larger than the ceiling — the diagnostic names the field that accounts for it |
+| `align_of(V) ≤ align` | the member needs more alignment than the payload has |
+| finite size | the member contains the set **by value** at any depth (a field, a nested struct, an array, an optional) |
+| every required method | the member does not declare one |
+| one set per type | a type is already a member of another set |
+
+A member may hold the set behind a **pointer** (`child: *View`) or in a list whose
+elements live outside the value (`kids: List(View)`) — neither embeds the set in
+the member's own layout. Nothing is spilled to heap to make an oversize type fit:
+either restructure it so the value is small and the bulk is borrowed, or raise
+`max` on the set.
+
+A **generic** member (`Padded :: @OpenVariant(View) ($T: Type) { … }`) is a
+separate member per instantiation, and the checks run per instantiation — reported
+at the instantiation site, since another instantiation may be admissible. An
+instantiation the program never materializes is not a member: membership follows
+what the program builds, exactly as it does for `protocol tagged`.
+
 ### Enum Definition
 
 ```sx

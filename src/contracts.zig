@@ -107,6 +107,13 @@ pub const init_bound = "@Init";
 /// The bound naming the trailing-block contract.
 pub const build_block_bound = "@BuildBlock";
 
+/// The two open-set DECLARATION heads. A third class of `@` name: neither a
+/// stdlib-declared contract nor a formed type, but a declaration form —
+/// `P :: @OpenSet(.{…}) { … }` declares the set, `V :: @OpenVariant(P) { … }`
+/// declares a member of it.
+pub const open_set_head = "@OpenSet";
+pub const open_variant_head = "@OpenVariant";
+
 /// True for a name the compiler FORMS. `parseCompilerFormedType` is its only
 /// producer, so these names never reach a declaration or a value.
 pub fn isCompilerFormed(name: []const u8) bool {

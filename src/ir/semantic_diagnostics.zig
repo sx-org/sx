@@ -317,6 +317,12 @@ pub const UnknownTypeChecker = struct {
             // `#objc_class` bodied method is lowered (M1.2), so its reserved
             // param/local names mis-lower the same as any other.
             .impl_block => |ib| for (ib.methods) |m| self.checkBindingNames(m),
+            .open_set_decl => |sd| {
+                self.checkDeclName(node, sd.name, sd.is_raw);
+                for (sd.methods) |m| {
+                    if (m.default_body) |body| self.checkBindingNames(body);
+                }
+            },
             .protocol_decl => |pd| {
                 self.checkDeclName(node, pd.name, pd.is_raw);
                 for (pd.methods) |m| {

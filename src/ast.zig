@@ -106,6 +106,7 @@ pub const Node = struct {
         ufcs_alias: UfcsAlias,
         c_import_decl: CImportDecl,
         protocol_decl: ProtocolDecl,
+        open_set_decl: OpenSetDecl,
         impl_block: ImplBlock,
         ffi_intrinsic_call: FfiIntrinsicCall,
         runtime_class_decl: RuntimeClassDecl,
@@ -127,6 +128,7 @@ pub const Node = struct {
                 .ufcs_alias => |d| d.name,
                 .c_import_decl => |d| d.name,
                 .protocol_decl => |d| d.name,
+                .open_set_decl => |d| d.name,
                 .runtime_class_decl => |d| d.name,
                 else => null,
             };
@@ -583,6 +585,31 @@ pub const StructDecl = struct {
     /// (`` `i2 :: struct { … } ``) — exempt from the reserved-type-name decl
     /// check. A bare reserved-name decl still errors.
     is_raw: bool = false,
+    /// The open set this declaration joins (`Button :: @OpenVariant(View) { … }`),
+    /// as written. A variant IS an ordinary standalone struct — constructible,
+    /// with its own layout — that additionally becomes a member of that set, so
+    /// this is one more fact ABOUT a struct rather than a separate declaration
+    /// form. Null for a plain `struct`.
+    open_variant_of: ?[]const u8 = null,
+    /// Span of the set name, for the diagnostics that must point at the binding.
+    open_variant_span: ?Span = null,
+};
+
+/// `View :: @OpenSet(.{ max = 256, align = 8 }) { … }` — an inline tagged slot
+/// whose members declare themselves (spec: Open Sets). Not a protocol kind: the
+/// methods are a requirement on every member, and the options are the payload
+/// ceiling the slot is laid out to.
+pub const OpenSetDecl = struct {
+    name: []const u8,
+    /// The required methods, in declaration order. `Self` in a signature denotes
+    /// the member type: each is monomorphized per member.
+    methods: []const ProtocolMethodDecl,
+    /// The options expression (`.{ max = …, align = … }`), resolved at
+    /// registration. `max` is required; `align` defaults to 8.
+    options: ?*Node = null,
+    options_span: ?Span = null,
+    is_raw: bool = false,
+    source_file: ?[]const u8 = null,
 };
 
 pub const StructFieldInit = struct {

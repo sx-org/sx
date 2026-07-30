@@ -286,6 +286,14 @@ fn walkDecl(b: *Builder, node: *const Node) anyerror!void {
                 try walk(&method, body);
             };
         },
+        // An open set declares required methods the same way a protocol does.
+        .open_set_decl => |sd| {
+            var inner = try b.enter(sd.name);
+            for (sd.methods) |m| if (m.default_body) |body| {
+                var method = try inner.enter(m.name);
+                try walk(&method, body);
+            };
+        },
         .impl_block => |ib| {
             // An impl's methods hang off the impl's STRUCTURAL identity —
             // protocol name + its type arguments + the structural target —
@@ -452,7 +460,7 @@ fn spellType(alloc: std.mem.Allocator, node: *const Node) anyerror![]const u8 {
 fn walk(b: *Builder, node: *const Node) anyerror!void {
     switch (node.data) {
         // A nested named declaration is a scope, not a site in this one.
-        .fn_decl, .struct_decl, .protocol_decl, .impl_block, .runtime_class_decl, .namespace_decl => return walkDecl(b, node),
+        .fn_decl, .struct_decl, .protocol_decl, .open_set_decl, .impl_block, .runtime_class_decl, .namespace_decl => return walkDecl(b, node),
         else => try b.record(node),
     }
     switch (node.data) {
@@ -460,7 +468,7 @@ fn walk(b: *Builder, node: *const Node) anyerror!void {
             try walk(b, c.callee);
             for (c.args) |a| try walk(b, a);
         },
-        .fn_decl, .struct_decl, .protocol_decl, .impl_block, .runtime_class_decl, .namespace_decl => unreachable,
+        .fn_decl, .struct_decl, .protocol_decl, .open_set_decl, .impl_block, .runtime_class_decl, .namespace_decl => unreachable,
         .const_decl => |cd| {
             if (cd.type_annotation) |t| try walk(b, t);
             try walk(b, cd.value);

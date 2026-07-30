@@ -2462,6 +2462,16 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
         }
     }
 
+    // A GENERIC open-set member is measured per instantiation: the template has
+    // no layout, so `max` / `align` / finiteness are checked here, against the
+    // instantiation the program actually materialized. A failing instantiation is
+    // diagnosed at this site — the declaration is not at fault, since another
+    // instantiation may be perfectly admissible.
+    if (tmpl.decl.open_variant_of != null) {
+        const site = if (args.len > 0) args[0].span else ast.Span{ .start = 0, .end = 0 };
+        self.admitOpenVariant(tmpl.decl, id, site);
+    }
+
     return id;
 }
 
