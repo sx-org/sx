@@ -979,8 +979,9 @@ pub const Parser = struct {
 
     /// One generic bound (specs: Generic bounds):
     /// `ProtocolHead [ '(' TypeExpr (',' TypeExpr)* ')' ]`, where the head is a
-    /// bare name, an `@` name, or a name QUALIFIED by the module that owns it. The head is an ordinary name reference, NOT
-    /// the closed compiler-formed set that `parseCompilerFormedType` guards:
+    /// bare name, an `@` name, or a name QUALIFIED by the module that owns it.
+    /// The head is an ordinary name reference, NOT the closed compiler-formed
+    /// set that `parseCompilerFormedType` guards:
     /// `lower/bound.zig` resolves it, and a head naming nothing is an
     /// unknown-name error there. Type arguments are full type expressions, so a
     /// bound argument may introduce its own binder with its own bounds
@@ -993,8 +994,9 @@ pub const Parser = struct {
         var head = self.tokenSlice(self.current);
         self.advance();
         // A head may be QUALIFIED (`$V/pkg.View`): a module reached by name owns
-        // the protocol or set the bound asks about, exactly as a type annotation
-        // names it. The path is carried whole; `lower/bound.zig` resolves it.
+        // the protocol or set the bound asks about, exactly as a type
+        // annotation names it. The path is carried whole; `lower/bound.zig`
+        // resolves it.
         while (self.current.tag == .dot) {
             self.advance();
             if (self.current.tag != .identifier) return self.fail("expected a name after '.' in a bound head");

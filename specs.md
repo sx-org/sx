@@ -2897,7 +2897,8 @@ A binder carries zero or more **bounds**, each introduced by `/`:
 
 ```
 Bound        := '/' ProtocolHead [ '(' TypeExpr { ',' TypeExpr } ')' ]
-ProtocolHead := identifier | at_identifier
+ProtocolHead := identifier | at_identifier | QualifiedHead
+QualifiedHead:= identifier { '.' identifier }
 ```
 
 ```sx
@@ -2906,12 +2907,18 @@ are_equal :: (a: $T/Eq/Hashable, b: T) -> bool { … }    // several
 lift      :: ($T: Type/Ord, x: T) -> T { … }            // explicit form
 ```
 
-A head names the protocol required of the binder: a declared protocol, an
-enclosing type parameter, or a compiler-owned `@` contract (`@Init`,
+A head names what is required of the binder: a declared protocol, an **open
+set** — where the requirement is MEMBERSHIP rather than conformance (see Open
+Sets) — an enclosing type parameter, or a compiler-owned `@` contract (`@Init`,
 `@BuildBlock`). A parameterized protocol takes its type arguments in the
 bound — `$B/@BuildBlock(View)`, `$I/@Init(Button)`. An argument is an
 ordinary type expression, so it may introduce a binder of its own, with its
 own bounds: `$I/@Init($V/Drawable)`.
+
+A head may be **qualified** by the module that owns it — `$V/compose.View`,
+`$T/geometry.Ord` — naming a protocol or a set a module reached by name
+declares. What the bound asks is the DECLARATION's question, so a member joins
+the set it was declared into however the head that names it is spelled.
 
 Bounds belong to the binder, not to the type built around it, so a type
 constructor may wrap a bound binder: `*$S/@BuildSink(P)` is a pointer to some
@@ -5496,7 +5503,9 @@ main :: () {
 
 Every qualified shape resolves through a carried alias exactly as through a
 directly-declared one: function calls, `alias.Type.method()`, type
-annotations, enum variants, module constants, and generic struct heads.
+annotations, enum variants, module constants, generic struct heads, **open
+sets** (in an annotation, as a type argument, and as a bound head), and
+**bound heads** generally.
 
 Collision rules mirror ordinary declarations:
 
