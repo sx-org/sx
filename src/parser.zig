@@ -3992,11 +3992,12 @@ pub const Parser = struct {
             },
             .kw_return => {
                 self.advance();
-                // return with optional value
-                const value = if (self.current.tag != .semicolon and self.current.tag != .eof)
-                    try self.parseExpr()
+                // The terminator can be implied, so whether a value follows is
+                // the same question a statement-position `return` asks.
+                const value = if (self.current.tag == .semicolon or self.implicitTerminator())
+                    null
                 else
-                    null;
+                    try self.parseExpr();
                 return try self.createNode(start, .{ .return_stmt = .{ .value = value } });
             },
             .l_bracket, .question => {

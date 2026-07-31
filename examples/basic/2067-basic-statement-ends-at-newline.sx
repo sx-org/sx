@@ -19,6 +19,19 @@ bump :: (by: i64) -> void {
     return
 }
 
+// A `return` in expression position ends the same way, so the call below the
+// early exit is the next statement and not the value the exit returns.
+report :: (quiet: bool) -> void {
+    if quiet then return
+    print("loud\n")
+}
+
+// A value on the same line still belongs to the `return`.
+clamp :: (v: i64) -> i64 {
+    if v > 100 then return 100
+    v
+}
+
 Point :: struct { x: i64; y: i64 }
 
 add :: (a: i64, b: i64) -> i64 => a + b
@@ -75,6 +88,10 @@ main :: () -> i32 {
     bump(5)
     bump(TAU)
     print("counter={} version={}\n", counter, VERSION)
+
+    report(true)
+    report(false)
+    print("clamp={} {}\n", clamp(7), clamp(250))
 
     // `}` then `else` on the next line is one chain, not a statement and an
     // orphan.

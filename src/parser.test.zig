@@ -882,6 +882,30 @@ test "parser: a newline terminates the value-less forms" {
     try std.testing.expect(stmts[0].data.var_decl.value == null);
     try std.testing.expect(stmts[1].data == .call);
     try std.testing.expect(stmts[2].data.return_stmt.value == null);
+
+    // A `return` in expression position asks the same question, so the line
+    // below an early `then return` is the next statement and not its value.
+    const early = try parseBody(alloc,
+        \\f :: (c: bool) -> void {
+        \\    if c then return
+        \\    g()
+        \\}
+    );
+    const early_stmts = early.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 2), early_stmts.len);
+    try std.testing.expect(early_stmts[0].data.if_expr.then_branch.data.return_stmt.value == null);
+    try std.testing.expect(early_stmts[1].data == .call);
+
+    // A value on the same line still belongs to the `return`.
+    const valued = try parseBody(alloc,
+        \\f :: (c: bool) -> i64 {
+        \\    if c then return 7
+        \\    9
+        \\}
+    );
+    const valued_stmts = valued.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 2), valued_stmts.len);
+    try std.testing.expect(valued_stmts[0].data.if_expr.then_branch.data.return_stmt.value.?.data == .int_literal);
 }
 
 // The last token of a file is followed by a line break like any other, so the

@@ -402,6 +402,17 @@ bump :: (by: i64) -> void {
 }
 ```
 
+This holds for a `return` in expression position too, so an early exit written
+`if quiet then return` takes the line below it as the next statement and not as
+the value it returns:
+
+```sx
+report :: (quiet: bool) -> void {
+    if quiet then return
+    print("loud\n")
+}
+```
+
 The end of the file ends the declaration it lands on, so a file's last
 declaration needs no terminator either. The rule does not reach inside a fixed
 form's own list — a runtime class's members, the entries of `#import c { … }`,
