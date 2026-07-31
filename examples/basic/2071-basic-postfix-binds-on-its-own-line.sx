@@ -1,0 +1,43 @@
+// Whitespace is syntax (specs §1), the binding layer: a postfix token attaches
+// to what precedes it only on that expression's own line. A trailing block's
+// `{` already followed this rule; a named aggregate's `{` and a force-unwrap
+// `!` follow it too, because each has a second reading waiting on the other
+// side of the break — a scope block, and the prefix `not`.
+// Expected: exit 0.
+#import "modules/std.sx"
+
+Pair :: struct { a: i64; b: i64 }
+
+Box :: struct($T: Type) { v: T }
+
+mk :: () -> i64 { 1 }
+
+main :: () -> i32 {
+    // Same line, so both braces bind: an aggregate and a type application's
+    // aggregate.
+    p := Pair{ a = 1, b = 2 }
+    b := Box(i64){ v = 3 }
+    print("p={} {} b={}\n", p.a, p.b, b.v)
+
+    // Across the break the head is an expression of its own and the brace is a
+    // scope block — whatever the head was.
+    Pair
+    { print("after a type name\n") }
+
+    mk()
+    { print("after a value call\n") }
+
+    Box(i64)
+    { print("after a type application\n") }
+
+    // `!` is force-unwrap behind its operand and `not` in front of one.
+    maybe : ?i64 = 4
+    print("unwrapped={}\n", maybe!)
+
+    ready := false
+    ready
+    !ready
+    print("ready={}\n", !ready)
+
+    0
+}
