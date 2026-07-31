@@ -63,6 +63,15 @@ pub const Parser = struct {
     /// `parseStmt` so the forms that end through neither (return, break, `push`, …)
     /// leave it false. A `;` does not enter into it: the terminator separates
     /// statements and carries no value semantics.
+    ///
+    /// The mark belongs to ONE statement list at a time: every recursive
+    /// statement container (`parseBlock`, `parseMatchBody`, the arrow body of
+    /// `parseForExpr`) saves and restores it, so a nested body classifies its own
+    /// statements and never the statement that encloses it. Without that, a
+    /// nested tail expression would reclassify an enclosing declaration — the
+    /// forms that end through `expectStatementEnd` rather than `endDeclaration`
+    /// (`::` bindings, assignments, `return`, `defer`) have nothing else to
+    /// clear it.
     last_stmt_produces_value: bool = false,
     /// True while parsing the body of a MODULE-SCOPE expansion form — an
     /// `inline if` branch or an `inline for` iteration group. Their statements
@@ -2628,6 +2637,10 @@ pub const Parser = struct {
         const saved_ntb_blk = self.no_trailing_block;
         self.no_trailing_block = false;
         defer self.no_trailing_block = saved_ntb_blk;
+        // This body's statements are classified here and nowhere else: the
+        // enclosing statement's mark comes back untouched at the `}`.
+        const saved_produces = self.last_stmt_produces_value;
+        defer self.last_stmt_produces_value = saved_produces;
         var stmts = std.ArrayList(*Node).empty;
         var produces_value = false;
         while (self.current.tag != .r_brace and self.current.tag != .eof) {
@@ -4362,6 +4375,10 @@ pub const Parser = struct {
         var body: *Node = undefined;
         if (self.current.tag == .fat_arrow) {
             self.advance();
+            // A braced body isolates the mark in `parseBlock`; the arrow body is
+            // one statement parsed in place, so it isolates it here.
+            const saved_produces = self.last_stmt_produces_value;
+            defer self.last_stmt_produces_value = saved_produces;
             body = try self.parseStmt();
         } else {
             body = try self.parseBlock();
@@ -4376,6 +4393,11 @@ pub const Parser = struct {
 
     fn parseMatchBody(self: *Parser, subject: *Node, start_pos: u32) anyerror!*Node {
         try self.expect(.l_brace);
+        // An arm body is its own statement list — an arm wrapper always carries
+        // the arm's value, so the arms decide nothing about the statement the
+        // `match` itself sits in.
+        const saved_produces = self.last_stmt_produces_value;
+        defer self.last_stmt_produces_value = saved_produces;
         var arms = std.ArrayList(ast.MatchArm).empty;
         while (self.current.tag == .kw_case) {
             const arm_start = self.current.loc.start;
