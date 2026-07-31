@@ -2,7 +2,7 @@
 // that impls it. Both `Q` and the protocol `P` are declared HERE; a consumer
 // reaches them only namespaced (`inner.P`), so `Q` is not bare-visible there.
 Q :: struct { v: i64 = 0; }
-P :: protocol {
+P :: protocol vtable {
     get :: (self: *Self) -> ?Q;
 }
 Impl :: struct { x: i64 = 0; }

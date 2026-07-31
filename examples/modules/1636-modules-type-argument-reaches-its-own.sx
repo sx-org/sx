@@ -8,15 +8,22 @@
 // program's scope with two authors. Inside either module, the bare name still
 // reaches THAT module's declaration — for the soft temperament, for the hard one
 // whose refusal path names the member too, and for a plain aggregate asserted
-// out of an `any`.
+// out of an `any`. Two more modules write those names again and are reached under
+// namespaces instead, since how the PROGRAM imports a module is not what decides
+// which declaration a name inside it reaches.
 #import "modules/std.sx";
 #import "1636-modules-type-argument-reaches-its-own/alpha/panel.sx";
 #import "1636-modules-type-argument-reaches-its-own/beta/panel.sx";
+g :: #import "1636-modules-type-argument-reaches-its-own/gamma/panel.sx";
+d :: #import "1636-modules-type-argument-reaches-its-own/delta/panel.sx";
 
 main :: () -> i32 {
     print("{} {}\n", alpha_soft(), beta_soft());
     print("{} {}\n", alpha_hard(), beta_hard());
     print("{} {}\n", alpha_note(), beta_note());
+    print("{} {}\n", g.soft(), d.soft());
+    print("{} {}\n", g.hard(), d.hard());
+    print("{} {}\n", g.note(), d.note());
     0
 }
 
@@ -24,4 +31,7 @@ main :: () -> i32 {
 // alpha soft beta soft
 // alpha hard beta hard
 // alpha note beta note
+// gamma soft delta soft
+// gamma hard delta hard
+// gamma note delta note
 //

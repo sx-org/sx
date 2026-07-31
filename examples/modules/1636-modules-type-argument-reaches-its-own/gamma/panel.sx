@@ -1,0 +1,29 @@
+// The same two names again, in a module the program reaches under a namespace.
+#import "modules/std.sx";
+v :: #import "../view.sx";
+
+Panel :: @OpenVariant(v.View) {
+    tag: string = "gamma";
+    render :: (self: *Panel) -> string => self.tag;
+}
+
+Note :: struct { text: string; }
+
+soft :: () -> string {
+    p : Panel = .{ tag = "gamma soft" };
+    x : v.View = p;
+    if q := x.(?Panel) { return q.tag; }
+    return "reached someone else's";
+}
+
+hard :: () -> string {
+    p : Panel = .{ tag = "gamma hard" };
+    x : v.View = p;
+    return x.(Panel).render();
+}
+
+note :: () -> string {
+    n : Note = .{ text = "gamma note" };
+    av : any = n;
+    return av.(Note).text;
+}

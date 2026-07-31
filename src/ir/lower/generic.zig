@@ -556,13 +556,16 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
             if (self.type_bindings) |tb| {
                 if (tb.get(te.name)) |ty| return ty;
             }
-            // The SAME author question the `.identifier` arm asks, with the
-            // SAME answer taken: a plain nominal spelling resolves to the
-            // author this source reaches, not to whichever same-name author
-            // the global map registered first. A generic / constrained /
-            // dotted spelling names a head, not a nominal leaf, so it keeps
-            // the poison-or-proceed projection.
+            // A plain nominal spelling names a leaf, and a leaf is asked the
+            // way every other position asks it: a dotted one reaches the
+            // module it names, and a bare one reaches the author this source
+            // sees — never whichever same-name author the global map
+            // registered first. A generic or constrained spelling names a
+            // head, so it keeps the poison-or-proceed projection.
             const plain = !te.is_generic and te.protocol_constraints.len == 0;
+            if (plain and std.mem.indexOfScalar(u8, te.name, '.') != null) {
+                if (self.qualifiedNominalTypeArg(te.name, node.span)) |tid| return tid;
+            }
             switch (self.headTypeGate(te.name, node.span)) {
                 .ambiguous, .not_visible => return .unresolved,
                 .resolved => |tid| if (plain) return tid,
@@ -629,14 +632,9 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
                 return .unresolved;
             };
             defer self.alloc.free(path);
+            if (self.qualifiedNominalTypeArg(path, node.span)) |ty| return ty;
             switch (self.qualifiedMemberVerdict(path)) {
-                .selected => |sel| {
-                    const saved_src = self.current_source_file;
-                    self.setCurrentSourceFile(sel.target.target_module_path);
-                    const ty = self.resolveNominalLeaf(sel.member, false, node.span);
-                    self.setCurrentSourceFile(saved_src);
-                    if (ty != .unresolved) return ty;
-                },
+                .selected => {},
                 .missing => |m| {
                     if (self.namespaceMissWaits(m)) return .unresolved;
                     if (self.diagnostics) |diags|
@@ -657,6 +655,24 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         },
         else => return .unresolved,
     }
+}
+
+/// The type a qualified path names, when the path proves a terminal author that
+/// authors it. The leaf is resolved AS that module, which is what makes
+/// `pkg.Row` in a type-argument slot the same type `pkg.Row` names in an
+/// annotation. Null when the path is not qualified, its namespace does not
+/// answer, or the author's leaf does not resolve — each of which the caller
+/// already has a reading for.
+pub fn qualifiedNominalTypeArg(self: *Lowering, path: []const u8, span: ast.Span) ?TypeId {
+    const sel = switch (self.qualifiedMemberVerdict(path)) {
+        .selected => |s| s,
+        .not_qualified, .missing, .ambiguous => return null,
+    };
+    const saved_src = self.current_source_file;
+    self.setCurrentSourceFile(sel.target.target_module_path);
+    const ty = self.resolveNominalLeaf(sel.member, false, span);
+    self.setCurrentSourceFile(saved_src);
+    return if (ty == .unresolved) null else ty;
 }
 
 /// Format a type name for display (e.g. "*Point", "[]i32", "[3]f64").

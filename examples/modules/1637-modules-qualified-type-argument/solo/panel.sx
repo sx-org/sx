@@ -1,0 +1,23 @@
+// One module, one author of every name here: nothing to disambiguate.
+#import "modules/std.sx";
+
+Vw :: @OpenSet(.{ max = 64 }) { render :: (self: *Self) -> string; }
+
+Pnl :: @OpenVariant(Vw) {
+    tag: string = "pnl";
+    render :: (self: *Pnl) -> string => self.tag;
+}
+
+Note :: struct { text: string; }
+
+Box :: struct($T: Type) { v: T; }
+
+mk :: () -> Vw {
+    p : Pnl = .{ tag = "solo" };
+    v : Vw = p;
+    return v;
+}
+
+mk_note :: () -> Note { n : Note = .{ text = "solo note" }; return n; }
+
+mk_box :: () -> Box(i64) { b : Box(i64) = .{ v = 7 }; return b; }

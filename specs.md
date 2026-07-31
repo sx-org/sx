@@ -3907,7 +3907,9 @@ Every position that names a type asks that same question, and gets the same answ
 a member's head, a bound's head, a downcast's target — the soft form's and the hard
 form's alike, whose refusal is about the member the target named. A module that declares a name
 of its own reaches its own — asking `v.(?Panel)` where this module declares `Panel`
-is asking about this module's, whatever other modules spell it. A facade's
+is asking about this module's, whatever other modules spell it. A qualified target
+reaches the module it names, so a consumer that imported a package under a name asks
+about that package's member with it (`v.(?compose.Row)`). A facade's
 re-exported name reaches what it names, so a bound written on it asks the set's own
 question.
 

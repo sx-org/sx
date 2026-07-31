@@ -3504,6 +3504,7 @@ pub const Lowering = struct {
     pub const isStaticTypeRef = lower_generic.isStaticTypeRef;
     pub const resolveTupleLiteralTypeArg = lower_generic.resolveTupleLiteralTypeArg;
     pub const resolveTypeArg = lower_generic.resolveTypeArg;
+    pub const qualifiedNominalTypeArg = lower_generic.qualifiedNominalTypeArg;
     pub const formatTypeName = lower_generic.formatTypeName;
     pub const formatSourceTypeName = lower_generic.formatSourceTypeName;
     pub const formatFnTypeString = lower_generic.formatFnTypeString;
