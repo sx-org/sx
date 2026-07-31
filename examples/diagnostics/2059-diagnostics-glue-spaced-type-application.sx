@@ -1,0 +1,14 @@
+// Glue rule (specs: Whitespace is Syntax) in a TYPE position: a type's
+// argument list binds only when glued to the type name. One check in
+// `parseTypeExpr`'s name atom covers every type position that applies
+// arguments, so an annotation reports exactly like a return type or a field
+// type would. Expected: exit 1.
+#import "modules/std.sx";
+
+Box :: struct ($T: Type) { v: $T; }
+
+main :: () -> i32 {
+    b : Box (i64) = Box(i64){ v = 7 };
+    print("{}\n", b.v);
+    return 0;
+}

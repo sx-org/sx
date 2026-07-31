@@ -306,6 +306,76 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 | `()`   | grouping / params                    |
 | `{}`   | blocks / bodies                      |
 
+### Whitespace is Syntax
+
+Three tokens read differently depending on the whitespace around them. Each
+rule exists because the glyph carries two meanings and the gap is what tells
+them apart.
+
+**Glue — `(` and `[` bind only when glued.** A `(` applies arguments, and a
+`[` indexes, only when *nothing at all* separates it from what precedes it:
+
+```sx
+foo(2)          // a call
+Box(i64)        // a type application
+xs[0]           // an index
+
+foo (2)         // error: a space before `(` — a call binds only when the `(`
+                //        is glued to its callee: write `foo(2)`
+v : Box (i64)   // error: a space between a type and its arguments — write `Box(i64)`
+xs [0]          // error: a space before `[` — an index binds only when the `[`
+                //        is glued to what it indexes: write `xs[0]`
+```
+
+The rule is one rule, applied everywhere the bracket continues something to its
+left: expression calls and indexing, every type position that applies arguments
+(annotation, return type, parameter type, struct field type, type alias,
+constant annotation, `.(T)` cast target, type argument to a builtin, match-arm
+type pattern, an `impl`'s protocol arguments), and the fixed forms whose
+argument list the grammar mandates —
+`Closure(i64) -> i64`, `@Init(P)` / `@BuildBlock(P)` (including in a bound,
+`$B/@BuildBlock(Drawable)`), `@OpenVariant(View)`, `@OpenSet(.{ … })`. A space
+before such a `(` is always fatal.
+
+A bracket that opens something *new* is unaffected — grouping (`(a + b)`),
+parameter and capture lists, array and slice types (`[3]i64`, `[]u8`), and the
+`(…)` of a declaration form all take whatever spacing reads best:
+
+```sx
+add    :: (a: i64, b: i64) -> i64 => a + b;   // fn declaration
+scaled :: ufcs (v: i64) -> i64 => v * 2;      // ufcs declaration
+Pair   :: struct ($T: Type) { a: $T; b: $T; } // struct type params
+Show   :: protocol (T) { render :: (self: *Self) -> T; }
+Padded :: @OpenVariant(View) ($T: Type) { … } // generic open-set member
+for xs (x) { … }                              // for capture
+v := risky() catch (e) -1;                    // catch binding
+onfail (e) { … }                              // onfail binding
+```
+
+**Spacing — `-` and `*` are infix only when spaced symmetrically.** Both glyphs
+also have a prefix reading (negation, address-of), so the gaps on the two sides
+decide. Matching gaps — both present or both absent — is infix; spaced on the
+left and glued on the right is the prefix reading; the mirror shape has no
+reading at all:
+
+```sx
+a - b       // infix subtraction
+a-b         // infix subtraction
+a -b        // `a`, then a prefix `-b`
+a- b        // error: neither reading
+```
+
+A prefix `-` / `*` binds only when glued to its operand, which is what makes
+`-b` and `*p` unambiguous. This is also how an expression continues across a
+line: a leading `- b` keeps the gaps matched and continues the expression,
+while `-b` starts a fresh operand.
+
+**Trailing blocks — a `{` reads by line and by tightness.** The third
+whitespace-sensitive token is `{` after a call: it opens a trailing block only
+on the same line as the `)`, and a same-line empty `{}` reads as a
+parameterized aggregate when written tight against the `)`. Both rules are
+specified with the form itself — see [Trailing Blocks](#trailing-blocks).
+
 ---
 
 ## 2. Type System
@@ -4926,7 +4996,9 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
   closure argument is spelled explicitly (`f(x, (a) => { … })`).
 - **Same line**: the `{` must sit on the same line as the call's `)`. A `{`
   on the next line is an ordinary scope block statement, never a trailing
-  block.
+  block. (This and the empty-block spelling below are the `{` half of
+  [Whitespace is Syntax](#whitespace-is-syntax); the call's own `(` obeys the
+  glue rule there.)
 - **Empty block**: a same-line empty `{}` (comment-only bodies included) carries
   no body shape, so the **brace spelling** decides. Written **tight** against
   the `)` it is a parameterized named aggregate — `List(Move){}`,
@@ -6300,9 +6372,10 @@ range_op        = '..' | '..=' | '..<' | '<..' | '<..=' | '<..<' | '=..' | '=..=
 for_capture     = '(' ['*'] IDENT (',' ['*'] IDENT)* ')'
 binary          = catch_expr (binop catch_expr)*    // binop includes `or` (fallback / chain)
 catch_expr      = unary ('catch' ('(' IDENT ')')? (block | '==' '{' case_arm* else_arm? '}' | unary))?
-unary           = ('-' | '!' | 'xx' | 'try') postfix
+unary           = ('-' | '!' | 'xx' | 'try') postfix    // '-' / '*' glued to the operand (§1 Whitespace is Syntax)
                 | postfix
-postfix         = primary ('(' args? ')' | '.' IDENT | '.{' field_init_list '}')*
+postfix         = primary ('(' args? ')' | '[' expr ']' | '.' IDENT | '.{' field_init_list '}')*
+                  // a postfix '(' / '[' must be GLUED to what precedes it (§1 Whitespace is Syntax)
 primary         = INT | HEX_INT | OCT_INT | BIN_INT | FLOAT | STRING | BOOL | IDENT | '---'
                 | '.' IDENT | '.' '{' field_init_list '}'
                 | '(' expr ')' | block | '#run' expr    // bare parens = grouping ONLY

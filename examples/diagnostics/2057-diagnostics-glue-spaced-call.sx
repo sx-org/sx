@@ -1,0 +1,13 @@
+// Glue rule (specs: Whitespace is Syntax): a `(` applies arguments only when
+// it is GLUED to what precedes it. `foo (2)` is not a call with a decorative
+// space in it — the `(` has nothing to bind to — so the diagnostic names the
+// space and quotes the glued spelling back. Expected: exit 1.
+#import "modules/std.sx";
+
+double :: (n: i64) -> i64 => n * 2;
+
+main :: () -> i32 {
+    a := double (21);
+    print("{}\n", a);
+    return 0;
+}

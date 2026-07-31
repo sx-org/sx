@@ -1,0 +1,17 @@
+// The alias orphan. `BI :: Box;` — an alias to the UN-APPLIED generic — is
+// valid on its own, so a glue rule that only stopped the `(` from binding
+// would let the declaration succeed and leave `(i64);` to fail one construct
+// later as "expected identifier at top level", pointing at neither the space
+// nor the fix. The glue check fires at the `(` instead, so the report still
+// names the space and quotes `Box(i64)`. Expected: exit 1.
+#import "modules/std.sx";
+
+Box :: struct ($T: Type) { v: $T; }
+
+BI :: Box (i64);
+
+main :: () -> i32 {
+    b := BI{ v = 3 };
+    print("{}\n", b.v);
+    return 0;
+}
