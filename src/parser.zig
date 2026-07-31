@@ -4993,8 +4993,6 @@ pub const Parser = struct {
         return abi;
     }
 
-    /// Postfix linkage modifier in the slot after `abi(...)`:
-    /// `extern` (import) or `export` (define + expose), or `.none` if neither.
     /// Whether the construct that owns a linkage tail may end inside it. An
     /// `extern` import is whole the moment its keyword is read, so each empty
     /// slot is a place the declaration can stop; an `export` definition and an
@@ -5028,6 +5026,8 @@ pub const Parser = struct {
         return tail;
     }
 
+    /// Postfix linkage modifier in the slot after `abi(...)`:
+    /// `extern` (import) or `export` (define + expose), or `.none` if neither.
     fn parseOptionalExternExport(self: *Parser) ast.ExternExportModifier {
         switch (self.current.tag) {
             .kw_extern => {
