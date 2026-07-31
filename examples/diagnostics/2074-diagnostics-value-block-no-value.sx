@@ -3,6 +3,10 @@
 // DECLARATION has none — and since `;` is a pure separator, both spellings of
 // that ending are the same statement and both are refused, in the same place.
 //
+// A tail expression nested INSIDE that last statement is not the block's value
+// either: it belongs to the body that contains it. Each refusal below is a
+// front-end diagnostic naming the offending tail, never a backend failure.
+//
 // An empty block is exempt: `{}` is how the void value itself is written.
 // Expected: exit 1.
 #import "modules/std.sx";
@@ -16,9 +20,21 @@ main :: () -> i32 {
     // Refused identically without the terminator.
     b := { seed(); n := 1 }
 
+    // Refused: the `42;` is the local function's return value, not this
+    // block's — the tail statement is still a declaration.
+    c := {
+        local :: () -> i32 { 42; }
+    }
+
+    // Refused: the branch tails are the assignment's value, not this block's.
+    slot := 0;
+    d := {
+        slot = if true { 1; } else { 2; }
+    }
+
     // Legal: `{}` is the void value, and the slot's type asks for one.
     t : Tuple(void, i32) = .{ {}, 9 };
 
-    print("a={} b={}\n", a, b);
+    print("a={} b={} c={} d={}\n", a, b, c, d);
     t.1
 }
