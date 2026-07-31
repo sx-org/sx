@@ -1,0 +1,33 @@
+// `Sink` and `collectViews` — the fluent library's own collection boundary
+// (revision §13.1).
+//
+// `View` is an open set, so it carries its member inside the slot: the sink
+// writes the published expression into a slot it owns and appends that. Nothing
+// is allocated and nothing borrows the block's frame, which is why the
+// initializer's target is the fixed `@Init(View)` rather than an open binder.
+//
+// This sink is package-local by design. `compose` and `emit` declare their own;
+// where the three listings look alike that is deliberate duplication, not a
+// module to share.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+#import "modules/ui/fluent/view.sx";
+
+Sink :: struct {
+    children: List(View) = .{};
+
+    expression :: (self: *Sink, value: $I/@Init(View)) {
+        item: View = ---;
+        value.write(*item);
+        self.children.append(item);
+    }
+}
+
+// Interception happens only inside this block: a standalone expression whose type
+// is a member of `View` (or a `View` itself) becomes a child, and anything else
+// stays an ordinary statement.
+collectViews :: (content: $B/@BuildBlock(View)) -> List(View) {
+    sink := Sink{};
+    content.run(*sink);
+    sink.children
+}

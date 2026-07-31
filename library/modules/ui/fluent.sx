@@ -1,0 +1,50 @@
+// The fluent UI library (revision §13.1) — public facade.
+//
+// One import gets a consumer the library; the modules behind this file are its
+// implementation. Each name below is re-exported explicitly, because an import
+// publishes nothing on its own.
+//
+// This library shares no UI-level code and no geometry, render, or component
+// types with `ui/compose` or `ui/emit`. `fluent.View` is its own open set: a
+// component of another library is not a member of it, and no conversion stands in
+// for a declaration.
+#import "modules/std.sx";
+
+geometry :: #import "modules/ui/fluent/geometry.sx";
+render :: #import "modules/ui/fluent/render.sx";
+view :: #import "modules/ui/fluent/view.sx";
+modifier :: #import "modules/ui/fluent/modifier.sx";
+components :: #import "modules/ui/fluent/components.sx";
+storage :: #import "modules/ui/fluent/storage.sx";
+containers :: #import "modules/ui/fluent/containers.sx";
+runtime :: #import "modules/ui/fluent/runtime.sx";
+
+// Geometry
+Point :: geometry.Point;
+Size :: geometry.Size;
+Frame :: geometry.Frame;
+ProposedSize :: geometry.ProposedSize;
+EdgeInsets :: geometry.EdgeInsets;
+
+// Render
+Color :: render.Color;
+RenderCommand :: render.RenderCommand;
+RenderTree :: render.RenderTree;
+RenderContext :: render.RenderContext;
+
+// The set and what joins it
+View :: view.View;
+Modifier :: modifier.Modifier;
+Label :: components.Label;
+Button :: components.Button;
+VStack :: containers.VStack;
+ZStack :: containers.ZStack;
+
+// Collection boundary
+Sink :: storage.Sink;
+
+// The collection boundary is re-exported as the library's own name, so one
+// import of this facade is the whole API.
+collectViews :: storage.collectViews;
+render_root :: runtime.render_root;
+command_count :: runtime.command_count;

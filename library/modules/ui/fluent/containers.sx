@@ -1,0 +1,72 @@
+// The fluent library's stacks and containers (revision §13.1).
+//
+// A container is an ordinary struct value and its child list is an explicit field
+// initializer — `children = collectViews() { … }`. There is no ambient emitter and
+// no terminal marker on a child.
+#import "modules/std.sx";
+#import "modules/ui/fluent/geometry.sx";
+#import "modules/ui/fluent/render.sx";
+#import "modules/ui/fluent/view.sx";
+#import "modules/ui/fluent/modifier.sx";
+
+VStack :: @OpenVariant(View) {
+    children: List(View) = .{};
+    spacing: f32 = 0.0;
+    modifier: Modifier = .{};
+
+    size_that_fits :: (self: *VStack, proposal: ProposedSize) -> Size {
+        w := 0.0;
+        h := 0.0;
+        for self.children (c) {
+            s := c.size_that_fits(proposal);
+            if s.width > w { w = s.width; }
+            h += s.height;
+        }
+        if self.children.len > 1 {
+            h += self.spacing * xx (self.children.len - 1);
+        }
+        Size{ width = w, height = h }
+    }
+
+    layout :: (self: *VStack, bounds: Frame) {
+        y := bounds.origin.y;
+        for self.children (c) {
+            s := c.size_that_fits(ProposedSize.fixed(bounds.size.width, bounds.size.height));
+            c.layout(Frame.make(bounds.origin.x, y, bounds.size.width, s.height));
+            y += s.height + self.spacing;
+        }
+    }
+
+    render :: (self: *VStack, rc: *RenderContext, frame: Frame) {
+        y := frame.origin.y;
+        for self.children (c) {
+            s := c.size_that_fits(ProposedSize.fixed(frame.size.width, frame.size.height));
+            c.render(rc, Frame.make(frame.origin.x, y, frame.size.width, s.height));
+            y += s.height + self.spacing;
+        }
+    }
+}
+
+ZStack :: @OpenVariant(View) {
+    children: List(View) = .{};
+    modifier: Modifier = .{};
+
+    size_that_fits :: (self: *ZStack, proposal: ProposedSize) -> Size {
+        w := 0.0;
+        h := 0.0;
+        for self.children (c) {
+            s := c.size_that_fits(proposal);
+            if s.width > w { w = s.width; }
+            if s.height > h { h = s.height; }
+        }
+        Size{ width = w, height = h }
+    }
+
+    layout :: (self: *ZStack, bounds: Frame) {
+        for self.children (c) { c.layout(bounds); }
+    }
+
+    render :: (self: *ZStack, rc: *RenderContext, frame: Frame) {
+        for self.children (c) { c.render(rc, frame); }
+    }
+}
