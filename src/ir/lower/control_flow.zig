@@ -388,9 +388,9 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
 
     // Demote to a statement-`if` only when the arms genuinely yield no value:
     // BOTH arms diverge (merge unreachable), or the live arm(s) are void blocks
-    // (`result_type == .void`). An `.unresolved` result is NOT
-    // valueless — it is a live arm we simply couldn't type statically (resolved
-    // after lowering); demoting it would `alloca void` a real value (Bug B).
+    // (`result_type == .void`). An `.unresolved` result is NOT valueless — it is
+    // a live arm we simply couldn't type statically (resolved after lowering);
+    // demoting it would `alloca void` a real value (Bug B).
     if (is_value and ((then_div and else_div) or result_type == .void or result_type == .noreturn)) {
         is_value = false;
         result_type = .void;

@@ -145,11 +145,11 @@ pub fn lowerBlockValue(self: *Lowering, node: *const Node) ?Ref {
             const last = blk.stmts[blk.stmts.len - 1];
             // A no-`else` block-`if` tail is a valueless GUARD statement, not a
             // value expression — e.g. `-> i32 { if x < 0 { return 0 } }`. Do NOT
-            // force value-mode for
-            // it (that would make `lowerIfExpr` flag it as "an `if` used as a value
-            // must have an `else` branch"). Lowered as a statement it yields no
-            // value; a value-returning function's missing tail value is still
-            // caught downstream by `lowerValueBody`'s "body produces no value".
+            // force value-mode for it (that would make `lowerIfExpr` flag it as
+            // "an `if` used as a value must have an `else` branch"). Lowered as a
+            // statement it yields no value; a value-returning function's missing
+            // tail value is still caught downstream by `lowerValueBody`'s "body
+            // produces no value".
             self.force_block_value = !isNoElseValuelessIf(last);
             return lowerTailAsExpr(self, last);
         },
