@@ -1,455 +1,52 @@
-// The emit core surface (experiment/ui direction, gate G4 Step 1):
-// components are plain functions that emit into an ambient sink; containers
-// are scope functions; the root is a typed return; identity is an explicit
-// key chain plus comptime scope sites plus occurrence counters (K1).
+// The compose UI library (revision §13.3) — public facade.
 //
-// Emission scope = `push .{ ui_sink = @s }` (S1, append-only, restore
-// automatic). The single placement helper `place` is the only code that
-// touches `context.ui_sink` (S2). Dual-mode rule: inside an emit scope call
-// components as statements — placement already happened, the return is for
-// value position. Prefer not to `place()` a dual component's returned View
-// again under a sink (that would emit twice); the type system does not refuse it.
+// One import gets a consumer the library; the modules behind this file are its
+// implementation. Each name below is re-exported explicitly, because an import
+// publishes nothing on its own.
+//
+// This library shares no UI-level code and no geometry, render, or component
+// types with `ui/emit` or `ui/fluent`. `compose.View` is its own open set: a
+// component of another library is not a member of it, and no conversion stands in
+// for a declaration.
 #import "modules/std.sx";
-#import "modules/std/core.sx";   // @SourceSite
-#import "modules/std/mem.sx";
-#import "modules/ui/types.sx";
-#import "modules/ui/view.sx";
-#import "modules/ui/stacks.sx";
-#import "modules/ui/label.sx";
-#import "modules/ui/button.sx";
-#import "modules/ui/modifier.sx";
 
-// --- Sink — the append-only emission target (frame-local) ---
+geometry :: #import "modules/ui/compose/geometry.sx";
+render :: #import "modules/ui/compose/render.sx";
+view :: #import "modules/ui/compose/view.sx";
+modifier :: #import "modules/ui/compose/modifier.sx";
+components :: #import "modules/ui/compose/components.sx";
+sink :: #import "modules/ui/compose/sink.sx";
+containers :: #import "modules/ui/compose/containers.sx";
+runtime :: #import "modules/ui/compose/runtime.sx";
 
-Sink :: struct ($T: Type) {
-    items: List(T) = .{};
+// Geometry
+Point :: geometry.Point;
+Size :: geometry.Size;
+Frame :: geometry.Frame;
+ProposedSize :: geometry.ProposedSize;
+EdgeInsets :: geometry.EdgeInsets;
 
-    // Allocates via context.allocator — the build arena during a frame
-    // build; sinks and their lists never outlive the emission push.
-    emit :: (self: *Sink(T), v: T) { self.items.append(v); }
-}
+// Render
+Color :: render.Color;
+RenderCommand :: render.RenderCommand;
+RenderTree :: render.RenderTree;
+RenderContext :: render.RenderContext;
 
-#context_extend ui_sink: *Sink(View) = null;   // container children (rebinds per scope)
-#context_extend ui: *Ui = null;                // identity chain + store (per build)
+// The set and what joins it
+View :: view.View;
+Modifier :: modifier.Modifier;
+Label :: components.Label;
+Button :: components.Button;
+VStack :: containers.VStack;
+ZStack :: containers.ZStack;
 
-// --- Identity: scope sites and keys (K1) ---
+// Collection boundary
+Sink :: sink.Sink;
 
-// A comptime per-call-site constant: containers declare
-// `site: SiteId = site_of(@caller)` so every CALL SITE becomes its
-// own scope segment — no keys needed for repeated wrappers, and K2 messages
-// print file:line natively. The site param sits BEFORE the closure param
-// (T1 binds a trailing block to the LAST param); named arguments reach it
-// when a caller must override.
-SiteId :: struct {
-    file: string;
-    line: i32;
-}
-
-site_of :: (site: @SourceSite) -> SiteId => .{ file = site.file, line = site.line };
-
-// Dynamic identity for list items, conditional presence, and K3
-// discriminators. Compare with `eq` — payload-enum `==` is tag-only by spec
-// and must never be used on Keys.
-Key :: enum {
-    int: i64;
-    str: string;
-}
-
-eq :: ufcs (a: Key, b: Key) -> bool {
-    if a == {
-        case .int: (x) { if b == { case .int: (y) { x == y } else: false } }
-        case .str: (s) { if b == { case .str: (t) { s == t } else: false } }
-    }
-}
-
-// --- The identity chain ---
-
-ChainKind :: enum {
-    site;
-    key;
-}
-
-ChainSegment :: struct {
-    kind: ChainKind;
-    site: SiteId = .{ file = "", line = 0 };
-    key: Key = .int(0);
-    // The chain hash BEFORE this segment — popping restores it without
-    // rehashing the whole chain.
-    prev_hash: u64;
-}
-
-FNV_OFFSET : u64 : 14695981039346656037;
-
-hash_site :: (h: u64, site: SiteId) -> u64 {
-    h2 := hash.fnv1a_fold(h, site.file.ptr, site.file.len);
-    line := site.line;
-    hash.fnv1a_fold(h2, xx *line, size_of(i32))
-}
-
-hash_key :: (h: u64, k: Key) -> u64 {
-    if k == {
-        case .int: (x) {
-            v := x;
-            hash.fnv1a_fold(h, xx *v, size_of(i64))
-        }
-        case .str: (s) {
-            // A tag byte separates .str("1") from .int(1)'s bytes.
-            tag : u8 = 0xFF;
-            h2 := hash.fnv1a_fold(h, *tag, 1);
-            hash.fnv1a_fold(h2, s.ptr, s.len)
-        }
-    }
-}
-
-// --- Ui — the per-build identity carrier ---
-
-// One occurrence-counter group: the n-th claim from the same (chain, site)
-// group within one build gets occurrence n (K1's last tuple element).
-OccCounter :: struct {
-    id: u64;
-    count: i32;
-}
-
-// K2a bookkeeping: explicit keys seen under one parent scope this build.
-SeenKey :: struct {
-    parent: u64;
-    key: Key;
-}
-
-Ui :: struct {
-    chain: List(ChainSegment) = .{};
-    chain_hash: u64 = FNV_OFFSET;
-    // Per-build state, reset by begin_build; allocated from the ambient
-    // (frame) allocator — never retained across builds.
-    occ: List(OccCounter) = .{};
-    seen_keys: List(SeenKey) = .{};
-    // Router/focus bridges, installed per root by Router.attach /
-    // FocusTable.attach (compose sits below both). Build-side
-    // pressed/focused fills read them until the use_transient record
-    // bridge lands with the K4/K5 dissolution.
-    pressed_query: ?Closure(u64) -> bool = null;
-    focus_query: ?Closure(u64) -> bool = null;
-
-    depth :: (self: *Ui) -> i64 #get => self.chain.len;
-
-    // Reset the per-build identity state. Pairs with the store's
-    // begin_build/commit_build transaction.
-    begin_build :: (self: *Ui) {
-        // DETACH, not `len = 0`: these backings live on the frame arena that
-        // built them, and the arena is reset before this build fills them
-        // again. Keeping ptr/cap would append into memory the reset has
-        // already released — the Ui outlives the arena, so it must not
-        // outlive its pointers into it.
-        self.chain.detach();
-        self.chain_hash = FNV_OFFSET;
-        self.occ.detach();
-        self.seen_keys.detach();
-    }
-
-    // Occurrence within a (chain, use_state-site) group, advancing per call.
-    next_occurrence :: (self: *Ui, gid: u64) -> i32 {
-        i := 0;
-        while i < self.occ.len {
-            if self.occ.items[i].id == gid {
-                n := self.occ.items[i].count;
-                self.occ.items[i].count = n + 1;
-                return n;
-            }
-            i += 1;
-        }
-        self.occ.append(.{ id = gid, count = 1 });
-        0
-    }
-
-    // Open one comptime scope-site segment for the duration of `content`.
-    scope_at :: (self: *Ui, site: SiteId, content: Closure()) {
-        prev := self.chain_hash;
-        self.chain.append(.{ kind = .site, site = site, prev_hash = prev });
-        self.chain_hash = hash_site(prev, site);
-        content();
-        self.chain_hash = prev;
-        self.chain.len = self.chain.len - 1;
-    }
-
-    // Open one explicit-key segment (dynamic identity: list items,
-    // conditional presence, K3 discriminators). K2a: the same explicit key
-    // twice under one scope — including duplicate ids in a keyed list — is
-    // a DATA BUG surfaced as a frame-1 panic, never a silent merge.
-    key_scope :: (self: *Ui, k: Key, content: Closure()) {
-        prev := self.chain_hash;
-        i := 0;
-        while i < self.seen_keys.len {
-            if self.seen_keys.items[i].parent == prev and self.seen_keys.items[i].key.eq(k) {
-                print("K2: duplicate explicit key ");
-                print_key(k);
-                print(" under one scope — sibling identities would merge silently. Scope chain:\n");
-                print_chain(self);
-                print("fix-it: give each sibling a distinct key; duplicate ids in a keyed list are a data bug in the items\n");
-                process.exit(1);
-            }
-            i += 1;
-        }
-        self.seen_keys.append(.{ parent = prev, key = k });
-        self.chain.append(.{ kind = .key, key = k, prev_hash = prev });
-        self.chain_hash = hash_key(prev, k);
-        content();
-        self.chain_hash = prev;
-        self.chain.len = self.chain.len - 1;
-    }
-}
-
-// --- ElementId (K5) — interactive-element identity ---
-
-// ElementId = hash of the K1 identity tuple (ambient chain ++ element
-// site ++ occurrence). The identity is dispatch-neutral and STANDS;
-// events reach an element through the §6.9 router against the
-// committed snapshot's hit list. Focus and a11y ride the same
-// identity when those gates land.
-ElementId :: struct {
-    value: u64;
-}
-
-// The capture shape: what an input router (or focus table) records
-// instead of retaining closures or tree pointers — resolved against
-// persistent structures at fire time, refused on a stale generation.
-// G4 ships the TYPES; the recording mechanism is out of scope.
-ElementCapture :: struct {
-    id: ElementId;
-    generation: i64;
-}
-
-// Derive the calling element's id inside a build. Same-site siblings
-// disambiguate by occurrence (K1's last tuple element) — the id is
-// stable across rebuilds as long as the element's identity tuple is.
-element_id :: (site: SiteId = site_of(@caller)) -> ElementId {
-    if context.ui == null {
-        print("panic: element_id used outside a frame build\n");
-        process.exit(1);
-    }
-    ui := context.ui;
-    gid := hash_site(ui.chain_hash, site);
-    occurrence := ui.next_occurrence(gid);
-    occ := occurrence;
-    ElementId{ value = hash.fnv1a_fold(gid, xx *occ, size_of(i32)) }
-}
-
-// --- keyed — THE dynamic-identity spelling ---
-
-// Comptime kind-match: an i64, a string, or an already-built Key. Anything
-// else must convert explicitly — silent key coercion would invite identity
-// collisions.
-as_key :: (id: $K) -> Key {
-    k : Key = .int(0);
-    inline if K == {
-        case i64: { k = Key.int(id); }
-        case string: { k = Key.str(id); }
-        case Key: { k = id; }
-        else: #error("keyed id must be an i64, a string, or a Key — convert explicitly");
-    }
-    k
-}
-
-// Open a keyed identity scope for `body` (K1 dynamic identity: list items,
-// conditionally-present instances, K3 discriminators). The LIST spelling is
-// a plain loop — one keyed row per element:
-//
-//     for chats (c) { keyed(c.id) { chat_row(c); } }
-//
-// Duplicate keys under one scope are a data bug and panic frame-1 (K2a).
-// State-driven in-place swaps (route, tab, wizard step) MUST key by the
-// driving value (K3) — K2 cannot catch cross-frame bleed at one site.
-keyed :: (id: $K, body: Closure()) {
-    if context.ui == null {
-        print("panic: keyed used outside a frame build\n");
-        process.exit(1);
-    }
-    context.ui.key_scope(as_key(id), body);
-}
-
-print_key :: (k: Key) {
-    if k == {
-        case .int: (x) { print("{}", x); }
-        case .str: (s) { print("\"{}\"", s); }
-    }
-}
-
-print_chain :: (ui: *Ui) {
-    i := 0;
-    while i < ui.chain.len {
-        seg := *ui.chain.items[i];
-        if seg.kind == .site {
-            print("  site {}:{}\n", seg.site.file, seg.site.line);
-        } else {
-            print("  key ");
-            print_key(seg.key);
-            print("\n");
-        }
-        i += 1;
-    }
-    if ui.chain.len == 0 { print("  (root scope)\n"); }
-}
-
-// --- place — THE single placement helper (S2) ---
-
-// Three states: `ui == null` → outside a frame build (handler, layout,
-// callback) → hard stop; `ui` set + `ui_sink == null` → root / value
-// position → return only; both set → emit into the parent + return.
-//
-// Modifier application: a default `m` adds NOTHING — the view passes
-// through untouched (0 wrappers); a non-default `m` wraps in exactly ONE
-// ModBox (single dispatch level) no matter how many fields are set.
-//
-// `v` arrives at its CONCRETE type and is copied exactly once, into the
-// storage the returned handle borrows: the view itself, or the ModBox
-// that holds it inline. Everything downstream — sinks, containers,
-// ViewChild — carries the 16-byte handle.
-//
-// When `V` is already `View` (erase-early / helper-returned handle), there
-// is no concrete layout to copy: pass the handle through unchanged, or wrap
-// one `ModBox(View)` when `m` is non-default. Lifetime of the referent stays
-// the caller's responsibility (same as any other tagged borrow).
-place :: (v: $V/View, m: Mod = .{}) -> View {
-    if context.ui == null {
-        // The S2 contract message, line-stable on purpose: a module-internal
-        // line number tells the user nothing (the failure is at THEIR call
-        // site) and shifts with every edit to this file.
-        print("panic: UI element used outside a frame build\n");
-        process.exit(1);
-    }
-    w : View = ---;
-    inline if V == {
-        case View: {
-            // Handle passthrough: no create(V), no re-erasure, no `impl View
-            // for View`. Default Mod reuses the handle; non-default wraps
-            // ModBox(View) once around the 16-byte child.
-            if m == MOD_DEFAULT {
-                w = v;
-            } else {
-                b := context.allocator.create(ModBox(View));
-                b.child = v;
-                b.m = m;
-                b.box_frame = .zero();
-                b.child_frame = .zero();
-                w = b;
-            }
-        }
-        else: {
-            if m == MOD_DEFAULT {
-                p := context.allocator.create(V);
-                p.* = v;
-                w = p;
-            } else {
-                b := context.allocator.create(ModBox(V));
-                b.child = v;
-                b.m = m;
-                b.box_frame = .zero();
-                b.child_frame = .zero();
-                w = b;
-            }
-        }
-    }
-    if context.ui_sink != null { context.ui_sink.emit(w); }
-    w
-}
-
-// --- El — the fluent handle for a call-site-composed element ---
-//
-// `el(v)` opens a chain over a concrete view; each link sets one Mod
-// field and `place` finalizes it. The chain is call-order-free: the Mod
-// applies in the canonical order above, so `el(v).padding(p).bg(c)` and
-// `el(v).bg(c).padding(p)` are the same element — and the whole chain
-// still costs one wrapper.
-El :: struct ($V: Type) {
-    view: V;
-    m: Mod = .{};
-
-    margin  :: (self: El(V), insets: EdgeInsets) -> El(V) { e := self; e.m.margin = insets; e }
-    size    :: (self: El(V), width: ?f32 = null, height: ?f32 = null) -> El(V) {
-        e := self;
-        e.m.width = width;
-        e.m.height = height;
-        e
-    }
-    bg      :: (self: El(V), color: Color, corner: f32 = 0.0) -> El(V) {
-        e := self;
-        e.m.bg = color;
-        e.m.corner = corner;
-        e
-    }
-    border  :: (self: El(V), stroke: Stroke) -> El(V) { e := self; e.m.border = stroke; e }
-    padding :: (self: El(V), insets: EdgeInsets) -> El(V) { e := self; e.m.padding = insets; e }
-    opacity :: (self: El(V), alpha: f32) -> El(V) { e := self; e.m.opacity = alpha; e }
-    clip    :: (self: El(V), on: bool = true) -> El(V) { e := self; e.m.clip = on; e }
-    hidden  :: (self: El(V), on: bool = true) -> El(V) { e := self; e.m.hidden = on; e }
-
-    place   :: (self: El(V)) -> View => place(self.view, self.m);
-}
-
-el :: (v: $V/View) -> El(V) => .{ view = v };
-
-// --- Scope containers and leaf elements (target spelling) ---
-
-fold_vstack :: (items: []View, spacing: f32) -> VStack {
-    vs := VStack{ spacing = spacing, alignment = .leading, children = .{} };
-    for items (v) { vs.children.append(.{ view = v }); }
-    vs
-}
-
-fold_hstack :: (items: []View, spacing: f32) -> HStack {
-    hs := HStack{ spacing = spacing, alignment = .center, children = .{} };
-    for items (v) { hs.children.append(.{ view = v }); }
-    hs
-}
-
-// Signature convention: `required…, m: Mod = .{}, site, closure-param
-// last` (T1 binds a trailing block to the LAST param; named args reach
-// the middle defaults). Leaves without closures put `m` last. Public
-// components accept and forward `m` to their root container — the one
-// pass-through that makes any component externally styleable; the
-// forwarded Mod styles OUTSIDE the component's surface (doctrine in
-// modifier.sx — content padding belongs to the component's style).
-
-vstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(@caller), content: Closure()) -> View {
-    s := Sink(View){};
-    push .{ ui_sink = *s } {
-        context.ui.scope_at(site, content);
-    }
-    place(fold_vstack(s.items.items, spacing), m)
-}
-
-hstack :: (spacing: f32, m: Mod = .{}, site: SiteId = site_of(@caller), content: Closure()) -> View {
-    s := Sink(View){};
-    push .{ ui_sink = *s } {
-        context.ui.scope_at(site, content);
-    }
-    place(fold_hstack(s.items.items, spacing), m)
-}
-
-text :: (s: string, m: Mod = .{}) -> View { place(Label.make(s), m) }
-
-spacer :: (m: Mod = .{}) -> View { place(Spacer{ min_length = 0.0 }, m) }
-
-ui_is_pressed :: (id: u64) -> bool {
-    if context.ui == null { return false; }
-    if q := context.ui.pressed_query { return q(id); }
-    false
-}
-
-ui_is_focused :: (id: u64) -> bool {
-    if context.ui == null { return false; }
-    if q := context.ui.focus_query { return q(id); }
-    false
-}
-
-button :: (label: string, m: Mod = .{}, site: SiteId = site_of(@caller), on_tap: ?Closure() = null) -> View {
-    eid := element_id(site);
-    place(Button{
-        label = label,
-        font_size = 14.0,
-        style = ButtonStyle.default(),
-        on_tap = on_tap,
-        eid = eid.value,
-        hovered = false,
-        pressed = ui_is_pressed(eid.value),
-    }, m)
-}
+// The collection boundary is re-exported as the library's own name, so one
+// import of this facade is the whole API.
+collectViews :: sink.collectViews;
+vstack :: containers.vstack;
+zstack :: containers.zstack;
+render_root :: runtime.render_root;
+command_count :: runtime.command_count;

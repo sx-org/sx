@@ -1,0 +1,41 @@
+// The compose UI library as a package (revision §13.3).
+//
+// A container TAKES the block: the standalone expressions inside are its
+// children, with no terminal marker on the child, no ambient sink, and no
+// collection call at the call site. Interception is a property of the
+// container's own `$B/@BuildBlock(View)` parameter.
+//
+// That is the whole difference from the other two libraries, which is why they
+// are separate packages rather than modes of one: fluent asks for its children
+// through an explicit `collectViews()` field initializer, and emit requires a
+// terminal `.emit()` on each child.
+// Expected: exit 0.
+#import "modules/std.sx";
+#import "modules/ui/compose.sx";
+
+main :: () -> i32 {
+    stack := vstack(2.0) {
+        Label{ text = "title" };
+        Button{ label = "ok" };
+
+        // Not a member of the set: an ordinary statement the sink never sees.
+        41;
+    };
+
+    print("children {}\n", stack.children.len);
+    for stack.children (*c) {
+        print("  {}\n", type_of(c.*));
+    }
+
+    root : View = stack;
+    tree := RenderTree{};
+    render_root(*root, Size{ width = 120.0, height = 60.0 }, *tree);
+    print("commands {}\n", command_count(*tree));
+    0
+}
+
+// ** stdout **
+// children 2
+//   Label
+//   Button
+// commands 3
