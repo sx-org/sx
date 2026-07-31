@@ -135,7 +135,7 @@ pub fn armStaticallyDiverges(self: *Lowering, node: *const Node) bool {
     return self.inferExprType(body) == .noreturn;
 }
 
-/// An `if`/`match` arm body that yields NO value: a block with a `;`-discarded
+/// An `if`/`match` arm body that yields NO value: a block with no expression
 /// tail (`produces_value == false`), an empty block, or a tail that is a
 /// no-`else` `if` / statically types `void`. A DIVERGING arm (returns / breaks /
 /// raises) is NOT "valueless" — it legitimately never reaches the merge — so
@@ -149,8 +149,7 @@ pub fn armYieldsVoid(self: *Lowering, node: *const Node) bool {
         break :blk body.data.block.stmts[body.data.block.stmts.len - 1];
     } else body;
     // `null` contributes optionality (`?T`) — a real value in a value-`match`,
-    // never void. (A trailing `;` on a `match` arm does NOT discard, so the arm
-    // value is its tail EXPRESSION's type, not the block's `produces_value`.)
+    // never void.
     if (tail.data == .null_literal) return false;
     // A no-`else` `if` tail yields no value.
     if (tail.data == .if_expr and tail.data.if_expr.else_branch == null and !tail.data.if_expr.is_inline) return true;
@@ -389,7 +388,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr) Ref {
 
     // Demote to a statement-`if` only when the arms genuinely yield no value:
     // BOTH arms diverge (merge unreachable), or the live arm(s) are void blocks
-    // (`;`-terminated → `result_type == .void`). An `.unresolved` result is NOT
+    // (`result_type == .void`). An `.unresolved` result is NOT
     // valueless — it is a live arm we simply couldn't type statically (resolved
     // after lowering); demoting it would `alloca void` a real value (Bug B).
     if (is_value and ((then_div and else_div) or result_type == .void or result_type == .noreturn)) {

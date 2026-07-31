@@ -56,18 +56,14 @@ pub const Parser = struct {
     /// already exiting, so there is nothing to propagate to. E1.7 extends this
     /// to the full {try, return, break, continue} set.
     in_defer_body: bool = false,
-    /// Set by `expectSemicolonAfter` for the statement just parsed: true when the
-    /// statement is a trailing value (an expression / block-form with NO `;`),
-    /// false when a `;` terminated it (value discarded). `parseBlock` reads it
-    /// after the last statement to set `Block.produces_value`. Reset at the top
-    /// of `parseStmt` so non-expression statements (decls, return, …) leave it
-    /// false.
+    /// Set for the statement just parsed: true when it is an EXPRESSION
+    /// statement, whose value the enclosing block can hand on (`endExprStatement`);
+    /// false for a declaration (`endDeclaration`). `parseBlock` reads it after the
+    /// last statement to set `Block.produces_value`. Reset at the top of
+    /// `parseStmt` so the forms that end through neither (return, break, `push`, …)
+    /// leave it false. A `;` does not enter into it: the terminator separates
+    /// statements and carries no value semantics.
     last_stmt_produces_value: bool = false,
-    /// Span of the `;` that discarded the just-parsed statement's value, when
-    /// that statement was an expression terminated by `;` (so the value could
-    /// have been kept by dropping it). Null when the statement kept its value or
-    /// wasn't a value expression. Read by `parseBlock` into `Block.discarded_semi`.
-    last_stmt_semi_loc: ?ast.Span = null,
     /// True while parsing the body of a MODULE-SCOPE expansion form — an
     /// `inline if` branch or an `inline for` iteration group. Their statements
     /// are top-level declarations after comptime flattening, so `private` and
@@ -264,7 +260,7 @@ pub const Parser = struct {
         if (self.current.tag == .colon_equal) {
             self.advance();
             const value = try self.parseExpr();
-            try self.expectSemicolonAfter(value);
+            try self.endDeclaration(value);
             return try self.createNode(start, .{ .var_decl = .{ .name = name, .name_span = name_span, .type_annotation = null, .value = value, .is_raw = name_is_raw } });
         }
 
@@ -498,7 +494,7 @@ pub const Parser = struct {
             // name : type : value; (typed constant)
             self.advance();
             const value = try self.parseExpr();
-            try self.expectSemicolonAfter(value);
+            try self.endDeclaration(value);
             return try self.createNode(start_pos, .{ .const_decl = .{ .name = name, .type_annotation = type_node, .value = value, .name_span = name_span, .is_raw = name_is_raw } });
         }
 
@@ -506,7 +502,7 @@ pub const Parser = struct {
             // name : type = value; (typed variable)
             self.advance();
             const value = try self.parseExpr();
-            try self.expectSemicolonAfter(value);
+            try self.endDeclaration(value);
             return try self.createNode(start_pos, .{ .var_decl = .{ .name = name, .name_span = name_span, .type_annotation = type_node, .value = value, .is_raw = name_is_raw } });
         }
 
@@ -2634,25 +2630,19 @@ pub const Parser = struct {
         defer self.no_trailing_block = saved_ntb_blk;
         var stmts = std.ArrayList(*Node).empty;
         var produces_value = false;
-        var discarded_semi: ?ast.Span = null;
         while (self.current.tag != .r_brace and self.current.tag != .eof) {
             const stmt = try self.parseStmt();
             try stmts.append(self.allocator, stmt);
             // The block's value-ness is its LAST statement's value-ness.
             produces_value = self.last_stmt_produces_value;
-            // A discarding `;` is only meaningful when the block has no value.
-            discarded_semi = if (produces_value) null else self.last_stmt_semi_loc;
         }
         try self.expect(.r_brace);
-        return try self.createNode(start, .{ .block = .{ .stmts = try stmts.toOwnedSlice(self.allocator), .produces_value = produces_value, .discarded_semi = discarded_semi } });
+        return try self.createNode(start, .{ .block = .{ .stmts = try stmts.toOwnedSlice(self.allocator), .produces_value = produces_value } });
     }
 
-    /// Consume the terminator after an expression/block-form statement and
-    /// record whether the statement is a trailing VALUE (no `;`) or a discarded
-    /// statement (`;`). A trailing `;` always discards; otherwise the statement
-    /// is the (potential) block value — allowed when it is block-form (where
-    /// `;` is optional) or when it is the last thing before `}` — and a NEWLINE
-    /// ends the statement wherever the `;` was going to.
+    /// Consume the terminator after an expression: an explicit `;`, the one a
+    /// line break implies, or the position before `}` where a plain expression
+    /// may omit it. Block-form expressions never require one.
     fn expectSemicolonAfter(self: *Parser, expr: *Node) anyerror!void {
         const block_form = switch (expr.data) {
             .if_expr => |ie| !ie.is_inline,
@@ -2663,35 +2653,36 @@ pub const Parser = struct {
             else => false,
         };
         if (self.current.tag == .semicolon) {
-            self.last_stmt_semi_loc = .{ .start = self.current.loc.start, .end = self.current.loc.end };
-            self.advance(); // explicit terminator → value discarded
-            self.last_stmt_produces_value = false;
-        } else if (block_form or self.current.tag == .r_brace) {
-            // Block-form statements never require `;`; a plain expression may
-            // omit it only as the trailing value before `}`. Either way this
-            // statement is the block's value (and discards nothing — clear any
-            // stale semi location from a nested statement).
-            self.last_stmt_produces_value = true;
-            self.last_stmt_semi_loc = null;
-        } else if (self.implicitTerminator()) {
-            // A line break where a `;` was expected ends the statement, and
-            // ends it the same way `;` does — the value is discarded. The arm
-            // above already claimed the position before `}`, so a `;`-less
-            // tail expression stays the block's value.
-            self.last_stmt_produces_value = false;
-            self.last_stmt_semi_loc = null;
-        } else {
-            try self.expect(.semicolon); // emits "expected ;"
+            self.advance();
+            return;
         }
+        if (block_form or self.current.tag == .r_brace or self.implicitTerminator()) return;
+        try self.expect(.semicolon); // emits "expected ;"
+    }
+
+    /// End an EXPRESSION statement: consume its terminator and mark the
+    /// statement as carrying a value, which the enclosing block hands to
+    /// whatever position demands one. Both spellings of the terminator mark it
+    /// alike — `;` separates statements and decides nothing about the value.
+    fn endExprStatement(self: *Parser, expr: *Node) anyerror!void {
+        try self.expectSemicolonAfter(expr);
+        self.last_stmt_produces_value = true;
+    }
+
+    /// End a DECLARATION at its initializer's terminator. A declaration is
+    /// never its block's value, so this also clears the mark a block inside
+    /// that initializer left behind.
+    fn endDeclaration(self: *Parser, value: *Node) anyerror!void {
+        try self.expectSemicolonAfter(value);
+        self.last_stmt_produces_value = false;
     }
 
     pub fn parseStmt(self: *Parser) anyerror!*Node {
-        // Default: a statement discards its value unless `expectSemicolonAfter`
-        // marks it a trailing value (no `;`). Non-expression statements (decls,
+        // Default: a statement carries no value unless `expectSemicolonAfter`
+        // marks it an expression statement. Non-expression statements (decls,
         // return/raise, break/continue, defer/onfail) never set it, so they
         // correctly leave the enclosing block value-less.
         self.last_stmt_produces_value = false;
-        self.last_stmt_semi_loc = null;
         // `#error "msg";` — compile-time diagnostic (fires when reached in live code).
         if (self.current.tag == .hash_error) {
             return self.parseErrorDirective();
@@ -2745,8 +2736,7 @@ pub const Parser = struct {
                 .colon_equal => blk: {
                     self.advance();
                     const value = try self.parseExpr();
-                    try self.expectSemicolonAfter(value);
-                    self.last_stmt_produces_value = false;
+                    try self.endDeclaration(value);
                     break :blk try self.createNode(decl_start, .{ .var_decl = .{ .name = decl_name, .name_span = decl_name_span, .type_annotation = null, .value = value, .is_raw = decl_is_raw } });
                 },
                 else => return self.fail("expected '::', ':=', or ':' after the 'private' declaration name"),
@@ -2772,7 +2762,7 @@ pub const Parser = struct {
             if (self.current.tag == .colon_equal) {
                 self.advance();
                 const value = try self.parseExpr();
-                try self.expectSemicolonAfter(value);
+                try self.endDeclaration(value);
                 return try self.createNode(start, .{ .var_decl = .{ .name = name, .name_span = name_span, .type_annotation = null, .value = value, .is_raw = name_is_raw } });
             }
             if (self.current.tag == .colon) {
@@ -2989,14 +2979,14 @@ pub const Parser = struct {
                 } else if (expr.data == .match_expr) {
                     expr.data.match_expr.is_comptime = true;
                 }
-                try self.expectSemicolonAfter(expr);
+                try self.endExprStatement(expr);
                 return expr;
             }
             if (self.peekNext() == .kw_for) {
                 self.advance(); // skip 'inline'
                 const expr = try self.parseForExpr();
                 expr.data.for_expr.is_inline = true;
-                try self.expectSemicolonAfter(expr);
+                try self.endExprStatement(expr);
                 return expr;
             }
         }
@@ -3005,17 +2995,17 @@ pub const Parser = struct {
         // postfix chaining (e.g. `if cond { ... }.field` being misparsed)
         if (self.current.tag == .kw_if) {
             const expr = try self.parseIfExpr();
-            try self.expectSemicolonAfter(expr);
+            try self.endExprStatement(expr);
             return expr;
         }
         if (self.current.tag == .kw_while) {
             const expr = try self.parsePrimary();
-            try self.expectSemicolonAfter(expr);
+            try self.endExprStatement(expr);
             return expr;
         }
         if (self.current.tag == .kw_for) {
             const expr = try self.parsePrimary();
-            try self.expectSemicolonAfter(expr);
+            try self.endExprStatement(expr);
             return expr;
         }
         if (self.current.tag == .kw_push) {
@@ -3029,7 +3019,7 @@ pub const Parser = struct {
         // aggregate literal — is a different thing and keeps chaining.
         if (self.current.tag == .l_brace) {
             const block = try self.parseBlock();
-            try self.expectSemicolonAfter(block);
+            try self.endExprStatement(block);
             return block;
         }
 
@@ -3051,7 +3041,7 @@ pub const Parser = struct {
         }
 
         // Block-form if/match/while/bare blocks don't require trailing semicolon
-        try self.expectSemicolonAfter(expr);
+        try self.endExprStatement(expr);
         return expr;
     }
 
@@ -4431,9 +4421,8 @@ pub const Parser = struct {
                 self.advance();
                 const expr = try self.parseExpr();
                 try self.expect(.semicolon);
-                // Arm bodies are value-producing regardless of the arm `;` (the
-                // `;` is an arm terminator, not a value-discard — match arms are
-                // exempt from the block trailing-`;` rule).
+                // The arm `;` is the arm's terminator, from the match grammar
+                // rather than the statement one — the arm body is its expression.
                 const body = try self.createNode(arm_start, .{ .block = .{ .stmts = try self.allocator.dupe(*Node, &.{expr}), .produces_value = true } });
                 try arms.append(self.allocator, .{ .pattern = pattern, .body = body, .is_break = false, .capture = capture, .capture_span = capture_span, .capture_is_raw = capture_is_raw });
             } else {
@@ -4442,9 +4431,8 @@ pub const Parser = struct {
                 while (self.current.tag != .kw_case and self.current.tag != .kw_else and self.current.tag != .r_brace and self.current.tag != .eof) {
                     try stmts.append(self.allocator, try self.parseStmt());
                 }
-                // Arm exempt from the trailing-`;` rule (see above); the wrapper
-                // yields its last statement's value — which, for a braced-block
-                // arm body, still respects that inner block's own flag.
+                // The wrapper yields its last statement's value — which, for a
+                // braced-block arm body, is that inner block's own value.
                 const body = try self.createNode(stmts_start, .{ .block = .{ .stmts = try stmts.toOwnedSlice(self.allocator), .produces_value = true } });
                 try arms.append(self.allocator, .{ .pattern = pattern, .body = body, .is_break = false, .capture = capture, .capture_span = capture_span, .capture_is_raw = capture_is_raw });
             }
@@ -5104,7 +5092,7 @@ pub const Parser = struct {
                 try name_is_raw.append(self.allocator, target.data.identifier.is_raw);
             }
             const value = try self.parseExpr();
-            try self.expectSemicolonAfter(value);
+            try self.endDeclaration(value);
             return try self.createNode(start, .{ .destructure_decl = .{
                 .names = try names.toOwnedSlice(self.allocator),
                 .name_spans = try name_spans.toOwnedSlice(self.allocator),
@@ -5994,17 +5982,24 @@ test "block value: trailing expr without `;` produces a value" {
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expect(body.data.block.produces_value);
-    try std.testing.expect(body.data.block.discarded_semi == null);
 }
 
-test "block value: trailing `;` discards the value" {
+test "block value: a trailing `;` leaves the value untouched" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () -> i32 { 42; }");
     const root = try parser.parse();
     const body = root.data.root.decls[0].data.fn_decl.body;
+    try std.testing.expect(body.data.block.produces_value);
+}
+
+test "block value: a declaration tail leaves the block value-less" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), "f :: () -> i32 { n := 42; }");
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
     try std.testing.expect(!body.data.block.produces_value);
-    try std.testing.expect(body.data.block.discarded_semi != null);
 }
 
 test "block value: match arms are exempt (keep `;`, still produce a value)" {

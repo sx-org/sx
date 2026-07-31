@@ -3889,18 +3889,9 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 self.scope = saved_scope;
                 block_scope.deinit();
             }
-            // This block sits in value position (lowerExpr is reached only
-            // for value contexts — statement blocks go through lowerBlock).
-            // If its last expression's value is discarded by a `;`, the
-            // surrounding expression has no value to use: report it.
-            if (!blk.produces_value and blk.discarded_semi != null) {
-                if (self.diagnostics) |diags| {
-                    diags.addFmt(.err, blk.discarded_semi.?, "this block is used as a value but its last expression's value is discarded by this `;` — drop the `;`", .{});
-                }
-            }
             // A block in expression position yields its last statement's
-            // value only when it produces one (no trailing `;`); otherwise
-            // it runs as statements and evaluates to void.
+            // value when that statement is an expression; otherwise it runs as
+            // statements and evaluates to void.
             if (blk.produces_value and blk.stmts.len > 0) {
                 // Non-last statements lower as plain statements; force_block_value
                 // must be OFF for them (a mid-block if-else is a statement).
@@ -3927,9 +3918,15 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 self.force_block_value = saved_fbv;
                 break :blk last_val;
             }
+            // Nothing here is in value position — clear `force_block_value` so
+            // the demand this block sits under cannot reach its statements and
+            // make a guard-`if` look like a value use (mirrors `lowerBlock`).
+            const saved_fbv_stmts = self.force_block_value;
+            self.force_block_value = false;
             for (blk.stmts) |stmt| {
                 self.lowerStmt(stmt);
             }
+            self.force_block_value = saved_fbv_stmts;
             // Same terminator guard as the produces-value path above: a block whose
             // statements terminated it (trailing `return`/`break`/`continue`) must
             // not get a `const_int` placeholder appended after the terminator.

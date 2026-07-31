@@ -755,10 +755,10 @@ test "parser: a newline ends a top-level declaration" {
     try std.testing.expect(decls[4].data.fn_decl.is_arrow);
 }
 
-// Demand semantics is a later step: until it lands, `;` before `}` still means
-// "discard", so ASI must never insert a terminator there — a `;`-less tail is
-// the block's value however it is written.
-test "parser: a newline never terminates the tail before `}`" {
+// The tail before `}` reads the same in all three spellings: `;` is a
+// separator, so writing one, omitting one, or letting a line break stand in
+// leaves the same block value.
+test "parser: the tail before `}` is the block's value however it is written" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -766,17 +766,13 @@ test "parser: a newline never terminates the tail before `}`" {
     for ([_][:0]const u8{
         "f :: () -> i32 { x }",
         "f :: () -> i32 {\nx\n}",
+        "f :: () -> i32 { x; }",
+        "f :: () -> i32 {\nx;\n}",
     }) |src| {
         const body = try parseBody(alloc, src);
         try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
         try std.testing.expect(body.data.block.produces_value);
-        try std.testing.expect(body.data.block.discarded_semi == null);
     }
-
-    // The `;` still discards, and still names itself for the diagnostic.
-    const discarded = try parseBody(alloc, "f :: () -> i32 {\nx;\n}");
-    try std.testing.expect(!discarded.data.block.produces_value);
-    try std.testing.expect(discarded.data.block.discarded_semi != null);
 }
 
 // A token that cannot start a statement continues the one above it.

@@ -119,9 +119,8 @@ pub fn lowerBlockValue(self: *Lowering, node: *const Node) ?Ref {
                 block_scope.deinit();
                 self.narrowRestore(&narrow_snap);
             }
-            // A block whose last statement is `;`-terminated (or not an
-            // expression) discards its value: lower every statement as a
-            // statement and yield nothing.
+            // A block whose last statement is not an expression has no value to
+            // hand back: lower every statement as a statement and yield nothing.
             if (!blk.produces_value) {
                 self.force_block_value = false;
                 for (blk.stmts) |stmt| {
@@ -142,11 +141,11 @@ pub fn lowerBlockValue(self: *Lowering, node: *const Node) ?Ref {
                 if (self.currentBlockHasTerminator()) return null;
             }
             if (self.block_terminated) return null;
-            // Last statement (no trailing `;`): its value is the block's.
+            // Last statement: its value is the block's.
             const last = blk.stmts[blk.stmts.len - 1];
             // A no-`else` block-`if` tail is a valueless GUARD statement, not a
-            // value expression — e.g. `-> !MyErr { if x < 0 { raise … } }`, where
-            // falling off the end is a success return. Do NOT force value-mode for
+            // value expression — e.g. `-> i32 { if x < 0 { return 0 } }`. Do NOT
+            // force value-mode for
             // it (that would make `lowerIfExpr` flag it as "an `if` used as a value
             // must have an `else` branch"). Lowered as a statement it yields no
             // value; a value-returning function's missing tail value is still
@@ -162,9 +161,9 @@ pub fn lowerBlockValue(self: *Lowering, node: *const Node) ?Ref {
 }
 
 /// Lower a value-returning function body and emit the implicit return.
-/// Emits a hard error when the body yields no value — its last statement is
-/// `;`-terminated (value discarded) or void — and the body doesn't already
-/// terminate via `return`/`raise`. Replaces the old silent default-return.
+/// Emits a hard error when the body yields no value — its last statement is a
+/// declaration or void — and the body doesn't already terminate via
+/// `return`/`raise`. Replaces the old silent default-return.
 pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
     // Snapshot the ERROR count so the missing-value error below can be
     // suppressed when the body ALREADY reported a real error (e.g. an explicit
@@ -189,6 +188,17 @@ pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
                 break :blk body.span;
             };
             if (self.rejectBlockReturn(val_ty, span)) return;
+            // A PURE-failable function (`-> !` / `-> !Named`, whose whole return
+            // IS the error channel) has no success value, so only a trailing
+            // ERROR value is its return. A tail of any other type is demanded by
+            // nothing: discard it and take the error-slot-zero success exit,
+            // rather than weld a foreign value into the tag and fake a raise.
+            if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set and
+                (val_ty.isBuiltin() or self.module.types.get(val_ty) != .error_set))
+            {
+                self.ensureTerminator(ret_ty);
+                return;
+            }
             // Value-carrying failable `-> (T..., !)`: a trailing success
             // EXPRESSION (no explicit `return`) yields just the value part —
             // the compiler must append the success error slot (0). Mirror the
@@ -224,8 +234,7 @@ pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
         self.synthesizeNamedReturn(body, ret_ty, names);
         return;
     }
-    // A PURE-failable function (`-> !` / `-> !Named`, whose entire return IS
-    // the error channel) carries no success value — a void body is a normal
+    // A PURE-failable function reaching here produced no value at all — a normal
     // success exit, not a missing value. `ensureTerminator` emits the
     // error-slot-zero success return.
     if (self.errorChannelOf(ret_ty)) |chan| {
@@ -240,18 +249,14 @@ pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
         // an already-diagnosed failed return. (If a real error fired, surfacing
         // the redundant missing-value note would just be noise.)
         if (diags.errorCount() == errs_before) {
-            if (body.data == .block and body.data.block.discarded_semi != null) {
-                diags.addFmt(.err, body.data.block.discarded_semi.?, "function returns '{s}' but the last expression's value is discarded by this `;` — drop the `;` to return it (or use an explicit `return`)", .{self.formatTypeName(ret_ty)});
-            } else {
-                const span = blk: {
-                    if (body.data == .block) {
-                        const stmts = body.data.block.stmts;
-                        if (stmts.len > 0) break :blk stmts[stmts.len - 1].span;
-                    }
-                    break :blk body.span;
-                };
-                diags.addFmt(.err, span, "function returns '{s}' but its body produces no value — end it with a trailing expression (no `;`) or an explicit `return`", .{self.formatTypeName(ret_ty)});
-            }
+            const span = blk: {
+                if (body.data == .block) {
+                    const stmts = body.data.block.stmts;
+                    if (stmts.len > 0) break :blk stmts[stmts.len - 1].span;
+                }
+                break :blk body.span;
+            };
+            diags.addFmt(.err, span, "function returns '{s}' but its body produces no value — end it with a trailing expression or an explicit `return`", .{self.formatTypeName(ret_ty)});
         }
     }
     self.ensureTerminator(ret_ty);
@@ -3036,8 +3041,8 @@ pub fn emitLoopExitDefers(self: *Lowering) void {
 }
 
 /// Run a `defer`/`onfail` cleanup body for its side effects (void context).
-/// A braced body lowers as statements (NOT as a value) so a trailing-`;`
-/// last expression is fine here — cleanup bodies never yield a value.
+/// A braced body lowers as statements (NOT as a value): nothing demands a
+/// cleanup body's tail, so its value is discarded.
 pub fn lowerCleanupBody(self: *Lowering, body: *const Node) void {
     if (body.data == .block) self.lowerBlock(body) else _ = self.lowerExpr(body);
 }
