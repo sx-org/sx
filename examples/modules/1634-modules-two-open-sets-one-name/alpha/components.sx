@@ -1,0 +1,15 @@
+// Its members, in a sibling module, naming the set through the module that owns it.
+#import "modules/std.sx";
+v :: #import "view.sx";
+
+Label :: @OpenVariant(v.View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+hold :: (x: $V/v.View) -> string => x.render();
+
+// A SET-typed parameter: the call inside dispatches on the tag, so this package
+// gets its own dispatch routine.
+describe :: (x: v.View) -> string => x.render();
+size_here :: () -> i64 => size_of(v.View);

@@ -3887,13 +3887,21 @@ every member must have, and `@OpenVariant(P)` is how a type joins `P`. There is 
 registry API and no enrollment statement — the declarations are the registry, so a
 plain `struct` stays out.
 
+A set is its DECLARATION, so two modules may each declare one of the same name and
+they are two sets: each is laid out on its own members, a member joins the one its
+head reached, and a value of one is not a value of the other. Where a spelling has
+more than one author, a diagnostic names the module that declares the one it means.
+
 `P` is a **path**: a name the member's own module can see, or one **qualified** by
 the module that declares the set — `Label :: @OpenVariant(compose.View) { … }`, so
 a package's members live in their own modules. What a head reaches is a
 DECLARATION, and that is what membership is: a member joins the set its head
 reached, and whether a type is a member is asked about that declaration rather
 than about the spelling either side wrote. A head that reaches nothing, or reaches
-something that is not a set, is refused where the member is written.
+something that is not a set, is refused where the member is written — and a bare
+head is an ordinary bare name: it reaches what the file that wrote it can SEE, so a
+module that imported no such set is told so rather than handed one, and one that can
+see two is asked which.
 
 A member is an ordinary standalone type: constructible (`Label{ text = "x" }`),
 with its own `size_of`, its own methods, and no wrapper around it. `Self` inside

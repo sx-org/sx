@@ -53,6 +53,7 @@ const inst_mod = @import("../inst.zig");
 const errors = @import("../../errors.zig");
 const comptime_vm = @import("../comptime_vm.zig");
 const lower = @import("../lower.zig");
+const resolver_mod = @import("../resolver.zig");
 const Lowering = lower.Lowering;
 const Ref = inst_mod.Ref;
 const FuncId = inst_mod.FuncId;
@@ -109,11 +110,9 @@ pub fn effectiveAlign(self: *Lowering, declared: u32) u32 {
 }
 
 pub fn registerSetDecl(self: *Lowering, decl: *const ast.OpenSetDecl, node: *const Node) void {
-    if (self.open_set_by_name.get(decl.name) != null) {
-        if (self.diagnostics) |d|
-            d.addFmt(.err, node.span, "'{s}' is already declared as an open set", .{decl.name});
-        return;
-    }
+    // One declaration reached twice is one set: the registry is keyed by the
+    // declaration, so a second visit finds the entry it made the first time.
+    if (self.open_sets.contains(decl)) return;
     const options = readOptions(self, decl, node) orelse return;
     const table = &self.module.types;
     const name_id = table.internString(decl.name);
@@ -133,7 +132,6 @@ pub fn registerSetDecl(self: *Lowering, decl: *const ast.OpenSetDecl, node: *con
         .span = node.span,
         .source_file = node.source_file orelse self.current_source_file,
     }) catch return;
-    self.open_set_by_name.put(decl.name, decl) catch {};
     self.open_set_by_type.put(ty, decl) catch {};
     settleGenericNotes(self, decl);
 }
@@ -199,26 +197,83 @@ fn reportOptions(self: *Lowering, span: ast.Span, help: []const u8) void {
     d.addHelpFmt(id, span, null, "{s}", .{help});
 }
 
-/// The DECLARATION a `@OpenVariant(path)` head reaches, from the file that wrote
-/// it — a name reaches whatever that file can see, and a qualified path reaches
-/// what the module it names publishes. Null with a diagnostic when it reaches no
-/// set.
+/// What a `@OpenVariant(path)` head reached, from the file that wrote it.
+pub const HeadVerdict = union(enum) {
+    /// The one set the head reaches.
+    set: *const ast.OpenSetDecl,
+    /// Several sets of that name are visible here, and nothing in the spelling
+    /// says which — the file must reach the one it means by name.
+    ambiguous,
+    /// A set of that name is declared, but this file cannot see it: it never
+    /// imported the module that declares it.
+    not_visible,
+    /// Nothing of that name is a set here.
+    none,
+};
+
+/// The DECLARATION a head reaches. A qualified path reaches what the module it
+/// names publishes; a bare name reaches whatever the file that wrote it can SEE,
+/// which is the same question every other bare type reference asks — so two sets
+/// of one name are told apart the way two structs of one name are, and a file that
+/// imported neither is told so rather than handed one of them.
+pub fn setDeclVerdict(self: *Lowering, path: []const u8, from: ?[]const u8) HeadVerdict {
+    const source = from orelse self.current_source_file orelse self.main_file orelse "";
+    if (std.mem.indexOfScalar(u8, path, '.')) |_| {
+        return switch (self.qualifiedMemberVerdictFrom(path, source)) {
+            .selected => |sel| switch (sel.author.raw) {
+                .open_set_decl => |osd| .{ .set = osd },
+                else => .none,
+            },
+            else => .none,
+        };
+    }
+    var r = self.resolver();
+    const res = r.resolveBare(path, source, .bare_type);
+    defer self.alloc.free(res.set.flat);
+    const chosen: ?resolver_mod.RawAuthor = switch (res.verdict) {
+        .own_wins => res.set.own,
+        .single => if (res.set.flat.len == 1) res.set.flat[0] else res.set.own,
+        .ambiguous => return .ambiguous,
+        .not_visible => return .not_visible,
+        .domain_filtered => null,
+    };
+    const author = chosen orelse return .none;
+    return switch (author.raw) {
+        .open_set_decl => |osd| .{ .set = osd },
+        else => .none,
+    };
+}
+
+/// The declaration a head reaches, or null — the shape callers that only need the
+/// answer use.
 pub fn setDeclNamed(self: *Lowering, path: []const u8, from: ?[]const u8) ?*const ast.OpenSetDecl {
-    if (std.mem.indexOfScalar(u8, path, '.') == null) return self.open_set_by_name.get(path);
-    const source = from orelse self.current_source_file orelse self.main_file orelse return null;
-    return switch (self.qualifiedMemberVerdictFrom(path, source)) {
-        .selected => |sel| switch (sel.author.raw) {
-            .open_set_decl => |osd| osd,
-            else => null,
-        },
+    return switch (setDeclVerdict(self, path, from)) {
+        .set => |decl| decl,
         else => null,
     };
 }
 
 /// The set a `@OpenVariant(path)` head names, or null with a diagnostic.
 pub fn setNamed(self: *Lowering, name: []const u8, span: ast.Span) ?*Set {
-    if (setDeclNamed(self, name, self.current_source_file)) |decl| {
-        if (self.open_sets.getPtr(decl)) |set| return set;
+    switch (setDeclVerdict(self, name, self.current_source_file)) {
+        .set => |decl| {
+            if (self.open_sets.getPtr(decl)) |set| return set;
+        },
+        .ambiguous => {
+            if (self.diagnostics) |d| {
+                const id = d.addFmtId(.err, span, "'{s}' is declared as an open set by more than one module here", .{name});
+                d.addHelpFmt(id, span, null, "name the one this member joins through the module that declares it ('pkg.{s}')", .{name});
+            }
+            return null;
+        },
+        .not_visible => {
+            if (self.diagnostics) |d| {
+                const id = d.addFmtId(.err, span, "'{s}' is an open set, but not one this module can see", .{name});
+                d.addHelpFmt(id, span, null, "import the module that declares it, or name it through one ('pkg.{s}')", .{name});
+            }
+            return null;
+        },
+        .none => {},
     }
     if (self.diagnostics) |d| {
         const id = d.addFmtId(.err, span, "'{s}' is not an open set", .{name});
@@ -905,7 +960,7 @@ fn typeIdTable(self: *Lowering, set: *const Set) inst_mod.GlobalId {
 
 /// The set's name, sanitized for a symbol.
 fn tableName(self: *Lowering, set: *const Set) []const u8 {
-    const out = self.alloc.dupe(u8, set.decl.name) catch return "set";
+    const out = self.alloc.dupe(u8, self.declIdentityName(set.decl.name, @ptrCast(set.decl))) catch return "set";
     for (out) |*ch| {
         if (!std.ascii.isAlphanumeric(ch.*) and ch.* != '_') ch.* = '_';
     }
@@ -989,7 +1044,17 @@ fn memberAuthor(self: *Lowering, ty: TypeId) ?MemberAuthor {
     // A generic instance carries its template's declaration; the file that wrote
     // the template is where its head resolves from, and the template is reached
     // through the same author record its instantiation was stamped from.
-    if (self.struct_instance_author.get(name)) |decl| return .{ .decl = decl, .source = null };
+    if (self.struct_instance_author.get(name)) |decl| {
+        // The TEMPLATE's module is where its head was written, and the template
+        // carries it — asking that rather than whatever file is current keeps the
+        // answer the member's own.
+        const src: ?[]const u8 = blk: {
+            const tmpl_name = self.struct_instance_template.get(name) orelse break :blk null;
+            const tmpl = self.program_index.struct_template_map.get(tmpl_name) orelse break :blk null;
+            break :blk tmpl.source_file;
+        };
+        return .{ .decl = decl, .source = src };
+    }
     if (self.plain_struct_authors.get(ty)) |author| return .{ .decl = author.decl, .source = author.source };
     return null;
 }
@@ -1002,9 +1067,9 @@ fn memberDecl(self: *Lowering, ty: TypeId) ?*const ast.StructDecl {
 /// The set `member` joins, when it joins one.
 pub fn setOfMember(self: *Lowering, member: TypeId) ?*Set {
     if (self.open_variant_of.get(member)) |decl| return self.open_sets.getPtr(decl);
-    const decl = memberDecl(self, member) orelse return null;
-    const joined = decl.open_variant_of orelse return null;
-    const set_decl = self.open_set_by_name.get(joined) orelse return null;
+    const author = memberAuthor(self, member) orelse return null;
+    const joined = author.decl.open_variant_of orelse return null;
+    const set_decl = setDeclNamed(self, joined, author.source) orelse return null;
     return self.open_sets.getPtr(set_decl);
 }
 
@@ -1018,7 +1083,7 @@ pub fn refuseNonMember(self: *Lowering, src_ty: TypeId, set_ty: TypeId, span: as
     const set = setOf(self, set_ty) orelse return false;
     if (declaresMembership(self, src_ty, set.decl)) return false;
     if (self.diagnostics) |d| {
-        const id = d.addFmtId(.err, span, "'{s}' cannot be converted to '{s}': it is not a member of it", .{ self.formatSourceTypeName(src_ty), self.formatTypeName(set_ty) });
+        const id = d.addFmtId(.err, span, "'{s}' cannot be converted to '{s}': it is not a member of it", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(set_ty) });
         membershipHelp(self, d, id, src_ty, set_ty, span);
         noteInstantiation(self, d, id);
     }
@@ -1043,13 +1108,13 @@ pub fn noteInstantiation(self: *Lowering, d: *errors.DiagnosticList, id: usize) 
 /// declaration that would make it a member.
 pub fn membershipHelp(self: *Lowering, d: *errors.DiagnosticList, id: usize, member_ty: TypeId, set_ty: TypeId, span: ast.Span) void {
     if (setOfMember(self, member_ty)) |other| {
-        d.addHelpFmt(id, span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatSourceTypeName(member_ty), other.decl.name });
+        d.addHelpFmt(id, span, null, "'{s}' is a member of '{s}', and a type belongs to one set", .{ self.formatSourceTypeName(member_ty), self.formatSourceTypeName(other.ty) });
     } else if (member_ty.isBuiltin() or self.getStructTypeName(member_ty) == null) {
         // A builtin carries no declaration of its own, so there is no spelling
         // that would make it a member — only a type the program declares can be.
         d.addHelpFmt(id, span, null, "'{s}' is a builtin and cannot declare itself into a set — a member is a type the program declares: 'YourType :: @OpenVariant({s}) {{ … }}'", .{ self.formatSourceTypeName(member_ty), self.formatTypeName(set_ty) });
     } else {
-        d.addHelpFmt(id, span, null, "a type joins by declaring itself into the set: '{s} :: @OpenVariant({s}) {{ … }}'", .{ self.formatSourceTypeName(member_ty), self.formatTypeName(set_ty) });
+        d.addHelpFmt(id, span, null, "a type joins by declaring itself into the set: '{s} :: @OpenVariant({s}) {{ … }}'", .{ self.formatSourceTypeName(member_ty), self.formatSourceTypeName(set_ty) });
     }
 }
 
@@ -1223,7 +1288,7 @@ pub fn lowerDowncast(
 /// value of that type, whatever tag it carries.
 pub fn refuseNonMemberTarget(self: *Lowering, set_ty: TypeId, target: TypeId, span: ast.Span) bool {
     if (self.diagnostics) |d| {
-        const id = d.addFmtId(.err, span, "a '{s}' value is never '{s}': it is not a member of it", .{ self.formatTypeName(set_ty), self.formatSourceTypeName(target) });
+        const id = d.addFmtId(.err, span, "a '{s}' value is never '{s}': it is not a member of it", .{ self.formatSourceTypeName(set_ty), self.formatSourceTypeName(target) });
         membershipHelp(self, d, id, target, set_ty, span);
         noteInstantiation(self, d, id);
     }
@@ -1414,7 +1479,7 @@ fn refuseUndispatchable(self: *Lowering, set: *const Set, method: ast.ProtocolMe
 
 /// The set's name, sanitized for a symbol.
 fn symbolName(self: *Lowering, set: *const Set) []const u8 {
-    const out = self.alloc.dupe(u8, set.decl.name) catch return "set";
+    const out = self.alloc.dupe(u8, self.declIdentityName(set.decl.name, @ptrCast(set.decl))) catch return "set";
     for (out) |*ch| {
         if (!std.ascii.isAlphanumeric(ch.*) and ch.* != '_') ch.* = '_';
     }

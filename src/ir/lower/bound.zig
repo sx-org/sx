@@ -81,7 +81,7 @@ pub fn resolveHead(
     if (self.protocolResolver().resolveProtocol(name, source)) |p| {
         return .{ .protocol = .{ .ty = p.ty, .name = name, .params = p.decl.type_params.len } };
     }
-    if (self.open_set_by_name.get(name)) |decl| {
+    if (self.openSetDeclNamed(name, source)) |decl| {
         if (self.open_sets.getPtr(decl)) |set| return .{ .open_set = .{ .ty = set.ty, .name = name } };
     }
     // A QUALIFIED head names what a module reached by name owns. Membership and

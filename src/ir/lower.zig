@@ -441,9 +441,6 @@ pub const Lowering = struct {
     /// the registry: there is no enrollment API, and which set a name means is a
     /// question about which declaration it reaches.
     open_sets: std.AutoHashMap(*const ast.OpenSetDecl, lower_open_set.Set),
-    /// The declaration a set NAME reaches. One entry per spelling while a name may
-    /// only be declared once; the head of a member resolves through here.
-    open_set_by_name: std.StringHashMap(*const ast.OpenSetDecl),
     /// Reverse lookup: the set a type IS.
     open_set_by_type: std.AutoHashMap(TypeId, *const ast.OpenSetDecl),
     /// The set a member type joins — one per type.
@@ -1204,7 +1201,6 @@ pub const Lowering = struct {
             .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
             .struct_const_by_tid = std.AutoHashMap(StructConstTidKey, StructConstInfo).init(module.alloc),
             .open_sets = std.AutoHashMap(*const ast.OpenSetDecl, lower_open_set.Set).init(module.alloc),
-            .open_set_by_name = std.StringHashMap(*const ast.OpenSetDecl).init(module.alloc),
             .open_set_by_type = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
             .open_variant_of = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
             .open_set_dependents = std.AutoHashMap(TypeId, std.ArrayList(lower_open_set.Dependent)).init(module.alloc),
@@ -3622,6 +3618,7 @@ pub const Lowering = struct {
     pub const admitOpenVariant = lower_open_set.admitVariant;
     pub const openSetOf = lower_open_set.setOf;
     pub const isOpenSet = lower_open_set.isOpenSet;
+    pub const openSetDeclNamed = lower_open_set.setDeclNamed;
     pub const noteOpenSetGenericMember = lower_open_set.noteGenericMember;
     pub const reportUnreachedGenericHeads = lower_open_set.reportUnreachedGenericHeads;
     pub const openSetLayoutDependsOnSet = lower_open_set.layoutDependsOnSet;

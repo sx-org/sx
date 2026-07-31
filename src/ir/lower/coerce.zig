@@ -1263,9 +1263,9 @@ pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
             // The value is named the way the program spells it, and the fact reads
             // as it does at every other set refusal (spec: Open Sets).
             const id = if (formingFor(self, dst_ty))
-                d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatSourceTypeName(src_ty), self.formatTypeName(dst_ty) })
+                d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) })
             else
-                d.addFmtId(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatTypeName(dst_ty), self.formatSourceTypeName(src_ty) });
+                d.addFmtId(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatSourceTypeName(dst_ty), self.formatSourceTypeName(src_ty) });
             self.openSetMembershipHelp(d, id, src_ty, dst_ty, span);
             self.noteOpenSetInstantiation(d, id);
             self.assignability_error_count += 1;

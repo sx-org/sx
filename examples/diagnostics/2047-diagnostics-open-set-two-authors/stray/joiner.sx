@@ -1,0 +1,8 @@
+// This module never imports the module that declares `Cell`, and joins it anyway
+// by writing the bare name.
+#import "modules/std.sx";
+
+Stray :: @OpenVariant(Cell) {
+    n: i64 = 0;
+    tag :: (self: *Stray) -> string => "stray";
+}

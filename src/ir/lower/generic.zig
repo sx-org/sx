@@ -754,6 +754,18 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
 /// the template applied to its arguments (`Sink(i64)`), never as the mangled
 /// instance name that keys it internally. Everything else formats as usual.
 pub fn formatSourceTypeName(self: *Lowering, ty: TypeId) []const u8 {
+    // Two modules may declare one spelling. A reader can only act on a name that
+    // says which declaration it means, so a spelling with more than one author
+    // carries the module that declares THIS one — and one with a single author is
+    // left exactly as the program writes it.
+    if (self.openSetOf(ty)) |set| {
+        if (self.nameHasMultipleTypeAuthors(set.decl.name)) {
+            if (set.source_file) |src| {
+                return std.fmt.allocPrint(self.alloc, "{s} ({s})", .{ set.decl.name, src }) catch set.decl.name;
+            }
+        }
+        return set.decl.name;
+    }
     const inst = self.getStructTypeName(ty) orelse return self.formatTypeName(ty);
     const template = self.struct_instance_template.get(inst) orelse return self.formatTypeName(ty);
     const author = self.struct_instance_author.get(inst) orelse return self.formatTypeName(ty);
@@ -2472,9 +2484,9 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
         // The head names what the TEMPLATE's module can see, not what this
         // instantiation's site can: a member joins the set it was declared into.
         const saved_head_source = self.current_source_file;
+        defer self.setCurrentSourceFile(saved_head_source);
         if (tmpl.source_file) |src| self.setCurrentSourceFile(src);
         self.admitOpenVariant(tmpl.decl, id, site);
-        self.setCurrentSourceFile(saved_head_source);
     }
 
     return id;
