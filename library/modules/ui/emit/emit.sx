@@ -1,0 +1,20 @@
+// The terminal publish (revision §13.2).
+//
+// `Label{ … }.emit()` is the ONLY way a child reaches a container: there is no
+// interception, so an expression written without `.emit()` is an ordinary
+// statement that produces nothing.
+//
+// The receiver forms at the fixed `@Init(View)` target — a set carries its member
+// inside the slot, so the write is an identity slot copy and nothing allocates.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+#import "modules/ui/emit/view.sx";
+#import "modules/ui/emit/context.sx";
+
+emit :: ufcs (value: $I/@Init(View)) {
+    item: View = ---;
+    value.write(*item);
+    if context.emit_ui != null {
+        context.emit_ui.children.append(item);
+    }
+}

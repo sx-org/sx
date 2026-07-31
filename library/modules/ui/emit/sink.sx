@@ -1,0 +1,12 @@
+// `EmitSink` — the ambient buffer a child publishes into (revision §13.2).
+//
+// It points at the `List(View)` currently being filled, usually a container's
+// own field, so a child appends to whichever list is in scope. This is not the
+// generic collect sink: emit has no `@BuildBlock` interception, and a child that
+// does not call `.emit()` does not appear.
+#import "modules/std.sx";
+#import "modules/ui/emit/view.sx";
+
+EmitSink :: struct {
+    children: *List(View) = null;
+}
