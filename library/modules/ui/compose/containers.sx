@@ -1,0 +1,89 @@
+// The compose library's stacks and containers (revision §13.3).
+//
+// A container TAKES the block itself: `vstack(2.0) { child; child; }`. The
+// standalone expressions in that block are its children — no terminal marker on
+// the child, no ambient sink, and no collection call at the call site. What makes
+// it happen is the container's own parameter, `content: $B/@BuildBlock(View)`, so
+// interception is a property of the signature rather than of the call.
+#import "modules/std.sx";
+#import "modules/ui/compose/geometry.sx";
+#import "modules/ui/compose/render.sx";
+#import "modules/ui/compose/view.sx";
+#import "modules/ui/compose/modifier.sx";
+#import "modules/ui/compose/sink.sx";
+
+VStack :: @OpenVariant(View) {
+    children: List(View) = .{};
+    spacing: f32 = 0.0;
+    modifier: Modifier = .{};
+
+    size_that_fits :: (self: *VStack, proposal: ProposedSize) -> Size {
+        w := 0.0;
+        h := 0.0;
+        for self.children (c) {
+            s := c.size_that_fits(proposal);
+            if s.width > w { w = s.width; }
+            h += s.height;
+        }
+        if self.children.len > 1 {
+            h += self.spacing * xx (self.children.len - 1);
+        }
+        Size{ width = w, height = h }
+    }
+
+    layout :: (self: *VStack, bounds: Frame) {
+        y := bounds.origin.y;
+        for self.children (c) {
+            s := c.size_that_fits(ProposedSize.fixed(bounds.size.width, bounds.size.height));
+            c.layout(Frame.make(bounds.origin.x, y, bounds.size.width, s.height));
+            y += s.height + self.spacing;
+        }
+    }
+
+    render :: (self: *VStack, rc: *RenderContext, frame: Frame) {
+        y := frame.origin.y;
+        for self.children (c) {
+            s := c.size_that_fits(ProposedSize.fixed(frame.size.width, frame.size.height));
+            c.render(rc, Frame.make(frame.origin.x, y, frame.size.width, s.height));
+            y += s.height + self.spacing;
+        }
+    }
+}
+
+ZStack :: @OpenVariant(View) {
+    children: List(View) = .{};
+    modifier: Modifier = .{};
+
+    size_that_fits :: (self: *ZStack, proposal: ProposedSize) -> Size {
+        w := 0.0;
+        h := 0.0;
+        for self.children (c) {
+            s := c.size_that_fits(proposal);
+            if s.width > w { w = s.width; }
+            if s.height > h { h = s.height; }
+        }
+        Size{ width = w, height = h }
+    }
+
+    layout :: (self: *ZStack, bounds: Frame) {
+        for self.children (c) { c.layout(bounds); }
+    }
+
+    render :: (self: *ZStack, rc: *RenderContext, frame: Frame) {
+        for self.children (c) { c.render(rc, frame); }
+    }
+}
+
+// The container builders: interception happens inside the trailing block, and the
+// children land in the container the builder returns.
+vstack :: (spacing: f32, content: $B/@BuildBlock(View)) -> VStack {
+    sink := Sink{};
+    content.run(*sink);
+    VStack{ children = sink.children, spacing = spacing }
+}
+
+zstack :: (content: $B/@BuildBlock(View)) -> ZStack {
+    sink := Sink{};
+    content.run(*sink);
+    ZStack{ children = sink.children }
+}

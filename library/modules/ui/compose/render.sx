@@ -1,0 +1,53 @@
+// The render surface owned by the compose library.
+//
+// A render pass collects commands into a tree; the library's own runtime walks
+// them. Nothing here is shared with `ui/emit` or `ui/fluent`.
+#import "modules/std.sx";
+#import "modules/ui/compose/geometry.sx";
+
+Color :: struct {
+    r: f32 = 0.0;
+    g: f32 = 0.0;
+    b: f32 = 0.0;
+    a: f32 = 1.0;
+
+    rgba :: (r: f32, g: f32, b: f32, a: f32) -> Color => .{ r = r, g = g, b = b, a = a };
+    clear :: () -> Color => .{ r = 0.0, g = 0.0, b = 0.0, a = 0.0 };
+}
+
+CommandKind :: enum { rect; text; }
+
+RenderCommand :: struct {
+    kind: CommandKind = .rect;
+    frame: Frame = .{};
+    fill: Color = .{};
+    text: string = "";
+    opacity: f32 = 1.0;
+}
+
+RenderTree :: struct {
+    commands: List(RenderCommand) = .{};
+
+    add :: (self: *RenderTree, c: RenderCommand) {
+        self.commands.append(c);
+    }
+}
+
+// Opacity multiplies down the tree, so a context is passed by pointer and its
+// opacity restored by the caller that changed it.
+RenderContext :: struct {
+    tree: *RenderTree;
+    opacity: f32 = 1.0;
+
+    init :: (tree: *RenderTree) -> RenderContext {
+        RenderContext{ tree = tree, opacity = 1.0 }
+    }
+
+    add_rect :: (self: *RenderContext, frame: Frame, fill: Color) {
+        self.tree.add(.{ kind = .rect, frame = frame, fill = fill, opacity = self.opacity });
+    }
+
+    add_text :: (self: *RenderContext, frame: Frame, text: string) {
+        self.tree.add(.{ kind = .text, frame = frame, text = text, opacity = self.opacity });
+    }
+}
