@@ -10,6 +10,15 @@
 TAU :: 6
 seed : i64 = 7
 
+// The value-less forms end at the line break too: a declaration with no
+// initializer, and a `return` with nothing to return.
+counter : i64
+
+bump :: (by: i64) -> void {
+    counter = counter + by
+    return
+}
+
 Point :: struct { x: i64; y: i64 }
 
 add :: (a: i64, b: i64) -> i64 => a + b
@@ -63,6 +72,10 @@ main :: () -> i32 {
     print("tight={} spread={} discarded={}\n", tight(), spread(), discarded(9))
     print("packed={} reachable={} gap={}\n", packed(1, 2), reachable(true, true, false), gap(10, 4))
 
+    bump(5)
+    bump(TAU)
+    print("counter={} version={}\n", counter, VERSION)
+
     // `}` then `else` on the next line is one chain, not a statement and an
     // orphan.
     if n > 3 {
@@ -75,3 +88,7 @@ main :: () -> i32 {
     defer print("done\n")
     0
 }
+
+// The file's last declaration has no terminator either — nothing follows it to
+// run into, so the end of the file ends it.
+VERSION :: 2

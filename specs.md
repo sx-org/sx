@@ -391,9 +391,21 @@ One rule, applied wherever a statement or a declaration ENDS: top-level and
 local bindings, expression statements, assignments, `return` / `raise` /
 `break` / `continue` / `defer` / `onfail`, `#import` / `#insert` / `#error` and
 the other directive forms, and a function's `extern` / `intrinsic` / `=> expr`
-body. It does not reach inside a fixed form's own list — a runtime class's
-members, the entries of `#import c { … }`, and a `match` arm each keep the `;`
-their grammar asks for.
+body. The value-less spellings end the same way — a `return` with nothing to
+return, and a `name : Type` declaration with no initializer:
+
+```sx
+counter : i64
+bump :: (by: i64) -> void {
+    counter = counter + by
+    return
+}
+```
+
+The end of the file ends the declaration it lands on, so a file's last
+declaration needs no terminator either. The rule does not reach inside a fixed
+form's own list — a runtime class's members, the entries of `#import c { … }`,
+and a `match` arm each keep the `;` their grammar asks for.
 
 A line break does not end a statement that is still running. When the token
 below cannot START a statement, it continues the one above:
@@ -6402,9 +6414,9 @@ implicit `context`.
 
 ```
 program         = top_level*
-end             = ';' | NEWLINE     // §1 Whitespace is Syntax: the line break
-                  // where the `;` would go, unless the token below cannot start
-                  // a statement (`and`, `|`, `,`, `=>`, … — see §1)
+end             = ';' | NEWLINE | EOF   // §1 Whitespace is Syntax: the line
+                  // break where the `;` would go, unless the token below cannot
+                  // start a statement (`and`, `|`, `,`, `=>`, … — see §1)
 top_level       = decl | import_decl | context_extend
 import_decl     = '#import' STRING end
                 | IDENT '::' '#import' STRING end

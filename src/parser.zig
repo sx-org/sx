@@ -498,9 +498,9 @@ pub const Parser = struct {
             return try self.createNode(start_pos, .{ .var_decl = .{ .name = name, .name_span = name_span, .type_annotation = type_node, .value = value, .is_raw = name_is_raw } });
         }
 
-        if (self.current.tag == .semicolon) {
+        if (self.current.tag == .semicolon or self.implicitTerminator()) {
             // name : type; (default-initialized variable)
-            self.advance();
+            try self.expectStatementEnd();
             return try self.createNode(start_pos, .{ .var_decl = .{ .name = name, .name_span = name_span, .type_annotation = type_node, .value = null, .is_raw = name_is_raw } });
         }
 
@@ -2680,7 +2680,7 @@ pub const Parser = struct {
             // stale semi location from a nested statement).
             self.last_stmt_produces_value = true;
             self.last_stmt_semi_loc = null;
-        } else if (self.newlineEndsStatement()) {
+        } else if (self.implicitTerminator()) {
             // A line break where a `;` was expected ends the statement, and
             // ends it the same way `;` does — the value is discarded. The arm
             // above already claimed the position before `}`, so a `;`-less
@@ -2814,8 +2814,10 @@ pub const Parser = struct {
             try self.rejectInCleanup("return");
             const start = self.current.loc.start;
             self.advance();
-            if (self.current.tag == .semicolon) {
-                self.advance();
+            if (self.current.tag == .semicolon or self.implicitTerminator()) {
+                // `return` with no value — terminated by its `;` or by the
+                // line break standing in for it.
+                try self.expectStatementEnd();
                 return try self.createNode(start, .{ .return_stmt = .{ .value = null } });
             }
             // Comma-separated return list — the bare multi-value `return` form:
@@ -5662,25 +5664,26 @@ pub const Parser = struct {
     }
 
     /// The terminator of a statement or of a declaration written in statement
-    /// or top-level position: an explicit `;`, or the newline that ends it
-    /// where the `;` would have gone. The `;` inside a fixed form's member list
-    /// (a runtime class's members, `#import c { … }`'s entries) and a match
-    /// arm's terminator are separators under their own grammar, not statement
-    /// ends, and keep demanding their `;`.
+    /// or top-level position: an explicit `;`, or the implied one — the line
+    /// break where the `;` would have gone, or the end of the file. The `;`
+    /// inside a fixed form's member list (a runtime class's members,
+    /// `#import c { … }`'s entries) and a match arm's terminator are separators
+    /// under their own grammar, not statement ends, and keep demanding their `;`.
     fn expectStatementEnd(self: *Parser) !void {
         if (self.current.tag == .semicolon) {
             self.advance();
             return;
         }
-        if (self.newlineEndsStatement()) return;
+        if (self.implicitTerminator()) return;
         try self.expect(.semicolon);
     }
 
-    /// A newline between the statement's last token and the next one ends the
-    /// statement, exactly where a `;` would. End of file is not a next
-    /// statement, so it keeps reporting the terminator it was denied.
-    fn newlineEndsStatement(self: *const Parser) bool {
-        if (self.current.tag == .eof) return false;
+    /// True where the terminator is implied rather than written: a newline
+    /// between the statement's last token and the next one ends the statement
+    /// exactly where a `;` would, and so does the end of the file — there is
+    /// no next statement for the one below to run into.
+    fn implicitTerminator(self: *const Parser) bool {
+        if (self.current.tag == .eof) return true;
         if (continuesStatement(self.current.tag)) return false;
         return self.gapCrossesLine();
     }

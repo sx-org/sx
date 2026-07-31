@@ -862,3 +862,62 @@ test "parser: a bare scope block statement does not chain" {
     try std.testing.expectEqual(@as(usize, 1), chained.data.block.stmts.len);
     try std.testing.expect(chained.data.block.stmts[0].data.call.callee.data == .field_access);
 }
+
+// The value-less forms take the newline terminator too: a `return` with no
+// value, and a `name : type` declaration with no initializer.
+test "parser: a newline terminates the value-less forms" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc,
+        \\f :: () -> void {
+        \\    slot : i64
+        \\    g(slot)
+        \\    return
+        \\}
+    );
+    const stmts = body.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 3), stmts.len);
+    try std.testing.expect(stmts[0].data.var_decl.value == null);
+    try std.testing.expect(stmts[1].data == .call);
+    try std.testing.expect(stmts[2].data.return_stmt.value == null);
+}
+
+// The last token of a file is followed by a line break like any other, so the
+// final declaration needs no terminator either.
+test "parser: a newline ends the last declaration in a file" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc, "TAU :: 6\nseed : i64\n");
+    const decls = (try p.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), decls.len);
+    try std.testing.expect(decls[0].data == .const_decl);
+    try std.testing.expect(decls[1].data.var_decl.value == null);
+}
+
+// An `extern` / `export` tail is two optional bare names, so it binds only on
+// the declaration's own line — the name below belongs to the next declaration.
+test "parser: an extern tail binds only on its own line" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\puts :: (s: *u8) -> i32 extern
+        \\LIMIT :: 9
+    );
+    const decls = (try p.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), decls.len);
+    try std.testing.expect(decls[0].data.fn_decl.extern_lib == null);
+    try std.testing.expect(decls[0].data.fn_decl.extern_name == null);
+    try std.testing.expect(decls[1].data == .const_decl);
+
+    // On its own line the tail still binds.
+    var same = Parser.init(alloc, "puts :: (s: *u8) -> i32 extern C \"puts\"\n");
+    const bound = (try same.parse()).data.root.decls[0].data.fn_decl;
+    try std.testing.expectEqualStrings("C", bound.extern_lib.?);
+    try std.testing.expectEqualStrings("puts", bound.extern_name.?);
+}
