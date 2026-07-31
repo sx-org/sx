@@ -406,7 +406,7 @@ pub fn synthesizeNamedReturn(self: *Lowering, body: *const Node, ret_ty: TypeId,
     const tl = self.alloc.create(Node) catch return;
     tl.* = .{ .span = body.span, .data = .{ .tuple_literal = .{ .elements = elems.toOwnedSlice(self.alloc) catch return } } };
     const rs = ast.ReturnStmt{ .value = tl };
-    self.lowerReturn(&rs);
+    self.lowerReturn(&rs, body.span);
 }
 
 /// Try to lower a node as an expression, returning its value.
@@ -446,7 +446,7 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
         // decl pointer in `fn_ast_map`, so it must point into the AST node,
         // not at a stack temporary that the next statement reuses.
         .fn_decl => |*fd| self.lowerLocalFnDecl(fd),
-        .return_stmt => |rs| self.lowerReturn(&rs),
+        .return_stmt => |rs| self.lowerReturn(&rs, node.span),
         .raise_stmt => |rs| self.lowerRaise(&rs, node.span),
         .assignment => |asgn| self.lowerAssignment(&asgn),
         .defer_stmt => |ds| self.lowerDefer(&ds),
@@ -1066,7 +1066,29 @@ fn tupleFormOfBareBraceLiteral(self: *Lowering, node: *const Node, ret_ty: TypeI
     return n;
 }
 
-pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt) void {
+/// Diagnose a value-less `return` (`return;`, or a bare `return` a line break
+/// ended) in a function whose return type demands a value. Two shapes legitimately
+/// return nothing: a `-> void` body, and a PURE failable (`-> !` / `-> !Named`,
+/// whose whole return IS the error channel) where `return;` is the success exit.
+/// Everything else — a plain `-> T`, a value-carrying `-> (T…, !)`, a named
+/// multi-return — has slots to fill, and without this the `ret void` reaches the
+/// LLVM verifier as "Function return type does not match operand type".
+fn rejectValuelessReturn(self: *Lowering, span: ast.Span) void {
+    const ret_ty: TypeId = if (self.inline_return_target) |iri|
+        iri.ret_ty
+    else if (self.builder.func) |fid|
+        self.module.functions.items[@intFromEnum(fid)].ret
+    else
+        return;
+    if (ret_ty == .void or ret_ty == .noreturn or ret_ty == .unresolved) return;
+    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) return;
+    if (self.diagnostics) |d| {
+        d.addFmt(.err, span, "function returns '{s}' but this `return` carries no value — return a value of that type", .{self.formatTypeName(ret_ty)});
+    }
+}
+
+pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) void {
+    if (rs.value == null) rejectValuelessReturn(self, span);
     // Normalize a bare `.{ … }` against a tuple return to the tuple-literal
     // node shape FIRST — the intercepts below key on it.
     const norm_ret_ty: TypeId = if (self.inline_return_target) |iri|
