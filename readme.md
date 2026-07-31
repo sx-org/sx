@@ -61,6 +61,27 @@ Third-party attributions for stdlib-derived code are recorded in
 
 ## Language Overview
 
+### Whitespace is syntax
+
+Three rules, five glyphs: `(`, `[`, `-`, `*`, and `{` each carry two meanings,
+and the gap around them decides which:
+
+```sx
+foo(2)      Box(i64)      xs[0]     // `(` applies, `[` indexes — only when GLUED
+foo (2)     Box (i64)     xs [0]    // error, each naming the space and the fix
+
+a - b       a-b                     // infix: matching gaps on both sides
+a -b                                // `a`, then a prefix `-b`
+```
+
+A `(` or `[` binds to what precedes it only when nothing separates them — in
+expressions and in every type position alike. A `(` that opens something new
+(grouping, parameters, a capture, a declaration form) is free:
+`add :: (a: i64) -> i64`, `for xs (x) { … }`, `risky() catch (e) -1`. `-` and
+`*` also have prefix readings, so they are infix only when spaced the same on
+both sides, and a prefix `-` / `*` must be glued to its operand. The third rule
+governs the trailing-block `{` (below).
+
 ### Types
 
 | Type | Description |
@@ -287,8 +308,9 @@ scaffold(top_bar = toolbar) { chat_list(); }   // named slots + block
 ```
 
 The `{` must sit on the same line as the `)`; one block per call; after the
-block's `}` a dot continues the chain (`vstack(8.0) { … }.padded()`). A
-capture-free block promotes to a null-env thunk — zero allocation.
+block's `}` a dot continues the chain (`vstack(8.0) { … }.padded()`). The
+call's own `(` still obeys the glue rule — `vstack (8.0) { … }` is a spacing
+error. A capture-free block promotes to a null-env thunk — zero allocation.
 
 ### Structs
 

@@ -574,6 +574,7 @@ pub const Parser = struct {
             // A type-argument list is what a compiler-formed type takes; a
             // declared contract is a plain type name.
             if (self.current.tag == .l_paren) {
+                try self.requireTypeArgGlue(start);
                 return self.failAt(at_tok.loc, try self.unknownCompilerFormedTypeMsg(at_name));
             }
             return try self.createNode(start, .{ .type_expr = .{ .name = at_name } });
@@ -603,6 +604,7 @@ pub const Parser = struct {
         // Pointer type: *T
         if (self.current.tag == .star) {
             self.advance(); // skip '*'
+            try self.requirePrefixGlue(start);
             const pointee_type = try self.parseTypeExpr();
             return try self.createNode(start, .{ .pointer_type_expr = .{ .pointee_type = pointee_type } });
         }
@@ -657,6 +659,7 @@ pub const Parser = struct {
             self.advance();
             // Pack-index access: $<pack_name>[<int_literal>]
             if (self.current.tag == .l_bracket) {
+                if (!self.currentIsGlued()) return self.failSpacedForm(start, .index);
                 self.advance(); // skip '['
                 if (self.current.tag != .int_literal) {
                     return self.fail("expected integer literal in pack index");
@@ -857,6 +860,14 @@ pub const Parser = struct {
                 }
             }
 
+            // Glue rule (specs: Whitespace is Syntax). One check covers every
+            // type position that applies arguments — annotations, return and
+            // param types, field types, aliases, cast targets, builtin type
+            // args, match-arm type patterns — and the `Tuple` / `Closure`
+            // fixed forms below. A type application never spans a statement
+            // boundary, so ANY gap here is the spacing mistake.
+            if (self.current.tag == .l_paren) try self.requireTypeArgGlue(start);
+
             // Tuple type: `Tuple(A, B)` / `Tuple(T)` / `Tuple()` /
             //   named `Tuple(x: A, y: B)` / pack `Tuple(..Ts)` / `Tuple(..F(Ts))`.
             //   Magic contextual id — only a `Tuple` IMMEDIATELY followed by `(`
@@ -1007,6 +1018,9 @@ pub const Parser = struct {
         if (self.current.tag != .l_paren) {
             return try self.createNode(start, .{ .type_expr = .{ .name = head } });
         }
+        // Glue rule: a bound's arguments bind like any other type application
+        // (`$B/@BuildBlock(Drawable)`).
+        try self.requireTypeArgGlue(start);
         const l_paren_loc = self.current.loc;
         self.advance(); // skip '('
         var args = std.ArrayList(*Node).empty;
@@ -1076,6 +1090,9 @@ pub const Parser = struct {
                 .{ name, spelling },
             ));
         }
+        // Glue rule: the argument list is mandated by the form, so it binds on
+        // the same terms as any other type application (`@BuildBlock(P)`).
+        try self.requireTypeArgGlue(start);
         self.advance(); // skip '('
         const target = try self.parseTypeExpr();
         var args = std.ArrayList(*Node).empty;
@@ -1446,7 +1463,10 @@ pub const Parser = struct {
 
     /// `V :: @OpenVariant(P) [($T: Type)] { fields + the set's methods }`.
     fn parseOpenVariantDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
+        const head_start = self.current.loc.start;
         self.advance(); // skip '@OpenVariant'
+        // Glue rule: the set argument binds like any other type application.
+        if (self.current.tag == .l_paren) try self.requireTypeArgGlue(head_start);
         try self.expect(.l_paren);
         const set_tok = self.current;
         if (self.current.tag != .identifier) {
@@ -1474,7 +1494,10 @@ pub const Parser = struct {
 
     /// `P :: @OpenSet(.{ max = …, align = … }) { required methods }`.
     fn parseOpenSetDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
+        const head_start = self.current.loc.start;
         self.advance(); // skip '@OpenSet'
+        // Glue rule: the options argument binds like any other type application.
+        if (self.current.tag == .l_paren) try self.requireTypeArgGlue(head_start);
         try self.expect(.l_paren);
         const opt_start = self.current.loc.start;
         const options = try self.parseExpr();
@@ -2070,12 +2093,17 @@ pub const Parser = struct {
         if (self.current.tag != .identifier and self.current.tag != .at_identifier) {
             return self.fail("expected protocol name after 'impl'");
         }
+        const protocol_head_start = self.current.loc.start;
         const protocol_name = self.tokenSlice(self.current);
         self.advance();
 
         // Optional protocol type args: impl Into(Block) for ...
         var protocol_type_args = std.ArrayList(*Node).empty;
         if (self.current.tag == .l_paren) {
+            // Glue rule: these are the protocol's ARGUMENTS, so they bind like
+            // any other type application (the target's `($T)` below is a
+            // parameter list and stays free).
+            try self.requireTypeArgGlue(protocol_head_start);
             self.advance(); // skip '('
             while (self.current.tag != .r_paren and self.current.tag != .eof) {
                 if (protocol_type_args.items.len > 0) {
@@ -3074,6 +3102,15 @@ pub const Parser = struct {
                 continue;
             }
 
+            // Spacing rule (specs: Whitespace is Syntax): `-` and `*` carry a
+            // prefix reading too, so they are infix only when their gaps match.
+            // Lopsided on one line is fatal; across a line the operand below
+            // starts fresh and the caller reports what it finds.
+            if ((self.current.tag == .minus or self.current.tag == .star) and !self.infixSpacingMatches()) {
+                if (!self.gapCrossesLine()) return self.failLopsidedOperator();
+                break;
+            }
+
             const prec = self.binaryPrec();
             if (prec == 0 or prec < min_prec) break;
 
@@ -3116,6 +3153,7 @@ pub const Parser = struct {
         if (self.current.tag == .minus) {
             const start = self.current.loc.start;
             self.advance();
+            try self.requirePrefixGlue(start);
             const operand = try self.parseUnary();
             return try self.createNode(start, .{ .unary_op = .{ .op = .negate, .operand = operand } });
         }
@@ -3145,6 +3183,7 @@ pub const Parser = struct {
         if (self.current.tag == .star) {
             const start = self.current.loc.start;
             self.advance();
+            try self.requirePrefixGlue(start);
             const operand = try self.parseUnary();
             return try self.createNode(start, .{ .unary_op = .{ .op = .address_of, .operand = operand } });
         }
@@ -3169,6 +3208,14 @@ pub const Parser = struct {
 
         while (true) {
             if (self.current.tag == .l_paren and !self.parenGroupIsForCapture()) {
+                // Glue rule (specs: Whitespace is Syntax): the `(` is a call
+                // only when glued to the callee. On the same line that space
+                // is fatal; across a line the `(` opens whatever comes next,
+                // and the caller reports what it finds there.
+                if (!self.currentIsGlued()) {
+                    if (!self.gapCrossesLine()) return self.failSpacedForm(expr.span.start, .call);
+                    break;
+                }
                 // Call. Argument expressions are an ordinary nested context —
                 // the for-header capture rule does not apply inside them.
                 self.advance();
@@ -3367,6 +3414,12 @@ pub const Parser = struct {
                     return self.fail("expected field name after '?.'");
                 }
             } else if (self.current.tag == .l_bracket) {
+                // Glue rule (specs: Whitespace is Syntax) — same reading as the
+                // call `(` above.
+                if (!self.currentIsGlued()) {
+                    if (!self.gapCrossesLine()) return self.failSpacedForm(expr.span.start, .index);
+                    break;
+                }
                 // Index or slice access: expr[expr] or expr[start..end]
                 self.advance();
                 // Inside `[...]`, calls parse normally even within a for header.
@@ -3647,6 +3700,16 @@ pub const Parser = struct {
             const pname = self.tokenSlice(self.current);
             self.advance();
             if (self.current.tag == .l_bracket) {
+                // Glue rule (specs: Whitespace is Syntax): the `[` indexes the
+                // pack only when glued to it. Same-line, that space is fatal;
+                // across a line the `[` stops binding and the whole pack is
+                // the expression.
+                if (!self.currentIsGlued()) {
+                    if (!self.gapCrossesLine()) return self.failSpacedForm(start, .index);
+                    return try self.createNode(start, .{ .comptime_pack_ref = .{
+                        .pack_name = pname,
+                    } });
+                }
                 self.advance(); // skip '['
                 if (self.current.tag != .int_literal) {
                     return self.fail("expected integer literal in pack index");
@@ -3745,6 +3808,7 @@ pub const Parser = struct {
                 // (or a backtick-raw `` `Tuple ``) stays an ordinary identifier.
                 if (!is_raw and std.mem.eql(u8, name, "Tuple") and self.peekNext() == .l_paren) {
                     self.advance(); // skip `Tuple`; `current` is now `(`
+                    try self.requireTypeArgGlue(start);
                     return self.parseTupleTypeBody(start);
                 }
                 // `Closure(...) -> R` in expression position is a closure TYPE
@@ -3756,6 +3820,7 @@ pub const Parser = struct {
                 // `` `Closure ``) stays an ordinary identifier.
                 if (!is_raw and std.mem.eql(u8, name, "Closure") and self.peekNext() == .l_paren) {
                     self.advance(); // skip `Closure`; `current` is now `(`
+                    try self.requireTypeArgGlue(start);
                     return self.parseClosureTypeBody(start);
                 }
                 // A backtick raw identifier (`` `i2 ``) is NEVER type-classified —
@@ -5430,6 +5495,133 @@ pub const Parser = struct {
     fn advance(self: *Parser) void {
         self.prev_end = self.current.loc.end;
         self.current = self.lexer.next();
+    }
+
+    // ---- Whitespace is syntax (specs §1: Whitespace is Syntax) ----
+
+    /// Where a token was WRITTEN. A raw identifier's `loc` deliberately
+    /// excludes its leading backtick so its text is the bare name, but the
+    /// whitespace rules read the source as typed — `` *`i2 `` is glued.
+    fn writtenStart(tok: Token) u32 {
+        return if (tok.is_raw) tok.loc.start - 1 else tok.loc.start;
+    }
+
+    /// True when nothing at all separates `current` from the token before it.
+    /// The glue rule reads this: `(` and `[` bind to what precedes them only
+    /// when glued.
+    fn currentIsGlued(self: *const Parser) bool {
+        return self.prev_end == writtenStart(self.current);
+    }
+
+    /// True when the gap before `current` crosses a line. A same-line gap is
+    /// fatal wherever the glue rule applies; a line break is not a spacing
+    /// mistake, so it leaves the ordinary path to report what it finds.
+    fn gapCrossesLine(self: *const Parser) bool {
+        return std.mem.indexOfScalar(u8, self.source[self.prev_end..writtenStart(self.current)], '\n') != null;
+    }
+
+    /// The written form with the offending gap closed — `foo (2)` → `foo(2)` —
+    /// for the spacing diagnostics. Null when the bracket group is unbalanced,
+    /// spans a line, or is too long to quote back usefully.
+    fn gluedSpelling(self: *Parser, head_start: u32) ?[]const u8 {
+        const open = self.current.tag;
+        const close: Tag = if (open == .l_paren) .r_paren else .r_bracket;
+        var lex = self.lexer;
+        var depth: u32 = 1;
+        var end: u32 = self.current.loc.end;
+        while (depth > 0) {
+            const tok = lex.next();
+            if (tok.tag == .eof) return null;
+            if (tok.tag == open) {
+                depth += 1;
+            } else if (tok.tag == close) {
+                depth -= 1;
+                end = tok.loc.end;
+            }
+        }
+        // A raw head's span starts after its backtick; quote it back as written.
+        const head_written = if (head_start > 0 and self.source[head_start - 1] == '`') head_start - 1 else head_start;
+        const head = self.source[head_written..self.prev_end];
+        const args = self.source[self.current.loc.start..end];
+        if (head.len + args.len > 48) return null;
+        if (std.mem.indexOfScalar(u8, head, '\n') != null) return null;
+        if (std.mem.indexOfScalar(u8, args, '\n') != null) return null;
+        return std.fmt.allocPrint(self.allocator, "{s}{s}", .{ head, args }) catch null;
+    }
+
+    /// Which production the un-glued bracket was trying to continue.
+    const SpacedForm = enum { call, index, type_args };
+
+    /// The glue-rule diagnostic: name the space, and quote the glued spelling
+    /// that fixes it. Spans the gap plus the bracket, so the caret sits under
+    /// what has to go.
+    fn failSpacedForm(self: *Parser, head_start: u32, form: SpacedForm) error{ParseError} {
+        const loc: Token.Loc = .{ .start = self.prev_end, .end = self.current.loc.end };
+        const fix = self.gluedSpelling(head_start);
+        const msg = switch (form) {
+            .call => if (fix) |f|
+                std.fmt.allocPrint(self.allocator, "a space before `(` — a call binds only when the `(` is glued to its callee: write `{s}`", .{f}) catch return error.ParseError
+            else
+                "a space before `(` — a call binds only when the `(` is glued to its callee",
+            .index => if (fix) |f|
+                std.fmt.allocPrint(self.allocator, "a space before `[` — an index binds only when the `[` is glued to what it indexes: write `{s}`", .{f}) catch return error.ParseError
+            else
+                "a space before `[` — an index binds only when the `[` is glued to what it indexes",
+            .type_args => if (fix) |f|
+                std.fmt.allocPrint(self.allocator, "a space between a type and its arguments — write `{s}`", .{f}) catch return error.ParseError
+            else
+                "a space between a type and its arguments — the argument list binds only when glued to the type name",
+        };
+        return self.failAt(loc, msg);
+    }
+
+    /// The glue rule in a TYPE position: an argument list never crosses a
+    /// statement boundary, so any gap at all is the spacing mistake.
+    fn requireTypeArgGlue(self: *Parser, head_start: u32) !void {
+        if (!self.currentIsGlued()) return self.failSpacedForm(head_start, .type_args);
+    }
+
+    /// The spacing rule for infix `-` / `*`: they read as infix only when the
+    /// gaps on BOTH sides match — `a - b` or `a-b`. Glued on the right and
+    /// spaced on the left, the operator is a prefix `-` / `*` opening a new
+    /// operand; the mirror shape (`a- b`) is neither reading.
+    fn infixSpacingMatches(self: *const Parser) bool {
+        var lex = self.lexer;
+        const next = lex.next();
+        const left_spaced = self.prev_end != self.current.loc.start;
+        const right_spaced = self.current.loc.end != writtenStart(next);
+        return left_spaced == right_spaced;
+    }
+
+    fn failLopsidedOperator(self: *Parser) error{ParseError} {
+        const op = self.tokenSlice(self.current);
+        const reads_as_prefix = self.prev_end != self.current.loc.start;
+        return if (reads_as_prefix)
+            self.failFmt(
+                "`{s}` is spaced on its left and glued on its right, so it reads as a prefix `{s}` opening a new operand — an infix `{s}` needs matching spacing: write `a {s} b` or `a{s}b`",
+                .{ op, op, op, op, op },
+            )
+        else
+            self.failFmt(
+                "`{s}` is glued on its left and spaced on its right — an infix operator needs matching spacing on both sides: write `a {s} b` or `a{s}b`",
+                .{ op, op, op },
+            );
+    }
+
+    /// The spacing rule for a prefix `-` / `*`: it binds only when glued to its
+    /// operand. That is what makes `a -b` the prefix reading and `a - b` the
+    /// infix one, so a spaced prefix has no reading left.
+    fn requirePrefixGlue(self: *Parser, op_start: u32) !void {
+        if (self.currentIsGlued()) return;
+        const op = self.source[op_start .. op_start + 1];
+        return self.failAt(
+            Token.Loc{ .start = op_start, .end = writtenStart(self.current) },
+            std.fmt.allocPrint(
+                self.allocator,
+                "a space after the prefix `{s}` — a prefix operator binds only when glued to its operand",
+                .{op},
+            ) catch return error.ParseError,
+        );
     }
 
     fn expect(self: *Parser, tag: Tag) !void {
