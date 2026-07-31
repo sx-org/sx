@@ -308,7 +308,7 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 
 ### Whitespace is Syntax
 
-Five glyphs — `(`, `[`, `-`, `*`, `{` — read differently depending on the
+Six glyphs — `(`, `[`, `-`, `*`, `{`, `!` — read differently depending on the
 whitespace around them, under three rules. Each rule exists because its glyphs
 carry two meanings and the gap is what tells them apart. A fourth rule is about
 the whitespace itself: a line break ends a statement.
@@ -371,14 +371,17 @@ A prefix `-` / `*` binds only when glued to its operand, which is what makes
 line: a leading `- b` keeps the gaps matched and continues the expression,
 while `-b` starts a fresh operand.
 
-**Postfix — a token binds only on its expression's own line.** The third rule
-governs what attaches to an expression from behind. The `{` after a call opens
-a trailing block only on the same line as the `)`, and a same-line empty `{}`
-reads as a parameterized aggregate when written tight against the `)`; both
-readings are specified with the form itself — see
-[Trailing Blocks](#trailing-blocks). A named aggregate's `{` and a postfix `!`
-answer the same question the same way, because each has a second reading
-waiting on the other side of a break — a scope block, and the prefix `not`:
+**Postfix — `(`, `[`, `{`, and `!` bind only on their expression's own line.**
+The third rule governs what attaches to an expression from behind, and it
+splits the postfix tokens in two. These four are same-line only: `(` and `[`
+already are, since the glue rule above admits no gap at all, and the `{` and
+the `!` answer the question the same way. The `{` after a call opens a trailing
+block only on the same line as the `)`, and a same-line empty `{}` reads as a
+parameterized aggregate when written tight against the `)`; both readings are
+specified with the form itself — see [Trailing Blocks](#trailing-blocks). A
+named aggregate's `{` and a postfix `!` join them because each has a second
+reading waiting on the other side of a break — a scope block, and the prefix
+`not`:
 
 ```sx
 p := Pair{ a = 1, b = 2 }     // same line — the aggregate
@@ -392,6 +395,12 @@ ready
 
 This is geometry, not completability: the brace is refused across a break
 inside an argument list exactly as it is at statement level.
+
+The dot-led postfixes are the other camp. `.`, `?.`, and `catch` have no second
+reading for a break to pick up, so each reads on down the page: `?.` and `catch`
+are in the continuation list below, and a leading `.` chains whenever what it
+follows is an expression rather than a statement — the line **Statements break,
+expressions chain** draws at the end of this section.
 
 **Line breaks — a newline ends a statement.** A `;` terminates a statement, and
 so does the line break where the `;` would have gone. The two spellings are the
