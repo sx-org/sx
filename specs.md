@@ -308,9 +308,9 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 
 ### Whitespace is Syntax
 
-Three tokens read differently depending on the whitespace around them. Each
-rule exists because the glyph carries two meanings and the gap is what tells
-them apart.
+Five glyphs — `(`, `[`, `-`, `*`, `{` — read differently depending on the
+whitespace around them, under three rules. Each rule exists because its glyphs
+carry two meanings and the gap is what tells them apart.
 
 **Glue — `(` and `[` bind only when glued.** A `(` applies arguments, and a
 `[` indexes, only when *nothing at all* separates it from what precedes it:
@@ -370,11 +370,11 @@ A prefix `-` / `*` binds only when glued to its operand, which is what makes
 line: a leading `- b` keeps the gaps matched and continues the expression,
 while `-b` starts a fresh operand.
 
-**Trailing blocks — a `{` reads by line and by tightness.** The third
-whitespace-sensitive token is `{` after a call: it opens a trailing block only
-on the same line as the `)`, and a same-line empty `{}` reads as a
-parameterized aggregate when written tight against the `)`. Both rules are
-specified with the form itself — see [Trailing Blocks](#trailing-blocks).
+**Trailing blocks — a `{` reads by line and by tightness.** The third rule
+governs the `{` after a call: it opens a trailing block only on the same line
+as the `)`, and a same-line empty `{}` reads as a parameterized aggregate when
+written tight against the `)`. Both readings are specified with the form
+itself — see [Trailing Blocks](#trailing-blocks).
 
 ---
 
@@ -6372,8 +6372,9 @@ range_op        = '..' | '..=' | '..<' | '<..' | '<..=' | '<..<' | '=..' | '=..=
 for_capture     = '(' ['*'] IDENT (',' ['*'] IDENT)* ')'
 binary          = catch_expr (binop catch_expr)*    // binop includes `or` (fallback / chain)
 catch_expr      = unary ('catch' ('(' IDENT ')')? (block | '==' '{' case_arm* else_arm? '}' | unary))?
-unary           = ('-' | '!' | 'xx' | 'try') postfix    // '-' / '*' glued to the operand (§1 Whitespace is Syntax)
-                | postfix
+unary           = ('-' | '*' | '!' | '~' | 'xx' | 'try') unary | postfix
+                  // right-recursive, so prefixes stack (`xx try f()`, `!!ok`);
+                  // a prefix '-' / '*' must be GLUED to its operand (§1 Whitespace is Syntax)
 postfix         = primary ('(' args? ')' | '[' expr ']' | '.' IDENT | '.{' field_init_list '}')*
                   // a postfix '(' / '[' must be GLUED to what precedes it (§1 Whitespace is Syntax)
 primary         = INT | HEX_INT | OCT_INT | BIN_INT | FLOAT | STRING | BOOL | IDENT | '---'

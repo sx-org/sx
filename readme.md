@@ -63,7 +63,8 @@ Third-party attributions for stdlib-derived code are recorded in
 
 ### Whitespace is syntax
 
-Three glyphs each carry two meanings, and the gap around them decides which:
+Three rules, five glyphs: `(`, `[`, `-`, `*`, and `{` each carry two meanings,
+and the gap around them decides which:
 
 ```sx
 foo(2)      Box(i64)      xs[0]     // `(` applies, `[` indexes — only when GLUED
@@ -78,8 +79,8 @@ expressions and in every type position alike. A `(` that opens something new
 (grouping, parameters, a capture, a declaration form) is free:
 `add :: (a: i64) -> i64`, `for xs (x) { … }`, `risky() catch (e) -1`. `-` and
 `*` also have prefix readings, so they are infix only when spaced the same on
-both sides, and a prefix `-` / `*` must be glued to its operand. The third
-whitespace-sensitive glyph is the trailing-block `{` (below).
+both sides, and a prefix `-` / `*` must be glued to its operand. The third rule
+governs the trailing-block `{` (below).
 
 ### Types
 

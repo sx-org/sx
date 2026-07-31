@@ -3700,6 +3700,16 @@ pub const Parser = struct {
             const pname = self.tokenSlice(self.current);
             self.advance();
             if (self.current.tag == .l_bracket) {
+                // Glue rule (specs: Whitespace is Syntax): the `[` indexes the
+                // pack only when glued to it. Same-line, that space is fatal;
+                // across a line the `[` stops binding and the whole pack is
+                // the expression.
+                if (!self.currentIsGlued()) {
+                    if (!self.gapCrossesLine()) return self.failSpacedForm(start, .index);
+                    return try self.createNode(start, .{ .comptime_pack_ref = .{
+                        .pack_name = pname,
+                    } });
+                }
                 self.advance(); // skip '['
                 if (self.current.tag != .int_literal) {
                     return self.fail("expected integer literal in pack index");

@@ -663,3 +663,23 @@ test "parser: the glue rules see a raw identifier's backtick" {
     const msg = try parseErrMsg(alloc, "f :: (p: * `i2(i64)) { }");
     try std.testing.expect(std.mem.indexOf(u8, msg, "a prefix operator binds only when glued") != null);
 }
+
+// A pack index is an index like any other, in an expression as in a type.
+test "parser: a pack index binds only when glued" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var ok = Parser.init(alloc, "f :: (..$args) -> string { g($args[0]) }");
+    const root = try ok.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    try std.testing.expect(body.data.block.stmts[0].data.call.args[0].data == .pack_index_type_expr);
+
+    const spaced = try parseErrMsg(alloc, "f :: (..$args) -> string { g($args [0]) }");
+    try std.testing.expect(std.mem.indexOf(u8, spaced, "write `$args[0]`") != null);
+
+    // Across a line the `[` stops binding, leaving the whole pack — no spacing
+    // complaint, and the ordinary path reports what follows.
+    const split = try parseErrMsg(alloc, "f :: (..$args) -> string { g($args\n[0]) }");
+    try std.testing.expect(std.mem.indexOf(u8, split, "a space before `[`") == null);
+}

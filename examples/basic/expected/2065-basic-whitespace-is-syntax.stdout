@@ -1,5 +1,6 @@
 box=8 alias=5 zero=0
 call=42 index=20 ufcs=12
+packindex=i64
 total=60
 cleanup Bad
 half=-1
