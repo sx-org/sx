@@ -77,7 +77,7 @@ pub const Dependent = struct {
     decl: *const ast.StructDecl,
     member: TypeId,
     /// The set this member belongs to, which has to be laid out again.
-    set_name: []const u8,
+    set: *const ast.OpenSetDecl,
     span: ast.Span,
 };
 
@@ -109,7 +109,7 @@ pub fn effectiveAlign(self: *Lowering, declared: u32) u32 {
 }
 
 pub fn registerSetDecl(self: *Lowering, decl: *const ast.OpenSetDecl, node: *const Node) void {
-    if (self.open_sets.getPtr(decl.name) != null) {
+    if (self.open_set_by_name.get(decl.name) != null) {
         if (self.diagnostics) |d|
             d.addFmt(.err, node.span, "'{s}' is already declared as an open set", .{decl.name});
         return;
@@ -124,7 +124,7 @@ pub fn registerSetDecl(self: *Lowering, decl: *const ast.OpenSetDecl, node: *con
         .backing_type = backingType(self, 0, effectiveAlign(self, options.alignment)),
     } }, self.shadowNominalId(name_id));
     table.type_decl_tids.put(@ptrCast(decl), ty) catch {};
-    self.open_sets.put(decl.name, .{
+    self.open_sets.put(decl, .{
         .decl = decl,
         .ty = ty,
         .max = options.max,
@@ -133,7 +133,8 @@ pub fn registerSetDecl(self: *Lowering, decl: *const ast.OpenSetDecl, node: *con
         .span = node.span,
         .source_file = node.source_file orelse self.current_source_file,
     }) catch return;
-    self.open_set_by_type.put(ty, decl.name) catch {};
+    self.open_set_by_name.put(decl.name, decl) catch {};
+    self.open_set_by_type.put(ty, decl) catch {};
 }
 
 const Options = struct { max: u32, alignment: u32 };
@@ -199,7 +200,9 @@ fn reportOptions(self: *Lowering, span: ast.Span, help: []const u8) void {
 
 /// The set a `@OpenVariant(name)` head names, or null with a diagnostic.
 pub fn setNamed(self: *Lowering, name: []const u8, span: ast.Span) ?*Set {
-    if (self.open_sets.getPtr(name)) |set| return set;
+    if (self.open_set_by_name.get(name)) |decl| {
+        if (self.open_sets.getPtr(decl)) |set| return set;
+    }
     if (self.diagnostics) |d| {
         const id = d.addFmtId(.err, span, "'{s}' is not an open set", .{name});
         d.addHelpFmt(id, span, null, "a member joins a set declared '{s} :: @OpenSet(.{{ max = … }}) {{ … }}'", .{name});
@@ -209,8 +212,8 @@ pub fn setNamed(self: *Lowering, name: []const u8, span: ast.Span) ?*Set {
 
 /// The set `ty` is, or null.
 pub fn setOf(self: *Lowering, ty: TypeId) ?*Set {
-    const name = self.open_set_by_type.get(ty) orelse return null;
-    return self.open_sets.getPtr(name);
+    const decl = self.open_set_by_type.get(ty) orelse return null;
+    return self.open_sets.getPtr(decl);
 }
 
 /// True when `ty` is an open set.
@@ -238,9 +241,9 @@ pub fn admitVariant(
     const set = setNamed(self, set_name, sd.open_variant_span orelse span) orelse return;
 
     if (self.open_variant_of.get(variant)) |existing| {
-        if (!std.mem.eql(u8, existing, set_name)) {
+        if (existing != set.decl) {
             if (self.diagnostics) |d| {
-                const id = d.addFmtId(.err, span, "'{s}' already joins the open set '{s}'", .{ sd.name, existing });
+                const id = d.addFmtId(.err, span, "'{s}' already joins the open set '{s}'", .{ sd.name, existing.name });
                 d.addHelpFmt(id, span, null, "a type belongs to one set; wrap it in another member to take part in a second", .{});
             }
             return;
@@ -266,8 +269,8 @@ pub fn admitVariant(
     }
     set.members.append(self.alloc, variant) catch return;
     self.open_set_epoch += 1;
-    self.open_variant_of.put(variant, set_name) catch {};
-    recordDependencies(self, sd, variant, set_name, span);
+    self.open_variant_of.put(variant, set.decl) catch {};
+    recordDependencies(self, sd, variant, set.decl, span);
     relayout(self, set);
 }
 
@@ -281,8 +284,8 @@ pub fn noteGenericMember(self: *Lowering, set_name: []const u8) void {
 
 /// Can a generic member still be instantiated into `set`?
 fn mayGrowGenerically(self: *Lowering, set: TypeId) bool {
-    const name = self.open_set_by_type.get(set) orelse return false;
-    return self.open_set_generic_members.contains(name);
+    const decl = self.open_set_by_type.get(set) orelse return false;
+    return self.open_set_generic_members.contains(decl.name);
 }
 
 /// Does the member fit the set's ceiling and alignment? `grown` names the set
@@ -530,7 +533,7 @@ fn recordDependencies(
     self: *Lowering,
     sd: *const ast.StructDecl,
     variant: TypeId,
-    set_name: []const u8,
+    set: *const ast.OpenSetDecl,
     span: ast.Span,
 ) void {
     var seen = std.AutoHashMap(TypeId, void).init(self.alloc);
@@ -546,7 +549,7 @@ fn recordDependencies(
             gop.value_ptr.append(self.alloc, .{
                 .decl = sd,
                 .member = variant,
-                .set_name = set_name,
+                .set = set,
                 .span = span,
             }) catch {};
         }
@@ -624,7 +627,7 @@ fn cascade(self: *Lowering, grown: *Set) void {
     self.open_set_relayout.put(grown.ty, {}) catch return;
     defer _ = self.open_set_relayout.remove(grown.ty);
     for (deps.items) |dep| {
-        const owner = self.open_sets.getPtr(dep.set_name) orelse continue;
+        const owner = self.open_sets.getPtr(dep.set) orelse continue;
         // The member is measured again through the grown set; its verdict can
         // change, and the ceiling it now fails is reported where it is declared.
         if (!fits(self, dep.decl, owner, dep.member, dep.span, grown_name)) continue;
@@ -720,7 +723,7 @@ fn growersOf(self: *Lowering, set: TypeId) []const TypeId {
     var it = self.open_set_dependents.iterator();
     while (it.next()) |e| {
         for (e.value_ptr.items) |dep| {
-            const owner = self.open_sets.getPtr(dep.set_name) orelse continue;
+            const owner = self.open_sets.getPtr(dep.set) orelse continue;
             if (owner.ty != set) continue;
             out.append(self.alloc, e.key_ptr.*) catch {};
             break;
@@ -870,15 +873,15 @@ pub fn refuseUnfrozenLayout(self: *Lowering, measured: TypeId, span: ast.Span) v
 
 /// The set `measured`'s layout depends on, named for the refusal.
 fn firstSetName(self: *Lowering, measured: TypeId) ?[]const u8 {
-    if (self.open_set_by_type.get(measured)) |name| return name;
+    if (self.open_set_by_type.get(measured)) |decl| return decl.name;
     var seen = std.AutoHashMap(TypeId, void).init(self.alloc);
     defer seen.deinit();
     collectSetsByValue(self, measured, &seen, 0);
     var best: ?[]const u8 = null;
     var it = seen.keyIterator();
     while (it.next()) |k| {
-        const name = self.open_set_by_type.get(k.*) orelse continue;
-        if (best == null or std.mem.order(u8, name, best.?) == .lt) best = name;
+        const decl = self.open_set_by_type.get(k.*) orelse continue;
+        if (best == null or std.mem.order(u8, decl.name, best.?) == .lt) best = decl.name;
     }
     return best;
 }
@@ -893,7 +896,7 @@ fn firstSetName(self: *Lowering, measured: TypeId) ?[]const u8 {
 /// at which a declared member reads as a non-member and a later pass contradicts
 /// it.
 pub fn declaresMembership(self: *Lowering, ty: TypeId, set_name: []const u8) bool {
-    if (self.open_variant_of.get(ty)) |joined| return std.mem.eql(u8, joined, set_name);
+    if (self.open_variant_of.get(ty)) |joined| return std.mem.eql(u8, joined.name, set_name);
     const decl = memberDecl(self, ty) orelse return false;
     const joined = decl.open_variant_of orelse return false;
     return std.mem.eql(u8, joined, set_name);
@@ -910,10 +913,11 @@ fn memberDecl(self: *Lowering, ty: TypeId) ?*const ast.StructDecl {
 
 /// The set `member` joins, when it joins one.
 pub fn setOfMember(self: *Lowering, member: TypeId) ?*Set {
-    if (self.open_variant_of.get(member)) |name| return self.open_sets.getPtr(name);
+    if (self.open_variant_of.get(member)) |decl| return self.open_sets.getPtr(decl);
     const decl = memberDecl(self, member) orelse return null;
     const joined = decl.open_variant_of orelse return null;
-    return self.open_sets.getPtr(joined);
+    const set_decl = self.open_set_by_name.get(joined) orelse return null;
+    return self.open_sets.getPtr(set_decl);
 }
 
 /// Refuse a conversion of `src_ty` into the set `set_ty` when `src_ty` never
@@ -1168,6 +1172,7 @@ pub fn refuseUntemperedDowncast(self: *Lowering, set_ty: TypeId, member: TypeId,
 /// BODIED at the freeze, where the member set is final and the tags are numbered.
 pub const PendingDispatch = struct {
     set_name: []const u8,
+    set_decl: *const ast.OpenSetDecl,
     set_ty: TypeId,
     method: ast.ProtocolMethodDecl,
     fid: FuncId,
@@ -1271,6 +1276,7 @@ fn dispatchRoutine(self: *Lowering, set: *Set, method: ast.ProtocolMethodDecl, s
     self.open_set_dispatch.put(key, self.open_set_pending.items.len) catch {};
     const job = PendingDispatch{
         .set_name = set.decl.name,
+        .set_decl = set.decl,
         .set_ty = set.ty,
         .method = method,
         .fid = fid,
@@ -1336,7 +1342,7 @@ pub fn materializeArms(self: *Lowering) bool {
     var i: usize = 0;
     while (i < self.open_set_pending.items.len) : (i += 1) {
         const job = self.open_set_pending.items[i];
-        const set = self.open_sets.getPtr(job.set_name) orelse continue;
+        const set = self.open_sets.getPtr(job.set_decl) orelse continue;
         var m: usize = 0;
         while (m < set.members.items.len) : (m += 1) {
             const member = set.members.items[m];
@@ -1373,7 +1379,7 @@ pub fn emitDispatchBodies(self: *Lowering) void {
 }
 
 fn emitDispatchBody(self: *Lowering, job: PendingDispatch) void {
-    const set = self.open_sets.getPtr(job.set_name) orelse return;
+    const set = self.open_sets.getPtr(job.set_decl) orelse return;
     if (set.members.items.len == 0) {
         refuseMemberlessDispatch(self, job);
         return;

@@ -81,7 +81,9 @@ pub fn resolveHead(
     if (self.protocolResolver().resolveProtocol(name, source)) |p| {
         return .{ .protocol = .{ .ty = p.ty, .name = name, .params = p.decl.type_params.len } };
     }
-    if (self.open_sets.getPtr(name)) |set| return .{ .open_set = .{ .ty = set.ty, .name = name } };
+    if (self.open_set_by_name.get(name)) |decl| {
+        if (self.open_sets.getPtr(decl)) |set| return .{ .open_set = .{ .ty = set.ty, .name = name } };
+    }
     // A QUALIFIED head names what a module reached by name owns. Membership and
     // conformance are keyed by the declaration, so the path resolves to the
     // declaration's own name — the one its members and impls were written against.
@@ -90,7 +92,7 @@ pub fn resolveHead(
         switch (self.qualifiedMemberVerdictFrom(name, from)) {
             .selected => |sel| switch (sel.author.raw) {
                 .open_set_decl => |osd| {
-                    if (self.open_sets.getPtr(osd.name)) |set| return .{ .open_set = .{ .ty = set.ty, .name = osd.name } };
+                    if (self.open_sets.getPtr(osd)) |set| return .{ .open_set = .{ .ty = set.ty, .name = osd.name } };
                 },
                 .protocol_decl => |pd| {
                     if (self.protocolResolver().resolveProtocol(pd.name, sel.target.target_module_path)) |p| {

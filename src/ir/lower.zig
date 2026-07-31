@@ -437,13 +437,17 @@ pub const Lowering = struct {
     /// instantiation can say what they are. Set around a dispatch to such a
     /// method; null everywhere else.
     impl_binder_seed: ?*const std.StringHashMap(TypeId) = null,
-    /// Declared open sets, by name (spec: Open Sets). The declarations ARE the
-    /// registry: there is no enrollment API.
-    open_sets: std.StringHashMap(lower_open_set.Set),
+    /// Declared open sets, by DECLARATION (spec: Open Sets). The declarations ARE
+    /// the registry: there is no enrollment API, and which set a name means is a
+    /// question about which declaration it reaches.
+    open_sets: std.AutoHashMap(*const ast.OpenSetDecl, lower_open_set.Set),
+    /// The declaration a set NAME reaches. One entry per spelling while a name may
+    /// only be declared once; the head of a member resolves through here.
+    open_set_by_name: std.StringHashMap(*const ast.OpenSetDecl),
     /// Reverse lookup: the set a type IS.
-    open_set_by_type: std.AutoHashMap(TypeId, []const u8),
+    open_set_by_type: std.AutoHashMap(TypeId, *const ast.OpenSetDecl),
     /// The set a member type joins — one per type.
-    open_variant_of: std.AutoHashMap(TypeId, []const u8),
+    open_variant_of: std.AutoHashMap(TypeId, *const ast.OpenSetDecl),
     /// Members that hold a set BY VALUE, keyed by the set they hold: growing that
     /// set grows them, and therefore the sets they belong to.
     open_set_dependents: std.AutoHashMap(TypeId, std.ArrayList(lower_open_set.Dependent)),
@@ -453,8 +457,9 @@ pub const Lowering = struct {
     /// Sets with a GENERIC member declaration, by the name the member's head
     /// spells. The template has no layout; each instantiation the program spells is
     /// another member, so such a set's layout stays open past the declaration pass.
-    /// Keyed by name because a member is registered whether or not its set is —
-    /// a member may be written before the set it joins.
+    /// Keyed by the SPELLING, not the declaration: a template is built while the
+    /// declarations are still being scanned, so the set its head names may not be
+    /// registered yet and there is nothing to key on.
     open_set_generic_members: std.StringHashMap(void),
     /// The member tags each set's freeze assigned, in the set's own space.
     open_set_tags: std.AutoHashMap(mod_mod.Module.OpenSetMember, i64),
@@ -1196,9 +1201,10 @@ pub const Lowering = struct {
             .struct_defaults_map = std.StringHashMap([]const ?*const Node).init(module.alloc),
             .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
             .struct_const_by_tid = std.AutoHashMap(StructConstTidKey, StructConstInfo).init(module.alloc),
-            .open_sets = std.StringHashMap(lower_open_set.Set).init(module.alloc),
-            .open_set_by_type = std.AutoHashMap(TypeId, []const u8).init(module.alloc),
-            .open_variant_of = std.AutoHashMap(TypeId, []const u8).init(module.alloc),
+            .open_sets = std.AutoHashMap(*const ast.OpenSetDecl, lower_open_set.Set).init(module.alloc),
+            .open_set_by_name = std.StringHashMap(*const ast.OpenSetDecl).init(module.alloc),
+            .open_set_by_type = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
+            .open_variant_of = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
             .open_set_dependents = std.AutoHashMap(TypeId, std.ArrayList(lower_open_set.Dependent)).init(module.alloc),
             .open_set_relayout = std.AutoHashMap(TypeId, void).init(module.alloc),
             .open_set_generic_members = std.StringHashMap(void).init(module.alloc),
