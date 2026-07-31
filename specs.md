@@ -3833,6 +3833,13 @@ returning it are all refused. Take a `Closure()` parameter instead when the body
 must be stored or run later; that is the model that copies its captures into an
 allocated environment and outlives the frame.
 
+**A block's names are asked of the file that wrote it.** A replay lowers in the
+receiving function's instruction stream, but the body is resolved where it was
+written: a block does not inherit the collector's namespace, and a collector does
+not inherit the block's. That is what lets a collector live in its own module —
+it accepts bodies naming types it has never heard of, and its own signature keeps
+naming its own.
+
 `P` is the type the body's statements are intercepted at, and the sink is not
 part of the block's type: `run` takes any `*S` implementing `@BuildSink(P)`, so
 one block can be replayed into two different sinks.
