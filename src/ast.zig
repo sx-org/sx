@@ -586,10 +586,11 @@ pub const StructDecl = struct {
     /// check. A bare reserved-name decl still errors.
     is_raw: bool = false,
     /// The open set this declaration joins (`Button :: @OpenVariant(View) { … }`),
-    /// as written. A variant IS an ordinary standalone struct — constructible,
-    /// with its own layout — that additionally becomes a member of that set, so
-    /// this is one more fact ABOUT a struct rather than a separate declaration
-    /// form. Null for a plain `struct`.
+    /// as written — a PATH, so a member may name a set the module that owns it
+    /// publishes (`@OpenVariant(compose.View)`). A variant IS an ordinary
+    /// standalone struct — constructible, with its own layout — that additionally
+    /// becomes a member of that set, so this is one more fact ABOUT a struct
+    /// rather than a separate declaration form. Null for a plain `struct`.
     open_variant_of: ?[]const u8 = null,
     /// Span of the set name, for the diagnostics that must point at the binding.
     open_variant_span: ?Span = null,

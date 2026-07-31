@@ -135,6 +135,7 @@ pub fn registerSetDecl(self: *Lowering, decl: *const ast.OpenSetDecl, node: *con
     }) catch return;
     self.open_set_by_name.put(decl.name, decl) catch {};
     self.open_set_by_type.put(ty, decl) catch {};
+    settleGenericNotes(self, decl);
 }
 
 const Options = struct { max: u32, alignment: u32 };
@@ -198,14 +199,36 @@ fn reportOptions(self: *Lowering, span: ast.Span, help: []const u8) void {
     d.addHelpFmt(id, span, null, "{s}", .{help});
 }
 
-/// The set a `@OpenVariant(name)` head names, or null with a diagnostic.
+/// The DECLARATION a `@OpenVariant(path)` head reaches, from the file that wrote
+/// it — a name reaches whatever that file can see, and a qualified path reaches
+/// what the module it names publishes. Null with a diagnostic when it reaches no
+/// set.
+pub fn setDeclNamed(self: *Lowering, path: []const u8, from: ?[]const u8) ?*const ast.OpenSetDecl {
+    if (std.mem.indexOfScalar(u8, path, '.') == null) return self.open_set_by_name.get(path);
+    const source = from orelse self.current_source_file orelse self.main_file orelse return null;
+    return switch (self.qualifiedMemberVerdictFrom(path, source)) {
+        .selected => |sel| switch (sel.author.raw) {
+            .open_set_decl => |osd| osd,
+            else => null,
+        },
+        else => null,
+    };
+}
+
+/// The set a `@OpenVariant(path)` head names, or null with a diagnostic.
 pub fn setNamed(self: *Lowering, name: []const u8, span: ast.Span) ?*Set {
-    if (self.open_set_by_name.get(name)) |decl| {
+    if (setDeclNamed(self, name, self.current_source_file)) |decl| {
         if (self.open_sets.getPtr(decl)) |set| return set;
     }
     if (self.diagnostics) |d| {
         const id = d.addFmtId(.err, span, "'{s}' is not an open set", .{name});
-        d.addHelpFmt(id, span, null, "a member joins a set declared '{s} :: @OpenSet(.{{ max = … }}) {{ … }}'", .{name});
+        // A qualified head asks another module for a set: what it can be told is
+        // that the module publishes no such one, not to declare it here.
+        if (std.mem.lastIndexOfScalar(u8, name, '.')) |dot| {
+            d.addHelpFmt(id, span, null, "'{s}' publishes no open set '{s}' — a member joins a set the module that declares it publishes", .{ name[0..dot], name[dot + 1 ..] });
+        } else {
+            d.addHelpFmt(id, span, null, "a member joins a set declared '{s} :: @OpenSet(.{{ max = … }}) {{ … }}'", .{name});
+        }
     }
     return null;
 }
@@ -274,18 +297,69 @@ pub fn admitVariant(
     relayout(self, set);
 }
 
-/// Record that `set_name` has a GENERIC member declaration. The template has no
-/// layout of its own; each instantiation the program spells is another member,
-/// and the program is not finished spelling them — which is exactly what keeps
-/// the set's layout open past the declaration pass.
-pub fn noteGenericMember(self: *Lowering, set_name: []const u8) void {
-    self.open_set_generic_members.put(set_name, {}) catch {};
+/// A generic member whose head has not reached a set yet.
+pub const PendingGenericMember = struct {
+    member: *const ast.StructDecl,
+    head: []const u8,
+    source: ?[]const u8,
+};
+
+/// Record that the set this member's head names has a GENERIC member declaration.
+/// The template has no layout of its own; each instantiation the program spells is
+/// another member, and the program is not finished spelling them — which is
+/// exactly what keeps the set's layout open past the declaration pass.
+///
+/// A template is built while the declarations are still being scanned, so the head
+/// may reach nothing YET. That is a fact still owed rather than a fact denied: the
+/// note waits, `registerSetDecl` answers it the moment the set arrives, and what is
+/// still owed when the declarations are done is reported against the member that
+/// wrote it (§7.9 — a bookmark, not a stage wall).
+pub fn noteGenericMember(self: *Lowering, member: *const ast.StructDecl, head: []const u8, source: ?[]const u8) void {
+    if (setDeclNamed(self, head, source)) |decl| {
+        self.open_set_generic_members.put(decl, {}) catch {};
+        return;
+    }
+    self.open_set_generic_pending.append(self.alloc, .{ .member = member, .head = head, .source = source }) catch {};
+}
+
+/// Answer every pending note this registration settles.
+fn settleGenericNotes(self: *Lowering, decl: *const ast.OpenSetDecl) void {
+    var i: usize = 0;
+    while (i < self.open_set_generic_pending.items.len) {
+        const pending = self.open_set_generic_pending.items[i];
+        if (setDeclNamed(self, pending.head, pending.source) == decl) {
+            self.open_set_generic_members.put(decl, {}) catch {};
+            _ = self.open_set_generic_pending.orderedRemove(i);
+            continue;
+        }
+        i += 1;
+    }
+}
+
+/// The declarations are done, so a head that still reaches no set never will.
+/// Reported against the member that wrote it, naming what it asked for.
+pub fn reportUnreachedGenericHeads(self: *Lowering) void {
+    for (self.open_set_generic_pending.items) |pending| {
+        if (setDeclNamed(self, pending.head, pending.source) != null) continue;
+        const d = self.diagnostics orelse continue;
+        const span = pending.member.open_variant_span orelse ast.Span{ .start = 0, .end = 0 };
+        const saved = d.current_source_file;
+        if (pending.source) |src| d.current_source_file = src;
+        const id = d.addFmtId(.err, span, "'{s}' joins '{s}', which is not an open set", .{ pending.member.name, pending.head });
+        if (std.mem.lastIndexOfScalar(u8, pending.head, '.')) |dot| {
+            d.addHelpFmt(id, span, null, "'{s}' publishes no open set '{s}' — a member joins a set the module that declares it publishes", .{ pending.head[0..dot], pending.head[dot + 1 ..] });
+        } else {
+            d.addHelpFmt(id, span, null, "a member joins a set declared '{s} :: @OpenSet(.{{ max = … }}) {{ … }}'", .{pending.head});
+        }
+        d.current_source_file = saved;
+    }
+    self.open_set_generic_pending.clearRetainingCapacity();
 }
 
 /// Can a generic member still be instantiated into `set`?
 fn mayGrowGenerically(self: *Lowering, set: TypeId) bool {
     const decl = self.open_set_by_type.get(set) orelse return false;
-    return self.open_set_generic_members.contains(decl.name);
+    return self.open_set_generic_members.contains(decl);
 }
 
 /// Does the member fit the set's ceiling and alignment? `grown` names the set
@@ -895,20 +969,34 @@ fn firstSetName(self: *Lowering, measured: TypeId) ?[]const u8 {
 /// yet. That keeps the answer independent of when it is asked — there is no point
 /// at which a declared member reads as a non-member and a later pass contradicts
 /// it.
-pub fn declaresMembership(self: *Lowering, ty: TypeId, set_name: []const u8) bool {
-    if (self.open_variant_of.get(ty)) |joined| return std.mem.eql(u8, joined.name, set_name);
-    const decl = memberDecl(self, ty) orelse return false;
-    const joined = decl.open_variant_of orelse return false;
-    return std.mem.eql(u8, joined, set_name);
+pub fn declaresMembership(self: *Lowering, ty: TypeId, set: *const ast.OpenSetDecl) bool {
+    if (self.open_variant_of.get(ty)) |joined| return joined == set;
+    const author = memberAuthor(self, ty) orelse return false;
+    const joined = author.decl.open_variant_of orelse return false;
+    // The head is a PATH, and what it reaches is the question — comparing its
+    // spelling against the set's would answer differently for the same member
+    // depending on how it wrote the head.
+    return setDeclNamed(self, joined, author.source) == set;
 }
 
 /// The struct declaration `ty` was written as — its own, or the template a
-/// generic instance was stamped from.
-fn memberDecl(self: *Lowering, ty: TypeId) ?*const ast.StructDecl {
+/// generic instance was stamped from — with the file that wrote it, which is what
+/// its `@OpenVariant` head resolves from.
+const MemberAuthor = struct { decl: *const ast.StructDecl, source: ?[]const u8 };
+
+fn memberAuthor(self: *Lowering, ty: TypeId) ?MemberAuthor {
     const name = self.getStructTypeName(ty) orelse return null;
-    if (self.struct_instance_author.get(name)) |author| return author;
-    if (self.plain_struct_authors.get(ty)) |author| return author.decl;
+    // A generic instance carries its template's declaration; the file that wrote
+    // the template is where its head resolves from, and the template is reached
+    // through the same author record its instantiation was stamped from.
+    if (self.struct_instance_author.get(name)) |decl| return .{ .decl = decl, .source = null };
+    if (self.plain_struct_authors.get(ty)) |author| return .{ .decl = author.decl, .source = author.source };
     return null;
+}
+
+fn memberDecl(self: *Lowering, ty: TypeId) ?*const ast.StructDecl {
+    const author = memberAuthor(self, ty) orelse return null;
+    return author.decl;
 }
 
 /// The set `member` joins, when it joins one.
@@ -928,7 +1016,7 @@ pub fn setOfMember(self: *Lowering, member: TypeId) ?*Set {
 pub fn refuseNonMember(self: *Lowering, src_ty: TypeId, set_ty: TypeId, span: ast.Span) bool {
     if (src_ty == set_ty or src_ty == .unresolved) return false;
     const set = setOf(self, set_ty) orelse return false;
-    if (declaresMembership(self, src_ty, set.decl.name)) return false;
+    if (declaresMembership(self, src_ty, set.decl)) return false;
     if (self.diagnostics) |d| {
         const id = d.addFmtId(.err, span, "'{s}' cannot be converted to '{s}': it is not a member of it", .{ self.formatSourceTypeName(src_ty), self.formatTypeName(set_ty) });
         membershipHelp(self, d, id, src_ty, set_ty, span);

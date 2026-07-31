@@ -3887,6 +3887,14 @@ every member must have, and `@OpenVariant(P)` is how a type joins `P`. There is 
 registry API and no enrollment statement — the declarations are the registry, so a
 plain `struct` stays out.
 
+`P` is a **path**: a name the member's own module can see, or one **qualified** by
+the module that declares the set — `Label :: @OpenVariant(compose.View) { … }`, so
+a package's members live in their own modules. What a head reaches is a
+DECLARATION, and that is what membership is: a member joins the set its head
+reached, and whether a type is a member is asked about that declaration rather
+than about the spelling either side wrote. A head that reaches nothing, or reaches
+something that is not a set, is refused where the member is written.
+
 A member is an ordinary standalone type: constructible (`Label{ text = "x" }`),
 with its own `size_of`, its own methods, and no wrapper around it. `Self` inside
 the set declaration denotes the member type; each required method is monomorphized

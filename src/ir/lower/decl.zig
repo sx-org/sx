@@ -615,6 +615,9 @@ fn admitOpenVariants(self: *Lowering, decls: []const *const Node) void {
             else => {},
         }
     }
+    // Every declaration is registered, so a generic member's head that still
+    // reaches no set never will.
+    self.reportUnreachedGenericHeads();
     self.open_set_decls_admitted = true;
 }
 

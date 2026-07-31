@@ -1452,10 +1452,24 @@ pub const Parser = struct {
         if (self.current.tag != .identifier) {
             return self.fail("expected the open set's name in '@OpenVariant(…)'");
         }
-        const set_name = self.tokenSlice(set_tok);
+        var set_name = self.tokenSlice(set_tok);
         self.advance();
+        // The head may be QUALIFIED (`@OpenVariant(pkg.View)`): the set a module
+        // reached by name declares. The path is carried whole; `lower/open_set.zig`
+        // resolves it from this declaration's own file.
+        var head_end = set_tok.loc.end;
+        while (self.current.tag == .dot) {
+            self.advance();
+            if (self.current.tag != .identifier) {
+                return self.fail("expected a name after '.' in the open set's name");
+            }
+            const seg_tok = self.current;
+            self.advance();
+            set_name = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ set_name, self.tokenSlice(seg_tok) }) catch set_name;
+            head_end = seg_tok.loc.end;
+        }
         try self.expect(.r_paren);
-        return self.parseStructTail(name, start_pos, name_is_raw, set_name, .{ .start = set_tok.loc.start, .end = set_tok.loc.end });
+        return self.parseStructTail(name, start_pos, name_is_raw, set_name, .{ .start = set_tok.loc.start, .end = head_end });
     }
 
     /// `P :: @OpenSet(.{ max = …, align = … }) { required methods }`.

@@ -454,13 +454,15 @@ pub const Lowering = struct {
     /// Sets whose layout is being recomputed right now — a re-entry is a
     /// layout cycle between two sets, which has no finite answer.
     open_set_relayout: std.AutoHashMap(TypeId, void),
-    /// Sets with a GENERIC member declaration, by the name the member's head
-    /// spells. The template has no layout; each instantiation the program spells is
-    /// another member, so such a set's layout stays open past the declaration pass.
-    /// Keyed by the SPELLING, not the declaration: a template is built while the
-    /// declarations are still being scanned, so the set its head names may not be
-    /// registered yet and there is nothing to key on.
-    open_set_generic_members: std.StringHashMap(void),
+    /// Sets with a GENERIC member DECLARATION. The template has no layout; each
+    /// instantiation the program spells is another member, so such a set's layout
+    /// stays open past the declaration pass.
+    open_set_generic_members: std.AutoHashMap(*const ast.OpenSetDecl, void),
+    /// Generic members whose head has not reached a set yet. A template is built
+    /// while the declarations are still being scanned, so the set it names may not
+    /// be registered — the note waits here and is answered when it is, or reported
+    /// when the declarations are done and it still reaches nothing.
+    open_set_generic_pending: std.ArrayList(lower_open_set.PendingGenericMember),
     /// The member tags each set's freeze assigned, in the set's own space.
     open_set_tags: std.AutoHashMap(mod_mod.Module.OpenSetMember, i64),
     /// Each set's `tag → member Type` table global, written at the freeze.
@@ -1207,7 +1209,8 @@ pub const Lowering = struct {
             .open_variant_of = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
             .open_set_dependents = std.AutoHashMap(TypeId, std.ArrayList(lower_open_set.Dependent)).init(module.alloc),
             .open_set_relayout = std.AutoHashMap(TypeId, void).init(module.alloc),
-            .open_set_generic_members = std.StringHashMap(void).init(module.alloc),
+            .open_set_generic_members = std.AutoHashMap(*const ast.OpenSetDecl, void).init(module.alloc),
+            .open_set_generic_pending = std.ArrayList(lower_open_set.PendingGenericMember).empty,
             .open_set_tags = std.AutoHashMap(mod_mod.Module.OpenSetMember, i64).init(module.alloc),
             .open_set_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
             .open_set_dispatch = std.AutoHashMap(lower_open_set.MethodKey, usize).init(module.alloc),
@@ -3620,6 +3623,7 @@ pub const Lowering = struct {
     pub const openSetOf = lower_open_set.setOf;
     pub const isOpenSet = lower_open_set.isOpenSet;
     pub const noteOpenSetGenericMember = lower_open_set.noteGenericMember;
+    pub const reportUnreachedGenericHeads = lower_open_set.reportUnreachedGenericHeads;
     pub const openSetLayoutDependsOnSet = lower_open_set.layoutDependsOnSet;
     pub const openSetLayoutFinal = lower_open_set.layoutFinal;
     pub const freezeOpenSets = lower_open_set.freezeSets;

@@ -2469,7 +2469,12 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
     // instantiation may be perfectly admissible.
     if (tmpl.decl.open_variant_of != null) {
         const site = if (args.len > 0) args[0].span else ast.Span{ .start = 0, .end = 0 };
+        // The head names what the TEMPLATE's module can see, not what this
+        // instantiation's site can: a member joins the set it was declared into.
+        const saved_head_source = self.current_source_file;
+        if (tmpl.source_file) |src| self.setCurrentSourceFile(src);
         self.admitOpenVariant(tmpl.decl, id, site);
+        self.setCurrentSourceFile(saved_head_source);
     }
 
     return id;

@@ -194,7 +194,9 @@ fn checkMember(
         return;
     }
     if (bound_ty == head.ty) return;
-    if (self.openSetDeclaresMembership(bound_ty, set_name)) return;
+    if (self.openSetOf(head.ty)) |set| {
+        if (self.openSetDeclaresMembership(bound_ty, set.decl)) return;
+    }
     const d = self.diagnostics orelse return;
     const id = d.addFmtId(.err, bound.span, "'{s}' does not satisfy the bound '{s}' on '${s}'", .{
         self.formatTypeName(bound_ty), set_name, param,

@@ -873,7 +873,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
     if (sd.type_params.len > 0) {
         // A generic open-set member keeps its set's layout open: the template has
         // no layout, and every instantiation the program spells is another member.
-        if (sd.open_variant_of) |set_name| self.noteOpenSetGenericMember(set_name);
+        if (sd.open_variant_of) |head| self.noteOpenSetGenericMember(sd, head, source_file);
         const tmpl = self.buildGenericStructTemplate(sd, source_file) orelse return;
         self.program_index.struct_template_map.put(tmpl.name, tmpl) catch {};
 

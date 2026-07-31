@@ -1,0 +1,26 @@
+// The package's members, in a SIBLING module: each names the set through the
+// module that declares it, and joins that declaration.
+#import "modules/std.sx";
+v :: #import "view.sx";
+
+Label :: @OpenVariant(v.View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Panel :: @OpenVariant(v.View) {
+    title: string = "";
+    render :: (self: *Panel) -> string => self.title;
+}
+
+// A generic member, whose instantiations join the same set.
+Padded :: @OpenVariant(v.View) ($T: Type) {
+    inner: $T = ---;
+    render :: (self: *Padded) -> string => "padded";
+}
+
+// The package's own entry points, written in the set's terms through the same
+// qualified head.
+hold :: (x: $V/v.View) -> string => x.render();
+make :: () -> v.View { return Panel{ title = "from the package" }; }
+size_here :: () -> i64 => size_of(v.View);

@@ -1417,7 +1417,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr) Ref {
                     if (self.isOpenSet(ty)) {
                         if (self.refuseOpenSetArm(sst, ty, pat.span)) break :blk_rt &.{};
                     }
-                    if (!self.openSetDeclaresMembership(ty, self.openSetOf(sst).?.decl.name)) {
+                    if (!self.openSetDeclaresMembership(ty, self.openSetOf(sst).?.decl)) {
                         if (self.refuseOpenSetNonMemberTarget(sst, ty, pat.span)) break :blk_rt &.{};
                     }
                 } else if (self.isOpenSet(ty)) {

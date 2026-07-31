@@ -79,7 +79,7 @@ pub const CoercionResolver = struct {
         // unrelated aggregates as far as those are concerned.
         if (!dst_ty.isBuiltin() and self.l.isOpenSet(dst_ty)) {
             if (self.l.openSetOf(dst_ty)) |set| {
-                if (self.l.openSetDeclaresMembership(src_ty, set.decl.name)) return .member_to_open_set;
+                if (self.l.openSetDeclaresMembership(src_ty, set.decl)) return .member_to_open_set;
             }
         }
         if (src_ty == .cstring and dst_ty == .string) return .cstring_to_string_reject;

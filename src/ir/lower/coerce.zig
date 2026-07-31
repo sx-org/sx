@@ -61,7 +61,7 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
     if (target_explicit and self.isOpenSet(src_ty) and dst_ty != src_ty and dst_ty != .any and dst_ty != .unresolved) {
         const cs = self.builder.current_span;
         const span = ast.Span{ .start = cs.start, .end = cs.end };
-        if (self.openSetDeclaresMembership(dst_ty, self.openSetOf(src_ty).?.decl.name)) {
+        if (self.openSetDeclaresMembership(dst_ty, self.openSetOf(src_ty).?.decl)) {
             if (self.refuseUntemperedDowncast(src_ty, dst_ty, span)) return self.builder.constUndef(dst_ty);
         }
         if (self.refuseOpenSetNonMemberTarget(src_ty, dst_ty, span)) return self.builder.constUndef(dst_ty);
@@ -1202,7 +1202,7 @@ fn setWeldRefused(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
     if (!self.isOpenSet(dst_ty)) return false;
     if (src_ty == dst_ty or src_ty == .unresolved or src_ty == .void or src_ty == .noreturn) return false;
     if (src_ty == .any) return true;
-    return !self.openSetDeclaresMembership(src_ty, self.openSetOf(dst_ty).?.decl.name);
+    return !self.openSetDeclaresMembership(src_ty, self.openSetOf(dst_ty).?.decl);
 }
 
 /// The membership fact at an implicit weld — a field initializer, an argument, a

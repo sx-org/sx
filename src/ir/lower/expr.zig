@@ -3648,12 +3648,12 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     const target_node = if (soft) pc.type_expr.data.optional_type_expr.inner_type else pc.type_expr;
                     const target = self.resolveTypeArg(target_node);
                     if (target != .unresolved and target != .any and target != recv_ty) {
-                        const set_name = self.openSetOf(recv_ty).?.decl.name;
-                        if (self.openSetDeclaresMembership(target, set_name) and self.scope != null) {
+                        const set_decl = self.openSetOf(recv_ty).?.decl;
+                        if (self.openSetDeclaresMembership(target, set_decl) and self.scope != null) {
                             const value = self.lowerExpr(pc.operand);
                             break :blk self.lowerOpenSetDowncast(recv_ty, target, value, pc.operand, target_node, soft, node.span);
                         }
-                        if (!self.openSetDeclaresMembership(target, set_name) and
+                        if (!self.openSetDeclaresMembership(target, set_decl) and
                             self.refuseOpenSetNonMemberTarget(recv_ty, target, node.span))
                         {
                             break :blk self.builder.constUndef(if (soft) self.module.types.optionalOf(target) else target);

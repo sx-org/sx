@@ -211,7 +211,7 @@ pub fn lowerInitWrite(self: *Lowering, target: TypeId, recv: *const Node, args: 
                 const pointee = self.module.types.get(dest_actual);
                 if (pointee == .pointer and self.isOpenSet(pointee.pointer.pointee)) {
                     const set = self.openSetOf(pointee.pointer.pointee).?;
-                    if (self.openSetDeclaresMembership(target, set.decl.name)) {
+                    if (self.openSetDeclaresMembership(target, set.decl)) {
                         d.addHelpFmt(id, args[0].span, null, "'{s}' is a member of '{s}', and an initializer writes exactly its own type — take the set's initializer ('$I/@Init({s})') to write a set slot", .{ self.formatTypeName(target), set.decl.name, set.decl.name });
                     }
                 }

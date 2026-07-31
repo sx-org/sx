@@ -618,7 +618,7 @@ fn blanketSeed(self: *Lowering, scope: *const Scope) ?std.StringHashMap(TypeId) 
 ///     merely converts to `P` is an ordinary statement, not a child.
 fn publishesAt(self: *Lowering, protocol: TypeId, protocol_name: []const u8, v: TypeId) bool {
     if (v == protocol) return true;
-    if (self.openSetOf(protocol)) |set| return self.openSetDeclaresMembership(v, set.decl.name);
+    if (self.openSetOf(protocol)) |set| return self.openSetDeclaresMembership(v, set.decl);
     if (self.getProtocolInfo(protocol) == null) return false;
     return self.protocolResolver().packArgConformsTo(protocol_name, v);
 }
