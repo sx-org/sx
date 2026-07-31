@@ -1,0 +1,24 @@
+// The collector: its set, its sink, its collection boundary. Nothing here knows
+// what a caller's block will name.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+V :: @OpenSet(.{ max = 64 }) {
+    tag :: (self: *Self) -> string;
+}
+
+Snk :: struct {
+    kids: List(V) = .{};
+
+    expression :: (self: *Snk, value: $I/@Init(V)) {
+        item: V = ---;
+        value.write(*item);
+        self.kids.append(item);
+    }
+}
+
+gather :: (content: $B/@BuildBlock(V)) -> List(V) {
+    s := Snk{};
+    content.run(*s);
+    s.kids
+}

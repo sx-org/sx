@@ -434,6 +434,11 @@ fn replayBody(
     }
 
     self.scope = &body_scope;
+    // A name in the body is asked of the file that WROTE the block, not of the
+    // function replaying it: a block does not inherit the collector's namespace.
+    const saved_file = self.current_source_file;
+    defer self.current_source_file = saved_file;
+    if (record.source_file) |f| self.current_source_file = f;
     self.lowerBlock(record.lambda.data.lambda.body);
 }
 

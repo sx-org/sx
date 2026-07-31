@@ -1,0 +1,35 @@
+// A build block written in one module and replayed in another (fluent spec §7,
+// §9).
+//
+// The collector lives in its own module and the block is written here. Each
+// vocabulary is asked of the file that WROTE it: the body names types this file
+// declares, and a block does not inherit the collector's namespace.
+// Expected: exit 0.
+#import "modules/std.sx";
+#import "2056-fluent-buildblock-cross-module/collect.sx";
+
+// Declared HERE, named only from the block body — the collector's module has
+// never heard of it.
+Label :: @OpenVariant(V) {
+    text: string = "";
+    tag :: (self: *Label) -> string => self.text;
+}
+
+main :: () -> i32 {
+    kids := gather() {
+        Label{ text = "written here" };
+        Label{ text = "and here" };
+
+        // Not a member: an ordinary statement, and the collector never sees it.
+        41;
+    };
+
+    print("collected {}\n", kids.len);
+    for kids (*k) { print("  {}\n", k.tag()); }
+    0
+}
+
+// ** stdout **
+// collected 2
+//   written here
+//   and here
