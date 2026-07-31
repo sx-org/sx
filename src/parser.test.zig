@@ -922,9 +922,17 @@ test "parser: a newline ends the last declaration in a file" {
     try std.testing.expect(decls[1].data.var_decl.value == null);
 }
 
-// An `extern` / `export` tail is two optional bare names, so it binds only on
-// the declaration's own line — the name below belongs to the next declaration.
-test "parser: an extern tail binds only on its own line" {
+// ---- Linkage tails ----
+//
+// `[LIB] ["csym"]` after `extern` / `export` is two optional bare names, so
+// where the tail sits decides nothing on its own — what decides is whether the
+// construct that owns it may END inside it. An `extern` import is whole the
+// moment its keyword is read, so each empty slot is a place the declaration can
+// stop; an `export` definition and an `extern` struct still owe a body, so
+// nothing there can end and the tail reads straight through a line break.
+
+// L1/L2 — a function `extern` tail may end, so it binds only on its own line.
+test "parser: a terminable extern tail binds only on its own line" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -939,9 +947,218 @@ test "parser: an extern tail binds only on its own line" {
     try std.testing.expect(decls[0].data.fn_decl.extern_name == null);
     try std.testing.expect(decls[1].data == .const_decl);
 
+    // The symbol slot is a second, independent boundary: with the library
+    // bound, the string below still does not enter the tail — it is left to the
+    // next declaration, where a bare string literal is not one. Were the second
+    // check missing, this would parse.
+    const orphan = try parseErrMsg(alloc,
+        \\puts :: (s: *u8) -> i32 extern C
+        \\"detached"
+    );
+    try std.testing.expect(std.mem.indexOf(u8, orphan, "expected identifier at top level") != null);
+
     // On its own line the tail still binds.
     var same = Parser.init(alloc, "puts :: (s: *u8) -> i32 extern C \"puts\"\n");
     const bound = (try same.parse()).data.root.decls[0].data.fn_decl;
     try std.testing.expectEqualStrings("C", bound.extern_lib.?);
     try std.testing.expectEqualStrings("puts", bound.extern_name.?);
+}
+
+// L6/L7 — the data-global `extern` tail is terminable for the same reason.
+test "parser: a terminable extern data tail binds only on its own line" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\errno_loc : *i32 extern
+        \\LIMIT :: 9
+    );
+    const decls = (try p.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), decls.len);
+    try std.testing.expect(decls[0].data.var_decl.is_extern);
+    try std.testing.expect(decls[0].data.var_decl.extern_lib == null);
+    try std.testing.expect(decls[0].data.var_decl.extern_name == null);
+    try std.testing.expect(decls[1].data == .const_decl);
+
+    const orphan = try parseErrMsg(alloc,
+        \\errno_loc : *i32 extern libc
+        \\"detached"
+    );
+    try std.testing.expect(std.mem.indexOf(u8, orphan, "expected identifier at top level") != null);
+
+    var same = Parser.init(alloc, "errno_loc : *i32 extern libc \"__error\"\n");
+    const bound = (try same.parse()).data.root.decls[0].data.var_decl;
+    try std.testing.expectEqualStrings("libc", bound.extern_lib.?);
+    try std.testing.expectEqualStrings("__error", bound.extern_name.?);
+}
+
+// L3/L4 — an `export` still owes a body, so nothing in its tail can end and the
+// break is ordinary whitespace.
+test "parser: an export tail reads through a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\seven :: () -> i64 export
+        \\"renamed_c"
+        \\{ 7 }
+    );
+    const fd = (try p.parse()).data.root.decls[0].data.fn_decl;
+    try std.testing.expect(fd.extern_lib == null);
+    try std.testing.expectEqualStrings("renamed_c", fd.extern_name.?);
+    try std.testing.expectEqual(@as(usize, 1), fd.body.data.block.stmts.len);
+
+    var with_lib = Parser.init(alloc,
+        \\seven :: () -> i64 export
+        \\C
+        \\"renamed_c"
+        \\{ 7 }
+    );
+    const lib_fd = (try with_lib.parse()).data.root.decls[0].data.fn_decl;
+    try std.testing.expectEqualStrings("C", lib_fd.extern_lib.?);
+    try std.testing.expectEqualStrings("renamed_c", lib_fd.extern_name.?);
+
+    var same = Parser.init(alloc, "seven :: () -> i64 export C \"renamed_c\" { 7 }\n");
+    const same_fd = (try same.parse()).data.root.decls[0].data.fn_decl;
+    try std.testing.expectEqualStrings("C", same_fd.extern_lib.?);
+    try std.testing.expectEqualStrings("renamed_c", same_fd.extern_name.?);
+}
+
+// L5 — a struct's `{ … }` is unconditional, so its tail reads through too.
+test "parser: a struct linkage tail reads through a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\Handle :: struct abi(.c) extern
+        \\compiler
+        \\{ x: i64; }
+    );
+    const sd = (try p.parse()).data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqualStrings("compiler", sd.extern_lib.?);
+    try std.testing.expectEqual(ast.ABI.c, sd.abi);
+    try std.testing.expectEqual(@as(usize, 1), sd.field_names.len);
+
+    var same = Parser.init(alloc, "Handle :: struct abi(.c) extern compiler { x: i64; }\n");
+    const same_sd = (try same.parse()).data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqualStrings("compiler", same_sd.extern_lib.?);
+    try std.testing.expectEqual(@as(usize, 1), same_sd.field_names.len);
+}
+
+// C-1 / V3a / K1 — the reorder. A complete `name : T` (or `name :: value`) asks
+// whether it ended BEFORE dispatching on the token below, so which reading wins
+// is the suppression property rather than arm order. All three tails name a
+// token that cannot open a statement, so all three read through the break.
+test "parser: a complete binding asks whether it ended before its tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // C-1: `extern` below a complete `name : T`.
+    var ext = Parser.init(alloc,
+        \\errno_loc : *i32
+        \\    extern libc "__error"
+    );
+    const ext_decls = (try ext.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 1), ext_decls.len);
+    try std.testing.expect(ext_decls[0].data.var_decl.is_extern);
+    try std.testing.expectEqualStrings("libc", ext_decls[0].data.var_decl.extern_lib.?);
+    try std.testing.expectEqualStrings("__error", ext_decls[0].data.var_decl.extern_name.?);
+
+    // V3a: a split `:` still makes a typed constant.
+    var col = Parser.init(alloc,
+        \\LIMIT : i64
+        \\    : 1
+    );
+    const col_decls = (try col.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 1), col_decls.len);
+    try std.testing.expect(col_decls[0].data.const_decl.type_annotation != null);
+    try std.testing.expect(col_decls[0].data.const_decl.value.data == .int_literal);
+
+    // D1: a split `=` still makes a typed variable.
+    var eq = Parser.init(alloc,
+        \\seed : i64
+        \\    = 7
+    );
+    const eq_decls = (try eq.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 1), eq_decls.len);
+    try std.testing.expect(eq_decls[0].data.var_decl.value.?.data == .int_literal);
+
+    // K1: a split `intrinsic` still annotates the constant.
+    var intr = Parser.init(alloc,
+        \\mystery :: i64
+        \\    intrinsic
+    );
+    const intr_decls = (try intr.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 1), intr_decls.len);
+    try std.testing.expect(intr_decls[0].data.const_decl.value.data == .intrinsic_expr);
+    try std.testing.expect(intr_decls[0].data.const_decl.type_annotation != null);
+
+    // The same-line controls, and the ordinary next statement the reorder must
+    // still recognize: a bare `name : T` followed by an unrelated declaration.
+    var plain = Parser.init(alloc,
+        \\slot : i64
+        \\LIMIT :: 9
+    );
+    const plain_decls = (try plain.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), plain_decls.len);
+    try std.testing.expect(plain_decls[0].data.var_decl.value == null);
+    try std.testing.expect(!plain_decls[0].data.var_decl.is_extern);
+    try std.testing.expect(plain_decls[1].data == .const_decl);
+}
+
+// E1/E2 — the suppression list is the enumeration of a property, not a
+// whitelist: a binary operator below a complete statement continues it whether
+// or not it is a member, because the Pratt loop consumes it before any
+// terminator query runs.
+test "parser: a binary operator below a statement continues it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // E1 — members.
+    inline for (.{ "+", "==", "!=", "<=", ">=", "<<", ">>", "|", "??" }) |op| {
+        const body = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    " ++ op ++ " 2\n}");
+        try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+    }
+    // E2 — nonmembers. Same verdict, reached by the same path.
+    inline for (.{ "<", ">", "/", "%", "&", "^" }) |op| {
+        const body = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    " ++ op ++ " 2\n}");
+        try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+    }
+    // The same-line controls parse to the same single statement.
+    inline for (.{ "+", "<", "&" }) |op| {
+        const body = try parseBody(alloc, "f :: () -> i64 {\n    a := 1 " ++ op ++ " 2\n}");
+        try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+    }
+}
+
+// A1/D0 — the assignment operators are the same story: `=` is a member and the
+// compound spellings are not, and both continue because the assignment dispatch
+// consumes them directly.
+test "parser: an assignment operator below a target continues it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    inline for (.{ "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=" }) |op| {
+        // Bare-name target (the identifier fast path).
+        const bare = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    a\n    " ++ op ++ " 2\n    a\n}");
+        try std.testing.expectEqual(@as(usize, 3), bare.data.block.stmts.len);
+        // Field target (the general expression-target path).
+        const field = try parseBody(alloc, "f :: (p: Point) -> i64 {\n    p.x\n    " ++ op ++ " 2\n    0\n}");
+        try std.testing.expectEqual(@as(usize, 2), field.data.block.stmts.len);
+        // Same-line control.
+        const same = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    a " ++ op ++ " 2\n    a\n}");
+        try std.testing.expectEqual(@as(usize, 3), same.data.block.stmts.len);
+    }
+
+    // `::` and `,` below a bare name also continue — a declaration head and a
+    // multi-assignment target list.
+    const decl = try parseBody(alloc, "f :: () -> i64 {\n    N\n    :: 3\n    N\n}");
+    try std.testing.expectEqual(@as(usize, 2), decl.data.block.stmts.len);
+    try std.testing.expect(decl.data.block.stmts[0].data == .const_decl);
 }
