@@ -5,7 +5,7 @@
 // owns its identity, and the hidden route's state SWEEPS (product-visible
 // by design: leaving a screen resets its transient state).
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "modules/ui/ambient.sx";
 #import "modules/ui/store.sx";
 
 editor :: () -> i64 {

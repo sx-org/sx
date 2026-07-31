@@ -7,7 +7,7 @@
 // makes the same removal legal).
 #import "modules/std.sx";
 #import "modules/ui/view.sx";
-#import "modules/ui/compose.sx";
+#import "modules/ui/ambient.sx";
 #import "modules/ui/store.sx";
 #import "modules/ui/testing.sx";
 

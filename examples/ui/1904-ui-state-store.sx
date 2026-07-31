@@ -5,7 +5,7 @@
 // runs its initializer under the lazy per-entry arena and the payload
 // survives across builds.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "modules/ui/ambient.sx";
 #import "modules/ui/store.sx";
 
 bump :: () -> i64 {

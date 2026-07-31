@@ -20,7 +20,7 @@
 #import "modules/std/mem.sx";
 #import "modules/std/meta.sx";
 #import "modules/ui/types.sx";
-#import "modules/ui/compose.sx";
+#import "modules/ui/ambient.sx";
 
 // --- TrivialState (C2): comptime kind check ---
 

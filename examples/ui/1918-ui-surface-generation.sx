@@ -6,7 +6,7 @@
 // A torn-down root's replacement starts from defaults — nothing leaks
 // across the teardown, and the sibling never notices either event.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "modules/ui/ambient.sx";
 #import "modules/ui/store.sx";
 #import "modules/ui/runtime.sx";
 

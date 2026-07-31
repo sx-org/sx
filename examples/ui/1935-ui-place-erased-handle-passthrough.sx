@@ -5,7 +5,7 @@
 // Helpers that return View must return a handle whose referent outlives the
 // helper frame — typically by placing (arena storage) inside the helper.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "modules/ui/ambient.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";

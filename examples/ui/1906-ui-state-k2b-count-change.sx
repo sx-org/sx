@@ -3,7 +3,7 @@
 // conditionally-present instances must be keyed. Detection is O(groups),
 // one integer per group at commit.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "modules/ui/ambient.sx";
 #import "modules/ui/store.sx";
 
 row :: () { use_state(i64, 0); }

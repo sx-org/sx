@@ -1,7 +1,7 @@
 // Non-default Mod on an erased View handle: one ModBox(View), and the box
 // can measure/layout/render through its protocol-typed child.
 #import "modules/std.sx";
-#import "modules/ui/compose.sx";
+#import "modules/ui/ambient.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/render.sx";

@@ -15,7 +15,7 @@
 // registrations, captures, and handles die with the id).
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
-#import "modules/ui/compose.sx";
+#import "modules/ui/ambient.sx";
 #import "modules/ui/store.sx";
 #import "modules/ui/input.sx";
 

@@ -9,7 +9,7 @@
 #import "modules/ui/render.sx";
 #import "modules/ui/view.sx";
 #import "modules/ui/modifier.sx";
-#import "modules/ui/compose.sx";
+#import "modules/ui/ambient.sx";
 
 // A minimal concrete leaf: reports a fixed intrinsic size.
 Leaf :: struct { w, h: f32; }

@@ -19,7 +19,7 @@
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
 #import "modules/ui/input.sx";
-#import "modules/ui/compose.sx";
+#import "modules/ui/ambient.sx";
 #import "modules/ui/render.sx";
 #import "modules/ui/frame.sx";
 #import "modules/ui/runtime.sx";
