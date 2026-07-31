@@ -1275,9 +1275,9 @@ pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
         if (formingFor(self, dst_ty)) {
-            d.addFmt(.err, span, "'{s}' cannot form an initializer for '{s}': no conversion applies", .{ self.formatSourceTypeName(src_ty), self.formatTypeName(dst_ty) });
+            d.addFmt(.err, span, "'{s}' cannot form an initializer for '{s}': no conversion applies", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) });
         } else {
-            d.addFmt(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatTypeName(dst_ty), self.formatTypeName(src_ty) });
+            d.addFmt(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatSourceTypeName(dst_ty), self.formatSourceTypeName(src_ty) });
         }
         self.assignability_error_count += 1;
     }

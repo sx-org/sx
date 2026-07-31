@@ -556,7 +556,18 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
             if (self.type_bindings) |tb| {
                 if (tb.get(te.name)) |ty| return ty;
             }
-            if (self.headTypeLeak(te.name, node.span)) return .unresolved;
+            // The SAME author question the `.identifier` arm asks, with the
+            // SAME answer taken: a plain nominal spelling resolves to the
+            // author this source reaches, not to whichever same-name author
+            // the global map registered first. A generic / constrained /
+            // dotted spelling names a head, not a nominal leaf, so it keeps
+            // the poison-or-proceed projection.
+            const plain = !te.is_generic and te.protocol_constraints.len == 0;
+            switch (self.headTypeGate(te.name, node.span)) {
+                .ambiguous, .not_visible => return .unresolved,
+                .resolved => |tid| if (plain) return tid,
+                .proceed => {},
+            }
             if (self.program_index.type_alias_map.get(te.name)) |alias_ty| return alias_ty;
             return type_bridge.resolveAstType(node, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
         },

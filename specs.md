@@ -3904,7 +3904,8 @@ module that imported no such set is told so rather than handed one, and one that
 see two is asked which.
 
 Every position that names a type asks that same question, and gets the same answer:
-a member's head, a bound's head, a downcast's target. A module that declares a name
+a member's head, a bound's head, a downcast's target — the soft form's and the hard
+form's alike, whose refusal is about the member the target named. A module that declares a name
 of its own reaches its own — asking `v.(?Panel)` where this module declares `Panel`
 is asking about this module's, whatever other modules spell it. A facade's
 re-exported name reaches what it names, so a bound written on it asks the set's own
