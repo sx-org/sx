@@ -607,6 +607,11 @@ fn admitOpenVariants(self: *Lowering, decls: []const *const Node) void {
                 if (ty == .unresolved) continue;
                 self.admitOpenVariant(&cd.value.data.struct_decl, ty, decl.span);
             },
+            // A module reached by NAME is scanned through this same recursion
+            // (`scanDecls`), so its members join their sets here too: what a set
+            // has as members is what the program declares, not how a consumer
+            // spelled the import that reached it.
+            .namespace_decl => |ns| admitOpenVariants(self, ns.decls),
             else => {},
         }
     }
@@ -2683,6 +2688,7 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
         .union_decl => |d| d.name,
         .error_set_decl => |d| d.name,
         .protocol_decl => |d| d.name,
+        .open_set_decl => |d| d.name,
         .runtime_class_decl => |d| d.name,
         .const_decl => |d| d.name,
         .fn_decl, .var_decl, .namespace_decl => return null,
@@ -2924,12 +2930,12 @@ fn nameAuthoredAsTypeOnlyPrivatelyElsewhere(self: *Lowering, name: []const u8, f
 }
 
 /// TRUE iff `raw` declares a NAMED TYPE — struct / enum / union / error-set /
-/// protocol / runtime class. A `fn_decl`, a value-or-alias `const_decl`, and a
+/// protocol / open set / runtime class. A `fn_decl`, a value-or-alias `const_decl`, and a
 /// `namespace_decl` are NOT named types. A type ALIAS is a `const_decl`;
 /// it is recognised via `type_aliases_by_source` separately from named types.
 pub fn isNamedTypeKind(raw: resolver_mod.RawDeclRef) bool {
     return switch (raw) {
-        .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .runtime_class_decl => true,
+        .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl => true,
         .const_decl => |cd| constWrappedNamedTypeRef(cd) != null,
         .fn_decl, .var_decl, .namespace_decl => false,
     };
@@ -2979,6 +2985,7 @@ pub fn namedRefTid(self: *Lowering, ref: resolver_mod.RawDeclRef, name: []const 
         // name lookup, byte-identical to pre-0134.
         .error_set_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
         .protocol_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
+        .open_set_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
         .runtime_class_decl => table.findByName(table.internString(name)),
         .const_decl => |d| if (constWrappedNamedTypeRef(d)) |inner| self.namedRefTid(inner, name) else null,
         .fn_decl, .var_decl, .namespace_decl => null,

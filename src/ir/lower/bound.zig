@@ -82,6 +82,26 @@ pub fn resolveHead(
         return .{ .protocol = .{ .ty = p.ty, .name = name, .params = p.decl.type_params.len } };
     }
     if (self.open_sets.getPtr(name)) |set| return .{ .open_set = .{ .ty = set.ty, .name = name } };
+    // A QUALIFIED head names what a module reached by name owns. Membership and
+    // conformance are keyed by the declaration, so the path resolves to the
+    // declaration's own name — the one its members and impls were written against.
+    if (std.mem.indexOfScalar(u8, name, '.') != null) {
+        const from = source orelse self.current_source_file orelse self.main_file orelse "";
+        switch (self.qualifiedMemberVerdictFrom(name, from)) {
+            .selected => |sel| switch (sel.author.raw) {
+                .open_set_decl => |osd| {
+                    if (self.open_sets.getPtr(osd.name)) |set| return .{ .open_set = .{ .ty = set.ty, .name = osd.name } };
+                },
+                .protocol_decl => |pd| {
+                    if (self.protocolResolver().resolveProtocol(pd.name, sel.target.target_module_path)) |p| {
+                        return .{ .protocol = .{ .ty = p.ty, .name = pd.name, .params = p.decl.type_params.len } };
+                    }
+                },
+                else => {},
+            },
+            else => {},
+        }
+    }
     return .{ .unknown = name };
 }
 

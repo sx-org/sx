@@ -1,0 +1,14 @@
+// The package's own set, its member, and a signature in the set's own terms.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128, align = 8 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+describe :: (v: View) -> string => v.render();
+size_here :: () -> i64 => size_of(View);

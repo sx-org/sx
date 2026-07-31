@@ -979,7 +979,7 @@ pub const Parser = struct {
 
     /// One generic bound (specs: Generic bounds):
     /// `ProtocolHead [ '(' TypeExpr (',' TypeExpr)* ')' ]`, where the head is a
-    /// bare name or an `@` name. The head is an ordinary name reference, NOT
+    /// bare name, an `@` name, or a name QUALIFIED by the module that owns it. The head is an ordinary name reference, NOT
     /// the closed compiler-formed set that `parseCompilerFormedType` guards:
     /// `lower/bound.zig` resolves it, and a head naming nothing is an
     /// unknown-name error there. Type arguments are full type expressions, so a
@@ -990,8 +990,18 @@ pub const Parser = struct {
         if (self.current.tag != .identifier and self.current.tag != .at_identifier) {
             return self.fail("expected protocol name after '/'");
         }
-        const head = self.tokenSlice(self.current);
+        var head = self.tokenSlice(self.current);
         self.advance();
+        // A head may be QUALIFIED (`$V/pkg.View`): a module reached by name owns
+        // the protocol or set the bound asks about, exactly as a type annotation
+        // names it. The path is carried whole; `lower/bound.zig` resolves it.
+        while (self.current.tag == .dot) {
+            self.advance();
+            if (self.current.tag != .identifier) return self.fail("expected a name after '.' in a bound head");
+            const seg = self.tokenSlice(self.current);
+            self.advance();
+            head = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ head, seg }) catch head;
+        }
         if (self.current.tag != .l_paren) {
             return try self.createNode(start, .{ .type_expr = .{ .name = head } });
         }

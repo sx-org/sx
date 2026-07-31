@@ -574,6 +574,7 @@ pub fn rawNamedTypePtr(ref: resolver_mod.RawDeclRef) ?*const anyopaque {
         .union_decl => |d| @ptrCast(d),
         .error_set_decl => |d| @ptrCast(d),
         .protocol_decl => |d| @ptrCast(d),
+        .open_set_decl => |d| @ptrCast(d),
         .runtime_class_decl => |d| @ptrCast(d),
         .fn_decl, .const_decl, .var_decl, .namespace_decl => null,
     };

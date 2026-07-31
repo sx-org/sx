@@ -395,7 +395,7 @@ pub const ResolvedModule = struct {
     /// symbol, not split into a duplicate `__stdinp.1`.
     pub fn isPerSourceDecl(decl: *const Node) bool {
         return switch (decl.data) {
-            .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .runtime_class_decl => true,
+            .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl => true,
             .const_decl => |cd| cd.value.data != .fn_decl,
             else => false,
         };
@@ -494,6 +494,7 @@ pub const RawDeclRef = union(enum) {
     union_decl: *const ast.UnionDecl,
     error_set_decl: *const ast.ErrorSetDecl,
     protocol_decl: *const ast.ProtocolDecl,
+    open_set_decl: *const ast.OpenSetDecl,
     runtime_class_decl: *const ast.RuntimeClassDecl,
     namespace_decl: *const ast.NamespaceDecl,
 };
@@ -571,6 +572,7 @@ pub fn rawDeclRefOf(decl: *const Node) ?RawDeclRef {
         .union_decl => |*d| .{ .union_decl = d },
         .error_set_decl => |*d| .{ .error_set_decl = d },
         .protocol_decl => |*d| .{ .protocol_decl = d },
+        .open_set_decl => |*d| .{ .open_set_decl = d },
         .runtime_class_decl => |*d| .{ .runtime_class_decl = d },
         .namespace_decl => |*d| .{ .namespace_decl = d },
         else => null,
@@ -671,6 +673,7 @@ pub const DeclKind = enum {
     @"union",
     error_set,
     protocol,
+    open_set,
     runtime_class,
     namespace,
 };
@@ -685,6 +688,7 @@ fn declKindOf(ref: RawDeclRef) DeclKind {
         .union_decl => .@"union",
         .error_set_decl => .error_set,
         .protocol_decl => .protocol,
+        .open_set_decl => .open_set,
         .runtime_class_decl => .runtime_class,
         .namespace_decl => .namespace,
     };
