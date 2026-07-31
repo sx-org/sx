@@ -63,7 +63,7 @@ Third-party attributions for stdlib-derived code are recorded in
 
 ### Whitespace is syntax
 
-Four rules. Three decide how five glyphs read — `(`, `[`, `-`, `*`, and `{`
+Four rules. Three decide how six glyphs read — `(`, `[`, `-`, `*`, `{`, and `!`
 each carry two meanings, and the gap around them picks one. The fourth is about
 the gap itself: a line break ends a statement, so `;` is optional.
 
@@ -85,7 +85,10 @@ expressions and in every type position alike. A `(` that opens something new
 `add :: (a: i64) -> i64`, `for xs (x) { … }`, `risky() catch (e) -1`. `-` and
 `*` also have prefix readings, so they are infix only when spaced the same on
 both sides, and a prefix `-` / `*` must be glued to its operand. The third rule
-governs the trailing-block `{` (below).
+governs what binds to an expression from behind — the trailing-block `{`
+(below), a named aggregate's `{`, and the force-unwrap `!` — each of which
+binds only on the expression's own line, since across a break the brace is a
+scope block and the `!` is the prefix `not`.
 
 A newline terminates a statement wherever a `;` would, and holds off when the
 token below cannot start one (`and`, `or`, `catch`, `|>`, an operator, a

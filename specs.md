@@ -371,11 +371,27 @@ A prefix `-` / `*` binds only when glued to its operand, which is what makes
 line: a leading `- b` keeps the gaps matched and continues the expression,
 while `-b` starts a fresh operand.
 
-**Trailing blocks — a `{` reads by line and by tightness.** The third rule
-governs the `{` after a call: it opens a trailing block only on the same line
-as the `)`, and a same-line empty `{}` reads as a parameterized aggregate when
-written tight against the `)`. Both readings are specified with the form
-itself — see [Trailing Blocks](#trailing-blocks).
+**Postfix — a token binds only on its expression's own line.** The third rule
+governs what attaches to an expression from behind. The `{` after a call opens
+a trailing block only on the same line as the `)`, and a same-line empty `{}`
+reads as a parameterized aggregate when written tight against the `)`; both
+readings are specified with the form itself — see
+[Trailing Blocks](#trailing-blocks). A named aggregate's `{` and a postfix `!`
+answer the same question the same way, because each has a second reading
+waiting on the other side of a break — a scope block, and the prefix `not`:
+
+```sx
+p := Pair{ a = 1, b = 2 }     // same line — the aggregate
+Pair
+{ setup() }                   // across the break — an expression and a block
+
+print("{}\n", maybe!)         // same line — force unwrap
+ready
+!ready                        // across the break — the prefix `not`
+```
+
+This is geometry, not completability: the brace is refused across a break
+inside an argument list exactly as it is at statement level.
 
 **Line breaks — a newline ends a statement.** A `;` terminates a statement, and
 so does the line break where the `;` would have gone. The two spellings are the
@@ -429,13 +445,43 @@ ok := ready
     or forced
 ```
 
-The continuation tokens are `and`, `or`, `then`, `else`, `case`, `catch`, `|`,
+"Cannot start a statement" is the rule; the list below is its enumeration, and
+a token joins it as soon as some form can reach a terminator with that token in
+hand. Today that list is `and`, `or`, `then`, `else`, `case`, `catch`, `|`,
 `+`, `==`, `!=`, `<=`, `>=`, `<<`, `>>`, `|>`, `??`, `?.`, `,`, `=`, `::`,
-`->`, and `=>`. `-` and `*` are absent because the spacing rule above already
-decided them: a leading `- b` keeps its gaps matched and reads as subtraction,
-while `-b` opens a fresh operand and so begins a statement. A form that is
-simply still open — an unclosed `(`, an argument list, a `{` with no `}` yet —
-reads on for the same reason: nothing has ended.
+`->`, `=>`, `:`, `extern`, and `intrinsic`. `-` and `*` are absent because the
+spacing rule above already decided them: a leading `- b` keeps its gaps matched
+and reads as subtraction, while `-b` opens a fresh operand and so begins a
+statement. A form that is simply still open — an unclosed `(`, an argument
+list, a `{` with no `}` yet — reads on for the same reason: nothing has ended.
+
+The last three are the tails a completed declaration may still take, so each
+form asks whether it has ended before reading one:
+
+```sx
+LIMIT : i64
+    : 9                       // a typed constant
+errno_loc : *i32
+    extern libc "__error"     // an extern data global
+mystery :: i64
+    intrinsic                 // a typed intrinsic
+```
+
+Whether a form may end at all is a grammar fact, not a whitespace one, and the
+`[LIB] ["csym"]` tail after `extern` / `export` turns on it. An `extern` import
+is whole the moment its keyword is read, so each empty slot is a place the
+declaration can stop and the tail binds only on its own line. An `export`
+definition and an `extern` struct still owe a body, so nothing there can end and
+the tail reads straight through a break:
+
+```sx
+__stdinp : *void extern
+LIMIT :: 9                    // the import ended; this name is its own
+
+sx_double :: (n: i32) -> i32 export
+    "double_c"
+    { n * 2 }                 // the definition owes a body — the tail reads on
+```
 
 The last expression before a `}` has no terminator at all, which is what makes
 it the block's value (§6.3). A newline never supplies one there:
@@ -6436,9 +6482,15 @@ decl            = const_decl | var_decl | fn_decl | enum_decl | struct_decl | er
 error_decl      = IDENT '::' 'error' '{' IDENT (',' IDENT)* ','? '}' end
 const_decl      = IDENT '::' expr end
                 | IDENT ':' type ':' expr end
+                | IDENT '::' type 'intrinsic' end
 var_decl        = IDENT ':=' expr end
                 | IDENT ':' type '=' expr end
                 | IDENT ':' type end
+                | IDENT ':' type 'extern' linkage_tail end
+linkage_tail    = IDENT? STRING?    // `[LIB] ["csym"]`. On a form that may end
+                  // — an `extern` import — each slot binds only on the
+                  // declaration's own line; where a body is still owed
+                  // (`export`, an `extern` struct) it reads through the break
 fn_decl         = IDENT '::' '(' params? ')' ('->' ret_type)? block
                 | IDENT '::' block
 ret_type        = type ('!' IDENT?)?    // trailing `!` = failable; channel outside any Tuple
