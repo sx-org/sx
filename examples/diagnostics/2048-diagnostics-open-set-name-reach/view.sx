@@ -1,0 +1,2 @@
+#import "modules/std.sx";
+View :: @OpenSet(.{ max = 128 }) { render :: (self: *Self) -> string; }

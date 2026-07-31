@@ -52,6 +52,10 @@ pub const Head = union(enum) {
     formed: []const u8,
     /// A declared open set. The bound asks for MEMBERSHIP, not conformance.
     open_set: struct { ty: TypeId, name: []const u8 },
+    /// Several sets of that name are visible here, or none this file can see.
+    /// The head names something real; what it does not name is WHICH.
+    ambiguous_set: []const u8,
+    not_visible_set: []const u8,
     /// Names nothing in scope.
     unknown: []const u8,
 };
@@ -81,8 +85,13 @@ pub fn resolveHead(
     if (self.protocolResolver().resolveProtocol(name, source)) |p| {
         return .{ .protocol = .{ .ty = p.ty, .name = name, .params = p.decl.type_params.len } };
     }
-    if (self.openSetDeclNamed(name, source)) |decl| {
-        if (self.open_sets.getPtr(decl)) |set| return .{ .open_set = .{ .ty = set.ty, .name = name } };
+    switch (self.openSetDeclVerdict(name, source)) {
+        .set => |decl| {
+            if (self.open_sets.getPtr(decl)) |set| return .{ .open_set = .{ .ty = set.ty, .name = name } };
+        },
+        .ambiguous => return .{ .ambiguous_set = name },
+        .not_visible => return .{ .not_visible_set = name },
+        .none => {},
     }
     // A QUALIFIED head names what a module reached by name owns. Membership and
     // conformance are keyed by the declaration, so the path resolves to the
@@ -135,6 +144,16 @@ pub fn checkBindings(
                 // question is asked here against that binding.
                 .type_param => |sibling| checkAgainstSibling(self, bound, sibling, tp.name, bound_ty, bindings),
                 .unknown => |name| reportUnknownHead(self, bound, name, tp.name),
+                .ambiguous_set => |name| {
+                    const d0 = self.diagnostics orelse return;
+                    const id = d0.addFmtId(.err, bound.span, "'{s}' is declared as an open set by more than one module here", .{name});
+                    d0.addHelpFmt(id, bound.span, null, "name the one this bound asks about through the module that declares it ('${s}/pkg.{s}')", .{ tp.name, name });
+                },
+                .not_visible_set => |name| {
+                    const d0 = self.diagnostics orelse return;
+                    const id = d0.addFmtId(.err, bound.span, "'{s}' is an open set, but not one this module can see", .{name});
+                    d0.addHelpFmt(id, bound.span, null, "import the module that declares it, or name it through one ('${s}/pkg.{s}')", .{ tp.name, name });
+                },
                 .open_set => |set| checkMember(self, bound, set, tp.name, bound_ty),
                 .protocol => |p| checkOne(self, bound, p, tp.name, bound_ty),
             }

@@ -222,6 +222,17 @@ pub fn setDeclVerdict(self: *Lowering, path: []const u8, from: ?[]const u8) Head
         return switch (self.qualifiedMemberVerdictFrom(path, source)) {
             .selected => |sel| switch (sel.author.raw) {
                 .open_set_decl => |osd| .{ .set = osd },
+                // A facade re-exports by naming, so what it publishes is an ALIAS
+                // of the declaration — the set is what the alias names.
+                .const_decl => |cd| blk: {
+                    const saved = self.current_source_file;
+                    defer self.setCurrentSourceFile(saved);
+                    self.setCurrentSourceFile(sel.author.source);
+                    const ty = self.resolveTypeArg(cd.value);
+                    if (ty == .unresolved) break :blk .none;
+                    const set = setOf(self, ty) orelse break :blk .none;
+                    break :blk .{ .set = set.decl };
+                },
                 else => .none,
             },
             else => .none,
@@ -242,6 +253,34 @@ pub fn setDeclVerdict(self: *Lowering, path: []const u8, from: ?[]const u8) Head
         .open_set_decl => |osd| .{ .set = osd },
         else => .none,
     };
+}
+
+/// What a bare TYPE name reaches from the file that wrote it — the same question a
+/// bare set head asks, for the target of a downcast. A name two modules declare
+/// resolves to the one this file's own declaration or import selects, so a module
+/// asking about its OWN member is answered with its own.
+pub const TargetVerdict = union(enum) {
+    ty: TypeId,
+    ambiguous,
+    not_visible,
+    none,
+};
+
+pub fn bareTypeVerdict(self: *Lowering, name: []const u8, from: ?[]const u8) TargetVerdict {
+    const source = from orelse self.current_source_file orelse self.main_file orelse "";
+    var r = self.resolver();
+    const res = r.resolveBare(name, source, .bare_type);
+    defer self.alloc.free(res.set.flat);
+    const chosen: ?resolver_mod.RawAuthor = switch (res.verdict) {
+        .own_wins => res.set.own,
+        .single => if (res.set.flat.len == 1) res.set.flat[0] else res.set.own,
+        .ambiguous => return .ambiguous,
+        .not_visible => return .not_visible,
+        .domain_filtered => null,
+    };
+    const author = chosen orelse return .none;
+    const ty = self.namedRefTid(author.raw, name) orelse return .none;
+    return .{ .ty = ty };
 }
 
 /// The declaration a head reaches, or null — the shape callers that only need the

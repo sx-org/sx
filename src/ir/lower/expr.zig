@@ -3646,7 +3646,36 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (self.isOpenSet(recv_ty) and pc.alloc_arg == null) {
                     const soft = pc.type_expr.data == .optional_type_expr;
                     const target_node = if (soft) pc.type_expr.data.optional_type_expr.inner_type else pc.type_expr;
-                    const target = self.resolveTypeArg(target_node);
+                    // A bare target name is asked of THIS file: a member's name two
+                    // modules declare must reach the one this file selects, or the
+                    // downcast asks about somebody else's type (issue 0453).
+                    const bare_target: ?[]const u8 = switch (target_node.data) {
+                        .identifier => |id| id.name,
+                        .type_expr => |te| if (te.protocol_constraints.len == 0) te.name else null,
+                        else => null,
+                    };
+                    var target = TypeId.unresolved;
+                    if (bare_target) |nm| {
+                        switch (self.bareTypeVerdict(nm, self.current_source_file)) {
+                            .ty => |t| target = t,
+                            .ambiguous => {
+                                if (self.diagnostics) |d| {
+                                    const amb_id = d.addFmtId(.err, target_node.span, "'{s}' is declared by more than one module here", .{nm});
+                                    d.addHelpFmt(amb_id, target_node.span, null, "name the one this asks about through the module that declares it ('pkg.{s}')", .{nm});
+                                }
+                                break :blk self.builder.constUndef(.unresolved);
+                            },
+                            .not_visible => {
+                                if (self.diagnostics) |d| {
+                                    const nv_id = d.addFmtId(.err, target_node.span, "'{s}' is declared, but not where this module can see it", .{nm});
+                                    d.addHelpFmt(nv_id, target_node.span, null, "import the module that declares it, or name it through one ('pkg.{s}')", .{nm});
+                                }
+                                break :blk self.builder.constUndef(.unresolved);
+                            },
+                            .none => {},
+                        }
+                    }
+                    if (target == .unresolved) target = self.resolveTypeArg(target_node);
                     if (target != .unresolved and target != .any and target != recv_ty) {
                         const set_decl = self.openSetOf(recv_ty).?.decl;
                         if (self.openSetDeclaresMembership(target, set_decl) and self.scope != null) {

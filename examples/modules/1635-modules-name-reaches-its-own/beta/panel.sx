@@ -1,0 +1,18 @@
+// The same, in another module, with a `Panel` of its own.
+#import "modules/std.sx";
+#import "../view.sx";
+
+Panel :: @OpenVariant(View) {
+    tag: string = "beta";
+    render :: (self: *Panel) -> string => self.tag;
+}
+
+own :: () -> string {
+    p : Panel = .{ tag = "beta value" };
+    v : View = p;
+    if q := v.(?Panel) { return q.tag; }
+    return "reached someone else's";
+}
+
+// A bound whose head is the set, spelled bare inside the module that can see it.
+hold :: (x: $V/View) -> string => x.render();

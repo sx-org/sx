@@ -1,0 +1,19 @@
+// A name in a downcast, and in a bound, is asked of the file that wrote it
+// (specs: Open Sets — membership; Modules — the namespace surface).
+//
+// Two modules declare `Panel`, and this file imports both, so the name reaches two
+// declarations here and nothing in the spelling says which — a downcast asking for
+// it is told so rather than handed one. A name this file cannot see at all is told
+// that instead. Both refusals name the module that declares the type they mean, on
+// each side, because a bare spelling could not.
+// Expected: exit 1.
+#import "modules/std.sx";
+#import "2048-diagnostics-open-set-name-reach/view.sx";
+#import "2048-diagnostics-open-set-name-reach/alpha/panel.sx";
+#import "2048-diagnostics-open-set-name-reach/beta/panel.sx";
+
+main :: () -> i32 {
+    v : View = Panel{ tag = "which?" };
+    if q := v.(?Panel) { print("{}\n", q.tag); }
+    0
+}

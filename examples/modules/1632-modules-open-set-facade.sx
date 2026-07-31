@@ -8,6 +8,10 @@
 #import "modules/std.sx";
 pkg :: #import "1632-modules-open-set-facade/facade.sx";
 
+// A bound whose head is the facade's own spelling: what it names is the set the
+// facade re-exports, so the bound asks that set's question.
+holds :: (x: $V/pkg.View) -> string => x.render();
+
 main :: () -> i32 {
     // Formed entirely through the facade.
     v: pkg.View = pkg.Label{ text = "through a facade" };
@@ -16,13 +20,14 @@ main :: () -> i32 {
     // One set: the size the package measures inside itself is the size out here.
     print("size in {} out {}\n", pkg.size_here(), size_of(pkg.View));
 
-    // And the value crosses into a signature the package wrote in its own terms.
-    print("crossed {}\n", pkg.describe(v));
+    // And the value crosses into a signature the package wrote in its own terms,
+    // and into a bound written on the facade's spelling out here.
+    print("crossed {} {}\n", pkg.describe(v), holds(pkg.Label{ text = "bound" }));
     0
 }
 
 // ** stdout **
 // through a facade Label
 // size in 24 out 24
-// crossed through a facade
+// crossed through a facade bound
 //

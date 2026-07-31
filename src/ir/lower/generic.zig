@@ -767,7 +767,18 @@ pub fn formatSourceTypeName(self: *Lowering, ty: TypeId) []const u8 {
         return set.decl.name;
     }
     const inst = self.getStructTypeName(ty) orelse return self.formatTypeName(ty);
-    const template = self.struct_instance_template.get(inst) orelse return self.formatTypeName(ty);
+    const template = self.struct_instance_template.get(inst) orelse {
+        // A plain type whose spelling several modules declare says which one it is
+        // the same way a set does.
+        if (self.plain_struct_authors.get(ty)) |author| {
+            if (self.nameHasMultipleTypeAuthors(author.decl.name)) {
+                if (author.source) |src| {
+                    return std.fmt.allocPrint(self.alloc, "{s} ({s})", .{ author.decl.name, src }) catch author.decl.name;
+                }
+            }
+        }
+        return self.formatTypeName(ty);
+    };
     const author = self.struct_instance_author.get(inst) orelse return self.formatTypeName(ty);
     const binds = self.struct_instance_bindings.getPtr(inst) orelse return self.formatTypeName(ty);
     var out = std.ArrayList(u8).empty;

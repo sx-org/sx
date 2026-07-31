@@ -1,0 +1,16 @@
+// This module declares its own `Panel`, and asks about its own.
+#import "modules/std.sx";
+#import "../view.sx";
+
+Panel :: @OpenVariant(View) {
+    tag: string = "alpha";
+    render :: (self: *Panel) -> string => self.tag;
+}
+
+// The downcast names `Panel` bare: what it must reach is THIS module's.
+own :: () -> string {
+    p : Panel = .{ tag = "alpha value" };
+    v : View = p;
+    if q := v.(?Panel) { return q.tag; }
+    return "reached someone else's";
+}
