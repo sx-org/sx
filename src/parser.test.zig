@@ -1165,11 +1165,13 @@ test "parser: an assignment operator below a target continues it" {
 
 // ---- The binding layer ----
 //
-// A postfix token attaches to what precedes it only on that expression's own
-// line. This is the rule the trailing block already followed, applied to the
-// two postfix forms that were still taking their token across a break — and it
-// is geometry, not completability: the same brace is refused inside an argument
-// list exactly as it is at statement level.
+// `(`, `[`, `{`, and `!` attach to what precedes them only on that expression's
+// own line. This is the rule the glue forms and the trailing block already
+// followed, applied to the two postfix forms that were still taking their token
+// across a break — and it is geometry, not completability: the same brace is
+// refused inside an argument list exactly as it is at statement level. The
+// dot-led postfixes are the other camp: `.`, `?.`, and `catch` chain across a
+// break, which P4 below pins.
 
 // P2 — `!` is postfix force-unwrap and prefix `not`, so which one a leading `!`
 // spells is decided by the line it sits on.
