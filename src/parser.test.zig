@@ -544,9 +544,13 @@ test "parser: a postfix `(` binds only when glued" {
     const spaced = try parseErrMsg(alloc, "f :: () -> i64 { g (1) }");
     try std.testing.expect(std.mem.indexOf(u8, spaced, "a space before `(`") != null);
 
-    // Across a line the `(` simply does not bind — no spacing complaint.
-    const split = try parseErrMsg(alloc, "f :: () -> i64 { g\n(1) }");
-    try std.testing.expect(std.mem.indexOf(u8, split, "a space before `(`") == null);
+    // Across a line the `(` does not bind, so the newline ends the statement
+    // and the `(` opens the next one.
+    var split = Parser.init(alloc, "f :: () -> i64 { g\n(1) }");
+    const split_body = (try split.parse()).data.root.decls[0].data.fn_decl.body;
+    try std.testing.expectEqual(@as(usize, 2), split_body.data.block.stmts.len);
+    try std.testing.expect(split_body.data.block.stmts[0].data == .identifier);
+    try std.testing.expect(split_body.data.block.stmts[1].data == .int_literal);
 }
 
 test "parser: a postfix `[` binds only when glued" {
@@ -627,9 +631,12 @@ test "parser: `-` is infix only when its gaps match" {
     try std.testing.expect(std.mem.indexOf(u8, mirror, "glued on its left and spaced on its right") != null);
 
     // Across a line the prefix reading is a fresh operand, not a spacing
-    // mistake — the shape ASI turns into a second statement.
-    const split = try parseErrMsg(alloc, "f :: () -> i64 { g()\n-b }");
-    try std.testing.expect(std.mem.indexOf(u8, split, "reads as a prefix") == null);
+    // mistake — so the newline ends the statement and `-b` is the next one.
+    var split = Parser.init(alloc, "f :: () -> i64 { g()\n-b }");
+    const split_body = (try split.parse()).data.root.decls[0].data.fn_decl.body;
+    try std.testing.expectEqual(@as(usize, 2), split_body.data.block.stmts.len);
+    try std.testing.expect(split_body.data.block.stmts[0].data == .call);
+    try std.testing.expect(split_body.data.block.stmts[1].data.unary_op.op == .negate);
 }
 
 test "parser: a prefix `-` / `*` binds only when glued" {
@@ -682,4 +689,839 @@ test "parser: a pack index binds only when glued" {
     // complaint, and the ordinary path reports what follows.
     const split = try parseErrMsg(alloc, "f :: (..$args) -> string { g($args\n[0]) }");
     try std.testing.expect(std.mem.indexOf(u8, split, "a space before `[`") == null);
+}
+
+// ---- Statement termination (specs §1: Whitespace is Syntax) ----
+//
+// A newline ends a statement wherever a `;` would. These pin what the newline
+// terminates, what it must NOT, and which token in front of it keeps the
+// statement running.
+
+fn parseBody(alloc: std.mem.Allocator, src: [:0]const u8) !*Node {
+    var p = Parser.init(alloc, src);
+    const root = try p.parse();
+    return root.data.root.decls[0].data.fn_decl.body;
+}
+
+test "parser: a newline ends a statement" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    a := 1
+        \\    b : i64 = 2
+        \\    c :: 3
+        \\    g(a)
+        \\    a = b + c
+        \\    if a == b { g(0) }
+        \\    defer g(1)
+        \\    return a
+        \\}
+    );
+    const stmts = body.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 8), stmts.len);
+    try std.testing.expect(stmts[0].data == .var_decl);
+    try std.testing.expect(stmts[1].data == .var_decl);
+    try std.testing.expect(stmts[2].data == .const_decl);
+    try std.testing.expect(stmts[3].data == .call);
+    try std.testing.expect(stmts[4].data == .assignment);
+    try std.testing.expect(stmts[5].data == .if_expr);
+    try std.testing.expect(stmts[6].data == .defer_stmt);
+    try std.testing.expect(stmts[7].data == .return_stmt);
+}
+
+// The declaration forms a file is made of terminate on a newline too.
+test "parser: a newline ends a top-level declaration" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\#import "modules/std.sx"
+        \\TAU :: 6
+        \\seed : i64 = 1
+        \\puts :: (s: *u8) -> i32 extern
+        \\add :: (a: i64, b: i64) -> i64 => a + b
+        \\main :: () -> i32 { 0 }
+    );
+    const decls = (try p.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 6), decls.len);
+    try std.testing.expect(decls[0].data == .import_decl);
+    try std.testing.expect(decls[1].data == .const_decl);
+    try std.testing.expect(decls[2].data == .var_decl);
+    try std.testing.expectEqual(ast.ExternExportModifier.extern_, decls[3].data.fn_decl.extern_export);
+    try std.testing.expect(decls[4].data.fn_decl.is_arrow);
+}
+
+// Demand semantics is a later step: until it lands, `;` before `}` still means
+// "discard", so ASI must never insert a terminator there — a `;`-less tail is
+// the block's value however it is written.
+test "parser: a newline never terminates the tail before `}`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "f :: () -> i32 { x }",
+        "f :: () -> i32 {\nx\n}",
+    }) |src| {
+        const body = try parseBody(alloc, src);
+        try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+        try std.testing.expect(body.data.block.produces_value);
+        try std.testing.expect(body.data.block.discarded_semi == null);
+    }
+
+    // The `;` still discards, and still names itself for the diagnostic.
+    const discarded = try parseBody(alloc, "f :: () -> i32 {\nx;\n}");
+    try std.testing.expect(!discarded.data.block.produces_value);
+    try std.testing.expect(discarded.data.block.discarded_semi != null);
+}
+
+// A token that cannot start a statement continues the one above it.
+test "parser: a continuation token holds the statement open" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    v := (a << 16)
+        \\        | b
+        \\    w := a
+        \\        and b
+        \\        or c
+        \\    v + w
+        \\}
+    );
+    const stmts = body.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 3), stmts.len);
+    try std.testing.expectEqual(ast.BinaryOp.Op.bit_or, stmts[0].data.var_decl.value.?.data.binary_op.op);
+    try std.testing.expectEqual(ast.BinaryOp.Op.or_op, stmts[1].data.var_decl.value.?.data.binary_op.op);
+
+    // A continuation token that cannot in fact continue is still not a new
+    // statement — the terminator it denied is what gets reported.
+    for ([_][:0]const u8{
+        "f :: () -> i64 { x := a\n, b\n0 }",
+        "f :: () -> i64 { x := a\n=> b\n0 }",
+        "f :: () -> i64 { x := a\n:: b\n0 }",
+    }) |src| {
+        const msg = try parseErrMsg(alloc, src);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
+    }
+}
+
+// `}` then `else` on the next line is one if/else chain, not a statement and
+// an orphan.
+test "parser: a newline before `else` continues the chain" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    if c {
+        \\        1
+        \\    }
+        \\    else {
+        \\        2
+        \\    }
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+    try std.testing.expect(body.data.block.stmts[0].data.if_expr.else_branch != null);
+}
+
+// C1: statements break, expressions chain. A bare scope block in STATEMENT
+// position ends at its `}`; an expression that ends in a block does not.
+test "parser: a bare scope block statement does not chain" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const broken = try parseBody(alloc,
+        \\f :: () -> Color {
+        \\    {
+        \\        g()
+        \\    }
+        \\    .green
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 2), broken.data.block.stmts.len);
+    try std.testing.expect(broken.data.block.stmts[0].data == .block);
+
+    const chained = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    vstack(1.0) {
+        \\        g()
+        \\    }
+        \\        .show()
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 1), chained.data.block.stmts.len);
+    try std.testing.expect(chained.data.block.stmts[0].data.call.callee.data == .field_access);
+}
+
+// The value-less forms take the newline terminator too: a `return` with no
+// value, and a `name : type` declaration with no initializer.
+test "parser: a newline terminates the value-less forms" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc,
+        \\f :: () -> void {
+        \\    slot : i64
+        \\    g(slot)
+        \\    return
+        \\}
+    );
+    const stmts = body.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 3), stmts.len);
+    try std.testing.expect(stmts[0].data.var_decl.value == null);
+    try std.testing.expect(stmts[1].data == .call);
+    try std.testing.expect(stmts[2].data.return_stmt.value == null);
+
+    // A `return` in expression position asks the same question, so the line
+    // below an early `then return` is the next statement and not its value.
+    const early = try parseBody(alloc,
+        \\f :: (c: bool) -> void {
+        \\    if c then return
+        \\    g()
+        \\}
+    );
+    const early_stmts = early.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 2), early_stmts.len);
+    try std.testing.expect(early_stmts[0].data.if_expr.then_branch.data.return_stmt.value == null);
+    try std.testing.expect(early_stmts[1].data == .call);
+
+    // A value on the same line still belongs to the `return`.
+    const valued = try parseBody(alloc,
+        \\f :: (c: bool) -> i64 {
+        \\    if c then return 7
+        \\    9
+        \\}
+    );
+    const valued_stmts = valued.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 2), valued_stmts.len);
+    try std.testing.expect(valued_stmts[0].data.if_expr.then_branch.data.return_stmt.value.?.data == .int_literal);
+}
+
+// The last token of a file is followed by a line break like any other, so the
+// final declaration needs no terminator either.
+test "parser: a newline ends the last declaration in a file" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc, "TAU :: 6\nseed : i64\n");
+    const decls = (try p.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), decls.len);
+    try std.testing.expect(decls[0].data == .const_decl);
+    try std.testing.expect(decls[1].data.var_decl.value == null);
+}
+
+// ---- Linkage tails ----
+//
+// `[LIB] ["csym"]` after `extern` / `export` is two optional bare names, so
+// where the tail sits decides nothing on its own — what decides is whether the
+// construct that owns it may END inside it. An `extern` import is whole the
+// moment its keyword is read, so each empty slot is a place the declaration can
+// stop; an `export` definition and an `extern` struct still owe a body, so
+// nothing there can end and the tail reads straight through a line break.
+
+// L1/L2 — a function `extern` tail may end, so it binds only on its own line.
+test "parser: a terminable extern tail binds only on its own line" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\puts :: (s: *u8) -> i32 extern
+        \\LIMIT :: 9
+    );
+    const decls = (try p.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), decls.len);
+    try std.testing.expect(decls[0].data.fn_decl.extern_lib == null);
+    try std.testing.expect(decls[0].data.fn_decl.extern_name == null);
+    try std.testing.expect(decls[1].data == .const_decl);
+
+    // The symbol slot is a second, independent boundary: with the library
+    // bound, the string below still does not enter the tail — it is left to the
+    // next declaration, where a bare string literal is not one. Were the second
+    // check missing, this would parse.
+    const orphan = try parseErrMsg(alloc,
+        \\puts :: (s: *u8) -> i32 extern C
+        \\"detached"
+    );
+    try std.testing.expect(std.mem.indexOf(u8, orphan, "expected identifier at top level") != null);
+
+    // On its own line the tail still binds.
+    var same = Parser.init(alloc, "puts :: (s: *u8) -> i32 extern C \"puts\"\n");
+    const bound = (try same.parse()).data.root.decls[0].data.fn_decl;
+    try std.testing.expectEqualStrings("C", bound.extern_lib.?);
+    try std.testing.expectEqualStrings("puts", bound.extern_name.?);
+}
+
+// L6/L7 — the data-global `extern` tail is terminable for the same reason.
+test "parser: a terminable extern data tail binds only on its own line" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\errno_loc : *i32 extern
+        \\LIMIT :: 9
+    );
+    const decls = (try p.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), decls.len);
+    try std.testing.expect(decls[0].data.var_decl.is_extern);
+    try std.testing.expect(decls[0].data.var_decl.extern_lib == null);
+    try std.testing.expect(decls[0].data.var_decl.extern_name == null);
+    try std.testing.expect(decls[1].data == .const_decl);
+
+    const orphan = try parseErrMsg(alloc,
+        \\errno_loc : *i32 extern libc
+        \\"detached"
+    );
+    try std.testing.expect(std.mem.indexOf(u8, orphan, "expected identifier at top level") != null);
+
+    var same = Parser.init(alloc, "errno_loc : *i32 extern libc \"__error\"\n");
+    const bound = (try same.parse()).data.root.decls[0].data.var_decl;
+    try std.testing.expectEqualStrings("libc", bound.extern_lib.?);
+    try std.testing.expectEqualStrings("__error", bound.extern_name.?);
+}
+
+// L3/L4 — an `export` still owes a body, so nothing in its tail can end and the
+// break is ordinary whitespace.
+test "parser: an export tail reads through a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\seven :: () -> i64 export
+        \\"renamed_c"
+        \\{ 7 }
+    );
+    const fd = (try p.parse()).data.root.decls[0].data.fn_decl;
+    try std.testing.expect(fd.extern_lib == null);
+    try std.testing.expectEqualStrings("renamed_c", fd.extern_name.?);
+    try std.testing.expectEqual(@as(usize, 1), fd.body.data.block.stmts.len);
+
+    var with_lib = Parser.init(alloc,
+        \\seven :: () -> i64 export
+        \\C
+        \\"renamed_c"
+        \\{ 7 }
+    );
+    const lib_fd = (try with_lib.parse()).data.root.decls[0].data.fn_decl;
+    try std.testing.expectEqualStrings("C", lib_fd.extern_lib.?);
+    try std.testing.expectEqualStrings("renamed_c", lib_fd.extern_name.?);
+
+    var same = Parser.init(alloc, "seven :: () -> i64 export C \"renamed_c\" { 7 }\n");
+    const same_fd = (try same.parse()).data.root.decls[0].data.fn_decl;
+    try std.testing.expectEqualStrings("C", same_fd.extern_lib.?);
+    try std.testing.expectEqualStrings("renamed_c", same_fd.extern_name.?);
+}
+
+// L5 — a struct's `{ … }` is unconditional, so its tail reads through too.
+test "parser: a struct linkage tail reads through a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\Handle :: struct abi(.c) extern
+        \\compiler
+        \\{ x: i64; }
+    );
+    const sd = (try p.parse()).data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqualStrings("compiler", sd.extern_lib.?);
+    try std.testing.expectEqual(ast.ABI.c, sd.abi);
+    try std.testing.expectEqual(@as(usize, 1), sd.field_names.len);
+
+    var same = Parser.init(alloc, "Handle :: struct abi(.c) extern compiler { x: i64; }\n");
+    const same_sd = (try same.parse()).data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqualStrings("compiler", same_sd.extern_lib.?);
+    try std.testing.expectEqual(@as(usize, 1), same_sd.field_names.len);
+}
+
+// C-1 / V3a / K1 — the reorder. A complete `name : T` (or `name :: value`) asks
+// whether it ended BEFORE dispatching on the token below, so which reading wins
+// is the suppression property rather than arm order. All three tails name a
+// token that cannot open a statement, so all three read through the break.
+test "parser: a complete binding asks whether it ended before its tail" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // C-1: `extern` below a complete `name : T`.
+    var ext = Parser.init(alloc,
+        \\errno_loc : *i32
+        \\    extern libc "__error"
+    );
+    const ext_decls = (try ext.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 1), ext_decls.len);
+    try std.testing.expect(ext_decls[0].data.var_decl.is_extern);
+    try std.testing.expectEqualStrings("libc", ext_decls[0].data.var_decl.extern_lib.?);
+    try std.testing.expectEqualStrings("__error", ext_decls[0].data.var_decl.extern_name.?);
+
+    // V3a: a split `:` still makes a typed constant.
+    var col = Parser.init(alloc,
+        \\LIMIT : i64
+        \\    : 1
+    );
+    const col_decls = (try col.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 1), col_decls.len);
+    try std.testing.expect(col_decls[0].data.const_decl.type_annotation != null);
+    try std.testing.expect(col_decls[0].data.const_decl.value.data == .int_literal);
+
+    // D1: a split `=` still makes a typed variable.
+    var eq = Parser.init(alloc,
+        \\seed : i64
+        \\    = 7
+    );
+    const eq_decls = (try eq.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 1), eq_decls.len);
+    try std.testing.expect(eq_decls[0].data.var_decl.value.?.data == .int_literal);
+
+    // K1: a split `intrinsic` still annotates the constant.
+    var intr = Parser.init(alloc,
+        \\mystery :: i64
+        \\    intrinsic
+    );
+    const intr_decls = (try intr.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 1), intr_decls.len);
+    try std.testing.expect(intr_decls[0].data.const_decl.value.data == .intrinsic_expr);
+    try std.testing.expect(intr_decls[0].data.const_decl.type_annotation != null);
+
+    // The same-line controls, and the ordinary next statement the reorder must
+    // still recognize: a bare `name : T` followed by an unrelated declaration.
+    var plain = Parser.init(alloc,
+        \\slot : i64
+        \\LIMIT :: 9
+    );
+    const plain_decls = (try plain.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), plain_decls.len);
+    try std.testing.expect(plain_decls[0].data.var_decl.value == null);
+    try std.testing.expect(!plain_decls[0].data.var_decl.is_extern);
+    try std.testing.expect(plain_decls[1].data == .const_decl);
+}
+
+// E1/E2 — the suppression list is the enumeration of a property, not a
+// whitelist: a binary operator below a complete statement continues it whether
+// or not it is a member, because the Pratt loop consumes it before any
+// terminator query runs.
+test "parser: a binary operator below a statement continues it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // E1 — members.
+    inline for (.{ "+", "==", "!=", "<=", ">=", "<<", ">>", "|", "??" }) |op| {
+        const body = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    " ++ op ++ " 2\n}");
+        try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+    }
+    // E2 — nonmembers. Same verdict, reached by the same path.
+    inline for (.{ "<", ">", "/", "%", "&", "^" }) |op| {
+        const body = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    " ++ op ++ " 2\n}");
+        try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+    }
+    // The same-line controls parse to the same single statement.
+    inline for (.{ "+", "<", "&" }) |op| {
+        const body = try parseBody(alloc, "f :: () -> i64 {\n    a := 1 " ++ op ++ " 2\n}");
+        try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+    }
+}
+
+// A1/D0 — the assignment operators are the same story: `=` is a member and the
+// compound spellings are not, and both continue because the assignment dispatch
+// consumes them directly.
+test "parser: an assignment operator below a target continues it" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    inline for (.{ "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=" }) |op| {
+        // Bare-name target (the identifier fast path).
+        const bare = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    a\n    " ++ op ++ " 2\n    a\n}");
+        try std.testing.expectEqual(@as(usize, 3), bare.data.block.stmts.len);
+        // Field target (the general expression-target path).
+        const field = try parseBody(alloc, "f :: (p: Point) -> i64 {\n    p.x\n    " ++ op ++ " 2\n    0\n}");
+        try std.testing.expectEqual(@as(usize, 2), field.data.block.stmts.len);
+        // Same-line control.
+        const same = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    a " ++ op ++ " 2\n    a\n}");
+        try std.testing.expectEqual(@as(usize, 3), same.data.block.stmts.len);
+    }
+
+    // `::` and `,` below a bare name also continue — a declaration head and a
+    // multi-assignment target list.
+    const decl = try parseBody(alloc, "f :: () -> i64 {\n    N\n    :: 3\n    N\n}");
+    try std.testing.expectEqual(@as(usize, 2), decl.data.block.stmts.len);
+    try std.testing.expect(decl.data.block.stmts[0].data == .const_decl);
+}
+
+// ---- The binding layer ----
+//
+// `(`, `[`, `{`, and `!` attach to what precedes them only on that expression's
+// own line. This is the rule the glue forms and the trailing block already
+// followed, applied to the two postfix forms that were still taking their token
+// across a break — and it is geometry, not completability: the same brace is
+// refused inside an argument list exactly as it is at statement level. The
+// dot-led postfixes are the other camp: `.`, `?.`, and `catch` chain across a
+// break, which P4 below pins.
+
+// P2 — `!` is postfix force-unwrap and prefix `not`, so which one a leading `!`
+// spells is decided by the line it sits on.
+test "parser: a postfix `!` binds only on its own line" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const split = try parseBody(alloc,
+        \\f :: (a: bool) -> i64 {
+        \\    a
+        \\    !a
+        \\    0
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 3), split.data.block.stmts.len);
+    try std.testing.expect(split.data.block.stmts[0].data == .identifier);
+    try std.testing.expectEqual(ast.UnaryOp.Op.not, split.data.block.stmts[1].data.unary_op.op);
+
+    const same = try parseBody(alloc,
+        \\f :: (a: ?i64) -> i64 {
+        \\    a!
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 1), same.data.block.stmts.len);
+    try std.testing.expect(same.data.block.stmts[0].data == .force_unwrap);
+}
+
+// P3 — a named aggregate's `{` binds only on the same line as its head. Across
+// a break the head is an expression of its own and the brace is a scope block,
+// whatever the head was: a type name, a type application, or a value call.
+test "parser: a named aggregate `{` binds only on its head's line" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const type_name = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    Pair
+        \\    { g() }
+        \\    0
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 3), type_name.data.block.stmts.len);
+    try std.testing.expect(type_name.data.block.stmts[0].data == .identifier);
+    try std.testing.expect(type_name.data.block.stmts[1].data == .block);
+
+    // The `mk()` fall-through: the next-line brace already failed the trailing
+    // block's same-line test, and it is not stolen as an aggregate either.
+    const value_call = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    mk()
+        \\    { g() }
+        \\    0
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 3), value_call.data.block.stmts.len);
+    try std.testing.expect(value_call.data.block.stmts[0].data == .call);
+    try std.testing.expect(value_call.data.block.stmts[1].data == .block);
+
+    const type_app = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    Box(i64)
+        \\    { g() }
+        \\    0
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 3), type_app.data.block.stmts.len);
+    try std.testing.expect(type_app.data.block.stmts[0].data == .call);
+    try std.testing.expect(type_app.data.block.stmts[1].data == .block);
+
+    // Same-line controls: the aggregate and the trailing block both still bind.
+    const aggregate = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    Pair{ a = 1, b = 2 }
+        \\}
+    );
+    try std.testing.expect(aggregate.data.block.stmts[0].data == .struct_literal);
+
+    const applied = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    Box(i64){ v = 1 }
+        \\}
+    );
+    try std.testing.expect(applied.data.block.stmts[0].data == .struct_literal);
+
+    const trailing = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    vstack(8) { g() }
+        \\}
+    );
+    const call = trailing.data.block.stmts[0].data.call;
+    try std.testing.expect(call.args[call.args.len - 1].data == .trailing_block);
+}
+
+// ---- Must-continue locks ----
+//
+// An optional slot inside a construct that still owes a mandatory `{`, `(` or
+// name is not a place the construct can end, so a line break in front of it is
+// ordinary whitespace. Each of these has an identifier-shaped slot, which is
+// exactly the shape a future sweep could mistake for a statement head.
+
+// M1 — enum `flags` and the backing type.
+test "parser: an enum header reads through a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\Perms :: enum
+        \\    flags
+        \\    u32
+        \\    { read; write; }
+    );
+    const ed = (try p.parse()).data.root.decls[0].data.enum_decl;
+    try std.testing.expect(ed.is_flags);
+    try std.testing.expect(ed.backing_type != null);
+    try std.testing.expectEqual(@as(usize, 2), ed.variant_names.len);
+
+    var same = Parser.init(alloc, "Perms :: enum flags u32 { read; write; }\n");
+    const same_ed = (try same.parse()).data.root.decls[0].data.enum_decl;
+    try std.testing.expect(same_ed.is_flags);
+    try std.testing.expect(same_ed.backing_type != null);
+}
+
+// M2 — a `ufcs` alias target is mandatory, so the break cannot end the alias.
+test "parser: a ufcs alias target reads through a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\multiply :: ufcs
+        \\    mat4_multiply
+    );
+    const decls = (try p.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 1), decls.len);
+    try std.testing.expectEqualStrings("mat4_multiply", decls[0].data.ufcs_alias.target);
+
+    var same = Parser.init(alloc, "multiply :: ufcs mat4_multiply\n");
+    try std.testing.expectEqualStrings("mat4_multiply", (try same.parse()).data.root.decls[0].data.ufcs_alias.target);
+}
+
+// M3 — a runtime class's linkage word sits in front of a mandatory body.
+test "parser: a runtime-class linkage word reads through a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\NSString :: #objc_class("NSString")
+        \\    extern
+        \\    { length :: (self: *Self) -> i32; }
+    );
+    const rc = (try p.parse()).data.root.decls[0].data.runtime_class_decl;
+    try std.testing.expect(rc.is_extern);
+
+    var same = Parser.init(alloc, "NSString :: #objc_class(\"NSString\") extern { length :: (self: *Self) -> i32; }\n");
+    try std.testing.expect((try same.parse()).data.root.decls[0].data.runtime_class_decl.is_extern);
+}
+
+// M4 — a struct's type-parameter list sits in front of a mandatory `{`.
+test "parser: a struct type-parameter list reads through a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\Box :: struct
+        \\    ($T: Type)
+        \\    { v: T; }
+    );
+    const sd = (try p.parse()).data.root.decls[0].data.struct_decl;
+    try std.testing.expectEqual(@as(usize, 1), sd.type_params.len);
+    try std.testing.expectEqual(@as(usize, 1), sd.field_names.len);
+
+    var same = Parser.init(alloc, "Box :: struct($T: Type) { v: T; }\n");
+    try std.testing.expectEqual(@as(usize, 1), (try same.parse()).data.root.decls[0].data.struct_decl.type_params.len);
+}
+
+// M5 — a protocol's kind word sits in front of a mandatory `{`.
+test "parser: a protocol kind word reads through a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\Lerpable :: protocol
+        \\    inline
+        \\    { lerp :: (self: *Self, t: f32) -> Self; }
+    );
+    const pd = (try p.parse()).data.root.decls[0].data.protocol_decl;
+    try std.testing.expectEqual(ast.ProtocolKind.@"inline", pd.kind);
+
+    var same = Parser.init(alloc, "Lerpable :: protocol inline { lerp :: (self: *Self, t: f32) -> Self; }\n");
+    try std.testing.expectEqual(ast.ProtocolKind.@"inline", (try same.parse()).data.root.decls[0].data.protocol_decl.kind);
+}
+
+// H1 — a function header's optional slots all sit in front of a mandatory body.
+test "parser: a function header reads through a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\cb :: ()
+        \\    -> i64
+        \\    abi(.c)
+        \\    { 0 }
+    );
+    const fd = (try p.parse()).data.root.decls[0].data.fn_decl;
+    try std.testing.expect(fd.return_type != null);
+    try std.testing.expectEqual(ast.ABI.c, fd.abi);
+    try std.testing.expectEqual(@as(usize, 1), fd.body.data.block.stmts.len);
+}
+
+// D3 — `#context_extend`'s default is optional, and `=` cannot open a
+// statement, so a split default still binds.
+test "parser: a #context_extend default reads through a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var split = Parser.init(alloc,
+        \\#context_extend depth: i64
+        \\    = 3
+    );
+    const split_decls = (try split.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 1), split_decls.len);
+    try std.testing.expect(split_decls[0].data.context_extend_decl.default_expr != null);
+
+    var same = Parser.init(alloc, "#context_extend depth: i64 = 3\n");
+    try std.testing.expect((try same.parse()).data.root.decls[0].data.context_extend_decl.default_expr != null);
+
+    // Absent default, and the declaration below is its own.
+    var bare = Parser.init(alloc,
+        \\#context_extend depth: i64
+        \\LIMIT :: 9
+    );
+    const bare_decls = (try bare.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 2), bare_decls.len);
+    try std.testing.expect(bare_decls[0].data.context_extend_decl.default_expr == null);
+}
+
+// I1 — a value inside a fixed delimiter is owned by that delimiter: the list
+// runs to its closer, so a line break inside it never ends anything.
+test "parser: values inside fixed delimiters read through a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // A struct field's default.
+    var field = Parser.init(alloc,
+        \\Cfg :: struct {
+        \\    depth: i64
+        \\        = 3;
+        \\}
+    );
+    const sd = (try field.parse()).data.root.decls[0].data.struct_decl;
+    try std.testing.expect(sd.field_defaults[0] != null);
+
+    // A parameter's default, and an argument split across lines.
+    const body = try parseBody(alloc,
+        \\f :: (
+        \\    a: i64
+        \\        = 1,
+        \\    b: i64
+        \\) -> i64 {
+        \\    g(
+        \\        a,
+        \\        b
+        \\    )
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+    try std.testing.expectEqual(@as(usize, 2), body.data.block.stmts[0].data.call.args.len);
+
+    // An aggregate's named values.
+    const agg = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    p := Point{
+        \\        x = 1,
+        \\        y = 2,
+        \\    }
+        \\    p.x
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 2), agg.data.block.stmts.len);
+    try std.testing.expect(agg.data.block.stmts[0].data.var_decl.value.?.data == .struct_literal);
+}
+
+// P4 — the suppressed postfixes still chain across a break, on the paths that
+// own them.
+test "parser: `?.` and `catch` continue across a line break" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const opt = try parseBody(alloc,
+        \\f :: (p: ?Point) -> i64 {
+        \\    p
+        \\        ?.x
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 1), opt.data.block.stmts.len);
+
+    const failable = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    g()
+        \\        catch (e) 0
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 1), failable.data.block.stmts.len);
+    try std.testing.expect(failable.data.block.stmts[0].data == .catch_expr);
+}
+
+// X1 — a fixed form's own list keeps its literal separator. These are S3's
+// baseline: a newline is NOT a terminator inside them.
+test "parser: a fixed form's list still demands its `;`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    // `#import c { … }` entries.
+    _ = try parseErrMsg(alloc,
+        \\c :: #import c {
+        \\    #include "stdio.h"
+        \\}
+    );
+    var c_ok = Parser.init(alloc,
+        \\c :: #import c {
+        \\    #include "stdio.h";
+        \\}
+    );
+    _ = try c_ok.parse();
+
+    // Runtime-class members.
+    _ = try parseErrMsg(alloc,
+        \\NSString :: #objc_class("NSString") extern {
+        \\    length :: (self: *Self) -> i32
+        \\}
+    );
+
+    // Match arms.
+    _ = try parseErrMsg(alloc,
+        \\f :: (v: i64) -> i64 {
+        \\    v == {
+        \\        case 1: 10
+        \\        case _: 0;
+        \\    }
+        \\}
+    );
 }

@@ -151,7 +151,7 @@ pub const Parser = struct {
             const raw = self.tokenSlice(self.current);
             const path = raw[1 .. raw.len - 1];
             self.advance();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(start, .{ .import_decl = .{ .path = path, .name = null } });
         }
 
@@ -166,7 +166,7 @@ pub const Parser = struct {
         if (self.current.tag == .hash_run) {
             self.advance();
             const expr = try self.parseExpr();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(start, .{ .comptime_expr = .{ .expr = expr } });
         }
 
@@ -179,7 +179,7 @@ pub const Parser = struct {
             const raw = self.tokenSlice(self.current);
             const fw_name = raw[1 .. raw.len - 1];
             self.advance();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(start, .{ .framework_decl = .{ .name = fw_name } });
         }
 
@@ -289,7 +289,7 @@ pub const Parser = struct {
             const raw = self.tokenSlice(self.current);
             const path = raw[1 .. raw.len - 1];
             self.advance();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(start_pos, .{ .import_decl = .{ .path = path, .name = name, .is_raw = name_is_raw } });
         }
 
@@ -302,7 +302,7 @@ pub const Parser = struct {
             const raw = self.tokenSlice(self.current);
             const lib_name = raw[1 .. raw.len - 1];
             self.advance();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(start_pos, .{ .library_decl = .{ .lib_name = lib_name, .name = name, .is_raw = name_is_raw } });
         }
 
@@ -311,7 +311,7 @@ pub const Parser = struct {
             const run_start = self.current.loc.start;
             self.advance();
             const inner = try self.parseExpr();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             const ct = try self.createNode(run_start, .{ .comptime_expr = .{ .expr = inner } });
             return try self.createNode(start_pos, .{ .const_decl = .{ .name = name, .type_annotation = null, .value = ct, .name_span = name_span, .is_raw = name_is_raw } });
         }
@@ -320,7 +320,7 @@ pub const Parser = struct {
         if (self.current.tag == .kw_intrinsic) {
             const bi_start = self.current.loc.start;
             self.advance();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             const bi = try self.createNode(bi_start, .{ .intrinsic_expr = {} });
             return try self.createNode(start_pos, .{ .const_decl = .{ .name = name, .type_annotation = null, .value = bi, .name_span = name_span, .is_raw = name_is_raw } });
         }
@@ -389,7 +389,7 @@ pub const Parser = struct {
             }
             const target = self.tokenSlice(self.current);
             self.advance();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(start_pos, .{ .ufcs_alias = .{ .name = name, .target = target, .is_raw = name_is_raw } });
         }
 
@@ -411,16 +411,18 @@ pub const Parser = struct {
         // Otherwise it's a constant expression
         const value = try self.parseExpr();
 
-        // name :: type_expr intrinsic; — intrinsic with type annotation
-        if (self.current.tag == .kw_intrinsic) {
+        // name :: type_expr intrinsic; — intrinsic with type annotation. The
+        // declaration is already whole without the tail, so the tail binds only
+        // where the declaration has not already ended.
+        if (!self.atStatementEnd() and self.current.tag == .kw_intrinsic) {
             const bi_start = self.current.loc.start;
             self.advance();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             const bi = try self.createNode(bi_start, .{ .intrinsic_expr = {} });
             return try self.createNode(start_pos, .{ .const_decl = .{ .name = name, .type_annotation = value, .value = bi, .name_span = name_span, .is_raw = name_is_raw } });
         }
 
-        try self.expect(.semicolon);
+        try self.expectStatementEnd();
         return try self.createNode(start_pos, .{ .const_decl = .{ .name = name, .type_annotation = null, .value = value, .name_span = name_span, .is_raw = name_is_raw } });
     }
 
@@ -465,7 +467,7 @@ pub const Parser = struct {
             }
         }
         try self.expect(.r_brace);
-        try self.expect(.semicolon);
+        try self.expectStatementEnd();
 
         return try self.createNode(start, .{ .c_import_decl = .{
             .includes = try includes.toOwnedSlice(self.allocator),
@@ -481,6 +483,16 @@ pub const Parser = struct {
         // After `name :`
         // Parse type
         const type_node = try self.parseTypeExpr();
+
+        // `name : type` is already a whole declaration, so ask whether it ended
+        // before looking at what an initializer or a linkage tail would have
+        // started. `:`, `=` and `extern` cannot open a statement, so a line
+        // break in front of any of them continues this one.
+        if (self.atStatementEnd()) {
+            // name : type; (default-initialized variable)
+            try self.expectStatementEnd();
+            return try self.createNode(start_pos, .{ .var_decl = .{ .name = name, .name_span = name_span, .type_annotation = type_node, .value = null, .is_raw = name_is_raw } });
+        }
 
         if (self.current.tag == .colon) {
             // name : type : value; (typed constant)
@@ -498,36 +510,20 @@ pub const Parser = struct {
             return try self.createNode(start_pos, .{ .var_decl = .{ .name = name, .name_span = name_span, .type_annotation = type_node, .value = value, .is_raw = name_is_raw } });
         }
 
-        if (self.current.tag == .semicolon) {
-            // name : type; (default-initialized variable)
-            self.advance();
-            return try self.createNode(start_pos, .{ .var_decl = .{ .name = name, .name_span = name_span, .type_annotation = type_node, .value = null, .is_raw = name_is_raw } });
-        }
-
         if (self.current.tag == .kw_extern) {
             // name : type extern [LIB] ["csym"];   (extern data global, resolved
             // at link time)
             self.advance();
-            var ext_lib: ?[]const u8 = null;
-            if (self.current.tag == .identifier) {
-                ext_lib = self.tokenSlice(self.current);
-                self.advance();
-            }
-            var ext_name: ?[]const u8 = null;
-            if (self.current.tag == .string_literal) {
-                const raw = self.tokenSlice(self.current);
-                ext_name = raw[1 .. raw.len - 1];
-                self.advance();
-            }
-            try self.expect(.semicolon);
+            const tail = self.parseLinkageTail(.may_end, true);
+            try self.expectStatementEnd();
             return try self.createNode(start_pos, .{ .var_decl = .{
                 .name = name,
                 .name_span = name_span,
                 .type_annotation = type_node,
                 .value = null,
                 .is_extern = true,
-                .extern_lib = ext_lib,
-                .extern_name = ext_name,
+                .extern_lib = tail.lib,
+                .extern_name = tail.name,
                 .is_raw = name_is_raw,
             } });
         }
@@ -1275,10 +1271,11 @@ pub const Parser = struct {
         // Parse-only for now — no layout/registry semantics yet.
         const struct_abi = try self.parseOptionalAbi();
         const struct_extern = self.parseOptionalExternExport();
+        // The `{ … }` below is unconditional, so nothing here can end — the tail
+        // reads through a line break.
         var struct_extern_lib: ?[]const u8 = null;
-        if (struct_extern != .none and self.current.tag == .identifier) {
-            struct_extern_lib = self.tokenSlice(self.current);
-            self.advance();
+        if (struct_extern != .none) {
+            struct_extern_lib = self.parseLinkageTail(.must_continue, false).lib;
         }
 
         // Optional type params: struct($N: u32, $T: Type) { ... }
@@ -2554,18 +2551,19 @@ pub const Parser = struct {
         // ident then a C symbol-name string, both optional (mirrors
         // `extern LIB "csym"`). Stored on extern_lib/extern_name; the rename
         // is consumed in `declareFunction`, the lib reference in Part B.
+        // An `extern` import is whole without the tail, so past a line break the
+        // declaration has already ended and the name below belongs to the next
+        // one. An `export` definition still owes a body, so its tail reads
+        // through the break.
         var extern_lib: ?[]const u8 = null;
         var extern_name: ?[]const u8 = null;
         if (extern_export != .none) {
-            if (self.current.tag == .identifier) {
-                extern_lib = self.tokenSlice(self.current);
-                self.advance();
-            }
-            if (self.current.tag == .string_literal) {
-                const raw = self.tokenSlice(self.current);
-                extern_name = raw[1 .. raw.len - 1];
-                self.advance();
-            }
+            const tail = self.parseLinkageTail(
+                if (extern_export == .extern_) .may_end else .must_continue,
+                true,
+            );
+            extern_lib = tail.lib;
+            extern_name = tail.name;
         }
 
         // Body: block `{ ... }`, arrow `=> expr;`, intrinsic, or #compiler marker.
@@ -2584,19 +2582,19 @@ pub const Parser = struct {
         var is_arrow = false;
         const body = if (extern_export == .extern_) blk: {
             const semi_start = self.current.loc.start;
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             const stmts = try self.allocator.alloc(*Node, 0);
             break :blk try self.createNode(semi_start, .{ .block = .{ .stmts = stmts, .produces_value = false } });
         } else if (self.current.tag == .kw_intrinsic) blk: {
             const bi_start = self.current.loc.start;
             self.advance();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             break :blk try self.createNode(bi_start, .{ .intrinsic_expr = {} });
         } else if (self.current.tag == .fat_arrow) blk: {
             is_arrow = true;
             self.advance();
             const expr = try self.parseExpr();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             const stmts = try self.allocator.alloc(*Node, 1);
             stmts[0] = expr;
             const block_start = expr.span.start;
@@ -2653,7 +2651,8 @@ pub const Parser = struct {
     /// record whether the statement is a trailing VALUE (no `;`) or a discarded
     /// statement (`;`). A trailing `;` always discards; otherwise the statement
     /// is the (potential) block value — allowed when it is block-form (where
-    /// `;` is optional) or when it is the last thing before `}`.
+    /// `;` is optional) or when it is the last thing before `}` — and a NEWLINE
+    /// ends the statement wherever the `;` was going to.
     fn expectSemicolonAfter(self: *Parser, expr: *Node) anyerror!void {
         const block_form = switch (expr.data) {
             .if_expr => |ie| !ie.is_inline,
@@ -2673,6 +2672,13 @@ pub const Parser = struct {
             // statement is the block's value (and discards nothing — clear any
             // stale semi location from a nested statement).
             self.last_stmt_produces_value = true;
+            self.last_stmt_semi_loc = null;
+        } else if (self.implicitTerminator()) {
+            // A line break where a `;` was expected ends the statement, and
+            // ends it the same way `;` does — the value is discarded. The arm
+            // above already claimed the position before `}`, so a `;`-less
+            // tail expression stays the block's value.
+            self.last_stmt_produces_value = false;
             self.last_stmt_semi_loc = null;
         } else {
             try self.expect(.semicolon); // emits "expected ;"
@@ -2785,7 +2791,7 @@ pub const Parser = struct {
                 const op = self.assignOp();
                 self.advance();
                 const value = try self.parseExpr();
-                try self.expect(.semicolon);
+                try self.expectStatementEnd();
                 const target = try self.createNode(start, .{ .identifier = .{ .name = name, .is_raw = name_is_raw } });
                 return try self.createNode(start, .{ .assignment = .{ .target = target, .op = op, .value = value } });
             }
@@ -2801,8 +2807,10 @@ pub const Parser = struct {
             try self.rejectInCleanup("return");
             const start = self.current.loc.start;
             self.advance();
-            if (self.current.tag == .semicolon) {
-                self.advance();
+            if (self.atStatementEnd()) {
+                // `return` with no value — terminated by its `;` or by the
+                // line break standing in for it.
+                try self.expectStatementEnd();
                 return try self.createNode(start, .{ .return_stmt = .{ .value = null } });
             }
             // Comma-separated return list — the bare multi-value `return` form:
@@ -2833,7 +2841,7 @@ pub const Parser = struct {
                 }
                 break;
             }
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             const ret_value: *Node = if (ret_elems.items.len == 1 and !ret_any_named)
                 ret_elems.items[0].value
             else
@@ -2855,7 +2863,7 @@ pub const Parser = struct {
                 try self.parseBlock()
             else blk: {
                 const e = try self.parseExpr();
-                try self.expect(.semicolon);
+                try self.expectStatementEnd();
                 break :blk e;
             };
             return try self.createNode(start, .{ .defer_stmt = .{ .expr = deferred } });
@@ -2872,7 +2880,7 @@ pub const Parser = struct {
             }
             self.advance();
             const tag_expr = try self.parseExpr();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(start, .{ .raise_stmt = .{ .tag = tag_expr } });
         }
 
@@ -2908,7 +2916,7 @@ pub const Parser = struct {
                 try self.parseBlock()
             else blk: {
                 const e = try self.parseExpr();
-                try self.expect(.semicolon);
+                try self.expectStatementEnd();
                 break :blk e;
             };
             return try self.createNode(start, .{ .onfail_stmt = .{ .binding = binding, .binding_span = binding_span, .binding_is_raw = binding_is_raw, .body = body } });
@@ -2919,7 +2927,7 @@ pub const Parser = struct {
             try self.rejectInCleanup("break");
             const start = self.current.loc.start;
             self.advance();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(start, .{ .break_expr = {} });
         }
 
@@ -2928,7 +2936,7 @@ pub const Parser = struct {
             try self.rejectInCleanup("continue");
             const start = self.current.loc.start;
             self.advance();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(start, .{ .continue_expr = {} });
         }
 
@@ -2937,7 +2945,7 @@ pub const Parser = struct {
             const start = self.current.loc.start;
             self.advance();
             const inner = try self.parseExpr();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(start, .{ .insert_expr = .{ .expr = inner } });
         }
 
@@ -2955,7 +2963,7 @@ pub const Parser = struct {
             const raw = self.tokenSlice(self.current);
             const path = raw[1 .. raw.len - 1];
             self.advance();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(start, .{ .import_decl = .{ .path = path, .name = null } });
         }
         if (self.current.tag == .hash_framework) {
@@ -2967,7 +2975,7 @@ pub const Parser = struct {
             const raw = self.tokenSlice(self.current);
             const fw_name = raw[1 .. raw.len - 1];
             self.advance();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(start, .{ .framework_decl = .{ .name = fw_name } });
         }
 
@@ -3014,6 +3022,17 @@ pub const Parser = struct {
             return try self.parsePushStmt();
         }
 
+        // A bare scope block is a statement like the keyword-led forms above:
+        // it ends at its `}` and never continues into a postfix chain, so
+        // `{ … }` then `.flush()` on the next line is two statements. An
+        // EXPRESSION that happens to end in a block — a trailing-block call, an
+        // aggregate literal — is a different thing and keeps chaining.
+        if (self.current.tag == .l_brace) {
+            const block = try self.parseBlock();
+            try self.expectSemicolonAfter(block);
+            return block;
+        }
+
         // Expression statement
         const expr = try self.parseExpr();
 
@@ -3027,7 +3046,7 @@ pub const Parser = struct {
             const op = self.assignOp();
             self.advance();
             const value = try self.parseExpr();
-            try self.expect(.semicolon);
+            try self.expectStatementEnd();
             return try self.createNode(expr.span.start, .{ .assignment = .{ .target = expr, .op = op, .value = value } });
         }
 
@@ -3300,12 +3319,17 @@ pub const Parser = struct {
                 } else {
                     expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                 }
-            } else if (self.current.tag == .l_brace and self.shouldParseNamedAggregate(expr)) {
-                // Named aggregate: Type{ ... }. Contextual `.{...}` still starts
-                // with a leading dot in parsePrimary. Header contexts reserve
-                // their final `{` for the statement body (`if cond {`).
-                // Body-shape rejects statement blocks so
-                // `push self.dctx { body }` keeps the brace as the push body.
+            } else if (self.current.tag == .l_brace and !self.gapCrossesLine() and
+                self.shouldParseNamedAggregate(expr))
+            {
+                // Named aggregate: Type{ ... }. The `{` binds only on the same
+                // line as its head, the same rule the trailing block above
+                // follows — across a break it is a scope block of its own.
+                // Contextual `.{...}` still starts with a leading dot in
+                // parsePrimary. Header contexts reserve their final `{` for the
+                // statement body (`if cond {`). Body-shape rejects statement
+                // blocks so `push self.dctx { body }` keeps the brace as the
+                // push body.
                 if (expr.data == .identifier) {
                     expr = try self.parseStructLiteral(expr.data.identifier.name, null, expr.span.start);
                 } else {
@@ -3475,8 +3499,10 @@ pub const Parser = struct {
                         } });
                     }
                 }
-            } else if (self.current.tag == .bang) {
-                // Force unwrap: expr!
+            } else if (self.current.tag == .bang and !self.gapCrossesLine()) {
+                // Force unwrap: expr! — postfix on the expression's own line.
+                // `!` is also the prefix `not`, so a leading `!b` below a
+                // complete expression opens a statement of its own.
                 // Only if it's not != (bang_equal would have been lexed as a single token)
                 self.advance();
                 expr = try self.createNode(expr.span.start, .{ .force_unwrap = .{ .operand = expr } });
@@ -3655,7 +3681,7 @@ pub const Parser = struct {
             return self.fail("global (top-level) asm takes no operands, inputs, or clobbers — only a template string");
         }
         try self.expect(.r_brace);
-        try self.expect(.semicolon);
+        try self.expectStatementEnd();
         return try self.createNode(start, .{ .asm_global = .{ .template = template } });
     }
 
@@ -3966,11 +3992,12 @@ pub const Parser = struct {
             },
             .kw_return => {
                 self.advance();
-                // return with optional value
-                const value = if (self.current.tag != .semicolon and self.current.tag != .eof)
-                    try self.parseExpr()
+                // The terminator can be implied, so whether a value follows is
+                // the same question a statement-position `return` asks.
+                const value = if (self.atStatementEnd())
+                    null
                 else
-                    null;
+                    try self.parseExpr();
                 return try self.createNode(start, .{ .return_stmt = .{ .value = value } });
             },
             .l_bracket, .question => {
@@ -4452,7 +4479,7 @@ pub const Parser = struct {
         const message = raw[1 .. raw.len - 1];
         self.advance();
         try self.expect(.r_paren);
-        try self.expect(.semicolon);
+        try self.expectStatementEnd();
         return try self.createNode(start, .{ .error_directive = .{ .message = message } });
     }
 
@@ -4473,7 +4500,7 @@ pub const Parser = struct {
             self.advance();
             default_node = try self.parseExpr();
         }
-        try self.expect(.semicolon);
+        try self.expectStatementEnd();
         return try self.createNode(start, .{ .context_extend_decl = .{
             .name = field_name,
             .name_span = field_name_span,
@@ -4966,6 +4993,39 @@ pub const Parser = struct {
         return abi;
     }
 
+    /// Whether the construct that owns a linkage tail may end inside it. An
+    /// `extern` import is whole the moment its keyword is read, so each empty
+    /// slot is a place the declaration can stop; an `export` definition and an
+    /// `extern` struct still owe a body, so nothing there can end and the tail
+    /// reads straight through a line break.
+    const TailEnds = enum { may_end, must_continue };
+
+    const LinkageTail = struct {
+        lib: ?[]const u8 = null,
+        name: ?[]const u8 = null,
+    };
+
+    /// The `[LIB] ["csym"]` tail after `extern` / `export`. Both slots are bare
+    /// names, so on a terminable tail each one is asked whether the declaration
+    /// already ended — the name on the next line belongs to the next
+    /// declaration, not to this one.
+    fn parseLinkageTail(self: *Parser, ends: TailEnds, admits_symbol: bool) LinkageTail {
+        var tail: LinkageTail = .{};
+        if (ends == .may_end and self.atStatementEnd()) return tail;
+        if (self.current.tag == .identifier) {
+            tail.lib = self.tokenSlice(self.current);
+            self.advance();
+        }
+        if (!admits_symbol) return tail;
+        if (ends == .may_end and self.atStatementEnd()) return tail;
+        if (self.current.tag == .string_literal) {
+            const raw = self.tokenSlice(self.current);
+            tail.name = raw[1 .. raw.len - 1];
+            self.advance();
+        }
+        return tail;
+    }
+
     /// Postfix linkage modifier in the slot after `abi(...)`:
     /// `extern` (import) or `export` (define + expose), or `.none` if neither.
     fn parseOptionalExternExport(self: *Parser) ast.ExternExportModifier {
@@ -5073,7 +5133,7 @@ pub const Parser = struct {
             return self.fail("multi-target assignment: target count does not match value count");
         }
 
-        try self.expect(.semicolon);
+        try self.expectStatementEnd();
 
         return try self.createNode(start, .{ .multi_assign = .{
             .targets = try targets.toOwnedSlice(self.allocator),
@@ -5158,8 +5218,7 @@ pub const Parser = struct {
         return switch (expr.data) {
             // Enum/variant heads (`.key{…}`, `Ev.key{…}`) share the compact
             // aggregate body; contextual `.{…}` still starts with a leading dot alone.
-            .identifier, .field_access, .parameterized_type_expr, .call, .type_expr,
-            .tuple_type_expr, .enum_literal => true,
+            .identifier, .field_access, .parameterized_type_expr, .call, .type_expr, .tuple_type_expr, .enum_literal => true,
             else => false,
         };
     }
@@ -5285,8 +5344,16 @@ pub const Parser = struct {
                     prev_was_name = false;
                     saw_non_ws = true;
                 },
-                .kw_return, .kw_break, .kw_continue, .kw_defer, .kw_raise, .kw_onfail,
-                .kw_if, .kw_for, .kw_while, .kw_push,
+                .kw_return,
+                .kw_break,
+                .kw_continue,
+                .kw_defer,
+                .kw_raise,
+                .kw_onfail,
+                .kw_if,
+                .kw_for,
+                .kw_while,
+                .kw_push,
                 => {
                     if (depth == 1) top_level_stmt_kw = true;
                     prev_was_name = false;
@@ -5365,8 +5432,15 @@ pub const Parser = struct {
                     prev_was_name = false;
                     saw_non_ws = true;
                 },
-                .kw_return, .kw_break, .kw_continue, .kw_defer, .kw_raise, .kw_onfail,
-                .kw_if, .kw_for, .kw_while,
+                .kw_return,
+                .kw_break,
+                .kw_continue,
+                .kw_defer,
+                .kw_raise,
+                .kw_onfail,
+                .kw_if,
+                .kw_for,
+                .kw_while,
                 => {
                     if (depth == 1) top_level_stmt_kw = true;
                     prev_was_name = false;
@@ -5608,6 +5682,64 @@ pub const Parser = struct {
             );
     }
 
+    /// A token that cannot START a statement, so a line break in front of it
+    /// continues the statement above instead of ending it. `-` and `*` are
+    /// deliberately absent: the spacing rule already decided them — a leading
+    /// `- b` keeps the gaps matched and never reaches a terminator, while `-b`
+    /// opens a fresh operand and so is a statement of its own.
+    ///
+    /// The property is the rule and this list is its enumeration, so a token
+    /// belongs here as soon as some construct parser can reach a terminator
+    /// query with it current. `:`, `extern` and `intrinsic` are here because
+    /// the typed-binding and typed-constant parsers ask `atStatementEnd` before
+    /// dispatching on them; should `extern` ever become a declaration head
+    /// (issues/0030) it stops satisfying the property and leaves.
+    fn continuesStatement(tag: Tag) bool {
+        return switch (tag) {
+            .kw_and, .kw_or, .kw_then, .kw_else, .kw_case, .kw_catch => true,
+            .pipe, .plus, .equal_equal, .bang_equal, .less_equal, .greater_equal => true,
+            .less_less, .greater_greater, .pipe_arrow, .question_question, .question_dot => true,
+            .comma, .equal, .colon_colon, .arrow, .fat_arrow => true,
+            .colon, .kw_extern, .kw_intrinsic => true,
+            else => false,
+        };
+    }
+
+    /// The terminator of a statement or of a declaration written in statement
+    /// or top-level position: an explicit `;`, or the implied one — the line
+    /// break where the `;` would have gone, or the end of the file. The `;`
+    /// inside a fixed form's member list (a runtime class's members,
+    /// `#import c { … }`'s entries) and a match arm's terminator are separators
+    /// under their own grammar, not statement ends, and keep demanding their `;`.
+    fn expectStatementEnd(self: *Parser) !void {
+        if (self.current.tag == .semicolon) {
+            self.advance();
+            return;
+        }
+        if (self.implicitTerminator()) return;
+        try self.expect(.semicolon);
+    }
+
+    /// True where the terminator is implied rather than written: a newline
+    /// between the statement's last token and the next one ends the statement
+    /// exactly where a `;` would, and so does the end of the file — there is
+    /// no next statement for the one below to run into.
+    fn implicitTerminator(self: *const Parser) bool {
+        if (self.current.tag == .eof) return true;
+        if (continuesStatement(self.current.tag)) return false;
+        return self.gapCrossesLine();
+    }
+
+    /// True where the statement or declaration could end right here — at its
+    /// written `;`, or at the terminator a line break (or the end of the file)
+    /// implies. The query form of `expectStatementEnd`, which consumes. A
+    /// construct parser asks it before every optional slot that a completed
+    /// declaration would not have, so arm ordering stops deciding which of the
+    /// two readings wins.
+    fn atStatementEnd(self: *const Parser) bool {
+        return self.current.tag == .semicolon or self.implicitTerminator();
+    }
+
     /// The spacing rule for a prefix `-` / `*`: it binds only when glued to its
     /// operand. That is what makes `a -b` the prefix reading and `a - b` the
     /// infix one, so a spaced prefix has no reading left.
@@ -5757,6 +5889,43 @@ pub const Parser = struct {
         return error.ParseError;
     }
 };
+
+// The suppression set is the enumeration of one property — a token that cannot
+// START a statement — so every member is pinned by name, and so is every class
+// of token that CAN open one and therefore must end the statement above.
+test "continuesStatement: the suppression set member by member" {
+    const members = [_]Tag{
+        .kw_and,          .kw_or,     .kw_then,          .kw_else,
+        .kw_case,         .kw_catch,  .pipe,             .plus,
+        .equal_equal,     .bang_equal, .less_equal,      .greater_equal,
+        .less_less,       .greater_greater, .pipe_arrow, .question_question,
+        .question_dot,    .comma,     .equal,            .colon_colon,
+        .arrow,           .fat_arrow,
+        // Reorder-forced members: `parseTypedBinding` and `parseConstBinding`
+        // now ask `atStatementEnd` before dispatching on these three, so each
+        // one reaches a terminator query and has to answer it.
+        .colon,           .kw_extern, .kw_intrinsic,
+    };
+    for (members) |tag| try std.testing.expect(Parser.continuesStatement(tag));
+
+    // Statement heads, literals, openers, and the operators the spacing/glue
+    // rules own — none of them suppresses a terminator.
+    const negatives = [_]Tag{
+        .identifier, .int_literal, .string_literal, .l_brace,  .r_brace,
+        .l_paren,    .l_bracket,   .bang,           .dot,      .minus,
+        .star,       .semicolon,   .eof,            .kw_if,    .kw_while,
+        .kw_for,     .kw_return,   .kw_defer,       .kw_onfail, .kw_break,
+        .kw_continue, .kw_raise,   .kw_export,      .kw_push,   .kw_try,
+        .colon_equal, .plus_equal, .minus_equal,    .star_equal, .slash_equal,
+        .percent_equal, .ampersand_equal, .pipe_equal, .caret_equal,
+        // Binary operators outside the set: the Pratt loop consumes them before
+        // any terminator query, so membership decides nothing for them — the
+        // behavioural lock lives in parser.test.zig.
+        .slash,      .percent,     .ampersand,      .caret,    .less,
+        .greater,    .kw_in,
+    };
+    for (negatives) |tag| try std.testing.expect(!Parser.continuesStatement(tag));
+}
 
 test "parse minimal main" {
     const source = "main :: () { 42; }";

@@ -1,0 +1,29 @@
+// Whitespace is syntax (specs §1), statement termination: `[LIB] ["csym"]`
+// after `extern` / `export` is two optional bare names, so where the tail may
+// be written decides nothing on its own — what decides is whether the
+// declaration that owns it may END inside it.
+// Expected: exit 0.
+#import "modules/std.sx"
+
+// An `extern` import is whole the moment its keyword is read, so each empty
+// slot is a place the declaration can stop: the break ends it, and the name
+// below belongs to the declaration below.
+__stdinp : *void extern
+LIMIT :: 9
+
+// On the declaration's own line the same tail still binds — `c_abs` is C's
+// `abs`.
+c_abs :: (n: i32) -> i32 extern "abs"
+
+// An `export` definition still owes a body, so nothing in its tail can end and
+// the line break there is ordinary whitespace.
+sx_double :: (n: i32) -> i32 export
+    "double_c"
+    { n * 2 }
+
+main :: () -> i32 {
+    stdin_bits : u64 = xx *__stdinp
+    print("limit={} stdin={}\n", LIMIT, stdin_bits != 0)
+    print("abs={} double={}\n", c_abs(xx -42), sx_double(21))
+    0
+}
