@@ -544,9 +544,13 @@ test "parser: a postfix `(` binds only when glued" {
     const spaced = try parseErrMsg(alloc, "f :: () -> i64 { g (1) }");
     try std.testing.expect(std.mem.indexOf(u8, spaced, "a space before `(`") != null);
 
-    // Across a line the `(` simply does not bind — no spacing complaint.
-    const split = try parseErrMsg(alloc, "f :: () -> i64 { g\n(1) }");
-    try std.testing.expect(std.mem.indexOf(u8, split, "a space before `(`") == null);
+    // Across a line the `(` does not bind, so the newline ends the statement
+    // and the `(` opens the next one.
+    var split = Parser.init(alloc, "f :: () -> i64 { g\n(1) }");
+    const split_body = (try split.parse()).data.root.decls[0].data.fn_decl.body;
+    try std.testing.expectEqual(@as(usize, 2), split_body.data.block.stmts.len);
+    try std.testing.expect(split_body.data.block.stmts[0].data == .identifier);
+    try std.testing.expect(split_body.data.block.stmts[1].data == .int_literal);
 }
 
 test "parser: a postfix `[` binds only when glued" {
@@ -627,9 +631,12 @@ test "parser: `-` is infix only when its gaps match" {
     try std.testing.expect(std.mem.indexOf(u8, mirror, "glued on its left and spaced on its right") != null);
 
     // Across a line the prefix reading is a fresh operand, not a spacing
-    // mistake — the shape ASI turns into a second statement.
-    const split = try parseErrMsg(alloc, "f :: () -> i64 { g()\n-b }");
-    try std.testing.expect(std.mem.indexOf(u8, split, "reads as a prefix") == null);
+    // mistake — so the newline ends the statement and `-b` is the next one.
+    var split = Parser.init(alloc, "f :: () -> i64 { g()\n-b }");
+    const split_body = (try split.parse()).data.root.decls[0].data.fn_decl.body;
+    try std.testing.expectEqual(@as(usize, 2), split_body.data.block.stmts.len);
+    try std.testing.expect(split_body.data.block.stmts[0].data == .call);
+    try std.testing.expect(split_body.data.block.stmts[1].data.unary_op.op == .negate);
 }
 
 test "parser: a prefix `-` / `*` binds only when glued" {
@@ -682,4 +689,176 @@ test "parser: a pack index binds only when glued" {
     // complaint, and the ordinary path reports what follows.
     const split = try parseErrMsg(alloc, "f :: (..$args) -> string { g($args\n[0]) }");
     try std.testing.expect(std.mem.indexOf(u8, split, "a space before `[`") == null);
+}
+
+// ---- Statement termination (specs §1: Whitespace is Syntax) ----
+//
+// A newline ends a statement wherever a `;` would. These pin what the newline
+// terminates, what it must NOT, and which token in front of it keeps the
+// statement running.
+
+fn parseBody(alloc: std.mem.Allocator, src: [:0]const u8) !*Node {
+    var p = Parser.init(alloc, src);
+    const root = try p.parse();
+    return root.data.root.decls[0].data.fn_decl.body;
+}
+
+test "parser: a newline ends a statement" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    a := 1
+        \\    b : i64 = 2
+        \\    c :: 3
+        \\    g(a)
+        \\    a = b + c
+        \\    if a == b { g(0) }
+        \\    defer g(1)
+        \\    return a
+        \\}
+    );
+    const stmts = body.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 8), stmts.len);
+    try std.testing.expect(stmts[0].data == .var_decl);
+    try std.testing.expect(stmts[1].data == .var_decl);
+    try std.testing.expect(stmts[2].data == .const_decl);
+    try std.testing.expect(stmts[3].data == .call);
+    try std.testing.expect(stmts[4].data == .assignment);
+    try std.testing.expect(stmts[5].data == .if_expr);
+    try std.testing.expect(stmts[6].data == .defer_stmt);
+    try std.testing.expect(stmts[7].data == .return_stmt);
+}
+
+// The declaration forms a file is made of terminate on a newline too.
+test "parser: a newline ends a top-level declaration" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var p = Parser.init(alloc,
+        \\#import "modules/std.sx"
+        \\TAU :: 6
+        \\seed : i64 = 1
+        \\puts :: (s: *u8) -> i32 extern
+        \\add :: (a: i64, b: i64) -> i64 => a + b
+        \\main :: () -> i32 { 0 }
+    );
+    const decls = (try p.parse()).data.root.decls;
+    try std.testing.expectEqual(@as(usize, 6), decls.len);
+    try std.testing.expect(decls[0].data == .import_decl);
+    try std.testing.expect(decls[1].data == .const_decl);
+    try std.testing.expect(decls[2].data == .var_decl);
+    try std.testing.expectEqual(ast.ExternExportModifier.extern_, decls[3].data.fn_decl.extern_export);
+    try std.testing.expect(decls[4].data.fn_decl.is_arrow);
+}
+
+// Demand semantics is a later step: until it lands, `;` before `}` still means
+// "discard", so ASI must never insert a terminator there — a `;`-less tail is
+// the block's value however it is written.
+test "parser: a newline never terminates the tail before `}`" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    for ([_][:0]const u8{
+        "f :: () -> i32 { x }",
+        "f :: () -> i32 {\nx\n}",
+    }) |src| {
+        const body = try parseBody(alloc, src);
+        try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+        try std.testing.expect(body.data.block.produces_value);
+        try std.testing.expect(body.data.block.discarded_semi == null);
+    }
+
+    // The `;` still discards, and still names itself for the diagnostic.
+    const discarded = try parseBody(alloc, "f :: () -> i32 {\nx;\n}");
+    try std.testing.expect(!discarded.data.block.produces_value);
+    try std.testing.expect(discarded.data.block.discarded_semi != null);
+}
+
+// A token that cannot start a statement continues the one above it.
+test "parser: a continuation token holds the statement open" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    v := (a << 16)
+        \\        | b
+        \\    w := a
+        \\        and b
+        \\        or c
+        \\    v + w
+        \\}
+    );
+    const stmts = body.data.block.stmts;
+    try std.testing.expectEqual(@as(usize, 3), stmts.len);
+    try std.testing.expectEqual(ast.BinaryOp.Op.bit_or, stmts[0].data.var_decl.value.?.data.binary_op.op);
+    try std.testing.expectEqual(ast.BinaryOp.Op.or_op, stmts[1].data.var_decl.value.?.data.binary_op.op);
+
+    // A continuation token that cannot in fact continue is still not a new
+    // statement — the terminator it denied is what gets reported.
+    for ([_][:0]const u8{
+        "f :: () -> i64 { x := a\n, b\n0 }",
+        "f :: () -> i64 { x := a\n=> b\n0 }",
+        "f :: () -> i64 { x := a\n:: b\n0 }",
+    }) |src| {
+        const msg = try parseErrMsg(alloc, src);
+        try std.testing.expect(std.mem.indexOf(u8, msg, "expected ';'") != null);
+    }
+}
+
+// `}` then `else` on the next line is one if/else chain, not a statement and
+// an orphan.
+test "parser: a newline before `else` continues the chain" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const body = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    if c {
+        \\        1
+        \\    }
+        \\    else {
+        \\        2
+        \\    }
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
+    try std.testing.expect(body.data.block.stmts[0].data.if_expr.else_branch != null);
+}
+
+// C1: statements break, expressions chain. A bare scope block in STATEMENT
+// position ends at its `}`; an expression that ends in a block does not.
+test "parser: a bare scope block statement does not chain" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const broken = try parseBody(alloc,
+        \\f :: () -> Color {
+        \\    {
+        \\        g()
+        \\    }
+        \\    .green
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 2), broken.data.block.stmts.len);
+    try std.testing.expect(broken.data.block.stmts[0].data == .block);
+
+    const chained = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    vstack(1.0) {
+        \\        g()
+        \\    }
+        \\        .show()
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 1), chained.data.block.stmts.len);
+    try std.testing.expect(chained.data.block.stmts[0].data.call.callee.data == .field_access);
 }

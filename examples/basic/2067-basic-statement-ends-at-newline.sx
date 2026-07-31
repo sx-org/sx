@@ -1,0 +1,77 @@
+// Whitespace is syntax (specs §1), statement termination: a `;` ends a
+// statement, and so does the line break where the `;` would have gone. This
+// file is written WITHOUT terminators wherever one is optional — top-level
+// declarations, bindings, calls, assignments, `return`, `defer` — and pins the
+// two things the newline must NOT do: end a statement that is still running,
+// and terminate the tail expression a block returns.
+// Expected: exit 0.
+#import "modules/std.sx"
+
+TAU :: 6
+seed : i64 = 7
+
+Point :: struct { x: i64; y: i64 }
+
+add :: (a: i64, b: i64) -> i64 => a + b
+
+// The tail expression has no terminator, so it is the block's value — the
+// one-line and multi-line spellings are the same function.
+tight :: () -> i64 { 41 }
+spread :: () -> i64 {
+    n := 41
+    n
+}
+
+accumulate :: (v: i64) -> i64 {
+    total := 0
+    total = total + v
+    total = total + TAU
+    return total
+}
+
+// A `;` still discards, so this one returns 0 and not `v`.
+discarded :: (v: i64) -> i64 {
+    v;
+    0
+}
+
+// A token that cannot START a statement continues the one above it, so these
+// are single expressions spread over several lines.
+packed :: (hi: i64, lo: i64) -> i64 {
+    (hi << 16)
+        | lo
+}
+
+reachable :: (ready: bool, loaded: bool, forced: bool) -> bool {
+    ready
+        and loaded
+        or forced
+}
+
+// `-` and `*` are not continuation tokens: the spacing rule decides them. A
+// leading `- b` keeps its gaps matched and reads as subtraction.
+gap :: (a: i64, b: i64) -> i64 {
+    a
+        - b
+}
+
+main :: () -> i32 {
+    p := Point{ x = 1, y = 2 }
+    n := add(p.x, p.y)
+    n = accumulate(n)
+    print("tau={} seed={} n={}\n", TAU, seed, n)
+    print("tight={} spread={} discarded={}\n", tight(), spread(), discarded(9))
+    print("packed={} reachable={} gap={}\n", packed(1, 2), reachable(true, true, false), gap(10, 4))
+
+    // `}` then `else` on the next line is one chain, not a statement and an
+    // orphan.
+    if n > 3 {
+        print("big\n")
+    }
+    else {
+        print("small\n")
+    }
+
+    defer print("done\n")
+    0
+}

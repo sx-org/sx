@@ -310,7 +310,8 @@ ordinary comparisons. Native codegen and the comptime interpreter agree on this.
 
 Five glyphs — `(`, `[`, `-`, `*`, `{` — read differently depending on the
 whitespace around them, under three rules. Each rule exists because its glyphs
-carry two meanings and the gap is what tells them apart.
+carry two meanings and the gap is what tells them apart. A fourth rule is about
+the whitespace itself: a line break ends a statement.
 
 **Glue — `(` and `[` bind only when glued.** A `(` applies arguments, and a
 `[` indexes, only when *nothing at all* separates it from what precedes it:
@@ -375,6 +376,74 @@ governs the `{` after a call: it opens a trailing block only on the same line
 as the `)`, and a same-line empty `{}` reads as a parameterized aggregate when
 written tight against the `)`. Both readings are specified with the form
 itself — see [Trailing Blocks](#trailing-blocks).
+
+**Line breaks — a newline ends a statement.** A `;` terminates a statement, and
+so does the line break where the `;` would have gone. The two spellings are the
+same statement, and either terminator discards the statement's value:
+
+```sx
+a := 1
+b := compute(a)
+print("{}\n", b)
+```
+
+One rule, applied wherever a statement or a declaration ENDS: top-level and
+local bindings, expression statements, assignments, `return` / `raise` /
+`break` / `continue` / `defer` / `onfail`, `#import` / `#insert` / `#error` and
+the other directive forms, and a function's `extern` / `intrinsic` / `=> expr`
+body. It does not reach inside a fixed form's own list — a runtime class's
+members, the entries of `#import c { … }`, and a `match` arm each keep the `;`
+their grammar asks for.
+
+A line break does not end a statement that is still running. When the token
+below cannot START a statement, it continues the one above:
+
+```sx
+mask := (hi << 16)
+    | lo
+ok := ready
+    and loaded
+    or forced
+```
+
+The continuation tokens are `and`, `or`, `then`, `else`, `case`, `catch`, `|`,
+`+`, `==`, `!=`, `<=`, `>=`, `<<`, `>>`, `|>`, `??`, `?.`, `,`, `=`, `::`,
+`->`, and `=>`. `-` and `*` are absent because the spacing rule above already
+decided them: a leading `- b` keeps its gaps matched and reads as subtraction,
+while `-b` opens a fresh operand and so begins a statement. A form that is
+simply still open — an unclosed `(`, an argument list, a `{` with no `}` yet —
+reads on for the same reason: nothing has ended.
+
+The last expression before a `}` has no terminator at all, which is what makes
+it the block's value (§6.3). A newline never supplies one there:
+
+```sx
+tight  :: () -> i64 { 41 }
+spread :: () -> i64 {
+    n := 41
+    n                         // no terminator — the block's value, as above
+}
+```
+
+**Statements break, expressions chain.** Whether a `}` can be continued is
+decided by what it closes. A statement that IS a block — `if`, `while`, `for`,
+`match`, a `push` body, a bare scope `{ … }` — ends at its `}`, so the line
+below starts a new statement. An expression that merely ENDS in a block — a
+trailing-block call, an aggregate literal, a self-trailing `.{ }` — is still an
+expression, and its postfix chain reads on:
+
+```sx
+{
+    setup();
+}
+.unknown                      // the scope ended; this is the next statement
+
+c := vstack(1.0) {
+    body();
+}
+    .doubled()                // the call is an expression — the chain goes on
+    .show();
+```
 
 ---
 
@@ -5136,7 +5205,10 @@ The enum type is inferred from context (expected type from declaration or parame
 
 ## 5. Statements
 
-Statements are terminated by `;`.
+Statements are terminated by `;` — or by the line break that ends them, which
+is the same terminator written as whitespace (§1
+[Whitespace is Syntax](#whitespace-is-syntax)). The forms below are spelled
+with their `;` throughout; every one of them may drop it at a line break.
 
 - **Declaration**: `name :: value;` / `name := value;`
 - **Assignment**: `name = value;` / `name += value;` (and other compound assignments). Also supports field targets: `obj.field = value;`
@@ -6330,17 +6402,20 @@ implicit `context`.
 
 ```
 program         = top_level*
+end             = ';' | NEWLINE     // §1 Whitespace is Syntax: the line break
+                  // where the `;` would go, unless the token below cannot start
+                  // a statement (`and`, `|`, `,`, `=>`, … — see §1)
 top_level       = decl | import_decl | context_extend
-import_decl     = '#import' STRING ';'
-                | IDENT '::' '#import' STRING ';'
-context_extend  = '#context_extend' IDENT ':' type '=' expr ';'
+import_decl     = '#import' STRING end
+                | IDENT '::' '#import' STRING end
+context_extend  = '#context_extend' IDENT ':' type '=' expr end
 decl            = const_decl | var_decl | fn_decl | enum_decl | struct_decl | error_decl
-error_decl      = IDENT '::' 'error' '{' IDENT (',' IDENT)* ','? '}' ';'
-const_decl      = IDENT '::' expr ';'
-                | IDENT ':' type ':' expr ';'
-var_decl        = IDENT ':=' expr ';'
-                | IDENT ':' type '=' expr ';'
-                | IDENT ':' type ';'
+error_decl      = IDENT '::' 'error' '{' IDENT (',' IDENT)* ','? '}' end
+const_decl      = IDENT '::' expr end
+                | IDENT ':' type ':' expr end
+var_decl        = IDENT ':=' expr end
+                | IDENT ':' type '=' expr end
+                | IDENT ':' type end
 fn_decl         = IDENT '::' '(' params? ')' ('->' ret_type)? block
                 | IDENT '::' block
 ret_type        = type ('!' IDENT?)?    // trailing `!` = failable; channel outside any Tuple
@@ -6350,16 +6425,18 @@ struct_member   = field_group | '#using' IDENT ';'
 field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'
 params          = param (',' param)* ','?
 param           = IDENT ':' type ('=' expr)?
-block           = '{' stmt* '}'
-stmt            = decl | assignment ';' | multi_assign ';' | return_stmt | defer_stmt | insert_stmt
-                | push_stmt | break_stmt | continue_stmt | raise_stmt | onfail_stmt | expr ';'
-return_stmt     = 'return' expr? ';'
-break_stmt      = 'break' ';'
-continue_stmt   = 'continue' ';'
-raise_stmt      = 'raise' expr ';'
-onfail_stmt     = 'onfail' ('(' IDENT ')')? (block | expr ';')
-defer_stmt      = 'defer' expr ';'
-insert_stmt     = '#insert' expr ';'
+block           = '{' stmt* '}'     // the LAST expr may drop `end` — it is the value
+stmt            = decl | assignment end | multi_assign end | return_stmt | defer_stmt | insert_stmt
+                | push_stmt | break_stmt | continue_stmt | raise_stmt | onfail_stmt
+                | scope_stmt | expr end
+scope_stmt      = block             // a statement, so it never continues a postfix chain
+return_stmt     = 'return' expr? end
+break_stmt      = 'break' end
+continue_stmt   = 'continue' end
+raise_stmt      = 'raise' expr end
+onfail_stmt     = 'onfail' ('(' IDENT ')')? (block | expr end)
+defer_stmt      = 'defer' expr end
+insert_stmt     = '#insert' expr end
 push_stmt       = 'push' expr block
 assignment      = lvalue ('=' | '+=' | '-=' | '*=' | '/=') expr
 multi_assign    = lvalue (',' lvalue)+ '=' expr (',' expr)+
