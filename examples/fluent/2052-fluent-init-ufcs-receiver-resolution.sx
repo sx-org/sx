@@ -73,6 +73,19 @@ Obj :: struct {
     stow: Closure() -> string = ---;
 }
 
+// A family whose type argument this call cannot pin: both spellings say the same
+// thing about it, because the dot-call is re-read as the other one.
+Tagged :: struct ($U: Type) { u: $U = ---; }
+
+// A renaming alias of a destination-first ufcs: the alias is dot-callable, and the
+// call reaches what it names.
+deliver :: ufcs (value: $I/@Init(i64)) -> string {
+    slot: i64 = ---;
+    value.write(*slot);
+    return "aliased";
+}
+send :: ufcs deliver;
+
 // A protocol value dispatches to its conformer.
 Shape :: protocol tagged { name :: (self: *Self) -> string; }
 Round :: struct { s: string = "round"; }
@@ -114,6 +127,9 @@ main :: () -> i32 {
     o := Obj{ stow = () => "field closure" };
     print("field {} free {}\n", o.stow(), 5.stow());
 
+    // A renaming alias reaches its target.
+    print("alias {}\n", (9).send());
+
     // A dot on a name: the type prefix names the static, not the free function.
     print("type prefix {}\n", Crate.emit_at(3));
 
@@ -134,6 +150,7 @@ main :: () -> i32 {
 // emitted 3
 // generic generic method generic method v=7
 // field field closure free free stow
+// alias aliased
 // type prefix static
 // impl impl method own own method through a pointer own method protocol round
 //

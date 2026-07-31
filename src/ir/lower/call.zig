@@ -87,11 +87,15 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
         var amb = false;
         if (self.selectUfcsGenericByReceiver(eff_field, eff_args.items, &amb, fd0)) |sel| {
             fd = sel;
-        } else if (amb or !self.ufcsGenericBindsAll(fd0, eff_args.items)) {
-            // The dispatch arm owns both refusals; it says them with the receiver
-            // in hand.
+        } else if (amb) {
+            // A tie between receivers is a fact only the dot-call has: the ordinary
+            // spelling would pick one silently, so the dispatch arm keeps this one
+            // and reports it with the receiver in hand.
             return null;
         }
+        // A family that cannot bind from this call is diagnosed better by the
+        // ordinary spelling — the same message, naming the parameter it could not
+        // infer — so the call is re-spelled and says it there.
         // The receiver chose an author the NAME does not: an ordinary call resolves
         // by name, so re-spelling this one would call the other declaration. The
         // dispatch arm keeps it — and cannot form the receiver there, so a case that
@@ -103,6 +107,23 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
     if (fd.params.len == 0) return null;
     if (init_plan.boundTargetNode(fd.params[0].type_expr) == null) return null;
     return eff_field;
+}
+
+
+/// A destination-first target cannot be dispatched from the fall-through arm: the
+/// receiver was lowered on the way down, and that parameter takes the expression
+/// rather than its value (§5.2). The dot-call spelling is re-read as an ordinary
+/// call BEFORE anything is lowered, so reaching a dispatch means it was not — the
+/// call is refused rather than handed a receiver it cannot accept. It sits after
+/// every more specific refusal this arm makes, so it shadows none of them.
+fn refuseDestinationFirstDispatch(self: *Lowering, fd: *const ast.FnDecl, spelled: []const u8, recv_ty: TypeId, span: ast.Span) bool {
+    if (fd.params.len == 0) return false;
+    if (init_plan.boundTargetNode(fd.params[0].type_expr) == null) return false;
+    if (self.diagnostics) |d| {
+        const id = d.addFmtId(.err, span, "'{s}' takes its first argument unevaluated, so it cannot be dispatched on a '{s}' value", .{ spelled, self.formatSourceTypeName(recv_ty) });
+        d.addHelpFmt(id, span, null, "spell it as a call ('{s}(receiver, …)') — the receiver IS that argument", .{spelled});
+    }
+    return true;
 }
 
 /// Does a value of `ty` answer `name` ITSELF — as a member of any kind the
@@ -2225,21 +2246,6 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         d.addFmt(.err, c.callee.span, "'{s}' is ambiguous; declared by multiple imported modules — qualify the call", .{fa.field});
                     return Ref.none;
                 }
-                // A destination-first target cannot be dispatched from here: the
-                // receiver was lowered on the way down, and that parameter takes the
-                // expression rather than its value (§5.2). The dot-call spelling is
-                // re-read as an ordinary call BEFORE anything is lowered; reaching
-                // this point means it was not, so the call is refused instead of
-                // handed a receiver it cannot accept.
-                if (ufcs_fd) |fd_df| {
-                    if (fd_df.params.len > 0 and init_plan.boundTargetNode(fd_df.params[0].type_expr) != null) {
-                        if (self.diagnostics) |d| {
-                            const id = d.addFmtId(.err, c.callee.span, "'{s}' takes its first argument unevaluated, so it cannot be dispatched on a '{s}' value", .{ eff_field, self.formatSourceTypeName(obj_ty) });
-                            d.addHelpFmt(id, c.callee.span, null, "spell it as a call ('{s}(receiver, …)') — the receiver IS that argument", .{eff_field});
-                        }
-                        return Ref.none;
-                    }
-                }
                 // A pack ufcs target (`worker: Closure(..) -> $R, ..$args`):
                 // route through the SAME pack-call path the direct call uses,
                 // with the receiver spliced in as the first arg so the pack
@@ -2297,6 +2303,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                                 d.addFmt(.err, c.callee.span, "cannot infer generic type parameter for ufcs call '{s}' (no visible overload's receiver matches)", .{eff_field});
                             return Ref.none;
                         }
+                        // Nothing more specific applies now: a receiver already
+                        // lowered cannot reach a destination-first parameter.
+                        if (refuseDestinationFirstDispatch(self, fd, fa.field, obj_ty, c.callee.span)) return Ref.none;
                         var gbindings = self.genericResolver().buildTypeBindings(fd, eff_args.items);
                         defer gbindings.deinit();
                         const gmangled = self.genericResolver().mangleGenericName(eff_field, fd, &gbindings);
@@ -2338,6 +2347,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     }
                 }
                 const ufcs_arity_fd: ?*const ast.FnDecl = if (sel_author) |sf| sf.decl else ufcs_fd;
+                if (ufcs_arity_fd) |fd_df| {
+                    if (refuseDestinationFirstDispatch(self, fd_df, fa.field, obj_ty, c.callee.span)) return Ref.none;
+                }
                 if (ufcs_arity_fd) |fd| {
                     if (self.checkCallArity(fd, fa.field, method_args.items.len, true, c.callee.span)) return Ref.none;
                 }
