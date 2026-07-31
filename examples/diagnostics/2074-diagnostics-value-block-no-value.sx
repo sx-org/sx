@@ -1,0 +1,24 @@
+// A block in VALUE position must produce a value. Its value is its last
+// statement when that statement is an expression, so a block ending in a
+// DECLARATION has none — and since `;` is a pure separator, both spellings of
+// that ending are the same statement and both are refused, in the same place.
+//
+// An empty block is exempt: `{}` is how the void value itself is written.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+seed :: () -> i32 { 1 }
+
+main :: () -> i32 {
+    // Refused: the tail is a declaration, so the binding gets no value.
+    a := { seed(); n := 1; };
+
+    // Refused identically without the terminator.
+    b := { seed(); n := 1 }
+
+    // Legal: `{}` is the void value, and the slot's type asks for one.
+    t : Tuple(void, i32) = .{ {}, 9 };
+
+    print("a={} b={}\n", a, b);
+    t.1
+}

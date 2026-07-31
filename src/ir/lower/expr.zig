@@ -3930,7 +3930,18 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // Same terminator guard as the produces-value path above: a block whose
             // statements terminated it (trailing `return`/`break`/`continue`) must
             // not get a `const_int` placeholder appended after the terminator.
-            break :blk if (self.currentBlockHasTerminator()) Ref.none else self.builder.constInt(0, .void);
+            if (self.currentBlockHasTerminator()) break :blk Ref.none;
+            // The position demanded a value and this block's last statement is a
+            // declaration, so it has none. Say so here rather than hand back a
+            // void the binding tries to `alloca`. An EMPTY block is exempt: `{}`
+            // is how the void value itself is written (`.{ {}, 9 }` for a
+            // `Tuple(void, i32)`).
+            if (blk.stmts.len > 0) {
+                if (self.diagnostics) |diags| {
+                    diags.addFmt(.err, blk.stmts[blk.stmts.len - 1].span, "this block is used as a value but produces none — end it with a trailing expression", .{});
+                }
+            }
+            break :blk self.builder.constInt(0, .void);
         },
 
         // type_expr can appear as a variable reference when the name collides

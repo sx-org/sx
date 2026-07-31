@@ -1,0 +1,11 @@
+error: this block is used as a value but produces none — end it with a trailing expression
+  --> examples/diagnostics/2074-diagnostics-value-block-no-value.sx:14:20
+   |
+14 |     a := { seed(); n := 1; };
+   |                    ^^^^^^^
+
+error: this block is used as a value but produces none — end it with a trailing expression
+  --> examples/diagnostics/2074-diagnostics-value-block-no-value.sx:17:20
+   |
+17 |     b := { seed(); n := 1 }
+   |                    ^^^^^^
