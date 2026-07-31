@@ -1,5 +1,10 @@
-error: ambiguous ufcs call 'publish': multiple overloads' receivers match — qualify the call
+error: 'publish' takes its first argument unevaluated, so it cannot be dispatched on a 'i64' value
   --> examples/fluent/2053-fluent-init-ufcs-ambiguous.sx:15:20
+   |
+15 |     print("{}\n", (7).publish());
+   |                    ^^^^^^^^^^
+
+help: spell it as a call ('publish(receiver, …)') — the receiver IS that argument
    |
 15 |     print("{}\n", (7).publish());
    |                    ^^^^^^^^^^

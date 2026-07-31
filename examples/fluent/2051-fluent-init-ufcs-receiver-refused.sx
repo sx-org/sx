@@ -31,6 +31,15 @@ Plain :: struct {
 // A plain data target, so the vocabulary is not the set's alone.
 Box :: struct { v: i64 = 0; }
 
+// A field named like the ufcs, holding something that cannot be called. Calling a
+// field is not dispatching a method, and a field that holds no callable is not a
+// member call at all — so the name means the free function, and the receiver is
+// asked to form what that function's parameter wants.
+Obj :: struct {
+    v: i64 = 0;
+    take: i64 = 0;
+}
+
 take :: ufcs (value: $I/@Init(Box)) {
     slot: Box = ---;
     value.write(*slot);
@@ -61,6 +70,10 @@ main :: () -> i32 {
         // A plain target refuses in the same voice.
         Plain{ text = "not a Box" }.take();
         take(Plain{ text = "not a Box" });
+
+        // The receiver here has a `take` field, but it holds an i64: the call is
+        // the free function's, and an `Obj` cannot form what it writes.
+        Obj{ v = 1, take = 2 }.take();
     }
     print("{}\n", out.len);
     0

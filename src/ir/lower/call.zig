@@ -114,8 +114,11 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
 /// mirrors those arms one for one, with the line each answers for — a member kind
 /// added to the path without a line here is a dot-call the gate would steal.
 ///
-///   - a FIELD of that name, whatever its type — the callable-field arm calls it
-///     instead of dispatching a method (`o.flush()` on a `Closure()` field);
+///   - a CALLABLE field of that name — a closure or a function pointer — which the
+///     path calls instead of dispatching a method (`o.flush()` on a `Closure()`
+///     field). A field of any OTHER type is not a member call at all: the path has
+///     no arm for it, so it is left to the free function exactly as a plain ufcs
+///     leaves it;
 ///   - a method the type's own declaration carries (`plainStructMethod`);
 ///   - a method of a GENERIC instance, which carries a separate author stamp and
 ///     is intentionally absent from `plainStructMethod` (`genericInstanceMethod`);
@@ -128,12 +131,15 @@ fn destinationFirstUfcs(self: *Lowering, fa: *const ast.FieldAccess, call_args: 
 fn receiverProvidesMethod(self: *Lowering, ty: TypeId, name: []const u8) bool {
     if (ty == .unresolved) return false;
 
-    // A field of that name — any type. The path calls a callable field rather
-    // than looking for a method, and a non-callable one is its own error there.
+    // A CALLABLE field of that name: the path calls the field. A field of another
+    // type has no arm at all, so declining to it would leave the call to the very
+    // dispatch this gate exists to avoid.
     if (!ty.isBuiltin()) {
         const field_name_id = self.module.types.internString(name);
         for (self.getStructFields(ty)) |f| {
-            if (f.name == field_name_id) return true;
+            if (f.name != field_name_id or f.ty.isBuiltin()) continue;
+            const fti = self.module.types.get(f.ty);
+            if (fti == .closure or fti == .function) return true;
         }
     }
 
@@ -2218,6 +2224,21 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                     if (self.diagnostics) |d|
                         d.addFmt(.err, c.callee.span, "'{s}' is ambiguous; declared by multiple imported modules — qualify the call", .{fa.field});
                     return Ref.none;
+                }
+                // A destination-first target cannot be dispatched from here: the
+                // receiver was lowered on the way down, and that parameter takes the
+                // expression rather than its value (§5.2). The dot-call spelling is
+                // re-read as an ordinary call BEFORE anything is lowered; reaching
+                // this point means it was not, so the call is refused instead of
+                // handed a receiver it cannot accept.
+                if (ufcs_fd) |fd_df| {
+                    if (fd_df.params.len > 0 and init_plan.boundTargetNode(fd_df.params[0].type_expr) != null) {
+                        if (self.diagnostics) |d| {
+                            const id = d.addFmtId(.err, c.callee.span, "'{s}' takes its first argument unevaluated, so it cannot be dispatched on a '{s}' value", .{ eff_field, self.formatSourceTypeName(obj_ty) });
+                            d.addHelpFmt(id, c.callee.span, null, "spell it as a call ('{s}(receiver, …)') — the receiver IS that argument", .{eff_field});
+                        }
+                        return Ref.none;
+                    }
                 }
                 // A pack ufcs target (`worker: Closure(..) -> $R, ..$args`):
                 // route through the SAME pack-call path the direct call uses,
