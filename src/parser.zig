@@ -3319,12 +3319,17 @@ pub const Parser = struct {
                 } else {
                     expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                 }
-            } else if (self.current.tag == .l_brace and self.shouldParseNamedAggregate(expr)) {
-                // Named aggregate: Type{ ... }. Contextual `.{...}` still starts
-                // with a leading dot in parsePrimary. Header contexts reserve
-                // their final `{` for the statement body (`if cond {`).
-                // Body-shape rejects statement blocks so
-                // `push self.dctx { body }` keeps the brace as the push body.
+            } else if (self.current.tag == .l_brace and !self.gapCrossesLine() and
+                self.shouldParseNamedAggregate(expr))
+            {
+                // Named aggregate: Type{ ... }. The `{` binds only on the same
+                // line as its head, the same rule the trailing block above
+                // follows — across a break it is a scope block of its own.
+                // Contextual `.{...}` still starts with a leading dot in
+                // parsePrimary. Header contexts reserve their final `{` for the
+                // statement body (`if cond {`). Body-shape rejects statement
+                // blocks so `push self.dctx { body }` keeps the brace as the
+                // push body.
                 if (expr.data == .identifier) {
                     expr = try self.parseStructLiteral(expr.data.identifier.name, null, expr.span.start);
                 } else {
@@ -3494,8 +3499,10 @@ pub const Parser = struct {
                         } });
                     }
                 }
-            } else if (self.current.tag == .bang) {
-                // Force unwrap: expr!
+            } else if (self.current.tag == .bang and !self.gapCrossesLine()) {
+                // Force unwrap: expr! — postfix on the expression's own line.
+                // `!` is also the prefix `not`, so a leading `!b` below a
+                // complete expression opens a statement of its own.
                 // Only if it's not != (bang_equal would have been lexed as a single token)
                 self.advance();
                 expr = try self.createNode(expr.span.start, .{ .force_unwrap = .{ .operand = expr } });

@@ -1162,3 +1162,105 @@ test "parser: an assignment operator below a target continues it" {
     try std.testing.expectEqual(@as(usize, 2), decl.data.block.stmts.len);
     try std.testing.expect(decl.data.block.stmts[0].data == .const_decl);
 }
+
+// ---- The binding layer ----
+//
+// A postfix token attaches to what precedes it only on that expression's own
+// line. This is the rule the trailing block already followed, applied to the
+// two postfix forms that were still taking their token across a break — and it
+// is geometry, not completability: the same brace is refused inside an argument
+// list exactly as it is at statement level.
+
+// P2 — `!` is postfix force-unwrap and prefix `not`, so which one a leading `!`
+// spells is decided by the line it sits on.
+test "parser: a postfix `!` binds only on its own line" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const split = try parseBody(alloc,
+        \\f :: (a: bool) -> i64 {
+        \\    a
+        \\    !a
+        \\    0
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 3), split.data.block.stmts.len);
+    try std.testing.expect(split.data.block.stmts[0].data == .identifier);
+    try std.testing.expectEqual(ast.UnaryOp.Op.not, split.data.block.stmts[1].data.unary_op.op);
+
+    const same = try parseBody(alloc,
+        \\f :: (a: ?i64) -> i64 {
+        \\    a!
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 1), same.data.block.stmts.len);
+    try std.testing.expect(same.data.block.stmts[0].data == .force_unwrap);
+}
+
+// P3 — a named aggregate's `{` binds only on the same line as its head. Across
+// a break the head is an expression of its own and the brace is a scope block,
+// whatever the head was: a type name, a type application, or a value call.
+test "parser: a named aggregate `{` binds only on its head's line" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const type_name = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    Pair
+        \\    { g() }
+        \\    0
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 3), type_name.data.block.stmts.len);
+    try std.testing.expect(type_name.data.block.stmts[0].data == .identifier);
+    try std.testing.expect(type_name.data.block.stmts[1].data == .block);
+
+    // The `mk()` fall-through: the next-line brace already failed the trailing
+    // block's same-line test, and it is not stolen as an aggregate either.
+    const value_call = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    mk()
+        \\    { g() }
+        \\    0
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 3), value_call.data.block.stmts.len);
+    try std.testing.expect(value_call.data.block.stmts[0].data == .call);
+    try std.testing.expect(value_call.data.block.stmts[1].data == .block);
+
+    const type_app = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    Box(i64)
+        \\    { g() }
+        \\    0
+        \\}
+    );
+    try std.testing.expectEqual(@as(usize, 3), type_app.data.block.stmts.len);
+    try std.testing.expect(type_app.data.block.stmts[0].data == .call);
+    try std.testing.expect(type_app.data.block.stmts[1].data == .block);
+
+    // Same-line controls: the aggregate and the trailing block both still bind.
+    const aggregate = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    Pair{ a = 1, b = 2 }
+        \\}
+    );
+    try std.testing.expect(aggregate.data.block.stmts[0].data == .struct_literal);
+
+    const applied = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    Box(i64){ v = 1 }
+        \\}
+    );
+    try std.testing.expect(applied.data.block.stmts[0].data == .struct_literal);
+
+    const trailing = try parseBody(alloc,
+        \\f :: () -> i64 {
+        \\    vstack(8) { g() }
+        \\}
+    );
+    const call = trailing.data.block.stmts[0].data.call;
+    try std.testing.expect(call.args[call.args.len - 1].data == .trailing_block);
+}
