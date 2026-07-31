@@ -1,9 +1,9 @@
-// K2a (modules/ui/ambient.sx): the same explicit key twice under one scope
+// K2a (modules/ui/compose.sx): the same explicit key twice under one scope
 // is a DATA BUG surfaced as a frame-1 panic — sibling identities would
 // merge silently. The message carries the key, the scope chain, and a
 // fix-it.
 #import "modules/std.sx";
-#import "modules/ui/ambient.sx";
+#import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";
 
 main :: () {

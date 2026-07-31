@@ -4,7 +4,7 @@
 // the scene; ids allocate monotonically and are never reused within a
 // runtime, so a fresh root can never alias a torn-down root's identity.
 #import "modules/std.sx";
-#import "modules/ui/ambient.sx";
+#import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";
 #import "modules/ui/runtime.sx";
 

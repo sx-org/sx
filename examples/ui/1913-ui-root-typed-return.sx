@@ -3,7 +3,7 @@
 // No runtime arity check exists or is needed: the type system carries the
 // root contract (G0 pass-2 tightening).
 #import "modules/std.sx";
-#import "modules/ui/ambient.sx";
+#import "modules/ui/compose.sx";
 #import "modules/ui/view.sx";
 
 home :: () -> View {

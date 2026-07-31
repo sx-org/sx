@@ -1,4 +1,4 @@
-// The G4 emit-core surface (modules/ui/ambient.sx, Step 1): Sink emission
+// The G4 emit-core surface (modules/ui/compose.sx, Step 1): Sink emission
 // scopes, dual-mode components as bare statements, trailing-block scope fns
 // with comptime scope sites, `place`'s S2 value mode (ui set, no sink →
 // return only), Key.eq, and the identity chain — distinct sites hash
@@ -6,7 +6,7 @@
 // restores after every scope.
 #import "modules/std.sx";
 #import "modules/std/core.sx";
-#import "modules/ui/ambient.sx";
+#import "modules/ui/compose.sx";
 #import "modules/ui/view.sx";
 
 chat_row :: (title: string) {

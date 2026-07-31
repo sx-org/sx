@@ -24,7 +24,7 @@
 #import "modules/ui/stacks.sx";
 #import "modules/ui/label.sx";
 #import "modules/ui/modifier.sx";
-#import "modules/ui/ambient.sx";
+#import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";
 #import "modules/ui/input.sx";
 #import "modules/ui/runtime.sx";

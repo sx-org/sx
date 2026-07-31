@@ -3,7 +3,7 @@
 // by the recursive comptime kind check at COMPILE time, pointing at
 // `use_state_with` as the escape hatch for owned interiors.
 #import "modules/std.sx";
-#import "modules/ui/ambient.sx";
+#import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";
 
 Held :: struct { name_bytes: []u8; n: i64; }

@@ -7,7 +7,7 @@
 // contract message and exit 1 — assertable as expected-exit examples,
 // the corpus panic-capture mechanism.
 #import "modules/std.sx";
-#import "modules/ui/ambient.sx";
+#import "modules/ui/compose.sx";
 #import "modules/ui/store.sx";
 #import "modules/ui/runtime.sx";
 #import "modules/ui/view.sx";
