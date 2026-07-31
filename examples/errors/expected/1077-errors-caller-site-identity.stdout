@@ -1,0 +1,10 @@
+first 1077-errors-caller-site-identity.sx:26 in 1077-errors-caller-site-identity.main parity=true
+second 1077-errors-caller-site-identity.sx:27 in 1077-errors-caller-site-identity.main parity=true
+distinct ordinals true
+loop 1077-errors-caller-site-identity.sx:36 in 1077-errors-caller-site-identity.main parity=true
+loop 1077-errors-caller-site-identity.sx:36 in 1077-errors-caller-site-identity.main parity=true
+loop 1077-errors-caller-site-identity.sx:36 in 1077-errors-caller-site-identity.main parity=true
+loop ran 3 times, one site true
+explicit test.sx:20 in tests.report parity=false
+override test.sx 20 0 id0=true
+fake parity false true

@@ -1,0 +1,46 @@
+// The emit UI library (revision §13.2) — public facade.
+//
+// One import gets a consumer the library. Its product story is an ambient child
+// list plus an explicit terminal `.emit()`: there is no interception, so a child
+// written without `.emit()` does not appear.
+//
+// This library shares no UI-level code and no geometry, render, or component
+// types with `ui/compose` or `ui/fluent`. `emit.View` is its own open set.
+#import "modules/std.sx";
+
+geometry :: #import "modules/ui/emit/geometry.sx";
+render :: #import "modules/ui/emit/render.sx";
+view :: #import "modules/ui/emit/view.sx";
+modifier :: #import "modules/ui/emit/modifier.sx";
+components :: #import "modules/ui/emit/components.sx";
+sink :: #import "modules/ui/emit/sink.sx";
+containers :: #import "modules/ui/emit/containers.sx";
+emit_mod :: #import "modules/ui/emit/emit.sx";
+runtime :: #import "modules/ui/emit/runtime.sx";
+
+// Geometry
+Point :: geometry.Point;
+Size :: geometry.Size;
+Frame :: geometry.Frame;
+ProposedSize :: geometry.ProposedSize;
+EdgeInsets :: geometry.EdgeInsets;
+
+// Render
+Color :: render.Color;
+RenderCommand :: render.RenderCommand;
+RenderTree :: render.RenderTree;
+RenderContext :: render.RenderContext;
+
+// The set and what joins it
+View :: view.View;
+Modifier :: modifier.Modifier;
+Label :: components.Label;
+Button :: components.Button;
+VStack :: containers.VStack;
+
+// Ambient buffer and the terminal publish
+EmitSink :: sink.EmitSink;
+emit :: emit_mod.emit;
+vstack :: containers.vstack;
+render_root :: runtime.render_root;
+command_count :: runtime.command_count;

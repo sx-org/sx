@@ -21,7 +21,7 @@ main :: () {
     {
         print("gravity: {}\n", Phys.GRAVITY);                   // gravity: 9.810000
         print("max speed: {}\n", Phys.MAX_SPEED);               // max speed: 100
-        p := Phys.{ x = 0.0, y = Phys.GRAVITY };
+        p := Phys{ x = 0.0, y = Phys.GRAVITY };
         print("p.y: {}\n", p.y);                                // p.y: 9.810000
     }
 }

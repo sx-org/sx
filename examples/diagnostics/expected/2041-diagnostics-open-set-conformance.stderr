@@ -1,0 +1,258 @@
+error: 'BadRet' cannot be a member of 'View': its 'render' is not the 'render' the set declares
+  --> examples/diagnostics/2041-diagnostics-open-set-conformance.sx:32:1
+   |
+32 | BadRet :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+33 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+34 |     render :: (self: *BadRet) -> i64 => self.n;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+35 |     tag :: (self: *BadRet, n: i64) -> i64 => n;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+36 |     twin :: (self: *BadRet, other: BadRet) -> BadRet => other;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+37 | }
+   | ^
+
+help: it returns 'i64', and the set declares 'string'
+   |
+32 | BadRet :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+33 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+34 |     render :: (self: *BadRet) -> i64 => self.n;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+35 |     tag :: (self: *BadRet, n: i64) -> i64 => n;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+36 |     twin :: (self: *BadRet, other: BadRet) -> BadRet => other;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+37 | }
+   | ^
+
+help: every member answers a required method at the SAME types — the set's declaration states them, and 'Self' there denotes the member ('BadRet')
+   |
+32 | BadRet :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+33 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+34 |     render :: (self: *BadRet) -> i64 => self.n;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+35 |     tag :: (self: *BadRet, n: i64) -> i64 => n;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+36 |     twin :: (self: *BadRet, other: BadRet) -> BadRet => other;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+37 | }
+   | ^
+
+error: 'BadArity' cannot be a member of 'View': its 'tag' is not the 'tag' the set declares
+  --> examples/diagnostics/2041-diagnostics-open-set-conformance.sx:40:1
+   |
+40 | BadArity :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+42 |     render :: (self: *BadArity) -> string => "x";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+43 |     tag :: (self: *BadArity) -> i64 => 1;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+44 |     twin :: (self: *BadArity, other: BadArity) -> BadArity => other;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+45 | }
+   | ^
+
+help: the set declares 1 argument after the receiver, and this takes 0
+   |
+40 | BadArity :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+42 |     render :: (self: *BadArity) -> string => "x";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+43 |     tag :: (self: *BadArity) -> i64 => 1;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+44 |     twin :: (self: *BadArity, other: BadArity) -> BadArity => other;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+45 | }
+   | ^
+
+help: every member answers a required method at the SAME types — the set's declaration states them, and 'Self' there denotes the member ('BadArity')
+   |
+40 | BadArity :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+41 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+42 |     render :: (self: *BadArity) -> string => "x";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+43 |     tag :: (self: *BadArity) -> i64 => 1;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+44 |     twin :: (self: *BadArity, other: BadArity) -> BadArity => other;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+45 | }
+   | ^
+
+error: 'BadParam' cannot be a member of 'View': its 'tag' is not the 'tag' the set declares
+  --> examples/diagnostics/2041-diagnostics-open-set-conformance.sx:48:1
+   |
+48 | BadParam :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+49 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+50 |     render :: (self: *BadParam) -> string => "x";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+51 |     tag :: (self: *BadParam, n: string) -> i64 => 2;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+52 |     twin :: (self: *BadParam, other: BadParam) -> BadParam => other;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+53 | }
+   | ^
+
+help: 'n' is 'string', and the set declares 'i64'
+   |
+48 | BadParam :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+49 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+50 |     render :: (self: *BadParam) -> string => "x";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+51 |     tag :: (self: *BadParam, n: string) -> i64 => 2;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+52 |     twin :: (self: *BadParam, other: BadParam) -> BadParam => other;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+53 | }
+   | ^
+
+help: every member answers a required method at the SAME types — the set's declaration states them, and 'Self' there denotes the member ('BadParam')
+   |
+48 | BadParam :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+49 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+50 |     render :: (self: *BadParam) -> string => "x";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+51 |     tag :: (self: *BadParam, n: string) -> i64 => 2;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+52 |     twin :: (self: *BadParam, other: BadParam) -> BadParam => other;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+53 | }
+   | ^
+
+error: 'BadSelf' cannot be a member of 'View': its 'twin' is not the 'twin' the set declares
+  --> examples/diagnostics/2041-diagnostics-open-set-conformance.sx:56:1
+   |
+56 | BadSelf :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+57 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+58 |     render :: (self: *BadSelf) -> string => "x";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+59 |     tag :: (self: *BadSelf, n: i64) -> i64 => n;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+60 |     twin :: (self: *BadSelf, other: Ok) -> Ok => other;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+61 | }
+   | ^
+
+help: 'other' is 'Ok', and the set declares 'BadSelf'
+   |
+56 | BadSelf :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+57 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+58 |     render :: (self: *BadSelf) -> string => "x";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+59 |     tag :: (self: *BadSelf, n: i64) -> i64 => n;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+60 |     twin :: (self: *BadSelf, other: Ok) -> Ok => other;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+61 | }
+   | ^
+
+help: every member answers a required method at the SAME types — the set's declaration states them, and 'Self' there denotes the member ('BadSelf')
+   |
+56 | BadSelf :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+57 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+58 |     render :: (self: *BadSelf) -> string => "x";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+59 |     tag :: (self: *BadSelf, n: i64) -> i64 => n;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+60 |     twin :: (self: *BadSelf, other: Ok) -> Ok => other;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+61 | }
+   | ^
+
+error: 'Absent' cannot be a member of 'View': it has no 'twin'
+  --> examples/diagnostics/2041-diagnostics-open-set-conformance.sx:64:1
+   |
+64 | Absent :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+65 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+66 |     render :: (self: *Absent) -> string => "x";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+67 |     tag :: (self: *Absent, n: i64) -> i64 => n;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+68 | }
+   | ^
+
+help: every member declares every method the set requires; 'twin' is declared on 'View'
+   |
+64 | Absent :: @OpenVariant(View) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+65 |     n: i64 = 0;
+   | ^^^^^^^^^^^^^^^
+66 |     render :: (self: *Absent) -> string => "x";
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+67 |     tag :: (self: *Absent, n: i64) -> i64 => n;
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+68 | }
+   | ^
+
+error: 'Wrap(i64)' cannot be a member of 'View': its 'render' is not the 'render' the set declares
+  --> examples/diagnostics/2041-diagnostics-open-set-conformance.sx:88:17
+   |
+88 |     bad := Wrap(i64){ inner = 7 };
+   |                 ^^^
+
+help: it returns 'i64', and the set declares 'string'
+   |
+88 |     bad := Wrap(i64){ inner = 7 };
+   |                 ^^^
+
+help: every member answers a required method at the SAME types — the set's declaration states them, and 'Self' there denotes the member ('Wrap(i64)')
+   |
+88 |     bad := Wrap(i64){ inner = 7 };
+   |                 ^^^
+
+help: 'Wrap' is declared '@OpenVariant(View)'; this instantiation is the one that does not answer
+   |
+88 |     bad := Wrap(i64){ inner = 7 };
+   |                 ^^^
+
+error: 'Wrap(f64)' cannot be a member of 'View': its 'render' is not the 'render' the set declares
+  --> examples/diagnostics/2041-diagnostics-open-set-conformance.sx:83:17
+   |
+83 |     return Wrap(T){ inner = v };
+   |                 ^
+
+note: instantiated from here
+  --> examples/diagnostics/2041-diagnostics-open-set-conformance.sx:89:16
+   |
+89 |     through := wrap(f64, 1.5);
+   |                ^^^^
+
+help: it returns 'f64', and the set declares 'string'
+   |
+83 |     return Wrap(T){ inner = v };
+   |                 ^
+
+help: every member answers a required method at the SAME types — the set's declaration states them, and 'Self' there denotes the member ('Wrap(f64)')
+   |
+83 |     return Wrap(T){ inner = v };
+   |                 ^
+
+help: 'Wrap' is declared '@OpenVariant(View)'; this instantiation is the one that does not answer
+   |
+83 |     return Wrap(T){ inner = v };
+   |                 ^

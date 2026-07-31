@@ -1,0 +1,33 @@
+// A package's surface reached through its FACADE (specs: Modules — the namespace
+// surface).
+//
+// The facade re-exports by naming, and what it names IS what the package declared:
+// a member formed at the facade's spelling is a value of the very set the member
+// joined, so it dispatches, answers `type_of` with the member, measures the same,
+// and satisfies a signature written inside the package in the set's own terms.
+#import "modules/std.sx";
+pkg :: #import "1632-modules-open-set-facade/facade.sx";
+
+// A bound whose head is the facade's own spelling: what it names is the set the
+// facade re-exports, so the bound asks that set's question.
+holds :: (x: $V/pkg.View) -> string => x.render();
+
+main :: () -> i32 {
+    // Formed entirely through the facade.
+    v: pkg.View = pkg.Label{ text = "through a facade" };
+    print("{} {}\n", v.render(), type_of(v));
+
+    // One set: the size the package measures inside itself is the size out here.
+    print("size in {} out {}\n", pkg.size_here(), size_of(pkg.View));
+
+    // And the value crosses into a signature the package wrote in its own terms,
+    // and into a bound written on the facade's spelling out here.
+    print("crossed {} {}\n", pkg.describe(v), holds(pkg.Label{ text = "bound" }));
+    0
+}
+
+// ** stdout **
+// through a facade Label
+// size in 24 out 24
+// crossed through a facade bound
+//

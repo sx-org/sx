@@ -33,7 +33,7 @@ budget :: () -> i64 {
 }
 
 main :: () {
-    c := Cell.{ n = 1 };
+    c := Cell{ n = 1 };
     v : Show = c;
     print("{} {}\n", LANES, v.fmt());
 }

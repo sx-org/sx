@@ -144,27 +144,41 @@ pub const TypeLowering = struct {
                 return c.LLVMArrayType2(self.e.cached_i8, @intCast(max_size));
             },
             .tagged_union => |u| {
-                // Tagged union — { header, [N x i8] }
+                // Tagged union — { header, [N x i8] }, or the union's own backing
+                // struct when it states one.
                 var max_size: usize = 0;
                 for (u.fields) |field| {
                     const sz = self.e.ir_mod.types.typeSizeBytes(field.ty);
                     if (sz > max_size) max_size = sz;
                 }
-                if (max_size == 0) max_size = 8;
 
                 var header_size: usize = self.e.ir_mod.types.typeSizeBytes(u.tag_type);
                 if (u.backing_type) |bt| {
                     const bi = self.e.ir_mod.types.get(bt);
                     if (bi == .@"struct" and bi.@"struct".fields.len > 1) {
+                        const bfields = bi.@"struct".fields;
+                        // `{ tag, payload }` over the union's OWN tag word is a
+                        // stated LAYOUT — an open set's — and is lowered as
+                        // written, so the payload's element type (and therefore the
+                        // value's alignment) is delivered rather than assumed.
+                        // A wider header (`enum struct { tag: u32; _: u32; … }`)
+                        // states the header FIELDS instead, and keeps the default
+                        // `{ header, [N x i8] }` shape every payload access reads.
+                        if (bfields.len == 2 and bfields[0].ty == u.tag_type) {
+                            return self.toLLVMType(bt);
+                        }
                         header_size = 0;
-                        const fields = bi.@"struct".fields;
-                        for (fields[0 .. fields.len - 1]) |f| {
+                        for (bfields[0 .. bfields.len - 1]) |f| {
                             header_size += self.e.ir_mod.types.typeSizeBytes(f.ty);
                         }
-                        const backing_payload = self.e.ir_mod.types.typeSizeBytes(fields[fields.len - 1].ty);
+                        const backing_payload = self.e.ir_mod.types.typeSizeBytes(bfields[bfields.len - 1].ty);
                         if (backing_payload > max_size) max_size = backing_payload;
                     }
                 }
+                // The default shape. An all-void / memberless union has no payload
+                // bytes of its own, and the 8-byte floor keeps that case a
+                // nonempty aggregate.
+                if (max_size == 0) max_size = 8;
 
                 const header_llvm = c.LLVMIntTypeInContext(self.e.context, @intCast(header_size * 8));
                 var field_types: [2]c.LLVMTypeRef = .{

@@ -526,7 +526,7 @@ pub const LLVMEmitter = struct {
     }
 
     /// Source text for `file` via the diagnostics' file→source map (the
-    /// same map `#caller_location` uses). Empty when unavailable —
+    /// same map `@caller` uses). Empty when unavailable —
     /// line:col then degrades to 1:1 rather than crash.
     pub fn sourceForFile(self: *LLVMEmitter, file: []const u8) []const u8 {
         const is = self.import_sources orelse return "";
@@ -835,7 +835,12 @@ pub const LLVMEmitter = struct {
             const llvm_ty = self.toLLVMType(ty);
             const llvm_size = c.LLVMABISizeOfType(dl, llvm_ty);
             const ir_size = self.ir_mod.types.typeSizeBytes(ty);
-            std.debug.assert(llvm_size == ir_size);
+            // A disagreement here is a compiler bug in one of the two layout
+            // rules, and the type is the only useful thing to know about it.
+            if (llvm_size != ir_size) std.debug.panic(
+                "layout disagreement for '{s}': llvm={d} ir={d}",
+                .{ self.ir_mod.types.formatTypeName(self.ir_mod.types.alloc, ty), llvm_size, ir_size },
+            );
         }
     }
 
@@ -976,6 +981,7 @@ pub const LLVMEmitter = struct {
                         .global_get, .global_addr => |gid| used.put(gid.index(), {}) catch {},
                         .global_set => |gs| used.put(gs.global.index(), {}) catch {},
                         .tagged_type_id => |t| used.put(t.table.index(), {}) catch {},
+                        .open_set_type_id => |t| used.put(t.table.index(), {}) catch {},
                         else => {},
                     }
                 }
@@ -1800,6 +1806,9 @@ pub const LLVMEmitter = struct {
             .tagged_tag_of => |t| self.ops().emitTaggedTagOf(t),
             .tagged_conforms => |t| self.ops().emitTaggedConforms(t),
             .tagged_type_id => |t| self.ops().emitTaggedTypeId(instruction, t),
+            .open_set_layout => |q| self.ops().emitOpenSetLayout(q),
+            .open_set_tag_of => |t| self.ops().emitOpenSetTagOf(t),
+            .open_set_type_id => |t| self.ops().emitOpenSetTypeId(instruction, t),
 
             // ── Arithmetic ─────────────────────────────────────────
             .add => |bin| self.ops().emitAdd(instruction, bin),

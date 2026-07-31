@@ -21,7 +21,7 @@ Triple :: struct { a: i64; b: i64; c: i64; }
 // IMP for the runtime-installed method. Obj-C convention: implicit
 // (self, _cmd) prefix, then declared args. Returns the value bytes.
 triple_imp :: (self: *void, _cmd: *void) -> Triple abi(.c) {
-    Triple.{ a = 11, b = 22, c = 33 }
+    Triple{ a = 11, b = 22, c = 33 }
 }
 
 main :: () -> i32 {

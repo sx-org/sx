@@ -84,10 +84,10 @@ main :: () {
     print("multi: {} {}\n", cl_add(5), cl_mul(5));
 
     // 11. Optional closures
-    w1 := Widget.{ name = "slider", on_update = (val: i64) {
+    w1 := Widget{ name = "slider", on_update = (val: i64) {
         print("widget: {} = {}\n", "slider", val);
     } };
-    w2 := Widget.{ name = "label", on_update = null };
+    w2 := Widget{ name = "label", on_update = null };
 
     if h := w1.on_update { h(42); }
     if h := w2.on_update { h(0); } else { print("widget: no handler\n"); }

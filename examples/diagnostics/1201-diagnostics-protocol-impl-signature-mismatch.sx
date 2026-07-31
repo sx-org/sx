@@ -16,7 +16,7 @@ T :: struct { n: i64 = 7; }
 impl P for T { val :: (self: *T) -> bool { return true; } }   // return bool != i64
 
 main :: () {
-  t := T.{ n = 7 };
+  t := T{ n = 7 };
   p := t.(P);                 // <- 'T' does not implement 'P' (return type)
   print("{}\n", p.val());
 }

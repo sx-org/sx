@@ -1,0 +1,101 @@
+// A build block is a value a call can hand on (fluent spec §6.2 rule 2, N45).
+//
+// The parameter is satisfied in exactly one of two ways: the call writes a
+// trailing block, which the compiler forms an implementor from (rule 1), or an
+// argument is a block the caller already received (rule 2). A container that
+// wraps a collector uses both — it takes the app's trailing block and forwards
+// it to the helper that owns the sink.
+//
+// What the value carries is the capture environment of the frame that formed the
+// block, BY REFERENCE (N49): forming allocates nothing, a replay one or two
+// calls down reads the forming frame's locals live, and a second `run` observes
+// a mutation the first one made. The body is replayed, not unrolled — its `if`
+// and `for` are ordinary runtime control flow wherever it runs.
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+Roster :: struct {
+    n: i32 = 0;
+    expression :: (self: *Roster, value: $I/@Init($V/Drawable)) {
+        slot: V = ---;
+        value.write(*slot);
+        print("  published {}\n", slot.draw());
+        self.n += 1;
+    }
+}
+
+// The bottom of the chain: this is where the sink lives and the block runs. The
+// block still reports where it was WRITTEN — provenance survives every hand-over,
+// because the site belongs to the block, not to whoever is holding it.
+collect :: (content: $B/@BuildBlock(Drawable)) -> i32 {
+    s := content.site();
+    if s != null { print("  block written at {}:{}\n", s!.file, s!.line); }
+    sink := Roster{};
+    content.run(*sink);
+    sink.n
+}
+
+// Rule 2 twice over: `column` forwards to `panel`, which forwards to `collect`.
+panel :: (content: $B/@BuildBlock(Drawable)) -> i32 {
+    collect(content)
+}
+
+column :: (tag: string, content: $B/@BuildBlock(Drawable)) -> i32 {
+    print("{}:\n", tag);
+    panel(content)
+}
+
+// Two replays of one forwarded block, with the captured local mutated between
+// them: the second run reads the new value through the same environment.
+twice :: (content: $B/@BuildBlock(Drawable)) -> i32 {
+    first := Roster{};
+    content.run(*first);
+    second := Roster{};
+    content.run(*second);
+    first.n + second.n
+}
+
+main :: () -> i32 {
+    rows := .["alpha", "beta"];
+    show_extra := true;
+
+    print("two down {}\n", column("chain") {
+        Label{ text = "top" };
+        for rows (row) {
+            Label{ text = row };
+        }
+        if show_extra {
+            Label{ text = "extra" };
+        }
+    });
+
+    which := "before";
+    print("replays {}\n", twice() {
+        Label{ text = which };
+        which = "after";
+    });
+    0
+}
+
+// ** stdout **
+// chain:
+//   block written at 2042-fluent-buildblock-passed-down.sx:72
+//   published top
+//   published alpha
+//   published beta
+//   published extra
+// two down 4
+//   published before
+//   published after
+// replays 2
+//

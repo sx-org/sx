@@ -1,0 +1,8 @@
+// Another module's Panel, of the same name.
+#import "modules/std.sx";
+#import "../view.sx";
+
+Panel :: @OpenVariant(View) {
+    tag: string = "beta";
+    render :: (self: *Panel) -> string => self.tag;
+}

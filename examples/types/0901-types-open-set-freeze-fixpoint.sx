@@ -1,0 +1,64 @@
+// An open set's last member can come from the CONVERGENCE FIXPOINT (spec: Open
+// Sets — when the layout is final).
+//
+// A tagged conformer's impl body is monomorphized when its arm is materialized,
+// which happens after every ordinary body is lowered. If that body instantiates a
+// generic member, the set grows there — later than any source-order reading of the
+// program suggests.
+//
+// The sets therefore freeze in the same fixpoint as the conformer sets, and the
+// growth is a change the fixpoint accounts for. Every reader agrees afterwards: the
+// function lowered first, the impl arm itself, and `main`.
+#import "modules/std.sx";
+
+Set :: @OpenSet(.{ max = 256, align = 8 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(Set) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Padded :: @OpenVariant(Set) ($T: Type) {
+    inner: $T = ---;
+    pad: i64 = 0;
+    render :: (self: *Padded) -> string => "padded";
+}
+
+Big :: struct {
+    a: i64 = 0; b: i64 = 0; c: i64 = 0; d: i64 = 0;
+    e: i64 = 0; f: i64 = 0; g: i64 = 0; h: i64 = 0;
+}
+
+Shape :: protocol tagged {
+    area :: (self: *Self) -> i64;
+}
+
+Boxy :: struct {
+    n: i64 = 0;
+}
+
+impl Shape for Boxy {
+    // `Padded(Big)` becomes a member HERE — while this arm is being materialized.
+    area :: (self: *Boxy) -> i64 {
+        p := Padded(Big){ inner = .{} };
+        return size_of(Set) + self.n + p.pad;
+    }
+}
+
+// Lowered long before that arm exists.
+before :: () -> i64 => size_of(Set);
+
+main :: () -> i32 {
+    b := Boxy{ n = 1 };
+    s: Shape = b;
+    print("before {} in-arm {} after {}\n", before(), s.area(), size_of(Set));
+    print("members {} {}\n", size_of(Label), size_of(Padded(Big)));
+    0
+}
+
+// ** stdout **
+// before 80 in-arm 81 after 80
+// members 16 72
+//

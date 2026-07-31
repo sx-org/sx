@@ -1,0 +1,33 @@
+// A bound whose head is a SIBLING type parameter defers to whatever binds that
+// parameter, and what it asks there depends on what it landed on:
+//
+//   - a protocol  -> conformance (pinned in 2027);
+//   - a concrete type -> IDENTITY. The family collapses to its one member, so
+//     the binding must be exactly that type.
+//
+// The type-argument list is validated first, against the arity of whatever the
+// sibling landed on — a spelling that cannot be right is malformed whether or
+// not this particular binding would have satisfied it.
+#import "modules/std.sx";
+
+Ord :: protocol constraint {
+    less :: (self: *Self, o: Self) -> bool;
+}
+
+// Identity when `P` is concrete.
+exact :: ($P: Type, v: $V/P) -> i32 { 1 }
+
+// A type-argument list on a sibling head.
+spelled :: ($P: Type, v: $V/P(i32)) -> i32 { 1 }
+
+main :: () {
+    // `P = i64` collapses the bound to `V == i64`, and `string` is not it.
+    print("{}\n", exact(i64, "hello"));
+
+    // `Ord` takes no type arguments, so the list is wrong for it.
+    print("{}\n", spelled(Ord, 5));
+
+    // A concrete sibling takes none either — and this is reported even though
+    // `V` and `P` do land on the same type.
+    print("{}\n", spelled(i64, 5));
+}

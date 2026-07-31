@@ -22,6 +22,6 @@ make :: (..sources: VL) -> i64 {
 }
 
 main :: () -> i32 {
-    print("{}\n", make(IntCell.{ v = 7 }));   // 7
+    print("{}\n", make(IntCell{ v = 7 }));   // 7
     0
 }

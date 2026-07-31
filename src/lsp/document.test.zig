@@ -100,11 +100,11 @@ test "analyzeDocument: method call return type infers by receiver type" {
     const src: [:0]const u8 =
         \\ByteWriter :: struct {
         \\    n: i64;
-        \\    init :: (start: i64) -> ByteWriter { ByteWriter.{ n = start } }
+        \\    init :: (start: i64) -> ByteWriter { ByteWriter{ n = start } }
         \\}
         \\BitWriter :: struct {
         \\    bits: i64;
-        \\    init :: (start: i64) -> BitWriter { BitWriter.{ bits = start } }
+        \\    init :: (start: i64) -> BitWriter { BitWriter{ bits = start } }
         \\    write :: (self: *BitWriter, v: i64) { self.bits = v; }
         \\}
         \\use :: () {
@@ -274,7 +274,7 @@ test "analyzeDocument: typed struct-literal field name records a member use" {
     var store = doc_mod.DocumentStore.init(alloc, test_io(), &.{});
     const src: [:0]const u8 =
         \\Point :: struct { x: i64; y: i64; }
-        \\mk :: () { p := Point.{ x = 1, y = 2 }; }
+        \\mk :: () { p := Point{ x = 1, y = 2 }; }
     ;
     const doc = try store.openOrUpdate("point.sx", src, 1);
     try store.analyzeDocument(doc);

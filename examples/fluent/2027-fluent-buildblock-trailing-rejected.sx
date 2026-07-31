@@ -1,0 +1,32 @@
+// A trailing block binds the callee's LAST declared parameter, and that
+// parameter must be able to receive one: a `Closure()` or a `$B/@BuildBlock(P)`
+// (fluent spec §6.2). Any other type is refused, naming the parameter.
+//
+// A block parameter is satisfied in exactly ONE of two ways per call (N45): the
+// trailing block the compiler forms one from, or a block the caller already
+// received. An ordinary value is neither, and supplying both at once is
+// ambiguous — each is refused at the argument.
+// Expected: exit 1.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+plain :: (a: i64, b: i64) -> i64 { a + b }
+
+column :: (content: $B/@BuildBlock(Drawable)) {}
+
+// Rule 2 would forward this block; the trailing block below asks for rule 1 at
+// the same parameter.
+both :: (content: $B/@BuildBlock(Drawable)) {
+    column(content) { false; };
+}
+
+main :: () -> i32 {
+    _ = plain(1, 2) { 3; };   // refused: 'b' receives neither form
+    column(7);                // refused: a value is not a build block
+    both() { false; };        // refused: rule 1 and rule 2 at one parameter
+    0
+}

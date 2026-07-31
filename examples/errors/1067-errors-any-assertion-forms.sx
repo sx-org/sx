@@ -32,7 +32,7 @@ main :: () {
     u := av.(i64);
     print("plain: {}\n", u);
     // Struct payloads assert through the same tag machinery.
-    p := Point.{ x = 3, y = 4 };
+    p := Point{ x = 3, y = 4 };
     pv : any = p;
     q := pv.(Point);
     print("struct: {} {}\n", q.x, q.y);

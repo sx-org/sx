@@ -1,0 +1,25 @@
+// A blanket impl covers a SHAPE, not everything. `impl Series($T) for Buffer($T)`
+// says: for any `T`, `Buffer(T)` implements `Series(T)` — so a request whose
+// argument disagrees with the instantiation, or whose carrier is a different
+// template, is not covered and the bound is not satisfied.
+#import "modules/std.sx";
+
+Series :: protocol(T: Type) constraint {
+    count :: (self: *Self) -> i64;
+}
+
+Buffer :: struct($T: Type) { n: i64; }
+Other :: struct($T: Type) { n: i64; }
+
+impl Series($T) for Buffer($T) {
+    count :: (self: *Buffer) -> i64 { self.n }
+}
+
+tally :: (b: $B/Series(i64)) -> i64 { 1 }
+
+main :: () {
+    // The instantiation binds `T = f32`, so this impl gives `Series(f32)`.
+    print("{}\n", tally(Buffer(f32){ n = 1 }));
+    // A different template is not covered at all.
+    print("{}\n", tally(Other(i64){ n = 2 }));
+}

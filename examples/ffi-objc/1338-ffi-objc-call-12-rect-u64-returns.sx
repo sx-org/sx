@@ -21,7 +21,7 @@ CGRect :: struct {
 }
 
 rect_imp :: (self: *void, _cmd: *void) -> CGRect abi(.c) {
-    CGRect.{ x = 10.5, y = 20.5, width = 30.5, height = 40.5 }
+    CGRect{ x = 10.5, y = 20.5, width = 30.5, height = 40.5 }
 }
 
 u64_imp :: (self: *void, _cmd: *void) -> u64 abi(.c) {

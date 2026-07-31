@@ -195,7 +195,7 @@ cstring_len :: (c: cstring) -> i64 {
 // shares C's buffer — `substr` it if it must outlive the source.
 from_cstring :: (c: cstring) -> string {
     p : [*]u8 = xx c;
-    string.{ ptr = p, len = cstring_len(c) }
+    string{ ptr = p, len = cstring_len(c) }
 }
 
 // An owned, terminated copy of `s` as a `cstring`.
@@ -568,9 +568,9 @@ __sx_cast_assert :: (av: any, $T: Type) -> (T, !CastError) {
     return xx av;
 }
 
-__sx_cast_or_panic :: (av: any, $T: Type, loc: Source_Location = #caller_location) -> T {
+__sx_cast_or_panic :: (av: any, $T: Type, site: @SourceSite = @caller) -> T {
     if !type_eq(type_of(av), T) {
-        print("type assertion failed at {}:{}: expected {}, got {}\n", loc.file, loc.line, T, type_of(av));
+        print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, type_of(av));
         c.exit(1);
     }
     return xx av;
@@ -613,10 +613,10 @@ __sx_chain_cast_assert :: (o: ?any, $T: Type) -> (?T, !CastError) {
 }
 
 // Unconsumed form (`v := o?.(T);`): a present, mismatched payload panics.
-__sx_chain_cast_or_panic :: (o: ?any, $T: Type, loc: Source_Location = #caller_location) -> ?T {
+__sx_chain_cast_or_panic :: (o: ?any, $T: Type, site: @SourceSite = @caller) -> ?T {
     if av := o {
         if !type_eq(type_of(av), T) {
-            print("type assertion failed at {}:{}: expected {}, got {}\n", loc.file, loc.line, T, type_of(av));
+            print("type assertion failed at {}:{}: expected {}, got {}\n", site.file, site.line, T, type_of(av));
             c.exit(1);
         }
         v : T = xx av;

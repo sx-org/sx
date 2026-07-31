@@ -1,0 +1,19 @@
+// A match used as a := RHS is not the returned expression — binding a
+// tagged rvalue there is legal (§6.2 scopes refusal to return position).
+#import "modules/std.sx";
+
+View :: protocol tagged { area :: (self: *Self) -> i64; }
+Widget :: struct { n: i64; }
+impl View for Widget { area :: (self: *Widget) -> i64 { self.n } }
+
+match_bind :: (k: i64) -> i64 {
+    v := if k == {
+        case 0: { Widget{ n = 7 }.(View) }
+        else: { Widget{ n = 9 }.(View) }
+    };
+    v.area()
+}
+
+main :: () {
+    print("{} {}\n", match_bind(0), match_bind(1));
+}

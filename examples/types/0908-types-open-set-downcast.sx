@@ -1,0 +1,73 @@
+// Reading a member back out of an open set value (spec: Open Sets — the
+// downcast).
+//
+// A slot carries one member, and the tag says which, so asking for a member is one
+// compare against that member's tag. The answer is the member's own value, copied
+// out of the payload — an ordinary value of that type, with its own fields and its
+// own methods. `v.(Label)` states that the slot carries a Label and panics on
+// another member; `v.(?Label)` asks instead, and answers `null` on another member.
+//
+// The downcast is also how a method the SET cannot dispatch is reached: a required
+// method mentioning `Self` past the receiver has no caller-side type on a set value
+// — `Self` denotes the member, and a set value is not any one member — but on the
+// downcast result it is an ordinary call on a concrete type.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+    // Answered by every member at its own type; not dispatchable on a set value.
+    combine :: (self: *Self, other: Self) -> Self;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+    combine :: (self: *Label, other: Label) -> Label => Label{ text = other.text };
+}
+
+Panel :: @OpenVariant(View) {
+    title: string = "";
+    rows: i64 = 0;
+    render :: (self: *Panel) -> string => self.title;
+    combine :: (self: *Panel, other: Panel) -> Panel => Panel{ title = other.title, rows = self.rows + other.rows };
+}
+
+// An alias names the member it aliases, so it asks the same question.
+Card :: Panel;
+
+main :: () -> i32 {
+    v: View = Panel{ title = "panel", rows = 7 };
+
+    // The member the slot carries, with its own fields.
+    p := v.(Panel);
+    print("held {} rows {}\n", p.title, p.rows);
+
+    // The question form: null for the members it does not carry.
+    if l := v.(?Label) { print("unreachable {}\n", l.text); } else { print("not a Label\n"); }
+    if q := v.(?Panel) { print("is a Panel {}\n", q.title); }
+
+    // An alias resolves to the member, so both forms take it.
+    print("through an alias {}\n", v.(Card).title);
+    if c := v.(?Card) { print("alias asked {}\n", c.rows); }
+
+    // A method with `Self` past the receiver, on the member the downcast produced.
+    other := Panel{ title = "!", rows = 3 };
+    print("combined {} rows {}\n", p.combine(other).title, p.combine(other).rows);
+
+    // The slot is unchanged by being read: the answer is a copy.
+    w: View = Label{ text = "label" };
+    copy := w.(Label);
+    copy.text = "changed";
+    print("copy {} slot {}\n", copy.text, w.render());
+    0
+}
+
+// ** stdout **
+// held panel rows 7
+// not a Label
+// is a Panel panel
+// through an alias panel
+// alias asked 7
+// combined ! rows 10
+// copy changed slot label
+//

@@ -1,0 +1,8 @@
+before call
+  ordinary arg 1
+entered store(1)
+reserved destination
+  make_label()
+  compute_alpha()
+wrote destination
+after call: Play 0.800000

@@ -1,0 +1,25 @@
+// A function VALUE in a comptime pack keeps its signature as the element type,
+// so the element stays callable inside the monomorph (issue 0368). Two
+// different signatures in one pack each keep their own, and a fn element mixes
+// freely with ordinary value elements.
+#import "modules/std.sx";
+
+p :: (..$args) -> i64 { return args[0](); }
+some_fn :: () -> i64 { return 7; }
+
+two :: (..$args) -> i64 { return args[0]() + args[1](5, 6); }
+mix :: (..$args) -> i64 { return args[0]() + args[1] + args[2](args[1]); }
+
+add2 :: (a: i64, b: i64) -> i64 { return a + b; }
+dbl :: (a: i64) -> i64 { return a * 2; }
+
+main :: () {
+    print("{}\n", p(some_fn));
+    print("{}\n", two(some_fn, add2));
+    print("{}\n", mix(some_fn, 10, dbl));
+}
+
+// ** stdout **
+//7
+//18
+//37

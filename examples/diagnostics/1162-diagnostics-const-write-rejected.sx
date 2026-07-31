@@ -7,7 +7,7 @@
 #import "modules/std.sx";
 
 Color :: struct { r, g, b: i64; }
-WHITE :: Color.{ r = 255, g = 255, b = 255 };
+WHITE :: Color{ r = 255, g = 255, b = 255 };
 K : [4]i64 : .[11, 22, 33, 44];
 N : i64 : 4;
 

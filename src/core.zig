@@ -313,6 +313,7 @@ pub const Compilation = struct {
         }
         var lowering = ir.Lowering.init(&module);
         lowering.main_file = self.file_path;
+        lowering.stdlib_paths = self.stdlib_paths;
         lowering.resolved_root = root;
         lowering.target_config = self.target_config;
         lowering.diagnostics = &self.diagnostics;

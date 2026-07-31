@@ -13,6 +13,6 @@ apply :: (mapper: Closure(i64, i64) -> i64, ..sources: VL) -> i64 {
 }
 
 main :: () -> i32 {
-    print("{}\n", apply((a, b) => a + b, IntCell.{ v = 40 }, IntCell.{ v = 2 }));  // 42
+    print("{}\n", apply((a, b) => a + b, IntCell{ v = 40 }, IntCell{ v = 2 }));  // 42
     0
 }

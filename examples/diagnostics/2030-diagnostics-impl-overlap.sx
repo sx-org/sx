@@ -1,0 +1,25 @@
+// One carrier, two answers. A blanket impl covers every instantiation of its
+// carrier, so a concrete impl for one of those instantiations is a second impl
+// for the same type — and neither declaration says which body applies. Refused
+// at the overlap, in either declaration order.
+#import "modules/std.sx";
+
+Series :: protocol(T: Type) constraint {
+    count :: (self: *Self) -> i64;
+}
+
+Buffer :: struct($T: Type) { n: i64; }
+
+impl Series($T) for Buffer($T) {
+    count :: (self: *Buffer) -> i64 { self.n }
+}
+
+impl Series(i64) for Buffer(i64) {
+    count :: (self: *Buffer) -> i64 { 100 }
+}
+
+tally :: (b: $B/Series(i64)) -> i64 { 1 }
+
+main :: () {
+    print("{}\n", tally(Buffer(i64){ n = 7 }));
+}

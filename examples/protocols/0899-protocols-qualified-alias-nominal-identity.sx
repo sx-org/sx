@@ -21,12 +21,12 @@ impl One for Both { value :: (self: *Both) -> i64 { self.n } }
 impl Two for Both { other :: (self: *Both) -> bool { self.b } }
 
 main :: () -> i32 {
-    first := First.{ n = 37 };
-    second := Second.{ b = true };
+    first := First{ n = 37 };
+    second := Second{ b = true };
     if take_one(xx first) != 37 { return 1; }
     if !take_two(xx second) { return 2; }
 
-    both := Both.{ n = 41, b = true };
+    both := Both{ n = 41, b = true };
     if take_one(xx both) != 41 { return 3; }
     if !take_two(xx both) { return 4; }
     0

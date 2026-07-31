@@ -1,0 +1,19 @@
+// The set, its member, and a generic helper written once — in a module the caller
+// only imports.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+// Nothing here is wrong: `T` is whatever the caller asks for, and a member answers
+// it. The body is refused only for an instantiation that cannot.
+into :: ($T: Type, x: $S) -> T => xx x;
+
+// One more hop, so the note has a chain to walk back through.
+into_view :: (x: $S) -> View => into(View, x);

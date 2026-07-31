@@ -11,7 +11,7 @@ Widget :: struct { value: i64; }
 impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 
 main :: () {
-    w := Widget.{ value = 3 };
+    w := Widget{ value = 3 };
     av : any = w;
 
     s := av.(Sizable);          // checked form → refusal

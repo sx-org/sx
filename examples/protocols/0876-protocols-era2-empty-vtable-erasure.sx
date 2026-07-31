@@ -24,7 +24,7 @@ impl Eqish for Sq {
 }
 
 main :: () {
-    sq := Sq.{ side = 4 };
+    sq := Sq{ side = 4 };
 
     m := sq.(Marker);
     print("marker type: {}\n", type_of(m) == Sq);
@@ -45,8 +45,8 @@ main :: () {
 
     // free is legal on an OWNED (rvalue-erased, heap-copied) value even
     // with an empty vtable.
-    mo : Marker = xx Sq.{ side = 9 };
-    eo : Eqish = xx Sq.{ side = 9 };
+    mo : Marker = xx Sq{ side = 9 };
+    eo : Eqish = xx Sq{ side = 9 };
     free(mo);
     free(eo);
     print("freed\n");

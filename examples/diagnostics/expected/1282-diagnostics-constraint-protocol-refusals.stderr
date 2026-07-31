@@ -43,5 +43,5 @@ error: cannot make a value of 'Ord' — a constraint protocol has no runtime val
 error: cannot instantiate with the type argument 'Ord' — a constraint protocol has no runtime values; use the concrete type, or a generic bound ('$T/Ord') where polymorphism is needed
   --> examples/diagnostics/1282-diagnostics-constraint-protocol-refusals.sx:23:15
    |
-23 |     xs : List(Ord) = List(Ord).{};        // generic type argument
+23 |     xs : List(Ord) = List(Ord){};        // generic type argument
    |               ^^^

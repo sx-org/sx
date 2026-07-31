@@ -17,7 +17,7 @@ main :: () -> i32 {
         file.close();
         return 4;
     }
-    empty := fs.File.{};
+    empty := fs.File{};
     if empty.is_valid() or empty.close() { return 5; }
     if fs.set_modified_seconds("C:\\sx-stdlib-fs-definitely-missing", 0) { return 6; }
     0

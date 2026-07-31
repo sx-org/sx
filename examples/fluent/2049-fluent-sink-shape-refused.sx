@@ -1,0 +1,52 @@
+// What a sink may take for its initializer, and where each shape belongs
+// (fluent spec §6.1).
+//
+// `expression` takes the published child as an initializer, and the target it
+// names is what `write` fills. Two shapes are legal, and which one a sink may
+// spell follows from what `P` can carry:
+//
+//   - `$I/@Init(P)` — the FIXED target — where `P` carries its own storage: an
+//     open set holds its member inline, a plain data type is the value. The
+//     initializer writes a complete `P` and the sink keeps it.
+//   - `$I/@Init($V/P)` — the OPEN target — where `P` is a handle into storage it
+//     does not own, or has no values at all. The sink sees the member `V` the
+//     block reached and decides where it lives.
+//
+// A CONSTRAINT protocol has no runtime values, so there is no `*P` for a write to
+// fill: the fixed shape names a target that cannot exist, and the open shape is
+// the one such a sink takes.
+// Expected: exit 1.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+// The fixed shape, at a protocol whose values do not exist.
+Counter :: struct {
+    n: i32 = 0;
+
+    expression :: (self: *Counter, value: $I/@Init(Drawable)) {
+        self.n += 1;
+    }
+}
+
+column :: (content: $B/@BuildBlock(Drawable)) -> i32 {
+    sink := Counter{};
+    content.run(*sink);
+    sink.n
+}
+
+main :: () -> i32 {
+    n := column() {
+        Label{ text = "a leaf" };
+    };
+    print("{}\n", n);
+    0
+}

@@ -1,0 +1,32 @@
+// A function VALUE passed to an inferred generic parameter binds `$F` to the
+// function's SIGNATURE type, so the instance's parameter is a callable — not
+// the integer word a bare fn value rides in (issue 0367).
+//
+// The binding is a real type: `type_of` answers it inside the instance, it
+// compares equal to the written signature, and the value passes on to a
+// further generic unchanged.
+#import "modules/std.sx";
+
+apply :: (f: $F) -> i64 { return f(); }
+some_fn :: () -> i64 { return 7; }
+
+relay :: (g: $G) -> i64 { return apply(g); }
+apply2 :: (f: $F, a: i64, b: i64) -> i64 { return f(a, b); }
+add2 :: (a: i64, b: i64) -> i64 { return a + b; }
+
+describe :: (f: $F) -> string { return type_name(type_of(f)); }
+
+main :: () {
+    print("{}\n", apply(some_fn));
+    print("{}\n", relay(some_fn));
+    print("{}\n", apply2(add2, 3, 4));
+    print("{}\n", describe(some_fn));
+    print("{}\n", describe(add2));
+}
+
+// ** stdout **
+//7
+//7
+//7
+//() -> i64
+//(i64, i64) -> i64

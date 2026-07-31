@@ -20,7 +20,7 @@ main :: () {
         else: {}
     }
     if av == {
-        case i64: { }
+        case i64: {}
         case i64: { }                             // duplicate = unreachable
     }
     if av == {

@@ -41,9 +41,9 @@ sum_i    :: (s: Series(i64)) -> i64 { s.count() + s.at(3) }
 main :: () {
     print("{} {}\n", size_of(Series(f32)), size_of(Series(i64)));
 
-    sn := Sine.{ freq = 0.5 };
-    rp := Ramp.{ step = 3.0 };
-    ct := Counter.{ n = 5 };
+    sn := Sine{ freq = 0.5 };
+    rp := Ramp{ step = 3.0 };
+    ct := Counter{ n = 5 };
 
     // The alias spelling reaches the same instantiation as the canonical
     // one: `Sine`, implemented at `Series(Sample)`, erases into `Series(f32)`
@@ -53,7 +53,7 @@ main :: () {
     print("{} {}\n", a.at(2), b.at(2));
     print("{} {}\n", sample_f(sn), sum_i(ct));
 
-    f := Feed.{ rows = ct };
+    f := Feed{ rows = ct };
     print("{} {}\n", f.rows.count(), f.rows.at(4));
 
     // RTTI reads the concrete type through the instantiation's OWN table,

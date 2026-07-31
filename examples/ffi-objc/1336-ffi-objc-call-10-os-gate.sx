@@ -16,7 +16,7 @@
 // Empty stub class — Android cross-compile requires a `#jni_main`
 // declaration to satisfy the entry-point check. This file is testing
 // `inline if OS` gating around `#objc_call`, not Activity wiring.
-SxObjcOsGateStub :: #jni_main #jni_class("co/swipelab/sxobjcosgate/SxObjcOsGateStub") { }
+SxObjcOsGateStub :: #jni_main #jni_class("co/swipelab/sxobjcosgate/SxObjcOsGateStub") {}
 
 main :: () -> i32 {
     inline if OS == {

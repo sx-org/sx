@@ -1,0 +1,18 @@
+// The same refusal, with the declarations permuted: both impls precede the
+// protocol and the type they name, so each is registered on the order-retry
+// pass, and the bodies are in the opposite order to the sibling example. The
+// pair is refused either way — the error is a property of the pair, not of
+// which impl the scan reached first.
+#import "modules/std.sx";
+
+impl Show for Point { show :: (self: *Point) -> i64 { self.v * 2 } }
+impl Show for Point { show :: (self: *Point) -> i64 { self.v } }
+
+Point :: struct { v: i64 = 0; }
+
+Show :: protocol { show :: (self: *Self) -> i64; }
+
+main :: () {
+    p : Point = .{ v = 1 };
+    print("{}\n", p.show());
+}

@@ -232,7 +232,7 @@ fs_set_modified_seconds :: (path: [:0]u8, seconds: i64) -> bool {
     fs_windows_wide_free(wide); bits : i64 = xx handle;
     if !fs_file_is_valid(bits) { return false; }
     ticks := (seconds + 11644473600).(u64) * 10000000;
-    value := FsWindowsFileTime.{ low = ticks.(u32), high = (ticks >> 32).(u32) };
+    value := FsWindowsFileTime{ low = ticks.(u32), high = (ticks >> 32).(u32) };
     ok := fs_windows_SetFileTime(handle, null, null, *value) != 0;
     close_ok := fs_windows_CloseHandle(handle) != 0; ok and close_ok
 }

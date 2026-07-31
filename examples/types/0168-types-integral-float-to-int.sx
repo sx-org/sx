@@ -63,7 +63,7 @@ main :: () {
 
     // Struct field defaults fold (literal + int-const expr + float-const leaf +
     // float division).
-    b := Box.{};
+    b := Box{};
     print("field={} fieldExpr={} fieldFlt={} fieldDiv={}\n", b.n, b.ne, b.nf, b.nd);
 
     // Param defaults fold.

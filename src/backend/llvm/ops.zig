@@ -25,6 +25,9 @@ const GlobalId = ir_inst.GlobalId;
 const GlobalSet = ir_inst.GlobalSet;
 const TaggedTypeId = ir_inst.TaggedTypeId;
 const TagOf = ir_inst.TagOf;
+const SetLayoutOf = ir_inst.SetLayoutOf;
+const SetMemberOf = ir_inst.SetMemberOf;
+const OpenSetTypeId = ir_inst.OpenSetTypeId;
 const FuncId = ir_inst.FuncId;
 const Call = ir_inst.Call;
 const CallIndirect = ir_inst.CallIndirect;
@@ -157,6 +160,44 @@ pub const Ops = struct {
                 self.e.ir_mod.types.typeName(t.proto),
             });
         self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, @bitCast(tag), 0));
+    }
+
+    /// The size or alignment of a type an open set's layout decides. The IR
+    /// carries the type and the number is read HERE, from the frozen layout, so
+    /// the whole program agrees on one answer.
+    pub fn emitOpenSetLayout(self: Ops, q: SetLayoutOf) void {
+        if (!self.e.ir_mod.open_sets_final)
+            std.debug.panic("emitOpenSetLayout: '{s}' is measured before the program's open sets froze", .{
+                self.e.ir_mod.types.typeName(q.measured),
+            });
+        const table = &self.e.ir_mod.types;
+        const value: i64 = switch (q.query) {
+            .size => @intCast(table.typeSizeBytes(q.measured)),
+            .alignment => @intCast(table.typeAlignBytes(q.measured)),
+        };
+        self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, @bitCast(value), 0));
+    }
+
+    /// The member's tag inside its set: the one place a literal set tag exists.
+    /// The IR carries the pair and the freeze's numbering resolves it here.
+    pub fn emitOpenSetTagOf(self: Ops, t: SetMemberOf) void {
+        const tag = self.e.ir_mod.open_set_tags.get(.{ .set = t.set, .member = t.member }) orelse
+            std.debug.panic("emitOpenSetTagOf: '{s}' has no tag in '{s}' — a type that is not a member of the frozen set has no tag", .{
+                self.e.ir_mod.types.typeName(t.member),
+                self.e.ir_mod.types.typeName(t.set),
+            });
+        self.e.mapRef(c.LLVMConstInt(self.e.cached_i64, @bitCast(tag), 0));
+    }
+
+    pub fn emitOpenSetTypeId(self: Ops, instruction: *const Inst, t: OpenSetTypeId) void {
+        const llvm_global = self.e.global_map.get(t.table.index()) orelse {
+            self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
+            return;
+        };
+        const tag = self.e.resolveRef(t.tag);
+        var idx = [_]c.LLVMValueRef{tag};
+        const slot = c.LLVMBuildInBoundsGEP2(self.e.builder, self.e.cached_i64, llvm_global, &idx, 1, "set.tid.slot");
+        self.e.mapRef(c.LLVMBuildLoad2(self.e.builder, self.e.cached_i64, slot, "set.tid"));
     }
 
     /// The soft probe's answer: being in the converged numbering IS being in

@@ -1,0 +1,59 @@
+// `@Init(T)` timing: the call is destination-first (spec §5.2).
+//
+// The required order is
+//     evaluate ordinary arguments
+//     form the recipe WITHOUT evaluating it
+//     enter the callee
+//     reserve the destination
+//     write → the expression runs once, subexpressions in source order
+// so every effect inside the initializer expression happens after the callee
+// has chosen its storage, exactly once, left to right.
+#import "modules/std.sx";
+
+Button :: struct {
+    label: string = "";
+    alpha: f64 = 1.0;
+}
+
+make_label :: () -> string {
+    print("  make_label()\n");
+    "Play"
+}
+
+compute_alpha :: () -> f64 {
+    print("  compute_alpha()\n");
+    0.8
+}
+
+tag :: (n: i32) -> i32 {
+    print("  ordinary arg {}\n", n);
+    n
+}
+
+store :: (n: i32, value: $I/@Init($T)) -> *T {
+    print("entered store({})\n", n);
+    dest := context.allocator.create(T);
+    print("reserved destination\n");
+    value.write(dest);
+    print("wrote destination\n");
+    dest
+}
+
+main :: () -> i32 {
+    print("before call\n");
+    b := store(tag(1), Button{ label = make_label(), alpha = compute_alpha() });
+    print("after call: {} {}\n", b.label, b.alpha);
+    context.allocator.destroy(b);
+    0
+}
+
+// ** stdout **
+// before call
+//   ordinary arg 1
+// entered store(1)
+// reserved destination
+//   make_label()
+//   compute_alpha()
+// wrote destination
+// after call: Play 0.800000
+//

@@ -13,7 +13,7 @@ impl P for Thing {
 Thing :: struct { n: i64; }
 
 main :: () -> i32 {
-    value := Thing.{ n = 42 };
+    value := Thing{ n = 42 };
     erased : P = xx value;
     if erased.value() != 42 { return 1; }
     0

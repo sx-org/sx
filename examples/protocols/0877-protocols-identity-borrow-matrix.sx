@@ -4,7 +4,7 @@
 // POSITIVE matrix: lvalue borrows via `xx`, the target-explicit postfix
 // `x.(P)`, decl targets, call args, and struct-field targets all alias
 // the original (mutations visible both ways); `is_identity` reflects the
-// class at compile time; Allocator (std) is adopted — `Context.{
+// class at compile time; Allocator (std) is adopted — `Context{
 // allocator = xx gpa }` stays a legal value-borrow. The refusals
 // (rvalue erasure, free) are pinned in diagnostics/1255.
 #import "modules/std.sx";
@@ -29,13 +29,13 @@ main :: () {
     // Reflection: the class is a compile-time fact.
     print("classes: {} {} {}\n", is_identity(Counter), is_identity(Allocator), is_identity(Tally));
 
-    t := Tally.{ n = 0 };
+    t := Tally{ n = 0 };
 
     // Every spelling borrows the SAME storage:
     a : Counter = xx t;            // xx at a decl target
     b := t.(Counter);              // target-explicit postfix
     _ = use_counter(xx t);         // call-arg erasure (bumps t)
-    h := Holder.{ c = xx t };      // struct-field target
+    h := Holder{ c = xx t };      // struct-field target
 
     _ = a.bump();
     _ = b.bump();

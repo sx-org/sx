@@ -16,7 +16,7 @@ main :: () -> i64 {
     print("{}\n", type_name(type_of(b)));
     c := u8.[1, 2];
     print("{}\n", type_name(type_of(c)));
-    d := Pt.[Pt.{ x = 1 }];
+    d := Pt.[Pt{ x = 1 }];
     print("{}\n", type_name(type_of(d)));
     ok : [3]i32 = .[1, 2, 3];
     print("{}\n", type_name(type_of(ok)));  // the annotated form stays

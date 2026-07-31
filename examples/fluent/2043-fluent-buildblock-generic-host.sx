@@ -1,0 +1,56 @@
+// A block-accepting function is an ordinary function, so it may also be generic
+// (fluent spec §6.2). The block parameter binds a value like any other, and the
+// enclosing declaration's own type parameters monomorphize alongside it — one
+// instance per (block, type argument) pair, each with its own replay.
+//
+// Issue 0418: mixing a generic type parameter with a block parameter used to
+// reach LLVM emission with an unresolved type, because a block parameter forced
+// the whole call through comptime inlining, which never monomorphized the
+// generic one.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+Tally :: struct {
+    n: i32 = 0;
+    expression :: (self: *Tally, value: $I/@Init($V/Drawable)) {
+        slot: V = ---;
+        value.write(*slot);
+        self.n += 1;
+    }
+}
+
+// A generic parameter, a value parameter, and the block — in one signature.
+labelled :: (key: $K, gap: i32, content: $B/@BuildBlock(Drawable)) -> string {
+    sink := Tally{};
+    content.run(*sink);
+    print("{} gap {} published {}\n", key, gap, sink.n);
+    "done"
+}
+
+main :: () -> i32 {
+    // Two instantiations of the same generic host, each with its own block.
+    print("{}\n", labelled("by string", 4) {
+        Label{ text = "a" };
+        Label{ text = "b" };
+    });
+    print("{}\n", labelled(7, 2) {
+        Label{ text = "c" };
+    });
+    0
+}
+
+// ** stdout **
+// by string gap 4 published 2
+// done
+// 7 gap 2 published 1
+// done
+//

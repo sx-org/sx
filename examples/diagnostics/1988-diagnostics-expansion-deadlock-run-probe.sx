@@ -18,13 +18,13 @@ Serialize :: protocol tagged { write :: (self: *Self) -> i64; }
 
 GPA :: struct { n: i64; }
 
-HAS :: #run { g := GPA.{ n = 1 }; g.(?Serialize) != null };
+HAS :: #run { g := GPA{ n = 1 }; g.(?Serialize) != null };
 
 inline if !HAS {
     impl Serialize for GPA { write :: (self: *GPA) -> i64 { self.n } }
 }
 
 main :: () {
-    g := GPA.{ n = 3 };
+    g := GPA{ n = 3 };
     print("{}\n", g.n);
 }

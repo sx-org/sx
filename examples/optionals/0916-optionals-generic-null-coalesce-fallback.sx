@@ -32,9 +32,9 @@ main :: () {
 
     // ?Struct instantiation: null -> default struct, present -> the value.
     ps : ?Pt = null;
-    rp := unwrap_or(Pt.{ x = 1, y = 2 }, ps);
+    rp := unwrap_or(Pt{ x = 1, y = 2 }, ps);
     print("f={} {}\n", rp.x, rp.y);
-    qs : ?Pt = Pt.{ x = 8, y = 9 };
-    rq := unwrap_or(Pt.{ x = 1, y = 2 }, qs);
+    qs : ?Pt = Pt{ x = 8, y = 9 };
+    rq := unwrap_or(Pt{ x = 1, y = 2 }, qs);
     print("g={} {}\n", rq.x, rq.y);
 }

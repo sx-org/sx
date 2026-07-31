@@ -14,15 +14,32 @@ const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 const Scope = lower.Scope;
 
+/// Where a capturing closure's environment lives.
+///   `.heap` — the ordinary closure: the value may outlive the forming frame,
+///             so the env is copied to `context.allocator` storage.
+///   `.stack` — a NONESCAPING closure (`@Init(T)`): the env stays in the
+///             forming frame's alloca. Valid only when the value provably
+///             cannot outlive that frame; the compiler never allocates for it
+///             (spec §12.1).
+pub const EnvStorage = enum { heap, stack };
+
 pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
+    return lowerLambdaTyped(self, lam, .heap, null);
+}
+
+/// `lowerLambda` with the two knobs a compiler-formed recipe needs: where the
+/// environment lives, and which type the resulting `{fn_ptr, env}` value
+/// carries. `result_ty` must have the same closure shape the lambda lowers to —
+/// it renames the value (`@Init(V)` instead of `Closure(*V)`), never reshapes it.
+pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: EnvStorage, result_ty: ?TypeId) Ref {
     // Flow narrowing (issue 0179) does NOT cross into the lambda body: the
     // body is a separate function whose `Ref` space overlaps the enclosing
     // function's, so the outer `narrowed_refs` would falsely match body `Ref`s
     // (unsound unwrap of a captured-but-not-proven-present optional). The body
     // builds its own narrowing from scratch; the outer state is restored on
     // return (re-arming narrowing for the rest of the enclosing expression).
-    var narrow_guard = Lowering.NarrowGuard.enter(self);
-    defer narrow_guard.restore();
+    var nested_guard = Lowering.NestedBodyGuard.enter(self);
+    defer nested_guard.restore();
 
     // Lower the lambda body as a new anonymous function
     var buf: [64]u8 = undefined;
@@ -304,6 +321,12 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     // lambda inside a lambda) restores the enclosing context.
     const saved_in_lambda = self.in_lambda_body;
     self.in_lambda_body = true;
+    // The body is a separate function: the enclosing function's return
+    // position says nothing about it, and letting the flag leak in would
+    // refuse a frame temp that is legal inside the lambda (spec §6.2).
+    const saved_in_return_lam = self.in_return_expr;
+    self.in_return_expr = false;
+    defer self.in_return_expr = saved_in_return_lam;
     // The body types against the lambda's OWN return type, exactly as a
     // named fn's body does (lowerFunction): enum literals in an arrow body
     // resolve against `-> E`, and the enclosing expression's target — the
@@ -311,6 +334,12 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     // not leak in as the body's destination (issue 0350).
     const saved_target_lam = self.target_type;
     self.target_type = if (ret_ty != .void and ret_ty != .noreturn) ret_ty else null;
+    // Lambda bodies are separate functions: arm return-value mode for their
+    // body's value chain (same §6.2 rule as named fns). Nested statements
+    // clear `in_return_expr` in lowerStmt.
+    const saved_rvb_lam = self.return_value_body;
+    self.return_value_body = ret_ty != .void;
+    defer self.return_value_body = saved_rvb_lam;
     if (ret_ty != .void) {
         if (self.lowerBlockValue(lam.body)) |val| {
             if (!self.currentBlockHasTerminator()) {
@@ -360,7 +389,7 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     // would still see `Ref.fromIndex(0)` (the lambda's own ctx
     // param), which doesn't exist in the caller's frame and
     // silently routes through the default context instead of any
-    // surrounding `push Context.{ allocator = ... }`.
+    // surrounding `push Context{ allocator = ... }`.
     self.current_ctx_ref = saved_ctx_ref_lam;
 
     // Closure flowing into a BARE function-pointer slot (`(T) -> U`, no env):
@@ -395,7 +424,7 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
     for (params.items[skip_count..]) |p| {
         param_types_list.append(self.alloc, p.ty) catch unreachable;
     }
-    const closure_ty = self.module.types.closureType(param_types_list.items, ret_ty);
+    const closure_ty = result_ty orelse self.module.types.closureType(param_types_list.items, ret_ty);
 
     // Build env and closure in the caller's scope
     if (capture_list.len > 0) {
@@ -412,11 +441,15 @@ pub fn lowerLambda(self: *Lowering, lam: *const ast.Lambda) Ref {
             self.builder.store(gep, val);
         }
 
-        // Copy env to heap (so it outlives the stack frame).
-        // Route through `context.allocator.alloc` rather than calling
-        // libc malloc directly so closures respect a surrounding
-        // `push Context.{ allocator = ... }` and a tracker / arena
-        // counts the env allocation alongside everything else.
+        // A nonescaping closure keeps its env where it was built — no copy, no
+        // allocation. Everything else copies the env to heap so the value can
+        // outlive this frame. Route that through `context.allocator.alloc`
+        // rather than libc malloc, so closures respect a surrounding
+        // `push Context{ allocator = ... }` and a tracker / arena counts the
+        // env allocation alongside everything else.
+        if (env_storage == .stack) {
+            return self.builder.closureCreate(func_id, env_local, closure_ty);
+        }
         const env_byte_size = self.computeEnvSize(capture_list);
         const env_size = self.builder.constInt(@intCast(env_byte_size), .i64);
         const ptr_void = self.module.types.ptrTo(.void);
@@ -628,6 +661,11 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             if (self.scope) |scope| {
                 if (scope.lookupNearest(id.name)) |nearest| switch (nearest) {
                     .binding => |binding| {
+                        // A build block's environment points at the frame that
+                        // formed it; a closure may outlive that frame. Refused,
+                        // but still captured: the diagnostic halts before
+                        // codegen, and binding it keeps the body from cascading.
+                        self.rejectBlockCapture(binding.ty, id.name, node.span);
                         captures.append(self.alloc, .{
                             .name = id.name,
                             .ty = binding.ty,
@@ -802,9 +840,9 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             for (ma.targets) |t| self.collectCaptures(t, param_names, captures);
             for (ma.values) |v| self.collectCaptures(v, param_names, captures);
         },
-        // A `push Context { … }` block inside a lambda body is a nested scope
+        // A `push Context{ … }` block inside a lambda body is a nested scope
         // whose statements can reference captures (the install-the-scheduler
-        // pattern `push Context.{ io = … } { worker() }`). Descend into both
+        // pattern `push Context{ io = … }) { worker() }`). Descend into both
         // the context expression and the body.
         .push_stmt => |ps| {
             self.collectCaptures(ps.context_expr, param_names, captures);
@@ -824,7 +862,7 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
         // is an outer var). `out_value` payloads are Type nodes — descending is
         // harmless (the identifier arm filters type/fn names from capture).
         // A postfix cast's OPERAND is an ordinary expression and may name a
-        // capture (`place(Row.{ w = width }.(View))` inside a build closure).
+        // capture (`place(Row{ w = width }.(View))` inside a build closure).
         // The type expression is a type, never a value. Without this arm the
         // operand's names never enter the env and the body reports them
         // unresolved, while the same literal without the cast works.

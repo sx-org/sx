@@ -9,7 +9,7 @@
 Holder :: struct { a: Allocator; k: i64; }
 
 capture :: () -> Holder {
-    return Holder.{ a = context.allocator, k = 3 };
+    return Holder{ a = context.allocator, k = 3 };
 }
 
 // The default Context itself is a declared global; a handle borrowed from its

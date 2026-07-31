@@ -1,0 +1,61 @@
+// The emit library's stacks and containers (revision §13.2).
+//
+// A container takes an ordinary closure, not a build block. It rebinds the
+// ambient sink to its own child list for the extent of that closure, so every
+// `.emit()` inside lands in this container.
+#import "modules/std.sx";
+#import "modules/ui/emit/geometry.sx";
+#import "modules/ui/emit/render.sx";
+#import "modules/ui/emit/view.sx";
+#import "modules/ui/emit/modifier.sx";
+#import "modules/ui/emit/sink.sx";
+#import "modules/ui/emit/context.sx";
+
+VStack :: @OpenVariant(View) {
+    children: List(View) = .{};
+    spacing: f32 = 0.0;
+    modifier: Modifier = .{};
+
+    size_that_fits :: (self: *VStack, proposal: ProposedSize) -> Size {
+        w := 0.0;
+        h := 0.0;
+        for self.children (c) {
+            s := c.size_that_fits(proposal);
+            if s.width > w { w = s.width; }
+            h += s.height;
+        }
+        if self.children.len > 1 {
+            h += self.spacing * xx (self.children.len - 1);
+        }
+        Size{ width = w, height = h }
+    }
+
+    layout :: (self: *VStack, bounds: Frame) {
+        y := bounds.origin.y;
+        for self.children (c) {
+            s := c.size_that_fits(ProposedSize.fixed(bounds.size.width, bounds.size.height));
+            c.layout(Frame.make(bounds.origin.x, y, bounds.size.width, s.height));
+            y += s.height + self.spacing;
+        }
+    }
+
+    render :: (self: *VStack, rc: *RenderContext, frame: Frame) {
+        y := frame.origin.y;
+        for self.children (c) {
+            s := c.size_that_fits(ProposedSize.fixed(frame.size.width, frame.size.height));
+            c.render(rc, Frame.make(frame.origin.x, y, frame.size.width, s.height));
+            y += s.height + self.spacing;
+        }
+    }
+}
+
+// Builds a stack by running `body` with the ambient sink pointed at the stack's
+// own children.
+vstack :: (spacing: f32, body: Closure()) -> VStack {
+    stack := VStack{ spacing = spacing };
+    sink := EmitSink{ children = *stack.children };
+    push .{ emit_ui = *sink } {
+        body();
+    }
+    stack
+}

@@ -21,7 +21,7 @@ first :: (..sources: VL) -> i64 {
 }
 
 main :: () -> i32 {
-    print("{}\n", first(IntCell.{ v = 7 }));                       // 7
-    print("{}\n", first(IntCell.{ v = 42 }, IntCell.{ v = 99 }));  // 42 (element 0)
+    print("{}\n", first(IntCell{ v = 7 }));                       // 7
+    print("{}\n", first(IntCell{ v = 42 }, IntCell{ v = 99 }));  // 42 (element 0)
     0
 }

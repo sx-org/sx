@@ -53,30 +53,37 @@ fn plainHasImpl(self: *Lowering, proto_node: *const Node, ty: TypeId) bool {
             const cname = self.resolveConcreteTypeName(ty) orelse return false;
             return firstUnimplementedMethod(self, pty, cname, ty) == null;
         },
-        .call => |c| {
-            const p_name: []const u8 = switch (c.callee.data) {
-                .identifier => |id| id.name,
-                .type_expr => |te| te.name,
+        .call, .parameterized_type_expr => {
+            const p_name: []const u8 = switch (proto_node.data) {
+                .parameterized_type_expr => |pte| pte.name,
+                .call => |c| switch (c.callee.data) {
+                    .identifier => |id| id.name,
+                    .type_expr => |te| te.name,
+                    else => return false,
+                },
                 else => return false,
             };
-            // Resolve protocol type args. Each goes through
-            // `resolveTypeArg` so type aliases / generics / pack-
-            // indexed types all work as protocol args.
-            var arg_mangles = std.ArrayList(u8).empty;
-            defer arg_mangles.deinit(self.alloc);
-            for (c.args, 0..) |a, i| {
-                if (i > 0) arg_mangles.append(self.alloc, 0) catch return false;
-                const aty = self.resolveTypeArg(a);
-                arg_mangles.appendSlice(self.alloc, self.mangleTypeName(aty)) catch return false;
-            }
-            const ty_mangled = self.mangleTypeName(ty);
-            const key = std.fmt.allocPrint(self.alloc, "{s}\x00{s}\x00{s}", .{
-                p_name, arg_mangles.items, ty_mangled,
-            }) catch return false;
-            return self.param_impl_map.contains(key);
+            const args: []const *Node = switch (proto_node.data) {
+                .parameterized_type_expr => |pte| pte.args,
+                .call => |c| c.args,
+                else => return false,
+            };
+            // Resolve protocol type args. Each goes through `resolveTypeArg` so
+            // type aliases / generics / pack-indexed types all work as args.
+            var arg_tys = std.ArrayList(TypeId).empty;
+            defer arg_tys.deinit(self.alloc);
+            for (args) |a| arg_tys.append(self.alloc, self.resolveTypeArg(a)) catch return false;
+            return self.protocolResolver().paramImplExists(p_name, arg_tys.items, ty);
         },
         else => return false,
     }
+}
+
+/// The name of the first protocol method `concrete_ty` fails to provide, or null
+/// when it satisfies the protocol. The bound checker wants the name only.
+pub fn firstUnimplementedProtocolMethod(self: *Lowering, proto_ty: TypeId, concrete_type_name: []const u8, concrete_ty: TypeId) ?[]const u8 {
+    const nc = firstUnimplementedMethod(self, proto_ty, concrete_type_name, concrete_ty) orelse return null;
+    return nc.method;
 }
 
 /// The tagged instantiation a `has_impl`-shaped protocol spelling names, or
@@ -1017,7 +1024,7 @@ const containsSelf = program_index_mod.typeNodeContainsSelf;
 /// this, `[]Self` would resolve to a real `.slice` named `[]Self` ≠ `[]T` and
 /// the conformance gate would FALSELY reject a correct `[]T` impl (the gap from
 /// the 0178 adversarial review).
-fn resolveProtoTypeSubSelf(self: *Lowering, node: *const Node, concrete_ty: TypeId, proto_src: ?[]const u8) TypeId {
+pub fn resolveProtoTypeSubSelf(self: *Lowering, node: *const Node, concrete_ty: TypeId, proto_src: ?[]const u8) TypeId {
     switch (node.data) {
         .type_expr => |te| {
             if (std.mem.eql(u8, te.name, "Self")) return concrete_ty;
@@ -1165,7 +1172,7 @@ fn typeContainsUnresolved(self: *Lowering, ty: TypeId) bool {
 /// substitute), returns false, so we never flag a shape outside our resolver's
 /// reach. A REAL mismatch between two fully-resolved compounds (e.g. `[]i64` vs
 /// `[]i32`) still has a distinct interned TypeId and IS caught.
-fn typesClearlyDiffer(self: *Lowering, a: TypeId, b: TypeId) bool {
+pub fn typesClearlyDiffer(self: *Lowering, a: TypeId, b: TypeId) bool {
     if (typeContainsUnresolved(self, a) or typeContainsUnresolved(self, b)) return false;
     return a != b;
 }

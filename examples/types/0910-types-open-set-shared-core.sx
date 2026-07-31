@@ -1,0 +1,95 @@
+// One implementation, several sets: the wrapper-variant shape (spec: Open Sets —
+// a type belongs to one set).
+//
+// A type joins exactly one set, so a body that several sets want is not itself a
+// member of any of them: it stays an ordinary type, and each set gets a thin member
+// that HOLDS it and answers that set's methods by delegating. The work is written
+// once, the sets stay independent, and each dispatches over its own tag space —
+// the same member name in two sets is two members, numbered separately.
+//
+// The wrapper carries the core BY VALUE here, so each set's payload is the core
+// plus whatever that set's member adds. A core too big for a set's ceiling is held
+// behind a pointer instead (0911).
+#import "modules/std.sx";
+
+// The implementation every set wants, and a member of none of them.
+BoardCore :: struct {
+    title: string = "";
+    rows: i64 = 0;
+
+    label :: (self: *BoardCore) -> string => self.title;
+    area :: (self: *BoardCore, cols: i64) -> i64 => self.rows * cols;
+}
+
+// Two sets that know nothing about each other, each with its own methods.
+Draw :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Measure :: @OpenSet(.{ max = 128 }) {
+    weight :: (self: *Self) -> i64;
+}
+
+// A thin member per set, delegating to the one core.
+DrawBoard :: @OpenVariant(Draw) {
+    core: BoardCore = .{};
+    indent: i64 = 0;
+    render :: (self: *DrawBoard) -> string => self.core.label();
+}
+
+MeasureBoard :: @OpenVariant(Measure) {
+    core: BoardCore = .{};
+    cols: i64 = 1;
+    weight :: (self: *MeasureBoard) -> i64 => self.core.area(self.cols);
+}
+
+// An ordinary member of each set alongside the wrappers: the sets are not
+// dedicated to the core, they just admit a member that holds it.
+Note :: @OpenVariant(Draw) {
+    text: string = "";
+    render :: (self: *Note) -> string => self.text;
+}
+
+Weight :: @OpenVariant(Measure) {
+    n: i64 = 0;
+    weight :: (self: *Weight) -> i64 => self.n;
+}
+
+// Each set is consumed on its own terms, by whatever asks for it.
+show :: (v: Draw) -> string => v.render();
+total :: (m: Measure) -> i64 => m.weight();
+
+main :: () -> i32 {
+    core := BoardCore{ title = "board", rows = 8 };
+
+    // The same core reaching two sets, through the member each set admits.
+    drawn: Draw = DrawBoard{ core = core, indent = 2 };
+    measured: Measure = MeasureBoard{ core = core, cols = 8 };
+    print("drawn {} measured {}\n", show(drawn), total(measured));
+
+    // The other members dispatch through the same tag spaces.
+    print("note {} weight {}\n", show(Note{ text = "a note" }), total(Weight{ n = 3 }));
+
+    // Two sets, two numberings: each value answers with the member it carries.
+    print("members {} {}\n", type_of(drawn), type_of(measured));
+
+    // The core is held by value, so each wrapper is a copy: writing through one
+    // set's slot leaves the other's alone.
+    if drawn == {
+        case DrawBoard: (b) { print("held {} rows {}\n", b.core.title, b.core.rows); }
+        else: { print("other\n"); }
+    }
+
+    // A wrapper is an ordinary member: it can be read back out of its own set.
+    board := measured.(MeasureBoard);
+    print("read back {} of {}\n", board.core.area(board.cols), size_of(Measure));
+    0
+}
+
+// ** stdout **
+// drawn board measured 64
+// note a note weight 3
+// members DrawBoard MeasureBoard
+// held board rows 8
+// read back 64 of 40
+//

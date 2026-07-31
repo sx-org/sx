@@ -18,7 +18,7 @@ main :: () -> i32 {
     i2, rest := pair();                  // destructure name
     if u8 := maybe() { }                 // if optional binding
     while i16 := maybe() { break; }      // while optional binding
-    xs := [3]i64.{ 10, 20, 30 };
+    xs: [3]i64 = .{ 10, 20, 30 };
     for xs (bool) { }                   // for capture name
     for xs, 0.. (v, i32) { }                 // for index name
     opt: ?i64 = 5;

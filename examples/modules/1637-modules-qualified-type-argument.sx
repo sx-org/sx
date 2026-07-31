@@ -1,0 +1,43 @@
+// A qualified name in a TYPE-ARGUMENT position reaches the module it names
+// (specs: Modules — the namespace surface).
+//
+// `pkg.Row` in a downcast's target or an assertion's target is the same question
+// `pkg.Row` asks in an annotation, so it takes the same answer — which is what a
+// consumer of a package writes, having imported it under a name. Both
+// temperaments ask it, and a package with a single author of the name is asked no
+// differently from two packages that both write it: the qualifier says which.
+#import "modules/std.sx";
+s :: #import "1637-modules-qualified-type-argument/solo/panel.sx";
+ta :: #import "1637-modules-qualified-type-argument/twin_a/panel.sx";
+tb :: #import "1637-modules-qualified-type-argument/twin_b/panel.sx";
+
+main :: () -> i32 {
+    // One author: the qualified target is a member of the qualified set.
+    v := s.mk();
+    if p := v.(?s.Pnl) { print("soft {}\n", p.tag); } else { print("soft reached nothing\n"); }
+    print("hard {}\n", v.(s.Pnl).render());
+
+    // The same for a plain aggregate asserted out of an `any`.
+    an : any = s.mk_note();
+    if q := an.(?s.Note) { print("any soft {}\n", q.text); } else { print("any soft reached nothing\n"); }
+    print("any hard {}\n", an.(s.Note).text);
+
+    // A parameterized spelling names a head, and the head is qualified too.
+    ab : any = s.mk_box();
+    print("instance {}\n", ab.(s.Box(i64)).v);
+
+    // Two authors: the qualifier answers which `Panel` is asked about.
+    print("{} {}\n", ta.mk().(ta.Panel).tag, tb.mk().(tb.Panel).tag);
+    if x := ta.mk().(?tb.Panel) { print("crossed to {}\n", x.tag); } else { print("no cross\n"); }
+    0
+}
+
+// ** stdout **
+// soft solo
+// hard solo
+// any soft solo note
+// any hard solo note
+// instance 7
+// twin_a value twin_b value
+// no cross
+//

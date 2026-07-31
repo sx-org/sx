@@ -32,6 +32,8 @@ const ErrorAnalysis = @import("error_analysis.zig").ErrorAnalysis;
 const ErrorFlow = @import("error_flow.zig").ErrorFlow;
 const ObjcLowering = @import("ffi_objc.zig").ObjcLowering;
 const semantic_diagnostics = @import("semantic_diagnostics.zig");
+const source_site = @import("../source_site.zig");
+const contracts = @import("../contracts.zig");
 const lower_error = @import("lower/error.zig");
 const lower_comptime = @import("lower/comptime.zig");
 const lower_stmt = @import("lower/stmt.zig");
@@ -51,6 +53,10 @@ const lower_pack = @import("lower/pack.zig");
 const lower_generic = @import("lower/generic.zig");
 const lower_expr = @import("lower/expr.zig");
 const lower_closure = @import("lower/closure.zig");
+const lower_init_plan = @import("lower/init_plan.zig");
+const lower_build_block = @import("lower/build_block.zig");
+const lower_open_set = @import("lower/open_set.zig");
+const lower_bound = @import("lower/bound.zig");
 
 const TypeId = types.TypeId;
 const StringId = types.StringId;
@@ -62,13 +68,16 @@ const Module = mod_mod.Module;
 const Builder = mod_mod.Builder;
 
 /// Call-site provenance retained while a declaration-authored default AST is
-/// evaluated. Nested `#caller_location` markers use this instead of the
-/// default expression's lexical source; ordinary names still resolve in the
-/// function author's module.
+/// evaluated. Nested `@caller` markers use this instead of the default
+/// expression's lexical source; ordinary names still resolve in the function
+/// author's module.
 pub const DefaultCallSite = struct {
     source: ?[]const u8,
     span: ast.Span,
     caller_func: ?FuncId,
+    /// The call expression itself, which is what the source-site index is
+    /// keyed by. Null for a synthesized call with no source node.
+    node: ?*const ast.Node = null,
 };
 
 /// The declaration and source that author a concrete, non-generic struct
@@ -414,8 +423,80 @@ pub const Lowering = struct {
     /// lowering; null for a bare inline `#run`.
     comptime_const_name: ?[]const u8 = null,
     main_file: ?[]const u8 = null, // path of the main file; imported functions are declared extern
+    /// Source-site index over the program's declarations, built once (see
+    /// `src/source_site.zig`). `@caller` reads a call's site from it.
+    site_index: ?*const source_site.SiteIndex = null,
+    /// The library roots import resolution searched. `contracts` needs them to
+    /// tell a canonical `@` declaration from a same-named file elsewhere.
+    stdlib_paths: []const []const u8 = &.{},
     resolved_root: ?*const Node = null, // full AST root (for building comptime modules)
     comptime_param_nodes: ?std.StringHashMap(*const Node) = null, // active comptime substitutions
+    /// Impl binders to seed a monomorphization with: a blanket impl's method
+    /// signature spells the impl's own binders (`$T` in
+    /// `impl @BuildSink($T) for Sink($T)`), and only the carrier's
+    /// instantiation can say what they are. Set around a dispatch to such a
+    /// method; null everywhere else.
+    impl_binder_seed: ?*const std.StringHashMap(TypeId) = null,
+    /// Declared open sets, by DECLARATION (spec: Open Sets). The declarations ARE
+    /// the registry: there is no enrollment API, and which set a name means is a
+    /// question about which declaration it reaches.
+    open_sets: std.AutoHashMap(*const ast.OpenSetDecl, lower_open_set.Set),
+    /// Reverse lookup: the set a type IS.
+    open_set_by_type: std.AutoHashMap(TypeId, *const ast.OpenSetDecl),
+    /// The set a member type joins — one per type.
+    open_variant_of: std.AutoHashMap(TypeId, *const ast.OpenSetDecl),
+    /// Members that hold a set BY VALUE, keyed by the set they hold: growing that
+    /// set grows them, and therefore the sets they belong to.
+    open_set_dependents: std.AutoHashMap(TypeId, std.ArrayList(lower_open_set.Dependent)),
+    /// Sets whose layout is being recomputed right now — a re-entry is a
+    /// layout cycle between two sets, which has no finite answer.
+    open_set_relayout: std.AutoHashMap(TypeId, void),
+    /// Sets with a GENERIC member DECLARATION. The template has no layout; each
+    /// instantiation the program spells is another member, so such a set's layout
+    /// stays open past the declaration pass.
+    open_set_generic_members: std.AutoHashMap(*const ast.OpenSetDecl, void),
+    /// Generic members whose head has not reached a set yet. A template is built
+    /// while the declarations are still being scanned, so the set it names may not
+    /// be registered — the note waits here and is answered when it is, or reported
+    /// when the declarations are done and it still reaches nothing.
+    open_set_generic_pending: std.ArrayList(lower_open_set.PendingGenericMember),
+    /// The member tags each set's freeze assigned, in the set's own space.
+    open_set_tags: std.AutoHashMap(mod_mod.Module.OpenSetMember, i64),
+    /// Each set's `tag → member Type` table global, written at the freeze.
+    open_set_tables: std.AutoHashMap(TypeId, inst_mod.GlobalId),
+    /// The target an `@Init` write thunk is being formed for, while its body is
+    /// lowered: the store it performs is formation, and what cannot become that
+    /// target is refused in those terms rather than as a store the program wrote.
+    forming_init_target: ?TypeId = null,
+    /// Bumped by every member admission. The convergence fixpoint compares it
+    /// across a round: a set that grew is a round that changed something.
+    open_set_epoch: u32 = 0,
+    /// True once the declaration pass has admitted every member it can see. From
+    /// there only a generic member's instantiation can still grow a set.
+    open_set_decls_admitted: bool = false,
+    /// Where each (set, required method)'s routine sits in `open_set_pending` —
+    /// an index, so the declared routine and its pending body can never diverge.
+    open_set_dispatch: std.AutoHashMap(lower_open_set.MethodKey, usize),
+    /// Declared routines awaiting their body, in declaration order.
+    open_set_pending: std.ArrayList(lower_open_set.PendingDispatch) = .empty,
+    /// The member's own implementation each arm calls.
+    open_set_arms: std.AutoHashMap(lower_open_set.ArmKey, inst_mod.FuncId),
+    /// `@BuildBlock` formation sites, in mint order; a per-site implementor type
+    /// carries its one-based index as its nominal id.
+    block_sites: std.ArrayList(lower_build_block.Site) = .empty,
+    /// The site id minted for a source block, so two monomorphizations of one
+    /// enclosing generic function form at the SAME site (§4.2).
+    block_site_ids: std.AutoHashMapUnmanaged(*const Node, u32) = .empty,
+    /// Active build replays, innermost last (spec §7.3). A standalone expression
+    /// statement is offered to the top scope's sink; an empty stack means no
+    /// interception at all.
+    build_scopes: std.ArrayList(lower_build_block.Scope) = .empty,
+    /// `@Init` formation sites, in mint order; a per-site implementor type
+    /// carries its one-based index (`TypeInfo.ClosureInfo.init_site`).
+    init_sites: std.ArrayList(lower_init_plan.Site) = .empty,
+    /// The site id minted for a source expression, so two monomorphizations of
+    /// one enclosing generic function form at the SAME site (§4.2).
+    init_site_ids: std.AutoHashMapUnmanaged(*const Node, u32) = .empty,
     target_type: ?TypeId = null, // target type for struct/enum literals without explicit names
     /// Synthetic call-default roots keyed by node identity. Unlike caller-owned
     /// comptime substitutions (which also carry `Node.source_file`), a declared
@@ -498,6 +579,11 @@ pub const Lowering = struct {
     /// impl adopt an exact method already owned by the same concrete TypeId
     /// without turning protocol conformance structural or scan-order dependent.
     protocol_impl_decls: std.AutoHashMap(ProtocolConcreteKey, void),
+    /// Every declared impl site of a concrete `(protocol, type)` pair, so
+    /// import-scoped coherence (§3) can refuse a second impl of the pair in the
+    /// module that already declared one. Cross-module overlaps stay legal here
+    /// and are decided at a use site that sees both.
+    protocol_impl_sites: std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_tagged.ImplSite)),
     /// Exact receiver type recorded when a nullary-protocol impl method is
     /// declared. Synthesized default methods are authored in the protocol's
     /// module, where re-resolving their synthetic `self: *Target` annotation
@@ -536,7 +622,7 @@ pub const Lowering = struct {
     // default-conv sx function gains a synthetic `__sx_ctx: *void` param
     // at slot 0, and `current_ctx_ref` is bound to that param on each
     // function-body entry. `lowerCall` / `call_indirect` prepend this ref
-    // to the args of every sx-to-sx call. push Context.{...} rebinds it
+    // to the args of every sx-to-sx call. push Context{...} rebinds it
     // to a stack-allocated Context for the lexical body. See
     // `~/.claude/plans/lets-see-options-for-merry-dijkstra.md`.
     implicit_ctx_enabled: bool = false,
@@ -712,6 +798,11 @@ pub const Lowering = struct {
     /// RVALUE into a tagged value there has nothing durable to borrow — the
     /// frame is about to die (spec §6.2).
     in_return_expr: bool = false,
+    /// True while lowering a function/lambda body's value that becomes the
+    /// implicit return. Only the value-producing chain (block tails, if/match
+    /// arm values) inherits `in_return_expr`; nested statements clear it
+    /// (and clear this flag) in `lowerStmt`.
+    return_value_body: bool = false,
     param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; list lets Phase 4/5 detect cross-module overlap)
     /// One materialized instantiation of a parameterized protocol family, by
     /// its protocol TypeId. The base identity name plus the canonical argument
@@ -723,6 +814,15 @@ pub const Lowering = struct {
     /// matched against many concrete source shapes. Concrete impls in
     /// `param_impl_map` win when both match (specificity rule).
     param_impl_pack_map: std.StringHashMap(std.ArrayList(PackParamImplEntry)),
+    /// Blanket parameterized impls, keyed by protocol NAME only (no argument
+    /// tuple, no source). Lookup order is a specificity rule: `param_impl_map`
+    /// answers first, and this map is consulted only when no concrete impl
+    /// matches — at which point the request's own type arguments and source
+    /// instantiation are what bind the impl's binders.
+    param_impl_generic_map: std.StringHashMap(std.ArrayList(GenericParamImplEntry)),
+    /// Overlaps already reported, so one ambiguous carrier is named once however
+    /// many times conformance is asked about it.
+    reported_impl_overlaps: std.StringHashMap(void),
     /// Active pack bindings during monomorphisation. Mirrors `type_bindings`
     /// but for variadic pack names: `args → [T1, T2, ...]`. Read by
     /// `resolveTypeWithBindings` on closure_type_expr to substitute
@@ -841,6 +941,29 @@ pub const Lowering = struct {
         block: *const ast.ImplBlock,
     };
 
+    /// A BLANKET parameterized impl: one whose protocol type arguments are the
+    /// impl's own binders (`impl Series($T) for Buffer($T)`), so there is no
+    /// concrete tuple to key it by. Registered under the protocol NAME alone and
+    /// matched at the use site, where the concrete request supplies the binding.
+    pub const GenericParamImplEntry = struct {
+        methods: []const *const ast.FnDecl,
+        /// Protocol type arguments AS WRITTEN.
+        arg_nodes: []const *const ast.Node,
+        /// For each protocol argument that is a binder, WHERE it sits in the
+        /// carrier's argument list; null for a concrete argument. Matching goes
+        /// through the position because the impl spells its own binder name and
+        /// the template spells another.
+        arg_positions: []const ?usize,
+        /// The template the source spells (`Buffer` of `Buffer($T)`).
+        target_template: []const u8,
+        /// The carrier's type arguments AS WRITTEN. A concrete one constrains
+        /// which instantiations the impl covers just as much as a binder does.
+        target_arg_nodes: []const *const ast.Node,
+        defining_module: []const u8,
+        span: ast.Span,
+        block: *const ast.ImplBlock,
+    };
+
     /// A parameterized protocol instantiation: the family's declaration
     /// identity plus the canonical argument tuple it was instantiated at.
     pub const ParamProtocolInstance = struct {
@@ -899,6 +1022,10 @@ pub const Lowering = struct {
         narrowed: std.StringHashMap(void),
         narrowed_refs: std.AutoHashMap(Ref, void),
         xx_passthrough_refs: std.AutoHashMap(Ref, void),
+        break_target: ?BlockId,
+        continue_target: ?BlockId,
+        loop_defer_base: usize,
+        build_scopes: std.ArrayList(lower_build_block.Scope),
 
         pub fn enter(l: *Lowering) FnBodyReentry {
             const g = FnBodyReentry{
@@ -922,10 +1049,20 @@ pub const Lowering = struct {
                 .narrowed = l.narrowed,
                 .narrowed_refs = l.narrowed_refs,
                 .xx_passthrough_refs = l.xx_passthrough_refs,
+                // Loop targets and build replays are lexical to one body for
+                // the same reasons `NestedBodyGuard` states.
+                .break_target = l.break_target,
+                .continue_target = l.continue_target,
+                .loop_defer_base = l.loop_defer_base,
+                .build_scopes = l.build_scopes,
             };
             l.narrowed = std.StringHashMap(void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.xx_passthrough_refs = std.AutoHashMap(Ref, void).init(l.alloc);
+            l.break_target = null;
+            l.continue_target = null;
+            l.loop_defer_base = 0;
+            l.build_scopes = .empty;
             // The `#jni_env` Ref stack is lexical to ONE function's instruction
             // stream; move the visible base to the current top. Pack-fn mono
             // state is likewise lexical to the pack-fn body — null it so a
@@ -963,38 +1100,73 @@ pub const Lowering = struct {
             l.narrowed_refs = g.narrowed_refs;
             l.xx_passthrough_refs.deinit();
             l.xx_passthrough_refs = g.xx_passthrough_refs;
+            l.break_target = g.break_target;
+            l.continue_target = g.continue_target;
+            l.loop_defer_base = g.loop_defer_base;
+            l.build_scopes.deinit(l.alloc);
+            l.build_scopes = g.build_scopes;
         }
     };
 
-    /// Save + clear + restore JUST the flow-narrowing state (issue 0179) around
-    /// a nested body lowering that does NOT go through `FnBodyReentry` —
-    /// closure literals, generic/pack/comptime monomorphization. Each lowers a
-    /// SEPARATE function whose `Ref` space (reset by `beginFunction`) OVERLAPS
-    /// the outer function's, so the outer `narrowed_refs` indices would falsely
-    /// match the nested body's `Ref`s and permit an UNSOUND unwrap of a
-    /// non-present optional. Clearing on entry isolates the nested body (it
-    /// builds its own narrowing from scratch); restore re-arms the outer.
-    pub const NarrowGuard = struct {
+    /// Save + clear + restore the state that is lexical to ONE function body,
+    /// around a nested body lowering that does NOT go through `FnBodyReentry` —
+    /// closure literals, generic/pack/comptime monomorphization, synthesized
+    /// stubs. Each lowers a SEPARATE function, so none of the enclosing body's
+    /// per-body state may be visible inside it:
+    ///
+    /// - flow narrowing (issue 0179): the nested body's `Ref` space (reset by
+    ///   `beginFunction`) OVERLAPS the outer function's, so the outer
+    ///   `narrowed_refs` indices would falsely match and permit an UNSOUND
+    ///   unwrap of a non-present optional;
+    /// - loop targets: `break_target` / `continue_target` name BASIC BLOCKS of
+    ///   the enclosing function, so a `break` in the nested body would branch
+    ///   across a function boundary;
+    /// - build replays: a `@BuildBlock` scope intercepts expression statements
+    ///   of ITS OWN block only (spec §7.2), never of a function lowered while
+    ///   that replay happens to be on the stack.
+    pub const NestedBodyGuard = struct {
         l: *Lowering,
         narrowed: std.StringHashMap(void),
         narrowed_refs: std.AutoHashMap(Ref, void),
         xx_passthrough_refs: std.AutoHashMap(Ref, void),
+        break_target: ?BlockId,
+        continue_target: ?BlockId,
+        loop_defer_base: usize,
+        build_scopes: std.ArrayList(lower_build_block.Scope),
 
-        pub fn enter(l: *Lowering) NarrowGuard {
-            const g = NarrowGuard{ .l = l, .narrowed = l.narrowed, .narrowed_refs = l.narrowed_refs, .xx_passthrough_refs = l.xx_passthrough_refs };
+        pub fn enter(l: *Lowering) NestedBodyGuard {
+            const g = NestedBodyGuard{
+                .l = l,
+                .narrowed = l.narrowed,
+                .narrowed_refs = l.narrowed_refs,
+                .xx_passthrough_refs = l.xx_passthrough_refs,
+                .break_target = l.break_target,
+                .continue_target = l.continue_target,
+                .loop_defer_base = l.loop_defer_base,
+                .build_scopes = l.build_scopes,
+            };
             l.narrowed = std.StringHashMap(void).init(l.alloc);
             l.narrowed_refs = std.AutoHashMap(Ref, void).init(l.alloc);
             l.xx_passthrough_refs = std.AutoHashMap(Ref, void).init(l.alloc);
+            l.break_target = null;
+            l.continue_target = null;
+            l.loop_defer_base = 0;
+            l.build_scopes = .empty;
             return g;
         }
 
-        pub fn restore(g: NarrowGuard) void {
+        pub fn restore(g: NestedBodyGuard) void {
             g.l.narrowed.deinit();
             g.l.narrowed = g.narrowed;
             g.l.narrowed_refs.deinit();
             g.l.narrowed_refs = g.narrowed_refs;
             g.l.xx_passthrough_refs.deinit();
             g.l.xx_passthrough_refs = g.xx_passthrough_refs;
+            g.l.break_target = g.break_target;
+            g.l.continue_target = g.continue_target;
+            g.l.loop_defer_base = g.loop_defer_base;
+            g.l.build_scopes.deinit(g.l.alloc);
+            g.l.build_scopes = g.build_scopes;
         }
     };
 
@@ -1016,6 +1188,7 @@ pub const Lowering = struct {
             .plain_struct_authors = std.AutoHashMap(TypeId, PlainStructAuthor).init(module.alloc),
             .protocol_impl_methods = std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod).init(module.alloc),
             .protocol_impl_decls = std.AutoHashMap(ProtocolConcreteKey, void).init(module.alloc),
+            .protocol_impl_sites = std.AutoHashMap(ProtocolConcreteKey, std.ArrayList(lower_tagged.ImplSite)).init(module.alloc),
             .protocol_impl_receiver_types = std.AutoHashMap(*const ast.FnDecl, TypeId).init(module.alloc),
             .protocol_default_dispatch = null,
             .registered_protocol_impls = std.AutoHashMap(*const ast.ImplBlock, void).init(module.alloc),
@@ -1027,6 +1200,17 @@ pub const Lowering = struct {
             .struct_defaults_map = std.StringHashMap([]const ?*const Node).init(module.alloc),
             .struct_defaults_by_tid = std.AutoHashMap(TypeId, []const ?*const Node).init(module.alloc),
             .struct_const_by_tid = std.AutoHashMap(StructConstTidKey, StructConstInfo).init(module.alloc),
+            .open_sets = std.AutoHashMap(*const ast.OpenSetDecl, lower_open_set.Set).init(module.alloc),
+            .open_set_by_type = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
+            .open_variant_of = std.AutoHashMap(TypeId, *const ast.OpenSetDecl).init(module.alloc),
+            .open_set_dependents = std.AutoHashMap(TypeId, std.ArrayList(lower_open_set.Dependent)).init(module.alloc),
+            .open_set_relayout = std.AutoHashMap(TypeId, void).init(module.alloc),
+            .open_set_generic_members = std.AutoHashMap(*const ast.OpenSetDecl, void).init(module.alloc),
+            .open_set_generic_pending = std.ArrayList(lower_open_set.PendingGenericMember).empty,
+            .open_set_tags = std.AutoHashMap(mod_mod.Module.OpenSetMember, i64).init(module.alloc),
+            .open_set_tables = std.AutoHashMap(TypeId, inst_mod.GlobalId).init(module.alloc),
+            .open_set_dispatch = std.AutoHashMap(lower_open_set.MethodKey, usize).init(module.alloc),
+            .open_set_arms = std.AutoHashMap(lower_open_set.ArmKey, inst_mod.FuncId).init(module.alloc),
             .struct_instance_bindings = std.StringHashMap(std.StringHashMap(TypeId)).init(module.alloc),
             .struct_instance_template = std.StringHashMap([]const u8).init(module.alloc),
             .struct_instance_author = std.StringHashMap(*const ast.StructDecl).init(module.alloc),
@@ -1048,6 +1232,8 @@ pub const Lowering = struct {
             .param_impl_map = std.StringHashMap(std.ArrayList(ParamImplEntry)).init(module.alloc),
             .param_protocol_instances = std.AutoHashMap(TypeId, ParamProtocolInstance).init(module.alloc),
             .param_impl_pack_map = std.StringHashMap(std.ArrayList(PackParamImplEntry)).init(module.alloc),
+            .param_impl_generic_map = std.StringHashMap(std.ArrayList(GenericParamImplEntry)).init(module.alloc),
+            .reported_impl_overlaps = std.StringHashMap(void).init(module.alloc),
             .struct_const_map = std.StringHashMap(StructConstInfo).init(module.alloc),
             .extern_name_map = std.StringHashMap([]const u8).init(module.alloc),
             .comptime_constants = std.StringHashMap(ComptimeValue).init(module.alloc),
@@ -1191,6 +1377,15 @@ pub const Lowering = struct {
         // return type — not a parameter value type (use `Tuple(…)`).
         if (self.rejectMultiReturnValueType(p.type_expr, "parameter")) return .unresolved;
         const declared_ty = self.resolveTypeWithBindings(p.type_expr);
+        // A `$I/@Init(T)` parameter whose binder is not yet bound resolves to
+        // the FORMATION REQUEST for `T` (§5.2): argument lowering keys on it and
+        // forms the implementor that binds `$I`. Once bound — inside the
+        // monomorphized body, or at a forwarding call — the binder resolves to
+        // that implementor above and this arm is not reached.
+        if (declared_ty == .unresolved and !p.is_variadic) {
+            if (lower_init_plan.formationRequest(self, p)) |request| return request;
+            if (lower_build_block.formationRequest(self, p)) |request| return request;
+        }
         if (p.is_variadic) {
             // Two surface forms:
             //   - legacy `name: ..T` — declared_ty is the element type;
@@ -1365,6 +1560,15 @@ pub const Lowering = struct {
         // `field_count` of a resolved non-aggregate is 0 (matches the value path
         // in lower/call.zig), NOT a fold failure.
         if (is_fc) return self.module.types.memberCount(ty) orelse 0;
+        // An open set's layout is not a number yet unless nothing can still grow
+        // it: a folded position is fixed WHERE IT IS WRITTEN, so answering it here
+        // would bake a size a member declared later contradicts.
+        if (self.openSetLayoutDependsOnSet(ty) and !self.openSetLayoutFinal(ty)) {
+            self.refuseUnfrozenLayout(ty, node.span);
+            // Refused, not unfoldable: the measurement as it stands keeps the
+            // type it dimensions well-formed for the rest of the pass, and the
+            // build stops on the error before any of it is emitted.
+        }
         if (is_sz) return @intCast(self.typeSizeBytes(ty));
         return @intCast(self.typeAlignBytes(ty));
     }
@@ -1510,7 +1714,7 @@ pub const Lowering = struct {
         }
         // A qualified type reference reaching type position as an EXPRESSION
         // `field_access` node — e.g. `m.Cfg` written as a struct-literal prefix
-        // (`m.Cfg.{...}`, issue 0204). Resolve it the SAME way a dotted
+        // (`m.Cfg{...}`, issue 0204). Resolve it the SAME way a dotted
         // `type_expr` annotation (`x : m.Cfg`) does (see the `.type_expr` arm
         // below): the prefix is a namespace alias — pin the source to its target
         // module and resolve the leaf there. NOT `resolveNominalLeaf("m.Cfg")`,
@@ -2396,7 +2600,7 @@ pub const Lowering = struct {
     /// Reconstruct a dotted name from a pure identifier/field_access chain
     /// (`a.b.C` → "a.b.C"); null if any segment isn't a plain name. The caller
     /// owns and frees the returned slice. Used to resolve a qualified type
-    /// prefix written in expression position (`m.Cfg.{...}` — issue 0204).
+    /// prefix written in expression position (`m.Cfg{...}` — issue 0204).
     pub fn qualifiedTypeName(self: *Lowering, node: *const Node) ?[]const u8 {
         var parts = std.ArrayList([]const u8).empty;
         defer parts.deinit(self.alloc);
@@ -2455,6 +2659,17 @@ pub const Lowering = struct {
             };
         }
         return false;
+    }
+
+    /// The integer type a payload-less enum's value IS — its declared backing
+    /// type, `i64` when none was written. Null for every other type: a
+    /// payload-CARRYING enum is a `tagged_union` (`{tag, payload}`), not a
+    /// scalar, so no integer stands for its value.
+    pub fn enumBackingType(self: *Lowering, ty: TypeId) ?TypeId {
+        if (ty.isBuiltin()) return null;
+        const info = self.module.types.get(ty);
+        if (info != .@"enum") return null;
+        return info.@"enum".backing_type orelse .i64;
     }
 
     /// Value range of an integer type, for literal fits-checks. Null for
@@ -2772,11 +2987,13 @@ pub const Lowering = struct {
     pub const placeholderTraceFrame = lower_error.placeholderTraceFrame;
     pub const errorSetTypeOf = lower_error.errorSetTypeOf;
     pub const isErrorTagLiteralNode = lower_error.isErrorTagLiteralNode;
+    pub const literalTagName = lower_error.literalTagName;
     pub const tryLowerErrorSetEquality = lower_error.tryLowerErrorSetEquality;
     pub const effectiveReturnType = lower_error.effectiveReturnType;
     pub const errorChannelOf = lower_error.errorChannelOf;
     pub const isInferredErrorSet = lower_error.isInferredErrorSet;
     pub const checkErrorSetSubset = lower_error.checkErrorSetSubset;
+    pub const checkErrorSetValueCoercion = lower_error.checkErrorSetValueCoercion;
     pub const diagTagsNotInSet = lower_error.diagTagsNotInSet;
     pub const lowerRaise = lower_error.lowerRaise;
     pub const lowerFailableSuccessReturn = lower_error.lowerFailableSuccessReturn;
@@ -2789,7 +3006,10 @@ pub const Lowering = struct {
     pub const emitTupleRet = lower_error.emitTupleRet;
     pub const diagRaiseNotFailable = lower_error.diagRaiseNotFailable;
     pub const exprIsFailable = lower_error.exprIsFailable;
-    pub const lowerCallerLocation = lower_error.lowerCallerLocation;
+    pub const lowerCallerSite = lower_error.lowerCallerSite;
+    pub const sourceSiteType = lower_error.sourceSiteType;
+    pub const sourceSiteValue = lower_error.sourceSiteValue;
+    pub const mainDir = lower_error.mainDir;
     pub const sourceForFile = lower_error.sourceForFile;
     pub const currentFunctionName = lower_error.currentFunctionName;
     pub const lowerTry = lower_error.lowerTry;
@@ -3090,6 +3310,11 @@ pub const Lowering = struct {
     pub const lowerOwningErasure = lower_protocol.lowerOwningErasure;
     pub const refuseValuelessProtocol = lower_protocol.refuseValuelessProtocol;
     pub const refuseNonConformer = lower_protocol.refuseNonConformer;
+    /// The declared-signature comparison pair, shared by protocol conformance and
+    /// open-set member admission: both ask whether an implementation answers at
+    /// the types a declaration states, with `Self` standing for the implementor.
+    pub const resolveDeclaredTypeSubSelf = lower_protocol.resolveProtoTypeSubSelf;
+    pub const typesClearlyDiffer = lower_protocol.typesClearlyDiffer;
     pub const protocolKindOf = lower_protocol.protocolKindOf;
     pub const checkComptimeEscape = lower_protocol.checkComptimeEscape;
 
@@ -3114,7 +3339,9 @@ pub const Lowering = struct {
     pub const lowerSoftPointerRecovery = lower_tagged.lowerSoftPointerRecovery;
     pub const warnDeadTypeSwitchArm = lower_tagged.warnDeadTypeSwitchArm;
     pub const allocViaAllocatorValue = lower_protocol.allocViaAllocatorValue;
+    pub const firstUnimplementedProtocolMethod = lower_protocol.firstUnimplementedProtocolMethod;
     pub const resolveConcreteTypeName = lower_protocol.resolveConcreteTypeName;
+    pub const checkBoundBindings = lower_bound.checkBindings;
     pub const computeHasImpl = lower_protocol.computeHasImpl;
     pub const taggedMembershipOf = lower_protocol.taggedMembershipOf;
     pub const factScheduler = lower_tagged.factScheduler;
@@ -3143,6 +3370,8 @@ pub const Lowering = struct {
     pub const zeroValue = lower_coerce.zeroValue;
     pub const lowerCoercedDefault = lower_coerce.lowerCoercedDefault;
     pub const lowerDefaultWithBindings = lower_coerce.lowerDefaultWithBindings;
+    pub const valueTypeOfRef = lower_coerce.valueTypeOfRef;
+    pub const bareFnNameSignature = lower_coerce.bareFnNameSignature;
     pub const coerceToType = lower_coerce.coerceToType;
     pub const coerceExplicit = lower_coerce.coerceExplicit;
     pub const checkAssignable = lower_coerce.checkAssignable;
@@ -3223,6 +3452,7 @@ pub const Lowering = struct {
     pub const reflectionTypeArgGuard = lower_call.reflectionTypeArgGuard;
     pub const reflectionErrorSentinel = lower_call.reflectionErrorSentinel;
     pub const appendDefaultArgs = lower_call.appendDefaultArgs;
+    pub const lowerDefaultArg = lower_call.lowerDefaultArg;
     pub const checkCallArity = lower_call.checkCallArity;
     pub const expandCallDefaults = lower_call.expandCallDefaults;
     pub const userParamTypes = lower_call.userParamTypes;
@@ -3274,7 +3504,9 @@ pub const Lowering = struct {
     pub const isStaticTypeRef = lower_generic.isStaticTypeRef;
     pub const resolveTupleLiteralTypeArg = lower_generic.resolveTupleLiteralTypeArg;
     pub const resolveTypeArg = lower_generic.resolveTypeArg;
+    pub const qualifiedNominalTypeArg = lower_generic.qualifiedNominalTypeArg;
     pub const formatTypeName = lower_generic.formatTypeName;
+    pub const formatSourceTypeName = lower_generic.formatSourceTypeName;
     pub const formatFnTypeString = lower_generic.formatFnTypeString;
     pub const matchTypeParam = lower_generic.matchTypeParam;
     pub const matchTypeParamStatic = lower_generic.matchTypeParamStatic;
@@ -3309,6 +3541,7 @@ pub const Lowering = struct {
     pub const lowerStructLiteral = lower_expr.lowerStructLiteral;
     pub const synthesizeAnonStruct = lower_expr.synthesizeAnonStruct;
     pub const lowerInitBlock = lower_expr.lowerInitBlock;
+    pub const lowerPostScopeBlock = lower_expr.lowerPostScopeBlock;
     pub const getStructFields = lower_expr.getStructFields;
     pub const getAccessorFor = lower_expr.getAccessorFor;
     pub const getSetterFor = lower_expr.getSetterFor;
@@ -3371,4 +3604,56 @@ pub const Lowering = struct {
     pub const createClosureToBareFnAdapter = lower_closure.createClosureToBareFnAdapter;
     pub const collectCaptures = lower_closure.collectCaptures;
     pub const computeEnvSize = lower_closure.computeEnvSize;
+
+    // --- lower/init_plan.zig (`@Init(T)`) ---
+    pub const synthNode = lower_tagged.synthNode;
+    pub const initTargetOf = lower_init_plan.initTargetOf;
+    pub const initBinderType = lower_init_plan.binderType;
+    pub const formInitPlan = lower_init_plan.formInitPlan;
+    pub const lowerInitWrite = lower_init_plan.lowerInitWrite;
+    pub const lowerInitSite = lower_init_plan.lowerInitSite;
+
+    // --- lower/build_block.zig (`@BuildBlock(P)`) ---
+    // --- lower/open_set.zig (`@OpenSet` / `@OpenVariant`) ---
+    pub const registerOpenSetDecl = lower_open_set.registerSetDecl;
+    pub const admitOpenVariant = lower_open_set.admitVariant;
+    pub const openSetOf = lower_open_set.setOf;
+    pub const isOpenSet = lower_open_set.isOpenSet;
+    pub const openSetDeclNamed = lower_open_set.setDeclNamed;
+    pub const openSetDeclVerdict = lower_open_set.setDeclVerdict;
+    pub const bareTypeVerdict = lower_open_set.bareTypeVerdict;
+    pub const noteOpenSetGenericMember = lower_open_set.noteGenericMember;
+    pub const reportUnreachedGenericHeads = lower_open_set.reportUnreachedGenericHeads;
+    pub const openSetLayoutDependsOnSet = lower_open_set.layoutDependsOnSet;
+    pub const openSetLayoutFinal = lower_open_set.layoutFinal;
+    pub const freezeOpenSets = lower_open_set.freezeSets;
+    pub const refuseUnfrozenLayout = lower_open_set.refuseUnfrozenLayout;
+    pub const openSetDeclaresMembership = lower_open_set.declaresMembership;
+    pub const openSetOfMember = lower_open_set.setOfMember;
+    pub const refuseOpenSetNonMember = lower_open_set.refuseNonMember;
+    pub const refuseSetFromAny = lower_open_set.refuseSetFromAny;
+    pub const refuseOpenSetNonMemberTarget = lower_open_set.refuseNonMemberTarget;
+    pub const refuseOpenSetArm = lower_open_set.refuseSetArm;
+    pub const noteOpenSetInstantiation = lower_open_set.noteInstantiation;
+    pub const openSetMembershipHelp = lower_open_set.membershipHelp;
+    pub const refuseUntemperedDowncast = lower_open_set.refuseUntemperedDowncast;
+    pub const lowerOpenSetDowncast = lower_open_set.lowerDowncast;
+    pub const coerceMemberToSet = lower_open_set.coerceMemberToSet;
+    pub const openSetSlotAddress = lower_open_set.slotAddress;
+    pub const openSetMemberTypeId = lower_open_set.memberTypeId;
+    pub const openSetAnyView = lower_open_set.anyView;
+    pub const emitOpenSetDispatch = lower_open_set.emitDispatch;
+    pub const materializeOpenSetArms = lower_open_set.materializeArms;
+
+    pub const blockProtocolOf = lower_build_block.blockProtocolOf;
+    pub const blockBinderType = lower_build_block.binderType;
+    pub const formBuildBlock = lower_build_block.formBlock;
+    pub const lowerBuildBlockRun = lower_build_block.lowerRun;
+    pub const lowerBuildBlockShape = lower_build_block.lowerShape;
+    pub const lowerBuildBlockSite = lower_build_block.lowerSite;
+    pub const interceptBuildExpression = lower_build_block.interceptExpression;
+    pub const rejectBlockBinding = lower_build_block.rejectBinding;
+    pub const rejectBlockCapture = lower_build_block.rejectCapture;
+    pub const rejectBlockReturn = lower_build_block.rejectReturn;
+    pub const appendIntField = lower_build_block.appendIntField;
 };

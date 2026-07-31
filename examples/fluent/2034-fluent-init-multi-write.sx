@@ -1,0 +1,64 @@
+// `write` may run zero, one, or many times, and each run RE-EVALUATES the
+// expression (fluent spec §5.3).
+//
+// An initializer is a recipe, not a snapshot: formation captures the expression
+// without evaluating it, so every `write` executes it again — side effects
+// included — straight into that call's destination. There is no write-count
+// diagnostic and no escape analysis; which of these patterns is correct is the
+// library's protocol to document, not the compiler's to enforce.
+#import "modules/std.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+// How many times the argument expression has run.
+evaluations : i32 = 0;
+
+next_text :: () -> string {
+    evaluations += 1;
+    if evaluations == 1 then "first" else "second"
+}
+
+// Two writes, two destinations: each one re-runs the recipe, so the two slots
+// hold the results of two separate evaluations.
+pair :: (value: $I/@Init($V/Drawable)) -> string {
+    a: V = ---;
+    b: V = ---;
+    value.write(*a);
+    value.write(*b);
+    format("{} then {}", a.draw(), b.draw())
+}
+
+// Zero writes: the expression never runs at all, which is how a measuring sink
+// declines to build anything.
+skip :: (value: $I/@Init($V/Drawable)) -> i32 { 0 }
+
+// The same recipe written once per loop iteration. Nothing about the caller's
+// or the receiver's control flow limits how often a write may happen.
+repeat :: (value: $I/@Init($V/Drawable), times: i32) -> i32 {
+    i : i32 = 0;
+    for 0..times (_unused) {
+        slot: V = ---;
+        value.write(*slot);
+        i += 1;
+    }
+    i
+}
+
+main :: () -> i32 {
+    print("{}\n", pair(Label{ text = next_text() }));
+    print("evaluations {}\n", evaluations);
+
+    evaluations = 0;
+    print("skipped {} evaluations {}\n", skip(Label{ text = next_text() }), evaluations);
+
+    evaluations = 0;
+    print("wrote {} evaluations {}\n", repeat(Label{ text = next_text() }, 3), evaluations);
+    0
+}

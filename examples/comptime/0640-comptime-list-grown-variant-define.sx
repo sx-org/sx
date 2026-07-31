@@ -19,9 +19,9 @@ make_enum :: (name: string, variants: []EnumVariant) -> Type {
 
 build_color :: () -> Type {
     vs : List(EnumVariant) = .{};
-    vs.append(EnumVariant.{ name = "red",   payload = void });
-    vs.append(EnumVariant.{ name = "green", payload = i64 });
-    vs.append(EnumVariant.{ name = "blue",  payload = void });
+    vs.append(EnumVariant{ name = "red",   payload = void });
+    vs.append(EnumVariant{ name = "green", payload = i64 });
+    vs.append(EnumVariant{ name = "blue",  payload = void });
     return make_enum("Color", vs.items[0..vs.len]);
 }
 

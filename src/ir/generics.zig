@@ -87,7 +87,15 @@ pub const GenericResolver = struct {
                 const inner = self.mangleTypeName(v.element);
                 break :blk std.fmt.allocPrint(self.l.alloc, "vec_{d}_{s}", .{ v.length, inner }) catch @panic("out of memory while mangling type");
             },
-            .closure => |c| self.mangleParamList("cl", c.params, c.ret),
+            // The formation site joins the key: two sites forming the same `T`
+            // are distinct implementors, and a shared mono would bake the first
+            // site's `site()` into the second's writes.
+            .closure => |c| if (c.init_target) |it|
+                std.fmt.allocPrint(self.l.alloc, "init{d}_{s}", .{ c.init_site, self.mangleTypeName(it) }) catch @panic("out of memory while mangling type")
+            else if (c.build_protocol) |bp|
+                std.fmt.allocPrint(self.l.alloc, "block_{s}", .{self.mangleTypeName(bp)}) catch @panic("out of memory while mangling type")
+            else
+                self.mangleParamList("cl", c.params, c.ret),
             .function => |f| self.mangleParamList("fn", f.params, f.ret),
             .tuple => |t| blk: {
                 var buf = std.ArrayList(u8).empty;
@@ -245,8 +253,22 @@ pub const GenericResolver = struct {
                 const matched = self.l.matchTypeParam(param.type_expr, tp.name);
                 if (matched) {
                     if (s2_arg_idx < args_ast.len) {
-                        const arg_ty = self.l.inferExprType(args_ast[s2_arg_idx]);
-                        const extracted = self.l.extractTypeParam(param.type_expr, arg_ty, tp.name);
+                        const inferred = self.l.inferExprType(args_ast[s2_arg_idx]);
+                        // A bare fn NAME has no inferable expression type — it
+                        // is a value whose type lives in its declaration. Bind
+                        // `$F` to that signature so the instance's param is a
+                        // callable, not the legacy integer word (issue 0367).
+                        const arg_ty = if (inferred == .unresolved)
+                            self.l.bareFnNameSignature(args_ast[s2_arg_idx]) orelse inferred
+                        else
+                            inferred;
+                        // An `@Init`-bounded binder binds to the IMPLEMENTOR the
+                        // argument forms into, not to the argument's own type
+                        // (§5.2); the init's type argument still binds from the
+                        // ordinary type through `extractTypeParam` below.
+                        const extracted = self.l.initBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
+                            self.l.blockBinderType(param.type_expr, tp.name, args_ast[s2_arg_idx], arg_ty) orelse
+                            self.l.extractTypeParam(param.type_expr, arg_ty, tp.name);
                         if (extracted) |ety| {
                             if (inferred_ty) |prev| {
                                 if (ety == .f64 and prev != .f64) {
@@ -263,6 +285,12 @@ pub const GenericResolver = struct {
             }
             if (inferred_ty) |ty| {
                 bindings.put(tp.name, ty) catch {};
+                continue;
+            }
+            // A binder the arguments cannot speak for: a blanket impl's method
+            // names the IMPL's binders, which the carrier's instantiation bound.
+            if (self.l.impl_binder_seed) |seed| {
+                if (seed.get(tp.name)) |ty| bindings.put(tp.name, ty) catch {};
             }
         }
         return bindings;

@@ -1,0 +1,101 @@
+// Publishing into a block that intercepts at an OPEN SET (fluent spec §6.1/§6.3
+// rule 2, A1).
+//
+// A set carries its member inside the slot, so a member statement type-checked at
+// the expected `P` IS a complete `P` value — the same allocator-free formation the
+// expected type performs at a local, an argument, or a return. So both halves of
+// A1 publish here: a value that already is a `View`, and a member the expected type
+// lifts. The sink takes `@Init(View)` — the set is a by-value carrier, so the
+// initializer's type argument is the set itself and `write` is a plain slot copy.
+//
+// Everything else is an ordinary statement: it runs where it is written, in source
+// order, and the sink never sees it.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+#import "modules/std/list.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Panel :: @OpenVariant(View) {
+    title: string = "";
+    render :: (self: *Panel) -> string => self.title;
+}
+
+// Not a member of anything: publishing is membership, not shape.
+Plain :: struct {
+    text: string = "";
+}
+
+// The sink for a by-value carrier: a private slot, the write, and only then the
+// value is visible in what the sink keeps.
+Collect :: struct {
+    n: i32 = 0;
+    seen: List(string) = .{};
+
+    expression :: (self: *Collect, value: $I/@Init(View)) {
+        item: View = ---;
+        value.write(*item);
+        self.seen.append(item.render());
+        self.n += 1;
+    }
+}
+
+// A helper whose RETURN type is the set: its result already is a `View`.
+make_header :: (text: string) -> View { return Panel{ title = text }; }
+
+// A helper whose return type is a MEMBER: the expected type lifts it.
+make_label :: (text: string) -> Label => Label{ text = text };
+
+// An ordinary helper, with a side effect, whose type is not a member.
+note :: (text: string) -> Plain {
+    print("  ran {}\n", text);
+    return Plain{ text = text };
+}
+
+column :: (content: $B/@BuildBlock(View)) -> Collect {
+    sink := Collect{};
+    content.run(*sink);
+    sink
+}
+
+main :: () -> i32 {
+    already: View = Label{ text = "already a View" };
+
+    sink := column() {
+        // A member the expected type lifts into a complete slot.
+        Label{ text = "a member leaf" };
+        // A value that already is a View.
+        already;
+        // A call whose result is a View, and one whose result is a member.
+        make_header("a helper's View");
+        make_label("a helper's member");
+        // Another member type: membership is per declaration, not per shape.
+        Panel{ title = "another member" };
+
+        // Not a member: an ordinary statement. It runs, and stays out of the sink.
+        note("an ordinary statement");
+        Plain{ text = "an ordinary literal" };
+        41;
+    };
+
+    print("published {}\n", sink.n);
+    for sink.seen (s) { print("  {}\n", s); }
+    0
+}
+
+// ** stdout **
+//   ran an ordinary statement
+// published 5
+//   a member leaf
+//   already a View
+//   a helper's View
+//   a helper's member
+//   another member
+//

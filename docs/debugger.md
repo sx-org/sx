@@ -279,7 +279,7 @@ traces and DWARF can never disagree:
   walks each expr/stmt (E3.0 slice 1). `Function.source_file` records
   which file a function's spans index.
 - ✅ `errors.SourceLoc.compute(source, span.start)` turns an offset into
-  `{line, col}`. Used by the diagnostics renderer, `#caller_location`,
+  `{line, col}`. Used by the diagnostics renderer, `@caller`,
   the DWARF emitter, and the trace formatter — one function,
   every consumer.
 

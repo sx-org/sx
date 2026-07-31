@@ -1,0 +1,41 @@
+// The emit UI library as a package (revision §13.2).
+//
+// One product story: an ambient child list plus an explicit terminal `.emit()`.
+// There is no interception here — a child written WITHOUT `.emit()` is an
+// ordinary statement that produces nothing, which is the whole difference from
+// the compose library's bare `child;`.
+//
+// `emit.View` is its own open set, sharing no geometry, render surface or
+// components with `ui/fluent` or `ui/compose`.
+// Expected: exit 0.
+#import "modules/std.sx";
+#import "modules/ui/emit.sx";
+
+main :: () -> i32 {
+    // The container rebinds the ambient sink to its own child list, so every
+    // `.emit()` inside lands here.
+    stack := vstack(2.0) {
+        Label{ text = "title" }.emit();
+        Button{ label = "ok" }.emit();
+
+        // Written but never emitted: the ambient list never hears about it.
+        Label{ text = "not published" };
+    };
+
+    print("children {}\n", stack.children.len);
+    for stack.children (*c) {
+        print("  {}\n", type_of(c.*));
+    }
+
+    root : View = stack;
+    tree := RenderTree{};
+    render_root(*root, Size{ width = 120.0, height = 60.0 }, *tree);
+    print("commands {}\n", command_count(*tree));
+    0
+}
+
+// ** stdout **
+// children 2
+//   Label
+//   Button
+// commands 3

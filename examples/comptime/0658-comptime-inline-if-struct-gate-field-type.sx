@@ -35,5 +35,5 @@ main :: () {
     // scalar leaf.
     print("{}\n", leaf_count(7.(i64)));         // 1
     // struct instantiation — branch taken, recurses two leaves (i64 + enum).
-    print("{}\n", leaf_count(Pair.{a=1, e=E.B}));   // 2
+    print("{}\n", leaf_count(Pair{ a=1, e=E.B}));   // 2
 }

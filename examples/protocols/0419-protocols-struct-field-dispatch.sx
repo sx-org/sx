@@ -27,8 +27,8 @@ Outer  :: struct { h: Holder; }
 run :: (h: Holder) -> i64 { return h.s.greet(10) + h.t.greet(2); }
 
 main :: () {
-  d := Dog.{ n = 42 };
-  c := Cat.{ m = 5 };
+  d := Dog{ n = 42 };
+  c := Cat{ m = 5 };
 
   // struct-literal init: two protocol fields straddling a non-protocol one
   // (explicit owning copies — the cutover's spelling for lvalue sources).

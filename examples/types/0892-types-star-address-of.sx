@@ -20,7 +20,7 @@ main :: () {
 
     print("types: {} {} {}\n", size_of(*i64), size_of(**i64), type_name(*Pair));
 
-    pr := Pair.{ a = 5, b = 6 };
+    pr := Pair{ a = 5, b = 6 };
     fp := *pr.b;
     fp.* = 60;
     arr : [3]i64 = .[1, 2, 3];

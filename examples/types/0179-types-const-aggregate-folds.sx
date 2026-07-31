@@ -8,7 +8,7 @@
 
 Color :: struct { r, g, b: i64; }
 K : [4]i64 : .[11, 22, 33, 44];
-LIT :: Color.{ r = 5, g = 0, b = 0 };
+LIT :: Color{ r = 5, g = 0, b = 0 };
 
 N :: K[0] + K[3];
 L :: K.len;

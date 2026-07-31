@@ -1,0 +1,28 @@
+// A member joins the set a SIBLING module declares (specs: Open Sets — membership;
+// Modules — the namespace surface).
+//
+// `@OpenVariant`'s head is a path, so a member names the set through the module
+// that owns it, exactly as a bound head or a type annotation does. What the head
+// reaches is a DECLARATION: the member joins that set, and asking whether it is a
+// member is asking about that declaration rather than comparing spellings — a
+// member writing `v.View` and a set declared `View` are the same question.
+#import "modules/std.sx";
+comp :: #import "1633-modules-open-set-sibling-member/pkg/components.sx";
+
+main :: () -> i32 {
+    // Formed and dispatched through the package's own entry point.
+    print("{}\n", comp.make().render());
+
+    // Members declared in the sibling module, reaching the set through its name.
+    print("{} {}\n", comp.hold(comp.Label{ text = "a member" }), comp.hold(comp.Panel{ title = "another" }));
+
+    // A generic member's instantiation joins the same set, and its layout is in it.
+    print("{} size {}\n", comp.hold(comp.Padded(i64){ inner = 7 }), comp.size_here());
+    0
+}
+
+// ** stdout **
+// from the package
+// a member another
+// padded size 24
+//

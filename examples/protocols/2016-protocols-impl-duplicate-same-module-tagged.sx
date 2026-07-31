@@ -1,0 +1,17 @@
+// A tagged pair carries its own, stricter rule (§6.6), and a same-module
+// duplicate is reported by it — once, in the whole-program wording, and without
+// waiting for the instantiation to be reached: nothing here ever makes a `Beat`
+// value, yet the two impls already decide the arm that pair would own.
+#import "modules/std.sx";
+
+Beat :: protocol tagged { beat :: (self: *Self) -> i64; }
+
+Drum :: struct { n: i64 = 0; }
+
+impl Beat for Drum { beat :: (self: *Drum) -> i64 { self.n } }
+impl Beat for Drum { beat :: (self: *Drum) -> i64 { self.n + 1 } }
+
+main :: () {
+    d : Drum = .{ n = 2 };
+    print("{}\n", d.beat());
+}

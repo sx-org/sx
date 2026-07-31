@@ -23,6 +23,6 @@ classify :: (n: i32) -> !E {
 }
 
 main :: () -> i32 {
-    classify(-1) catch { };
+    classify(-1) catch {};
     return 0;
 }

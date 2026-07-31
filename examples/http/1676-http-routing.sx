@@ -95,7 +95,7 @@ dial_port :: (port: i64) -> i32 {
 }
 
 resp_complete :: (buf: [*]u8, len: i64) -> bool {
-    s := string.{ ptr = buf, len = xx len };
+    s := string{ ptr = buf, len = xx len };
     he := -1;
     i := 0;
     while i + 3 < s.len {
@@ -131,8 +131,8 @@ roundtrip :: (srv: *http.Server, fd: i32, reqtext: string, scratch: [*]u8, cap: 
         srv.tick(5) catch {};
         n, re := socket.read_nb(fd, *scratch[total], xx (cap - total));
         if !re { total += n; }
-        else if re == error.Closed { return string.{ ptr = scratch, len = xx total }; }
-        if resp_complete(scratch, total) { return string.{ ptr = scratch, len = xx total }; }
+        else if re == error.Closed { return string{ ptr = scratch, len = xx total }; }
+        if resp_complete(scratch, total) { return string{ ptr = scratch, len = xx total }; }
         tries += 1;
     }
     return "";

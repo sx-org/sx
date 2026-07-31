@@ -1,0 +1,61 @@
+error: 'Plain' cannot form an initializer for 'View': it is not a member of the set
+  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:63:9
+   |
+63 |         Plain{ text = "as a receiver" }.emit();
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
+   |
+63 |         Plain{ text = "as a receiver" }.emit();
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: 'Plain' cannot form an initializer for 'View': it is not a member of the set
+  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:64:14
+   |
+64 |         emit(Plain{ text = "as an argument" });
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
+   |
+64 |         emit(Plain{ text = "as an argument" });
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: 'string' cannot form an initializer for 'View': it is not a member of the set
+  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:67:9
+   |
+67 |         "a string".emit();
+   |         ^^^^^^^^^^
+
+help: 'string' is a builtin and cannot declare itself into a set — a member is a type the program declares: 'YourType :: @OpenVariant(View) { … }'
+   |
+67 |         "a string".emit();
+   |         ^^^^^^^^^^
+
+error: 'i64' cannot form an initializer for 'View': it is not a member of the set
+  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:68:14
+   |
+68 |         emit(41);
+   |              ^^
+
+help: 'i64' is a builtin and cannot declare itself into a set — a member is a type the program declares: 'YourType :: @OpenVariant(View) { … }'
+   |
+68 |         emit(41);
+   |              ^^
+
+error: 'Plain' cannot form an initializer for 'Box': no conversion applies
+  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:71:9
+   |
+71 |         Plain{ text = "not a Box" }.take();
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: 'Plain' cannot form an initializer for 'Box': no conversion applies
+  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:72:14
+   |
+72 |         take(Plain{ text = "not a Box" });
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: 'Obj' cannot form an initializer for 'Box': no conversion applies
+  --> examples/fluent/2051-fluent-init-ufcs-receiver-refused.sx:76:9
+   |
+76 |         Obj{ v = 1, take = 2 }.take();
+   |         ^^^^^^^^^^^^^^^^^^^^^^

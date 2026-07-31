@@ -14,7 +14,7 @@ Stats :: struct { count: i64; buf: [4]i64; }
 #context_extend stats: Stats = .{};
 
 main :: () {
-    v := S.{ n = 3 };
+    v := S{ n = 3 };
     push .{ s = *v } {
         context.s = *v;
         context.stats.count = 1;

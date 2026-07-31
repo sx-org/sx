@@ -4,11 +4,14 @@ const Tag = @import("token.zig").Tag;
 const getKeyword = @import("token.zig").getKeyword;
 const Lexer = @import("lexer.zig").Lexer;
 const ast = @import("ast.zig");
+const contracts = @import("contracts.zig");
 const Node = ast.Node;
 const Type = @import("types.zig").Type;
 const errors = @import("errors.zig");
 const print = @import("print.zig");
 const unescape = @import("unescape.zig");
+
+const named_aggregate_dot_msg = "a named aggregate literal places '{' directly after its type";
 
 pub const Parser = struct {
     lexer: Lexer,
@@ -39,6 +42,11 @@ pub const Parser = struct {
     /// headers are covered by `in_if_condition`/`in_for_header`. Cleared
     /// inside nested paren/argument contexts alongside `in_for_header`.
     no_trailing_block: bool = false,
+    /// True while parsing the context expression of `push <expr> { body }`.
+    /// Named aggregates are allowed here (`push Context{ a = x } { body }`);
+    /// the second brace group is the push body (init_block attach is off).
+    /// Call trailing stays off via `no_trailing_block`.
+    in_push_context: bool = false,
     /// When true (set while parsing an `onfail` body), a `raise` statement is
     /// rejected — an error during cleanup has no propagation target. E1.7
     /// extends this to the full {try, return, break, continue} set.
@@ -67,6 +75,9 @@ pub const Parser = struct {
     /// Function/lambda bodies clear it — a nested body's declarations are
     /// locals, never module scope.
     in_module_expansion: bool = false,
+    /// True while parsing a parameter's default expression — the one place
+    /// `@caller` may be written.
+    in_param_default: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, source: [:0]const u8) Parser {
         var lexer = Lexer.init(source);
@@ -214,8 +225,12 @@ pub const Parser = struct {
         // of the program's assembled Context.
         if (self.current.tag == .hash_context_extend) return self.parseContextExtend(start);
 
-        // All top-level declarations start with an identifier
-        if (!self.isIdentLike() and self.current.tag != .kw_Self) {
+        // All top-level declarations start with an identifier. An `@` name is
+        // one too: the compiler-maintained contracts are ordinary stdlib
+        // declarations, source-visible and reviewable. Which `@` names exist
+        // and which module owns each is `contracts`' registry, checked after
+        // parsing where the declaring file is known.
+        if (!self.isIdentLike() and self.current.tag != .kw_Self and self.current.tag != .at_identifier) {
             return self.fail("expected identifier at top level");
         }
         return self.parseTopLevelNamedDecl();
@@ -328,6 +343,19 @@ pub const Parser = struct {
         // Protocol declaration
         if (self.current.tag == .kw_protocol) {
             return self.parseProtocolDecl(name, start_pos, name_is_raw);
+        }
+
+        // Open-set declaration heads. Both are `@` names with an argument list,
+        // and both open a body, so they are declaration FORMS — neither a
+        // stdlib-declared contract nor a compiler-formed type.
+        if (self.current.tag == .at_identifier) {
+            const at_name = self.tokenSlice(self.current);
+            if (std.mem.eql(u8, at_name, contracts.open_set_head)) {
+                return self.parseOpenSetDecl(name, start_pos, name_is_raw);
+            }
+            if (std.mem.eql(u8, at_name, contracts.open_variant_head)) {
+                return self.parseOpenVariantDecl(name, start_pos, name_is_raw);
+            }
         }
 
         // Runtime-class binding with an optional `#jni_main` prefix modifier:
@@ -532,6 +560,24 @@ pub const Parser = struct {
 
     fn parseTypeExpr(self: *Parser) anyerror!*Node {
         const start = self.current.loc.start;
+        // A compiler-formed contract (`@Init`, `@BuildBlock`) is a CONSTRAINT: it
+        // names a bound, never a type, and `parseCompilerFormedType` says so.
+        // Every other `@` name in type position names a compiler-maintained
+        // stdlib declaration (`@SourceSite`) and resolves like any other type.
+        if (self.current.tag == .at_identifier) {
+            if (isCompilerFormedTypeName(self.tokenSlice(self.current))) {
+                return self.parseCompilerFormedType(start);
+            }
+            const at_tok = self.current;
+            const at_name = self.tokenSlice(at_tok);
+            self.advance();
+            // A type-argument list is what a compiler-formed type takes; a
+            // declared contract is a plain type name.
+            if (self.current.tag == .l_paren) {
+                return self.failAt(at_tok.loc, try self.unknownCompilerFormedTypeMsg(at_name));
+            }
+            return try self.createNode(start, .{ .type_expr = .{ .name = at_name } });
+        }
 
         // Error channel type: bare `!` (inferred set) or `!Named` (named set).
         // Legal only as the trailing element of a multi-return result list
@@ -631,17 +677,7 @@ pub const Parser = struct {
                     .index = idx_val,
                 } });
             }
-            // Parse optional protocol constraints: $T/Eq/Hashable
-            var constraints = std.ArrayList([]const u8).empty;
-            while (self.current.tag == .slash) {
-                self.advance(); // skip '/'
-                if (self.current.tag != .identifier) {
-                    return self.fail("expected protocol name after '/'");
-                }
-                try constraints.append(self.allocator, self.tokenSlice(self.current));
-                self.advance();
-            }
-            const pc = try constraints.toOwnedSlice(self.allocator);
+            const pc = try self.parseBoundList();
             return try self.createNode(start, .{ .type_expr = .{ .name = name, .is_generic = true, .protocol_constraints = pc } });
         }
         // Function type: (ParamTypes) -> ReturnType
@@ -931,6 +967,126 @@ pub const Parser = struct {
         return self.fail("expected type name");
     }
 
+    /// The bounds trailing a type-variable binder: `('/' BoundExpr)*`.
+    fn parseBoundList(self: *Parser) anyerror![]const *Node {
+        var bounds = std.ArrayList(*Node).empty;
+        while (self.current.tag == .slash) {
+            self.advance(); // skip '/'
+            try bounds.append(self.allocator, try self.parseBoundExpr());
+        }
+        return try bounds.toOwnedSlice(self.allocator);
+    }
+
+    /// One generic bound (specs: Generic bounds):
+    /// `ProtocolHead [ '(' TypeExpr (',' TypeExpr)* ')' ]`, where the head is a
+    /// bare name, an `@` name, or a name QUALIFIED by the module that owns it.
+    /// The head is an ordinary name reference, NOT the closed compiler-formed
+    /// set that `parseCompilerFormedType` guards:
+    /// `lower/bound.zig` resolves it, and a head naming nothing is an
+    /// unknown-name error there. Type arguments are full type expressions, so a
+    /// bound argument may introduce its own binder with its own bounds
+    /// (`@Init($V/P)`).
+    fn parseBoundExpr(self: *Parser) anyerror!*Node {
+        const start = self.current.loc.start;
+        if (self.current.tag != .identifier and self.current.tag != .at_identifier) {
+            return self.fail("expected protocol name after '/'");
+        }
+        var head = self.tokenSlice(self.current);
+        self.advance();
+        // A head may be QUALIFIED (`$V/pkg.View`): a module reached by name owns
+        // the protocol or set the bound asks about, exactly as a type
+        // annotation names it. The path is carried whole; `lower/bound.zig`
+        // resolves it.
+        while (self.current.tag == .dot) {
+            self.advance();
+            if (self.current.tag != .identifier) return self.fail("expected a name after '.' in a bound head");
+            const seg = self.tokenSlice(self.current);
+            self.advance();
+            head = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ head, seg }) catch head;
+        }
+        if (self.current.tag != .l_paren) {
+            return try self.createNode(start, .{ .type_expr = .{ .name = head } });
+        }
+        const l_paren_loc = self.current.loc;
+        self.advance(); // skip '('
+        var args = std.ArrayList(*Node).empty;
+        while (self.current.tag != .r_paren and self.current.tag != .eof) {
+            if (args.items.len > 0) {
+                try self.expect(.comma);
+                if (self.current.tag == .r_paren) break;
+            }
+            // A bound argument may itself bind: `@Init($V/P)`.
+            try args.append(self.allocator, try self.parseTypeExpr());
+        }
+        if (args.items.len == 0) {
+            return self.failAt(l_paren_loc, try std.fmt.allocPrint(
+                self.allocator,
+                "the bound '{s}' has an empty type-argument list — write '{s}' for the bare head, or give it arguments",
+                .{ head, head },
+            ));
+        }
+        try self.expect(.r_paren);
+        return try self.createNode(start, .{ .parameterized_type_expr = .{
+            .name = head,
+            .args = try args.toOwnedSlice(self.allocator),
+        } });
+    }
+
+    fn unknownCompilerFormedTypeMsg(self: *Parser, name: []const u8) ![]const u8 {
+        const list = try contracts.compilerFormedList(self.allocator);
+        return std.fmt.allocPrint(
+            self.allocator,
+            "unknown compiler-formed type '{s}' — the only ones are {s}",
+            .{ name, list },
+        );
+    }
+
+    /// The compiler-provided default-parameter value (spec: `@caller`).
+    pub const caller_site_name = "@caller";
+
+    /// True for the `@` names the compiler FORMS at a parameter annotation —
+    /// `contracts` is the single registry for both `@` classes, so the formed
+    /// set and the declared set cannot drift apart.
+    fn isCompilerFormedTypeName(name: []const u8) bool {
+        return contracts.isCompilerFormed(name);
+    }
+
+    fn parseCompilerFormedType(self: *Parser, start: u32) anyerror!*Node {
+        const name_tok = self.current;
+        const name = self.tokenSlice(name_tok);
+        self.advance();
+        const contract = contracts.find(name);
+        const spelling = if (contract != null and contract.?.kind == .compiler_formed)
+            contract.?.spelling
+        else
+            return self.failAt(name_tok.loc, try self.unknownCompilerFormedTypeMsg(name));
+        // A bound-only contract names a constraint: its implementors are minted
+        // per formation site, so no type position can name one.
+        if (contract.?.bound_only) {
+            return self.failAt(name_tok.loc, try std.fmt.allocPrint(
+                self.allocator,
+                "'{s}' is a generic bound, not a type — write the parameter as '{s}'",
+                .{ spelling, contract.?.bound_spelling },
+            ));
+        }
+        if (self.current.tag != .l_paren) {
+            return self.failAt(name_tok.loc, try std.fmt.allocPrint(
+                self.allocator,
+                "'{s}' needs its type argument: write '{s}'",
+                .{ name, spelling },
+            ));
+        }
+        self.advance(); // skip '('
+        const target = try self.parseTypeExpr();
+        var args = std.ArrayList(*Node).empty;
+        try args.append(self.allocator, target);
+        try self.expect(.r_paren);
+        return try self.createNode(start, .{ .parameterized_type_expr = .{
+            .name = name,
+            .args = try args.toOwnedSlice(self.allocator),
+        } });
+    }
+
     fn parseEnumDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
         self.advance(); // skip 'enum'
 
@@ -1081,6 +1237,20 @@ pub const Parser = struct {
 
     fn parseStructDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
         self.advance(); // skip 'struct'
+        return self.parseStructTail(name, start_pos, name_is_raw, null, null);
+    }
+
+    /// Everything after the declaration's head word. `open_variant_of` names the
+    /// set a `@OpenVariant(P)` head bound this declaration to: the body grammar is
+    /// the struct grammar, because a variant IS a struct.
+    fn parseStructTail(
+        self: *Parser,
+        name: []const u8,
+        start_pos: u32,
+        name_is_raw: bool,
+        open_variant_of: ?[]const u8,
+        open_variant_span: ?ast.Span,
+    ) anyerror!*Node {
 
         // Optional welded-binding annotation: `struct abi(.zig) extern <lib> { … }`.
         // `abi(...)` (the ABI/layout selector) sits before the `extern` linkage
@@ -1119,19 +1289,11 @@ pub const Parser = struct {
                 self.advance();
                 try self.expect(.colon);
                 const constraint = try self.parseTypeExpr();
-                // Parse optional protocol constraints: $T: Type/Eq/Hashable
-                var pc_list = std.ArrayList([]const u8).empty;
-                if (constraint.data == .type_expr and std.mem.eql(u8, constraint.data.type_expr.name, "Type")) {
-                    while (self.current.tag == .slash) {
-                        self.advance(); // skip '/'
-                        if (self.current.tag != .identifier) {
-                            return self.fail("expected protocol name after '/'");
-                        }
-                        try pc_list.append(self.allocator, self.tokenSlice(self.current));
-                        self.advance();
-                    }
-                }
-                const pc = try pc_list.toOwnedSlice(self.allocator);
+                // Bounds on the explicit form: `$T: Type/Eq/Hashable`.
+                const pc: []const *Node = if (constraint.data == .type_expr and std.mem.eql(u8, constraint.data.type_expr.name, "Type"))
+                    try self.parseBoundList()
+                else
+                    &.{};
                 try type_params.append(self.allocator, .{ .name = param_name, .constraint = constraint, .protocol_constraints = pc, .is_variadic = is_variadic });
             }
             try self.expect(.r_paren);
@@ -1277,7 +1439,186 @@ pub const Parser = struct {
             .abi = struct_abi,
             .extern_lib = struct_extern_lib,
             .is_raw = name_is_raw,
+            .open_variant_of = open_variant_of,
+            .open_variant_span = open_variant_span,
         } });
+    }
+
+    /// `V :: @OpenVariant(P) [($T: Type)] { fields + the set's methods }`.
+    fn parseOpenVariantDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
+        self.advance(); // skip '@OpenVariant'
+        try self.expect(.l_paren);
+        const set_tok = self.current;
+        if (self.current.tag != .identifier) {
+            return self.fail("expected the open set's name in '@OpenVariant(…)'");
+        }
+        var set_name = self.tokenSlice(set_tok);
+        self.advance();
+        // The head may be QUALIFIED (`@OpenVariant(pkg.View)`): the set a module
+        // reached by name declares. The path is carried whole; `lower/open_set.zig`
+        // resolves it from this declaration's own file.
+        var head_end = set_tok.loc.end;
+        while (self.current.tag == .dot) {
+            self.advance();
+            if (self.current.tag != .identifier) {
+                return self.fail("expected a name after '.' in the open set's name");
+            }
+            const seg_tok = self.current;
+            self.advance();
+            set_name = std.fmt.allocPrint(self.allocator, "{s}.{s}", .{ set_name, self.tokenSlice(seg_tok) }) catch set_name;
+            head_end = seg_tok.loc.end;
+        }
+        try self.expect(.r_paren);
+        return self.parseStructTail(name, start_pos, name_is_raw, set_name, .{ .start = set_tok.loc.start, .end = head_end });
+    }
+
+    /// `P :: @OpenSet(.{ max = …, align = … }) { required methods }`.
+    fn parseOpenSetDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
+        self.advance(); // skip '@OpenSet'
+        try self.expect(.l_paren);
+        const opt_start = self.current.loc.start;
+        const options = try self.parseExpr();
+        const opt_end = self.current.loc.end;
+        try self.expect(.r_paren);
+        try self.expect(.l_brace);
+
+        var methods = std.ArrayList(ast.ProtocolMethodDecl).empty;
+        try self.parseRequiredMethods(&methods, .{ .owner = name, .kind_spelling = "@OpenSet" });
+        try self.expect(.r_brace);
+
+        return try self.createNode(start_pos, .{ .open_set_decl = .{
+            .name = name,
+            .methods = try methods.toOwnedSlice(self.allocator),
+            .options = options,
+            .options_span = .{ .start = opt_start, .end = opt_end },
+            .is_raw = name_is_raw,
+        } });
+    }
+
+    /// The shared `{ name :: (params) -> T; … }` member list of a protocol and of
+    /// an open set: both declare REQUIRED methods, with `Self` denoting the
+    /// implementing type, and both monomorphize them per member.
+    /// What the enclosing declaration allows its methods to carry.
+    const RequiredMethodsCtx = struct {
+        /// The declaration's name, for diagnostics.
+        owner: []const u8,
+        /// `#expand` is a tagged-protocol attribute; every other owner refuses it.
+        expand_allowed: bool = false,
+        /// The owner already carries `#expand` on its header.
+        header_expand: bool = false,
+        /// How the owner's kind is spelled in the refusal.
+        kind_spelling: []const u8 = "",
+    };
+
+    fn parseRequiredMethods(self: *Parser, methods: *std.ArrayList(ast.ProtocolMethodDecl), ctx: RequiredMethodsCtx) anyerror!void {
+        while (self.current.tag != .r_brace and self.current.tag != .eof) {
+            // Method: name :: (params) -> type;  or  name :: (params) -> type { body }
+            if (!self.isMemberDeclName()) {
+                return self.failMemberDeclName("expected method name in protocol body");
+            }
+            const method_name = self.tokenSlice(self.current);
+            self.advance();
+            try self.expect(.colon_colon);
+            try self.expect(.l_paren);
+
+            var param_types = std.ArrayList(*Node).empty;
+            var param_names = std.ArrayList([]const u8).empty;
+            var param_name_spans = std.ArrayList(ast.Span).empty;
+            var param_name_is_raw = std.ArrayList(bool).empty;
+
+            while (self.current.tag != .r_paren and self.current.tag != .eof) {
+                if (param_types.items.len > 0) {
+                    try self.expect(.comma);
+                    if (self.current.tag == .r_paren) break;
+                }
+                // Parse: name: type
+                if (self.current.tag != .identifier and self.current.tag != .kw_Self) {
+                    return self.fail("expected parameter name in protocol method");
+                }
+                const pname = self.tokenSlice(self.current);
+                try param_name_spans.append(self.allocator, .{ .start = self.current.loc.start, .end = self.current.loc.end });
+                try param_name_is_raw.append(self.allocator, self.current.is_raw);
+                self.advance();
+                try self.expect(.colon);
+                const ptype = try self.parseTypeExpr();
+                try param_names.append(self.allocator, pname);
+                try param_types.append(self.allocator, ptype);
+            }
+            try self.expect(.r_paren);
+
+            // Every protocol method must declare its receiver EXPLICITLY as the
+            // first parameter — `self: *Self` (or `self: Self`) — matching how
+            // `impl` methods and ordinary methods are written. This removes the
+            // old implicit-receiver ambiguity (was the first listed param the
+            // receiver, or an extra arg?). The receiver is validated and then
+            // stripped here, so downstream lowering sees only the EXTRA-arg
+            // params, exactly as it did under the implicit form.
+            if (param_names.items.len == 0 or !std.mem.eql(u8, param_names.items[0], "self")) {
+                return self.fail("protocol method must declare its receiver as the first parameter: `self: *Self` (or `self: Self`)");
+            }
+            {
+                const rtype = param_types.items[0];
+                const is_self_val = rtype.data == .type_expr and std.mem.eql(u8, rtype.data.type_expr.name, "Self");
+                const is_self_ptr = rtype.data == .pointer_type_expr and
+                    rtype.data.pointer_type_expr.pointee_type.data == .type_expr and
+                    std.mem.eql(u8, rtype.data.pointer_type_expr.pointee_type.data.type_expr.name, "Self");
+                if (!is_self_val and !is_self_ptr) {
+                    return self.fail("protocol method receiver must be typed `*Self` or `Self`");
+                }
+            }
+
+            // Optional return type
+            var return_type: ?*Node = null;
+            if (self.current.tag == .arrow) {
+                self.advance();
+                return_type = try self.parseFnReturnType();
+            }
+
+            // Per-method `#expand`, in the same trailing attribute slot `#get` /
+            // `#set` occupy on an ordinary method.
+            var method_expand = false;
+            while (self.current.tag == .hash_expand) {
+                if (method_expand) return self.failFmt("duplicate #expand on method '{s}'", .{method_name});
+                if (!ctx.expand_allowed) {
+                    return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and '{s}' is declared '{s}'", .{ ctx.owner, ctx.kind_spelling });
+                }
+                if (ctx.header_expand) {
+                    return self.failFmt("'{s}' already carries #expand on its header, so every method's dispatch already expands at the call site — remove one", .{ctx.owner});
+                }
+                method_expand = true;
+                self.advance();
+            }
+
+            // Optional body (default method) or semicolon
+            var default_body: ?*Node = null;
+            if (self.current.tag == .l_brace) {
+                // A default-method body's declarations are locals.
+                const saved_module_expansion = self.in_module_expansion;
+                self.in_module_expansion = false;
+                defer self.in_module_expansion = saved_module_expansion;
+                default_body = try self.parseBlock();
+            } else {
+                if (self.current.tag == .semicolon) self.advance();
+            }
+
+            // Strip the receiver (index 0) — the method's stored params are the
+            // extra args only.
+            const all_param_types = try param_types.toOwnedSlice(self.allocator);
+            const all_param_names = try param_names.toOwnedSlice(self.allocator);
+            const all_param_name_spans = try param_name_spans.toOwnedSlice(self.allocator);
+            const all_param_name_is_raw = try param_name_is_raw.toOwnedSlice(self.allocator);
+
+            try methods.append(self.allocator, .{
+                .name = method_name,
+                .params = all_param_types[1..],
+                .param_names = all_param_names[1..],
+                .param_name_spans = all_param_name_spans[1..],
+                .param_name_is_raw = all_param_name_is_raw[1..],
+                .return_type = return_type,
+                .default_body = default_body,
+                .is_expand = method_expand,
+            });
+        }
     }
 
     fn parseProtocolDecl(self: *Parser, name: []const u8, start_pos: u32, name_is_raw: bool) anyerror!*Node {
@@ -1362,114 +1703,12 @@ pub const Parser = struct {
 
         var methods = std.ArrayList(ast.ProtocolMethodDecl).empty;
 
-        while (self.current.tag != .r_brace and self.current.tag != .eof) {
-            // Method: name :: (params) -> type;  or  name :: (params) -> type { body }
-            if (!self.isMemberDeclName()) {
-                return self.failMemberDeclName("expected method name in protocol body");
-            }
-            const method_name = self.tokenSlice(self.current);
-            self.advance();
-            try self.expect(.colon_colon);
-            try self.expect(.l_paren);
-
-            var param_types = std.ArrayList(*Node).empty;
-            var param_names = std.ArrayList([]const u8).empty;
-            var param_name_spans = std.ArrayList(ast.Span).empty;
-            var param_name_is_raw = std.ArrayList(bool).empty;
-
-            while (self.current.tag != .r_paren and self.current.tag != .eof) {
-                if (param_types.items.len > 0) {
-                    try self.expect(.comma);
-                    if (self.current.tag == .r_paren) break;
-                }
-                // Parse: name: type
-                if (self.current.tag != .identifier and self.current.tag != .kw_Self) {
-                    return self.fail("expected parameter name in protocol method");
-                }
-                const pname = self.tokenSlice(self.current);
-                try param_name_spans.append(self.allocator, .{ .start = self.current.loc.start, .end = self.current.loc.end });
-                try param_name_is_raw.append(self.allocator, self.current.is_raw);
-                self.advance();
-                try self.expect(.colon);
-                const ptype = try self.parseTypeExpr();
-                try param_names.append(self.allocator, pname);
-                try param_types.append(self.allocator, ptype);
-            }
-            try self.expect(.r_paren);
-
-            // Every protocol method must declare its receiver EXPLICITLY as the
-            // first parameter — `self: *Self` (or `self: Self`) — matching how
-            // `impl` methods and ordinary methods are written. This removes the
-            // old implicit-receiver ambiguity (was the first listed param the
-            // receiver, or an extra arg?). The receiver is validated and then
-            // stripped here, so downstream lowering sees only the EXTRA-arg
-            // params, exactly as it did under the implicit form.
-            if (param_names.items.len == 0 or !std.mem.eql(u8, param_names.items[0], "self")) {
-                return self.fail("protocol method must declare its receiver as the first parameter: `self: *Self` (or `self: Self`)");
-            }
-            {
-                const rtype = param_types.items[0];
-                const is_self_val = rtype.data == .type_expr and std.mem.eql(u8, rtype.data.type_expr.name, "Self");
-                const is_self_ptr = rtype.data == .pointer_type_expr and
-                    rtype.data.pointer_type_expr.pointee_type.data == .type_expr and
-                    std.mem.eql(u8, rtype.data.pointer_type_expr.pointee_type.data.type_expr.name, "Self");
-                if (!is_self_val and !is_self_ptr) {
-                    return self.fail("protocol method receiver must be typed `*Self` or `Self`");
-                }
-            }
-
-            // Optional return type
-            var return_type: ?*Node = null;
-            if (self.current.tag == .arrow) {
-                self.advance();
-                return_type = try self.parseFnReturnType();
-            }
-
-            // Per-method `#expand`, in the same trailing attribute slot `#get` /
-            // `#set` occupy on an ordinary method.
-            var method_expand = false;
-            while (self.current.tag == .hash_expand) {
-                if (method_expand) return self.failFmt("duplicate #expand on method '{s}'", .{method_name});
-                if (kind != .tagged) {
-                    return self.failFmt("#expand is a tagged-protocol attribute — only a tagged protocol dispatches through a generated switch, and '{s}' is declared '{s}'", .{ name, kind.spelling() });
-                }
-                if (is_expand) {
-                    return self.failFmt("'{s}' already carries #expand on its header, so every method's dispatch already expands at the call site — remove one", .{name});
-                }
-                method_expand = true;
-                self.advance();
-            }
-
-            // Optional body (default method) or semicolon
-            var default_body: ?*Node = null;
-            if (self.current.tag == .l_brace) {
-                // A default-method body's declarations are locals.
-                const saved_module_expansion = self.in_module_expansion;
-                self.in_module_expansion = false;
-                defer self.in_module_expansion = saved_module_expansion;
-                default_body = try self.parseBlock();
-            } else {
-                if (self.current.tag == .semicolon) self.advance();
-            }
-
-            // Strip the receiver (index 0) — the method's stored params are the
-            // extra args only.
-            const all_param_types = try param_types.toOwnedSlice(self.allocator);
-            const all_param_names = try param_names.toOwnedSlice(self.allocator);
-            const all_param_name_spans = try param_name_spans.toOwnedSlice(self.allocator);
-            const all_param_name_is_raw = try param_name_is_raw.toOwnedSlice(self.allocator);
-
-            try methods.append(self.allocator, .{
-                .name = method_name,
-                .params = all_param_types[1..],
-                .param_names = all_param_names[1..],
-                .param_name_spans = all_param_name_spans[1..],
-                .param_name_is_raw = all_param_name_is_raw[1..],
-                .return_type = return_type,
-                .default_body = default_body,
-                .is_expand = method_expand,
-            });
-        }
+        try self.parseRequiredMethods(&methods, .{
+            .owner = name,
+            .expand_allowed = kind == .tagged,
+            .header_expand = is_expand,
+            .kind_spelling = kind.spelling(),
+        });
 
         try self.expect(.r_brace);
 
@@ -1826,8 +2065,9 @@ pub const Parser = struct {
     fn parseImplBlock(self: *Parser, start_pos: u32) anyerror!*Node {
         self.advance(); // skip 'impl'
 
-        // Protocol name
-        if (self.current.tag != .identifier) {
+        // Protocol name. A contract protocol (`impl @BuildSink(P) for …`) is an
+        // ordinary protocol here — the `@` is part of its name.
+        if (self.current.tag != .identifier and self.current.tag != .at_identifier) {
             return self.fail("expected protocol name after 'impl'");
         }
         const protocol_name = self.tokenSlice(self.current);
@@ -2003,8 +2243,11 @@ pub const Parser = struct {
         }
         try self.expect(.r_brace);
 
-        // Optional init block: T.{ fields } { stmts }
-        const init_block: ?*Node = if (self.current.tag == .l_brace and !self.in_if_condition)
+        // Optional bare post-scope: T{ fields } { stmts } — construct T, then a
+        // plain block in the enclosing scope (no `self`). Taught self-trailing
+        // is `T{ fields }.{ stmts }` (attached in parsePostfix). Suppressed in
+        // if-conditions and push context expressions (`push Context{…} { body }`).
+        const init_block: ?*Node = if (self.current.tag == .l_brace and !self.in_if_condition and !self.in_push_context)
             try self.parseBlock()
         else
             null;
@@ -2014,6 +2257,7 @@ pub const Parser = struct {
             .type_expr = type_expr,
             .field_inits = try field_inits.toOwnedSlice(self.allocator),
             .init_block = init_block,
+            .init_block_binds_self = false,
         } });
     }
 
@@ -2070,17 +2314,8 @@ pub const Parser = struct {
             if (is_ct_param and param_type.data == .type_expr) {
                 const constraint_name = param_type.data.type_expr.name;
                 if (std.mem.eql(u8, constraint_name, "Type")) {
-                    // Parse optional protocol constraints: $T: Type/Eq/Hashable
-                    var constraints = std.ArrayList([]const u8).empty;
-                    while (self.current.tag == .slash) {
-                        self.advance(); // skip '/'
-                        if (self.current.tag != .identifier) {
-                            return self.fail("expected protocol name after '/'");
-                        }
-                        try constraints.append(self.allocator, self.tokenSlice(self.current));
-                        self.advance();
-                    }
-                    const pc = try constraints.toOwnedSlice(self.allocator);
+                    // Bounds on the explicit form: `$T: Type/Eq/Hashable`.
+                    const pc = try self.parseBoundList();
                     param_type.data = .{ .type_expr = .{ .name = param_name, .is_generic = true, .protocol_constraints = pc } };
                 } else {
                     is_comptime_param = true;
@@ -2091,6 +2326,9 @@ pub const Parser = struct {
             var default_expr: ?*Node = null;
             if (self.current.tag == .equal) {
                 self.advance(); // consume '='
+                const saved_in_default = self.in_param_default;
+                self.in_param_default = true;
+                defer self.in_param_default = saved_in_default;
                 default_expr = try self.parseExpr();
             }
             // Protocol-constrained variadic pack: `..xs: Protocol` — a bare
@@ -2112,11 +2350,63 @@ pub const Parser = struct {
         return try params.toOwnedSlice(self.allocator);
     }
 
+    /// The type arguments of the `@Init` bound on `node`, empty when it carries
+    /// none. That bound's argument is inferred from the argument an initializer
+    /// is formed from, so a binder written there belongs to the declaration
+    /// exactly as one written in the annotation does.
+    fn initBoundArgs(node: *const Node) []const *Node {
+        if (node.data != .type_expr) return &.{};
+        for (node.data.type_expr.protocol_constraints) |bound| {
+            if (bound.data != .parameterized_type_expr) continue;
+            const pte = bound.data.parameterized_type_expr;
+            if (!std.mem.eql(u8, pte.name, contracts.init_bound)) continue;
+            return pte.args;
+        }
+        return &.{};
+    }
+
     /// Recursively find all generic type names ($T) in a type expression tree.
+    /// Every bound the `$name` binder carries inside `node`, searching each
+    /// element position a type constructor can nest one in — `*$S/@BuildSink(P)`
+    /// binds `S` under a pointer, and the bounds belong to `S`, not to the
+    /// pointer around it. Appends, so one binder's bounds accumulate across
+    /// every spelling of it.
+    fn collectBinderBounds(self: *Parser, node: *const Node, name: []const u8, out: *std.ArrayList(*Node)) void {
+        switch (node.data) {
+            .type_expr => |te| {
+                if (te.is_generic and std.mem.eql(u8, te.name, name))
+                    out.appendSlice(self.allocator, te.protocol_constraints) catch {};
+                // A binder introduced INSIDE an `@Init` bound (`$I/@Init($V/P)`)
+                // carries its own bounds, which belong to it and not to `$I`.
+                for (initBoundArgs(node)) |a| collectBinderBounds(self, a, name, out);
+            },
+            .pointer_type_expr => |p| collectBinderBounds(self, p.pointee_type, name, out),
+            .many_pointer_type_expr => |m| collectBinderBounds(self, m.element_type, name, out),
+            .slice_type_expr => |s| collectBinderBounds(self, s.element_type, name, out),
+            .array_type_expr => |a| collectBinderBounds(self, a.element_type, name, out),
+            .optional_type_expr => |o| collectBinderBounds(self, o.inner_type, name, out),
+            .parameterized_type_expr => |p| for (p.args) |a| collectBinderBounds(self, a, name, out),
+            .tuple_type_expr => |t| for (t.field_types) |f| collectBinderBounds(self, f, name, out),
+            .closure_type_expr => |c| {
+                for (c.param_types) |p| collectBinderBounds(self, p, name, out);
+                if (c.return_type) |r| collectBinderBounds(self, r, name, out);
+            },
+            .function_type_expr => |f| {
+                for (f.param_types) |p| collectBinderBounds(self, p, name, out);
+                if (f.return_type) |r| collectBinderBounds(self, r, name, out);
+            },
+            else => {},
+        }
+    }
+
     fn collectGenericNames(node: *Node, list: *std.ArrayList([]const u8), allocator: std.mem.Allocator) void {
         switch (node.data) {
             .type_expr => |te| {
                 if (te.is_generic) list.append(allocator, te.name) catch {};
+                // A binder written inside an `@Init` bound (`$I/@Init($T)`,
+                // `$I/@Init($V/View)`) is one of this declaration's type
+                // parameters.
+                for (initBoundArgs(node)) |a| collectGenericNames(a, list, allocator);
             },
             .pointer_type_expr => |pte| collectGenericNames(pte.pointee_type, list, allocator),
             .many_pointer_type_expr => |mpte| collectGenericNames(mpte.element_type, list, allocator),
@@ -2162,16 +2452,24 @@ pub const Parser = struct {
                 for (generic_names.items) |gen_name| {
                     if (!seen.contains(gen_name)) {
                         try seen.put(gen_name, {});
-                        // Propagate protocol constraints from the TypeExpr if present
-                        const pc = if (param.type_expr.data == .type_expr)
-                            param.type_expr.data.type_expr.protocol_constraints
-                        else
-                            &[_][]const u8{};
                         const type_constraint = self.createNode(param.type_expr.span.start, .{ .type_expr = .{ .name = "Type" } }) catch continue;
-                        type_params.append(self.allocator, .{ .name = gen_name, .constraint = type_constraint, .protocol_constraints = pc }) catch {};
+                        type_params.append(self.allocator, .{ .name = gen_name, .constraint = type_constraint }) catch {};
                     }
                 }
             }
+        }
+        // Bounds are gathered after the names, over EVERY parameter: one binder
+        // may be spelled in several of them (`(a: $T/Ord, b: $T/Show)`), and each
+        // spelling's bounds are the declaration's. Keeping only the first
+        // spelling's would discard a written constraint.
+        for (type_params.items) |*tp| {
+            var bounds = std.ArrayList(*Node).empty;
+            for (params) |param| {
+                if (param.is_comptime) continue;
+                collectBinderBounds(self, param.type_expr, tp.name, &bounds);
+            }
+            if (bounds.items.len > 0)
+                tp.protocol_constraints = bounds.toOwnedSlice(self.allocator) catch tp.protocol_constraints;
         }
         return try type_params.toOwnedSlice(self.allocator);
     }
@@ -2876,10 +3174,15 @@ pub const Parser = struct {
                 self.advance();
                 const saved_hdr_args = self.in_for_header;
                 const saved_ntb_args = self.no_trailing_block;
+                const saved_if_args = self.in_if_condition;
                 self.in_for_header = false;
                 self.no_trailing_block = false;
+                // Arguments may contain `Type{…}` / `string{…}` even when the
+                // call sits in an if/while header (`if f(Point{…}) {`).
+                self.in_if_condition = false;
                 defer self.in_for_header = saved_hdr_args;
                 defer self.no_trailing_block = saved_ntb_args;
+                defer self.in_if_condition = saved_if_args;
                 var args = std.ArrayList(*Node).empty;
                 while (self.current.tag != .r_paren and self.current.tag != .eof) {
                     if (args.items.len > 0) {
@@ -2916,36 +3219,60 @@ pub const Parser = struct {
                 // zero-param closure literal in a `trailing_block` marker
                 // appended as the last argument; the mapping pass binds it to
                 // the callee's last declared param (T1/T3/N4 live there).
+                // Use the OUTER if-header flag (`saved_if_args`), not the
+                // cleared `self.in_if_condition`: args may parse Type{} freely,
+                // but `if f(x) { body }` must not steal the if-body as a trailing
+                // block on `f`.
                 if (self.current.tag == .l_brace and
-                    !saved_ntb_args and !saved_hdr_args and !self.in_if_condition and
+                    !saved_ntb_args and !saved_hdr_args and !saved_if_args and
                     std.mem.indexOfScalar(u8, self.source[rparen_end..self.current.loc.start], '\n') == null)
                 {
-                    const block = try self.parseBlock();
-                    const lambda = try self.createNode(block.span.start, .{ .lambda = .{
-                        .params = &.{},
-                        .return_type = null,
-                        .body = block,
-                    } });
-                    try args.append(self.allocator, try self.createNode(block.span.start, .{ .trailing_block = .{ .lambda = lambda } }));
-                    expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
-                    // T7′: a trailing block TERMINATES the postfix chain —
-                    // chaining onto the emitted result would modify a
-                    // discarded copy.
-                    if (self.current.tag == .dot) {
-                        return self.fail("a trailing block ends the call chain — pass the modifier inside the call: `f(x, m = .{ … }) { … }`");
+                    // Same-line `{` after a call: trailing block OR parameterized
+                    // named aggregate `List(T){…}`. Prefer the aggregate when the
+                    // brace body is aggregate-shaped (fields / commas). An empty
+                    // body carries no shape, so the spelling decides — see
+                    // emptyBraceIsTypeApplication.
+                    const brace_is_tight = rparen_end == self.current.loc.start;
+                    if (self.braceLooksLikeNamedAggregate(args.items, brace_is_tight)) {
+                        expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
+                        // Fall through: next postfix iteration takes Type{}.
+                    } else {
+                        const block = try self.parseBlock();
+                        const lambda = try self.createNode(block.span.start, .{ .lambda = .{
+                            .params = &.{},
+                            .return_type = null,
+                            .body = block,
+                        } });
+                        try args.append(self.allocator, try self.createNode(block.span.start, .{ .trailing_block = .{ .lambda = lambda } }));
+                        expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
+                        // T7′: after the block's `}` only DOT-led postfix
+                        // continues the chain (`f() { … }.map()`); every other
+                        // token ends it.
+                        if (self.current.tag != .dot) break;
                     }
-                    break;
+                } else {
+                    expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
                 }
-                expr = try self.createNode(expr.span.start, .{ .call = .{ .callee = expr, .args = try args.toOwnedSlice(self.allocator) } });
+            } else if (self.current.tag == .l_brace and self.shouldParseNamedAggregate(expr)) {
+                // Named aggregate: Type{ ... }. Contextual `.{...}` still starts
+                // with a leading dot in parsePrimary. Header contexts reserve
+                // their final `{` for the statement body (`if cond {`).
+                // Body-shape rejects statement blocks so
+                // `push self.dctx { body }` keeps the brace as the push body.
+                if (expr.data == .identifier) {
+                    expr = try self.parseStructLiteral(expr.data.identifier.name, null, expr.span.start);
+                } else {
+                    expr = try self.parseStructLiteral(null, expr, expr.span.start);
+                }
             } else if (self.current.tag == .dot) {
                 self.advance();
                 if (self.current.tag == .l_paren and expr.data == .tuple_type_expr) {
                     // `.( )` is GONE (aggregate ladder Step 1 cutover): the
                     // one aggregate literal is `.{ … }` — typed construction
-                    // is `Tuple(A, B).{ v1, v2 }`. A tuple-TYPE receiver can
+                    // is `Tuple(A, B){ v1, v2 }`. A tuple-TYPE receiver can
                     // only be the old literal spelling, so it keeps the
                     // migration message instead of parsing as a cast.
-                    return self.fail("'.( )' was removed — the aggregate literal is '.{ … }' (typed tuple construction: 'Tuple(A, B).{ v1, v2 }')");
+                    return self.fail("'.( )' was removed — the aggregate literal is '.{ … }' (typed tuple construction: 'Tuple(A, B){ v1, v2 }')");
                 } else if (self.current.tag == .l_paren) {
                     // Postfix cast `expr.(T)` (aggregate ladder Step 4) on
                     // the syntax freed by the Step-1 cutover. One type, plus
@@ -2964,21 +3291,22 @@ pub const Parser = struct {
                     try self.expect(.r_paren);
                     expr = try self.createNode(expr.span.start, .{ .postfix_cast = .{ .operand = expr, .type_expr = target, .alloc_arg = alloc_arg } });
                 } else if (self.current.tag == .l_brace) {
-                    // Struct literal: Type.{ ... }
-                    if (expr.data == .identifier) {
-                        // Simple name: Vec4.{ ... }
-                        expr = try self.parseStructLiteral(expr.data.identifier.name, null, expr.span.start);
-                    } else if (expr.data == .field_access) {
-                        // Qualified name: std.Vec4.{ ... }. Carry the field_access
-                        // NODE as type_expr (NOT a flattened "m.Type" string in
-                        // struct_name) so lowering + inference resolve it through
-                        // the qualified-type resolver — a flattened string is
-                        // looked up as a bare type name, fails, and fabricates an
-                        // empty `{}` stub literally named "m.Type" (issue 0204).
-                        expr = try self.parseStructLiteral(null, expr, expr.span.start);
+                    // `T{ fields }.{ stmts }` — self-trailing after a completed
+                    // aggregate (`self` binds to T). Bare `T{}{ stmts }` is a
+                    // plain post-scope without `self` (set in parseStructLiteral).
+                    // Separator-dot `Type.{…}` on a type designator is removed.
+                    if (expr.data == .struct_literal) {
+                        if (expr.data.struct_literal.init_block != null) {
+                            return self.fail("a struct literal already has a following block");
+                        }
+                        const block = try self.parseBlock();
+                        expr.data.struct_literal.init_block = block;
+                        expr.data.struct_literal.init_block_binds_self = true;
+                        expr.span.end = block.span.end;
+                    } else if (isNamedAggregatePrefix(expr)) {
+                        return self.failNamedAggregateDot();
                     } else {
-                        // Expression type: Vec(3, f32).{ ... }
-                        expr = try self.parseStructLiteral(null, expr, expr.span.start);
+                        return self.fail(named_aggregate_dot_msg);
                     }
                 } else if (self.current.tag == .l_bracket) {
                     // Typed array/vector literal: Type.[elem, ...]
@@ -3280,6 +3608,30 @@ pub const Parser = struct {
 
     fn parsePrimary(self: *Parser) anyerror!*Node {
         const start = self.current.loc.start;
+        // `@Init` is a type the compiler forms, never a value a program builds:
+        // there is no `@Init(T){ … }` literal and no `@Init` expression. A
+        // declared `@` contract is an ordinary type, so it names values and
+        // takes an aggregate literal (`@SourceSite{ … }`) like any other.
+        if (self.current.tag == .at_identifier) {
+            const at_name = self.tokenSlice(self.current);
+            if (isCompilerFormedTypeName(at_name)) {
+                return self.failFmt(
+                    "'{s}' is a compiler-formed type — it has no literal form and cannot be named in an expression",
+                    .{at_name},
+                );
+            }
+            if (std.mem.eql(u8, at_name, caller_site_name)) {
+                // `@caller` is the call site itself, so it can only be written
+                // where a call supplies one: a parameter's default.
+                if (!self.in_param_default) {
+                    return self.fail("'@caller' is only legal in a parameter's default value: `site: @SourceSite = @caller`");
+                }
+                self.advance();
+                return try self.createNode(start, .{ .caller_site = {} });
+            }
+            self.advance();
+            return try self.createNode(start, .{ .identifier = .{ .name = at_name } });
+        }
         // Pack references in expression position:
         //   `$<pack_name>[<int_literal>]` → `pack_index_type_expr`
         //       (single Type value, step 3 shape)
@@ -3389,7 +3741,7 @@ pub const Parser = struct {
                 // the type-demanding site), can stand alone as a `Type` value,
                 // and a postfix `.( ... )` (handled in `parsePostfix`)
                 // constructs a typed tuple VALUE of that type — exactly like
-                // `Name.{ ... }` for structs. A bare `Tuple` not followed by `(`
+                // `Name{ ... }` for structs. A bare `Tuple` not followed by `(`
                 // (or a backtick-raw `` `Tuple ``) stays an ordinary identifier.
                 if (!is_raw and std.mem.eql(u8, name, "Tuple") and self.peekNext() == .l_paren) {
                     self.advance(); // skip `Tuple`; `current` is now `(`
@@ -3470,31 +3822,39 @@ pub const Parser = struct {
                 }
                 self.advance(); // skip '('
 
-                // A `(` here opens a grouping/tuple, so calls inside it parse
-                // normally even within a for header.
+                // A `(` opens a grouping, so nested calls / named aggregates parse
+                // normally even within for/if/push headers (`if (Button{}) {`).
                 const saved_hdr_grp = self.in_for_header;
+                const saved_if_grp = self.in_if_condition;
+                const saved_ntb_grp = self.no_trailing_block;
                 self.in_for_header = false;
-                defer self.in_for_header = saved_hdr_grp;
+                self.in_if_condition = false;
+                self.no_trailing_block = false;
+                defer {
+                    self.in_for_header = saved_hdr_grp;
+                    self.in_if_condition = saved_if_grp;
+                    self.no_trailing_block = saved_ntb_grp;
+                }
 
                 // Bare `(...)` is GROUPING ONLY. Tuple VALUES are written
-                // `.( … )` / `Tuple(T..).( … )`. A named element, an empty group,
-                // a leading spread, or a top-level comma all used to build a
+                // `.{ … }` with a `Tuple(…)` annotation. A named element, an empty
+                // group, a leading spread, or a top-level comma used to build a
                 // bare-paren `tuple_literal`; that grammar is gone.
                 if (self.current.tag == .identifier and self.peekNext() == .colon) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B).{a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
                 if (self.current.tag == .r_paren) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B).{a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
                 if (self.current.tag == .dot_dot) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B).{a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
 
                 const first = try self.parseExpr();
 
                 // A top-level comma was a tuple; now it is an error.
                 if (self.current.tag == .comma) {
-                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B).{a, b}`)");
+                    return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
 
                 // No comma → grouping
@@ -3562,10 +3922,6 @@ pub const Parser = struct {
                 self.advance(); // skip '#run'
                 const inner = try self.parseExpr();
                 return try self.createNode(start, .{ .comptime_expr = .{ .expr = inner } });
-            },
-            .hash_caller_location => {
-                self.advance();
-                return try self.createNode(start, .{ .caller_location = {} });
             },
             .hash_objc_call, .hash_jni_call, .hash_jni_static_call => {
                 return try self.parseFfiIntrinsicCall();
@@ -3820,21 +4176,19 @@ pub const Parser = struct {
         const start = self.current.loc.start;
         self.advance(); // skip 'push'
 
+        // No call trailing on the context expr (`push f() {` must not bind the
+        // body to `f`). Named aggregates ARE allowed so
+        // `push Context{ fields } { body }` parses; init_block attach is off
+        // during the context expr so the following `{ body }` is the push body.
         const saved_ntb = self.no_trailing_block;
+        const saved_push = self.in_push_context;
         self.no_trailing_block = true;
+        self.in_push_context = true;
         const context_expr = try self.parseExpr();
         self.no_trailing_block = saved_ntb;
+        self.in_push_context = saved_push;
 
-        // push Context.{ ... } { body } — if parseExpr consumed the push body
-        // as a struct init block, steal it back as the push body.
-        // (if/while don't have this issue — they require bool/optional conditions)
-        const body = if (context_expr.data == .struct_literal and
-            context_expr.data.struct_literal.init_block != null)
-        body_blk: {
-            const ib = context_expr.data.struct_literal.init_block.?;
-            context_expr.data.struct_literal.init_block = null;
-            break :body_blk ib;
-        } else try self.parseBlock();
+        const body = try self.parseBlock();
 
         return try self.createNode(start, .{ .push_stmt = .{
             .context_expr = context_expr,
@@ -3949,7 +4303,14 @@ pub const Parser = struct {
                 const name = self.tokenSlice(self.current);
                 self.advance();
                 break :blk try self.createNode(arm_start, .{ .identifier = .{ .name = name } });
-            } else try self.parsePrimary(); // .variant
+            } else if (self.isIdentLike() and self.peekNext() == .l_paren)
+                // An instantiation spelling names a type in arm position
+                // (`case Buffer(f32):`, nested `case Buffer(Buffer(f32)):`).
+                // A name followed by `(` can only be a parameterized type
+                // here — the arm value grammar has no call form.
+                try self.parseTypeExpr()
+            else
+                try self.parsePrimary(); // .variant
             try self.expect(.colon);
 
             // Optional payload capture: `(ident)`. Disambiguated from a
@@ -4164,7 +4525,7 @@ pub const Parser = struct {
         } });
     }
 
-    /// `parsePostfix`, mirroring `Name.{ ... }` typed struct literals).
+    /// `parsePostfix`, mirroring `Name{ ... }` typed struct literals).
     ///   `Tuple(A, B)` / `Tuple(T)` / `Tuple()` / named `Tuple(x: A, y: B)` /
     ///   pack `Tuple(..Ts)` / `Tuple(..F(Ts))`. Lowers to the SAME
     ///   `tuple_type_expr` the inline `(A, B)` / `(x: A, y: B)` / `(..Ts)`
@@ -4484,6 +4845,11 @@ pub const Parser = struct {
             // `-> R export { … }` (and `-> R abi(.c) extern`). Marks a fn def.
             if (self.current.tag == .kw_extern or self.current.tag == .kw_export) return true;
             if (self.current.tag == .identifier or self.current.tag.isTypeKeyword() or
+                // A compiler-formed `@Init(T)` is a type spelling like any
+                // other here: skipping it keeps the scan on course to the body
+                // brace, so the decl is classified as a fn DEF and the
+                // return-position refusal lands on the return type.
+                self.current.tag == .at_identifier or
                 self.current.tag == .dot or self.current.tag == .dollar or
                 self.current.tag == .l_bracket or self.current.tag == .r_bracket or
                 self.current.tag == .l_paren or self.current.tag == .r_paren or
@@ -4717,6 +5083,285 @@ pub const Parser = struct {
             .less, .less_equal, .greater, .greater_equal, .equal_equal, .bang_equal => true,
             else => false,
         };
+    }
+
+    /// Prefix shapes that may take a named aggregate body `Type{...}`:
+    /// bare type name, qualified type, type application node, or a call that
+    /// stands for a parameterized type designator `F(args)` in expression
+    /// position (same shape as `List(i64){}` used to take).
+    fn isNamedAggregatePrefix(expr: *const Node) bool {
+        return switch (expr.data) {
+            // Enum/variant heads (`.key{…}`, `Ev.key{…}`) share the compact
+            // aggregate body; contextual `.{…}` still starts with a leading dot alone.
+            .identifier, .field_access, .parameterized_type_expr, .call, .type_expr,
+            .tuple_type_expr, .enum_literal => true,
+            else => false,
+        };
+    }
+
+    /// Header contexts (`if cond {`, `while cond {`, `for … {`) reserve the
+    /// final brace group for the statement body — a bare `Type{}` at the end
+    /// of the condition would steal it, so parenthesize: `if (Button{}) {`.
+    /// `push` is different: `push Context{ fields } { body }` is legal; the
+    /// second brace is the push body (not an init_block on the context expr).
+    fn namedAggregateAllowedHere(self: *const Parser) bool {
+        if (self.in_if_condition or self.in_for_header) return false;
+        if (self.in_push_context) return true;
+        return !self.no_trailing_block;
+    }
+
+    /// Unambiguous type syntax: nodes that can only be a type (builtin scalars
+    /// reach this path as `.type_expr`, see `parsePrimary`), or a nested type
+    /// application that itself carries one (`Holder(Vec(3, f32))`). A bare name
+    /// is deliberately excluded — `Limit` and `pair` are indistinguishable from
+    /// values here, and the brace spelling settles those.
+    fn argIsTypeExpr(expr: *const Node) bool {
+        return switch (expr.data) {
+            .parameterized_type_expr,
+            .type_expr,
+            .tuple_type_expr,
+            .slice_type_expr,
+            .pointer_type_expr,
+            .optional_type_expr,
+            .array_type_expr,
+            .many_pointer_type_expr,
+            .closure_type_expr,
+            .function_type_expr,
+            => true,
+            .call => |c| argsHaveTypeExpr(c.args),
+            else => false,
+        };
+    }
+
+    fn argsHaveTypeExpr(call_args: []const *Node) bool {
+        for (call_args) |a| {
+            if (argIsTypeExpr(a)) return true;
+        }
+        return false;
+    }
+
+    /// Empty `{}` after a call carries no body shape, so the spelling decides:
+    /// - `{` tight against `)` → parameterized aggregate (`Box(pair){}`,
+    ///   `Buf(16){}`, `Sink(View){}`);
+    /// - one space or more → trailing block (`run(n) {}`, `Group(2) {}`),
+    ///   unless an argument is unambiguous type syntax and can only be a type
+    ///   application (`List(i64) {}`, `Vec(3, f32) {}`).
+    /// Zero-arg `f() {}` is always trailing — `T{}` covers the empty aggregate.
+    fn emptyBraceIsTypeApplication(call_args: []const *Node, brace_is_tight: bool) bool {
+        if (call_args.len == 0) return false;
+        return brace_is_tight or argsHaveTypeExpr(call_args);
+    }
+
+    /// Whether `{` after `expr` should start a named aggregate (vs a push body).
+    /// Outside `push`, any aggregate-prefix + allowed header context takes `{`
+    /// as `Type{…}`. Inside `push`, body shape decides so
+    /// `push self.dctx { stmts }` keeps the brace as the push body while
+    /// `push Context{ fields } { body }` still parses the fields aggregate.
+    fn shouldParseNamedAggregate(self: *Parser, expr: *const Node) bool {
+        if (!isNamedAggregatePrefix(expr) or !self.namedAggregateAllowedHere()) return false;
+        if (!self.in_push_context) return true;
+        if (!self.braceLooksLikeAggregateBody()) return false;
+        // Empty `{}` after a value field access is the push body, not Type{}.
+        if (self.braceIsEmpty() and expr.data == .field_access) return false;
+        return true;
+    }
+
+    fn braceIsEmpty(self: *Parser) bool {
+        if (self.current.tag != .l_brace) return false;
+        var lex = self.lexer;
+        const tok = lex.next();
+        return tok.tag == .r_brace;
+    }
+
+    /// Peek whether the brace group at `current` is aggregate-shaped (fields /
+    /// commas / empty) vs statement-shaped (`;`, `:=`, statement keywords).
+    fn braceLooksLikeAggregateBody(self: *Parser) bool {
+        if (self.current.tag != .l_brace) return false;
+        var lex = self.lexer;
+        var depth: u32 = 1;
+        var saw_non_ws = false;
+        var top_level_semi = false;
+        var top_level_stmt_kw = false;
+        var top_level_comma = false;
+        var top_level_field_eq = false;
+        var top_level_colon_eq = false;
+        var prev_was_name = false;
+        while (true) {
+            const tok = lex.next();
+            switch (tok.tag) {
+                .l_brace => {
+                    depth += 1;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .r_brace => {
+                    depth -= 1;
+                    prev_was_name = false;
+                    if (depth == 0) break;
+                },
+                .eof => break,
+                .semicolon => {
+                    if (depth == 1) top_level_semi = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .comma => {
+                    if (depth == 1) top_level_comma = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .colon_equal => {
+                    if (depth == 1) top_level_colon_eq = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .equal => {
+                    if (depth == 1 and prev_was_name) top_level_field_eq = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .kw_return, .kw_break, .kw_continue, .kw_defer, .kw_raise, .kw_onfail,
+                .kw_if, .kw_for, .kw_while, .kw_push,
+                => {
+                    if (depth == 1) top_level_stmt_kw = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .identifier => {
+                    if (depth == 1) prev_was_name = true else prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                else => {
+                    if (depth == 1 and getKeyword(self.source[tok.loc.start..tok.loc.end]) != null)
+                        prev_was_name = true
+                    else
+                        prev_was_name = false;
+                    saw_non_ws = true;
+                },
+            }
+        }
+        if (!saw_non_ws) return true; // empty `{}` is aggregate-shaped
+        if (top_level_semi or top_level_stmt_kw or top_level_colon_eq) return false;
+        if (top_level_field_eq or top_level_comma) return true;
+        return false;
+    }
+
+    /// With `current` on `{` after a call: true when the brace body looks
+    /// like a named-aggregate body rather than a trailing-block statement
+    /// list.
+    ///
+    /// - empty `{}` → see `emptyBraceIsTypeApplication`
+    /// - top-level `;` or statement-lead keywords → trailing (`vstack() { a; }`)
+    /// - top-level `name =` or top-level `,` → aggregate (`Plan{ x = 1 }`, `T{1, 2}`)
+    /// - otherwise → trailing (statement blocks that omit `;` after `if`/`for`)
+    fn braceLooksLikeNamedAggregate(self: *Parser, call_args: []const *Node, brace_is_tight: bool) bool {
+        if (self.current.tag != .l_brace) return false;
+        var lex = self.lexer;
+        var depth: u32 = 1;
+        var saw_non_ws = false;
+        var top_level_semi = false;
+        var top_level_stmt_kw = false;
+        var top_level_comma = false;
+        var top_level_field_eq = false;
+        var top_level_colon_eq = false;
+        var prev_was_name = false;
+        while (true) {
+            const tok = lex.next();
+            switch (tok.tag) {
+                .l_brace => {
+                    depth += 1;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .r_brace => {
+                    depth -= 1;
+                    prev_was_name = false;
+                    if (depth == 0) break;
+                },
+                .eof => break,
+                .semicolon => {
+                    if (depth == 1) top_level_semi = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .comma => {
+                    if (depth == 1) top_level_comma = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .colon_equal => {
+                    // `bound := …` is a statement, never a field init.
+                    if (depth == 1) top_level_colon_eq = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .equal => {
+                    if (depth == 1 and prev_was_name) top_level_field_eq = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .kw_return, .kw_break, .kw_continue, .kw_defer, .kw_raise, .kw_onfail,
+                .kw_if, .kw_for, .kw_while,
+                => {
+                    if (depth == 1) top_level_stmt_kw = true;
+                    prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                .identifier => {
+                    if (depth == 1) prev_was_name = true else prev_was_name = false;
+                    saw_non_ws = true;
+                },
+                else => {
+                    if (depth == 1 and getKeyword(self.source[tok.loc.start..tok.loc.end]) != null)
+                        prev_was_name = true
+                    else
+                        prev_was_name = false;
+                    saw_non_ws = true;
+                },
+            }
+        }
+        if (!saw_non_ws) {
+            // Empty / comment-only `{}`: type application vs empty trailing
+            // block (see emptyBraceIsTypeApplication).
+            return emptyBraceIsTypeApplication(call_args, brace_is_tight);
+        }
+        // Statement markers force trailing even when an assignment `x = e`
+        // looks like a field init (`slot = Label{…};` inside a build block).
+        if (top_level_semi or top_level_stmt_kw or top_level_colon_eq) return false;
+        if (top_level_field_eq or top_level_comma) return true;
+        return false;
+    }
+
+    /// Separator-dot `Type.{…}` was removed. Point at the `.` and offer the
+    /// compact `Type{…}` spelling.
+    fn failNamedAggregateDot(self: *Parser) error{ParseError} {
+        // `current` is `{`; the separator `.` ends at `prev_end`.
+        const dot_start = if (self.prev_end > 0) self.prev_end - 1 else self.current.loc.start;
+        const dot_end = self.prev_end;
+        const msg = named_aggregate_dot_msg;
+        self.err_msg = msg;
+        self.err_offset = dot_start;
+        self.err_end = self.current.loc.end;
+        if (self.diagnostics) |diags| {
+            const id = diags.addId(.err, msg, .{ .start = dot_start, .end = dot_end });
+            // Rebuild the current line with the separator dot removed as fix-it.
+            // Help span covers the `.{` region so carets sit on the edit.
+            const line = errors.lineAt(self.source, dot_start);
+            var line_start: u32 = dot_start;
+            while (line_start > 0 and self.source[line_start - 1] != '\n') : (line_start -= 1) {}
+            const rel_dot = dot_start - line_start;
+            var fix_buf: std.ArrayList(u8) = .empty;
+            defer fix_buf.deinit(self.allocator);
+            if (rel_dot < line.len and line[rel_dot] == '.') {
+                fix_buf.appendSlice(self.allocator, line[0..rel_dot]) catch {};
+                fix_buf.appendSlice(self.allocator, line[rel_dot + 1 ..]) catch {};
+                const fix = fix_buf.toOwnedSlice(self.allocator) catch null;
+                diags.addHelp(id, .{ .start = dot_start, .end = self.current.loc.end }, "write the type, then '{'", fix);
+            } else {
+                diags.addHelp(id, null, "write `Type{...}` — remove the separator dot", null);
+            }
+        }
+        return error.ParseError;
     }
 
     /// Peek at the next token's tag without consuming.
@@ -5920,4 +6565,357 @@ test "E0.3 full failable function parses end-to-end (all E0 forms)" {
     // the onfail flag was restored: the raise inside the (separate) if-block is allowed
     const then_block = stmts[3].data.if_expr.then_branch;
     try std.testing.expect(then_block.data.block.stmts[0].data == .raise_stmt);
+}
+
+test "parse named aggregate Type{ fields } without separator dot" {
+    const source =
+        \\Point :: struct { x: i64; y: i64; }
+        \\main :: () {
+        \\  p := Point{ x = 1, y = 2 };
+        \\  q := Point{};
+        \\  r: Point = .{};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[1].data.fn_decl.body;
+    const stmts = body.data.block.stmts;
+    try std.testing.expect(stmts[0].data == .var_decl);
+    const p_init = stmts[0].data.var_decl.value.?;
+    try std.testing.expect(p_init.data == .struct_literal);
+    try std.testing.expectEqualStrings("Point", p_init.data.struct_literal.struct_name.?);
+    try std.testing.expectEqual(@as(usize, 2), p_init.data.struct_literal.field_inits.len);
+    const q_init = stmts[1].data.var_decl.value.?;
+    try std.testing.expect(q_init.data == .struct_literal);
+    try std.testing.expectEqual(@as(usize, 0), q_init.data.struct_literal.field_inits.len);
+    // Contextual .{} remains
+    const r_init = stmts[2].data.var_decl.value.?;
+    try std.testing.expect(r_init.data == .struct_literal);
+    try std.testing.expect(r_init.data.struct_literal.struct_name == null);
+    try std.testing.expect(r_init.data.struct_literal.type_expr == null);
+}
+
+test "parse parameterized named aggregate List(T){}" {
+    const source =
+        \\main :: () {
+        \\  xs := List(i64){};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
+    try std.testing.expect(init_expr.data == .struct_literal);
+    try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+    try std.testing.expect(init_expr.data.struct_literal.type_expr.?.data == .call);
+}
+
+test "parse empty trailing block after value-arg call" {
+    // `run(2) {}` is spaced with no type-expr arg — a trailing block.
+    const source =
+        \\run :: (n: i64, body: Closure()) { body(); }
+        \\main :: () { run(2) {} }
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[1].data.fn_decl.body;
+    const call = body.data.block.stmts[0];
+    try std.testing.expect(call.data == .call);
+    try std.testing.expectEqual(@as(usize, 2), call.data.call.args.len);
+    try std.testing.expect(call.data.call.args[1].data == .trailing_block);
+}
+
+test "parse empty trailing block after capitalized value-arg call" {
+    // The callee's case is not a signal — only the brace spelling is.
+    const source =
+        \\Group :: (n: i64, body: Closure()) { body(); }
+        \\main :: () { Group(2) {} }
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[1].data.fn_decl.body;
+    const call = body.data.block.stmts[0];
+    try std.testing.expect(call.data == .call);
+    try std.testing.expectEqual(@as(usize, 2), call.data.call.args.len);
+    try std.testing.expect(call.data.call.args[1].data == .trailing_block);
+}
+
+test "parse lowercase parameterized named aggregate list(T){}" {
+    const source =
+        \\main :: () {
+        \\  xs := list(i64){};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
+    try std.testing.expect(init_expr.data == .struct_literal);
+    try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+}
+
+test "parse empty trailing block with identifier value args" {
+    // `run(n) {}` — a bare name is never a type signal; the space decides.
+    const source =
+        \\run :: (n: i64, body: Closure()) { body(); }
+        \\main :: () {
+        \\  n := 2;
+        \\  run(n) {}
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[1].data.fn_decl.body;
+    const call = body.data.block.stmts[1];
+    try std.testing.expect(call.data == .call);
+    try std.testing.expectEqual(@as(usize, 2), call.data.call.args.len);
+    try std.testing.expect(call.data.call.args[1].data == .trailing_block);
+}
+
+test "parse empty trailing block with PascalCase callee and identifier arg" {
+    const source =
+        \\Group :: (n: i64, body: Closure()) { body(); }
+        \\main :: () {
+        \\  n := 2;
+        \\  Group(n) {}
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[1].data.fn_decl.body;
+    const call = body.data.block.stmts[1];
+    try std.testing.expect(call.data == .call);
+    try std.testing.expect(call.data.call.args[1].data == .trailing_block);
+}
+
+test "parse tight empty brace as aggregate regardless of arg spelling" {
+    // The tight `){}` spelling is the aggregate signal: a lowercase user type
+    // (`pair`), a PascalCase name, and a pure value parameter all qualify.
+    const source =
+        \\main :: () {
+        \\  b := Box(pair){};
+        \\  m := List(Move){};
+        \\  v := Buf(16){};
+        \\  g := Group(n){};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    for (body.data.block.stmts) |stmt| {
+        const init_expr = stmt.data.var_decl.value.?;
+        try std.testing.expect(init_expr.data == .struct_literal);
+        try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+    }
+}
+
+test "parse spaced empty brace with a type-expr arg as aggregate" {
+    // A space does not force trailing when an argument can only be a type.
+    const source =
+        \\main :: () {
+        \\  xs := List(i64) {};
+        \\  vs := Vec(3, f32) {};
+        \\  hs := Holder(Vec(3, f32)) {};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    for (body.data.block.stmts) |stmt| {
+        const init_expr = stmt.data.var_decl.value.?;
+        try std.testing.expect(init_expr.data == .struct_literal);
+        try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+    }
+}
+
+test "parse spaced empty brace with name-only args as trailing" {
+    // Bare names and `*x` are values here — `run(Limit) {}` and
+    // `render(*screen) {}` bind the block instead of inventing a type app.
+    const source =
+        \\Limit :: 7;
+        \\run :: (n: i64, body: Closure()) { body(); }
+        \\render :: (s: *Screen, body: Closure()) { body(); }
+        \\main :: () {
+        \\  run(Limit) {}
+        \\  render(*screen) {}
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[3].data.fn_decl.body;
+    for (body.data.block.stmts) |stmt| {
+        try std.testing.expect(stmt.data == .call);
+        const args = stmt.data.call.args;
+        try std.testing.expect(args[args.len - 1].data == .trailing_block);
+    }
+}
+
+test "parse zero-arg empty brace as trailing even when tight" {
+    // `f(){}` has no arguments to apply — `T{}` is the empty aggregate.
+    const source =
+        \\f :: (body: Closure()) { body(); }
+        \\main :: () { f(){} }
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[1].data.fn_decl.body;
+    const call = body.data.block.stmts[0];
+    try std.testing.expect(call.data == .call);
+    try std.testing.expect(call.data.call.args[0].data == .trailing_block);
+}
+
+test "parse comment-only body keeps the tight aggregate reading" {
+    // A comment-only body is still empty, so the brace spelling decides.
+    const source =
+        \\main :: () {
+        \\  b := Box(pair){ // nothing yet
+        \\  };
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
+    try std.testing.expect(init_expr.data == .struct_literal);
+    try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+}
+
+test "parse parameterized aggregate with compound and PascalCase type args" {
+    // `[]u8` → slice_type_expr; `?i64` → optional_type_expr;
+    // `(i64) -> i64` → function_type_expr; `Vec(3, f32)` mixes value + type
+    // args. `*Node` and `Move` are name-shaped and ride the tight spelling.
+    const source =
+        \\main :: () {
+        \\  xs := List([]u8){};
+        \\  ps := List(*Node){};
+        \\  os := List(?i64){};
+        \\  ms := List(Move){};
+        \\  fs := Marker((i64) -> i64, [:0]u8){};
+        \\  vs := Vec(3, f32){};
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    for (body.data.block.stmts) |stmt| {
+        const init_expr = stmt.data.var_decl.value.?;
+        try std.testing.expect(init_expr.data == .struct_literal);
+        try std.testing.expect(init_expr.data.struct_literal.type_expr != null);
+    }
+}
+
+test "parse rejects separator-dot Type.{}" {
+    const source =
+        \\main :: () {
+        \\  p := Point.{ x = 1 };
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const result = parser.parse();
+    try std.testing.expectError(error.ParseError, result);
+    try std.testing.expect(parser.err_msg != null);
+    try std.testing.expect(std.mem.indexOf(u8, parser.err_msg.?, "named aggregate") != null);
+}
+
+test "parse aggregate self-trailing via dot binds self flag" {
+    const source =
+        \\main :: () {
+        \\  b := Button{ label = "x" }.{
+        \\    self.label = "y";
+        \\  };
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
+    try std.testing.expect(init_expr.data == .struct_literal);
+    try std.testing.expect(init_expr.data.struct_literal.init_block != null);
+    try std.testing.expect(init_expr.data.struct_literal.init_block_binds_self);
+}
+
+test "parse aggregate bare post-scope does not bind self" {
+    const source =
+        \\main :: () {
+        \\  b := Button{ label = "x" } {
+        \\    x := 1;
+        \\  };
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const init_expr = body.data.block.stmts[0].data.var_decl.value.?;
+    try std.testing.expect(init_expr.data == .struct_literal);
+    try std.testing.expect(init_expr.data.struct_literal.init_block != null);
+    try std.testing.expect(!init_expr.data.struct_literal.init_block_binds_self);
+}
+
+test "parse push Context{ fields } { body } without parens" {
+    const source =
+        \\main :: () {
+        \\  push Context{ allocator = context.allocator } {
+        \\    x := 1;
+        \\  }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const stmt = body.data.block.stmts[0];
+    try std.testing.expect(stmt.data == .push_stmt);
+    try std.testing.expect(stmt.data.push_stmt.context_expr.data == .struct_literal);
+    try std.testing.expect(stmt.data.push_stmt.context_expr.data.struct_literal.init_block == null);
+    try std.testing.expect(stmt.data.push_stmt.body.data == .block);
+}
+
+test "parse if cond { body } is not Type{}" {
+    const source =
+        \\main :: () {
+        \\  if neg { x = 1; }
+        \\}
+    ;
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var parser = Parser.init(arena.allocator(), source);
+    const root = try parser.parse();
+    const body = root.data.root.decls[0].data.fn_decl.body;
+    const ife = body.data.block.stmts[0];
+    try std.testing.expect(ife.data == .if_expr);
+    try std.testing.expect(ife.data.if_expr.condition.data == .identifier);
+    try std.testing.expectEqualStrings("neg", ife.data.if_expr.condition.data.identifier.name);
 }

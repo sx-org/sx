@@ -1,0 +1,56 @@
+// A type alias of an instantiation IS that instantiation. `BufF :: Buffer(f32)`
+// binds the alias name to the instantiation's own TypeId — it does not mint a
+// second nominal type — so every consumer position agrees with the
+// `Buffer(f32)` spelling: `type_eq`, `type_name`, a `case BufF:` arm, a
+// `v.(BufF)` downcast, an `impl … for BufF` head, and a `BufF{ … }` literal.
+// Distinct instantiations stay distinct.
+#import "modules/std.sx";
+
+Series :: protocol(T: Type) tagged { count :: (self: *Self) -> i64; }
+
+Buffer :: struct($T: Type) { n: i64; }
+impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.n } }
+
+BufF  :: Buffer(f32);
+BufF2 :: BufF;             // an alias of an alias resolves through
+BufI  :: Buffer(i64);
+
+Show :: protocol vtable { show :: (self: *Self) -> i64; }
+Box  :: struct($T: Type) { v: i64; }
+BoxI :: Box(i64);
+// The impl head names the alias; the conformance it registers is the
+// instantiation's, so both spellings erase.
+impl Show for BoxI { show :: (self: *BoxI) -> i64 { self.v } }
+seen :: (s: Show) -> i64 { s.show() }
+
+main :: () {
+    print("{} {}\n", type_eq(BufF, Buffer(f32)), type_eq(BufF2, Buffer(f32)));
+    //stdout: true true
+
+    print("{} {}\n", type_name(BufF), type_name(BufF2));
+    //stdout: Buffer__f32 Buffer__f32
+
+    // Distinct instantiations remain distinct types.
+    print("{} {}\n", type_eq(Buffer(f32), Buffer(i64)), type_eq(BufF, BufI));
+    //stdout: false false
+
+    a : Series(f32) = Buffer(f32){ n = 7 };
+
+    // The arm names the alias and matches the instantiation's value.
+    if a == {
+        case BufF: (x) { print("arm {}\n", x.n); }
+    }
+    //stdout: arm 7
+
+    // The downcast target names the alias — same tag compare as `.(Buffer(f32))`.
+    print("{} {}\n", a.(BufF).n, a.(BufF2).n);
+    //stdout: 7 7
+
+    // A literal spelled through the alias carries the instantiation's type.
+    b := BoxI{ v = 5 };
+    print("{} {}\n", type_name(type_of(b)), type_name(type_of(BoxI{ v = 6 })));
+    //stdout: Box__i64 Box__i64
+
+    print("{} {}\n", seen(Box(i64){ v = 1 }), seen(BoxI{ v = 2 }));
+    //stdout: 1 2
+}

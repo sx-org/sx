@@ -1,0 +1,40 @@
+// B3 (specs: Trailing Blocks): a trailing-block call does not end the postfix
+// chain — dot-led postfix after the closing `}` applies to the call's result.
+#import "modules/std.sx";
+
+Box :: struct {
+    n: i64;
+
+    show :: (self: Box) -> i64 { self.n }
+    doubled :: (self: Box) -> Box { Box{ n = self.n * 2 } }
+
+    with :: (self: Box, content: Closure()) -> Box {
+        content();
+        Box{ n = self.n + 1 }
+    }
+}
+
+vstack :: (spacing: f32, content: Closure()) -> Box {
+    content();
+    Box{ n = 7 }
+}
+
+main :: () -> i32 {
+    // (a) dot-led postfix on the value a trailing-block call returned.
+    a := vstack(1.0) { print("a-block\n"); }.show();
+    print("a={}\n", a);
+
+    // (b) the chained call takes a trailing block of its own.
+    b := vstack(1.0) { print("b-outer\n"); }.with() { print("b-inner\n"); }.show();
+    print("b={}\n", b);
+
+    // (c) the continuing `.` opens the line after the closing `}`.
+    c := vstack(1.0) {
+        print("c-block\n");
+    }
+        .doubled()
+        .with() { print("c-inner\n"); }
+        .show();
+    print("c={}\n", c);
+    0
+}

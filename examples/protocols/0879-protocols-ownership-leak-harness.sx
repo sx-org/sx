@@ -22,7 +22,7 @@ main :: () {
     tracker := TrackingAllocator.init(gpa);
 
     // Owned values through the tracker, explicit pairing.
-    sq := Sq.{ side = 3 };
+    sq := Sq{ side = 3 };
     a := sq.(Shape, tracker);
     b := sq.(Shape, tracker);
     a.grow();
@@ -36,7 +36,7 @@ main :: () {
     ca : i64 = 0;
     da : i64 = 0;
     push .{ allocator = tracker } {
-        c : Shape = xx Sq.{ side = 2 };
+        c : Shape = xx Sq{ side = 2 };
         c.grow();
         d := sq.(Shape);
         ca = c.area();

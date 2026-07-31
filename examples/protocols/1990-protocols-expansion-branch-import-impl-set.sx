@@ -23,7 +23,7 @@ inline if POINTER_SIZE == 8 {
 }
 
 main :: () {
-    i := Item.{ n = 2 };
+    i := Item{ n = 2 };
     s := i.(Show);
     print("{} {}\n", ADMITTED, s.fmt());
 }

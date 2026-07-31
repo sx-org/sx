@@ -17,8 +17,8 @@ howmany :: (..xs: Show) -> i64 {
 }
 
 main :: () -> i32 {
-    a := IntBox.{ v = 1 };
-    n := Naked.{ x = 2 };
+    a := IntBox{ v = 1 };
+    n := Naked{ x = 2 };
     print("{}\n", howmany(a, n));   // `n` does not conform to Show
     0
 }

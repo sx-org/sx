@@ -1,6 +1,6 @@
-// The catch error binding is parenthesized — `catch (e) { }`; a bare
+// The catch error binding is parenthesized — `catch (e) {}`; a bare
 // binding is rejected with a migration hint. (Same rule as the for-loop
-// capture; `onfail (e) { }` follows it too.)
+// capture; `onfail (e) {}` follows it too.)
 
 #import "modules/std.sx";
 

@@ -17,7 +17,7 @@ main :: () -> i32 {
     print("pair {} {}\n", pair.0, pair.1);
 
     // Named tuple: named + numeric access (numeric aliases are a TUPLE
-    // feature — an untyped named `.{ }` is an anonymous struct, so the
+    // feature — an untyped named `.{}` is an anonymous struct, so the
     // named-tuple type is spelled out).
     named : Tuple(x: i64, y: i64) = .{x = 10, y = 20};
     print("named {} {} {}\n", named.x, named.0, named.1);
@@ -41,7 +41,7 @@ main :: () -> i32 {
 
     // Operators: equality, concatenation, repetition, membership, lex.
     // (Tuple-typed operands — the exotic operators are tuple-only; an
-    // untyped `.{ }` is an anonymous struct.)
+    // untyped `.{}` is an anonymous struct.)
     ta : Tuple(i64, i64) = .{1, 2};
     tb : Tuple(i64, i64) = .{3, 4};
     tc : Tuple(i64, i64) = .{1, 3};

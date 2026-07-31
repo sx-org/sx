@@ -4,6 +4,6 @@
 Vec :: struct { x: f32; y: f32; }
 
 main :: () -> i32 {
-    v := Vec.{ x = 1.0, y = 2.0 };
+    v := Vec{ x = 1.0, y = 2.0 };
     return xx v.bogus;
 }

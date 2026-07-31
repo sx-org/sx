@@ -1,0 +1,49 @@
+// A compile-time evaluation may WAIT for an open set's layout — and waiting for a
+// layout that waits for the evaluation is the expansion deadlock (spec: Open Sets —
+// when the layout is final; §7.9).
+//
+// `#insert` writes code, so it runs DURING lowering: the set has not frozen, and a
+// generic member means a body lowered later can still spell an instantiation and
+// grow it. The evaluation therefore parks on the set's layout rather than reading a
+// size a later member would contradict — and nothing can publish that fact while
+// the program is still being written by the very evaluation waiting for it.
+//
+// So the drain goes quiet with a bookmark still down, and sx refuses instead of
+// electing one of the two consistent outcomes. The diagnostic names the waiting
+// unit and the fact it awaits.
+//
+// A set no generic member can reach settles as soon as the declarations are
+// admitted, and the same `#insert` against it is answered immediately — that is the
+// positive half, pinned in examples/types/0899.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 256, align = 8 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+// The member that keeps the set open: each instantiation the program spells is
+// another member.
+Padded :: @OpenVariant(View) ($T: Type) {
+    inner: $T = ---;
+    render :: (self: *Padded) -> string => "padded";
+}
+
+// The code this writes depends on the set's size, and the code it writes is part of
+// the program whose bodies decide that size.
+line :: () -> string {
+    if size_of(View) > 32 {
+        return "print(\"big\n\");";
+    }
+    return "print(\"small\n\");";
+}
+
+main :: () -> i32 {
+    #insert line();
+    0
+}

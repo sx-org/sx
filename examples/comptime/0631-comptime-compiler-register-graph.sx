@@ -32,9 +32,9 @@ KIND_TAGGED_UNION :: 3; // a payload-carrying enum
 // An actual enum: variants are names, no payloads (ty = void).
 make_suit :: () -> Type {
     return raw_register_type(raw_declare_type("Suit"), KIND_ENUM, .[
-        Member.{ name = "hearts",   ty = void },
-        Member.{ name = "spades",   ty = void },
-        Member.{ name = "diamonds", ty = void },
+        Member{ name = "hearts",   ty = void },
+        Member{ name = "spades",   ty = void },
+        Member{ name = "diamonds", ty = void },
     ]);
 }
 Suit :: make_suit();
@@ -44,14 +44,14 @@ build_graph :: () -> Type {
     hA := raw_declare_type("GraphA");
     hB := raw_declare_type("GraphB");
     raw_register_type(hA, KIND_TAGGED_UNION, .[
-        Member.{ name = "self_ref", ty = raw_pointer_to(hA) }, // *A — self-reference
-        Member.{ name = "to_b",     ty = hB },             // B by value (forward)
-        Member.{ name = "tag",      ty = u32 },            // a plain payload
+        Member{ name = "self_ref", ty = raw_pointer_to(hA) }, // *A — self-reference
+        Member{ name = "to_b",     ty = hB },             // B by value (forward)
+        Member{ name = "tag",      ty = u32 },            // a plain payload
     ]);
     raw_register_type(hB, KIND_TAGGED_UNION, .[
-        Member.{ name = "back_a", ty = raw_pointer_to(hA) },    // *A — back-reference
-        Member.{ name = "self_b", ty = raw_pointer_to(hB) },    // *B — self-reference
-        Member.{ name = "num",    ty = u32 },
+        Member{ name = "back_a", ty = raw_pointer_to(hA) },    // *A — back-reference
+        Member{ name = "self_b", ty = raw_pointer_to(hB) },    // *B — self-reference
+        Member{ name = "num",    ty = u32 },
     ]);
     return hA;
 }

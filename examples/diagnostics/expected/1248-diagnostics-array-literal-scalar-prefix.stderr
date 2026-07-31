@@ -19,5 +19,5 @@ error: a '.[ ]' literal's type prefix names the aggregate type, not the element 
 error: a '.[ ]' literal's type prefix names the aggregate type, not the element type — 'Pt' is not an array/vector/slice; annotate the binding instead: `x : [1]Pt = .[ … ]`
   --> examples/diagnostics/1248-diagnostics-array-literal-scalar-prefix.sx:19:10
    |
-19 |     d := Pt.[Pt.{ x = 1 }];
+19 |     d := Pt.[Pt{ x = 1 }];
    |          ^^

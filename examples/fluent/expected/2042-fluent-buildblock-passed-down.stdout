@@ -1,0 +1,10 @@
+chain:
+  block written at 2042-fluent-buildblock-passed-down.sx:72
+  published top
+  published alpha
+  published beta
+  published extra
+two down 4
+  published before
+  published after
+replays 2

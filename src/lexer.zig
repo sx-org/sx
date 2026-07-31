@@ -74,6 +74,20 @@ pub const Lexer = struct {
             return self.makeToken(.invalid, start, self.index);
         }
 
+        // Compiler-formed type name: `@Init`. The `@` is part of the name, so
+        // the token spans it; the tag keeps it out of every identifier position.
+        if (c == '@') {
+            const id_start = start + 1;
+            if (id_start < self.source.len and isIdentStart(self.source[id_start])) {
+                self.index = id_start;
+                var tok = self.lexIdentifier(id_start);
+                tok.tag = .at_identifier;
+                tok.loc.start = start;
+                return tok;
+            }
+            self.index += 1;
+            return self.makeToken(.invalid, start, self.index);
+        }
 
         // Directives: #import, #insert, #run, #library, #string
         if (c == '#') {
@@ -121,7 +135,6 @@ pub const Lexer = struct {
                 .{ "#property", Tag.hash_property },
                 .{ "#get", Tag.hash_get },
                 .{ "#set", Tag.hash_set },
-                .{ "#caller_location", Tag.hash_caller_location },
                 .{ "#context_extend", Tag.hash_context_extend },
             };
             inline for (directives) |d| {

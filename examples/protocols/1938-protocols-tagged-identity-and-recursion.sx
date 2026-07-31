@@ -45,12 +45,12 @@ drain :: (s: Sink, xs: Series) {
 
 main :: () {
     // The identity value borrows a NAMED object — mutations land in it.
-    acc := Accum.{ sum = 0 };
+    acc := Accum{ sum = 0 };
     sink : Sink = acc;
 
-    ramp := Ramp.{ n = 5 };
-    doubled := Scaled.{ inner = ramp, factor = 2 };
-    nested  := Scaled.{ inner = doubled, factor = 10 };
+    ramp := Ramp{ n = 5 };
+    doubled := Scaled{ inner = ramp, factor = 2 };
+    nested  := Scaled{ inner = doubled, factor = 10 };
 
     print("{} {}\n", nested.count(), size_of(Series));
     drain(sink, nested);

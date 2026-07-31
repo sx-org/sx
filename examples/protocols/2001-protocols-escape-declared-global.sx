@@ -18,8 +18,8 @@ Native :: struct { n: i64; }
 impl View for Widget { area :: (self: *Widget) -> i64 { self.n * 10 } }
 impl View for Native { area :: (self: *Native) -> i64 { self.n + 1 } }
 
-g_widget := Widget.{ n = 4 };
-g_native := Native.{ n = 100 };
+g_widget := Widget{ n = 4 };
+g_native := Native{ n = 100 };
 
 // The comptime mutation is execution-local: it lands on the VM's own copy of
 // the global, which is discarded with the evaluation.
@@ -41,7 +41,7 @@ pick_native :: () -> View {
 Slot :: protocol tagged { id :: (self: *Self) -> i64; }
 Anchor :: struct { k: i64; }
 impl Slot for Anchor { id :: (self: *Anchor) -> i64 { self.k } }
-g_anchor := Anchor.{ k = 9 };
+g_anchor := Anchor{ k = 9 };
 pick_slot :: () -> Slot { return g_anchor; }
 
 W :: #run pick_widget();

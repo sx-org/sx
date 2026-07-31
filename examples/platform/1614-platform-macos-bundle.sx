@@ -9,7 +9,7 @@
 
 configure :: () {
     opts := build_options();
-    opts.set_bundle_path("HelloApp.app");
+    opts.set_bundle_path(".sx-tmp/1614-platform-macos-bundle.app");
     opts.set_bundle_id("co.example.hello");
     on_build(bundle_main);
 }

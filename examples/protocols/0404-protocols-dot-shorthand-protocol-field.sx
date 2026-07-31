@@ -32,7 +32,7 @@ Rect :: struct {
     y: f32;
     w: f32;
     h: f32;
-    zero :: () -> Rect { Rect.{ x = 0.0, y = 0.0, w = 0.0, h = 0.0 } }
+    zero :: () -> Rect { Rect{ x = 0.0, y = 0.0, w = 0.0, h = 0.0 } }
 }
 
 Container :: struct {
@@ -58,14 +58,14 @@ StackB :: struct {
     add :: (self: *StackB, d: Drawable) {
         // BUG: second struct doing `.{ child = d }` triggers the error
         self.children.append(.{ child = d });
-        // FIX: explicit `Container.{ child = d }` works
-        // self.children.append(Container.{ child = d });
+        // FIX: explicit `Container{ child = d }` works
+        // self.children.append(Container{ child = d });
     }
 }
 
 main :: () -> void {
-    c := Circle.{ radius = 42 };
-    s := Square.{ side = 5 };
+    c := Circle{ radius = 42 };
+    s := Square{ side = 5 };
 
     a : StackA = .{};
     a.add(c.(Drawable));

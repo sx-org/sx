@@ -1,0 +1,51 @@
+// `content.site()` — a build block's own `@SourceSite` (fluent spec §6.2).
+//
+// The block is a compile-time binding, so its site is a compile-time constant:
+// the file, line, and enclosing declaration where the trailing block was
+// WRITTEN — the caller's, not the accepting function's. It is optional because a
+// block need not have an indexed site.
+//
+// Provenance of one PUBLISHED expression is a different question, answered by
+// the initializer (`value.site()`); the sink is never handed a site argument
+// that could disagree with the value beside it.
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+#import "modules/fluent.sx";
+#import "modules/std/source_site.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+Tally :: struct {
+    n: i32 = 0;
+    expression :: (self: *Tally, value: $I/@Init($V/Drawable)) { self.n += 1; }
+}
+
+panel :: (tag: string, content: $B/@BuildBlock(Drawable)) -> i32 {
+    s := content.site();
+    if s != null {
+        print("{} block {}:{} in {} parity={}\n", tag, s!.file, s!.line, s!.declaration,
+            s!.id == source_site_key_id(source_site_key(s!)));
+    }
+    sink := Tally{};
+    content.run(*sink);
+    sink.n
+}
+
+main :: () -> i32 {
+    first := panel("one") {
+        Label{ text = "a" };
+    };
+    second := panel("two") {
+        Label{ text = "b" };
+        Label{ text = "c" };
+    };
+    print("published {} {}\n", first, second);
+    0
+}

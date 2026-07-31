@@ -14,7 +14,7 @@ Point :: struct {
 }
 
 main :: () {
-    p := Point.{ x = 3, y = 4 };
+    p := Point{ x = 3, y = 4 };
     print("point: {}, magnitude: {}\n", p, p.magnitude());
 }
 ```
@@ -169,7 +169,7 @@ spelling:
 K : [4]i64 : .[11, 22, 33, 44];   // typed array const
 A :: .[1, 2, 3];                  // untyped — infers [3]i64
 M :: .[1, 2.2, 3];                // numeric mix promotes — [3]f64
-LIT :: Color.{ r = 255, g = 0, b = 0 };   // struct const
+LIT :: Color{ r = 255, g = 0, b = 0 };   // struct const
 
 N :: K[0] + K[3];     // 55 — const element reads fold at compile time
 D : [K.len]u8 = ---;  // .len folds in dimensions too
@@ -286,9 +286,9 @@ vstack(8.0) {
 scaffold(top_bar = toolbar) { chat_list(); }   // named slots + block
 ```
 
-The `{` must sit on the same line as the `)`; one block per call; the block
-ends the call chain (pass modifiers inside the call). A capture-free block
-promotes to a null-env thunk — zero allocation.
+The `{` must sit on the same line as the `)`; one block per call; after the
+block's `}` a dot continues the chain (`vstack(8.0) { … }.padded()`). A
+capture-free block promotes to a null-env thunk — zero allocation.
 
 ### Structs
 
@@ -301,8 +301,8 @@ Vec3 :: struct {
     }
 }
 
-v := Vec3.{ x = 1, y = 2, z = 3 };
-v2 := Vec3.{ 1, 2, 3 };              // positional
+v := Vec3{ x = 1, y = 2, z = 3 };
+v2 := Vec3{ 1, 2, 3 };              // positional
 print("{}\n", v.length());
 ```
 
@@ -486,6 +486,34 @@ conformer keeps a single arm and pays nothing for the protocol.
 ```sx
 Gauge :: protocol tagged #expand { read :: (self: *Self) -> i64; }
 ```
+
+### Open Sets
+
+A set whose members declare **themselves** into it, carried inline in a tagged
+slot — not a protocol, and no registry to enroll with.
+
+```sx
+View :: @OpenSet(.{ max = 256 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {                 // a member joins by declaring it
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+v: View = Label{ text = "hi" };               // formation: no allocator, no box
+v.render();                                   // dispatch on the tag word
+if v == {
+    case Label: (l) { print("{}\n", l.text); }
+    else: { }                                 // a set is open — `else` is required
+}
+```
+
+`max` is a payload ceiling, not a reservation: `size_of(View)` follows the
+members the program actually declares, and importing a module that declares a
+bigger one grows it. `type_of(v)` answers the member, `v.(Label)` reads it back
+(and `v.(?Label)` asks instead), and `$V/View` bounds a generic on membership.
 
 ### Pattern Matching
 
@@ -764,7 +792,7 @@ describe :: (tp: Type) {
     }
 }
 
-av : any = Packet.{ … };
+av : any = Packet{ … };
 describe(type_of(av));                          // works on an any's tag
 ```
 

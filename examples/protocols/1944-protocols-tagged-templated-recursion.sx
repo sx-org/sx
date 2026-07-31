@@ -36,16 +36,16 @@ depth :: (s: Series(f32)) -> f32 { s.at(1) }
 main :: () {
     fa : [3]f32 = .[1.0, 2.0, 3.0];
     ia : [3]i64 = .[4, 5, 6];
-    bf := Buffer(f32).{ items = fa[0..] };
-    bi := Buffer(i64).{ items = ia[0..] };
+    bf := Buffer(f32){ items = fa[0..] };
+    bi := Buffer(i64){ items = ia[0..] };
 
     // Arbitrary depth: each hop is one handle into the same tag space.
-    s1 := Scaled(f32).{ inner = bf, factor = 10.0 };
-    s2 := Scaled(f32).{ inner = s1, factor = 2.0 };
+    s1 := Scaled(f32){ inner = bf, factor = 10.0 };
+    s2 := Scaled(f32){ inner = s1, factor = 2.0 };
     print("{} {}\n", depth(s1), depth(s2));
 
     // The i64 space recurses independently — its own set, its own tags.
-    t1 := Scaled(i64).{ inner = bi, factor = 3 };
+    t1 := Scaled(i64){ inner = bi, factor = 3 };
     v  : Series(i64) = t1;
     print("{} {}\n", v.count(), v.at(2));
 
@@ -58,7 +58,7 @@ main :: () {
 
     // The type switch is the opening construct — arms name concrete
     // conformers of the subject's own instantiation.
-    p : Series(f32) = Pulse.{ v = 5.0 };
+    p : Series(f32) = Pulse{ v = 5.0 };
     if p == {
         case Pulse: (x) { print("pulse {}\n", x.v); }
     }

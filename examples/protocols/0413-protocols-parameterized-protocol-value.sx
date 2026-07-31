@@ -13,10 +13,10 @@ impl VL(i64) for IntCell { get :: (self: *IntCell) -> i64 => self.v; }
 impl VL(string) for StrCell { get :: (self: *StrCell) -> string => self.s; }
 
 main :: () -> i32 {
-    a : VL(i64) = xx IntCell.{ v = 42 };
+    a : VL(i64) = xx IntCell{ v = 42 };
     print("a.get={}\n", a.get());          // 42 (T = i64)
 
-    b : VL(string) = xx StrCell.{ s = "hi" };
+    b : VL(string) = xx StrCell{ s = "hi" };
     print("b.get={}\n", b.get());          // hi (T = string)
     0
 }

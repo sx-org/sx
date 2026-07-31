@@ -1,0 +1,52 @@
+// The fluent UI library as a package (revision §13.1).
+//
+// One import of the facade is the whole API: the library re-exports its own
+// names, because an import publishes nothing on its own. A container's children
+// are an explicit field initializer — `children = collectViews() { … }` — and
+// interception happens only inside that block.
+//
+// `fluent.View` is the library's own open set. It shares no geometry, no render
+// surface and no components with any other UI library: a component of another
+// library is not a member of this set, whatever the two declare.
+// Expected: exit 0.
+#import "modules/std.sx";
+#import "modules/ui/fluent.sx";
+
+main :: () -> i32 {
+    // A leaf is an ordinary value, and a modifier call is an ordinary value
+    // operation — nothing is intercepted out here.
+    padded := Modifier{}.with_padding(EdgeInsets.all(4.0));
+
+    stack := VStack{
+        spacing = 2.0,
+        children = collectViews() {
+            Label{ text = "title" };
+            Button{ label = "ok", modifier = padded };
+
+            // Not a member of the set: an ordinary statement the sink never sees.
+            41;
+        },
+    };
+
+    print("children {}\n", stack.children.len);
+
+    // The set answers for the member each element carries.
+    for stack.children (*c) {
+        print("  {}\n", type_of(c.*));
+    }
+
+    // A container is itself a member, so it forms the set slot.
+    root : View = stack;
+
+    // Measure, lay out and render through the library's own runtime.
+    tree := RenderTree{};
+    render_root(*root, Size{ width = 120.0, height = 60.0 }, *tree);
+    print("commands {}\n", command_count(*tree));
+    0
+}
+
+// ** stdout **
+// children 2
+//   Label
+//   Button
+// commands 3

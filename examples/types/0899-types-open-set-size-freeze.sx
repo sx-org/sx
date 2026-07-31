@@ -1,0 +1,105 @@
+// An open set's size is ONE number per program (spec: Open Sets — when the layout
+// is final).
+//
+// The layout follows the members declared anywhere in the program, and the last
+// one can arrive at any point up to the FREEZE — the point the whole-program sets
+// converge at, after every body is lowered. A generic member is a member per
+// instantiation, so a body lowered before an instantiation and a body lowered
+// after it are asking about the same set at two different moments.
+//
+// So `size_of(P)` is not a literal baked where it is written: it is answered from
+// the frozen layout. `early` is lowered before `Padded(Big)` is instantiated and
+// `late` after it, and they agree — including with a `#run` written before any
+// member is declared, and with a compile-time evaluation that runs DURING lowering
+// and waits for the answer.
+#import "modules/std.sx";
+
+// Written before the set's members: a `#run` is answered from the frozen layout,
+// not from the layout as it stands at this line.
+VIEW_BEFORE :: #run size_of(View);
+
+View :: @OpenSet(.{ max = 256, align = 8 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+// A generic member: each instantiation the program spells is another member, and
+// the program is not finished spelling them until every body is lowered.
+Padded :: @OpenVariant(View) ($T: Type) {
+    inner: $T = ---;
+    render :: (self: *Padded) -> string => "padded";
+}
+
+Big :: struct {
+    a: i64 = 0; b: i64 = 0; c: i64 = 0; d: i64 = 0;
+    e: i64 = 0; f: i64 = 0; g: i64 = 0; h: i64 = 0;
+}
+
+VIEW_AFTER :: #run size_of(View);
+
+// A plain struct holding the set by value has the same problem, and the same
+// answer: its own size is settled by the set's.
+Wrapper :: struct {
+    v: View = ---;
+    n: i64 = 0;
+}
+
+// Lowered before `Padded(Big)` exists as a member…
+early :: () -> i64 => size_of(View);
+early_wrapper :: () -> i64 => size_of(Wrapper);
+
+// …and after it.
+late :: () -> i64 => size_of(View);
+late_wrapper :: () -> i64 => size_of(Wrapper);
+
+// A second set no generic member can reach: nothing can grow it once the
+// declarations are admitted, so its size is settled well before the freeze — which
+// is what lets a compile-time evaluation running mid-lowering read it.
+Cell :: @OpenSet(.{ max = 64, align = 8 }) {
+    value :: (self: *Self) -> i64;
+}
+
+Number :: @OpenVariant(Cell) {
+    n: i64 = 0;
+    value :: (self: *Number) -> i64 => self.n;
+}
+
+// This runs while `main` is being lowered, and it reads `Cell`'s size to decide
+// what code to write.
+cell_line :: () -> string {
+    if size_of(Cell) == 16 {
+        return "print(\"cell 16\n\");";
+    }
+    return "print(\"cell other\n\");";
+}
+
+main :: () -> i32 {
+    e := early();
+    ew := early_wrapper();
+    p := Padded(Big){ inner = .{} };
+    print("early {} late {}\n", e, late());
+    print("wrapper {} {}\n", ew, late_wrapper());
+    print("run {} {}\n", VIEW_BEFORE, VIEW_AFTER);
+    print("align {} {}\n", align_of(View), align_of(Wrapper));
+    // A settled set — nothing can still grow `Cell` — so a dimension over it is
+    // answerable where it is written.
+    buf: [size_of(Cell)]u8 = ---;
+    print("cell {} buf {}\n", size_of(Cell), buf.len);
+    #insert cell_line();
+    print("render {} {}\n", Label{ text = "l" }.render(), p.render());
+    0
+}
+
+// ** stdout **
+// early 72 late 72
+// wrapper 80 80
+// run 72 72
+// align 8 8
+// cell 16 buf 16
+// cell 16
+// render l padded
+//

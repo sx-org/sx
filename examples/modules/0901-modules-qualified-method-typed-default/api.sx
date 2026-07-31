@@ -7,7 +7,7 @@ Options :: struct {
 Writer :: struct {
     total: i64;
 
-    init :: () -> Writer { Writer.{ total = 0 } }
+    init :: () -> Writer { Writer{ total = 0 } }
 
     add :: (self: *Writer, value: i64, options: Options = .{}) -> ApiError {
         if options.amount < 0 { raise error.Bad; }

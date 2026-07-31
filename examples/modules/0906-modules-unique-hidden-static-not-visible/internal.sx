@@ -2,6 +2,6 @@ Hidden :: struct {
     value: i64;
 
     make :: () -> Hidden {
-        Hidden.{ value = 17 }
+        Hidden{ value = 17 }
     }
 }

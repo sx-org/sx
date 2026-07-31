@@ -10,8 +10,8 @@
 
 Box :: ($T: Type) -> Type {
     return define(declare("Box"), .enum(.{ variants = .[
-        EnumVariant.{ name = "some", payload = T    },
-        EnumVariant.{ name = "none", payload = void },
+        EnumVariant{ name = "some", payload = T    },
+        EnumVariant{ name = "none", payload = void },
     ] }));
 }
 

@@ -1,0 +1,37 @@
+// Two packages declare a set of the same name, in one program (specs: Open Sets —
+// membership; Modules — the namespace surface).
+//
+// A set is its DECLARATION, so a spelling two modules both write is two sets. Each
+// package's members join the one their own module names, each set is laid out on
+// its own members, and a value of one is not a value of the other.
+//
+// And a declaration reached twice is still one set: this program reaches `alpha`'s
+// set both directly through its components and again through a second module of
+// its own, and what it measures is one layout, not two registrations.
+#import "modules/std.sx";
+a :: #import "1634-modules-two-open-sets-one-name/alpha/components.sx";
+a_mid :: #import "1634-modules-two-open-sets-one-name/alpha/mid.sx";
+b :: #import "1634-modules-two-open-sets-one-name/beta/components.sx";
+
+main :: () -> i32 {
+    // Each package forms and dispatches its own — through a membership bound, and
+    // through a set-typed slot, which is the tag dispatch.
+    print("{} {}\n", a.hold(a.Label{ text = "from alpha" }), b.hold(b.Label{ text = "from beta" }));
+    print("{} {}\n", a.describe(a.Label{ text = "alpha slot" }), b.describe(b.Label{ text = "beta slot" }));
+
+    // One declaration reached by two routes is ONE set: the size its own module
+    // measures, the size a second module measures, and they agree.
+    print("one set: {} {}\n", a.size_here(), a_mid.size_via_mid());
+
+    // Two declarations of one spelling are TWO sets, each sized on its OWN members:
+    // beta's member is larger, and only beta's set is.
+    print("two sets: {} {}\n", a.size_here(), b.size_here());
+    0
+}
+
+// ** stdout **
+// from alpha from beta
+// alpha slot beta slot
+// one set: 24 24
+// two sets: 24 48
+//

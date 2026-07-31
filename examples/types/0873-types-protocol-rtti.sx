@@ -23,8 +23,8 @@ impl Drawable for Circle { area :: (self: *Circle) -> i64 { 3 * self.r * self.r 
 impl Drawable for Rect { area :: (self: *Rect) -> i64 { self.w * self.h } }
 
 main :: () {
-    c := Circle.{ r = 2 };
-    q := Rect.{ w = 3, h = 4 };
+    c := Circle{ r = 2 };
+    q := Rect{ w = 3, h = 4 };
     s := c.(Drawable);
     t := q.(Drawable);
 
@@ -41,11 +41,11 @@ main :: () {
     if cc := s.(?Circle) { print("soft r={}\n", cc.r); }
 
     // graceful: or-fallback and catch, mismatch and match
-    fallback := s.(Rect) or Rect.{ w = 9, h = 9 };
+    fallback := s.(Rect) or Rect{ w = 9, h = 9 };
     print("or w={}\n", fallback.w);
-    caught := s.(Rect) catch (e) { print("catch: {}\n", e); Rect.{ w = 1, h = 1 } };
+    caught := s.(Rect) catch (e) { print("catch: {}\n", e); Rect{ w = 1, h = 1 } };
     print("caught w={}\n", caught.w);
-    ok := t.(Rect) catch (e) { _ = e; Rect.{ w = 0, h = 0 } };
+    ok := t.(Rect) catch (e) { _ = e; Rect{ w = 0, h = 0 } };
     print("ok w={}\n", ok.w);
 
     // the type switch on a protocol subject

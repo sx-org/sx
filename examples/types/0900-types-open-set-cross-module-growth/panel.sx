@@ -1,0 +1,13 @@
+// A member declared in ANOTHER module. Importing this file is what puts `Panel`
+// in the program, and a set's layout follows the members declared anywhere in it —
+// so this import is what makes `View` 48 bytes instead of 24.
+#import "modules/std.sx";
+#import "view.sx";
+
+Panel :: @OpenVariant(View) {
+    title: string = "";
+    a: i64 = 0;
+    b: i64 = 0;
+    c: i64 = 0;
+    render :: (self: *Panel) -> string => self.title;
+}

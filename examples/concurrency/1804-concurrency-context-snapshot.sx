@@ -38,7 +38,7 @@ run_fiber :: (f: *Fiber) -> i64 {
 main :: () {
     snap := context;
     snap.sentinel = 42;           // the spawner's sentinel
-    f := Fiber.{ root = snap };   // snapshot stored in the fiber
+    f := Fiber{ root = snap };   // snapshot stored in the fiber
 
     other := context;
     other.sentinel = 99;          // a DIFFERENT ambient context

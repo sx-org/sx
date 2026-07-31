@@ -5,4 +5,4 @@ Thing :: struct {
     x: i64 = 99;
     extra: i64 = 7;
 }
-mk :: () -> Thing { return Thing.{ da = 5 }; }
+mk :: () -> Thing { return Thing{ da = 5 }; }

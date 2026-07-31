@@ -10,6 +10,7 @@
 // 0207/0206/0204. Fix pins the impl side to `fd.body.source_file`
 // (`signatureMismatch`), and stamps impl-method bodies with their module
 // (`stampImplMethodSources`) so that pin is populated.
+#import "modules/std.sx";
 inner :: #import "0421-protocols-impl-type-resolved-in-impl-module/inner.sx";
 main :: () -> i32 {
     im : inner.Impl = .{};

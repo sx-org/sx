@@ -22,7 +22,7 @@ impl Mark for Badge { rank :: (self: *Badge) -> i64 { self.k + 1 } }
 ASKED :: #run has_impl(Mark, Badge);
 
 main :: () {
-    w := Widget.{ n = 3 };
+    w := Widget{ n = 3 };
     v : View = w;
     print("{} {}\n", v.area(), ASKED);
 }

@@ -1,0 +1,17 @@
+#import "modules/std.sx";
+v :: #import "view.sx";
+
+// Bigger than alpha's member, so each set's own layout is visible.
+Label :: @OpenVariant(v.View) {
+    text: string = "";
+    note: string = "";
+    n: i64 = 0;
+    render :: (self: *Label) -> string => self.text;
+}
+
+hold :: (x: $V/v.View) -> string => x.render();
+
+// A SET-typed parameter: the call inside dispatches on the tag, so this package
+// gets its own dispatch routine.
+describe :: (x: v.View) -> string => x.render();
+size_here :: () -> i64 => size_of(v.View);

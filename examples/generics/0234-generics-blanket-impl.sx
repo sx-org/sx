@@ -1,0 +1,53 @@
+// A BLANKET parameterized impl — one whose protocol type arguments are the
+// impl's own binders (specs: Generic bounds).
+//
+// `impl Series($T) for Buffer($T)` cannot be keyed by a concrete argument
+// tuple, since the arguments it writes are binders no request ever spells. It
+// is registered under the protocol name and matched at the use site, where the
+// request's own arguments and the source instantiation's bindings decide.
+//
+// A concrete impl for a DIFFERENT carrier coexists: the two never cover the same
+// type, so nothing is ambiguous. One carrier covered by both a blanket and a
+// concrete impl is refused instead — see the diagnostics pin.
+#import "modules/std.sx";
+
+Series :: protocol(T: Type) constraint {
+    count :: (self: *Self) -> i64;
+}
+
+Buffer :: struct($T: Type) { n: i64; }
+
+// Covers EVERY instantiation of `Buffer`. The binder is matched by POSITION, so
+// the impl spells its own name for it — `$U` here — without needing to know that
+// the template calls the same parameter `$T`.
+impl Series($U) for Buffer($U) {
+    count :: (self: *Buffer) -> i64 { self.n }
+}
+
+// A concrete impl of the same protocol family for an unrelated carrier.
+Cell :: struct { v: i64 = 0; }
+impl Series(i64) for Cell {
+    count :: (self: *Cell) -> i64 { self.v * 10 }
+}
+
+// The bound is satisfied through whichever impl matches.
+tally :: (b: $B/Series(i64)) -> i64 { b.count() }
+
+// A second instantiation of the same template, at a different argument.
+tally_f32 :: (b: $B/Series(f32)) -> i64 { b.count() }
+
+// A carrier may mix CONCRETE slots with binders. The concrete slot constrains
+// which instantiations are covered exactly as the binder does: this impl covers
+// `Map2(i64, W)` for any `W`, and nothing whose first argument is not `i64`.
+Map2 :: struct($K: Type, $V: Type) { n: i64; }
+impl Series($W) for Map2(i64, $W) {
+    count :: (self: *Map2) -> i64 { self.n }
+}
+
+main :: () -> i32 {
+    print("{}\n", tally(Buffer(i64){ n = 7 }));
+    print("{}\n", tally(Cell{ v = 3 }));
+    print("{}\n", tally_f32(Buffer(f32){ n = 9 }));
+    print("{}\n", tally_f32(Map2(i64, f32){ n = 4 }));
+    0
+}

@@ -47,7 +47,7 @@ main :: () -> i32 {
         m := SxMover.alloc();
         if m == null { print("FAIL: alloc returned null\n"); return 1; }
 
-        m.goto(Point.{ x = 7.5, y = 8.25 });
+        m.goto(Point{ x = 7.5, y = 8.25 });
         p := m.here();
         print("at: ({}, {})\n", p.x, p.y);  // expected: at: (7.500000, 8.250000)
 

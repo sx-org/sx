@@ -32,8 +32,8 @@ inline if POINTER_SIZE == 8 {
 }
 
 main :: () {
-    w := Widget.{ n = 4 };
-    n := Native.{ n = 4 };
+    w := Widget{ n = 4 };
+    n := Native{ n = 4 };
     v : View = w;
     u : View = n;
     print("{} {}\n", v.area(), u.area());

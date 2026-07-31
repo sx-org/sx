@@ -35,7 +35,7 @@ main :: () {
     // protocol (default layout) -> ProtocolRaw, both spellings. The value
     // OWNS its ctx (E4): the recovered pointer is the heap copy — a
     // faithful Widget that is NOT w's address.
-    w := Widget.{ value = 7 };
+    w := Widget{ value = 7 };
     sz := w.(Sizable);
     pr : ProtocolRaw = xx sz;
     wc : *Widget = xx sz.(ProtocolRaw).ctx;

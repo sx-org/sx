@@ -47,13 +47,13 @@
 // Writing into a caller buffer (returns bytes written; raises on overflow):
 //
 //     out : [4096]u8 = ---;
-//     n := try write_to_buffer(root, string.{ ptr = @out[0], len = 4096 });
+//     n := try write_to_buffer(root, string{ ptr = @out[0], len = 4096 });
 //
 // Streaming straight to a file (no whole-document string):
 //
 //     f := open_file("db.json\0", .write)!;
 //     stage : [4096]u8 = ---;
-//     try write_to_file(root, @f, string.{ ptr = @stage[0], len = 4096 });
+//     try write_to_file(root, @f, string{ ptr = @stage[0], len = 4096 });
 //     f.close();
 // =====================================================================
 
@@ -122,7 +122,7 @@ Object :: struct {
             self.items = new_items;
             self.cap = new_cap;
         }
-        self.items[self.len] = Member.{ key = key, val = v };
+        self.items[self.len] = Member{ key = key, val = v };
         self.len += 1;
     }
 
@@ -175,7 +175,7 @@ Sink :: struct {
     flush :: (self: *Sink) -> !JsonError {
         if self.file == null { return; }
         if self.pos == 0 { return; }
-        n := self.file.write(string.{ ptr = *self.dst[0], len = self.pos });
+        n := self.file.write(string{ ptr = *self.dst[0], len = self.pos });
         if n != self.pos { raise error.Io; }
         self.pos = 0;
         return;
@@ -243,7 +243,7 @@ write_int :: (n: i64, sink: *Sink) -> !JsonError {
         v = v / 10;           // truncates toward zero
     }
     if neg { i -= 1; tmp[i] = '-'; }
-    try sink.put(string.{ ptr = *tmp[i], len = 20 - i });
+    try sink.put(string{ ptr = *tmp[i], len = 20 - i });
     return;
 }
 
@@ -294,7 +294,7 @@ write_object :: (obj: Object, sink: *Sink) -> !JsonError {
 // partial contents of `dst` are then undefined — nothing is truncated
 // silently). No allocation.
 write_to_buffer :: (v: Value, dst: []u8) -> (i64, !JsonError) {
-    sink := Sink.{ dst = dst };
+    sink := Sink{ dst = dst };
     try write_value(v, *sink);
     return sink.pos;
 }
@@ -304,7 +304,7 @@ write_to_buffer :: (v: Value, dst: []u8) -> (i64, !JsonError) {
 // string is ever held — peak extra memory is O(staging). Raises
 // `error.Io` on a short/failed write. No allocation.
 write_to_file :: (v: Value, file: *File, staging: []u8) -> !JsonError {
-    sink := Sink.{ dst = staging, file = file };
+    sink := Sink{ dst = staging, file = file };
     try write_value(v, *sink);
     try sink.flush();
     return;
@@ -507,13 +507,13 @@ Parser :: struct {
         end := i;
         if !has_escape {
             self.pos = end + 1;
-            return string.{ ptr = *self.src[start], len = end - start };
+            return string{ ptr = *self.src[start], len = end - start };
         }
         raw_len := end - start;        // decoded length <= raw_len (escapes shrink)
         out : [*]u8 = xx self.alloc.alloc_bytes(raw_len);
         dlen := try self.decode_into(start, end, out);
         self.pos = end + 1;
-        return string.{ ptr = out, len = dlen };
+        return string{ ptr = out, len = dlen };
     }
 
     // Parse an i64 integer (optional '-', then digits). Rejects leading
@@ -632,7 +632,7 @@ Parser :: struct {
 // string values are VIEWS into `src` and are valid only while `src` lives.
 // Trailing non-whitespace after the value raises `error.TrailingGarbage`.
 parse :: (src: string, alloc: Allocator) -> (Value, !JsonParseError) {
-    p := Parser.{ src = src, alloc = alloc };
+    p := Parser{ src = src, alloc = alloc };
     v := try p.parse_value();
     p.skip_ws();
     if p.pos != p.src.len { raise error.TrailingGarbage; }

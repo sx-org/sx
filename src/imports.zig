@@ -146,7 +146,7 @@ pub fn canonicalizeEntryPath(allocator: std.mem.Allocator, path: []const u8) []c
 /// Do two path spellings name the SAME file on disk? Symlink-following libc
 /// stat identity (st_dev + st_ino). Any stat failure → false — the caller
 /// keeps the spelling that was actually probed.
-fn sameFileIdentity(allocator: std.mem.Allocator, a: []const u8, b: []const u8) bool {
+pub fn sameFileIdentity(allocator: std.mem.Allocator, a: []const u8, b: []const u8) bool {
     const az = allocator.dupeZ(u8, a) catch return false;
     const bz = allocator.dupeZ(u8, b) catch return false;
     var sa: std.c.Stat = undefined;
@@ -218,6 +218,13 @@ pub fn discoverStdlibPaths(allocator: std.mem.Allocator) ![]const []const u8 {
     try out.append(allocator, try std.fmt.allocPrint(allocator, "{s}/../library", .{exe_dir}));
     // Alongside the binary.
     try out.append(allocator, try std.fmt.allocPrint(allocator, "{s}/library", .{exe_dir}));
+    // Through the same chokepoint resolved file paths take, so a root and the
+    // files under it are spelled the same way. Built from `exe_dir`, these carry
+    // `..` hops and stay absolute; a resolved file is lexically normalized and
+    // cwd-relativized, so without this no root ever prefixes any file.
+    for (out.items) |*p| {
+        p.* = canonicalizePath(allocator, p.*) catch p.*;
+    }
     if (c_getenv("SX_DEBUG_STDLIB") != null) {
         std.debug.print("[sx] exe_path={s}\n", .{exe_path});
         for (out.items, 0..) |p, i| std.debug.print("[sx] stdlib_paths[{d}]={s}\n", .{ i, p });
@@ -388,7 +395,7 @@ pub const ResolvedModule = struct {
     /// symbol, not split into a duplicate `__stdinp.1`.
     pub fn isPerSourceDecl(decl: *const Node) bool {
         return switch (decl.data) {
-            .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .runtime_class_decl => true,
+            .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl => true,
             .const_decl => |cd| cd.value.data != .fn_decl,
             else => false,
         };
@@ -487,6 +494,7 @@ pub const RawDeclRef = union(enum) {
     union_decl: *const ast.UnionDecl,
     error_set_decl: *const ast.ErrorSetDecl,
     protocol_decl: *const ast.ProtocolDecl,
+    open_set_decl: *const ast.OpenSetDecl,
     runtime_class_decl: *const ast.RuntimeClassDecl,
     namespace_decl: *const ast.NamespaceDecl,
 };
@@ -564,6 +572,7 @@ pub fn rawDeclRefOf(decl: *const Node) ?RawDeclRef {
         .union_decl => |*d| .{ .union_decl = d },
         .error_set_decl => |*d| .{ .error_set_decl = d },
         .protocol_decl => |*d| .{ .protocol_decl = d },
+        .open_set_decl => |*d| .{ .open_set_decl = d },
         .runtime_class_decl => |*d| .{ .runtime_class_decl = d },
         .namespace_decl => |*d| .{ .namespace_decl = d },
         else => null,
@@ -664,6 +673,7 @@ pub const DeclKind = enum {
     @"union",
     error_set,
     protocol,
+    open_set,
     runtime_class,
     namespace,
 };
@@ -678,6 +688,7 @@ fn declKindOf(ref: RawDeclRef) DeclKind {
         .union_decl => .@"union",
         .error_set_decl => .error_set,
         .protocol_decl => .protocol,
+        .open_set_decl => .open_set,
         .runtime_class_decl => .runtime_class,
         .namespace_decl => .namespace,
     };

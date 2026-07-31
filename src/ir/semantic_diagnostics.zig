@@ -1,5 +1,6 @@
 const std = @import("std");
 const ast = @import("../ast.zig");
+const contracts = @import("../contracts.zig");
 const errors = @import("../errors.zig");
 const types = @import("types.zig");
 const name_class = @import("../types.zig");
@@ -81,6 +82,35 @@ pub const UnknownTypeChecker = struct {
         // `current_source_file`, saved/restored per node) so an imported-module
         // diagnostic renders against that module's text.
         for (decls) |decl| self.checkBindingNames(decl);
+
+        // `@` contract identity: an `@`-named declaration is legal only in the
+        // module the registry says owns it, so a lookalike cannot stand in for
+        // the canonical declaration. Every module is checked.
+        {
+            const saved = self.diagnostics.current_source_file;
+            defer self.diagnostics.current_source_file = saved;
+            const roots: []const []const u8 = if (self.lowering) |l| l.stdlib_paths else &.{};
+            for (decls) |decl| {
+                const name = declaredName(decl) orelse continue;
+                if (!contracts.isAtName(name)) continue;
+                const file = decl.source_file orelse self.main_file;
+                const contract = contracts.find(name);
+                if (contract != null and contract.?.kind == .declared and
+                    contracts.declaredIn(self.alloc, contract.?, file, roots))
+                {
+                    self.checkContractShape(decl, contract.?, file);
+                    continue;
+                }
+                if (file) |f| self.diagnostics.current_source_file = f;
+                const span = ast.Span{ .start = decl.span.start, .end = decl.span.start + @as(u32, @intCast(name.len)) };
+                if (contract) |c| switch (c.kind) {
+                    .compiler_formed => self.diagnostics.addFmt(.err, span, "'{s}' is formed by the compiler and has no declaration — it cannot be declared anywhere", .{name}),
+                    .declared => self.diagnostics.addFmt(.err, span, "'{s}' is a compiler-maintained contract declared by '{s}' — this module cannot declare it", .{ name, c.module }),
+                } else {
+                    self.diagnostics.addFmt(.err, span, "'{s}' is not a compiler-maintained contract — '@' names belong to the compiler; a declaration name is an ordinary identifier", .{name});
+                }
+            }
+        }
 
         // Unknown-type diagnostic: main-file decls only; imported
         // and library modules are trusted, matching `checkErrorFlow`.
@@ -287,6 +317,12 @@ pub const UnknownTypeChecker = struct {
             // `#objc_class` bodied method is lowered (M1.2), so its reserved
             // param/local names mis-lower the same as any other.
             .impl_block => |ib| for (ib.methods) |m| self.checkBindingNames(m),
+            .open_set_decl => |sd| {
+                self.checkDeclName(node, sd.name, sd.is_raw);
+                for (sd.methods) |m| {
+                    if (m.default_body) |body| self.checkBindingNames(body);
+                }
+            },
             .protocol_decl => |pd| {
                 self.checkDeclName(node, pd.name, pd.is_raw);
                 for (pd.methods) |m| {
@@ -442,7 +478,7 @@ pub const UnknownTypeChecker = struct {
             .many_pointer_type_expr,
             .optional_type_expr,
             .error_type_expr,
-            .caller_location,
+            .caller_site,
             .error_directive,
             .pack_index_type_expr,
             .comptime_pack_ref,
@@ -804,17 +840,17 @@ pub const UnknownTypeChecker = struct {
                 self.walkBodyTypes(ix.index, declared, in_scope, type_vals);
             },
             .struct_literal => |sl| {
-                // A NAMED struct-literal head (`Point.{ … }`) names its type
+                // A NAMED struct-literal head (`Point{ … }`) names its type
                 // exactly like a declaration annotation — validate it through the
                 // same unknown-type walk. Without this, an undeclared literal type
-                // name (`NoSuchType.{ a = 1 }`) bypassed the checker (the main-file
+                // name (`NoSuchType{ a = 1 }`) bypassed the checker (the main-file
                 // diagnostic authority) and reached `resolveNominalLeaf`'s
                 // `.undeclared` main-file arm, which keeps the legacy empty-struct
                 // stub and defers to THIS checker — so nothing diagnosed it and the
                 // literal silently compiled with a 0-field struct, dropping every
                 // field (issue 0220). `struct_name` is always a bare, non-raw
                 // identifier (the parser only sets it for the simple-name form;
-                // `mod.Type.{…}` and `Gen(args).{…}` carry `type_expr` instead,
+                // `mod.Type{…}` and `Gen(args){…}` carry `type_expr` instead,
                 // resolved+diagnosed on the lowering path). `reportIfUnknownType`
                 // skips forward-refs (`declared`), in-scope generics, value params,
                 // builtins, and aliases — so only genuinely-undeclared names fire,
@@ -1140,6 +1176,83 @@ pub const UnknownTypeChecker = struct {
     fn checkDeclName(self: UnknownTypeChecker, node: *const Node, name: []const u8, is_raw: bool) void {
         const span = ast.Span{ .start = node.span.start, .end = node.span.start + @as(u32, @intCast(name.len)) };
         self.checkBindingName(name, span, is_raw);
+    }
+
+    /// Bootstrap check for the canonical declaration of a contract: the
+    /// compiler builds and reads these fields positionally, so a stdlib that
+    /// renamed, reordered, retyped, or dropped one must say so here rather than
+    /// mis-lower every construction of it.
+    fn checkContractShape(
+        self: UnknownTypeChecker,
+        decl: *const Node,
+        contract: contracts.Contract,
+        file: ?[]const u8,
+    ) void {
+        if (contract.fields.len == 0) return;
+        const saved = self.diagnostics.current_source_file;
+        defer self.diagnostics.current_source_file = saved;
+        if (file) |f| self.diagnostics.current_source_file = f;
+        const span = ast.Span{ .start = decl.span.start, .end = decl.span.start + @as(u32, @intCast(contract.name.len)) };
+        if (decl.data != .struct_decl) {
+            self.diagnostics.addFmt(.err, span, "'{s}' must be declared as a struct", .{contract.name});
+            return;
+        }
+        const sd = decl.data.struct_decl;
+        if (sd.field_names.len != contract.fields.len) {
+            self.diagnostics.addFmt(.err, span, "'{s}' must declare exactly {d} field{s}, not {d}", .{
+                contract.name,
+                contract.fields.len,
+                if (contract.fields.len == 1) "" else "s",
+                sd.field_names.len,
+            });
+            return;
+        }
+        for (contract.fields, 0..) |want, i| {
+            if (!std.mem.eql(u8, sd.field_names[i], want.name)) {
+                self.diagnostics.addFmt(.err, span, "'{s}' field {d} must be '{s}', not '{s}' — the compiler reads these fields in order", .{
+                    contract.name, i, want.name, sd.field_names[i],
+                });
+                return;
+            }
+            if (!fieldTypeMatches(sd.field_types[i], want.type_name)) {
+                self.diagnostics.addFmt(.err, span, "'{s}.{s}' must be '{s}'", .{ contract.name, want.name, want.type_name });
+                return;
+            }
+        }
+    }
+
+    /// Does a contract field's declared type spell `want`? A contract's fields
+    /// are primitives and optionals of primitives, so the spelling is the whole
+    /// check.
+    fn fieldTypeMatches(node: *const Node, want: []const u8) bool {
+        return switch (node.data) {
+            .type_expr => |te| std.mem.eql(u8, te.name, want),
+            .optional_type_expr => |ote| want.len > 1 and want[0] == '?' and
+                fieldTypeMatches(ote.inner_type, want[1..]),
+            else => false,
+        };
+    }
+
+    /// The name a module-scope declaration BINDS, or null for a node that
+    /// binds none (`impl`, a flat `#import`, a statement).
+    fn declaredName(node: *const Node) ?[]const u8 {
+        return switch (node.data) {
+            .fn_decl => |fd| fd.name,
+            .struct_decl => |sd| sd.name,
+            .enum_decl => |ed| ed.name,
+            .union_decl => |ud| ud.name,
+            .protocol_decl => |pd| pd.name,
+            .error_set_decl => |esd| esd.name,
+            .const_decl => |cd| cd.name,
+            .var_decl => |vd| vd.name,
+            .ufcs_alias => |ua| ua.name,
+            .library_decl => |ld| ld.name,
+            .framework_decl => |fd| fd.name,
+            .import_decl => |imp| imp.name,
+            .c_import_decl => |cid| cid.name,
+            .namespace_decl => |nd| nd.name,
+            else => null,
+        };
     }
 };
 

@@ -1,0 +1,70 @@
+// `@BuildBlock(P)` — the trailing block's second meaning (fluent spec §7.1).
+//
+// One source form, two interpretations, chosen by the DECLARED type of the
+// callee's last parameter:
+//
+//   Closure()          ordinary closure — the block's statements are the
+//                      closure's statements, and nothing is intercepted
+//   @BuildBlock(P)     build block — a standalone expression whose type
+//                      conforms to `P` is offered to a sink instead
+//
+// There is no overload resolution and no global reinterpretation of expression
+// statements: the declaration the call already selected decides.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+// A sink that materializes every reached expression and prints it.
+Echo :: struct {
+    n: i32 = 0;
+
+    expression :: (self: *Echo, value: $I/@Init($V/Drawable)) {
+        dest := context.allocator.create(V);
+        value.write(dest);
+        print("  expression #{} -> {}\n", self.n, dest.draw());
+        self.n += 1;
+        context.allocator.destroy(dest);
+    }
+}
+
+// Build-block acceptor: the block replays into a sink of this function's choice.
+column :: (title: string, content: $B/@BuildBlock(Drawable)) -> i32 {
+    print("{}:\n", title);
+    sink := Echo{};
+    content.run(*sink);
+    sink.n
+}
+
+// Closure acceptor: the SAME trailing-block syntax, ordinary closure semantics.
+repeat :: (times: i32, body: Closure()) {
+    for 0..times (i) { body(); }
+}
+
+main :: () -> i32 {
+    n := column("build block") {
+        Label{ text = "A" };
+        Label{ text = "B" };
+    };
+    print("  reached {}\n", n);
+
+    repeat(2) {
+        print("closure body\n");
+    };
+    0
+}
+
+// ** stdout **
+// build block:
+//   expression #0 -> A
+//   expression #1 -> B
+//   reached 2
+// closure body
+// closure body

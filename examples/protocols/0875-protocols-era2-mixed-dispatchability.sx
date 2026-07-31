@@ -38,7 +38,7 @@ combine_bound :: (a: $T/Shape, b: T) -> i64 {
 }
 
 main :: () {
-    sq := Sq.{ side = 4 };
+    sq := Sq{ side = 4 };
 
     // Vtable layout: dispatchable methods through an owned P.
     s := sq.(Shape);
@@ -53,7 +53,7 @@ main :: () {
     print("view:   {} {}\n", pv.area(), pv.name());
 
     // Excluded method: concrete receiver (static dispatch) still works...
-    print("direct: {}\n", sq.combine(Sq.{ side = 1 }));
+    print("direct: {}\n", sq.combine(Sq{ side = 1 }));
     // ...and the generic-bound path keeps it callable with Self known.
-    print("bound:  {}\n", combine_bound(sq, Sq.{ side = 6 }));
+    print("bound:  {}\n", combine_bound(sq, Sq{ side = 6 }));
 }

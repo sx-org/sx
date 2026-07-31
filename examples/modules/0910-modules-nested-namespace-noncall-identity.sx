@@ -19,8 +19,8 @@ BMade :: carried.engine_alias.Make(i64);
 main :: () -> i32 {
     ar : direct.engine_alias.Record = .{ a_only = 1 };
     br : carried.engine_alias.Record = .{ b_only = 2 };
-    ar_literal := direct.engine_alias.Record.{ a_only = 3 };
-    br_literal := carried.engine_alias.Record.{ b_only = 4 };
+    ar_literal := direct.engine_alias.Record{ a_only = 3 };
+    br_literal := carried.engine_alias.Record{ b_only = 4 };
     if ar.a_only != 1 or br.b_only != 2 or ar_literal.a_only != 3 or br_literal.b_only != 4 { return 1; }
 
     aa : ARecord = .{ a_only = 5 };

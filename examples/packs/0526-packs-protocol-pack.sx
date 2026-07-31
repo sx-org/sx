@@ -29,9 +29,9 @@ howmany :: (..xs: Show) -> i64 {
 }
 
 main :: () -> i32 {
-    a := IntBox.{ v = 42 };
-    b := IntBox.{ v = 7 };
-    c := StrBox.{ s = "cool" };
+    a := IntBox{ v = 42 };
+    b := IntBox{ v = 7 };
+    c := StrBox{ s = "cool" };
     print("n0={}\n", howmany());            // empty pack
     print("n2={}\n", howmany(a, b));         // two elements
     print("n3={}\n", howmany(a, b, c));      // heterogeneous: IntBox, IntBox, StrBox

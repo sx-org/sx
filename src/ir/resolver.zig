@@ -135,7 +135,7 @@ pub fn eligibleKind(domain: Domain, raw: RawDeclRef, field: ?[]const u8) bool {
     return switch (domain) {
         .bare_type => switch (raw) {
             .struct_decl, .enum_decl, .union_decl, .error_set_decl,
-            .protocol_decl, .runtime_class_decl => true,
+            .protocol_decl, .open_set_decl, .runtime_class_decl => true,
             else => false,
         },
         .value_const => raw == .const_decl,

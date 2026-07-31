@@ -17,9 +17,9 @@ ret     :: (..xs: Show) -> i64  { return xs; }               // C: return
 iter    :: (..xs: Show) -> void { for xs  (x) { _ = x; } }  // D: runtime iterate
 
 main :: () -> i32 {
-    storage(A.{});
-    call(A.{});
-    _ = ret(A.{});
-    iter(A.{});
+    storage(A{});
+    call(A{});
+    _ = ret(A{});
+    iter(A{});
     0
 }

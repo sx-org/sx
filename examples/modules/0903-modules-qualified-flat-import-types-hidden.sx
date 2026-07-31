@@ -10,7 +10,7 @@ main :: () -> i32 {
     overlay : facade.HiddenUnion = ---;
     err : facade.HiddenError = ---;
     stream : facade.HiddenProtocol = ---;
-    generic := facade.HiddenGeneric(i64).{ value = 1 };
+    generic := facade.HiddenGeneric(i64){ value = 1 };
     made := facade.HiddenStruct.make();
     0
 }

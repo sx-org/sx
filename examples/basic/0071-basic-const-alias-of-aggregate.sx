@@ -9,7 +9,7 @@
 
 P :: struct { x: i64; y: i64; }
 
-ORIGIN :: P.{ x = 3, y = 4 };
+ORIGIN :: P{ x = 3, y = 4 };
 START  :: ORIGIN;           // alias of a struct-literal const
 HOME   :: START;            // chained
 AHEAD  :: BEHIND;           // forward alias, declared before its target

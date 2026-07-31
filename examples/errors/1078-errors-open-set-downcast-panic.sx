@@ -1,0 +1,26 @@
+// The unconsumed downcast temperament on an open set value: `v.(M)` states that
+// the slot carries an `M`, and another member PANICS — the same assertion
+// carve-out `av.(T)` takes on an `any`, naming the member actually carried.
+// The asking form `v.(?M)` is the one that answers instead.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 64 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Panel :: @OpenVariant(View) {
+    title: string = "";
+    render :: (self: *Panel) -> string => self.title;
+}
+
+main :: () {
+    v: View = Panel{ title = "panel" };
+    print("before\n");
+    l := v.(Label);
+    print("unreached: {}\n", l.text);
+}

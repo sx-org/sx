@@ -10,7 +10,7 @@
 #import "modules/std.sx";
 
 Point :: struct { x: i32; y: i32; }
-K : Point : Point.{ x = 9, y = 4 };
+K : Point : Point{ x = 9, y = 4 };
 g : i32 = K.x;
 
 main :: () -> i32 {

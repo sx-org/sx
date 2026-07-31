@@ -1,0 +1,24 @@
+// `@caller` — the compiler-provided default-parameter value. As a parameter's
+// default it resolves to the CALL site's `@SourceSite`: the caller's file,
+// line:col, and the fully qualified declaration the call sits in, rather than
+// anything about the callee's signature. Explicitly forwarding an
+// `@SourceSite` through an inner call preserves the outermost site, so a
+// logging wrapper reports where IT was called. Expected exit: 0.
+
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+
+note :: (site: @SourceSite = @caller) {
+    print("note from {} (line {})\n", site.declaration, site.line);
+}
+
+// Forwards its own caller site through to `note`.
+wrap :: (site: @SourceSite = @caller) {
+    note(site);
+}
+
+main :: () -> i32 {
+    note();              // call site → main
+    wrap();              // forwarded → still reports this line in main
+    return 0;
+}

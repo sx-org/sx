@@ -1,0 +1,37 @@
+// A refusal raised inside a generic body names the call that instantiated it
+// (spec: Open Sets — a refusal under instantiation).
+//
+// The generic body lives in `views.sx`, which this file only imports. Its `xx x`
+// is written once and refused per instantiation, so the span it carries is a line
+// in a module the author of THIS file may never open. The note is the route back:
+// it names the call that spelled the instantiation, in the file that spelled it,
+// and for a chain of forwarding generics it names the outermost one — the call a
+// reader of this file can actually act on.
+// Expected: exit 1.
+#import "modules/std.sx";
+#import "2046-diagnostics-open-set-instantiated-from/views.sx";
+
+Plain :: struct {
+    text: string = "";
+}
+
+// A second non-member, so the forwarded call is its own instantiation rather than
+// one the first already forced.
+Stray :: struct {
+    text: string = "";
+}
+
+main :: () -> i32 {
+    // A member: the library's helper forms the set and nothing is refused.
+    fine := into(View, Label{ text = "a member" });
+    print("{}\n", fine.render());
+
+    // A non-member, through the same body.
+    lifted := into(View, Plain{ text = "not a member" });
+    print("{}\n", lifted.render());
+
+    // And through a second generic, which forwards to the first.
+    forwarded := into_view(Stray{ text = "still not one" });
+    print("{}\n", forwarded.render());
+    0
+}

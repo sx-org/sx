@@ -28,6 +28,6 @@ inline if !has_impl(Name, Badge) {
 }
 
 main :: () {
-    b := Badge.{ n = 2 };
+    b := Badge{ n = 2 };
     print("{}\n", b.n);
 }

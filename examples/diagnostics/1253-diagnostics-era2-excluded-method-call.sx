@@ -24,7 +24,7 @@ impl Eq for Point {
     id :: (self: *Point) -> i64 { return self.x; }
 }
 impl Cloneable for Point {
-    clone :: (self: *Point) -> Point { return Point.{ x = self.x }; }
+    clone :: (self: *Point) -> Point { return Point{ x = self.x }; }
 }
 
 // Missing the excluded `eq` — conformance still requires it.
@@ -34,8 +34,8 @@ impl Eq for Bad {
 }
 
 main :: () {
-    p := Point.{ x = 1 };
-    q := Point.{ x = 1 };
+    p := Point{ x = 1 };
+    q := Point{ x = 1 };
 
     e := p.(Eq);
     print("{}\n", e.id());          // dispatchable — fine
@@ -48,7 +48,7 @@ main :: () {
     p2 := c.clone();                // Self return → return-position refusal
     _ = p2;
 
-    b := Bad.{ y = 2 };
+    b := Bad{ y = 2 };
     eb := b.(Eq);                   // missing excluded method → conformance error
     _ = eb;
 }

@@ -1,0 +1,62 @@
+// The extended generic-bound grammar (specs: Generic bounds). A bound is a
+// protocol head with an optional type-argument list; the head may be an `@`
+// name; an argument may introduce a binder carrying its own bounds; and the
+// bound binder may sit under a type constructor.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+// The binder is introduced UNDER the pointer constructor, against the shipped
+// parameterized constraint protocol `@BuildSink(P)`. The bound CONSTRAINS: the
+// impl below is what makes `Tally` a legal binding for `$S`.
+Tally :: struct { seen: i32 = 0; }
+
+impl @BuildSink(Drawable) for Tally {
+    expression :: (self: *Tally, value: $I/@Init($V/Drawable)) { self.seen += 1; }
+}
+
+// Marker protocols so `Eq` / `Hashable` below name something: a bound head must
+// resolve. An empty body partitions types and costs nothing.
+Eq :: protocol constraint {}
+Hashable :: protocol constraint {}
+
+count_into :: (sink: *$S/@BuildSink(Drawable), n: i32) -> i32 {
+    sink.seen += n;
+    sink.seen
+}
+
+// Bare multi-bound — the shipped spelling, unchanged.
+bare :: (a: $T/Eq/Hashable) -> string { "bare" }
+
+// `@` heads: open type arg, fixed type arg, nested binder with its own bound.
+// An `@Init` bound is what makes the parameter form an initializer, so its type
+// argument names what a `write` would fill — a concrete type, not a constraint.
+open   :: (v: $I/@Init($T)) -> string { "open" }
+fixed  :: (v: $I/@Init(Label)) -> string { "fixed" }
+nested :: (v: $I/@Init($V/Drawable)) -> string { "nested" }
+// A `@BuildBlock` bound makes the parameter take the call's trailing block, so
+// it is the last parameter and the call writes `{ … }`.
+block  :: (v: $B/@BuildBlock(Drawable)) -> string { "block" }
+sunk   :: (s: *$S/@BuildSink(Drawable)) -> string { "sunk" }
+
+// The explicit binder form takes the same bounds.
+lift :: ($T: Type/Drawable, x: T) -> string { x.draw() }
+
+main :: () -> i32 {
+    l := Label{ text = "hi" };
+    t := Tally{};
+    print("{} {} {} {} {}\n", bare(1), open(l), fixed(l), nested(l), sunk(*t));
+    print("{}\n", block() { Label{ text = "in a block" }; });
+    print("count {} {}\n", count_into(*t, 3), count_into(*t, 4));
+    print("lift {} {}\n", lift(Label, l), l.draw());
+    0
+}

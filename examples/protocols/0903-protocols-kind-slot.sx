@@ -49,7 +49,7 @@ main :: () {
 
     // A parameterized head carries its kind and attribute into every
     // instantiation: `Slot(i64)` erases and borrows, like any identity vtable.
-    p := Point.{ x = 5 };
+    p := Point{ x = 5 };
     sl : Slot(i64) = p;
     print("{}\n", sl.get());
 
@@ -58,7 +58,7 @@ main :: () {
     print("{}\n", s.fmt());
     free(s);
 
-    r := Xorshift.{ state = 41 };
+    r := Xorshift{ state = 41 };
     rng : Rng = r;
     print("{}\n", rng.next());
 

@@ -26,7 +26,7 @@ SchedRunner :: struct {
     // CURRENT context.allocator into the Scheduler — fiber structs and
     // closure envs are reaped through it, so it must outlive the runner.
     init :: () -> SchedRunner {
-        return SchedRunner.{ s = sched.Scheduler.init() };
+        return SchedRunner{ s = sched.Scheduler.init() };
     }
 
     // Terminal. Call AFTER Server.close() — the server has driven every

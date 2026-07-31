@@ -1,0 +1,47 @@
+error: the layout of the open set 'View' is not final here
+  --> examples/diagnostics/2037-diagnostics-open-set-layout-not-final.sx:22:13
+   |
+22 |     bytes: [size_of(View)]u8 = ---;
+   |             ^^^^^^^^^^^^^
+
+help: a set's members are declared anywhere in the program, and this position is fixed where it is written — a member declared later would contradict the number
+   |
+22 |     bytes: [size_of(View)]u8 = ---;
+   |             ^^^^^^^^^^^^^
+
+help: read the size where it is a VALUE ('n := size_of(…)'), or bind it with '#run size_of(…)' — both are answered from the frozen layout
+   |
+22 |     bytes: [size_of(View)]u8 = ---;
+   |             ^^^^^^^^^^^^^
+
+error: the layout of 'Wrapper' is not final here: it holds the open set 'View' by value
+  --> examples/diagnostics/2037-diagnostics-open-set-layout-not-final.sx:31:13
+   |
+31 |     bytes: [size_of(Wrapper)]u8 = ---;
+   |             ^^^^^^^^^^^^^^^^
+
+help: a set's members are declared anywhere in the program, and this position is fixed where it is written — a member declared later would contradict the number
+   |
+31 |     bytes: [size_of(Wrapper)]u8 = ---;
+   |             ^^^^^^^^^^^^^^^^
+
+help: read the size where it is a VALUE ('n := size_of(…)'), or bind it with '#run size_of(…)' — both are answered from the frozen layout
+   |
+31 |     bytes: [size_of(Wrapper)]u8 = ---;
+   |             ^^^^^^^^^^^^^^^^
+
+error: the layout of the open set 'View' is not final here
+  --> examples/diagnostics/2037-diagnostics-open-set-layout-not-final.sx:52:13
+   |
+52 |     local: [size_of(View)]u8 = ---;
+   |             ^^^^^^^^^^^^^
+
+help: a set's members are declared anywhere in the program, and this position is fixed where it is written — a member declared later would contradict the number
+   |
+52 |     local: [size_of(View)]u8 = ---;
+   |             ^^^^^^^^^^^^^
+
+help: read the size where it is a VALUE ('n := size_of(…)'), or bind it with '#run size_of(…)' — both are answered from the frozen layout
+   |
+52 |     local: [size_of(View)]u8 = ---;
+   |             ^^^^^^^^^^^^^

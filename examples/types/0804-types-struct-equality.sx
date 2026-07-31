@@ -5,7 +5,7 @@
 //
 // Regression (issue 0245): before the fix, `emit_llvm`'s struct-compare arm
 // only handled a 2-scalar-field shape — a 1-field struct emitted invalid IR, a
-// 3+-field struct SILENTLY compared only fields 0/1 (`S{1,2,3} == S{1,2,999}`
+// 3+-field struct SILENTLY compared only fields 0/1 (`S{ 1,2,3} == S{ 1,2,999}`
 // returned true), and any non-scalar field (float / nested struct / string)
 // crashed the LLVM verifier. The compare is now lowered field-wise in
 // src/ir/lower/expr.zig (lowerStructEquality) so every field participates and

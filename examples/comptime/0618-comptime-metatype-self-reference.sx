@@ -13,8 +13,8 @@
 make_list :: () -> Type {
     h := declare("List");
     return define(h, .enum(.{ variants = .[
-        EnumVariant.{ name = "cons", payload = *List },   // self-reference
-        EnumVariant.{ name = "nil",  payload = void },
+        EnumVariant{ name = "cons", payload = *List },   // self-reference
+        EnumVariant{ name = "nil",  payload = void },
     ] }));
 }
 

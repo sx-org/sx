@@ -21,8 +21,8 @@ comp2 :: () { context.sink.target.n += 7; }
 meth2 :: (v: i64) { context.sink.target.list.append(v); }
 
 main :: () {
-    v := S.{ n = 3, list = .{} };
-    k := Sink.{ target = *v };
+    v := S{ n = 3, list = .{} };
+    k := Sink{ target = *v };
     push .{ s = *v, sink = *k } {
         print("reads {} {}\n", read1(), read2());
         write1();

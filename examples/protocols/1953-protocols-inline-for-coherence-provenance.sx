@@ -17,7 +17,7 @@ inline for .[Rect] (T) {
 }
 
 main :: () {
-    r := Rect.{ w = 1, h = 2 };
+    r := Rect{ w = 1, h = 2 };
     s : Show = r;
     print("{}\n", s.show());
 }

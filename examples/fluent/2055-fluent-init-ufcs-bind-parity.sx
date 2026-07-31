@@ -1,0 +1,36 @@
+// A dot-call is re-read as the ordinary call, so it cannot be told less than one
+// (fluent spec §5.2).
+//
+// `store` is a family: what it writes is a `Tagged($U)`, and nothing about a
+// `Plain` receiver says what `U` is. The call cannot be made either way — and both
+// spellings are diagnosed by the same words, naming the parameter that could not be
+// inferred, because after the re-reading there is only one call left to diagnose.
+//
+// The third line belongs to neither spelling: two failing calls to one unbindable
+// family report a formation attempt against the family's un-inferred form, and the
+// two ordinary calls alone report it the same way.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+Tagged :: struct ($U: Type) {
+    u: $U = ---;
+}
+
+Plain :: struct {
+    text: string = "";
+}
+
+Other :: struct {
+    n: i64 = 0;
+}
+
+store :: ufcs (value: $I/@Init(Tagged($U))) {
+    slot: Tagged(U) = ---;
+    value.write(*slot);
+}
+
+main :: () -> i32 {
+    Plain{ text = "unpinnable" }.store();
+    store(Other{ n = 1 });
+    0
+}

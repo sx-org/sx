@@ -1,8 +1,9 @@
 #import "modules/std.sx";
+#import "modules/std/core.sx";
 
 Record :: struct { b: i64; }
 Mode :: enum { other; chosen; }
-LocationBox :: struct { loc: Source_Location; }
+LocationBox :: struct { site: @SourceSite; }
 Counter :: struct {
     value: i64;
     get :: (self: *Counter) -> i64 { self.value }
@@ -20,4 +21,4 @@ choose :: ($mode: Mode) -> i64 {
     if mode == .chosen { return 102; }
     0
 }
-caller :: (box: LocationBox = .{ loc = #caller_location }) -> Source_Location { box.loc }
+caller :: (box: LocationBox = .{ site = @caller }) -> @SourceSite { box.site }

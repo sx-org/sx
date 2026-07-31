@@ -1,29 +1,34 @@
-error: 'plain' cannot take a trailing block — its last parameter 'b' is not a `Closure`
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:17:21
+error: 'plain' cannot take a trailing block — its last parameter 'b' is 'i64', which is neither a `Closure` nor a `@BuildBlock(P)`
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:16:21
    |
-17 |     _ = plain(1, 2) { print("x\n"); };
+16 |     _ = plain(1, 2) { print("x\n"); };
+   |                     ^^^^^^^^^^^^^^^^^
+
+help: declare 'b' as `Closure()` to receive the block as a closure, or as `@BuildBlock(P)` to receive it as a build block
+   |
+16 |     _ = plain(1, 2) { print("x\n"); };
    |                     ^^^^^^^^^^^^^^^^^
 
 error: 'vari' cannot take a trailing block — its last parameter '..rest' is variadic; a variadic tail binds positionally
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:18:13
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:17:13
    |
-18 |     vari(1) { print("x\n"); };
+17 |     vari(1) { print("x\n"); };
    |             ^^^^^^^^^^^^^^^^^
 
 error: 'rower' expects a parameterized closure for 'row' — a trailing block is zero-param; pass the closure explicitly
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:19:13
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:18:13
    |
-19 |     rower() { print("x\n"); };
+18 |     rower() { print("x\n"); };
    |             ^^^^^^^^^^^^^^^^^
 
 error: parameter 'content' is bound both by a named argument and by the trailing block
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:20:33
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:19:33
    |
-20 |     scaffold(content = toolbar) { print("x\n"); };
+19 |     scaffold(content = toolbar) { print("x\n"); };
    |                                 ^^^^^^^^^^^^^^^^^
 
 error: cannot use a trailing block here — 'q' has no known declaration (closure and function-pointer values bind their arguments explicitly)
-  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:22:5
+  --> examples/diagnostics/1273-diagnostics-trailing-blocks.sx:21:5
    |
-22 |     q() { print("x\n"); };
+21 |     q() { print("x\n"); };
    |     ^

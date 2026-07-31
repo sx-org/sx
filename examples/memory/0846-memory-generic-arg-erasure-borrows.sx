@@ -48,27 +48,27 @@ gen_poke :: (s: $P, a: Allocator) {
 gen_id :: (x: $T) -> T { x }
 
 main :: () {
-    amb := CountA.{ n = 0 };
+    amb := CountA{ n = 0 };
 
     // direct call: borrows (the baseline)
-    t := Tracker.{ allocs = 0, deallocs = 0 };
+    t := Tracker{ allocs = 0, deallocs = 0 };
     push .{ allocator = amb } {
         poke(xx t);
     }
     print("direct: {}/{} ambient {}\n", t.allocs, t.deallocs, amb.n);
 
     // generic call: borrows identically — no ambient copy
-    t2 := Tracker.{ allocs = 0, deallocs = 0 };
+    t2 := Tracker{ allocs = 0, deallocs = 0 };
     push .{ allocator = amb } {
         gen_poke(1, xx t2);
     }
     print("generic: {}/{} ambient {}\n", t2.allocs, t2.deallocs, amb.n);
 
     // free(s, xx local) — the S4.4 pairing this fix makes trustworthy
-    t3 := Tracker.{ allocs = 0, deallocs = 0 };
+    t3 := Tracker{ allocs = 0, deallocs = 0 };
     s : Sizable = ---;
     push .{ allocator = t3 } {
-        s = xx Widget.{ value = 5 };
+        s = xx Widget{ value = 5 };
     }
     free(s, xx t3);
     print("free pairing: {}/{}\n", t3.allocs, t3.deallocs);

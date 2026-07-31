@@ -1,0 +1,4 @@
+board at the ceiling label
+cells 81 10 0
+set 40 state 656 member 8
+through a copy 9 9

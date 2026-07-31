@@ -1,0 +1,17 @@
+// The `@` namespace holds two classes, and neither can be declared here. `@Init`
+// is FORMED by the compiler at a parameter annotation, so it has no declaration
+// anywhere; `@BuildSink` is declared, but by `modules/fluent.sx`, not by this
+// module.
+#import "modules/std.sx";
+
+@Init :: struct {
+    target: i64 = 0;
+}
+
+@BuildSink :: protocol(P: Type) constraint {
+    expression :: (self: *Self);
+}
+
+main :: () {
+    print("{}\n", 1);
+}

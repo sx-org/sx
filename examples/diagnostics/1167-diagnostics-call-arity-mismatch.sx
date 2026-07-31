@@ -19,7 +19,7 @@ main :: () -> i32 {
     _ = add2(1, 2, 3);           // plain bare call, too many
     _ = add2(1);                 // plain bare call, too few
     _ = concat("a", "b", "c");   // flat-imported stdlib fn, too many
-    p := Point.{ x = 5 };
+    p := Point{ x = 5 };
     _ = p.scaled(2, 9);          // method dot-call, too many
     _ = p.bump(1, 2);            // ufcs dot-call, too many
     return 0;

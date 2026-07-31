@@ -7,6 +7,6 @@ main :: () {
     y := x + CONSTANT;         // use position  -> util.CONSTANT
     s := "helper CONSTANT";    // inside a string: untouched
     already := util.helper(4); // already qualified: untouched
-    lit := Config.{ helper = 1 }; // field init: SKIP, reported
+    lit := Config{ helper = 1 }; // field init: SKIP, reported
     print("{} {} {} {}\n", x, y, s, already, lit);
 }

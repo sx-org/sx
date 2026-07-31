@@ -1,0 +1,53 @@
+// What an `@OpenVariant` head must reach (spec: Open Sets — membership).
+//
+// The head names the set a member joins, and it is a PATH: a name its own module
+// can see, or one a module reached by name publishes. What it must reach is a set —
+// a head that reaches nothing, or reaches something that is not one, is refused
+// where the member is written:
+//
+//   - a plain member's head is answered as the declarations are scanned; and
+//   - a GENERIC member's head is a fact still owed while the scan runs, since the
+//     set may be declared after the template is built. It waits, and what is still
+//     owed when the declarations are done is reported against the member that wrote
+//     it, naming the head it asked for.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 64 }) {
+    render :: (self: *Self) -> string;
+}
+
+// A head naming nothing at all.
+Stray :: @OpenVariant(Nowhere) {
+    text: string = "";
+    render :: (self: *Stray) -> string => self.text;
+}
+
+// A head naming something that is not a set.
+Plain :: struct { n: i64 = 0; }
+
+Wrong :: @OpenVariant(Plain) {
+    text: string = "";
+    render :: (self: *Wrong) -> string => self.text;
+}
+
+// A qualified head whose module publishes no such name.
+lib :: #import "modules/std/mem.sx";
+
+Absent :: @OpenVariant(lib.View) {
+    text: string = "";
+    render :: (self: *Absent) -> string => self.text;
+}
+
+// A GENERIC member whose head reaches nothing: owed while the scan runs, reported
+// once the declarations are done.
+Padded :: @OpenVariant(Missing) ($T: Type) {
+    inner: $T = ---;
+    render :: (self: *Padded) -> string => "padded";
+}
+
+main :: () -> i32 {
+    v: View = Stray{ text = "no" };
+    print("{}\n", v.render());
+    0
+}

@@ -96,6 +96,17 @@ Fiber :: struct {
     // `context.io.suspend_raw`/`ready` resolve to the scheduler that spawned it,
     // not the blocking default. Behavior-preserving for fibers spawned under the
     // default context (the capture just re-pushes that same default).
+    //
+    // The snapshot includes `context.allocator`, and a fiber outlives the scope
+    // that spawned it: its body — and `reap_fiber`'s free of the closure env —
+    // reach that allocator arbitrarily later, possibly after the spawn scope has
+    // ended. Spawning under a frame-local or resettable allocator (a frame arena)
+    // therefore hands the fiber memory that may be reused before or while it runs.
+    // The SPAWNING CONTAINER owns this: when the ambient allocator does not
+    // outlive the fiber, push a fiber-safe one (the scheduler's `own_allocator`,
+    // or any allocator living at least as long as the scheduler) around `spawn`.
+    // Neither `spawn` nor the language rebases the inherited allocator — the
+    // snapshot is verbatim, by design.
     dctx: Context;
     // Phase 3 (true cancellation): back-ref to this fiber's task cancel flag
     // (the `Future.canceled` `Atomic(bool)`, erased to `*void`), set from
@@ -167,7 +178,7 @@ Scheduler :: struct {
         // partial literal zero-fills it, and it is written by the first
         // `swap_context` before ever being read. `kq = -1` is the lazy sentinel
         // (opened by the first `block_on_fd`).
-        return Scheduler.{
+        return Scheduler{
             current = null, ready_head = null, ready_tail = null,
             own_allocator = context.allocator,
             next_id = 0, n_spawned = 0, n_suspended = 0,
@@ -1068,7 +1079,7 @@ wake_io_waiter_for_fd :: (self: *Scheduler, fd: i32) {
 RaceResult :: ($T: Type) -> Type {
     vs : [struct_field_count(T)]EnumVariant = ---;
     inline for 0..struct_field_count(T) (i) {
-        vs[i] = EnumVariant.{
+        vs[i] = EnumVariant{
             name    = struct_field_name(T, i),                          // tuple label → variant name
             payload = struct_field_type(pointee_type(struct_field_type(T, i)), 0),  // *Future(R) -> Future(R) -> R
         };

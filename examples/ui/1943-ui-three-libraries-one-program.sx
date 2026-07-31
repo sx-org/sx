@@ -1,0 +1,45 @@
+// The three UI libraries in one program (revision §13, §14).
+//
+// They are separate libraries, not modes of one. Each is imported under its own
+// name, and each `View` is its own open set: three sets declaring the same three
+// methods, sharing no geometry, no render surface and no components.
+//
+// A component joins a set by DECLARING itself into it, and each of these
+// declared itself into exactly one — so `compose.Label` is a member of
+// `compose.View` and of nothing else.
+// Expected: exit 0.
+#import "modules/std.sx";
+
+c :: #import "modules/ui/compose.sx";
+e :: #import "modules/ui/emit.sx";
+f :: #import "modules/ui/fluent.sx";
+
+main :: () -> i32 {
+    // Each library's own component forms its own library's slot.
+    cv : c.View = c.Label{ text = "composed" };
+    ev : e.View = e.Label{ text = "emitted" };
+    fv : f.View = f.Label{ text = "fluent" };
+
+    // Each set answers for the member it carries — three distinct `Label`s.
+    print("{} {} {}\n", type_of(cv), type_of(ev), type_of(fv));
+
+    // Three sets, each laid out on its own members.
+    print("sets {} {} {}\n", size_of(c.View), size_of(e.View), size_of(f.View));
+
+    // Each library measures through its own geometry and renders through its own
+    // runtime into its own tree type.
+    ct := c.RenderTree{};
+    et := e.RenderTree{};
+    ft := f.RenderTree{};
+    c.render_root(*cv, c.Size{ width = 80.0, height = 20.0 }, *ct);
+    e.render_root(*ev, e.Size{ width = 80.0, height = 20.0 }, *et);
+    f.render_root(*fv, f.Size{ width = 80.0, height = 20.0 }, *ft);
+    print("commands {} {} {}\n",
+        c.command_count(*ct), e.command_count(*et), f.command_count(*ft));
+    0
+}
+
+// ** stdout **
+// Label Label Label
+// sets 64 64 64
+// commands 1 1 1

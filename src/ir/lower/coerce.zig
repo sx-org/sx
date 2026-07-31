@@ -32,15 +32,39 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
     // Concrete → any: node-aware boxing (an lvalue operand borrows its
     // storage, mirroring protocol erasure's borrow mode). Handled ahead
     // of the plan switch — the `.coerce` ladder's box arm is node-less
-    // and would always spill a copy. A PROTOCOL source is exempt: an
-    // explicit `xx p : any` is the CONCRETE view (protocol_to_any — the
-    // {ctx, type_id} prefix), not a box of the protocol value; implicit
-    // boxing (`av : any = s`) routes through boxAnyOf directly at its
-    // sites and stays a box.
+    // and would always spill a copy. A PROTOCOL source is exempt: it has
+    // no storage to borrow, and `xx p : any` is the CONCRETE view
+    // (protocol_to_any — the {ctx, type_id} prefix) rather than a box.
     if (dst_ty == .any and src_ty != .any and src_ty != .unresolved and
         self.getProtocolInfo(src_ty) == null)
     {
         return boxAnyOf(self, operand, src_ty, operand_node);
+    }
+
+    // A set destination is reached from a MEMBER and from nothing else: the
+    // formation arm lifts the member into the slot, and no other source has a tag
+    // to write. An explicit cast asks for that same conversion, so what cannot
+    // form a set is refused here rather than reaching an arm that would type
+    // foreign bytes as one (spec: Open Sets — formation).
+    if (target_explicit and self.isOpenSet(dst_ty)) {
+        const cs = self.builder.current_span;
+        const span = ast.Span{ .start = cs.start, .end = cs.end };
+        if (src_ty == .any) {
+            if (self.refuseSetFromAny(dst_ty, span)) return self.builder.constUndef(dst_ty);
+        }
+        if (self.refuseOpenSetNonMember(src_ty, dst_ty, span)) return self.builder.constUndef(dst_ty);
+    }
+
+    // Out of a set: the only conversion is to the member the slot carries, and it
+    // can fail. `xx` states no temperament, so it cannot spell that question —
+    // and a type that is not a member is not an answer to it at all.
+    if (target_explicit and self.isOpenSet(src_ty) and dst_ty != src_ty and dst_ty != .any and dst_ty != .unresolved) {
+        const cs = self.builder.current_span;
+        const span = ast.Span{ .start = cs.start, .end = cs.end };
+        if (self.openSetDeclaresMembership(dst_ty, self.openSetOf(src_ty).?.decl)) {
+            if (self.refuseUntemperedDowncast(src_ty, dst_ty, span)) return self.builder.constUndef(dst_ty);
+        }
+        if (self.refuseOpenSetNonMemberTarget(src_ty, dst_ty, span)) return self.builder.constUndef(dst_ty);
     }
 
     // PLANNING: the `xx`-head decision (conversions.zig). `.coerce` falls
@@ -141,15 +165,9 @@ pub fn lowerXX(self: *Lowering, operand: Ref, operand_node: *const Node) Ref {
             var fields = [2]Ref{ ctx_ref, tid_ref };
             return self.builder.structInit(&fields, dst_ty);
         },
-        // Protocol → any: the concrete view. The value's {ctx, __type_id}
-        // prefix IS an any {data, type_id} — read the two words and
-        // assemble the view (the downcast / protocol type switch base).
-        .protocol_to_any => {
-            const void_ptr_ty = self.module.types.ptrTo(.void);
-            const ctx_ref = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr_ty);
-            const tid_ref = self.protocolTypeIdWord(src_ty, operand);
-            return self.builder.makeAny(tid_ref, ctx_ref);
-        },
+        // Protocol → any: the concrete view (the downcast / protocol type
+        // switch base).
+        .protocol_to_any => return protocolToAnyView(self, operand, src_ty),
         .coerce => {},
     }
 
@@ -550,6 +568,17 @@ pub fn refStorageAddress(self: *Lowering, ref: Ref) ?Ref {
     }
 }
 
+/// The `any` view of a protocol value (§7.3): its `{ctx, __type_id}` prefix
+/// IS an any `{data, type_id}`, so the view names the CONCRETE receiver.
+/// `protocolTypeIdWord` supplies the word for every kind — the stamped slot
+/// on the erased kinds, the tag table on tagged.
+pub fn protocolToAnyView(self: *Lowering, operand: Ref, src_ty: TypeId) Ref {
+    const void_ptr_ty = self.module.types.ptrTo(.void);
+    const ctx_ref = self.builder.emit(.{ .struct_get = .{ .base = operand, .field_index = 0 } }, void_ptr_ty);
+    const tid_ref = self.protocolTypeIdWord(src_ty, operand);
+    return self.builder.makeAny(tid_ref, ctx_ref);
+}
+
 /// Box a concrete value into an `any` view `{tag, data}`. `any` is a
 /// type-erased BORROW: the data slot holds the value's ADDRESS.
 /// - An addressable lvalue operand (same discipline as protocol erasure:
@@ -563,6 +592,17 @@ pub fn refStorageAddress(self: *Lowering, ref: Ref) ?Ref {
 /// `size_of(tag)` valid bytes — the invariant every consumer (typed
 /// unbox loads, the raw layer's shallow copies) relies on.
 pub fn boxAnyOf(self: *Lowering, val: Ref, src_ty: TypeId, node: ?*const Node) Ref {
+    // A protocol source is never boxed as itself: the box of a protocol
+    // value is the concrete receiver's view (§7.3). Every implicit boxing
+    // position — declaration target, assignment, call argument, field
+    // init, container element, return — funnels through here, so they all
+    // agree with the explicit `xx p : any` conversion.
+    if (self.getProtocolInfo(src_ty) != null) return protocolToAnyView(self, val, src_ty);
+    // An open set is never boxed as the set: the view is of the MEMBER it
+    // carries — the member's address inside the slot, and the member's own type
+    // (spec: Open Sets — what a set value answers about itself). Every boxing
+    // position funnels through here, so they all agree with `v.(any)`.
+    if (self.isOpenSet(src_ty)) return self.openSetAnyView(src_ty, val, node);
     if (src_ty == .void) {
         // A void has no storage; the view is `{void, null}` (matches the
         // fieldless arm of field_value_get).
@@ -744,7 +784,7 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
         }
     }
 
-    // Also try from the operand node for struct literals: xx Accumulator.{ total = 0 }
+    // Also try from the operand node for struct literals: xx Accumulator{ total = 0 }
     if (concrete_type_name == null) {
         concrete_type_name = self.inferConcreteTypeName(operand_node);
         if (concrete_type_name != null) heap_copy = true;
@@ -833,15 +873,21 @@ pub fn refuseIdentityRvalueErasure(self: *Lowering, dst_ty: TypeId, span: ?ast.S
 /// the slot's address. The pointee protocol value ALIASES the concrete
 /// storage — mutations through the view are visible to the original; the
 /// slot itself is a frame temp whose lifetime covers the call/statement.
-/// Returns null when `view_ptr_ty` is not pointer-to-protocol or the
-/// concrete type name is not resolvable (caller falls through to its
-/// default path). Non-conformance is diagnosed inside buildProtocolValue.
+/// Returns null when `view_ptr_ty` is not pointer-to-protocol, the source is
+/// untyped raw storage, or the concrete type name is not resolvable (caller
+/// falls through to its default path). Non-conformance is diagnosed inside
+/// buildProtocolValue.
 pub fn viewOfConcreteAddr(self: *Lowering, concrete_addr: Ref, concrete_ty: TypeId, view_ptr_ty: TypeId) ?Ref {
     if (view_ptr_ty.isBuiltin()) return null;
     const vinfo = self.module.types.get(view_ptr_ty);
     if (vinfo != .pointer) return null;
     const proto_ty = vinfo.pointer.pointee;
     const proto_info = self.getProtocolInfo(proto_ty) orelse return null;
+    // `*void` is untyped raw storage — the allocator's bytes-level result, not
+    // an object of some conformer type. A view is BUILT over a value; storage
+    // is merely reinterpreted, so `*void → *P` is a pointer cast to room for a
+    // protocol handle (an ordinary copyable value, §5.3a).
+    if (concrete_ty == .void) return null;
     const ctn = self.resolveConcreteTypeName(concrete_ty) orelse return null;
     // A tagged value is already a borrow, so no view-building exists for it:
     // the `*P` handle points at a 16-byte value the caller must name.
@@ -1147,6 +1193,30 @@ fn initIsExplicitCast(node: *const Node) bool {
     };
 }
 
+/// Is this weld into a set slot one that membership refuses? A set destination is
+/// decided by the source's DECLARATION: `any` holds a member rather than a set, a
+/// non-member is not what the slot carries, and a member never fails — whatever the
+/// two widths are. Width decides bit-compatibility, and no number of matching bytes
+/// makes a non-member a slot (spec: Open Sets — formation).
+fn setWeldRefused(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
+    if (!self.isOpenSet(dst_ty)) return false;
+    if (src_ty == dst_ty or src_ty == .unresolved or src_ty == .void or src_ty == .noreturn) return false;
+    if (src_ty == .any) return true;
+    return !self.openSetDeclaresMembership(src_ty, self.openSetOf(dst_ty).?.decl);
+}
+
+/// The membership fact at an implicit weld — a field initializer, an argument, a
+/// return. True when refused, and the caller stops before the value is welded.
+fn refuseSetWeld(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
+    if (!setWeldRefused(self, src_ty, dst_ty)) return false;
+    const refused = if (src_ty == .any)
+        self.refuseSetFromAny(dst_ty, span)
+    else
+        self.refuseOpenSetNonMember(src_ty, dst_ty, span);
+    if (refused) self.assignability_error_count += 1;
+    return refused;
+}
+
 /// Guard a store into an explicitly-annotated slot against a silent bit-mangle.
 /// When the initializer/RHS type `src_ty` has NO modeled coercion to the
 /// destination slot type `dst_ty`, the classifier yields `.none` and
@@ -1180,12 +1250,46 @@ pub fn checkAssignable(self: *Lowering, src_ty: TypeId, dst_ty: TypeId, span: as
     // An explicit `xx`/`.(T)` is the user opting into a reinterpretation that
     // has no standard coercion — leave the escape hatch intact, width be damned.
     if (init_node) |n| if (initIsExplicitCast(n)) return true;
+    // A set slot is filled by MEMBERSHIP, and that question is asked BEFORE the
+    // same-width reinterpretation this guard allows everywhere else: a non-member
+    // of the slot's own size is still not the slot, and passing its bytes through
+    // types them as a set the program then dispatches on.
+    if (setWeldRefused(self, src_ty, dst_ty)) {
+        if (src_ty == .any) {
+            if (self.refuseSetFromAny(dst_ty, span)) self.assignability_error_count += 1;
+            return false;
+        }
+        if (self.diagnostics) |d| {
+            // The value is named the way the program spells it, and the fact reads
+            // as it does at every other set refusal (spec: Open Sets).
+            const id = if (formingFor(self, dst_ty))
+                d.addFmtId(.err, span, "'{s}' cannot form an initializer for '{s}': it is not a member of the set", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) })
+            else
+                d.addFmtId(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatSourceTypeName(dst_ty), self.formatSourceTypeName(src_ty) });
+            self.openSetMembershipHelp(d, id, src_ty, dst_ty, span);
+            self.noteOpenSetInstantiation(d, id);
+            self.assignability_error_count += 1;
+        }
+        return false;
+    }
     if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatTypeName(dst_ty), self.formatTypeName(src_ty) });
+        if (formingFor(self, dst_ty)) {
+            d.addFmt(.err, span, "'{s}' cannot form an initializer for '{s}': no conversion applies", .{ self.formatSourceTypeName(src_ty), self.formatSourceTypeName(dst_ty) });
+        } else {
+            d.addFmt(.err, span, "cannot {s} '{s}' of type '{s}' with a value of type '{s}'", .{ verb, name, self.formatSourceTypeName(dst_ty), self.formatSourceTypeName(src_ty) });
+        }
         self.assignability_error_count += 1;
     }
     return false;
+}
+
+/// Is this store the WRITE of an initializer being formed for `dst_ty`? Then it is
+/// formation, and a refusal names the expression rather than a destination the
+/// program never wrote.
+fn formingFor(self: *Lowering, dst_ty: TypeId) bool {
+    const t = self.forming_init_target orelse return false;
+    return t == dst_ty;
 }
 
 /// The shared "this implicit passthrough is exempt" gate for the unmodeled-
@@ -1204,27 +1308,61 @@ fn implicitNoneMismatchExempt(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty:
     if (src_ty == .void or dst_ty == .void) return true;
     if (src_ty == .noreturn) return true;
     if (self.xx_passthrough_refs.contains(val)) return true;
-    if (!self.noneReinterpretIsUnsafe(src_ty, dst_ty)) return true;
+    if (!self.noneReinterpretIsUnsafe(valueTypeOfRef(self, val, src_ty), dst_ty)) return true;
     if (self.externalErrorsExist()) return true;
     return false;
 }
 
-/// A bare-function VALUE is carried in the legacy integer-word IR type
-/// (`func_ref` typed `i64`/`isize` — issue 0237), which must never leak into
-/// a user-facing message as the value's type (issue 0338: "cannot coerce a
-/// value of type 'i64'" for a fn name). When `val` is a `func_ref`, recover
-/// the function's real signature type (implicit ctx param excluded — it is
-/// not part of the source-level signature); otherwise return `src_ty`.
-fn diagnosedSrcType(self: *Lowering, val: Ref, src_ty: TypeId) TypeId {
-    if (src_ty != .i64 and src_ty != .isize) return src_ty;
-    const op = self.builder.getRefOp(val) orelse return src_ty;
-    if (op != .func_ref) return src_ty;
-    const f = &self.module.functions.items[op.func_ref.index()];
+/// The SOURCE-LEVEL signature type of the lowered function `fid`: the implicit
+/// `__sx_ctx` parameter dropped and the declared calling convention kept, so it
+/// interns to the same `TypeId` as the equivalent written annotation
+/// (`(i64) -> i64`, `(i64) -> i64 abi(.c)`). A parameter with a default is an
+/// ordinary parameter here — a default is a call-site convenience, not part of
+/// the value's signature.
+pub fn functionSignatureType(self: *Lowering, fid: inst_mod.FuncId) ?TypeId {
+    const f = &self.module.functions.items[fid.index()];
     var param_ids = std.ArrayList(TypeId).empty;
     defer param_ids.deinit(self.alloc);
     const skip: usize = if (f.has_implicit_ctx) 1 else 0;
-    for (f.params[skip..]) |p| param_ids.append(self.alloc, p.ty) catch return src_ty;
-    return self.module.types.functionType(param_ids.items, f.ret);
+    for (f.params[skip..]) |p| param_ids.append(self.alloc, p.ty) catch return null;
+    return self.module.types.functionTypeCC(param_ids.items, f.ret, f.call_conv);
+}
+
+/// A bare-function VALUE is carried in the legacy integer-word IR type
+/// (`func_ref` typed `i64`/`isize` — issue 0237), which is not the value's
+/// TYPE: it must never leak into a user-facing message (issue 0338: "cannot
+/// coerce a value of type 'i64'" for a fn name), and it must never be what a
+/// generic type param or a comptime pack element binds to — the binding would
+/// carry the word instead of a callable signature (issues 0367 / 0368). When
+/// `val` is a `func_ref`, recover the function's real signature type;
+/// otherwise return `src_ty`.
+pub fn valueTypeOfRef(self: *Lowering, val: Ref, src_ty: TypeId) TypeId {
+    if (src_ty != .i64 and src_ty != .isize) return src_ty;
+    const op = self.builder.getRefOp(val) orelse return src_ty;
+    if (op != .func_ref) return src_ty;
+    return functionSignatureType(self, op.func_ref) orelse src_ty;
+}
+
+/// The signature type of an expression that NAMES a bare function used as a
+/// value (`apply(some_fn)`), or null when it names anything else. The generic
+/// type-param binder answers "what does this argument bind" BEFORE the argument
+/// is lowered, so it has no `Ref` to recover from (`valueTypeOfRef`) — the
+/// author's declared FuncId carries the same signature. A generic / pack /
+/// comptime-parameterized function has no single signature and never qualifies.
+pub fn bareFnNameSignature(self: *Lowering, node: *const Node) ?TypeId {
+    if (node.data != .identifier) return null;
+    const name = node.data.identifier.name;
+    if (self.scope) |scope| if (scope.lookup(name) != null) return null;
+    if (self.ufcsAliasTarget(name) != null) return null;
+    const fd: *const ast.FnDecl = switch (self.selectCallableAuthor(name, self.current_source_file orelse return null, .plain_free)) {
+        .func => |sf| sf.decl,
+        .none => self.program_index.fn_ast_map.get(name) orelse return null,
+        .ambiguous, .not_callable => return null,
+    };
+    if (fd.type_params.len > 0) return null;
+    for (fd.params) |p| if (p.is_pack or p.is_comptime) return null;
+    const fid = self.fn_decl_fids.get(fd) orelse return null;
+    return functionSignatureType(self, fid);
 }
 
 /// The central issue-0191 guard: an IMPLICIT coercion classified `.none` with
@@ -1234,10 +1372,14 @@ fn diagnosedSrcType(self: *Lowering, val: Ref, src_ty: TypeId) TypeId {
 /// the type-mismatch error; the caller still passes the value through (the
 /// build aborts via hasErrors before the IR could reach codegen).
 fn diagnoseUnmodeledCoercion(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId) void {
+    {
+        const cs = self.builder.current_span;
+        if (refuseSetWeld(self, valueTypeOfRef(self, val, src_ty), dst_ty, .{ .start = cs.start, .end = cs.end })) return;
+    }
     if (implicitNoneMismatchExempt(self, val, src_ty, dst_ty)) return;
     if (self.diagnostics) |d| {
         const cs = self.builder.current_span;
-        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot coerce a value of type '{s}' to '{s}': no implicit conversion applies", .{ self.formatTypeName(diagnosedSrcType(self, val, src_ty)), self.formatTypeName(dst_ty) });
+        d.addFmt(.err, ast.Span{ .start = cs.start, .end = cs.end }, "cannot coerce a value of type '{s}' to '{s}': no implicit conversion applies", .{ self.formatTypeName(valueTypeOfRef(self, val, src_ty)), self.formatTypeName(dst_ty) });
         self.assignability_error_count += 1;
     }
 }
@@ -1249,9 +1391,10 @@ fn diagnoseUnmodeledCoercion(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: 
 /// diagnostic for the same weld. Shares `assignability_error_count` so the
 /// external-error suppression keeps working across both guards.
 pub fn checkReturnable(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, span: ast.Span) bool {
+    if (refuseSetWeld(self, valueTypeOfRef(self, val, src_ty), dst_ty, span)) return false;
     if (implicitNoneMismatchExempt(self, val, src_ty, dst_ty)) return true;
     if (self.diagnostics) |d| {
-        d.addFmt(.err, span, "cannot return a value of type '{s}' where '{s}' is expected", .{ self.formatTypeName(diagnosedSrcType(self, val, src_ty)), self.formatTypeName(dst_ty) });
+        d.addFmt(.err, span, "cannot return a value of type '{s}' where '{s}' is expected", .{ self.formatTypeName(valueTypeOfRef(self, val, src_ty)), self.formatTypeName(dst_ty) });
         self.assignability_error_count += 1;
     }
     return false;
@@ -1278,6 +1421,14 @@ pub fn externalErrorsExist(self: *Lowering) bool {
 pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) bool {
     if (src_ty == dst_ty) return false;
     if (self.coercionResolver().classify(src_ty, dst_ty) != .none) return false;
+    // Two DIFFERENT function types are never a bit-compatible reinterpretation,
+    // width match or not: both sides are one code pointer, but the callee reads
+    // its arguments and return slot per the signature it was compiled for.
+    // Welding `(i64) -> i64` into a `() -> i64` slot makes the call read an
+    // argument register the caller never wrote (issue 0369). Signatures are
+    // interned, so "different TypeId" is exactly "incompatible signature" —
+    // arity, parameter types, return type, or calling convention.
+    if (isFunctionType(self, src_ty) and isFunctionType(self, dst_ty)) return true;
     // An unmodeled pair where exactly ONE side is an aggregate value
     // (struct/union/tagged union/array/tuple) is NEVER a legitimate
     // bit-reinterpretation, width match or not: the aggregate's bytes pun
@@ -1287,6 +1438,11 @@ pub fn noneReinterpretIsUnsafe(self: *Lowering, src_ty: TypeId, dst_ty: TypeId) 
     // `i64 → isize`, fn-ref → fn slot).
     if (isAggregateValueKind(self, src_ty) != isAggregateValueKind(self, dst_ty)) return true;
     return !sameStoreWidth(self, src_ty, dst_ty);
+}
+
+fn isFunctionType(self: *Lowering, ty: TypeId) bool {
+    if (ty.isBuiltin()) return false;
+    return self.module.types.get(ty) == .function;
 }
 
 /// A type whose values are AGGREGATE-shaped at the IR level, for the pun
@@ -1348,6 +1504,10 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
         }
     }
+    if (mode == .implicit and !self.xx_passthrough_refs.contains(val)) {
+        const cs = self.builder.current_span;
+        self.checkErrorSetValueCoercion(src_ty, dst_ty, .{ .start = cs.start, .end = cs.end });
+    }
     // PLANNING: classify the built-in coercion (conversions.zig).
     // EMISSION: each arm below reproduces the original lowering.
     switch (self.coercionResolver().classify(src_ty, dst_ty)) {
@@ -1391,6 +1551,10 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             }
             return self.builder.emit(.{ .unbox_any = .{ .operand = val } }, dst_ty);
         },
+        // A member value into its set's slot: the tag the freeze numbers plus a
+        // COPY of the member's bytes. An independent slot — the set is an inline
+        // value, so nothing is shared with the source afterwards.
+        .member_to_open_set => return self.coerceMemberToSet(val, src_ty, dst_ty),
         // Box concrete → any. Node-less coercion site: always a spill
         // (the node-aware borrow path is `boxAnyOf` at lowerXX / the
         // variadic pack / the decl-init hooks).
@@ -1663,6 +1827,22 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 }
             }
             return self.builder.emit(.{ .float_to_int = .{ .operand = val, .from = src_ty, .to = dst_ty } }, dst_ty);
+        },
+        // Int ↔ payload-less enum: run the integer ladder to/from the enum's
+        // backing type, then retype the word to the other side. The retype is
+        // a `bitcast` between two identically-shaped scalars (the enum lowers
+        // to its backing integer), so the result is a genuinely enum-/int-
+        // typed value in every position — optional wrap, argument, `switch`
+        // subject, comparison.
+        .int_to_enum => {
+            const backing = self.enumBackingType(dst_ty).?;
+            const as_backing = self.coerceMode(val, src_ty, backing, mode);
+            return self.builder.emit(.{ .bitcast = .{ .operand = as_backing, .from = backing, .to = dst_ty } }, dst_ty);
+        },
+        .enum_to_int => {
+            const backing = self.enumBackingType(src_ty).?;
+            const as_backing = self.builder.emit(.{ .bitcast = .{ .operand = val, .from = src_ty, .to = backing } }, backing);
+            return self.coerceMode(as_backing, backing, dst_ty, mode);
         },
         // Ptr ↔ Int — explicit `xx ptr` to/from an integer-typed slot.
         // Emits a `bitcast` IR op; emit_llvm.zig's bitcast arm dispatches

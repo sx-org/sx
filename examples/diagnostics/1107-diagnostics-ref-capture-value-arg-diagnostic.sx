@@ -10,7 +10,7 @@ Move :: struct { flag: i64; }
 take :: (m: Move) -> i64 { return m.flag; }
 
 main :: () -> i32 {
-    moves : [2]Move = .[ Move.{ flag = 1 }, Move.{ flag = 2 } ];
+    moves : [2]Move = .[ Move{ flag = 1 }, Move{ flag = 2 } ];
     for moves (*m) {
         take(m);
     }

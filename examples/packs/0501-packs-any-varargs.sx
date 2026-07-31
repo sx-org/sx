@@ -36,7 +36,7 @@ main :: () -> i32 {
     print_any(42, "hello", true, 3.14);
 
     // Test with struct
-    p := Point.{ x=10, y=20 };
+    p := Point{ x=10, y=20 };
     print_any("point:", p, 99);
 
     // Test count

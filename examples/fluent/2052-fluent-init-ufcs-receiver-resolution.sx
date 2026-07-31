@@ -1,0 +1,156 @@
+// A dot-call at a destination-first parameter is still a dot-call: it resolves the
+// way every other one does, and only then re-spells itself (fluent spec §5.2).
+//
+// `@Init` decides HOW the receiver reaches the callee — unevaluated, formed — not
+// WHICH callee it reaches. So everything that answers before a free function still
+// answers first: a method the receiver's type declares, one an `impl` contributed,
+// a protocol's method on an erased value, a method reached through a pointer. And
+// what a receiver cannot decide alone stays refused: two imported declarations of
+// the same name are ambiguous whether the call is spelled with a dot or not.
+//
+// The receiver is an argument, so it is evaluated exactly as an argument is: once,
+// when the callee writes — and the other arguments once each, whichever spelling
+// the call uses.
+//
+// And a dot on a NAME is not a receiver at all: a type prefix and a namespace path
+// are qualified spellings whose left side names where the function lives, not what
+// it is called with.
+#import "modules/std.sx";
+#import "modules/std/list.sx";
+
+View :: @OpenSet(.{ max = 128 }) { render :: (self: *Self) -> string; }
+Label :: @OpenVariant(View) { text: string = ""; render :: (self: *Label) -> string => self.text; }
+
+#context_extend ui_out: *List(View) = null;
+#context_extend ticks: *i64 = null;
+
+// A destination-first ufcs with two ordinary arguments after the receiver.
+emit_at :: ufcs (value: $I/@Init(View), a: i64, b: i64) {
+    item: View = ---;
+    value.write(*item);
+    context.ui_out.append(item);
+}
+
+tick :: () -> i64 {
+    context.ticks.* += 1;
+    return context.ticks.*;
+}
+
+// A receiver with a side effect: an initializer runs it when it writes, once.
+counted :: () -> Label {
+    context.ticks.* += 100;
+    return Label{ text = "counted" };
+}
+
+// --- What answers before a free function ---
+
+Drawable :: protocol constraint { draw :: (self: *Self) -> string; }
+
+// An impl contributes the method — it is not in the struct's body.
+Box :: struct { v: i64 = 0; }
+impl Drawable for Box { draw :: (self: *Box) -> string => "impl method"; }
+
+// A method the struct declares itself, reached through a value AND a pointer.
+Crate :: struct {
+    v: i64 = 0;
+    stow :: (self: *Crate) -> string => "own method";
+
+    // A STATIC on the same type, sharing the free function's name: `Crate.emit_at`
+    // names this one, and its arguments are its own.
+    emit_at :: (n: i64) -> string => "static";
+}
+
+// A GENERIC instance's own method: its declaration is stamped per instantiation,
+// so the value it prints is what proves the method ran rather than a free function
+// reading the receiver's bits.
+Crated :: struct ($T: Type) {
+    v: $T = ---;
+    emit_at :: (self: *Crated(T), a: i64, b: i64) -> string => "generic method";
+}
+
+// A CALLABLE field named like a free function: calling it calls the field.
+Obj :: struct {
+    stow: Closure() -> string = ---;
+}
+
+// A family whose type argument this call cannot pin: both spellings say the same
+// thing about it, because the dot-call is re-read as the other one.
+Tagged :: struct ($U: Type) { u: $U = ---; }
+
+// A renaming alias of a destination-first ufcs: the alias is dot-callable, and the
+// call reaches what it names.
+deliver :: ufcs (value: $I/@Init(i64)) -> string {
+    slot: i64 = ---;
+    value.write(*slot);
+    return "aliased";
+}
+send :: ufcs deliver;
+
+// A protocol value dispatches to its conformer.
+Shape :: protocol tagged { name :: (self: *Self) -> string; }
+Round :: struct { s: string = "round"; }
+impl Shape for Round { name :: (self: *Round) -> string => self.s; }
+
+// Free ufcs functions with the SAME names and destination-first first parameters.
+draw :: ufcs (value: $I/@Init($V/Drawable)) -> string => "free draw";
+stow :: ufcs (value: $I/@Init(i64)) -> string => "free stow";
+name :: ufcs (value: $I/@Init($V/Shape)) -> string => "free name";
+
+main :: () -> i32 {
+    out : List(View) = .{};
+    n : i64 = 0;
+
+    push .{ ui_out = *out, ticks = *n } {
+        // Two arguments, spelled both ways: each evaluated once, each time.
+        Label{ text = "receiver" }.emit_at(tick(), tick());
+        print("receiver spelling: {} evaluations\n", n);
+
+        n = 0;
+        emit_at(Label{ text = "argument" }, tick(), tick());
+        print("argument spelling: {} evaluations\n", n);
+
+        // The receiver's own side effect runs once, inside the write.
+        n = 0;
+        counted().emit_at(0, 0);
+        print("receiver evaluated: {}\n", n == 100);
+    }
+    print("emitted {}\n", out.len);
+
+    // A generic instance answers with its own method, by value and through a
+    // pointer — and `v` proves it: a free function reading these bits would print
+    // the receiver's address.
+    g := Crated(i64){ v = 7 };
+    pg := *g;
+    print("generic {} {} v={}\n", g.emit_at(1, 2), pg.emit_at(1, 2), g.v);
+
+    // A callable field is called, and the free function of that name still forms.
+    o := Obj{ stow = () => "field closure" };
+    print("field {} free {}\n", o.stow(), 5.stow());
+
+    // A renaming alias reaches its target.
+    print("alias {}\n", (9).send());
+
+    // A dot on a name: the type prefix names the static, not the free function.
+    print("type prefix {}\n", Crate.emit_at(3));
+
+    // The receiver's type answers first, however it declares the method.
+    b := Box{ v = 1 };
+    c := Crate{ v = 2 };
+    pc := *c;
+    r := Round{};
+    h : Shape = *r;
+    print("impl {} own {} through a pointer {} protocol {}\n", b.draw(), c.stow(), pc.stow(), h.name());
+    0
+}
+
+// ** stdout **
+// receiver spelling: 2 evaluations
+// argument spelling: 2 evaluations
+// receiver evaluated: true
+// emitted 3
+// generic generic method generic method v=7
+// field field closure free free stow
+// alias aliased
+// type prefix static
+// impl impl method own own method through a pointer own method protocol round
+//

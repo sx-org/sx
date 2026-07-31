@@ -1,0 +1,8 @@
+// Another package's publish, of the same name.
+#import "modules/std.sx";
+
+publish :: ufcs (value: $I/@Init(i64)) -> string {
+    slot: i64 = ---;
+    value.write(*slot);
+    return "right";
+}

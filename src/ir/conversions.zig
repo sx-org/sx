@@ -40,8 +40,11 @@ pub const CoercionResolver = struct {
         optional_to_optional, // ?A → ?B (presence-preserving payload coercion)
         optional_wrap, // concrete → ?T
         erase_protocol, // concrete → protocol value
+        member_to_open_set, // a member VALUE → its open set's inline slot
         int_to_float,
         float_to_int,
+        int_to_enum, // int → payload-less enum (through the enum's backing type)
+        enum_to_int, // payload-less enum → int (through the enum's backing type)
         ptr_int_bitcast, // ptr ↔ int
         widen, // same kind, dst wider
         narrow, // same kind, dst narrower
@@ -68,6 +71,15 @@ pub const CoercionResolver = struct {
             const di = self.l.module.types.get(dst_ty);
             if (di == .many_pointer and (di.many_pointer.element == .u8 or di.many_pointer.element == .i8)) {
                 return .string_to_cstring;
+            }
+        }
+        // A member of an open set, where the set is expected: the value goes INTO
+        // the slot — its tag in the tag word, its bytes in the payload. Classified
+        // before the generic aggregate arms, since a set and its member are two
+        // unrelated aggregates as far as those are concerned.
+        if (!dst_ty.isBuiltin() and self.l.isOpenSet(dst_ty)) {
+            if (self.l.openSetOf(dst_ty)) |set| {
+                if (self.l.openSetDeclaresMembership(src_ty, set.decl)) return .member_to_open_set;
             }
         }
         if (src_ty == .cstring and dst_ty == .string) return .cstring_to_string_reject;
@@ -175,6 +187,16 @@ pub const CoercionResolver = struct {
         const dst_int = self.l.isIntEx(dst_ty);
         const src_ptr = (!src_ty.isBuiltin() and self.l.module.types.get(src_ty) == .pointer) or src_ty == .cstring;
         const dst_ptr = (!dst_ty.isBuiltin() and self.l.module.types.get(dst_ty) == .pointer) or dst_ty == .cstring;
+
+        // Int ↔ payload-less enum. Such an enum IS an integer of its backing
+        // type (§Enums), so the conversion is that integer conversion plus a
+        // retype. Modeled rather than left to the same-shaped passthrough,
+        // which keeps the SOURCE type and so answers `i64` for `n.(Zone)`
+        // (issue 0396). No range check: like every other `xx`/`.(T)`
+        // conversion this is well-defined, not value-preserving, and a flags
+        // enum makes non-variant bit patterns legal by construction.
+        if (src_int and self.l.enumBackingType(dst_ty) != null) return .int_to_enum;
+        if (self.l.enumBackingType(src_ty) != null and dst_int) return .enum_to_int;
 
         if (src_int and dst_float) return .int_to_float;
         if (src_float and dst_int) return .float_to_int;

@@ -14,7 +14,7 @@ c :: #import "modules/std/c.sx";
 // functions declared `ufcs` — dot-call, pipe, or call directly:
 //
 //   s := context.allocator.create(Session);
-//   s.* = Session.{};                  // no zero-init (Zig-aligned)
+//   s.* = Session{};                  // no zero-init (Zig-aligned)
 //   defer context.allocator.destroy(s);
 //
 //   moves := context.allocator.alloc(Move, 64);
@@ -157,7 +157,7 @@ GPA :: struct {
     alloc_count: i64;
 
     init :: () -> GPA {
-        GPA.{ alloc_count = 0 }
+        GPA{ alloc_count = 0 }
     }
 }
 
@@ -281,7 +281,7 @@ BufAlloc :: struct {
     pos: i64;
 
     init :: (buf: [*]u8, len: i64) -> BufAlloc {
-        BufAlloc.{ buf = buf, len = len, pos = 0 }
+        BufAlloc{ buf = buf, len = len, pos = 0 }
     }
 
     reset :: (b: *BufAlloc) {
@@ -332,7 +332,7 @@ TrackingAllocator :: struct {
     total_alloc_bytes: i64;
 
     init :: (parent_alloc: Allocator) -> TrackingAllocator {
-        TrackingAllocator.{
+        TrackingAllocator{
             parent = parent_alloc,
             alloc_count = 0,
             dealloc_count = 0,

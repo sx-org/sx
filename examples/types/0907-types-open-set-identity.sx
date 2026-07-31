@@ -1,0 +1,108 @@
+// What an open set value answers about itself (spec: Open Sets — identity).
+//
+// A set slot is declared as the set and carries a MEMBER, so `type_of` answers
+// the member: the tag word says which one, and the set's own numbering turns that
+// tag into the member's type. Assigning another member into the same slot changes
+// the answer, because the answer was never the declaration.
+//
+// `v.(any)` is the set's raw polymorphic view — the member's address INSIDE the
+// slot and the member's own type, no allocation and no copy — and every other
+// boxing position agrees with it, so an `any` parameter, an `any` local, and a
+// formatted argument all see the member rather than the set.
+//
+// The numbering exists only once the sets freeze, so a `#run` that asks waits for
+// it and gets the same answer the run-time program gets.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Panel :: @OpenVariant(View) {
+    title: string = "";
+    render :: (self: *Panel) -> string => self.title;
+}
+
+// A `*View` receiver is the slot's address, so the value it points at answers for
+// its own member.
+through :: (v: *View) -> Type => type_of(v.*);
+
+// An `any` parameter sees what the explicit view sees.
+boxed :: (a: any) -> Type => type_of(a);
+
+// One probe, asked about a set and about a member: generic code that asks keeps
+// working when it is instantiated at a set.
+probe :: ($T: Type, a: any) -> ?T => a.(?T);
+
+CT_MEMBER :: #run early_member();
+
+// Asked while the program is still being lowered: the tag space is assigned at
+// the freeze, so this waits for it rather than answering from a numbering that
+// does not exist yet.
+early_member :: () -> Type {
+    v: View = Panel{ title = "comptime" };
+    type_of(v)
+}
+
+main :: () -> i32 {
+    v: View = Label{ text = "label" };
+    print("member {}\n", type_of(v));
+    v = Panel{ title = "panel" };
+    print("after assignment {}\n", type_of(v));
+
+    // The same slot, reached through its address.
+    print("through a pointer {} and the pointer itself {}\n", through(*v), type_of(*v));
+
+    // The explicit view, an implicit box, and an argument all name the member.
+    l: View = Label{ text = "viewed" };
+    view := l.(any);
+    a: any = l;
+    print("view {} box {} argument {}\n", type_of(view), type_of(a), boxed(l));
+    print("formatted {}\n", l);
+
+    // The view addresses the member itself, so the type switch opens it and the
+    // capture is the member's own value.
+    if view == {
+        case Label: (label) { print("opened {}\n", label.text); }
+        case Panel: (panel) { print("opened {}\n", panel.title); }
+        else: { print("opened nothing\n"); }
+    }
+
+    // Because a box holds the member, asking a box whether it holds the SET is a
+    // question with one answer, and the probe forms give it — spelled out, through
+    // a type parameter, and through a chain. Asking for a member is the real
+    // question, and it is answered from the box.
+    print("set probe {} member probe {}\n", probe(View, a) == null, probe(Label, a) == null);
+    chained: ?any = l;
+    print("chain set probe {}\n", chained?.(?View) == null);
+    if member := chained?.(?Label) { print("chain member {}\n", member.text); }
+
+    // An optional of a set is an ordinary value: the box holds what it was given,
+    // and it is recovered as that.
+    maybe: ?View = Panel{ title = "optional" };
+    box: any = maybe;
+    back: ?View = xx box;
+    if held := back { print("boxed {} holds {}\n", type_of(box), held.render()); }
+
+    print("comptime {}\n", CT_MEMBER);
+    0
+}
+
+// ** stdout **
+// member Label
+// after assignment Panel
+// through a pointer Panel and the pointer itself *View
+// view Label box Label argument Label
+// formatted {text: viewed}
+// opened viewed
+// set probe true member probe false
+// chain set probe true
+// chain member viewed
+// boxed ?View holds optional
+// comptime Panel
+//

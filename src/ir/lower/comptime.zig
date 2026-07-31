@@ -1356,6 +1356,18 @@ fn lowerComptimeCallArgsMode(
     self.comptime_param_nodes = cpn;
     defer self.comptime_param_nodes = saved_cpn;
 
+    // The inlined body is a DIFFERENT function's statements sharing the
+    // caller's instruction stream, so an enclosing build replay must not
+    // intercept them (spec §7.2: an expression belongs to the nearest active
+    // block scope, and this body is in none). The callee's own `run` pushes
+    // its scope onto the cleared stack.
+    const saved_build_scopes = self.build_scopes;
+    self.build_scopes = .empty;
+    defer {
+        self.build_scopes.deinit(self.alloc);
+        self.build_scopes = saved_build_scopes;
+    }
+
     // Install pack-arg-node binding. Mirrors `comptime_param_nodes`:
     // each call owns its own map, nested calls shadow. `lowerIndexExpr`
     // reads the map for `args[<int_literal>]` substitution.
@@ -1723,8 +1735,8 @@ pub fn createComptimeFunctionWithPrelude(self: *Lowering, prefix: []const u8, ph
     // Flow narrowing (issue 0179) is per-function: this wrapper body has its
     // own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
-    var narrow_guard = Lowering.NarrowGuard.enter(self);
-    defer narrow_guard.restore();
+    var nested_guard = Lowering.NestedBodyGuard.enter(self);
+    defer nested_guard.restore();
 
     // Save current builder + lowering state. The wrapper fn we're
     // about to build runs the comptime expression in isolation —

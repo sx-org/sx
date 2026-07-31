@@ -109,7 +109,7 @@ pub const ExprTyper = struct {
                 }
                 break :blk .unresolved;
             },
-            .caller_location => self.l.module.types.findByName(self.l.module.types.internString("Source_Location")) orelse .unresolved,
+            .caller_site => self.l.sourceSiteType() orelse .unresolved,
             .if_expr => |ie| {
                 // If-else types as its branches' unified type. A `noreturn`
                 // branch (one that diverges — `return` / `raise` / `break` /
@@ -480,16 +480,26 @@ pub const ExprTyper = struct {
             },
             .struct_literal => |sl| {
                 if (sl.struct_name) |name| {
+                    // Source-aware first, so a head that is a type ALIAS
+                    // (`BoxI :: Box(i64)`) infers the type it names — the
+                    // global `findByName` below knows only registered type
+                    // NAMES and would mint a stub under the alias spelling.
+                    if (self.l.current_source_file) |from| {
+                        switch (self.l.selectNominalLeaf(name, from, false)) {
+                            .resolved => |tid| return tid,
+                            else => {},
+                        }
+                    }
                     const name_id = self.l.module.types.internString(name);
                     return self.l.module.types.findByName(name_id) orelse
                         self.l.module.types.intern(.{ .@"struct" = .{ .name = name_id, .fields = &.{} } });
                 }
-                // A qualified (`m.Cfg.{…}`) or generic (`Pair(i32).{…}`) prefix
+                // A qualified (`m.Cfg{…}`) or generic (`Pair(i32){…}`) prefix
                 // carries its type as a NODE — resolve it the same way lowering
                 // does, so a `:=`-inferred decl gets the real struct type (issue
                 // 0204), not the empty `{}` it would fall to below.
                 if (sl.type_expr) |te| {
-                    // `Ev.key.{ ... }` — qualified tagged-union variant
+                    // `Ev.key{ ... }` — qualified tagged-union variant
                     // construction: the literal's TYPE is the tagged union
                     // `Ev`, not a resolvable `Ev.key` type. Recognize it here
                     // (side-effect-free `findByName`) so inference doesn't fall
@@ -574,7 +584,7 @@ pub const ExprTyper = struct {
             .tuple_literal => |tl| {
                 // Explicitly-typed `Tuple(A, B).( ... )`: the literal's type is
                 // the carried tuple type (preserves field names for the named
-                // form), exactly like `Name.{ ... }` infers to `Name`.
+                // form), exactly like `Name{ ... }` infers to `Name`.
                 if (tl.type_expr) |te| {
                     const tuple_ty = self.l.resolveTypeWithBindings(te);
                     if (tuple_ty != .unresolved) return tuple_ty;

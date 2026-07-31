@@ -1,0 +1,64 @@
+// What a `@caller`-filled `@SourceSite` guarantees (specs: `@caller`).
+//
+//   - the default substitutes the REAL call site, not the signature's;
+//   - a caller may override it with an explicit `@SourceSite{ … }`;
+//   - a hand-built site is legal, and `id = 0` is enough for a fake;
+//   - `site.id` equals `source_site_key_id(source_site_key(site))` computed in
+//     ordinary sx — the compiler's compile-time fold and the stdlib algorithm
+//     are the same function;
+//   - two lexically distinct call sites carry distinct ordinals and ids, while
+//     a loop reuses the one lexical site however many times it runs.
+#import "modules/std.sx";
+#import "modules/std/core.sx";
+#import "modules/std/source_site.sx";
+
+// `id` is a compile-time fingerprint of (file, declaration, ordinal), so the
+// stdlib recomputation must agree exactly.
+parity :: (site: @SourceSite) -> bool => site.id == source_site_key_id(source_site_key(site));
+
+seen :: (tag: string, site: @SourceSite = @caller) -> u64 {
+    print("{} {}:{} in {} parity={}\n", tag, site.file, site.line, site.declaration, parity(site));
+    site.ordinal
+}
+
+main :: () -> i32 {
+    // Two lexically distinct sites in one declaration.
+    first := seen("first");
+    second := seen("second");
+    print("distinct ordinals {}\n", first != second);
+
+    // A loop body is ONE lexical site: every iteration reports the same
+    // ordinal, which is what makes the site a stable key.
+    loop_ordinals := 0;
+    same := true;
+    prev : u64 = 0;
+    for 0..3 (i) {
+        ord := seen("loop");
+        if i == 0 { prev = ord; } else if ord != prev { same = false; }
+        loop_ordinals += 1;
+    }
+    print("loop ran {} times, one site {}\n", loop_ordinals, same);
+
+    // An explicit argument overrides the default.
+    fixed := @SourceSite{
+        file = "test.sx",
+        declaration = "tests.report",
+        line = 20,
+        column = 4,
+        ordinal = 0,
+        id = 0,
+    };
+    print("override {} {} {} id0={}\n", fixed.file, fixed.line, seen("explicit", fixed), fixed.id == 0);
+
+    // A fake stamped with the real algorithm satisfies the parity law too.
+    stamped := @SourceSite{
+        file = fixed.file,
+        declaration = fixed.declaration,
+        line = fixed.line,
+        column = fixed.column,
+        ordinal = fixed.ordinal,
+        id = source_site_key_id(source_site_key(fixed)),
+    };
+    print("fake parity {} {}\n", parity(fixed), parity(stamped));
+    0
+}

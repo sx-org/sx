@@ -1,0 +1,30 @@
+// Calling a fn-typed EXPRESSION directly — an array element, a struct field
+// read through an index, the result of a call — uses the same ABI as calling a
+// fn-typed local: the implicit context is prepended for a default-convention
+// pointee and arguments coerce to the pointee's parameter types.
+#import "modules/std.sx";
+
+add2 :: (a: i64, b: i64) -> i64 { return a + b; }
+sub2 :: (a: i64, b: i64) -> i64 { return a - b; }
+cadd :: (a: i64, b: i64) -> i64 abi(.c) { return a + b + 100; }
+
+Table :: struct { ops: [2]((i64, i64) -> i64); }
+
+pick :: () -> (i64, i64) -> i64 { return add2; }
+
+main :: () {
+    fs : [2]((i64, i64) -> i64) = .[add2, sub2];
+    t : Table = .{ ops = .[sub2, add2] };
+    cs : [1]((i64, i64) -> i64 abi(.c)) = .[cadd];
+
+    print("{} {}\n", fs[0](5, 6), fs[1](5, 6));
+    print("{} {}\n", t.ops[0](9, 4), t.ops[1](9, 4));
+    print("{}\n", pick()(20, 22));
+    print("{}\n", cs[0](5, 6));
+}
+
+// ** stdout **
+//11 -1
+//5 13
+//42
+//111

@@ -27,7 +27,7 @@ make :: (..sources: VL) -> VL(i64) {
 }
 
 main :: () -> i32 {
-    r := make(IntCell.{ v = 1 });
+    r := make(IntCell{ v = 1 });
     print("{}\n", r.get());      // 99 (dispatch through the erased Combined)
     0
 }

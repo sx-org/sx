@@ -103,7 +103,7 @@ roundtrip :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64) -> string {
         if got > 0 { stall = 0; } else { stall += 1; }
     }
     socket.close(fd);
-    return string.{ ptr = buf, len = xx total };
+    return string{ ptr = buf, len = xx total };
 }
 
 check :: (r: string, frag: string, label: string, failed: *i64) {

@@ -24,7 +24,7 @@ begin :: (self: *Foo, current: i64, freq: i64) -> FC {
     if self.last_perf > 0 {
         self.delta_time = xx (current - self.last_perf) / xx freq;
     }
-    FC.{ a = 1.0, b = 2.0, c = 3, d = 4, e = 5.0, f = 6.0 }
+    FC{ a = 1.0, b = 2.0, c = 3, d = 4, e = 5.0, f = 6.0 }
 }
 
 main :: () -> void {

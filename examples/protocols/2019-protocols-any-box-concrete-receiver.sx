@@ -1,0 +1,62 @@
+// Boxing a protocol value into `any` yields a view of the CONCRETE receiver
+// (§7.3), never of the protocol handle. Every binding position funnels
+// through the one coercion seam, so the declaration target, an assignment,
+// a call argument, a field init, a container element and a return all agree
+// with the explicit `xx p : any` — on each kind that has runtime values.
+#import "modules/std.sx";
+
+Sized :: protocol vtable { size :: (self: *Self) -> i64; }
+Boxed :: protocol inline { size :: (self: *Self) -> i64; }
+Noted :: protocol tagged { size :: (self: *Self) -> i64; }
+
+Cube :: struct { side: i64; }
+impl Sized for Cube { size :: (self: *Cube) -> i64 { self.side } }
+impl Boxed for Cube { size :: (self: *Cube) -> i64 { self.side } }
+impl Noted for Cube { size :: (self: *Cube) -> i64 { self.side } }
+
+Holder :: struct { seen: any; }
+
+named :: (v: any) -> string { type_name(type_of(v)) }
+returned :: (s: Sized) -> any { s }
+
+main :: () {
+    c := Cube{ side = 4 };
+
+    // Each kind's handle, boxed by a plain declaration.
+    v := c.(Sized);
+    i := c.(Boxed);
+    n : Noted = c;
+
+    av : any = v;
+    iv : any = i;
+    nv : any = n;
+    print("decl {} {} {}\n", named(av), named(iv), named(nv));
+
+    // The explicit conversion has always answered the concrete receiver;
+    // the implicit box now agrees with it.
+    xv : any = xx v;
+    print("xx {}\n", named(xv));
+
+    // Assignment into an existing `any` slot.
+    slot : any = 1;
+    slot = v;
+    print("assign {}\n", named(slot));
+
+    // Call argument, field init, container element, return.
+    print("arg {}\n", named(v));
+    h := Holder{ seen = n };
+    print("field {}\n", named(h.seen));
+    row : [3]any = .{ v, i, n };
+    print("elem {} {} {}\n", named(row[0]), named(row[1]), named(row[2]));
+    print("ret {}\n", named(returned(v)));
+
+    // The type word is the concrete receiver's, so the downcast opens the
+    // box at the conformer type — through every kind's handle.
+    print("down {} {} {}\n", av.(Cube).side, iv.(Cube).side, nv.(Cube).side);
+
+    // A value boxed DIRECTLY and the same value boxed VIA a protocol handle
+    // are the same view: same type word, same contents.
+    dv : any = c;
+    print("direct {} same {}\n", named(dv), type_of(av) == type_of(dv));
+    print("agree {} {} {} {}\n", dv.(Cube).side, av.(Cube).side, iv.(Cube).side, nv.(Cube).side);
+}

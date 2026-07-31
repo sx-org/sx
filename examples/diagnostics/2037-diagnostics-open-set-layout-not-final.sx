@@ -1,0 +1,55 @@
+// A position the compiler must fold BEFORE the sets freeze cannot ask for an open
+// set's size (spec: Open Sets — when the layout is final).
+//
+// An array dimension is fixed where it is written. A set's members are declared
+// anywhere in the program, and the last one can arrive at any point up to the
+// freeze — so a dimension folded from a set's size would be a size a later member
+// contradicts, in a struct whose layout is already registered and cannot be
+// measured again.
+//
+// The refusal names the set and says where the size IS answerable: a value
+// position, or a `#run`. Both read the frozen layout.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 256, align = 8 }) {
+    render :: (self: *Self) -> string;
+}
+
+// A struct field's dimension: folded when the struct is registered, which is
+// before this file's own members are admitted.
+Slot :: struct {
+    bytes: [size_of(View)]u8 = ---;
+}
+
+// Same for a type holding the set by value: its size is the set's.
+Wrapper :: struct {
+    v: View = ---;
+}
+
+Held :: struct {
+    bytes: [size_of(Wrapper)]u8 = ---;
+}
+
+// Declared AFTER the dimensions above — which is exactly the point. Nothing about
+// the order of a file decides a set's layout.
+Panel :: @OpenVariant(View) {
+    title: string = "";
+    w: i64 = 0;
+    h: i64 = 0;
+    render :: (self: *Panel) -> string => self.title;
+}
+
+// A generic member keeps the set open even past the declaration pass: a body
+// lowered later can still spell an instantiation, so a dimension inside a BODY is
+// refused too.
+Padded :: @OpenVariant(View) ($T: Type) {
+    inner: $T = ---;
+    render :: (self: *Padded) -> string => "padded";
+}
+
+main :: () -> i32 {
+    local: [size_of(View)]u8 = ---;
+    print("{} {}\n", size_of(Slot), local.len);
+    0
+}

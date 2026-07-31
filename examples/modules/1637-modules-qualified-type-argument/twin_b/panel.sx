@@ -1,0 +1,14 @@
+// One of two modules writing a `Panel`, over the set they both reach.
+#import "modules/std.sx";
+v :: #import "../view.sx";
+
+Panel :: @OpenVariant(v.View) {
+    tag: string = "twin_b";
+    render :: (self: *Panel) -> string => self.tag;
+}
+
+mk :: () -> v.View {
+    p : Panel = .{ tag = "twin_b value" };
+    x : v.View = p;
+    return x;
+}

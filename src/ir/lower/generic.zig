@@ -9,6 +9,8 @@ const program_index_mod = @import("../program_index.zig");
 const resolver_mod = @import("../resolver.zig");
 const StructTemplate = program_index_mod.StructTemplate;
 const GenericResolver = @import("../generics.zig").GenericResolver;
+const init_plan = @import("init_plan.zig");
+const build_block = @import("build_block.zig");
 
 const TypeId = types.TypeId;
 const Ref = inst_mod.Ref;
@@ -32,8 +34,8 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     // Flow narrowing (issue 0179) is per-function: this monomorphized body has
     // its own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
-    var narrow_guard = Lowering.NarrowGuard.enter(self);
-    defer narrow_guard.restore();
+    var nested_guard = Lowering.NestedBodyGuard.enter(self);
+    defer nested_guard.restore();
 
     // Save builder state
     const saved_func = self.builder.func;
@@ -85,6 +87,11 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     const saved_source_mono = self.current_source_file;
     defer self.setCurrentSourceFile(saved_source_mono);
     if (fd.body.source_file) |src| self.setCurrentSourceFile(src);
+
+    // The bounds this instance's bindings have to satisfy. Asked here rather
+    // than at the call site because this is where the concrete binding for each
+    // type parameter exists; the template itself constrains nothing.
+    self.checkBoundBindings(fd.type_params, bindings, self.current_source_file);
 
     // Resolve return type with type bindings active. The body's tail
     // expression inherits this as its target_type so bare `.{...}`
@@ -549,7 +556,21 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
             if (self.type_bindings) |tb| {
                 if (tb.get(te.name)) |ty| return ty;
             }
-            if (self.headTypeLeak(te.name, node.span)) return .unresolved;
+            // A plain nominal spelling names a leaf, and a leaf is asked the
+            // way every other position asks it: a dotted one reaches the
+            // module it names, and a bare one reaches the author this source
+            // sees — never whichever same-name author the global map
+            // registered first. A generic or constrained spelling names a
+            // head, so it keeps the poison-or-proceed projection.
+            const plain = !te.is_generic and te.protocol_constraints.len == 0;
+            if (plain and std.mem.indexOfScalar(u8, te.name, '.') != null) {
+                if (self.qualifiedNominalTypeArg(te.name, node.span)) |tid| return tid;
+            }
+            switch (self.headTypeGate(te.name, node.span)) {
+                .ambiguous, .not_visible => return .unresolved,
+                .resolved => |tid| if (plain) return tid,
+                .proceed => {},
+            }
             if (self.program_index.type_alias_map.get(te.name)) |alias_ty| return alias_ty;
             return type_bridge.resolveAstType(node, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map);
         },
@@ -611,14 +632,9 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
                 return .unresolved;
             };
             defer self.alloc.free(path);
+            if (self.qualifiedNominalTypeArg(path, node.span)) |ty| return ty;
             switch (self.qualifiedMemberVerdict(path)) {
-                .selected => |sel| {
-                    const saved_src = self.current_source_file;
-                    self.setCurrentSourceFile(sel.target.target_module_path);
-                    const ty = self.resolveNominalLeaf(sel.member, false, node.span);
-                    self.setCurrentSourceFile(saved_src);
-                    if (ty != .unresolved) return ty;
-                },
+                .selected => {},
                 .missing => |m| {
                     if (self.namespaceMissWaits(m)) return .unresolved;
                     if (self.diagnostics) |diags|
@@ -639,6 +655,24 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         },
         else => return .unresolved,
     }
+}
+
+/// The type a qualified path names, when the path proves a terminal author that
+/// authors it. The leaf is resolved AS that module, which is what makes
+/// `pkg.Row` in a type-argument slot the same type `pkg.Row` names in an
+/// annotation. Null when the path is not qualified, its namespace does not
+/// answer, or the author's leaf does not resolve — each of which the caller
+/// already has a reading for.
+pub fn qualifiedNominalTypeArg(self: *Lowering, path: []const u8, span: ast.Span) ?TypeId {
+    const sel = switch (self.qualifiedMemberVerdict(path)) {
+        .selected => |s| s,
+        .not_qualified, .missing, .ambiguous => return null,
+    };
+    const saved_src = self.current_source_file;
+    self.setCurrentSourceFile(sel.target.target_module_path);
+    const ty = self.resolveNominalLeaf(sel.member, false, span);
+    self.setCurrentSourceFile(saved_src);
+    return if (ty == .unresolved) null else ty;
 }
 
 /// Format a type name for display (e.g. "*Point", "[]i32", "[3]f64").
@@ -733,39 +767,78 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
             }
             break :blk buf.toOwnedSlice(self.alloc) catch "function";
         },
+        // A compiler-formed `@` type renders through the type table's canonical
+        // spelling; a plain closure keeps the historical bare `closure` tag.
+        .closure => |co| if (co.init_target != null or co.build_protocol != null)
+            self.module.types.formatTypeName(self.alloc, ty)
+        else
+            @tagName(info),
         else => @tagName(info),
     };
 }
 
+/// A type's SOURCE spelling, for diagnostics: a generic instance is rendered as
+/// the template applied to its arguments (`Sink(i64)`), never as the mangled
+/// instance name that keys it internally. Everything else formats as usual.
+pub fn formatSourceTypeName(self: *Lowering, ty: TypeId) []const u8 {
+    // Two modules may declare one spelling. A reader can only act on a name that
+    // says which declaration it means, so a spelling with more than one author
+    // carries the module that declares THIS one — and one with a single author is
+    // left exactly as the program writes it.
+    if (self.openSetOf(ty)) |set| {
+        if (self.nameHasMultipleTypeAuthors(set.decl.name)) {
+            if (set.source_file) |src| {
+                return std.fmt.allocPrint(self.alloc, "{s} ({s})", .{ set.decl.name, src }) catch set.decl.name;
+            }
+        }
+        return set.decl.name;
+    }
+    const inst = self.getStructTypeName(ty) orelse return self.formatTypeName(ty);
+    const template = self.struct_instance_template.get(inst) orelse {
+        // A plain type whose spelling several modules declare says which one it is
+        // the same way a set does.
+        if (self.plain_struct_authors.get(ty)) |author| {
+            if (self.nameHasMultipleTypeAuthors(author.decl.name)) {
+                if (author.source) |src| {
+                    return std.fmt.allocPrint(self.alloc, "{s} ({s})", .{ author.decl.name, src }) catch author.decl.name;
+                }
+            }
+        }
+        return self.formatTypeName(ty);
+    };
+    const author = self.struct_instance_author.get(inst) orelse return self.formatTypeName(ty);
+    const binds = self.struct_instance_bindings.getPtr(inst) orelse return self.formatTypeName(ty);
+    var out = std.ArrayList(u8).empty;
+    out.appendSlice(self.alloc, template) catch return self.formatTypeName(ty);
+    out.append(self.alloc, '(') catch return self.formatTypeName(ty);
+    var n: usize = 0;
+    for (author.type_params) |tp| {
+        const bound = binds.get(tp.name) orelse continue;
+        if (n > 0) out.appendSlice(self.alloc, ", ") catch return self.formatTypeName(ty);
+        out.appendSlice(self.alloc, self.formatSourceTypeName(bound)) catch return self.formatTypeName(ty);
+        n += 1;
+    }
+    if (n == 0) return self.formatTypeName(ty);
+    out.append(self.alloc, ')') catch return self.formatTypeName(ty);
+    return out.items;
+}
+
 /// Format a function type string like "() -> i32" or "(i32, i32) -> i32".
 pub fn formatFnTypeString(self: *Lowering, fd: *const ast.FnDecl) []const u8 {
-    var buf: [512]u8 = undefined;
-    var pos: usize = 0;
-    buf[pos] = '(';
-    pos += 1;
+    var buf = std.ArrayList(u8).empty;
+    buf.append(self.alloc, '(') catch return "function";
     for (fd.params, 0..) |p, i| {
-        if (i > 0) {
-            @memcpy(buf[pos..][0..2], ", ");
-            pos += 2;
-        }
+        if (i > 0) buf.appendSlice(self.alloc, ", ") catch return "function";
         const pty = self.resolveParamType(&p);
-        const name = self.formatTypeName(pty);
-        @memcpy(buf[pos..][0..name.len], name);
-        pos += name.len;
+        buf.appendSlice(self.alloc, self.formatTypeName(pty)) catch return "function";
     }
-    buf[pos] = ')';
-    pos += 1;
+    buf.append(self.alloc, ')') catch return "function";
     const ret_ty = self.resolveReturnType(fd);
     if (ret_ty != .void) {
-        @memcpy(buf[pos..][0..4], " -> ");
-        pos += 4;
-        const rname = self.formatTypeName(ret_ty);
-        @memcpy(buf[pos..][0..rname.len], rname);
-        pos += rname.len;
+        buf.appendSlice(self.alloc, " -> ") catch return "function";
+        buf.appendSlice(self.alloc, self.formatTypeName(ret_ty)) catch return "function";
     }
-    const result = self.alloc.alloc(u8, pos) catch unreachable;
-    @memcpy(result, buf[0..pos]);
-    return result;
+    return buf.toOwnedSlice(self.alloc) catch "function";
 }
 
 /// Format a type name for function name mangling (identifier-safe).
@@ -773,7 +846,7 @@ pub fn formatFnTypeString(self: *Lowering, fd: *const ast.FnDecl) []const u8 {
 /// Check if a param type expression references a type param name (possibly nested).
 pub fn matchTypeParam(_: *Lowering, type_node: *const Node, tp_name: []const u8) bool {
     return switch (type_node.data) {
-        .type_expr => |te| std.mem.eql(u8, te.name, tp_name),
+        .type_expr => |te| std.mem.eql(u8, te.name, tp_name) or initBoundMatches(type_node, tp_name),
         .identifier => |id| std.mem.eql(u8, id.name, tp_name),
         .slice_type_expr => |st| matchTypeParamStatic(st.element_type, tp_name),
         .pointer_type_expr => |pt| matchTypeParamStatic(pt.pointee_type, tp_name),
@@ -800,9 +873,17 @@ pub fn matchTypeParam(_: *Lowering, type_node: *const Node, tp_name: []const u8)
     };
 }
 
+/// A binder carrying an `@Init(X)` bound also introduces whatever binder `X`
+/// writes (`$I/@Init($T)` declares `$T` too), and that one is inferred from the
+/// argument the initializer is formed from — so both matchers see it.
+fn initBoundMatches(type_node: *const Node, tp_name: []const u8) bool {
+    const target = init_plan.boundTargetNode(type_node) orelse return false;
+    return matchTypeParamStatic(target, tp_name);
+}
+
 pub fn matchTypeParamStatic(type_node: *const Node, tp_name: []const u8) bool {
     return switch (type_node.data) {
-        .type_expr => |te| std.mem.eql(u8, te.name, tp_name),
+        .type_expr => |te| std.mem.eql(u8, te.name, tp_name) or initBoundMatches(type_node, tp_name),
         .identifier => |id| std.mem.eql(u8, id.name, tp_name),
         .slice_type_expr => |st| matchTypeParamStatic(st.element_type, tp_name),
         .pointer_type_expr => |pt| matchTypeParamStatic(pt.pointee_type, tp_name),
@@ -832,7 +913,29 @@ pub fn matchTypeParamStatic(type_node: *const Node, tp_name: []const u8) bool {
 /// E.g., param type []$T with arg type []i64 → T = i64.
 pub fn extractTypeParam(self: *Lowering, type_node: *const Node, arg_ty: TypeId, tp_name: []const u8) ?TypeId {
     return switch (type_node.data) {
-        .type_expr => |te| if (std.mem.eql(u8, te.name, tp_name)) arg_ty else null,
+        .type_expr => |te| blk: {
+            const init_target = init_plan.boundTargetNode(type_node);
+            // A `@BuildBlock`-bounded binder binds only to a block the compiler
+            // formed; an ordinary value leaves it unbound, so the parameter
+            // resolves to the formation request and the argument is diagnosed
+            // there rather than silently binding its own type.
+            if (build_block.boundProtocolNode(type_node) != null and std.mem.eql(u8, te.name, tp_name)) {
+                break :blk if (self.module.types.blockSite(arg_ty) != null) arg_ty else null;
+            }
+            if (std.mem.eql(u8, te.name, tp_name)) {
+                // An `@Init`-bounded binder binds only to an IMPLEMENTOR: an
+                // ordinary expression is formed first, and the formed type is
+                // what arrives here (§5.2). Leaving it unbound is what makes
+                // the parameter resolve to the formation request.
+                if (init_target != null) break :blk if (init_plan.conforms(self, null, arg_ty)) arg_ty else null;
+                break :blk arg_ty;
+            }
+            // The init's own type argument, inferred from the argument's
+            // ordinary type — or, for a forwarded initializer, from its target.
+            const target_node = init_target orelse break :blk null;
+            const value_ty = self.module.types.initTarget(arg_ty) orelse arg_ty;
+            break :blk self.extractTypeParam(target_node, value_ty, tp_name);
+        },
         .identifier => |id| if (std.mem.eql(u8, id.name, tp_name)) arg_ty else null,
         .slice_type_expr => |st| blk: {
             // arg_ty should be a slice → extract element type. An array
@@ -1298,6 +1401,9 @@ pub fn isTypeCategoryMatch(me: *const ast.MatchExpr) bool {
             const name = switch (pat.data) {
                 .identifier => |id| id.name,
                 .type_expr => |te| te.name,
+                // An instantiation spelling (`case Buffer(f32):`) names a
+                // type by construction — no category/capitalization probe.
+                .parameterized_type_expr => return true,
                 else => continue,
             };
             const categories = [_][]const u8{
@@ -2404,6 +2510,21 @@ pub fn instantiateGenericStruct(self: *Lowering, tmpl: *const StructTemplate, ar
         if (has_any_default) {
             self.struct_defaults_map.put(owned_mangled, instance_defaults.toOwnedSlice(self.alloc) catch &.{}) catch {};
         }
+    }
+
+    // A GENERIC open-set member is measured per instantiation: the template has
+    // no layout, so `max` / `align` / finiteness are checked here, against the
+    // instantiation the program actually materialized. A failing instantiation is
+    // diagnosed at this site — the declaration is not at fault, since another
+    // instantiation may be perfectly admissible.
+    if (tmpl.decl.open_variant_of != null) {
+        const site = if (args.len > 0) args[0].span else ast.Span{ .start = 0, .end = 0 };
+        // The head names what the TEMPLATE's module can see, not what this
+        // instantiation's site can: a member joins the set it was declared into.
+        const saved_head_source = self.current_source_file;
+        defer self.setCurrentSourceFile(saved_head_source);
+        if (tmpl.source_file) |src| self.setCurrentSourceFile(src);
+        self.admitOpenVariant(tmpl.decl, id, site);
     }
 
     return id;

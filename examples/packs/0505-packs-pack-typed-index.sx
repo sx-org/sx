@@ -25,7 +25,7 @@ Point :: struct { x: i64; y: i64; }
 get_x :: (..$args) -> i64 => args[0].x;
 
 main :: () -> i32 {
-    p := Point.{ x = 7, y = 9 };
+    p := Point{ x = 7, y = 9 };
     n := get_x(p);
     print("{}\n", n);
     return 0;

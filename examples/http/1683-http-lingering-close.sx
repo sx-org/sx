@@ -123,7 +123,7 @@ main :: () -> i32 {
             }
             if got > 0 { stall = 0; } else { stall += 1; }
         }
-        resp := string.{ ptr = rbuf, len = xx total };
+        resp := string{ ptr = rbuf, len = xx total };
         if !contains(resp, "HTTP/1.1 431") {
             print("431 never reached the client (got {} bytes)\n", total);
             failed = 1;
@@ -171,7 +171,7 @@ main :: () -> i32 {
             }
             if got > 0 { stall = 0; } else { stall += 1; }
         }
-        bresp := string.{ ptr = rbuf, len = xx btotal };
+        bresp := string{ ptr = rbuf, len = xx btotal };
         if !contains(bresp, "HTTP/1.1 200 OK") or !contains(bresp, "healthy") {
             print("server unhealthy after lingering close\n");
             failed = 1;

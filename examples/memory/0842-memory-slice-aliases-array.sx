@@ -18,9 +18,9 @@ g_arr : [4]i64 = ---;
 main :: () -> i32 {
     // ── local array: write-through + read-through ────────────────────────
     arr : [3]S = ---;
-    arr[0] = S.{ v = 1 };
-    arr[1] = S.{ v = 2 };
-    arr[2] = S.{ v = 3 };
+    arr[0] = S{ v = 1 };
+    arr[1] = S{ v = 2 };
+    arr[2] = S{ v = 3 };
     sl : []S = arr[0..3];
     sl[1].v = 99;                    // write through the slice
     if arr[1].v != 99 { return 1; }  // visible in the array

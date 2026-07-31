@@ -20,6 +20,6 @@ inline if !has_impl(Serialize, GPA) {
 }
 
 main :: () {
-    g := GPA.{ n = 3 };
+    g := GPA{ n = 3 };
     print("{}\n", g.n);
 }

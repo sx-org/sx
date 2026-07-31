@@ -80,7 +80,7 @@ exchange :: (srv: *http.Server, req: string, buf: [*]u8, cap: i64, eof: *bool) -
     }
     socket.close(fd);
     eof.* = done;
-    return string.{ ptr = buf, len = xx total };
+    return string{ ptr = buf, len = xx total };
 }
 
 check :: (r: string, frag: string, label: string, failed: *i64) {

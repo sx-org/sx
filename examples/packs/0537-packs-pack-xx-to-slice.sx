@@ -27,6 +27,6 @@ fwd_show :: (..xs: Show) -> i64 { return show_all(xx xs); }
 
 main :: () -> i32 {
     print("any={}\n", fwd_any(1, "hi", 2.5));     // 3
-    print("show={}\n", fwd_show(A.{}, B.{ s = "x" }, A.{}));  // A B A, 3
+    print("show={}\n", fwd_show(A{}, B{ s = "x" }, A{}));  // A B A, 3
     0
 }

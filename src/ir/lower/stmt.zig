@@ -85,6 +85,18 @@ fn isNoElseValuelessIf(node: *const Node) bool {
         !node.data.if_expr.is_inline;
 }
 
+/// Lower a block's trailing value. When the enclosing body is a function's
+/// returned value (`return_value_body`), this tail is in return position —
+/// the same §6.2 refusals as an explicit `return <expr>;`. Nested statements
+/// clear `in_return_expr` in `lowerStmt` so only the value chain is armed.
+fn lowerTailAsExpr(self: *Lowering, tail: *const Node) ?Ref {
+    if (!self.return_value_body) return self.tryLowerAsExpr(tail);
+    const old_in_return = self.in_return_expr;
+    self.in_return_expr = true;
+    defer self.in_return_expr = old_in_return;
+    return self.tryLowerAsExpr(tail);
+}
+
 /// Lower a block and return the last expression's value (for implicit returns).
 pub fn lowerBlockValue(self: *Lowering, node: *const Node) ?Ref {
     // Set force_block_value so nested if-else expressions produce values
@@ -140,11 +152,11 @@ pub fn lowerBlockValue(self: *Lowering, node: *const Node) ?Ref {
             // value; a value-returning function's missing tail value is still
             // caught downstream by `lowerValueBody`'s "body produces no value".
             self.force_block_value = !isNoElseValuelessIf(last);
-            return self.tryLowerAsExpr(last);
+            return lowerTailAsExpr(self, last);
         },
         else => {
             // Single expression as body (arrow functions)
-            return self.tryLowerAsExpr(node);
+            return lowerTailAsExpr(self, node);
         },
     }
 }
@@ -161,6 +173,9 @@ pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
     // ObjC selector arity warning) must NOT suppress a genuine missing-value
     // error, or we'd ship an uninitialized return at exit 0.
     const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
+    const saved_rvb = self.return_value_body;
+    self.return_value_body = true;
+    defer self.return_value_body = saved_rvb;
     const body_val = self.lowerBlockValue(body);
     if (self.currentBlockHasTerminator()) return;
     if (body_val) |val| {
@@ -173,6 +188,7 @@ pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
                 }
                 break :blk body.span;
             };
+            if (self.rejectBlockReturn(val_ty, span)) return;
             // Value-carrying failable `-> (T..., !)`: a trailing success
             // EXPRESSION (no explicit `return`) yields just the value part —
             // the compiler must append the success error slot (0). Mirror the
@@ -401,6 +417,18 @@ pub fn tryLowerAsExpr(self: *Lowering, node: *const Node) ?Ref {
 }
 
 pub fn lowerStmt(self: *Lowering, node: *const Node) void {
+    // Statement context is never return-position for §6.2: a binding like
+    // `v := Widget{}.(View)` inside a returned block/if arm must stay legal.
+    // Clear both the flag and the body mode so nested match/if value contexts
+    // and local function bodies do not re-arm via lowerTailAsExpr.
+    const saved_in_return = self.in_return_expr;
+    const saved_rvb = self.return_value_body;
+    self.in_return_expr = false;
+    self.return_value_body = false;
+    defer {
+        self.in_return_expr = saved_in_return;
+        self.return_value_body = saved_rvb;
+    }
     // Stamp this statement's span onto its instructions (ERR E3.0); see
     // `lowerExpr`.
     const saved_span = self.builder.current_span;
@@ -468,6 +496,13 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
         },
         // Expression statement
         else => {
+            // Inside a `@BuildBlock(P)` replay, a standalone expression whose
+            // type conforms to `P` is the block's payload: it is offered to the
+            // sink as an `@Init(V)` instead of being evaluated here (spec §7.2).
+            // Every other statement form reached one of the arms above, which is
+            // exactly why a declaration, an assignment (`_ = e` included), and a
+            // `return` are never intercepted — their value belongs to them.
+            if (self.interceptBuildExpression(node)) return;
             const v = self.lowerExpr(node);
             // A statement-position expression that DIVERGES — a call to a
             // `-> noreturn` fn such as `proc.exit` — ends the basic block. A
@@ -556,6 +591,7 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
             var ref = self.lowerExpr(val);
             self.target_type = saved_target;
             self.force_block_value = saved_fbv;
+            if (self.rejectBlockBinding(val, vd.name, self.builder.getRefType(ref))) return;
             // If target is optional and value isn't null, wrap with optional_wrap
             // — UNLESS the value is already that optional (e.g. a `?T`-returning
             // call, or a struct literal that lowered straight to `?T`); wrapping
@@ -757,6 +793,9 @@ pub fn lowerVarDecl(self: *Lowering, vd: *const ast.VarDecl) void {
         // integer (issue 0237).  Keep the emitted ref unchanged and specialize
         // only this declaration-inference boundary.
         const ty = inferBareFnBindingType(self, val) orelse self.builder.getRefType(ref);
+        // Asked on the LOWERED type, so every shape a block can arrive through
+        // is covered — a bare name, an `if` that yields one, anything.
+        if (self.rejectBlockBinding(val, vd.name, ty)) return;
         const slot = self.builder.alloca(ty);
         self.builder.store(slot, ref);
         if (self.scope) |scope| {
@@ -1094,6 +1133,9 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt) void {
     // returns and for the inline-comptime case (ret_ty_for_target carries the
     // right tuple either way).
     const ret_val = if (rs_value) |val| self.lowerExpr(reorderNamedReturn(self, val, ret_ty_for_target)) else null;
+    if (ret_val) |rv| {
+        if (self.rejectBlockReturn(self.builder.getRefType(rv), (rs_value orelse rs.value.?).span)) return;
+    }
     self.force_block_value = saved_fbv_ret;
     self.target_type = old_target;
 
@@ -3033,16 +3075,16 @@ pub fn emitErrorCleanup(self: *Lowering, base: usize, err_tag: Ref) void {
 }
 
 pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
-    // push Context.{...} { body } — allocates a fresh Context on the
-    // stack frame, rebinds the lowering's `current_ctx_ref` to it for
-    // the body's lexical scope, then restores. No global, no walk.
+    // push Context{...} { body } / push .{...} { body } — allocates a fresh
+    // Context on the stack frame, rebinds the lowering's `current_ctx_ref`
+    // to it for the body's lexical scope, then restores. No global, no walk.
     if (!self.implicit_ctx_enabled) {
-        _ = self.diagnoseMissingContext("`push Context.{...}`");
+        _ = self.diagnoseMissingContext("`push .{...}` / `push Context{...}`");
         self.lowerBlock(ps.body);
         return;
     }
     const ctx_ty = self.module.types.findByName(self.module.types.internString("Context")) orelse {
-        _ = self.diagnoseMissingContext("`push Context.{...}`");
+        _ = self.diagnoseMissingContext("`push .{...}` / `push Context{...}`");
         self.lowerBlock(ps.body);
         return;
     };
@@ -3051,14 +3093,14 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
 
     const slot = self.builder.alloca(ctx_ty);
 
-    // Inherit-omitted semantics: a `push Context.{ ... }` is a CAPABILITY
-    // bag — fields the literal does NOT name are inherited from the ambient
-    // context, not zero-inited. Zero-init would install a NULL `io`/
+    // Inherit-omitted semantics: a `push Context{ ... }` / `push .{ ... }` is a
+    // CAPABILITY bag — fields the literal does NOT name are inherited from the
+    // ambient context, not zero-inited. Zero-init would install a NULL `io`/
     // `allocator` vtable (a latent crash if the field is later used inside
     // the pushed scope). So seed the new slot from the ambient context,
     // then overwrite only the fields the literal explicitly names.
     //
-    // This applies only to a `Context.{...}` struct-literal context-expr;
+    // This applies only to a Context / contextual struct-literal context-expr;
     // any other form (e.g. `push some_ctx_value`) keeps the whole-value
     // store (no field-level merge to do).
     const lit: ?*const ast.StructLiteral = switch (ps.context_expr.data) {
@@ -3072,15 +3114,15 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
         const ambient = self.builder.load(self.current_ctx_ref, ctx_ty);
         self.builder.store(slot, ambient);
 
-        // 2. Overwrite only the named fields. `push Context.{...}` always
-        //    uses named field-inits (it is a Context literal); a positional
-        //    init has no field name to target, so it is rejected loudly
-        //    rather than silently writing the wrong field.
+        // 2. Overwrite only the named fields. `push .{...}` / `push Context{...}`
+        //    always uses named field-inits; a positional init has no field name
+        //    to target, so it is rejected loudly rather than silently writing
+        //    the wrong field.
         self.current_ctx_ref = slot; // body + field values see the new slot
         for (lit.?.field_inits) |fi| {
             const fname = fi.name orelse {
                 if (self.diagnostics) |d|
-                    d.addFmt(.err, ps.context_expr.span, "`push Context.{{...}}` requires named fields (positional init not supported)", .{});
+                    d.addFmt(.err, ps.context_expr.span, "`push .{{...}}` / `push Context{{...}}` requires named fields (positional init not supported)", .{});
                 continue;
             };
             const fl = self.fieldLvaluePtr(slot, ctx_ty, fname) orelse {

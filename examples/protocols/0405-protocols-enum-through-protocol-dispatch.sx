@@ -25,7 +25,7 @@ take :: (f: Fmt) -> i64 {
 main :: () -> i32 {
   print("direct a={} b={}\n", take(.a), take(.b));
 
-  p := Impl.{}.(Proto);
+  p := Impl{}.(Proto);
   p.take_fmt(.b);
   p.take_fmt(.a);
   0

@@ -1,0 +1,56 @@
+// Asserting a set out of an `any` (spec: Open Sets — what a set value answers
+// about itself).
+//
+// Boxing a set boxes the MEMBER it carries, so no `any` in a program holds a set
+// value. An assertion states that a box holds one, which nothing can make true:
+//
+//   - `av.(View)` asserts it outright;
+//   - a generic assertion instantiated at a set asserts it just as much, and is
+//     answered where the assertion is written;
+//   - the consumed forms (`try`, `or`, `catch`) are that same assertion with a
+//     failure channel, so they are refused with it — and the consumer then has
+//     an operand that is not failable, which it says in its own words; and
+//   - the chain `o?.(View)` asserts it about the payload.
+//
+// The QUESTION forms are not here: `av.(?View)` answers `null` for every box, and
+// so does the chained `o?.(?View)` — see examples/types/0907.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+// The same assertion, written once and instantiated at the set.
+assert_it :: ($T: Type, a: any) -> T => a.(T);
+
+Grabbed :: error { nothing }
+
+grab :: (a: any) -> (View, !Grabbed) {
+    v := try a.(View);
+    return v;
+}
+
+main :: () -> i32 {
+    v: View = Label{ text = "boxed" };
+    a: any = v;
+
+    // The assertion, outright.
+    direct := a.(View);
+    print("{}\n", direct.render());
+
+    // The same assertion through a type parameter.
+    generic := assert_it(View, a);
+    print("{}\n", generic.render());
+
+    // With a failure channel, and through a chain.
+    chained: ?any = v;
+    reached := chained?.(View);
+    print("{} {}\n", grab(a), reached);
+    0
+}

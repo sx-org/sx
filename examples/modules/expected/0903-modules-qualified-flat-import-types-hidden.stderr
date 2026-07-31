@@ -31,7 +31,7 @@ error: namespace 'facade' has no member 'HiddenProtocol'
 error: namespace 'facade' has no member 'HiddenGeneric'
   --> examples/modules/0903-modules-qualified-flat-import-types-hidden.sx:13:16
    |
-13 |     generic := facade.HiddenGeneric(i64).{ value = 1 };
+13 |     generic := facade.HiddenGeneric(i64){ value = 1 };
    |                ^^^^^^^^^^^^^^^^^^^^
 
 error: namespace 'facade' has no member 'HiddenStruct'

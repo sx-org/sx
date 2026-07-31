@@ -16,7 +16,7 @@ Dog :: struct { n: i64 = 0; }
 impl Speaker for Dog { speak :: (self: *Dog, $T: Type) -> i64 { return self.n; } }
 
 main :: () {
-  d := Dog.{ n = 42 };
+  d := Dog{ n = 42 };
   s := d.(Speaker);   // <- 'Dog.speak' has a mismatched signature
   print("{}\n", s.speak());
 }

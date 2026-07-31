@@ -1,0 +1,20 @@
+// The emit library's root and rendering entry points (revision §13.2).
+#import "modules/std.sx";
+#import "modules/ui/emit/geometry.sx";
+#import "modules/ui/emit/render.sx";
+#import "modules/ui/emit/view.sx";
+
+// Measures the root against the viewport, lays it out, and renders it into a
+// tree the caller owns.
+render_root :: (root: *View, viewport: Size, tree: *RenderTree) {
+    proposal := ProposedSize.fixed(viewport.width, viewport.height);
+    size := root.size_that_fits(proposal);
+    bounds := Frame.make(0.0, 0.0, size.width, size.height);
+    root.layout(bounds);
+    rc := RenderContext.init(tree);
+    root.render(*rc, bounds);
+}
+
+// The command count is what a test asserts against without owning the tree's
+// representation.
+command_count :: (tree: *RenderTree) -> i64 => tree.commands.len;

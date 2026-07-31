@@ -32,7 +32,7 @@ fold :: (..xs: Box) -> i64 {
 }
 
 main :: () -> i32 {
-    snap(IntCell.{ v = 42 }, StrCell.{ s = "hi" });   // (i64, string)
-    print("fold={}\n", fold(IntCell.{ v = 10 }, Dbl.{ n = 5 }));   // 10 + 10 = 20
+    snap(IntCell{ v = 42 }, StrCell{ s = "hi" });   // (i64, string)
+    print("fold={}\n", fold(IntCell{ v = 10 }, Dbl{ n = 5 }));   // 10 + 10 = 20
     0
 }

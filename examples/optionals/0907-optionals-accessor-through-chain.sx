@@ -49,7 +49,7 @@ main :: () -> i64 {
 
     // COLD user generic getter through chain (no direct call first): concrete
     // return and type-parameter return, via ?*Cell and ?Cell.
-    c := Cell(i64).{ slot = 99, n = 5 };
+    c := Cell(i64){ slot = 99, n = 5 };
     pc : ?*Cell(i64) = *c;
     print("cold ?*Cell count: {}\n", pc?.count ?? -1);  // 5
     print("cold ?*Cell head: {}\n", pc?.head ?? -1);    // 99

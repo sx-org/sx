@@ -1,0 +1,29 @@
+// Telling two sets of one name apart, and a name that reaches none (specs: Open
+// Sets — membership; Modules — the namespace surface).
+//
+// A set is its declaration, so what a refusal must say is WHICH declaration it
+// means. A spelling only one module declares says that already, and is left as the
+// program writes it; a spelling two modules declare carries the module that
+// declares the one being named. The mangled form a compiler keeps them apart with
+// is never what a reader is shown.
+//
+// A bare head is a bare name: it reaches what the file that wrote it can see. A
+// module that imported neither of two same-named sets is told so, rather than
+// handed one of them.
+// Expected: exit 1.
+#import "modules/std.sx";
+#import "2047-diagnostics-open-set-two-authors/cell.sx";
+#import "2047-diagnostics-open-set-two-authors/stray/joiner.sx";
+one :: #import "2047-diagnostics-open-set-two-authors/one/view.sx";
+two :: #import "2047-diagnostics-open-set-two-authors/two/view.sx";
+
+main :: () -> i32 {
+    // Two authors: each side of the refusal names the module that declares it.
+    wrong : one.View = two.Label{ text = "the other one" };
+    print("{}\n", wrong.render());
+
+    // One author: the name stands alone, exactly as the program writes it.
+    odd : Cell = Plain{ n = 1 };
+    print("{}\n", odd.tag());
+    0
+}

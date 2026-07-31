@@ -91,7 +91,7 @@ staged :: (srv: *http.Server, first: string, second: string, third: string, wait
         spins : i64 = 0;
         while spins < 400 {
             if drain(srv, fd, buf, cap, *total) { break; }   // early EOF (a reject)
-            if contains(string.{ ptr = buf, len = xx total }, wait_for) { break; }
+            if contains(string{ ptr = buf, len = xx total }, wait_for) { break; }
             spins += 1;
         }
     } else {
@@ -123,7 +123,7 @@ staged :: (srv: *http.Server, first: string, second: string, third: string, wait
         if total > prev { stall = 0; prev = total; } else { stall += 1; }
     }
     socket.close(fd);
-    return string.{ ptr = buf, len = xx total };
+    return string{ ptr = buf, len = xx total };
 }
 
 check :: (r: string, frag: string, label: string, failed: *i64) {

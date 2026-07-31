@@ -10,7 +10,7 @@
 #import "./1946-diagnostics-tagged-templated-coherence-b.sx";
 
 main :: () {
-    s := Sine.{ freq = 1.0 };
+    s := Sine{ freq = 1.0 };
     v : Series(f32) = s;
     print("{}\n", v.at(0));
 }

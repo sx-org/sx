@@ -46,7 +46,7 @@ main :: () -> i32 {
     tls.mbedtls_version_get_string(xx @ver);
     n := 0;
     while n < 16 and ver[n] != 0 { n = n + 1; }
-    s := string.{ ptr = xx @ver, len = n };
+    s := string{ ptr = xx @ver, len = n };
     print("{}\n", s);
 
     tls.mbedtls_ssl_config_free(@conf);

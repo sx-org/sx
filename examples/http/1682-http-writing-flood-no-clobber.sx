@@ -49,7 +49,7 @@ route :: (req: *http.Request, resp: *http.Response, ctx: usize) {
     b : [*]u8 = xx context.allocator.alloc_bytes(BODY_LEN);
     i : i64 = 0;
     while i < BODY_LEN { b[i] = xx ((i * 13 + 7) % 251); i += 1; }
-    resp.body = string.{ ptr = b, len = BODY_LEN };
+    resp.body = string{ ptr = b, len = BODY_LEN };
 }
 
 dial_port :: (port: i64) -> i32 {
@@ -153,7 +153,7 @@ main :: () -> i32 {
             i += 1;
         }
         if he < 0 { print("no response header terminator\n"); failed = 1; }
-        head := string.{ ptr = rbuf, len = if he > 0 then he else 0 };
+        head := string{ ptr = rbuf, len = if he > 0 then he else 0 };
         ok200 := false;
         if head.len >= 15 {
             s := "HTTP/1.1 200 OK";

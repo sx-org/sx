@@ -39,15 +39,15 @@ main :: () {
     ia : [4]i64  = .[9, 8, 7, 6];
     ba : [2]bool = .[true, false];
 
-    bf := Buffer(f32).{ items = fa[0..] };
-    bi := Buffer(i64).{ items = ia[0..] };
+    bf := Buffer(f32){ items = fa[0..] };
+    bi := Buffer(i64){ items = ia[0..] };
     // Instantiated, and admissible under the blanket — but `Series(bool)` is
     // never value-used, so no set, tag space, or table exists for it.
-    bb := Buffer(bool).{ items = ba[0..] };
+    bb := Buffer(bool){ items = ba[0..] };
 
-    ru := Repeat(i64).{ tag = 1, n = 4 };
-    rs := Repeat(string).{ tag = "k", n = 2 };
-    ct := Counter.{ n = 3 };
+    ru := Repeat(i64){ tag = 1, n = 4 };
+    rs := Repeat(string){ tag = "k", n = 2 };
+    ct := Counter{ n = 3 };
 
     print("{} {}\n", total_f(bf), total_i(bi));
     print("{} {}\n", total_f(ru), total_f(rs));

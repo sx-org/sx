@@ -1,4 +1,4 @@
-#import "modules/std/core.sx";   // Source_Location
+#import "modules/std/core.sx";   // @SourceSite
 #import "modules/std/fmt.sx";    // print, concat, substr, alloc_string, to_cstring, from_cstring
 c :: #import "modules/std/c.sx"; // c.exit (_exit) + the shared libc handle
 trace :: #import "modules/std/trace.sx";
@@ -81,7 +81,7 @@ run :: (cmd: [:0]u8) -> ?ProcessResult {
             exit_code = 128 + (raw_status & 0x7F);
         }
     }
-    ProcessResult.{ exit_code = exit_code, stdout = out }
+    ProcessResult{ exit_code = exit_code, stdout = out }
 }
 
 // Read an environment variable. Returns null if unset; an empty
@@ -132,22 +132,22 @@ find_executable :: (name: [:0]u8) -> ?string {
 // no `defer` / `onfail` cleanup runs, no error-trace frames are pushed —
 // it's the POSIX `_exit(2)` syscall. At comptime (`#run`) it terminates the
 // COMPILER with the same code after printing a diagnostic naming the call site
-// (`loc` defaults to `#caller_location`); in compiled code the `is_comptime()`
+// (`site` defaults to `@caller`); in compiled code the `is_comptime()`
 // branch folds away to just the syscall.
-exit :: (code: u8, loc: Source_Location = #caller_location) -> noreturn {
+exit :: (code: u8, site: @SourceSite = @caller) -> noreturn {
     if is_comptime() {
-        print("\nprocess.exit({}) called from {} at {}:{}\n", code, loc.func, loc.file, loc.line);
+        print("\nprocess.exit({}) called from {} at {}:{}\n", code, site.declaration, site.file, site.line);
         trace.print_interpreter_frames();
     }
     c.exit(xx code)
 }
 
 // Abort with a message when `cond` is false. Prints `ASSERTION FAILED at
-// <file>:<line>: <msg>` (the caller's location, via `#caller_location`) then
+// <file>:<line>: <msg>` (the caller's location, via `@caller`) then
 // exits 1; a true condition is a no-op.
-assert :: (cond: bool, msg: string, loc: Source_Location = #caller_location) {
+assert :: (cond: bool, msg: string, site: @SourceSite = @caller) {
     if !cond {
-        print("ASSERTION FAILED at {}:{}: {}\n", loc.file, loc.line, msg);
+        print("ASSERTION FAILED at {}:{}: {}\n", site.file, site.line, msg);
         exit(1);
     }
 }

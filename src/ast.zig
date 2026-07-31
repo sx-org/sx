@@ -74,11 +74,11 @@ pub const Node = struct {
         try_expr: TryExpr,
         catch_expr: CatchExpr,
         onfail_stmt: OnFailStmt,
-        /// `#caller_location` — a marker that, as a parameter default, resolves
-        /// to a `Source_Location` of the call site (ERR E4.1b). The node's
-        /// `span`/`source_file` carry the location (rewritten to the call site
-        /// during default expansion). No payload.
-        caller_location: void,
+        /// `@caller` — a marker legal only inside a parameter's default
+        /// expression, where it resolves to the CALL site's `@SourceSite`. The
+        /// node's `span`/`source_file` carry that site (rewritten during default
+        /// expansion). No payload.
+        caller_site: void,
         pack_index_type_expr: PackIndexTypeExpr,
         comptime_pack_ref: ComptimePackRef,
         force_unwrap: ForceUnwrap,
@@ -106,6 +106,7 @@ pub const Node = struct {
         ufcs_alias: UfcsAlias,
         c_import_decl: CImportDecl,
         protocol_decl: ProtocolDecl,
+        open_set_decl: OpenSetDecl,
         impl_block: ImplBlock,
         ffi_intrinsic_call: FfiIntrinsicCall,
         runtime_class_decl: RuntimeClassDecl,
@@ -127,6 +128,7 @@ pub const Node = struct {
                 .ufcs_alias => |d| d.name,
                 .c_import_decl => |d| d.name,
                 .protocol_decl => |d| d.name,
+                .open_set_decl => |d| d.name,
                 .runtime_class_decl => |d| d.name,
                 else => null,
             };
@@ -549,7 +551,8 @@ pub const ErrorSetDecl = struct {
 pub const StructTypeParam = struct {
     name: []const u8, // e.g. "N" or "T" (without $)
     constraint: *Node, // type_expr: "u32" for value param, "Type" for type param
-    protocol_constraints: []const []const u8 = &.{}, // e.g. ["Eq", "Hashable"] for $T/Eq/Hashable
+    /// Generic bounds — see `TypeExpr.protocol_constraints`.
+    protocol_constraints: []const *Node = &.{},
     /// `..$Ts: []Type` — a pack type-param binding the remaining type args as a
     /// sequence (must be last). Field types reference it via `(..$Ts)` etc.
     is_variadic: bool = false,
@@ -582,6 +585,32 @@ pub const StructDecl = struct {
     /// (`` `i2 :: struct { … } ``) — exempt from the reserved-type-name decl
     /// check. A bare reserved-name decl still errors.
     is_raw: bool = false,
+    /// The open set this declaration joins (`Button :: @OpenVariant(View) { … }`),
+    /// as written — a PATH, so a member may name a set the module that owns it
+    /// publishes (`@OpenVariant(compose.View)`). A variant IS an ordinary
+    /// standalone struct — constructible, with its own layout — that additionally
+    /// becomes a member of that set, so this is one more fact ABOUT a struct
+    /// rather than a separate declaration form. Null for a plain `struct`.
+    open_variant_of: ?[]const u8 = null,
+    /// Span of the set name, for the diagnostics that must point at the binding.
+    open_variant_span: ?Span = null,
+};
+
+/// `View :: @OpenSet(.{ max = 256, align = 8 }) { … }` — an inline tagged slot
+/// whose members declare themselves (spec: Open Sets). Not a protocol kind: the
+/// methods are a requirement on every member, and the options are the payload
+/// ceiling the slot is laid out to.
+pub const OpenSetDecl = struct {
+    name: []const u8,
+    /// The required methods, in declaration order. `Self` in a signature denotes
+    /// the member type: each is monomorphized per member.
+    methods: []const ProtocolMethodDecl,
+    /// The options expression (`.{ max = …, align = … }`), resolved at
+    /// registration. `max` is required; `align` defaults to 8.
+    options: ?*Node = null,
+    options_span: ?Span = null,
+    is_raw: bool = false,
+    source_file: ?[]const u8 = null,
 };
 
 pub const StructFieldInit = struct {
@@ -596,9 +625,13 @@ pub const StructFieldInit = struct {
 
 pub const StructLiteral = struct {
     struct_name: ?[]const u8, // null for anonymous `.{ ... }`
-    type_expr: ?*Node = null, // for GenericType(args).{ ... }
+    type_expr: ?*Node = null, // for GenericType(args){ ... }
     field_inits: []const StructFieldInit,
-    init_block: ?*Node = null, // optional `{ stmts }` block after struct literal
+    /// Optional block after the aggregate. With `init_block_binds_self`
+    /// (`T{…}.{…}`), `self` is bound to the value. Bare `T{…}{…}` is a plain
+    /// scope after construction — no `self`.
+    init_block: ?*Node = null,
+    init_block_binds_self: bool = false,
 };
 
 pub const Lambda = struct {
@@ -612,7 +645,12 @@ pub const Lambda = struct {
 pub const TypeExpr = struct {
     name: []const u8,
     is_generic: bool = false,
-    protocol_constraints: []const []const u8 = &.{}, // e.g. ["Eq", "Hashable"] for $T/Eq/Hashable
+    /// Generic bounds after the binder: `$T/Eq/Hashable`, `$I/@Init($V/P)`.
+    /// Each is one bound expression — a `type_expr` holding a bare protocol
+    /// head, or a `parameterized_type_expr` holding a head plus its type
+    /// arguments. The head may be an `@` name; type arguments are ordinary
+    /// type expressions and may introduce their own binders.
+    protocol_constraints: []const *Node = &.{},
     /// True when written as a backtick raw identifier in type position
     /// (`` `i2 ``). Such a reference is the LITERAL name `i2` used as a type —
     /// resolution skips the builtin/reserved classifier and looks up a
@@ -976,7 +1014,7 @@ pub const ReturnTypeExpr = struct {
 pub const TupleLiteral = struct {
     elements: []const TupleElement,
     // Explicit tuple type for the `Tuple(...).( ... )` typed-construction form
-    // (mirrors `StructLiteral.type_expr` for `Name.{ ... }`). null for the
+    // (mirrors `StructLiteral.type_expr` for `Name{ ... }`). null for the
     // anonymous, contextually-typed `.( ... )` form.
     type_expr: ?*Node = null,
 };

@@ -1,0 +1,32 @@
+error: 'string' does not satisfy the bound on '$V'
+  --> examples/diagnostics/2033-diagnostics-sibling-bound.sx:18:27
+   |
+18 | exact :: ($P: Type, v: $V/P) -> i32 { 1 }
+   |                           ^
+
+help: '$P' is bound to 'i64', so '$V' must be 'i64'
+   |
+18 | exact :: ($P: Type, v: $V/P) -> i32 { 1 }
+   |                           ^
+
+error: the bound on '$V' writes 1 type argument, but '$P' is bound to 'Ord', which takes 0
+  --> examples/diagnostics/2033-diagnostics-sibling-bound.sx:21:29
+   |
+21 | spelled :: ($P: Type, v: $V/P(i32)) -> i32 { 1 }
+   |                             ^^^^^^
+
+help: the arity is the bound protocol's, and '$P' is only known at the call that binds it
+   |
+21 | spelled :: ($P: Type, v: $V/P(i32)) -> i32 { 1 }
+   |                             ^^^^^^
+
+error: the bound on '$V' spells type arguments, but '$P' is bound to 'i64', which takes none
+  --> examples/diagnostics/2033-diagnostics-sibling-bound.sx:21:29
+   |
+21 | spelled :: ($P: Type, v: $V/P(i32)) -> i32 { 1 }
+   |                             ^^^^^^
+
+help: a bound on a concrete type is an identity, not an instantiation — write '$V/P'
+   |
+21 | spelled :: ($P: Type, v: $V/P(i32)) -> i32 { 1 }
+   |                             ^^^^^^

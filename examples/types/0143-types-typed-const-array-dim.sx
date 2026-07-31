@@ -47,8 +47,8 @@ main :: () {
 
     // Typed-const dimension via ALIAS (struct elements).
     ps : TPArr = ---;
-    ps[0] = P.{ x = 1, y = 2 };
-    ps[7] = P.{ x = 5, y = 6 };
+    ps[0] = P{ x = 1, y = 2 };
+    ps[7] = P{ x = 5, y = 6 };
     print("alias p0x={} p0y={} p7x={}\n", ps[0].x, ps[0].y, ps[7].x);
 
     // Nested fixed array whose both dimensions are the typed const NT.

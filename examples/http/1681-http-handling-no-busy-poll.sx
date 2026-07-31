@@ -108,10 +108,10 @@ main :: () -> i32 {
             n, re := socket.read_nb(ca, *rbuf[total], xx (cap - total));
             if !re { total += n; }
             else if re == error.Closed { done = true; }
-            resp := string.{ ptr = rbuf, len = xx total };
+            resp := string{ ptr = rbuf, len = xx total };
             if contains(resp, "slow-ok") and contains(resp, "fast-ok") { done = true; }
         }
-        resp := string.{ ptr = rbuf, len = xx total };
+        resp := string{ ptr = rbuf, len = xx total };
 
         // (2) both responses arrived — the pipelined request WAS served
         // after the completion re-armed read interest.

@@ -63,7 +63,7 @@ open_file :: (path: [:0]u8, mode: OpenMode) -> ?File {
     else if mode == .read_write { code = 3; }
     handle := fs_open_handle(path, code);
     if !fs_file_is_valid(handle) { return null; }
-    File.{ fd = handle }
+    File{ fd = handle }
 }
 read_file :: (path: [:0]u8) -> ?string { fs_read_file(path) }
 write_file :: (path: [:0]u8, data: string) -> bool { fs_write_file(path, data) }

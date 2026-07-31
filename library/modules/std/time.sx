@@ -83,8 +83,8 @@ local_civil :: (unix_seconds: i64) -> (CivilTime, bool) {
         case .windows: valid = c.localtime_s(*broken, *value) == 0;
         else: valid = c.localtime_r(*value, *broken) != null;
     }
-    if !valid { return CivilTime.{}, false; }
-    civil := CivilTime.{
+    if !valid { return CivilTime{}, false; }
+    civil := CivilTime{
         year = broken.year.(i64) + 1900,
         month = broken.mon.(i64) + 1,
         day = broken.mday.(i64),

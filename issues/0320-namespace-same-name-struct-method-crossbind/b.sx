@@ -1,8 +1,8 @@
 BState :: struct { b: bool; }
 Thing :: struct {
     state: BState;
-    init :: () -> Thing { Thing.{ state = .{ b = true } } }
-    reset :: (self: *Thing) { self.state = BState.{ b = false }; }
+    init :: () -> Thing { Thing{ state = .{ b = true } } }
+    reset :: (self: *Thing) { self.state = BState{ b = false }; }
 }
 use :: () -> bool {
     value := Thing.init();

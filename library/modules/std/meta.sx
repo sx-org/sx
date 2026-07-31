@@ -140,8 +140,8 @@ KIND_TUPLE        :: 4;
 //   define(handle, info) — fill a declared handle's body from a `TypeInfo`, and
 //                          RETURN the handle so the one-shot form chains:
 //                              List :: define(declare("List"), .enum(.{ variants = .[
-//                                  EnumVariant.{ name = "cons", payload = *List },
-//                                  EnumVariant.{ name = "nil",  payload = void } ] }));
+//                                  EnumVariant{ name = "cons", payload = *List },
+//                                  EnumVariant{ name = "nil",  payload = void } ] }));
 //                          Plain sx: it matches the `TypeInfo` union and calls
 //                          `raw_register_type` with the matching kind code, decoding
 //                          the variant/field/element list into `[]Member`.
@@ -175,7 +175,7 @@ define :: (handle: Type, info: TypeInfo) -> Type {
             mems : List(Member) = .{};
             all_void := true;
             for e.variants (v) {
-                mems.append(Member.{ name = v.name, ty = v.payload });
+                mems.append(Member{ name = v.name, ty = v.payload });
                 if v.payload != void { all_void = false; }
             }
             kind := KIND_TAGGED_UNION;
@@ -185,14 +185,14 @@ define :: (handle: Type, info: TypeInfo) -> Type {
         case .struct: (s) {
             mems : List(Member) = .{};
             for s.fields (f) {
-                mems.append(Member.{ name = f.name, ty = f.type });
+                mems.append(Member{ name = f.name, ty = f.type });
             }
             return raw_register_type(handle, KIND_STRUCT, mems.items[0..mems.len]);
         }
         case .tuple: (t) {
             mems : List(Member) = .{};
             for t.elements (ety) {
-                mems.append(Member.{ name = "", ty = ety });
+                mems.append(Member{ name = "", ty = ety });
             }
             return raw_register_type(handle, KIND_TUPLE, mems.items[0..mems.len]);
         }
@@ -234,8 +234,8 @@ make_enum :: (name: string, variants: []EnumVariant) -> Type {
 // A blocking recv: a value, or the channel was closed (drained).
 RecvResult :: ($T: Type) -> Type {
     return define(declare("RecvResult"), .enum(.{ variants = .[
-        EnumVariant.{ name = "value",  payload = T    },
-        EnumVariant.{ name = "closed", payload = void },
+        EnumVariant{ name = "value",  payload = T    },
+        EnumVariant{ name = "closed", payload = void },
     ] }));
 }
 
@@ -243,9 +243,9 @@ RecvResult :: ($T: Type) -> Type {
 // a bool can't express.
 TryResult :: ($T: Type) -> Type {
     return define(declare("TryResult"), .enum(.{ variants = .[
-        EnumVariant.{ name = "value",  payload = T    },
-        EnumVariant.{ name = "empty",  payload = void },
-        EnumVariant.{ name = "closed", payload = void },
+        EnumVariant{ name = "value",  payload = T    },
+        EnumVariant{ name = "empty",  payload = void },
+        EnumVariant{ name = "closed", payload = void },
     ] }));
 }
 

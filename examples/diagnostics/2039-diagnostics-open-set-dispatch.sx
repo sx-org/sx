@@ -1,0 +1,47 @@
+// What set DISPATCH refuses — the two facts that are about the call, not about
+// the member (spec: Open Sets — dispatch).
+//
+// Whether a member answers a required method correctly is settled at its
+// declaration (examples/diagnostics/2041). What is left here is what only a call
+// site can be wrong about:
+//
+//   - nothing is a member, so no receiver value can exist; and
+//   - the method's signature names `Self` past the receiver. `Self` denotes the
+//     MEMBER, and a set value is not any one member, so there is no caller-side
+//     type for that argument. The method is still perfectly callable through a
+//     membership bound, where `Self` IS a type — which is why this cannot be a
+//     refusal at the member's declaration.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+// Nothing declares itself into this one.
+Empty :: @OpenSet(.{ max = 64 }) {
+    name :: (self: *Self) -> string;
+}
+
+// A required method whose signature mentions `Self` past the receiver.
+Fold :: @OpenSet(.{ max = 64 }) {
+    merge :: (self: *Self, other: Self) -> i64;
+}
+
+// A conforming member: it answers `merge` with `Self` substituted for itself, so
+// admission is satisfied.
+Pair :: @OpenVariant(Fold) {
+    n: i64 = 0;
+    merge :: (self: *Pair, other: Pair) -> i64 => self.n + other.n;
+}
+
+// The route the refusal names, and it works: through the bound, `Self` is `V`.
+fold :: (a: $V/Fold, b: V) -> i64 => a.merge(b);
+
+main :: () -> i32 {
+    e: Empty = ---;
+    print("{}\n", e.name());
+
+    f: Fold = Pair{ n = 1 };
+    // Refused: no caller-side type for `other`.
+    print("{}\n", f.merge(Pair{ n = 2 }));
+    // Accepted: the same method through the membership bound.
+    print("{}\n", fold(Pair{ n = 1 }, Pair{ n = 2 }));
+    0
+}

@@ -1,0 +1,141 @@
+// What forming an open-set value refuses (spec: Open Sets — formation).
+//
+// Formation is type-directed: a MEMBER value where the set is expected becomes a
+// set value. Everything below fails one half of that sentence.
+//
+//   - a contextual literal names no type at all, so there is no member to lift;
+//   - a type that never declared itself into the set is not a member, and no
+//     conversion can stand in for a declaration — including a member of a
+//     DIFFERENT set, since a type belongs to one;
+//   - `xx` names the same conversion, so it refuses exactly what the expected
+//     type and `.(View)` refuse — an explicit cast is not a way past membership;
+//   - membership is asked before width: a non-member the size of the slot is still
+//     not the slot, and the fact reads the same at a field, an argument, and a
+//     return as it does at a local;
+//   - a refusal raised inside a generic body names the call that instantiated it,
+//     at the expected type as well as at a cast, and a generic member is named the
+//     way the program spells it;
+//   - an `any` holds no set value at all, since boxing a set boxes the member it
+//     carries, so there is nothing at a set destination for an unbox to read;
+//   - `.(P, alloc)` does not exist for a set: the active member lives inline in
+//     the slot, so nothing allocates and there is no allocator to pass; and
+//   - `write` takes exactly `*T` for its own type argument. An `@Init(Label)`
+//     writes `*Label` and never a `*View` — there is no widening arm, so a set
+//     slot is written through `@Init(View)` identity.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Elsewhere :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Alien :: @OpenVariant(Elsewhere) {
+    text: string = "";
+    render :: (self: *Alien) -> string => self.text;
+}
+
+Pair :: struct ($A: Type, $B: Type) {
+    a: $A = ---;
+    b: $B = ---;
+}
+
+// A generic member of that other set: an instantiation is named the way the
+// program spells it, arguments and all.
+Boxed :: @OpenVariant(Elsewhere) ($T: Type) {
+    held: $T = ---;
+    render :: (self: *Boxed) -> string => "boxed";
+}
+
+Plain :: struct {
+    text: string = "";
+}
+
+// One body, refused per instantiation: the fault is the call that spelled this one.
+lift :: ($T: Type, x: $S) -> T => xx x;
+
+// The same, at the expected type rather than a cast.
+form :: (x: $S) -> View {
+    v: View = x;
+    return v;
+}
+
+// The expected type at a field, an argument, and a return: one fact, wherever the
+// value is going.
+Holder :: struct {
+    v: View = ---;
+}
+
+takes :: (v: View) -> string => v.render();
+gives :: () -> View { return Plain{ text = "a return" }; }
+
+// And through a generic body, where the note names the call.
+hand :: (x: $S) -> View { return x; }
+
+// No widening arm: this init's type argument is `Label`, so `write` takes `*Label`.
+into_label :: (value: $I/@Init(Label)) -> string {
+    slot: View = ---;
+    value.write(*slot);
+    slot.render()
+}
+
+main :: () -> i32 {
+    // Not a member, and a member of another set.
+    plain: View = Plain{ text = "not a member" };
+    alien: View = Alien{ text = "another set" };
+    print("{} {}\n", plain.render(), alien.render());
+
+    // A generic member of another set, named as the program spells it — and
+    // exactly the size of a 'View' slot, which changes nothing: what may fill a
+    // slot is what declared itself into the set, not what happens to fit it.
+    nested: View = Boxed(Pair(i64, string)){ };
+    print("{}\n", nested.render());
+
+    // The expected type inside a generic body, refused for this instantiation.
+    formed := form(Plain{ text = "through a generic" });
+    print("{}\n", formed.render());
+
+    // A field, an argument, a return, and a return from inside a generic body.
+    held := Holder{ v = Plain{ text = "a field" } };
+    print("{} {}\n", takes(Plain{ text = "an argument" }), held.v.render());
+    print("{} {}\n", gives().render(), hand(Plain{ text = "a generic return" }).render());
+
+    // A contextual literal, empty and with fields.
+    empty: View = .{};
+    fielded: View = .{ text = "which member?" };
+    print("{} {}\n", empty.render(), fielded.render());
+
+    // The explicit conversion asks the same question.
+    converted := Plain{ text = "no" }.(View);
+    print("{}\n", converted.render());
+
+    // And so does `xx`, for a non-member and for a member of another set.
+    cast_plain: View = xx Plain{ text = "still not a member" };
+    cast_alien: View = xx Alien{ text = "still another set" };
+    print("{} {}\n", cast_plain.render(), cast_alien.render());
+
+    // Written once, refused for this instantiation — and named at the call.
+    lifted := lift(View, Plain{ text = "through a generic" });
+    print("{}\n", lifted.render());
+
+    // A box of a set holds the member, so there is no set in it to unbox.
+    slot: View = Label{ text = "boxed" };
+    boxed: any = slot;
+    unboxed: View = xx boxed;
+    print("{}\n", unboxed.render());
+
+    // An allocator has nothing to fund here.
+    allocated := Label{ text = "x" }.(View, context.allocator);
+    print("{}\n", allocated.render());
+
+    print("{}\n", into_label(Label{ text = "widen" }));
+    0
+}

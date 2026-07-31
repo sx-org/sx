@@ -1,0 +1,42 @@
+// A one-member open set devirtualizes completely (spec: Open Sets — dispatch).
+//
+// The switch is total over the frozen tag space, and a set with exactly one member
+// has exactly one tag — so there is nothing to switch on. The routine loads no tag
+// and branches nowhere: it addresses the payload and calls that member's method.
+// Dispatch on a set the program only ever puts one type into costs the same as
+// calling the method on the type itself.
+//
+// The tag word is still there — it is the set's layout, and importing a module
+// with a second member would put the switch back — but no code reads it.
+#import "modules/std.sx";
+
+Cell :: @OpenSet(.{ max = 64, align = 8 }) {
+    value :: (self: *Self) -> i64;
+    scale :: (self: *Self, by: i64) -> i64;
+}
+
+Number :: @OpenVariant(Cell) {
+    n: i64 = 0;
+    value :: (self: *Number) -> i64 => self.n;
+    scale :: (self: *Number, by: i64) -> i64 {
+        self.n = self.n * by;
+        return self.n;
+    }
+}
+
+reach :: (c: *Cell) -> i64 => c.value();
+
+main :: () -> i32 {
+    c: Cell = Number{ n = 6 };
+    print("value {} scaled {} again {}\n", c.value(), c.scale(7), c.value());
+    print("through a pointer {}\n", reach(*c));
+    // The slot is one tag plus the member: 8 + 8.
+    print("layout {} member {}\n", size_of(Cell), size_of(Number));
+    0
+}
+
+// ** stdout **
+// value 6 scaled 42 again 42
+// through a pointer 42
+// layout 16 member 8
+//

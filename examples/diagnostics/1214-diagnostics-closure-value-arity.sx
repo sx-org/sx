@@ -28,7 +28,7 @@ main :: () {
     print("{}\n", zero(1));
 
     // struct-field closure: extra arg
-    s := S.{ cb = (x: i64) -> i64 => x + 1 };
+    s := S{ cb = (x: i64) -> i64 => x + 1 };
     print("{}\n", s.cb(3, 4));
 
     // fn-pointer value: extra arg

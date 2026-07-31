@@ -40,7 +40,7 @@ main :: () {
     print("capture spread: {}\n", addc(..pair));
 
     // struct-field closure
-    s := S.{ cb = (a: i64, b: i64) -> i64 => a * b };
+    s := S{ cb = (a: i64, b: i64) -> i64 => a * b };
     print("field direct: {}\n", s.cb(3, 4));
     print("field spread: {}\n", s.cb(..pair));
 

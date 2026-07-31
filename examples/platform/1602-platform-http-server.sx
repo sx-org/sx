@@ -49,7 +49,7 @@ main :: () -> i32 {
     print("listening on http://localhost:{}\n", PORT);
 
     arena := mem.Arena.init(context.allocator, 65536);
-    logger := Logger.{ prefix = "http", count = 0 };
+    logger := Logger{ prefix = "http", count = 0 };
 
     while true {
         client := accept(fd, null, null);

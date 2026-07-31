@@ -1,0 +1,75 @@
+// Stress: the same board screen through the FLUENT library (revision §14.2.1).
+//
+// A separate entry point importing exactly one library. The same screen again,
+// built the fluent way: a container is an ordinary value whose child list is an
+// explicit field initializer over `collectViews()`, so interception happens only
+// inside that named block.
+// Expected: exit 0.
+#import "modules/std.sx";
+#import "modules/ui/fluent/geometry.sx";
+#import "modules/ui/fluent/render.sx";
+#import "modules/ui/fluent/view.sx";
+#import "modules/ui/fluent/components.sx";
+#import "modules/ui/fluent/containers.sx";
+#import "modules/ui/fluent/runtime.sx";
+#import "modules/ui/fluent/storage.sx";
+
+BoardViewState :: struct {
+    cell_eids: [81]u64 = ---;
+}
+
+BoardView :: @OpenVariant(View) {
+    state: *BoardViewState = null;
+    side: f32 = 0.0;
+
+    size_that_fits :: (self: *BoardView, proposal: ProposedSize) -> Size {
+        Size{ width = self.side, height = self.side }
+    }
+
+    layout :: (self: *BoardView, bounds: Frame) {}
+
+    render :: (self: *BoardView, rc: *RenderContext, frame: Frame) {
+        rc.add_rect(frame, Color{ r = 0.1, g = 0.1, b = 0.1, a = 1.0 });
+    }
+}
+
+main :: () -> i32 {
+    st := BoardViewState{};
+    for 0..81 (i) { st.cell_eids[i] = xx (i + 1); }
+
+    cells := VStack{ children = collectViews() {
+        for 0..81 (i) {
+            Label{ text = "c" };
+        }
+    } };
+
+    actions := VStack{ spacing = 8.0, children = collectViews() {
+        Button{ label = "New" };
+        Button{ label = "Hint" };
+        Button{ label = "Undo" };
+    } };
+
+    screen := VStack{ spacing = 12.0, children = collectViews() {
+        Label{ text = "sudoku" };
+        cells;
+        BoardView{ state = *st, side = 90.0 };
+        actions;
+    } };
+
+    print("top {}\n", screen.children.len);
+    inner := screen.children.items[1].(VStack);
+    print("cells {}\n", inner.children.len);
+    print("slot {} state {}\n", size_of(View), size_of(BoardViewState));
+
+    root : View = screen;
+    tree := RenderTree{};
+    render_root(*root, Size{ width = 200.0, height = 400.0 }, *tree);
+    print("commands {}\n", command_count(*tree));
+    0
+}
+
+// ** stdout **
+// top 4
+// cells 81
+// slot 64 state 648
+// commands 89

@@ -1,0 +1,80 @@
+// A receiver forms exactly where an argument in that position forms — including
+// when it cannot (fluent spec §5.2).
+//
+// `emit` takes `$I/@Init(View)`, a FIXED target: what an initializer writes is
+// exactly its target. An expression that cannot become one is refused where it is
+// written — at the receiver, at an argument, in the terms the target decides by
+// (membership, for an open set) — and not inside the write the receiver performs
+// later, which is a store no one wrote.
+//
+// A type that carries no declaration of its own cannot be told to declare itself
+// into anything, so it is told what is true instead. And a target that is not a set
+// says the same thing in its own terms: what cannot become it cannot form one.
+// Expected: exit 1.
+#import "modules/std.sx";
+#import "modules/std/list.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+// A member of nothing.
+Plain :: struct {
+    text: string = "";
+}
+
+// A plain data target, so the vocabulary is not the set's alone.
+Box :: struct { v: i64 = 0; }
+
+// A field named like the ufcs, holding something that cannot be called. Calling a
+// field is not dispatching a method, and a field that holds no callable is not a
+// member call at all — so the name means the free function, and the receiver is
+// asked to form what that function's parameter wants.
+Obj :: struct {
+    v: i64 = 0;
+    take: i64 = 0;
+}
+
+take :: ufcs (value: $I/@Init(Box)) {
+    slot: Box = ---;
+    value.write(*slot);
+}
+
+#context_extend ui_out: *List(View) = null;
+
+emit :: ufcs (value: $I/@Init(View)) {
+    item: View = ---;
+    value.write(*item);
+    context.ui_out.append(item);
+}
+
+main :: () -> i32 {
+    out : List(View) = .{};
+    push .{ ui_out = *out } {
+        // A member: forms, as the dot-call and the ordinary call both do.
+        Label{ text = "fine" }.emit();
+
+        // Not a member: refused as the receiver, and refused as an argument.
+        Plain{ text = "as a receiver" }.emit();
+        emit(Plain{ text = "as an argument" });
+
+        // A builtin has no declaration to join a set with.
+        "a string".emit();
+        emit(41);
+
+        // A plain target refuses in the same voice.
+        Plain{ text = "not a Box" }.take();
+        take(Plain{ text = "not a Box" });
+
+        // The receiver here has a `take` field, but it holds an i64: the call is
+        // the free function's, and an `Obj` cannot form what it writes.
+        Obj{ v = 1, take = 2 }.take();
+    }
+    print("{}\n", out.len);
+    0
+}

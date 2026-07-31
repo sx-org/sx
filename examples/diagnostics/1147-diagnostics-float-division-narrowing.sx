@@ -41,6 +41,6 @@ main :: () {
     dim : [5.0 / 2.0]i64 = ---;  // non-integral float-DIVISION array dimension → error
     cdiv : i64 = ME / 2;         // untyped float-EXPR const division (5.0/2 = 2.5) → error
     cdim : [ME / 2]i64 = ---;    // same, at the count path → error
-    b := BadField.{};
+    b := BadField{};
     print("{} {} {} {} {} {}\n", local, b.f, badParam(), dim.len, cdiv, cdim.len);
 }

@@ -16,7 +16,7 @@ invoke :: (callback: Callback) -> bool => callback(null, "");
 main :: () -> i32 {
     inferred := accept;
     annotated : Callback = accept;
-    holder := Holder.{ callback = accept };
+    holder := Holder{ callback = accept };
     holder.callback = accept;
     if !inferred(null, "") { return 1; }
     if !annotated(null, "") { return 2; }

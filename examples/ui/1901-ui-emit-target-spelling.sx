@@ -19,23 +19,23 @@ place :: (v: View) -> View {
     v
 }
 
-text :: (s: string) -> View { place(View.{ tag = s }) }
-spacer :: () -> View { place(View.{ tag = "spacer" }) }
+text :: (s: string) -> View { place(View{ tag = s }) }
+spacer :: () -> View { place(View{ tag = "spacer" }) }
 
 vstack :: (spacing: f32, content: Closure()) -> View {
-    s := Sink(View).{};
+    s := Sink(View){};
     push .{ ui_sink = *s } { content(); }
-    place(View.{ tag = "vstack" })
+    place(View{ tag = "vstack" })
 }
 
 hstack :: (spacing: f32, content: Closure()) -> View {
-    s := Sink(View).{};
+    s := Sink(View){};
     push .{ ui_sink = *s } { content(); }
-    place(View.{ tag = "hstack" })
+    place(View{ tag = "hstack" })
 }
 
 button :: (label: string, on_tap: Closure()) -> View {
-    place(View.{ tag = label })
+    place(View{ tag = label })
 }
 
 scaffold :: (top_bar: ?Closure() = null, fab: ?Closure() = null, content: Closure()) -> View {
@@ -56,7 +56,7 @@ home_screen :: () -> View {
 }
 
 main :: () {
-    root := Sink(View).{};
+    root := Sink(View){};
     push .{ ui_sink = *root } {
         home_screen();
         scaffold(top_bar = toolbar) { text("content"); }

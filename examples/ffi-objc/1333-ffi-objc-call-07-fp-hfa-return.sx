@@ -21,7 +21,7 @@ UIEdgeInsets :: struct {
 }
 
 insets_imp :: (self: *void, _cmd: *void) -> UIEdgeInsets abi(.c) {
-    UIEdgeInsets.{ top = 1.5, left = 2.5, bottom = 3.5, right = 4.5 }
+    UIEdgeInsets{ top = 1.5, left = 2.5, bottom = 3.5, right = 4.5 }
 }
 
 main :: () -> i32 {

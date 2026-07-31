@@ -20,6 +20,6 @@ sum_two :: (..sources: VL) -> i64 {
 }
 
 main :: () -> i32 {
-    print("{}\n", sum_two(IntCell.{ v = 10 }, Doubler.{ n = 16 }));  // 10 + (16*2) = 42
+    print("{}\n", sum_two(IntCell{ v = 10 }, Doubler{ n = 16 }));  // 10 + (16*2) = 42
     0
 }

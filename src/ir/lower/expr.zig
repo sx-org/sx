@@ -28,7 +28,7 @@ const headNameOfCallee = Lowering.headNameOfCallee;
 const StructConstInfo = Lowering.StructConstInfo;
 
 pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: ast.Span) Ref {
-    // Check for tagged enum construction: .Variant.{ payload_fields }
+    // Check for tagged enum construction: .Variant{ payload_fields }
     // This happens when type_expr is an enum_literal and target_type is a union
     if (sl.type_expr) |te| {
         if (te.data == .enum_literal) {
@@ -41,10 +41,10 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                 }
             }
         }
-        // Qualified variant construction: `Ev.key.{ ... }`. Here `type_expr`
+        // Qualified variant construction: `Ev.key{ ... }`. Here `type_expr`
         // is a field_access (`Ev.key`), not an `enum_literal` — `Ev` names the
         // tagged union and `key` the variant. Route it through the same path
-        // as the inferred `.key.{ ... }` form (issue 0281); without this the
+        // as the inferred `.key{ ... }` form (issue 0281); without this the
         // field_access falls to `resolveTypeWithBindings`, which cannot place
         // `Ev.key` in type position and returns `.unresolved` → LLVM panic.
         if (te.data == .field_access) {
@@ -67,8 +67,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
                     else => null,
                 };
                 // Diagnostic-free PROBE: this pass only decides whether the
-                // head is a tagged union (`Ev.key.{...}` variant construction).
-                // The object may equally be a namespace alias (`m.Cfg.{...}`,
+                // head is a tagged union (`Ev.key{...}` variant construction).
+                // The object may equally be a namespace alias (`m.Cfg{...}`,
                 // issue 0334) — the real head resolution below owns the
                 // diagnostics, so a loud `resolveNominalLeaf` here would blast
                 // "unknown type 'm'" for a perfectly valid qualified literal
@@ -95,9 +95,26 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
         }
     }
 
+    // A contextual literal against an OPEN SET target. A set slot's contents are
+    // whichever MEMBER it carries, and a contextual literal names no type at all —
+    // so there is nothing for the expected type to lift (spec: Open Sets —
+    // formation). Refused before the tagged-union arms below, whose "variant"
+    // vocabulary is not the set's.
+    if (sl.type_expr == null and sl.struct_name == null) {
+        if (self.target_type) |target| {
+            if (self.isOpenSet(target)) {
+                if (self.diagnostics) |d| {
+                    const id = d.addFmtId(.err, span, "a contextual literal cannot form a '{s}' value: it names no member", .{self.formatTypeName(target)});
+                    d.addHelpFmt(id, span, null, "a set value is formed FROM a member — name it ('YourMember{{ … }}'), and the expected '{s}' lifts it into the slot", .{self.formatTypeName(target)});
+                }
+                return self.builder.constUndef(target);
+            }
+        }
+    }
+
     // `.{ name = ... }` against a tagged-union target_type. Reject:
     // the only valid construction forms are `.variant(payload)` and
-    // `.variant.{ field, ... }`. Falling through would lower the
+    // `.variant{ field, ... }`. Falling through would lower the
     // user's values straight into the `(tag, payload_bytes)` slot
     // pair and emit IR that LLVM later rejects.
     if (sl.type_expr == null and sl.struct_name == null) {
@@ -129,13 +146,13 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     const ty: TypeId = if (sl.struct_name) |name|
         // Source-aware (E2): a bare struct-literal type name resolves to the
         // querying source's OWN same-name author, not the global `findByName`
-        // first-match — so `Box.{...}` in module B builds B's `Box`, never a
+        // first-match — so `Box{...}` in module B builds B's `Box`, never a
         // flat-imported A's. `.undeclared`/`.pending` keep the empty-struct
         // stub (byte-identical to the legacy `findByName orelse intern`);
         // `.ambiguous`/`.not_visible` surface their loud diagnostic + poison.
         self.resolveNominalLeaf(name, false, span)
     else if (sl.type_expr) |te|
-        // Generic struct literal: Pair(i32).{ ... } — resolve type from type_expr
+        // Generic struct literal: Pair(i32){ ... } — resolve type from type_expr
         self.resolveTypeWithBindings(te)
     else
         self.target_type orelse .unresolved;
@@ -235,7 +252,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // positional paths below handle exactly: struct, tuple, array, vector,
     // the two {ptr, len} fat pointers — a slice (`sl : []T = .{ ptr = …,
     // len = … }`, used throughout the stdlib/corpus) and the builtin `string`
-    // (`string.{ ptr = …, len = … }` in fmt/hash/cli/sqlite) — and a closure
+    // (`string{ ptr = …, len = … }` in fmt/hash/cli/sqlite) — and a closure
     // (`c : Closure(i32) -> i32 = .{ fn_ptr = …, env = … }`, the {fn_ptr, env}
     // pair, exercised by examples/types/0129).
     // Any other resolved target — a scalar builtin (`x : i64 = .{ a = 1 }`),
@@ -326,7 +343,7 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     // Check if any field_init has a name (named literal).
     //
     // The parser PUNS a bare identifier element `.{ x, ... }` into a named
-    // field `x = x` (the shorthand `Vec4.{ w, z }` form, specs §Struct
+    // field `x = x` (the shorthand `Vec4{ w, z }` form, specs §Struct
     // Literals), because it cannot know — without the struct definition —
     // whether `x` names a field or is a positional value. A POSITIONAL literal
     // whose first element is a bare variable (`.{ x, 2 }`, `x` not a field of
@@ -452,7 +469,8 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
 
         const result = self.builder.structInit(fields.items, ty);
         if (sl.init_block) |ib| {
-            return self.lowerInitBlock(result, ty, ib);
+            if (sl.init_block_binds_self) return self.lowerInitBlock(result, ty, ib);
+            return self.lowerPostScopeBlock(result, ib);
         }
         return result;
     }
@@ -535,15 +553,22 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
 
     const result = self.builder.structInit(fields.items, ty);
 
-    // Lower init block if present
+    // Lower following block if present
     if (sl.init_block) |ib| {
-        return self.lowerInitBlock(result, ty, ib);
+        if (sl.init_block_binds_self) return self.lowerInitBlock(result, ty, ib);
+        return self.lowerPostScopeBlock(result, ib);
     }
 
     return result;
 }
 
-/// Lower an init block: store struct value to alloca, bind `self`, execute block, reload.
+/// Bare `T{…}{ stmts }`: run `stmts` in the enclosing scope (no `self`), yield T.
+pub fn lowerPostScopeBlock(self: *Lowering, struct_val: Ref, ib: *const Node) Ref {
+    self.lowerBlock(ib);
+    return struct_val;
+}
+
+/// Lower `T{…}.{ stmts }`: store struct value to alloca, bind `self`, execute block, reload.
 pub fn lowerInitBlock(self: *Lowering, struct_val: Ref, ty: TypeId, ib: *const Node) Ref {
     // Store struct value to a temporary alloca
     const ptr_ty = self.module.types.ptrTo(ty);
@@ -1661,6 +1686,14 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
     const cs = self.builder.current_span;
     const span = ast.Span{ .start = cs.start, .end = cs.end };
 
+    // An error-set destination types `.Name` as that set's tag — the
+    // contextual parallel to `error.Name`, sharing its membership check and
+    // its optional wrapping (`lowerErrorTagLiteral` re-derives both from
+    // `self.target_type`, which still holds the un-unwrapped destination).
+    if (!target.isBuiltin() and self.module.types.get(target) == .error_set) {
+        return self.lowerErrorTagLiteral(el.name, span);
+    }
+
     // The destination must be a known enum / tagged union that carries the
     // named variant — every other shape used to lower to a silent 0.
     if (target == .unresolved) {
@@ -1828,7 +1861,7 @@ pub fn lowerErrorTagLiteral(self: *Lowering, tag_name: []const u8, span: ast.Spa
     return self.builder.constInt(@as(i64, @intCast(tag_id)), .u32);
 }
 
-/// Lower a tagged enum construction: .Variant.{ field_inits }
+/// Lower a tagged enum construction: .Variant{ field_inits }
 /// The struct literal provides the payload fields; we wrap them in an enum_init.
 pub fn lowerTaggedEnumLiteral(
     self: *Lowering,
@@ -1865,7 +1898,7 @@ pub fn lowerTaggedEnumLiteral(
     self.target_type = payload_ty;
     const payload_fields = self.getStructFields(payload_ty);
 
-    // Scalar (non-aggregate) payload: `.key.{ 42 }` where `key`'s payload is a
+    // Scalar (non-aggregate) payload: `.key{ 42 }` where `key`'s payload is a
     // plain i64 — the single field_init IS the payload value. There is no
     // struct to insertvalue into, so wrapping it in a structInit builds an
     // invalid `insertvalue i64 ...` (issue 0281). Emit the value directly.
@@ -2632,7 +2665,7 @@ pub fn lowerTupleLiteral(self: *Lowering, tl: *const ast.TupleLiteral) Ref {
     }
 
     // Explicitly-typed construction `Tuple(A, B).( ... )`: the literal carries
-    // its tuple type, exactly like `Name.{ ... }` for structs. Resolve it and
+    // its tuple type, exactly like `Name{ ... }` for structs. Resolve it and
     // drive element lowering through it as the target tuple — the produced
     // value equals what the anonymous `.( ... )` form yields against that type.
     // An ambient contextual `target_type` (annotation / call slot), if present
@@ -3083,7 +3116,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             }
             // `context` resolves to a load through the lowering's
             // current `__sx_ctx` pointer. Every sx function (and
-            // every `push Context.{...}` body) sets `current_ctx_ref`
+            // every `push .{...}` / `push Context{...}` body) sets `current_ctx_ref`
             // to a `*Context` it owns, so this is one indirection.
             if (std.mem.eql(u8, id.name, "context")) {
                 if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) {
@@ -3553,6 +3586,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 if (child == .any) {
                     if (self.refuseProtocolAssertTargetOnAny(pc.type_expr, node.span))
                         break :blk self.builder.constUndef(.unresolved);
+                    if (lowerAnyAssertAtSet(self, &pc, node.span, true)) |answer| break :blk answer;
                     // Assertion regime through the chain: soft target →
                     // conflating maybe-helper; concrete target unconsumed →
                     // panic helper (consumers claim the failable form via
@@ -3603,6 +3637,59 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     break :blk self.builder.constUndef(.unresolved);
                 }
             }
+            // A set VALUE asked for a member: the tag decides which member the
+            // slot carries, so the answer is that member's own value — and a
+            // target that never declared itself into the set is refused, since
+            // no value of the set is ever one (spec: Open Sets — the downcast).
+            {
+                const recv_ty = self.inferExprType(pc.operand);
+                if (self.isOpenSet(recv_ty) and pc.alloc_arg == null) {
+                    const soft = pc.type_expr.data == .optional_type_expr;
+                    const target_node = if (soft) pc.type_expr.data.optional_type_expr.inner_type else pc.type_expr;
+                    // A bare target name is asked of THIS file: a member's name two
+                    // modules declare must reach the one this file selects, or the
+                    // downcast asks about somebody else's type (issue 0453).
+                    const bare_target: ?[]const u8 = switch (target_node.data) {
+                        .identifier => |id| id.name,
+                        .type_expr => |te| if (te.protocol_constraints.len == 0) te.name else null,
+                        else => null,
+                    };
+                    var target = TypeId.unresolved;
+                    if (bare_target) |nm| {
+                        switch (self.bareTypeVerdict(nm, self.current_source_file)) {
+                            .ty => |t| target = t,
+                            .ambiguous => {
+                                if (self.diagnostics) |d| {
+                                    const amb_id = d.addFmtId(.err, target_node.span, "'{s}' is declared by more than one module here", .{nm});
+                                    d.addHelpFmt(amb_id, target_node.span, null, "name the one this asks about through the module that declares it ('pkg.{s}')", .{nm});
+                                }
+                                break :blk self.builder.constUndef(.unresolved);
+                            },
+                            .not_visible => {
+                                if (self.diagnostics) |d| {
+                                    const nv_id = d.addFmtId(.err, target_node.span, "'{s}' is declared, but not where this module can see it", .{nm});
+                                    d.addHelpFmt(nv_id, target_node.span, null, "import the module that declares it, or name it through one ('pkg.{s}')", .{nm});
+                                }
+                                break :blk self.builder.constUndef(.unresolved);
+                            },
+                            .none => {},
+                        }
+                    }
+                    if (target == .unresolved) target = self.resolveTypeArg(target_node);
+                    if (target != .unresolved and target != .any and target != recv_ty) {
+                        const set_decl = self.openSetOf(recv_ty).?.decl;
+                        if (self.openSetDeclaresMembership(target, set_decl) and self.scope != null) {
+                            const value = self.lowerExpr(pc.operand);
+                            break :blk self.lowerOpenSetDowncast(recv_ty, target, value, pc.operand, target_node, soft, node.span);
+                        }
+                        if (!self.openSetDeclaresMembership(target, set_decl) and
+                            self.refuseOpenSetNonMemberTarget(recv_ty, target, node.span))
+                        {
+                            break :blk self.builder.constUndef(if (soft) self.module.types.optionalOf(target) else target);
+                        }
+                    }
+                }
+            }
             // An `any` receiver is the checked-assertion regime. Reaching
             // THIS arm means no graceful consumer claimed it (`try` / `or` /
             // `catch` desugar their direct assertion operands via
@@ -3637,6 +3724,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 }
                 if (self.refuseProtocolAssertTargetOnAny(pc.type_expr, node.span))
                     break :blk self.builder.constUndef(.unresolved);
+                if (lowerAnyAssertAtSet(self, &pc, node.span, false)) |answer| break :blk answer;
                 // `.(?T)` is the SOFT assertion: mismatch is a value
                 // (`null`), never a failure — the optional IS the check.
                 // The asserted type is the INNER T; the result is `?T`.
@@ -3728,9 +3816,27 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                     break :blk self.lowerOwningErasure(&pc, dst, node.span);
                 }
             }
+            // `value.(P)` on an OPEN SET is the explicit spelling of ordinary set
+            // formation, so it accepts exactly what formation accepts: a member of
+            // that set (or a `P` already). Anything else has nothing to lift, and
+            // an explicit cast must not pass the bytes through as if it did.
+            if (self.isOpenSet(dst)) {
+                if (self.refuseOpenSetNonMember(self.inferExprType(pc.operand), dst, node.span))
+                    break :blk self.builder.constUndef(dst);
+            }
             if (pc.alloc_arg != null) {
-                if (self.diagnostics) |d|
-                    d.addFmt(.err, node.span, "an allocator argument only applies to an owning protocol erasure — '.({s}, alloc)' needs a protocol target and a concrete receiver", .{self.formatTypeName(dst)});
+                if (self.diagnostics) |d| {
+                    // An open set is not a protocol conversion at all: the active
+                    // member lives INLINE in the slot, so forming one is ordinary
+                    // value formation and there is nothing an allocator could fund
+                    // (spec: Open Sets — formation).
+                    if (self.isOpenSet(dst)) {
+                        const id = d.addFmtId(.err, node.span, "'.({s}, alloc)' is not a conversion that allocates: '{s}' holds its member inline", .{ self.formatTypeName(dst), self.formatTypeName(dst) });
+                        d.addHelpFmt(id, node.span, null, "forming a set value is ordinary value formation — write '.({s})', or let the expected type form it", .{self.formatTypeName(dst)});
+                    } else {
+                        d.addFmt(.err, node.span, "an allocator argument only applies to an owning protocol erasure — '.({s}, alloc)' needs a protocol target and a concrete receiver", .{self.formatTypeName(dst)});
+                    }
+                }
                 break :blk self.builder.constUndef(dst);
             }
             const saved_target = self.target_type;
@@ -3880,7 +3986,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
 
         .try_expr => |te| self.lowerTry(te.operand, node.span),
         .catch_expr => |ce| self.lowerCatch(&ce, node.span),
-        .caller_location => self.lowerCallerLocation(node),
+        .caller_site => self.lowerCallerSite(node),
         .asm_expr => |ae| self.lowerAsmExpr(&ae, node.span),
         // `#error("msg");` that survived comptime pruning into live code —
         // fire at lower time (specs: the directive fires when REACHED; a
@@ -3907,6 +4013,25 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         },
         else => self.emitError("unknown_expr", node.span),
     };
+}
+
+/// An assertion on an `any` receiver whose target is a BARE open set, answered
+/// here rather than through the checked-cast helpers: an `any` never holds a set
+/// value, since boxing a set boxes the member it carries, so no box can ever
+/// supply the conversion those helpers would ask for. Each form answers from its
+/// own contract — the soft `.(?P)` is a question whose answer is null for every
+/// box, and an assertion states what cannot hold, so it is refused where it is
+/// written. Null for a target that is not a bare set: the ordinary route stands.
+fn lowerAnyAssertAtSet(self: *Lowering, pc: *const ast.PostfixCast, span: ast.Span, chained: bool) ?Ref {
+    const soft = pc.type_expr.data == .optional_type_expr;
+    const target_node = if (soft) pc.type_expr.data.optional_type_expr.inner_type else pc.type_expr;
+    const target = self.resolveTypeArg(target_node);
+    if (target == .unresolved or !self.isOpenSet(target)) return null;
+    const optional_ty = self.module.types.optionalOf(target);
+    if (soft) return self.builder.constNull(optional_ty);
+    if (self.refuseSetFromAny(target, span))
+        return self.builder.constUndef(if (chained) optional_ty else target);
+    return null;
 }
 
 /// The single register a constraint pins, or null for a register-class /

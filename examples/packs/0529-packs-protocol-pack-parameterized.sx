@@ -24,7 +24,7 @@ describe :: (..xs: Box) -> void {
 }
 
 main :: () -> i32 {
-    describe(IntCell.{ v = 11 }, StrCell.{ s = "hi" });
-    describe(StrCell.{ s = "x" }, IntCell.{ v = 99 });
+    describe(IntCell{ v = 11 }, StrCell{ s = "hi" });
+    describe(StrCell{ s = "x" }, IntCell{ v = 99 });
     0
 }

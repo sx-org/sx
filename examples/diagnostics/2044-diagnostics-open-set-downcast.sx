@@ -1,0 +1,71 @@
+// What reading a member out of an open set value refuses (spec: Open Sets — the
+// downcast).
+//
+// A set value carries one of its members, and that is the whole range of answers:
+//
+//   - a type that never declared itself into the set is not among them, and no
+//     tag can ever select it — including a member of a DIFFERENT set, since a
+//     type belongs to one; and
+//   - `xx` cannot ask the question at all: reading a member out can fail, and
+//     `xx` states no temperament, so the spellings that do are named instead.
+//
+// The same holds through an alias, which names the type it aliases, and a refusal
+// raised inside a generic body names the call that instantiated it.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Elsewhere :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Alien :: @OpenVariant(Elsewhere) {
+    text: string = "";
+    render :: (self: *Alien) -> string => self.text;
+}
+
+Plain :: struct {
+    text: string = "";
+}
+
+Stranger :: Plain;
+
+takes :: (l: Label) -> string => l.text;
+
+// Asked once, answered per instantiation.
+peek :: ($T: Type, v: View) -> T => v.(T);
+
+main :: () -> i32 {
+    v: View = Label{ text = "label" };
+
+    // Not a member, and a member of another set.
+    plain := v.(Plain);
+    alien := v.(Alien);
+    print("{} {}\n", plain.text, alien.text);
+
+    // The asking form asks the same question of the same types.
+    if p := v.(?Plain) { print("{}\n", p.text); }
+
+    // An alias names the type it aliases, so it is refused as that type.
+    stranger := v.(Stranger);
+    print("{}\n", stranger.text);
+
+    // Through a generic body: the refusal names the call that asked for it.
+    peeked := peek(Plain, v);
+    print("{}\n", peeked.text);
+
+    // `xx` has no temperament to offer, for a member or for anything else.
+    forced: Label = xx v;
+    print("{} {}\n", forced.text, takes(xx v));
+    strange: Plain = xx v;
+    print("{}\n", strange.text);
+    0
+}

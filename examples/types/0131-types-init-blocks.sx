@@ -64,7 +64,7 @@ main :: () {
 
     // IB1: basic init block with struct methods
     {
-        b := Builder.{ total = 0, count = 0 } {
+        b := Builder{ total = 0, count = 0 }.{
             self.add(10);
             self.add(20);
             self.add(30);
@@ -74,9 +74,9 @@ main :: () {
 
     // IB2: nested init blocks (self shadows correctly)
     {
-        b1 := Builder.{ total = 0, count = 0 } {
+        b1 := Builder{ total = 0, count = 0 }.{
             self.add(100);
-            b2 := Builder.{ total = 0, count = 0 } {
+            b2 := Builder{ total = 0, count = 0 }.{
                 self.add(42);
             };
             self.add(b2.total);
@@ -86,14 +86,14 @@ main :: () {
 
     // IB3: empty init block
     {
-        b := Builder.{ total = 5, count = 1 } {};
+        b := Builder{ total = 5, count = 1 }.{};
         print("IB3: {} {}\n", b.total, b.count);
     }
 
     // IB4: conditional inside init block
     {
         add_extra := true;
-        b := Builder.{ total = 0, count = 0 } {
+        b := Builder{ total = 0, count = 0 }.{
             self.add(10);
             if add_extra {
                 self.add(90);
@@ -105,7 +105,7 @@ main :: () {
     // IB5: init block + auto type erasure combined
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
-        result := use_counter(SimpleCounter.{ val = 0 } {
+        result := use_counter(SimpleCounter{ val = 0 }.{
             self.val = 50;
         });
         print("IB5: {}\n", result);
@@ -123,11 +123,11 @@ main :: () {
             h: f32;
 
             create :: (w: f32, h: f32) -> Dims {
-                Dims.{ w = w, h = h }
+                Dims{ w = w, h = h }
             }
 
             square :: (size: f32) -> Dims {
-                Dims.{ w = size, h = size }
+                Dims{ w = size, h = size }
             }
         }
         use_dims :: (d: Dims) { print("SM1: {} {}\n", d.w, d.h); }
@@ -142,7 +142,7 @@ main :: () {
             b: i64;
 
             make :: (a: i64, b: i64) -> Pair {
-                Pair.{ a = a, b = b }
+                Pair{ a = a, b = b }
             }
         }
         p : Pair = .make(10, 20);
@@ -158,15 +158,15 @@ main :: () {
         x :f32: 10.0;
 
         // null in then branch
-        f1 := OptF.{ width = if true then null else x };
+        f1 := OptF{ width = if true then null else x };
         print("opt-if1: {}\n", f1.width ?? 99.0);
 
         // value in then branch, null in else
-        f2 := OptF.{ width = if true then x else null };
+        f2 := OptF{ width = if true then x else null };
         print("opt-if2: {}\n", f2.width ?? 99.0);
 
         // both branches are values
-        f3 := OptF.{ width = if false then 5.0 else x };
+        f3 := OptF{ width = if false then 5.0 else x };
         print("opt-if3: {}\n", f3.width ?? 99.0);
 
         // standalone optional variable

@@ -1,0 +1,18 @@
+// The `@` namespace is the compiler's: a module may declare an `@` name only
+// when it is a registered contract AND this module is the one that owns it.
+// Both halves refuse here — an invented `@` name, and a lookalike standing in
+// for the canonical `@SourceSite` that `modules/std/core.sx` declares.
+#import "modules/std.sx";
+
+@Site :: struct {
+    file: string = "";
+    line: i32 = 0;
+}
+
+@SourceSite :: struct {
+    file: string = "";
+}
+
+main :: () {
+    print("{}\n", 1);
+}

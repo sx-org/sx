@@ -39,8 +39,8 @@ main :: () {
 
     // Struct elements (direct local).
     ps : [N]P = ---;
-    ps[0] = P.{ x = 1, y = 2 };
-    ps[2] = P.{ x = 5, y = 6 };
+    ps[0] = P{ x = 1, y = 2 };
+    ps[2] = P{ x = 5, y = 6 };
     print("struct p0x={} p0y={} p2x={}\n", ps[0].x, ps[0].y, ps[2].x);
 
     // Type-alias dimension (scalar): same layout as the direct `[N]i64`.

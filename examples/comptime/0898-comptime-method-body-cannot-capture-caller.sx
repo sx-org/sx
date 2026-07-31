@@ -15,6 +15,6 @@ Thing :: struct {
 
 main :: () {
     hidden := 40;
-    thing := Thing.{ value = 2 };
+    thing := Thing{ value = 2 };
     print("{}\n", thing.bad(.one));
 }

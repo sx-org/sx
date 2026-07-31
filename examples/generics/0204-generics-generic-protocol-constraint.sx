@@ -15,7 +15,7 @@ Size :: struct {
 
 impl Lerpable for Size {
     lerp :: (self: Size, b: Size, t: f32) -> Size {
-        Size.{ width = self.width + (b.width - self.width) * t,
+        Size{ width = self.width + (b.width - self.width) * t,
                height = self.height + (b.height - self.height) * t }
     }
 }
@@ -29,7 +29,7 @@ Animated :: struct ($T: Lerpable) {
     active: bool;
 
     make :: (value: T) -> Animated(T) {
-        Animated(T).{
+        Animated(T){
             current = value, from = value, to = value,
             elapsed = 0.0, duration = 0.0, active = false
         }
@@ -64,10 +64,10 @@ Animated :: struct ($T: Lerpable) {
 
 main :: () -> void {
     anim := Animated(Size).make(Size.zero());
-    anim.set_immediate(Size.{ width = 100.0, height = 50.0 });
+    anim.set_immediate(Size{ width = 100.0, height = 50.0 });
     print("after set: {}x{}\n", anim.current.width, anim.current.height);
 
-    anim.animate_to(Size.{ width = 200.0, height = 100.0 }, 1.0);
+    anim.animate_to(Size{ width = 200.0, height = 100.0 }, 1.0);
     anim.tick(0.5);
     print("mid anim: {}x{}\n", anim.current.width, anim.current.height);
 

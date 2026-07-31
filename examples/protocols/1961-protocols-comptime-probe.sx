@@ -27,31 +27,31 @@ impl Show for Loose { text :: (self: *Loose) -> i64 { self.n } }
 
 in_set :: () -> bool {
     ia : [3]i64 = .[1, 2, 3];
-    b := Buffer(i64).{ items = ia[0..] };
+    b := Buffer(i64){ items = ia[0..] };
     return b.(?Series(i64)) != null;
 }
 
 out_of_set :: () -> bool {
-    l := Loose.{ n = 1 };
+    l := Loose{ n = 1 };
     return l.(?Series(i64)) != null;
 }
 
 empty_set :: () -> bool {
-    l := Loose.{ n = 1 };
+    l := Loose{ n = 1 };
     return l.(?Nobody) != null;
 }
 
 // A positive probe hands back the value, so the answer is usable directly.
 through_probe :: () -> i64 {
     ia : [4]i64 = .[9, 8, 7, 6];
-    b := Buffer(i64).{ items = ia[0..] };
+    b := Buffer(i64){ items = ia[0..] };
     s := b.(?Series(i64));
     if s { return s!.count(); }
     return -1;
 }
 
 erased_probe :: () -> bool {
-    l := Loose.{ n = 5 };
+    l := Loose{ n = 5 };
     return l.(?Show) != null;
 }
 

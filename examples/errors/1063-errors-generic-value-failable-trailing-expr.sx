@@ -29,7 +29,7 @@ main :: () -> i32 {
     s := gen(string, "hello") catch (e) { print("PHANTOM string\n"); return 1; };
     print("string: {}\n", s);
 
-    p := gen(Point, Point.{ x = 3, y = 4 }) catch (e) { print("PHANTOM struct\n"); return 1; };
+    p := gen(Point, Point{ x = 3, y = 4 }) catch (e) { print("PHANTOM struct\n"); return 1; };
     print("struct: ({},{})\n", p.x, p.y);
 
     // `or`-form on success must yield the real value, not the fallback.

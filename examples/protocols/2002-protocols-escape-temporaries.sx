@@ -23,7 +23,7 @@ Pair :: struct { a: View; b: View; }
 shared :: () -> Pair {
     c := context.allocator.create(Cell);
     c.n = 5;
-    return Pair.{ a = c, b = c };
+    return Pair{ a = c, b = c };
 }
 
 // Two objects, two handles.
@@ -32,7 +32,7 @@ split :: () -> Pair {
     x.n = 1;
     y := context.allocator.create(Cell);
     y.n = 4;
-    return Pair.{ a = x, b = y };
+    return Pair{ a = x, b = y };
 }
 
 SHARED :: #run shared();

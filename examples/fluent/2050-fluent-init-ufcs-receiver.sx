@@ -1,0 +1,136 @@
+// A `ufcs` first parameter bounded by `@Init(T)` takes its RECEIVER the way it
+// takes an argument (fluent spec §5.2; the emit product story, §13.2).
+//
+// `@Init` is destination-first: the argument is not evaluated at the call, it is
+// formed into a recipe the receiver writes when it chooses. A dot-call reaches
+// that same first parameter, so `Label{…}.emit()` forms exactly what
+// `emit(Label{…})` forms — same formation, same write, same result.
+//
+// Every shape of the bound behaves that way: a FIXED target (an open set, a plain
+// data type) and an OPEN one (`$V/P`, which binds the receiver's own type). And a
+// receiver is an ordinary expression, so it can be the result of a chain or of a
+// trailing-block call.
+#import "modules/std.sx";
+#import "modules/std/list.sx";
+
+// --- A fixed target that is an open set: the value IS the slot ---
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    dim: bool = false;
+    render :: (self: *Label) -> string => if self.dim then "dim" else self.text;
+}
+
+Stack :: @OpenVariant(View) {
+    label: string = "";
+    render :: (self: *Stack) -> string => self.label;
+}
+
+#context_extend ui_out: *List(View) = null;
+
+emit :: ufcs (value: $I/@Init(View)) {
+    item: View = ---;
+    value.write(*item);
+    context.ui_out.append(item);
+}
+
+// --- A fixed target that is a plain data type ---
+Total :: struct { sum: i64 = 0; n: i32 = 0; }
+#context_extend acc: *Total = null;
+
+add :: ufcs (value: $I/@Init(i64)) {
+    slot: i64 = ---;
+    value.write(*slot);
+    context.acc.sum += slot;
+    context.acc.n += 1;
+}
+
+// --- An open target at a constraint protocol: `$V` binds the receiver's type ---
+Drawable :: protocol constraint { draw :: (self: *Self) -> string; }
+Dot :: struct { c: string = "."; }
+impl Drawable for Dot { draw :: (self: *Dot) -> string => self.c; }
+
+Seen :: struct { last: string = ""; }
+#context_extend seen: *Seen = null;
+
+show :: ufcs (value: $I/@Init($V/Drawable)) {
+    d := context.allocator.create(V);
+    value.write(d);
+    context.seen.last = d.draw();
+    context.allocator.destroy(d);
+}
+
+// --- An open target at a tagged protocol: the sink funds the payload ---
+Shape :: protocol tagged { name :: (self: *Self) -> string; }
+Round :: struct { s: string = "round"; }
+impl Shape for Round { name :: (self: *Round) -> string => self.s; }
+
+Kept :: struct { last: string = ""; }
+#context_extend kept: *Kept = null;
+
+keep :: ufcs (value: $I/@Init($V/Shape)) {
+    payload := context.allocator.create(V);
+    value.write(payload);
+    handle : Shape = payload;
+    context.kept.last = handle.name();
+}
+
+// An ordinary ufcs modifier over a member, so a chain can precede the receiver.
+dimmed :: ufcs (v: $V/View) -> V {
+    r := v;
+    r.dim = true;
+    r
+}
+
+// A trailing-block call whose RESULT is then the receiver.
+column :: (label: string, body: Closure()) -> Stack {
+    body();
+    return Stack{ label = label };
+}
+
+main :: () -> i32 {
+    out : List(View) = .{};
+    total := Total{};
+    s := Seen{};
+    k := Kept{};
+
+    push .{ ui_out = *out, acc = *total, seen = *s, kept = *k } {
+        // The receiver at each shape of the bound.
+        Label{ text = "a member" }.emit();
+        (40 + 2).add();
+        Dot{ c = "!" }.show();
+        Round{}.keep();
+
+        // The same function, spelled as an ordinary call.
+        emit(Label{ text = "an argument" });
+
+        // A chain: the modifier runs, and its result is what forms.
+        Label{ text = "chained" }.dimmed().emit();
+
+        // A trailing-block call, then the dot: what the block emitted is already
+        // in the list, and the container it returned goes in after it.
+        column("a container") {
+            Label{ text = "inside" }.emit();
+        }.emit();
+    }
+
+    print("emitted {}\n", out.len);
+    for out (v) { print("  {}\n", v.render()); }
+    print("added sum={} n={}\n", total.sum, total.n);
+    print("shown {} kept {}\n", s.last, k.last);
+    0
+}
+
+// ** stdout **
+// emitted 5
+//   a member
+//   an argument
+//   dim
+//   inside
+//   a container
+// added sum=42 n=1
+// shown ! kept round
+//

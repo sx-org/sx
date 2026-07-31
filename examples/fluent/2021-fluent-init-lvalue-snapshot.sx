@@ -1,0 +1,43 @@
+// `@Init(T)` formed from an lvalue is a SNAPSHOT, never a borrow (spec §5.3).
+//
+// `store(a)` writes a value copy of `a` into the destination. `a` stays valid
+// and independent afterwards: mutating either side leaves the other alone.
+#import "modules/std.sx";
+
+Button :: struct {
+    label: string = "";
+    alpha: f64 = 1.0;
+}
+
+store :: (value: $I/@Init($T)) -> *T {
+    dest := context.allocator.create(T);
+    value.write(dest);
+    dest
+}
+
+main :: () -> i32 {
+    a: Button = .{ label = "original", alpha = 0.25 };
+
+    copy := store(a);
+    print("copy: {} {}\n", copy.label, copy.alpha);
+
+    // The source is untouched by the write and still usable.
+    a.label = "still usable";
+    a.alpha = 0.5;
+    print("source: {} {}\n", a.label, a.alpha);
+    print("copy after: {} {}\n", copy.label, copy.alpha);
+
+    // ...and the copy is independent storage of its own.
+    copy.label = "written through";
+    print("source unaffected: {}\n", a.label);
+
+    context.allocator.destroy(copy);
+    0
+}
+
+// ** stdout **
+// copy: original 0.250000
+// source: still usable 0.500000
+// copy after: original 0.250000
+// source unaffected: still usable
+//

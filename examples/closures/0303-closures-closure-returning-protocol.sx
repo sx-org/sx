@@ -13,7 +13,7 @@ impl MyProtocol for MyImpl {
 }
 
 make_thing :: () -> MyProtocol {
-    MyImpl.{ value = 42 }
+    MyImpl{ value = 42 }
 }
 
 main :: () -> void {

@@ -1,0 +1,69 @@
+// An open set's layout follows the members the program declares, so it can GROW
+// as declarations arrive — and growth is transitive (spec: Open Sets).
+//
+// A member of one set may hold ANOTHER set by value. That member's size is then a
+// function of the held set's layout, so when a later, larger member grows the held
+// set, the holding member grows too, and the set IT belongs to is laid out again.
+// Sizes stay consistent however the declarations are ordered.
+//
+// Two degenerate cases are ordinary here: a set with no members at all is just its
+// tag word, and a set whose members are all small stays small however high its
+// ceiling is.
+#import "modules/std.sx";
+
+// Declared but never populated — every set starts here, and members may arrive
+// from a module this one never sees.
+Empty :: @OpenSet(.{ max = 128 }) {
+    describe :: (self: *Self) -> string;
+}
+
+Held :: @OpenSet(.{ max = 64 }) {
+    value :: (self: *Self) -> i64;
+}
+
+Holder :: @OpenSet(.{ max = 64 }) {
+    total :: (self: *Self) -> i64;
+}
+
+// A `Holder` member that holds a whole `Held` slot by value.
+Wrapper :: @OpenVariant(Holder) {
+    inner: Held = ---;
+    total :: (self: *Wrapper) -> i64 => 0;
+}
+
+// The first `Held` member: one word.
+Single :: @OpenVariant(Held) {
+    a: i64 = 0;
+    value :: (self: *Single) -> i64 => self.a;
+}
+
+// Declared LAST and largest: `Held` grows, so `Wrapper` grows, so `Holder` grows.
+Triple :: @OpenVariant(Held) {
+    a: i64 = 0;
+    b: i64 = 0;
+    c: i64 = 0;
+    value :: (self: *Triple) -> i64 => self.a + self.b + self.c;
+}
+
+main :: () -> i32 {
+    // Tag only: no members, so no payload.
+    print("empty {} align {}\n", size_of(Empty), align_of(Empty));
+
+    // 8 tag + the largest member (24), not the 64-byte ceiling.
+    print("held {}\n", size_of(Held));
+
+    // The wrapper is exactly one `Held` slot, and `Holder` is that plus its tag.
+    print("wrapper {} holder {}\n", size_of(Wrapper), size_of(Holder));
+
+    t := Triple{ a = 1, b = 2, c = 3 };
+    s := Single{ a = 7 };
+    print("values {} {}\n", t.value(), s.value());
+    0
+}
+
+// ** stdout **
+// empty 8 align 8
+// held 32
+// wrapper 32 holder 40
+// values 6 7
+//

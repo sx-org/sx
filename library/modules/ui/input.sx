@@ -14,7 +14,6 @@
 //   the router's capture routes by.
 #import "modules/std.sx";
 #import "modules/ui/types.sx";
-#import "modules/ui/store.sx";
 
 InputModifiers :: struct {
     shift: bool = false;
@@ -122,7 +121,7 @@ InputQueue :: struct {
     gpa: Allocator;
 
     init :: (gpa: Allocator = context.allocator) -> InputQueue {
-        InputQueue.{ gpa = gpa }
+        InputQueue{ gpa = gpa }
     }
 
     len :: (self: *InputQueue) -> i64 #get => self.events.len;

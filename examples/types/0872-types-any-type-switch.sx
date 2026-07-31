@@ -36,7 +36,7 @@ main :: () {
     bytes : []u8 = .[1, 2, 3];
     o : ?i64 = 7;
     onull : ?i64 = null;
-    p := Point.{ x = 3, y = 4 };
+    p := Point{ x = 3, y = 4 };
     q := Color.red;
     u : u32 = 9;
 

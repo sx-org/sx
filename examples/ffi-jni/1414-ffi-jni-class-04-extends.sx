@@ -12,7 +12,7 @@
 
 #import "modules/std.sx";
 
-View :: #jni_class("android/view/View") extern { }
+View :: #jni_class("android/view/View") extern {}
 
 Window :: #jni_class("android/view/Window") extern {
     #extends View;

@@ -34,9 +34,9 @@ inline for SERIALIZABLE (T) {
 render :: (s: Serialize) { s.write(); }
 
 main :: () {
-    p := Point.{ x = 1, y = 2 };
-    r := Rect.{ w = 3, h = 4 };
-    c := Color.{ r = 5, g = 6, b = 7 };
+    p := Point{ x = 1, y = 2 };
+    r := Rect{ w = 3, h = 4 };
+    c := Color{ r = 5, g = 6, b = 7 };
 
     // Erasure at a protocol-typed position — the pair joined the whole-program
     // conformer set through expansion, like any hand-written impl.

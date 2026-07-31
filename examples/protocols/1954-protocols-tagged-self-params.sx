@@ -43,10 +43,10 @@ impl Handle for Port {
 }
 
 main :: () {
-    c1 := Circle.{ r = 2.0 };
-    c2 := Circle.{ r = 2.0 };
-    c3 := Circle.{ r = 5.0 };
-    sq := Square.{ s = 4.0 };
+    c1 := Circle{ r = 2.0 };
+    c2 := Circle{ r = 2.0 };
+    c3 := Circle{ r = 5.0 };
+    sq := Square{ s = 4.0 };
 
     v : Shape = c1;
 
@@ -67,8 +67,8 @@ main :: () {
 
     // A single-conformer set devirtualizes; `#identity` keeps `Self`
     // parameters dispatchable.
-    p := Port.{ n = 3 };
-    q := Port.{ n = 9 };
+    p := Port{ n = 3 };
+    q := Port{ n = 9 };
     h : Handle = p;
     g : Handle = q;
     print("{} {}\n", h.beats(g), g.beats(h));

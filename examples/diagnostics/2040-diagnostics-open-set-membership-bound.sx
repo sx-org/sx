@@ -1,0 +1,51 @@
+// What the membership bound `$V/View` refuses (spec: Open Sets — the membership
+// bound).
+//
+// The bound asks whether the binding is a MEMBER of the named set. It is not a
+// conformance question: a set carries no impls, and no `impl` can make a type a
+// member — the member's own declaration is the only thing that does. So a type
+// that never declared itself into the set fails the bound, and so does a member of
+// a DIFFERENT set, because a type belongs to one set.
+//
+// A set is not parameterized either, so a head spelled with type arguments names
+// no set at all.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 64 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Other :: @OpenSet(.{ max = 64 }) {
+    render :: (self: *Self) -> string;
+}
+
+// A member of `Other`, with the same method — and still not a `View`.
+Alien :: @OpenVariant(Other) {
+    text: string = "";
+    render :: (self: *Alien) -> string => self.text;
+}
+
+// A plain struct that declares the method but joins nothing.
+Plain :: struct {
+    text: string = "";
+    render :: (self: *Plain) -> string => self.text;
+}
+
+show :: (v: $V/View) -> string => v.render();
+
+// A set takes no type arguments, so this head names nothing.
+sized :: (v: $V/View(i64)) -> string => v.render();
+
+main :: () -> i32 {
+    print("{}\n", show(Label{ text = "fine" }));
+    print("{}\n", show(Plain{ text = "not a member" }));
+    print("{}\n", show(Alien{ text = "another set" }));
+    print("{}\n", sized(Label{ text = "parameterized" }));
+    0
+}

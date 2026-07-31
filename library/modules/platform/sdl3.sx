@@ -77,7 +77,7 @@ logical_key_from_sdl :: (k: SDL_Keycode) -> LogicalKey {
 }
 
 sdl_modifiers :: (m: SDL_Keymod) -> InputModifiers {
-    InputModifiers.{
+    InputModifiers{
         shift   = (m & (SDL_Keymod.lshift | SDL_Keymod.rshift)) != 0,
         control = (m & (SDL_Keymod.lctrl | SDL_Keymod.rctrl)) != 0,
         alt     = (m & (SDL_Keymod.lalt | SDL_Keymod.ralt)) != 0,
@@ -147,7 +147,7 @@ sdl_pointer_button :: (data: SDL_MouseButtonData) -> PointerEvent {
         case 3: .secondary;
         else: .none;
     };
-    PointerEvent.{
+    PointerEvent{
         header = .{ time_ns = data.timestamp },
         pointer = .{ value = data.which.(u64) },
         kind = .mouse,
@@ -296,7 +296,7 @@ impl Platform for SdlPlatform {
             else: {}
         }
 
-        FrameContext.{
+        FrameContext{
             viewport_w = xx self.width,
             viewport_h = xx self.height,
             pixel_w = self.pixel_w,

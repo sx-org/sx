@@ -1,0 +1,6 @@
+build block:
+  expression #0 -> A
+  expression #1 -> B
+  reached 2
+closure body
+closure body

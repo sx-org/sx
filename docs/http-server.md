@@ -15,7 +15,7 @@ handler :: (req: *http.Request, resp: *http.Response, ctx: usize) {
 }
 
 main :: () -> i32 {
-    s, e := http.Server.init(http.Config.{ port = 8080 }, handler, 0);
+    s, e := http.Server.init(http.Config{ port = 8080 }, handler, 0);
     if e { return 1; }
     s.run();          // serve until s.stop()
     s.close();

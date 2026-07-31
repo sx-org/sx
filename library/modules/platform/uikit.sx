@@ -331,7 +331,7 @@ impl Platform for UIKitPlatform {
 
     begin_frame :: (self: *UIKitPlatform) -> FrameContext {
         self.refresh_safe_insets();
-        FrameContext.{
+        FrameContext{
             viewport_w = self.viewport_w,
             viewport_h = self.viewport_h,
             pixel_w = self.pixel_w,
@@ -354,7 +354,7 @@ impl Platform for UIKitPlatform {
         if self.keyboard_visible {
             if self.keyboard_height > bottom { bottom = self.keyboard_height; }
         }
-        EdgeInsets.{
+        EdgeInsets{
             top = self.safe_top,
             left = self.safe_left,
             bottom = bottom,
@@ -363,7 +363,7 @@ impl Platform for UIKitPlatform {
     }
 
     keyboard :: (self: *UIKitPlatform) -> KeyboardState {
-        KeyboardState.{
+        KeyboardState{
             visible = self.keyboard_visible,
             height = self.keyboard_height,
         }
@@ -714,7 +714,7 @@ impl Platform for UIKitPlatform {
 // Single-touch model: one contact, pointer id 0; timestamps ride the
 // process monotonic clock.
 uikit_pointer :: (pos: Point) -> PointerEvent {
-    PointerEvent.{
+    PointerEvent{
         header = .{ time_ns = time.mono_ns().(u64) },
         kind = .touch,
         position = pos,
@@ -757,7 +757,7 @@ uikit_chdir_to_bundle :: () {
 uikit_touch_location :: (touch: *void, view: *void) -> Point {
     t : *UITouch = xx touch;
     p := t.locationInView(view);
-    Point.{ x = xx p.x, y = xx p.y }
+    Point{ x = xx p.x, y = xx p.y }
 }
 
 uikit_first_touch :: (touches: *void) -> *void {

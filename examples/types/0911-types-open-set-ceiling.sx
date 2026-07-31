@@ -1,0 +1,77 @@
+// The ceiling is a boundary, and bulk state lives behind a pointer (spec: Open
+// Sets — options, admission).
+//
+// `max` is the largest payload the set will admit. A member exactly that size is a
+// member; one byte more is refused at its own declaration (2036), and the answer is
+// not to raise the ceiling for one type but to stop storing its bulk in the slot: a
+// member holds a POINTER to the state it owns, so the slot stays the size of a
+// pointer no matter how large the state is.
+//
+// The layout still follows the members declared, so the set is as big as its
+// largest member and no bigger than that — `max` reserves nothing.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 32, align = 8 }) {
+    render :: (self: *Self) -> string;
+    cells :: (self: *Self) -> i64;
+}
+
+// Bulk state: far past any ceiling this set would sensibly state.
+BoardState :: struct {
+    cell_ids: [81]u64 = .{};
+    filled: i64 = 0;
+}
+
+// Exactly the ceiling: four words, admitted.
+AtCeiling :: @OpenVariant(View) {
+    a: i64 = 0;
+    b: i64 = 0;
+    c: i64 = 0;
+    d: i64 = 0;
+    render :: (self: *AtCeiling) -> string => "at the ceiling";
+    cells :: (self: *AtCeiling) -> i64 => self.a + self.b + self.c + self.d;
+}
+
+// The 648-byte state, held BEHIND a pointer: the member is one word.
+Board :: @OpenVariant(View) {
+    state: *BoardState = ---;
+    render :: (self: *Board) -> string => "board";
+    cells :: (self: *Board) -> i64 => self.state.filled;
+}
+
+// A smaller member, so the payload is visibly the largest member's and not `max`.
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+    cells :: (self: *Label) -> i64 => 0;
+}
+
+main :: () -> i32 {
+    state := BoardState{};
+    state.filled = 81;
+
+    board: View = Board{ state = *state };
+    edge: View = AtCeiling{ a = 1, b = 2, c = 3, d = 4 };
+    small: View = Label{ text = "label" };
+
+    print("{} {} {}\n", board.render(), edge.render(), small.render());
+    print("cells {} {} {}\n", board.cells(), edge.cells(), small.cells());
+
+    // The member at the ceiling is what the payload is sized by; the 648-byte
+    // state costs the slot one pointer.
+    print("set {} state {} member {}\n", size_of(View), size_of(BoardState), size_of(Board));
+
+    // The state is not in the slot, so copying the set value copies the pointer:
+    // both slots see the same state.
+    copy := board;
+    state.filled = 9;
+    print("through a copy {} {}\n", board.cells(), copy.cells());
+    0
+}
+
+// ** stdout **
+// board at the ceiling label
+// cells 81 10 0
+// set 40 state 656 member 8
+// through a copy 9 9
+//

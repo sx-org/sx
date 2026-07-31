@@ -1,0 +1,47 @@
+// The compose library's leaf components (revision §13.3).
+//
+// Each declares itself into `compose.View` and answers the three methods the set
+// declares, at the types the set declares them.
+#import "modules/std.sx";
+#import "modules/ui/compose/geometry.sx";
+#import "modules/ui/compose/render.sx";
+#import "modules/ui/compose/view.sx";
+#import "modules/ui/compose/modifier.sx";
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    modifier: Modifier = .{};
+    measured: Size = .{};
+
+    size_that_fits :: (self: *Label, proposal: ProposedSize) -> Size {
+        w := xx self.text.len * 8;
+        Size{ width = w, height = 16.0 }
+    }
+
+    layout :: (self: *Label, bounds: Frame) {
+        self.measured = bounds.size;
+    }
+
+    render :: (self: *Label, rc: *RenderContext, frame: Frame) {
+        rc.add_text(frame, self.text);
+    }
+}
+
+Button :: @OpenVariant(View) {
+    label: string = "";
+    modifier: Modifier = .{};
+    fill: Color = .{ r = 0.2, g = 0.4, b = 0.9, a = 1.0 };
+
+    size_that_fits :: (self: *Button, proposal: ProposedSize) -> Size {
+        w := xx self.label.len * 8;
+        pad := self.modifier.padding.horizontal();
+        Size{ width = w + pad, height = 24.0 + self.modifier.padding.vertical() }
+    }
+
+    layout :: (self: *Button, bounds: Frame) {}
+
+    render :: (self: *Button, rc: *RenderContext, frame: Frame) {
+        rc.add_rect(frame, self.fill);
+        rc.add_text(frame, self.label);
+    }
+}

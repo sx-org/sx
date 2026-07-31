@@ -25,14 +25,14 @@ impl P for T {
 }
 
 main :: () {
-    t := T.{ n = 10 };
+    t := T{ n = 10 };
     // The ERASURE runs the conformance gate (the regression under test);
     // `total` itself is not dispatchable through the erased value (Era-2:
     // `xs: []Self` past the receiver — refusal pinned in diagnostics/1253),
     // so the call below is the static one.
     p := t.(P);
     _ = p;
-    arr : [3]T = .{ T.{ n = 1 }, T.{ n = 2 }, T.{ n = 3 } };
+    arr : [3]T = .{ T{ n = 1 }, T{ n = 2 }, T{ n = 3 } };
     // 10 (self) + 1+2+3 (slice) + 100 (extra) = 116
-    print("{}\n", t.total(arr[..], T.{ n = 100 }));
+    print("{}\n", t.total(arr[..], T{ n = 100 }));
 }

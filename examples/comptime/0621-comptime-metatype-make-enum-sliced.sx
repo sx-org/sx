@@ -11,10 +11,10 @@
 
 build_axis :: () -> Type {
     dirs := .[
-        EnumVariant.{ name = "north", payload = void },
-        EnumVariant.{ name = "east",  payload = i64 },   // carries a bearing
-        EnumVariant.{ name = "south", payload = void },
-        EnumVariant.{ name = "west",  payload = void },
+        EnumVariant{ name = "north", payload = void },
+        EnumVariant{ name = "east",  payload = i64 },   // carries a bearing
+        EnumVariant{ name = "south", payload = void },
+        EnumVariant{ name = "west",  payload = void },
     ];
     return make_enum("Axis", dirs[0..2]);   // first two only — a comptime subslice
 }

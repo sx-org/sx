@@ -7,7 +7,7 @@
 //   inline for xs (x)            — element form
 //   inline for xs, 0.. (x, i)    — element + paired index
 //   inline for 0..xs.len, xs (i, x) — range driver, trailing pack
-//   inline for xs { }            — captureless; N=0 unrolls nothing
+//   inline for xs {}            — captureless; N=0 unrolls nothing
 
 #import "modules/std.sx";
 
@@ -53,11 +53,11 @@ empty :: (..xs: Show) {
 }
 
 main :: () {
-    bare(IntBox.{ v = 7 }, StrBox.{ s = "hi" });
-    elem_and_index(IntBox.{ v = 7 }, StrBox.{ s = "hi" });
-    range_driver(IntBox.{ v = 1 }, StrBox.{ s = "two" });
-    offset_index(StrBox.{ s = "x" }, StrBox.{ s = "y" });
-    captureless(IntBox.{ v = 0 }, IntBox.{ v = 0 }, IntBox.{ v = 0 });
-    value_pos(IntBox.{ v = 42 });
+    bare(IntBox{ v = 7 }, StrBox{ s = "hi" });
+    elem_and_index(IntBox{ v = 7 }, StrBox{ s = "hi" });
+    range_driver(IntBox{ v = 1 }, StrBox{ s = "two" });
+    offset_index(StrBox{ s = "x" }, StrBox{ s = "y" });
+    captureless(IntBox{ v = 0 }, IntBox{ v = 0 }, IntBox{ v = 0 });
+    value_pos(IntBox{ v = 42 });
     empty();
 }

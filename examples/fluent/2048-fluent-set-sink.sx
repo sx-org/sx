@@ -1,0 +1,70 @@
+// The stdlib `Sink($T)` at an OPEN SET (fluent spec §6.1, A1).
+//
+// `T` is the interception type and what the list holds. A set carries its member
+// inside the slot, so an element IS the published value: the sink writes it into a
+// slot it owns and appends that — no allocator, no handle, nothing borrowed. What
+// comes back out is an ordinary `View`, and dispatch on it reads the tag the write
+// left behind.
+//
+// The same sink at a `tagged` protocol keeps allocating the payload it hands a
+// handle to (§8) — a handle borrows storage it does not own, and the sink's own
+// frame is gone by the time the list is read. One sink, two storage stories,
+// decided by whether `T` can carry the value itself.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+
+Panel :: @OpenVariant(View) {
+    title: string = "";
+    rows: i64 = 0;
+    render :: (self: *Panel) -> string => self.title;
+}
+
+// A helper whose return type is the set, and one whose return type is a member.
+make_header :: (text: string) -> View { return Panel{ title = text, rows = 2 }; }
+make_label :: (text: string) -> Label => Label{ text = text };
+
+collect :: (content: $B/@BuildBlock(View)) -> Sink(View) {
+    sink := Sink(View){};
+    content.run(*sink);
+    sink
+}
+
+main :: () -> i32 {
+    already: View = Panel{ title = "already a View", rows = 1 };
+
+    sink := collect() {
+        Label{ text = "a member leaf" };
+        already;
+        make_header("a helper's View");
+        make_label("a helper's member");
+
+        // Not a member: an ordinary statement, and the sink never sees it.
+        41;
+    };
+
+    print("collected {}\n", sink.children.len);
+    for sink.children (v) { print("  {}\n", v.render()); }
+
+    // The elements are ordinary set values: they answer for the member they carry.
+    first := sink.children.items[0];
+    print("first is a {}\n", type_of(first));
+    0
+}
+
+// ** stdout **
+// collected 4
+//   a member leaf
+//   already a View
+//   a helper's View
+//   a helper's member
+// first is a Label
+//

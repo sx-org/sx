@@ -1,0 +1,21 @@
+// `compose.Modifier` and the library's UFCS modifiers (revision §13.3).
+//
+// A modifier is an ordinary value carried by a component, and a modifier call is
+// an ordinary value operation — chaining one does not intercept anything.
+#import "modules/std.sx";
+#import "modules/ui/compose/geometry.sx";
+
+Modifier :: struct {
+    opacity: f32 = 1.0;
+    padding: EdgeInsets = .{};
+}
+
+// The modifiers take and return the modifier itself, so a component exposes them
+// by threading its own field through.
+with_opacity :: ufcs (m: Modifier, alpha: f32) -> Modifier {
+    Modifier{ opacity = alpha, padding = m.padding }
+}
+
+with_padding :: ufcs (m: Modifier, insets: EdgeInsets) -> Modifier {
+    Modifier{ opacity = m.opacity, padding = insets }
+}

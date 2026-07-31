@@ -1,0 +1,55 @@
+// An instantiation spelling is legal wherever a type is expected, including a
+// type-switch arm (`case Buffer(f32):`, nested `case Buffer(Buffer(f32)):`) and
+// a type-value comparison (`type_of(x) == Buffer(f32)`). An arm that names a
+// DIFFERENT instantiation of the same template does not match.
+#import "modules/std.sx";
+
+Series :: protocol(T: Type) tagged { count :: (self: *Self) -> i64; }
+
+Buffer :: struct($T: Type) { n: i64; }
+impl Series($T) for Buffer($T) { count :: (self: *Buffer) -> i64 { self.n } }
+
+open :: (s: Series(f32)) {
+    if s == {
+        case Buffer(f32): (x) { print("f32 arm {}\n", x.n); }
+    }
+}
+
+main :: () {
+    a : Series(f32) = Buffer(f32){ n = 7 };
+    open(a);
+    //stdout: f32 arm 7
+
+    // Comparison position: identity of the interned instantiation.
+    print("{} {}\n", type_of(a) == Buffer(f32), type_of(a) == Buffer(i64));
+    //stdout: true false
+
+    // An `any` subject dispatches on the same tag; the i64 arm is live here
+    // (no whole-program conformer set narrows it) and does not claim an f32
+    // value.
+    v : any = Buffer(f32){ n = 3 };
+    if v == {
+        case Buffer(i64): (x) { print("i64 arm {}\n", x.n); }
+        case Buffer(f32): (x) { print("f32 arm {}\n", x.n); }
+        else: { print("no arm\n"); }
+    }
+    //stdout: f32 arm 3
+
+    w : any = Buffer(i64){ n = 4 };
+    if w == {
+        case Buffer(f32): (x) { print("f32 arm {}\n", x.n); }
+        else: { print("no f32 arm\n"); }
+    }
+    //stdout: no f32 arm
+
+    // Nested instantiation in arm and compare position.
+    z : any = Buffer(Buffer(f32)){ n = 9 };
+    if z == {
+        case Buffer(Buffer(f32)): (x) { print("nested {}\n", x.n); }
+        else: { print("nested miss\n"); }
+    }
+    //stdout: nested 9
+
+    print("{}\n", type_of(z) == Buffer(Buffer(f32)));
+    //stdout: true
+}

@@ -18,10 +18,10 @@ impl Collector for Accum { put :: (self: *Accum, v: i64) { self.sum = self.sum +
 measure :: (v: *View) -> i64 { v.area() }
 
 // The frame that would hold the temporary dies with the return.
-escaping :: () -> View { return Widget.{ n = 1 }; }
+escaping :: () -> View { return Widget{ n = 1 }; }
 
 main :: () {
-    w := Widget.{ n = 3 };
+    w := Widget{ n = 3 };
     v : View = w;
 
     // No owned backing: nothing to release.
@@ -36,7 +36,7 @@ main :: () {
 
     // The identity naming discipline: an anonymous instance has no name to
     // borrow.
-    s : Collector = Accum.{ sum = 0 };
+    s : Collector = Accum{ sum = 0 };
 
     print("{}\n", escaping().area());
 }

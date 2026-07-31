@@ -9,9 +9,9 @@
 
 make_suit :: () -> Type {
     return make_enum("Suit", .[
-        EnumVariant.{ name = "hearts",   payload = void },
-        EnumVariant.{ name = "spades",   payload = void },
-        EnumVariant.{ name = "diamonds", payload = void },
+        EnumVariant{ name = "hearts",   payload = void },
+        EnumVariant{ name = "spades",   payload = void },
+        EnumVariant{ name = "diamonds", payload = void },
     ]);
 }
 Suit :: make_suit();

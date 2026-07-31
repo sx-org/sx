@@ -1048,7 +1048,10 @@ pub fn lowerPackFnCallNamed(
         pack_refs.append(self.alloc, r) catch return self.builder.constInt(0, .void);
         if (pack_is_comptime) {
             const it = self.inferExprType(a);
-            pack_arg_types.append(self.alloc, if (it == .unresolved) self.builder.getRefType(r) else it) catch return self.builder.constInt(0, .void);
+            // The lowered ref is the fallback type source, but a bare fn value
+            // rides in the legacy integer word — take its signature so the
+            // element stays callable in the mono (issue 0368).
+            pack_arg_types.append(self.alloc, if (it == .unresolved) self.valueTypeOfRef(r, self.builder.getRefType(r)) else it) catch return self.builder.constInt(0, .void);
         } else {
             pack_arg_types.append(self.alloc, self.builder.getRefType(r)) catch return self.builder.constInt(0, .void);
         }
@@ -1210,8 +1213,8 @@ pub fn monomorphizePackFn(
     // Flow narrowing (issue 0179) is per-function: this monomorphized pack body
     // has its own `Ref` space (overlapping the caller's), so isolate it from the
     // caller's `narrowed`/`narrowed_refs` to avoid a false-positive unwrap gate.
-    var narrow_guard = Lowering.NarrowGuard.enter(self);
-    defer narrow_guard.restore();
+    var nested_guard = Lowering.NestedBodyGuard.enter(self);
+    defer nested_guard.restore();
 
     // Find the pack param's name and position in fd.params, plus its
     // constraint protocol (`..xs: Box` ⇒ "Box"; comptime `..$args` has none).

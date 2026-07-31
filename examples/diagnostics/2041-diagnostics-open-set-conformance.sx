@@ -1,0 +1,92 @@
+// A member answers its set's required methods AT ITS DECLARATION, or it is not a
+// member (spec: Open Sets — admission).
+//
+// The set's declaration states each required method once: its arity, its parameter
+// types, and its return type. Every member answers at exactly those types, because
+// one dispatch switch returns through one slot — so the check belongs where the
+// member is declared, not at whatever call site happens to dispatch it first.
+// NOTHING in this program dispatches anything, and every fault below is still
+// diagnosed.
+//
+// `Self` in a required method denotes the MEMBER, so it is substituted before
+// comparing: `(self: *Self, other: Self) -> Self` is answered by
+// `(self: *Ok, other: Ok) -> Ok`.
+// Expected: exit 1.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128 }) {
+    render :: (self: *Self) -> string;
+    tag :: (self: *Self, n: i64) -> i64;
+    twin :: (self: *Self, other: Self) -> Self;
+}
+
+// The reference member: every method at the declared types, `Self` as itself.
+Ok :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Ok) -> string => self.text;
+    tag :: (self: *Ok, n: i64) -> i64 => n;
+    twin :: (self: *Ok, other: Ok) -> Ok => other;
+}
+
+// Wrong return type.
+BadRet :: @OpenVariant(View) {
+    n: i64 = 0;
+    render :: (self: *BadRet) -> i64 => self.n;
+    tag :: (self: *BadRet, n: i64) -> i64 => n;
+    twin :: (self: *BadRet, other: BadRet) -> BadRet => other;
+}
+
+// Wrong arity after the receiver.
+BadArity :: @OpenVariant(View) {
+    n: i64 = 0;
+    render :: (self: *BadArity) -> string => "x";
+    tag :: (self: *BadArity) -> i64 => 1;
+    twin :: (self: *BadArity, other: BadArity) -> BadArity => other;
+}
+
+// Wrong parameter type.
+BadParam :: @OpenVariant(View) {
+    n: i64 = 0;
+    render :: (self: *BadParam) -> string => "x";
+    tag :: (self: *BadParam, n: string) -> i64 => 2;
+    twin :: (self: *BadParam, other: BadParam) -> BadParam => other;
+}
+
+// `Self` answered as another member instead of itself: substitution is per member.
+BadSelf :: @OpenVariant(View) {
+    n: i64 = 0;
+    render :: (self: *BadSelf) -> string => "x";
+    tag :: (self: *BadSelf, n: i64) -> i64 => n;
+    twin :: (self: *BadSelf, other: Ok) -> Ok => other;
+}
+
+// A method missing entirely.
+Absent :: @OpenVariant(View) {
+    n: i64 = 0;
+    render :: (self: *Absent) -> string => "x";
+    tag :: (self: *Absent, n: i64) -> i64 => n;
+}
+
+// A GENERIC member's conformance depends on the instantiation: its `render`
+// returns `$T`, so only `Wrap(string)` answers. The refusal is at the
+// INSTANTIATION — the declaration is not at fault, and `Wrap(string)` is fine.
+Wrap :: @OpenVariant(View) ($T: Type) {
+    inner: $T = ---;
+    render :: (self: *Wrap) -> $T => self.inner;
+    tag :: (self: *Wrap, n: i64) -> i64 => n;
+    twin :: (self: *Wrap, other: Wrap($T)) -> Wrap($T) => other;
+}
+
+// The same instantiation, reached from a generic body: the member is named as the
+// instantiation, and the call that forced it is named too.
+wrap :: ($T: Type, v: $T) -> View {
+    return Wrap(T){ inner = v };
+}
+
+main :: () -> i32 {
+    good := Wrap(string){ inner = "fine" };
+    bad := Wrap(i64){ inner = 7 };
+    through := wrap(f64, 1.5);
+    print("{} {} {}\n", good.inner, bad.inner, through.render());
+    0
+}

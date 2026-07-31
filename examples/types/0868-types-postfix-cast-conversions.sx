@@ -35,7 +35,7 @@ main :: () {
     x := 300;
     print("chain: {}\n", x.(u8).(i64));
     // Pointer bitcasts through composite targets.
-    p := Point.{ x = 7, y = 8 };
+    p := Point{ x = 7, y = 8 };
     pp := *p;
     vp := pp.(*void);
     back := vp.(*Point);
@@ -46,7 +46,7 @@ main :: () {
     // Protocol erasure: postfix on an lvalue receiver is the OWNING copy
     // (E4 — the value is independent of its source; borrow-for-transient
     // moved to `*Speaker` views).
-    d := Dog.{ n = 42 };
+    d := Dog{ n = 42 };
     s := d.(Speaker);
     print("speak: {}\n", s.speak());
     d.n = 43;

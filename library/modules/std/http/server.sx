@@ -727,7 +727,7 @@ create_out_chan :: (alloc: Allocator, lp: event.Loop) -> *OutChan {
     raw := alloc.alloc_bytes(size_of(OutChan));
     if raw == null { return null; }
     result : *OutChan = xx raw;
-    result.* = OutChan.{ alloc = alloc, lp = lp };
+    result.* = OutChan{ alloc = alloc, lp = lp };
     if !result.mu.setup() { alloc.dealloc_bytes(raw); return null; }
     if !result.cv.setup() {
         result.mu.destroy();
@@ -924,7 +924,7 @@ has_strong_validator_or_digest :: (raw: string) -> bool {
 }
 
 set_not_acceptable :: (resp: *Response) {
-    resp.* = Response.{ status = 406, body = "", allow_compression = false };
+    resp.* = Response{ status = 406, body = "", allow_compression = false };
     resp.add_header("Vary", "Accept-Encoding");
 }
 
@@ -936,7 +936,7 @@ prepare_content_encoding :: (req: *Request, resp: *Response, enabled: bool, min_
     // Message framing is exclusively server-owned. Reject a handler response
     // that tries to inject a second delimiter before any bytes are serialized.
     if has_header(resp.extra_headers, "content-length") or has_header(resp.extra_headers, "transfer-encoding") {
-        resp.* = Response.{ status = 500, body = reason_for(500), allow_compression = false };
+        resp.* = Response{ status = 500, body = reason_for(500), allow_compression = false };
         return .identity;
     }
     if resp.status == 204 or resp.status == 304 { return .identity; }
@@ -984,7 +984,7 @@ prepare_content_encoding :: (req: *Request, resp: *Response, enabled: bool, min_
     if failed {
         // Compression state could not be built before the head went out: a
         // plain 500 is honest; never advertise an encoding for identity data.
-        resp.* = Response.{ status = 500, body = reason_for(500), allow_compression = false };
+        resp.* = Response{ status = 500, body = reason_for(500), allow_compression = false };
         return .identity;
     }
     resp.body = encoded;
@@ -1077,13 +1077,13 @@ run_handler_job :: (arg: usize) {
                 job.compress_level, resp.producer, resp.producer_ctx,
                 job.alloc);
             if encoded == null {
-                resp = Response.{ status = 500, body = reason_for(500), allow_compression = false };
+                resp = Response{ status = 500, body = reason_for(500), allow_compression = false };
                 keep = false;
                 encoding = .identity;
             }
         }
         format_imf_date(time.now_secs(), *db[0]);
-        date = string.{ ptr = *db[0], len = IMF_DATE_LEN };
+        date = string{ ptr = *db[0], len = IMF_DATE_LEN };
         no_body := resp.status == 204 or resp.status == 304;
         if resp.streamed and resp.producer != null and !is_head and !no_body {
             // Q3.2: chunked — serialize ONLY the head (job.alloc-owned),
@@ -1103,7 +1103,7 @@ run_handler_job :: (arg: usize) {
                     destroy_encoded_producer(encoded, job.alloc);
                     encoded = null;
                 }
-                resp = Response.{ status = 500, body = reason_for(500) };
+                resp = Response{ status = 500, body = reason_for(500) };
                 keep = false;
                 ob = serialize_bytes(*resp, keep, job.alloc, is_head, date, job.server_name);   // is_head: a HEAD 500 ships no body (Q3.2-review LOW)
             } else {
@@ -1111,13 +1111,13 @@ run_handler_job :: (arg: usize) {
                 if ob.buf == null {
                     och.release();
                     if encoded != null { destroy_encoded_producer(encoded, job.alloc); encoded = null; }
-                    resp = Response.{ status = 500, body = reason_for(500) };
+                    resp = Response{ status = 500, body = reason_for(500) };
                     keep = false;
                     ob = serialize_bytes(*resp, keep, job.alloc, is_head, date, job.server_name);
                 } else {
                     streamed = true;
                     och.retain(); // completion/connection reference
-                    queue_completion(job.ps, job.alloc, Completion.{
+                    queue_completion(job.ps, job.alloc, Completion{
                         slot = job.slot, gen = job.gen, out = ob,
                         close_after = !keep, consumed = job.consumed,
                         streamed = true, ochan = och,
@@ -1137,7 +1137,7 @@ run_handler_job :: (arg: usize) {
                         n : i64 = 0;
                         if encoded != null {
                             step_failed := false;
-                            step := encoded.next(piece[..]) catch { step_failed = true; EncodedProduceStep.{} };
+                            step := encoded.next(piece[..]) catch { step_failed = true; EncodedProduceStep{} };
                             if step_failed { producer_failed = true; break; }
                             if step.status == .pending { continue; }
                             if step.status == .done { break; }
@@ -1176,7 +1176,7 @@ run_handler_job :: (arg: usize) {
     // Q3.2: a streamed response queued its completion before the pump;
     // everything else queues here. (`streamed` is true iff `completed`.)
     if !completed {
-        queue_completion(job.ps, job.alloc, Completion.{
+        queue_completion(job.ps, job.alloc, Completion{
             slot = job.slot, gen = job.gen, out = ob,
             close_after = !keep, consumed = job.consumed,
             streamed = streamed,
@@ -1351,7 +1351,7 @@ serialize_bytes :: (resp: *Response, keep: bool, alloc: Allocator, head_only: bo
     buf : [*]u8 = xx raw;
     w := resp_head_write(resp, keep, date, server_name, no_body_status, false, buf);
     if body_len > 0 { clib.memcpy(*buf[w], resp.body.ptr, xx body_len); }
-    return OutBytes.{ buf = buf, len = w + body_len };
+    return OutBytes{ buf = buf, len = w + body_len };
 }
 
 // S1: build the HEAD of a chunked (streamed) response — status line,
@@ -1365,7 +1365,7 @@ serialize_chunked_head :: (resp: *Response, keep: bool, alloc: Allocator, date: 
     if raw == null { return .{}; }
     buf : [*]u8 = xx raw;
     w := resp_head_write(resp, keep, date, server_name, false, true, buf);
-    return OutBytes.{ buf = buf, len = w };
+    return OutBytes{ buf = buf, len = w };
 }
 
 // S1: lowercase-hex of a non-negative chunk length, no "0x", no leading
@@ -1471,7 +1471,7 @@ Server :: struct {
         }
         i := self.dheap_len;
         self.dheap_len += 1;
-        self.dheap[i] = DlEntry.{ deadline = dl, slot = slot, gen = gen };
+        self.dheap[i] = DlEntry{ deadline = dl, slot = slot, gen = gen };
         while i > 0 {
             p := (i - 1) / 2;
             if self.dheap[p].deadline <= self.dheap[i].deadline { break; }
@@ -1552,7 +1552,7 @@ Server :: struct {
             self.date_secs = now;
             format_imf_date(now, *self.date_cache.bytes[0]);
         }
-        return string.{ ptr = *self.date_cache.bytes[0], len = IMF_DATE_LEN };
+        return string{ ptr = *self.date_cache.bytes[0], len = IMF_DATE_LEN };
     }
 
     // Fire the optional event hook (no-op when unset — a single null check,
@@ -1573,7 +1573,7 @@ Server :: struct {
             depth = self.ps.done_len;
             self.ps.mu.unlock();
         }
-        return Stats.{
+        return Stats{
             active_conns = self.st_accepted - self.st_closed,
             accepted_total = self.st_accepted,
             closed_total = self.st_closed,
@@ -1679,7 +1679,7 @@ Server :: struct {
         slots : [*]Conn = xx oa.alloc_bytes(cfg.max_conn * size_of(Conn));
         i : i64 = 0;
         while i < cfg.max_conn {
-            slots[i] = Conn.{};
+            slots[i] = Conn{};
             // Q2.2: thread the initial free list in index order (head = 0,
             // so the first accept lands in slot 0 — tests rely on it).
             slots[i].next_free = if i + 1 < cfg.max_conn then i + 1 else -1;
@@ -1691,7 +1691,7 @@ Server :: struct {
         ps : *PoolState = null;
         if cfg.thread_pool_count > 0 {
             ps = xx oa.alloc_bytes(size_of(PoolState));
-            ps.* = PoolState.{};
+            ps.* = PoolState{};
             // Failure below this point must release what init already
             // allocated (slots, dheap, ps, ps.done) — these late paths used
             // to close only the fd and leak the rest (Q2.5-review INFO).
@@ -1733,7 +1733,7 @@ Server :: struct {
             ps.pool = pool;
         }
 
-        return Server.{
+        return Server{
             cfg = cfg, loop = lp, lfd = lfd, conns = slots,
             own_alloc = oa, handler = handler, ctx = ctx, ps = ps,
             free_head = 0, dheap = dh, dheap_cap = dcap,
@@ -3053,7 +3053,7 @@ Server :: struct {
             }
             np += qlen;
         }
-        req.path = string.{ ptr = *c.read_buf[path_off], len = np };
+        req.path = string{ ptr = *c.read_buf[path_off], len = np };
         return true;
     }
 
@@ -3061,7 +3061,7 @@ Server :: struct {
     // (need more bytes) or the connection left the READING state.
     try_serve_one :: (self: *Server, slot: i64) -> bool {
         c := *self.conns[slot];
-        buf := string.{ ptr = c.read_buf, len = xx c.read_len };
+        buf := string{ ptr = c.read_buf, len = xx c.read_len };
 
         // headers complete? Q0.5: resume the terminator scan where the last
         // cycle left off (scan_pos bytes are known clean; back up 3 so a
@@ -3087,15 +3087,15 @@ Server :: struct {
         req : Request = .{};
         p := 0;
         while p < he and buf[p] != ' ' { p += 1; }
-        req.method = string.{ ptr = c.read_buf, len = p };
+        req.method = string{ ptr = c.read_buf, len = p };
         p += 1;
         ps := p;
         while p < he and buf[p] != ' ' { p += 1; }
-        req.path = string.{ ptr = *c.read_buf[ps], len = p - ps };
+        req.path = string{ ptr = *c.read_buf[ps], len = p - ps };
         p += 1;
         vs := p;
         while p < he and buf[p] != '\r' { p += 1; }
-        req.version = string.{ ptr = *c.read_buf[vs], len = p - vs };
+        req.version = string{ ptr = *c.read_buf[vs], len = p - vs };
         hdr_start := p + 2;
         // hdr_start == he + 2 is the LEGAL zero-header shape (the request
         // line's own CRLF is the first half of the terminator); anything
@@ -3113,7 +3113,7 @@ Server :: struct {
         // or NUL smuggled into either is a request-splitting vector).
         if !ascii_ieq(req.version, "http/1.0") and !ascii_ieq(req.version, "http/1.1") {
             http_shape := req.version.len >= 6
-                and ascii_ieq(string.{ ptr = req.version.ptr, len = 5 }, "http/");
+                and ascii_ieq(string{ ptr = req.version.ptr, len = 5 }, "http/");
             self.respond_error_close(slot, if http_shape then 505 else 400);
             return false;
         }
@@ -3175,7 +3175,7 @@ Server :: struct {
                     self.respond_error_close(slot, 400);
                     return false;
                 }
-                sch := string.{ ptr = t.ptr, len = scheme_end };
+                sch := string{ ptr = t.ptr, len = scheme_end };
                 if !ascii_ieq(sch, "http") and !ascii_ieq(sch, "https") {
                     self.respond_error_close(slot, 400);
                     return false;
@@ -3189,12 +3189,12 @@ Server :: struct {
                 }
                 auth_off = ps + astart;
                 auth_len = aend - astart;
-                req.authority = string.{ ptr = *c.read_buf[auth_off], len = auth_len };
+                req.authority = string{ ptr = *c.read_buf[auth_off], len = auth_len };
                 if aend < t.len and t[aend] == '/' {
                     // embedded path; its query, if any, rides along — the
                     // router splits on '?' itself
                     path_off = ps + aend;
-                    req.path = string.{ ptr = *c.read_buf[path_off], len = t.len - aend };
+                    req.path = string{ ptr = *c.read_buf[path_off], len = t.len - aend };
                 } else if aend < t.len {
                     // '?' straight after the authority ("http://host?q"):
                     // an empty path with a query. Splicing the implied "/"
@@ -3211,7 +3211,7 @@ Server :: struct {
             }
         }
 
-        req.headers_raw = string.{ ptr = *c.read_buf[hdr_start], len = he - hdr_start + 2 };
+        req.headers_raw = string{ ptr = *c.read_buf[hdr_start], len = he - hdr_start + 2 };
 
         // Header-block bounds: cap the line count and each line's length
         // (resource exhaustion / smuggling) → 431. One pass over the raw
@@ -3407,7 +3407,7 @@ Server :: struct {
             req.deadline_ms = self.cfg.handler_timeout_ms;
 
             ch : *BodyChan = xx self.own_alloc.alloc_bytes(size_of(BodyChan));
-            ch.* = BodyChan.{ alloc = self.own_alloc };
+            ch.* = BodyChan{ alloc = self.own_alloc };
             if !ch.mu.setup() {
                 self.own_alloc.dealloc_bytes(xx ch);
                 self.respond_error_close(slot, 500);
@@ -3434,12 +3434,12 @@ Server :: struct {
             clib.memcpy(raw, c.read_buf, xx hdr_total);
             jreq := req;
             jreq.body = "";
-            jreq.method = string.{ ptr = raw, len = req.method.len };
-            if !path_static_root { jreq.path = string.{ ptr = *raw[path_off], len = req.path.len }; }
-            if auth_len > 0 { jreq.authority = string.{ ptr = *raw[auth_off], len = auth_len }; }
-            jreq.version = string.{ ptr = *raw[vs], len = req.version.len };
-            jreq.headers_raw = string.{ ptr = *raw[hdr_start], len = req.headers_raw.len };
-            job.* = HandlerJob.{
+            jreq.method = string{ ptr = raw, len = req.method.len };
+            if !path_static_root { jreq.path = string{ ptr = *raw[path_off], len = req.path.len }; }
+            if auth_len > 0 { jreq.authority = string{ ptr = *raw[auth_off], len = auth_len }; }
+            jreq.version = string{ ptr = *raw[vs], len = req.version.len };
+            jreq.headers_raw = string{ ptr = *raw[hdr_start], len = req.headers_raw.len };
+            job.* = HandlerJob{
                 handler = self.handler, app_ctx = self.ctx, ps = self.ps,
                 alloc = self.own_alloc, req = jreq,
                 slot = slot, gen = c.gen, keep = keep, consumed = 0,
@@ -3521,7 +3521,7 @@ Server :: struct {
             // when-complete) unchanged.
             body_start := he + 4;
             resume : ChunkScan = .{};
-            if c.chunk_active { resume = ChunkScan.{ rp = c.chunk_rp, decoded = c.chunk_decoded }; }
+            if c.chunk_active { resume = ChunkScan{ rp = c.chunk_rp, decoded = c.chunk_decoded }; }
             cr := decode_chunked(*c.read_buf[body_start], c.read_len - body_start, max_body, resume);
             if cr.status == ChunkStatus.NEED_MORE {
                 c.chunk_active = true;
@@ -3546,7 +3546,7 @@ Server :: struct {
             }
             // OK: decoded body is compacted at body_start, raw_len bytes used.
             total = body_start + cr.raw_len;
-            req.body = string.{ ptr = *c.read_buf[body_start], len = cr.decoded_len };
+            req.body = string{ ptr = *c.read_buf[body_start], len = cr.decoded_len };
         } else {
             // body per Content-Length (`clen` parsed up front, above).
             // Early 413: a cleanly-parsed Content-Length over max_body is
@@ -3564,7 +3564,7 @@ Server :: struct {
                 if expect_continue and clen > 0 and !self.send_continue(slot) { return false; }
                 return false;
             }
-            req.body = string.{ ptr = *c.read_buf[he + 4], len = xx clen };
+            req.body = string{ ptr = *c.read_buf[he + 4], len = xx clen };
         }
 
         // Q1.8: canonicalize the routable path (percent-decode + dot-segment
@@ -3626,13 +3626,13 @@ Server :: struct {
             raw : [*]u8 = *jb[size_of(HandlerJob)];
             clib.memcpy(raw, c.read_buf, xx total);
             jreq := req;
-            jreq.method      = string.{ ptr = raw, len = req.method.len };
-            if !path_static_root { jreq.path = string.{ ptr = *raw[path_off], len = req.path.len }; }
-            if auth_len > 0 { jreq.authority = string.{ ptr = *raw[auth_off], len = auth_len }; }
-            jreq.version     = string.{ ptr = *raw[vs], len = req.version.len };
-            jreq.headers_raw = string.{ ptr = *raw[hdr_start], len = req.headers_raw.len };
-            jreq.body        = string.{ ptr = *raw[he + 4], len = req.body.len };
-            job.* = HandlerJob.{
+            jreq.method      = string{ ptr = raw, len = req.method.len };
+            if !path_static_root { jreq.path = string{ ptr = *raw[path_off], len = req.path.len }; }
+            if auth_len > 0 { jreq.authority = string{ ptr = *raw[auth_off], len = auth_len }; }
+            jreq.version     = string{ ptr = *raw[vs], len = req.version.len };
+            jreq.headers_raw = string{ ptr = *raw[hdr_start], len = req.headers_raw.len };
+            jreq.body        = string{ ptr = *raw[he + 4], len = req.body.len };
+            job.* = HandlerJob{
                 handler = self.handler, app_ctx = self.ctx, ps = self.ps,
                 alloc = self.own_alloc, req = jreq,
                 slot = slot, gen = c.gen, keep = keep, consumed = total,
@@ -3795,7 +3795,7 @@ Server :: struct {
             if self.start_stream(slot, resp, keep, encoding) { return; }
             // Encoder initialization failed before any bytes were staged.
             // Replace the response atomically with an identity 500.
-            resp.* = Response.{ status = 500, body = reason_for(500), allow_compression = false };
+            resp.* = Response{ status = 500, body = reason_for(500), allow_compression = false };
         }
         date := self.date_now();
         if resp.streamed and resp.producer != null and head_only and !no_body {
@@ -4014,9 +4014,9 @@ Server :: struct {
             self.set_deadline(slot, self.cfg.timeout_request_ms);
         } else if c.encoded_producer != null {
             failed := false;
-            step := c.encoded_producer.next(string.{ ptr = *c.out_buf[DATA_OFF], len = STREAM_PIECE }) catch {
+            step := c.encoded_producer.next(string{ ptr = *c.out_buf[DATA_OFF], len = STREAM_PIECE }) catch {
                 failed = true;
-                EncodedProduceStep.{}
+                EncodedProduceStep{}
             };
             if failed { return -1; }
             if step.status == .pending {

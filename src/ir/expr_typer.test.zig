@@ -162,7 +162,7 @@ test "expr_typer: raw value binding shadows numeric-limit, bare type still folds
 // a raw value binding can shadow a builtin numeric type name through
 // any of three sources — lexical scope, program globals, or module
 // value constants. The shared `identifierBindsValue` guard consults all three,
-// so a global `` `f32 := Box.{…} `` and a module-const `` `i16 :: Box.{…} `` each
+// so a global `` `f32 := Box{…} `` and a module-const `` `i16 :: Box{…} `` each
 // read the value's field (NOT the numeric-limit fold), while a bare `f32.max` /
 // `i16.max` (a `.type_expr` receiver) still folds. Pins the guard across the two
 // non-lexical sources the attempt-3 scope-only fix missed.
@@ -183,9 +183,9 @@ test "expr_typer: global and module-const raw bindings shadow numeric-limit" {
         .fields = &box_fields,
     } });
 
-    // GLOBAL raw binding `` `f32 := Box.{…} `` — registered in global_names.
+    // GLOBAL raw binding `` `f32 := Box{…} `` — registered in global_names.
     try l.program_index.global_names.put("f32", .{ .id = @enumFromInt(0), .ty = box_ty });
-    // MODULE-CONST raw binding `` `i16 :: Box.{…} `` — registered in module_const_map.
+    // MODULE-CONST raw binding `` `i16 :: Box{…} `` — registered in module_const_map.
     var const_val = node(.{ .int_literal = .{ .value = 0 } });
     try l.program_index.module_const_map.put("i16", .{ .value = &const_val, .ty = box_ty });
 

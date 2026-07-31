@@ -35,15 +35,15 @@ main :: () {
     cls := objc_allocateClassPair(ns_object, "SxStructProbe".ptr, 0);
     class_addMethod(cls, sel_registerName("takeRegion:".ptr), xx region_imp, "Q@:{ProbeRegion=QQQQQQ}".ptr);
     class_addMethod(cls, sel_registerName("takeSize:".ptr), xx size_imp, "d@:{ProbeSize=dd}".ptr);
-    class_addMethod(cls, sel_registerName("takeMixed:region:tail:".ptr), xx mixed_imp, "Q@:q{ProbeRegion=QQQQQQ}q".ptr);
+    class_addMethod(cls, sel_registerName("takeMixed:region:tail:".ptr), xx mixed_imp, "Q@:q{ ProbeRegion=QQQQQQ}q".ptr);
     objc_registerClassPair(cls);
 
     inst : *SxStructProbe = xx class_createInstance(cls, 0);
 
-    r := ProbeRegion.{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6 };
+    r := ProbeRegion{ a = 1, b = 2, c = 3, d = 4, e = 5, f = 6 };
     print("region sum: {}\n", inst.take_region(r));
 
-    s := ProbeSize.{ w = 12.0, h = 34.0 };
+    s := ProbeSize{ w = 12.0, h = 34.0 };
     print("size packed: {}\n", inst.take_size(s));
 
     print("mixed: {}\n", inst.take_mixed(7, r, 9));

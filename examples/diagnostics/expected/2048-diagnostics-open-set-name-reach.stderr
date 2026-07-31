@@ -1,0 +1,22 @@
+error: type 'Panel' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/diagnostics/2048-diagnostics-open-set-name-reach.sx:16:16
+   |
+16 |     v : View = Panel{ tag = "which?" };
+   |                ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: 'Panel' is declared by more than one module here
+  --> examples/diagnostics/2048-diagnostics-open-set-name-reach.sx:17:17
+   |
+17 |     if q := v.(?Panel) { print("{}\n", q.tag); }
+   |                 ^^^^^
+
+help: name the one this asks about through the module that declares it ('pkg.Panel')
+   |
+17 |     if q := v.(?Panel) { print("{}\n", q.tag); }
+   |                 ^^^^^
+
+error: type 'Panel' is ambiguous: it is declared in multiple flat-imported modules; qualify the reference or remove the duplicate import
+  --> examples/diagnostics/2048-diagnostics-open-set-name-reach.sx:17:17
+   |
+17 |     if q := v.(?Panel) { print("{}\n", q.tag); }
+   |                 ^^^^^

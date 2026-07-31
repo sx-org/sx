@@ -27,7 +27,7 @@ main :: () {
     p : *i64 = *x;
     print("{}\n", p[0]);    // error: '*i64' is not indexable (hint form)
 
-    s := S.{ a = 1 };
+    s := S{ a = 1 };
     j := 0;
     print("{}\n", s[j]);    // error: runtime index into 'S' (bare form)
 }

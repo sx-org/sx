@@ -22,9 +22,9 @@ impl P for C {
 Holder :: struct { gpu: ?*P = null; }
 
 main :: () {
-    c := C.{};
+    c := C{};
     v : *P = c;
-    h := Holder.{ gpu = v };
+    h := Holder{ gpu = v };
     if h.gpu != null {
         print("direct:  {}\n", h.gpu.n());
     }

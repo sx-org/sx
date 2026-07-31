@@ -19,6 +19,7 @@ const CallResolver = @import("../calls.zig").CallResolver;
 const ProtocolResolver = @import("../protocols.zig").ProtocolResolver;
 const ErrorFlow = @import("../error_flow.zig").ErrorFlow;
 const semantic_diagnostics = @import("../semantic_diagnostics.zig");
+const source_site = @import("../../source_site.zig");
 
 const TypeId = types.TypeId;
 const StringId = types.StringId;
@@ -229,6 +230,10 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     self.collectContextExtensions(decls);
     // Pass 1: scan — register all function ASTs, struct types, extern stubs
     self.scanDecls(decls);
+    // Pass 1a: admit open-set members. Every declaration is registered by now, so
+    // a member declared before its set still finds it, and every member has the
+    // layout the admission checks measure.
+    admitOpenVariants(self, decls);
     // Pass 1a': assemble the program Context — append the collected
     // `#context_extend` fields to the registered Context struct. Must run
     // after `scanDecls` (every named type an extension can reference is
@@ -282,6 +287,21 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
         };
         checker.run(decls);
     }
+    // Pass 1f': index every source site, so `@caller` can read a call's
+    // (file, declaration, ordinal, id) without consulting lowering state — the
+    // index is a function of the parsed declarations alone, which is what makes
+    // a site stable across instantiation order and optimization level.
+    if (source_site.build(self.alloc, decls, .{
+        .stdlib_roots = self.stdlib_paths,
+        .main_dir = self.mainDir(),
+        .main_file = self.main_file,
+    })) |built| {
+        const owned = self.alloc.create(source_site.SiteIndex) catch null;
+        if (owned) |p| {
+            p.* = built;
+            self.site_index = p;
+        }
+    } else |_| {}
     // Pass 1g: reject infinitely-sized types — a nominal aggregate that contains
     // ITSELF (or a mutual peer) BY VALUE has no finite layout and would otherwise
     // infinite-loop `typeSizeBytes` into a stack overflow during body lowering.
@@ -321,7 +341,9 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // the tags and emit each reached protocol's tag table and outlined
     // dispatch routines. Runs after every body is lowered — an impl body
     // monomorphized here can still enlarge a set, so the pass is a fixpoint —
-    // and before codegen, which is where the relocated tags are consumed.
+    // and before codegen, which is where the relocated tags are consumed. The
+    // open sets freeze in the same fixpoint: their last member can arrive from
+    // the same monomorphization, and their layout is what codegen reads.
     self.convergeTaggedSets();
     // Pass 6: any impl block STILL unregistered has an unresolvable head or
     // types — every registration opportunity has run. Silence here let a
@@ -539,6 +561,9 @@ pub fn lowerDecls(self: *Lowering, decls: []const *const Node) void {
             .protocol_decl => {
                 self.registerProtocolDecl(&decl.data.protocol_decl);
             },
+            .open_set_decl => {
+                self.registerOpenSetDecl(&decl.data.open_set_decl, decl);
+            },
             .impl_block => {
                 self.protocolResolver().registerImplBlock(&decl.data.impl_block, is_imported, decl);
             },
@@ -555,6 +580,45 @@ pub fn lowerDecls(self: *Lowering, decls: []const *const Node) void {
             else => {},
         }
     }
+}
+
+/// Admit every `V :: @OpenVariant(P)` declaration into its set, after every
+/// declaration in this list is registered: a member may be written before the set
+/// it joins, and its own layout has to exist before it can be measured.
+fn admitOpenVariants(self: *Lowering, decls: []const *const Node) void {
+    for (decls) |decl| {
+        switch (decl.data) {
+            .struct_decl => |sd| {
+                if (sd.open_variant_of == null) continue;
+                // A generic member is measured per instantiation, at the
+                // instantiation site — the template itself has no layout.
+                if (sd.type_params.len > 0) continue;
+                self.setCurrentSourceFile(decl.source_file);
+                const ty = self.resolveName(sd.name);
+                if (ty == .unresolved) continue;
+                self.admitOpenVariant(&decl.data.struct_decl, ty, decl.span);
+            },
+            .const_decl => |cd| {
+                if (cd.value.data != .struct_decl) continue;
+                const sd = cd.value.data.struct_decl;
+                if (sd.open_variant_of == null or sd.type_params.len > 0) continue;
+                self.setCurrentSourceFile(decl.source_file);
+                const ty = self.resolveName(sd.name);
+                if (ty == .unresolved) continue;
+                self.admitOpenVariant(&cd.value.data.struct_decl, ty, decl.span);
+            },
+            // A module reached by NAME is scanned through this same recursion
+            // (`scanDecls`), so its members join their sets here too: what a set
+            // has as members is what the program declares, not how a consumer
+            // spelled the import that reached it.
+            .namespace_decl => |ns| admitOpenVariants(self, ns.decls),
+            else => {},
+        }
+    }
+    // Every declaration is registered, so a generic member's head that still
+    // reaches no set never will.
+    self.reportUnreachedGenericHeads();
+    self.open_set_decls_admitted = true;
 }
 
 /// Detect whether `Context :: struct {...}` is declared anywhere in the
@@ -1071,7 +1135,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                         .float_literal => .f64,
                         .bool_literal => .bool,
                         .char_literal => .i64,
-                        // Complex constant expressions (e.g. COLOR_WHITE :: Color.{ r = 255, ... })
+                        // Complex constant expressions (e.g. COLOR_WHITE :: Color{ r = 255, ... })
                         .struct_literal => self.inferExprType(cd.value),
                         else => null,
                     };
@@ -1097,6 +1161,9 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
             },
             .protocol_decl => {
                 self.registerProtocolDecl(&decl.data.protocol_decl);
+            },
+            .open_set_decl => {
+                self.registerOpenSetDecl(&decl.data.open_set_decl, decl);
             },
             .impl_block => {
                 self.protocolResolver().registerImplBlock(&decl.data.impl_block, is_imported, decl);
@@ -1200,7 +1267,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
         self.putModuleConst(decl.source_file, cd.name, .{ .value = cd.value, .ty = .i64 });
     }
     // Pass 2c: the const-alias fixpoint again. Its pass-0a' run can only see
-    // the LITERAL consts pass 0 registers; an aggregate const (`C :: S.{…}`,
+    // the LITERAL consts pass 0 registers; an aggregate const (`C :: S{…}`,
     // `A :: .[…]`) does not reach `module_const_map` until pass 1/2, so an
     // alias of one (`D :: C`) had no registered target back then. Re-running
     // here closes over those. Idempotent — the fixpoint skips a name already
@@ -1581,7 +1648,7 @@ pub fn globalInitValue(self: *Lowering, vd: *const ast.VarDecl, var_ty: TypeId) 
     // other (present) initializer is serialized against the CHILD type and
     // wrapped here into `{ <payload>, true }`. Recursing on the child type
     // also handles nested optionals (`?(?i64)`) and optional aggregates
-    // (`?S = S.{...}`), whose payloads are themselves structs/optionals.
+    // (`?S = S{...}`), whose payloads are themselves structs/optionals.
     if (!var_ty.isBuiltin() and self.module.types.get(var_ty) == .optional) {
         switch (v.data) {
             .null_literal => return .null_val,
@@ -2624,6 +2691,7 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
         .union_decl => |d| d.name,
         .error_set_decl => |d| d.name,
         .protocol_decl => |d| d.name,
+        .open_set_decl => |d| d.name,
         .runtime_class_decl => |d| d.name,
         .const_decl => |d| d.name,
         .fn_decl, .var_decl, .namespace_decl => return null,
@@ -2865,12 +2933,12 @@ fn nameAuthoredAsTypeOnlyPrivatelyElsewhere(self: *Lowering, name: []const u8, f
 }
 
 /// TRUE iff `raw` declares a NAMED TYPE — struct / enum / union / error-set /
-/// protocol / runtime class. A `fn_decl`, a value-or-alias `const_decl`, and a
+/// protocol / open set / runtime class. A `fn_decl`, a value-or-alias `const_decl`, and a
 /// `namespace_decl` are NOT named types. A type ALIAS is a `const_decl`;
 /// it is recognised via `type_aliases_by_source` separately from named types.
 pub fn isNamedTypeKind(raw: resolver_mod.RawDeclRef) bool {
     return switch (raw) {
-        .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .runtime_class_decl => true,
+        .struct_decl, .enum_decl, .union_decl, .error_set_decl, .protocol_decl, .open_set_decl, .runtime_class_decl => true,
         .const_decl => |cd| constWrappedNamedTypeRef(cd) != null,
         .fn_decl, .var_decl, .namespace_decl => false,
     };
@@ -2920,6 +2988,7 @@ pub fn namedRefTid(self: *Lowering, ref: resolver_mod.RawDeclRef, name: []const 
         // name lookup, byte-identical to pre-0134.
         .error_set_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
         .protocol_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
+        .open_set_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
         .runtime_class_decl => table.findByName(table.internString(name)),
         .const_decl => |d| if (constWrappedNamedTypeRef(d)) |inner| self.namedRefTid(inner, name) else null,
         .fn_decl, .var_decl, .namespace_decl => null,
@@ -3656,6 +3725,13 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     const saved_protocol_default_dispatch = self.protocol_default_dispatch;
     self.protocol_default_dispatch = self.protocolDefaultDispatchDomain(fd);
     defer self.protocol_default_dispatch = saved_protocol_default_dispatch;
+
+    // An `@Init` write is the store in the THUNK's own body. A function lowered
+    // while that body is being lowered is some other function, and a store of its
+    // own is an ordinary one.
+    const saved_forming = self.forming_init_target;
+    self.forming_init_target = null;
+    defer self.forming_init_target = saved_forming;
 
     // objc-defined-class method context for `*Self` substitution (M1.2 A.2b);
     // the resolveReturnType / resolveParamType calls below consult it.

@@ -86,6 +86,37 @@ i2 :: struct { x: i64; }            // ERROR — and a type-declaration name
 everywhere. `string` and `Vector` are language primitives — the compiler resolves
 them by name, they are declared nowhere, and they cannot be re-bound.)
 
+#### The `@` namespace
+
+A leading `@` marks a **compiler-maintained contract**: a declaration whose
+shape the compiler depends on, so changing it is a coordinated compiler and
+stdlib revision. The sigil grants no privilege — an `@` declaration is
+ordinary, source-visible sx, and user code constructs its values like any
+other type:
+
+```sx
+site := @SourceSite{ file = "fake.sx", declaration = "tests.fake", line = 1 };
+```
+
+Which `@` names exist, and which module owns each canonical declaration, is a
+compiler registry. An `@` declaration in any other file is rejected. The owning
+module is the one resolved from a **library root**, matched by identity on disk
+— never by a name-and-field-shape test, and never by what a path spells, so
+neither a nested `…/modules/std/core.sx` nor a project-local file that shadows
+the import can stand in for the canonical declaration:
+
+```sx
+@Site :: struct { … }         // ERROR: not a compiler-maintained contract
+@SourceSite :: struct { … }   // ERROR: 'modules/std/core.sx' declares it
+```
+
+Separately, a few `@` names are **compiler-formed** — `@Init(T)` and
+`@BuildBlock(P)`. Those are formed for a parameter, never declared and never
+constructed, so they have no stdlib declaration and no literal form.
+Both are constraints, so both are written only as a bound on the parameter
+(`value: $I/@Init(T)`, `content: $B/@BuildBlock(P)`) — see
+[`@Init(T)`](#initt) and [`@BuildBlock(P)`](#buildblockp).
+
 #### Backtick raw-identifier escape
 
 A leading backtick makes the following token a **raw identifier**: `` `name `` is
@@ -572,19 +603,18 @@ Foo :: struct {
 v1 : Vec4 = .{ 1, 2, 3, 0 };
 
 // Positional (with type prefix)
-v2 := Vec4.{ 4, 1, 1, 3 };
+v2 := Vec4{4, 1, 1, 3 };
 
 // Named fields (any order)
-v3 := Vec4.{ w=0, x=2, y=3, z=4 };
+v3 := Vec4{w=0, x=2, y=3, z=4 };
 
 // Mixed named + shorthand (bare identifier = field name matches variable name)
 z := 5.0;
 w := 6.0;
-v4 := Vec4.{ y=3, x=9, w, z };
+v4 := Vec4{y=3, x=9, w, z };
 
 // Trailing commas are allowed in all comma-separated lists
-v5 := Vec4.{
-    x = 1.0,
+v5 := Vec4{x = 1.0,
     y = 2.0,
     z = 3.0,
     w = 4.0,
@@ -596,6 +626,37 @@ A named field must name a **declared field** of the struct. An explicit
 type 'T'`) — it is never silently dropped, so a typo or a field removed by an
 `inline if OS` branch is caught. (Bare-identifier shorthand that happens to match
 no field is instead read as a *positional* element, not an error.)
+
+Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
+`List(i64){}`, `mod.Config{ port = 80 }`. The old separator-dot form `Type.{…}`
+is a hard error with a fix-it to the compact spelling. Contextual `.{…}` is
+unchanged.
+
+After a completed aggregate, a following block may appear in two forms:
+
+```sx
+// Taught: self-trailing — stores the value, binds `self` to a pointer to it,
+// runs the block, yields the (possibly mutated) value.
+b := Button{ label = "Play" }.{
+    self.label = "Go";
+};
+
+// Legal, not taught: bare second brace group — construct T, then a plain
+// scope in the enclosing environment (no `self`). The value is still T.
+b2 := Button{ label = "Play" } {
+    print("built\n");
+};
+```
+
+Call trailing blocks stay bare after `)` (`f(args) { … }`) and are unrelated.
+
+`push` context expressions may be named aggregates; the body brace is the push
+scope (not a second competing trailing form):
+
+```sx
+push .{ allocator = a } { … }              // idiomatic
+push Context{ allocator = a } { … }        // explicit Context literal
+```
 
 #### Anonymous Structs
 
@@ -655,7 +716,7 @@ individually). These mirror the rejection of the same shapes as bare top-level
 ```sx
 UBase :: struct { x: i32; y: i32; }
 UExt :: struct { #using UBase; z: i32; }
-e := UExt.{ x = 1, y = 2, z = 3 };
+e := UExt{x = 1, y = 2, z = 3 };
 print("{}\n", e.x);  // 1
 ```
 
@@ -664,7 +725,7 @@ print("{}\n", e.x);  // 1
 UPos :: struct { px: i32; py: i32; }
 UCol :: struct { r: i32; g: i32; }
 USprite :: struct { #using UPos; #using UCol; scale: i32; }
-s := USprite.{ px = 10, py = 20, r = 255, g = 128, scale = 1 };
+s := USprite{px = 10, py = 20, r = 255, g = 128, scale = 1 };
 ```
 
 The referenced struct must be declared before use. This is purely a compile-time field expansion — no runtime overhead.
@@ -685,7 +746,7 @@ Point :: struct {
     sum :: (self: *Point) -> i32 { self.x + self.y; }
 }
 
-p := Point.{ x = 3, y = 4 };
+p := Point{x = 3, y = 4 };
 print("{}\n", p.sum());  // 7
 ```
 
@@ -846,13 +907,16 @@ impl Series($T) for Buffer(T) {            // blanket: one impl, a family of con
 - **Coherence.** For `constraint` and the erased kinds, duplicate
   `(protocol-instantiation, concrete type)` pairs follow
   import-scoped visibility: a duplicate within one compilation unit
-  is an error at the impls; duplicates across modules are diagnosed
-  at a use site that sees both. The `tagged` kind requires **global
-  coherence**: its conformer sets are whole-program, so a duplicate
-  pair is an error regardless of import visibility — diagnosed,
-  naming both impl sites, when the pair's instantiation is reached
-  (§6.6). Colliding blankets whose instantiations are never reached
-  are not diagnosed (nothing exists to collide at).
+  is an error at the impls, naming both; duplicates across modules
+  are diagnosed at a use site that sees both. The `tagged` kind
+  requires **global coherence**: its conformer sets are whole-program,
+  so a duplicate pair is an error regardless of import visibility —
+  diagnosed, naming both impl sites, when the pair's instantiation is
+  reached (§6.6). One module declaring both impls is the same-unit
+  error for every kind, tagged included, and needs no reached
+  instantiation. Colliding blankets, and cross-module collisions whose
+  instantiations are never reached, are not diagnosed (nothing exists
+  to collide at).
 
 **Comptime-expanded conformance.** `impl` blocks participate in the
 ordinary top-level comptime declaration forms. An `inline if` gates
@@ -1096,7 +1160,7 @@ impl Sizable for Widget {
     size :: (self: *Widget) -> i64 { self.value }
 }
 
-w := Widget.{ value = 7 };
+w := Widget{value = 7 };
 s : Sizable = w;      // error: 'w' is an lvalue and 'Sizable' values own
                       // their storage — write the copy ('w.(Sizable)')
                       // or pass a view ('*Sizable') for transient use
@@ -1123,10 +1187,10 @@ impl Rng for Xorshift {
     }
 }
 
-rng := Xorshift.{ state = 42 };
+rng := Xorshift{state = 42 };
 a : Rng = rng;                      // borrow — no demand error, no copy
 b := rng.(Rng);                     // borrow, same value shape
-c : Rng = Xorshift.{ state = 7 };   // error: identity objects need a
+c : Rng = Xorshift{state = 7 };   // error: identity objects need a
                                     // name; bind it first
 ```
 
@@ -1176,10 +1240,10 @@ impl Sizable for Widget {
 }
 
 measure :: (v: *Sizable) -> i64 { v.size() }
-w := Widget.{ value = 7 };
+w := Widget{value = 7 };
 measure(w);                            // view in place — aliases w
 pv : *Sizable = w;                     // view over w, valid to end of frame
-pv : *Sizable = Widget.{ value = 1 };  // error: rvalue — nothing durable to borrow
+pv : *Sizable = Widget{value = 1 };  // error: rvalue — nothing durable to borrow
 ```
 
 ##### 5.6 Dispatchability (per method)
@@ -1217,8 +1281,8 @@ impl Eq for Point {
     }
 }
 
-p1 := Point.{ x = 1.0, y = 2.0 };
-p2 := Point.{ x = 3.0, y = 2.0 };
+p1 := Point{x = 1.0, y = 2.0 };
+p2 := Point{x = 3.0, y = 2.0 };
 e := p1.(Eq);
 e.eq(p2);            // error: 'eq' is unavailable on an erased 'Eq' value —
                      // its parameter 'other: Self' has no expressible type here
@@ -1328,7 +1392,7 @@ Arena :: struct {
 }
 impl Allocator for Arena { … }
 
-gpa := GPA.{ … };
+gpa := GPA{… };
 arena := Arena.init(gpa, 4096);
 push .{ allocator = arena } { … }              // borrow of a named arena
 push .{ allocator = Arena.init(gpa, 4096) } { … }
@@ -1465,7 +1529,7 @@ impl Shape for Circle {
     resized :: (self: Circle, k: f64) -> Circle { .{ r = self.r * k } }
 }
 
-c := Circle.{ r = 1.0 };
+c := Circle{r = 1.0 };
 s : Shape = c;
 big := s.resized(2.0);     // ← the note below fires here
 ```
@@ -1589,7 +1653,7 @@ The examples below share this context: `Series(T)` (§1, tagged:
 to nothing; no impl anywhere names `Series(bool)`.
 
 ```sx
-v : Series(f32) = Sine.{ freq = 0.5 };
+v : Series(f32) = Sine{freq = 0.5 };
 ```
 
 - **Empty set**: any value-consuming operation — erasure, method
@@ -1752,7 +1816,10 @@ identity erasure of a named instance global — a borrow, never null
 constant cannot exist before `main`, so a value/own protocol-typed
 context field is refused at its declaration. Threads and fibers inherit the
 context by snapshot; a snapshot copies handles, not referents — a
-borrow outliving its referent is the standard hazard.
+borrow outliving its referent is the standard hazard. `context.allocator`
+rides the same snapshot, so the spawning container — not the language —
+is responsible for pushing an allocator that outlives the spawned fiber
+or thread when the ambient one does not.
 
 ##### 7.7 Packs and variadics
 
@@ -1858,7 +1925,7 @@ dataflow discipline:
   ```sx
   GPA :: struct { … }
   Serialize :: protocol tagged { write :: (self: *Self, out: *Buf); }
-  HAS :: #run { g := GPA.{ … }; g.(?Serialize) != null };
+  HAS :: #run { g := GPA{… }; g.(?Serialize) != null };
   inline if !HAS { impl Serialize for GPA { … } }
   ```
   ```
@@ -2055,7 +2122,7 @@ conformer identity.
 | all methods `Self`-excluded (erased kind) | erases fine; every method call through the value diagnoses; concrete/bound calls fine |
 | single-conformer tagged protocol | fully devirtualizes inside the link-stage routine (single arm → direct call); downcasts stay symbol compares; module objects unaffected (§9) |
 | zero-conformer tagged instantiation | reaching use legal; erasure, method call, or downcast errors naming the implemented instantiations; a comptime SOFT probe against the final empty set answers null (§7.9) |
-| duplicate impl `(P-instantiation, T)` | constraint/erased: import-scoped (§3). tagged: global coherence — error at the first reached colliding instantiation, naming both impl sites; unreached collisions are not diagnosed |
+| duplicate impl `(P-instantiation, T)` | constraint/erased: import-scoped (§3). tagged: global coherence — error at the first reached colliding instantiation, naming both impl sites; unreached CROSS-MODULE collisions are not diagnosed. Both impls in one module: error at the impls on every kind, reached or not |
 | impl for a protocol type itself (`impl P for Q`) | protocols are not concrete types; refused |
 | impl for a structural type (`impl Series($T) for []T`) | legal — conformer identity is canonical type identity |
 | impl bounded by a constraint (`impl Show for $T/Ord`) | not a supported form; the `for` target names a type constructor |
@@ -2123,9 +2190,9 @@ single : Tuple(i64) = .{42};                   // 1-tuple value
 empty  : Tuple() = .{};                        // empty tuple value
 zeroed : Tuple(i32, i32) = ---;                // zero-initialized tuple
 
-// Explicitly typed value (like `Point.{...}`):
-p := Tuple(i64, i64).{40, 2};
-n := Tuple(x: i64, y: i64).{x = 10, y = 20};
+// Explicitly typed value (like `Point{...}`):
+p := Tuple(i64, i64){40, 2};
+n := Tuple(x: i64, y: i64){x = 10, y = 20};
 ```
 
 A named tuple value uses `=` for its fields (`.{x = a, y = b}`); a named tuple
@@ -2143,7 +2210,7 @@ Tuple(..F(Ts))      // pack-spread tuple type (see Variadic Heterogeneous Type P
 `Tuple(...)` is strictly a **type** in every position — including `size_of(Tuple(...))`
 and `type_info(...)` arguments. A tuple **value** comes only from a `.{ ... }`
 literal against a tuple-typed target (`t : Tuple(A, B) = .{a, b}`) or the typed
-prefix (`Tuple(A, B).{a, b}`); a bare `Tuple(1, 2)` (non-type elements) is
+prefix (`Tuple(A, B){a, b}`); a bare `Tuple(1, 2)` (non-type elements) is
 rejected as a tuple type with non-type elements.
 
 Bare parentheses are grouping and never a tuple:
@@ -2223,7 +2290,7 @@ a != b   // true
 
 **Concatenation** (`+`) — creates a new tuple with fields from both sides:
 ```sx
-c := a + Tuple(i64, i64).{3, 4};   // c : Tuple(i64, i64, i64, i64)
+c := a + Tuple(i64, i64){3, 4};   // c : Tuple(i64, i64, i64, i64)
 c.0;                       // 1
 c.3;                       // 4
 ```
@@ -2238,7 +2305,7 @@ r.5;                 // 2
 **Lexicographic comparison** (`<`, `<=`, `>`, `>=`) — compares element-by-element left to right:
 ```sx
 a < b                            // true  (first fields equal, 2 < 3)
-Tuple(i64, i64).{2, 0} > Tuple(i64, i64).{1, 9}   // true  (2 > 1, rest ignored)
+Tuple(i64, i64){2, 0} > Tuple(i64, i64){1, 9}   // true  (2 > 1, rest ignored)
 a <= a                           // true  (all equal, <= allows tie)
 ```
 
@@ -2418,7 +2485,7 @@ address never silently becomes a type. Infix `*` (multiplication) is
 untouched: after an operand `*` is binary, at expression head it is
 address-of (`a * *b` multiplies `a` by the address of `b`).
 ```sx
-v := Vec2.{ 1.0, 2.0 };
+v := Vec2{1.0, 2.0 };
 ptr := *v;             // *Vec2
 ```
 
@@ -2493,7 +2560,7 @@ Conversion discipline (Odin's model):
 - A string **literal** coerces to `cstring` implicitly — literal bytes
   are terminated constants in the binary, so the conversion is free.
 - Any **other** `string` does NOT coerce: it may be an unterminated view
-  (`string.{ptr, len}` windows, writer output). Materialize an owned,
+  (`string{ptr, len}` windows, writer output). Materialize an owned,
   terminated copy with `to_cstring(s)`.
 - `cstring` does not coerce to `string` implicitly — the length is an
   O(n) strlen the code must ask for. `from_cstring(c)` is the zero-copy
@@ -2609,7 +2676,7 @@ result := if opt == {
 #### Optional Chaining (`?.`)
 Short-circuits field access on optionals:
 ```sx
-x: ?Point = Point.{ x = 1, y = 2 };
+x: ?Point = Point{x = 1, y = 2 };
 y: ?Point = null;
 a := x?.x ?? 0;       // 1
 b := y?.x ?? 0;       // 0
@@ -2643,7 +2710,7 @@ Reassignment kills narrowing.
 Optional fields in structs default to `null`:
 ```sx
 Node :: struct { value: i32; next: ?i32; }
-n := Node.{ value = 10 };    // n.next is null
+n := Node{value = 10 };    // n.next is null
 ```
 
 #### Printing
@@ -2778,7 +2845,7 @@ through it:
 ```sx
 Box :: struct ($T: Type) { item: T; }
 BoxAlias :: Box;                          // same template
-b := BoxAlias(i64).{ item = 3 };
+b := BoxAlias(i64){ item = 3 };
 b2 : BoxAlias(string) = .{ item = "x" };  // annotation head too
 ```
 
@@ -2823,6 +2890,87 @@ sum :: (a: $T, b: T) -> T {
   ```
 - Each unique set of concrete types produces a **separate specialized function** (monomorphization)
 - Multiple type parameters are supported: `(a: $T, b: $U) -> T`
+
+#### Generic bounds
+
+A binder carries zero or more **bounds**, each introduced by `/`:
+
+```
+Bound        := '/' ProtocolHead [ '(' TypeExpr { ',' TypeExpr } ')' ]
+ProtocolHead := identifier | at_identifier | QualifiedHead
+QualifiedHead:= identifier { '.' identifier }
+```
+
+```sx
+largest   :: (xs: []$T/Ord) -> T { … }                  // one bound
+are_equal :: (a: $T/Eq/Hashable, b: T) -> bool { … }    // several
+lift      :: ($T: Type/Ord, x: T) -> T { … }            // explicit form
+```
+
+A head names what is required of the binder: a declared protocol, an **open
+set** — where the requirement is MEMBERSHIP rather than conformance (see Open
+Sets) — an enclosing type parameter, or a compiler-owned `@` contract (`@Init`,
+`@BuildBlock`). A parameterized protocol takes its type arguments in the
+bound — `$B/@BuildBlock(View)`, `$I/@Init(Button)`. An argument is an
+ordinary type expression, so it may introduce a binder of its own, with its
+own bounds: `$I/@Init($V/Drawable)`.
+
+A head may be **qualified** by the module that owns it — `$V/compose.View`,
+`$T/geometry.Ord` — naming a protocol or a set a module reached by name
+declares. What the bound asks is the DECLARATION's question, so a member joins
+the set it was declared into however the head that names it is spelled.
+
+Bounds belong to the binder, not to the type built around it, so a type
+constructor may wrap a bound binder: `*$S/@BuildSink(P)` is a pointer to some
+`S` conforming to `@BuildSink(P)`.
+
+A `/` with no head, and an empty argument list (`$T/Eq()`), are errors.
+
+**A bound constrains.** Each bound is checked per monomorphized instance,
+against the concrete type that instance binds — the template itself constrains
+nothing, so one call may satisfy a bound and another fail it. A head that names
+nothing in scope is an unknown-name error, whichever way it is spelled.
+
+Where the check lands depends on what the head names:
+
+| Head | Satisfied when |
+|---|---|
+| a declared protocol | the binding implements every method |
+| a parameterized protocol (`Into(i32)`) | a visible `impl Into(i32) for <binding>` exists, or a **blanket** impl covers it |
+| the declaration's own type parameter (`$V/P`) | deferred — asked again wherever `P` is bound: as **conformance** when `P` is a protocol, as **identity** when `P` is a concrete type |
+| `@Init(T)` | the binder holds an initializer the compiler formed for `T` — see [`@Init(T)`](#initt) |
+| `@BuildBlock(P)` | the binder holds a build block the compiler formed for `P` — see [`@BuildBlock(P)`](#buildblockp) |
+
+A protocol satisfies its own bound: binding `$V/View` to `View` is the identity
+case, not a request that `View` implement itself.
+
+A sibling head bound to a **concrete** type collapses the bound's family to that
+one member: `$V/P` with `P = i64` admits `i64` and nothing else. A bound's
+type-argument list is validated against the arity of whatever the sibling landed
+on, before the binding is considered.
+
+**Blanket impls.** An impl may write the protocol's type arguments as its own
+binders — `impl Series($T) for Buffer($T)` covers every instantiation of
+`Buffer` at the matching argument. Such an impl has no concrete argument tuple
+to be keyed by, so it is matched at the use site against the request's arguments
+and the carrier's own instantiation. The binder is matched by POSITION, not by
+name: `impl Series($U) for Buffer($U)` works without knowing what the template
+calls its parameter. A carrier may mix binders with CONCRETE arguments, and each
+constrains coverage equally — `impl Series($W) for Map2(i64, $W)` covers
+`Map2(i64, W)` for any `W` and nothing whose first argument differs.
+
+**One carrier, one impl.** A carrier covered by both a blanket impl and a
+concrete impl of the same protocol at the same arguments is an error at the
+overlap — nothing in either declaration says which body applies. Drop one.
+
+An impl that could never be selected is refused where it is written. A binder in
+the protocol arguments needs a carrier instantiation to bind it from
+(`impl P($T) for Plain` has none), and every such binder must appear among the
+carrier's arguments to have a position to resolve through — both hold for every
+protocol kind. A generic carrier whose binder the protocol arguments never
+mention (`impl P(i64) for Carrier($T)`) is refused for a **constraint** protocol,
+but is ordinary for a **tagged** family, which collects one member per
+instantiated carrier through whole-program membership.
 
 ### Variadic Functions
 Functions can accept a variable number of arguments using `..name: []Type` syntax:
@@ -3303,9 +3451,9 @@ elements of array constants.
 
 ```sx
 Color :: struct { r, g, b: i64; }
-LIT  :: Color.{ r = 255, g = 0, b = 0 };        // one global; uses GEP it
-EXPR :: Color.{ r = K + 1, g = K * 2, b = 0 };  // folds, also one global
-W : Color : Color.{ r = 1, g = 2, b = 3 };      // typed form, same storage
+LIT  :: Color{r = 255, g = 0, b = 0 };        // one global; uses GEP it
+EXPR :: Color{r = K + 1, g = K * 2, b = 0 };  // folds, also one global
+W : Color : Color{r = 1, g = 2, b = 3 };      // typed form, same storage
 ```
 
 A struct constant with a **non-serializable** initializer field (a call, a
@@ -3317,7 +3465,7 @@ value may differ between reads:
 ```sx
 counter : i64 = 0;
 bump :: () -> i64 { counter += 1; counter }
-CALL :: Color.{ r = bump(), g = 0, b = 0 };
+CALL :: Color{r = bump(), g = 0, b = 0 };
 
 print("{} {}\n", CALL.r, CALL.r);   // prints '1 2'; counter is now 2
 ```
@@ -3504,6 +3652,610 @@ list.append(42, self.parent_allocator);  // alloc = the named long-lived owner
 Defaults are only consulted for **trailing** missing positional args; once
 a position is provided, all earlier positions must also be provided. There
 is no named-argument syntax for skipping middle defaults.
+
+#### `@caller`
+
+`@caller` is a compiler-provided value legal **only inside a parameter's
+default expression**, where it resolves to the CALL site's `@SourceSite`.
+Written anywhere else there is no caller to name, and it is refused.
+
+```sx
+report :: (message: string, site: @SourceSite = @caller) {
+    print("{}:{}:{}: {}\n", site.file, site.line, site.column, message);
+}
+
+report("invalid width");        // site = this line, in this declaration
+```
+
+A caller may pass the parameter explicitly, which is how a wrapper forwards
+its own site inward and how a test supplies a fixed one:
+
+```sx
+report("from a test", @SourceSite{ file = "test.sx", declaration = "tests.report", line = 20 });
+```
+
+The fields the compiler fills:
+
+| Field | Value |
+|---|---|
+| `file` | the call's module import path, independent of the working directory |
+| `declaration` | fully qualified nearest named declaration containing the call; a generic specialization reports its **template**'s path |
+| `line`, `column` | the call's one-based source position |
+| `ordinal` | zero-based lexical occurrence within that declaration |
+| `id` | compile-time fingerprint of (`file`, `declaration`, `ordinal`) |
+
+`ordinal` and `id` are **lexical**, so a call in a loop reports one site
+however many times it runs, and they are unchanged by instantiation order,
+optimization level, or edits to unrelated declarations. A library that needs
+per-iteration identity combines the site with an occurrence count or an
+explicit key. `id` is exactly `source_site_key_id(source_site_key(site))` —
+`modules/std/source_site.sx` states that computation in ordinary sx, and the
+compiler must agree with it.
+
+#### `@Init(T)`
+
+`@Init(T)` is a compiler-maintained **constraint**: an initializer for `T`, a
+recipe that fills a destination the receiver chooses. It is not a type, so it is
+never a variable, field, or return type — a parameter accepts an initializer by
+carrying it as a **bound**:
+
+```sx
+store :: (value: $I/@Init($T)) -> *T {
+    dest := context.allocator.create(T);
+    value.write(dest);
+    dest
+}
+
+button := store(Button{ label = "Play" });
+```
+
+The argument is **not evaluated at the call**. The compiler forms an initializer
+from the expression and binds `$I` to it; the expression runs when — and each
+time — the receiver calls `write`. A receiver that never writes never evaluates
+it at all. A `ufcs` first parameter carrying the bound is reached the same way
+through a dot-call: the receiver **is** that first argument, and it forms exactly
+as it would spelled as one (`v.publish()` and `publish(v)` form the same
+initializer).
+
+The bound's type argument is what a `write` fills. It may be **fixed**
+(`$I/@Init(Button)`) or left open, inferred from the argument's own type
+(`$I/@Init($T)`, `$I/@Init($V/View)` when the type must also satisfy `View`).
+
+An argument that is **already** an initializer for the same type passes through
+unchanged: a helper taking `$I/@Init($T)` may hand its own `value` to another
+such parameter, which hands over the single write rather than wrapping it. A
+binder bounded by `@Init` can hold nothing else — a binding that is not a formed
+initializer fails the bound.
+
+The operations:
+
+| Operation | Meaning |
+|---|---|
+| `write(destination: *T)` | evaluate the expression into `destination`, which is **exactly** `*T` |
+| `site() -> ?@SourceSite` | the source site of the expression the initializer was formed from |
+
+`write` may be called zero, one, or many times: each call re-evaluates the
+expression, side effects included. The compiler does not count writes, does not
+require one, and does not check that a receiver publishes only what it wrote —
+that protocol belongs to the library that accepts the initializer.
+
+Each formation site is its own implementor type, so `write` and `site` are
+resolved per site with nothing dispatched at runtime and no storage beyond the
+expression's own captures. `site()` reports the site the way `@caller` does: a
+lexical position, with a generic specialization reporting its **template**'s
+declaration path.
+
+#### `@BuildBlock(P)`
+
+`@BuildBlock(P)` is a compiler-maintained **constraint**: a block of statements
+the receiving call may **replay**, offering each statement whose type conforms to
+`P` to a sink it chooses. Like `@Init`, it is not a type — a parameter accepts a
+build block by carrying it as a **bound**, and it is the callee's **last**
+parameter:
+
+```sx
+collect :: (content: $B/@BuildBlock(View)) -> List(View) {
+    sink := Sink(View){ children = .{} };
+    content.run(*sink);
+    sink.children
+}
+
+rows := collect() {
+    Label{ text = "Status" };
+    for items (item) { Row{ value = item }; }
+};
+```
+
+The parameter is satisfied in **exactly one** of two ways per call:
+
+1. **the call's trailing block** — the compiler forms a block from that body and
+   binds `$B` to it; or
+2. **a build block the caller already received** — passed as an ordinary
+   argument, which is how a container forwards its own block inward.
+
+Supplying both at once is the duplicate-binding error, and an ordinary value is
+neither.
+
+The operations:
+
+| Operation | Meaning |
+|---|---|
+| `run(sink: *S)` | replay the body once, offering each conforming statement to `sink.expression` |
+| `shape() -> @BuildShape` | side-effect-free static facts about the body |
+| `site() -> ?@SourceSite` | where the block was written |
+
+`run` may be called more than once: each call replays the body, so its side
+effects repeat. Replay is ordinary code — an `if` or `for` in the body is a
+runtime `if` or `for` wherever the block is replayed, and no part of it is
+deferred to run time in the compiler.
+
+**What publishes.** Only a standalone expression **statement** is offered to the
+sink, and only when its type answers to `P`:
+
+- `P` a protocol: the statement's type implements it — or **is** it, which is the
+  identity case. A value that already is a `P` is written into the sink's slot as
+  itself: no second formation, no re-erasure.
+- `P` an **open set**: its **members** publish too. A set carries its member inside
+  the slot, so a member statement type-checked at the expected `P` is a complete
+  `P` value — the same allocator-free formation the expected type performs at a
+  local, an argument, or a return, decided by membership rather than by shape.
+- `P` any other type: the statement's type **is** `P`. A type that merely converts
+  to `P` does not publish.
+
+So `P` is not restricted to protocols — `$B/@BuildBlock(i64)` is a general list
+builder whose children are `i64` statements. Everything else in the body is
+ordinary code: a binding, an assignment, a call whose value is discarded, and a
+statement of any other type all run where they are written and are not published.
+A subexpression never publishes, whatever its type.
+
+**A child that would vanish is refused.** Inside a build body, a
+statement-position block — an `if`/`else` branch, a loop body, bare braces —
+whose trailing expression has no `;` and is non-void is an error:
+
+```text
+error: this value is neither published nor used
+help: publish it as a statement (end it with `;`) or discard it (`_ = …;`)
+```
+
+That value would be the inner block's value, which the enclosing statement
+discards — a child lost with no signal. A void trailing expression is exempt, a
+value-**position** block is unaffected (`x := if c { … } else { … };` stays
+legal), and the body's own top level needs no rule for the opposite reason: a
+trailing expression there is a child like any other and publishes, so nothing
+vanishes.
+
+**A build block is frame-bound.** What the value carries is the environment of
+the frame that formed it, captured **by reference**: forming allocates nothing,
+a replay further down the call chain reads those locals live, and a second `run`
+observes what the first one changed. It is therefore valid only within the call
+that received it — binding it to a local, capturing it in a closure, and
+returning it are all refused. Take a `Closure()` parameter instead when the body
+must be stored or run later; that is the model that copies its captures into an
+allocated environment and outlives the frame.
+
+**A block's names are asked of the file that wrote it.** A replay lowers in the
+receiving function's instruction stream, but the body is resolved where it was
+written: a block does not inherit the collector's namespace, and a collector does
+not inherit the block's. That is what lets a collector live in its own module —
+it accepts bodies naming types it has never heard of, and its own signature keeps
+naming its own.
+
+`P` is the type the body's statements are intercepted at, and the sink is not
+part of the block's type: `run` takes any `*S` implementing `@BuildSink(P)`, so
+one block can be replayed into two different sinks.
+
+A type implements `@BuildSink(P)` in either of two ways, and `run` accepts both
+by the same question:
+
+- it **declares** `expression` itself, on the struct; or
+- an `impl @BuildSink(P) for S` supplies it — including a **blanket** impl
+  (`impl @BuildSink($T) for S($T)`), whose method spells the impl's own binder
+  and is monomorphized with what the carrier's instantiation bound it to.
+
+A method inherited from an impl of some OTHER protocol does not answer for this
+one; the refusal names the requirement and the sink as the source spells it.
+**The initializer's target — two shapes.** `expression` takes the published child as
+an initializer, and the target that initializer names is what `write` fills. Which
+shape a sink may spell follows from what `P` can carry:
+
+- `$I/@Init(P)` — the **fixed** target — where `P` is a **by-value carrier**: it
+  holds the value itself, so a complete `P` is what the initializer writes. An open
+  set holds its member inline; a plain data type IS the value. `write` fills a `*P`
+  and the sink keeps what it wrote.
+- `$I/@Init($V/P)` — the **open** target — where `P` cannot carry the value: a
+  `tagged` protocol is a handle into storage it does not own, so the sink is told
+  the member `V` the block reached and decides where that lives (`modules/fluent.sx`
+  funds it from `context.allocator`, which is why its elements outlive the call). A
+  **constraint** protocol has no runtime values at all, so no `*P` exists for a
+  write to fill — the fixed shape names a target that cannot exist and is refused,
+  naming that fact.
+
+`modules/fluent.sx` ships `Sink($T)` with a blanket impl covering both: where `T`
+carries its own storage the published value is written into a slot the list owns
+and nothing is allocated; where `T` is a handle the payload is funded from
+`context.allocator` first, so what the list holds still points at something.
+
+### Open Sets
+
+```sx
+View :: @OpenSet(.{ max = 256, align = 8 }) {
+    render :: (self: *Self) -> string;
+}
+
+Label :: @OpenVariant(View) {
+    text: string = "";
+    render :: (self: *Label) -> string => self.text;
+}
+```
+
+An **open set** is an inline tagged slot whose members declare **themselves** into
+it. It is not a protocol: `@OpenSet` states a payload **ceiling** and the methods
+every member must have, and `@OpenVariant(P)` is how a type joins `P`. There is no
+registry API and no enrollment statement — the declarations are the registry, so a
+plain `struct` stays out.
+
+A set is its DECLARATION, so two modules may each declare one of the same name and
+they are two sets: each is laid out on its own members, a member joins the one its
+head reached, and a value of one is not a value of the other. Where a spelling has
+more than one author, a diagnostic names the module that declares the one it means.
+
+`P` is a **path**: a name the member's own module can see, or one **qualified** by
+the module that declares the set — `Label :: @OpenVariant(compose.View) { … }`, so
+a package's members live in their own modules. What a head reaches is a
+DECLARATION, and that is what membership is: a member joins the set its head
+reached, and whether a type is a member is asked about that declaration rather
+than about the spelling either side wrote. A head that reaches nothing, or reaches
+something that is not a set, is refused where the member is written — and a bare
+head is an ordinary bare name: it reaches what the file that wrote it can SEE, so a
+module that imported no such set is told so rather than handed one, and one that can
+see two is asked which.
+
+Every position that names a type asks that same question, and gets the same answer:
+a member's head, a bound's head, a downcast's target — the soft form's and the hard
+form's alike, whose refusal is about the member the target named. A module that declares a name
+of its own reaches its own — asking `v.(?Panel)` where this module declares `Panel`
+is asking about this module's, whatever other modules spell it. A qualified target
+reaches the module it names, so a consumer that imported a package under a name asks
+about that package's member with it (`v.(?compose.Row)`). A facade's
+re-exported name reaches what it names, so a bound written on it asks the set's own
+question.
+
+A member is an ordinary standalone type: constructible (`Label{ text = "x" }`),
+with its own `size_of`, its own methods, and no wrapper around it. `Self` inside
+the set declaration denotes the member type; each required method is monomorphized
+per member, and a member spells its own concrete receiver (`self: *Label`).
+
+#### Declaring a set and its members
+
+**Options.** `max` is the largest admitted member payload, in bytes, and has no
+default. `align` is the payload's alignment and defaults to `8` — what ordinary
+allocators guarantee, and therefore what a `List(P)` can honour. Raising `align`
+above 8 is only safe if every storage path for those values honours it.
+
+**Layout** is a function of the members the program declares, not of `max`:
+
+```text
+payload    = max(size_of(member))              // ≤ max; a ceiling, not a reservation
+alignment  = max(declared align, align_of(tag))  // not a max over members
+size_of(P) = align_up(align_up(size_of(tag), alignment) + payload, alignment)
+```
+
+The tag's own alignment is a **floor**: it lives in the same value, so a set
+declared `align = 4` is laid out at 8. Above the floor the declared alignment is
+delivered — `align_of(P)` is that value, and an array of `P` keeps every element's
+payload on it.
+
+So a set declared `max = 256` whose largest member is 24 bytes is 32 bytes, not
+264, and a set with **no members** is just its tag word. Because layout follows the
+declared members, **importing a module that declares a larger member grows the
+set** — an accepted cost, stated here because it is observable in `size_of(P)` and
+in every `List(P)`.
+
+Growth is **transitive**: a member of one set may hold another set by value, so
+growing the held set grows that member and re-lays-out the set it belongs to. A
+member that no longer fits its own ceiling after such growth is refused at its
+declaration, naming the set whose growth changed it. (Two sets that each hold the
+other by value have no finite layout and are refused.)
+
+**Admission is checked at the member's declaration**, so a type that cannot be
+represented is never a member and no conversion site needs a second check:
+
+| Requirement | Refused when |
+|---|---|
+| `size_of(V) ≤ max` | the member is larger than the ceiling — the diagnostic names the field that accounts for it |
+| `align_of(V) ≤ alignment` | the member needs more alignment than the payload has (the effective value above, not the raw option) |
+| finite size | the member contains the set **by value** at any depth (a field, a nested struct, an array, an optional) |
+| every required method | the member does not declare one |
+| every required method's SIGNATURE | the member answers one at other types — arity, a parameter type, or the return type. The set's declaration states them once, and `Self` there denotes the member (`(self: *Self, other: Self) -> Self` is answered by `(self: *Ok, other: Ok) -> Ok`) |
+| one set per type | a type is already a member of another set |
+
+A member may hold the set behind a **pointer** (`child: *View`) or in a list whose
+elements live outside the value (`kids: List(View)`) — neither embeds the set in
+the member's own layout. Nothing is spilled to heap to make an oversize type fit:
+either restructure it so the value is small and the bulk is borrowed, or raise
+`max` on the set.
+
+A **generic** member (`Padded :: @OpenVariant(View) ($T: Type) { … }`) is a
+separate member per instantiation, and the checks run per instantiation — reported
+at the instantiation site, since another instantiation may be admissible. An
+instantiation the program never materializes is not a member: membership follows
+what the program builds, exactly as it does for `protocol tagged`.
+
+Every refusal a set earns inside a **generic body** reads the same way: the body is
+written once and refused per instantiation, so it names the instantiation as the
+program spells it and carries a note at the call that forced this one — the
+OUTERMOST call, which for a caller in another module is the only span it can act on.
+
+**When the layout is final.** Because growth follows the declarations, a set's last
+member can arrive at any point up to the **freeze** — the point the whole-program
+`tagged` conformer sets converge at, after every body is lowered, since the same
+monomorphization that admits a conformer can instantiate a generic member. The
+freeze also numbers each set's members densely from 0 in the set's **own** tag space
+and writes its `tag → member Type` table.
+
+So `size_of(P)` is **not a literal baked where it is written**. Wherever it is a
+value — a body, a `#run`, an argument — it is answered from the frozen layout, and
+one program therefore has **one** answer for it everywhere: a body lowered before a
+generic member's instantiation and a body lowered after it agree. The same holds for
+any type whose layout a set decides, such as a plain struct with a `P` field.
+
+A position the compiler must fold **earlier** than the freeze is **refused** rather
+than answered:
+
+```sx
+Slot :: struct {
+    bytes: [size_of(View)]u8 = ---;   // error: the layout of the open set 'View'
+}                                     //        is not final here
+```
+
+An array dimension is fixed where it is written, and the struct that carries it is
+registered on the spot — a member declared later in the program (or in a module the
+program imports) would contradict the number, in a layout that cannot be measured
+again. Read the size where it is a value, or bind it with `#run size_of(P)`. A set
+that **no generic member can reach** settles as soon as the declarations are
+admitted, and a dimension over that set inside a body folds normally.
+
+A compile-time evaluation that runs **during** lowering — `#insert`, a comptime type
+construction — may ask for a set's size, and **waits** when nothing can answer yet
+(§7.9). It is answered the moment nothing can grow the set. If the answer needs the
+freeze and the freeze needs the program that evaluation is still writing, the drain
+goes quiet with a bookmark down: that is the expansion deadlock, and sx refuses it
+instead of electing one of the outcomes.
+
+#### Forming a set value
+
+**A member value becomes a set value.** Formation is **type-directed** and
+allocator-free. Writing a member where the set is expected forms the slot: the
+member's frozen tag in the tag word, a **copy** of its bytes in the payload. It is
+an ordinary by-value formation — the source is untouched, and neither one's later
+writes reach the other:
+
+```sx
+source := Label{ text = "label" };
+v: View = source;   // an independent slot carrying Label
+```
+
+The same coercion applies wherever a set is the expected type: an assignment, an
+argument, a `return`, a field initializer. `value.(P)` is the **explicit** spelling
+of that same conversion — never required where the expected type already supplies
+`P`, and accepting exactly what formation accepts.
+
+A set value is an ordinary value of its size, so **copying one copies the slot**.
+`b := a` is an independent set value; passing one by value hands the callee its own
+slot. Two set values never share the member they carry, and a dispatched method that
+writes through `self` writes the slot it was called on:
+
+```sx
+a: View = Label{ n = 1 };
+b := a;            // an independent slot
+_ = a.bump(10);    // writes a's payload
+                   // b is untouched
+```
+
+What formation **refuses**:
+
+| Spelling | Why |
+|---|---|
+| `v: View = .{ … }` | a contextual literal names no type, so there is no member to lift |
+| `v: View = Plain{}` | `Plain` never declared itself into `View`; no conversion stands in for a declaration |
+| `v: View = Alien{}` | `Alien` is a member of another set, and a type belongs to one |
+| `v: View = xx Plain{}` | a cast asks for the same conversion, and is not a way past a declaration |
+| `value.(View, alloc)` | not a conversion that allocates — the active member lives **inline** in the slot, so there is no allocator to pass and none is invented |
+
+An open set sits outside protocol conversion entirely: there is no `xx`-style
+erasure, no heap box, and no compiler-selected storage anywhere in formation.
+
+What may fill a set slot is decided by **membership, never by width**: a non-member
+the size of the slot is still not the slot. The question is asked the same way
+wherever the value is going — an annotated slot, an assignment, a **field
+initializer**, an **argument**, a **return** — so a type that never declared itself
+into the set is refused at each of them rather than reinterpreted into one.
+
+#### Consuming a set value
+
+**Dispatch.** Calling a required method on a set value dispatches on the tag word.
+Each `(set, method)` pair gets one outlined routine whose switch is **total** over
+the frozen tag space — there is no default arm, because the tags *are* the frozen
+members — and whose arms call each member's own method directly, handing it the
+payload's address as its `*Member`:
+
+```sx
+v: View = Panel{ title = "panel" };
+v.render();       // the Panel arm
+v.bump(10);       // writes through `self` into v's own slot
+```
+
+There is no vtable, no boxing, and no indirection through a function pointer. A
+`*P` receiver dispatches through the same routine — it already is the slot's
+address. Because the arm receives that address, a method that writes through `self`
+writes the **receiver's** storage.
+
+A set with exactly **one** member has one tag, so its routine loads no tag and
+branches nowhere: dispatch devirtualizes completely. A set **nothing** is a member
+of has no values at all, so a required-method call on one is refused.
+
+Every member must answer a required method at the types the **set's declaration**
+states — one switch returns through one slot. A member answering at its own types
+is refused where its implementation is written. A required method whose signature
+mentions `Self` past the receiver has no caller-side type on a set value (`Self`
+denotes the member, and a set value is not any one member); call it through the
+membership bound instead.
+
+**What a set value answers about itself.** A slot is declared as the set and
+carries a member, so `type_of` answers the **member**: the tag word names it, and
+the set's own numbering turns that tag into the member's type. Writing another
+member into the same slot changes the answer — the answer was never the
+declaration.
+
+```sx
+v: View = Label{ text = "label" };
+type_of(v);        // Label
+v = Panel{ title = "panel" };
+type_of(v);        // Panel
+```
+
+`v.(any)` is the raw polymorphic view a set has: the member's address **inside the
+slot**, and the member's own type. Nothing allocates and no payload is copied — the
+view borrows the slot, so it answers for the member carried there and is valid
+exactly as long as that slot is. Every boxing position agrees with that spelling —
+an `any` local, an `any` argument, a formatted value — so a set value is never seen
+as the set anywhere `any` is. A set is not a protocol handle: it has no
+`ProtocolRaw` view, and `any` is the one it has.
+
+Because a box holds the member, **no `any` holds a set value**, and each assertion
+form answers from its own contract. `av.(View)` states that a box holds one, which
+nothing can make true, so it is refused where it is written — through a type
+parameter instantiated at a set, through a `?any` chain, and in the consumed forms
+(`try av.(View)`, `av.(View) or …`), which are that same assertion with a failure
+channel. `av.(?View)` is a question, not a statement, so it stays total and
+answers `null` for every box, as does the chained `o?.(?View)`: generic code that
+probes keeps working when it is instantiated at a set. An **optional** of a set is
+an ordinary value — a box of `?View` holds what it was given, and `xx` recovers it
+as that.
+
+The numbering is written at the freeze, so a compile-time evaluation that asks
+what a set value is **waits** for it (§7.9) and reads the same answer the running
+program reads.
+
+**Reading a member back out.** A slot carries one member and its tag says which, so
+asking a set value for a member is one compare against that member's tag, and the
+answer is the member's own value — a **copy** read out of the payload, with its own
+fields and its own methods. The two temperaments are the ones every checked
+conversion has: `v.(Label)` **states** that the slot carries a `Label` and panics on
+another member, naming the member actually carried; `v.(?Label)` **asks**, and
+answers `null` on another member.
+
+```sx
+v: View = Panel{ title = "panel" };
+p := v.(Panel);        // the Panel it carries
+v.(?Label);            // null — it carries a Panel
+v.(Label);             // panics: expected Label, got Panel
+```
+
+A target that never declared itself into the set is refused: membership is a
+declaration, so no tag ever selects that type and no value of the set is ever one.
+`xx` cannot spell this conversion at all — reading a member out can fail, and `xx`
+states no temperament — so the spellings that do are what the refusal names.
+
+The downcast is also how a method the set cannot dispatch is reached: a required
+method mentioning `Self` past the receiver has no caller-side type on a set value,
+and on the member a downcast produced it is an ordinary call on a concrete type —
+the second route alongside the membership bound.
+
+**Switching on the member.** A type switch over a set subject opens the member its
+tag names: the arms name members, a capture binds that member's own value, and the
+arms are read first-wins exactly as they are over an `any`. An **`else:` arm is
+required** — a set is open, so a member declared elsewhere in the program carries a
+tag no arm here names, and the arms are never the whole of it.
+
+```sx
+if v == {
+    case Label: (l) { print("{}\n", l.text); }
+    case Panel: (p) { print("{}\n", p.title); }
+    else: { … }                  // a member beyond these arms may reach it
+}
+```
+
+An arm naming a type that never declared itself into the set is refused, and so is
+one naming a **set** — a set is what a slot is declared as, never what it holds,
+the subject's own set included. Over an `any` subject a set arm is refused for the
+same reason from the other side: a box holds the member.
+
+A capture is a **copy**. Dispatch writes through the slot it was called on, so a
+method that mutates `self` mutates the receiver; the value an arm binds was read out
+of the slot and is unmoved by that.
+
+**Unwritten slots.** A set-typed location left `---` has an undefined tag until
+formation or an `@Init.write` fills it, and consulting that tag — dispatch,
+`type_of`, a type switch, a downcast, `.(any)` — is **undefined behavior**. There is
+no poison tag, no default-arm trap, and no dispatch-time check; writing before
+publishing is the discipline. The other way to reach a tag that means nothing is a
+wrong `xx` force from an `any` (`xx a : ?View` where the box holds something else),
+which reinterprets whatever the box points at — the `xx` forms that could produce
+one out of a set value itself are refused.
+
+**`free` is not part of a set's story.** The active member lives **inline** in the
+slot: the payload IS the value, not a handle to an allocation, so there is nothing
+for `free` to release and it refuses a set value. What a member's fields point at —
+a `List`'s backing, a string buffer — is ordinary field data with ordinary
+lifetimes; reclaim it by resetting the allocator or arena those allocations came
+from, not through the set value.
+
+#### Sets in signatures
+
+**The membership bound `$V/P`.** A set is not a protocol and carries no impls, so a
+bound whose head names a set asks the set's own question: **is the binding a
+member?** This is the one head in the bound grammar that is not a conformance
+question.
+
+```sx
+show :: (v: $V/View) -> string => v.render();
+
+show(Label{ text = "label" });   // a member — resolves on Label, monomorphically
+show(slot);                      // the set satisfies its own bound; this dispatches
+```
+
+Inside the body the parameter is the **concrete member**, so calls on it resolve
+monomorphically and the bound is what guarantees the method is there. Membership is
+the member's own declaration, so the answer never depends on when it is asked, and
+a generic member's instantiation carries its template's declaration. A type that
+declares itself into no set fails the bound — and so does a member of a *different*
+set, since a type belongs to one. A set takes no type arguments, so a head spelled
+with any names no set.
+
+**`@Init(P)` into a set slot.** A `$I/@Init(T)` parameter accepts an initializer
+whose `write` fills exactly `*T`. Both ways of naming `T` reach a set:
+
+```sx
+store :: (value: $I/@Init(View)) {        // FIXED target: T is the set
+    slot: View = ---;
+    value.write(*slot);                   // a complete slot, either way
+}
+
+store(Label{ text = "x" });               // the member is typed at expected View
+already: View = Panel{};
+store(already);                           // already a View — a plain slot copy
+```
+
+At a **fixed** `@Init(P)` the expression is type-checked at expected `P`, so the
+allocator-free lift is part of giving it that type and the initializer's target is
+`P` — not the member's. When the expression's type already **is** `P`, `write` is a
+plain slot copy of a complete value: no tag recomputation and no size check.
+
+An **open** type argument takes the expression's own type instead, and the set is
+reached afterwards by ordinary expected-type formation:
+
+```sx
+store_as_view :: (value: $I/@Init($V/View)) -> View {
+    item: V = ---;
+    value.write(*item);   // writes exactly *V
+    item                  // returned at expected View: lift + slot copy
+}
+```
+
+There is **no widening arm**: `write` takes exactly `*T` for the init's own type
+argument, so an `@Init(Label)` writes `*Label` and never a `*View`. A set slot is
+written through the set's own initializer.
 
 ### Enum Definition
 
@@ -3800,11 +4552,13 @@ if av == {
   reverse order, or a duplicate — is a compile error, never a silently
   dead arm. Value patterns (`case 5:`) are a compile error: the payload is
   never the scrutinee.
-- **Subjects**: `any` and PROTOCOL values. An erased protocol subject
-  switches through its `{ctx, type_id}` prefix view; a tagged subject
-  switches on its tag (an arm naming a non-conformer is warned dead —
-  see Protocols) — same arms, same captures, over the concrete value
-  the protocol erases. A `?any` composes through the optional match
+- **Subjects**: `any`, PROTOCOL values, and OPEN SET values. An erased
+  protocol subject switches through its `{ctx, type_id}` prefix view; a
+  tagged subject switches on its tag (an arm naming a non-conformer is
+  warned dead — see Protocols); a set subject switches on the member its
+  tag names, and its arms name members with an `else:` arm REQUIRED
+  (see Open Sets) — same arms, same captures, over the concrete value
+  behind the subject. A `?any` composes through the optional match
   (`case .some: (av) { … }`).
 - Division of labor: the type switch dispatches on CONCRETE types and
   binds typed values; kind-only dispatch also exists as the category match
@@ -4070,7 +4824,7 @@ Button :: struct {
     label: string;
     on_click: ?Closure(i64) -> void;
 }
-btn := Button.{ label = "OK", on_click = null };
+btn := Button{label = "OK", on_click = null };
 if handler := btn.on_click {
     handler(1);
 }
@@ -4161,9 +4915,11 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
 ```
 
 - **Binding**: the block binds the last declared parameter, which must be a
-  non-variadic `Closure` type — otherwise a targeted error names the
-  parameter ("'f' cannot take a trailing block — its last parameter 'x' is
-  not a `Closure`", or "… its last parameter '..xs' is variadic").
+  non-variadic `Closure` type — or a **build block** parameter, which gives the
+  same source block a second meaning (see [`@BuildBlock(P)`](#buildblockp)).
+  Otherwise a targeted error names the parameter ("'f' cannot take a trailing
+  block — its last parameter 'x' is not a `Closure`", or "… its last parameter
+  '..xs' is variadic").
 - **One block**: at most one trailing block per call. Other closure
   arguments are named args or ordinary positional slots.
 - **Zero-param only**: the block is a `Closure()` literal; a parameterized
@@ -4171,15 +4927,37 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
 - **Same line**: the `{` must sit on the same line as the call's `)`. A `{`
   on the next line is an ordinary scope block statement, never a trailing
   block.
+- **Empty block**: a same-line empty `{}` (comment-only bodies included) carries
+  no body shape, so the **brace spelling** decides. Written **tight** against
+  the `)` it is a parameterized named aggregate — `List(Move){}`,
+  `Sink(View){}`, `Box(pair){}`, `List(*Node){}`, `Buf(16){}`. Written with a
+  **space** it is a trailing block — `run(2) {}`, `Group(n) {}`,
+  `run(Limit) {}`, `render(*screen) {}` — unless at least one argument is
+  **unambiguously type syntax** (builtin scalar type nodes, compound forms
+  `[]u8`/`?T`/`[N]T`/`[*]T`, function types, or a nested type app carrying one),
+  which nothing but a type application can mean: `List(i64) {}`,
+  `Vec(3, f32) {}`, `Holder(Vec(3, f32)) {}`. Names never decide — neither the
+  callee's case nor an argument's, so a lowercase type (`pair`), a PascalCase
+  const (`Limit`), and `*x` (address-of, not `*T`) all take the spelling they
+  are written with. Zero-arg `f() {}` is always trailing, tight or not (`T{}`
+  is the empty non-parameterized aggregate). Bodies with statements/`;`/control
+  keywords are always trailing whatever the spelling.
 - **Header position**: inside an `if`/`while`/`for` header the form is
   disabled — `{` terminates the condition and opens the statement body;
   bind the closure explicitly there.
+- **Named aggregates in headers**: a named aggregate that ends a header
+  expression must be parenthesized so the statement body keeps its `{`:
+  `if (Button{ label = "x" }.ready) { … }`. Push is different — named aggregates
+  are legal in the context expr and the following brace is the push body:
+  `push Context{ io = my_io } { … }`. Idiomatic: `push .{ … } { … }`.
 - **`return` is local**: a `return` inside the block returns from the
   closure, never from the enclosing function (no non-local return).
-- **Chain termination**: a trailing block ENDS the postfix chain —
-  `f(x) { … }.modifier()` is a parse error ("a trailing block ends the call
-  chain — pass the modifier inside the call: `f(x, m = .{ … }) { … }`").
-  Chaining onto the emitted result would silently modify a discarded copy.
+- **Chain continuation**: after the block's closing `}`, **dot-led** postfix
+  continues the chain — member access, UFCS call, and `.(T)` cast all apply to
+  the call's result: `f(x) { … }.modifier()`, `emit.column(4) { … }.emit();`.
+  The `.` may sit on the next line. Only `.` continues — every other token
+  ends the chain. A chained call may take its own trailing block, each block
+  re-applying this rule: `f() { … }.map() { … }`.
 - **Duplicate with a named argument**: a trailing block binds the last
   parameter, so also naming that parameter is the duplicate-binding error
   ("parameter 'content' is bound both by a named argument and by the
@@ -4187,7 +4965,10 @@ scaffold() { chat_list(); }                    // defaults skipped, block binds 
 
 No `inline` keyword exists or is needed: a capture-free block promotes to a
 null-env static thunk (zero allocation); a capturing block allocates its
-environment through `context.allocator` like any closure literal.
+environment through `context.allocator` like any closure literal. A block bound
+to a **build block** parameter allocates nothing at all, and captures by
+reference instead — that is the difference the two parameter kinds buy
+([`@BuildBlock(P)`](#buildblockp)).
 
 ### UFCS (Uniform Function Call Syntax)
 ```sx
@@ -4749,13 +5530,15 @@ main :: () {
     x : r.Thing = t;           // type annotation
     n := r.LIMIT;              // module const
     c := r.Color.green;        // enum variant
-    b := r.Box(i64).{ item = 3 };  // generic struct head
+    b := r.Box(i64){ item = 3 };  // generic struct head
 }
 ```
 
 Every qualified shape resolves through a carried alias exactly as through a
 directly-declared one: function calls, `alias.Type.method()`, type
-annotations, enum variants, module constants, and generic struct heads.
+annotations, enum variants, module constants, generic struct heads, **open
+sets** (in an annotation, as a type argument, and as a bound head), and
+**bound heads** generally.
 
 Collision rules mirror ordinary declarations:
 
@@ -5358,6 +6141,16 @@ if e == error.Empty { ... }               // compare against a literal
 - Against a **named-set** destination, `error.X` is valid only if `X ∈` the set
   (typo-checked). A comparison to a literal not in the set is a compile error
   (it could never be true). For **inferred** sets this check is skipped.
+- A contextual **`.X` shorthand** is accepted wherever the destination supplies
+  a named set — declaration, argument, field init, `raise` / `return` into a
+  channel, comparison against an error-set operand. It names the same tag as
+  `error.X` and is membership-checked identically, exactly as an enum literal
+  types itself from an enum destination. Against a bare `!` channel it mints
+  into the inferred set, like `error.X`.
+- An error-set **value** crossing into a differently-typed named set follows
+  the same subset rule as the error channel: `A` coerces to `B` only if
+  `A ⊆ B`, in declaration, argument, and field-init positions alike. Each
+  escaping tag is diagnosed; `xx` forces a narrowing.
 - An error-set value compares (`==` / `!=`) only with an `error.X` literal or
   another error-set value — **never a raw integer** (`e == 42` is rejected).
   Coerce explicitly (`(xx e) == id`) to use the raw id.

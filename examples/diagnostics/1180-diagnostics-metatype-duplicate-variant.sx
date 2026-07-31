@@ -6,9 +6,9 @@
 #import "modules/std/meta.sx";
 
 Bad :: define(declare("Bad"), .enum(.{ variants = .[
-    EnumVariant.{ name = "value",  payload = i64 },
-    EnumVariant.{ name = "closed", payload = void },
-    EnumVariant.{ name = "value",  payload = f64 },   // duplicate name
+    EnumVariant{ name = "value",  payload = i64 },
+    EnumVariant{ name = "closed", payload = void },
+    EnumVariant{ name = "value",  payload = f64 },   // duplicate name
 ] }));
 
 main :: () -> i32 {

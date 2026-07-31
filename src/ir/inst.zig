@@ -134,6 +134,24 @@ pub const Op = union(enum) {
     /// concrete type directly (§7.9 — tags are link-stage artifacts), so the
     /// operand IS the answer. One op, so both worlds read RTTI the same way.
     tagged_type_id: TaggedTypeId,
+    /// The size or alignment of a type an OPEN SET's layout decides — the set
+    /// itself, or anything holding one by value. An open set's layout follows
+    /// the members declared anywhere in the program, so neither number exists
+    /// until the set freezes: the op carries the type and each world resolves
+    /// it against the frozen layout, so one program has ONE answer wherever it
+    /// is asked (spec: Open Sets — when the layout is final).
+    open_set_layout: SetLayoutOf,
+    /// The tag word `member` carries inside open set `set`. Like
+    /// `tagged_tag_of` it stays a PAIR in the IR: the dense numbering is
+    /// assigned when the sets freeze, so no site can spell the number, and each
+    /// world resolves the pair against the published numbering.
+    open_set_tag_of: SetMemberOf,
+    /// The `Type` of the member an open set value carries, from its tag word:
+    /// one indexed load through the set's `tag → member Type` table. The SET
+    /// travels with the op because a set's tag is a dense index the freeze
+    /// assigns rather than the member's own type word, so neither world can
+    /// read the answer off the tag itself.
+    open_set_type_id: OpenSetTypeId,
 
     // ── Arithmetic ──────────────────────────────────────────────────
     add: BinOp,
@@ -308,6 +326,28 @@ pub const TagOf = struct {
 pub const TaggedTypeId = struct {
     tag: Ref,
     table: GlobalId,
+};
+
+/// One member inside one open set — a pair the freeze's numbering answers.
+pub const SetMemberOf = struct {
+    set: TypeId,
+    member: TypeId,
+};
+
+/// The member an open set value carries, named by the tag word read from its
+/// slot and resolved through the set's own numbering.
+pub const OpenSetTypeId = struct {
+    set: TypeId,
+    tag: Ref,
+    table: GlobalId,
+};
+
+/// Which measurement of `measured` the frozen layout answers.
+pub const SetLayoutOf = struct {
+    measured: TypeId,
+    query: Query,
+
+    pub const Query = enum { size, alignment };
 };
 
 pub const UnaryOp = struct {

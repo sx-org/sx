@@ -64,7 +64,7 @@ main :: () -> i32 {
     gpa := mem.GPA.init();
     raw := gpa.alloc_bytes(1048576);
     if raw == null { return 1; }
-    data := string.{ ptr = xx raw, len = 1048576 };
+    data := string{ ptr = xx raw, len = 1048576 };
 
     i := 0;
     while i < data.len {

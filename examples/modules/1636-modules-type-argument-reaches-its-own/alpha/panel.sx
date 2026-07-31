@@ -1,0 +1,30 @@
+// This module writes a `Panel` and a `Note`, and asks about its own.
+#import "modules/std.sx";
+v :: #import "../view.sx";
+
+Panel :: @OpenVariant(v.View) {
+    tag: string = "alpha";
+    seq: i64 = 0;
+    render :: (self: *Panel) -> string => self.tag;
+}
+
+Note :: struct { text: string; seq: i64; }
+
+alpha_soft :: () -> string {
+    p : Panel = .{ tag = "alpha soft" };
+    x : v.View = p;
+    if q := x.(?Panel) { return q.tag; }
+    return "reached someone else's";
+}
+
+alpha_hard :: () -> string {
+    p : Panel = .{ tag = "alpha hard" };
+    x : v.View = p;
+    return x.(Panel).render();
+}
+
+alpha_note :: () -> string {
+    n : Note = .{ text = "alpha note", seq = 1 };
+    av : any = n;
+    return av.(Note).text;
+}

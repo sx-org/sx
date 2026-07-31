@@ -1,0 +1,52 @@
+// `@Init(T)` — destination construction (fluent spec §5.1, §5.2).
+//
+// A parameter bounded `$I/@Init($T)` opts into destination-first construction:
+// the argument expression is NOT evaluated at the call boundary. The callee
+// picks the storage, then `value.write(dest)` runs the expression once,
+// directly into it. A callee that never writes never evaluates the expression
+// at all — the explicitly lazy API in §5.1.3.
+#import "modules/std.sx";
+
+Button :: struct {
+    label: string = "";
+    alpha: f64 = 1.0;
+}
+
+// The §5.1 shape: reserve, write, hand back the pointer.
+store :: (value: $I/@Init($T)) -> *T {
+    dest := context.allocator.create(T);
+    value.write(dest);
+    dest
+}
+
+// Forwarding an initializer to another `$I/@Init(T)` parameter is synchronous and
+// hands over the single write — it does not wrap the recipe in a second one.
+store_via :: (value: $I/@Init($T)) -> *T {
+    store(value)
+}
+
+// A receiver may decline to write. Then the expression never runs.
+count_only :: (value: $I/@Init($T)) -> i32 {
+    3
+}
+
+main :: () -> i32 {
+    alpha := 0.8;
+
+    b := store(Button{ label = "Play", alpha = alpha });
+    print("stored: {} {}\n", b.label, b.alpha);
+    context.allocator.destroy(b);
+
+    f := store_via(Button{ label = "Forwarded" });
+    print("forwarded: {} {}\n", f.label, f.alpha);
+    context.allocator.destroy(f);
+
+    print("declined: {}\n", count_only(Button{ label = "never built" }));
+    0
+}
+
+// ** stdout **
+// stored: Play 0.800000
+// forwarded: Forwarded 1.000000
+// declined: 3
+//

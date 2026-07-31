@@ -1,0 +1,6 @@
+// The package's set, alone in the module that declares it.
+#import "modules/std.sx";
+
+View :: @OpenSet(.{ max = 128, align = 8 }) {
+    render :: (self: *Self) -> string;
+}

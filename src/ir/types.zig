@@ -199,6 +199,28 @@ pub const TypeInfo = union(enum) {
         /// Pack-variadic shape marker — same semantics as FunctionInfo.
         /// `Closure(..$args) -> $R` => params = [], pack_start = 0.
         pack_start: ?u32 = null,
+        /// Non-null makes this an `@Init(T)` type (spec §5): a deferred
+        /// construction recipe whose operations are `write(dest: *T)` — re-run
+        /// on each call — and `site()`. Its representation IS the
+        /// `{fn_ptr, env}` closure pair — `params = [*T]`, `ret = void` — so
+        /// layout, codegen, and the indirect-call path are shared verbatim; the
+        /// marker keeps the type DISTINCT from an ordinary `Closure(*T)` (so
+        /// neither converts to the other) and is what the operations key on.
+        init_target: ?TypeId = null,
+        /// Which `@Init(T)` this is. `0` is the FORMATION REQUEST a
+        /// `$I/@Init(T)` parameter resolves to before an argument is formed
+        /// against it — never the type of a value. A nonzero id indexes
+        /// `Lowering.init_sites`: one per formation site, so two sites forming
+        /// the same `T` are distinct types, each with its own `site()` and its
+        /// own monomorphizations.
+        init_site: u32 = 0,
+        /// Non-null makes this the `@BuildBlock(P)` FORMATION REQUEST (spec §7):
+        /// what a `$B/@BuildBlock(P)` parameter resolves to while its binder is
+        /// unbound. No value has this type — the trailing block at such a
+        /// parameter forms (or passes through) into a per-site implementor,
+        /// which is a nominal struct rather than a closure
+        /// (`TypeTable.buildBlockImplementorType`).
+        build_protocol: ?TypeId = null,
     };
 
     pub const OptionalInfo = struct {
@@ -882,6 +904,102 @@ pub const TypeTable = struct {
         return self.intern(.{ .closure = .{ .params = owned_params, .ret = ret } });
     }
 
+    /// The `@Init(target)` FORMATION REQUEST (spec §5.2): what a
+    /// `$I/@Init(target)` parameter resolves to while its binder is still
+    /// unbound. No value ever has this type — an argument at such a parameter
+    /// forms (or passes through) into a per-site implementor.
+    pub fn initPlanType(self: *TypeTable, target: TypeId) TypeId {
+        return self.initImplementorType(target, 0);
+    }
+
+    /// The `@Init(target)` implementor minted for formation site `site`
+    /// (nonzero). Shares the closure representation: `{fn_ptr, env}` calling
+    /// `(dest: *target)`, so the site costs no storage.
+    pub fn initImplementorType(self: *TypeTable, target: TypeId, site: u32) TypeId {
+        const owned_params = self.slice_arena.allocator().dupe(TypeId, &.{self.ptrTo(target)}) catch unreachable;
+        return self.intern(.{ .closure = .{
+            .params = owned_params,
+            .ret = .void,
+            .init_target = target,
+            .init_site = site,
+        } });
+    }
+
+    /// The `T` of an `@Init(T)`, or null for any other type (including an
+    /// ordinary `Closure(*T)`). THE single init-type classifier.
+    pub fn initTarget(self: *const TypeTable, ty: TypeId) ?TypeId {
+        if (ty.isBuiltin()) return null;
+        const info = self.get(ty);
+        if (info != .closure) return null;
+        return info.closure.init_target;
+    }
+
+    /// The formation site an `@Init(T)` was minted for: nonzero for an
+    /// implementor, `0` for the formation request, null for any other type.
+    pub fn initSiteOf(self: *const TypeTable, ty: TypeId) ?u32 {
+        if (ty.isBuiltin()) return null;
+        const info = self.get(ty);
+        if (info != .closure) return null;
+        if (info.closure.init_target == null) return null;
+        return info.closure.init_site;
+    }
+
+    /// The `@BuildBlock(protocol)` FORMATION REQUEST (spec §7): what a
+    /// `$B/@BuildBlock(protocol)` parameter resolves to before a trailing block
+    /// is formed against it. The empty closure shape carries no value.
+    pub fn buildBlockType(self: *TypeTable, protocol: TypeId) TypeId {
+        return self.intern(.{ .closure = .{ .params = &.{}, .ret = .void, .build_protocol = protocol } });
+    }
+
+    /// The `@BuildBlock(protocol)` implementor minted for formation site `site`
+    /// (nonzero): a nominal struct holding the by-reference capture environment
+    /// of the frame that formed it, and nothing else. The block's BODY belongs
+    /// to the site (`Lowering.block_sites`), so it costs no storage, and `run`
+    /// replays it wherever the value is received.
+    ///
+    /// Every site displays as `@BuildBlock(P)` and is distinguished by its
+    /// nominal id, so two blocks over one `P` are distinct types that print the
+    /// same way — the `@Init` rule (`initImplementorType`) for the same reason.
+    pub fn buildBlockImplementorType(self: *TypeTable, protocol: TypeId, site: u32) TypeId {
+        const fields = self.slice_arena.allocator().dupe(TypeInfo.StructInfo.Field, &.{.{
+            .name = self.internString(block_env_field),
+            .ty = self.ptrTo(.void),
+        }}) catch unreachable;
+        const name = std.fmt.allocPrint(self.alloc, "@BuildBlock({s})", .{self.formatTypeName(self.alloc, protocol)}) catch "@BuildBlock";
+        return self.intern(.{ .@"struct" = .{
+            .name = self.internString(name),
+            .fields = fields,
+            .nominal_id = site,
+        } });
+    }
+
+    /// The field a block implementor carries its capture environment in. Named
+    /// unspellably: the struct has no declaration, so nothing may reach it.
+    pub const block_env_field = "__block_env";
+
+    /// The `P` of an `@BuildBlock(P)` FORMATION REQUEST, or null for anything
+    /// else — an implementor included, which is classified by
+    /// `Lowering.blockSiteOf` instead.
+    pub fn buildProtocol(self: *const TypeTable, ty: TypeId) ?TypeId {
+        if (ty.isBuiltin()) return null;
+        const info = self.get(ty);
+        if (info != .closure) return null;
+        return info.closure.build_protocol;
+    }
+
+    /// The formation site of a block implementor: its nominal id, or null when
+    /// `ty` is not one. A struct named `@BuildBlock(…)` has no declaration, so
+    /// the name is proof the compiler minted it.
+    pub fn blockSite(self: *const TypeTable, ty: TypeId) ?u32 {
+        if (ty.isBuiltin()) return null;
+        const info = self.get(ty);
+        if (info != .@"struct") return null;
+        if (info.@"struct".nominal_id == 0) return null;
+        const name = self.getString(info.@"struct".name);
+        if (!std.mem.startsWith(u8, name, "@BuildBlock(")) return null;
+        return info.@"struct".nominal_id;
+    }
+
     pub fn closureTypePack(self: *TypeTable, params: []const TypeId, ret: TypeId, pack_start: u32) TypeId {
         const owned_params = self.slice_arena.allocator().dupe(TypeId, params) catch unreachable;
         return self.intern(.{ .closure = .{ .params = owned_params, .ret = ret, .pack_start = pack_start } });
@@ -1156,7 +1274,12 @@ pub const TypeTable = struct {
                 }
                 break :blk max_a;
             },
-            .@"union", .tagged_union => 8,
+            .@"union" => 8,
+            // A stated backing shape IS the layout, so its alignment is the
+            // union's — that is how an open set delivers its declared payload
+            // alignment. Without one, the default `{tag, [N]u8}` shape aligns to
+            // the tag word.
+            .tagged_union => |u| if (u.backing_type) |bt| self.typeAlignBytes(bt) else 8,
             .error_set => 4, // u32 tag id
             .@"enum" => |e| {
                 if (e.backing_type) |bt| return self.typeAlignBytes(bt);
@@ -1291,6 +1414,12 @@ pub const TypeTable = struct {
                 break :blk buf.toOwnedSlice(alloc) catch "(?)";
             },
             .closure => |co| blk: {
+                if (co.init_target) |it| {
+                    break :blk std.fmt.allocPrint(alloc, "@Init({s})", .{self.formatTypeName(alloc, it)}) catch "@Init(?)";
+                }
+                if (co.build_protocol) |bp| {
+                    break :blk std.fmt.allocPrint(alloc, "@BuildBlock({s})", .{self.formatTypeName(alloc, bp)}) catch "@BuildBlock(?)";
+                }
                 var buf = std.ArrayList(u8).empty;
                 defer buf.deinit(alloc);
                 buf.appendSlice(alloc, "Closure(") catch break :blk "Closure(?)";
@@ -1391,6 +1520,11 @@ fn hashTypeInfo(h: *std.hash.Wyhash, info: TypeInfo) void {
             const pack_present: u8 = if (c.pack_start != null) 1 else 0;
             h.update(&.{pack_present});
             if (c.pack_start) |ps| h.update(std.mem.asBytes(&ps));
+            if (c.init_target) |it| {
+                h.update(std.mem.asBytes(&it));
+                h.update(std.mem.asBytes(&c.init_site));
+            }
+            if (c.build_protocol) |bp| h.update(std.mem.asBytes(&bp));
         },
         // Nominal arms key by display name; `nominal_id` joins the key only when
         // nonzero, so structural (legacy) interning hashes byte-identically.
@@ -1460,6 +1594,13 @@ fn typeInfoEql(a: TypeInfo, b: TypeInfo) bool {
             }
             if ((c.pack_start == null) != (d.pack_start == null)) return false;
             if (c.pack_start) |cp| if (cp != d.pack_start.?) return false;
+            if ((c.init_target == null) != (d.init_target == null)) return false;
+            if (c.init_target) |ct| {
+                if (ct != d.init_target.?) return false;
+                if (c.init_site != d.init_site) return false;
+            }
+            if ((c.build_protocol == null) != (d.build_protocol == null)) return false;
+            if (c.build_protocol) |cb| if (cb != d.build_protocol.?) return false;
             return c.ret == d.ret;
         },
         // Nominal arms compare display name + nominal id. With both ids 0 this is

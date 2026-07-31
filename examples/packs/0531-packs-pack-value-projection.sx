@@ -22,7 +22,7 @@ show :: (..xs: Box) -> void {
 }
 
 main :: () -> i32 {
-    show(IntCell.{ v = 42 }, StrCell.{ s = "hi" });
-    show(StrCell.{ s = "x" }, IntCell.{ v = 7 });   // order swapped → (string, i64)
+    show(IntCell{ v = 42 }, StrCell{ s = "hi" });
+    show(StrCell{ s = "x" }, IntCell{ v = 7 });   // order swapped → (string, i64)
     0
 }

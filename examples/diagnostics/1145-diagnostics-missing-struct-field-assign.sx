@@ -16,10 +16,10 @@ Inner :: struct { a: i64; }
 Outer :: struct { inner: Inner; }
 
 main :: () -> i32 {
-    p := Point.{ x = 1 };
+    p := Point{ x = 1 };
     p.q = 2;                              // site 1: lowerAssignment target path
 
-    o := Outer.{ inner = Inner.{ a = 1 } };
+    o := Outer{ inner = Inner{ a = 1 } };
     o.missing.a = 5;                      // site 2: lowerExprAsPtr fallback
 
     y : i64 = 0;

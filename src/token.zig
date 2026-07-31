@@ -8,6 +8,13 @@ pub const Tag = enum {
 
     // Identifiers and keywords
     identifier,
+    /// `@Name` — a compiler-formed type name (`@Init`). The `@` is part of the
+    /// name; the token is deliberately NOT an `.identifier`, so an `@` name can
+    /// only be written where the grammar explicitly accepts one (a type
+    /// position). Every other position — declarations, expressions — rejects it
+    /// through the ordinary "expected …" path, which is what makes `@` names
+    /// undeclarable by user code.
+    at_identifier,
     kw_if,
     kw_else,
     kw_then,
@@ -145,7 +152,6 @@ pub const Tag = enum {
     hash_property, // `#property[(modifier, ...)]` field directive — synthesizes getter/setter dispatch (M2.2)
     hash_get, // `name :: (self) -> R #get => expr;` — a no-paren property accessor method (read via field syntax)
     hash_set, // `name :: (self, value) #set { ... }` — the write counterpart of #get (`obj.name = rhs` dispatches here)
-    hash_caller_location, // `#caller_location` — as a param default, synthesizes the call site's Source_Location (ERR E4.1b)
     hash_jni_env, // `#jni_env(env) { body }` block-form env-scoping intrinsic
     hash_jni_main, // `#jni_main #jni_class(...) { ... }` — class is the launchable Android Activity
     hash_context_extend, // `#context_extend name: Type = default;` — top-level Context field declaration

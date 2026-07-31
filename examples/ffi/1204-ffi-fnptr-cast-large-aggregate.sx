@@ -17,7 +17,7 @@ accept :: (w: Wide) -> i64 {
 }
 
 main :: () -> i32 {
-    w := Wide.{ a = 1, b = 10, c = 100, d = 1000 };
+    w := Wide{ a = 1, b = 10, c = 100, d = 1000 };
     direct := accept(w);
     if direct != 1111 { return 1; }
 

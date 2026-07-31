@@ -33,7 +33,7 @@ use_two :: (a: Lerpable) -> f32 { run2(a) }
 // Bind an erased value into a container/struct field.
 Holder :: struct { item: Lerpable; }
 use_struct :: (a: Lerpable) -> string {
-    h := Holder.{ item = a };
+    h := Holder{ item = a };
     h.item.name()
 }
 

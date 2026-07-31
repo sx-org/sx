@@ -1,0 +1,76 @@
+error: 'saved' cannot bind a '@BuildBlock(Drawable)' — a build block is valid only within the call that received it
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:31:14
+   |
+31 |     saved := content;        // refused: a block is not storage
+   |              ^^^^^^^
+
+help: call '.run(*sink)' here, or pass it to another '@BuildBlock' parameter
+   |
+31 |     saved := content;        // refused: a block is not storage
+   |              ^^^^^^^
+
+error: 'saved' cannot bind a '@BuildBlock(Drawable)' — a build block is valid only within the call that received it
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:37:14
+   |
+37 |     saved := if flag { content } else { content };
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+help: call '.run(*sink)' here, or pass it to another '@BuildBlock' parameter
+   |
+37 |     saved := if flag { content } else { content };
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: 'kept' cannot bind a '@BuildBlock(Drawable)' — a build block is valid only within the call that received it
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:38:16
+   |
+38 |     kept : B = content;
+   |                ^^^^^^^
+
+help: call '.run(*sink)' here, or pass it to another '@BuildBlock' parameter
+   |
+38 |     kept : B = content;
+   |                ^^^^^^^
+
+error: a '@BuildBlock(Drawable)' cannot be returned — it is valid only within the call that received it
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:42:5
+   |
+42 |     content                  // refused: the frame it points at ends here
+   |     ^^^^^^^
+
+help: run it here and return what the sink collected
+   |
+42 |     content                  // refused: the frame it points at ends here
+   |     ^^^^^^^
+
+error: '_l' cannot bind a '@BuildBlock(Drawable)' — a build block is valid only within the call that received it
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:56:11
+   |
+56 |     _l := leak() { Label{ text = "b" }; };
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+help: call '.run(*sink)' here, or pass it to another '@BuildBlock' parameter
+   |
+56 |     _l := leak() { Label{ text = "b" }; };
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: 'content' is a '@BuildBlock(Drawable)' and cannot be captured by a closure
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:46:32
+   |
+46 |     later := () => { elsewhere(content.shape().static_expressions); };
+   |                                ^^^^^^^
+
+help: replay it where it was received ('.run(*sink)'), or collect what you need into storage the closure can reach
+   |
+46 |     later := () => { elsewhere(content.shape().static_expressions); };
+   |                                ^^^^^^^
+
+error: '@BuildBlock(Drawable)' has no 'replay' — a build block's operations are '.run(sink)', '.shape()', and '.site()'
+  --> examples/fluent/2031-fluent-buildblock-escape-rejected.sx:50:5
+   |
+50 |     content.replay();        // refused: not one of its operations
+   |     ^^^^^^^^^^^^^^
+
+help: the block's own body is what it carries; nothing else reads it
+   |
+50 |     content.replay();        // refused: not one of its operations
+   |     ^^^^^^^^^^^^^^

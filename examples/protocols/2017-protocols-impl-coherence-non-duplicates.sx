@@ -1,0 +1,29 @@
+// What same-module coherence does NOT refuse: the pair is (protocol
+// instantiation, type), so one protocol over two types, two protocols over one
+// type, and two instantiations of one templated protocol over one source type
+// are three distinct pairs and all coexist in a single module.
+#import "modules/std.sx";
+
+Show :: protocol { show :: (self: *Self) -> i64; }
+Rank :: protocol { rank :: (self: *Self) -> i64; }
+
+Point :: struct { v: i64 = 0; }
+Mark :: struct { v: i64 = 0; }
+
+impl Show for Point { show :: (self: *Point) -> i64 { self.v } }
+impl Show for Mark { show :: (self: *Mark) -> i64 { self.v * 10 } }
+impl Rank for Point { rank :: (self: *Point) -> i64 { self.v + 1 } }
+
+Boxed :: struct { v: i64 = 0; }
+Doubled :: struct { v: i64 = 0; }
+
+impl Into(Boxed) for i64 { convert :: (self: i64) -> Boxed { .{ v = self } } }
+impl Into(Doubled) for i64 { convert :: (self: i64) -> Doubled { .{ v = self * 2 } } }
+
+main :: () {
+    p : Point = .{ v = 3 };
+    m : Mark = .{ v = 4 };
+    b : Boxed = xx 5;
+    d : Doubled = xx 5;
+    print("{} {} {} {} {}\n", p.show(), m.show(), p.rank(), b.v, d.v);
+}

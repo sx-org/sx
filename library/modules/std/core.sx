@@ -1,6 +1,6 @@
 // The compiler-coupled prelude primitives: `intrinsic` declarations and the
 // types the compiler resolves by NAME program-wide
-// (`Context`, `Allocator`, `Into`, `Source_Location`). Consumers never import
+// (`Context`, `Allocator`, `Into`, `@SourceSite`). Consumers never import
 // this file directly — std.sx re-exports every name here.
 //
 // `string` and `Vector` are NOT declared here: they are language primitives
@@ -119,14 +119,35 @@ raw_pointer_to        :: (t: Type) -> Type intrinsic;
 // `field_type` builtin above carries no data type, so it stays in the prelude.)
 // Import `modules/std/meta.sx` to construct or reflect types at comptime.
 
-// Call-site location, synthesized by the `#caller_location` directive when it
-// is a parameter's default value (ERR E4.1b). `process.exit` / `assert` use it
-// to report where they were invoked.
-Source_Location :: struct {
-    file: string;
-    line: i32;
-    col: i32;
-    func: string;
+// One source descriptor for diagnostics and for library identity. A
+// compiler-maintained contract: the compiler recognizes THIS declaration by
+// module identity, so the field set is a compiler + stdlib contract, not a
+// shape any lookalike can satisfy. User code may construct values — `id = 0`
+// is enough for a diagnostic-only fake; a test that exercises identity
+// computes the matching value with `source_site_key_id`
+// (modules/std/source_site.sx).
+@SourceSite :: struct {
+    // Normalized source file identity, independent of the working directory.
+    file: string = "";
+
+    // Fully qualified source declaration containing this site — a source-level
+    // name, never an internal AST address.
+    declaration: string = "";
+
+    // One-based source line. Zero means unavailable.
+    line: i32 = 0;
+
+    // One-based source column. Zero means unavailable.
+    column: i32 = 0;
+
+    // Zero-based lexical occurrence within `declaration`, including a
+    // deterministic inline-expansion path. Runtime loop iterations reuse it.
+    ordinal: u64 = 0;
+
+    // Compile-time fingerprint of (file, declaration, ordinal), exactly
+    // `source_site_key_id(source_site_key(site))`. It contains no line,
+    // column, pointer, padding, compiler-process, or runtime state.
+    id: u64 = 0;
 }
 // --- Allocator protocol (impls live in std/mem.sx) ---
 

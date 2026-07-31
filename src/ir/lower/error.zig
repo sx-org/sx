@@ -5,6 +5,8 @@ const types = @import("../types.zig");
 const inst_mod = @import("../inst.zig");
 const mod_mod = @import("../module.zig");
 const errors = @import("../../errors.zig");
+const contracts = @import("../../contracts.zig");
+const source_site = @import("../../source_site.zig");
 const ErrorAnalysis = @import("../error_analysis.zig").ErrorAnalysis;
 
 const TypeId = types.TypeId;
@@ -98,6 +100,16 @@ pub fn isErrorTagLiteralNode(node: *const Node) bool {
     return obj.data == .identifier and std.mem.eql(u8, obj.data.identifier.name, "error");
 }
 
+/// The tag NAME a `raise` operand names literally, in either spelling — the
+/// anonymous `error.X` or the contextual `.X` shorthand — or null for a
+/// variable / computed tag. In `raise` position a `.X` is unambiguously a tag,
+/// so the two spellings are interchangeable to every caller of this.
+pub fn literalTagName(node: *const Node) ?[]const u8 {
+    if (isErrorTagLiteralNode(node)) return node.data.field_access.field;
+    if (node.data == .enum_literal) return node.data.enum_literal.name;
+    return null;
+}
+
 /// Lower `==` / `!=` when an error-set value or `error.X` tag is involved.
 /// Returns null when neither operand is error-related (general path runs).
 /// Both operands must be a tag (an `error.X` literal or an error-set value);
@@ -109,11 +121,17 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
     const r_tag = isErrorTagLiteralNode(bop.rhs);
     if (l_set == null and r_set == null and !l_tag and !r_tag) return null;
 
-    const l_ok = l_set != null or l_tag;
-    const r_ok = r_set != null or r_tag;
+    // A contextual `.Name` shorthand is a tag when the OTHER operand supplies
+    // the set to type it from; with no set on either side there is nothing to
+    // resolve against and it stays an ordinary enum literal.
+    const l_dot = bop.lhs.data == .enum_literal and r_set != null;
+    const r_dot = bop.rhs.data == .enum_literal and l_set != null;
+
+    const l_ok = l_set != null or l_tag or l_dot;
+    const r_ok = r_set != null or r_tag or r_dot;
     if (!l_ok or !r_ok) {
         if (self.diagnostics) |diags| {
-            diags.addFmt(.err, bop.lhs.span, "an error-set value compares only with an `error.X` tag or another error-set value; coerce with `xx` to compare the raw id", .{});
+            diags.addFmt(.err, bop.lhs.span, "an error-set value compares only with an `error.X` tag, a `.X` shorthand, or another error-set value; coerce with `xx` to compare the raw id", .{});
         }
         return self.builder.constBool(false);
     }
@@ -176,6 +194,37 @@ pub fn checkErrorSetSubset(self: *Lowering, src: TypeId, dst: TypeId, span: ast.
     self.diagTagsNotInSet(src_info.error_set.tags, dst, span);
 }
 
+/// An error-set VALUE crossing between two named sets is legal only when
+/// every tag of `src` is a member of `dst` — the same subset rule the error
+/// channel applies to `raise` and to a forwarded failable. Both sets are
+/// u32-backed, so the width-based reinterpret guard in `coerce.zig` classifies
+/// the pair as a legitimate same-width passthrough and lets a foreign tag land
+/// in the destination slot, where no `error.X` literal of that set can ever
+/// name it. The inferred bare-`!` placeholder absorbs any tag on either side.
+pub fn checkErrorSetValueCoercion(self: *Lowering, src: TypeId, dst: TypeId, span: ast.Span) void {
+    if (src == dst) return;
+    if (src.isBuiltin() or dst.isBuiltin()) return;
+    const src_info = self.module.types.get(src);
+    const dst_info = self.module.types.get(dst);
+    if (src_info != .error_set or dst_info != .error_set) return;
+    if (self.isInferredErrorSet(src) or self.isInferredErrorSet(dst)) return;
+    const src_name = self.module.types.getString(src_info.error_set.name);
+    const dst_name = self.module.types.getString(dst_info.error_set.name);
+    for (src_info.error_set.tags) |tag| {
+        var found = false;
+        for (dst_info.error_set.tags) |d| {
+            if (d == tag) {
+                found = true;
+                break;
+            }
+        }
+        if (found) continue;
+        if (self.diagnostics) |diags| {
+            diags.addFmt(.err, span, "cannot coerce error set '{s}' to '{s}': tag 'error.{s}' is not a member of '{s}'", .{ src_name, dst_name, self.module.types.getTagName(tag), dst_name });
+        }
+    }
+}
+
 /// Diagnose every tag id in `src_tags` that is not a member of the named
 /// error set `dst`. Shared by the named-set subset check and E1.4b's
 /// inferred-callee widening (where the callee's tags come from the SCC,
@@ -227,7 +276,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     const tag_ref = self.lowerExpr(rs.tag);
     self.target_type = saved_target;
 
-    if (!inferred and !isErrorTagLiteralNode(rs.tag)) {
+    if (!inferred and literalTagName(rs.tag) == null) {
         if (self.errorSetTypeOf(rs.tag)) |src_set| {
             self.checkErrorSetSubset(src_set, err_set, span);
         }
@@ -238,10 +287,12 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
     self.emitTracePush(self.placeholderTraceFrame());
 
     // (4) Emit the failure return. Pure-failable: the return type IS the
-    //     error set, so return the tag value directly.
+    //     error set, so return the tag value directly. Step (2)'s subset rule
+    //     owns the set relationship here, so the tag move into the channel
+    //     bypasses the implicit value-coercion membership guard.
     if (ret_ty == err_set) {
         const tag_ty = self.builder.getRefType(tag_ref);
-        const coerced = if (tag_ty != err_set) self.coerceToType(tag_ref, tag_ty, err_set) else tag_ref;
+        const coerced = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
         self.emitErrorCleanup(self.func_defer_base, coerced);
         if (self.inline_return_target) |iri| {
             self.builder.store(iri.slot, coerced);
@@ -253,7 +304,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
         // Value-carrying `-> (T..., !)`: the error path leaves the value
         // slots undefined and carries the tag in the error slot (ERR E2.1).
         const tag_ty = self.builder.getRefType(tag_ref);
-        const coerced_tag = if (tag_ty != err_set) self.coerceToType(tag_ref, tag_ty, err_set) else tag_ref;
+        const coerced_tag = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
         self.emitErrorCleanup(self.func_defer_base, coerced_tag);
         const fields = self.module.types.get(ret_ty).tuple.fields;
         var slots = std.ArrayList(Ref).empty;
@@ -582,20 +633,25 @@ pub fn exprIsFailable(self: *Lowering, node: *const Node) bool {
 /// callees, propagation from a value-carrying caller, and `try` inside an
 /// `or` chain need the error-channel tuple ABI / fallback routing — those
 /// land in E1.4b/E2, so we bail loudly here.
-/// Synthesize a `Source_Location` value for a `#caller_location` marker
-/// (ERR E4.1b). The node's `span`/`source_file` are the CALL site (rewritten
-/// by `expandCallDefaults`); resolve them to file / line:col against the
-/// source text and stamp the enclosing (caller) function name.
-pub fn lowerCallerLocation(self: *Lowering, node: *const Node) Ref {
-    const sl_tid = self.module.types.findByName(self.module.types.internString("Source_Location")) orelse {
-        if (self.diagnostics) |d| d.addFmt(.err, node.span, "`#caller_location` needs `Source_Location` (from std.sx) in scope", .{});
+/// Build the `@SourceSite` a `@caller` marker stands for.
+///
+/// `file` / `declaration` / `ordinal` / `id` come from the source-site index,
+/// which keyed them off the CALL expression — so a generic specialization
+/// reports its template's path, and a loop reports one site however many times
+/// it runs. `line` / `column` are the call span resolved against the source
+/// text, one-based, and are the only fields that are position-dependent.
+pub fn lowerCallerSite(self: *Lowering, node: *const Node) Ref {
+    const tid = self.sourceSiteType() orelse {
+        if (self.diagnostics) |d| {
+            const contract = contracts.find(source_site.contract_name).?;
+            d.addFmt(.err, node.span, "'@caller' needs '{s}' in scope — #import \"{s}\"", .{ source_site.contract_name, contract.module });
+        }
         return self.builder.constInt(0, .void);
     };
-    // A caller-location marker may be nested inside a larger declared default
-    // expression. That root evaluates under the callee's lexical source, so
-    // consult the separately retained call-site provenance before the node /
-    // current source. A marker which is itself the whole default was cloned
-    // directly onto the call site and reaches the same fallback path.
+    // The marker may sit inside a larger declared default, whose root evaluates
+    // under the callee's lexical source; the retained provenance is the only
+    // place the caller's identity survives that. A marker that IS the whole
+    // default was re-authored onto the call site and reads the same way.
     const call_site = if (self.active_default_call_site) |site|
         if (site.caller_func == self.builder.func) site else null
     else
@@ -607,17 +663,69 @@ pub fn lowerCallerLocation(self: *Lowering, node: *const Node) Ref {
     const location_span = if (call_site) |site| site.span else node.span;
     const src = self.sourceForFile(file);
     const loc = errors.SourceLoc.compute(src, location_span.start);
-    const func_name = self.currentFunctionName();
-    var fields = [_]Ref{
-        self.builder.constString(self.module.types.internString(file)),
-        self.builder.constInt(@intCast(loc.line), .i32),
-        self.builder.constInt(@intCast(loc.col), .i32),
-        self.builder.constString(self.module.types.internString(func_name)),
+
+    const site = callerSiteIdentity(self, file, if (call_site) |cs| cs.node else null);
+    return sourceSiteValue(self, tid, site, @intCast(loc.line), @intCast(loc.col));
+}
+
+/// The indexed identity of the call `node`, or — for a call the site pass never
+/// saw (a synthesized one) — the enclosing declaration at ordinal 0, so the
+/// site still names where it came from.
+fn callerSiteIdentity(self: *Lowering, file: []const u8, node: ?*const Node) source_site.Site {
+    if (node) |n| {
+        if (self.site_index) |idx| {
+            if (idx.get(n)) |site| return site;
+        }
+    }
+    const module_path = source_site.normalizeModulePath(file, self.stdlib_paths, self.mainDir());
+    const prefix = source_site.modulePrefix(self.alloc, module_path) catch module_path;
+    const func = self.currentFunctionName();
+    const declaration = if (func.len == 0)
+        prefix
+    else
+        std.fmt.allocPrint(self.alloc, "{s}.{s}", .{ prefix, func }) catch prefix;
+    return .{
+        .file = module_path,
+        .declaration = declaration,
+        .ordinal = 0,
+        .id = source_site.computeId(module_path, declaration, 0),
     };
-    return self.builder.emit(.{ .struct_init = .{ .fields = self.alloc.dupe(Ref, &fields) catch unreachable } }, sl_tid);
 }
 
 /// The source text for `file`, via the diagnostics' file→source map (which
+/// The registered `@SourceSite` type. Looked up by the registry's contract
+/// name, not a bare spelling, so the type a `@caller` builds is the one the
+/// canonical declaration registered.
+pub fn sourceSiteType(self: *Lowering) ?TypeId {
+    return self.module.types.findByName(self.module.types.internString(source_site.contract_name));
+}
+
+/// Build a `@SourceSite` value of type `tid` from an indexed site plus the
+/// one-based `line` / `column` that only the source text can answer. THE single
+/// place the contract's field order is written down, so every producer
+/// (`@caller`, a build block's `site()`, an initializer's `site()`) emits the
+/// same shape.
+pub fn sourceSiteValue(self: *Lowering, tid: TypeId, site: source_site.Site, line: i32, column: i32) Ref {
+    var fields = [_]Ref{
+        self.builder.constString(self.module.types.internString(site.file)),
+        self.builder.constString(self.module.types.internString(site.declaration)),
+        self.builder.constInt(line, .i32),
+        self.builder.constInt(column, .i32),
+        self.builder.constInt(@bitCast(site.ordinal), .u64),
+        self.builder.constInt(@bitCast(site.id), .u64),
+    };
+    return self.builder.emit(.{ .struct_init = .{ .fields = self.alloc.dupe(Ref, &fields) catch unreachable } }, tid);
+}
+
+/// The compilation root: the main file's directory. `main_file` already came
+/// through `imports.canonicalizePath`, so this is spelled the way resolved
+/// module paths are.
+pub fn mainDir(self: *Lowering) ?[]const u8 {
+    const mf = self.main_file orelse return null;
+    const idx = std.mem.lastIndexOfScalar(u8, mf, '/') orelse return null;
+    return mf[0..idx];
+}
+
 /// includes the main file). Empty if unavailable — line:col then degrade to
 /// 1:1 rather than crash.
 pub fn sourceForFile(self: *Lowering, file: []const u8) []const u8 {
@@ -629,7 +737,7 @@ pub fn sourceForFile(self: *Lowering, file: []const u8) []const u8 {
 }
 
 /// Name of the function currently being lowered (the caller, at a
-/// `#caller_location` site), or "" outside any function.
+/// `@caller` site), or "" outside any function.
 pub fn currentFunctionName(self: *Lowering) []const u8 {
     const fid = self.builder.func orelse return "";
     return self.module.types.getString(self.module.functions.items[@intFromEnum(fid)].name);
@@ -710,7 +818,10 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
 /// inline-comptime return targets. The caller emits defers first.
 pub fn emitErrorReturn(self: *Lowering, caller_ret: TypeId, caller_set: TypeId, err: Ref) void {
     const ety = self.builder.getRefType(err);
-    const coerced = if (ety != caller_set) self.coerceToType(err, ety, caller_set) else err;
+    // The channel's own subset rule (`checkEscapeWidening` / `checkErrorSetSubset`
+    // at the raise / propagate / forward site) owns this move, so it bypasses the
+    // implicit value-coercion membership guard rather than being reported twice.
+    const coerced = if (ety != caller_set) self.coerceExplicit(err, ety, caller_set) else err;
     if (caller_ret == caller_set) {
         if (self.inline_return_target) |iri| {
             self.builder.store(iri.slot, coerced);
@@ -1071,6 +1182,15 @@ pub fn desugarErasedAssert(self: *Lowering, node: *const Node) ?*const Node {
             break :blk ri == .optional and ri.optional.child == .any;
         });
         if (any_recv and self.refuseProtocolAssertTargetOnAny(pc.type_expr, node.span)) return null;
+        // A bare open set as the target is the same shape of impossible: an
+        // `any` never holds a set value. The assertion is answered where it is
+        // written rather than desugared, so the helper is never asked for a
+        // conversion no box can supply.
+        if (any_recv and pc.type_expr.data != .optional_type_expr) {
+            const target = self.resolveTypeArg(pc.type_expr);
+            if (target != .unresolved and self.isOpenSet(target) and
+                self.refuseSetFromAny(target, node.span)) return null;
+        }
     }
     const helper: []const u8 = if (pc.is_optional_chain) "__sx_chain_cast_assert" else "__sx_cast_assert";
     const callee = self.alloc.create(Node) catch unreachable;

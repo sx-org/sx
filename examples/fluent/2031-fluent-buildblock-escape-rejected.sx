@@ -1,0 +1,60 @@
+// A build block is a value, and it is FRAME-BOUND (fluent spec §6.2, N49). Its
+// environment holds the addresses of the locals the body reads, in the frame
+// that formed it, so it is valid exactly as long as the call that received it —
+// which is why handing it to a callee is legal (2042 pins that) and every way of
+// outliving the call is refused:
+//
+//   - binding it to a local, which is what a later statement or a closure would
+//     reach through — however the value arrives there, an `if` that yields one
+//     and an annotated binding included;
+//   - capturing it in a closure, which may run after that frame is gone;
+//   - returning it, which names a frame that has ended.
+//
+// A method it does not have is refused by name too, so the operation set stays
+// the three the contract declares.
+// Expected: exit 1.
+#import "modules/std.sx";
+#import "modules/fluent.sx";
+
+Drawable :: protocol constraint {
+    draw :: (self: *Self) -> string;
+}
+
+Label :: struct { text: string = ""; }
+impl Drawable for Label {
+    draw :: (self: *Label) -> string => self.text;
+}
+
+elsewhere :: (n: i32) {}
+
+hold :: (content: $B/@BuildBlock(Drawable)) {
+    saved := content;        // refused: a block is not storage
+}
+
+// The refusal is on the TYPE, not on the spelling: an expression that yields a
+// block is refused where a bare name is.
+hold_indirect :: (flag: bool, content: $B/@BuildBlock(Drawable)) {
+    saved := if flag { content } else { content };
+    kept : B = content;
+}
+
+leak :: (content: $B/@BuildBlock(Drawable)) -> B {
+    content                  // refused: the frame it points at ends here
+}
+
+capture :: (content: $B/@BuildBlock(Drawable)) {
+    later := () => { elsewhere(content.shape().static_expressions); };
+}
+
+reach :: (content: $B/@BuildBlock(Drawable)) {
+    content.replay();        // refused: not one of its operations
+}
+
+main :: () -> i32 {
+    hold() { Label{ text = "a" }; };
+    hold_indirect(true) { Label{ text = "a2" }; };
+    _l := leak() { Label{ text = "b" }; };
+    capture() { Label{ text = "c" }; };
+    reach() { Label{ text = "d" }; };
+    0
+}

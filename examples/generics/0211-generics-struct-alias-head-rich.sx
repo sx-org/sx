@@ -6,7 +6,7 @@ helper :: () -> i64 { 7 }
 
 Thing :: struct {
     v: i64;
-    init :: () -> Thing { Thing.{ v = 42 } }
+    init :: () -> Thing { Thing{ v = 42 } }
 }
 
 Box :: struct ($T: Type) {

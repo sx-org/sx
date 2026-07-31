@@ -1,0 +1,21 @@
+// A blanket impl covers the carrier SHAPE it spelled, concrete slots included.
+// `for Map2(i64, $W)` says the first argument is `i64`; an instantiation whose
+// first argument is something else is a different shape and is not covered.
+#import "modules/std.sx";
+
+Series :: protocol(T: Type) constraint {
+    count :: (self: *Self) -> i64;
+}
+
+Map2 :: struct($K: Type, $V: Type) { n: i64; }
+
+impl Series($W) for Map2(i64, $W) {
+    count :: (self: *Map2) -> i64 { self.n }
+}
+
+tally :: (b: $B/Series(f32)) -> i64 { 1 }
+
+main :: () {
+    // `Map2(f32, f32)` binds `K = f32`, but the impl only covers `K = i64`.
+    print("{}\n", tally(Map2(f32, f32){ n = 4 }));
+}

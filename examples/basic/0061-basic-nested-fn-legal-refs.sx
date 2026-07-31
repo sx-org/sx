@@ -23,7 +23,7 @@ main :: () -> i32 {
 
     // enclosing local TYPE (not a value binding) — legal
     P :: struct { v: i64; }
-    make :: () -> i64 { p := P.{ v = 9 }; return p.v; }
+    make :: () -> i64 { p := P{ v = 9 }; return p.v; }
     print("{}\n", make());           // 9
     0
 }

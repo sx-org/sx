@@ -24,7 +24,7 @@
 // Android target requires a `#jni_main` Activity declaration to
 // satisfy the entry-point check. An empty stub class is enough — this
 // file is testing `#jni_call` lowering, not Activity wiring.
-SxJniCallVoidStub :: #jni_main #jni_class("co/swipelab/sxjnicall/SxJniCallVoidStub") { }
+SxJniCallVoidStub :: #jni_main #jni_class("co/swipelab/sxjnicall/SxJniCallVoidStub") {}
 
 main :: () -> i32 {
     inline if OS == .android {

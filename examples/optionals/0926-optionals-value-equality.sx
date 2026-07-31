@@ -17,7 +17,7 @@ Style :: struct {
     scale: f32 = 1.0;
 }
 
-STYLE_DEFAULT :: Style.{};
+STYLE_DEFAULT :: Style{};
 
 U :: enum { a: i64; b: string; }
 
@@ -35,15 +35,15 @@ main :: () {
     print("null {} {}\n", b == null, a != null);
 
     // Struct payloads compare field-wise; string fields by content.
-    sa : ?P = P.{ x = 4, tag = "hi" };
-    sb : ?P = P.{ x = 4, tag = "hi" };
-    sc : ?P = P.{ x = 4, tag = "yo" };
+    sa : ?P = P{ x = 4, tag = "hi" };
+    sb : ?P = P{ x = 4, tag = "hi" };
+    sc : ?P = P{ x = 4, tag = "yo" };
     sn : ?P = null;
-    print("struct {} {} {} {}\n", sa == sb, sa == sc, sa == sn, sa == P.{ x = 4, tag = "hi" });
+    print("struct {} {} {} {}\n", sa == sb, sa == sc, sa == sn, sa == P{ x = 4, tag = "hi" });
 
     // Optional fields inside a struct: the Mod-style default probe.
-    s := Style.{ width = 2.0 };
-    print("field {} {} {}\n", Style.{} == STYLE_DEFAULT, s == STYLE_DEFAULT, s != STYLE_DEFAULT);
+    s := Style{ width = 2.0 };
+    print("field {} {} {}\n", Style{} == STYLE_DEFAULT, s == STYLE_DEFAULT, s != STYLE_DEFAULT);
 
     // Tagged-union payloads keep the bare rule: tag-only compare.
     ua : ?U = U.a(1);

@@ -1,0 +1,32 @@
+error: this value is neither published nor used
+  --> examples/diagnostics/2035-diagnostics-buildblock-unpublished.sx:45:13
+   |
+45 |             Label{ text = "in a branch" }   // refused: neither published nor used
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+help: publish it as a statement (end it with `;`) or discard it (`_ = …;`)
+   |
+45 |             Label{ text = "in a branch" }   // refused: neither published nor used
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: this value is neither published nor used
+  --> examples/diagnostics/2035-diagnostics-buildblock-unpublished.sx:49:13
+   |
+49 |             Label{ text = row }             // refused: same, per iteration
+   |             ^^^^^^^^^^^^^^^^^^^
+
+help: publish it as a statement (end it with `;`) or discard it (`_ = …;`)
+   |
+49 |             Label{ text = row }             // refused: same, per iteration
+   |             ^^^^^^^^^^^^^^^^^^^
+
+error: this value is neither published nor used
+  --> examples/diagnostics/2035-diagnostics-buildblock-unpublished.sx:53:13
+   |
+53 |             Label{ text = "in bare braces" } // refused: same
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+help: publish it as a statement (end it with `;`) or discard it (`_ = …;`)
+   |
+53 |             Label{ text = "in bare braces" } // refused: same
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

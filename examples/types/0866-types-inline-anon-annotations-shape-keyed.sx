@@ -1,5 +1,5 @@
 // Inline anonymous type ANNOTATIONS (`x : struct { … }`, `: union { … }`,
-// `: enum { … }`) are SHAPE-keyed, like untyped `.{ }` literals: identical
+// `: enum { … }`) are SHAPE-keyed, like untyped `.{}` literals: identical
 // shapes unify to one TypeId, distinct shapes are distinct types — including
 // across annotation/literal sites and inside anon-enum payload structs.
 // Regression (issue 0294): every inline decl displays as `__anon`, and the
@@ -35,7 +35,7 @@ main :: () -> i64 {
     // Inline payload enums: distinct shapes separate, and two anon enums
     // sharing a variant NAME keep their differently-shaped payload structs
     // apart (the `__anon.<variant>` qualification hazard).
-    e : enum { S: struct { a: i64; }; } = .S.{ a = 4 };
+    e : enum { S: struct { a: i64; }; } = .S{ a = 4 };
     f : enum { S: struct { b: f64; }; U: void; } = .U;
     if e == { case .S: print("S\n"); }
     if f == { case .U: print("U\n"); case .S: print("S\n"); }

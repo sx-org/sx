@@ -15,7 +15,7 @@ sum_ptr :: (xs: *List(i64)) -> i64 {
 }
 
 main :: () -> i32 {
-    xs := List(i64).{};
+    xs := List(i64){};
     xs.append(10);
     xs.append(20);
     xs.append(30);
@@ -31,7 +31,7 @@ main :: () -> i32 {
 
     print("via ptr {}\n", sum_ptr(*xs));       // 360
 
-    bs := List(Box).{};
+    bs := List(Box){};
     bs.append(.{ v = 7 });
     bt : i64 = 0;
     for bs (*b) { bt = bt + b.boxed(); }      // *Box receiver, value-self method

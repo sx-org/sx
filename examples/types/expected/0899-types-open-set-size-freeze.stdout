@@ -1,0 +1,7 @@
+early 72 late 72
+wrapper 80 80
+run 72 72
+align 8 8
+cell 16 buf 16
+cell 16
+render l padded

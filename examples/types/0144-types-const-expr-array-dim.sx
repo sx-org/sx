@@ -71,7 +71,7 @@ main :: () {
 
     // struct elements.
     ps : StructAlias = ---;
-    ps[0] = P.{ x = 1, y = 2 };
-    ps[4] = P.{ x = 5, y = 6 };
+    ps[0] = P{ x = 1, y = 2 };
+    ps[4] = P{ x = 5, y = 6 };
     print("struct alias.len={} p0x={} p4y={}\n", ps.len, ps[0].x, ps[4].y);
 }

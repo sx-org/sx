@@ -25,7 +25,7 @@ main :: () {
     print("pipe: {}\n", f |> bump());      // 41 — plain fn, pipe
     print("marked-direct: {}\n", bump2(f)); // 42 — marked fn callable directly
 
-    c := Counter.{ n = 10 };
+    c := Counter{ n = 10 };
     print("ptr-recv: {}\n", c.inc(5));     // 15 — auto address-of receiver
 
     arr := .[7, 8, 9];

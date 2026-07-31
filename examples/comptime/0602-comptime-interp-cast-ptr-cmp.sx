@@ -15,7 +15,7 @@ R :: struct { x: i32; }
 bug :: (cmd: [:0]u8) -> ?R {
     f := popen(cmd, "r");
     if f.(i64) == 0 { return null; }
-    R.{ x = 1 }
+    R{ x = 1 }
 }
 
 post_link :: (opt: BuildOptions) -> bool {

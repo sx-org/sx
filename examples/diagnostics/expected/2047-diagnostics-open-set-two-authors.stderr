@@ -1,0 +1,32 @@
+error: 'Cell' is an open set, but not one this module can see
+  --> examples/diagnostics/2047-diagnostics-open-set-two-authors/stray/joiner.sx:5:23
+   |
+ 5 | Stray :: @OpenVariant(Cell) {
+   |                       ^^^^
+
+help: import the module that declares it, or name it through one ('pkg.Cell')
+   |
+ 5 | Stray :: @OpenVariant(Cell) {
+   |                       ^^^^
+
+error: 'Label (examples/diagnostics/2047-diagnostics-open-set-two-authors/two/view.sx)' cannot be converted to 'View (examples/diagnostics/2047-diagnostics-open-set-two-authors/one/view.sx)': it is not a member of it
+  --> examples/diagnostics/2047-diagnostics-open-set-two-authors.sx:22:5
+   |
+22 |     wrong : one.View = two.Label{ text = "the other one" };
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+help: 'Label (examples/diagnostics/2047-diagnostics-open-set-two-authors/two/view.sx)' is a member of 'View (examples/diagnostics/2047-diagnostics-open-set-two-authors/two/view.sx)', and a type belongs to one set
+   |
+22 |     wrong : one.View = two.Label{ text = "the other one" };
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: 'Plain' cannot be converted to 'Cell': it is not a member of it
+  --> examples/diagnostics/2047-diagnostics-open-set-two-authors.sx:26:5
+   |
+26 |     odd : Cell = Plain{ n = 1 };
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(Cell) { … }'
+   |
+26 |     odd : Cell = Plain{ n = 1 };
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^

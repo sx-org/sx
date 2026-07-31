@@ -12,7 +12,7 @@ impl Sizable for Widget { size :: (self: *Widget) -> i64 { self.value } }
 Pair :: struct { a: i32; b: i32; }
 
 main :: () {
-    w := Widget.{ value = 4 };
+    w := Widget{ value = 4 };
 
     // aggregate → scalar: single-field struct reads back its field bits
     n := w.(i64);

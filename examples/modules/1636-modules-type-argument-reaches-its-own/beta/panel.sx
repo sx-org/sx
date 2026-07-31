@@ -1,0 +1,29 @@
+// The same names, written by another module, over a differently shaped value.
+#import "modules/std.sx";
+v :: #import "../view.sx";
+
+Panel :: @OpenVariant(v.View) {
+    tag: string = "beta";
+    render :: (self: *Panel) -> string => self.tag;
+}
+
+Note :: struct { text: string; }
+
+beta_soft :: () -> string {
+    p : Panel = .{ tag = "beta soft" };
+    x : v.View = p;
+    if q := x.(?Panel) { return q.tag; }
+    return "reached someone else's";
+}
+
+beta_hard :: () -> string {
+    p : Panel = .{ tag = "beta hard" };
+    x : v.View = p;
+    return x.(Panel).render();
+}
+
+beta_note :: () -> string {
+    n : Note = .{ text = "beta note" };
+    av : any = n;
+    return av.(Note).text;
+}

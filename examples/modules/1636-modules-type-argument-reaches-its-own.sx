@@ -1,0 +1,37 @@
+// A name in a TYPE-ARGUMENT position is asked of the file that wrote it (specs:
+// Modules — the namespace surface).
+//
+// The downcast target, the `any` assertion's target, and the annotation are the
+// same question in three positions, so they take the same answer. Two modules
+// write a `Panel` (over a set they both reach through a sibling module) and a
+// `Note` of their own; this program flat-imports both, so both names are in one
+// program's scope with two authors. Inside either module, the bare name still
+// reaches THAT module's declaration — for the soft temperament, for the hard one
+// whose refusal path names the member too, and for a plain aggregate asserted
+// out of an `any`. Two more modules write those names again and are reached under
+// namespaces instead, since how the PROGRAM imports a module is not what decides
+// which declaration a name inside it reaches.
+#import "modules/std.sx";
+#import "1636-modules-type-argument-reaches-its-own/alpha/panel.sx";
+#import "1636-modules-type-argument-reaches-its-own/beta/panel.sx";
+g :: #import "1636-modules-type-argument-reaches-its-own/gamma/panel.sx";
+d :: #import "1636-modules-type-argument-reaches-its-own/delta/panel.sx";
+
+main :: () -> i32 {
+    print("{} {}\n", alpha_soft(), beta_soft());
+    print("{} {}\n", alpha_hard(), beta_hard());
+    print("{} {}\n", alpha_note(), beta_note());
+    print("{} {}\n", g.soft(), d.soft());
+    print("{} {}\n", g.hard(), d.hard());
+    print("{} {}\n", g.note(), d.note());
+    0
+}
+
+// ** stdout **
+// alpha soft beta soft
+// alpha hard beta hard
+// alpha note beta note
+// gamma soft delta soft
+// gamma hard delta hard
+// gamma note delta note
+//

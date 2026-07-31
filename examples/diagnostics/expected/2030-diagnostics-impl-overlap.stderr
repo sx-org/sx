@@ -1,0 +1,18 @@
+error: 'Buffer__i64' has both a concrete and a blanket 'impl Series' — which one applies is not stated by either
+  --> examples/diagnostics/2030-diagnostics-impl-overlap.sx:13:1
+   |
+13 | impl Series($T) for Buffer($T) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     count :: (self: *Buffer) -> i64 { self.n }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+15 | }
+   | ^
+
+help: drop one of them: a blanket impl covers every instantiation of its carrier, so a concrete impl for the same one is a second answer
+   |
+13 | impl Series($T) for Buffer($T) {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     count :: (self: *Buffer) -> i64 { self.n }
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+15 | }
+   | ^

@@ -13,7 +13,7 @@
 
 open_pixel_surface :: (w: i32, h: i32) -> ?PixelSurface {
     inline if OS == .macos {
-        g := MetalOffscreen.{};
+        g := MetalOffscreen{};
         if !g.open(w, h) { return null; }
         s := g.(PixelSurface);
         // The erasure heap-copied the backend; the intra-struct GPU
@@ -25,7 +25,7 @@ open_pixel_surface :: (w: i32, h: i32) -> ?PixelSurface {
         return s;
     }
     inline if OS != .ios and OS != .macos {
-        g := GlOffscreen.{};
+        g := GlOffscreen{};
         if !g.open(w, h) { return null; }
         s := g.(PixelSurface);
         // The erasure heap-copied the backend; the ambient font must
