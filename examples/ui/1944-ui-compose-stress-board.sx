@@ -1,0 +1,89 @@
+// Stress: a board screen through ONE library (revision §14.1).
+//
+// An entry point imports exactly one UI library and does not combine components
+// or protocols across them. This one is compose, because repeated child
+// expressions make the behavior easiest to inspect.
+//
+// What it stresses:
+//   - a loop inside a build block, publishing one child per iteration;
+//   - containers nested three deep, each intercepting into its own list;
+//   - bulk per-cell state held BEHIND A POINTER, so an 81-entry id table does
+//     not enlarge every slot in the set.
+// Expected: exit 0.
+#import "modules/std.sx";
+// An application that declares its OWN component into the library's set reaches
+// the library's modules rather than its facade: a member joins the set where the
+// set is DECLARED, and a facade re-export is a name for the type, not the
+// declaration a member can join.
+#import "modules/ui/compose/geometry.sx";
+#import "modules/ui/compose/render.sx";
+#import "modules/ui/compose/view.sx";
+#import "modules/ui/compose/components.sx";
+#import "modules/ui/compose/containers.sx";
+#import "modules/ui/compose/runtime.sx";
+
+// 648 bytes of ids. Held by pointer so the member stays small and the set's
+// slot is sized by its widest MEMBER, not by the application's state.
+BoardViewState :: struct {
+    cell_eids: [81]u64 = ---;
+}
+
+BoardView :: @OpenVariant(View) {
+    state: *BoardViewState = null;
+    side: f32 = 0.0;
+
+    size_that_fits :: (self: *BoardView, proposal: ProposedSize) -> Size {
+        Size{ width = self.side, height = self.side }
+    }
+
+    layout :: (self: *BoardView, bounds: Frame) {}
+
+    render :: (self: *BoardView, rc: *RenderContext, frame: Frame) {
+        rc.add_rect(frame, Color{ r = 0.1, g = 0.1, b = 0.1, a = 1.0 });
+    }
+}
+
+main :: () -> i32 {
+    st := BoardViewState{};
+    for 0..81 (i) { st.cell_eids[i] = xx (i + 1); }
+
+    screen := vstack(12.0) {
+        Label{ text = "sudoku" };
+
+        // One child per cell, published from inside the block by a loop.
+        vstack(0.0) {
+            for 0..81 (i) {
+                Label{ text = "c" };
+            }
+        };
+
+        // The board itself carries only a pointer to its bulk state.
+        BoardView{ state = *st, side = 90.0 };
+
+        vstack(8.0) {
+            Button{ label = "New" };
+            Button{ label = "Hint" };
+            Button{ label = "Undo" };
+        };
+    };
+
+    print("top {}\n", screen.children.len);
+
+    grid := screen.children.items[1];
+    inner := grid.(VStack);
+    print("cells {}\n", inner.children.len);
+
+    print("slot {} state {}\n", size_of(View), size_of(BoardViewState));
+
+    root : View = screen;
+    tree := RenderTree{};
+    render_root(*root, Size{ width = 200.0, height = 400.0 }, *tree);
+    print("commands {}\n", command_count(*tree));
+    0
+}
+
+// ** stdout **
+// top 4
+// cells 81
+// slot 64 state 648
+// commands 89

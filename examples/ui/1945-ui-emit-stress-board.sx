@@ -1,0 +1,78 @@
+// Stress: the same board screen through the EMIT library (revision §14.2.2).
+//
+// A separate entry point importing exactly one library. The shape is the same
+// screen as 1944, so the two can be compared side by side, but every child here
+// reaches its container through the terminal `.emit()` — there is no
+// interception, and a child written without it does not appear.
+// Expected: exit 0.
+#import "modules/std.sx";
+#import "modules/ui/emit/geometry.sx";
+#import "modules/ui/emit/render.sx";
+#import "modules/ui/emit/view.sx";
+#import "modules/ui/emit/components.sx";
+#import "modules/ui/emit/containers.sx";
+#import "modules/ui/emit/runtime.sx";
+#import "modules/ui/emit/emit.sx";
+
+BoardViewState :: struct {
+    cell_eids: [81]u64 = ---;
+}
+
+BoardView :: @OpenVariant(View) {
+    state: *BoardViewState = null;
+    side: f32 = 0.0;
+
+    size_that_fits :: (self: *BoardView, proposal: ProposedSize) -> Size {
+        Size{ width = self.side, height = self.side }
+    }
+
+    layout :: (self: *BoardView, bounds: Frame) {}
+
+    render :: (self: *BoardView, rc: *RenderContext, frame: Frame) {
+        rc.add_rect(frame, Color{ r = 0.1, g = 0.1, b = 0.1, a = 1.0 });
+    }
+}
+
+main :: () -> i32 {
+    st := BoardViewState{};
+    for 0..81 (i) { st.cell_eids[i] = xx (i + 1); }
+
+    screen := vstack(12.0) {
+        Label{ text = "sudoku" }.emit();
+
+        // A loop of terminal publishes into the nested container's own list.
+        vstack(0.0) {
+            for 0..81 (i) {
+                Label{ text = "c" }.emit();
+            }
+        }.emit();
+
+        BoardView{ state = *st, side = 90.0 }.emit();
+
+        vstack(8.0) {
+            Button{ label = "New" }.emit();
+            Button{ label = "Hint" }.emit();
+            Button{ label = "Undo" }.emit();
+        }.emit();
+
+        // Written without `.emit()`: never reaches the list.
+        Label{ text = "dropped" };
+    };
+
+    print("top {}\n", screen.children.len);
+    inner := screen.children.items[1].(VStack);
+    print("cells {}\n", inner.children.len);
+    print("slot {} state {}\n", size_of(View), size_of(BoardViewState));
+
+    root : View = screen;
+    tree := RenderTree{};
+    render_root(*root, Size{ width = 200.0, height = 400.0 }, *tree);
+    print("commands {}\n", command_count(*tree));
+    0
+}
+
+// ** stdout **
+// top 4
+// cells 81
+// slot 64 state 648
+// commands 89
