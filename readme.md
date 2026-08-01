@@ -54,7 +54,7 @@ Options:
 ## Standard library guides
 
 - [Compression, PNG, and ZIP](docs/compression.md)
-- [Compression migration coverage](docs/compression-coverage.md)
+- [Miniz-to-stdlib crosswalk](docs/compression-miniz-crosswalk.md)
 
 Third-party attributions for stdlib-derived code are recorded in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

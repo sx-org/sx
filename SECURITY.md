@@ -19,8 +19,8 @@ commit / release notes unless you prefer otherwise.
 
 `std/http` is a low-level HTTP/1.1 server intended to provide the guarantees
 needed to run a long-lived service without each application rediscovering the
-same failure modes. It is **not** a web framework, and it makes deliberate
-trade-offs you should understand before exposing it.
+same failure modes. It is **not** a web framework, and it makes trade-offs you
+should understand before exposing it.
 
 ### TLS / deployment
 
@@ -35,8 +35,8 @@ running plaintext on the open internet is **not** recommended.
 
 Note on TLS scope: the provider defaults to TLS 1.2+ (preferring 1.3) and
 supports ALPN (`set_alpn`), SNI / multi-cert (`add_sni_cert_files`), and
-client-cert auth (`require_client_cert_files`). An explicit min-version pin is
-not yet implemented (needs a small C shim) — front with a proxy if you must
+client-cert auth (`require_client_cert_files`). There is no explicit
+min-version pin (it needs a small C shim) — front with a proxy if you must
 REQUIRE 1.3.
 
 ### What the server defends against (implemented + tested)
@@ -69,13 +69,13 @@ Request parsing is hardened against the common malformed/malicious inputs
 - **Backpressure** — a full handler pool sheds with 503 rather than growing
   unboundedly; streamed responses are bounded-memory.
 
-### Known limitations (by design, at this stage)
+### Known limitations (by design)
 
 - **No explicit TLS min-version pin.** Native TLS (mbedTLS 1.2/1.3,
   `Config.tls`) supports ALPN, SNI / multi-cert, and client-cert auth, and the
-  default already floors at TLS 1.2 preferring 1.3 — but REQUIRING 1.3 needs a
-  small C shim (the mbedTLS setter is `static inline`) and is not implemented;
-  front with a proxy if you need that pin.
+  default floors at TLS 1.2 preferring 1.3 — but REQUIRING 1.3 needs a small C
+  shim (the mbedTLS setter is `static inline`); front with a proxy if you need
+  that pin.
 - **Inline handler mode has no hard timeout.** With `thread_pool_count == 0` the
   handler runs on the event-loop thread and cannot be preempted — a hung inline
   handler hangs the whole server. The request deadline is exposed as
