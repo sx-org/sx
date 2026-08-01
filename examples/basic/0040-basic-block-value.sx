@@ -25,8 +25,8 @@ sum3 :: (a: i32, b: i32, c: i32) -> i32 {
     t
 }
 
-// The arm `;` is the arm's terminator, from the match grammar rather than the
-// statement one; each arm yields its expression as the match value.
+// Each arm's `;` separates it from the next `case`, and each arm still yields
+// its expression as the match value.
 classify :: (n: i32) -> i32 {
     if n == {
         case 0:  100;
