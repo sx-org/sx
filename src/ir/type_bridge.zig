@@ -269,10 +269,9 @@ fn resolveTypeName(name: []const u8, table: *TypeTable, alias_map: AliasMap, ski
     return type_resolver.TypeResolver.resolveNamed(name, table, alias_map, skip_builtin);
 }
 
-/// Builtin primitive keyword → TypeId. The keyword table now lives in
-/// `type_resolver.zig` (architecture phase A2.1, `TypeResolver.resolvePrimitive`);
-/// re-exported here so existing callers are unaffected while `type_bridge` is
-/// retired. Single source of truth: the table is defined once, there.
+/// Builtin primitive keyword → TypeId. The keyword table lives in
+/// `type_resolver.zig` (`TypeResolver.resolvePrimitive`); re-exported here.
+/// Single source of truth: the table is defined once, there.
 pub const resolveTypePrimitive = type_resolver.TypeResolver.resolvePrimitive;
 
 /// Pack-shaped `Closure(..p)` resolved without bindings: the canonical

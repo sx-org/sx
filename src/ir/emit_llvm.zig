@@ -252,7 +252,7 @@ pub const LLVMEmitter = struct {
     // main file) + a `DIFile` per source file + a `DISubprogram` per
     // emitted function + a `DILocation` per instruction (resolved from
     // `Inst.span`). Lets a captured return-address PC resolve to
-    // file:line:col for E3.3's runtime trace formatting, and makes sx
+    // file:line:col for runtime trace formatting, and makes sx
     // binaries debuggable in lldb/gdb as a bonus.
     di_builder: c.LLVMDIBuilderRef = null,
     di_cu: c.LLVMMetadataRef = null,

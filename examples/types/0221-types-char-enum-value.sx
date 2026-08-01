@@ -3,10 +3,9 @@
 // value, NOT the variant's positional index. Covers plain enums, sized
 // backing (`enum u32`), and `enum flags`.
 //
-// Regression: before the char-enum-value fix, `type_bridge.buildEnumInfo`
-// matched only `int_literal` when extracting explicit values, so a
-// `char_literal` silently fell through to the ordinal fallback (`esc :: '\x1b'`
-// shipped tag 0 instead of 27) with no diagnostic.
+// `type_bridge.buildEnumInfo` extracts explicit values from a `char_literal`
+// as well as an `int_literal`; without that, `esc :: '\x1b'` would fall to the
+// ordinal fallback and ship tag 0 instead of 27 with no diagnostic.
 
 #import "modules/std.sx";
 

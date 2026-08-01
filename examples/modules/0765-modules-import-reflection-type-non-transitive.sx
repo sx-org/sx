@@ -11,9 +11,9 @@
 // `COnly` because b.sx directly imports c.sx (one flat hop there, two from a
 // file that imports b.sx).
 //
-// Regression: before the bare-TYPE gate reached the reflection
-// type-arg and array-literal leaf sites, these 2-flat-hop references leaked
-// through the global `type_alias_map` / `findByName` / `type_bridge` lookup.
+// The bare-TYPE gate reaches the reflection type-arg and array-literal leaf
+// sites, so these 2-flat-hop references do not leak through the global
+// `type_alias_map` / `findByName` / `type_bridge` lookup.
 
 #import "modules/std.sx";
 #import "0765-modules-import-reflection-type-non-transitive/b.sx";

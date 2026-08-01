@@ -1,6 +1,6 @@
 //! The unified sx name/type resolver — the shared author-collection layer.
 //!
-//! A read-only facade over the borrowed Phase A import facts on a
+//! A read-only facade over the borrowed import facts on a
 //! `*ProgramIndex` (`module_decls` / `namespace_edges`) and the existing
 //! `import_graph` / `flat_import_graph` views. It OWNS nothing import-derived;
 //! those maps live in `imports.zig`/`core.zig` and are borrowed here.

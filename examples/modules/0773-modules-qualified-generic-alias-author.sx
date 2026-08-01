@@ -6,11 +6,9 @@
 // aliases over their OWN module's template (sizes 8 and 16) and stay DISTINCT,
 // so the field unique to b's layout (`y`) is reachable only through `BBox`.
 //
-// Regression: before the alias-registration path selected the
-// qualified author, the const-decl alias `.call` branch stripped the head to the
-// bare name and read the global `struct_template_map`, so `ABox` and `BBox` both
-// instantiated the last-wins template (both size 16). This pins the
-// alias-registration sibling of the annotation head sites.
+// The alias-registration path selects the qualified author rather than
+// stripping the head to its bare name — the alias-registration sibling of the
+// annotation head sites.
 
 #import "modules/std.sx";
 a :: #import "0773-modules-qualified-generic-alias-author/a.sx";

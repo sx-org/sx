@@ -57,8 +57,8 @@ pub fn tracesEnabled(self: *Lowering) bool {
 }
 
 /// Emit a trace-buffer push of `frame` (an opaque u64) at a failure site.
-/// No-op when traces are disabled (release). `frame` is a placeholder until
-/// DWARF supplies real return-address PCs and E3.3 resolves them.
+/// No-op when traces are disabled (release). `frame` is a placeholder; real
+/// return-address PCs require DWARF.
 pub fn emitTracePush(self: *Lowering, frame: Ref) void {
     if (!self.tracesEnabled()) return;
     const fids = self.getTraceFids();

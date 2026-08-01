@@ -2021,7 +2021,7 @@ pub const Lowering = struct {
         return .{ .l = self };
     }
 
-    /// A `Resolver` facade over the borrowed Phase A import facts. Cheap
+    /// A `Resolver` facade over the borrowed import facts. Cheap
     /// by-value; `collectVisibleAuthors`'s `AuthorSet.flat` slice is backed by
     /// `self.alloc` and owned by the caller (`selectCallableAuthor` frees it).
     pub fn resolver(self: *Lowering) resolver_mod.Resolver {

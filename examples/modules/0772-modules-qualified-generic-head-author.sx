@@ -11,10 +11,9 @@
 // "qualify the reference"; that advice only works if `ns.Box(..)` actually
 // selects ns's author.
 //
-// Regression: before qualified generic-head selection, the head was
-// stripped to the bare name and read from the global `struct_template_map`, so
-// `a.Box(i64)` and `b.Box(i64)` both instantiated the last-wins template (both
-// size 16) — the namespace qualifier was ignored.
+// The qualifier is honoured: the head is NOT stripped to its bare name and
+// read from the global `struct_template_map`, which would make `a.Box(i64)`
+// and `b.Box(i64)` share the last-wins template.
 
 #import "modules/std.sx";
 a :: #import "0772-modules-qualified-generic-head-author/a.sx";

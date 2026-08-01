@@ -10,9 +10,8 @@
 // b.sx directly imports c.sx (the head is one flat hop away there, two from a
 // file that imports b.sx).
 //
-// Regression: before the bare-head gate went single-hop this 2-flat-
-// hop generic head was wrongly visible — the head lookup hit the global
-// `struct_template_map` before any source-aware visibility check.
+// The bare-head gate is single-hop: the head lookup consults source-aware
+// visibility, not the global `struct_template_map`.
 
 #import "modules/std.sx";
 #import "0764-modules-import-generic-head-non-transitive/b.sx";
