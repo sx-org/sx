@@ -444,8 +444,10 @@ form's own list — a runtime class's members, the entries of `#import c { … }
 and the one-line `match` arm bodies (`case .x: break;`,
 `case .x: (e) => expr;`) each keep the `;` their grammar asks for. An arm
 written as a statement list is not one of those: its statements end at a line
-break like any others, and the `;` the last of them still needs before the next
-`case` or `else` is the suppression list below at work, not the match grammar.
+break like any others. `case` and `else` are on the suppression list below, so
+the break before one implies no terminator — an ordinary expression or
+declaration statement written there carries its `;`, while a statement that IS
+a block already ended at its own `}` and takes nothing.
 
 ```sx
 if c == {
@@ -453,7 +455,11 @@ if c == {
         setup()
         report();     // `case` cannot start a statement — this `;` is required
     case .b:
-        done()        // the `}` ends it
+        if ready {
+            report()
+        }             // a statement that is a block ended at its `}`
+    case .c:
+        done()        // the match's `}` ends it
 }
 ```
 
@@ -6635,7 +6641,11 @@ field_init      = IDENT '=' expr | IDENT | '..' expr | expr
 if_expr         = 'if' expr 'then' expr ('else' expr)?
                 | 'if' expr block ('else' block)?
 match_expr      = 'if' expr '==' '{' case_arm* else_arm? '}'
-case_arm        = 'case' pattern ':' (stmt* | 'break' ';')
+case_arm        = 'case' pattern ':' arm_capture? arm_body
+arm_capture     = '(' IDENT ')'         // payload binding — a LONE identifier
+arm_body        = 'break' ';'           // one-line form: keeps the match grammar's `;`
+                | '=>' expr ';'         // one-line form: keeps the match grammar's `;`
+                | stmt*                 // statement list: statements end as they do anywhere
 else_arm        = 'else' ':' stmt*
 pattern         = '.' IDENT | INT | BOOL | IDENT
 lambda          = '(' params? ')' ('->' type)? '=>' expr
