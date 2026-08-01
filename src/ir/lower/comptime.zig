@@ -1405,70 +1405,81 @@ fn lowerComptimeCallArgsMode(
     self.func_defer_base = self.defer_stack.items.len;
     defer self.func_defer_base = saved_func_defer_base;
 
-    // Lower the body under the demand its DECLARED return type carries — the
-    // same one a real function's body gets. Only the exit differs: this sink
-    // stores into the inliner's slot and branches instead of emitting a `ret`.
+    // The body is lowered by the SAME owner a real function's body goes
+    // through, so the demand its declared return type carries, the tail's
+    // destination, return position, failable assembly, named-return synthesis
+    // and the missing-value rule are all decided in one place. Only the EXIT
+    // differs, and the target installed here is what every exit reads.
+    //
+    // Installed unconditionally: no syntactic property of the body can decide
+    // whether it needs one. An `#insert`'s text is parsed during lowering, so
+    // a `return` it generates is invisible to any pre-scan of the AST — and a
+    // body with no exit context of its own emits the CALLER's `ret`.
     const ret_ty = self.resolveReturnType(fd);
-    const demand = self.bodyDemand(ret_ty);
-    if (demand == .none) {
-        // Nothing to hand back to the call site. A `-> noreturn` body has
-        // already closed the block it was inlined into, so there is no live
-        // position left to put the placeholder in — emitting one there lands
-        // an instruction after the terminator.
-        self.lowerBlock(fd.body);
-        if (self.currentBlockHasTerminator()) return .none;
-        return self.builder.constInt(0, .void);
-    }
-    // A `return X;` in the body — and a PURE-failable body's implicit error
-    // tail, which is one too — needs the inline-return slot AND a dedicated
-    // "return-done" basic block: each exit stores to the slot and branches
-    // to ret_done, and the load after the body picks the value up. A body
-    // with neither skips the slot+block and hands its tail value straight
-    // back — the common `format`/`#insert`-style path.
-    if (fnBodyHasReturn(fd.body) or demand == .error_only) {
-        const ret_slot = self.builder.alloca(ret_ty);
-        const ret_done_bb = self.freshBlock("ct.ret_done");
-        const saved_iri = self.inline_return_target;
-        self.inline_return_target = .{ .slot = ret_slot, .ret_ty = ret_ty, .done_bb = ret_done_bb };
-        defer self.inline_return_target = saved_iri;
+    const inline_exit = classifyInlineExit(self, ret_ty);
+    const saved_exit = self.inline_return_target;
+    self.inline_return_target = inline_exit;
+    defer self.inline_return_target = saved_exit;
 
-        switch (self.lowerDemandedBody(fd.body, demand)) {
-            // The error tail already stored the coerced tag and branched.
-            .error_channel, .terminated => {},
-            .value => |val| {
-                if (!self.currentBlockHasTerminator()) {
-                    const v_ty = self.builder.getRefType(val);
-                    // Issue 0191: same returnable check as the regular body
-                    // path — no bit-weld into the inline return slot.
-                    const coerced = if (v_ty != ret_ty and self.checkReturnable(val, v_ty, ret_ty, fd.body.span))
-                        self.coerceToType(val, v_ty, ret_ty)
-                    else
-                        val;
-                    self.builder.store(ret_slot, coerced);
-                    self.builder.br(ret_done_bb, &.{});
-                }
-            },
-            .no_value, .poisoned => {
-                if (!self.currentBlockHasTerminator()) {
-                    // A pure-failable body that fell through SUCCEEDED: the
-                    // error slot carries 0, exactly as a real function's
-                    // success exit does. Any other body reaching here ends
-                    // in a void statement and leaves the slot alone.
-                    if (demand == .error_only) self.builder.store(ret_slot, self.builder.constInt(0, ret_ty));
-                    self.builder.br(ret_done_bb, &.{});
-                }
-            },
-        }
+    // `block_terminated` says the enclosing FUNCTION's control flow ended. The
+    // enclosing function here is the callee, and control resumes in the caller
+    // at the join — a `return` inside the inlined body must not make the
+    // caller's own trailing statements look dead. Genuine divergence still
+    // stops the caller: its block carries the terminator.
+    const saved_block_terminated = self.block_terminated;
+    self.block_terminated = false;
+    defer self.block_terminated = saved_block_terminated;
 
-        self.builder.switchToBlock(ret_done_bb);
-        return self.builder.load(ret_slot, ret_ty);
+    // The callee's named-return slots are ITS body's to synthesize, and an
+    // enclosing `-> (x: A, y: B)` caller's are not. They live in a scope of
+    // their own so binding them cannot overwrite a caller local of the same
+    // name; `lowerDemandedBody` opens the body's own block scope beneath it.
+    const saved_nrn = self.named_return_names;
+    const saved_nrd = self.named_return_defaults;
+    self.named_return_names = null;
+    self.named_return_defaults = null;
+    defer {
+        self.named_return_names = saved_nrn;
+        self.named_return_defaults = saved_nrd;
     }
-    switch (self.lowerDemandedBody(fd.body, demand)) {
-        .value => |val| return val,
-        else => {},
-    }
+    var named_return_scope = Scope.init(self.alloc, self.scope);
+    defer named_return_scope.deinit();
+    const saved_body_scope = self.scope;
+    self.scope = &named_return_scope;
+    defer self.scope = saved_body_scope;
+    self.bindNamedReturnSlots(fd, ret_ty, &named_return_scope);
 
-    return self.builder.constInt(0, .void);
+    self.lowerFunctionBody(fd.body, ret_ty);
+
+    // The call's value is formed at the destination and nowhere else.
+    switch (inline_exit.dest) {
+        .value => |v| {
+            self.builder.switchToBlock(v.join);
+            return self.builder.load(v.slot, ret_ty);
+        },
+        .unit => |join| {
+            self.builder.switchToBlock(join);
+            return self.builder.constInt(0, .void);
+        },
+        .poison => |join| {
+            self.builder.switchToBlock(join);
+            return self.builder.constUndef(.unresolved);
+        },
+        // The body closed the position it was inlined into. There is no live
+        // place left to hold a result, and nothing that could read one.
+        .diverges => return .none,
+    }
+}
+
+/// Where an inlined callee's body exits to, read off its resolved return type.
+/// The slot and the join are materialized HERE — at the call position, before
+/// any of the body's control flow exists — so every exit finds them live.
+fn classifyInlineExit(self: *Lowering, ret_ty: TypeId) Lowering.InlineExit {
+    if (ret_ty == .noreturn) return .{ .ret_ty = ret_ty, .dest = .diverges };
+    if (ret_ty == .void) return .{ .ret_ty = ret_ty, .dest = .{ .unit = self.freshBlock("ct.ret_done") } };
+    if (ret_ty == .unresolved) return .{ .ret_ty = ret_ty, .dest = .{ .poison = self.freshBlock("ct.ret_done") } };
+    const slot = self.builder.alloca(ret_ty);
+    return .{ .ret_ty = ret_ty, .dest = .{ .value = .{ .slot = slot, .join = self.freshBlock("ct.ret_done") } } };
 }
 
 /// Bind VALUE-typed comptime params for an inlined comptime call. For each
@@ -1667,35 +1678,6 @@ pub fn enumHasVariant(self: *Lowering, variants: []const types.StringId, variant
         if (v == name_id) return true;
     }
     return false;
-}
-
-/// True if `node` (a fn body) contains any top-level `return` statement.
-/// Used by inline-comptime lowering to decide whether to allocate a
-/// result slot — pure tail-expression bodies skip the slot. Walks past
-/// `if`/`while`/`for`/`match` arms (early-return inside a conditional
-/// counts) but stops at nested fn/lambda bodies (those have their own
-/// return contexts).
-pub fn fnBodyHasReturn(node: *const Node) bool {
-    return switch (node.data) {
-        .return_stmt => true,
-        .block => |b| blk: {
-            for (b.stmts) |s| if (fnBodyHasReturn(s)) break :blk true;
-            break :blk false;
-        },
-        .if_expr => |ie| blk: {
-            if (fnBodyHasReturn(ie.then_branch)) break :blk true;
-            if (ie.else_branch) |eb| if (fnBodyHasReturn(eb)) break :blk true;
-            break :blk false;
-        },
-        .while_expr => |we| fnBodyHasReturn(we.body),
-        .for_expr => |fe| fnBodyHasReturn(fe.body),
-        .match_expr => |me| blk: {
-            for (me.arms) |arm| if (fnBodyHasReturn(arm.body)) break :blk true;
-            break :blk false;
-        },
-        .defer_stmt => |ds| fnBodyHasReturn(ds.expr),
-        else => false,
-    };
 }
 
 /// Which comptime phase a wrapper body belongs to (§7.9's phase law).

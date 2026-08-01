@@ -831,7 +831,7 @@ pub const Lowering = struct {
     /// `{ return 42; }` truncates the caller's basic block mid-flight
     /// and trips LLVM's "Terminator found in the middle of a basic
     /// block" verifier.
-    inline_return_target: ?InlineReturnInfo = null,
+    inline_return_target: ?InlineExit = null,
     /// Active pack-arg-node bindings during a comptime call's body lowering.
     /// Maps the pack-param name (e.g. `args`) to the slice of call-site
     /// argument AST nodes. `lowerIndexExpr` (and `inferExprType`) check
@@ -967,7 +967,28 @@ pub const Lowering = struct {
         decl: *const ast.ProtocolDecl,
     };
 
-    const InlineReturnInfo = struct { slot: Ref, ret_ty: TypeId, done_bb: BlockId };
+    /// Where the body of an INLINED comptime callee exits to. Installed for the
+    /// whole body and for nothing else, so "a target exists" is exactly "we are
+    /// inside an inlined body". The destination is decided once, from the
+    /// callee's resolved return type, before any of its CFG is built — a slot
+    /// allocated inside a branch would be executed only when that branch runs
+    /// (the comptime VM allocates when it reaches the instruction), so a
+    /// fallthrough exit would store through a zero address.
+    ///
+    /// The partition is total, and `slot` exists exactly for `value`:
+    ///   - a material value, tuple or error set → `value`
+    ///   - `void`                               → `unit`
+    ///   - a return type that never resolved    → `poison`
+    ///   - `noreturn`                           → `diverges`
+    pub const InlineExit = struct {
+        ret_ty: TypeId,
+        dest: union(enum) {
+            value: struct { slot: Ref, join: BlockId },
+            unit: BlockId,
+            poison: BlockId,
+            diverges,
+        },
+    };
 
     /// ERR E2.4 — where a failable `or` chain's TOTAL failure routes when the
     /// chain is the operand of an absorbing consumer (`catch`). `bb` is a block
@@ -1013,7 +1034,7 @@ pub const Lowering = struct {
         pack_arg_nodes: ?std.StringHashMap([]const *const Node),
         pack_param_count: ?std.StringHashMap(u32),
         pack_arg_types: ?std.StringHashMap([]const TypeId),
-        inline_return_target: ?InlineReturnInfo,
+        inline_return_target: ?InlineExit,
         narrowed: std.StringHashMap(void),
         narrowed_refs: std.AutoHashMap(Ref, void),
         xx_passthrough_refs: std.AutoHashMap(Ref, void),
@@ -1131,7 +1152,7 @@ pub const Lowering = struct {
         continue_target: ?BlockId,
         loop_defer_base: usize,
         build_scopes: std.ArrayList(lower_build_block.Scope),
-        inline_return_target: ?InlineReturnInfo,
+        inline_return_target: ?InlineExit,
 
         pub fn enter(l: *Lowering) NestedBodyGuard {
             const g = NestedBodyGuard{
@@ -3077,7 +3098,6 @@ pub const Lowering = struct {
     pub const lowerInsertExprValue = lower_comptime.lowerInsertExprValue;
     pub const lowerComptimeDeps = lower_comptime.lowerComptimeDeps;
     pub const substituteComptimeNodes = lower_comptime.substituteComptimeNodes;
-    pub const fnBodyHasReturn = lower_comptime.fnBodyHasReturn;
     pub const createComptimeFunction = lower_comptime.createComptimeFunction;
     pub const createComptimeFunctionWithPrelude = lower_comptime.createComptimeFunctionWithPrelude;
     pub const constExprValue = lower_comptime.constExprValue;

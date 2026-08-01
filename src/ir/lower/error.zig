@@ -155,7 +155,7 @@ pub fn tryLowerErrorSetEquality(self: *Lowering, bop: *const ast.BinaryOp) ?Ref 
 /// inlined body's type wins while inlining a comptime call), or null when
 /// there is no enclosing function.
 pub fn effectiveReturnType(self: *Lowering) ?TypeId {
-    if (self.inline_return_target) |iri| return iri.ret_ty;
+    if (self.inline_return_target) |exit| return exit.ret_ty;
     if (self.builder.func) |fid| return self.module.functions.items[@intFromEnum(fid)].ret;
     return null;
 }

@@ -269,7 +269,9 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty: TypeId) voi
     self.target_type = if (ret_ty != .void and ret_ty != .noreturn) ret_ty else null;
     defer self.target_type = saved_target;
 
-    if (self.builder.currentFunc().is_naked) {
+    // `currentFunc` is the CALLER while an inlined body is being lowered, so a
+    // naked caller must not make the inlined callee naked.
+    if (self.inline_return_target == null and self.builder.currentFunc().is_naked) {
         // `abi(.naked)`: the body is a single asm block that emits its own `ret`.
         // There is no sx-level value return — lower the statements and cap the
         // block with `unreachable` (control never falls back into sx). This
@@ -375,12 +377,33 @@ pub const ExitForm = enum { fallthrough, return_like };
 /// the finished exit goes — a real `ret`, or the inlined body's slot and join.
 /// `value` is null when the exit carries nothing to hand back.
 pub fn emitBodyExit(self: *Lowering, value: ?Ref, ret_ty: TypeId, form: ExitForm) void {
-    if (self.inline_return_target) |iri| {
-        if (value) |ref| self.builder.store(iri.slot, ref);
-        self.builder.br(iri.done_bb, &.{});
+    // An exit of a PURE failable (`-> !` / `-> !Named`, whose return type IS
+    // the error set) that carries no error IS its success value: the error slot
+    // must hold 0 ("no error"), whether the body fell off the end or wrote
+    // `return;`. Without it the slot keeps whatever it held and the caller
+    // reads a garbage tag, reporting a phantom unhandled error (issue 0190).
+    const carried: ?Ref = value orelse
+        if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set)
+            self.builder.constInt(0, ret_ty)
+        else
+            null;
+
+    if (self.inline_return_target) |exit| {
+        switch (exit.dest) {
+            .value => |v| {
+                // A `return 5;` in a `-> void` body is accepted, so a value can
+                // arrive with nowhere to go — but never the reverse.
+                if (carried) |ref| self.builder.store(v.slot, ref);
+                self.builder.br(v.join, &.{});
+            },
+            .unit, .poison => |join| self.builder.br(join, &.{}),
+            // A `-> noreturn` body has no continuation to reach: the exit ends
+            // where it stands, exactly as the real body's does.
+            .diverges => self.builder.emitUnreachable(),
+        }
         return;
     }
-    if (value) |ref| {
+    if (carried) |ref| {
         // A value returned from a `-> void` function was evaluated for its
         // effects and has nowhere to go.
         if (ret_ty == .void) self.builder.retVoid() else self.builder.ret(ref, ret_ty);
@@ -395,15 +418,6 @@ pub fn emitBodyExit(self: *Lowering, value: ?Ref, ret_ty: TypeId, form: ExitForm
     }
     if (ret_ty == .void) {
         self.builder.retVoid();
-        return;
-    }
-    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) {
-        // A pure-failable function (`-> !` / `-> !Named`, whose return type IS
-        // the error set) exiting with no error is a SUCCESS exit — the error
-        // slot must carry 0 ("no error"), whether it fell off the end or wrote
-        // `return;`. Without it the slot is undefined and the caller reads a
-        // garbage tag and reports a phantom unhandled error (issue 0190).
-        self.builder.ret(self.builder.constInt(0, ret_ty), ret_ty);
         return;
     }
     // A value-returning function with nothing to return: the written form is
@@ -1354,12 +1368,9 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
                 ref;
             emitBodyExit(self, coerced, exit_ty, .return_like);
         }
-    } else if (!exit_ty.isBuiltin() and self.module.types.get(exit_ty) == .error_set) {
-        // A bare `return;` in a pure failable function (`-> !` / `-> !Named`,
-        // whose return type IS the error set) is the success exit — the
-        // error slot carries 0 ("no error").
-        emitBodyExit(self, self.builder.constInt(0, exit_ty), exit_ty, .return_like);
     } else {
+        // A bare `return;` carries nothing; what that MEANS for the exit — a
+        // void return, or a pure failable's success tag — the emitter owns.
         emitBodyExit(self, null, exit_ty, .return_like);
     }
 }
