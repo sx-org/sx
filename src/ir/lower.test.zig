@@ -3103,3 +3103,248 @@ test "lower: assignment to a function-local '::' const gets the constant message
     }
     try std.testing.expect(found_const);
 }
+
+// ── Inlined-body exit matrix ────────────────────────────────────────────
+
+/// Where the inlined callee's completed exits land, read off its declared
+/// return type. `unit` and `poison` reach a join carrying nothing; `diverges`
+/// has no continuation at all.
+const InlineDest = enum { value, unit, poison, diverges };
+
+const InlineExitCell = struct {
+    name: []const u8,
+    dest: InlineDest,
+    /// The callee has a path that leaves control where it stands.
+    divergent_path: bool,
+    /// The callee's declared return type never resolved, so the cell keeps its
+    /// originating diagnostic.
+    unresolved_ret: bool = false,
+    body: []const u8,
+    call: []const u8,
+};
+
+/// One `-> i32` caller per cell, so every law below is read against a function
+/// whose ONLY real return is the one its own source wrote.
+fn inlineExitSource(alloc: std.mem.Allocator, cell: InlineExitCell) ![:0]const u8 {
+    return std.fmt.allocPrintSentinel(alloc,
+        \\spin :: () -> noreturn {{ spin(); }}
+        \\Bad :: error {{ Nope }}
+        \\{s}
+        \\main :: () -> i32 {{ {s} }}
+        \\
+    , .{ cell.body, cell.call }, 0);
+}
+
+/// The exit protocol, read off the lowered IR of one cell. Every law holds for
+/// every cell; which destination the callee classified to decides only WHICH
+/// shape the join has.
+fn checkInlineExitCell(cell: InlineExitCell) !void {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    const source = try inlineExitSource(alloc, cell);
+    var p = parser.Parser.init(alloc, source);
+    const root = p.parse() catch return error.ParseFailed;
+
+    var module = ir_mod.Module.init(alloc);
+    defer module.deinit();
+    var diagnostics = errors.DiagnosticList.init(alloc, source, "test.sx");
+    var lowering = Lowering.init(&module);
+    lowering.diagnostics = &diagnostics;
+    lowering.lowerRoot(root);
+
+    if (cell.unresolved_ret) {
+        try std.testing.expect(diagnostics.hasErrors());
+    } else {
+        if (diagnostics.hasErrors()) {
+            for (diagnostics.items.items) |d| std.debug.print("{s}: {s}\n", .{ cell.name, d.message });
+            return error.UnexpectedDiagnostic;
+        }
+    }
+
+    // L1/L2 hold for the WHOLE module: a body that emitted into an already
+    // closed block, or branched to a block of another function, is malformed
+    // wherever it landed.
+    for (module.functions.items) |func| {
+        for (func.blocks.items) |blk| {
+            for (blk.insts.items, 0..) |inst, i| {
+                const terminates = switch (inst.op) {
+                    .ret, .ret_void, .br, .cond_br, .switch_br, .@"unreachable" => true,
+                    else => false,
+                };
+                if (terminates) try std.testing.expectEqual(blk.insts.items.len - 1, i);
+                switch (inst.op) {
+                    .br => |b| try std.testing.expect(b.target.index() < func.blocks.items.len),
+                    .cond_br => |b| {
+                        try std.testing.expect(b.then_target.index() < func.blocks.items.len);
+                        try std.testing.expect(b.else_target.index() < func.blocks.items.len);
+                    },
+                    .switch_br => |b| {
+                        try std.testing.expect(b.default.index() < func.blocks.items.len);
+                        for (b.cases) |case| try std.testing.expect(case.target.index() < func.blocks.items.len);
+                    },
+                    else => {},
+                }
+            }
+        }
+    }
+
+    const main_fid = lowering.resolveFuncByName("main") orelse return error.NoMain;
+    const main_fn = &module.functions.items[@intFromEnum(main_fid)];
+
+    // L3 — the caller's ONLY real return is the one its own source wrote. An
+    // inlined body that emitted the caller's `ret` shows up here as a second.
+    var real_rets: usize = 0;
+    var diverged_blocks: usize = 0;
+    for (main_fn.blocks.items) |blk| {
+        for (blk.insts.items) |inst| switch (inst.op) {
+            .ret, .ret_void => real_rets += 1,
+            .@"unreachable" => diverged_blocks += 1,
+            else => {},
+        };
+    }
+    try std.testing.expectEqual(@as(usize, 1), real_rets);
+
+    // L4 — the join exists exactly when the destination has a continuation.
+    var joins = std.ArrayList(u32).empty;
+    for (main_fn.blocks.items, 0..) |blk, i| {
+        if (std.mem.startsWith(u8, module.types.getString(blk.name), "ct.ret_done")) try joins.append(alloc, @intCast(i));
+    }
+    if (cell.dest == .diverges) {
+        try std.testing.expectEqual(@as(usize, 0), joins.items.len);
+        try std.testing.expect(diverged_blocks > 0);
+        return;
+    }
+    try std.testing.expectEqual(@as(usize, 1), joins.items.len);
+
+    // L5 — the join's predecessors. A `value` destination loads its slot there
+    // and every predecessor filled it exactly once; `unit` and `poison` reach
+    // the same join carrying nothing, so neither loads nor stores.
+    const join_idx = joins.items[0];
+    const join = &main_fn.blocks.items[join_idx];
+    var preds: usize = 0;
+    for (main_fn.blocks.items) |blk| {
+        if (blk.insts.items.len == 0) continue;
+        const reaches = switch (blk.insts.items[blk.insts.items.len - 1].op) {
+            .br => |b| b.target.index() == join_idx,
+            .cond_br => |b| b.then_target.index() == join_idx or b.else_target.index() == join_idx,
+            .switch_br => |b| blk: {
+                if (b.default.index() == join_idx) break :blk true;
+                for (b.cases) |case| if (case.target.index() == join_idx) break :blk true;
+                break :blk false;
+            },
+            else => false,
+        };
+        if (reaches) preds += 1;
+    }
+    try std.testing.expect(preds > 0);
+
+    if (cell.dest != .value) {
+        // No slot exists, so the join has nothing to load and no exit filled
+        // one. A poison destination additionally never allocates the type it
+        // could not resolve — it hands back an undef of it.
+        try std.testing.expect(join.insts.items.len > 0);
+        try std.testing.expect(join.insts.items[0].op != .load);
+        if (cell.dest == .poison) {
+            try std.testing.expect(join.insts.items[0].op == .const_undef);
+            try std.testing.expectEqual(TypeId.unresolved, join.insts.items[0].ty);
+        }
+        for (main_fn.blocks.items) |blk| {
+            for (blk.insts.items) |inst| try std.testing.expect(inst.op != .alloca or inst.ty != .unresolved);
+        }
+        if (cell.divergent_path) try std.testing.expect(diverged_blocks > 0);
+        return;
+    }
+
+    try std.testing.expect(join.insts.items.len > 0);
+    const slot = switch (join.insts.items[0].op) {
+        .load => |l| l.operand,
+        else => return error.JoinDoesNotLoadItsSlot,
+    };
+    var storing_blocks: usize = 0;
+    for (main_fn.blocks.items) |blk| {
+        var stores: usize = 0;
+        for (blk.insts.items) |inst| switch (inst.op) {
+            .store => |s| if (s.ptr == slot) {
+                stores += 1;
+            },
+            else => {},
+        };
+        if (stores == 0) continue;
+        storing_blocks += 1;
+        // Exactly one complete value, and it goes straight to the join.
+        try std.testing.expectEqual(@as(usize, 1), stores);
+        const term = blk.insts.items[blk.insts.items.len - 1].op;
+        try std.testing.expect(term == .br and term.br.target.index() == join_idx);
+    }
+    // Every predecessor filled the slot, and nothing else did.
+    try std.testing.expectEqual(preds, storing_blocks);
+
+    if (cell.divergent_path) try std.testing.expect(diverged_blocks > 0);
+}
+
+test "inline exit: every inlined body form exits to its own destination, never the caller's `ret` (S3 matrix)" {
+    // The matrix is (declared return family) × (a completed explicit return) ×
+    // (a path that diverges), plus the subentries whose written return operand
+    // is ITSELF divergent. The callee takes a comptime `$t` so every cell is
+    // inlined into `main`'s instruction stream, which is where the exit had to
+    // stop being the caller's.
+    const cells = [_]InlineExitCell{
+        // `void` — a join with nothing to carry.
+        .{ .name = "V00", .dest = .unit, .divergent_path = false, .call = "c(\"v\", 1); 11", .body = "c :: ($t: string, n: i64) -> void { }" },
+        .{ .name = "V10", .dest = .unit, .divergent_path = false, .call = "c(\"v\", 1); 11", .body = "c :: ($t: string, n: i64) -> void { if n > 0 { return; } }" },
+        .{ .name = "V01", .dest = .unit, .divergent_path = true, .call = "c(\"v\", 1); 11", .body = "c :: ($t: string, n: i64) -> void { if n > 5 { spin(); } }" },
+        .{ .name = "V11", .dest = .unit, .divergent_path = true, .call = "c(\"v\", 1); 11", .body = "c :: ($t: string, n: i64) -> void { if n > 5 { spin(); } if n > 0 { return; } }" },
+        .{ .name = "V11n", .dest = .unit, .divergent_path = true, .call = "c(\"v\", 1); 11", .body = "c :: ($t: string, n: i64) -> void { if n > 5 { return spin(); } if n > 0 { return; } }" },
+        // A `return <value>;` in a `-> void` body is accepted: evaluated for its
+        // effects, and stored nowhere.
+        .{ .name = "Vdisc", .dest = .unit, .divergent_path = false, .call = "c(\"v\", 1); 11", .body = "c :: ($t: string, n: i64) -> void { if n > 0 { return n + 1; } }" },
+
+        // Ordinary value — a slot and a join.
+        .{ .name = "O00", .dest = .value, .divergent_path = false, .call = "xx c(\"o\", 1)", .body = "c :: ($t: string, n: i64) -> i64 { n + 1 }" },
+        .{ .name = "O10", .dest = .value, .divergent_path = false, .call = "xx c(\"o\", 1)", .body = "c :: ($t: string, n: i64) -> i64 { if n > 0 { return n + 1; } 0 }" },
+        .{ .name = "O01", .dest = .value, .divergent_path = true, .call = "xx c(\"o\", 1)", .body = "c :: ($t: string, n: i64) -> i64 { if n > 5 { spin(); } n + 1 }" },
+        .{ .name = "O11", .dest = .value, .divergent_path = true, .call = "xx c(\"o\", 1)", .body = "c :: ($t: string, n: i64) -> i64 { if n > 5 { spin(); } if n > 0 { return n + 1; } 0 }" },
+        .{ .name = "O11n", .dest = .value, .divergent_path = true, .call = "xx c(\"o\", 1)", .body = "c :: ($t: string, n: i64) -> i64 { if n > 5 { return spin(); } if n > 0 { return n + 1; } 0 }" },
+
+        // Value-carrying failable — the success tag is appended before the
+        // destination sees the value, by the trailing-value path and the
+        // explicit-return path alike.
+        .{ .name = "F00", .dest = .value, .divergent_path = false, .call = "xx (c(\"f\", 1) catch { 0 })", .body = "c :: ($t: string, n: i64) -> (i64, !Bad) { n + 1 }" },
+        .{ .name = "F10", .dest = .value, .divergent_path = false, .call = "xx (c(\"f\", 1) catch { 0 })", .body = "c :: ($t: string, n: i64) -> (i64, !Bad) { if n > 0 { return n + 1; } 0 }" },
+        .{ .name = "F01", .dest = .value, .divergent_path = true, .call = "xx (c(\"f\", 1) catch { 0 })", .body = "c :: ($t: string, n: i64) -> (i64, !Bad) { if n > 5 { spin(); } n + 1 }" },
+        .{ .name = "F11", .dest = .value, .divergent_path = true, .call = "xx (c(\"f\", 1) catch { 0 })", .body = "c :: ($t: string, n: i64) -> (i64, !Bad) { if n > 5 { spin(); } if n > 0 { return n + 1; } 0 }" },
+        .{ .name = "F11n", .dest = .value, .divergent_path = true, .call = "xx (c(\"f\", 1) catch { 0 })", .body = "c :: ($t: string, n: i64) -> (i64, !Bad) { if n > 5 { return spin(); } if n > 0 { return n + 1; } 0 }" },
+        .{ .name = "Ferr", .dest = .value, .divergent_path = false, .call = "xx (c(\"f\", 1) catch { 0 })", .body = "c :: ($t: string, n: i64) -> (i64, !Bad) { if n < 0 { raise error.Nope; } n + 1 }" },
+
+        // Pure failable — the exit IS the error set, and a success exit carries
+        // tag 0 whether the body fell off the end or wrote `return;`.
+        .{ .name = "P00", .dest = .value, .divergent_path = false, .call = "c(\"p\", 1) catch { }; 11", .body = "c :: ($t: string, n: i64) -> !Bad { }" },
+        .{ .name = "P10", .dest = .value, .divergent_path = false, .call = "c(\"p\", 1) catch { }; 11", .body = "c :: ($t: string, n: i64) -> !Bad { if n > 0 { return; } }" },
+        .{ .name = "P01", .dest = .value, .divergent_path = true, .call = "c(\"p\", 1) catch { }; 11", .body = "c :: ($t: string, n: i64) -> !Bad { if n > 5 { spin(); } }" },
+        .{ .name = "P11", .dest = .value, .divergent_path = true, .call = "c(\"p\", 1) catch { }; 11", .body = "c :: ($t: string, n: i64) -> !Bad { if n > 5 { spin(); } if n > 0 { return; } }" },
+        .{ .name = "P11n", .dest = .value, .divergent_path = true, .call = "c(\"p\", 1) catch { }; 11", .body = "c :: ($t: string, n: i64) -> !Bad { if n > 5 { return spin(); } if n > 0 { return; } }" },
+        .{ .name = "Perr", .dest = .value, .divergent_path = false, .call = "c(\"p\", 1) catch { }; 11", .body = "c :: ($t: string, n: i64) -> !Bad { if n < 0 { raise error.Nope; } }" },
+
+        // `noreturn` — no slot, no join, and no placeholder to hold a result.
+        .{ .name = "N00", .dest = .diverges, .divergent_path = true, .call = "if 1 > 2 { c(\"n\"); } 11", .body = "c :: ($t: string) -> noreturn { }" },
+        .{ .name = "Nfall", .dest = .diverges, .divergent_path = true, .call = "if 1 > 2 { c(\"n\"); } 11", .body = "c :: ($t: string) -> noreturn { spin(); }" },
+        .{ .name = "Nret", .dest = .diverges, .divergent_path = true, .call = "if 1 > 2 { c(\"n\", 1); } 11", .body = "c :: ($t: string, n: i64) -> noreturn { if n > 0 { return; } spin(); }" },
+        .{ .name = "NretD", .dest = .diverges, .divergent_path = true, .call = "if 1 > 2 { c(\"n\", 1); } 11", .body = "c :: ($t: string, n: i64) -> noreturn { if n > 0 { return spin(); } spin(); }" },
+
+        // A return type that never resolved: the originating diagnostic stands,
+        // and no unresolved slot is ever allocated or loaded.
+        .{ .name = "U00", .dest = .poison, .divergent_path = false, .unresolved_ret = true, .call = "x := c(\"u\", 1); 11", .body = "Poison :: Tuple(..Ts);\nc :: ($t: string, n: i64) -> Poison { n }" },
+        .{ .name = "U10", .dest = .poison, .divergent_path = false, .unresolved_ret = true, .call = "x := c(\"u\", 1); 11", .body = "Poison :: Tuple(..Ts);\nc :: ($t: string, n: i64) -> Poison { if n > 0 { return n; } n }" },
+        .{ .name = "U01", .dest = .poison, .divergent_path = true, .unresolved_ret = true, .call = "x := c(\"u\", 1); 11", .body = "Poison :: Tuple(..Ts);\nc :: ($t: string, n: i64) -> Poison { if n > 5 { spin(); } n }" },
+        .{ .name = "U11", .dest = .poison, .divergent_path = true, .unresolved_ret = true, .call = "x := c(\"u\", 1); 11", .body = "Poison :: Tuple(..Ts);\nc :: ($t: string, n: i64) -> Poison { if n > 5 { spin(); } if n > 0 { return n; } n }" },
+    };
+
+    for (cells) |cell| {
+        checkInlineExitCell(cell) catch |err| {
+            std.debug.print("inline exit cell '{s}' failed: {s}\n", .{ cell.name, @errorName(err) });
+            return err;
+        };
+    }
+}
