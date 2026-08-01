@@ -1,4 +1,4 @@
-// A dot on a NAME is not a receiver (fluent spec §5.2).
+// A dot on a NAME is not a receiver.
 //
 // A ufcs function whose first parameter is destination-first takes its receiver
 // unevaluated, because the receiver IS that first argument. A qualified spelling

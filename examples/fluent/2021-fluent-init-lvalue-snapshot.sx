@@ -1,4 +1,4 @@
-// `@Init(T)` formed from an lvalue is a SNAPSHOT, never a borrow (spec §5.3).
+// `@Init(T)` formed from an lvalue is a SNAPSHOT, never a borrow.
 //
 // `store(a)` writes a value copy of `a` into the destination. `a` stays valid
 // and independent afterwards: mutating either side leaves the other alone.

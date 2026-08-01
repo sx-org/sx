@@ -1,5 +1,4 @@
-// Publishing into a block that intercepts at an OPEN SET (fluent spec §6.1/§6.3
-// rule 2).
+// Publishing into a block that intercepts at an OPEN SET.
 //
 // A set carries its member inside the slot, so a member statement type-checked at
 // the expected `P` IS a complete `P` value — the same allocator-free formation the

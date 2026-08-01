@@ -1,4 +1,4 @@
-// `@Init(T)` timing: the call is destination-first (spec §5.2).
+// `@Init(T)` timing: the call is destination-first.
 //
 // The required order is
 //     evaluate ordinary arguments

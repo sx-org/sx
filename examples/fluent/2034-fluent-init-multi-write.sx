@@ -1,5 +1,5 @@
 // `write` may run zero, one, or many times, and each run RE-EVALUATES the
-// expression (fluent spec §5.3).
+// expression.
 //
 // An initializer is a recipe, not a snapshot: formation captures the expression
 // without evaluating it, so every `write` executes it again — side effects

@@ -1,10 +1,8 @@
-// A build block written in one module and replayed in another (fluent spec §7,
-// §9).
+// A build block written in one module and replayed in another.
 //
 // The collector lives in its own module and the block is written here. Each
 // vocabulary is asked of the file that WROTE it: the body names types this file
 // declares, and a block does not inherit the collector's namespace.
-// Expected: exit 0.
 #import "modules/std.sx";
 #import "2056-fluent-buildblock-cross-module/collect.sx";
 
