@@ -256,7 +256,7 @@ swap_context :: (from: *Fiber, to: *Fiber) callconv(.naked) {
 }
 ```
 `callconv(.naked)` ≠ `callconv(.c)`: **no prologue/epilogue/frame** — required
-because a context switch deliberately makes SP-in ≠ SP-out (a `.c` epilogue would
+because a context switch changes SP between entry and exit (a `.c` epilogue would
 restore from the wrong stack). Body is a single `asm` block; you emit your own
 `ret`. Args arrive in ABI registers, read directly from asm.
 

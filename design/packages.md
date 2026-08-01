@@ -830,7 +830,7 @@ files). That is why root-file mode must not aggregate the input file's siblings.
 
 | Area | Current anchor | Migration consequence |
 |---|---|---|
-| AST | `src/ast.zig` (`Root`, `ImportDecl`, `NamespaceDecl`, `ABI`) | Add package declaration/identity and intrinsic marker; eventually remove namespace nodes and `.compiler`. |
+| AST | `src/ast.zig` (`Root`, `ImportDecl`, `NamespaceDecl`, `ABI`) | Add package declaration/identity and intrinsic marker; remove namespace nodes and `.compiler`. |
 | Parser | `src/parser.zig` import/builtin/function postfix parsing | Parse `package`, collection imports, intrinsic declarations, compatibility diagnostics. |
 | Import loader | `src/imports.zig::resolveImports` / `resolveDirectoryImport` | Replace recursive flat merging with package loading and explicit dependency edges. |
 | Path discovery | `src/imports.zig::resolveImportPath` / `discoverStdlibPaths` | Add collection roots and directory-package canonicalization. |
