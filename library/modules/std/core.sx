@@ -178,9 +178,9 @@ Allocator :: protocol inline #identity {
 // (`async` / `await` / `cancel` / `timeout`) is a generic free-fn on top
 // (std/io.sx), the same way `alloc(T,n)` sits over `alloc_bytes`.
 //
-//   spawn_raw  — submit a task; opaque handle (B1.3 fiber bootstrap).
+//   spawn_raw  — submit a task; opaque handle (fiber bootstrap).
 //   suspend_raw— suspend current fiber; `!` so cancel can raise out.
-//   ready      — wake a parked fiber (B1.4/B1.5).
+//   ready      — wake a parked fiber.
 //   poll       — drive one step; blocking impl returns 0.
 //   now_ms     — clock hook (a PROTOCOL method so the deterministic-sim
 //                Io [B1.4] can return a fake clock — the B1.4 keystone).

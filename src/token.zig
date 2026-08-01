@@ -148,8 +148,8 @@ pub const Tag = enum {
     hash_extends, // `#extends Alias;` inside a runtime-class body
     hash_implements, // `#implements Alias;` inside a runtime-class body
     hash_jni_method_descriptor, // `#jni_method_descriptor("(Sig)Ret")` per-method JNI descriptor override
-    hash_selector, // `#selector("explicit:string")` per-method Obj-C selector override (Phase 3.2)
-    hash_property, // `#property[(modifier, ...)]` field directive — synthesizes getter/setter dispatch (M2.2)
+    hash_selector, // `#selector("explicit:string")` per-method Obj-C selector override
+    hash_property, // `#property[(modifier, ...)]` field directive — synthesizes getter/setter dispatch
     hash_get, // `name :: (self) -> R #get => expr;` — a no-paren property accessor method (read via field syntax)
     hash_set, // `name :: (self, value) #set { ... }` — the write counterpart of #get (`obj.name = rhs` dispatches here)
     hash_jni_env, // `#jni_env(env) { body }` block-form env-scoping intrinsic

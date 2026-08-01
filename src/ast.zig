@@ -306,7 +306,7 @@ pub const AsmOperand = struct {
 
     pub const Role = enum {
         out_value, // `-> Type`     value output; N of these → a tuple result
-        out_place, // `-> @place`   write-through to storage (Phase 2)
+        out_place, // `-> @place`   write-through to storage
         input, // `= expr`
     };
 };
@@ -1109,7 +1109,7 @@ pub const RuntimeMethodDecl = struct {
     return_type: ?*Node, // null = void
     is_static: bool = false, // true for `static name :: ...`
     jni_descriptor_override: ?[]const u8 = null, // `#jni_method_descriptor("(Sig)Ret")` — JNI runtime only
-    selector_override: ?[]const u8 = null, // `#selector("explicit:string")` — Obj-C runtime only (Phase 3.2)
+    selector_override: ?[]const u8 = null, // `#selector("explicit:string")` — Obj-C runtime only
     body: ?*Node = null, // sx-side implementation (defined-class only). null = `;`-terminated decl referencing inherited / external method.
 };
 

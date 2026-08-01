@@ -136,7 +136,7 @@ pub const Module = struct {
         sel: []const u8, // mangled Obj-C selector (`add:and:`)
         encoding: []const u8, // Apple-runtime type encoding (`v@:ii`)
         imp_name: []const u8, // C-ABI trampoline symbol (`__Cls_method_imp`)
-        is_class: bool = false, // true ⇒ register on the metaclass (M2.1 class methods)
+        is_class: bool = false, // true ⇒ register on the metaclass (class methods)
     };
 
     pub fn init(alloc: Allocator) Module {

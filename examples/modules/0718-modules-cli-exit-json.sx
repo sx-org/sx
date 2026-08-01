@@ -1,4 +1,4 @@
-// std.cli EXIT-CODE + `--json` contract (F3.3 — FOUNDATION MILESTONE CLOSE).
+// std.cli EXIT-CODE + `--json` contract.
 //
 // The minimal contract `dist` (and any sx CLI front-end) relies on:
 //

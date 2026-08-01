@@ -1,7 +1,7 @@
 // A `Future` allows ONE awaiter — a second concurrent `await` on the same pending
 // future would overwrite the single `park` slot, and completion would wake only
-// the second, stranding the first forever. Regression (B1.4a review, P1-c): the
-// guard aborts loudly instead of silently deadlocking. It runs over the
+// the second, stranding the first forever. The guard aborts loudly instead of
+// silently deadlocking. It runs over the
 // unified `context.io` async layer.
 //
 //

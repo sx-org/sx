@@ -82,7 +82,7 @@ fn typeContainsUnresolved(table: *const types.TypeTable, ty: TypeId) bool {
 /// IR EMISSION stays in `Lowering` for the later A4.2 increment — registration
 /// calls `self.l.declareFunction` (the emission primitive) but the thunk/value
 /// builders (`createProtocolThunk` / `buildProtocolValue` / `tryUserConversion`)
-/// are NOT moved here.
+/// do NOT live here.
 pub const ProtocolResolver = struct {
     l: *Lowering,
 
@@ -955,7 +955,7 @@ pub fn paramImplExists(
 
 /// Which KIND of parameterized impl answers, in the specificity order. Callers
 /// that can only consume one kind (a build sink needs a substituted method body,
-/// which a blanket impl does not yet have) branch on this instead of re-deriving
+/// which a blanket impl does not have) branch on this instead of re-deriving
 /// the lookup.
 pub const ParamImplKind = enum { none, concrete, blanket };
 

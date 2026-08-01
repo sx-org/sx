@@ -7,8 +7,8 @@
 // unsupported return type silently became `undef` and showed
 // up as garbage arguments downstream.
 //
-// Here we declare a JNI method returning `i8` (jbyte, not yet
-// wired into the call-method switch). The compile must fail
+// Here we declare a JNI method returning `i8` (jbyte, which the
+// call-method switch does not carry). The compile must fail
 // with a clear message naming the method + return type.
 
 #import "modules/std.sx";

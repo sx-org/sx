@@ -358,7 +358,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
 /// and have a SINGLE-slot return: void (`()` / `-> ()` / `-> void`), an
 /// integer (POSIX exit code, truncated to u8), or `-> !` / `-> !Named` (the
 /// error tag rides the single return register). The multi-slot
-/// `-> (T, !)` tuple return is NOT yet supported — the JIT calls main as
+/// `-> (T, !)` tuple return is NOT supported — the JIT calls main as
 /// `() -> i32`, so a 2-slot `{value, error}` return ABI-mismatches and
 /// segfaults; that shape lands with the E4.2 entry-point wrapper. Any other
 /// shape (`-> string`, `-> f64`, a non-failable tuple, …) is a clean

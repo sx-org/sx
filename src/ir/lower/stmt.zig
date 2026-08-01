@@ -2649,10 +2649,8 @@ const FieldLvalue = struct { ptr: Ref, ty: TypeId };
 /// NOTE: the READ path (`lowerFieldAccess`, expr.zig) and the TYPE-INFER path
 /// (`ExprTyper.inferType`, expr_typer.zig) still carry their OWN parallel field
 /// matchers (emitting `union_get`/`enum_payload`/`struct_get` value reads, and
-/// returning a bare `TypeId`, respectively). They are not yet routed through
-/// here, so a new aggregate shape must currently be taught to all three. Folding
-/// read + infer onto this resolver (switching the descriptor to value-read ops /
-/// `.valueType()`) would make it the genuine compiler-wide single matcher.
+/// returning a bare `TypeId`, respectively). They do not route through here,
+/// so a new aggregate shape must be taught to all three.
 const FieldResolution = union(enum) {
     /// Direct union/tagged-union member: union_gep(index) into the aggregate.
     union_direct: struct { index: u32, ty: TypeId },

@@ -4224,7 +4224,7 @@ pub fn lowerDefaultArg(self: *Lowering, fd: *const ast.FnDecl, idx: usize, call_
 
 /// Reject a direct call whose argument count cannot bind to the callee's
 /// declared parameter list. `supplied` counts the args as they bind to
-/// params — receiver included for dot-dispatch, defaults not yet
+/// params — receiver included for dot-dispatch, defaults not
 /// appended. Returns true when a diagnostic was emitted (the call must
 /// not lower). Pack / comptime / generic / `#compiler` / `intrinsic`
 /// callees bind args through their own dispatch and are exempt.

@@ -208,7 +208,7 @@ test "resolveAstType: bare `!` resolves to a shared inferred placeholder set" {
     try std.testing.expect(table.get(ia) == .error_set);
     try std.testing.expectEqualStrings("!", table.getString(table.get(ia).error_set.name));
     try std.testing.expectEqual(@as(usize, 0), table.get(ia).error_set.tags.len); // empty until E1.4 SCC
-    try std.testing.expectEqual(ia, ib); // all bare `!` share the placeholder for now
+    try std.testing.expectEqual(ia, ib); // all bare `!` share the placeholder
 }
 
 test "resolveAstType: `(i32, !Named)` result list is a tuple ending in the error set" {

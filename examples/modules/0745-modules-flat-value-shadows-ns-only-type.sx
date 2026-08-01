@@ -1,4 +1,4 @@
-// Type-author-aware bare-TYPE visibility gate (Phase E1, R1). `flatval.sx` is
+// Type-author-aware bare-TYPE visibility gate. `flatval.sx` is
 // flat-imported and authors a VALUE/FUNCTION `Secret`; `nstype.sx` is namespaced
 // (`nst :: #import`) and authors a TYPE `Secret`. A bare `Secret` in a type
 // position must NOT resolve: the only flat-visible `Secret` author is a FUNCTION,

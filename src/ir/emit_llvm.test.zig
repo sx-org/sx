@@ -104,8 +104,8 @@ test "emit: add(a, b) returns a + b" {
 
     // Parameters are refs 0 and 1 — but in our IR they're passed as
     // arguments to the interpreter. For the LLVM emitter, we need to
-    // load them from LLVM function params. For now, use constInt as
-    // placeholders since we haven't wired up param→ref mapping yet.
+    // load them from LLVM function params. constInt stands in as a
+    // placeholder — this test does not exercise param→ref mapping.
     //
     // Actually, looking at the IR design: the Builder's inst_counter starts
     // at 0, and params are accessed differently. The lowering pass emits

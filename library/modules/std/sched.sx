@@ -348,7 +348,7 @@ Scheduler :: struct {
     //
     // `want_read` is the readiness direction; only read-readiness is wired for
     // now (a write-readiness EVFILT_WRITE path would mirror this exactly). A
-    // false `want_read` would be a write-wait — not yet implemented, so bail
+    // false `want_read` would be a write-wait — unimplemented, so bail
     // loudly rather than silently arming a read filter (silent-wrong-arm rule).
     //
     // MUST be called from inside a fiber (there must be a `current` to park); a

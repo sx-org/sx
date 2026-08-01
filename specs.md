@@ -3645,7 +3645,7 @@ The `::` operator creates an immutable binding. The value is evaluated at
 compile time when possible.
 
 `::` is the one and only constant spelling in sx. `const` is not a keyword
-and never will be — it is an ordinary identifier.
+and is not reserved — it is an ordinary identifier.
 
 Examples:
 ```sx

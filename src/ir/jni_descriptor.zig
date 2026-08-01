@@ -15,7 +15,7 @@
 //   f32           → F   (jfloat)
 //   f64           → D   (jdouble)
 //   []T           → [<elem>
-//   [*]T          → [<elem>   (sx many-pointer treated as array for now)
+//   [*]T          → [<elem>   (sx many-pointer treated as array)
 //   *Self         → L<enclosing-runtime-path>;
 //   *Foo          → L<Foo's runtime path>;   (cross-class — step 2.9)
 //

@@ -797,7 +797,7 @@ pub const DeclTable = struct {
         }
     }
 
-    /// Debug cross-check (S1.1 acceptance): every `RawDeclRef` the import facts
+    /// Debug cross-check: every `RawDeclRef` the import facts
     /// hold round-trips `RawDeclRef → DeclId → AST node ptr` back to the same
     /// node, with matching name. Asserts; call only under `builtin.mode == .Debug`.
     pub fn verifyRoundTrip(self: *const DeclTable, decls: *const ModuleDecls, ns_edges: *const NamespaceEdges) void {

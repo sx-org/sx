@@ -1,5 +1,5 @@
 // Error return-trace formatting (ERR step E3.3). `library/modules/std/trace.sx`
-// reads the trace buffer (E3.1, populated by E3.2's raise/try push wiring) and
+// reads the trace buffer (populated by the raise/try push wiring) and
 // renders it. `trace.print_current()` writes the trace to stderr; the catch
 // handler sees the full chain because the absorption clear fires at handler
 // EXIT, not entry. Frame locations are placeholders until DWARF (ERR E3.0)

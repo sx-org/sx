@@ -29,7 +29,7 @@ describe :: ($T: Type) -> string {
     return "other";
 }
 
-// Pack-fn collecting per-position types (step 4A.bare path).
+// Pack-fn collecting per-position types (bare path).
 type_list :: (..$args) -> string {
     list := $args;
     s := "[";
