@@ -35,7 +35,7 @@ Request :: struct {
     headers_raw: string = "";   // the raw header block (no request line)
     body: string = "";
     keep_alive: bool = true;
-    // H5: the per-request handler budget in ms (Config.handler_timeout_ms;
+    // The per-request handler budget in ms (Config.handler_timeout_ms;
     // 0 = disabled). In POOL mode this is also enforced from the loop thread
     // (a hard 504 + close on overrun). In INLINE mode it is ADVISORY ONLY —
     // the loop can't preempt the handler — so a cooperative handler should
@@ -130,7 +130,7 @@ Response :: struct {
     // handler response containing either field into a 500 before serialization.
     extra_headers: string = "";
     body: string = "";
-    // S1 streamed/chunked output. When `streamed` is true the server
+    // Streamed/chunked output. When `streamed` is true the server
     // ignores `body` and pulls from `producer` (see StreamProducer).
     streamed: bool = false;
     producer: StreamProducer = null;
@@ -214,7 +214,7 @@ count_header :: (req: *Request, name: string) -> i64 {
     return n;
 }
 
-// ── S2: inbound chunked Transfer-Encoding decode ─────────────────────
+// ── inbound chunked Transfer-Encoding decode ─────────────────────
 //
 // Outcome of one decode attempt over the chunked body bytes sitting in the
 // read buffer after the header terminator. Validation is re-run each

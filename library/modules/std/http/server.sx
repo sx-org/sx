@@ -55,7 +55,7 @@ close_listener :: (lfd: i32, unix_path: string) {
     if unix_path.len > 0 { unlink_path(unix_path); }
 }
 
-// H4 observability: the kind of event handed to Config.on_event. The hook
+// The kind of event handed to Config.on_event. The hook
 // is the user's escape hatch to LOG/COUNT faults that otherwise close a
 // connection silently — the server forces no format. `detail` carries the
 // HTTP status (PARSE_ERROR), an errno-ish code, or 0 (see each call site).
@@ -72,14 +72,14 @@ EventKind :: enum {
                     // detail = the CONSECUTIVE failure count. At
                     // LOOP_FAULT_LIMIT consecutive failures run() gives up
                     // and returns (see run).
-    HANDLER_TIMEOUT;// (H5, pool mode) a CONN_HANDLING request overran
+    HANDLER_TIMEOUT;// (pool mode) a CONN_HANDLING request overran
                     // handler_timeout_ms: the loop sent 504 + closed the
                     // slot; the worker's late completion will be discarded.
-    TLS_HANDSHAKE_FAULT;// (T3) a TLS handshake failed or the peer dropped
+    TLS_HANDSHAKE_FAULT;// a TLS handshake failed or the peer dropped
                     // mid-handshake → the slot is closed; never served plaintext.
 }
 
-// H4 metrics snapshot. All fields are plain i64 counters that ONLY the
+// Metrics snapshot. All fields are plain i64 counters that ONLY the
 // loop thread mutates (see the note on Server's stat fields) — Server.stats
 // copies them out, no lock needed. Cumulative totals except active_conns
 // and pool_queue_depth, which are live gauges.
@@ -108,7 +108,7 @@ Config :: struct {
     // demand toward this limit (a declared Content-Length sizes it in
     // one step); a grown buffer is retained for slot reuse.
     read_buf_cap: i64 = 1048576;
-    // S2 — MAXIMUM decoded request-body size (bytes). Enforced EARLY: a
+    // MAXIMUM decoded request-body size (bytes). Enforced EARLY: a
     // declared Content-Length over this → 413 before any body is buffered;
     // a chunked body whose accumulated decoded length crosses this → 413 as
     // soon as a chunk-size header pushes the running total over (the data
@@ -131,7 +131,7 @@ Config :: struct {
     // (GPA/malloc — never an Arena).
     thread_pool_count: i64 = 0;
     thread_pool_backlog: i64 = 500;  // queued jobs beyond running ones; full = 503 shed
-    // H5 per-request handler deadline (ms; 0 = disabled). Bounds the time a
+    // Per-request handler deadline (ms; 0 = disabled). Bounds the time a
     // request may spend in CONN_HANDLING so one slow/hung handler can't
     // permanently consume capacity. ENFORCEMENT DIFFERS BY MODE:
     //   • POOL MODE (thread_pool_count > 0): the handler runs on a WORKER, so
@@ -169,8 +169,8 @@ Config :: struct {
     // returns. A drain that overruns the deadline force-closes whatever
     // is still in flight.
     shutdown_timeout_ms: i64 = 5000;
-    // H4 observability hook (OPTIONAL — default null = silent, today's
-    // behavior, zero overhead beyond a null check). When non-null it is
+    // Observability hook (OPTIONAL — default null is silent, zero overhead
+    // beyond a null check). When non-null it is
     // called from the LOOP thread at every fault / key lifecycle site that
     // otherwise closes silently: (ctx, kind, slot, detail). `detail` is the
     // HTTP status for PARSE_ERROR, otherwise an errno-ish code or 0. The
@@ -289,7 +289,7 @@ LOOP_FAULT_LIMIT :: 5;
 // buffer only smooths hand-offs, it never changes semantics.
 BODY_CHAN_CAP :: 65536;
 
-// S1: the bounded scratch a streamed/chunked response drains through.
+// The bounded scratch a streamed/chunked response drains through.
 // Each refill pulls at most STREAM_PIECE bytes from the producer, frames
 // them as one chunk, and stages the framing in this buffer — so the
 // server NEVER holds the whole body, only one bounded piece + its framing.
@@ -307,7 +307,7 @@ CONN_HANDLING  :u8: 4;   // request dispatched to the pool: the loop must
                          // not read or serve the slot until the completion
                          // lands (response ordering; the worker itself owns
                          // a COPY of the request bytes — see HandlerJob)
-CONN_TLS_HANDSHAKE :u8: 5;// (T3) negotiating TLS before the first request:
+CONN_TLS_HANDSHAKE :u8: 5;// negotiating TLS before the first request:
                          // readiness drives c.tls.handshake() incrementally
                          // (deadline: request) until Done → CONN_READING
 CONN_LINGER    :u8: 6;   // error response fully sent + SHUT_WR done:
@@ -358,7 +358,7 @@ Conn :: struct {
     // Server.close. Kills the alloc/free pair per inline response.
     wbuf: [*]u8 = null;
     wbuf_cap: i64 = 0;
-    // S1 streamed/chunked output. When `streaming` is set, out_buf is a
+    // Streamed/chunked output. When `streaming` is set, out_buf is a
     // BOUNDED scratch (STREAM_BUF_CAP) that holds the current chunk-framed
     // piece; write_more drains it then refills by pulling the next piece
     // from `producer` (resumable via stream_off). Memory stays bounded
@@ -405,7 +405,7 @@ Conn :: struct {
     // (shutdown write side + drain-and-discard) instead of an abrupt close,
     // so the error bytes survive the kernel's close-with-unread-data RST.
     linger_close: bool = false;
-    // H5: monotonic deadline for a handler running in the pool. Set when the
+    // Monotonic deadline for a handler running in the pool. Set when the
     // slot enters CONN_HANDLING (job submitted); checked by the tick sweep
     // (which otherwise skips CONN_HANDLING for the delivery deadline). 0 =
     // no handler timeout (handler_timeout_ms disabled or inline mode).
@@ -1354,7 +1354,7 @@ serialize_bytes :: (resp: *Response, keep: bool, alloc: Allocator, head_only: bo
     return OutBytes{ buf = buf, len = w + body_len };
 }
 
-// S1: build the HEAD of a chunked (streamed) response — status line,
+// Build the HEAD of a chunked (streamed) response — status line,
 // Transfer-Encoding: chunked, connection mode, extra headers — and NOTHING
 // of the body. The body follows as chunks emitted incrementally by
 // write_more pulling the producer. One allocation from `alloc` (pool
@@ -1368,7 +1368,7 @@ serialize_chunked_head :: (resp: *Response, keep: bool, alloc: Allocator, date: 
     return OutBytes{ buf = buf, len = w };
 }
 
-// S1: lowercase-hex of a non-negative chunk length, no "0x", no leading
+// Lowercase-hex of a non-negative chunk length, no "0x", no leading
 // zeros (RFC 7230 chunk-size). Returns the digit count written into `dst`.
 hex_len_into :: (n: i64, dst: [*]u8) -> i64 {
     if n == 0 { dst[0] = '0'; return 1; }
@@ -1410,7 +1410,7 @@ Server :: struct {
     stop_begun: bool = false;
     lfd_removed: bool = false;   // listener pulled from the loop / closed
 
-    // H4 counters. ALL of these are mutated ONLY from loop-thread code
+    // Counters. ALL of these are mutated ONLY from loop-thread code
     // paths (accept_ready, read_more, respond_error_close, conn_close, the
     // tick timeout-eviction sweep, drain_completions, the 503 backpressure
     // path). No worker thread ever touches them — in pooled mode a request
@@ -2025,7 +2025,7 @@ Server :: struct {
                 if ev.readable or ev.eof or (ev.writable and c.tls_rd_want_write) { self.body_ready(slot); }
                 continue;
             }
-            if c.state == CONN_TLS_HANDSHAKE {          // T3: drive the handshake on either readiness
+            if c.state == CONN_TLS_HANDSHAKE {          // drive the handshake on either readiness
                 if ev.readable or ev.writable or ev.eof { self.drive_handshake(slot); }
                 continue;
             }
@@ -2039,7 +2039,7 @@ Server :: struct {
                 // drains the fd) and may leave the slot in ANY state (close,
                 // recycle, dispatch → CONN_BODY/CONN_HANDLING, linger) —
                 // re-routing the remaining bits against the ORIGINAL state
-                // ladder would misdeliver them (review F3). Stop here: both
+                // ladder would misdeliver them. Stop here: both
                 // backends are level-triggered, so anything unconsumed
                 // (e.g. a writable for a response drain) re-surfaces at the
                 // next wait.
@@ -2136,7 +2136,7 @@ Server :: struct {
             if c.gen != e.gen or c.state == CONN_FREE { continue; }   // recycled
             if e.deadline == c.hq_deadline { c.hq_deadline = 0; }     // its live entry
             rel := self.relevant_deadline(e.slot);
-            if rel == 0 { continue; }   // e.g. CONN_HANDLING with H5 disabled
+            if rel == 0 { continue; }   // e.g. CONN_HANDLING with no handler deadline
             if !event.expired(rel) {
                 // The deadline moved on (keep-alive refresh, 504 window,
                 // state change) — re-arm the hint at the current value.
@@ -2145,7 +2145,7 @@ Server :: struct {
             }
             slot := e.slot;
             st := c.state;
-            // H5 handler-deadline enforcement (pool mode — inline handlers
+            // Handler-deadline enforcement (pool mode — inline handlers
             // run on THIS thread and can't be preempted). The worker is
             // still running (no safe pthread_cancel), so reply 504 and free
             // the slot. conn_close bumps c.gen, so the worker's eventual
@@ -2376,7 +2376,7 @@ Server :: struct {
                 self.conn_close(slot);
                 continue;
             }
-            // TLS (T3): mint a per-connection session and negotiate before the
+            // TLS: mint a per-connection session and negotiate before the
             // first request. accept() returns null on a per-session setup
             // failure → drop the connection (never serve it in the clear). On
             // success the slot enters CONN_TLS_HANDSHAKE and we kick the
@@ -2396,7 +2396,7 @@ Server :: struct {
         }
     }
 
-    // T3: advance a CONN_TLS_HANDSHAKE slot one step. WantRead leaves the slot
+    // Advance a CONN_TLS_HANDSHAKE slot one step. WantRead leaves the slot
     // on the (always-armed) read watch; WantWrite arms the write watch; Done
     // transitions to CONN_READING and drains any app-data mbedTLS already
     // buffered; Closed/Fatal drops the connection. The request deadline (set at
@@ -2469,7 +2469,7 @@ Server :: struct {
             self.loop.del_read(c.fd);
         }
         c.state = CONN_HANDLING;
-        // (review F1): reading just parked for the handler stretch —
+        // Reading just parked for the handler stretch —
         // drop any unresolved cross-direction want + cross-armed watch.
         self.tls_want_drop(slot);
         // hygiene: fiber mode keeps handler_deadline 0 (cooperative —
@@ -2499,7 +2499,7 @@ Server :: struct {
         } else {
             self.loop.del_read(c.fd);
         }
-        // (review F1): reading stops for good on this slot (it idles
+        // Reading stops for good on this slot (it idles
         // for the owed completion) — a live cross-armed write watch would
         // spin the loop until it lands. Drop the wants.
         self.tls_want_drop(slot);
@@ -2817,7 +2817,7 @@ Server :: struct {
         }
     }
 
-    // (review F1/F2): drop BOTH pending cross-direction wants and the
+    // Drop BOTH pending cross-direction wants and the
     // cross-armed write watch. Called wherever the conn LEAVES the reading
     // paths with the want unresolved — dispatch into CONN_HANDLING (reading
     // parks: a level-triggered writable would be swallowed by the ready
@@ -2887,8 +2887,7 @@ Server :: struct {
                 // a level-triggered writable with nothing to act on would
                 // spin the loop; the read watch delivers the retry. (Unless
                 // a blocked TLS READ cross-armed it — that retry still
-                // needs writability, and its routing does real work;
-                // review F4.)
+                // needs writability, and its routing does real work.)
                 c.tls_wr_want_read = true;
                 if c.write_armed and !c.tls_rd_want_write {
                     self.loop.del_write(c.fd);
@@ -3497,7 +3496,7 @@ Server :: struct {
             return false;
         }
 
-        // S2: the effective body-size ceiling. max_body == 0 means "use the
+        // The effective body-size ceiling. max_body == 0 means "use the
         // read-buffer cap" (the raw request, framing included, can never
         // exceed read_buf_cap anyway). Otherwise clamp to read_buf_cap — a
         // configured max_body larger than the buffer is meaningless since the
@@ -3592,7 +3591,7 @@ Server :: struct {
         // handler-timeout sweep's 504 suppresses its body for a HEAD.
         is_head := ascii_ieq(req.method, "head");
 
-        // H5: expose the per-request budget to the handler (advisory in
+        // Expose the per-request budget to the handler (advisory in
         // inline mode, also loop-enforced in pool mode below).
         req.deadline_ms = self.cfg.handler_timeout_ms;
 
@@ -3641,7 +3640,7 @@ Server :: struct {
                 srv = self,
             };
             c.state = CONN_HANDLING;
-            // (review F1): reading parks below — drop any unresolved
+            // Reading parks below — drop any unresolved
             // cross-direction want with its cross-armed watch.
             self.tls_want_drop(slot);
             c.head_req = is_head;
@@ -3653,7 +3652,7 @@ Server :: struct {
                 c.fiber_h = self.cfg.fibers.spawn(xx run_fiber_job, xx job);
                 self.fiber_spawned = true;   // tick re-drives until quiescent (review MED)
             } else {
-                // H5: arm the handler deadline as the slot enters
+                // Arm the handler deadline as the slot enters
                 // CONN_HANDLING. The tick sweep enforces it (504 + close)
                 // if the worker overruns. 0 disables (no timeout). Distinct
                 // from c.deadline (delivery), which the sweep skips while
@@ -3723,7 +3722,7 @@ Server :: struct {
     // Build the response bytes into the slot's out buffer. Does NOT
     // start sending — try_serve_one compacts the read buffer between
     // serialization and the first write (see the ordering note there).
-    // S1: set up a chunked stream on the slot. out_buf becomes ONE bounded
+    // Set up a chunked stream on the slot. out_buf becomes ONE bounded
     // scratch (≥ STREAM_BUF_CAP) that first carries the response head, then
     // is refilled one chunk-framed piece at a time by write_more pulling the
     // producer. Memory stays bounded regardless of total body size.
@@ -3976,7 +3975,7 @@ Server :: struct {
         self.own_alloc.dealloc_bytes(xx batch);
     }
 
-    // S1: refill the streaming scratch (out_buf) with the next chunk —
+    // Refill the streaming scratch (out_buf) with the next chunk —
     // up to STREAM_PIECE body bytes, framed as `<hexlen>\r\n<data>\r\n`.
     // a pool-mode stream (c.ochan != null) TAKES the bytes from the
     // worker-fed channel — nonblocking; an empty-but-running channel
@@ -4177,7 +4176,7 @@ Server :: struct {
     // the force-close path may drop it at any time.
     begin_linger :: (self: *Server, slot: i64) {
         c := *self.conns[slot];
-        // (review F2): linger discards RAW bytes — any pending TLS
+        // Linger discards RAW bytes — any pending TLS
         // want is moot, and a surviving cross-armed write watch would spin
         // against the CONN_LINGER arm (which ignores writable) until the
         // linger deadline.
