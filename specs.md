@@ -6589,10 +6589,12 @@ linkage_tail    = IDENT? STRING?    // `[LIB] ["csym"]`. On a form that may end
 fn_decl         = IDENT '::' '(' params? ')' ('->' ret_type)? block
                 | IDENT '::' block
 ret_type        = type ('!' IDENT?)?    // trailing `!` = failable; channel outside any Tuple
-enum_decl       = IDENT '::' 'enum' '{' (IDENT ';')* '}'
+enum_decl       = IDENT '::' 'enum' '{' (IDENT ';'?)* '}'
 struct_decl     = IDENT '::' 'struct' '{' struct_member* '}'
-struct_member   = field_group | '#using' IDENT ';'
-field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'
+struct_member   = field_group | '#using' IDENT ';'?
+field_group     = IDENT (',' IDENT)* ':' type ('=' expr)? ';'?
+                  // a member list's `;` is an optional separator, not `end`:
+                  // the entry ends where the next one starts, line break or not
 params          = param (',' param)* ','?
 param           = IDENT ':' type ('=' expr)?
 block           = '{' stmt* '}'     // the LAST expr may drop `end`; written or
