@@ -217,13 +217,18 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
     // from the target — so lower it once and dispose by what it ACTUALLY
     // lowered to, never by the prediction.
     self.target_type = ret_ty;
+    const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
     const maybe_val = self.tryLowerAsExpr(tail);
     if (self.currentBlockHasTerminator()) return .terminated;
     const val = maybe_val orelse return .no_value;
     const val_ty = self.builder.getRefType(val);
     if (val_ty == .unresolved) {
+        // Never reinterpreted as a tag. Report it unless lowering the tail
+        // already said why it could not be typed.
         if (self.diagnostics) |d| {
-            d.addFmt(.err, tail.span, "cannot resolve the type of this trailing expression — a pure-failable function returns only an error value, and this tail's type is unknown here", .{});
+            if (d.errorCount() == errs_before) {
+                d.addFmt(.err, tail.span, "cannot resolve the type of this trailing expression — a pure-failable function returns only an error value, and this tail's type is unknown here", .{});
+            }
         }
         return .poisoned;
     }
@@ -1316,6 +1321,11 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
             else
                 ref;
             self.builder.store(iri.slot, coerced);
+        } else if (!iri.ret_ty.isBuiltin() and self.module.types.get(iri.ret_ty) == .error_set) {
+            // A value-less `return;` in a pure-failable inlined body is its
+            // SUCCESS exit, exactly as in a real function: the slot carries the
+            // no-error tag rather than whatever the alloca held.
+            self.builder.store(iri.slot, self.builder.constInt(0, iri.ret_ty));
         }
         // Drain block-scoped defers up to the inlined-body base so
         // they fire on this return path the same as a real fn return.

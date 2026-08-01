@@ -1,0 +1,130 @@
+// A callee with a comptime param is INLINED into its caller, so its body has a
+// second exit sink: the inliner's return slot and done block rather than a real
+// `ret`. The pure-failable demand reads the same there — an undemanded tail is
+// discarded and the call yields the success tag; only an error tail reaches the
+// caller's `catch`.
+//
+// Both inline shapes are covered: a body with no explicit `return` (which used
+// to hand its raw tail value back as the call's error tag, so `catch` fired on
+// success) and a body that has one (whose slot was left undefined when control
+// fell off the end). Defers run before either exit.
+// Expected: exit 0.
+#import "modules/std.sx";
+
+Failed :: error { Nope }
+
+tick :: (label: string) -> i32 {
+    print("tick {}\n", label);
+    42
+}
+
+tick64 :: (label: string) -> i64 {
+    print("tick64 {}\n", label);
+    7
+}
+
+nothing :: (label: string) {
+    print("void {}\n", label);
+}
+
+fails :: () -> !Failed {
+    error.Nope
+}
+
+// ── No explicit `return` in the body ───────────────────────────────────
+
+ct_value :: ($label: string) -> !Failed {
+    tick(label)
+}
+
+ct_wide :: ($label: string) -> !Failed {
+    tick64(label)
+}
+
+ct_void :: ($label: string) -> !Failed {
+    nothing(label)
+}
+
+ct_compound :: ($label: string) -> !Failed {
+    { x := tick(label); }
+}
+
+ct_error :: ($label: string) -> !Failed {
+    print("ct-error {}\n", label);
+    error.Nope
+}
+
+ct_forward :: ($label: string) -> !Failed {
+    print("ct-forward {}\n", label);
+    fails()
+}
+
+ct_defer :: ($label: string) -> !Failed {
+    defer print("ct defer {}\n", label);
+    tick(label)
+}
+
+ct_defer_error :: ($label: string) -> !Failed {
+    defer print("ct defer {}\n", label);
+    fails()
+}
+
+ct_mixed :: ($label: string, b: bool) -> !Failed {
+    defer print("ct mixed defer\n");
+    if b { fails() } else { tick(label) }
+}
+
+// ── With an explicit `return` in the body ──────────────────────────────
+
+ct_ret_value :: ($label: string, n: i32) -> !Failed {
+    if n < 0 { return; }
+    tick(label)
+}
+
+ct_ret_error :: ($label: string, n: i32) -> !Failed {
+    if n < 0 { return; }
+    print("ct-ret-error {}\n", label);
+    error.Nope
+}
+
+ct_ret_early :: ($label: string, n: i32) -> !Failed {
+    if n < 0 {
+        print("early {}\n", label);
+        return;
+    }
+    tick(label)
+}
+
+ct_ret_raise :: ($label: string, n: i32) -> !Failed {
+    if n < 0 {
+        raise error.Nope;
+    }
+    tick(label)
+}
+
+ct_ret_mixed :: ($label: string, b: bool) -> !Failed {
+    if b { return; }
+    if b { fails() } else { tick(label) }
+}
+
+main :: () -> i32 {
+    ct_value("ct-value") catch { print("NOT REACHED ct-value\n"); }
+    ct_wide("ct-wide") catch { print("NOT REACHED ct-wide\n"); }
+    ct_void("ct-void") catch { print("NOT REACHED ct-void\n"); }
+    ct_compound("ct-compound") catch { print("NOT REACHED ct-compound\n"); }
+    ct_defer("ct-defer") catch { print("NOT REACHED ct-defer\n"); }
+    ct_mixed("ct-mixed", false) catch { print("NOT REACHED ct-mixed\n"); }
+    ct_error("a") catch { print("caught ct-error\n"); }
+    ct_forward("b") catch { print("caught ct-forward\n"); }
+    ct_defer_error("c") catch { print("caught ct-defer-error\n"); }
+    ct_mixed("d", true) catch { print("caught ct-mixed\n"); }
+
+    ct_ret_value("ct-ret-value", 1) catch { print("NOT REACHED ct-ret-value\n"); }
+    ct_ret_value("ct-ret-none", -1) catch { print("NOT REACHED ct-ret-none\n"); }
+    ct_ret_early("ct-ret-early", -1) catch { print("NOT REACHED ct-ret-early\n"); }
+    ct_ret_raise("ct-ret-raise", 1) catch { print("NOT REACHED ct-ret-raise\n"); }
+    ct_ret_mixed("ct-ret-mixed", false) catch { print("NOT REACHED ct-ret-mixed\n"); }
+    ct_ret_error("e", 1) catch { print("caught ct-ret-error\n"); }
+    ct_ret_raise("f", -1) catch { print("caught ct-ret-raise\n"); }
+    0
+}

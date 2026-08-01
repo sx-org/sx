@@ -10,6 +10,12 @@
 //
 // `;` is a pure separator, so a tail written with one and a tail written
 // without one are the same tail.
+//
+// This file is the NAMED row of the tail matrix — a block body and an arrow
+// body against every tail kind. Each discarded tail prints exactly once (the
+// golden pins the count, so a skipped or twice-lowered tail fails the file),
+// every success `catch` stays cold, and every kind has an error twin whose
+// `catch` observes the declared tag — "discard every tail" cannot pass here.
 // Expected: exit 0.
 #import "modules/std.sx";
 
@@ -24,21 +30,53 @@ impl Drawable for Label {
     draw :: (self: *Label) -> string => self.text;
 }
 
+Colour :: enum { red; green; }
+
 tick :: (label: string) -> i32 {
     print("tick {}\n", label);
     42
 }
 
-// The tail is an rvalue erased into a tagged handle — refused at a `return`,
-// undemanded here.
-erase_tail :: () -> !Failed {
-    Label{ text = "hi" }.(Drawable);
+tick64 :: (label: string) -> i64 {
+    print("tick64 {}\n", label);
+    7
 }
 
-// The same tail where the caller consumes the result with `catch` instead of
-// binding it.
-ignore :: () -> !Failed {
-    Label{}.(Drawable);
+name :: (label: string) -> string {
+    print("name {}\n", label);
+    "n"
+}
+
+nothing :: (label: string) {
+    print("void {}\n", label);
+}
+
+// ── The error tails: the one thing a pure-failable body returns ────────
+
+// The `error.X` spelling.
+fails :: () -> !Failed {
+    error.Nope
+}
+
+// The contextual `.X` spelling resolves against the declared set.
+fails_contextual :: () -> !Failed {
+    .Nope
+}
+
+// A call whose result is the SAME set — forwarded, not discarded.
+forwards :: () -> !Failed {
+    fails()
+}
+
+// An arrow body is the same tail (the parser normalises `=> expr` to a block).
+forwards_arrow :: () -> !Failed => fails();
+
+// ── The discarded tails ────────────────────────────────────────────────
+
+// An rvalue erased into a tagged handle — refused at a `return`, undemanded
+// here.
+erase_tail :: () -> !Failed {
+    Label{ text = "hi" }.(Drawable);
 }
 
 // The tail's EFFECT still happens; only its value is dropped.
@@ -51,21 +89,166 @@ effect_tail_no_semi :: () -> !Failed {
     tick("no-semi")
 }
 
-// An ERROR tail is the one thing a pure-failable body does return.
-fails :: () -> !Failed {
-    error.Nope
+// An arrow body, same rule.
+effect_arrow :: () -> !Failed => tick("arrow");
+
+// 8-byte and aggregate tails — a tag is 4 bytes, and neither is one.
+wide_tail :: () -> !Failed {
+    tick64("wide")
+}
+
+string_tail :: () -> !Failed {
+    name("string")
+}
+
+// A typed ordinary enum tail is evaluated and discarded; it is not a
+// contextual error literal.
+enum_tail :: () -> !Failed {
+    c := Colour.green;
+    c
+}
+
+// A compound, value-less block.
+compound_tail :: () -> !Failed {
+    { x := tick("compound"); }
+}
+
+// A void call, and a no-`else` guard `if`.
+void_tail :: () -> !Failed {
+    nothing("void-tail")
+}
+
+guard_tail :: (n: i32) -> !Failed {
+    if n > 0 {
+        print("guard {}\n", n);
+    }
+}
+
+// No tail at all.
+empty_tail :: () -> !Failed {
+    print("empty\n");
+    x := 1;
+}
+
+// The typeless placeholders: neither is ever an error value.
+undef_tail :: () -> !Failed {
+    ---
+}
+
+null_tail :: () -> !Failed {
+    null
+}
+
+// A tail whose type is only known once the prefix has bound it: the tail is
+// classified after the prefix runs, so it reads the LOCAL, not an outer name.
+prefix_error :: () -> !Failed {
+    e : Failed = error.Nope;
+    e
+}
+
+prefix_call :: () -> !Failed {
+    e := fails();
+    e
+}
+
+prefix_value :: () -> !Failed {
+    v := tick("prefix");
+    v
+}
+
+// An UNTYPED `error.X` is its raw u32 tag id (the integer-context fallback),
+// so this binds an integer, not an error value — and an integer tail is
+// demanded by nothing. Annotate the binding (`e : Failed`) to bind the error.
+prefix_raw_tag :: () -> !Failed {
+    e := error.Nope;
+    e
+}
+
+// Mixed live arms, BOTH orders — the error arm returns the tag, the ordinary
+// arm is discarded and the function succeeds. Neither arm decides the other's
+// fate, so neither order welds a value into the tag or swallows the error.
+if_err_first :: (b: bool) -> !Failed {
+    if b { fails() } else { tick("if-err-first") }
+}
+
+if_val_first :: (b: bool) -> !Failed {
+    if b { tick("if-val-first") } else { fails() }
+}
+
+match_err_first :: (n: i32) -> !Failed {
+    if n == {
+        case 0: fails();
+        else:   tick("match-err-first");
+    }
+}
+
+match_val_first :: (n: i32) -> !Failed {
+    if n == {
+        case 0: tick("match-val-first");
+        else:   fails();
+    }
+}
+
+// Defers unwind before the exit on BOTH paths — an implicit error tail is a
+// `return <error>;` and runs them exactly like one.
+defer_success :: () -> !Failed {
+    defer print("defer success\n");
+    tick("defer-success")
+}
+
+defer_error :: () -> !Failed {
+    defer print("defer error\n");
+    fails()
+}
+
+defer_mixed :: (b: bool) -> !Failed {
+    defer print("defer mixed\n");
+    if b { fails() } else { tick("defer-mixed") }
 }
 
 main :: () -> i32 {
-    ignore() catch { print("NOT REACHED\n"); }
+    // Cold `catch`: every discarded tail took the success exit.
+    erase_tail() catch { print("NOT REACHED erase\n"); }
+    effect_tail() catch { print("NOT REACHED effect\n"); }
+    effect_tail_no_semi() catch { print("NOT REACHED no-semi\n"); }
+    effect_arrow() catch { print("NOT REACHED arrow\n"); }
+    wide_tail() catch { print("NOT REACHED wide\n"); }
+    string_tail() catch { print("NOT REACHED string\n"); }
+    enum_tail() catch { print("NOT REACHED enum\n"); }
+    compound_tail() catch { print("NOT REACHED compound\n"); }
+    void_tail() catch { print("NOT REACHED void\n"); }
+    guard_tail(1) catch { print("NOT REACHED guard\n"); }
+    empty_tail() catch { print("NOT REACHED empty\n"); }
+    undef_tail() catch { print("NOT REACHED undef\n"); }
+    null_tail() catch { print("NOT REACHED null\n"); }
+    prefix_value() catch { print("NOT REACHED prefix\n"); }
+    prefix_raw_tag() catch { print("NOT REACHED raw-tag\n"); }
+    if_err_first(false) catch { print("NOT REACHED if-err-first\n"); }
+    if_val_first(true) catch { print("NOT REACHED if-val-first\n"); }
+    match_err_first(1) catch { print("NOT REACHED match-err-first\n"); }
+    match_val_first(0) catch { print("NOT REACHED match-val-first\n"); }
+    defer_success() catch { print("NOT REACHED defer-success\n"); }
+    defer_mixed(false) catch { print("NOT REACHED defer-mixed\n"); }
 
+    // Hot `catch`: the error tails reached the caller through the channel.
+    fails() catch { print("caught fails\n"); }
+    fails_contextual() catch { print("caught contextual\n"); }
+    forwards() catch { print("caught forwards\n"); }
+    forwards_arrow() catch { print("caught arrow\n"); }
+    prefix_error() catch { print("caught prefix\n"); }
+    prefix_call() catch { print("caught prefix-call\n"); }
+    if_err_first(true) catch { print("caught if-err-first\n"); }
+    if_val_first(false) catch { print("caught if-val-first\n"); }
+    match_err_first(0) catch { print("caught match-err-first\n"); }
+    match_val_first(1) catch { print("caught match-val-first\n"); }
+    defer_error() catch { print("caught defer-error\n"); }
+    defer_mixed(true) catch { print("caught defer-mixed\n"); }
+
+    // The same rows read as VALUES: only the error tails carry a tag.
     a := erase_tail();
     b := effect_tail();
     c := effect_tail_no_semi();
     d := fails();
-
-    // Only `fails` reached the caller through the error channel — the three
-    // discarded tails took the success exit instead of faking a raise.
     r : i32 = 0;
     if a == error.Nope { r = r + 1; }
     if b == error.Nope { r = r + 2; }

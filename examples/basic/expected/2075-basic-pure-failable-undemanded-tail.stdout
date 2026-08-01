@@ -1,3 +1,35 @@
 tick with-semi
 tick no-semi
+tick arrow
+tick64 wide
+name string
+tick compound
+void void-tail
+guard 1
+empty
+tick prefix
+tick if-err-first
+tick if-val-first
+tick match-err-first
+tick match-val-first
+tick defer-success
+defer success
+tick defer-mixed
+defer mixed
+caught fails
+caught contextual
+caught forwards
+caught arrow
+caught prefix
+caught prefix-call
+caught if-err-first
+caught if-val-first
+caught match-err-first
+caught match-val-first
+defer error
+caught defer-error
+defer mixed
+caught defer-mixed
+tick with-semi
+tick no-semi
 r=8

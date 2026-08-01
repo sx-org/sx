@@ -1,0 +1,23 @@
+error: cannot forward a bare-`!` failable result through the named error set 'Named' — its inferred error set is not statically known here; destructure and re-raise instead (`v, e := …; if e { raise error.X; } return v;`)
+  --> examples/diagnostics/2077-diagnostics-pure-failable-tail.sx:27:5
+   |
+27 |     wide()
+   |     ^^^^^^
+
+error: unresolved 'no_such_name' (in examples/diagnostics/2077-diagnostics-pure-failable-tail.sx fn irreducible)
+  --> examples/diagnostics/2077-diagnostics-pure-failable-tail.sx:41:5
+   |
+41 |     no_such_name
+   |     ^^^^^^^^^^^^
+
+error: function returns 'i32' but its body produces no value — end it with a trailing expression or an explicit `return`
+  --> examples/diagnostics/2077-diagnostics-pure-failable-tail.sx:63:26
+   |
+63 |     empty := () -> i32 { x := 1; };
+   |                          ^^^^^^^
+
+error: native JNI method 'SxApp.onCreate' is failable — a Java method has no error channel to carry its result; return the value and signal failure in-band instead
+  --> examples/diagnostics/2077-diagnostics-pure-failable-tail.sx:48:46
+   |
+48 |     onCreate :: (self: *Self, b: *Bundle) -> !Named {
+   |                                              ^^^^^^
