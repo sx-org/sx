@@ -3831,6 +3831,25 @@ log_size :: () {
 }
 ```
 
+A **pure failable** (`-> !` / `-> !Named`) has no success value — its whole
+return is the error channel — so only a trailing ERROR value is demanded there.
+A tail of any other type is discarded like any other undemanded expression, and
+the function takes the ordinary success exit. Because nothing in such a body is
+in return position, the return-position restrictions do not reach its tail
+(erasing an rvalue into a tagged handle is refused at a `return`, and accepted
+here, where the handle dies with the frame).
+
+```sx
+check :: (n: i32) -> !ParseErr {
+  if n < 0 { raise error.BadDigit; }
+  measure();          // undemanded — discarded, then the success exit
+}
+
+fail :: () -> !ParseErr {
+  error.BadDigit;     // an ERROR tail IS the return
+}
+```
+
 A block in **value position** that produces no value is a compile error (rather
 than silently returning a zero default). Both spellings of the ending are
 refused, because both are the same statement:
