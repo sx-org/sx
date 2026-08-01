@@ -5,9 +5,9 @@
 //
 // The reconciled choke-point (resolveRegistrationSigTypeInSource → the recursive
 // source-aware engine) recurses every structural shape and resolves the leaf
-// author own-wins. The E6BR-4 RED CELL is the WRAPPED RETURN `() -> *Box`: pre-fix
-// the wrapped sig fell to the no-author `type_bridge.resolveTemplateSignatureType`
-// (global last-wins) and typed the result as `dep`'s `Box { a }`, so `bp.m` was
+// author own-wins. The sharp cell is the WRAPPED RETURN `() -> *Box`: letting
+// the wrapped sig fall to the no-author `type_bridge.resolveTemplateSignatureType`
+// (global last-wins) types the result as `dep`'s `Box { a }`, so `bp.m` is
 // `field 'm' not found on type 'Box'`. Discriminating returns: `*Box`, `?Box`,
 // `(Box,Box)`, `[2]Box` (each observed by a `.m` access). Routing-only params:
 // `*Box`, `?Box`, `[]Box`, `[2]Box`, `(Box,Box)`, nested `*?[]Box` — all resolved

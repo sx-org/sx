@@ -4,8 +4,8 @@
 // rejects zero — see 1505.) This pins the zero-accepting half of the
 // context-dependent count rule documented in specs.md (Array Types).
 //
-// Regression (F0.4 attempt 12): the spec previously claimed every count must be
-// "positive integral", which wrongly implied `[0]T` / `Box(0)` are illegal.
+// A blanket "every count is positive integral" rule would wrongly make
+// `[0]T` / `Box(0)` illegal.
 #import "modules/std.sx";
 
 Box :: struct($N: u32) { items: [N]i64; }

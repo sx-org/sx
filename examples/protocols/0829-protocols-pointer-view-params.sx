@@ -5,7 +5,7 @@
 //   - a pointer-to-concrete arg views its pointee;
 //   - `@p` on an owned protocol value lends a plain pointer to it;
 //   - protocol methods dispatch through `*P` (`vtable` AND `inline` layouts).
-// Regression (issues 0303/0304): the lvalue case used to emit an ill-typed
+// Regression (issues 0303/0304): the lvalue case must not emit an ill-typed
 // call (LLVM verifier abort, no diagnostic); the rvalue case is pinned as a
 // refusal in diagnostics/1251.
 #import "modules/std.sx";

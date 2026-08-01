@@ -17,8 +17,8 @@
 // (Bare `!` → NAMED set is rejected — the inferred set can't be proven ⊆;
 // see examples/diagnostics/1222-diagnostics-failable-forward-mixtures.sx.)
 //
-// Regression (issue 0205): the concrete→bare forward used to pack the whole
-// callee `{value, err}` aggregate as element 0 of the caller's own tuple —
+// Regression (issue 0205): packing the whole callee `{value, err}` aggregate
+// as element 0 of the caller's own tuple on the concrete→bare forward is
 // invalid LLVM IR (`Invalid InsertValueInst operands!`).
 
 #import "modules/std.sx";

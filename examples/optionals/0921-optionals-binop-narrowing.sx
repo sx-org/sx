@@ -1,9 +1,9 @@
 // Flow narrowing extends to binary-op OPERANDS: a `?T` proven present by a
 // `!= null` guard reads as its concrete payload in arithmetic / comparison.
 //
-// Regression (issue 0185): an un-narrowed `?T` operand used to unwrap
-// unconditionally, so `null + 10` silently yielded `10` (the zero payload).
-// Narrowing is now the only implicit operand unwrap; everything else is a
+// Regression (issue 0185): unwrapping an un-narrowed `?T` operand
+// unconditionally makes `null + 10` yield `10` (the zero payload).
+// Narrowing is the only implicit operand unwrap; everything else is a
 // compile error (see 0922).
 #import "modules/std.sx";
 

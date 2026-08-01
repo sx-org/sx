@@ -5,7 +5,7 @@
 // representation — so `args[i]` is valid only when `i` is a compile-time
 // constant (a literal, or an `inline for` cursor). A runtime index (here a
 // `while`-loop counter) must produce a clear diagnostic, not the confusing
-// "unresolved 'args'" the slice-index fall-through used to give. To walk a
+// "unresolved 'args'" a slice-index fall-through would give. To walk a
 // pack, use `inline for 0..args.len (i) { ... }`, which unrolls so each
 // `args[i]` is a comptime index.
 

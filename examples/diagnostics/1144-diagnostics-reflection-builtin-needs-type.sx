@@ -3,10 +3,10 @@
 // value argument is a compile-time error, not a silently-reinterpreted
 // TypeId index.
 //
-// Regression (issue 0090, attempt 2): each builtin used to accept a
-// non-type value and reinterpret it — `is_unsigned(6)` read 6 as a
-// TypeId and returned the signedness of types[6] (`u8` → true);
-// `size_of(true)` sized `typeof(true)` (8). The strict `$T: Type` guard
+// Regression (issue 0090): a builtin that accepts a non-type value and
+// reinterprets it reads 6 as a TypeId for `is_unsigned(6)` and returns the
+// signedness of types[6] (`u8` → true), and sizes `typeof(true)` (8) for
+// `size_of(true)`. The strict `$T: Type` guard
 // (`Lowering.reflectionTypeArgGuard`) now rejects any argument whose
 // static type is not `Type` and emits "<builtin> expects a type, got
 // '<type>'" at the offending argument, aborting (exit 1).

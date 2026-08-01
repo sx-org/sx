@@ -4,7 +4,7 @@
 // is a priority symbol-search target ahead of the process-wide
 // fallback. The unit's zlibCompileFlags answers 0xDEADBEEF; the OS
 // one answers real flag bits, so `true` proves the unit won.
-// Regression (PLAN-C C0.3 xfail, flipped by C2.1).
+// Regression (PLAN-C C0.3).
 #import "modules/std.sx";
 
 zshadow :: #import c {

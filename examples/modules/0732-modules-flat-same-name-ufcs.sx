@@ -2,8 +2,8 @@
 // free function `bump` (a.sx adds 1, b.sx adds 100). Each module dispatches it
 // via free-function UFCS — `v.bump()` lowers to `bump(v)`. The dispatched
 // author must be the RESOLVED one for the receiver's source (own-author wins),
-// not the first-wins winner. Before the fix, b.sx's `v.bump()` dispatched
-// a.sx's winner (+1 → 11). Regression: per-source free-function UFCS dispatch.
+// not the first-wins winner, which would make b.sx's `v.bump()` dispatch
+// a.sx's author (+1 → 11). Regression: per-source free-function UFCS dispatch.
 #import "modules/std.sx";
 #import "0732-modules-flat-same-name-ufcs/a.sx";
 #import "0732-modules-flat-same-name-ufcs/b.sx";

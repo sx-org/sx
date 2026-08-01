@@ -3,7 +3,7 @@
 // Regression: while a slot was CONN_WRITING (response draining, write watch
 // armed), a client flooding pipelined bytes past read_buf_cap made read_more
 // fire respond_error_close(413/431) — which serialized a SECOND response
-// over c.out_buf: the old (partially sent) buffer leaked, out_len shrank
+// over c.out_buf: the partially sent buffer leaks, out_len shrinks
 // below out_sent, and the wire stream was cut mid-body with error bytes.
 //
 // The fix: at the buffer cap with a response in flight, the server STOPS
@@ -23,7 +23,7 @@
 //      BYTE-EXACT: status 200, declared Content-Length, body checksum, and
 //      NOTHING after the body (no spliced 413/431, no truncation).
 //   4. The connection closes (close_after honored).
-//   5. GPA leak gate: net-zero (pre-fix leaked the clobbered 8 MB out_buf).
+//   5. GPA leak gate: net-zero — a clobbered 8 MB out_buf would leak.
 #import "modules/std.sx";
 http :: #import "modules/std/http.sx";
 
@@ -108,8 +108,8 @@ main :: () -> i32 {
         if !parked { print("server never parked mid-write\n"); failed = 1; }
 
         // Flood garbage while the response is in flight. The server buffers
-        // up to read_buf_cap then hits the grow-failure branch — pre-fix it
-        // serialized a 431 over the draining response.
+        // up to read_buf_cap then hits the grow-failure branch, which must not
+        // serialize a 431 over the draining response.
         junk : [*]u8 = xx context.allocator.alloc_bytes(FLOOD_LEN);
         i : i64 = 0;
         while i < FLOOD_LEN { junk[i] = 88; i += 1; }   // 'X': no CRLF, no header end
@@ -122,7 +122,7 @@ main :: () -> i32 {
             // (the fixed server stopped reading): the over-cap branch has
             // fired — no need to force the rest through.
             else if we == error.WouldBlock and fsent >= 24576 { break; }
-            else if we != error.WouldBlock { break; }   // server reset us (pre-fix path)
+            else if we != error.WouldBlock { break; }   // server reset us
             srv.tick(1) catch {};
             t += 1;
         }

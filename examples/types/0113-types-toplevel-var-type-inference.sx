@@ -1,16 +1,14 @@
-// Pre-fix: `resolveType(null)` silently returned `.i64`, so a top-level
-// var without a type annotation got typed as `i64` regardless of what
-// the initializer was. For `g_pi := 3.14;` this meant the float literal
-// was assigned to an i64 slot, producing a wrong value at runtime or
-// the wrong codegen shape.
+// `lowerVarDecl` at the top level mirrors the local-scope path: explicit
+// annotation → resolveType; no annotation → infer from the initializer's
+// type, exactly as `:=` does for locals.
 //
-// After the fix `lowerVarDecl` at the top level mirrors the local-scope
-// path: explicit annotation → resolveType; no annotation → infer from
-// the initializer's type. Mirrors how `:=` already worked for locals.
+// Falling back to `resolveType(null)`'s `.i64` types every un-annotated
+// top-level var as `i64` whatever its initializer: `g_pi := 3.14;` assigns
+// the float literal to an i64 slot, a wrong value or the wrong codegen shape.
 #import "modules/std.sx";
 
 g_count := 42;        // inferred i64
-g_pi    := 3.14;      // inferred f64 — used to silently become i64
+g_pi    := 3.14;      // inferred f64 — never i64
 g_flag  := true;      // inferred bool
 
 main :: () -> i32 {

@@ -6,10 +6,10 @@
 // must parse to exactly the same result as a single-write delivery, and
 // the connection must remain usable (keep-alive) afterwards.
 //
-// (Why this exists: the terminator scan used to restart from byte 0 on
-// every read_more cycle, and the chunked decoder revalidated ALL framing
-// from scratch each cycle — O(n²) on slow-dripped requests, a slowloris
-// CPU amplifier. The optimization keeps a per-Conn scan cursor + resumable
+// (Why this exists: restarting the terminator scan from byte 0 on
+// every read_more cycle, and revalidating ALL chunked framing
+// from scratch each cycle, is O(n²) on slow-dripped requests — a slowloris
+// CPU amplifier. The parser keeps a per-Conn scan cursor + resumable
 // chunk-scan state; THIS test pins the semantics it must not change.)
 //
 //   1. A request with 24 headers delivered 7 bytes per tick → 200; the

@@ -3,9 +3,9 @@
 // lowering its body) — which would build a whole-struct-typed null and emit an
 // oversized store that overruns the field's slot.
 //
-// Regression (issue 0154): `s.p = null` inside a struct-returning fn used to
-// store a 32-byte struct `zeroinitializer` through the pointer field's GEP,
-// clobbering the saved x29/x30 so the fn `ret`'d to 0x0. The array-before-
+// Regression (issue 0154): `s.p = null` inside a struct-returning fn must not
+// store a 32-byte struct `zeroinitializer` through the pointer field's GEP —
+// that clobbers the saved x29/x30 and the fn `ret`s to 0x0. The array-before-
 // pointer order puts the pointer at a non-zero offset, pushing the over-store
 // off the end of the alloca. Fixed by adding null/undef literals to
 // `needs_target` in lowerAssignment.

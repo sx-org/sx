@@ -6,9 +6,9 @@
 // stdlib `event.Event` struct carried by `#import "modules/std.sx"` (reachable
 // only as `event.Event`, never bare).
 //
-// Fail-before: `Lowering.resolveTypeWithBindings` delegated inline `struct_decl`
-// field types to the FLAT `type_bridge.resolveAstType`, dropping the visibility
-// context — so `e: Event` resolved via global `findByName` to the stdlib struct
+// Delegating inline `struct_decl` field types from
+// `Lowering.resolveTypeWithBindings` to the FLAT `type_bridge.resolveAstType`
+// drops the visibility context — `e: Event` resolves via global `findByName` to the stdlib struct
 // and `h.inner.e.code` errored "field 'code' not found on type 'Event'". Fixed
 // by routing inline enum/struct/union decls through the `inner` recursion hook
 // with `self` (visibility-aware), the same own-wins rule top-level decls use.

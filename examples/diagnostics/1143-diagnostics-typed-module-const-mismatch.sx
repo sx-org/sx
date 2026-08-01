@@ -12,10 +12,10 @@
 // because its node kind isn't a literal (issue 0088, attempt 2).
 //
 // The mixed-numeric pair (`i64 : M + 0.5`, `i64 : 0.5 + M`) is rejected in BOTH
-// operand orders: arithmetic binary-op inference now promotes int+float to the
-// float result (`Lowering.arithResultType`), so an i64 annotation no longer
-// matches a float-producing initializer regardless of which operand is the
-// float (issue 0088, attempt 3 — the inferExprType promotion root fix).
+// operand orders: arithmetic binary-op inference promotes int+float to the
+// float result (`Lowering.arithResultType`), so an i64 annotation does not
+// match a float-producing initializer regardless of which operand is the
+// float (issue 0088).
 
 #import "modules/std.sx";
 

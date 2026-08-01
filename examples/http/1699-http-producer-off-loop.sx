@@ -1,9 +1,9 @@
 // std.http — Q3.2 stream producers run OFF the loop thread (pool mode).
 //
-// A streamed response's producer used to be pulled on the LOOP thread after
-// the worker's job — and the per-request arena — had been freed: producer_ctx
-// pointing at request-derived or arena memory was a use-after-free class
-// (the documented "ctx must be caller-owned" footgun), and a slow producer
+// Pulling a streamed response's producer on the LOOP thread after the
+// worker's job — and the per-request arena — is freed makes producer_ctx
+// pointing at request-derived or arena memory a use-after-free class
+// (the "ctx must be caller-owned" footgun), and a slow producer
 // stalled every other connection. Q3.2 moves the pulls onto the WORKER that
 // ran the handler, inside the job's push scope, feeding the loop through a
 // bounded channel — so ctx may now reference per-request-arena memory and
@@ -17,7 +17,7 @@
 //      exercised throughout. The client de-chunks and verifies every byte.
 //      The producer also records its thread id: it must NOT be the loop
 //      thread (the tick harness runs the loop on main) — the deterministic
-//      red assertion pre-fix.
+//      assertion.
 //   2. SAME connection: /ping still answers (keep-alive after a worker-fed
 //      chunked response; the slot's channel was released).
 //   3. GET /big (4 MB): the client reads ~64 KB and disconnects mid-stream —
@@ -44,8 +44,8 @@ Obs :: struct {
 }
 
 // Producer state — deliberately allocated in the PER-REQUEST ARENA by the
-// handler: valid post-fix (the worker pumps inside the push scope), the
-// UAF class pre-fix.
+// handler: valid because the worker pumps inside the push scope; pumping
+// after the arena is freed is the UAF class.
 StreamState :: struct {
     seed: i64 = 0;
     total: i64 = 0;
@@ -320,8 +320,8 @@ main :: () -> i32 {
         // still SLEEPING — its stream channel does not exist yet — when
         // close() runs, so the one-shot registry sweep cannot see it. The
         // closing flag makes the late registration abort the pump; close()
-        // must return (pre-fix it joined a feeder blocked forever on a
-        // full channel).
+        // must return, never join a feeder blocked forever on a full
+        // channel.
         c5 := dial_port(PORT);
         if c5 < 0 { print("dial c5 failed\n"); srv.close(); return 1; }
         send_all(*srv, c5, "GET /slowbig HTTP/1.1\r\nHost: t\r\n\r\n");

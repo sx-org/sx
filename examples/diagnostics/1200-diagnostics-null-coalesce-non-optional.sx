@@ -1,10 +1,10 @@
 // `??` (null-coalesce) requires an optional left operand. A resolved
 // non-optional lhs is malformed user input and must be a clean, located type
 // error — not a compiler crash. Regression (issue 0172): `lowerNullCoalesce`
-// used to feed the `.unresolved` inner type (from `resolveOptionalInner` on a
+// must not feed the `.unresolved` inner type (from `resolveOptionalInner` on a
 // non-optional lhs) straight into the merge-block params / `optionalUnwrap` /
-// the RHS target type, which reached emit_llvm's "unresolved type reached LLVM
-// emission" panic (exit 134) with no diagnostic. A guard now inspects the
+// the RHS target type — that reaches emit_llvm's "unresolved type reached LLVM
+// emission" panic (exit 134) with no diagnostic. A guard inspects the
 // inferred lhs type: a resolved non-optional emits this error and bails before
 // codegen; an already-`.unresolved` lhs (a prior error, e.g. undefined name)
 // passes through untouched so the original diagnostic isn't double-reported.

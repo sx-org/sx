@@ -1,9 +1,9 @@
 // Regression (issue 0273) — HashMap / IndexMap struct keys are hashed
 // STRUCTURALLY (field-by-field, padding skipped), consistent with `==`, so a
 // separately-constructed field-equal key is FOUND even when the padding bytes
-// of the two keys differ. Before the fix `map_hash_key` hashed all size_of(K)
-// bytes including indeterminate padding, so equal keys hashed differently and
-// a lookup missed (HashMap) / appended a phantom duplicate (IndexMap).
+// of the two keys differ. Hashing all size_of(K) bytes in `map_hash_key`,
+// indeterminate padding included, hashes equal keys differently, so
+// a lookup misses (HashMap) / appends a phantom duplicate (IndexMap).
 //
 // Covers: padded struct key found after stack churn (both map kinds), struct
 // with a string field (content-hashed), struct with an enum field, a nested

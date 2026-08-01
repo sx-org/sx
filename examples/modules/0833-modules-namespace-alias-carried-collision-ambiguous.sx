@@ -3,8 +3,8 @@
 // loudly — never a silent first-registration pick. (Each module's own use
 // of its own `t` stays valid — see 0834.)
 //
-// Regression (issue 0114): collisions used to resolve silently first-wins
-// through the global qualified-fn registration.
+// Regression (issue 0114): a global qualified-fn registration resolves
+// collisions silently first-wins.
 
 #import "modules/std.sx";
 #import "0833-modules-namespace-alias-carried-collision-ambiguous/a.sx";

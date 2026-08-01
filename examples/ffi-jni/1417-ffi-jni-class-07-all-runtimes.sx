@@ -1,19 +1,11 @@
-// Phase 2 step 2.7 (PLAN-FFI.md): xfail then green for the remaining
-// six type-introducer directive forms parsing with the same body
-// grammar as `#jni_class`. No codegen yet — Phase 3 picks up Obj-C
-// codegen, Phase 4 picks up Swift.
-//
-// The directives this step turns on:
+// Six further type-introducer directive forms parse with the same body
+// grammar as `#jni_class`:
 //   #jni_interface  — Java interface binding
 //   #objc_class     — Obj-C class binding
 //   #objc_protocol  — Obj-C protocol binding
 //   #swift_class    — Swift class binding (via @_cdecl bridge)
 //   #swift_struct   — Swift @frozen value-type binding
 //   #swift_protocol — Swift @objc-bridgeable protocol binding
-//
-// Internally the AST collapses into one `runtime_class_decl` node
-// carrying a `runtime` discriminator. Today the parser rejects each
-// of these because the lexer doesn't recognise the directive name.
 
 #import "modules/std.sx";
 

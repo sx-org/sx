@@ -4,9 +4,9 @@
 // integer/bool literals, and type categories). A `string` subject (and a
 // float subject) has no such discriminant and is rejected up front with a
 // located diagnostic.
-// Regression (issue 0224): a string subject used to reach the backend as
+// Regression (issue 0224): unrejected, a string subject reaches the backend as
 // invalid IR — `switch ptr %etag` against integer case constants ("Switch
-// constants must all be same type as switch value!"); an f64 subject produced
+// constants must all be same type as switch value!"); an f64 subject gives
 // the same verifier failure via `switch double`.
 #import "modules/std.sx";
 
@@ -28,8 +28,8 @@ main :: () {
     // An `any` subject IS legal — it is the TYPE SWITCH, dispatching on the
     // value's runtime type tag — but its arms name TYPES or CATEGORIES.
     // Value patterns still cannot reach the unboxed payload (the
-    // silently-wrong arm of the old baseline: `any = 6` matched `case 5:`,
-    // exit 0); they now get a per-arm diagnostic instead of a subject-level
+    // silently-wrong arm would be `any = 6` matching `case 5:`, exit 0);
+    // they get a per-arm diagnostic instead of a subject-level
     // one.
     a : any = 6;
     v := if a == { case 5: { 1 } case 6: { 2 } else: { 0 } };

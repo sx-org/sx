@@ -7,9 +7,9 @@
 // enum `Wrap`. The payload type name `Event` must resolve at REGISTRATION to
 // THIS file's own `Event` (which has `code`), not the namespaced stdlib struct.
 //
-// Fail-before: `registerEnumDecl` built the tagged-union body through the
-// stateless `type_bridge.buildEnumInfo`, whose flat `findByName` picked the
-// wrong same-name author — `got`'s payload became the stdlib `Event`, so
+// Building the tagged-union body in `registerEnumDecl` through the
+// stateless `type_bridge.buildEnumInfo`, whose flat `findByName` picks the
+// wrong same-name author, makes `got`'s payload the stdlib `Event`, so
 // `e.code` errored "field 'code' not found on type 'Event'". Fixed by threading
 // the visibility-aware resolver (`*Lowering` as the `resolveInner` hook) through
 // `buildEnumInfo` / `buildUnionInfo`, matching what `registerStructDecl` already

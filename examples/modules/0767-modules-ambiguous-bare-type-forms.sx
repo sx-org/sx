@@ -12,9 +12,9 @@
 //   - type-as-value                  `t : Type = Thing`
 //   - type-category match arm        `case Thing:`
 //
-// Regression (Phase E4 attempt-5): before the bare-type gate carried the full
-// source-aware author outcome, these non-leaf sites used a boolean leak-check
-// that dropped the AMBIGUOUS outcome — two direct flat same-name authors fell
+// Regression: unless the bare-type gate carries the full
+// source-aware author outcome, these non-leaf sites use a boolean leak-check
+// that drops the AMBIGUOUS outcome — two direct flat same-name authors fall
 // through to a global pick (exit 0 / cascade) instead of the loud diagnostic.
 
 #import "modules/std.sx";

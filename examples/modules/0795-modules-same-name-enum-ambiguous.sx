@@ -12,9 +12,9 @@
 //   - type-as-value                  `t : Type = Dir`
 //   - type-category match arm        `case Dir:`
 //
-// Fail-before (pre-E6a): the stateless `type_bridge.resolveInlineEnum`
-// `findByName` short-circuit interned ONE global last-wins `Dir`, so every bare
-// form silently resolved to it and the program exited 0.
+// A stateless `type_bridge.resolveInlineEnum` `findByName` short-circuit
+// interns ONE global last-wins `Dir`, so every bare form resolves to it and
+// the program exits 0.
 
 #import "modules/std.sx";
 #import "0795-modules-same-name-enum-ambiguous/a.sx";

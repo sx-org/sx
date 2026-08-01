@@ -4,9 +4,9 @@
 // (`ns :: #import`) and authors a top-level `Secret` STRUCT; `main` authors its
 // OWN top-level alias `Secret :: i32`. A bare `Secret` must resolve to MAIN's
 // alias (`i32`), NOT be poisoned by the invisible same-name struct: the alias is
-// the only flat-visible TYPE author. Before the fix the leaf saw the global
-// `findByName` struct and, finding no NAMED-type author in `main` (an alias is a
-// `const_decl`, not a named type), wrongly rejected the bare reference as "not
+// the only flat-visible TYPE author. A leaf that sees the global
+// `findByName` struct and finds no NAMED-type author in `main` (an alias is a
+// `const_decl`, not a named type) rejects the bare reference as "not
 // visible". Regression (issue R4).
 ns :: #import "0748-modules-flat-alias-shadows-ns-only-type/dep.sx";
 

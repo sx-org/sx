@@ -43,7 +43,7 @@ main :: () {
     print("type: {} {}\n", type_of(z), type_of(x));
     print("value: {} {}\n", z, x);
 
-    // Optional wrap — the shape that used to fail to compile.
+    // Optional wrap.
     print("wrap: {} {}\n", zone_of(2), zone_of(-1));
     // An optional TARGET is the ordinary wrap, never a check.
     print("opt-target: {}\n", i.(?Zone));

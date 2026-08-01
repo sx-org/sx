@@ -11,7 +11,7 @@
 // reserved spelling still needs the backtick (`` `i2 :: (self) ``) — bare would
 // be type-classified and mislower (the issue-0076 protection). A bare reserved
 // VALUE binding / declaration name still errors (see examples/1119, 1141, 1142).
-// Regression (issue 0089 — attempt-7: pins the Agra-ruled member-name exemption).
+// Regression (issue 0089): pins the member-name exemption.
 #import "modules/std.sx";
 
 // Struct fields spelled with reserved type names — bare is legal.

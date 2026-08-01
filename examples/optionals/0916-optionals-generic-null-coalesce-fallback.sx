@@ -1,10 +1,10 @@
 // Generic `??` preserves the optional's presence across monomorphization.
 //
 // Regression (issue 0180): a `??` inside a generic fn whose lhs is a
-// type-param-typed optional `?T` used to drop the RHS default and return the
-// zero payload — a null `?i32` arriving as the `?T` arg was silently coerced
-// to the monomorphized `?i64` with the has-bit hardcoded to `true` (the
-// optional→optional arg coercion unwrapped-then-rewrapped-present), so
+// type-param-typed optional `?T` drops the RHS default and returns the
+// zero payload when a null `?i32` arriving as the `?T` arg is coerced
+// to the monomorphized `?i64` with the has-bit hardcoded to `true` (an
+// optional→optional arg coercion that unwraps then rewraps present), so
 // `x ?? d` saw a present zero and returned 0 instead of `d`.
 #import "modules/std.sx";
 

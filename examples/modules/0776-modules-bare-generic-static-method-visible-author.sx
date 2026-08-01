@@ -14,8 +14,8 @@
 // Regression (Phase E4 finding #1, static-method site): before the static-method
 // head consulted the source-keyed visible author, `size_of(Box(i64))` correctly
 // picked the visible `b.Box` (8) but `Box(i64).make(7)` instantiated the global
-// last-wins `c.Box` and ran `c.Box.make`, returning a 16-byte value. Fail-before
-// printed `size=8 xtype=16 x=7`.
+// last-wins `c.Box` and runs `c.Box.make`, returning a 16-byte value —
+// `size=8 xtype=16 x=7`.
 
 #import "modules/std.sx";
 #import "0776-modules-bare-generic-static-method-visible-author/b.sx";

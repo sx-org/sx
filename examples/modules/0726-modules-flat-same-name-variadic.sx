@@ -2,10 +2,10 @@
 // functions whose VARIADIC SHAPE differs. `combine` is fixed-arity in a.sx
 // (the first-wins winner) but variadic in b.sx (the shadow); `pick` is the
 // reverse. Each module's bare call must pack arguments against ITS OWN
-// author's signature — not the first-wins author's. Pre-fix the call path
-// re-fetched the first-wins AST by name to drive variadic packing, so b.sx's
-// variadic `combine` was packed as if fixed (and its fixed `pick` as if
-// variadic) → wrong lowering. Regression for the F1 review finding.
+// author's signature — not the first-wins author's. A call path that
+// re-fetches the first-wins AST by name to drive variadic packing packs b.sx's
+// variadic `combine` as if fixed (and its fixed `pick` as if
+// variadic) → wrong lowering.
 #import "modules/std.sx";
 #import "0726-modules-flat-same-name-variadic/a.sx";
 #import "0726-modules-flat-same-name-variadic/b.sx";

@@ -6,11 +6,11 @@
 // the field's own type (`*Pair`, an opaque pointer) instead of the pointee
 // aggregate (`Pair`).
 //
-// Regression (issue 0094, attempt-3 consolidation): the shared `fieldLvaluePtr`
-// resolver used to type struct/tuple GEPs with the bare field value type, so a
-// `*Pair` field stored via the multi-assign / address-of paths promoted the
-// pointer to a 16-byte struct and clobbered the next field (`sentinel` read 0).
-// The single-assign path already used the `*field_ty` convention; folding all
+// Regression (issue 0094): typing struct/tuple GEPs in the shared
+// `fieldLvaluePtr` resolver with the bare field value type promotes a `*Pair`
+// field stored via the multi-assign / address-of paths to a 16-byte struct and
+// clobbers the next field (`sentinel` reads 0).
+// Every path uses the `*field_ty` convention; folding all
 // three lvalue sites onto the one resolver applies it uniformly.
 
 #import "modules/std.sx";

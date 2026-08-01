@@ -3,9 +3,9 @@
 // `S` and stores it — the target type propagates to a union-member lvalue
 // exactly as it does to a struct field.
 //
-// Regression (issue 0133): the literal used to lower as `.unresolved` (the
-// target-type path only inspected struct fields, not union members) and trip
-// the LLVM-emission tripwire in emitStructInit.
+// Regression (issue 0133): a target-type path that inspects struct fields
+// only, not union members, lowers the literal as `.unresolved` and trips the
+// LLVM-emission tripwire in emitStructInit.
 
 #import "modules/std.sx";
 

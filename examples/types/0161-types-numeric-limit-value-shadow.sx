@@ -14,11 +14,11 @@
 // `` `i16 ``, and LOCAL `` `f64 ``/`` `i32 ``/`` `u8 `` — each reads its field,
 // and the bare spelling of each STILL folds.
 //
-// Regression (issues 0092 local, 0093 global + module-const): the intercept
-// previously treated any identifier whose text matched a builtin numeric type
-// name as a TYPE receiver, silently shadowing the in-scope value binding
-// (`` `f64.epsilon `` folded to 2^-52, `` `i32.max `` folded to 2147483647 —
-// a silent wrong value). The attempt-3 fix guarded only lexical scope, so
+// Regression (issues 0092 local, 0093 global + module-const): an intercept
+// that treats any identifier whose text matches a builtin numeric type name
+// as a TYPE receiver shadows the in-scope value binding
+// (`` `f64.epsilon `` folds to 2^-52, `` `i32.max `` to 2147483647 —
+// a silent wrong value). Guarding lexical scope alone is not enough, so
 // GLOBAL and MODULE-CONST raw bindings still folded (issue 0093).
 #import "modules/std.sx";
 

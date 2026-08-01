@@ -3,7 +3,7 @@
 // it is accepted as the tag binding and a later reference resolves to it. A
 // *bare* reserved spelling in the same position is still rejected (see
 // examples/1123), so the backtick escape is the only way to spell these tags.
-// Regression (issue 0089 — attempt-2 catch/onfail coverage).
+// Regression (issue 0089), catch/onfail coverage.
 #import "modules/std.sx";
 
 E :: error { Bad, Empty }

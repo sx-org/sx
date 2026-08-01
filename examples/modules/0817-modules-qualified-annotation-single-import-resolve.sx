@@ -5,7 +5,7 @@
 // "a.Box", so `x.a` failed with `field 'a' not found on type 'a.Box'` — even with
 // this SINGLE namespace import and NO same-name flat author.
 //
-// Pass-after: `resolveNominalLeaf` dot-splits the name and routes it through the
+// `resolveNominalLeaf` dot-splits the name and routes it through the
 // namespace-author selector (`qualifiedNamedTypeTid`), binding `a`'s real
 // `Box { a }`, so `x.a` resolves, exit 0.
 

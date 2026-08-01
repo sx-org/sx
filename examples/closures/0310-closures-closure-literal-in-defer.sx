@@ -1,9 +1,9 @@
 // Closure literal declared (and used) inside a `defer` body.
 //
-// Regression (issue 0073): this used to segfault lowering. A lambda inherited
-// the enclosing function's `func_defer_base`, so the lambda's `return` re-drained
-// the enclosing function's defers — and when the defer body itself declared the
-// lambda, that re-lowered the lambda forever (infinite recursion). A lambda now
+// Regression (issue 0073): a lambda that inherits the enclosing function's
+// `func_defer_base` re-drains the enclosing function's defers on its own
+// `return` — and when the defer body itself declares the lambda, that
+// re-lowers the lambda forever (infinite recursion). A lambda
 // opens its own defer window (like every other function-lowering entry).
 
 #import "modules/std.sx";

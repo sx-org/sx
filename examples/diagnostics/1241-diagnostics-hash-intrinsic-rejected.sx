@@ -1,6 +1,6 @@
 // `intrinsic` is a KEYWORD in body position, not a directive. `#intrinsic` is
 // not a spelling of it and must not parse — there is exactly one way to write an
-// intrinsic declaration, so the old `#builtin`-style directive form cannot creep
+// intrinsic declaration, so a `#builtin`-style directive form cannot creep
 // back in under a new name.
 //
 // The message below is the GENERIC unknown-directive parse error (`#wibble`

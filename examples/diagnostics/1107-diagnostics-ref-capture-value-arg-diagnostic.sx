@@ -1,7 +1,7 @@
 // A by-reference loop capture (`for xs (*m)`) binds `m` to a `*T`.
-// Passing it where a `T` value is expected used to slip through to the
+// Passing it where a `T` value is expected must not slip through to the
 // LLVM verifier ("Call parameter type does not match function signature").
-// The compiler now reports it at the call site with a fix-it: write `m.*`.
+// The compiler reports it at the call site with a fix-it: write `m.*`.
 
 #import "modules/std.sx";
 

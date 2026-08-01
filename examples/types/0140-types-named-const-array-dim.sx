@@ -31,7 +31,7 @@ main :: () {
     a[3] = 42;
     print("scalar a0={} a3={}\n", a[0], a[3]);
 
-    // Slice/pointer elements (string, direct local): used to bus-error.
+    // Slice/pointer elements (string, direct local): the bus-erroring shape.
     s : [N]string = ---;
     s[0] = "hi";
     s[1] = "yo";

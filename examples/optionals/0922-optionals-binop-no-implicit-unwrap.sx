@@ -1,8 +1,8 @@
 // An un-narrowed `?T` used directly as a binary-op operand is a compile error
 // — it does not implicitly unwrap.
 //
-// Regression (issue 0185): `null + 10` used to compile and unconditionally
-// extract the payload, silently yielding `10` (0 + 10) with no diagnostic.
+// Regression (issue 0185): compiling `null + 10` and unconditionally
+// extracting the payload yields `10` (0 + 10) with no diagnostic.
 // The legal forms are `!` / `??` / a `!= null` guard (see 0921).
 #import "modules/std.sx";
 

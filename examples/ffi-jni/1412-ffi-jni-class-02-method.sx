@@ -1,10 +1,6 @@
-// Phase 2 step 2.2 (PLAN-FFI.md): xfail then green for the instance
-// method body item inside a `#jni_class` declaration.
-//
-// `name :: (self: *Self, args...) -> Ret;` is the shape — semicolon
-// terminated (extern declaration, no body). The 2.1 parser only
-// accepts an empty body; step 2.2 extends `parseJniClassDecl` to
-// loop over body items and collect method declarations.
+// An instance-method body item inside a `#jni_class` declaration:
+// `name :: (self: *Self, args...) -> Ret;` — semicolon terminated, no body.
+// Parse-only.
 
 #import "modules/std.sx";
 

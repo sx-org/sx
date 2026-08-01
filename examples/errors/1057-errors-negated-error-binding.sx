@@ -1,7 +1,7 @@
 // `!` on an error binding is the truthiness complement of `if e` (issue
-// 0129). Pre-fix, `!` lowered as a bitwise not, so a nonzero error tag
-// stayed nonzero and `if !e` held even on a SET error — with the success
-// value read as garbage. Integer operands get the same `!x ≡ x == 0`
+// 0129). Lowering `!` as a bitwise not leaves a nonzero error tag
+// nonzero, so `if !e` holds even on a SET error and the success
+// value reads as garbage. Integer operands get the same `!x ≡ x == 0`
 // semantics.
 #import "modules/std.sx";
 

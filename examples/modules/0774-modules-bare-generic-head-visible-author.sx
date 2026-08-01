@@ -13,7 +13,7 @@
 // Regression (Phase E4 finding #1): before the bare head/alias consulted the
 // source-keyed visible author, both fell through the `.unregistered` gate arm to
 // the global last-wins template and instantiated the non-visible `c.Box`
-// (size 16). Fail-before printed `size=16 alias=16`.
+// (size 16), printing `size=16 alias=16`.
 
 #import "modules/std.sx";
 #import "0774-modules-bare-generic-head-visible-author/b.sx";

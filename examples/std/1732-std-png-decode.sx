@@ -61,7 +61,7 @@ main :: () {
         print("trunc reject ok\n");
         png.Image{ pixels = "", width = 0, height = 0, format = .rgba }
     };
-    // Flip one payload byte inside IHDR — its CRC no longer matches.
+    // Flip one payload byte inside IHDR so its CRC mismatches.
     corrupt := context.allocator.alloc(u8, data.len);
     i = 0;
     while i < data.len { corrupt[i] = data[i]; i += 1; }

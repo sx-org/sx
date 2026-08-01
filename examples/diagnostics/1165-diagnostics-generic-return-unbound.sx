@@ -2,8 +2,8 @@
 // at the declaration: the fn isn't a template (type params derive from
 // params), and no call site could ever bind the return. All three declare
 // surfaces diagnose: a top-level fn, a struct-body method, and a
-// (non-parameterised) impl method. Each used to PANIC the compiler at LLVM
-// emission via the `.unresolved` tripwire — even when never called.
+// (non-parameterised) impl method. Undiagnosed, each PANICs the compiler at
+// LLVM emission via the `.unresolved` tripwire — even when never called.
 
 #import "modules/std.sx";
 

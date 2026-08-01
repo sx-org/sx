@@ -4,9 +4,9 @@
 //
 // The parser marks any reference to a struct's own type param `is_generic`
 // (so `x: T` for a real `$T: Type` resolves without a `$`). That marking is
-// the same for a value param, so the unknown-type walk used to skip `x: N`
-// entirely; the field's type leaf then resolved to the `.unresolved` sentinel
-// and PANICKED at LLVM emission ("unresolved type reached LLVM emission").
+// the same for a value param, so an unknown-type walk that skips `x: N`
+// entirely leaves the field's type leaf at the `.unresolved` sentinel, which
+// PANICS at LLVM emission ("unresolved type reached LLVM emission").
 //
 // The checker now distinguishes TYPE params (`$T: Type`, `$T: SomeProtocol`,
 // the `..$Ts` pack) from VALUE params (`$N: u32`) using the binder's own rule:

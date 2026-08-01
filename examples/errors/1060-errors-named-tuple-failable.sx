@@ -5,8 +5,8 @@
 // `or .(x=.., y=..)` terminator.
 //
 // Regression (issue 0179-adjacent named-tuple-failable miscompile): a named
-// failable tuple used to WRAP as `{ {A,B}, err }` while the value-return
-// lowering inserted the value slots FLAT, producing invalid LLVM
+// failable tuple WRAPPED as `{ {A,B}, err }` against a value-return lowering
+// that inserts the value slots FLAT produces invalid LLVM
 // (`Invalid InsertValueInst operands`).
 #import "modules/std.sx";
 

@@ -13,9 +13,9 @@
 //   - type-category match arm         `case IoErr:`
 //   - `!Named` failable channel       `-> !IoErr`   (E6b audited use surface)
 //
-// Fail-before (pre-E6b): the stateless `type_bridge.resolveInlineErrorSet`
-// `findByName` short-circuit interned ONE global last-wins `IoErr`, so every bare
-// form silently resolved to it; the `!IoErr` channel resolved through
+// A stateless `type_bridge.resolveInlineErrorSet`
+// `findByName` short-circuit interns ONE global last-wins `IoErr`, so every bare
+// form resolves to it; the `!IoErr` channel resolves through
 // `resolveErrorType -> resolveTypeName` straight to that global slot. The program
 // exited 0.
 

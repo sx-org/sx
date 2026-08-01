@@ -3,10 +3,9 @@
 // enclosing declaration's own type parameters monomorphize alongside it — one
 // instance per (block, type argument) pair, each with its own replay.
 //
-// Issue 0418: mixing a generic type parameter with a block parameter used to
-// reach LLVM emission with an unresolved type, because a block parameter forced
-// the whole call through comptime inlining, which never monomorphized the
-// generic one.
+// Issue 0418: a block parameter must not force the whole call through comptime
+// inlining, which never monomorphizes the generic parameter — mixing the two
+// then reaches LLVM emission with an unresolved type.
 #import "modules/std.sx";
 #import "modules/fluent.sx";
 

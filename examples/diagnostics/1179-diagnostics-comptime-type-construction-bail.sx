@@ -11,9 +11,9 @@
 // never-defined `declare` placeholder, which would otherwise panic codegen
 // (`verifySizes`: llvm_size != ir_size on an unsized forward slot).
 //
-// Regression (issue 0140): before the fix this panicked with "unresolved type
-// reached LLVM emission" (exit 134), because the interp's bail detail was
-// dropped (`catch return null`) and `.unresolved` reached codegen unannounced.
+// Regression (issue 0140): dropping the bail detail (`catch return null`)
+// lets `.unresolved` reach codegen unannounced and panics with "unresolved
+// type reached LLVM emission" (exit 134).
 #import "modules/std.sx";
 #import "modules/std/meta.sx";
 

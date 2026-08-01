@@ -1,6 +1,6 @@
 // The 0921 nominal-identity matrix with the IMPORT ORDER FLIPPED (b before
-// a): the pre-fix global-name maps were order-sensitive (last or first
-// registration won), so both orders must select identically per author.
+// a): global-name maps are order-sensitive (last or first registration
+// wins), so both orders must select identically per author.
 // Regression (issue 0320).
 #import "modules/std.sx";
 b :: #import "0922-modules-nominal-identity-import-order/wb.sx";

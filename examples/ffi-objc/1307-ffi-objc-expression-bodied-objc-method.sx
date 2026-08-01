@@ -1,13 +1,5 @@
-// M1.0 (xfail) — '=>' expression-body form inside '#objc_class'
-// member methods.
-//
-// Today: parseRuntimeClassDecl ([src/parser.zig:1262]) accepts ';'
-// (declaration) or '{ ... }' (block body) but not '=>'. Trying
-// '=>' surfaces 'expected ;' at the arrow.
-//
-// Next commit extends the member parser to accept the arrow
-// form, mirroring the existing parseFnDecl ('=>') arm, and this
-// snapshot flips from a parser error to '42\n'.
+// The `=>` expression-body form parses for `#objc_class` member methods,
+// mirroring `parseFnDecl`'s arrow arm.
 
 #import "modules/std.sx";
 

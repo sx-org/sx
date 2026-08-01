@@ -1,6 +1,6 @@
-// 1a-S3a — `type_info` is kind-first and EXHAUSTIVE: every type-table
-// kind reflects into its TypeInfo variant (previously only enum/
-// struct/tuple). Also pins StructField.offset (from the same layout
+// `type_info` is kind-first and EXHAUSTIVE: every type-table
+// kind reflects into its TypeInfo variant, not just enum/
+// struct/tuple. Also pins StructField.offset (from the same layout
 // walk the field accessors use) and the union arm (arms overlay at 0).
 #import "modules/std.sx";
 meta :: #import "modules/std/meta.sx";

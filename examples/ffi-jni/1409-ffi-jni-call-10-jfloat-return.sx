@@ -1,8 +1,8 @@
 // Regression: `#jni_call(f32)` (jfloat return).
-// Before the fix, the Call<T>Method switch in `src/ir/emit_llvm.zig`
-// only handled `.f64` (jdouble), so any JNI method returning `float`
-// fell through to the `else` arm and emitted `LLVMGetUndef` — a
-// silent-undef footgun that shipped on Android (chess
+// The Call<T>Method switch in `src/ir/emit_llvm.zig` covers `.f32`.
+// Without that arm a JNI method returning `float` falls through to the
+// `else` arm and emits `LLVMGetUndef` — a
+// silent-undef footgun on Android (chess
 // `MotionEvent.getX()` / `getY()` came through as `undef` arguments
 // to `sx_android_push_touch`, breaking every touch).
 //

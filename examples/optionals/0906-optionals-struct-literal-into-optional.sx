@@ -1,10 +1,10 @@
 // A bare struct literal `.{ ... }` against an optional target `?T` builds the
 // inner `T` and wraps it once — in every caller context: var-decl, function
 // argument, return value, a nested `?T` struct field, reassignment, and an
-// array element. Previously this filled the optional's {payload, has_value}
-// layout directly, corrupting the value (a multi-field payload's first field
-// was clobbered by the has_value flag, or a `?T` arg silently read as null) or
-// failing LLVM verification on a double wrap.
+// array element. Filling the optional's {payload, has_value} layout directly
+// corrupts the value (the has_value flag clobbers a multi-field payload's
+// first field, or a `?T` arg reads as null) or fails LLVM verification on a
+// double wrap.
 // Regression (issue 0160).
 #import "modules/std.sx";
 

@@ -5,10 +5,10 @@
 // FuncId (the identity fix, issue 0100 / example 0719) and lowers it through
 // `lazyLowerFunction`'s null-FuncId `lowerFunction` path. `foo`'s body folds
 // `if true { return helper(); }` to an unconditional return, so its lowering
-// ends with `block_terminated = true`. The null-FuncId path used to restore
-// every saved caller field EXCEPT `block_terminated`, so that flag leaked back
-// into `main`, and `main`'s own trailing `print` / `return 0` were treated as
-// dead-after-terminator — the compiler rejected `return 0` with "body produces
+// ends with `block_terminated = true`. A null-FuncId path that restores
+// every saved caller field EXCEPT `block_terminated` leaks that flag back
+// into `main`, so `main`'s own trailing `print` / `return 0` read as
+// dead-after-terminator and the compiler rejects `return 0` with "body produces
 // no value". The fix routes all exit paths through one save/restore defer, so
 // the qualified alias is transparent to the caller. (`helper` also lives in
 // m.sx's own flat import, exercising the F1 source-context restore too.)
@@ -26,6 +26,6 @@ main :: () -> i32 {
     // Caller statements AFTER the call must still be emitted (not dead).
     report("terminating-callee", x == 7);
     print("after\n");
-    // The caller's OWN return — rejected pre-fix because block_terminated leaked.
+    // The caller's OWN return — reachable, not dead-after-terminator.
     return 0;
 }

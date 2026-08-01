@@ -5,9 +5,9 @@
 // size is unknown.
 //
 // Regression: target_type leaks from the surrounding scope (e.g. the
-// enclosing function's return type). The dispatcher used to auto-load
-// `sizeof(target_type)` bytes from every `*void` return, mistaking
-// real pointers for Self-encoded boxes. Result was that
+// enclosing function's return type). A dispatcher that auto-loads
+// `sizeof(target_type)` bytes from every `*void` return mistakes
+// real pointers for Self-encoded boxes, so
 // `alloc.alloc_bytes(64)` through an Allocator protocol value returned the
 // first 4 bytes of malloc'd memory interpreted as `i32` (= 0 → null).
 

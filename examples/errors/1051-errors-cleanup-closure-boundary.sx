@@ -15,9 +15,8 @@
 // Also: `try` is legal inside the lambda (it propagates through the lambda's own
 // `!E` channel) even though it is parser-banned in the cleanup body directly.
 //
-// Locks the closure-boundary arms of the error-flow pass before A5.2 extracts it
-// into its own module. Constructible since issue 0073 (closure literal in a
-// `defer` body no longer segfaults lowering — see 0310).
+// Locks the closure-boundary arms of the error-flow pass. A closure literal in
+// a `defer` body lowers without segfaulting (issue 0073 — see 0310).
 
 #import "modules/std.sx";
 

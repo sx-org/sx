@@ -4,8 +4,8 @@
 // on field access. Writes through the pointer are visible in the
 // original array and vice versa.
 //
-// Regression (issue 0117): this shape used to reach LLVM emission with
-// an unresolved element type and panic.
+// Regression (issue 0117): this shape reaching LLVM emission with an
+// unresolved element type panics.
 
 #import "modules/std.sx";
 

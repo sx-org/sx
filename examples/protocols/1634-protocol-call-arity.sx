@@ -1,6 +1,6 @@
 // issue 0131 regression: a protocol method call must arity-check like a
 // plain call. `Allocator.dealloc_bytes` declares (ptr); calling it with
-// an extra argument used to compile and silently drop the extra.
+// an extra argument must not compile and drop the extra.
 #import "modules/std.sx";
 
 main :: () -> i32 {

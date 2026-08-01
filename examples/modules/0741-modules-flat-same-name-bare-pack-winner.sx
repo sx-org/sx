@@ -2,10 +2,10 @@
 // fn must DISPATCH to that author, not the first-wins winner — even when the
 // winner is a comptime PACK (`..$args`) of the same name. a.sx (imported first)
 // authors `f` as a pack → first-wins winner; b.sx authors its OWN plain `f`. In
-// b.sx, `f()` must reach b.f (returns 2). Before the fix, lowerCall's early
-// pack/comptime/generic dispatch keyed off the first-wins winner (a's pack) and
-// invoked it (returns 1) BEFORE consuming the selected author — so plan-selected
-// author and lowered+dispatched author disagreed. The early dispatch now reads
+// b.sx, `f()` must reach b.f (returns 2). An early pack/comptime/generic
+// dispatch in lowerCall keyed off the first-wins winner (a's pack)
+// invokes it (returns 1) BEFORE consuming the selected author — so plan-selected
+// author and lowered+dispatched author disagree. The early dispatch reads
 // the SAME `SelectedFunc` the main dispatch binds (fix-0102 F2).
 #import "modules/std.sx";
 #import "0741-modules-flat-same-name-bare-pack-winner/a.sx";

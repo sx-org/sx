@@ -206,8 +206,8 @@ main :: () -> i32 {
         // ── case 1b: pipelined requests complete in ONE tick ──────────
         // (Q3.3-review MED): the second request's fiber is dispatched by
         // finalize_fibers' write→serve path AFTER the tick's first drive —
-        // the re-drive loop must run it in the SAME tick (pre-fix it slept
-        // out the next tick's whole wait). The pin is measured SERVER-SIDE
+        // the re-drive loop must run it in the SAME tick, not sleep out the
+        // next tick's whole wait. The pin is measured SERVER-SIDE
         // (requests_served delta across the single tick), where it is
         // deterministic. Two loopback-visibility races voided the original
         // single-shot wire check (~25% flake, diagnosed 2026-07-03): the

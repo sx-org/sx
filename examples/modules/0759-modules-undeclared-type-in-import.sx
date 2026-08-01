@@ -3,10 +3,10 @@
 //
 // The `UnknownTypeChecker` only walks MAIN-file decls — imported / library
 // modules are trusted and never checked. So an undeclared type name in an
-// imported module used to fall through the type leaf's empty-struct stub and
-// silently fabricate a 0-field struct: `make_thing()` below compiled and ran
+// imported module falling through the type leaf's empty-struct stub
+// fabricates a 0-field struct: `make_thing()` below compiles and runs
 // (printing `thing.x = 42`) even though `lib.sx` references the non-existent
-// type `Coordnate`. The source-aware nominal leaf now poisons a genuinely-
+// type `Coordnate`. The source-aware nominal leaf poisons a genuinely-
 // undeclared name with the `.unresolved` sentinel and emits the diagnostic at
 // the reference, so the typo surfaces instead of mis-sizing `Thing` downstream.
 //

@@ -4,9 +4,9 @@
 // guard form, compound `and` / `or`, the `else` arm, and reassignment killing
 // narrowing (the value must be re-narrowed before reuse).
 //
-// Regression (issue 0179): an un-narrowed `?T → concrete` used to unwrap
-// unconditionally — yielding the zero payload of a null optional with no
-// diagnostic. Narrowing is now the ONLY implicit path; everything else is a
+// Regression (issue 0179): unwrapping an un-narrowed `?T → concrete`
+// unconditionally yields the zero payload of a null optional with no
+// diagnostic. Narrowing is the ONLY implicit path; everything else is a
 // compile error (see 0920).
 #import "modules/std.sx";
 

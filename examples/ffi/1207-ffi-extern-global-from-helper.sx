@@ -5,10 +5,9 @@
 // pointers), and a `u64`-returning function correctly returns
 // the address.
 //
-// Was issue-0037 — the helper used to emit `ret i64 undef` because
-// `coerceToType` had no pointer↔integer case, so the explicit
-// `xx ptr` cast produced an unchanged pointer value handed to a
-// `ret i64` slot.
+// Issue 0037: without a pointer↔integer case in `coerceToType` the
+// explicit `xx ptr` cast yields an unchanged pointer value handed to a
+// `ret i64` slot, and the helper emits `ret i64 undef`.
 
 #import "modules/std.sx";
 

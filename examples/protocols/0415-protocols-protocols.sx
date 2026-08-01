@@ -529,9 +529,9 @@ main :: () {
     }
 
     // P5.3: Self-typed argument via a generic bound. Calling `eq` through
-    // an ERASED `Eq` value is a compile error (Era-2 per-method
-    // erasability: `other: Self` has no expressible type through erasure —
-    // the old erased form passed it UNCHECKED); the generic bound keeps
+    // an ERASED `Eq` value is a compile error (per-method
+    // erasability: `other: Self` has no expressible type through erasure, so
+    // an erased form would pass it UNCHECKED); the generic bound keeps
     // Self known. The refusal itself is pinned in diagnostics/1253.
     {
         p1 := Point{ x = 1, y = 2 };
@@ -591,8 +591,8 @@ main :: () {
     // P2.4: xx in function return position (tested in standalone test_return.sx)
     // Covered by: make_adder :: (acc: *Accumulator) -> Adder { xx acc; }
 
-    // P2.6: protocol values in arrays — each element OWNS its copy
-    // (the cutover: reads go through the erased values, not the sources).
+    // P2.6: protocol values in arrays — each element OWNS its copy, so reads
+    // go through the erased values, not the sources.
     {
         acc := Accumulator{ total = 0 };
         dbl := Doubler{ val = 0 };

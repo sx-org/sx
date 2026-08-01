@@ -31,7 +31,7 @@ main :: () {
     if p := t.(?*Rect) { print("tagged ptr {}\n", p.w); } else { print("tagged ptr null\n"); }
     // A conformer that is not the receiver's own type answers null. Rect is
     // the FIRST conformer by canonical order, so its tag is 0 — the word a
-    // missing tag used to fall back to, which made this arm crash.
+    // a missing tag would fall back to, crashing this arm.
     if p := t.(?*Square) { print("tagged miss {}\n", p.side); } else { print("tagged ptr miss null\n"); }
     // The recovery is a BORROW: the write is seen through `r`.
     if p := t.(?*Rect) { p.w = 9; }

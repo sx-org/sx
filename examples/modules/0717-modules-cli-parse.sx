@@ -25,7 +25,7 @@ report :: (label: string, ok: bool) {
     if ok { print("{}: ok\n", label); } else { print("{}: FAIL\n", label); }
 }
 
-// Half-open containment [lo, hi) — used to prove a view points into argv.
+// Half-open containment [lo, hi) — proves a view points into argv.
 in_range :: (x: i64, lo: i64, hi: i64) -> bool {
     return x >= lo and x < hi;
 }

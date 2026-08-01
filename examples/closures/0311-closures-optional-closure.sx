@@ -6,10 +6,10 @@
 // call-through (with and without captures), `??` coalesce, pass-as-param,
 // return, and args + non-void return.
 //
-// Regression (issue 0170): `g!()` where `g : ?Closure(...)` previously lowered
-// to a `call_indirect` that treated the closure `{fn,env}` struct as a bare
-// fn pointer (LLVM "Called function must be a pointer!"); the indirect-call
-// catch-all also hardcoded an `.i64` return type. The else-arm in
+// Regression (issue 0170): lowering `g!()` where `g : ?Closure(...)` to a
+// `call_indirect` that treats the closure `{fn,env}` struct as a bare
+// fn pointer fails LLVM ("Called function must be a pointer!"), and an
+// indirect-call catch-all that hardcodes an `.i64` return type. The else-arm in
 // `src/ir/lower/call.zig` now dispatches to `call_closure` when the callee
 // expression's static type is a closure, and uses the real return type.
 

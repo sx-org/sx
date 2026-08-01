@@ -5,7 +5,7 @@
 // (they never reached the address-of mis-lowering) — the binding must still be
 // rejected at its declaration.
 //
-// Regression (issue 0076, attempt-4 coverage). Expected: one error for each
+// Regression (issue 0076). Expected: one error for each
 // binding; exit 1.
 #import "modules/std.sx";
 

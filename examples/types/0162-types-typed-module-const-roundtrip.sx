@@ -18,7 +18,7 @@
 // initializers, whose type-based validation (attempt 2) must accept a correctly
 // typed expression even though it isn't a literal.
 //
-// `MF`/`MFR` pin the attempt-3 inferExprType promotion fix: a mixed int+float
+// `MF`/`MFR` pin the inferExprType promotion: a mixed int+float
 // arithmetic expression infers as the float result regardless of operand order,
 // so it matches an `f64` annotation (and folds to 2.5, not a truncated 2).
 #import "modules/std.sx";

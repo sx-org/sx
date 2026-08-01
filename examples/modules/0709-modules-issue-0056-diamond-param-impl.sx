@@ -4,9 +4,9 @@
 //   main ─┬─ issue-0056/mid_a ─┐
 //         └─ issue-0056/mid_b ─┴─ issue-0056/common  (holds `impl Into(Wrapped) for i64`)
 //
-// Impl blocks are anonymous (no `declName`), so before the fix the diamond
-// dedup in imports.zig appended the cached node once per path and the second
-// registration tripped: `duplicate impl 'Into' for source 'i64'`. Now the flat
+// Impl blocks are anonymous (no `declName`), so a name-only diamond dedup in
+// imports.zig appends the cached node once per path and the second
+// registration trips: `duplicate impl 'Into' for source 'i64'`. The flat
 // decl list also dedups by node identity, so this builds and the impl runs
 // exactly once: 7 + 35 = 42.
 #import "modules/std.sx";

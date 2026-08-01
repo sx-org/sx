@@ -1,11 +1,11 @@
 // M1.2 A.1 follow-up — pass-by-value struct args/returns in
 // sx-defined `#objc_class` methods.
 //
-// Wires the new `{Name=field0field1...}` arm of
-// `appendObjcEncoding` into `class_addMethod` registration. Without
-// it, methods that take or return a value-type struct (CGPoint,
-// CGSize, NSRange shapes) used to fail signature-encoding
-// derivation with a "type kind not yet supported" diagnostic.
+// The `{Name=field0field1...}` arm of `appendObjcEncoding` feeds
+// `class_addMethod` registration. Without it, a method that takes or
+// returns a value-type struct (CGPoint, CGSize, NSRange shapes) fails
+// signature-encoding derivation with a "type kind not yet supported"
+// diagnostic.
 //
 // Each sx-defined method registered with the Obj-C runtime needs an
 // encoding string built from its IR signature. For

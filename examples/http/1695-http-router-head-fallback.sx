@@ -3,8 +3,8 @@
 // Q1.10 follow-through: "GET and HEAD MUST be supported" — the server's
 // automatic HEAD (Q1.4: run the handler, keep Content-Length, ship no
 // body) only works if the ROUTER dispatches a HEAD request at all. It
-// used to 405 any HEAD unless a HEAD route was explicitly registered,
-// so every Router-based app was nonconformant for HEAD. Now a HEAD
+// 405ing any HEAD without an explicitly registered HEAD route makes
+// every Router-based app nonconformant for HEAD. A HEAD
 // request with no HEAD route falls back to the matching GET route; the
 // server layer suppresses the body as usual. A HEAD for a path with
 // only non-GET routes still 405s (with Allow), and 404 stays 404.

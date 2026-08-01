@@ -7,9 +7,9 @@
 // "type 'Make' is not visible" diagnostic and poison — the visible 1-hop
 // `Make :: 123` const must NOT vouch for it.
 //
-// Regression (Phase E4 attempt-7, finding E4-type-fn-head-hidden-by-visible-
-// nonfn): before `headFnLeak` decided visibility from the ELIGIBLE FUNCTION
-// authors it used the module-scope NAME predicate (`isNameVisible`), which the
+// Regression (type-fn head hidden by a visible non-fn):
+// `headFnLeak` decides visibility from the ELIGIBLE FUNCTION
+// authors, not the module-scope NAME predicate (`isNameVisible`), which the
 // visible non-fn `Make :: 123` satisfied — so the global `fn_ast_map` type-fn
 // silently instantiated and `size_of(Make(i64))` printed 8 at exit 0 instead of
 // the visibility diagnostic.

@@ -5,9 +5,9 @@
 // param target, so the erasure keeps its node-aware lvalue-borrow
 // discipline. Mutations made through the protocol value hit the CALLER'S
 // local — never a silent heap copy through the ambient allocator.
-// Regression (issue 0302): the loop used to clear the target entirely and
-// the later value-wise coercion heap-copied the local via
-// context.allocator (counters landed on the copy; the copy leaked).
+// Regression (issue 0302): a loop that clears the target entirely leaves the
+// later value-wise coercion to heap-copy the local via context.allocator —
+// counters land on the copy, and the copy leaks.
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 

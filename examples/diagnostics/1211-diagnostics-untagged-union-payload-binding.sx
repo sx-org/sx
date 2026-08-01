@@ -6,8 +6,8 @@
 //     fold; see example 1220 for the no-binding forms);
 //   - a payload-less enum (the most plausible user typo) — the arm-level
 //     binding rejection, generic wording.
-// Regression (issue 0163): these used to leak an .unresolved binding type and
-// panic in the LLVM backend ("unresolved type reached LLVM emission").
+// Regression (issue 0163): undiagnosed these leak an .unresolved binding type
+// and panic in the LLVM backend ("unresolved type reached LLVM emission").
 #import "modules/std.sx";
 
 Shape :: union { circle: i64; rect: i64; }

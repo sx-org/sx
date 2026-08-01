@@ -12,8 +12,8 @@
 //
 // This test kills the loop's kernel queue out from under a running server
 // and calls run() on the main thread:
-//   • pre-fix: run() never returns → the example TIMES OUT (that is the red).
-//   • post-fix: run() returns in ~100 ms after 5 LISTEN_ERROR emissions.
+// run() returns in ~100 ms after 5 LISTEN_ERROR emissions; a loop that never
+// gives up never returns and the example TIMES OUT.
 // Asserts the hook saw >= LOOP_FAULT_LIMIT consecutive-failure events and
 // the GPA gate stays net-zero after close.
 #import "modules/std.sx";
@@ -62,7 +62,7 @@ main :: () -> i32 {
             socket.close(srv.loop.kq);
         }
 
-        // Pre-fix this never returns (the corpus timeout is the red).
+        // Without the fault stop this never returns (the corpus times out).
         srv.run();
 
         if counter.listen_errors < 5 {

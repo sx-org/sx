@@ -5,8 +5,8 @@
 // subject-level, so it fires with or without payload bindings (subsuming the
 // arm-level issue-0163 rejection for union subjects — see example 1211 for
 // the binding forms) and for a POINTER to an untagged union.
-// Regression (issue 0222): the no-binding form used to reach the backend as
-// invalid IR — a raw `[8 x i8]` union scrutinee switched against `i0` case
+// Regression (issue 0222): unrejected, the no-binding form reaches the backend
+// as invalid IR — a raw `[8 x i8]` union scrutinee switched against `i0` case
 // constants ("Switch constants must all be same type as switch value!").
 #import "modules/std.sx";
 

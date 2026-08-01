@@ -5,10 +5,10 @@
 // Unbox to a typed value first (`xx av` / `av.(T)`), or compare
 // `type_of(av)` against a type for tag questions.
 //
-// Supersedes the old value-word comparison (and its issue-0199
-// regression pin, example 0654): under the borrow representation the
-// payload words are temp addresses, so the old semantics could only
-// have meant accidental pointer identity.
+// A value-word comparison (issue 0199, example 0654) is not available:
+// under the borrow representation the payload words are temp
+// addresses, so comparing them could only mean accidental pointer
+// identity.
 
 #import "modules/std.sx";
 

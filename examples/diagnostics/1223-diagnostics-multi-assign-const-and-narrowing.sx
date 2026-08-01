@@ -1,9 +1,9 @@
 // Multi-assign shares single-assign's write guards (issues 0229 + 0228):
 //
 // 1. Root-const rejection (issue 0116 machinery): a MEMBER or INDEX target
-//    whose chain roots at a `::` constant is rejected per-target — previously
-//    only IDENT targets were guarded and `CP.x, a = 9, 9;` wrote through the
-//    const. A deref target (`GP.*`) stays accepted: writing through a pointer
+//    whose chain roots at a `::` constant is rejected per-target; guarding
+//    IDENT targets alone lets `CP.x, a = 9, 9;` write through the
+//    const. A deref target (`GP.*`) is accepted: writing through a pointer
 //    VALUE is not a write to the named root (same as single-assign).
 // 2. Flow-narrowing invalidation: a multi-assign to a narrowed optional name
 //    kills the narrowing (parity with `o = null;`), so a stale-narrowed use

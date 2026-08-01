@@ -4,10 +4,10 @@
 // protocol `Provider` returns `Box` and the impl builds main's `Box`. Dispatching
 // `p.get()` must type the result as MAIN's `Box`, so `b.m` resolves.
 //
-// Fail-before (pre-E6BR-2): the method signature went through the no-author
-// `type_bridge.resolveTemplateSignatureType` wrapper (global last-wins), so the
-// return typed as dep's `Box { a }` and `b.m` was `field 'm' not found on type
-// 'Box'`. Pass-after: source-aware → main's `Box`, exit 0.
+// Routing the method signature through the no-author
+// `type_bridge.resolveTemplateSignatureType` wrapper (global last-wins) types
+// the return as dep's `Box { a }`, and `b.m` is `field 'm' not found on type
+// 'Box'`. Source-aware, it is main's `Box`, exit 0.
 
 #import "modules/std.sx";
 #import "0820-protocols-same-name-method-own-wins/dep.sx";

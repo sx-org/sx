@@ -12,8 +12,8 @@
 // when cancelled; their next `suspend_raw` raises `Canceled` and unwinds the body,
 // so their POST-SLEEP `rec(...)` NEVER runs and `race` returns at WINNER-time. The
 // completion log therefore shows ONLY `a @ 10ms`, and the final virtual clock is
-// 10 — NOT 30 (the old cooperative-join behaviour that let losers run to their
-// natural end). The losers end `.canceled` with their work stopped.
+// 10 — NOT 30, which is what letting losers run to their natural end would
+// give. The losers end `.canceled` with their work stopped.
 //
 // aarch64-pinned (the scheduler's per-arch asm + per-OS mmap/event constants):
 // runs end-to-end on a matching host (macOS + linux), ir-only on a mismatch.

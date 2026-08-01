@@ -2,7 +2,7 @@
 // param diagnoses at the call site instead of monomorphizing with the
 // param unbound. A `string` arg at a `[]$T` param is the canonical
 // uninferrable shape (string deliberately does not bind `[]$T`); it
-// used to stamp `.unresolved` through the body and PANIC the compiler
+// otherwise stamps `.unresolved` through the body and PANICs the compiler
 // at LLVM emission via the sentinel tripwire.
 //
 // Regression (issue 0126, diagnostic half).

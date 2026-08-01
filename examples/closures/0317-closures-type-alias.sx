@@ -2,7 +2,7 @@
 //   CB :: Closure(i32) -> i32;
 // The alias is usable everywhere a closure type is: fn param, struct field,
 // return type, and as the target of an `xx` protocol erasure. Parses the
-// `-> R` tail that a bare `Closure(i32)` call previously left dangling.
+// `-> R` tail that a bare `Closure(i32)` call would leave dangling.
 //
 // Regression (issue 0231): the const-RHS grammar parsed `Closure(i32)` as a
 // call expression and errored "expected ';'" at `->`. Fixed by routing a

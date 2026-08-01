@@ -1,12 +1,12 @@
-// E6a (attempt-2) regression — RECURSIVE top-level enum/union via per-decl nominal
+// Regression — RECURSIVE top-level enum/union via per-decl nominal
 // identity. Three single-author shapes that reference a not-yet-interned name in a
 // `*Name` field:
 //   * `Node`  — a SELF-referential UNION (linked cells: `next: *Node`).
 //   * `Tree`  — a SELF-referential ENUM/tagged-union (`branch: *Tree`).
 //   * `A`/`B` — a MUTUALLY-referential union pair (`A` holds `*B`, `B` holds `*A`).
 //
-// Pre-fix (eed2f99) the new per-decl register path built each enum/union body
-// through the STATELESS `type_bridge` BEFORE a matching nominal slot existed, so a
+// The per-decl register path must not build an enum/union body through the
+// STATELESS `type_bridge` BEFORE a matching nominal slot exists: a
 // `*Name` field forward-created a STRUCT stub under `Name`; `internNamedTypeDecl`
 // then refreshed that struct stub as an enum/union and tripped the kind-stability
 // assert in `types.zig` `updatePreservingKey` — a hard panic (the corpus had no

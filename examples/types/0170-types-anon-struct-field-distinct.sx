@@ -4,9 +4,8 @@
 // cross-bind on the shared field spelling.
 //
 // Regression (folded from the Phase-D `replaceKeyedInfo` re-key, which made the
-// per-parent anon rename key-safe): on master 7ffc0c1 the two anon types
-// cross-bound and `b.inner.y` failed with "field 'y' not found on type
-// 'B.inner'". Pins fail-before / pass-after.
+// per-parent anon rename key-safe): cross-bound anon types make `b.inner.y`
+// fail with "field 'y' not found on type 'B.inner'".
 #import "modules/std.sx";
 
 A :: struct { inner: struct { x: i64; }; }

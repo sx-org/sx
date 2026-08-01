@@ -19,7 +19,7 @@ E :: enum { A; B; K :: 7; }
 F :: enum { X :: 3; Y :: 7; Z :: 11; }
 
 main :: () {
-    // Read each variant by name — the previously-crashing path.
+    // Read each variant by name.
     print("{} {} {}\n", E.A, E.B, E.K);        // .A .B .K
     print("{} {} {}\n", F.X, F.Y, F.Z);        // .X .Y .Z
 

@@ -6,9 +6,9 @@
 //     B :: u64;                     // its LOCAL target, declared later
 //
 // Because `ns` is scanned first, dep's `B :: u8` is already in the global
-// `type_alias_map` when `A :: B` is scanned. The pre-E1.5-attempt-2 `scanDecls`
-// identifier-RHS branch resolved the RHS through that GLOBAL map and bound `A` to
-// dep's `u8` right there; the per-source fixpoint guard then saw `A` already
+// `type_alias_map` when `A :: B` is scanned. A `scanDecls`
+// identifier-RHS branch that resolves the RHS through that GLOBAL map binds `A` to
+// dep's `u8` right there; the per-source fixpoint guard then sees `A` already
 // resolved and skipped it, so the source-aware leaf never corrected it (`A` came
 // out `u8`, truncating 300 -> 44). The source-aware scan registration resolves
 // `B` AS SEEN FROM main's source: dep's `B` is namespaced-only (not bare-visible)

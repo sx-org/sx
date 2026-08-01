@@ -6,8 +6,8 @@
 // the array to a local first (mirrors Zig, which also rejects slicing an
 // rvalue array).
 //
-// Regression (issue 0225): the old value-lowering path silently sliced a
-// hidden temp instead of diagnosing.
+// Regression (issue 0225): a value-lowering path slices a hidden temp
+// instead of diagnosing.
 #import "modules/std.sx";
 
 make_arr :: () -> [3]i64 {

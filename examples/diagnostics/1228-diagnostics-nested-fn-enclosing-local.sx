@@ -1,9 +1,9 @@
 // A nested `::` static function is NOT a closure — it has no environment, so a
 // reference to an ENCLOSING function's local / param / local-const cannot be
-// resolved and previously miscompiled to a dead Ref: bare reads returned undef
-// (exit 0, no diagnostic), indexed reads segfaulted, indexed / member stores
-// Bus-errored, and calling an enclosing closure value dispatched through a dead
-// env pointer. Every consumer shape is now a located compile error naming the
+// resolved; miscompiling it to a dead Ref makes bare reads return undef
+// (exit 0, no diagnostic), indexed reads segfault, indexed / member stores
+// Bus-error, and a call through an enclosing closure value dispatch on a dead
+// env pointer. Every consumer shape is a located compile error naming the
 // closure alternative: bare read, indexed read, indexed write, field write,
 // closure-value call, and multi-assign write. Regression (issue 0250 + review
 // fold).

@@ -8,8 +8,8 @@
 // must be sliced with `[0..len]` to form a `[]T`; passing `vs.items` bare is a
 // rejected coercion (see the diagnostic example for that path).
 //
-// Regression (issue 0141): the List-grown form used to segfault in the comptime
-// VM's slice decoder.
+// Regression (issue 0141): the List-grown form segfaults in the comptime VM's
+// slice decoder when its slice is decoded from a stale length.
 #import "modules/std.sx";
 #import "modules/std/meta.sx";
 

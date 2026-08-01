@@ -7,9 +7,9 @@
 // with `M :: 2`), a FLOAT-const-leaf expression (`F + 0.25`, with `F : f64 : 2.5`,
 // = 2.75), a builtin FLOAT numeric-limit leaf inside an expression
 // (`f64.true_min + 0.5` = 0.5), or a float `%` whose remainder is non-integral
-// (`5.5 % 2.0` = 1.5) — all of these are the core of issue 0095, which previously
-// slipped through and truncated. The fix is the integral-fold / non-integral-error
-// rule shared across all five sites (local, field, param, const, and array
+// (`5.5 % 2.0` = 1.5) — all of these are the core of issue 0095, where an
+// unguarded narrowing truncates. The integral-fold / non-integral-error
+// rule is shared across all five sites (local, field, param, const, and array
 // dimension), applied to ANY compile-time-constant float expression (literal,
 // int-const leaf, float-const leaf, numeric-limit leaf, `+ - * / %`, and
 // combinations) — the compile-time float evaluator is at parity with the integer

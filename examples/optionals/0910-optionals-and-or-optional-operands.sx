@@ -1,7 +1,7 @@
 // `and` / `or` over bare optional operands reduce each operand to its
 // has_value flag (presence-as-truth), exactly like `if <optional>`. A bare
-// optional reaching the short-circuit merge as a `{T,i1}` aggregate used to
-// fold truthy (issue 0164); it must instead test presence.
+// optional reaching the short-circuit merge as a `{T,i1}` aggregate folds
+// truthy (issue 0164); it must test presence instead.
 //
 // Truth table below: present `?i64` is "true", absent (null) is "false".
 #import "modules/std.sx";

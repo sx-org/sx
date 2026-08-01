@@ -11,7 +11,7 @@
 T :: struct { x: i64 = 1; y: i64 = 2; }
 U :: struct { a: i64 = 9; }
 
-// fn returns nothing — panicked at LLVM emission before the fix.
+// fn returns nothing — the shape that panics at LLVM emission unguarded.
 mk_void :: (p: *T) {
     p.* = .{ x = 5 };
 }

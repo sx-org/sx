@@ -1,7 +1,7 @@
 // Assigning to a by-VALUE capture is a compile error, not a silent no-op
 // (issue 0219). A capture is a read-only alias into storage the loop / match
 // / error machinery owns — mutating it bare would corrupt nothing (the store
-// used to be silently dropped, reaching neither the container nor the copy),
+// would be dropped silently, reaching neither the container nor the copy),
 // so it is rejected. Every by-value capture family is covered here; each `=`
 // below is diagnosed with a SHAPE-AWARE "cannot assign to immutable capture"
 // message: only the for-loop ELEMENT form suggests the `(*x)` by-ref

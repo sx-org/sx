@@ -1,5 +1,5 @@
 // Enum-valued value-carrying failables, two paths the bare-success fix (issue
-// 0097) did NOT originally cover. Regression (issue 0097, attempt-2 review F1+F2).
+// 0097) does not itself cover. Regression (issue 0097).
 //
 //   F1 — EXPLICIT full failable tuple return `return (.v, error.X)`. The bug was
 //   the inverse of 0097: narrowing the return target to the value type for ALL

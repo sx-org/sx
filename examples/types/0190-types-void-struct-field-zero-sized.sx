@@ -2,8 +2,8 @@
 // and must NOT crash the compiler. It lowers to a zero-width `[0 x i8]` LLVM
 // slot (TypeLowering.fieldLLVMType), and aggregate init skips storing a value
 // into it (emitStructInit) — so the struct stays sized and field access past
-// the void field is correct, instead of the old unsized-type SIGTRAP / a
-// corrupt aggregate constant.
+// the void field is correct, never an unsized-type SIGTRAP or a corrupt
+// aggregate constant.
 //
 // Regression (issue 0150).
 #import "modules/std.sx";

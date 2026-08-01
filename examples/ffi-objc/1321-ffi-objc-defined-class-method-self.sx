@@ -41,11 +41,10 @@ SxIssue44Foo :: #objc_class("SxIssue44Foo") {
         return xx this;
     }
 
-    // SxAppDelegate-shape: BOOL return + 2 extra *void args. Pre-fix,
-    // the call to addObserver:... would receive `xx this` truncated to
-    // its low byte (because resolveCallParamTypes returned `&.{}` for
-    // runtime-class receivers and `self.target_type` leaked the BOOL
-    // return type into the call's args).
+    // SxAppDelegate-shape: BOOL return + 2 extra *void args. Should
+    // resolveCallParamTypes return `&.{}` for runtime-class receivers,
+    // `self.target_type` leaks the BOOL return type into the call's args
+    // and addObserver:... receives `xx this` truncated to its low byte.
     appDelegate_options :: (this: *Self, app: *void, opts: *void) -> BOOL {
         bus := SxIssue44Bus.defaultCenter();
         bus.addObserver_selector_name_object(
@@ -79,7 +78,7 @@ main :: () -> i32 {
         f.bump();
         print("counter: {}\n", f.get());
 
-        // Direct `xx this` round-trip (worked pre-fix).
+        // Direct `xx this` round-trip — the control.
         f_void : *void = xx f;
         if f.me() == f_void {
             print("me: ok\n");
@@ -88,7 +87,7 @@ main :: () -> i32 {
         }
 
         // The actual repro: BOOL return + runtime-class method call.
-        // Pre-fix: `xx this` truncated to i8, capture_observer receives
+        // Truncating `xx this` to i8 makes capture_observer receive
         // (low_byte_of_f) cast back to *void, which won't equal f_void.
         g_observer = null;
         _ = f.captureSelf_options(xx 0, xx 0);

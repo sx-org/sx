@@ -7,7 +7,7 @@
 // unsent send buffer: the client usually got a reset instead of the error
 // response it was owed.
 //
-// The fix (Config.linger_timeout_ms, default 1000; 0 restores the old abrupt
+// Config.linger_timeout_ms (default 1000; 0 selects the abrupt
 // close): after an error response drains, the server shutdown(SHUT_WR)s
 // (FIN after the response — no RST), then keeps reading and DISCARDING
 // inbound bytes until EOF or the linger deadline, and only then closes.
@@ -16,8 +16,8 @@
 //   1. Sends a 64 KB junk burst (no header terminator; read_buf_cap 8 KB) —
 //      the server 431s with ~56 KB still unread in its receive queue.
 //   2. Asserts the client RECEIVES the full "HTTP/1.1 431" response and then
-//      a CLEAN FIN — a raw read() == 0 — never a reset. Pre-fix the close
-//      fired an RST (read() < 0, ECONNRESET); on a slower/wide-area path
+//      a CLEAN FIN — a raw read() == 0 — never a reset. An abrupt close
+//      fires an RST (read() < 0, ECONNRESET); on a slower/wide-area path
 //      that same RST routinely destroys the 431 itself (loopback usually
 //      wins the race, which is why the FIN-vs-RST kind is the assertion).
 //   3. Client closes; the lingering slot sees EOF and is freed well before
@@ -90,20 +90,20 @@ main :: () -> i32 {
             n, we := socket.write_nb(ca, *junk[fsent], xx (JUNK_LEN - fsent));
             if !we { fsent += n; wb = 0; }
             else if we == error.WouldBlock {
-                // Post-fix the server drains + discards, so the burst always
-                // completes; pre-fix its kernel queue jams once it stops
-                // reading — either way the 431 has fired long before this.
+                // The server drains + discards, so the burst always
+                // completes; a server that stops reading jams its kernel
+                // queue — either way the 431 has fired long before this.
                 wb += 1;
                 if wb > 50 and fsent >= 24576 { break; }
             }
-            else { break; }   // reset by the server (pre-fix RST path)
+            else { break; }   // reset by the server (the RST path)
             srv.tick(1) catch {};
             t += 1;
         }
 
         // ── the client must RECEIVE the 431, then a clean FIN ─────────
         // Raw reads so FIN and RST are distinguishable: 0 = orderly FIN
-        // (lingering close), -1/ECONNRESET = the old abrupt-close RST.
+        // (lingering close), -1/ECONNRESET = an abrupt-close RST.
         total : i64 = 0;
         got_fin := false;
         got_rst := false;

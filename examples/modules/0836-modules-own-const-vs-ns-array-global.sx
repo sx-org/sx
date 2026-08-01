@@ -1,7 +1,7 @@
 // The MAIN file's own typed scalar const `K : i64 : 4` vs a namespaced
 // module's same-named array global: the main file's bare `K` is its own
 // scalar — type inference must not borrow the array global's type either
-// (the print pack used to format the whole 4-element array).
+// (borrowing it makes the print pack format the whole 4-element array).
 //
 // Regression (issue 0115).
 

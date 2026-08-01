@@ -26,8 +26,7 @@ Ev :: enum { quit :: 0x100; key :: 0x300: i64; resize :: 0x400: i64; }
 Sig :: enum { term :: 0x0F; interrupt :: 0x02; halt :: 0x1A: i64; }
 
 main :: () {
-    // The previously-crashing / mis-printing path: print a payload-less
-    // variant of an explicit-tag tagged union by name.
+    // Print a payload-less variant of an explicit-tag tagged union by name.
     print("{}\n", Ev.quit);          // .quit
     print("{} {}\n", Sig.term, Sig.interrupt);   // .term .interrupt
 

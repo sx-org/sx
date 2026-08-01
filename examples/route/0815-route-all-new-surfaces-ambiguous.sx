@@ -13,9 +13,9 @@
 //   - tuple-type element                `size_of(Tuple(Box, i32))`  (O1/K5)
 //   - inline-anonymous body child       `x : union { b: Box }`      (inline-anon engine arm)
 //
-// Fail-before (pre-E6b-R): each of these resolved `Box` through the stateless
-// `type_bridge.resolveAstType` global last-wins, silently binding one arbitrary
-// author with NO diagnostic. Pass-after: every surface emits the LOUD
+// Resolving `Box` at any of these through the stateless
+// `type_bridge.resolveAstType` global last-wins binds one arbitrary
+// author with NO diagnostic. Every surface must emit the LOUD
 // "type 'Box' is ambiguous" and the build exits 1.
 
 #import "modules/std.sx";

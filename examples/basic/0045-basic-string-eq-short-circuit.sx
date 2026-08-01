@@ -5,8 +5,9 @@
 // started in. The `and`/`or` merge PHI must take that actual block as the
 // incoming predecessor.
 //
-// Regression (issue 0078): combining string equality with `and`/`or` used to
-// emit invalid LLVM (`PHI node entries do not match predecessors!`).
+// Regression (issue 0078): taking the wrong predecessor emits invalid LLVM
+// for string equality under `and`/`or` (`PHI node entries do not match
+// predecessors!`).
 #import "modules/std.sx";
 
 Json :: enum {

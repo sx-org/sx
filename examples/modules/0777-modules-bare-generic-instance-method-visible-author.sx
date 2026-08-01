@@ -11,7 +11,7 @@
 // Regression (Phase E4 finding #1, instance-method site): the static head
 // `Box(i64).make(7)` already selected `b.Box` for the layout (size 8), but the
 // instance method `x.tag()` resolved by bare template name in `fn_ast_map`, so it
-// ran `c.Box.tag` (returning 7+16=23) on the b instance. Fail-before printed
+// runs `c.Box.tag` (returning 7+16=23) on the b instance —
 // `size=8 tag=23`; with body-author ≡ layout-author it runs b's `tag` (7+8=15).
 
 #import "modules/std.sx";

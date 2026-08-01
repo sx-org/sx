@@ -51,7 +51,7 @@ main :: () {
     print("=== Auto Type Erasure ===\n");
 
     // AE1: function argument — explicit owning copy of an lvalue (an
-    // implicit `use_counter(sc)` is the cutover's demand error)
+    // implicit `use_counter(sc)` is the demand error)
     {
         use_counter :: (c: Counter) -> i32 { c.inc(); c.inc(); c.get() }
         sc := SimpleCounter{ val = 10 };

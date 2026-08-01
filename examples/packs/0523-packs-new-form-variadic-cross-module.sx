@@ -1,13 +1,12 @@
 // Regression: new-form variadic `..name: []T` defined in an imported
 // module is callable from another module without crashing LLVM emit.
 //
-// Before the fix in `resolveParamType` + `packVariadicCallArgs`,
-// the new-form variadic's element type went through one extra
-// `sliceOf` wrap (the helpers treated `..parts: []string` the same
-// as the legacy `parts: ..string` and added a slice level on top
-// of the already-declared slice). The double-wrapped `[][]T`
-// signature mismatched what the call-site marshalling emitted as
-// `[N x T]`, producing null/undef Refs that crashed
+// `resolveParamType` + `packVariadicCallArgs` must not put the
+// slice-form variadic's element type through an extra `sliceOf`
+// wrap: treating `..parts: []string` like `parts: ..string` adds a
+// slice level on top of the already-declared slice. The
+// double-wrapped `[][]T` signature mismatches what the call-site
+// marshalling emits as `[N x T]`, producing null/undef Refs that crash
 // `LLVMBuildExtractValue` inside `emitStrCmp` during emission.
 //
 // Today's stdlib `path_join` uses the new form

@@ -3,8 +3,8 @@
 //
 // An untagged union is a raw byte aggregate (`[N x i8]` storage); its
 // inactive-variant + padding bytes are unspecified, so byte-wise equality is
-// undefined. Previously `a == b` lowered to `icmp eq [8 x i8]` and failed LLVM
-// verification with no diagnostic. Now the binary-op equality lowering
+// undefined. Unrejected, `a == b` lowers to `icmp eq [8 x i8]` and fails LLVM
+// verification with no diagnostic. The binary-op equality lowering
 // (src/ir/lower/expr.zig) diagnoses it at compile time with a hint to compare a
 // specific variant field. The same guard covers fixed arrays (also raw
 // element aggregates with no `==` semantics). Expected exit: 1 (diagnostic).

@@ -5,8 +5,8 @@
 // (`` *`i2(i64) ``, a struct field typed `` `i2(i64) ``). A bare `i2` in type
 // position is still the 2-bit signed int. Complements examples/0154 (nullary
 // raw type references).
-// Regression (issue 0089 — attempt-5: the raw type atom no longer parses as a
-// terminal `type_expr`; it reaches the parameterized + wrapper continuations).
+// Regression (issue 0089): the raw type atom is not a terminal `type_expr` —
+// it reaches the parameterized + wrapper continuations.
 #import "modules/std.sx";
 
 `i2 :: struct($T: Type) {

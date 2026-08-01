@@ -1,8 +1,8 @@
 // Value spread (specs.md §"Tuple parallels") + pack capture materialization.
 // Regression (issue 0156 Part 2): a `..` spread crossing a deferred / value
-// boundary used to crash — a comptime pack captured into a closure segfaulted
-// (the deferred body re-expanded the spawner's dead locals), and spreading a
-// concrete tuple panicked ("unresolved type reached LLVM emission").
+// boundary crashes when a comptime pack captured into a closure re-expands
+// the spawner's dead locals in the deferred body, and spreading a concrete
+// tuple panics ("unresolved type reached LLVM emission").
 //
 // Locked-in semantics:
 //  - `..t` on a concrete TUPLE / fixed ARRAY value spreads its elements into

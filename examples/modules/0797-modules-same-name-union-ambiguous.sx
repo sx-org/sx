@@ -11,9 +11,9 @@
 //   - type-as-value                  `t : Type = Pair`
 //   - type-category match arm        `case Pair:`
 //
-// Fail-before (pre-E6a): the stateless `type_bridge.resolveInlineUnion`
-// `findByName` short-circuit interned ONE global last-wins `Pair`, so every bare
-// form silently resolved to it and the program exited 0.
+// A stateless `type_bridge.resolveInlineUnion` `findByName` short-circuit
+// interns ONE global last-wins `Pair`, so every bare form resolves to it and
+// the program exits 0.
 
 #import "modules/std.sx";
 #import "0797-modules-same-name-union-ambiguous/a.sx";

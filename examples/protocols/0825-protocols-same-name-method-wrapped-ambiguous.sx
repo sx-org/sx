@@ -6,9 +6,9 @@
 // declares none itself, so the `Provider.getp` return `*Box` is an unresolvable
 // collision and the build exits 1.
 //
-// Fail-before (pre-E6BR-4): the wrapped `*Box` fell to the no-author
+// A wrapped `*Box` falling to the no-author
 // `type_bridge.resolveTemplateSignatureType` wrapper (global last-wins, no
-// diagnostic), so the build did NOT report the collision.
+// diagnostic) leaves the collision unreported.
 
 #import "modules/std.sx";
 #import "0825-protocols-same-name-method-wrapped-ambiguous/a.sx";

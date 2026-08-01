@@ -31,7 +31,7 @@ main :: () {
   c := Cat{ m = 5 };
 
   // struct-literal init: two protocol fields straddling a non-protocol one
-  // (explicit owning copies — the cutover's spelling for lvalue sources).
+  // (explicit owning copies — the spelling for lvalue sources).
   h : Holder = .{ s = d.(Speaker), b = 7, t = c.(Speaker) };
   print("lit: {} {} {}\n", h.s.greet(10), h.b, h.t.greet(3));   // 52 7 15
 

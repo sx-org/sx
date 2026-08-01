@@ -1,10 +1,10 @@
 // A genuinely-undeclared type in an IMPORTED GENERIC struct field must emit
 // "unknown type" even when the struct is instantiated from the main file —
 // 0759 only covered a non-generic imported struct instantiated in-module.
-// Before the fix the generic template's fields resolved in the main-file
-// instantiation context, so the leaf trusted them as main-file decls and
-// silently stubbed `Missing` (the program compiled and printed `b.x`). The
-// template's fields now resolve in the template's own source context, so the
+// Resolving the generic template's fields in the main-file
+// instantiation context makes the leaf trust them as main-file decls and
+// stub `Missing` (the program compiles and prints `b.x`). The
+// template's fields resolve in the template's own source context, so the
 // undeclared name surfaces.
 //
 // Expected: `error: unknown type 'Missing'` pointing into lib.sx; exit 1.

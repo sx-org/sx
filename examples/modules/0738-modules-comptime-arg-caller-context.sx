@@ -5,9 +5,9 @@
 // `emit` is reachable only as `m.emit`; the comptime arg `caller_name()` is
 // authored HERE in the caller. When `emit` splices that arg into its `#insert`
 // body and lowers it, the bare name `caller_name` must stay visible in the
-// caller's context. Before the fix, the body's defining-module pin also covered
-// the substituted caller arg, so `caller_name` was wrongly checked against
-// `emit.sx` and rejected as "not visible". The metaprogram's OWN code still
+// caller's context. A body defining-module pin that also covers
+// the substituted caller arg checks `caller_name` against
+// `emit.sx` and rejects it as "not visible". The metaprogram's OWN code
 // resolves in `emit.sx` (where `concat`/`print` are flat-imported), so this
 // stays compatible with the 0106 defining-context pin.
 //

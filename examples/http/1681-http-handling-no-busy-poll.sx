@@ -90,8 +90,8 @@ main :: () -> i32 {
         while t < 5 { srv.tick(2) catch {}; t += 1; }   // accept + dispatch
 
         // Request 2 arrives WHILE the worker holds request 1. These bytes sit
-        // unread in the kernel buffer — pre-fix, level-triggered readiness
-        // reports them every wait() and the loop spins doing nothing.
+        // unread in the kernel buffer — under level-triggered readiness they
+        // are reported every wait() and the loop spins doing nothing.
         req2 := "GET /fast HTTP/1.1\r\nHost: t\r\nConnection: close\r\n\r\n";
         socket.write(ca, req2.ptr, xx req2.len);
         usleep(10000);   // let the bytes land

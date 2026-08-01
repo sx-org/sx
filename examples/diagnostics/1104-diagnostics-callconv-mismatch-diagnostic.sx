@@ -1,7 +1,7 @@
 // Passing a default-conv sx function as a abi(.c) fn-pointer
-// silently mismatches ABIs — historically that meant the C-side caller
-// supplied no `__sx_ctx` slot 0 and the sx-side body read garbage.
-// The compiler now rejects the coercion outright with a "call-convention
+// silently mismatches ABIs — the C-side caller supplies no `__sx_ctx`
+// slot 0 and the sx-side body reads garbage.
+// The compiler rejects the coercion outright with a "call-convention
 // mismatch" diagnostic.
 
 #import "modules/std.sx";

@@ -6,8 +6,8 @@
 // Also pinned: each RHS value types against ITS target (the multi-assign
 // twin of single-assign's target-typing preamble) —
 //   - a `null` RHS lowers as the TARGET's optional type, global and local
-//     (previously it typed against the enclosing fn's return type and
-//     coerceToType wrapped a PRESENT Some(0) into the optional);
+//     (typing it against the enclosing fn's return type makes coerceToType
+//     wrap a PRESENT Some(0) into the optional);
 //   - an enum-literal RHS resolves against the enum target's type.
 // The optional global is null-INITIALIZED and set at runtime because a
 // non-null optional-global initializer miscompiles today (issue 0234).

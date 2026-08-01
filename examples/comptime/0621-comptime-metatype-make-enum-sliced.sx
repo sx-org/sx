@@ -1,8 +1,7 @@
 // Comptime slice over a non-string AGGREGATE: assemble a pool of candidate
 // variants in a local array, then mint an enum from a SUBSLICE of it. This
-// exercises the interp's `subslice` op on an array VALUE (`dirs[0..2]`) — which
-// used to bail ("slice over non-string aggregates not yet supported") — now
-// yielding a real `[]EnumVariant` the `define` decoder reads.
+// exercises the `subslice` op on an array VALUE (`dirs[0..2]`), yielding a
+// real `[]EnumVariant` the `define` decoder reads.
 //
 // `Axis` is built from only the first two of four directions, so `.south` /
 // `.west` are NOT variants of it.

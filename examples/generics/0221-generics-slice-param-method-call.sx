@@ -39,7 +39,7 @@ main :: () -> i64 {
     a : [4]i64 = .[10, 20, 30, 40];
 
     print("{}\n", Box.take(*b, a));   // explicit form
-    print("{}\n", b.take(a));         // method syntax — used to panic
+    print("{}\n", b.take(a));         // method syntax — the panicking shape
 
     // `T` binds to the element type, not just to the slice's length.
     print("{}\n", b.first(a));        // 10

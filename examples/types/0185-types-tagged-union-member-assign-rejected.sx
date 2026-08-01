@@ -3,8 +3,8 @@
 // would set the payload but leave the tag stale. The variant is set via
 // construction (`s = .rect(...)`), which writes both tag and payload.
 //
-// Regression (issue 0136): `s.rect = .{...}` used to silently store the payload
-// only, desyncing the tag so a later `match` took the wrong arm. It now errors.
+// Regression (issue 0136): storing only the payload for `s.rect = .{...}`
+// desyncs the tag, so a later `match` takes the wrong arm. It errors instead.
 
 #import "modules/std.sx";
 

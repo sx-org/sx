@@ -1,10 +1,10 @@
 // Regression: bare `$args` slice survives crossing a function-call
 // boundary — both `.len` AND per-element values come through.
 //
-// Before the fix landed in `lazyLowerFunction`, the callee's
-// `args.len` got constant-folded to the outer pack-fn mono's
-// arity. `walk(args: []any) { return args.len; }` lazily lowered
-// inside `probe(..$args)`'s first mono inherited
+// `lazyLowerFunction` must not let the callee's `args.len` be
+// constant-folded to the outer pack-fn mono's arity:
+// `walk(args: []any) { return args.len; }` lazily lowered
+// inside `probe(..$args)`'s first mono would inherit
 // `pack_param_count["args"] = N` from the pack — the
 // `<pack_name>.len` intercept in `lowerFieldAccess` then baked
 // `ret i64 N` into walk's IR. Every subsequent shape's call to
@@ -23,8 +23,7 @@
 // The element type is `[]Type` (a bare `$args` is the list of the
 // pack args' TYPES, each an 8-byte `.type_value`). Declaring it
 // `[]any` (16-byte boxes) read every element past the first at the
-// wrong stride — the legacy interp's loose Value model tolerated it,
-// the byte-accurate comptime VM does not.
+// wrong stride, which the byte-accurate comptime VM rejects.
 
 #import "modules/std.sx";
 

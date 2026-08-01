@@ -2,10 +2,10 @@
 // GENERIC struct must emit a clean "unknown type" diagnostic, not silently
 // compile.
 //
-// The `UnknownTypeChecker` used to SKIP generic structs entirely ("their field
-// types reference the struct's own `$T`, resolved at instantiation"). That skip
-// was too broad: a field type like `bad: MissingType` — which is NOT a type
-// param and names no declared type — fell through the type leaf's empty-struct
+// The `UnknownTypeChecker` must not SKIP generic structs wholesale ("their
+// field types reference the struct's own `$T`, resolved at instantiation").
+// That skip is too broad: a field type like `bad: MissingType` — which is NOT
+// a type param and names no declared type — falls through the empty-struct
 // stub and the struct silently compiled, mis-sizing every downstream load.
 //
 // The checker now walks generic-struct fields with the struct's own type params

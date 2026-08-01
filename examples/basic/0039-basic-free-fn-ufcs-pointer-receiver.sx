@@ -2,8 +2,8 @@
 // on a value `recv` whose matching free function takes `*T` now takes the
 // receiver's address (the same implicit address-of as a struct-defined method),
 // so mutations through the pointer are visible. Also: a function reached ONLY
-// via UFCS is lazily lowered (previously declared-but-never-emitted → undefined
-// symbol at link).
+// via UFCS is lazily lowered — declared-but-never-emitted is an undefined
+// symbol at link.
 
 #import "modules/std.sx";
 

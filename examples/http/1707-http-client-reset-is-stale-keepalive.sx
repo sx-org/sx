@@ -55,8 +55,8 @@ main :: () -> i32 {
         return 5;
     }
     if re != error.Closed {
-        // Pre-fix this was error.Recv — a class ClientPool.hop does NOT retry,
-        // so the pool surfaced the error instead of redialing.
+        // error.Recv is a class ClientPool.hop does NOT retry, so the pool
+        // would surface the error instead of redialing.
         print("FAIL: reset classified as Recv, not Closed (issue 0285)\n");
         return 6;
     }

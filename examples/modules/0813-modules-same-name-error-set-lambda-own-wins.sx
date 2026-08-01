@@ -5,12 +5,12 @@
 // `raise error.Disk` inside the closure body validates against main's `{ Disk }`;
 // meanwhile `dep_err` keeps dep's DISTINCT `IoErr { Net }`.
 //
-// Fail-before (attempt-1): `lowerLambda` resolved the explicit `lam.return_type`
-// through the STATELESS `type_bridge.resolveAstType`, so the closure's `!IoErr`
-// channel bound the global last-wins author (dep's `{ Net }`); `error.Disk` was
+// Resolving the explicit `lam.return_type` in `lowerLambda`
+// through the STATELESS `type_bridge.resolveAstType` binds the closure's `!IoErr`
+// channel to the global last-wins author (dep's `{ Net }`); `error.Disk` is then
 // then "not in error set 'IoErr'" and the program exited 1.
 //
-// Pass-after: the lambda return annotation routes through the source-aware
+// The lambda return annotation routes through the source-aware
 // `resolveTypeWithBindings` (same path as the regular function-return channel),
 // main's own `IoErr` wins, `error.Disk` validates, exit 0.
 
