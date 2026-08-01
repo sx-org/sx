@@ -1,4 +1,4 @@
-// Source-aware forward-alias fixpoint — the INITIAL scan registration (E1.5).
+// Source-aware forward-alias fixpoint — the INITIAL scan registration.
 // Sibling of 0750, but the namespaced import is placed BEFORE the forward alias:
 //
 //     ns :: #import ".../dep.sx";   // authors a same-name `B :: u8`

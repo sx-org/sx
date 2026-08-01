@@ -19,7 +19,7 @@
 //   *Self         → L<enclosing-runtime-path>;
 //   *Foo          → L<Foo's runtime path>;   (cross-class — step 2.9)
 //
-// `#jni_method_descriptor("...")` (step 2.6) overrides this whole walk
+// `#jni_method_descriptor("...")` overrides this whole walk
 // when set; sema/lowering use the override verbatim.
 
 const std = @import("std");

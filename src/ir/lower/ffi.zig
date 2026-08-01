@@ -201,7 +201,7 @@ pub fn lowerJniCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall) Ref {
 
     // Capture the (name, sig) literal content when both args are
     // string literals — emit_llvm uses this as the intern key for
-    // the shared `jclass`/`jmethodID` slot pair (step 1.17).
+    // the shared `jclass`/`jmethodID` slot pair.
     const cache_key: ?inst_mod.CacheKey = if (name_node.data == .string_literal and sig_node.data == .string_literal)
         inst_mod.CacheKey{
             .name_str = name_node.data.string_literal.raw,
@@ -1090,7 +1090,7 @@ pub fn lookupObjcDefinedClassForMethod(self: *Lowering, name: []const u8) ?*cons
 }
 
 /// Lazily declare the `sx_jni_env_tl_get` / `sx_jni_env_tl_set`
-/// runtime externs (step 2.16c). The storage lives in
+/// runtime externs. The storage lives in
 /// `library/vendors/sx_jni_runtime/sx_jni_env_tl.c` as a
 /// `_Thread_local` slot — keeping it OUT of the user's IR module
 /// is what lets the LLVM ORC JIT load the module cleanly without

@@ -6,7 +6,7 @@
 // for the postfix
 // owning copy, for every index base shape: a LOCAL array, a module-GLOBAL
 // array, and a STRUCT-FIELD array — and for `?P` destinations.
-// Ownership contract (E4): the erased value is an independent COPY — the
+// Ownership contract: the erased value is an independent COPY — the
 // source element is untouched by mutations through it. Transient
 // write-through lives in `*P` views (pinned in 0829); the by-REF capture
 // leg below drives one through a view.

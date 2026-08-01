@@ -36,7 +36,7 @@ const comptime_vm = @import("comptime_vm.zig");
 // The vendored error-trace ring buffer (library/vendors/sx_trace_runtime/sx_trace.c)
 // is linked into the compiler. Comptime `#run` evaluation pushes frames to it via
 // extern `sx_trace_push` calls; after a `#run` we read it here to render the
-// return trace for an escaping comptime error (E5.2).
+// return trace for an escaping comptime error.
 extern fn sx_trace_len() u32;
 extern fn sx_trace_frame_at(i: u32) u64;
 extern fn sx_trace_clear() void;
@@ -106,7 +106,7 @@ pub const LLVMEmitter = struct {
     // IR Module being emitted
     ir_mod: *const Module,
 
-    // Set when a comptime `#run` raised an unhandled error (E5.2), or when a
+    // Set when a comptime `#run` raised an unhandled error, or when a
     // global initializer could not be serialized to a valid static constant.
     // The driver (core.generateCode) aborts with a non-zero exit after emit()
     // when set, so an invalid/placeholder initializer never reaches the object
@@ -188,7 +188,7 @@ pub const LLVMEmitter = struct {
     // (opaque pointers — the function value is just a `ptr`).
     objc_msg_send_value: ?c.LLVMValueRef,
     // `(name, sig)` → `{cls_slot, mid_slot}` cache for `#jni_call`
-    // interning (step 1.17). Two call sites with the same literal
+    // interning. Two call sites with the same literal
     // name + signature share one pair of static slots, populated
     // lazily on the first call.
     jni_slots: std.StringHashMap(JniSlotPair),
@@ -865,7 +865,7 @@ pub const LLVMEmitter = struct {
     /// comptime-error diagnostic + return trace, flag compilation failed, and
     /// return null. On success, return the value part (error channel stripped):
     /// `void_val` for a pure failable, the lone value for `(T, !)`, the
-    /// value-tuple for multi-value. (E5.2)
+    /// value-tuple for multi-value.
     fn checkComptimeFailable(self: *LLVMEmitter, result: Value, fail_ty: TypeId, label: []const u8) ?Value {
         const channel = self.comptimeErrChannel(fail_ty) orelse return result;
         var tag: u32 = 0;
@@ -1036,7 +1036,7 @@ pub const LLVMEmitter = struct {
                 // A bare failable `NAME :: #run f();`: the comptime function
                 // returns the failable tuple; split it. Escaping error →
                 // diagnostic + halt (leave the global undef); success → the
-                // value part materializes into the global's success type (E5.2).
+                // value part materializes into the global's success type.
                 const cf_ret = self.ir_mod.getFunction(func_id).ret;
                 var init_value = result;
                 if (self.comptimeErrChannel(cf_ret) != null) {

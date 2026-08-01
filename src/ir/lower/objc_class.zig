@@ -285,7 +285,7 @@ pub fn ensureCRuntimeDecl(self: *Lowering, name: []const u8, param_tys: []const 
 pub fn emitObjcDefinedClassImps(self: *Lowering) void {
     for (self.module.objc_defined_class_cache.items) |entry| {
         const fcd = entry.decl;
-        // Pin to the class's defining module (E4) so the IMP trampolines'
+        // Pin to the class's defining module so the IMP trampolines'
         // method-signature types (`-> BOOL`, param types) resolve where they
         // are visible, not at whatever lowering site triggered emission.
         const saved_src = self.current_source_file;

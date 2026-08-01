@@ -3,7 +3,7 @@
 // no target to transfer control to: `raise` / `try` / `return` / `break` /
 // `continue` are all rejected inside one. The ban is transitive through nested
 // `catch` bodies and loops, but NOT through a nested closure (its own function
-// boundary). `raise` was already banned (E1.3); this adds the other four.
+// boundary). `raise` was already banned; this adds the other four.
 // This file is expected to FAIL compilation (exit 1).
 //
 // Run: ./zig-out/bin/sx run examples/237-cleanup-body-restrictions.sx

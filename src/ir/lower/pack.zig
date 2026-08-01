@@ -1083,7 +1083,7 @@ pub fn lowerPackFnCallNamed(
                 // Contextually type the arg from the param (so a lambda arg
                 // `(x) => …` takes its param types from a `Closure(...)` param).
                 // The param type is resolved under the pack fn's OWN source
-                // (E4): a fixed-prefix type bare-visible only in the defining
+                // a fixed-prefix type bare-visible only in the defining
                 // module must resolve there, not the caller's. The arg itself
                 // is lowered AFTER, in the caller's context.
                 const saved_tt = self.target_type;
@@ -1315,7 +1315,7 @@ pub fn monomorphizePackFn(
     self.pack_constraint = if (pack_proto != null) pre_pcon else null;
 
     // Resolve the declared return + fixed-prefix param types in the pack fn's
-    // OWN module (E4), so a 2-flat-hop library type named in the signature is
+    // OWN module, so a 2-flat-hop library type named in the signature is
     // bare-visible — mirrors the body pin further down and the
     // `monomorphizeFunction` pin. The comptime call-site args below are
     // lowered AFTER this restore, in the caller's context.
@@ -1407,7 +1407,7 @@ pub fn monomorphizePackFn(
             ct_arg_idx += 1;
             continue;
         }
-        // Pin to the pack fn's OWN module (E4): a fixed-prefix param whose
+        // Pin to the pack fn's OWN module: a fixed-prefix param whose
         // type is bare-visible only in the defining module must resolve
         // there, not in the caller's restored context. Mirrors the
         // signature build above and `resolveParamTypeInSource` at the

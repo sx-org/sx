@@ -432,7 +432,7 @@ pub fn reserveShadowSlot(self: *Lowering, td: ShadowTypeDecl) void {
 }
 
 /// Register (or re-register) a top-level NAMED type decl under a per-source
-/// nominal identity (E2), returning its TypeId. `decl_key` is the decl's
+/// nominal identity, returning its TypeId. `decl_key` is the decl's
 /// stable pointer (the import raw-facts identity); `info` carries the full
 /// body; `nominal_id` is the slot's identity (0 for a single / first author,
 /// nonzero for a later same-name shadow) — computed once by the caller
@@ -901,7 +901,7 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
         return;
     }
 
-    // Per-decl nominal identity (E2). EACH author of a GENUINE same-name STRUCT
+    // Per-decl nominal identity. EACH author of a GENUINE same-name STRUCT
     // shadow already reserved its distinct slot up-front in `scanDecls` (the
     // first at id 0, the rest at nonzero ids), so a self / forward / mutual
     // reference to the shadow name bound to ITS nominal TypeId via

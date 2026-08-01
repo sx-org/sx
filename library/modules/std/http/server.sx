@@ -179,7 +179,7 @@ Config :: struct {
     // want; the server never allocates for this.
     on_event: (ctx: usize, ev: EventKind, slot: i64, detail: i64) -> void = null;
     on_event_ctx: usize = 0;
-    // TLS (Phase T): when set, every accepted connection is served over
+    // TLS: when set, every accepted connection is served over
     // TLS via this acceptor (see TlsAcceptor). null = plaintext HTTP.
     // Supplied by an opt-in provider module so non-TLS programs never
     // compile the crypto. The acceptor's state must outlive the Server.
@@ -434,7 +434,7 @@ Conn :: struct {
     close_after: bool = false;
     write_armed: bool = false;
     gen: i64 = 0;   // bumped on close; a stale pool completion is dropped
-    // TLS (Phase T): per-connection TLS session from cfg.tls.accept
+    // TLS: per-connection TLS session from cfg.tls.accept
     // (null = plaintext). Drives the transport seam (conn_read/conn_write);
     // closed + freed via its own TlsConn.close in conn_close.
     tls: ?TlsConn = null;
@@ -1825,7 +1825,7 @@ Server :: struct {
         }
 
         if self.ps != null {
-            // Pool.shutdown() (step 1) has joined every worker, so
+            // Pool.shutdown() has joined every worker, so
             // ps.done_len / ps.done are stable — no lock needed. Workers
             // that finished an in-flight handler queued their serialized
             // response bytes (out.buf, from serialize_bytes) here and they
@@ -1878,7 +1878,7 @@ Server :: struct {
         // (a re-close of an already-free slot — close()'s teardown sweep
         // tolerates them — must not corrupt the list with a cycle).
         was_active := c.state != CONN_FREE;
-        // TLS (Phase T): tear down the per-connection TLS session first,
+        // TLS: tear down the per-connection TLS session first,
         // while the fd is still open so close() can attempt a best-effort
         // close_notify. close() frees the session's own state; idempotent
         // (null = plaintext).
@@ -2781,7 +2781,7 @@ Server :: struct {
         return true;
     }
 
-    // ── Transport seam (Phase T) ────────────────────────────────────
+    // ── Transport seam ────────────────────────────────────
     // read_more / write_more go through these instead of calling
     // socket.*_nb directly, so a connection is transport-agnostic:
     // plaintext today, TLS app-data once cfg.tls negotiated the session.

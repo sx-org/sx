@@ -1,7 +1,7 @@
 // Comptime `#run` of a failable composes with the handlers exactly as at
 // runtime: `catch` absorbs, `or` terminates, a successful bare `#run` yields the
 // value (error channel stripped), and an `onfail` in the evaluated body still
-// runs during comptime unwinding (E5.2).
+// runs during comptime unwinding.
 
 #import "modules/std.sx";
 

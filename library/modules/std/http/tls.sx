@@ -1,4 +1,4 @@
-// std.http — TLS transport seam (Phase T).
+// std.http — TLS transport seam.
 //
 // http.sx never imports a TLS library — that would force every program that
 // merely touches std/http to compile the (large) crypto C even when it serves

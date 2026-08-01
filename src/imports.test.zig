@@ -14,7 +14,7 @@ fn testIo() std.Io {
     return g_test_threaded.?.io();
 }
 
-// ── buildImportFacts unit tests (Phase A: import-side raw facts) ──
+// ── buildImportFacts unit tests (import-side raw facts) ──
 
 const Facts = struct {
     decls: imports.ModuleDecls,
@@ -431,7 +431,7 @@ test "buildImportFacts: c-import namespace recorded as an edge" {
     try expectTag(m_idx.names.get("cmod") orelse return error.MissingCmodRef, .namespace_decl);
 }
 
-// Duplicate-name invariant (R5 #2): a same-module authored duplicate top-level
+// Duplicate-name invariant: a same-module authored duplicate top-level
 // name is DIAGNOSED, not silently dropped. The parser/decl-checker does not
 // catch this today (verified: `sx run` of a same-file double decl exits 0 with
 // no diagnostic), so `resolveImports` surfaces it where `addOwnDecl` refuses the

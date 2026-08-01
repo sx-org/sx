@@ -134,7 +134,7 @@ pub const ProtocolDefaultDispatchDomain = struct {
 /// allocation — the source-aware analogue of `program_index.ModuleConstFrame`,
 /// which guards the GLOBAL-map fold (`moduleConstInt`). The frame keys on the
 /// const's (name, author-source) pair, NOT name alone: same-name nested consts
-/// across modules (`a.M` ≠ `b.M`) must NOT trip a false cycle (F3). A pair
+/// across modules (`a.M` ≠ `b.M`) must NOT trip a false cycle. A pair
 /// already on the chain is a cyclic definition (`N :: N`; `N :: M + 1; M :: N`)
 /// with no compile-time value → folds to null.
 pub const ConstFoldFrame = struct {
@@ -699,7 +699,7 @@ pub const Lowering = struct {
     /// (`CAllocator`/`Allocator`/`Context`) is resolved as compiler internals,
     /// independent of the user program's import STYLE (a `std :: #import` puts
     /// `CAllocator` behind a namespace edge from `main`, so the user-visibility
-    /// gate would reject it) — so the bare TYPE leaf falls open here (F1).
+    /// gate would reject it) — so the bare TYPE leaf falls open here.
     emitting_default_context: bool = false,
     /// Set once `assembleContext` has extended the registered Context struct
     /// (possibly EARLY, from a scan-time type-fn eval; the assembly is
@@ -728,7 +728,7 @@ pub const Lowering = struct {
     /// a same-name top-level type — R2). It is keyed by source because a local is
     /// visible ONLY within the source that declares it: an imported template's field
     /// resolution (run in the template's source context, E3 attempt-4) must NOT bind a
-    /// name the CALLER declared block-local (E3 attempt-5).
+    /// name the CALLER declared block-local.
     local_type_names: std.StringHashMap(std.StringHashMap(void)),
     struct_defaults_map: std.StringHashMap([]const ?*const Node), // struct name → field defaults
     /// Concrete plain-struct TypeId → field defaults ALIGNED WITH THE
@@ -1804,7 +1804,7 @@ pub const Lowering = struct {
         }
         // Structural type shapes — `*T`, `[*]T`, `[]T`, `?T`, `[N]T`, functions,
         // PLAIN closures, and PLAIN tuples — are owned by
-        // `TypeResolver.resolveCompound` (A2.3b). Element types recurse through
+        // `TypeResolver.resolveCompound`. Element types recurse through
         // the full stateful resolver (`resolveInner` → here) so generic structs
         // / bindings keep their resolution. resolveCompound returns null only
         // for the pack-shaped forms (`Closure(..p)`, spread tuples) below.
@@ -1868,7 +1868,7 @@ pub const Lowering = struct {
             return .unresolved;
         }
         // Bare type names resolve through the source-aware `selectNominalLeaf`
-        // (E1): the nominal author is selected over the ONE graph-walk collector
+        // the nominal author is selected over the ONE graph-walk collector
         // and resolved against the source-keyed caches, not the global
         // `findByName` first-match / global alias map. Other node kinds (inline
         // type decls, error types) route through type_bridge, which reads the
@@ -2021,7 +2021,7 @@ pub const Lowering = struct {
         return .{ .l = self };
     }
 
-    /// A `Resolver` facade over the borrowed Phase A import facts (Phase B). Cheap
+    /// A `Resolver` facade over the borrowed Phase A import facts. Cheap
     /// by-value; `collectVisibleAuthors`'s `AuthorSet.flat` slice is backed by
     /// `self.alloc` and owned by the caller (`selectCallableAuthor` frees it).
     pub fn resolver(self: *Lowering) resolver_mod.Resolver {

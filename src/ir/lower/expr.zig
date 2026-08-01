@@ -846,7 +846,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     }
 
     // `error.X` — an error-tag literal. The `error` keyword in expression
-    // position parses as identifier "error" (E0.2), so `error.X` is a
+    // position parses as identifier "error", so `error.X` is a
     // field access we intercept here. `error` is reserved, so this is
     // unambiguous (no struct/pack can be named `error`).
     if (fa.object.data == .identifier and std.mem.eql(u8, fa.object.data.identifier.name, "error")) {
@@ -1183,7 +1183,7 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
 }
 
 /// True when an `.identifier` receiver text resolves to an in-scope VALUE
-/// binding rather than a builtin type. A backtick raw identifier (F0.6) can
+/// binding rather than a builtin type. A backtick raw identifier can
 /// bind a value whose spelling shadows a builtin type name (`` `f64 := … ``);
 /// such a value is reachable through the same three sources the ordinary
 /// identifier field-access path consults (see `expr_typer` `.identifier`
@@ -1228,12 +1228,12 @@ pub fn lowerNumericLimit(self: *Lowering, fa: *const ast.FieldAccess, span: ast.
     if (!TypeResolver.isLimitField(fa.field)) return null;
     const ty = TypeResolver.resolveBuiltinName(name, &self.module.types) orelse return null;
 
-    // A backtick raw identifier (F0.6) can bind a value whose spelling
+    // A backtick raw identifier can bind a value whose spelling
     // shadows a builtin type name (`` `f64 := … ``). Field access on that
     // value is an ordinary field read, not a numeric-limit fold — defer to
     // the normal field-access path when the receiver identifier resolves to
-    // a value binding through any of scope / globals / module consts
-    //. A `.type_expr` receiver is unambiguously a type
+    // a value binding through any of scope / globals / module consts.
+    // A `.type_expr` receiver is unambiguously a type
     // and can never be value-shadowed.
     if (fa.object.data == .identifier and self.identifierBindsValue(name)) return null;
 
@@ -1818,7 +1818,7 @@ pub fn lowerErrorTagLiteral(self: *Lowering, tag_name: []const u8, span: ast.Spa
                 const set_info = self.module.types.get(set_ty).error_set;
                 // The bare-`!` inferred placeholder (reserved name "!") accepts
                 // any tag — its members aren't known until the whole-program SCC
-                // pass (E1.4) folds in every raised tag. Skip membership for it.
+                // pass folds in every raised tag. Skip membership for it.
                 if (!std.mem.eql(u8, self.module.types.getString(set_info.name), "!")) {
                     var in_set = false;
                     for (set_info.tags) |member| {

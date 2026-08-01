@@ -1,9 +1,9 @@
 // The M:1 colorblind async stack, end-to-end.
 //
-// One program exercises the whole pure-sx runtime together: the M:1 scheduler
-// (B1.5a), the suspending fiber-task async layer `go`/`wait` (B1.4a), and the
-// deterministic virtual-time timers `sleep`/`now_ms` (B1.4b) — all over the
-// `abi(.naked)` `swap_context` on guarded `mmap` stacks (B1.0–B1.3).
+// One program exercises the whole pure-sx runtime together: the M:1 scheduler,
+// the suspending fiber-task async layer `go`/`wait`, and the deterministic
+// virtual-time timers `sleep`/`now_ms` — all over the `abi(.naked)`
+// `swap_context` on guarded `mmap` stacks.
 //
 // A coordinator fiber launches three async tasks; each `sleep`s a different
 // duration, records its completion (id @ virtual-ms) into a shared log, then

@@ -6,7 +6,7 @@
 // aliases over their OWN module's template (sizes 8 and 16) and stay DISTINCT,
 // so the field unique to b's layout (`y`) is reachable only through `BBox`.
 //
-// Regression (Phase E4): before the alias-registration path selected the
+// Regression: before the alias-registration path selected the
 // qualified author, the const-decl alias `.call` branch stripped the head to the
 // bare name and read the global `struct_template_map`, so `ABox` and `BBox` both
 // instantiated the last-wins template (both size 16). This pins the

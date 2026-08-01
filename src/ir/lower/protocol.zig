@@ -268,7 +268,7 @@ pub fn instantiateParamProtocol(self: *Lowering, pd: *const ast.ProtocolDecl, ar
     table.updatePreservingKey(id, struct_info);
 
     // Method infos resolved with the type-arg binding (T → i64), pinned to
-    // the protocol's OWN module (E4) so a method-signature type visible only
+    // the protocol's OWN module so a method-signature type visible only
     // there resolves correctly when instantiated cross-module. `Self` and the
     // bound type-args short-circuit before the leaf; a concrete library type
     // in a signature is the case this pin protects.

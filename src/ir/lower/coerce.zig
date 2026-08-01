@@ -1113,7 +1113,7 @@ pub fn zeroValue(self: *Lowering, ty: TypeId) Ref {
     };
 }
 
-/// Emit the unified non-integral float→int narrowing diagnostic (F0.11).
+/// Emit the unified non-integral float→int narrowing diagnostic.
 /// ONE wording, ONE place: every site that rejects an implicit
 /// narrowing of a non-integral compile-time float to an integer type calls
 /// this, so the message + fix-it stay identical across the typed-binding

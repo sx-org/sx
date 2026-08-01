@@ -1,4 +1,4 @@
-// std.http — mbedTLS-backed TLS provider (Phase T3).
+// std.http — mbedTLS-backed TLS provider.
 //
 // Implements http's transport-seam protocols (TlsConn / TlsAcceptor, from
 // http/tls.sx) over the VENDORED mbedTLS (vendors/mbedtls). This is the ONLY

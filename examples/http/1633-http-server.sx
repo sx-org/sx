@@ -213,7 +213,7 @@ main :: () -> i32 {
 
     srv.close();
 
-    // ── pooled dispatch (S7b): same contract through worker threads ──
+    // ── pooled dispatch: same contract through worker threads ──
     // thread_pool_count > 0 runs handlers on a pool; completions come
     // back through the loop's wake channel. Same assertions: routing,
     // body echo, keep-alive reuse — now crossing threads per request.

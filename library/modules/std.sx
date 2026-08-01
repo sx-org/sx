@@ -109,7 +109,7 @@ IoErr       :: io_mod.IoErr;
 async       :: io_mod.async;
 await       :: io_mod.await;
 cancel      :: io_mod.cancel;
-// `timeout` / `Future(void)` are DEFERRED (B1.4) pending issue 0150
+// `timeout` / `Future(void)` are DEFERRED pending issue 0150
 // (a `void` struct field SIGTRAPs the compiler). Re-export once it lands.
 
 // --- The stdlib namespace tail: flat-importing std.sx carries these ---

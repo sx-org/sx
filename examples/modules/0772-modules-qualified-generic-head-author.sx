@@ -11,7 +11,7 @@
 // "qualify the reference"; that advice only works if `ns.Box(..)` actually
 // selects ns's author.
 //
-// Regression (Phase E4): before qualified generic-head selection, the head was
+// Regression: before qualified generic-head selection, the head was
 // stripped to the bare name and read from the global `struct_template_map`, so
 // `a.Box(i64)` and `b.Box(i64)` both instantiated the last-wins template (both
 // size 16) — the namespace qualifier was ignored.

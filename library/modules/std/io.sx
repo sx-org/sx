@@ -11,14 +11,14 @@
 // `cancel` / `CBlockingIo` re-exports), never by importing this file
 // directly.
 //
-// BLOCKING SEMANTICS (B1.2): the M:1 default has no scheduler and no
+// BLOCKING SEMANTICS: the M:1 default has no scheduler and no
 // suspension. `async(worker, ..args)` runs the worker to COMPLETION
 // inline, so the returned `Future` is born `.ready` and `await` yields
 // immediately. `spawn_raw`/`suspend_raw`/`ready`/`poll`/`arm_timer` are
 // trivial no-ops/0 — they exist for the fiber scheduler [B1.3+].
 // `now_ms` returns a real monotonic clock. Fully deterministic/testable.
 //
-// Worker form (B1.2): a `Closure(..$args) -> $R` whose params are
+// Worker form: a `Closure(..$args) -> $R` whose params are
 // annotated at the call site (a lambda `(a: i64) -> i64 => ...`).
 // Named-fn workers need a `::` callable-parameter language feature that
 // does not exist yet and are DEFERRED.

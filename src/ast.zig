@@ -681,7 +681,7 @@ pub const RaiseStmt = struct {
 };
 
 /// `try X` — a failable attempt. Unary prefix, binds tighter than any
-/// binary operator. Sema (E1.4) rejects a non-failable operand.
+/// binary operator. Sema rejects a non-failable operand.
 pub const TryExpr = struct {
     operand: *Node,
 };
@@ -818,7 +818,7 @@ pub const OptionalTypeExpr = struct {
 /// The error channel of a multi-return result list: bare `!` (inferred
 /// set) or `!Named` (a declared `error { ... }` set). Appears only as
 /// the trailing result element; the parser enforces the position and
-/// sema (E1) restricts it to return positions.
+/// sema restricts it to return positions.
 pub const ErrorTypeExpr = struct {
     /// `null` = inferred set (bare `!`); non-null = named set (`!Named`).
     name: ?[]const u8 = null,
@@ -1147,7 +1147,7 @@ pub const RuntimeClassDecl = struct {
     /// Defining module path (stamped by `resolveImports`), so the IMP trampolines
     /// emitted for an sx-defined class resolve their method-signature types in the
     /// module that declares the class — not the (cross-module) lowering site that
-    /// happens to trigger emission (E4). Null for a synthesized/sourceless decl.
+    /// happens to trigger emission. Null for a synthesized/sourceless decl.
     source_file: ?[]const u8 = null,
 };
 

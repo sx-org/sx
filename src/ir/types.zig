@@ -388,7 +388,7 @@ pub const TypeTable = struct {
     /// `*const ast.StructDecl`) — the SAME pointer the import raw-facts hold and
     /// `registerStructDecl` receives, so registration and resolution agree on
     /// identity without threading the wrapping `ast.Node`. Populated by the
-    /// resolver (E2) as it assigns nominal ids.
+    /// resolver as it assigns nominal ids.
     type_decl_tids: std.AutoHashMap(*const anyopaque, TypeId),
     /// Anonymous-struct-literal identity: canonical (field-name, field-type)
     /// shape → TypeId. The nominal intern map keys structs by DISPLAY NAME,

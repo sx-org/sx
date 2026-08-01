@@ -1740,7 +1740,7 @@ test "lower: shadowed same-name author gets its own FuncId + real body (fix-0102
     while (cache_it.next()) |entry| {
         try module_scopes.put(entry.key_ptr.*, entry.value_ptr.scope);
     }
-    // Phase A raw facts: both `selectCallableAuthor` (Phase C) and
+    // Phase A raw facts: both `selectCallableAuthor` and
     // `lowerRetainedSameNameAuthors` read function authors out of `module_decls`.
     // Wired exactly as `core.zig` does.
     var facts = try imports.buildImportFacts(alloc, main_path, mod, &cache);

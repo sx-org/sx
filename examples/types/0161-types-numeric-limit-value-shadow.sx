@@ -1,5 +1,5 @@
 // Numeric-limit accessor vs. a raw value binding that shadows a builtin type
-// name. A backtick raw identifier (F0.6) can legitimately bind a value whose
+// name. A backtick raw identifier can legitimately bind a value whose
 // spelling is a reserved numeric type name (`` `f64 ``, `` `i32 ``, `` `u8 ``).
 // Field access on such a value is an ORDINARY field read — the numeric-limit
 // intercept (NL.1 integer `.min`/`.max`, NL.2 float `.epsilon`/… ) must NOT

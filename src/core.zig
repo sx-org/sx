@@ -166,7 +166,7 @@ pub const Compilation = struct {
         self.ir_module = ir_mod_ptr;
         self.ir_emitter = emitter;
         // A comptime `#run` raised an unhandled error — the diagnostic + trace
-        // were already printed to stderr; abort before JIT/link (E5.2).
+        // were already printed to stderr; abort before JIT/link.
         if (emitter.comptime_failed) return error.ComptimeError;
         if (emitter.emission_failed) return error.CodegenError;
 

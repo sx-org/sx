@@ -456,7 +456,7 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
     // returns the full failable tuple so the #run site can inspect the
     // error slot, but the GLOBAL is typed as the success value. On a
     // comptime error the global never materializes — emit halts with a
-    // diagnostic + trace (E5.2). A handled `#run … catch/or …` already
+    // diagnostic + trace. A handled `#run … catch/or …` already
     // strips the error channel, so it lands here as non-failable.
     const is_failable = self.errorChannelOf(expr_ty) != null;
     const func_ret: TypeId = if (is_failable)
@@ -489,7 +489,7 @@ pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node,
 /// Creates a comptime function that the interpreter should execute.
 pub fn lowerComptimeSideEffect(self: *Lowering, expr: *const Node) void {
     // A failable side-effect `#run f();` returns the failable tuple so the
-    // emit-time runner can detect an escaping error and halt (E5.2);
+    // emit-time runner can detect an escaping error and halt;
     // non-failable side effects stay `void`.
     const expr_ty = self.inferExprType(expr);
     const ret: TypeId = if (self.errorChannelOf(expr_ty) != null) expr_ty else .void;
@@ -2002,7 +2002,7 @@ pub fn sourceConstIsFloatTyped(self: *Lowering, name: []const u8, frame: ?*const
 }
 
 /// A selected module const plus the SOURCE that authored it. `source` pins the
-/// context in which the const's RHS leaves must be folded (F1): a same-name
+/// context in which the const's RHS leaves must be folded: a same-name
 /// `K :: M + 1` selected from author `a.sx` folds its nested `M` against `a.sx`,
 /// not against whichever module read `K`. `source` is null only on the
 /// fully-unwired fallback (no source partition at all), where the RHS resolves
@@ -2264,7 +2264,7 @@ const ConstSourcePin = struct {
 
 /// Pin `current_source_file` to a SELECTED const's AUTHOR source while its RHS
 /// is folded / lowered, so nested same-name leaves resolve in the author's
-/// visibility context (F1): `K :: M + 1` selected from `a.sx` always folds `M`
+/// visibility context: `K :: M + 1` selected from `a.sx` always folds `M`
 /// against `a.sx`, regardless of which module read `K`. A null author (the
 /// fully-unwired fallback) leaves the context untouched. Single-author programs
 /// pin to the source they were already in → byte-identical.

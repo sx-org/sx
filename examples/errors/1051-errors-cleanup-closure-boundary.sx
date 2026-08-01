@@ -7,7 +7,7 @@
 //       (were the `.lambda` arm to recurse, this bare `failing()` would reject
 //       like the ones in 1052).
 //
-//   (b) value-slot liveness (E1.8) is analysed per-boundary: `flowExpr` recurses
+//   (b) value-slot liveness is analysed per-boundary: `flowExpr` recurses
 //       into the lambda via `analyzeFnBody`, so a value slot read inside the
 //       lambda must prove its own error absent — `v` here is live under its
 //       `if !err` guard. (The rejecting counterpart is 1053.)

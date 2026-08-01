@@ -1,4 +1,4 @@
-// Unified float→int narrowing rule (F0.11), float-DIVISION pin: a compile-time
+// Unified float→int narrowing rule, float-DIVISION pin: a compile-time
 // float division (`5.0 / 2.0` = 2.5) is a NON-INTEGRAL float, so narrowing it
 // implicitly into an integer-typed binding is a COMPILE ERROR — exactly like any
 // other non-integral float (example 1146). The division is the subtle case: its

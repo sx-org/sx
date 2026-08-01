@@ -901,11 +901,11 @@ pub fn stampFnBodySource(decl: *Node, file_path: []const u8) void {
         .struct_decl => |sd| stampStructMethodSources(sd, file_path),
         // A parameterized protocol is instantiated cross-module; record its
         // defining path so the instantiation resolves method-signature types in
-        // this module (E4).
+        // this module.
         .protocol_decl => decl.data.protocol_decl.source_file = file_path,
         // An sx-defined `#objc_class` / `#jni_class`: its IMP trampolines are
         // emitted at lowering time (possibly from another module's context), so
-        // record the defining path AND stamp each method body (E4).
+        // record the defining path AND stamp each method body.
         .runtime_class_decl => {
             decl.data.runtime_class_decl.source_file = file_path;
             stampRuntimeClassMethodSources(decl.data.runtime_class_decl, file_path);

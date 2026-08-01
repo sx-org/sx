@@ -1,4 +1,4 @@
-// Unified float→int narrowing rule (F0.11), POSITIVE side: an INTEGRAL float
+// Unified float→int narrowing rule, POSITIVE side: an INTEGRAL float
 // flowing into an integer-typed binding FOLDS to its integer — the same
 // `floatToIntExact` rule an array dimension / `$K: Count` already uses — across
 // all FIVE sites: a typed LOCAL, a struct FIELD default, a typed module CONST, a

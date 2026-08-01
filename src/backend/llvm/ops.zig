@@ -873,7 +873,7 @@ pub const Ops = struct {
 
         // Method-ID resolution. When `name` and `sig` are both
         // string literals the call site participates in
-        // `(name, sig)` slot interning (step 1.17): a shared
+        // `(name, sig)` slot interning: a shared
         // pair of static globals holds the `jclass` GlobalRef
         // and the `jmethodID`, populated lazily on the first
         // call to any matching site. Non-literal sites fall

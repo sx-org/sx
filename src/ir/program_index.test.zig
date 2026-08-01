@@ -225,7 +225,7 @@ fn nIdent(name: []const u8) ast.Node {
 }
 /// A backtick RAW identifier (`` `f64 ``): same spelling as a builtin type, but
 /// bound as a value — so a field access on it is an ordinary field read, never a
-/// numeric-limit fold (F0.11-7).
+/// numeric-limit fold.
 fn nIdentRaw(name: []const u8) ast.Node {
     return .{ .span = .{ .start = 0, .end = 0 }, .data = .{ .identifier = .{ .name = name, .is_raw = true } } };
 }

@@ -78,7 +78,7 @@ pub fn monomorphizeFunction(self: *Lowering, fd: *const ast.FnDecl, mangled_name
     // body reference to a type visible only in the template's module —
     // resolves where it is visible, not at the (possibly cross-module) call
     // site. This is the namespaced-fn-body plain-fn pin extended to generic
-    // instantiation; without it the non-transitive bare-TYPE gate (E4) would
+    // instantiation; without it the non-transitive bare-TYPE gate would
     // reject a 2-flat-hop library type the call site cannot see directly.
     // A synthesized / sourceless body keeps the caller's context.
     const saved_source_mono = self.current_source_file;
@@ -580,7 +580,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
         // `resolveCompound` recurses each element through the source-aware leaf
         // (`resolveNominalLeaf`) — so a 2-hop inner leaf (`*COnly`, `[2]COnly`,
         // `(COnly, i64)`) is rejected exactly as in a normal annotation, instead
-        // of `type_bridge.resolveAstType`'s ungated global lookup (E4).
+        // of `type_bridge.resolveAstType`'s ungated global lookup.
         .tuple_literal,
         .tuple_type_expr,
         .pointer_type_expr,
@@ -1655,7 +1655,7 @@ pub fn headNameOfCallee(callee: *const Node) ?HeadName {
 
 /// The complete source-aware author outcome of an UNQUALIFIED bare TYPE head —
 /// the unified non-transitive visibility + ambiguity gate every bare-type-
-/// reference site OUTSIDE the nominal leaf routes through (E4 attempt-5):
+/// reference site OUTSIDE the nominal leaf routes through:
 /// reflection / type-arg slots, typed array/vector-literal heads, parameterized
 /// generic / protocol / type-fn heads, type-as-value, and type-category match
 /// arms. Mirrors `selectNominalLeaf`'s author model so a 2-flat-hop type is
@@ -1930,7 +1930,7 @@ pub fn fieldTypeOf(self: *Lowering, t: TypeId, idx: usize, span: ?ast.Span) Type
 pub fn resolveTypeCallWithBindings(self: *Lowering, cl: *const ast.Call) TypeId {
     // A namespaced callee (`ns.Box(..)`) is an explicit qualified reach and is
     // exempt from the bare-head visibility gate; only a plain identifier head
-    // is policed (E4).
+    // is policed.
     const is_qualified = cl.callee.data == .field_access;
     const callee_name: []const u8 = switch (cl.callee.data) {
         .identifier => |id| id.name,
@@ -2046,7 +2046,7 @@ pub fn resolveParameterizedWithBindings(self: *Lowering, pt: *const ast.Paramete
     const table = &self.module.types;
     // A namespaced base (`ns.Box(..)`) is an explicit qualified reach and is
     // exempt from the bare-head visibility gate; only a dotless head is
-    // policed (E4).
+    // policed.
     const is_qualified = std.mem.indexOfScalar(u8, pt.name, '.') != null;
 
     // A Type-returning reflection builtin spelled in a TYPE position
@@ -2583,7 +2583,7 @@ pub fn instantiateTypeFunction(self: *Lowering, alias_name: []const u8, template
     }
 
     // Resolve the type fn's body (inline struct/union fields, or the returned
-    // type expression) in its OWN module (E4), so a 2-flat-hop library type
+    // type expression) in its OWN module, so a 2-flat-hop library type
     // named there is bare-visible — not the cross-module call site. The arg
     // exprs above were already resolved in the caller's context.
     const saved_tf_src = self.current_source_file;

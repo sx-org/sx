@@ -79,7 +79,7 @@ Request :: struct {
 //     `Content-Length` response, building it in a single allocation
 //     (serialize_bytes) and draining via write_more. The fast path —
 //     unchanged. Use for known-size bodies.
-//   • STREAMED/chunked (S1): for a body whose size isn't known up front
+//   • STREAMED/chunked: for a body whose size isn't known up front
 //     or is too large to buffer whole. The handler calls
 //     `resp.stream(producer, ctx)` (see below) and returns; the server
 //     emits `Transfer-Encoding: chunked` and PULLS the body from the

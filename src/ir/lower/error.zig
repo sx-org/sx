@@ -58,7 +58,7 @@ pub fn tracesEnabled(self: *Lowering) bool {
 
 /// Emit a trace-buffer push of `frame` (an opaque u64) at a failure site.
 /// No-op when traces are disabled (release). `frame` is a placeholder until
-/// DWARF (E3.0) supplies real return-address PCs and E3.3 resolves them.
+/// DWARF supplies real return-address PCs and E3.3 resolves them.
 pub fn emitTracePush(self: *Lowering, frame: Ref) void {
     if (!self.tracesEnabled()) return;
     const fids = self.getTraceFids();
@@ -762,7 +762,7 @@ pub fn lowerTry(self: *Lowering, operand_in: *const Node, span: ast.Span) Ref {
 
     // (3) Widening: the callee's escape set must be ⊆ the caller's named
     //     set. For an inferred caller (`!`) the absorption happens in the
-    //     whole-program SCC (E1.4b) — no check here.
+    //     whole-program SCC — no check here.
     self.checkEscapeWidening(operand, callee_set, caller_set, span);
 
     // (4) Lower: evaluate the operand, then branch on its error tag (which
@@ -1035,7 +1035,7 @@ pub fn runCatchBody(self: *Lowering, ce: *const ast.CatchExpr, err_val: Ref, err
 /// the fallback-target routing deferred from E1.4 — bail.
 /// Widening at an escape (function-propagation) site: the escaping set must
 /// be ⊆ the caller's named set. An inferred caller (`!`) absorbs everything
-/// via the whole-program SCC (E1.4b) — no check. A bare-`!` callee carries
+/// via the whole-program SCC — no check. A bare-`!` callee carries
 /// no tags on its placeholder TypeId, so check its SCC-converged set.
 /// Shared by `try` propagation and a failable `or` chain's final operand.
 pub fn checkEscapeWidening(self: *Lowering, callee_node: *const Node, callee_set: TypeId, caller_set: TypeId, span: ast.Span) void {

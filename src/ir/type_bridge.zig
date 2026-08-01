@@ -32,7 +32,7 @@ pub const ConstMap = ?*const std.StringHashMap(ModuleConstInfo);
 /// nested element types resolve through `type_bridge.resolveAstType` (the
 /// registration-time path — no generic/pack bindings). Lets type_bridge reuse
 /// the single canonical structural-shape constructor instead of carrying its
-/// own compound algorithm (A2.3b).
+/// own compound algorithm.
 const StatelessInner = struct {
     table: *TypeTable,
     alias_map: AliasMap,
@@ -184,7 +184,7 @@ pub fn resolveAstType(node: ?*const Node, table: *TypeTable, alias_map: AliasMap
         // Structural shapes (`*T`/`[*]T`/`[]T`/`?T`/`[N]T`, functions, plain
         // closures, plain tuples) are owned by the single canonical
         // `TypeResolver.resolveCompound` — no independent compound algorithm
-        // lives here (A2.3b). resolveCompound never returns null for these
+        // lives here. resolveCompound never returns null for these
         // kinds, so `.?` is total.
         .pointer_type_expr,
         .many_pointer_type_expr,
@@ -272,7 +272,7 @@ fn resolveTypeName(name: []const u8, table: *TypeTable, alias_map: AliasMap, ski
 /// Builtin primitive keyword → TypeId. The keyword table now lives in
 /// `type_resolver.zig` (architecture phase A2.1, `TypeResolver.resolvePrimitive`);
 /// re-exported here so existing callers are unaffected while `type_bridge` is
-/// retired (A2.2). Single source of truth: the table is defined once, there.
+/// retired. Single source of truth: the table is defined once, there.
 pub const resolveTypePrimitive = type_resolver.TypeResolver.resolvePrimitive;
 
 /// Pack-shaped `Closure(..p)` resolved without bindings: the canonical

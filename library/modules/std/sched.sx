@@ -65,7 +65,7 @@ inline if OS == {
 GUARD     :: 16384;      // one 16 KB page (aarch64-macOS)
 STACK     :: 131072;     // 128 KB usable per fiber
 
-// Max fd events drained per kqueue wait (B1.4c). Sized for the M:1 model's
+// Max fd events drained per kqueue wait. Sized for the M:1 model's
 // small fiber counts; a wait that fills it just drains the rest on the next
 // loop iteration (the woken fibers run, the queue re-drains, the still-pending
 // waiters block again).

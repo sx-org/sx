@@ -1,4 +1,4 @@
-// CLI argument PARSER from `modules/std/cli.sx` (F3.2) — subcommand
+// CLI argument PARSER from `modules/std/cli.sx` — subcommand
 // dispatch + `--flag` parsing over an EXPLICIT logical argv (`[]string`).
 //
 // Every argv vector below is an explicit `[]string` literal (the caller's

@@ -564,7 +564,7 @@ fn blanketSeed(self: *Lowering, scope: *const Scope) ?std.StringHashMap(TypeId) 
 /// (§6.3 rule 2)? `P` may be ANY type (H8):
 ///
 ///   - a PROTOCOL: the statement's type conforms to it — or IS it, which is the
-///     identity publish (A1): a value that already is a `P` is written into the
+///     identity publish: a value that already is a `P` is written into the
 ///     sink's slot as itself, with no second formation and no re-erasure.
 ///   - an OPEN SET: its MEMBERS publish too. A set carries its member inside the
 ///     slot, so a member statement type-checked at the expected `P` IS a complete

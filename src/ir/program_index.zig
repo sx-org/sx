@@ -516,8 +516,8 @@ fn qualifiedDottedIsFloat(name: []const u8, ctx: anytype) bool {
 /// ONE exception keeps a float operation out of integer arithmetic: a `/` whose
 /// lhs/rhs is float-valued (`5.0 / 2.0`, `K / 3` with `K : f64 : 4.0`) is FLOAT
 /// division, NOT integer truncation, so this folder refuses it (`isFloatValuedExpr`)
-/// and lets `evalConstFloatExpr` + the unified narrowing rule see the true value
-///. `+ - *` need no such guard — they agree between int and
+/// and lets `evalConstFloatExpr` + the unified narrowing rule see the true
+/// value. `+ - *` need no such guard — they agree between int and
 /// float arithmetic for the integral operands this folder ever sees.
 ///
 /// Leaves resolve through the ctx, so each call site shares the SAME folding
@@ -546,8 +546,8 @@ pub fn evalConstIntExpr(node: *const Node, ctx: anytype) ?i64 {
             // A backtick RAW receiver (`` `i64.max ``, `` `f64.epsilon ``) is an
             // ordinary field READ on a value whose spelling shadows a builtin
             // type name, NOT a numeric-limit / pack-arity accessor — so it is
-            // never a compile-time leaf here; its field is a runtime value
-            //. Only a BARE type/name receiver folds a
+            // never a compile-time leaf here; its field is a runtime value.
+            // Only a BARE type/name receiver folds a
             // `<pack>.len` / `<IntType>.min`/`.max`. Mirrors the same `is_raw`
             // guard `isFloatValuedExpr` already applies, so the const cluster
             // (this folder, `evalConstFloatExpr`, `isFloatValuedExpr`) agrees.

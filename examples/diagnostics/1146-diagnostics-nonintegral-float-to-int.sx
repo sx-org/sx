@@ -1,4 +1,4 @@
-// Unified float→int narrowing rule (F0.11), NEGATIVE side: a NON-INTEGRAL float
+// Unified float→int narrowing rule, NEGATIVE side: a NON-INTEGRAL float
 // implicitly narrowing to an integer-typed binding is a COMPILE ERROR — not a
 // silent truncation. The rule fires at a typed LOCAL initializer, a function
 // PARAM default, a struct FIELD default, AND an array DIMENSION; each emits a

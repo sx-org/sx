@@ -9,7 +9,7 @@
 //   - integer EXPRESSION → float    (`WE : f32 : M + 2`)
 //   - MIXED int+float EXPRESSION → float (`MF : f64 : M + 0.5`, both operand orders)
 //   - INTEGRAL float literal → integer (`KF : i64 : 4.0` → 4) — folds under the
-//     unified narrowing rule (F0.11), usable as a count too
+//     unified narrowing rule, usable as a count too
 //   - INTEGRAL float EXPRESSION → integer (`KFE : i64 : M + 2.0` → 4)
 //
 // Companion to the negative example 1143: the issue-0088 fix rejects a typed

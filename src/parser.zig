@@ -583,7 +583,7 @@ pub const Parser = struct {
         // Error channel type: bare `!` (inferred set) or `!Named` (named set).
         // Legal only as the trailing element of a multi-return result list
         // (enforced by the parenthesized-list loop below) or as a bare
-        // failable return type. Sema (E1) restricts it to return positions.
+        // failable return type. Sema restricts it to return positions.
         if (self.current.tag == .bang) {
             self.advance(); // skip '!'
             var set_name: ?[]const u8 = null;
@@ -3206,7 +3206,7 @@ pub const Parser = struct {
         // `try X` — failable-attempt prefix. Joins the unary tier (binds
         // tighter than any binary op incl. `or`); right-recursive so prefixes
         // stack by adjacency (`xx try foo()` = `xx (try foo())`). Failability
-        // of the operand is a sema check (E1.4), not a parse-time restriction.
+        // of the operand is a sema check, not a parse-time restriction.
         if (self.current.tag == .kw_try) {
             try self.rejectInCleanup("try");
             const start = self.current.loc.start;
@@ -4016,7 +4016,7 @@ pub const Parser = struct {
                 return try self.parseJniEnvBlock();
             },
             // `error` in expression position is the head of a tag literal
-            // `error.X` (parsed as a field access); sema (E1) gives it meaning.
+            // `error.X` (parsed as a field access); sema gives it meaning.
             .kw_error => {
                 self.advance();
                 return try self.createNode(start, .{ .identifier = .{ .name = "error" } });

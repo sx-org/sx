@@ -274,7 +274,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     // Runs after scanning (so every real type name is registered) and
     // before body lowering, so the diagnostic halts via `core.zig`
     // `hasErrors()` before the empty-struct stub can reach codegen. Owned by
-    // `semantic_diagnostics.UnknownTypeChecker` (A2.4); built only when
+    // `semantic_diagnostics.UnknownTypeChecker`; built only when
     // diagnostics are active, querying ProgramIndex + TypeResolver.
     if (self.diagnostics) |diags| {
         const checker = semantic_diagnostics.UnknownTypeChecker{
@@ -747,8 +747,8 @@ pub fn registerLiteralModuleConsts(self: *Lowering, decls: []const *const Node) 
             },
             // A const whose RHS is an integer EXPRESSION over other consts
             // (`M :: 2; N :: M + 1`) is itself a usable count: register it so
-            // `moduleConstInt` can fold the RHS through `evalConstIntExpr`
-            //. Placeholder `.i64` type — the count consumers read
+            // `moduleConstInt` can fold the RHS through `evalConstIntExpr`.
+            // Placeholder `.i64` type — the count consumers read
             // only the value; if the expression doesn't fold (references a
             // non-const), `moduleConstInt` yields null and the use diagnoses.
             .binary_op, .unary_op => {
@@ -955,7 +955,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     }
                     if (cd.value.data == .identifier) {
                         // Identifier-RHS alias: MyAlias :: MyInt;  WideAlias :: Wide.
-                        // SOURCE-AWARE (E1.5). Resolve the RHS `B` AS SEEN FROM this
+                        // SOURCE-AWARE. Resolve the RHS `B` AS SEEN FROM this
                         // alias's OWN source via `selectNominalLeaf` (E1's source-
                         // keyed nominal leaf), NEVER the global `type_alias_map` /
                         // global `findByName` (last-wins across modules). Only the
@@ -1054,7 +1054,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                         }
                     }
                     // A namespaced callee is an explicit qualified reach,
-                    // exempt from the bare-head visibility gate (E4). The
+                    // exempt from the bare-head visibility gate. The
                     // complete path is retained by selectGenericStructCallee,
                     // including nested namespace aliases.
                     if (callee_name.len > 0) {
@@ -2333,7 +2333,7 @@ fn resolveCompositeAliases(self: *Lowering, decls: []const *const Node) void {
 
 /// TRUE iff `name` is already recorded as a type alias FROM `src` — the
 /// per-source analogue of `type_alias_map.contains`, so the forward-alias
-/// fixpoint resolves a same-name alias in each source independently (E1.5).
+/// fixpoint resolves a same-name alias in each source independently.
 pub fn aliasResolvedInSource(self: *Lowering, src: []const u8, name: []const u8) bool {
     if (self.program_index.type_aliases_by_source.get(src)) |inner| return inner.contains(name);
     return false;
@@ -2376,7 +2376,7 @@ pub fn lowerMainAndComptime(self: *Lowering, decls: []const *const Node) void {
                     self.lowerMainAndComptime(ns.decls);
                 }
             },
-            // Top-level global asm (Phase F): capture the verbatim template; it
+            // Top-level global asm: capture the verbatim template; it
             // is appended to the LLVM module at emit time (source order). The
             // template must be a comptime-known string (parser guarantees a
             // string node here).
@@ -2550,7 +2550,7 @@ pub const TypeHeadResolution = union(enum) {
     /// help.
     private_elsewhere,
     /// ≥2 DISTINCT same-name type authors are flat-visible from the querying
-    /// source and none is its own (E2). The selection is genuinely
+    /// source and none is its own. The selection is genuinely
     /// ambiguous: `resolveNominalLeaf` emits a loud diagnostic and returns the
     /// `.unresolved` poison sentinel — never a silent first-/last-wins pick.
     ambiguous,
@@ -2749,7 +2749,7 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     // namespaced-only alias leaks no more than a namespaced-only named type,
     // and a flat-visible alias is never poisoned by an invisible same-name
     // named type (and vice-versa) — R4. A same-name flat VALUE/FUNCTION is
-    // NOT a type author (R1); a value-const (`N :: 7`) lives in
+    // NOT a type author; a value-const (`N :: 7`) lives in
     // `module_consts_by_source`, never in `type_aliases_by_source`, so it is
     // correctly excluded too.
     //
@@ -2990,7 +2990,7 @@ pub fn namedRefTid(self: *Lowering, ref: resolver_mod.RawDeclRef, name: []const 
 /// TRUE iff `name` is authored as a TYPE — a NAMED type OR a type ALIAS — in
 /// ANY module's raw facts. The leak detector: a name that is a type author
 /// somewhere but not flat-visible from the querying module is reachable only
-/// over a namespace edge. Both kinds are checked (R4): named types via
+/// over a namespace edge. Both kinds are checked: named types via
 /// `module_decls`, aliases via E0's `type_aliases_by_source`. Distinguishes a
 /// real cross-module TYPE author from a LOCAL type / generic-param /
 /// fabricated empty-struct stub (findByName-registered but authored in no

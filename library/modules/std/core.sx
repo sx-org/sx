@@ -184,7 +184,7 @@ Allocator :: protocol inline #identity {
 //   poll       — drive one step; blocking impl returns 0.
 //   now_ms     — clock hook (a PROTOCOL method so the deterministic-sim
 //                Io [B1.4] can return a fake clock — the B1.4 keystone).
-//   arm_timer  — register a timer; backs `timeout` (B1.4).
+//   arm_timer  — register a timer; backs `timeout`.
 //
 // `ParkToken` is an opaque per-suspension token (unused by the blocking
 // impl). `SpawnOpts.pin` is inert in the M:1 model. (`PinTarget.on` —

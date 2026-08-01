@@ -11,7 +11,7 @@
 // `COnly` because b.sx directly imports c.sx (one flat hop there, two from a
 // file that imports b.sx).
 //
-// Regression (Phase E4): before the bare-TYPE gate reached the reflection
+// Regression: before the bare-TYPE gate reached the reflection
 // type-arg and array-literal leaf sites, these 2-flat-hop references leaked
 // through the global `type_alias_map` / `findByName` / `type_bridge` lookup.
 
