@@ -434,7 +434,7 @@ pub const ExprTyper = struct {
                     }
                 }
                 // Check module-level value constants (e.g., WIDTH :f32: 800).
-                // F4: a same-name VALUE const must infer the SOURCE-AWARE author's
+                // A same-name VALUE const must infer the SOURCE-AWARE author's
                 // TYPE (own-wins / one-flat-visible), not the global last-wins
                 // `module_const_map` — otherwise a return-type / coercion inferred
                 // on one module's `K` borrows another module's `K` TYPE. The global

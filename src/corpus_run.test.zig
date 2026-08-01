@@ -360,7 +360,7 @@ const BuildConfig = struct {
     /// a real JDK being available; when either is missing the example SKIPS
     /// cleanly so a plain `zig build test` on a bare host stays green.
     apk: ?ApkCheck = null,
-    /// Host-OS gate (C4 / Linux CI). When set, the example runs ONLY on a host
+    /// Host-OS gate (Linux CI). When set, the example runs ONLY on a host
     /// whose OS matches; on any other host it SKIPS cleanly (not a failure).
     /// For a one-off example whose runtime is host-OS-specific and that has no
     /// `target` ir-only fallback — e.g. links a libc symbol present only on one
@@ -492,7 +492,7 @@ fn hostOsMatches(name: []const u8) bool {
 /// The host OS a whole CATEGORY folder is pinned to, or null if the category is
 /// portable. `ffi-objc` links Apple's Objective-C runtime + Foundation/AppKit,
 /// which exist only on macOS — so the entire folder skips off a macOS host
-/// (C4 / Linux CI), with no per-example `host_os` sidecar needed. Keep this list
+/// (Linux CI), with no per-example `host_os` sidecar needed. Keep this list
 /// minimal: prefer the per-example `host_os` directive for one-offs.
 fn categoryHostOs(rel_prefix: []const u8) ?[]const u8 {
     const base = std.fs.path.basename(rel_prefix);
@@ -774,7 +774,7 @@ fn runOne(
         out.skip_note = try std.fmt.allocPrint(results_gpa, "skip {s} (no Android SDK/JDK)", .{name});
         return;
     }
-    // Host-OS gate (C4): the per-example `host_os` directive, else the
+    // Host-OS gate: the per-example `host_os` directive, else the
     // example's category gate (`ffi-objc` → macOS). On a non-matching host
     // the example SKIPS cleanly so the corpus stays green off that host
     // (e.g. Objective-C examples on a Linux CI runner).

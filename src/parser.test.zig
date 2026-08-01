@@ -869,7 +869,7 @@ test "parser: a newline before `else` continues the chain" {
     try std.testing.expect(body.data.block.stmts[0].data.if_expr.else_branch != null);
 }
 
-// C1: statements break, expressions chain. A bare scope block in STATEMENT
+// Statements break, expressions chain. A bare scope block in STATEMENT
 // position ends at its `}`; an expression that ends in a block does not.
 test "parser: a bare scope block statement does not chain" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -1062,7 +1062,7 @@ test "parser: an export tail reads through a line break" {
     try std.testing.expectEqualStrings("renamed_c", same_fd.extern_name.?);
 }
 
-// L5 — a struct's `{ … }` is unconditional, so its tail reads through too.
+// A struct's `{ … }` is unconditional, so its tail reads through too.
 test "parser: a struct linkage tail reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1114,7 +1114,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
     try std.testing.expect(col_decls[0].data.const_decl.type_annotation != null);
     try std.testing.expect(col_decls[0].data.const_decl.value.data == .int_literal);
 
-    // D1: a split `=` still makes a typed variable.
+    // A split `=` still makes a typed variable.
     var eq = Parser.init(alloc,
         \\seed : i64
         \\    = 7
@@ -1123,7 +1123,7 @@ test "parser: a complete binding asks whether it ended before its tail" {
     try std.testing.expectEqual(@as(usize, 1), eq_decls.len);
     try std.testing.expect(eq_decls[0].data.var_decl.value.?.data == .int_literal);
 
-    // K1: a split `intrinsic` still annotates the constant.
+    // A split `intrinsic` still annotates the constant.
     var intr = Parser.init(alloc,
         \\mystery :: i64
         \\    intrinsic
@@ -1155,12 +1155,12 @@ test "parser: a binary operator below a statement continues it" {
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // E1 — members.
+    // Members.
     inline for (.{ "+", "==", "!=", "<=", ">=", "<<", ">>", "|", "??" }) |op| {
         const body = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    " ++ op ++ " 2\n}");
         try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
     }
-    // E2 — nonmembers. Same verdict, reached by the same path.
+    // Nonmembers. Same verdict, reached by the same path.
     inline for (.{ "<", ">", "/", "%", "&", "^" }) |op| {
         const body = try parseBody(alloc, "f :: () -> i64 {\n    a := 1\n    " ++ op ++ " 2\n}");
         try std.testing.expectEqual(@as(usize, 1), body.data.block.stmts.len);
@@ -1406,7 +1406,7 @@ test "parser: a protocol kind word reads through a line break" {
     try std.testing.expectEqual(ast.ProtocolKind.@"inline", (try same.parse()).data.root.decls[0].data.protocol_decl.kind);
 }
 
-// H1 — a function header's optional slots all sit in front of a mandatory body.
+// A function header's optional slots all sit in front of a mandatory body.
 test "parser: a function header reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -1424,7 +1424,7 @@ test "parser: a function header reads through a line break" {
     try std.testing.expectEqual(@as(usize, 1), fd.body.data.block.stmts.len);
 }
 
-// D3 — `#context_extend`'s default is optional, and `=` cannot open a
+// `#context_extend`'s default is optional, and `=` cannot open a
 // statement, so a split default still binds.
 test "parser: a #context_extend default reads through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -1452,7 +1452,7 @@ test "parser: a #context_extend default reads through a line break" {
     try std.testing.expect(bare_decls[0].data.context_extend_decl.default_expr == null);
 }
 
-// I1 — a value inside a fixed delimiter is owned by that delimiter: the list
+// A value inside a fixed delimiter is owned by that delimiter: the list
 // runs to its closer, so a line break inside it never ends anything.
 test "parser: values inside fixed delimiters read through a line break" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

@@ -2230,7 +2230,7 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
         },
         .parameterized_type_expr => |pt| return self.resolveParameterizedWithBindings(&pt, te.span),
         .identifier => |id| {
-            // E4 single-hop visibility + ambiguity gate: a 2-flat-hop bare type
+            // Single-hop visibility + ambiguity gate: a 2-flat-hop bare type
             // name in a typed array/vector-literal annotation (`Nums.[1, 2]`) is
             // not bare-visible (consistent with annotations / 0763); ≥2 direct
             // flat same-name authors are ambiguous (loud diagnostic, consistent
@@ -3150,7 +3150,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                         d.addFmt(.err, node.span, "'{s}' is not visible; #import the module that declares it", .{id.name});
                     break :blk self.emitError(id.name, node.span);
                 }
-                // F2: emit the SOURCE-AWARE author's value (own-wins), not the
+                // Emit the SOURCE-AWARE author's value (own-wins), not the
                 // global last-wins `ci_global`. ≥2 flat-visible same-name const
                 // authors → a loud ambiguity, never a silent
                 // pick. `.none` after a visible name is the registration-only
@@ -3328,7 +3328,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
             // (`x: Type = Vec4`), comparison (`x == Vec4`), and
             // pack-arg / Any context (boxing happens at the
             // consumer).
-            // E4 single-hop visibility + ambiguity gate: a bare type name used
+            // Single-hop visibility + ambiguity gate: a bare type name used
             // as a VALUE (`x: Type = COnly`, `x == COnly`) reachable only over
             // 2+ flat hops is not bare-visible (consistent with annotations /
             // 0763); ≥2 direct flat same-name authors are ambiguous (loud

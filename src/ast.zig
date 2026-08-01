@@ -148,7 +148,7 @@ pub const Root = struct {
 /// - `.c` — C ABI / cdecl, no implicit context.
 /// - `.zig` — welded to the real internal Zig type/fn: layout follows the bound
 ///   Zig type, functions dispatch over the comptime host-call bridge. The
-///   `compiler` library (`design/comptime-compiler-api.md`) binds via `abi(.zig)`.
+///   `compiler` library binds via `abi(.zig)`.
 /// - `.compiler` — a COMPILER-DOMAIN function: it runs in the comptime evaluator
 ///   (VM / interp), NEVER in the shipped binary, so the backend does not lower it.
 ///   Covers the compiler-API surface (`intern`/`find_type`/`build_options`/… —

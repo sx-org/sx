@@ -3179,7 +3179,7 @@ fn checkInlineExitCell(cell: InlineExitCell) !void {
     const main_fid = lowering.resolveFuncByName("main") orelse return error.NoMain;
     const main_fn = &module.functions.items[@intFromEnum(main_fid)];
 
-    // L3 — the caller's ONLY real return is the one its own source wrote. An
+    // The caller's ONLY real return is the one its own source wrote. An
     // inlined body that emitted the caller's `ret` shows up here as a second.
     var real_rets: usize = 0;
     var diverged_blocks: usize = 0;
@@ -3192,7 +3192,7 @@ fn checkInlineExitCell(cell: InlineExitCell) !void {
     }
     try std.testing.expectEqual(@as(usize, 1), real_rets);
 
-    // L4 — the join exists exactly when the destination has a continuation.
+    // The join exists exactly when the destination has a continuation.
     var joins = std.ArrayList(u32).empty;
     for (main_fn.blocks.items, 0..) |blk, i| {
         if (std.mem.startsWith(u8, module.types.getString(blk.name), "ct.ret_done")) try joins.append(alloc, @intCast(i));
@@ -3204,7 +3204,7 @@ fn checkInlineExitCell(cell: InlineExitCell) !void {
     }
     try std.testing.expectEqual(@as(usize, 1), joins.items.len);
 
-    // L5 — the join's predecessors. A `value` destination loads its slot there
+    // The join's predecessors. A `value` destination loads its slot there
     // and every predecessor filled it exactly once; `unit` and `poison` reach
     // the same join carrying nothing, so neither loads nor stores.
     const join_idx = joins.items[0];

@@ -1323,7 +1323,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     // decided, it returns `.void`/`.noreturn`/`.unresolved`, so `has_value_merge`
     // is false, the match lowers as a void statement, and the `y : ?T = <void>`
     // assignment fabricates a PRESENT `{0,true}` instead of `none`. Mirror the
-    // both-null / null+diverging `if` fix: adopt the contextual optional target
+    // both-null / null+diverging `if` rule: adopt the contextual optional target
     // so each `null` arm lowers to `none`; with no target to pin the payload,
     // reject loudly rather than silently lower to void.
     if (self.force_block_value and !is_type_match and
@@ -1498,7 +1498,7 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 arm_tag_values.append(self.alloc, &.{}) catch unreachable;
                 continue;
             }
-            // E4 single-hop visibility + ambiguity gate: a SPECIFIC 2-flat-hop
+            // Single-hop visibility + ambiguity gate: a SPECIFIC 2-flat-hop
             // type name in a type-match arm (`case COnly:`) is not bare-visible
             // (consistent with annotations / 0763); ≥2 direct flat same-name
             // authors are ambiguous (loud diagnostic, 0755/0767). A category

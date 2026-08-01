@@ -3274,8 +3274,8 @@ pub const Parser = struct {
                 const rparen_end = self.current.loc.end;
                 try self.expect(.r_paren);
                 // Trailing block (specs: Trailing Blocks): `f(args) { body }`.
-                // T4: the `{` must sit on the SAME LINE as `)` — a next-line
-                // `{` stays an ordinary scope block. T5: disabled in header
+                // The `{` must sit on the SAME LINE as `)` — a next-line
+                // `{` stays an ordinary scope block; disabled in header
                 // position (the OUTER context's flags — the resets above only
                 // govern the nested argument list). The block becomes a
                 // zero-param closure literal in a `trailing_block` marker
@@ -6571,7 +6571,7 @@ fn e02ExpectPrints(alloc: std.mem.Allocator, node: *const Node, expected: []cons
     try std.testing.expectEqualStrings(expected, aw.writer.toArrayList().items);
 }
 
-test "S4.1 postfix cast parses: a.(i8)" {
+test "postfix cast parses: a.(i8)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := a.(i8); }");
@@ -6579,7 +6579,7 @@ test "S4.1 postfix cast parses: a.(i8)" {
     try e02ExpectPrints(arena.allocator(), v, "a.(i8)");
 }
 
-test "S4.1 postfix cast: int-literal receiver does not lex as a float" {
+test "postfix cast: int-literal receiver does not lex as a float" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := 56.(i8); }");
@@ -6587,7 +6587,7 @@ test "S4.1 postfix cast: int-literal receiver does not lex as a float" {
     try std.testing.expect(v.data.postfix_cast.operand.data == .int_literal);
 }
 
-test "S4.1 postfix cast: composite targets *T / []u8 / ?T" {
+test "postfix cast: composite targets *T / []u8 / ?T" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const p = try e02FirstValue(arena.allocator(), "f :: () { v := x.(*Point); }");
@@ -6600,7 +6600,7 @@ test "S4.1 postfix cast: composite targets *T / []u8 / ?T" {
     try std.testing.expect(o.data.postfix_cast.type_expr.data == .optional_type_expr);
 }
 
-test "S4.1 postfix cast binds tighter than unary minus: -x.(i8)" {
+test "postfix cast binds tighter than unary minus: -x.(i8)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := -x.(i8); }");
@@ -6617,7 +6617,7 @@ test "postfix cast: '.(P, alloc)' parses with the allocator argument; a third el
     try std.testing.expectError(error.ParseError, e02FirstValue(arena.allocator(), "f :: () { v := x.(P, a, b); }"));
 }
 
-test "S4.2c optional-chained cast parses: x?.(i64)" {
+test "optional-chained cast parses: x?.(i64)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := x?.(i64); }");

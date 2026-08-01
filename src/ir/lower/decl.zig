@@ -3979,7 +3979,7 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
 // ── Module-const emission ───────────────────────────────────────
 
 pub fn emitModuleConst(self: *Lowering, ci: ModuleConstInfo, author_source: ?[]const u8) Ref {
-    // F1: a const read from another module folds/lowers its RHS in the
+    // A const read from another module folds/lowers its RHS in the
     // AUTHOR's visibility context, so a same-name leaf (`K :: M + 1` selected
     // from `a.sx`) resolves `M` against `a.sx` — not against the reading
     // module, which may flat-import a different same-name `M`. Single-author /

@@ -384,7 +384,7 @@ pub fn resolveTupleLiteralTypeArg(self: *Lowering, node: *const Node) TypeId {
             }
             return .unresolved;
         }
-        // E4 single-hop visibility gate: each element leaf is resolved through
+        // Single-hop visibility gate: each element leaf is resolved through
         // the source-aware resolver, so a 2-flat-hop inner leaf (`(COnly, i64)`)
         // emits "not visible" + poisons rather than leaking through
         // `type_bridge`'s ungated global lookup. A valid element resolves to the
@@ -505,7 +505,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
             if (self.type_bindings) |tb| {
                 if (tb.get(id.name)) |ty| return ty;
             }
-            // E4 single-hop visibility + ambiguity gate: a bare type name
+            // Single-hop visibility + ambiguity gate: a bare type name
             // reachable only over 2+ flat hops is not bare-visible in a
             // reflection / type-arg slot (consistent with normal annotations /
             // 0763); ≥2 direct flat same-name authors are ambiguous (loud

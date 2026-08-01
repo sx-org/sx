@@ -47,8 +47,8 @@ pub fn collectContextExtensions(self: *Lowering, decls: []const *const Node) voi
     gatherEntries(self, decls, &entries, &seen_nodes);
     if (entries.items.len == 0) return;
 
-    // L6 deterministic order: (declaring module path, field name). Stable, so
-    // a same-module duplicate keeps its source order for the L4 error.
+    // Deterministic order: (declaring module path, field name). Stable, so a
+    // same-module duplicate keeps its source order for the collision error.
     std.sort.insertion(ContextFieldDecl, entries.items, {}, entryLessThan);
 
     const ext = entries.toOwnedSlice(self.alloc) catch return;
@@ -56,7 +56,7 @@ pub fn collectContextExtensions(self: *Lowering, decls: []const *const Node) voi
 
     const diags = self.diagnostics orelse return;
 
-    // L5: defaults are mandatory.
+    // Defaults are mandatory.
     for (ext) |*e| {
         if (e.default_expr != null) continue;
         e.valid = false;
@@ -64,9 +64,9 @@ pub fn collectContextExtensions(self: *Lowering, decls: []const *const Node) voi
         diags.addFmtInFile(.err, e.module_path, e.span, "#context_extend '{s}' has no default value — the default context must be constructible before `main` runs", .{e.name});
     }
 
-    // L4: one flat namespace. First (in L6 order) declaration of a name wins
-    // the role of "declared here" note; every later same-name declaration is
-    // the error site.
+    // One flat namespace. The first declaration of a name in sorted order
+    // wins the role of "declared here" note; every later same-name
+    // declaration is the error site.
     var first_by_name = std.StringHashMap(usize).init(self.alloc);
     defer first_by_name.deinit();
     for (ext, 0..) |*e, i| {

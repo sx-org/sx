@@ -1282,8 +1282,8 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             }
             // Check scope first: local variables (closures, fn ptrs) shadow
             // global functions. NEAREST-scope resolution across BOTH local
-            // namespaces (value bindings AND nested local fn decls, review
-            // F1): whichever is declared at the inner level wins — an outer
+            // namespaces (value bindings AND nested local fn decls):
+            // whichever is declared at the inner level wins — an outer
             // callable var must not hijack an inner nested fn, nor vice
             // versa (specs §Variable Shadowing).
             if (self.scope) |scope| {
@@ -2552,7 +2552,7 @@ pub fn diagnoseMissingContext(self: *Lowering, what: []const u8) Ref {
     if (self.diagnostics) |d| {
         const span = ast.Span{ .start = 0, .end = 0 };
         const id = d.addFmtId(.err, span, "{s} requires the Context type — add `#import \"modules/std.sx\";` (or a module that imports it)", .{what});
-        // O3: a no-context build may still COMPILE `#context_extend`
+        // A no-context build may still COMPILE `#context_extend`
         // declarations (they are inert without Context). Show what the
         // program's context would have been, so the demand is traceable.
         self.noteRegisteredContextFields(id);

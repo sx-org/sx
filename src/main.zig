@@ -1005,8 +1005,7 @@ fn extractLibraries(allocator: std.mem.Allocator, root: *const sx.ast.Node) ![]c
                     .library_decl => |ld| {
                         // The `compiler` library is the comptime-only internal
                         // surface (welded types / host-call functions), not a
-                        // linkable dylib — never dlopen it. See
-                        // design/comptime-compiler-api.md.
+                        // linkable dylib — never dlopen it.
                         if (std.mem.eql(u8, ld.lib_name, sx.ir.compiler_lib.lib_name)) continue;
                         if (s.contains(ld.lib_name)) continue;
                         try s.put(ld.lib_name, {});

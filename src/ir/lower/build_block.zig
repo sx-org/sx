@@ -127,8 +127,8 @@ pub fn binderType(
     if (param_type.data != .type_expr) return null;
     if (!std.mem.eql(u8, param_type.data.type_expr.name, tp_name)) return null;
     const protocol_node = boundProtocolNode(param_type) orelse return null;
-    // An argument that is already a block implementor is passed on as itself
-    // (N45 rule 2) — the same body, replayed by whoever receives it.
+    // An argument that is already a block implementor is passed on as itself:
+    // the same body, replayed by whoever receives it.
     if (self.module.types.blockSite(arg_ty) != null) return arg_ty;
     const protocol = self.resolveTypeWithBindings(protocol_node);
     if (protocol == .unresolved) return null;
