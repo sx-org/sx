@@ -4,10 +4,8 @@
 #import "modules/std.sx";
 
 main :: () -> i32 {
-    // `#objc_call(void)` with a null receiver — never executed (this
-    // file's purpose is parser surface coverage). `inline if false`
-    // would suppress sema/codegen too, but for the parse-only step
-    // we want the AST to actually carry the node.
+    // `#objc_call(void)` with a null receiver — never executed; the
+    // `inline if false` arm keeps the node in the AST.
     inline if false {
         #objc_call(void)(null, "init");
     }

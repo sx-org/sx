@@ -1,22 +1,17 @@
 // End-to-end allocator threading. The per-instance allocator design is
 // wired through every step:
-//   1. `push .{ allocator = tracker } { SxFoo.alloc(); }` →
-//      the state struct is allocated via tracker (not libc).
-//   2. The state struct's first field is `__sx_allocator` (captures the
-//      tracker so -dealloc can free through it).
-//   3. `f.release()` drives refcount → 0 → -dealloc fires → reads the
-//      captured allocator → calls tracker.dealloc_bytes(state).
-//   4. The alloc/dealloc deltas around the call pair balance to (+1, +1)
-//      — exactly one sx-defined-class state struct round-trips.
+// 1. `push .{ allocator = tracker } { SxFoo.alloc(); }` →
+//    the state struct is allocated via tracker (not libc).
+// 2. The state struct's first field is `__sx_allocator` (captures the
+//    tracker so -dealloc can free through it).
+// 3. `f.release()` drives refcount → 0 → -dealloc fires → reads the
+//    captured allocator → calls tracker.dealloc_bytes(state).
+// 4. The alloc/dealloc deltas around the call pair balance to (+1, +1)
+//    — exactly one sx-defined-class state struct round-trips.
 //
-// An +alloc IMP on libc `malloc` with -dealloc on libc
-// `free`, both bypassing context.allocator — tracker would have
-// observed (+0, +0) deltas, missing the leak silently.
-//
-// Important: capture tracker counters BEFORE and AFTER the
-// alloc/release with NOTHING else allocating in between. `print`
-// allocates strings (NSString-backed), which would also route through
-// tracker and pollute the deltas.
+// The tracker counters are captured BEFORE and AFTER the alloc/release
+// with NOTHING else allocating in between: `print` allocates strings
+// (NSString-backed), which route through tracker and pollute the deltas.
 
 #import "modules/std.sx";
 #import "modules/std/mem.sx";

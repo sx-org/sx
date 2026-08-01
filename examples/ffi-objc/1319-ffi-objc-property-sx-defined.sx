@@ -1,13 +1,12 @@
-// second pass — `#property` on sx-defined `#objc_class`
-// synthesizes getter/setter IMPs that read/write the hidden
-// state struct.
+// `#property` on sx-defined `#objc_class` synthesizes getter/setter
+// IMPs that read/write the hidden state struct.
 //
 // User writes:
-//   field: T #property[(modifiers)];
+// field: T #property[(modifiers)];
 //
 // Compiler emits:
-//   __<Cls>_<field>_imp(self, _cmd) -> T          // load state.field
-//   __<Cls>_set<Field>_imp(self, _cmd, v) -> void // store state.field
+// __<Cls>_<field>_imp(self, _cmd) -> T          // load state.field
+// __<Cls>_set<Field>_imp(self, _cmd, v) -> void // store state.field
 // (setter skipped for `readonly`.)
 //
 // Both register on the class via class_addMethod with auto-derived

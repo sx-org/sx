@@ -21,9 +21,8 @@ NSPoint :: struct { x: f64; y: f64; }
 NSRange :: struct { location: u64; length: u64; }
 
 // 32 B HFA (Apple ARM64 — 4×f64 stays in v0..v3). NSRect / CGRect
-// shape. The plan singles this out because >16 B is the sret cliff
-// for *integer* aggregates, but HFAs of any size up to v0..v3 stay
-// register-resident; that distinction is what we want to lock in.
+// shape. >16 B is the sret cliff for *integer* aggregates, but HFAs of
+// any size up to v0..v3 stay register-resident.
 NSRect :: struct {
     x: f64; y: f64; width: f64; height: f64;
 }

@@ -2,10 +2,9 @@
 // sx-defined `#objc_class` methods.
 //
 // The `{Name=field0field1...}` arm of `appendObjcEncoding` feeds
-// `class_addMethod` registration. Without it, a method that takes or
-// returns a value-type struct (CGPoint, CGSize, NSRange shapes) fails
-// signature-encoding derivation with a "type kind not yet supported"
-// diagnostic.
+// `class_addMethod` registration, so a method that takes or returns a
+// value-type struct (CGPoint, CGSize, NSRange shapes) derives its
+// signature encoding.
 //
 // Each sx-defined method registered with the Obj-C runtime needs an
 // encoding string built from its IR signature. For
@@ -13,11 +12,10 @@
 // — return void, receiver `@`, selector `:`, then the struct
 // argument `{Point=dd}`.
 //
-// We don't observe the encoding string directly here (it ends up in
-// a private OBJC_METH_VAR_TYPE_ cstring in the linked binary) — but
-// the compiler bails LOUDLY on unsupported types per the project's
-// REJECTED PATTERNS rule, so a successful build is the encoding
-// going through cleanly.
+// The encoding string is not observable here (it ends up in a private
+// OBJC_METH_VAR_TYPE_ cstring in the linked binary) — but the compiler
+// bails LOUDLY on unsupported types per the project's REJECTED PATTERNS
+// rule, so a successful build is the encoding going through cleanly.
 
 #import "modules/std.sx";
 #import "modules/build.sx";
@@ -49,7 +47,7 @@ main :: () -> i32 {
 
         m.goto(Point{ x = 7.5, y = 8.25 });
         p := m.here();
-        print("at: ({}, {})\n", p.x, p.y);  // expected: at: (7.500000, 8.250000)
+        print("at: ({}, {})\n", p.x, p.y);
 
         sel_release : SEL = sel_registerName("release".ptr);
         release_fn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;

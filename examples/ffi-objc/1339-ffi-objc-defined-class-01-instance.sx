@@ -1,22 +1,21 @@
 // Full instance state round-trip on a sx-defined
-// `#objc_class`. The plan's first integration smoke test
-// (method lowering, ivar registration, and class-pair init integrated
-// through the dispatch gate).
+// `#objc_class`: method lowering, ivar registration, and class-pair init
+// integrated through the dispatch gate.
 //
 // What this exercises end-to-end:
-//   1. `SxFoo.alloc()` — sx-side call lowers to objc_msgSend(SxFoo, sel_alloc).
-//      The runtime invokes the synthesized +alloc IMP
-//      which allocates an instance + state struct and binds them
-//      via __sx_state.
-//   2. `f.bump()` — sx-side method call lowers to
-//      objc_msgSend(f, sel_bump). Runtime dispatches to the IMP
-//      trampoline, which reads __sx_state to find
-//      the state pointer and forwards to the sx body
-//      `SxFoo.bump(__sx_default_context, state)`. Body mutates
-//      self.counter.
-//   3. Repeat to confirm the state persists across calls.
-//   4. release — synthesized -dealloc frees the state
-//      and chains to [super dealloc].
+// 1. `SxFoo.alloc()` — sx-side call lowers to objc_msgSend(SxFoo, sel_alloc).
+//    The runtime invokes the synthesized +alloc IMP
+//    which allocates an instance + state struct and binds them
+//    via __sx_state.
+// 2. `f.bump()` — sx-side method call lowers to
+//    objc_msgSend(f, sel_bump). Runtime dispatches to the IMP
+//    trampoline, which reads __sx_state to find
+//    the state pointer and forwards to the sx body
+//    `SxFoo.bump(__sx_default_context, state)`. Body mutates
+//    self.counter.
+// 3. Repeat to confirm the state persists across calls.
+// 4. release — synthesized -dealloc frees the state
+//    and chains to [super dealloc].
 
 #import "modules/std.sx";
 #import "modules/build.sx";
@@ -48,7 +47,7 @@ main :: () -> i32 {
         f.bump();
         f.bump();
         f.bump();
-        print("counter: {}\n", f.get());  // expected: 3
+        print("counter: {}\n", f.get());
 
         // release
         sel_release : SEL = sel_registerName("release".ptr);

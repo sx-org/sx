@@ -1,5 +1,4 @@
-// Locked-in golden test for the default Obj-C
-// selector mangling rule. One fixture covers the common
+// The default Obj-C selector mangling rule. One fixture covers the common
 // shapes (niladic, 1-arg through 4-arg, camelCase across pieces, and
 // the `#selector(...)` override). The accompanying `.ir` snapshot
 // records each resolved selector string as an `OBJC_METH_VAR_NAME_*`
@@ -7,11 +6,11 @@
 // surfaces every affected case at once.
 //
 // Per the rule:
-//   - Niladic (arity 0): name verbatim. `length` → "length".
-//   - Arity N (1..): split the sx name on `_`; each piece becomes a
-//     keyword with a trailing `:`. Piece count must equal arity.
-//   - `#selector("...")` overrides the mangling entirely; the literal
-//     string is used as the selector. Arity is the user's contract.
+// - Niladic (arity 0): name verbatim. `length` → "length".
+// - Arity N (1..): split the sx name on `_`; each piece becomes a
+//   keyword with a trailing `:`. Piece count must equal arity.
+// - `#selector("...")` overrides the mangling entirely; the literal
+//   string is used as the selector. Arity is the user's contract.
 
 #import "modules/std.sx";
 #import "modules/build.sx";

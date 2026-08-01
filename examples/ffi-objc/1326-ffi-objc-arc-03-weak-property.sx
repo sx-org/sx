@@ -1,21 +1,16 @@
-// ffi-objc-arc-03 — #property(weak) on sx-defined class.
+// `#property(weak)` on a sx-defined class.
 //
 // Weak contract:
-//   - setter calls objc_storeWeak — does NOT retain.
-//   - getter calls objc_loadWeakRetained + autorelease — auto-nils
-//     if the target has been deallocated.
-//   - -dealloc calls objc_destroyWeak on each weak ivar.
+// - setter calls objc_storeWeak — does NOT retain.
+// - getter calls objc_loadWeakRetained + autorelease — auto-nils
+//   if the target has been deallocated.
+// - -dealloc calls objc_destroyWeak on each weak ivar.
 //
 // Observation: assign a target to the weak property. Drop the
-// caller's strong reference. Read back via the weak getter — should
-// be `null` (the target deallocated when its last strong ref
-// dropped, and the weak slot auto-niled).
-//
-// The setter stores the pointer (no storeWeak); the getter
-// reads the raw pointer (no loadWeakRetained). After target's
-// release, the slot points at freed memory — the read returns the
-// stale pointer (not null). The test catches this by comparing the
-// read result to null.
+// caller's strong reference. Read back via the weak getter — the read
+// is `null`, because the target deallocated when its last strong ref
+// dropped and the weak slot auto-niled. Comparing the read result to
+// null is what makes the auto-nil observable.
 
 #import "modules/std.sx";
 #import "modules/std/mem.sx";

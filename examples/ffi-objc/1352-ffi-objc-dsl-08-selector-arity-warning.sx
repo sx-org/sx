@@ -1,10 +1,10 @@
 // A `#selector("...")` override whose keyword count disagrees with the
-// call-site arity is a WARNING, not an error: the user picked the selector
-// deliberately, so the build proceeds and the runtime dispatches. Both
+// call-site arity is a WARNING, not an error: the override IS the user's
+// chosen selector, so the build proceeds and the runtime dispatches. Both
 // override paths are covered — the static call (`lowerObjcStaticCall`) and
-// the instance call (`lowerObjcMethodCall`). The compile succeeds, so the
-// warnings only surface because diagnostics render on the success path
-// path. The mismatching-arity ERROR arm (no override) is
+// the instance call (`lowerObjcMethodCall`). The compile succeeds, and the
+// warnings surface because diagnostics render on the success path too. The
+// mismatching-arity ERROR arm (no override) is
 // examples/ffi-objc/1344-ffi-objc-dsl-04-mismatch.sx.
 #import "modules/std.sx";
 #import "modules/build.sx";

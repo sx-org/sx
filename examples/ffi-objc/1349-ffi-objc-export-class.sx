@@ -28,7 +28,7 @@ main :: () -> i32 {
         if b == null { print("FAIL: alloc returned null\n"); return 1; }
         b.bump();
         b.bump();
-        print("counter: {}\n", b.get());  // expected: 2
+        print("counter: {}\n", b.get());
 
         sel_release : SEL = sel_registerName("release".ptr);
         release_fn : (obj: *void, sel: *void) -> void abi(.c) = xx objc_msgSend;

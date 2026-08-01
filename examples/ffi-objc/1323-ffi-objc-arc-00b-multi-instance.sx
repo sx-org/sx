@@ -1,12 +1,10 @@
-// ffi-objc-arc-00b — multi-instance allocator threading.
+// Multi-instance allocator threading.
 //
-// Verifies that EACH sx-defined-class instance captures its own
-// allocator and round-trips through it. Catches bugs where:
-//   - the captured allocator is shared across instances (one global
-//     slot instead of per-instance).
-//   - alloc captures the wrong allocator on the 2nd+ instance.
-//   - dealloc reads garbage if state[0] is overwritten between
-//     instances.
+// EACH sx-defined-class instance captures its OWN allocator and
+// round-trips through it: the capture lives in that instance's state
+// struct (not one global slot), every instance's alloc captures the
+// allocator live at its own call, and each dealloc reads its own
+// state[0].
 //
 // Three instances → three alloc events → three dealloc events. The
 // tracker observes exactly +3 / +3 deltas.

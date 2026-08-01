@@ -1,11 +1,11 @@
 // `#objc_call` inside an
 // `inline if OS == .ios { ... }` arm cross-compiles cleanly to
-// Android. The comptime gate must strip the arm BEFORE the
-// `objc_msg_send` lowering runs, otherwise emit_llvm would
-// produce calls to `@objc_msgSend` / `@sel_registerName` that
-// don't exist in Bionic + libGLESv3 / linker would fail.
+// Android. The comptime gate strips the arm BEFORE the
+// `objc_msg_send` lowering runs, so no call to `@objc_msgSend` /
+// `@sel_registerName` — symbols absent from Bionic + libGLESv3 —
+// reaches the linker.
 //
-// On macOS the iOS arm is also stripped (we're not iOS) so the
+// On macOS the iOS arm is also stripped (the host is not iOS) so the
 // runtime test just prints "host stripped both", proving the
 // `inline if OS == { case }` form works around `#objc_call`
 // sites the same way it does elsewhere.

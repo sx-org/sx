@@ -1,18 +1,17 @@
-// ffi-objc-arc-02 — #property(strong) on sx-defined class.
+// `#property(strong)` on a sx-defined class.
 //
 // Strong contract:
-//   - setter retains the new value, releases the old.
-//   - -dealloc releases each strong property ivar before freeing state.
+// - setter retains the new value, releases the old.
+// - -dealloc releases each strong property ivar before freeing state.
 //
 // Observation: a child instance assigned to a parent's strong property
-// stays alive after we drop our own reference. Without the strong
-// setter, the child's refcount drops to 0 immediately when we release,
-// and the parent ends up with a dangling pointer.
+// stays alive after the caller drops its own reference, because the
+// strong setter took a reference of its own.
 //
-// We observe via TrackingAllocator. The KEY check is the dealloc count
-// AT THE MIDPOINT — between dropping our child reference and releasing
-// the parent. With strong+dealloc-cleanup: child stays alive across
-// midpoint (no extra dealloc). Without: child is dead at midpoint.
+// Observed via TrackingAllocator. The KEY check is the dealloc count
+// AT THE MIDPOINT — between dropping the child reference and releasing
+// the parent: the child is still alive there (no extra dealloc), and
+// both die once the parent is released.
 
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
