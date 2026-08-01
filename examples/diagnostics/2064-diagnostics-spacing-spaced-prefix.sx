@@ -1,7 +1,7 @@
 // Spacing rule, prefix half: a prefix `-` / `*` binds only when glued to its
 // operand. That glue is what makes `a -b` the prefix reading and `a - b` the
 // infix one, so a spaced prefix is refused wherever it is written — here in a
-// position with no left operand at all. Expected: exit 1.
+// position with no left operand at all.
 #import "modules/std.sx";
 
 main :: () -> i32 {

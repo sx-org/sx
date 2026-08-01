@@ -1,7 +1,6 @@
-// One C symbol bound twice with DIFFERENT sx signatures is diagnosed
-// — letting the first registration silently win mis-types
-// every call through the second declaration. Equal signatures share one
-// registration silently (see std's read/write bound by several modules).
+// One C symbol bound twice with DIFFERENT sx signatures is diagnosed. Equal
+// signatures share one registration silently (std's read/write are bound by
+// several modules).
 #import "modules/std.sx";
 
 libc :: #library "c";

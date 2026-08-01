@@ -1,9 +1,5 @@
-// An identifier used in a LOCAL variable's type annotation that names no
-// declared type is rejected, exactly like a signature or struct-field use.
-// A body-level annotation must not bypass the check: the type resolver's
-// empty-struct stub would give the local a 0-field type, so `v: Coordnate
-// = 5` compiles and runs (the `5` dropped) with no diagnostic.
-// Expected: error at the annotation; exit 1.
+// An unknown type name in a LOCAL variable's annotation is rejected at the
+// annotation, exactly like a signature or struct-field use.
 main :: () -> i32 {
     v: Coordnate = 5;
     return 0;

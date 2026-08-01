@@ -1,19 +1,12 @@
 // A comptime type construction (declare/define, reflection) that leaves a type
-// INCOMPLETE must surface a build-gating DIAGNOSTIC naming the reason — not
-// poison the decl to `.unresolved` silently and let that crash at LLVM emission
-// or hide behind a downstream cascade. Here `declare("Undefined")` mints a
-// forward nominal slot that is NEVER completed by a matching `define(handle, …)`;
-// the compiler rejects the incomplete type at its construction site (exit 1, no
-// panic).
+// INCOMPLETE surfaces a build-gating diagnostic naming the reason. Here
+// `declare("Undefined")` mints a forward nominal slot that no matching
+// `define(handle, …)` completes, and the compiler rejects it at its construction
+// site.
 //
-// NOTE: an EXPLICITLY-defined empty type (empty struct/tuple/enum/tagged_union)
-// is VALID — see examples/0641. The remaining rejection is purely the
-// never-defined `declare` placeholder, which would otherwise panic codegen
-// (`verifySizes`: llvm_size != ir_size on an unsized forward slot).
-//
-// Dropping the bail detail (`catch return null`)
-// lets `.unresolved` reach codegen unannounced and panics with "unresolved
-// type reached LLVM emission" (exit 134).
+// An EXPLICITLY-defined empty type — empty struct/tuple/enum/tagged_union — is
+// valid; see examples/0641. Only the never-defined `declare` placeholder is
+// rejected.
 #import "modules/std.sx";
 #import "modules/std/meta.sx";
 

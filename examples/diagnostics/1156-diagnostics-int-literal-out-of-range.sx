@@ -1,6 +1,5 @@
-// An integer literal that does not fit its integer target type is a
-// compile error (no silent wrap): both faces diagnosed in one run.
-// Unchecked, `x : i8 = 300` binds 44 and `y : u8 = 256` binds 0.
+// An integer literal that does not fit its integer target type is a compile error
+// — no silent wrap. Both faces are diagnosed in one run.
 
 #import "modules/std.sx";
 

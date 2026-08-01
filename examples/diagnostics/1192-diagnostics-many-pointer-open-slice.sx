@@ -1,7 +1,6 @@
-// Slicing a many-pointer `[*]T` requires an explicit upper bound — it carries
-// no length, so an open-ended `mp[lo..]` has no bound to resolve and would
-// otherwise build a garbage-length slice. This guards that diagnostic.
-// (Companion: examples/types/0195 covers the valid explicit-bound form.)
+// Slicing a many-pointer `[*]T` requires an explicit upper bound: it carries no
+// length, so an open-ended `mp[lo..]` has no bound to resolve.
+// examples/types/0195 covers the valid explicit-bound form.
 #import "modules/std.sx";
 
 main :: () -> i64 {

@@ -5,7 +5,7 @@ error: duplicate context field 'tracer': the Context namespace is program-global
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 note: 'tracer' first declared here, by examples/diagnostics/1260-diagnostics-context-extend-collision.sx
-  --> examples/diagnostics/1260-diagnostics-context-extend-collision.sx:9:1
+  --> examples/diagnostics/1260-diagnostics-context-extend-collision.sx:8:1
    |
- 9 | #context_extend tracer: i64 = 1;
+ 8 | #context_extend tracer: i64 = 1;
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

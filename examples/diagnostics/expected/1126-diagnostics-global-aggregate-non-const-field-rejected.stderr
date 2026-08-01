@@ -1,5 +1,5 @@
 error: global 'boxes' must be initialized by a compile-time constant
-  --> examples/diagnostics/1126-diagnostics-global-aggregate-non-const-field-rejected.sx:14:18
+  --> examples/diagnostics/1126-diagnostics-global-aggregate-non-const-field-rejected.sx:10:18
    |
-14 | boxes : [1]Box = .[ .{ p = null, marker = runtime_marker() } ];
+10 | boxes : [1]Box = .[ .{ p = null, marker = runtime_marker() } ];
    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

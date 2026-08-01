@@ -1,10 +1,10 @@
 error: a named aggregate literal places '{' directly after its type
-  --> examples/diagnostics/1287-diagnostics-named-aggregate-separator-dot.sx:11:16
+  --> examples/diagnostics/1287-diagnostics-named-aggregate-separator-dot.sx:10:16
    |
-11 |     b := Button.{ label = "Play" };
+10 |     b := Button.{ label = "Play" };
    |                ^
 
 help: write the type, then '{'
    |
-11 |     b := Button{ label = "Play" };
+10 |     b := Button{ label = "Play" };
    |                ^^

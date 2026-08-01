@@ -1,5 +1,5 @@
 error: array dimension must be a compile-time integer constant
-  --> examples/diagnostics/1148-diagnostics-value-shadow-field-dim-not-const.sx:18:13
+  --> examples/diagnostics/1148-diagnostics-value-shadow-field-dim-not-const.sx:16:13
    |
-18 |     arr : [`i8.max]f32 = ---;
+16 |     arr : [`i8.max]f32 = ---;
    |             ^^^^^^

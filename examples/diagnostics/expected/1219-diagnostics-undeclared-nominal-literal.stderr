@@ -1,11 +1,11 @@
 error: unknown type 'NoSuchType'
-  --> examples/diagnostics/1219-diagnostics-undeclared-nominal-literal.sx:11:10
+  --> examples/diagnostics/1219-diagnostics-undeclared-nominal-literal.sx:8:10
    |
-11 |     a := NoSuchType{ a = 1 };   // unknown type — named-field form
+ 8 |     a := NoSuchType{ a = 1 };   // unknown type — named-field form
    |          ^^^^^^^^^^^^^^^^^^^
 
 error: unknown type 'AlsoMissing'
-  --> examples/diagnostics/1219-diagnostics-undeclared-nominal-literal.sx:12:10
+  --> examples/diagnostics/1219-diagnostics-undeclared-nominal-literal.sx:9:10
    |
-12 |     b := AlsoMissing{};         // unknown type — empty form
+ 9 |     b := AlsoMissing{};         // unknown type — empty form
    |          ^^^^^^^^^^^^^

@@ -1,11 +1,7 @@
-// A NON-integral float constant (`4.5`) used as an array dimension is a hard
-// error — only an integral float (`4.0`) folds to a count. Clean diagnostic +
-// non-zero exit, NOT a fabricated length.
-//
-// The dimension follows the unified float→int narrowing rule:
-// an integral float folds, a non-integral one is rejected as "not an integer"
-// — the SAME `floatToIntExact` judgement the typed local/field/param/const
-// sites use.
+// A NON-integral float constant (`4.5`) as an array dimension is a hard error;
+// an integral float (`4.0`) folds to a count. The dimension follows the unified
+// float→int narrowing rule — the same `floatToIntExact` judgement the typed
+// local/field/param/const sites use.
 #import "modules/std.sx";
 
 N : f64 : 4.5;

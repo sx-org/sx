@@ -1,9 +1,6 @@
-// A module-global enum-literal initializer naming a variant that does not exist
-// must be rejected loudly — never silently zero-initialized to the first tag.
-// The enum-literal global serializer resolves the tag
-// against the destination enum type; an unknown variant emits a diagnostic and
-// fails the build instead of falling back to a null (zero-tag) initializer.
-// Expected: "'.purple' is not a variant of enum 'Color'"; exit 1.
+// A module-global enum-literal initializer naming a variant the enum does not
+// have reports `'.purple' is not a variant of enum 'Color'` — never a silent
+// zero-tag initializer.
 
 #import "modules/std.sx";
 

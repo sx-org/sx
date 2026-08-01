@@ -1,8 +1,6 @@
-// Diagnostic: a type that contains ITSELF by value has no finite size and must
-// be rejected loudly (not infinite-loop the size computation into a crash). A
-// pointer payload (`*Tree`) would break the cycle and is the fix the message
-// suggests. Covers both source decls and comptime-constructed types — this is
-// the source form.
+// A type that contains ITSELF by value has no finite size and is rejected; the
+// message suggests a pointer payload (`*Tree`), which breaks the cycle. Source
+// decls and comptime-constructed types are both covered — this is the source form.
 #import "modules/std.sx";
 
 Tree :: enum {

@@ -1,8 +1,5 @@
-// An identifier used in a type position that names no declared type, builtin,
-// or in-scope generic parameter is rejected. A type resolver whose
-// empty-struct-stub fallback interns a 0-field struct under the typo lets
-// the program compile and run.
-// Expected: a clean "unknown type" error at the field; exit 1.
+// An identifier in a type position that names no declared type, builtin, or
+// in-scope generic parameter is rejected — here at a struct field.
 Point :: struct {
     x: i32;
     y: Coordnate;   // typo for a non-existent type

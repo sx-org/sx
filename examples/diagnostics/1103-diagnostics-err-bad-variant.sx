@@ -1,7 +1,5 @@
-// A match arm with a variant name that doesn't exist on the subject's
-// enum/tagged-union produces `error: no variant 'X' on type 'Y'` instead of
-// falling back to the arm index, which causes duplicate switch cases
-// and LLVM verification failures.
+// A match arm naming a variant the subject's enum/tagged-union does not have
+// reports `no variant 'X' on type 'Y'`.
 
 #import "modules/std.sx";
 

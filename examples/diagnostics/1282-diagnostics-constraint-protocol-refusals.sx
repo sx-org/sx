@@ -1,8 +1,8 @@
-// A constraint protocol (the default kind) has NO runtime values. Every
-// erasure spelling and every storable position refuses at the USE site, and
-// the guidance is always the same pair — stay concrete, or bind through
-// `$T/P`. It never suggests respelling the declaration: whether `Ord` should
-// have runtime values is its author's decision, made at the declaration.
+// A constraint protocol (the default kind) has NO runtime values. Every erasure
+// spelling and every storable position refuses at the USE site, and the guidance is
+// always the same pair — stay concrete, or bind through `$T/P`. It never suggests
+// respelling the declaration: whether `Ord` should have runtime values is its
+// author's decision, made at the declaration.
 #import "modules/std.sx";
 #import "modules/std/list.sx";
 

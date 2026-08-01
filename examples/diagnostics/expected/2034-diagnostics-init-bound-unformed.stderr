@@ -1,43 +1,43 @@
 error: 'i64' does not satisfy the bound '@Init(Button)' on '$T'
-  --> examples/diagnostics/2034-diagnostics-init-bound-unformed.sx:21:19
+  --> examples/diagnostics/2034-diagnostics-init-bound-unformed.sx:20:19
    |
-21 | lift :: ($T: Type/@Init(Button), x: T) -> T { x }
+20 | lift :: ($T: Type/@Init(Button), x: T) -> T { x }
    |                   ^^^^^^^^^^^^^
 
 help: an initializer is formed at the argument of a value parameter — '$T' can only bind what formation produced
    |
-21 | lift :: ($T: Type/@Init(Button), x: T) -> T { x }
+20 | lift :: ($T: Type/@Init(Button), x: T) -> T { x }
    |                   ^^^^^^^^^^^^^
 
 error: '@Init(Button)' does not satisfy the bound '@Init(Label)' on '$I'
-  --> examples/diagnostics/2034-diagnostics-init-bound-unformed.sx:24:26
+  --> examples/diagnostics/2034-diagnostics-init-bound-unformed.sx:23:26
    |
-24 | into_label :: (value: $I/@Init(Label)) -> i32 { 0 }
+23 | into_label :: (value: $I/@Init(Label)) -> i32 { 0 }
    |                          ^^^^^^^^^^^^
 
 help: this initializer writes 'Button', and the bound asks for 'Label'
    |
-24 | into_label :: (value: $I/@Init(Label)) -> i32 { 0 }
+23 | into_label :: (value: $I/@Init(Label)) -> i32 { 0 }
    |                          ^^^^^^^^^^^^
 
 error: the bound '@Init' on '$I' takes one type argument, but 2 are written
-  --> examples/diagnostics/2034-diagnostics-init-bound-unformed.sx:31:21
+  --> examples/diagnostics/2034-diagnostics-init-bound-unformed.sx:30:21
    |
-31 | two   :: (value: $I/@Init(Button, Label)) -> i32 { 0 }
+30 | two   :: (value: $I/@Init(Button, Label)) -> i32 { 0 }
    |                     ^^^^^^^^^^^^^^^^^^^^
 
 help: write '$I/@Init(T)' with the type a 'write' fills
    |
-31 | two   :: (value: $I/@Init(Button, Label)) -> i32 { 0 }
+30 | two   :: (value: $I/@Init(Button, Label)) -> i32 { 0 }
    |                     ^^^^^^^^^^^^^^^^^^^^
 
 error: the bound '@Init' on '$I' takes one type argument, but 0 are written
-  --> examples/diagnostics/2034-diagnostics-init-bound-unformed.sx:32:21
+  --> examples/diagnostics/2034-diagnostics-init-bound-unformed.sx:31:21
    |
-32 | bare  :: (value: $I/@Init) -> i32 { 0 }
+31 | bare  :: (value: $I/@Init) -> i32 { 0 }
    |                     ^^^^^
 
 help: write '$I/@Init(T)' with the type a 'write' fills
    |
-32 | bare  :: (value: $I/@Init) -> i32 { 0 }
+31 | bare  :: (value: $I/@Init) -> i32 { 0 }
    |                     ^^^^^

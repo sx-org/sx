@@ -1,5 +1,5 @@
 error: expected ','
-  --> examples/diagnostics/1241-diagnostics-hash-intrinsic-rejected.sx:12:11
+  --> examples/diagnostics/1241-diagnostics-hash-intrinsic-rejected.sx:11:11
    |
-12 | foo :: ($T: Type) -> i64 #intrinsic;
+11 | foo :: ($T: Type) -> i64 #intrinsic;
    |           ^

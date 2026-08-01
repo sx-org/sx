@@ -1,8 +1,5 @@
 // `x.(T)` where `T` is a value parameter declared `: Type` (without the `$`
-// generic sigil) is rejected with the generic-param hint, never cast to a
-// fabricated empty struct (an unknown *literal* cast target errors via value
-// resolution; the value-param case needs its own guard).
-// Expected: tailored error; exit 1.
+// generic sigil) is rejected with the generic-param hint.
 conv :: (T: Type, x: i32) -> i32 {
     return x.(T);
 }

@@ -1,5 +1,5 @@
 error: property 'doubled' is read-only (no '#set')
-  --> examples/diagnostics/1193-diagnostics-readonly-property-write.sx:15:5
+  --> examples/diagnostics/1193-diagnostics-readonly-property-write.sx:14:5
    |
-15 |     r.doubled = 10;     // ERROR: property 'doubled' is read-only (no '#set')
+14 |     r.doubled = 10;     // ERROR: property 'doubled' is read-only (no '#set')
    |     ^^^^^^^^^

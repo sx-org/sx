@@ -1,10 +1,7 @@
-// A struct literal naming an UNDECLARED type is diagnosed, not silently
-// accepted. Both the named-field form (`NoSuchType{ a = 1 }`) and the empty
-// form (`NoSuchType{}`) must emit "unknown type" and fail the build — the
-// main-file `UnknownTypeChecker` validates a named struct-literal head just
-// like a declaration annotation, instead of letting it reach the lowering's
-// empty-struct forward-ref stub, which drops every field and compiles to a
-// 0-field struct.
+// A struct literal naming an UNDECLARED type is diagnosed in both the named-field
+// form (`NoSuchType{ a = 1 }`) and the empty form (`NoSuchType{}`): the main-file
+// `UnknownTypeChecker` validates a named struct-literal head just like a
+// declaration annotation.
 #import "modules/std.sx";
 
 main :: () {

@@ -1,23 +1,14 @@
-// Unified float→int narrowing rule, float-DIVISION pin: a compile-time
-// float division (`5.0 / 2.0` = 2.5) is a NON-INTEGRAL float, so narrowing it
-// implicitly into an integer-typed binding is a COMPILE ERROR — exactly like any
-// other non-integral float (example 1146). The division is the subtle case: its
-// operands (`5.0`, `2.0`) are individually INTEGRAL, so a naive integer fold
-// would truncate `5.0 / 2.0` to 2 with no diagnostic. The rule fires at all five
-// sites — a typed module CONST, a struct FIELD default, a function PARAM default,
-// a typed LOCAL, and an array DIMENSION — because the shared compile-time integer
-// folder now refuses a division with a float operand, deferring it to the float
-// evaluator + the unified rule (integral folds, non-integral errors). A float
-// operand on either side (literal or float-typed const) makes the `/` a float
-// division.
+// Unified float→int narrowing rule, float-DIVISION pin: a compile-time float
+// division (`5.0 / 2.0` = 2.5) is non-integral, so narrowing it implicitly into an
+// integer-typed binding is a compile error, like any other non-integral float
+// (1146). Its operands are individually integral, so the shared compile-time
+// integer folder refuses a division with a float operand and defers to the float
+// evaluator. A float operand on either side — literal or float-typed const —
+// makes the `/` a float division. All five sites reject it: typed module CONST,
+// struct FIELD default, function PARAM default, typed LOCAL, array DIMENSION.
 //
-// The escape hatch stays open: `xx (5.0 / 2.0)` truncates to 2 with no error, and
-// an INTEGRAL float division (`6.0 / 2.0` → 3) folds — both exercised on the
-// POSITIVE side (example 0168).
-//
-// Each of the five sites — typed local, field default, param default, typed
-// const, array dimension — rejects the non-integral float instead of folding
-// `5.0 / 2.0` to 2 via integer truncating division.
+// The escape hatch stays open: `xx (5.0 / 2.0)` truncates and an INTEGRAL float
+// division (`6.0 / 2.0` → 3) folds — both on the POSITIVE side (0168).
 #import "modules/std.sx";
 
 // An UNTYPED float-EXPRESSION const carries a placeholder `i64` type, yet its

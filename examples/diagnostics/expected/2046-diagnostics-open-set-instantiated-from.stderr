@@ -5,9 +5,9 @@ error: 'Plain' cannot be converted to 'View': it is not a member of it
    |                                   ^^^^
 
 note: instantiated from here
-  --> examples/diagnostics/2046-diagnostics-open-set-instantiated-from.sx:30:15
+  --> examples/diagnostics/2046-diagnostics-open-set-instantiated-from.sx:29:15
    |
-30 |     lifted := into(View, Plain{ text = "not a member" });
+29 |     lifted := into(View, Plain{ text = "not a member" });
    |               ^^^^
 
 help: a type joins by declaring itself into the set: 'Plain :: @OpenVariant(View) { … }'
@@ -22,9 +22,9 @@ error: 'Stray' cannot be converted to 'View': it is not a member of it
    |                                   ^^^^
 
 note: instantiated from here
-  --> examples/diagnostics/2046-diagnostics-open-set-instantiated-from.sx:34:18
+  --> examples/diagnostics/2046-diagnostics-open-set-instantiated-from.sx:33:18
    |
-34 |     forwarded := into_view(Stray{ text = "still not one" });
+33 |     forwarded := into_view(Stray{ text = "still not one" });
    |                  ^^^^^^^^^
 
 help: a type joins by declaring itself into the set: 'Stray :: @OpenVariant(View) { … }'

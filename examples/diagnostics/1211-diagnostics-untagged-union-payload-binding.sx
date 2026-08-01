@@ -1,13 +1,11 @@
-// Diagnostic: a match-style `if x == { case .variant: (v) { ... } }` payload
-// binding is only valid on a tagged union (enum with payloads). Non-bindable
-// subjects are rejected at lowering with a located diagnostic:
-//   - a plain UNTAGGED `union` (no discriminant) and a POINTER to one — the
-//     subject-level match gate rejects the whole match up front (see
-//     example 1220 for the no-binding forms);
-//   - a payload-less enum (the most plausible user typo) — the arm-level
-//     binding rejection, generic wording.
-// Undiagnosed these leak an .unresolved binding type
-// and panic in the LLVM backend ("unresolved type reached LLVM emission").
+// A match-style `if x == { case .variant: (v) { ... } }` payload binding is valid
+// only on a tagged union (an enum with payloads). Two non-bindable subjects are
+// rejected at lowering:
+// - a plain UNTAGGED `union` (no discriminant) and a POINTER to one, where the
+// subject-level match gate rejects the whole match up front (1220 covers the
+// no-binding forms);
+// - a payload-less enum, where the arm-level binding rejection fires with the
+// generic wording.
 #import "modules/std.sx";
 
 Shape :: union { circle: i64; rect: i64; }

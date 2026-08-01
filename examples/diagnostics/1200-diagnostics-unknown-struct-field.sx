@@ -1,11 +1,9 @@
-// A struct literal naming a field the struct does not have is a COMPILE ERROR —
-// not silently dropped. Catches typos and fields removed by an `inline if OS`
-// branch (the motivating case: a darwin-only `sin_len` written into the linux
-// `SockAddr`). Lowering the unknown field's value and discarding it ships
-// the mistake silently.
+// A struct literal naming a field the struct does not have is a compile error.
+// This catches typos and fields removed by an `inline if OS` branch — a
+// darwin-only `sin_len` written into the linux `SockAddr`.
 //
-// Punned bare-ident shorthand (`.{ x, y }`) that misses a field is NOT this
-// case — it is reclassified as a positional literal earlier; only an explicit
+// Punned bare-ident shorthand (`.{ x, y }`) that misses a field is a different
+// case: it is reclassified as a positional literal earlier. Only an explicit
 // `name = expr` naming no field is rejected here.
 
 Point :: struct { x: i64 = 0; y: i64 = 0; }

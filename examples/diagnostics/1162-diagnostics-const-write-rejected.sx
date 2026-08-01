@@ -1,8 +1,7 @@
-// Writes through a module constant are compile errors — for every target
-// chain rooted at a const: a struct const's field (unguarded this compiles
-// and BUS-ERRORs at runtime), an array const's element,
-// a compound assignment, and a bare scalar const. A local that shadows
-// the const name stays writable (see 0177/0178 for the value semantics).
+// Writes through a module constant are compile errors for every target chain
+// rooted at a const: a struct const's field, an array const's element, a compound
+// assignment, and a bare scalar const. A local that shadows the const name stays
+// writable (0177/0178 carry the value semantics).
 
 #import "modules/std.sx";
 

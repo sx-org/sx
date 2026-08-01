@@ -1,6 +1,4 @@
-// Deliberately broken: exercises import parse-error LOCATION reporting.
-// These leading comment lines push the parse error down so its line number
-// differs from the importer's — a mislocated caret would point here-or-wrong
-// instead of at the real offending token below.
-//
+// The parse error below is the subject of the importer's pin. These leading lines
+// keep its line number distinct from the importer's, so a mislocated caret is
+// visible.
 broken :: 1 2;

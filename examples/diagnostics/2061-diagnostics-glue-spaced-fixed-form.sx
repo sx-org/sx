@@ -2,7 +2,7 @@
 // argument list, so `Closure (i64) -> i64` is a spacing error rather than a
 // tolerated spelling. The same holds for `@Init(P)` / `@BuildBlock(P)`,
 // `@OpenVariant(View)`, and `@OpenSet(.{ … })` — a space before `(` is always
-// fatal. Expected: exit 1.
+// fatal.
 #import "modules/std.sx";
 
 apply :: (f: Closure (i64) -> i64, n: i64) -> i64 => f(n);

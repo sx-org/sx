@@ -1,13 +1,9 @@
-// `==` / `!=` between two untagged-`union` VALUES
-// is rejected with a located diagnostic instead of emitting invalid LLVM IR.
-//
-// An untagged union is a raw byte aggregate (`[N x i8]` storage); its
-// inactive-variant + padding bytes are unspecified, so byte-wise equality is
-// undefined. Unrejected, `a == b` lowers to `icmp eq [8 x i8]` and fails LLVM
-// verification with no diagnostic. The binary-op equality lowering
-// (src/ir/lower/expr.zig) diagnoses it at compile time with a hint to compare a
-// specific variant field. The same guard covers fixed arrays (also raw
-// element aggregates with no `==` semantics). Expected exit: 1 (diagnostic).
+// `==` / `!=` between two untagged-`union` VALUES is a located diagnostic. An
+// untagged union is a raw byte aggregate (`[N x i8]` storage) whose
+// inactive-variant and padding bytes are unspecified, so byte-wise equality is
+// undefined; the binary-op equality lowering (src/ir/lower/expr.zig) hints at
+// comparing a specific variant field instead. The same guard covers fixed arrays,
+// also raw element aggregates with no `==` semantics.
 #import "modules/std.sx";
 
 Shape :: union { circle: i64; rect: i64; }

@@ -1,10 +1,7 @@
-// Erasing a concrete type to a protocol it does NOT `impl`-ement is a hard
-// error, not a silent SIGABRT. A plain free function
-// `speak :: (self: *Dog)` with a matching receiver does NOT satisfy the
-// protocol — protocol erasure is impl-driven, not structural (specs.md
-// §"Storage and protocol conformance"). Ungated, erasure builds a vtable
-// of unreachable thunks and `h.s.speak()` aborts with exit 133 and no output;
-// it reports a clear diagnostic at the erasure site and exits 1 instead.
+// Erasing a concrete type to a protocol it does NOT `impl`-ement is reported at
+// the erasure site. A plain free function `speak :: (self: *Dog)` with a matching
+// receiver does not satisfy the protocol: erasure is impl-driven, not structural
+// (specs.md §"Storage and protocol conformance").
 
 #import "modules/std.sx";
 

@@ -1,16 +1,8 @@
 // A DIRECT array dimension that is genuinely not a compile-time integer (a
-// runtime call) is a hard error — ONE clean diagnostic + non-zero exit. Crucially
-// it must NOT fabricate a length and must NOT crash later in lowering: the bad
-// var is used downstream (element store + read, `.len`), and lowering has to bail
-// gracefully on the `.unresolved` type rather than `@panic` in `sizeOf` or pile
-// on cascade errors.
-//
-// A `resolveArrayLen` that emits the diagnostic then
-// `return 0` fabricates a 0-length array (0-byte alloca, OOB access) to dodge
-// the `sizeOf` panic. It returns null → the `.unresolved` sentinel; the
-// binding's lowering bails on it (a field access on an already-diagnosed
-// `.unresolved` value stays silent), so the single real diagnostic aborts the
-// build with no fabrication and no panic.
+// runtime call) reports ONE diagnostic and aborts the build. `resolveArrayLen`
+// returns null → the `.unresolved` sentinel, and the binding's lowering bails on
+// it, so the downstream element store, read and `.len` add no cascade errors and
+// no fabricated length.
 #import "modules/std.sx";
 
 get :: () -> i64 { return 5; }

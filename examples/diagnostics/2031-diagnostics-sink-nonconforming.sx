@@ -6,7 +6,6 @@
 //
 // The pointer requirement is separate and reported on its own: a sink recorded
 // through a copy would record nothing.
-// Expected: exit 1.
 #import "modules/std.sx";
 #import "modules/std/list.sx";
 #import "modules/fluent.sx";

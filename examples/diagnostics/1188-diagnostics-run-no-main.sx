@@ -1,7 +1,6 @@
-// `sx run` on a program with no `main` must emit a clean diagnostic and exit
-// non-zero — never call into a garbage JIT address and segfault. A pre-JIT
-// entry-point check in main.zig (plus a defensive `main_addr == 0` backstop in
-// target.zig's runJITFromObject) guards the garbage-pointer call.
+// `sx run` on a program with no `main` emits a diagnostic and exits non-zero. A
+// pre-JIT entry-point check in main.zig and a `main_addr == 0` backstop in
+// target.zig's runJITFromObject both guard the call into a garbage JIT address.
 #import "modules/std.sx";
 
 // Intentionally no `main` — only a helper.

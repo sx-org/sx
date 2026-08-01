@@ -1,14 +1,8 @@
-// A generic value-param arg that does not fit the param's declared integer type
-// is a hard error even when that type is reached through a type ALIAS
-// (`$K: Count` where `Count :: u32`, `$K: Small` where `Small :: i8`) — a clean
-// diagnostic + non-zero exit, NOT a silent truncating bind.
-//
-// The constraint resolves to its underlying builtin (`Count` → u32, `Small` →
-// i8) before range-checking, so an aliased integer constraint behaves exactly
-// like the builtin it names — at both the struct and type-fn binders. A range
-// gate that matches only BUILTIN constraint names lets an aliased constraint
-// slip past `intTypeRange`, so `Box(5_000_000_000)` with `$K: Count` compiles
-// and binds a truncated value.
+// A generic value-param arg that does not fit its declared integer type is a hard
+// error when that type is reached through a type ALIAS too (`$K: Count` where
+// `Count :: u32`, `$K: Small` where `Small :: i8`). The constraint resolves to
+// its underlying builtin before range-checking, at both the struct and type-fn
+// binders.
 #import "modules/std.sx";
 
 Count :: u32;

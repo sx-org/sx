@@ -1,19 +1,11 @@
 // The 7 type-introspection builtins (size_of, align_of, struct_field_count,
-// type_name, type_eq, is_unsigned, is_flags) take ONLY types. A
-// value argument is a compile-time error, not a silently-reinterpreted
-// TypeId index.
+// type_name, type_eq, is_unsigned, is_flags) take ONLY types. The strict
+// `$T: Type` guard (`Lowering.reflectionTypeArgGuard`) rejects an argument whose
+// static type is not `Type` with "<builtin> expects a type, got '<type>'" at that
+// argument.
 //
-// A builtin that accepts a non-type value and
-// reinterprets it reads 6 as a TypeId for `is_unsigned(6)` and returns the
-// signedness of types[6] (`u8` → true), and sizes `typeof(true)` (8) for
-// `size_of(true)`. The strict `$T: Type` guard
-// (`Lowering.reflectionTypeArgGuard`) rejects any argument whose
-// static type is not `Type` and emits "<builtin> expects a type, got
-// '<type>'" at the offending argument, aborting (exit 1).
-//
-// Reject cases use `true`/`1.5` (whose types — bool/f64 — are stable)
-// rather than an integer literal, so the pinned diagnostics don't drift
-// when the int-literal default type changes.
+// Reject cases use `true`/`1.5`, whose types (bool/f64) are stable, so the pinned
+// diagnostics do not move with the int-literal default type.
 
 #import "modules/std.sx";
 

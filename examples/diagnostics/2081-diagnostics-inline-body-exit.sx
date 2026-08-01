@@ -8,7 +8,6 @@
 //
 // Each is the same rule the real body path already applies — the refusals name
 // the callee's type because the callee's type is what the exit has to satisfy.
-// Expected: exit 1.
 Bad :: error { Nope }
 
 fails :: () -> (i64, !Bad) {

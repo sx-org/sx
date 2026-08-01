@@ -3,7 +3,6 @@
 // is an expression of its own and the brace opens a scope block — so the field
 // list inside it is read as statements, and the `,` between them is the
 // ordinary error a scope block gives.
-// Expected: exit 1.
 #import "modules/std.sx";
 
 Pair :: struct { a: i64; b: i64 }

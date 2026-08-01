@@ -1,5 +1,5 @@
 error: unknown type 'Undefined'
-  --> examples/diagnostics/1196-diagnostics-array-literal-head-unknown-type.sx:14:17
+  --> examples/diagnostics/1196-diagnostics-array-literal-head-unknown-type.sx:9:17
    |
-14 |     arr := ([2]?Undefined).[ null, null ];
+ 9 |     arr := ([2]?Undefined).[ null, null ];
    |                 ^^^^^^^^^

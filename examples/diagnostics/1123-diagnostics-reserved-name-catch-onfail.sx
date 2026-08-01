@@ -1,11 +1,5 @@
-// A reserved/builtin type name is rejected as the error-tag binding of a
-// `catch` (`u8`) and of an `onfail` (`i64`). Both are reached through the
-// exhaustive binding-name walk's `catch_expr` / `onfail_stmt` arms. A scalar
-// tag never reaches the address-of lowering, so the rejection must land at the
-// binding's declaration.
-//
-// Expected: one error for each
-// binding; exit 1.
+// A reserved/builtin type name is rejected as the error-tag binding of a `catch`
+// (`u8`) and of an `onfail` (`i64`), reported at the binding's declaration.
 #import "modules/std.sx";
 
 E :: error { Bad }

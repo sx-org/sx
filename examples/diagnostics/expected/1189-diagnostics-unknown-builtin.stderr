@@ -1,5 +1,5 @@
 error: unknown intrinsic 'mystery'
-  --> examples/diagnostics/1189-diagnostics-unknown-builtin.sx:10:1
+  --> examples/diagnostics/1189-diagnostics-unknown-builtin.sx:9:1
    |
-10 | mystery :: ($T: Type, x: T) -> T intrinsic;
+ 9 | mystery :: ($T: Type, x: T) -> T intrinsic;
    | ^^^^^^^

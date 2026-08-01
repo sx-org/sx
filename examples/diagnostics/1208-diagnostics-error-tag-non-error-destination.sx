@@ -1,14 +1,8 @@
 // An `error.X` tag literal does not flow into a NOMINAL non-error destination
-// (struct / enum / union / tagged union). Per the spec's context rule the tag
-// is an error-set value against a named-set destination and a raw u32 global
-// id in an untyped / integer context — an aggregate destination is neither,
-// and a raw-u32 fallback reinterprets the tag id as the aggregate's bytes
-// (a struct param reads the id back as its first field).
-//
-// Unchecked, `f(error.Fault)` into a
-// struct-typed param compiles silently and produces garbage (r=5, the global
-// tag id), and an annotated init `s : S = error.Fault` does the same. The
-// integer context stays valid: `id : u32 = error.X`.
+// (struct / enum / union / tagged union). Per the spec's context rule the tag is an
+// error-set value against a named-set destination and a raw u32 global id in an
+// untyped / integer context; an aggregate destination is neither. The integer
+// context stays valid: `id : u32 = error.X`.
 
 #import "modules/std.sx";
 

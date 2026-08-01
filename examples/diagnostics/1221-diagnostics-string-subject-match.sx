@@ -1,13 +1,7 @@
-// Diagnostic: a case-style match subject must carry a discriminant the switch
-// can dispatch on — enums, tagged unions, error sets, optionals, integers,
-// bools, or type ids (specs §Pattern Matching: patterns are enum literals,
-// integer/bool literals, and type categories). A `string` subject (and a
-// float subject) has no such discriminant and is rejected up front with a
-// located diagnostic.
-// Unrejected, a string subject reaches the backend as
-// invalid IR — `switch ptr %etag` against integer case constants ("Switch
-// constants must all be same type as switch value!"); an f64 subject gives
-// the same verifier failure via `switch double`.
+// A case-style match subject carries a discriminant the switch can dispatch on:
+// enums, tagged unions, error sets, optionals, integers, bools, or type ids (specs
+// §Pattern Matching). A `string` subject and a float subject have none and are
+// rejected up front with a located diagnostic.
 #import "modules/std.sx";
 
 main :: () {

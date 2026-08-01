@@ -1,35 +1,35 @@
 error: 'i2' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:18:5
+  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:12:5
    |
-18 |     i2, rest := pair();                  // destructure name
+12 |     i2, rest := pair();                  // destructure name
    |     ^^
 
 error: 'u8' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:19:8
+  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:13:8
    |
-19 |     if u8 := maybe() { }                 // if optional binding
+13 |     if u8 := maybe() { }                 // if optional binding
    |        ^^
 
 error: 'i16' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:20:11
+  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:14:11
    |
-20 |     while i16 := maybe() { break; }      // while optional binding
+14 |     while i16 := maybe() { break; }      // while optional binding
    |           ^^^
 
 error: 'bool' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:22:13
+  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:16:13
    |
-22 |     for xs (bool) { }                   // for capture name
+16 |     for xs (bool) { }                   // for capture name
    |             ^^^^
 
 error: 'i32' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:23:21
+  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:17:21
    |
-23 |     for xs, 0.. (v, i32) { }                 // for index name
+17 |     for xs, 0.. (v, i32) { }                 // for index name
    |                     ^^^
 
 error: 'string' is a reserved type name and cannot be used as an identifier
-  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:26:22
+  --> examples/diagnostics/1121-diagnostics-reserved-name-control-flow.sx:20:22
    |
-26 |         case .some: (string) { 0 }
+20 |         case .some: (string) { 0 }
    |                      ^^^^^^

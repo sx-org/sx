@@ -1,14 +1,12 @@
-// Assigning to a by-VALUE capture is a compile error, not a silent no-op
-// — a capture is a read-only alias into storage the loop / match
-// / error machinery owns — mutating it bare would corrupt nothing (the store
-// would be dropped silently, reaching neither the container nor the copy),
-// so it is rejected. Every by-value capture family is covered here; each `=`
-// below is diagnosed with a SHAPE-AWARE "cannot assign to immutable capture"
-// message: only the for-loop ELEMENT form suggests the `(*x)` by-ref
-// write-back (its container storage exists); range indexes, match payloads,
-// catch/onfail bindings, and pack-element aliases have no storage behind
-// them, so they get the copy-into-a-`:=`-local advice alone. A function-local
-// `::` const rides the same enforcement but gets the constant-family message.
+// Assigning to a by-VALUE capture is a compile error — a capture is a read-only
+// alias into storage the loop / match / error machinery owns. Every by-value
+// capture family is covered, and each `=` below gets a SHAPE-AWARE "cannot assign
+// to immutable capture" message: only the for-loop ELEMENT form suggests the
+// `(*x)` by-ref write-back, since its container storage exists. Range indexes,
+// match payloads, catch/onfail bindings and pack-element aliases have no storage
+// behind them, so they get the copy-into-a-`:=`-local advice alone. A
+// function-local `::` const rides the same enforcement with the constant-family
+// message.
 //
 // The sibling by-REF misuse is `for xs (*x) { x = v }`.
 

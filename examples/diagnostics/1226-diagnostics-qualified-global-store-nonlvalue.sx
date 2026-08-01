@@ -1,15 +1,10 @@
-// A qualified store through a namespace-import alias must reject a member that
-// is NOT a mutable global: a CONST (`lib.LIB_C = 3`) and a FUNCTION
-// (`lib.lib_fn = 3`) each diagnose cleanly at the assignment site, rather than
-// silently dropping the write or failing "unresolved 'lib'". A TRANSITIVE
-// member (`amb.shared`, authored only by modules that `amb` flat-imports) is
-// not a namespace member at all. ALL errors point at THIS file —
-// classification runs in the target module's context, but diagnostics are
-// emitted after source-file restore, so caller spans never render against an
-// imported module's (shorter) text.
-//
-// Qualified module-global assignment — non-lvalue
-// member rejection + ambiguous-member attribution (review fold).
+// A qualified store through a namespace-import alias rejects a member that is NOT
+// a mutable global: a CONST (`lib.LIB_C = 3`) and a FUNCTION (`lib.lib_fn = 3`)
+// each diagnose at the assignment site. A TRANSITIVE member (`amb.shared`,
+// authored only by modules that `amb` flat-imports) is not a namespace member at
+// all. Every error points at THIS file: classification runs in the target module's
+// context, but diagnostics are emitted after source-file restore, so caller spans
+// never render against an imported module's text.
 
 #import "modules/std.sx";
 lib :: #import "1226-diagnostics-qualified-global-store-nonlvalue/lib.sx";

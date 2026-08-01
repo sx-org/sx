@@ -1,8 +1,7 @@
-// A NON-integral float (`4.5`) as an `inline for` range bound is a hard error:
-// the loop cursor must be a compile-time integer, so only an integral float
-// (`4.0`, `-2.0`) folds. Clean diagnostic + non-zero exit.
-// Range bounds are exempt from the count negative-rejection (negatives are
-// valid endpoints); the must-be-integer requirement still applies.
+// A NON-integral float (`4.5`) as an `inline for` range bound is a hard error —
+// the loop cursor is a compile-time integer, so only an integral float (`4.0`,
+// `-2.0`) folds. Range bounds accept negative endpoints; only the
+// must-be-integer requirement applies.
 #import "modules/std.sx";
 
 main :: () {

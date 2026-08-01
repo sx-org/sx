@@ -1,6 +1,5 @@
 // A named aggregate literal places `{` directly after its type — `Type{…}`;
 // a separator dot (`Type.{…}`) is rejected. Contextual construction is `.{…}`.
-// Expected: exit 1.
 #import "modules/std.sx";
 
 Button :: struct {

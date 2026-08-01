@@ -1,13 +1,8 @@
-// A reserved/builtin type name used as a PARAMETER name is rejected inside the
-// two method-with-body forms that carry their params as bare name lists rather
-// than `Param` nodes: a protocol default-body method (`u8`) and a sx-defined
-// runtime-class (`#objc_class`) method (`i16`). The declaration-site diagnostic
-// underlines the OFFENDING PARAMETER itself, not the enclosing `protocol` /
-// `#objc_class` block — each method's `param_name_spans` is threaded from the
-// parser so the caret lands on the parameter token.
-//
-// Expected: one error per
-// offending parameter, each caret on the parameter name; exit 1.
+// A reserved/builtin type name used as a PARAMETER name is rejected in the two
+// method-with-body forms that carry their params as bare name lists rather than
+// `Param` nodes: a protocol default-body method (`u8`) and a `#objc_class` method
+// (`i16`). Each method's `param_name_spans` puts the caret on the offending
+// parameter token, not on the enclosing block.
 #import "modules/std.sx";
 #import "modules/build.sx";
 

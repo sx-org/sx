@@ -1,14 +1,8 @@
 // Reserved/builtin type names are rejected as binding NAMES across every
-// control-flow and destructuring form, not just plain `var`/param decls: a
-// destructure name (`i2`), an `if`/`while` optional binding (`u8`/`i16`), a
-// `for` capture and index name (`bool`/`i32`), and a match-arm capture
-// (`string`). Each spelling parses as a `.type_expr`, so the address-of family
-// in lowering mis-lowers it (a loaded aggregate passed by value to a `ptr`
-// param → LLVM verifier abort). The declaration-site diagnostic comes from one
-// EXHAUSTIVE binding-name walk, so no syntactic binding form can slip through.
-//
-// Expected: one error per
-// offending name; exit 1 — NOT an LLVM verifier abort.
+// control-flow and destructuring form: a destructure name (`i2`), an `if`/`while`
+// optional binding (`u8`/`i16`), a `for` capture and index name (`bool`/`i32`),
+// and a match-arm capture (`string`). One exhaustive binding-name walk covers
+// every syntactic binding form, so each offending name gets its own error.
 #import "modules/std.sx";
 
 pair :: () -> Tuple(i64, i64) { .{1, 2} }

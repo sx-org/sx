@@ -1,13 +1,9 @@
-// Passing an optional (`?T`) where a `bool` is expected is a hard type error,
-// not a silent miscompile. The coercion classifier's
-// "optional → concrete (unwrap+narrow)" rule must not accept `?i64 → bool`
-// (both child and dst are builtin): unwrapping the payload and narrowing it to
-// `i1` produces `false` for EVERY optional, present or null
-// alike. There is no implicit optional→bool coercion in the language (only
-// `T → ?T` wrapping and flow-sensitive narrowing); a bool position wants an
-// explicit presence test. The classifier rejects `?T → bool` (payload not
-// itself a bool) at the coercion site (exit 1) with a `!= null` fix-it. The
-// `if opt {}` presence test is a separate path and still works.
+// Passing an optional (`?T`) where a `bool` is expected is a type error at the
+// coercion site, with a `!= null` fix-it. The language has no implicit
+// optional→bool coercion — only `T → ?T` wrapping and flow-sensitive narrowing —
+// so the coercion classifier's "optional → concrete (unwrap+narrow)" rule does not
+// admit `?i64 → bool`, whose payload is not itself a bool. The `if opt {}` presence
+// test is a separate path.
 
 #import "modules/std.sx";
 

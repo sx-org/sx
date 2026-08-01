@@ -14,7 +14,6 @@
 //      diagnostic as a named function, instead of returning `undef`.
 //   4. A native `#jni_main` method cannot be failable: Java has no error
 //      channel to receive the tag.
-// Expected: exit 1.
 #import "modules/std.sx";
 #import "modules/build.sx";
 

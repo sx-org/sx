@@ -1,11 +1,8 @@
 // A nested `::` static function is NOT a closure — it has no environment, so a
-// reference to an ENCLOSING function's local / param / local-const cannot be
-// resolved; miscompiling it to a dead Ref makes bare reads return undef
-// (exit 0, no diagnostic), indexed reads segfault, indexed / member stores
-// Bus-error, and a call through an enclosing closure value dispatch on a dead
-// env pointer. Every consumer shape is a located compile error naming the
-// closure alternative: bare read, indexed read, indexed write, field write,
-// closure-value call, and multi-assign write.
+// reference to an ENCLOSING function's local, param or local-const cannot be
+// resolved. Every consumer shape is a located compile error naming the closure
+// alternative: bare read, indexed read, indexed write, field write, closure-value
+// call, and multi-assign write.
 #import "modules/std.sx";
 Pt :: struct { v: i64; }
 main :: () -> i32 {

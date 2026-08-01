@@ -1,14 +1,10 @@
-// A value-position block `match` (a `:=` RHS here) whose arms are MIXED — one
-// yields a real value while a sibling arm yields void (a bare-statement tail) —
-// must be a clean, located compile-time error, never an `alloca void` /
-// `i64 undef` backend crash. Mirrors the value-`if`-without-`else`
-// diagnostic; every arm of a value `match` must produce a value.
+// A value-position block `match` — a `:=` RHS here — whose arms are MIXED, one
+// yielding a real value while a sibling yields void through a bare-statement tail,
+// is a located compile-time error: every arm of a value `match` produces a value.
+// It mirrors the value-`if`-without-`else` diagnostic.
 //
-// Value-`match` arms lower via `lowerBlockValue`, whose no-`else`-`if`
-// exemption must not clear `force_block_value`: cleared, a void arm value feeds
-// the i64 merge phi and reaches the backend. (A `match` used purely as
-// a STATEMENT — all arms void — and a diverging arm in a value `match` both
-// remain valid; only the value/void MIX is rejected.)
+// A `match` used purely as a STATEMENT, with all arms void, and a diverging arm in
+// a value `match` both stay valid; only the value/void MIX is rejected.
 #import "modules/std.sx";
 
 E :: enum { A; B; }

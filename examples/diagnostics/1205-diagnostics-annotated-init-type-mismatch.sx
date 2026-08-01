@@ -1,16 +1,9 @@
-// Initializing (or reassigning) an explicitly-annotated slot with a value
-// whose type has NO coercion to the annotation is a type error, diagnosed at
-// lowering with a located message.
+// Initializing or reassigning an explicitly-annotated slot with a value whose type
+// has NO coercion to the annotation is a located type error. `checkAssignable`
+// rejects it at every store-into-annotated-slot site — var-decl, body-local
+// const-decl, and reassignment.
 //
-// Unguarded, `x : i32 = "hi"` passes through a
-// `.none` coercion plan UNCHANGED, storing a 16-byte `string` into a 4-byte
-// `i32` slot — the slot is bit-mangled and the program SIGSEGVs at run time
-// (`sx ir` lowers fine; only the run crashes). The guard (`checkAssignable`)
-// rejects an un-coercible initializer at every store-into-annotated-slot
-// site — var-decl, body-local const-decl, and reassignment — emitting a
-// diagnostic and aborting the build cleanly (exit 1).
-//
-// The explicit `xx` / `.(T)` escape hatch is unaffected: a deliberate
+// The explicit `xx` / `.(T)` escape hatch is unaffected: an explicit
 // reinterpretation (pointer↔int, etc.) still passes through.
 
 #import "modules/std.sx";

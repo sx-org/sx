@@ -1,8 +1,7 @@
-// A diagnostic naming a bare-function VALUE must show the function's
-// signature, never the integer word it is carried in ('i64') and
-// never the bare 'function' tag (second defect). Pinned in both
-// coercion error paths: the central unmodeled-coercion guard (call arg) and
-// the return-path guard.
+// A diagnostic naming a bare-function VALUE shows the function's signature, never
+// the integer word it is carried in ('i64') and never the bare 'function' tag. Both
+// coercion error paths are pinned: the central unmodeled-coercion guard (call arg)
+// and the return-path guard.
 #import "modules/std.sx";
 
 toolbar :: () { print("t\n"); }

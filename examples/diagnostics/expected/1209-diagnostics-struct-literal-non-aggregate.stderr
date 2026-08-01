@@ -1,17 +1,17 @@
 error: cannot build a struct literal for non-struct type 'i64'
-  --> examples/diagnostics/1209-diagnostics-struct-literal-non-aggregate.sx:15:15
+  --> examples/diagnostics/1209-diagnostics-struct-literal-non-aggregate.sx:10:15
    |
-15 |     x : i64 = .{ a = 1 };     // error: named literal against a scalar
+10 |     x : i64 = .{ a = 1 };     // error: named literal against a scalar
    |               ^^^^^^^^^^
 
 error: cannot build a struct literal for non-struct type 'i64'
-  --> examples/diagnostics/1209-diagnostics-struct-literal-non-aggregate.sx:18:15
+  --> examples/diagnostics/1209-diagnostics-struct-literal-non-aggregate.sx:13:15
    |
-18 |     y : i64 = .{};            // error: empty literal against a scalar (was silent garbage)
+13 |     y : i64 = .{};            // error: empty literal against a scalar (was silent garbage)
    |               ^^^
 
 error: cannot build a struct literal for non-struct type 'i64'
-  --> examples/diagnostics/1209-diagnostics-struct-literal-non-aggregate.sx:21:16
+  --> examples/diagnostics/1209-diagnostics-struct-literal-non-aggregate.sx:16:16
    |
-21 |     o : ?i64 = .{ a = 1 };    // error: optional path recurses with child 'i64'
+16 |     o : ?i64 = .{ a = 1 };    // error: optional path recurses with child 'i64'
    |                ^^^^^^^^^^

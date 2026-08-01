@@ -1,7 +1,6 @@
 // A comptime-constructed enum (declare/define) with two same-named variants is
-// rejected loudly. Two `value` variants would make construction (`.value`) and
-// matching ambiguous — `define` bails naming the duplicate, instead of silently
-// minting a malformed enum that picks one arbitrarily.
+// rejected: two `value` variants would make construction (`.value`) and matching
+// ambiguous, so `define` bails naming the duplicate.
 #import "modules/std.sx";
 #import "modules/std/meta.sx";
 

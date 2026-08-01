@@ -1,7 +1,5 @@
-// Wrong argument counts to fixed-arity functions are rejected at the call
-// site — bare calls, flat-imported stdlib fns, method dot-calls, and ufcs
-// dot-calls — instead of reaching LLVM verification ("Incorrect number of
-// arguments passed to called function!").
+// Wrong argument counts to fixed-arity functions are rejected at the call site —
+// bare calls, flat-imported stdlib fns, method dot-calls and ufcs dot-calls.
 
 #import "modules/std.sx";
 

@@ -1,11 +1,6 @@
-// A many-pointer `[*]T` carries NO length, so it cannot coerce to a slice `[]T`
-// implicitly — doing so would pass a bare 8-byte pointer where a 16-byte
-// `{ptr,len}` fat pointer is expected, silently corrupting the callee's view of
-// the data (garbage length, mis-aligned element reads). The compiler rejects it
-// loudly and tells the user to supply the length via `ptr[0..len]`.
-//
-// Admitted, this silent mis-coercion segfaults the
-// comptime VM and fails LLVM verification at runtime.
+// A many-pointer `[*]T` carries NO length, so it does not coerce to a slice `[]T`
+// implicitly — an 8-byte pointer where a 16-byte `{ptr,len}` fat pointer is
+// expected. The diagnostic asks for the length via `ptr[0..len]`.
 #import "modules/std.sx";
 
 sum :: (s: []i64) -> i64 {

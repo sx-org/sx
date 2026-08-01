@@ -1,7 +1,6 @@
-// A destination-less enum literal is diagnosed (undiagnosed it panics the
-// LLVM backend with an unresolved type). Kept
-// as the ONLY error in this file: the diagnostic is cascade-guarded, so it
-// stays silent when the destination type itself already failed to resolve.
+// A destination-less enum literal is diagnosed. It is the only error in this file:
+// the diagnostic is cascade-guarded, so it stays silent when the destination type
+// itself already failed to resolve.
 #import "modules/std.sx";
 
 main :: () -> i32 {
