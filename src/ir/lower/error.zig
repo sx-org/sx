@@ -1085,7 +1085,7 @@ pub fn operandIsFailableLike(self: *Lowering, node: *const Node) bool {
 
 /// True iff `node` is `expr.(T)` in the checked-assertion shape: an `any`
 /// receiver, or a protocol receiver whose target is a concrete downcast
-/// (RTTI Option B — the type_id word makes it the any assertion over the
+/// (the type_id word makes it the any assertion over the
 /// value's {ctx, type_id} prefix view).
 pub fn isErasedAssertNode(self: *Lowering, node: *const Node) bool {
     if (node.data != .postfix_cast) return false;

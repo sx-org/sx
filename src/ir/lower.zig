@@ -1670,12 +1670,11 @@ pub const Lowering = struct {
             return self.module.types.ptrTo(inner);
         }
         // Pack-index in a type position: `$<pack>[<lit>]` resolves to the
-        // i-th element type of the active pack binding (step 3 of the
-        // variadic heterogeneous type packs feature). Unblocks parametric
+        // i-th element type of the active pack binding — what parametric
         // trampoline bodies (`(*void, $args[0]) -> $args[1]`) in stdlib's
-        // generic Into(Block) impl. OOB indices / a missing binding emit a
-        // diagnostic and return the `.unresolved` sentinel — never a plausible
-        // `.i64`, which would silently fabricate an 8-byte int.
+        // generic Into(Block) impl are spelled with. OOB indices / a missing
+        // binding emit a diagnostic and return the `.unresolved` sentinel —
+        // never a plausible `.i64`, which would silently fabricate an 8-byte int.
         if (node.data == .pack_index_type_expr) {
             const pi = node.data.pack_index_type_expr;
             if (self.pack_arg_types) |pat| {
@@ -1941,14 +1940,12 @@ pub const Lowering = struct {
             .union_decl => return type_bridge.resolveInlineUnion(&node.data.union_decl, &self.module.types, self),
             // A NAMED error-set reference (`!Named`) resolves its name through
             // `self` (visibility-aware) too; the bare `!` inferred set has no name
-            // to shadow. NOTE: this reference-side resolution is currently DORMANT
-            // for same-name error-set collisions — error-set DECLARATIONS don't
-            // yet get per-decl nominal identity (struct/enum/union do), so a
-            // same-name set collapses to one TypeId at registration
-            // and there is nothing distinct for the reference to select. Once
-            // decls get nominal identity this activates with no change
-            // here. `error_set_decl` is NOT in this switch: it interns only tag
-            // names, resolving no type names, so it stays on the flat `else`.
+            // to shadow. Same-name error-set collisions have nothing for the
+            // reference to select: error-set DECLARATIONS carry no per-decl
+            // nominal identity (struct/enum/union do), so a same-name set
+            // collapses to one TypeId at registration. `error_set_decl` is NOT
+            // in this switch: it interns only tag names, resolving no type
+            // names, so it stays on the flat `else`.
             .error_type_expr => return type_bridge.resolveErrorType(&node.data.error_type_expr, &self.module.types, self),
             else => return type_bridge.resolveAstType(node, &self.module.types, &self.program_index.type_alias_map, &self.program_index.module_const_map),
         }
@@ -2109,9 +2106,9 @@ pub const Lowering = struct {
 
     /// A static nested `::` function referenced an ENCLOSING function's local /
     /// param / local-const `name`. It has no environment to reach it — the only
-    /// spelling that captures is a closure. Diagnose loudly (was a silent dead
-    /// Ref → `undef` read) and emit a placeholder; `hasErrors()`
-    /// aborts before codegen so the placeholder never runs. Deduped per
+    /// spelling that captures is a closure. Diagnose loudly and emit a
+    /// placeholder; `hasErrors()` aborts before codegen so the placeholder
+    /// never runs. Deduped per
     /// (function, name): the guard sits at every resolution layer and a
     /// speculative fast path's diagnostic would otherwise repeat when its
     /// null-fallback re-lowers the same identifier through another guard.

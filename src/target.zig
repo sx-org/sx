@@ -363,8 +363,8 @@ pub fn runJITFromObject(obj_buf: c.LLVMMemoryBufferRef, priority_dylibs: []const
     const prefix = c.LLVMOrcLLJITGetGlobalPrefix(jit);
 
     // Program-owned dylibs first (generators run in attachment order).
-    // A failed generator is skipped: resolution then degrades to the
-    // process-wide search below, exactly the pre-priority behavior.
+    // A failed generator is skipped: resolution degrades to the
+    // process-wide search below.
     for (priority_dylibs) |path| {
         var pgen: c.LLVMOrcDefinitionGeneratorRef = null;
         err = c.LLVMOrcCreateDynamicLibrarySearchGeneratorForPath(&pgen, path.ptr, prefix, null, null);

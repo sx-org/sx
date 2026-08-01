@@ -3833,7 +3833,7 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
             return self.openSetMemberTypeId(arg_ty, slot);
         } else if (self.getProtocolInfo(arg_ty) != null) {
             // A PROTOCOL value answers its CONCRETE type — the type_id
-            // word at slot 1 (RTTI Option B), same position as an any's;
+            // word at slot 1, same position as an any's;
             // a tagged value synthesizes it through its tag table.
             const val = self.lowerExpr(c.args[0]);
             return self.protocolTypeIdWord(arg_ty, val);
@@ -4840,9 +4840,9 @@ pub fn expandCallDefaults(
                 // rather than re-resolving the name, so default expansion and
                 // dispatch agree on the author. `.ambiguous` declines to expand
                 // (the call path emits the single diagnostic); a non-collision
-                // call keeps the existing first-wins winner, byte-for-byte.
-                // Reading `.decl` only keeps `materialized` null — inspecting
-                // defaults must not lower the author (0102d).
+                // call keeps the first-wins winner. Reading `.decl` only keeps
+                // `materialized` null — inspecting defaults must not lower the
+                // author.
                 if (author_declines) return null;
                 if (sel_author) |sf| break :blk sf.decl;
                 // A callable LOCAL binding shadows the top-level fn: the

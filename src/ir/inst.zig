@@ -101,7 +101,7 @@ pub const Op = union(enum) {
     /// frame from its own context. `emit_llvm` resolves this instruction's span
     /// + the current function → `{file,line,col,func}`, interns a `Frame` global,
     /// and yields its address (`ptrtoint`). `interp` yields a packed
-    /// `(func_id << 32 | span.start)` for the comptime resolver (slice 3b). The
+    /// `(func_id << 32 | span.start)` for the comptime resolver. The
     /// result feeds the existing `sx_trace_push(u64)` call.
     trace_frame,
     /// the read-side resolver: a raw trace-buffer `u64` →
@@ -264,7 +264,6 @@ pub const Op = union(enum) {
     /// emit_llvm.zig expands this into the JNI vtable indirection:
     /// `(*env)->GetObjectClass` (instance only) → `GetMethodID` /
     /// `GetStaticMethodID` → `Call<Type>Method` / `CallStatic<Type>Method`.
-    /// Method-ID caching across call sites is added in step 1.17.
     jni_msg_send: JniMsgSend,
 
     /// `asm volatile? { "tmpl", operands…, clobbers(.…) }` — inline assembly

@@ -142,7 +142,7 @@ test "DocumentStore: absolute didOpen of a relatively-keyed file reuses the Docu
     const alloc = arena.allocator();
     const io = test_io();
 
-    const rel = "lsp-dup-key-regression.tmp.sx";
+    const rel = "lsp-dup-key.tmp.sx";
     const disk_src = "answer :: () -> i64 { return 42; }\n";
     try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = rel, .data = disk_src });
     defer std.Io.Dir.deleteFile(.cwd(), io, rel) catch {};
@@ -177,7 +177,7 @@ test "DocumentStore: relative import lookup after absolute didOpen sees editor c
     const alloc = arena.allocator();
     const io = test_io();
 
-    const rel = "lsp-dup-key-regression2.tmp.sx";
+    const rel = "lsp-dup-key-reverse.tmp.sx";
     try std.Io.Dir.writeFile(.cwd(), io, .{ .sub_path = rel, .data = "on_disk :: 1;\n" });
     defer std.Io.Dir.deleteFile(.cwd(), io, rel) catch {};
 

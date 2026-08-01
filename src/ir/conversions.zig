@@ -286,7 +286,7 @@ pub const CoercionResolver = struct {
             self.l.module.types.get(dst_ty) == .pointer) return .protocol_to_pointer;
         if (self.l.getProtocolInfo(src_ty) != null and self.isProtocolRawDst(dst_ty)) return .protocol_to_raw;
         // Protocol → any (explicit): the CONCRETE view — {data = ctx,
-        // type_id} read straight off the value's prefix (RTTI Option B).
+        // type_id} read straight off the value's prefix.
         // The IMPLICIT boxing of a protocol value (`av : any = s`) is
         // untouched: it still boxes the protocol value itself.
         if (self.l.getProtocolInfo(src_ty) != null and dst_ty == .any) return .protocol_to_any;

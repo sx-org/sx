@@ -648,8 +648,7 @@ pub const Parser = struct {
 
         // Generic type parameter introduction: $T or $T/Protocol1/Protocol2.
         // Also: pack-index type access $args[<int_literal>] — resolves to
-        // the i-th element type of the active pack binding (step 3 of
-        // the variadic heterogeneous type packs feature).
+        // the i-th element type of the active pack binding.
         if (self.current.tag == .dollar) {
             self.advance();
             if (self.current.tag != .identifier) {
@@ -3708,9 +3707,9 @@ pub const Parser = struct {
         }
         // Pack references in expression position:
         //   `$<pack_name>[<int_literal>]` → `pack_index_type_expr`
-        //       (single Type value, step 3 shape)
+        //       (a single Type value)
         //   `$<pack_name>`                 → `comptime_pack_ref`
-        //       (whole pack as []Type value, step 4 final slice)
+        //       (the whole pack as a []Type value)
         // Lowering routes each through `pack_arg_types` to either
         // a `const_type(TypeId)` or a `[]Type` aggregate of them.
         if (self.current.tag == .dollar) {
@@ -4042,8 +4041,7 @@ pub const Parser = struct {
         const env_expr = try self.parseExpr();
         try self.expect(.r_paren);
 
-        // Body is a brace-delimited block. The `-> ?T` annotation for
-        // exception bubbling lands with step 2.15 / 2.16 follow-ups.
+        // Body is a brace-delimited block.
         if (self.current.tag != .l_brace) {
             return self.fail("expected '{' after '#jni_env(env)'");
         }

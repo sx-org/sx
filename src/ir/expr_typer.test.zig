@@ -51,9 +51,8 @@ test "expr_typer: binary comparison is bool, int arithmetic stays int" {
 
 // A non-comparison binary op infers the PROMOTED result
 // of (lhs, rhs), not the LHS alone — so a mixed int+float op types as the float
-// in EITHER operand order (was LHS-biased: `int + float` → i64 while
-// `float + int` → f64). This is what feeds the typed-const validation that
-// rejected `i64 : 0.5 + M` but not `i64 : M + 0.5`.
+// in EITHER operand order. This feeds the typed-const validation, which rejects
+// `i64 : 0.5 + M` and `i64 : M + 0.5` alike.
 test "expr_typer: mixed int+float arithmetic promotes to float, order-independent" {
     const alloc = std.testing.allocator;
     var module = ir_mod.Module.init(alloc);

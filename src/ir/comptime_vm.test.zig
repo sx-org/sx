@@ -679,8 +679,8 @@ test "comptime_vm exec: a negative i32 stored and reloaded stays negative (sign-
 
 test "comptime_vm exec: storing a null non-pointer optional into a slot reads back as none" {
     // `y: ?i64 = null` lowers to a store of the `null_addr` optional sentinel
-    // into an aggregate slot. writeField
-    // must ZERO the slot (→ flag byte 0 → none), not memcpy from address 0 (OOB).
+    // into an aggregate slot. writeField must ZERO the slot (→ flag byte 0 →
+    // none), not memcpy from address 0 (OOB).
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);
     defer table.deinit();

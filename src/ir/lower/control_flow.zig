@@ -1182,16 +1182,14 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
             }
         }
     }
-    // TYPE SWITCH (Step-4 phase 2): an `any` subject dispatches on its
-    // runtime type TAG — `if av == { case i64: (v) {…} case Point: (p) {…}
-    // case struct: {…} else: {…} }`. Concrete arms (named, builtin, and
-    // composite types) may bind the typed value; category arms are tag
-    // SETS and bind nothing; arms overlap first-wins with a loud
-    // unreachable-arm diagnostic. Protocol values as SUBJECTS stay refused
-    // (no tag — the phase-2 RTTI story).
+    // TYPE SWITCH: an `any` subject dispatches on its runtime type TAG —
+    // `if av == { case i64: (v) {…} case Point: (p) {…} case struct: {…}
+    // else: {…} }`. Concrete arms (named, builtin, and composite types) may
+    // bind the typed value; category arms are tag SETS and bind nothing; arms
+    // overlap first-wins with a loud unreachable-arm diagnostic.
     // A PROTOCOL subject type-switches through its {ctx, type_id} prefix
-    // view (RTTI Option B) — the scrutinee/captures are exactly the any
-    // switch's, over the concrete value the protocol erases.
+    // view — the scrutinee/captures are exactly the any switch's, over the
+    // concrete value the protocol erases.
     // Non-null when the subject was a protocol value: the type switch then
     // opens the CONCRETE receiver, and a tagged subject additionally knows
     // its whole-program conformer set, so an arm outside it is dead.

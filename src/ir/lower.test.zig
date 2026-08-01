@@ -1668,16 +1668,16 @@ fn countRealBodies(module: *ir_mod.Module, name: []const u8) usize {
     return n;
 }
 
-// two flat-imported modules each author `greet`. The first-wins merge
-// keeps a.sx's author in the merged decl list (the WINNER) and drops b.sx's,
-// which the `module_decls` raw facts still retain (0102a). `main` itself can't bare-call `greet`
-// — with two flat authors this is ambiguous; two flat authors make that ambiguous — so it calls a.sx's
+// Two flat-imported modules each author `greet`. The first-wins merge keeps
+// a.sx's author in the merged decl list (the WINNER) and drops b.sx's, which
+// the `module_decls` raw facts still retain. `main` itself can't bare-call
+// `greet` — two flat authors make it ambiguous — so it calls a.sx's
 // `use_greet` wrapper, whose own-author call to `greet` binds a.sx's winner.
-// BEFORE the identity-addressable pass, only the winner has a real body — the
-// shadowed author has no slot at all.
-// `lowerRetainedSameNameAuthors` declares the shadowed author its OWN same-name
-// FuncId and lowers its body there, so BOTH authors carry distinct, non-extern
-// bodies, and `resolveFuncByName` still returns the winner (the name-keyed slot).
+// Before `lowerRetainedSameNameAuthors` runs, only the winner has a real body;
+// the shadowed author has no slot at all. The pass declares that author its OWN
+// same-name FuncId and lowers its body there, so BOTH authors carry distinct,
+// non-extern bodies, while `resolveFuncByName` still returns the winner (the
+// name-keyed slot).
 test "lower: shadowed same-name author gets its own FuncId + real body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -2249,8 +2249,8 @@ test "lower: payload binding on a payload-less enum match is diagnosed, not .unr
     var lowering = Lowering.init(&module);
     lowering.diagnostics = &diags;
     // Pre-fold this leaked .unresolved through enum_payload just like the
-    // untagged-union shape; the generic guard now rejects any binding whose
-    // payload type failed to resolve.
+    // untagged-union shape; the generic guard rejects any binding whose
+    // payload type fails to resolve.
     lowering.lowerFunction(&fd, "main", false);
 
     var found = false;

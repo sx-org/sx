@@ -648,16 +648,13 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
         .insert_expr => |ins| self.lowerInsertExpr(ins.expr),
         .block => self.lowerBlock(node),
         .jni_env_block => |eb| {
-            // Compile-time stack push for lexical-direct env resolution
-            // (2.16b — `#jni_call` in the same fn picks up env from
-            // jni_env_stack directly, no TL read).
-            //
-            // Runtime TL save/set/restore (2.16c) for cross-function
-            // helpers: callees in OTHER fns invoked from inside the
-            // body read the slot via `sx_jni_env_tl_get`. Storage
-            // lives in a separately-linked C helper (see
-            // library/vendors/sx_jni_runtime/sx_jni_env_tl.c) so the
-            // JIT doesn't need orc_rt for TLS.
+            // A compile-time stack push resolves the env lexically: a
+            // `#jni_call` in the same fn reads `jni_env_stack` directly, no TL
+            // read. Callees in OTHER fns invoked from inside the body reach the
+            // slot via `sx_jni_env_tl_get`, so the env is also saved/set/
+            // restored in thread-local storage. That storage lives in a
+            // separately-linked C helper (library/vendors/sx_jni_runtime/
+            // sx_jni_env_tl.c) so the JIT doesn't need orc_rt for TLS.
             const env_ref = self.lowerExpr(eb.env);
             const fids = self.getJniEnvTlFids();
             const ptr_ty = self.module.types.ptrTo(.void);
@@ -1180,8 +1177,7 @@ fn reorderNamedReturn(self: *Lowering, value_node: *const Node, ret_ty: TypeId) 
     // list (a trailing element for the error slot too, `els.len == fields_len`).
     // BOTH must be reordered/validated — otherwise a fully-named full-tuple
     // failable return silently lands values positionally. `match_count` slots
-    // participate; the error slot (when present)
-    // joins by its own slot name.
+    // participate; the error slot (when present) joins by its own slot name.
     const match_count = els.len;
     if (match_count != value_count and match_count != fields_len) return value_node;
     if (match_count > slot_names.len) return value_node;

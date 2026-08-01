@@ -17,7 +17,7 @@
 //   []T           → [<elem>
 //   [*]T          → [<elem>   (sx many-pointer treated as array)
 //   *Self         → L<enclosing-runtime-path>;
-//   *Foo          → L<Foo's runtime path>;   (cross-class — step 2.9)
+//   *Foo          → L<Foo's runtime path>;   (cross-class)
 //
 // `#jni_method_descriptor("...")` overrides this whole walk
 // when set; sema/lowering use the override verbatim.

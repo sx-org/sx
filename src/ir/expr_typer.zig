@@ -61,8 +61,7 @@ pub const ExprTyper = struct {
                 // Arithmetic / bitwise / shift ops: infer the PROMOTED result
                 // of (lhs, rhs), not the LHS alone — `Lowering.arithResultType`
                 // is the same rule `lowerBinaryOp` applies, so `M + 0.5` types
-                // as `f64` regardless of operand order (was LHS-biased: `M + 0.5`
-                // → i64 while `0.5 + M` → f64).
+                // as `f64` regardless of operand order.
                 else => Lowering.arithResultType(self.l.inferExprType(bop.lhs), self.l.inferExprType(bop.rhs)),
             },
             .unary_op => |uop| switch (uop.op) {

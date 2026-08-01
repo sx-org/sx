@@ -722,7 +722,7 @@ pub fn formatTypeName(self: *Lowering, ty: TypeId) []const u8 {
                 }
                 buf.appendSlice(self.alloc, self.formatTypeName(f)) catch break :blk "tuple";
             }
-            // A 1-tuple renders with the trailing comma `(T,)` — `(T)` now means
+            // A 1-tuple renders with the trailing comma `(T,)` — `(T)` means
             // a grouping (the inner type), so the comma is required to spell a
             // 1-tuple unambiguously (and keeps diagnostics self-consistent).
             if (t.fields.len == 1) buf.append(self.alloc, ',') catch break :blk "tuple";
@@ -1126,8 +1126,8 @@ pub fn resolveTypeCategoryTags(self: *Lowering, name: []const u8) []const u64 {
         return tags.items;
     }
     if (std.mem.eql(u8, name, "type") or std.mem.eql(u8, name, "Type")) {
-        // A Type value's runtime tag is `.type_value` (was `.any` when Type and
-        // Any shared a TypeId) — so `case type:` matches an Any holding a Type.
+        // A Type value's runtime tag is `.type_value`, so `case type:` matches
+        // an Any holding a Type.
         tags.append(self.alloc, TypeId.type_value.index()) catch {};
         return tags.items;
     }
@@ -1302,16 +1302,13 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
         }
         if (result == null) {
             // A `.void` FIRST decisive arm means "no value" — the match is a
-            // statement; later arms' discarded tails don't re-open it (the
-            // pre-unification behavior: the first decisive arm returned
-            // immediately, void included).
+            // statement; later arms' discarded tails don't re-open it.
             if (arm_ty == .void) return .void;
             result = arm_ty;
             continue;
         }
-        // A later void-tail arm doesn't join: in a value match it keeps the
-        // pre-unification default-fill behavior (`lowerMatch` substitutes a
-        // zero/undef of the result type for a valueless arm).
+        // A later void-tail arm doesn't join: in a value match `lowerMatch`
+        // substitutes a zero/undef of the result type for a valueless arm.
         if (arm_ty == .void) continue;
         if (unifyValueArmTypes(self, result.?, arm_ty)) |joined| {
             result = joined;

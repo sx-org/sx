@@ -2390,12 +2390,8 @@ pub fn lowerMainAndComptime(self: *Lowering, decls: []const *const Node) void {
 }
 
 /// Lower every SHADOWED same-name function author into its OWN FuncId with a
-/// real (non-extern) body — the identity-addressable lowering PATH this step
-/// adds. It does NOT run during a default compile: the name path
-/// stays the sole resolver, so the suite is byte-for-byte unchanged. The bare-call
-/// disambiguation invokes it as part of routing bare flat calls to the right author; until
-/// then it is exercised by the lower-test regression that asserts two distinct
-/// non-extern bodies for a same-name collision.
+/// real (non-extern) body — the identity-addressable lowering path. A default
+/// compile never calls it; there the name path is the sole resolver.
 ///
 /// The first-wins flat/directory merge keeps exactly one author per name in
 /// the merged decl list; `scanDecls` declares that WINNER (lowered on demand
@@ -2491,7 +2487,7 @@ pub const CallableKinds = enum {
 /// author's FuncId once a site needs it; it is filled on demand by
 /// `selectedFuncId` (→ `bareAuthorFuncId`), NOT during selection — so a
 /// selection that only needs the decl (default-arg expansion), or a shadow
-/// taken purely as a value, never lowers the first-wins winner (0102d).
+/// taken purely as a value, never lowers the first-wins winner.
 pub const SelectedFunc = struct {
     decl: *const ast.FnDecl,
     source: []const u8,
@@ -3187,7 +3183,7 @@ pub fn structMethodFn(sd: *const ast.StructDecl, method: []const u8) ?*const ast
 /// caching into `sf.materialized`. Shadow-only: the winner owns the
 /// name-keyed slot and lowers through the lazy path, so
 /// `selectCallableAuthor` returns `.none` for it and this is never asked
-/// to lower the winner (0102d). `sf.source` pins the author's own visibility
+/// to lower the winner. `sf.source` pins the author's own visibility
 /// context. The slot is registered under the author's OWN declared name, not
 /// the spelling that reached it: an `alias :: target` call would otherwise
 /// register the terminal body under the ALIAS name and win that name-keyed

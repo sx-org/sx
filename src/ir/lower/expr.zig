@@ -3734,7 +3734,7 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 break :blk self.lowerCall(&syn_call);
             }
             // A PROTOCOL receiver with a concrete (non-recovery) target is
-            // the checked DOWNCAST: with the type_id word (RTTI Option B)
+            // the checked DOWNCAST: with the type_id word
             // it is exactly the any assertion over the value's
             // {ctx, type_id} prefix view — the operand wraps in an
             // `xx …: any` (the modeled protocol_to_any conversion) and the
