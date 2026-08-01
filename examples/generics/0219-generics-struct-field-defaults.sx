@@ -5,9 +5,7 @@
 // `instantiateGenericStruct` registers the template's defaults under the
 // mangled instance name, and dependent defaults (a default referencing a bare
 // type param `T`) are monomorphized at the literal site with the instance's
-// type bindings installed. A `struct_defaults_map` keyed by the plain decl name
-// instead never matches an instantiated generic's mangled struct name, so unset
-// defaulted fields read 0.
+// type bindings installed.
 #import "modules/std.sx";
 
 Inner :: struct { v: i64 = 11; }

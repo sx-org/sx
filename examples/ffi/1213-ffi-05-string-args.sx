@@ -1,12 +1,12 @@
-// The three shapes that
-// actually appear at the sx ↔ C boundary today:
+// The shapes that appear
+// at the sx ↔ C boundary:
 //
-//   1. Null-terminated `[:0]u8`  — passed by `.ptr` to a `const char *`.
-//   2. Raw byte buffer `[*]u8`   — pointer + explicit length.
-//   3. sx `string` value         — coerceArg's "fat-pointer decay" branch
-//                                  pulls `.ptr` automatically for `*u8`/
-//                                  `[:0]u8` params (string is `{ptr, len}`).
-//   4. Pointer return from C     — round-trips back as `[*]u8` / `*u8`.
+// 1. Null-terminated `[:0]u8`  — passed by `.ptr` to a `const char *`.
+// 2. Raw byte buffer `[*]u8`   — pointer + explicit length.
+// 3. sx `string` value         — coerceArg's "fat-pointer decay" branch
+//                                pulls `.ptr` automatically for `*u8`/
+//                                `[:0]u8` params (string is `{ptr, len}`).
+// 4. Pointer return from C     — round-trips back as `[*]u8` / `*u8`.
 
 #import "modules/std.sx";
 

@@ -6,12 +6,12 @@
 // constant. Arity and element types vary per call; each call is a distinct
 // specialization.
 //
-// DESIGN (locked): a pack element is viewed THROUGH the protocol — only the
-// protocol's own interface (its methods, and the projections `xs.T` / `xs.value`)
-// is accessible, NOT arbitrary concrete members. So `xs[i].get()` / `xs.T` are
-// the intended interface; `xs[i].v` (a field on the concrete IntBox, not part
-// of `Show`) is an error. Those are still being implemented — this example
-// locks in only the binding + comptime `xs.len`, the protocol-agnostic part.
+// A pack element is viewed THROUGH the protocol — only the protocol's own
+// interface (its methods, and the projections `xs.T` / `xs.value`) is
+// accessible, NOT arbitrary concrete members. So `xs[i].get()` / `xs.T` are the
+// interface; `xs[i].v` (a field on the concrete IntBox, not part of `Show`) is
+// an error. This file locks the binding and the comptime `xs.len`; 0528 and
+// 0530 pin the interface access itself.
 
 #import "modules/std.sx";
 

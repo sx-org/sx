@@ -4,12 +4,11 @@
 // monomorphizes independently, and printing a real slice still formats
 // through `slice_to_string`.
 //
-// The receiver-prepended call site is the shape that installs no bindings
-// when `resolveCallParamTypes` gives each arg a target type, so `[]$T` must
-// not resolve to `[]unresolved`: interning that poison reaches
-// `any_to_string`'s `case slice:` TypeTable scan, which monomorphizes
-// `slice_to_string` per slice tag. The scan skips container types built over
-// `.unresolved` — no runtime value can ever have one.
+// The receiver-prepended call site installs no bindings when
+// `resolveCallParamTypes` gives each arg a target type, so `[]$T` must not
+// resolve to `[]unresolved`: `any_to_string`'s `case slice:` TypeTable scan
+// monomorphizes `slice_to_string` per slice tag, and it skips container types
+// built over `.unresolved` — no runtime value can ever have one.
 
 #import "modules/std.sx";
 

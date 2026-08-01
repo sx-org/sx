@@ -1,17 +1,9 @@
 // Variadic heterogeneous type packs — `..$args` — impl matching
 // lock-in.
 //
-// Pins the concrete-only impl-matching behaviour: a user-declared
-// `impl Into(Block) for Closure(..$args) -> $R` does NOT match any
-// concrete closure source type. The xx cast site hits the "no
-// `Into(Block) for <src>` impl" diagnostic even though the pack impl
-// is reachable.
-//
-// The `Closure(i32, bool) -> bool` shape is not covered by
-// stdlib's hand-rolled impls (only `Closure() -> void` and
-// `Closure(bool) -> void`) and not covered by 96-block-multi-arg's
-// `Closure(i32, *void) -> void` impl, so the pack impl is the
-// only candidate.
+// A user-declared `impl Into(Block) for Closure(..$args) -> $R` matches a
+// concrete closure source type: the `xx` cast at a `Closure(i32, bool) -> bool`
+// source resolves through the pack impl.
 
 #import "modules/std.sx";
 #import "modules/ffi/objc_block.sx";

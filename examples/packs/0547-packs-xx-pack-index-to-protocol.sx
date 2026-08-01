@@ -5,9 +5,6 @@
 // runtime storage — `sources[i]` resolves to the call-site arg, which only
 // gets storage when lowered as a value), so the erasure must heap-copy the
 // materialized element rather than take its address.
-//
-// Lowering the bare pack as a value for
-// `xx sources[0]` errors with "pack 'sources' has no runtime value".
 
 #import "modules/std.sx";
 

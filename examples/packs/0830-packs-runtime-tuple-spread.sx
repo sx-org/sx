@@ -1,18 +1,14 @@
-// Value spread (specs.md §"Tuple parallels") + pack capture materialization.
-// A `..` spread crossing a deferred / value
-// boundary crashes when a comptime pack captured into a closure re-expands
-// the spawner's dead locals in the deferred body, and spreading a concrete
-// tuple panics ("unresolved type reached LLVM emission").
+// Value spread (specs.md §"Tuple parallels") + pack capture materialization,
+// including a `..` spread crossing a deferred / value boundary.
 //
-// Locked-in semantics:
-//  - `..t` on a concrete TUPLE / fixed ARRAY value spreads its elements into
-//    a call's positional args (so a materialized pack `.(..xs)` re-spreads);
-//  - a tuple spread also feeds a pack-fn call (each element its own pack arg)
-//    and a slice-variadic call (elements repack into the slice);
-//  - `.(..t)` re-splices a tuple value's fields into a new tuple literal;
-//  - capturing a pack into a closure MATERIALIZES the monomorphized element
-//    values into the env as a tuple — the deferred body spreads/indexes that
-//    tuple, never the spawner's frame.
+// - `..t` on a concrete TUPLE / fixed ARRAY value spreads its elements into
+//   a call's positional args (so a materialized pack `.(..xs)` re-spreads);
+// - a tuple spread also feeds a pack-fn call (each element its own pack arg)
+//   and a slice-variadic call (elements repack into the slice);
+// - `.(..t)` re-splices a tuple value's fields into a new tuple literal;
+// - capturing a pack into a closure MATERIALIZES the monomorphized element
+//   values into the env as a tuple — the deferred body spreads/indexes that
+//   tuple, never the spawner's frame.
 
 #import "modules/std.sx";
 

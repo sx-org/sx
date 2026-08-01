@@ -5,10 +5,8 @@
 // and a same-name extern collision compiles + runs (prints 7) rather than
 // erroring as ambiguous.
 //
-// `isPlainFreeFn` / `isPlainFreeFnDecl` exclude
-// every `extern` shape. Classifying an empty-block `extern` fn as a plain
-// free function counts the two extern authors as an ambiguous bare-call
-// collision.
+// `isPlainFreeFn` / `isPlainFreeFnDecl` exclude every `extern` shape, so an
+// empty-block `extern` fn never counts as a plain free-function author.
 #import "modules/std.sx";
 #import "1230-ffi-extern-same-name-authors/a.sx";
 #import "1230-ffi-extern-same-name-authors/b.sx";

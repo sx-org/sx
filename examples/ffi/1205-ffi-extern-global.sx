@@ -8,10 +8,6 @@
 // Both files referencing the same extern symbol must link cleanly —
 // LLVM dedupes the named global, the C linker resolves both refs to
 // the one libSystem symbol.
-//
-// Only the direct read is compared: a helper-function-scoped
-// `@extern_global` lowers to undef, so the helper's address is not checked
-// against it. The helper still takes part in the link.
 
 #import "modules/std.sx";
 #import "1205-ffi-extern-global-helper.sx";
@@ -21,10 +17,8 @@ __stdinp : *void extern;
 main :: () -> i32 {
   addr_bits : u64 = xx *__stdinp;
   print("stdin extern global non-null: {}\n", addr_bits != 0);
-  // Force the helper symbol to participate in linking (otherwise the
-  // imported file's #extern decl might get dropped by the
-  // dead-code stripper). The actual return value is busted today:
-  // a helper-scoped `@extern_global` lowers to undef.
+  // Calling the helper keeps its duplicate `extern` decl in the link; the
+  // dead-code stripper would otherwise drop the imported file.
   _ := stdinp_addr_present();
   print("helper file linked: true\n");
   0

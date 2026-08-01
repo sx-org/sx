@@ -1,18 +1,17 @@
 // New-form variadic `..name: []T` defined in an imported
-// module is callable from another module without crashing LLVM emit.
+// module is callable from another module.
 //
 // `resolveParamType` + `packVariadicCallArgs` must not put the
 // slice-form variadic's element type through an extra `sliceOf`
 // wrap: treating `..parts: []string` like `parts: ..string` adds a
-// slice level on top of the already-declared slice. The
-// double-wrapped `[][]T` signature mismatches what the call-site
-// marshalling emits as `[N x T]`, producing null/undef Refs that crash
-// `LLVMBuildExtractValue` inside `emitStrCmp` during emission.
+// slice level on top of the already-declared slice, and the
+// double-wrapped `[][]T` signature does not match the `[N x T]`
+// the call-site marshalling emits.
 //
 // The stdlib `path_join` uses the form
 // (`(..parts: []string) -> string`); it lives in `modules/std.sx`
-// and is called here from the test module. Two- and three-arg
-// shapes must round-trip the slice through the function-call
+// and is called here from another module. Two- and three-arg
+// shapes round-trip the slice through the function-call
 // boundary and concatenate the parts with '/'. Empty join (no
 // args) returns "".
 

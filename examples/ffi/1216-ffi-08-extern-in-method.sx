@@ -1,12 +1,12 @@
 // `extern` C call sites
-// embedded inside the major sx surface constructs. None of these
-// touch a new ABI shape — they only verify lowering routes the call
-// through identically regardless of the enclosing context:
+// embedded inside the major sx surface constructs. None touches a distinct
+// ABI shape; each pins that lowering routes the call through identically
+// whatever the enclosing context:
 //
-//   1. struct method body                  (Counter.next)
-//   2. protocol impl method body           (impl Doubler for Counter)
-//   3. closure value body                  (closure { ... })
-//   4. comptime-gated branch               (inline if OS == ...)
+// 1. struct method body                  (Counter.next)
+// 2. protocol impl method body           (impl Doubler for Counter)
+// 3. closure value body                  (closure { ... })
+// 4. comptime-gated branch               (inline if OS == ...)
 
 #import "modules/std.sx";
 #import "modules/build.sx";

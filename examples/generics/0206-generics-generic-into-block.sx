@@ -1,21 +1,12 @@
-// Generic `Into(Block) for Closure(..$args) ->
-// $R` impl. One impl in stdlib covers every closure shape; the
-// compiler monomorphises the impl body per call shape and emits a
-// dedicated `__invoke` `abi(.c)` trampoline + Block literal
-// (via `#insert build_block_convert($args, $R);`).
+// The generic `Into(Block) for Closure(..$args) -> $R` impl in stdlib covers every
+// closure shape: the compiler monomorphises the impl body per call shape and emits
+// a dedicated `__invoke` `abi(.c)` trampoline plus Block literal (via
+// `#insert build_block_convert($args, $R);`). The shape here
+// (`Closure(i64, i64) -> void`) resolves through it like any other.
 //
-// This test exercises a closure shape (`Closure(i64, i64) -> void`)
-// that has NO hand-rolled `Into(Block)` impl in
-// `library/modules/ffi/objc_block.sx`. Without the generic impl,
-// `xx cl : Block` errors out with the "no Into(Block) for
-// cl_i64_i64__void" focused diagnostic. After the generic impl
-// lands, the same call resolves through the pack-shaped impl and
-// the per-shape trampoline ferries control back to the sx closure.
-//
-// The block is invoked directly through `b.invoke` (a typed
-// `abi(.c)` fn-pointer) — the same shape the Apple Block
-// runtime calls when a UIKit/Foundation API hands the block back
-// to its registered invoke.
+// The block is invoked directly through `b.invoke` (a typed `abi(.c)` fn-pointer) —
+// the same shape the Apple Block runtime calls when a UIKit/Foundation API hands
+// the block back to its registered invoke.
 
 #import "modules/std.sx";
 #import "modules/ffi/objc_block.sx";

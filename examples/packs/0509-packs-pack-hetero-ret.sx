@@ -9,10 +9,8 @@
 // - generic `$R` inference for non-zeroth pack indices.
 // - heterogeneous mixed-type call args binding into distinct
 //   types per position (i64, f64, string).
-// - `pack_arg_types` type-only binding for `inferExprType`
-//   pre-mono-scope: without it, the synthesized-ident detour
-//   loses the type because the scope isn't set up yet during
-//   return-type inference.
+// - `pack_arg_types` type-only binding, which is what carries the element
+//   type into `inferExprType` before the mono scope exists.
 
 #import "modules/std.sx";
 

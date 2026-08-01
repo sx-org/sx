@@ -3,9 +3,7 @@
 // as `Buf(65)` would — and the two are distinct monomorphizations.
 //
 // The parser's generic type-argument path accepts a char literal in a value
-// position; accepting only `int_literal` there makes `Buf('A')` fail to parse
-// with "expected type name" even though the value-mangling half (generics.zig)
-// is char-aware.
+// position, and the value-mangling half (generics.zig) is char-aware.
 
 #import "modules/std.sx";
 

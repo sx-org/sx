@@ -1,9 +1,9 @@
 // A variadic `..$args` pack forwarded as a `[]Type`
-// ARGUMENT across a call must read the right element types. The pack-slice
-// materialization (`buildPackSliceValue`) built a `[]any` (16-byte) array while
-// `Type` is `.type_value` (8 bytes), so a `[]Type` reader (8-byte stride)
-// would read `[t0, pad, t1, …]` instead of `[t0, t1, …]` — which the
-// byte-accurate comptime VM catches.
+// ARGUMENT across a call must read the right element types.
+// `buildPackSliceValue` materializes the pack at the target element type's
+// own stride, so a `[]Type` reader (`.type_value`, 8 bytes) sees
+// `[t0, t1, …]` rather than the 16-byte `[]any` layout — a distinction the
+// byte-accurate comptime VM enforces.
 #import "modules/std.sx";
 
 inner :: (args: []Type) -> string {

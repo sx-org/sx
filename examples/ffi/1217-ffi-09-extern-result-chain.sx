@@ -5,9 +5,9 @@
 // pushing into a `List(*void)`, and iterating that list to feed each
 // handle back through C.
 //
-// No new ABI shape — pointer-in, pointer-out. The lemma locked in:
-// handle-shaped flows survive sx's struct-field assignment, List
-// storage, and iteration-then-call cycles.
+// No distinct ABI shape — pointer-in, pointer-out: handle-shaped flows
+// survive sx's struct-field assignment, List storage, and
+// iteration-then-call cycles.
 
 #import "modules/std.sx";
 

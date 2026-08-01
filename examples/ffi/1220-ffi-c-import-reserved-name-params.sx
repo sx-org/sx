@@ -4,9 +4,7 @@
 // bindings import and call without hand-edits (no backticks needed). This covers
 // parameter names (`i1`/`i2`), a function whose own NAME is a reserved spelling
 // (`i2`), and bare-calling that function (its callee spelling parses as a type
-// but resolves to the extern fn). Without the exemption the params error with
-// "'i1' is a reserved type name and cannot be used as an identifier", and the
-// bare call errors with "unresolved 'i2'".
+// but resolves to the extern fn).
 #import "modules/std.sx";
 
 #import c {

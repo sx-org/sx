@@ -4,24 +4,19 @@
 // An inline-comptime-body `return X;` routes into a result slot so
 // the caller's basic block isn't terminated mid-flight, and sets
 // `block_terminated = true` after the inline return — which must not
-// leak PAST the enclosing `if`'s
-// merge block. When the body shape is
+// leak PAST the enclosing `if`'s merge block. For the body shape
 //   if cond { return X; }
 //   return Y;
-// only the then-branch's `return X;` runs; `block_terminated`
-// stays true in the merge block, so `lowerBlockValue`'s loop
-// exits before the trailing `return Y;` lowers. The trailing
-// return never stores into the slot — for the false-condition
-// path the load reads uninitialised stack memory.
+// the false-condition path has to reach the trailing `return Y;`, so
+// `lowerBlockValue`'s loop keeps lowering past the merge block.
 //
-// Pack-fn `..$args` is the shortest repro because `args.len`
-// gives a comptime-feeling test for the condition. The shape is
+// Pack-fn `..$args` is the shortest spelling because `args.len`
+// gives a comptime test for the condition. The shape is
 // incidental — any comptime body with `if cond { return X; };
-// return Y;` exercises the same path.
+// return Y;` takes the same path.
 //
-// `maybe()` with zero call-args takes the false branch and
-// should fall through to `return -1;`. It loads garbage
-// from the uninitialised slot.
+// `maybe()` with zero call-args takes the false branch and falls through to
+// `return -1;`.
 
 #import "modules/std.sx";
 

@@ -1,6 +1,6 @@
 // An asm with no value outputs yields no result, so its
 // effects could be deleted unless it is marked `volatile`. This omits
-// `volatile` ⇒ a compile error. Pins that diagnostic (mirrors Zig's rule).
-// Called from `main` so lowering reaches the asm body.
+// `volatile` ⇒ a compile error. Called from `main` so lowering reaches the
+// asm body.
 nope :: () { asm { "nop" }; }
 main :: () { nope(); }

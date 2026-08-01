@@ -5,12 +5,11 @@
 // ONLY `lib.sx`, so `Needs` is two flat hops away and not bare-visible here —
 // main never names it.
 //
-// `monomorphizePackFn` must not restore the caller's source before
-// re-binding the fixed-prefix params: `n: Needs` then resolves in main's
-// context and is rejected with "type 'Needs' is not visible" — while the
-// control plain fn `use_plain(n: Needs)` (typed via the source-pinned call-arg
-// path) still passes. The fixed-prefix param resolves under the pack fn's own
-// source (`fd.body.source_file`), matching the rest of the pack signature/body.
+// `monomorphizePackFn` re-binds the fixed-prefix params before restoring the
+// caller's source, so `n: Needs` resolves under the pack fn's own source
+// (`fd.body.source_file`) — matching the rest of the pack signature/body —
+// rather than in main's context, where it is not visible. The control plain fn
+// `use_plain(n: Needs)` types through the source-pinned call-arg path.
 #import "modules/std.sx";
 #import "0544-packs-imported-pack-fn-fixed-param-source-pin/lib.sx";
 

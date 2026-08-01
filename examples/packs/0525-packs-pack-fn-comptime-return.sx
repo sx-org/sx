@@ -2,8 +2,7 @@
 // an explicit `return X;` lowers to clean IR — the inline-return
 // path stores into a dedicated result slot and branches to the
 // shared `ret_done` block instead of emitting a `ret` inside the
-// caller's basic block. Without that, LLVM's verifier rejected the
-// IR with "Terminator found in the middle of a basic block".
+// caller's basic block.
 //
 // The shape is not pack-specific: ANY comptime fn with `is_comptime`
 // params, a non-void return, and a block body with `return X;` takes

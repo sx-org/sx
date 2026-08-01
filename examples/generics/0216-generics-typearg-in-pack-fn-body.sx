@@ -7,8 +7,7 @@
 // `instantiateGenericStruct` uses for each type-arg) as a `comptime_pack_ref`.
 // `resolveTypeWithBindings` mirrors `resolveTypeArg`'s arm for it — look up
 // `type_bindings`, else a loud "pack used where a single type is required"
-// diagnostic, never a silent default type. Without that arm the reference falls
-// to the catch-all → `.unresolved` → an LLVM-emission panic.
+// diagnostic, never a silent default type.
 #import "modules/std.sx";
 
 Box :: struct ($R: Type) { v: R; }

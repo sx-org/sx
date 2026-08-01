@@ -3,9 +3,6 @@
 // bare, renamed, and namespace-member RHS. The alias is an ordinary own
 // declaration, so it re-exports one flat-import level (companion file
 // -rich.sx authors the fns aliased here and via the namespace).
-// A name-keyed global registry resolves same-name
-// re-exports only, so comptime-pack fn aliases (and ALL renamed fn aliases)
-// fail with "unresolved '<alias>'".
 #import "modules/std.sx";
 s :: #import "modules/std.sx";
 r :: #import "0546-packs-fn-alias-rich.sx";

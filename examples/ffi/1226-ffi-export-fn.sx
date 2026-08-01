@@ -7,7 +7,7 @@
 //
 // Without `export`, an sx-defined fn is `internal` linkage + carries the
 // implicit `__sx_ctx` slot, so the C object can neither resolve nor correctly
-// call the symbol — this is the gap `export` fills.
+// call the symbol.
 #import "modules/std.sx";
 
 #import c {

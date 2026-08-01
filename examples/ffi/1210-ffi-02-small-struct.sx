@@ -6,10 +6,8 @@
 //   Pair64 — 16 B, two i64        (9..16 B int — [2 x i64] coercion slot)
 //   Quad32 — 16 B, four i32       (9..16 B int — same slot as Pair64)
 //
-// Pair64 / Quad32 need emit_llvm.zig's coerceArg to bridge struct <->
-// array via the abi.struct2arr / abi.arr2struct branches; without that
-// bridge the LLVM verifier rejects the struct<->[2 x i64] type
-// mismatch.
+// Pair64 / Quad32 go through emit_llvm.zig's coerceArg, which bridges
+// struct <-> array via the abi.struct2arr / abi.arr2struct branches.
 
 #import "modules/std.sx";
 

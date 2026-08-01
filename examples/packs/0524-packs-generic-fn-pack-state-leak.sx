@@ -3,11 +3,10 @@
 // pack maps during its own body lowering. Without that isolation
 // in `monomorphizeFunction`, the cached mono of a generic with
 // an `args`-named param has its `args.len` constant-folded to
-// the arity of whichever pack shape triggered the first mono;
-// every subsequent shape read the same baked-in constant.
+// the arity of whichever pack shape triggered the first mono.
 //
-// Same root cause as `lazyLowerFunction`'s, in a different
-// lowering path (`monomorphizeFunction`).
+// `lazyLowerFunction` needs the same isolation on its own lowering
+// path — 0522 pins that side.
 
 #import "modules/std.sx";
 

@@ -1,8 +1,7 @@
 // Monomorph keys are built in dynamic storage — a base and type
-// arguments whose mangled key runs well past 256 bytes must stay distinct all
-// the way to the last byte. Both authors' long spelling is identical, so a
-// truncated or display-only key would collapse them onto one layout and one
-// monomorph.
+// arguments whose mangled key runs well past 256 bytes stay distinct all
+// the way to the last byte. Both authors' long spelling is identical, so only
+// the full key separates them.
 #import "modules/std.sx";
 a :: #import "0227-generics-long-mono-key/a.sx";
 b :: #import "0227-generics-long-mono-key/b.sx";
