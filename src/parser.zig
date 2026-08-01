@@ -4860,8 +4860,6 @@ pub const Parser = struct {
         } });
     }
 
-    // ---- Helpers ----
-
     /// Returns true if the current token can be used as an identifier name.
     /// Includes actual identifiers plus contextual keywords that are only
     /// keywords in specific syntactic positions (e.g., `protocol`, `impl`).
