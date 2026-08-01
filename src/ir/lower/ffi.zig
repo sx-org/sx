@@ -1202,6 +1202,16 @@ pub fn synthesizeJniMainStub(self: *Lowering, fcd: *const ast.RuntimeClassDecl, 
     }
 
     const ret_ty = if (md.return_type) |rt| jniMapParamType(self, rt) else .void;
+    // Java has no error channel to receive: a native method declared failable
+    // has nowhere to put its tag, so the declaration itself is refused rather
+    // than lowered into a stub that encodes the set as an integer.
+    if (self.errorChannelOf(ret_ty)) |_| {
+        if (self.diagnostics) |d| {
+            const span = if (md.return_type) |rt| rt.span else md.body.?.span;
+            d.addFmt(.err, span, "native JNI method '{s}.{s}' is failable — a Java method has no error channel to carry its result; return the value and signal failure in-band instead", .{ fcd.name, md.name });
+        }
+        return;
+    }
     const params_slice = params.toOwnedSlice(self.alloc) catch return;
 
     _ = self.builder.beginFunction(name_id, params_slice, ret_ty);
@@ -1264,28 +1274,17 @@ pub fn synthesizeJniMainStub(self: *Lowering, fcd: *const ast.RuntimeClassDecl, 
         }
     }
 
-    const saved_target = self.target_type;
-    self.target_type = if (ret_ty != .void) ret_ty else null;
-    if (ret_ty != .void) {
-        const body_val = self.lowerBlockValue(md.body.?);
-        if (!self.currentBlockHasTerminator()) {
-            if (body_val) |val| {
-                const val_ty = self.builder.getRefType(val);
-                if (val_ty == .void) {
-                    self.ensureTerminator(ret_ty);
-                } else {
-                    const coerced = self.coerceToType(val, val_ty, ret_ty);
-                    self.builder.ret(coerced, ret_ty);
-                }
-            } else {
-                self.ensureTerminator(ret_ty);
-            }
-        }
-    } else {
-        self.lowerBlock(md.body.?);
-        self.ensureTerminator(ret_ty);
+    // A stub is its own function boundary: an enclosing named-return function's
+    // slots are not this body's to synthesize.
+    const saved_nrn_jni = self.named_return_names;
+    const saved_nrd_jni = self.named_return_defaults;
+    self.named_return_names = null;
+    self.named_return_defaults = null;
+    defer {
+        self.named_return_names = saved_nrn_jni;
+        self.named_return_defaults = saved_nrd_jni;
     }
-    self.target_type = saved_target;
+    self.lowerFunctionBody(md.body.?, ret_ty);
 
     self.builder.finalize();
 }
