@@ -1962,29 +1962,10 @@ pub fn currentBlockHasTerminator(self: *Lowering) bool {
     return false;
 }
 
+/// The FALLTHROUGH half of the body exit: control reached the end of a body
+/// with no exit of its own, so this one closes the block. Every call site is a
+/// function-body end.
 pub fn ensureTerminator(self: *Lowering, ret_ty: TypeId) void {
     if (self.currentBlockHasTerminator()) return;
-    if (ret_ty == .noreturn) {
-        // A `-> noreturn` function never returns; if control reaches the
-        // end of the body it's genuinely unreachable (the body is expected
-        // to diverge — call another noreturn, loop forever, etc.).
-        self.builder.emitUnreachable();
-    } else if (ret_ty == .void) {
-        self.builder.retVoid();
-    } else if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) {
-        // A pure-failable function (`-> !` / `-> !Named`, whose return type IS
-        // the error set) that falls off the end with no explicit `return;` is
-        // a SUCCESS exit — the error slot must carry 0 ("no error"), exactly
-        // like the bare-`return;` path in lowerReturn. Without this the slot is
-        // left undefined and the caller (or main) reads a garbage tag and
-        // reports a phantom unhandled error (issue 0190).
-        self.builder.ret(self.builder.constInt(0, ret_ty), ret_ty);
-    } else {
-        // Use const_undef for complex types (string, struct, etc.)
-        const default_val = if (ret_ty == .string or !ret_ty.isBuiltin())
-            self.builder.constUndef(ret_ty)
-        else
-            self.builder.constInt(0, ret_ty);
-        self.builder.ret(default_val, ret_ty);
-    }
+    self.emitBodyExit(null, ret_ty, .fallthrough);
 }

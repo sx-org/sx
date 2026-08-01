@@ -323,7 +323,7 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty: TypeId) voi
                     self.coerceToType(val, val_ty, ret_ty)
                 else
                     val;
-                self.builder.ret(coerced, ret_ty);
+                emitBodyExit(self, coerced, ret_ty, .fallthrough);
                 return;
             }
         },
@@ -364,16 +364,66 @@ pub fn lowerFunctionBody(self: *Lowering, body: *const Node, ret_ty: TypeId) voi
     self.ensureTerminator(ret_ty);
 }
 
-/// The PURE-failable return tail: the forward rules, then the terminator this
-/// sink wants — a real function `ret`s, an inlined comptime body stores into the
-/// inliner's slot and branches to its done block. Defers have already run.
-fn retPureFailable(self: *Lowering, ref: Ref, ret_ty: TypeId, span: ast.Span) void {
+/// What ENDED a body at an exit — the cause, not the shape. A body's own
+/// trailing position falls through; every written `return`, error leaf, `raise`
+/// and total propagation is return-like. The two differ only where the language
+/// treats reaching the end differently from writing the exit (`-> noreturn`).
+pub const ExitForm = enum { fallthrough, return_like };
+
+/// THE destination of a completed body exit. Its callers own evaluation,
+/// validation, coercion, failable assembly and cleanup; this decides only where
+/// the finished exit goes — a real `ret`, or the inlined body's slot and join.
+/// `value` is null when the exit carries nothing to hand back.
+pub fn emitBodyExit(self: *Lowering, value: ?Ref, ret_ty: TypeId, form: ExitForm) void {
     if (self.inline_return_target) |iri| {
-        self.builder.store(iri.slot, self.coercePureFailableReturn(ref, iri.ret_ty, span));
+        if (value) |ref| self.builder.store(iri.slot, ref);
         self.builder.br(iri.done_bb, &.{});
         return;
     }
-    self.builder.ret(self.coercePureFailableReturn(ref, ret_ty, span), ret_ty);
+    if (value) |ref| {
+        // A value returned from a `-> void` function was evaluated for its
+        // effects and has nowhere to go.
+        if (ret_ty == .void) self.builder.retVoid() else self.builder.ret(ref, ret_ty);
+        return;
+    }
+    if (ret_ty == .noreturn) {
+        // Reaching the end of a `-> noreturn` body is genuinely unreachable
+        // (the body is expected to diverge — call another noreturn, loop
+        // forever). A written `return;` there keeps its accepted behaviour.
+        if (form == .fallthrough) self.builder.emitUnreachable() else self.builder.retVoid();
+        return;
+    }
+    if (ret_ty == .void) {
+        self.builder.retVoid();
+        return;
+    }
+    if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) {
+        // A pure-failable function (`-> !` / `-> !Named`, whose return type IS
+        // the error set) exiting with no error is a SUCCESS exit — the error
+        // slot must carry 0 ("no error"), whether it fell off the end or wrote
+        // `return;`. Without it the slot is undefined and the caller reads a
+        // garbage tag and reports a phantom unhandled error (issue 0190).
+        self.builder.ret(self.builder.constInt(0, ret_ty), ret_ty);
+        return;
+    }
+    // A value-returning function with nothing to return: the written form is
+    // already refused by `rejectValuelessReturn`, so only the terminator's
+    // well-formedness is at stake. Falling off the end fills the slot.
+    if (form == .return_like) {
+        self.builder.retVoid();
+        return;
+    }
+    const default_val = if (ret_ty == .string or !ret_ty.isBuiltin())
+        self.builder.constUndef(ret_ty)
+    else
+        self.builder.constInt(0, ret_ty);
+    self.builder.ret(default_val, ret_ty);
+}
+
+/// The PURE-failable return tail: the forward rules, then the exit. Defers have
+/// already run.
+fn retPureFailable(self: *Lowering, ref: Ref, ret_ty: TypeId, span: ast.Span) void {
+    emitBodyExit(self, self.coercePureFailableReturn(ref, ret_ty, span), ret_ty, .return_like);
 }
 
 /// An implicit ERROR tail is exactly `return <error>;` — it unwinds this
@@ -1188,12 +1238,7 @@ fn tupleFormOfBareBraceLiteral(self: *Lowering, node: *const Node, ret_ty: TypeI
 /// multi-return — has slots to fill, and without this the `ret void` reaches the
 /// LLVM verifier as "Function return type does not match operand type".
 fn rejectValuelessReturn(self: *Lowering, span: ast.Span) void {
-    const ret_ty: TypeId = if (self.inline_return_target) |iri|
-        iri.ret_ty
-    else if (self.builder.func) |fid|
-        self.module.functions.items[@intFromEnum(fid)].ret
-    else
-        return;
+    const ret_ty: TypeId = self.effectiveReturnType() orelse return;
     if (ret_ty == .void or ret_ty == .noreturn or ret_ty == .unresolved) return;
     if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) return;
     if (self.diagnostics) |d| {
@@ -1205,12 +1250,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     if (rs.value == null) rejectValuelessReturn(self, span);
     // Normalize a bare `.{ … }` against a tuple return to the tuple-literal
     // node shape FIRST — the intercepts below key on it.
-    const norm_ret_ty: TypeId = if (self.inline_return_target) |iri|
-        iri.ret_ty
-    else if (self.builder.func) |fid|
-        self.module.functions.items[@intFromEnum(fid)].ret
-    else
-        .i64;
+    const norm_ret_ty: TypeId = self.effectiveReturnType() orelse .i64;
     const rs_value: ?*const Node = if (rs.value) |val| tupleFormOfBareBraceLiteral(self, val, norm_ret_ty) else null;
     if (rs_value) |val| {
         if (val.data == .identifier and self.isPackName(val.data.identifier.name)) {
@@ -1236,12 +1276,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // over the caller's — otherwise `return 42` inside a `-> i64` body lowered into
     // a `-> i32` caller would coerce 42 to i32 before storing into the i64 slot.
     const old_target = self.target_type;
-    const ret_ty_for_target: TypeId = if (self.inline_return_target) |iri|
-        iri.ret_ty
-    else if (self.builder.func) |fid|
-        self.module.functions.items[@intFromEnum(fid)].ret
-    else
-        TypeId.i64;
+    const ret_ty_for_target: TypeId = self.effectiveReturnType() orelse TypeId.i64;
     // A value-carrying failable (`-> (T..., !)`) returns its VALUE part and
     // the success error slot (0) is appended by lowerFailableSuccessReturn.
     // Resolve a BARE returned value against that value type, NOT the failable
@@ -1280,107 +1315,52 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     self.force_block_value = saved_fbv_ret;
     self.target_type = old_target;
 
-    // Inlined-comptime-body return: store into the slot the inliner
-    // gave us and branch to the inliner's "return-done" basic block.
-    // The branch is the basic block's terminator — so subsequent
-    // dead code in the same block trips the LLVM verifier (the
-    // SAME behaviour as a regular `return X;` followed by code).
-    //
-    // We DO NOT set `block_terminated = true`: that flag would
-    // leak past structured control flow (e.g. an `if cond { return
-    // X; }` whose merge block continues to subsequent statements)
-    // and incorrectly skip the trailing statements. CFG-level
-    // termination is what we actually want — let the basic-block
-    // terminator do its job.
-    if (self.inline_return_target) |iri| {
-        if (ret_val) |ref| {
-            // Value-carrying failable inlined body: append the success error
-            // slot (0) exactly like the real-return path below.
-            // lowerFailableSuccessReturn routes through emitTupleRet, which
-            // stores into iri.slot and branches to iri.done_bb for an inline
-            // target. Defers first, so the returned SSA value is materialized
-            // before they run (matching the real-return ordering).
-            if (!iri.ret_ty.isBuiltin() and
-                self.module.types.get(iri.ret_ty) == .tuple and
-                self.errorChannelOf(iri.ret_ty) != null)
-            {
-                emitReturnDefers(self, self.func_defer_base);
-                self.lowerFailableSuccessReturn(ref, iri.ret_ty, rs.value.?.span);
-                return;
-            }
-            // Pure-failable inlined body: the shared exit — same forward rules
-            // as the real-return path below (set compat / no tuple truncation).
-            if (!iri.ret_ty.isBuiltin() and self.module.types.get(iri.ret_ty) == .error_set) {
-                emitReturnDefers(self, self.func_defer_base);
-                retPureFailable(self, ref, iri.ret_ty, rs.value.?.span);
-                return;
-            }
-            const val_ty = self.builder.getRefType(ref);
-            const coerced = if (val_ty != iri.ret_ty and self.checkReturnable(ref, val_ty, iri.ret_ty, rs.value.?.span))
-                self.coerceToType(ref, val_ty, iri.ret_ty)
-            else
-                ref;
-            self.builder.store(iri.slot, coerced);
-        } else if (!iri.ret_ty.isBuiltin() and self.module.types.get(iri.ret_ty) == .error_set) {
-            // A value-less `return;` in a pure-failable inlined body is its
-            // SUCCESS exit, exactly as in a real function: the slot carries the
-            // no-error tag rather than whatever the alloca held.
-            self.builder.store(iri.slot, self.builder.constInt(0, iri.ret_ty));
-        }
-        // Drain block-scoped defers up to the inlined-body base so
-        // they fire on this return path the same as a real fn return.
-        emitReturnDefers(self, self.func_defer_base);
-        self.builder.br(iri.done_bb, &.{});
-        return;
-    }
-
-    // Emit ALL pending defers for THIS function in LIFO order before the return
+    // Emit ALL pending defers for THIS function in LIFO order before the exit.
+    // An inlined body drains only to its own base, so a caller defer that
+    // happens to precede the inline call does not fire here.
     emitReturnDefers(self, self.func_defer_base);
 
+    // The exit is typed by the body being lowered — the INLINED fn's declared
+    // return type while inlining, the real function's otherwise. Neither
+    // present means there is no function to return from; keep the historical
+    // fallbacks so the shape of the written return still decides.
+    const exit_ty: TypeId = self.effectiveReturnType() orelse
+        (if (ret_val != null) TypeId.i64 else TypeId.void);
+
     if (ret_val) |ref| {
-        const ret_ty = if (self.builder.func) |fid|
-            self.module.functions.items[@intFromEnum(fid)].ret
-        else
-            TypeId.i64;
-        if (ret_ty == .void) {
-            // Void function — just return void (the value expression was evaluated for side effects)
-            self.builder.retVoid();
-        } else if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .tuple and self.errorChannelOf(ret_ty) != null) {
+        if (exit_ty == .void) {
+            // The value expression was evaluated for its side effects.
+            emitBodyExit(self, null, exit_ty, .return_like);
+        } else if (!exit_ty.isBuiltin() and self.module.types.get(exit_ty) == .tuple and self.errorChannelOf(exit_ty) != null) {
             // Value-carrying failable `-> (T..., !)`: the user returns the
             // value part; the compiler appends the success error slot (0).
-            self.lowerFailableSuccessReturn(ref, ret_ty, rs.value.?.span);
-        } else if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) {
+            self.lowerFailableSuccessReturn(ref, exit_ty, rs.value.?.span);
+        } else if (!exit_ty.isBuiltin() and self.module.types.get(exit_ty) == .error_set) {
             // PURE failable (`-> !` / `-> !Named`, ret type IS the error set)
             // returning a value: the pure→pure forward path. Set compat is
             // checked; a value-carrying failable result is rejected (its
             // value slots have nowhere to go — the plain coerce silently
             // truncated the tuple into a garbage tag).
-            retPureFailable(self, ref, ret_ty, rs.value.?.span);
+            retPureFailable(self, ref, exit_ty, rs.value.?.span);
         } else {
-            // Coerce return value to match function return type (e.g., ?i32 → i32).
+            // Coerce return value to match the return type (e.g., ?i32 → i32).
             // Issue 0191: reject an un-coercible value instead of bit-welding
             // it into the return slot; on failure skip the coerce (the build
             // aborts via hasErrors before this ret could run).
             const val_ty = self.builder.getRefType(ref);
-            const coerced = if (self.checkReturnable(ref, val_ty, ret_ty, rs.value.?.span))
-                self.coerceToType(ref, val_ty, ret_ty)
+            const coerced = if (self.checkReturnable(ref, val_ty, exit_ty, rs.value.?.span))
+                self.coerceToType(ref, val_ty, exit_ty)
             else
                 ref;
-            self.builder.ret(coerced, ret_ty);
+            emitBodyExit(self, coerced, exit_ty, .return_like);
         }
-    } else {
+    } else if (!exit_ty.isBuiltin() and self.module.types.get(exit_ty) == .error_set) {
         // A bare `return;` in a pure failable function (`-> !` / `-> !Named`,
         // whose return type IS the error set) is the success exit — the
-        // error slot carries 0 ("no error"). Everything else is a void return.
-        const ret_ty = if (self.builder.func) |fid|
-            self.module.functions.items[@intFromEnum(fid)].ret
-        else
-            TypeId.void;
-        if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set) {
-            self.builder.ret(self.builder.constInt(0, ret_ty), ret_ty);
-        } else {
-            self.builder.retVoid();
-        }
+        // error slot carries 0 ("no error").
+        emitBodyExit(self, self.builder.constInt(0, exit_ty), exit_ty, .return_like);
+    } else {
+        emitBodyExit(self, null, exit_ty, .return_like);
     }
 }
 

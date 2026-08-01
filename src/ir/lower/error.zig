@@ -294,12 +294,7 @@ pub fn lowerRaise(self: *Lowering, rs: *const ast.RaiseStmt, span: ast.Span) voi
         const tag_ty = self.builder.getRefType(tag_ref);
         const coerced = if (tag_ty != err_set) self.coerceExplicit(tag_ref, tag_ty, err_set) else tag_ref;
         self.emitErrorCleanup(self.func_defer_base, coerced);
-        if (self.inline_return_target) |iri| {
-            self.builder.store(iri.slot, coerced);
-            self.builder.br(iri.done_bb, &.{});
-        } else {
-            self.builder.ret(coerced, err_set);
-        }
+        self.emitBodyExit(coerced, err_set, .return_like);
     } else {
         // Value-carrying `-> (T..., !)`: the error path leaves the value
         // slots undefined and carries the tag in the error slot (ERR E2.1).
@@ -595,15 +590,9 @@ pub fn extractErrorSlot(self: *Lowering, result: Ref, op_ty: TypeId, err_set: Ty
     return self.builder.emit(.{ .tuple_get = .{ .base = result, .field_index = @intCast(fields.len - 1), .base_type = op_ty } }, err_set);
 }
 
-/// Emit a return of an already-assembled tuple, honoring inline-comptime
-/// return targets (store + branch) vs a real function return.
+/// Emit a return of an already-assembled failable tuple.
 pub fn emitTupleRet(self: *Lowering, ret_ty: TypeId, tup: Ref) void {
-    if (self.inline_return_target) |iri| {
-        self.builder.store(iri.slot, tup);
-        self.builder.br(iri.done_bb, &.{});
-    } else {
-        self.builder.ret(tup, ret_ty);
-    }
+    self.emitBodyExit(tup, ret_ty, .return_like);
 }
 
 pub fn diagRaiseNotFailable(self: *Lowering, span: ast.Span) void {
@@ -823,12 +812,7 @@ pub fn emitErrorReturn(self: *Lowering, caller_ret: TypeId, caller_set: TypeId, 
     // implicit value-coercion membership guard rather than being reported twice.
     const coerced = if (ety != caller_set) self.coerceExplicit(err, ety, caller_set) else err;
     if (caller_ret == caller_set) {
-        if (self.inline_return_target) |iri| {
-            self.builder.store(iri.slot, coerced);
-            self.builder.br(iri.done_bb, &.{});
-        } else {
-            self.builder.ret(coerced, caller_set);
-        }
+        self.emitBodyExit(coerced, caller_set, .return_like);
     } else {
         const fields = self.module.types.get(caller_ret).tuple.fields;
         var undefs = std.ArrayList(Ref).empty;
