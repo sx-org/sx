@@ -172,8 +172,15 @@ pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
     // ObjC selector arity warning) must NOT suppress a genuine missing-value
     // error, or we'd ship an uninitialized return at exit 0.
     const errs_before: usize = if (self.diagnostics) |d| d.errorCount() else 0;
+    // A PURE-failable function (`-> !` / `-> !Named`, whose whole return IS the
+    // error channel) has no success value, so only a trailing ERROR value is its
+    // return — nothing demands a tail of any other type. The body is therefore
+    // NOT a returned value, and arming return position over it would apply the
+    // §6.2 return refusals (rvalue erasure into a tagged handle, a build-block
+    // result) to a tail that is about to be discarded.
+    const pure_failable = !ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set;
     const saved_rvb = self.return_value_body;
-    self.return_value_body = true;
+    self.return_value_body = !pure_failable;
     defer self.return_value_body = saved_rvb;
     const body_val = self.lowerBlockValue(body);
     if (self.currentBlockHasTerminator()) return;
@@ -187,18 +194,14 @@ pub fn lowerValueBody(self: *Lowering, body: *const Node, ret_ty: TypeId) void {
                 }
                 break :blk body.span;
             };
-            if (self.rejectBlockReturn(val_ty, span)) return;
-            // A PURE-failable function (`-> !` / `-> !Named`, whose whole return
-            // IS the error channel) has no success value, so only a trailing
-            // ERROR value is its return. A tail of any other type is demanded by
-            // nothing: discard it and take the error-slot-zero success exit,
-            // rather than weld a foreign value into the tag and fake a raise.
-            if (!ret_ty.isBuiltin() and self.module.types.get(ret_ty) == .error_set and
-                (val_ty.isBuiltin() or self.module.types.get(val_ty) != .error_set))
-            {
+            // Discard the undemanded tail before any return-position refusal
+            // reads it, and take the error-slot-zero success exit rather than
+            // weld a foreign value into the tag and fake a raise.
+            if (pure_failable and (val_ty.isBuiltin() or self.module.types.get(val_ty) != .error_set)) {
                 self.ensureTerminator(ret_ty);
                 return;
             }
+            if (self.rejectBlockReturn(val_ty, span)) return;
             // Value-carrying failable `-> (T..., !)`: a trailing success
             // EXPRESSION (no explicit `return`) yields just the value part —
             // the compiler must append the success error slot (0). Mirror the
