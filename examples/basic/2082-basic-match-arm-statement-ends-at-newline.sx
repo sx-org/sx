@@ -1,8 +1,9 @@
 // Whitespace is syntax (specs §1), inside a `match` arm. An arm written as a
 // statement LIST holds ordinary statements, so each one ends at the line break
-// where its `;` would have gone. The only `;` such an arm still needs is the
-// one before the next `case` / `else`, because those tokens cannot start a
-// statement — the last arm's last statement is ended by the `}` instead.
+// where its `;` would have gone. `case` and `else` cannot start a statement, so
+// the break before one implies no terminator: an ordinary statement written
+// there carries its `;`, while a statement that IS a block already ended at its
+// own `}`. The last arm's last statement is ended by the match's `}` instead.
 //
 // The two ONE-LINE arm bodies are the fixed forms that keep the `;` the match
 // grammar asks for: `case .x: break;` and `case .x: (e) => expr;`.
@@ -39,6 +40,27 @@ trace :: (c: Color) -> i64 {
     n
 }
 
+// A NON-final arm that closes on a statement which IS a block writes no `;`:
+// the `if` and the bare scope each end at their own `}`, and the next `case` /
+// `else` follows with nothing between.
+shade :: (c: Color) -> i64 {
+    n := 0
+    if c == {
+        case .Red:
+            n = 1
+            if n == 1 {
+                n = n + 6
+            }
+        case .Green: {
+            n = 2
+            n = n + 60
+        }
+        else:
+            n = 3
+    }
+    n
+}
+
 // An arm's last expression is the arm's value, with or without the `;`.
 classify :: (n: i64) -> i64 {
     if n == {
@@ -64,6 +86,7 @@ first :: (c: Color) -> string {
 
 main :: () -> i32 {
     print("{} {} {}\n", trace(Color.Red), trace(Color.Green), trace(Color.Blue))
+    print("{} {} {}\n", shade(Color.Red), shade(Color.Green), shade(Color.Blue))
     print("{} {} {}\n", classify(0), classify(1), classify(2))
     print("{} {} {}\n", first(Color.Red), first(Color.Green), first(Color.Blue))
 
