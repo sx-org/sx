@@ -24,10 +24,8 @@ pub const ResolveEnv = struct {
     target_type: ?TypeId = null,
 };
 
-/// Canonical AST-type-node → `TypeId` resolver (architecture phase A2). As of
-/// A2.1 it owns the primitive-keyword table and the structural compound type
-/// constructors. Later phases fold in generics/aliases (A2.2) and pack
-/// projections (A2.3) and retire `src/ir/type_bridge.zig` (Principle 1).
+/// Canonical AST-type-node → `TypeId` resolver. Owns the primitive-keyword
+/// table and the structural compound type constructors.
 ///
 /// Holds borrowed references only — constructed cheaply by value at each call
 /// site (`Lowering.typeResolver()`), so it always reflects current state.

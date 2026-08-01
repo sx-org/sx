@@ -11,8 +11,8 @@ const Inst = ir_inst.Inst;
 const TypeId = ir_types.TypeId;
 const StringId = ir_types.StringId;
 
-/// Reflection metadata + trace-frame emission (architecture phase A7.2),
-/// extracted from `LLVMEmitter`. A backend `*LLVMEmitter` facade (field `e`):
+/// Reflection metadata + trace-frame emission. A backend `*LLVMEmitter`
+/// facade (field `e`):
 /// the type/field/tag reflection NAME-ARRAY builders (memoized into
 /// `type_name_array`/`field_name_arrays`/`tag_name_array` on `LLVMEmitter`) and
 /// the error-trace `Frame` builders. Reads cached LLVM handles / the IR type

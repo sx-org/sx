@@ -53,8 +53,7 @@ const ObjcPropertyKind = enum {
     }
 };
 
-/// Pure Obj-C decision helpers (architecture phase A6.1), extracted from
-/// `Lowering`. A `*Lowering` facade (Principle 5, like `ErrorAnalysis`/
+/// Pure Obj-C decision helpers. A `*Lowering` facade (Principle 5, like `ErrorAnalysis`/
 /// `CoercionResolver`): selector derivation, type-encoding-string derivation,
 /// ARC property-kind classification, Obj-C class-pointer recognition, and
 /// hidden-state-struct planning. No IR is emitted here — the emission-heavy IMP

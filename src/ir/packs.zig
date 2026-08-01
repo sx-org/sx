@@ -17,8 +17,7 @@ const Lowering = lower.Lowering;
 /// state (`pack_arg_types` / `pack_constraint` / `pack_bindings` /
 /// `type_bindings` / `param_impl_map`) and recurses through the full stateful
 /// type resolver, so it borrows `Lowering` rather than re-threading every
-/// field. The dependency shrinks as later phases lift pack state into an
-/// explicit context object.
+/// field.
 pub const PackResolver = struct {
     l: *Lowering,
 

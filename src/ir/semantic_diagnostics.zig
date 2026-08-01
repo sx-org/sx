@@ -19,8 +19,7 @@ var type_param_constraint: ast.Node = .{ .span = .{ .start = 0, .end = 0 }, .dat
 /// Declaration-name / type-position diagnostic pass. Two checks, before
 /// lowering:
 ///
-/// 1. Unknown-type diagnostic, extracted from `Lowering`
-///    (architecture phase A2.4): an identifier used in a type position that
+/// 1. Unknown-type diagnostic: an identifier used in a type position that
 ///    names no declared type, primitive, or in-scope generic type parameter.
 ///    Main-file decls only — imported / library modules are trusted, matching
 ///    `checkErrorFlow`.

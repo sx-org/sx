@@ -20,9 +20,8 @@ const Lowering = lower.Lowering;
 //    body (with no `catch` / `or value`) is rejected — its error has nowhere
 //    to propagate (the block is already exiting). See `checkCleanupBody`.
 //
-// This is the diagnostic-only Pass 1e (architecture phase A5.2), extracted from
-// `Lowering`. A `*Lowering` facade (Principle 5, like `ErrorAnalysis`/
-// `CoercionResolver`): it reads AST decls + `ProgramIndex` and emits diagnostics
+// This is the diagnostic-only Pass 1e. A `*Lowering` facade (Principle 5, like
+// `ErrorAnalysis`/`CoercionResolver`): it reads AST decls + `ProgramIndex` and emits diagnostics
 // via `self.l.diagnostics`; lowering proceeds only if the diagnostics are clean
 // (`core.zig` halts before codegen on any error). External `Lowering` helpers it
 // consumes: `inferExprType`, `errorChannelOf`, `exprIsFailable`.

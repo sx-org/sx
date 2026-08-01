@@ -7,8 +7,7 @@ const emit = @import("../../ir/emit_llvm.zig");
 const TypeId = ir_types.TypeId;
 const LLVMEmitter = emit.LLVMEmitter;
 
-/// Parameter coercion (architecture phase A7.1), extracted from
-/// `LLVMEmitter`. A backend `*LLVMEmitter` facade: it borrows the emitter for
+/// Parameter coercion. A backend `*LLVMEmitter` facade: it borrows the emitter for
 /// the cached LLVM handles, the IR type table, the module data layout, and the
 /// IR builder. `LLVMEmitter.{abiCoerceParamType, abiCoerceParamTypeEx,
 /// abiCoerceDefaultParamType, needsByval, materializeByvalArg}` are thin

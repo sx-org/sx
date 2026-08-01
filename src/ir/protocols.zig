@@ -65,7 +65,7 @@ fn typeContainsUnresolved(table: *const types.TypeTable, ty: TypeId) bool {
     };
 }
 
-/// Protocol / impl LOOKUP + REGISTRATION (architecture phase A4.2), extracted
+/// Protocol / impl LOOKUP + REGISTRATION, extracted
 /// from `Lowering`. Owns:
 ///   - read-only conformance queries: `getProtocolInfo` (is a type a registered
 ///     protocol + its method table), `packArgConformsTo` (impl-declaration

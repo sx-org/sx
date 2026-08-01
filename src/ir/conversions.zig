@@ -7,7 +7,7 @@ const Node = ast.Node;
 const TypeId = types.TypeId;
 const Lowering = lower.Lowering;
 
-/// Coercion planning (architecture phase A4.3): classify HOW a value of one
+/// Coercion planning: classify HOW a value of one
 /// type converts to another, before `Lowering` emits the IR for it. The
 /// classifier is pure (reads the type table + protocol/impl registries); all
 /// actual IR emission — `unbox_any`/`optional_wrap`/`int_to_float`/protocol

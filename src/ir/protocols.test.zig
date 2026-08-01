@@ -1,8 +1,7 @@
 // Tests for protocols.zig — the protocol/impl LOOKUP owner (`ProtocolResolver`).
 // Reached via `ir.ProtocolResolver{ .l = &lowering }`, mirroring calls.test.zig /
-// generics.test.zig. Covers the pure conformance queries moved out of `Lowering`
-// in A4.2 sub-step 2 (lookup increment); registration + emission stay in
-// `Lowering`, so their plan tests land with later increments.
+// generics.test.zig. Covers the pure conformance queries; registration and
+// emission stay in `Lowering`.
 
 const std = @import("std");
 const ast = @import("../ast.zig");

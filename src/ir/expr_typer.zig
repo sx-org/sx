@@ -9,8 +9,7 @@ const TypeId = types.TypeId;
 const Lowering = lower.Lowering;
 const TypeResolver = @import("type_resolver.zig").TypeResolver;
 
-/// AST-level expression typing (architecture phase A3.1), extracted from
-/// `Lowering.inferExprType`. Owns the structural / non-call expression shapes —
+/// AST-level expression typing. Owns the structural / non-call expression shapes —
 /// literals, unary / binary ops, `try` / `catch`, `if`, block, field access,
 /// identifier / type-name, struct / tuple literals, index / slice / deref,
 /// null-coalesce, and the statement shapes that produce no value. Call result
@@ -19,9 +18,7 @@ const TypeResolver = @import("type_resolver.zig").TypeResolver;
 ///
 /// A `*Lowering` facade (Principle 5), like `PackResolver`: expression typing
 /// reads live lexical-scope / pack / target-type state and dozens of resolver
-/// helpers, so it borrows `Lowering` rather than re-threading every field. The
-/// dependency shrinks as later phases lift that state into an explicit context
-/// (the plan's `TypeResolver` / `ProgramIndex` / `ResolveEnv` target).
+/// helpers, so it borrows `Lowering` rather than re-threading every field.
 pub const ExprTyper = struct {
     l: *Lowering,
 

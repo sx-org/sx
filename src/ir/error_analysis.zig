@@ -14,7 +14,7 @@ pub const ErrorFacts = struct {
     shape_inferred_sets: std.StringHashMap([]const u32),
 };
 
-/// Whole-program error-set convergence (architecture phase A5.1), extracted
+/// Whole-program error-set convergence, extracted
 /// from `Lowering`. Owns the fix-point traversals that converge inferred
 /// `!` error sets (`convergeInferredErrorSets`) and bare-`!` closure-shape sets
 /// (`convergeClosureShapeSets`), plus the AST collectors that feed them.

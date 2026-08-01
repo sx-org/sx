@@ -1,7 +1,6 @@
 // Tests for generics.zig — the generic substitution + mono-key owner
 // (`GenericResolver`). Reached via `ir.GenericResolver{ .l = &lowering }`,
-// mirroring how calls.test.zig drives `CallResolver`. Moved here from
-// lower.test.zig when the helpers moved out of `Lowering` (A4.1 sub-step 2).
+// mirroring how calls.test.zig drives `CallResolver`.
 
 const std = @import("std");
 const ast = @import("../ast.zig");

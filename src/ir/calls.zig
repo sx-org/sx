@@ -19,10 +19,8 @@ const Lowering = lower.Lowering;
 /// that path implies.
 ///
 /// `plan(c)` is the single point that recognises a call form; `resultType(c)`
-/// is the thin "just the type" projection (`plan(c).return_type`). This step
-/// (A3.2 convergence sub-step 2) builds the plan object and routes typing
-/// through it; `lowerCall` still owns its own dispatch and is rerouted onto
-/// the plan in sub-step 3.
+/// is the thin "just the type" projection (`plan(c).return_type`). `lowerCall`
+/// owns its own dispatch.
 pub const CallPlan = struct {
     kind: Kind,
     return_type: TypeId,
@@ -93,7 +91,7 @@ pub const CallPlan = struct {
     };
 };
 
-/// Call result typing (architecture phase A3.2), extracted from
+/// Call result typing, extracted from
 /// `Lowering.inferExprType`'s call arm. Discovers the IR type a call
 /// expression evaluates to — across builtins / reflection builtins, generic
 /// and plain free functions (lowered or lazy via `fn_ast_map`), closure /

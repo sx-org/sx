@@ -6,7 +6,7 @@
 //      these need no lexical scope / fn registration.
 //   2. The `CallPlan` object built by `CallResolver.plan` — its selected
 //      kind / target / variant and the receiver / `__sx_ctx` / default-arg
-//      properties, across every call form pinned by A3.2 sub-step 1
+//      properties, across every call form
 //      (direct / UFCS / protocol / closure / fn-pointer / extern / enum /
 //      namespace). `resultType` is just `plan(c).return_type`, so these also
 //      lock the typing the regression suite relies on.
