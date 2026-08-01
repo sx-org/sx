@@ -3137,6 +3137,7 @@ pub const Lowering = struct {
     pub const lowerFunctionBody = lower_stmt.lowerFunctionBody;
     pub const ExitForm = lower_stmt.ExitForm;
     pub const emitBodyExit = lower_stmt.emitBodyExit;
+    pub const expressionDiverged = lower_stmt.expressionDiverged;
     pub const bindNamedReturnSlots = lower_stmt.bindNamedReturnSlots;
     pub const synthesizeNamedReturn = lower_stmt.synthesizeNamedReturn;
     pub const validateMultiReturn = lower_stmt.validateMultiReturn;

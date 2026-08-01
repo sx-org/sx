@@ -144,6 +144,17 @@ pub fn lowerDemandedBody(self: *Lowering, node: *const Node, demand: TailDemand)
     }
 }
 
+/// Whether an evaluated expression left this position live, closing the block
+/// where it stands if it did not. Divergence is normalized the INSTANT the
+/// value exists, so nothing downstream — a coercion, a defer, a store, a branch
+/// or a `ret` — can be emitted after a `proc.exit(0)` that stands in its place.
+pub fn expressionDiverged(self: *Lowering, v: Ref) bool {
+    if (self.currentBlockHasTerminator()) return true;
+    if (self.builder.getRefType(v) != .noreturn) return false;
+    self.builder.emitUnreachable();
+    return true;
+}
+
 /// The block's last statement, dispatched by what the position demands of it.
 fn lowerTail(self: *Lowering, tail: *const Node, demand: TailDemand) BodyTail {
     switch (demand) {
@@ -166,6 +177,7 @@ fn lowerTail(self: *Lowering, tail: *const Node, demand: TailDemand) BodyTail {
             if (demand == .return_value) self.in_return_expr = true;
             defer self.in_return_expr = saved_in_return;
             const v = self.tryLowerAsExpr(tail) orelse return .no_value;
+            if (expressionDiverged(self, v)) return .terminated;
             return .{ .value = v };
         },
         .error_only => |ret_ty| return lowerErrorOnlyTail(self, tail, ret_ty),
@@ -209,8 +221,8 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
         // Nothing demands this value: it has no destination, and it is
         // evaluated purely for its effects.
         self.target_type = null;
-        _ = self.tryLowerAsExpr(tail);
-        return if (self.currentBlockHasTerminator()) .terminated else .no_value;
+        const disposed = self.tryLowerAsExpr(tail) orelse return if (self.currentBlockHasTerminator()) .terminated else .no_value;
+        return if (expressionDiverged(self, disposed)) .terminated else .no_value;
     }
     // An error leaf, or one not yet typed: the declared set IS its destination
     // — both contextual spellings read it, `error.X` while lowering and `.X`
@@ -221,6 +233,7 @@ fn lowerErrorOnlyTail(self: *Lowering, tail: *const Node, ret_ty: TypeId) BodyTa
     const maybe_val = self.tryLowerAsExpr(tail);
     if (self.currentBlockHasTerminator()) return .terminated;
     const val = maybe_val orelse return .no_value;
+    if (expressionDiverged(self, val)) return .terminated;
     const val_ty = self.builder.getRefType(val);
     if (val_ty == .unresolved) {
         // Never reinterpreted as a tag. Report it unless lowering the tail
@@ -686,19 +699,15 @@ pub fn lowerStmt(self: *Lowering, node: *const Node) void {
             // exactly why a declaration, an assignment (`_ = e` included), and a
             // `return` are never intercepted — their value belongs to them.
             if (self.interceptBuildExpression(node)) return;
-            const v = self.lowerExpr(node);
             // A statement-position expression that DIVERGES — a call to a
             // `-> noreturn` fn such as `proc.exit` — ends the basic block. A
             // bare `.call` op is NOT a terminator (see currentBlockHasTerminator),
-            // so without emitting `unreachable` here the block stays "open": the
-            // statements after it would be lowered into a closed-in-spirit block,
-            // and — the bug this fixes — a diverging statement as the live branch
-            // of an `inline if` leaves the enclosing function looking value-less,
-            // tripping the "produces no value" check (issue 0209). Guard on the
-            // block not already being terminated so we never double-terminate.
-            if (!self.currentBlockHasTerminator() and self.builder.getRefType(v) == .noreturn) {
-                self.builder.emitUnreachable();
-            }
+            // so without closing the block here it stays "open": the statements
+            // after it would be lowered into a closed-in-spirit block, and — the
+            // bug this fixes — a diverging statement as the live branch of an
+            // `inline if` leaves the enclosing function looking value-less,
+            // tripping the "produces no value" check (issue 0209).
+            _ = expressionDiverged(self, self.lowerExpr(node));
         },
     }
 }
@@ -1324,6 +1333,13 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // right tuple either way).
     const ret_val = if (rs_value) |val| self.lowerExpr(reorderNamedReturn(self, val, ret_ty_for_target)) else null;
     if (ret_val) |rv| {
+        // `return proc.exit(0);` never returns: the operand took control where
+        // it stands, so no defer, coercion or exit follows it.
+        if (expressionDiverged(self, rv)) {
+            self.force_block_value = saved_fbv_ret;
+            self.target_type = old_target;
+            return;
+        }
         if (self.rejectBlockReturn(self.builder.getRefType(rv), (rs_value orelse rs.value.?).span)) return;
     }
     self.force_block_value = saved_fbv_ret;
