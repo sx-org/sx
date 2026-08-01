@@ -13,7 +13,8 @@
 //               callee's slots live in their own scope, the caller keeps its
 //   success     a value-carrying failable's trailing value, with no explicit
 //               `return` to assemble the success tag for it
-//   discarded   `return 5;` in a `-> void` body: evaluated, stored nowhere
+//   discarded   a value-carrying `return` in a `-> void` body: the operand is
+//               evaluated for its effects, and its value is stored nowhere
 //   vm          a body the comptime VM runs whose FIRST written return is in
 //               the arm it does not take — the slot exists on every path
 #import "modules/std.sx";
@@ -51,9 +52,15 @@ success :: ($tag: string, n: i64) -> (i64, !Bad) {
     n + 100
 }
 
+// A `-> void` exit has no slot to store the operand into, so the printed line
+// is the only trace `return noisy(5)` leaves behind.
+noisy :: (n: i64) -> i64 {
+    print("discard {}\n", n);
+    n
+}
+
 discarded :: ($tag: string) {
-    print("discard {}\n", 5);
-    return;
+    return noisy(5);
 }
 
 vm_pick :: ($tag: string, n: i64) -> i64 {
