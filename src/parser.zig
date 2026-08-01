@@ -4443,8 +4443,8 @@ pub const Parser = struct {
                 self.advance();
                 const expr = try self.parseExpr();
                 try self.expect(.semicolon);
-                // The arm `;` is the arm's terminator, from the match grammar
-                // rather than the statement one — the arm body is its expression.
+                // The short form's `;` is the match grammar's, not the statement
+                // one — the arm body is its expression.
                 const body = try self.createNode(arm_start, .{ .block = .{ .stmts = try self.allocator.dupe(*Node, &.{expr}), .produces_value = true } });
                 try arms.append(self.allocator, .{ .pattern = pattern, .body = body, .is_break = false, .capture = capture, .capture_span = capture_span, .capture_is_raw = capture_is_raw });
             } else {
@@ -5719,8 +5719,10 @@ pub const Parser = struct {
     /// or top-level position: an explicit `;`, or the implied one — the line
     /// break where the `;` would have gone, or the end of the file. The `;`
     /// inside a fixed form's member list (a runtime class's members,
-    /// `#import c { … }`'s entries) and a match arm's terminator are separators
-    /// under their own grammar, not statement ends, and keep demanding their `;`.
+    /// `#import c { … }`'s entries) and the one closing a `break` or `=> expr`
+    /// match arm are separators under their own grammar, not statement ends,
+    /// and keep demanding their `;`. A statement-list arm holds ordinary
+    /// statements, which end here like any others.
     fn expectStatementEnd(self: *Parser) !void {
         if (self.current.tag == .semicolon) {
             self.advance();
@@ -6024,7 +6026,7 @@ test "block value: a declaration tail leaves the block value-less" {
     try std.testing.expect(!body.data.block.produces_value);
 }
 
-test "block value: match arms are exempt (keep `;`, still produce a value)" {
+test "block value: an arm's written `;` still leaves the arm producing a value" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: (n: i32) -> i32 { if n == { case 1: 5; else: 0; } }");
@@ -6034,7 +6036,7 @@ test "block value: match arms are exempt (keep `;`, still produce a value)" {
     try std.testing.expect(body.data.block.produces_value);
     const match = body.data.block.stmts[0];
     try std.testing.expect(match.data == .match_expr);
-    // Each arm body (built with `;`) is still value-producing (exempt).
+    // Each arm body ends with a written `;` and still produces its value.
     for (match.data.match_expr.arms) |arm| {
         try std.testing.expect(arm.body.data.block.produces_value);
     }

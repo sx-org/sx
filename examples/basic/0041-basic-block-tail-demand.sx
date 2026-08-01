@@ -33,7 +33,7 @@ sum3 :: (a: i32, b: i32, c: i32) -> i32 {
     t
 }
 
-// Match arms keep their arm `;`, as they always have.
+// An arm's `;` separates it from the next `case`; the value is unchanged.
 classify :: (n: i32) -> i32 {
     if n == {
         case 0:  100;

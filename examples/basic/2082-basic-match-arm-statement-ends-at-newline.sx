@@ -1,0 +1,78 @@
+// Whitespace is syntax (specs §1), inside a `match` arm. An arm written as a
+// statement LIST holds ordinary statements, so each one ends at the line break
+// where its `;` would have gone. The only `;` such an arm still needs is the
+// one before the next `case` / `else`, because those tokens cannot start a
+// statement — the last arm's last statement is ended by the `}` instead.
+//
+// The two ONE-LINE arm bodies are the fixed forms that keep the `;` the match
+// grammar asks for: `case .x: break;` and `case .x: (e) => expr;`.
+// Expected: exit 0.
+#import "modules/std.sx"
+
+Color :: enum {
+    Red
+    Green
+    Blue
+}
+
+Shape :: enum {
+    rect: i64
+    dot
+}
+
+// Three statements per arm, terminated by their line breaks. Only the last
+// statement of a NON-final arm carries a written `;`.
+trace :: (c: Color) -> i64 {
+    n := 0
+    if c == {
+        case .Red:
+            n = n + 1
+            n = n + 10
+            n = n + 100;
+        case .Green:
+            n = n + 2
+            n = n + 20;
+        else:
+            n = n + 3
+            n = n + 30
+    }
+    n
+}
+
+// An arm's last expression is the arm's value, with or without the `;`.
+classify :: (n: i64) -> i64 {
+    if n == {
+        case 0: 100;
+        case 1: { x := 5; x * 2 }
+        else:   7;
+    }
+}
+
+// `break;` is one of the two one-line bodies, and keeps its `;`.
+first :: (c: Color) -> string {
+    out := "none"
+    if c == {
+        case .Red:
+            out = "red";
+        case .Green:
+            break;
+        else:
+            out = "other"
+    }
+    out
+}
+
+main :: () -> i32 {
+    print("{} {} {}\n", trace(Color.Red), trace(Color.Green), trace(Color.Blue))
+    print("{} {} {}\n", classify(0), classify(1), classify(2))
+    print("{} {} {}\n", first(Color.Red), first(Color.Green), first(Color.Blue))
+
+    // `(e) => expr;` is the other one-line body, and keeps its `;` too.
+    s := Shape.rect(4)
+    if s == {
+        case .rect: (size) => print("rect {}\n", size);
+        case .dot:
+            print("dot\n")
+    }
+    0
+}
