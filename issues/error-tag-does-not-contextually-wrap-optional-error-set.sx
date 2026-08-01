@@ -1,4 +1,4 @@
-// Regression target for issue 0332: an error tag is an error-set value before
+// Regression target: an error tag is an error-set value before
 // it is implicitly wrapped into an optional of that same set.
 Failure :: error { Broken };
 

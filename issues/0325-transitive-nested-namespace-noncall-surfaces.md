@@ -28,8 +28,8 @@ for every surface above. No syntax or public API change is required.
   therefore inherit caller/unresolved target typing instead of the exact slot.
 - Bare type-function gates prove one visible author but still execute the
   process-global function-map winner. Qualified full paths select exactly;
-  bare own/one-hop authors need the same declaration-carrying result (also
-  tracked with callable aliases in issue 0330).
+  bare own/one-hop authors need the same declaration-carrying result,
+  callable aliases included.
 - The first pre-RHS store repair returned only an optional successful target.
   Missing, ambiguous, immutable, non-lvalue, and not-applicable paths therefore
   collapsed together, and invalid qualified targets could still lower

@@ -1,7 +1,6 @@
 # 0030 — `extern G : T;` cross-file sx global declarations (feature request)
 
-> **Status: OPEN feature request** (not a bug). Relocated from the old
-> `examples/issue-0030.sx` placeholder during the test-layout migration. Repro:
+> **Status: OPEN feature request** (not a bug). Repro:
 > `issues/0030-extern-global-declarations.sx` (currently a parse error — the
 > syntax doesn't exist yet).
 

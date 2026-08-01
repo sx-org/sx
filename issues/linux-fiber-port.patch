@@ -177,9 +177,9 @@ index c2f4b564..c2a99271 100644
 +// own symbol is emitted with the platform-correct name automatically, so
 +// `spawn`'s `xx fib_tramp` resolves on every target. (This register-indirect
 +// bootstrap replaced an OS-conditional global `asm` block: a top-level `asm`
-+// wrapped in an `inline if` is dropped in this module's context — see
-+// issues/0193 — and a naked fn + `br` sidesteps the hand-written symbol
-+// entirely, which is cleaner regardless.)
++// wrapped in an `inline if` is dropped in this module's context — and a
++// naked fn + `br` sidesteps the hand-written symbol entirely, which is
++// cleaner regardless.)
 +fib_tramp :: () abi(.naked) {
 +    asm volatile {
 +        #string T

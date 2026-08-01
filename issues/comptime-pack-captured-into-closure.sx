@@ -1,5 +1,5 @@
-// issue 0156 Part 2 (OPEN, non-blocking) — a deferred `..` spread crashes the
-// backend instead of working or diagnosing. `..` is comptime-pack-only; spreading
+// A deferred `..` spread crashes the backend instead of working or
+// diagnosing. `..` is comptime-pack-only; spreading
 // a concrete tuple `w(..t)` panics (`unresolved type reached LLVM emission`), and
 // capturing a comptime pack into a closure then spreading it segfaults at runtime
 // (the deferred body re-expands the pack from the now-gone caller locals).

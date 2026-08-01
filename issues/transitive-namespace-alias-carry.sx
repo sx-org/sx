@@ -1,4 +1,4 @@
-facade :: #import "0322-transitive-namespace-alias-carry/facade.sx";
+facade :: #import "transitive-namespace-alias-carry/facade.sx";
 
 main :: () -> i32 {
     if facade.engine_alias.secret() == 9 { return 0; }

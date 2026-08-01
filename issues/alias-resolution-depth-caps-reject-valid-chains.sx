@@ -1,4 +1,4 @@
-// Issue 0331: alias resolution depth caps silently rejected valid chains.
+// Alias resolution must not cap the depth of a valid chain.
 // Generic template aliases stopped at 8 hops, function aliases at 9,
 // protocol/pending-type aliases at 16, and reverse-order module-constant
 // aliases got only 16 fixpoint rounds. All four families below exceed the
