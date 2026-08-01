@@ -1,4 +1,4 @@
-// E6a — per-decl nominal identity for UNION decls. A bare UNION reference is
+// Per-decl nominal identity for UNION decls. A bare UNION reference is
 // non-transitive AND ambiguity-checked at every site, exactly like the enum
 // (0795) and struct (0767) forms. `main` flat-imports two modules that each author
 // a same-name `Pair` union and authors none itself, so EACH of the following bare

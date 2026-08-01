@@ -1,4 +1,4 @@
-// E6b — ambiguity guard for an ERROR-SET name in a CLOSURE-LITERAL return
+// Ambiguity guard for an ERROR-SET name in a CLOSURE-LITERAL return
 // annotation (`() -> !IoErr { … }`). `main` flat-imports two modules
 // that each author a same-name `IoErr` and authors none itself, so the closure
 // literal's `-> !IoErr` channel is a genuine collision the source cannot

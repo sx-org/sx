@@ -1,4 +1,4 @@
-// E6a — own-wins-over-flat for ENUM per-decl nominal identity. `main` flat-imports
+// Own-wins-over-flat for ENUM per-decl nominal identity. `main` flat-imports
 // `dep.sx` (which authors `Dir { east; west }`) AND authors its OWN `Dir { north;
 // south }`. A bare `Dir` reference in `main` resolves to `main`'s OWN author, not
 // the flat-imported one (the querying source's author wins outright — no

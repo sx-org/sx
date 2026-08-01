@@ -1,4 +1,4 @@
-// E6b — own-wins for an ERROR-SET name in a CLOSURE-LITERAL return annotation
+// Own-wins for an ERROR-SET name in a CLOSURE-LITERAL return annotation
 // (`() -> !IoErr { … }`). `main` flat-imports `dep.sx` (which authors
 // `IoErr { Net }`) AND authors its OWN `IoErr { Disk }`. The closure literal's
 // `-> !IoErr` channel must resolve to `main`'s OWN author (own-wins), so the

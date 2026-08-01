@@ -1,4 +1,4 @@
-// std.http: BOUNDED, DETERMINISTIC in-process fuzz SMOKE.
+// std.http: bounded, deterministic in-process fuzzing of the request parser.
 //
 // A seeded PRNG throws hundreds of mutated / malformed / random HTTP
 // requests at one live server (driven single-thread via Server.tick) and
@@ -27,7 +27,7 @@
 //     decode_chunked / try_serve_one harness (no socket) — sx has no
 //     libFuzzer integration today, so that target lives as a separate CI
 //     job, never in examples/. See tests/fuzz-http.md.
-// If THIS smoke ever finds a crash/hang/leak, that is a REAL parser bug:
+// A crash/hang/leak found here is a REAL parser bug:
 // the failing SEED + iteration + the exact bytes are the repro — fix the
 // parser, do not weaken the assertions here.
 #import "modules/std.sx";

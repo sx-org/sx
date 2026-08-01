@@ -1,4 +1,4 @@
-// E6a — per-decl nominal identity for ENUM decls. A bare ENUM reference is
+// Per-decl nominal identity for ENUM decls. A bare ENUM reference is
 // non-transitive AND ambiguity-checked at every site, exactly like the struct
 // leaf (0755) and the non-leaf struct forms (0767). `main` flat-imports two
 // modules that each author a same-name `Dir` enum and authors none itself, so

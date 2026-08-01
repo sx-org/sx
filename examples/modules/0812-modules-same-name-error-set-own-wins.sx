@@ -1,4 +1,4 @@
-// E6b — own-wins-over-flat for ERROR-SET per-decl nominal identity. `main`
+// Own-wins-over-flat for ERROR-SET per-decl nominal identity. `main`
 // flat-imports `dep.sx` (which authors `IoErr { Net }`) AND authors its OWN
 // `IoErr { Disk }`. A bare `IoErr` reference in `main` resolves to `main`'s OWN
 // author, not the flat-imported one (the querying source's author wins outright —

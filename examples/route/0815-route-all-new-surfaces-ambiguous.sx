@@ -1,11 +1,11 @@
-// E6b-R — route-all: the NEW use surfaces a same-name type reaches now funnel
+// Route-all: the use surfaces a same-name type reaches funnel
 // through the source-aware engine, so an ambiguous bare name poisons LOUDLY at
 // each of them instead of silently picking a global `findByName` last-wins author.
 // `main` flat-imports two same-name `Box` struct authors and authors none itself,
 // so every bare `Box` below is a genuine collision. `Box` is the kind-agnostic
 // canary (the bare-leaf forms — annotations / size_of / match / `!Named` — are
 // already locked per kind by 0755/0795/0797/0811); these cells exercise the
-// surfaces E6b-R added:
+// surfaces:
 //
 //   - wrapper-alias element            `BoxPtr :: *Box`         (engine wrapper aliasing)
 //   - union body-builder child          `WrapU :: union { b: Box }` (C1, registerUnionDecl)

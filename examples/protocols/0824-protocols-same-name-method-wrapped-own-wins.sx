@@ -1,4 +1,4 @@
-// E6BR-4 (own-wins) — a protocol method-signature names a same-name `Box` under
+// Own-wins: a protocol method-signature names a same-name `Box` under
 // every WRAPPER / COMPOUND form, and each must resolve SOURCE-AWARE (pinned to the
 // protocol's defining module = main), selecting main's OWN `Box { m }` rather than
 // the global last-wins `Box { a }` from the flat-imported `dep.sx`.

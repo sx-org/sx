@@ -1,4 +1,4 @@
-// E6a — own-wins-over-flat for UNION per-decl nominal identity. `main` flat-imports
+// Own-wins-over-flat for UNION per-decl nominal identity. `main` flat-imports
 // `dep.sx` (which authors `Pair { a }`) AND authors its OWN `Pair { m }`. A bare
 // `Pair` reference in `main` resolves to `main`'s OWN author, not the flat-imported
 // one (the querying source's author wins outright — no ambiguity), so `p : Pair`

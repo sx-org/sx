@@ -28,7 +28,7 @@ main :: () -> i32 {
     // Shadow gone — the module-scope `h` is back.
     print("h(2) = {}\n", h(2));
 
-    // Nested-fn shadowing (0217 review F1): shadowing is by DEPTH across
+    // Nested-fn shadowing is by DEPTH across
     // both local namespaces — an INNER nested fn beats an outer callable
     // var, and an INNER callable var beats an outer nested fn.
     {

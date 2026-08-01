@@ -1,24 +1,8 @@
-// A same-name `error` set collapses into a namespaced import's set (error
-// sets lack per-decl nominal identity).
-//
-// `EventErr` is declared locally as `error { Boom }`, but
-// `#import "modules/std.sx"` also carries `event.EventErr` (an error set with
-// tags Init/Register/Wait). Because error-set DECLARATIONS are not given
-// per-decl nominal identity (unlike struct/enum/union under E6a) —
-// `registerErrorSetDecl` registers via the flat `findByName`-dedup path — the
-// local `EventErr` collapses into the imported one, losing its own `Boom` tag.
-//
-// So `raise error.Boom` / `r == error.Boom` are checked against the IMPORTED
-// set, which has no `Boom`.
-//
-// EXPECT (today): build FAILS —
-//   error: error tag 'error.Boom' is not in error set 'EventErr'
-// EXPECT (after fix): prints `own EventErr.Boom`, exit 0.
-//
-// Proof it's the collision: rename `EventErr` -> `MyErr` and it compiles and
-// prints. The reference side (`!EventErr` → resolveNominalLeaf) is already
-// visibility-aware, but it is dormant until the
-// local declaration gets its own TypeId. See the .md.
+// A locally declared `error` set wins over a same-name set carried in by a
+// flat import: `EventErr :: error { Boom }` here, `event.EventErr`
+// (Init/Register/Wait) through `#import "modules/std.sx"`. Error-set
+// declarations get per-decl nominal identity, so `raise error.Boom` and
+// `r == error.Boom` check against the LOCAL set and its `Boom` tag.
 
 #import "modules/std.sx";
 

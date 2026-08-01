@@ -17,16 +17,15 @@
 //     internal buffer and returns (0, WantWrite); the buffered bytes are
 //     only handed out on a retry. The kernel buffer is now empty, so no
 //     readable event will ever fire — only an armed write watch delivers
-//     the retry. Red today: the request stalls silently to eviction.
+//     the retry.
 //   W (accept #2): the first response write returns (0, WantRead) until one
 //     new inbound byte arrives (consumed internally, like a handshake
-//     record). The retry must come from readability; wr_extra_retries
-//     counts write attempts made while waiting with nothing inbound —
-//     red today: the armed write watch spins retries every tick (fix: 0).
-//     Keep-alive on the same conn afterwards proves the watch state healed.
+//     record). The retry comes from readability; wr_extra_retries counts
+//     write attempts made while waiting with nothing inbound, and must be 0.
+//     Keep-alive on the same conn afterwards proves the watch state heals.
 //   B (accept #3, pool + stream_request_body): the SECOND data-bearing read
 //     (the body tail) injects the mode-R drain — the CONN_BODY pump must
-//     also retry on writability. Red today: the body stalls to eviction.
+//     also retry on writability.
 //   H (accept #4): the want surfaces AFTER the request is fully
 //     read — the read that would return WouldBlock returns WantWrite
 //     instead, so the request DISPATCHES (slow pooled handler) with the
@@ -54,8 +53,8 @@ MODE_PASS :: 0;   // pure passthrough (health-check conns)
 MODE_R    :: 1;   // read-cross: drain + WantWrite on the 1st data-bearing read
 MODE_W    :: 2;   // write-cross: WantRead on the 1st response write
 MODE_B    :: 3;   // body-cross: drain + WantWrite on the 2nd data-bearing read
-MODE_H    :: 4;   // dispatch-cross (review F1): WantWrite at the WouldBlock
-                  // position right after the request was fully surfaced
+MODE_H    :: 4;   // dispatch-cross: WantWrite at the WouldBlock position
+                  // right after the request is fully surfaced
 
 PEND_CAP :: 4096;
 
@@ -180,9 +179,9 @@ impl TlsConn for FakeConn {
 FakeAcceptor :: struct {
     a: Allocator;
     n_accepts: i64 = 0;
-    rd_injections: i64 = 0;   // sanity: the R/B injections actually fired
-    h_injections: i64 = 0;    // sanity: the H (dispatch-cross) want fired
-    wr_declared: i64 = 0;     // sanity: the W want actually surfaced
+    rd_injections: i64 = 0;   // the R/B injections that fired
+    h_injections: i64 = 0;    // the H (dispatch-cross) wants that fired
+    wr_declared: i64 = 0;     // the W wants that surfaced
     wr_extra_retries: i64 = 0;// write retries while waiting with nothing inbound
 }
 

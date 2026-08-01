@@ -1,4 +1,4 @@
-// E6BR-2 / G8 (own-wins) — a protocol method-signature CONCRETE named return type
+// Own-wins: a protocol method-signature CONCRETE named return type
 // resolves SOURCE-AWARE, pinned to the protocol's defining module. `main`
 // flat-imports `dep.sx` (`Box { a }`) AND authors its OWN `Box { m }`; the
 // protocol `Provider` returns `Box` and the impl builds main's `Box`. Dispatching
