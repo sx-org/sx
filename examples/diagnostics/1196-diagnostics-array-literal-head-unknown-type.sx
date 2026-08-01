@@ -3,7 +3,7 @@
 // type name must be rejected with the same `unknown type '<name>'` diagnostic
 // the declaration path emits — NOT silently compiled.
 //
-// Regression (issues 0173–0175 adversarial review): the 0173 fix taught the
+// Regression (issues 0173–0175): the 0173 fix taught the
 // lowering's `resolveArrayLiteralType` to resolve a structural `[N]?T` head,
 // but for an UNDEFINED element name the resolver returned a forward-reference
 // empty-struct STUB instead of `.unresolved`. So `([2]?Undefined).[…]`

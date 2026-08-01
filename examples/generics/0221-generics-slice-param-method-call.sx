@@ -1,18 +1,18 @@
 // A generic method taking a slice (`xs: []$T`), reached through method-call
 // syntax (`b.take(a)`) rather than the explicit `Box.take(@b, a)` form.
 //
-// Regression: `resolveCallParamTypes` resolved the callee's declared params
-// eagerly to give each arg a target type, but did so with NO bindings
-// installed for a generic method — so `[]$T` resolved to `[]unresolved` and
-// that poison was interned into the TypeTable. Nothing consumed it until a
-// `print` made `any_to_string` reachable: its `case slice:` arm scans the
+// Regression: resolving the callee's declared params eagerly in
+// `resolveCallParamTypes` to give each arg a target type, with NO bindings
+// installed for a generic method, resolves `[]$T` to `[]unresolved` and
+// interns that poison into the TypeTable. Nothing consumes it until a
+// `print` makes `any_to_string` reachable: its `case slice:` arm scans the
 // TypeTable for every slice type and monomorphizes `slice_to_string` per tag,
-// stamping a `slice_to_string__unresolved` whose element type tripped the
+// stamping a `slice_to_string__unresolved` whose element type trips the
 // emitter's "unresolved type reached LLVM emission" panic — no diagnostic, a
-// compiler crash. The explicit-call form bound correctly and was unaffected,
-// as was the same signature on a free function.
+// compiler crash. The explicit-call form and the same signature on a free
+// function bind correctly and never reach it.
 //
-// Both halves of the fix are exercised here: params now bind through the
+// Both halves are exercised here: params bind through the
 // receiver-prepended call site, and the category scan skips container types
 // built over `.unresolved` (no runtime value can ever have one).
 

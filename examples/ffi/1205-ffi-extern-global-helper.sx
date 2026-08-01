@@ -1,4 +1,4 @@
-// Companion module for examples/1205-ffi-extern-global.sx (PLAN-FFI 0.10).
+// Companion module for examples/1205-ffi-extern-global.sx.
 // Declares the same `extern` extern global as the main file; the
 // linker should treat both decls as one symbol. We deliberately don't
 // READ `@__stdinp` from inside a helper fn body — that path is busted

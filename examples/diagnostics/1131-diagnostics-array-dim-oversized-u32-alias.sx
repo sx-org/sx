@@ -5,7 +5,7 @@
 // the dimension through one shared folder + one shared message map, so they
 // cannot diverge.
 //
-// Regression (issue 0083 / F0.4 attempt 7): the stateless alias-registration
+// Regression (issue 0083): the stateless alias-registration
 // path collapsed `foldDimU32`'s distinct `.too_large` outcome into `null` and
 // emitted ONE generic "an array dimension is not a compile-time integer
 // constant" message — FALSE, since 5_000_000_000 IS a compile-time integer

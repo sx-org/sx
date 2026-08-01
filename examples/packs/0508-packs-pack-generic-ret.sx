@@ -3,13 +3,11 @@
 //
 // A pack-fn's return type can be a generic name (`$R`) — bound at
 // the call site to match the body's natural type or the caller's
-// target. Today's `monomorphizePackFn` calls `resolveReturnType`
+// target. `monomorphizePackFn` calls `resolveReturnType`
 // which treats `$R` as an opaque struct, so the mono's signature
 // gets a wrong ret_ty and the value is silently zero / garbage.
 //
-// `first(42)` should return 42; the lock-in pins today's `0`.
-// Next commit infers the ret type from the body's tail expression
-// (or first `return X;`) and rebuilds the mono signature.
+// `first(42)` should return 42; this pins the `0` it yields instead.
 
 #import "modules/std.sx";
 

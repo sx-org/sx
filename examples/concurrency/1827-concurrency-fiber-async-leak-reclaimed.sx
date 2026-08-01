@@ -1,5 +1,5 @@
 // The unified `context.io.async` layer reclaims its per-task heap once a future is
-// AWAITED (PLAN-IO-UNIFY follow-up — closing the documented leaks). Each `async`
+// AWAITED. Each `async`
 // allocates: the `Future`, the `ThunkBox`, the completion-closure env, the worker's
 // env, and the spawn_raw fiber-body env. With ownership wired through, ALL of it is
 // freed: the box + envs by `sx_run_boxed_closure` the instant the worker completes,

@@ -1,4 +1,4 @@
-// Stream B1 (fibers) B1.4b — a fiber's pending `sleep` timer is EVICTED when it
+// A fiber's pending `sleep` timer is EVICTED when it
 // is woken early by another path, so a stale timer can never outlive (and
 // dereference) a reaped fiber.
 //

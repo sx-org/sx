@@ -327,7 +327,7 @@ pub const Scope = struct {
     /// (specs §Variable Shadowing — innermost wins), never by namespace:
     /// an inner nested fn shadows an outer callable var and vice versa,
     /// which the independent full-chain walks of `lookup` / `lookupFn`
-    /// cannot express (issue 0217 review F1). Within a single level the
+    /// cannot express (issue 0217). Within a single level the
     /// value binding wins; both coexisting at one level is a same-scope
     /// redeclaration shape, not a shadowing one.
     pub const NearestName = union(enum) {
@@ -1308,8 +1308,8 @@ pub const Lowering = struct {
         // params aren't pushed into `self.scope` until body lowering, so bind
         // them into a temporary scope here; otherwise `inferExprType` can't
         // resolve `x`, the inference yields `.unresolved`, and that reaches LLVM
-        // emission as `func.ret`. Whether it slipped through used to
-        // depend on a same-named binding lingering from earlier lowering.
+        // emission as `func.ret`. Without the temporary scope, whether it slips
+        // through depends on a same-named binding lingering from earlier lowering.
         var tmp_scope = Scope.init(self.alloc, self.scope);
         defer tmp_scope.deinit();
         const saved_scope = self.scope;
@@ -1727,7 +1727,7 @@ pub const Lowering = struct {
         // This matches the Obj-C idiom where `self` IS the object.
         // `self.field` access on sx-defined classes is rewritten by
         // lowerFieldAccess to go through the `__sx_state` ivar
-        // (object_getIvar + struct_gep) when needed — see M1.2 A.3.
+        // (object_getIvar + struct_gep) when needed.
         if (node.data == .type_expr and std.mem.eql(u8, node.data.type_expr.name, "Self")) {
             if (self.current_runtime_class) |fcd| {
                 if (fcd.runtime == .objc_class or fcd.runtime == .objc_protocol) {
@@ -1946,8 +1946,8 @@ pub const Lowering = struct {
             // `self` (visibility-aware) too; the bare `!` inferred set has no name
             // to shadow. NOTE: this reference-side resolution is currently DORMANT
             // for same-name error-set collisions — error-set DECLARATIONS don't
-            // yet get per-decl nominal identity (E6a covers struct/enum/union
-            // only), so a same-name set collapses to one TypeId at registration
+            // yet get per-decl nominal identity (struct/enum/union do), so a
+            // same-name set collapses to one TypeId at registration
             // and there is nothing distinct for the reference to select. See issue
             // 0134; once decls get nominal identity this activates with no change
             // here. `error_set_decl` is NOT in this switch: it interns only tag

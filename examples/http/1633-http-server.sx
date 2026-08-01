@@ -1,4 +1,4 @@
-// std.http S7a (PLAN-HTTPZ): a live single-worker server and its
+// std.http S7a a live single-worker server and its
 // clients driven in ONE thread via Server.tick — keep-alive reuse,
 // POST body echo, the per-connection request cap closing politely,
 // 404 routing, and half-a-header eviction at the request deadline

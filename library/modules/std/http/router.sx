@@ -1,4 +1,4 @@
-// std.http_router (PLAN-HTTPZ D2): a thin ergonomic layer over the
+// std.http_router a thin ergonomic layer over the
 // std.http server core. Method+path ROUTING with path PARAMS (/users/:id),
 // QUERY-string parsing, urlencoded FORM parsing, and JSON request/response
 // helpers over std/json — so apps stop hand-rolling `if req.path == …`.

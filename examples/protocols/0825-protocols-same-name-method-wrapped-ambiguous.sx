@@ -1,10 +1,10 @@
-// E6BR-4 (ambiguous) — because a protocol method-signature WRAPPED return type is
-// now resolved SOURCE-AWARE (the reconciled choke-point recurses `*Box` and
-// resolves its leaf via `resolveNominalLeaf`), a genuinely ambiguous same-name
-// element poisons LOUDLY at the protocol declaration instead of silently picking a
-// global `findByName` last-wins author. `main` flat-imports two `Box` authors and
-// declares none itself, so the `Provider.getp` return `*Box` is an unresolvable
-// collision and the build exits 1.
+// A protocol method-signature WRAPPED return type resolves SOURCE-AWARE (the
+// choke-point recurses `*Box` and resolves its leaf via `resolveNominalLeaf`),
+// so a genuinely ambiguous same-name element poisons LOUDLY at the protocol
+// declaration rather than silently picking a global `findByName` last-wins
+// author. `main` flat-imports two `Box` authors and declares none itself, so
+// the `Provider.getp` return `*Box` is an unresolvable collision and the build
+// exits 1.
 //
 // A wrapped `*Box` falling to the no-author
 // `type_bridge.resolveTemplateSignatureType` wrapper (global last-wins, no

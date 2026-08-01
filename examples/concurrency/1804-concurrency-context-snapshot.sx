@@ -1,4 +1,4 @@
-// Stream B1 (fibers) step B1.1 — per-fiber `context` root, via plain
+// Per-fiber `context` root, via plain
 // snapshot + `push` (NO compiler change — the substrate the fiber spawn relies on).
 //
 // `context` is an implicit `*Context` parameter (slot 0) threaded through every

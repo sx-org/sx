@@ -2,12 +2,12 @@
 // return (assign the named slot locals, no explicit `return`), works for both a
 // generic free function and a generic struct method.
 //
-// Regression (issue 0200): the generic monomorph path (`monomorphizeFunction`)
-// bound params but never called `bindNamedReturnSlots`, so `named_return_names`
-// stayed null and the implicit-return synthesis didn't fire — the body wrongly
-// reported "produces no value". Now the binder runs on the generic path too
-// (mirroring `lowerFunctionBodyInto`), incl. with defaults and the failable
-// error channel.
+// Regression (issue 0200): a generic monomorph path (`monomorphizeFunction`)
+// that binds params without calling `bindNamedReturnSlots` leaves
+// `named_return_names` null, so the implicit-return synthesis never fires and
+// the body wrongly reports "produces no value". The binder runs on the generic
+// path too (mirroring `lowerFunctionBodyInto`), incl. with defaults and the
+// failable error channel.
 #import "modules/std.sx";
 
 ErrX :: error { Bad }

@@ -1,4 +1,4 @@
-// Phase 0 (ASM stream) test-infra lock: exercises the `<name>.build` JSON
+// Test-infra lock: exercises the `<name>.build` JSON
 // config + `--target` threading + the host-match EXECUTE path of the corpus
 // runner. The companion `.build` pins the HOST target (`{ "target": "macos" }`
 // resolves to the host arch+os), so the runner threads `--target` and still

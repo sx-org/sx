@@ -1,4 +1,4 @@
-// PLAN-HTTPZ C3a — std/socket LINUX ABI lock (cross-target). ir-only on a
+// Std/socket LINUX ABI lock (cross-target). ir-only on a
 // non-linux dev host (the `target` sidecar mismatches host arch+os → the runner
 // asserts .exit + .ir + .stderr from `sx ir --target`); runs end-to-end (exit 0)
 // on a linux runner. Pins the linux-specific facts that were silently WRONG

@@ -293,7 +293,7 @@ pub const keywords = std.StaticStringMap(Tag).initComptime(.{
     .{ "extern", .kw_extern },
     .{ "export", .kw_export },
     // `asm` is a real keyword; `volatile` / `clobbers` stay OUT of this table
-    // (recognized contextually only inside an `asm { … }` body — see PLAN-ASM).
+    // (recognized contextually only inside an `asm { … }` body).
     .{ "asm", .kw_asm },
     // `intrinsic` marks a declaration whose implementation is a compiler
     // intrinsic (`size_of :: ($T: Type) -> i64 intrinsic;`). A reserved word:

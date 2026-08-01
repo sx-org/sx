@@ -7,7 +7,7 @@
 
 main :: () {
     // Not canceled → await yields the value. The worker is FAILABLE
-    // (`Closure() -> ($R, !)`) — the unified Phase 3 shape.
+    // (`Closure() -> ($R, !)`) — the unified worker shape.
     ok := context.io.async(() -> (i64, !) => 7);
     print("ok: {}\n", ok.await() or { -1 });
 

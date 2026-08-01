@@ -44,8 +44,8 @@
 // `sx ir --target *-linux`, and the whole module lowers clean. Runtime
 // correctness (syscall behavior, the kernel-filled event array, EPOLLRDHUP
 // semantics) validates end-to-end only on a linux runner — mirror of how the
-// Win64 switch was IR-only until a Windows VM appeared (CHECKPOINT-FIBERS
-// B1.3b-1).
+// Win64 switch is IR-only without a Windows VM.
+//
 //
 // No `#import "modules/build.sx"` despite the `inline if ARCH` below: a
 // top-level `inline if OS/ARCH/POINTER_SIZE` conditional is resolved by the

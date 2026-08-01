@@ -264,8 +264,8 @@ test "analyzeDocument: push-literal field name records a Context member use" {
 }
 
 // A TYPED struct literal's field name records a member USE owned by the
-// literal's struct — the general struct-literal navigation win (stress
-// review finding 8), not a Context special case.
+// literal's struct — general struct-literal navigation, not a Context
+// special case.
 test "analyzeDocument: typed struct-literal field name records a member use" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

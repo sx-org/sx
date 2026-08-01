@@ -1275,7 +1275,7 @@ test "emit: box_any and unbox_any" {
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "extractvalue") != null);
 }
 
-test "emit: ERR E3.0 — DWARF debug info (compile unit + subprogram + per-inst location)" {
+test "emit: DWARF debug info (compile unit + subprogram + per-inst location)" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
     defer module.deinit();
@@ -1320,7 +1320,7 @@ test "emit: ERR E3.0 — DWARF debug info (compile unit + subprogram + per-inst 
     try std.testing.expect(std.mem.indexOf(u8, ir_str, "DILocation(line: 3") != null);
 }
 
-test "emit: ERR E3.0 — no DWARF without a debug context (unit-test default)" {
+test "emit: no DWARF without a debug context (unit-test default)" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
     defer module.deinit();
@@ -1348,8 +1348,8 @@ test "emit: ERR E3.0 — no DWARF without a debug context (unit-test default)" {
 // `argIRTypeOrFail` backs the four FFI call-arg lowering sites (objc_msgSend,
 // JNI Call<Type>Method / non-virtual / constructor). A ref it cannot resolve is
 // a codegen invariant violation; it must surface the dedicated `.unresolved`
-// tripwire sentinel (which `toLLVMType` hard-panics on) rather than the old
-// silent `.void` default that would emit a void-typed extern-call argument.
+// tripwire sentinel (which `toLLVMType` hard-panics on) rather than a silent
+// `.void` default, which would emit a void-typed extern-call argument.
 test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref (issue 0074)" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);

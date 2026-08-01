@@ -871,7 +871,7 @@ pub const ContextFieldDecl = struct {
 };
 
 /// Single lowering access point for declaration-name / import / visibility
-/// facts. The architecture stream (`current/PLAN-ARCH.md`, phase A1) extracts
+/// facts. The architecture stream extracts
 /// these out of the `Lowering` state bag incrementally. `Lowering` embeds one
 /// `ProgramIndex` by value and reaches every moved fact through
 /// `self.program_index.<field>`; later phases hand collaborator modules a

@@ -119,9 +119,9 @@ fn unwrapArmBlock(node: *const Node) *const Node {
 /// statement is a `return`/`raise`/`break`/`continue`, or when the arm
 /// expression itself types `noreturn` (a diverging call like `process.exit()`).
 /// A diverging arm never reaches the merge, so it must NOT decide a value-`if`'s
-/// result type — the LIVE arm's type does (issue 0269): a diverging arm used to
-/// drag `result_type` down to void/noreturn, demoting a live value-`if` into a
-/// statement that returned 0 (Bug A) or `alloca void`'d (Bug B).
+/// result type — the LIVE arm's type does (issue 0269). Letting a diverging arm
+/// drag `result_type` down to void/noreturn demotes a live value-`if` into a
+/// statement that returns 0, or one that `alloca void`s.
 pub fn armStaticallyDiverges(self: *Lowering, node: *const Node) bool {
     const body = unwrapArmBlock(node);
     if (body.data == .block) {
@@ -1343,8 +1343,8 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
     }
     // 0271: a value-position `match` (`force_block_value`) whose arms are MIXED —
     // some yield a real value, some yield void (a bare-statement tail or a
-    // no-`else` `if`) — cannot build a well-typed merge phi: the void arm used to
-    // reach the backend as `alloca void` / `i64 undef`. Reject the offending
+    // no-`else` `if`) — cannot build a well-typed merge phi: an unrejected void
+    // arm reaches the backend as `alloca void` / `i64 undef`. Reject the offending
     // arm(s) with a located error, mirroring the 0270 value-`if`-without-`else`
     // diagnostic. All-void arms = a statement `match` (fine); all-value arms =
     // fine; only the MIX is an error. A diverging arm (`return`/`break`/…) is

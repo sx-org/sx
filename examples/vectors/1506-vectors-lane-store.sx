@@ -4,12 +4,12 @@
 // (undefined) init write, writes to every lane of a 4-lane vector, the colour
 // aliases, and a compound lane assignment (`+= / *=`).
 //
-// Regression (issue 0086): the lane STORE path fell through to struct-field
-// lookup, where no field matched a vector lane, leaving the lane pointer's
-// pointee as the `.unresolved` sentinel — which panicked at LLVM emission
-// ("unresolved type reached LLVM emission"). The store path now resolves the
-// lane index via the same shared `vectorLaneIndex` resolver the read path uses
-// and GEPs a typed pointer to the lane, so the two paths never diverge.
+// Regression (issue 0086): a lane STORE path that falls through to struct-field
+// lookup matches no field for a vector lane, leaving the lane pointer's pointee
+// as the `.unresolved` sentinel — which panics at LLVM emission ("unresolved
+// type reached LLVM emission"). The store path resolves the lane index via the
+// same shared `vectorLaneIndex` resolver the read path uses and GEPs a typed
+// pointer to the lane, so the two paths cannot diverge.
 #import "modules/std.sx";
 
 main :: () {

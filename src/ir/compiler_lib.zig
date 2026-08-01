@@ -1,6 +1,6 @@
 //! The comptime `compiler` library's name registry — the curated set of the
 //! compiler's own functions reachable from comptime sx via
-//! `abi(.zig) extern compiler`. See `current/PLAN-COMPILER-VM.md`.
+//! `abi(.zig) extern compiler`.
 //!
 //! **This registry IS the safety boundary.** Only the names registered here are
 //! bindable from user comptime code; a name not on the export list is rejected

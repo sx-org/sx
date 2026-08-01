@@ -291,7 +291,7 @@ test "isUnsignedInt: user-defined arbitrary-width ints" {
 
 // ── Phase D: nominal identity + key-safe mutation ───────────────────────
 
-test "phase D: forward-decl field fill preserves intern key" {
+test "forward-decl field fill preserves intern key" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -315,7 +315,7 @@ test "phase D: forward-decl field fill preserves intern key" {
     try std.testing.expectEqual(id, table.findByName(foo).?);
 }
 
-test "phase D: anon rename re-keys intern_map" {
+test "anon rename re-keys intern_map" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -340,7 +340,7 @@ test "phase D: anon rename re-keys intern_map" {
     try std.testing.expect(fresh != id);
 }
 
-test "phase D: generic struct instantiation interns by distinct names" {
+test "generic struct instantiation interns by distinct names" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -362,7 +362,7 @@ test "phase D: generic struct instantiation interns by distinct names" {
     try std.testing.expectEqual(vec3a, table.findByName(table.internString("Vec__3")).?);
 }
 
-test "phase D: type-returning function result interns stably" {
+test "type-returning function result interns stably" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -381,7 +381,7 @@ test "phase D: type-returning function result interns stably" {
     try std.testing.expectEqual(a, table.findByName(name).?);
 }
 
-test "phase D: parameterized protocol value struct interns stably" {
+test "parameterized protocol value struct interns stably" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -402,7 +402,7 @@ test "phase D: parameterized protocol value struct interns stably" {
     try std.testing.expect(other != a);
 }
 
-test "phase D: same display-name distinct nominal ids" {
+test "same display-name distinct nominal ids" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -440,7 +440,7 @@ test "phase D: same display-name distinct nominal ids" {
     try std.testing.expect(es1 != es2);
 }
 
-test "phase D: internNominal(.,0) interns identically to intern" {
+test "internNominal(.,0) interns identically to intern" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -463,7 +463,7 @@ test "phase D: internNominal(.,0) interns identically to intern" {
     }
 }
 
-test "phase D: findUniqueByName returns the sole match" {
+test "findUniqueByName returns the sole match" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -474,7 +474,7 @@ test "phase D: findUniqueByName returns the sole match" {
     try std.testing.expectEqual(id, table.findUniqueByName(foo).?);
 }
 
-test "phase D: type_decl_tids maps decl pointer to TypeId" {
+test "type_decl_tids maps decl pointer to TypeId" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();

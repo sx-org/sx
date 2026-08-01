@@ -7,10 +7,10 @@
 // a signed backing sign-extends, a layout-struct union loads its narrow
 // tag slot, never the wider header); `is_flags(t)` answers at runtime;
 // `variant_payload(av, i)` composes with runtime indices. Static answers
-// == runtime answers by construction (parity lines). Also pins the
-// static variant_value fix for tagged unions with EXPLICIT tags (was the
-// ordinal, now the declared tag — the inverse `variant_index` already
-// reverse-mapped them).
+// == runtime answers by construction (parity lines). Also pins
+// static `variant_value` for tagged unions with EXPLICIT tags — it answers
+// the declared tag, not the ordinal, matching the inverse `variant_index`
+// which reverse-maps them.
 #import "modules/std.sx";
 
 Color :: enum { red; green; blue; }

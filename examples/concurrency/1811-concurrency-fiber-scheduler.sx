@@ -1,4 +1,4 @@
-// Stream B1 (fibers) B1.5a — the M:1 cooperative fiber scheduler core, in pure
+// The M:1 cooperative fiber scheduler core, in pure
 // sx over `swap_context` (proven in 1807-1809). `Scheduler` drives N fibers,
 // each running a `body: Closure() -> void` on its own guarded `mmap` stack;
 // fibers cooperate by calling `yield_now`, which round-robins control back

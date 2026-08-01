@@ -3,7 +3,7 @@
 // __stdinp, etc.) for FFI bridges. Mirrors the long-standing
 // `<fn> :: (...) -> ... extern;` form on the function side.
 //
-// Cross-file dimension (PLAN-FFI step 0.10): the helper companion
+// Cross-file dimension: the helper companion
 // `1205-ffi-extern-global-helper.sx` ALSO declares `__stdinp : *void extern;`.
 // Both files referencing the same extern symbol must link cleanly —
 // LLVM dedupes the named global, the C linker resolves both refs to

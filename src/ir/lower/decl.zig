@@ -154,9 +154,9 @@ fn fnReturnsTypeValue(fd: *const ast.FnDecl) bool {
 /// COMPOSITE shape — tuple fields, array/slice/vector/many-pointer elements,
 /// optional child, pointer pointee, function/closure params + return. A tuple
 /// ALIAS must never register such a type: the sentinel would reach LLVM
-/// emission and panic the tripwire (issue 0196 review MED-3 —
-/// `Tuple(a: [2][zz]i64)` hid the sentinel one composite deep and a
-/// tuple-only recursion waved it through). Nominal aggregates
+/// emission and panic the tripwire (issue 0196: `Tuple(a: [2][zz]i64)` hides
+/// the sentinel one composite deep, where a tuple-only recursion waves it
+/// through). Nominal aggregates
 /// (struct/union/enum) are terminal: their fields are validated at their own
 /// registration, and not recursing through them keeps self-referential shapes
 /// (`next: *Node` cycles) from looping this walk.
@@ -324,7 +324,7 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     self.validateMainSignature();
     // Pass 4b: eagerly lower bodied methods on sx-defined `#objc_class`
     // declarations. The Obj-C runtime calls these via IMP pointers
-    // registered in M1.2 A.4 — no sx-side call path drives lazy
+    // registered there — no sx-side call path drives lazy
     // lowering, so we trigger it here. Mirrors the JNI eager-lower
     // pattern in Pass 5.
     self.lowerObjcDefinedClassMethods();
@@ -662,7 +662,7 @@ pub fn funcWantsImplicitCtx(self: *const Lowering, fd: *const ast.FnDecl) bool {
     // (A build callback is an ordinary sx function the VM runs — it gets the
     // normal implicit-ctx treatment.)
     // `extern` imports and `export` defines are external C symbols —
-    // C ABI, no sx context (Phase 2, gap iv).
+    // C ABI, no sx context.
     if (fd.extern_export != .none) return false;
     return switch (fd.body.data) {
         .intrinsic_expr => false,
@@ -819,7 +819,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     registerConstAliases(self, decls);
     // Pass 0b: reserve every GENUINE same-name NAMED-TYPE shadow's DISTINCT
     // nominal slot BEFORE the registration loop resolves any fields (E2/F1, and
-    // enum/union from E6a). A field / variant type referencing a shadow name —
+    // enum/union). A field / variant type referencing a shadow name —
     // self (`next: *Box`), or a forward / mutual ref to a shadow declared LATER
     // in the same module (`peer: *Node`) — then binds to its OWN nominal TypeId
     // via `type_decl_tids`, never the global findByName first-author fallback
@@ -903,10 +903,10 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 } else if (cd.value.data == .struct_decl) {
                     self.registerStructDecl(&cd.value.data.struct_decl, decl.source_file);
                 } else if (cd.value.data == .enum_decl) {
-                    // Per-decl nominal identity for enum/tagged-union types (E6a)
+                    // Per-decl nominal identity for enum/tagged-union types
                     self.registerEnumDecl(&cd.value.data.enum_decl);
                 } else if (cd.value.data == .union_decl) {
-                    // Per-decl nominal identity for plain union types (E6a)
+                    // Per-decl nominal identity for plain union types
                     self.registerUnionDecl(&cd.value.data.union_decl);
                 } else if (isCompositeAliasRhs(cd.value.data)) {
                     // COMPOSITE type alias — tuple / array / slice / optional /
@@ -923,7 +923,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                     // to every composite kind in 0230) — so those DEFER to the
                     // `resolveCompositeAliases` fixpoint after the forward-alias
                     // fixpoint below, where the element is ADOPTED once its
-                    // decl has been seen (`A :: [2]B; B :: i64` now works).
+                    // decl has been seen (`A :: [2]B; B :: i64`).
                     if (typeNodeLeavesReady(self, cd.value, decl.source_file)) {
                         registerCompositeAlias(self, &decl.data.const_decl, decl.source_file);
                     }
@@ -1148,11 +1148,11 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
                 self.registerStructDecl(&decl.data.struct_decl, decl.source_file);
             },
             .enum_decl => {
-                // Per-decl nominal identity for enum/tagged-union types (E6a)
+                // Per-decl nominal identity for enum/tagged-union types
                 self.registerEnumDecl(&decl.data.enum_decl);
             },
             .union_decl => {
-                // Per-decl nominal identity for plain union types (E6a)
+                // Per-decl nominal identity for plain union types
                 self.registerUnionDecl(&decl.data.union_decl);
             },
             .error_set_decl => {
@@ -1954,7 +1954,7 @@ fn addrOfAliasRhs(node: *const Node) bool {
 /// probed via the NON-MINTING `selectNominalLeaf`, so a not-yet-registered
 /// element name never gets a permanent empty-struct stub interned under it
 /// (the stub is adopted only by NOMINAL decls, never by a later alias — the
-/// 0196-review HIGH-1 silent-layout corruption). FALSE defers the alias to
+/// 0196 silent-layout corruption). FALSE defers the alias to
 /// the `resolveCompositeAliases` fixpoint (element declared later) or its final
 /// rounds (spread / undeclared / builtin-constructor heads — resolved or
 /// diagnosed there). Conservative by construction: node kinds without bare
@@ -2226,8 +2226,8 @@ fn nodeTypeLeafName(node: *const Node) ?[]const u8 {
 /// rejects the alias NAME having been stub-bound ABOVE its declaration (an
 /// earlier fn signature / struct field resolved the name before this decl
 /// registered; the stub is adopted only by nominal decls, so that earlier
-/// binder would keep a permanently-wrong empty layout — 0196 review MED-4,
-/// surfaced as a located diagnostic instead of an LLVM verifier dump).
+/// binder would keep a permanently-wrong empty layout, surfaced as a located
+/// diagnostic instead of an LLVM verifier dump).
 fn registerCompositeAlias(self: *Lowering, cd: *const ast.ConstDecl, source: ?[]const u8) void {
     const ty = self.resolveTypeWithBindings(cd.value);
     if (!typeCarriesUnresolved(&self.module.types, ty)) {
@@ -2235,7 +2235,7 @@ fn registerCompositeAlias(self: *Lowering, cd: *const ast.ConstDecl, source: ?[]
         // the alias's own name means an earlier reference (fn signature /
         // struct field) resolved the name before this registration and bound
         // a never-adopted stub. For a STRUCTURAL TUPLE alias that stub keeps a
-        // permanently-wrong empty layout (0196 review MED-4), so reject loudly.
+        // permanently-wrong empty layout (0196), so reject loudly.
         // The other composite RHS kinds (function / closure / pointer / slice
         // / optional / array) do NOT hit this: a struct field / signature that
         // names such an alias above its decl (e.g. `body_read_fn: BodyReadFn`
@@ -2265,7 +2265,7 @@ fn registerCompositeAlias(self: *Lowering, cd: *const ast.ConstDecl, source: ?[]
 }
 
 /// Fixpoint registration for COMPOSITE-type aliases whose elements reference
-/// decls registered LATER in the scan (issue 0196 review HIGH-1, extended to
+/// decls registered LATER in the scan (issue 0196, extended to
 /// every composite kind in 0230): `A :: [2]B; B :: i64;` /
 /// `A :: Tuple(a: B, c: bool); B :: i64;` — A's in-loop registration was
 /// deferred (resolving `B` then would mint a permanent stub); now that every
@@ -2355,7 +2355,7 @@ pub fn lowerMainAndComptime(self: *Lowering, decls: []const *const Node) void {
                     // `export` defines are roots: their purpose is external
                     // consumption (often never called from sx), so force-lower
                     // them like OS-called entry points — else lazy lowering
-                    // leaves them as bodiless `declare` stubs (Phase 2).
+                    // leaves them as bodiless `declare` stubs.
                     if (isExportedEntryName(cd.name) or cd.value.data.fn_decl.extern_export == .export_ or isDefaultBuildPipeline(cd.name)) {
                         self.lazyLowerFunction(cd.name);
                     }
@@ -2961,7 +2961,7 @@ fn constWrappedNamedTypeRef(cd: *const ast.ConstDecl) ?resolver_mod.RawDeclRef {
 /// `struct #compiler`, a protocol-backed struct, a generic instance) or before
 /// it registers; a genuine same-name SHADOW always registers through
 /// `internNamedTypeDecl` and so is in `type_decl_tids`, never reaching the
-/// fallback. ENUM and UNION resolve the same per-decl way (E6a): registered
+/// fallback. ENUM and UNION resolve the same per-decl way: registered
 /// through `internNamedTypeDecl` (`registerEnumDecl` / `registerUnionDecl`),
 /// keyed by the raw-facts decl pointer, with the `findByName` fallback for a
 /// single author registered before its slot lands. Error-set and nullary
@@ -3614,7 +3614,7 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
 
     // For sx-defined `#objc_class` methods, pin current_runtime_class
     // so `*Self` substitutions in resolveTypeWithBindings find the
-    // state-struct type (M1.2 A.2b). The inline body-lowering path
+    // state-struct type The inline body-lowering path
     // below re-resolves param types, so the context must be set
     // BEFORE any resolveReturnType / resolveParamType call.
     const saved_fc_lazy = self.current_runtime_class;
@@ -3661,7 +3661,7 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
     // (declareFunction's rename path), so search for the stub under that name
     // and promote the body into it. `extern_name_map` only carries an entry
     // when a rename was registered; a bare export / normal define keeps its sx
-    // name (Phase 2.2).
+    // name.
     const search_name = self.extern_name_map.get(name) orelse name;
     const name_id = self.module.types.internString(search_name);
     var func_id: ?FuncId = null;
@@ -3720,7 +3720,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
     self.forming_init_target = null;
     defer self.forming_init_target = saved_forming;
 
-    // objc-defined-class method context for `*Self` substitution (M1.2 A.2b);
+    // objc-defined-class method context for `*Self` substitution ;
     // the resolveReturnType / resolveParamType calls below consult it.
     const saved_fc = self.current_runtime_class;
     defer self.current_runtime_class = saved_fc;
@@ -3754,7 +3754,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
         return;
     }
     func.is_extern = false; // promote from extern stub to real function
-    // `export` defines force external linkage + C ABI (Phase 2, gaps i+ii).
+    // `export` defines force external linkage + C ABI.
     func.linkage = if (isExportedEntryName(name) or fd.extern_export == .export_) .external else .internal;
     if (fd.abi == .c or fd.extern_export == .export_) func.call_conv = .c;
     // Set inst_counter to param count (params occupy refs 0..N-1). IR params
@@ -3835,7 +3835,7 @@ pub fn lowerFunctionBodyInto(self: *Lowering, fd: *const ast.FnDecl, fid: FuncId
 pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, is_imported: bool) void {
     // For sx-defined `#objc_class` methods (qualified `<Class>.<method>`),
     // set `current_runtime_class` so `*Self` substitutions through
-    // `resolveTypeWithBindings` find the state-struct type (M1.2 A.2b).
+    // `resolveTypeWithBindings` find the state-struct type
     // Save+restore — function lowering can re-enter.
     const saved_fc = self.current_runtime_class;
     defer self.current_runtime_class = saved_fc;
@@ -3908,7 +3908,7 @@ pub fn lowerFunction(self: *Lowering, fd: *const ast.FnDecl, name: []const u8, i
     // matches C `static`). isExportedEntryName lists the names the OS
     // loader calls — `main`, Android NativeActivity hooks — which must
     // stay externally visible.
-    // `export` defines force external linkage (Phase 2, gap i) alongside
+    // `export` defines force external linkage alongside
     // the OS-called entry points.
     if (isExportedEntryName(name) or fd.extern_export == .export_) {
         self.builder.currentFunc().linkage = .external;

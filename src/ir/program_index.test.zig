@@ -45,7 +45,7 @@ test "ProgramIndex borrows module_scopes / import_graph without owning them" {
     try std.testing.expectEqual(@as(u32, 0), idx.module_scopes.?.count());
 }
 
-test "ProgramIndex declaration maps round-trip (A1.1b)" {
+test "ProgramIndex declaration maps round-trip" {
     var idx = ProgramIndex.init(std.testing.allocator);
     defer idx.deinit();
 
@@ -501,7 +501,7 @@ test "evalConstFloatExpr folds comptime float expressions, halts on runtime leav
 
     // A NON-INTEGRAL float-const leaf (`F : f64 : 2.5`) resolves through the
     // float-leaf lookup — the int folder cannot fold it (2.5 is not integral), so
-    // an expression like `F + 0.25` (= 2.75) is now recognised as a compile-time
+    // an expression like `F + 0.25` (= 2.75) is recognised as a compile-time
     // float and rejected by the narrowing rule instead of silently truncating;
     // `F + 1.5` (= 4.0) is integral and folds. This completes the evaluator for
     // float-const-leaf expressions.
@@ -557,7 +557,7 @@ test "evalConstFloatExpr folds comptime float expressions, halts on runtime leav
     try std.testing.expect(eval(&divz, ctx) == null);
 }
 
-test "a backtick raw-shadow receiver is a field read, not a numeric-limit fold (F0.11-7)" {
+test "a backtick raw-shadow receiver is a field read, not a numeric-limit fold" {
     const evalf = pi.evalConstFloatExpr;
     const evali = pi.evalConstIntExpr;
     const ctx = DimCtx{};

@@ -194,7 +194,7 @@ PinTarget :: enum { any; main; on_thread; }
 
 SpawnOpts :: struct {
     pin: PinTarget = .any;
-    // Cancellation back-ref (Phase 3 — true cancellation). A pointer to the
+    // Cancellation back-ref (true cancellation). A pointer to the
     // spawned task's cancel flag (the `Future.canceled` `Atomic(bool)`, erased to
     // `*void` so this foundation type stays free of the atomic dependency). A
     // suspending impl stashes it on the spawned execution context so its

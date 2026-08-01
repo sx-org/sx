@@ -1,6 +1,6 @@
 // Parameterized protocol impl lookup and thunk dispatch retain the concrete
 // nominal TypeId when namespace modules define same-display-name structs.
-// Regression (issue 0320 adversarial review).
+// Regression (issue 0320).
 
 #import "0887-protocols-parameterized-nominal-impl-identity/contract.sx";
 a :: #import "0887-protocols-parameterized-nominal-impl-identity/a.sx";

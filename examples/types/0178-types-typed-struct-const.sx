@@ -1,7 +1,7 @@
 // A TYPED struct constant ('W : Color : Color{ ...}') registers like the
 // untyped form ('WHITE :: Color{ ...}') — value reads, field reads, and
-// independent copies. (Both shapes keep inline re-lowering semantics
-// until PLAN-CONST-AGG step 4 migrates them to const globals.)
+// independent copies. (Both shapes carry inline re-lowering semantics rather
+// than const-global storage.)
 
 #import "modules/std.sx";
 

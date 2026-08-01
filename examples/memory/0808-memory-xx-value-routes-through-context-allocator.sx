@@ -1,4 +1,4 @@
-// Phase 1.1 — the compiler-internal heap-copy that backs `xx <rvalue>`
+// The compiler-internal heap-copy that backs `xx <rvalue>`
 // protocol erasure must dispatch through `context.allocator`, not call
 // libc malloc directly. So when a `push .{ allocator = tracer }`
 // block is active, a `xx StructLiteral{}` inside it MUST be allocated

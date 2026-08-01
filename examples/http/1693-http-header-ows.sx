@@ -1,14 +1,13 @@
 // std.http — header-value OWS handling in find_header (RFC 9112 §5.1).
 //
-// Q1.7: a field value is `OWS field-value OWS` — optional whitespace is
+// A field value is `OWS field-value OWS` — optional whitespace is
 // SP *or* HTAB on both sides, and it is not part of the value. find_header
 // trims BOTH sides; skipping only leading spaces (not tabs) and leaving
 // trailing OWS breaks legal requests wherever a header value is compared:
 //   • `Content-Length:\t5`      → the tab reached the digit parser → 400;
 //   • `Transfer-Encoding: chunked ` (trailing SP) → not "chunked" → 501;
-//   • `Expect: 100-continue `   → not "100-continue" → 417 (the Q1.3
-//     adversarial review's MED finding — a served request became a hard
-//     reject);
+//   • `Expect: 100-continue `   → not "100-continue" → 417 (a request
+//     that should be served becomes a hard reject);
 // Interior whitespace is NOT OWS and must be preserved verbatim.
 //
 // The handler echoes `[<X-Echo value>]` so trimming is byte-observable.
@@ -151,8 +150,7 @@ main :: () -> i32 {
         }
 
         // (d2) a PRESENT-but-empty Content-Length (value all OWS) is not
-        // "0" — it must 400, never serve with the payload left buffered
-        // (Q1.6/Q1.7 adversarial review MED)
+        // "0" — it must 400, never serve with the payload left buffered.
         r = staged(*srv,
             "POST / HTTP/1.1\r\nHost: t\r\nContent-Length: \t \r\nConnection: close\r\n\r\nhello",
             "", "", rbuf, cap);

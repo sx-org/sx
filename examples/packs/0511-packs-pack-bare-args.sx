@@ -1,4 +1,4 @@
-// Step 2.7 — forwarding a variadic to a `[]any` helper.
+// Forwarding a variadic to a `[]any` helper.
 //
 // A comptime pack `..$args` is comptime-only (Decision 1): `args` bare is NOT a
 // runtime value, so `log_count(args)` on a pack is an error (see the

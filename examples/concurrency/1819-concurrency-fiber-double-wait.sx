@@ -1,9 +1,9 @@
 // A `Future` allows ONE awaiter — a second concurrent `await` on the same pending
 // future would overwrite the single `park` slot, and completion would wake only
 // the second, stranding the first forever. Regression (B1.4a review, P1-c): the
-// guard aborts loudly instead of silently deadlocking. Now over the unified
-// `context.io` async layer (PLAN-IO-UNIFY Phase 5 — the bespoke `Task`/`wait` is
-// retired).
+// guard aborts loudly instead of silently deadlocking. It runs over the
+// unified `context.io` async layer.
+//
 //
 // aborts (exit 134) after the diagnostic — aarch64-macOS-pinned.
 #import "modules/std.sx";

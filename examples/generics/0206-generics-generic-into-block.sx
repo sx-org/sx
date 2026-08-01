@@ -1,4 +1,4 @@
-// FFI plan step 5.2 — generic `Into(Block) for Closure(..$args) ->
+// Generic `Into(Block) for Closure(..$args) ->
 // $R` impl. One impl in stdlib covers every closure shape; the
 // compiler monomorphises the impl body per call shape and emits a
 // dedicated `__invoke` `abi(.c)` trampoline + Block literal
@@ -6,7 +6,7 @@
 //
 // This test exercises a closure shape (`Closure(i64, i64) -> void`)
 // that has NO hand-rolled `Into(Block)` impl in
-// `library/modules/ffi/objc_block.sx`. Before step 5.2 lands,
+// `library/modules/ffi/objc_block.sx`. Without the generic impl,
 // `xx cl : Block` errors out with the "no Into(Block) for
 // cl_i64_i64__void" focused diagnostic. After the generic impl
 // lands, the same call resolves through the pack-shaped impl and

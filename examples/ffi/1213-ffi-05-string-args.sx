@@ -1,4 +1,4 @@
-// Phase 0 baseline (PLAN-FFI.md step 0.5): the three shapes that
+// The three shapes that
 // actually appear at the sx ↔ C boundary today:
 //
 //   1. Null-terminated `[:0]u8`  — passed by `.ptr` to a `const char *`.

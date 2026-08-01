@@ -6,14 +6,14 @@
 // and the pointer-to-slice `*[]T`; `*T` converts implicitly to `[*]T` when
 // buffer indexing is intended.
 //
-// Regression (issue 0155): `pc[0]` on a `*i64` panicked the compiler at LLVM
-// emission ("unresolved type reached LLVM emission", exit 134) instead of
-// diagnosing. The read path was guarded under issue 0183 (see
-// 1203-diagnostics-index-non-indexable.sx); the WRITE, ADDRESS-OF, and
-// L-VALUE-POINTER (`lowerExprAsPtr`) paths still emitted an `index_gep` typed
-// `ptrTo(.unresolved)` and kept panicking. All four now diagnose cleanly
-// (exit 1). Legit lvalue-through-index shapes (`w.arr[i].a = v`,
-// `ps_arr[i].a = v` for `*[N]S`, `mp[i].a = v` for `[*]S`) are unaffected.
+// Regression (issue 0155): undiagnosed, `pc[0]` on a `*i64` panics the
+// compiler at LLVM emission ("unresolved type reached LLVM emission", exit
+// 134). The WRITE, ADDRESS-OF, and L-VALUE-POINTER (`lowerExprAsPtr`) paths
+// each emit an `index_gep` typed `ptrTo(.unresolved)` without the guard; the
+// read path shares the guard in 1203-diagnostics-index-non-indexable.sx. All
+// four diagnose cleanly (exit 1). Legit lvalue-through-index shapes
+// (`w.arr[i].a = v`, `ps_arr[i].a = v` for `*[N]S`, `mp[i].a = v` for
+// `[*]S`) are unaffected.
 #import "modules/std.sx";
 S :: struct { a: i64; }
 main :: () -> i64 {

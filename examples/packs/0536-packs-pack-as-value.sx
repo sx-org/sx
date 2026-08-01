@@ -1,4 +1,4 @@
-// Step 2.7 — pack-as-value diagnostics. A pack is comptime-only (Decision 1),
+// Pack-as-value diagnostics. A pack is comptime-only (Decision 1),
 // so using the bare pack name where a runtime value is required is an error,
 // with a context-tailored suggestion. All four categories below fire (the
 // functions are monomorphized when called from main).

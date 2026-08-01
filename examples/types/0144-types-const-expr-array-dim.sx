@@ -5,10 +5,10 @@
 // through a type alias (`A :: [M + 1]T`), and for scalar, string (slice/pointer
 // class), and struct element types.
 //
-// Regression (issue 0083): the shared array-dimension resolver only looked up a
-// bare named const or a literal; any const-foldable EXPRESSION dimension was
-// rejected as "not a compile-time integer constant". It now routes the
-// dimension through the shared comptime integer-expression evaluator
+// Regression (issue 0083): an array-dimension resolver that looks up only a
+// bare named const or a literal rejects any const-foldable EXPRESSION
+// dimension as "not a compile-time integer constant". It routes the dimension
+// through the shared comptime integer-expression evaluator
 // (`program_index.evalConstIntExpr`), so integer `+ - * /` and parenthesisation
 // over literals and module consts fold on BOTH the stateful (direct) and
 // stateless (alias) paths — they share the one evaluator and cannot diverge.

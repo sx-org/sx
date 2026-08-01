@@ -3,11 +3,11 @@
 // matches through the deref"), payload captures bind the variant payload, and
 // the match RESULT TYPE is inferred from the arms even when every arm's value
 // depends on its capture.
-// Regression (issue 0226): the result-type inference typed capture-dependent
-// arms against the RAW pointer subject, leaked `.unresolved` as the match
-// expression's type, and panicked at LLVM emission ("unresolved type reached
-// LLVM emission" via declareFunction). Statement position and value subjects
-// worked only when some arm's type was inferable without the capture.
+// Regression (issue 0226): result-type inference that types capture-dependent
+// arms against the RAW pointer subject leaks `.unresolved` as the match
+// expression's type and panics at LLVM emission ("unresolved type reached
+// LLVM emission" via declareFunction) — statement position and value subjects
+// survive it only when some arm's type is inferable without the capture.
 #import "modules/std.sx";
 
 Shape :: enum { circle: i64; rect: i64; }

@@ -1,9 +1,7 @@
-// Phase 3 step 3.0: one-arg selector mangling. `addObject(o)` derives
+// One-arg selector mangling. `addObject(o)` derives
 // `addObject:` — the sx method name becomes the keyword, a single
 // trailing `:` for the single arg. Selector arity (count of `:`) must
 // equal sx-side arity excluding self.
-//
-// Pre-3.0: bails at lower.zig with the Phase 3/4 diagnostic.
 #import "modules/std.sx";
 #import "modules/build.sx";
 #import "modules/ffi/objc.sx";

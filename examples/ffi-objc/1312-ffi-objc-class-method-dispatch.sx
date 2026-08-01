@@ -1,13 +1,13 @@
-// M1.2 A.4b.iii — instance-method dispatch through the Obj-C
-// runtime. Each instance method now gets a C-ABI IMP trampoline
+// Instance-method dispatch through the Obj-C
+// runtime. Each instance method gets a C-ABI IMP trampoline
 // registered via 'class_addMethod' at class-pair init time. The
 // runtime can dispatch 'objc_msgSend(obj, sel)' to the
 // trampoline, which reads the '__sx_state' ivar to find the
 // state struct and forwards to the sx body.
 //
 // End-to-end (verifies registration only — sx-side
-// 'obj.bump()' calls still bail at the M1.2 A.7 dispatch gate
-// until +alloc/-dealloc (A.5/A.6) land too):
+// 'obj.bump()' calls bail at the dispatch gate, which opens once
+// +alloc/-dealloc are wired):
 //   1. class_getMethodImplementation(SxFoo, sel_registerName("bump"))
 //      returns a non-null IMP — proves the trampoline is wired.
 

@@ -1,5 +1,5 @@
 // Interning a large (~64KB) array type and using `{}` formatting elsewhere must
-// NOT scalarize into an O(N) SelectionDAG (which crashed `sx build` / made
+// NOT scalarize into an O(N) SelectionDAG (which crashes `sx build` and makes
 // `sx run` take ~12s). The array any-unbox formats via a SLICE VIEW of its
 // storage — no whole-array load.
 //

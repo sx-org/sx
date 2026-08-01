@@ -3,10 +3,10 @@
 // `[]` wrapper (and the `*Self` receiver), so a correct `[]T` impl is
 // accepted and dispatched — not falsely rejected as `[]Self` ≠ `[]T`.
 //
-// Regression (issue 0178 adversarial review): the signature gate's
-// `Self`-substitution originally only reached the bare leaf and a
-// one-level pointer/optional wrapper, so `[]Self` resolved to a real
-// slice named `[]Self` and a correct `[]T` impl was WRONGLY flagged.
+// Regression (issue 0178): a `Self`-substitution that reaches only the
+// bare leaf and a one-level pointer/optional wrapper resolves `[]Self`
+// to a real slice named `[]Self`, so a correct `[]T` impl is WRONGLY
+// flagged.
 #import "modules/std.sx";
 
 P :: protocol vtable {

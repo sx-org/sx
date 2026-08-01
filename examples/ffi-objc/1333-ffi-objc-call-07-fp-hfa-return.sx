@@ -1,13 +1,10 @@
-// Phase 1 step 1.9 (PLAN-FFI.md): all-double HFA returns through
-// `#objc_call`. 4×f64 = 32 B, stays in v0..v3 on AAPCS64 and
-// xmm0..xmm3 on SysV AMD64 — same shape as UIEdgeInsets / NSRect /
-// CGRect, the f32-vs-f64 landmine that bit us when we first wrote
-// `safeAreaInsets` in uikit.sx.
+// All-double HFA returns through `#objc_call`. 4×f64 = 32 B, staying in
+// v0..v3 on AAPCS64 and xmm0..xmm3 on SysV AMD64 — the UIEdgeInsets /
+// NSRect / CGRect shape, where an f32-vs-f64 slip mis-reads every field.
 //
-// Nominally covered by ffi-objc-call-05's nil-recv NSRect case,
-// but that only checks that zeros come back. Here we install a
-// real IMP that returns specific non-zero values and verify each
-// field comes through the float-register file intact.
+// ffi-objc-call-05's nil-recv NSRect case only checks that zeros come
+// back. This installs a real IMP returning specific non-zero values and
+// verifies each field comes through the float-register file intact.
 
 #import "modules/std.sx";
 #import "modules/build.sx";

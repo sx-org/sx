@@ -63,7 +63,7 @@ pub const BuildConfig = struct {
 
     /// C companion object files (`#import c { #source ... }`, compiled to `.o`)
     /// and `#library` link names, forwarded by main.zig before the post-link
-    /// callback so the sx-driven build pipeline (Phase 5) can read them via the
+    /// callback so the sx-driven build pipeline can read them via the
     /// `c_object_paths()` / `link_libraries()` compiler primitives and pass them
     /// to `link`. Slices reference compiler-owned memory that outlives the
     /// callback.
@@ -121,7 +121,7 @@ pub const BuildConfig = struct {
 /// but can't perform itself (it must not depend on the driver: `core`/`main`/
 /// `target`). main.zig builds the concrete `ctx` + functions and points
 /// `BuildConfig.build_hooks` at it before invoking the post-link callback. The
-/// build callback is NOT fallible (Phase 5 decision) — a failed action returns an
+/// build callback is NOT fallible — a failed action returns an
 /// error here and the VM surfaces it as a hard build error.
 pub const BuildHooks = struct {
     ctx: *anyopaque,

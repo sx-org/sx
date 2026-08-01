@@ -4,7 +4,7 @@
 // 2-flat-hop `c.Box` is two fields (size 16). Selecting `c.Box.dbl` (a `{i64,i64}`
 // by-value receiver) for a `b.Box` instance (`{i64}`) mismatches the layout.
 //
-// Regression (Phase E4 finding #1, by-value receiver variant): before
+// Regression (by-value receiver variant): before
 // body-author ≡ layout-author, the instance method resolved by bare template name
 // and selected `c.Box.dbl`, whose by-value receiver signature did not match the
 // `b.Box` instance layout (an LLVM verify failure / wrong body). With the fix it

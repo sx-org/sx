@@ -14,7 +14,7 @@
 // POSIX file descriptor. Methods are provided for read/write/close;
 // the value is invalid (fd == -1) after `close()`.
 //
-// Scope (Phase 1A): file I/O + directory creation/deletion + path
+// Scope: file I/O + directory creation/deletion + path
 // helpers needed for `.app` bundling. Recursive walkers, `stat`, and
 // the full path module land in subsequent phases.
 // =====================================================================

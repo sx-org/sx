@@ -560,8 +560,8 @@ pub fn compileCToObjects(
 
     // Cross-object duplicate exports are diagnosed HERE, before they
     // surface as an opaque dylib/binary link failure: every `#import c`
-    // unit shares one link namespace (per-unit symbol isolation is
-    // PLAN-C C3.2, deferred). Scan failures are non-fatal — the linker
+    // unit shares one link namespace — there is no per-unit symbol
+    // isolation. Scan failures are non-fatal — the linker
     // remains the backstop.
     var sym_owner = std.StringHashMap(usize).init(allocator);
     defer sym_owner.deinit();

@@ -2,8 +2,8 @@
 #import "modules/ffi/objc.sx";
 
 // A second view of the SAME runtime class under the same sx name,
-// declaring a different method. Pre-0348 the registry raced
-// (last-wins) and one module's calls failed resolution.
+// declaring a different method. A last-wins registry would drop one
+// view, failing that module's calls at resolution.
 Probe :: #objc_class("NSString") extern {
     length :: (self: *Self) -> u64;
 }

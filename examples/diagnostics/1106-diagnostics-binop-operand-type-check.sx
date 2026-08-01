@@ -3,7 +3,7 @@
 // type (here `string`) would lower as `<op> : i64` and either reinterpret
 // the string's bytes (arithmetic / bitwise → garbage) or feed mismatched
 // types to `icmp` (ordering → LLVM verifier failure). All such mismatches
-// are now rejected at compile time:
+// are rejected at compile time:
 //   - arithmetic `+ - * / %`  (numeric / vector / pointer operands)
 //   - ordering   `< <= > >=`  (numeric / enum / pointer operands)
 //   - bitwise    `& | ^`      (integer / enum operands)

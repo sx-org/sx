@@ -1,4 +1,4 @@
-// std.event — the OS-neutral readiness Loop (PLAN-HTTPZ S5).
+// std.event — the OS-neutral readiness Loop.
 //
 // One Loop multiplexes any number of fds without ever blocking on a
 // single one: register interest with an opaque `udata` word, then

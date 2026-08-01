@@ -1,13 +1,13 @@
 #import "modules/std.sx";
 
-// MEM Phase 1.4 regression: an aggregate (struct) returned from a `#run`
+// Regression: an aggregate (struct) returned from a `#run`
 // initializer must serialize correctly into the static binary, not
 // silently collapse to a zero-init constant.
 //
-// Before Phase 1.4 the LLVM `valueToLLVMConst` only handled int/float/bool
-// and dropped everything else into `LLVMConstNull` — so a global like
-// `POINT :: #run make_point();` ended up emitting `{0, 0}` regardless of
-// what the interp computed. Reading POINT.x would give 0, hiding the bug.
+// An LLVM `valueToLLVMConst` that handles int/float/bool only and drops
+// everything else into `LLVMConstNull` emits `{0, 0}` for a global like
+// `POINT :: #run make_point();` regardless of what the interp computed,
+// so reading POINT.x gives 0 and hides the loss.
 //
 // Also exercises type inference at the `NAME :: #run expr;` binding site:
 // without an explicit annotation, the global's type is taken from the

@@ -1,4 +1,4 @@
-// Feature 1 — a pack element exposes ONLY the constraint protocol's interface.
+// A pack element exposes ONLY the constraint protocol's interface.
 // `xs[i].v` reaches a concrete field of IntCell that is not part of `Box`, so
 // it's rejected even though IntCell does have `v` — a pack element is viewed
 // through the protocol, like a constrained generic. (Protocol methods like

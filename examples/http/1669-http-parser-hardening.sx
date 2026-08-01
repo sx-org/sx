@@ -1,4 +1,4 @@
-// std.http parser hardening (PLAN-HTTPZ H1): the request parser rejects
+// std.http parser hardening the request parser rejects
 // malformed / smuggling-shaped requests with the correct HTTP status —
 // overflowing or duplicate Content-Length → 400, Transfer-Encoding → 501,
 // malformed version / control chars → 400, unsupported well-formed

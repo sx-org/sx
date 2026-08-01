@@ -100,7 +100,7 @@ pub fn getSelRegisterNameFid(self: *Lowering) FuncId {
 /// Lower `#objc_call(T)(recv, "sel:", args...)` to:
 ///   %sel = call ptr @sel_registerName(<"sel:">)
 ///   %ret = call <ABI(T)> @objc_msgSend(recv, %sel, args...)
-/// For Phase 1.3 only the (void return, no extra args) form is
+/// For the (void return, no extra args) form is
 /// fully wired. Extra arities + non-void returns will land in
 /// subsequent phase-1 steps.
 pub fn lowerFfiIntrinsicCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall) Ref {
@@ -231,8 +231,8 @@ pub fn lowerJniCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall) Ref {
 /// Lower an `inst.method(args)` call where `inst`'s type is a runtime-class
 /// alias declared by `#jni_class("...") { ... }` (or its parallel forms).
 /// JNI runtimes lower directly to `jni_msg_send` with a descriptor derived
-/// from the method's sx signature; Obj-C / Swift runtimes are deferred to
-/// Phase 3/4 and currently surface a clear diagnostic.
+/// from the method's sx signature; Obj-C / Swift runtimes surface a clear
+/// diagnostic instead.
 pub fn lowerRuntimeMethodCall(
     self: *Lowering,
     fcd: *const ast.RuntimeClassDecl,
@@ -241,7 +241,7 @@ pub fn lowerRuntimeMethodCall(
     method_args: []const Ref,
     span: ast.Span,
 ) Ref {
-    // M2.3 — walk the `#extends` chain when the method isn't
+    // walk the `#extends` chain when the method isn't
     // declared directly on this fcd. The dispatch target stays
     // the original receiver — objc_msgSend's runtime walks the
     // class hierarchy by isa, so we just need to find ANY
@@ -258,15 +258,15 @@ pub fn lowerRuntimeMethodCall(
     };
     const method = found.method;
 
-    // Obj-C instance dispatch (Phase 3 step 3.0 + M1.2 A.7).
+    // Obj-C instance dispatch.
     // `inst.method(args)` on an `#objc_class` / `#objc_protocol`
     // receiver derives a selector from the sx method name (default
     // mangling: split on `_`, each piece becomes a keyword with a
     // trailing `:`; niladic stays verbatim) and lowers to
     // `objc_msg_send`. Both runtime and sx-defined classes flow
     // through the same path — sx-defined classes have their IMPs
-    // registered at module-init (M1.2 A.4b.iii) so `objc_msgSend`
-    // finds them. The Swift runtimes still bail — Phase 4.
+    // registered at module-init so `objc_msgSend`
+    // finds them. The Swift runtimes still bail.
     if (fcd.runtime == .objc_class or fcd.runtime == .objc_protocol) {
         return self.lowerObjcMethodCall(fcd, method, target, method_args, span);
     }
@@ -457,7 +457,7 @@ pub fn lowerObjcMethodCall(
 /// `#objc_protocol` alias. Loads the class object through the
 /// module-scoped cached slot (populated by `objc_getClass` at
 /// module-init) and dispatches `objc_msg_send` with the same
-/// selector mangling as instance methods (Phase 3.0).
+/// selector mangling as instance methods.
 pub fn lowerObjcStaticCall(
     self: *Lowering,
     fcd: *const ast.RuntimeClassDecl,
@@ -500,7 +500,7 @@ pub fn lowerObjcStaticCall(
     const class_slot_ptr = self.builder.emit(.{ .global_addr = class_slot_gid }, self.module.types.ptrTo(vptr_ty));
     const class_obj = self.builder.emit(.{ .load = .{ .operand = class_slot_ptr } }, vptr_ty);
 
-    // M4.0b: intercept `Cls.alloc()` for sx-defined classes — emit the
+    // Intercept `Cls.alloc()` for sx-defined classes — emit the
     // inline alloc-and-init sequence using the caller's `context.allocator`
     // instead of going through `objc_msgSend` (which would land in the
     // +alloc IMP and use `__sx_default_context.allocator`). This honors
@@ -575,7 +575,7 @@ pub fn lowerRuntimeStaticCall(
     method_args: []const Ref,
     span: ast.Span,
 ) Ref {
-    // Obj-C static dispatch (Phase 3 step 3.1). `Cls.static_method(args)`
+    // Obj-C static dispatch. `Cls.static_method(args)`
     // on an `#objc_class` alias loads the class object through a
     // module-scoped cached slot (populated once per module via
     // `objc_getClass`) and dispatches with the derived selector.
@@ -791,25 +791,25 @@ pub fn lowerSuperCall(
 /// order AND have their bodied methods registered into `fn_ast_map`
 /// under qualified names `<ClassName>.<methodName>`. Lazy lowering
 /// then handles the body via the standard path; `*Self` is
-/// substituted to `*<ClassName>State` during body lowering (M1.2 A.2b).
+/// substituted to `*<ClassName>State` during body lowering
 pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDecl) void {
     upsertRuntimeClass(self, fcd.name, fcd);
     if (!fcd.is_extern and fcd.runtime == .objc_class) {
         if (self.module.lookupObjcDefinedClass(fcd.name) == null) {
             self.module.appendObjcDefinedClass(fcd.name, fcd);
-            // M2.3 — resolve the `#extends` alias to the actual
+            // resolve the `#extends` alias to the actual
             // Obj-C runtime class name. `#extends NSObjectBase`
             // where NSObjectBase is aliased to "NSObject" must
             // pass "NSObject" to objc_allocateClassPair, otherwise
             // the runtime's class-hierarchy link is broken and
             // inherited-method dispatch fails.
             self.module.setObjcDefinedClassParent(fcd.name, self.resolveObjcParentName(fcd));
-            // M1.2 A.4b.i: per-class ivar handle global. The class-pair
+            // Per-class ivar handle global. The class-pair
             // init constructor (emit_llvm) populates it via
             // class_getInstanceVariable after the class is registered;
             // IMP trampolines read it to find the __sx_state ivar.
             self.declareObjcDefinedStateIvarGlobal(fcd.name);
-            // M1.2 A.6: per-class class-object global. -dealloc reads
+            // Per-class class-object global. -dealloc reads
             // it to build an `objc_super` struct for `[super dealloc]`
             // dispatch via `objc_msgSendSuper2`.
             self.declareObjcDefinedClassGlobal(fcd.name);
@@ -993,7 +993,7 @@ pub fn declareObjcDefinedClassGlobal(self: *Lowering, class_name: []const u8) vo
 /// function, AND collect per-method registration data (selector
 /// mangling + type encoding + IMP symbol name) into the class's
 /// cache entry so emit_llvm can wire up `class_addMethod` calls
-/// (M1.2 A.4b.iii). Bodyless declarations are skipped — they
+/// Bodyless declarations are skipped — they
 /// reference inherited / external methods, not sx-side bodies.
 pub fn registerObjcDefinedClassMethods(self: *Lowering, fcd: *const ast.RuntimeClassDecl) void {
     // Set current_runtime_class so `*Self` substitutions in

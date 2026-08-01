@@ -298,7 +298,7 @@ pub fn reserveShadowStructSlot(self: *Lowering, sd: *const ast.StructDecl) void 
 }
 
 /// Reserve a GENUINE same-name ENUM shadow author's DISTINCT nominal slot
-/// up-front — the enum twin of `reserveShadowStructSlot` (E6a). The reserved
+/// up-front — the enum twin of `reserveShadowStructSlot`. The reserved
 /// slot's KIND MUST match what `buildEnumInfo` will produce (a payload enum →
 /// `.tagged_union`, a payload-less enum → `.enum`), because `internNamedTypeDecl`
 /// later refreshes the body via `updatePreservingKey`, whose key-stability
@@ -320,7 +320,7 @@ pub fn reserveShadowEnumSlot(self: *Lowering, ed: *const ast.EnumDecl) void {
 }
 
 /// Reserve a GENUINE same-name UNION shadow author's DISTINCT nominal slot
-/// up-front — the union twin of `reserveShadowStructSlot` (E6a).
+/// up-front — the union twin of `reserveShadowStructSlot`.
 pub fn reserveShadowUnionSlot(self: *Lowering, ud: *const ast.UnionDecl) void {
     const table = &self.module.types;
     const decl_key: *const anyopaque = @ptrCast(ud);
@@ -332,7 +332,7 @@ pub fn reserveShadowUnionSlot(self: *Lowering, ud: *const ast.UnionDecl) void {
 }
 
 /// Reserve a GENUINE same-name ERROR-SET shadow author's DISTINCT nominal slot
-/// up-front — the error-set twin of `reserveShadowStructSlot` (E6a). The reserved
+/// up-front — the error-set twin of `reserveShadowStructSlot`. The reserved
 /// slot is an empty `.error_set` (its body — the tag id list — is not part of the
 /// intern key, only name + nominal id), so `internNamedTypeDecl` later fills the
 /// real tags via `updatePreservingKey`. Without this, a local `Foo :: error { ... }`
@@ -400,8 +400,8 @@ const ShadowTypeDecl = union(enum) {
 /// Classify a top-level node as the NAMED type decl it authors — a bare
 /// `struct`/`enum`/`union` node, or a `const_decl` whose value is one — so the
 /// genuine-shadow scan enumerates all three kinds uniformly. Null when the node
-/// is not a struct/enum/union author. The shared infra E6b/E6c extend by adding
-/// their kind here.
+/// is not a struct/enum/union author. A new kind extends it by adding itself
+/// here.
 pub fn topLevelTypeDecl(decl: *const Node) ?ShadowTypeDecl {
     return switch (decl.data) {
         .struct_decl => .{ .@"struct" = &decl.data.struct_decl },
@@ -661,7 +661,7 @@ pub fn qualifiedStructTemplate(self: *Lowering, alias: []const u8, member: []con
 /// module authors NO member named `member` at all. A qualified generic head
 /// `a.Box(..)` whose namespace lacks `Box` must diagnose the missing member —
 /// never silently fall back to the bare last-wins `struct_template_map` (which
-/// would instantiate an unrelated module's same-name `Box`, E4 finding #2).
+/// would instantiate an unrelated module's same-name `Box`).
 /// FALSE when `alias` is not a namespace at all (leave the caller's existing
 /// non-namespace handling), or when the namespace DOES author `member` (a
 /// generic struct → `qualifiedStructTemplate` already selected it; any other
@@ -796,7 +796,7 @@ pub fn aliasedFnDecl(self: *Lowering, cd: *const ast.ConstDecl, from: []const u8
 /// `struct_template_map` already holds — the E4 non-transitive selection for a
 /// bare generic head / alias / static-method head whose visible author (own or
 /// a single 1-hop flat import) is shadowed in the global map by a NON-visible
-/// (≥2-flat-hop) same-name template (finding #1). Exposing the decl (not just a
+/// (≥2-flat-hop) same-name template. Exposing the decl (not just a
 /// rebuilt template) lets a static-method head source-pin the METHOD body too,
 /// not only the type layout. Null — caller uses the global map unchanged
 /// (byte-identical) — when: no source context; the single visible author IS the
@@ -1066,8 +1066,8 @@ pub fn resolveUsingBase(self: *Lowering, base_name: []const u8, authority: ?[]co
     return null;
 }
 
-/// Register a top-level ENUM decl under a per-decl nominal identity (E6a) —
-/// the enum twin of `registerStructDecl`. A GENUINE same-name shadow already
+/// Register a top-level ENUM decl under a per-decl nominal identity — the
+/// enum twin of `registerStructDecl`. A GENUINE same-name shadow already
 /// reserved its DISTINCT slot up-front in `scanDecls` (the first at id 0, the
 /// rest at nonzero ids), so a forward / self / mutual reference to the shadow
 /// name already bound to ITS nominal TypeId via `type_decl_tids`: reuse that
@@ -1091,8 +1091,8 @@ pub fn registerEnumDecl(self: *Lowering, ed: *const ast.EnumDecl) void {
     _ = self.internNamedTypeDecl(decl_key, name_id, info, nominal_id);
 }
 
-/// Register a top-level UNION decl under a per-decl nominal identity (E6a) —
-/// the union twin of `registerEnumDecl` / `registerStructDecl`.
+/// Register a top-level UNION decl under a per-decl nominal identity — the
+/// union twin of `registerEnumDecl` / `registerStructDecl`.
 pub fn registerUnionDecl(self: *Lowering, ud: *const ast.UnionDecl) void {
     const table = &self.module.types;
     const name_id = table.internString(ud.name);

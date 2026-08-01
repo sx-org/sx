@@ -9,7 +9,7 @@ c :: #import "modules/std/c.sx"; // libc write
 // `print`). Sink is stderr (fd 2) so log output stays out of a program's
 // stdout data stream.
 //
-// Note: PLAN-ERR §log sketches a `LEVEL ts msg` line with an ISO-8601
+// Note: a `LEVEL ts msg` line with an ISO-8601
 // UTC timestamp. The timestamp is deferred — it needs a clock binding
 // and would make golden tests time-dependent; the level + message are
 // the load-bearing parts. Add `ts` once a pinnable clock lands.

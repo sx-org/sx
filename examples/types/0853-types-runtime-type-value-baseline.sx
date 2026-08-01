@@ -1,7 +1,7 @@
 // 1a-S1 BASELINE — the dynamic reflection paths that work TODAY with a
 // runtime `Type` value (an i64 tag at runtime, spec §Type): type_of on
 // values and any, type_name / is_unsigned through locals, params, and
-// []Type elements. Pinned BEFORE runtime reflection (PLAN-RUNTIME-
+// []Type elements. Pinned independently of runtime reflection (
 // REFLECTION 1a) so the S2/S3 boundary move is visible against a green
 // baseline.
 #import "modules/std.sx";

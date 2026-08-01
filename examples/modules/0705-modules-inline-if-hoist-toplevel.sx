@@ -1,6 +1,6 @@
 // Regression: top-level `inline if OS == .X { ... }` body decls get
 // hoisted to the actual top level. Before this commit, the `if_expr`
-// landed in `root.decls` but `scanDecls` had no `.if_expr` arm, so the
+// lands in `root.decls`, and a `scanDecls` with no `.if_expr` arm leaves the
 // body was silently dropped — chess's
 // `inline if OS == .android { SxApp :: #jni_main #jni_class(...) { ... } }`
 // was invisible to the compiler. Fix:

@@ -1,4 +1,4 @@
-// Stream B1 (fibers) B1.5 — the M:1 colorblind async stack, end-to-end.
+// The M:1 colorblind async stack, end-to-end.
 //
 // One program exercises the whole pure-sx runtime together: the M:1 scheduler
 // (B1.5a), the suspending fiber-task async layer `go`/`wait` (B1.4a), and the

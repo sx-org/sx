@@ -1,5 +1,5 @@
 // Atomic($T) read-modify-write: fetch_add/sub/and/or/xor/min/max → LLVM atomicrmw.
-// Each returns the OLD value. Stream A (atomics) A.1. Single-thread.
+// Each returns the OLD value. Single-thread.
 // Also covers signed min/max with NEGATIVES at BOTH comptime (#run) and runtime —
 // they must agree — a comptime unsigned compare would diverge from runtime.
 #import "modules/std.sx";

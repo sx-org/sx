@@ -1,7 +1,7 @@
 // std.thread — OS threads, Mutex/Cond, and a bounded worker Pool over
-// pthreads (PLAN-HTTPZ S6).
+// pthreads.
 //
-// THE RE-ENTRY CONTRACT (pinned by examples/1636): a thread entry is a
+// THE RE-ENTRY CONTRACT (pinned by examples/1636): a thread entry is an
 // `abi(.c)` function — it has NO implicit context — and enters
 // the sx world by fabricating one: `push .{ allocator = gpa }`
 // around the default-conv code it runs. Pool workers do exactly that,
@@ -18,7 +18,7 @@
 // initialize IN PLACE (`m.setup()`) and Pool lives behind a pointer
 // (`Pool.create`), never by-value copy.
 //
-// PTHREAD STRUCT SIZES (PLAN-HTTPZ C3b): `MutexBuf`/`CondBuf` below are sized
+// PTHREAD STRUCT SIZES `MutexBuf`/`CondBuf` below are sized
 // to the SAFE MAXIMUM across every supported target, so no per-OS branch is
 // needed — a single layout is correct everywhere. `pthread_mutex_init` (and the
 // cond/lock ops) only ever touch `sizeof(pthread_mutex_t)` bytes, so an OVER-

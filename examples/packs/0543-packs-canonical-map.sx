@@ -1,4 +1,4 @@
-// Phase 6 — the canonical heterogeneous `map`, end to end. A pack-fn whose
+// The canonical heterogeneous `map`, end to end. A pack-fn whose
 // return type `$R` is inferred from the mapper's closure return:
 //   - `mapper: Closure(..sources.T) -> $R` types the lambda's params from the
 //     projected pack element types, and its body (`a + b`) drives `$R`.

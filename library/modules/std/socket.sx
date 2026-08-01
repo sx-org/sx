@@ -1,4 +1,4 @@
-// POSIX socket module — per-OS (PLAN-HTTPZ C3a).
+// POSIX socket module — per-OS.
 //
 // The sockaddr_in layout, the SOL_SOCKET / SO_REUSEADDR option codes, the
 // fcntl O_NONBLOCK bit, the errno values, and the errno-slot symbol all differ
@@ -9,7 +9,7 @@
 // NEITHER block, so
 // `SockAddr` / `O_NONBLOCK` / `errno_slot` / … stay undefined and the first use
 // is a loud compile error — never a silent darwin-default fallback (CLAUDE.md
-// REJECTED PATTERNS / PLAN-HTTPZ C3 decision).
+// REJECTED PATTERNS).
 //
 // VALIDATION: the darwin path runs on the macOS dev host; the linux path is
 // IR-locked cross-target by examples (the `.build` `target` sidecar) and
@@ -475,7 +475,7 @@ inline if OS == .macos or OS == .ios {
     }
 }
 
-// ── nonblocking I/O (PLAN-HTTPZ S2) ──────────────────────────────────
+// ── nonblocking I/O  ──────────────────────────────────
 // Typed wrappers over the readiness-loop syscall patterns: callers see
 // WouldBlock / Closed / Fault, never a raw -1/errno pair. EINTR is
 // retried internally — a readiness loop has nothing useful to do with

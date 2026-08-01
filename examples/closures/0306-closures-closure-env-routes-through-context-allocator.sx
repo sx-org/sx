@@ -1,4 +1,4 @@
-// Phase 1.3 — the closure env-buffer heap-copy in `lowerLambda` must
+// The closure env-buffer heap-copy in `lowerLambda` must
 // dispatch through `context.allocator`, not `.heap_alloc` directly.
 // So when a `push .{ allocator = tracer }` block is active, a
 // capturing closure created inside it MUST allocate its env through

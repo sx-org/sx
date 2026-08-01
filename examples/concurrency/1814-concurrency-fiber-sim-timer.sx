@@ -1,4 +1,4 @@
-// Stream B1 (fibers) B1.4b — deterministic VIRTUAL-TIME timer scheduling (the
+// Deterministic VIRTUAL-TIME timer scheduling (the
 // KEYSTONE), in pure sx over the M:1 scheduler. A fiber `sleep(ms)`s in
 // SIMULATED time; the scheduler wakes fibers in DEADLINE order, advancing a
 // virtual clock that moves only when the ready queue drains and the earliest

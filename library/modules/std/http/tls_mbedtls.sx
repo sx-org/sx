@@ -269,7 +269,7 @@ TlsServer :: struct {
         }
         // Replace-on-repeat: the config now points at the NEW list. The old
         // one is RETIRED, not freed — a live session that negotiated against
-        // it still points into its strings (review P2); deinit reclaims all.
+        // it still points into its strings; deinit reclaims all.
         if self.alpn_vec != null {
             self.alpn_old.append(.{ vec = self.alpn_vec, n = self.alpn_n }, self.a);
         }

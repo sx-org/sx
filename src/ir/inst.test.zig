@@ -50,7 +50,7 @@ test "block creation" {
     try std.testing.expectEqual(@as(usize, 2), block.insts.items.len);
 }
 
-test "inline_asm op shape (ASM stream Phase C.0)" {
+test "inline_asm op shape" {
     // out_value (yields the value, operand = .none) + a named-less input,
     // plus two clobbers; result rides on Inst.ty.
     const operands = [_]InlineAsm.AsmOperand{

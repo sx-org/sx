@@ -1,4 +1,4 @@
-// Stream B1 (fibers) — `Scheduler.deinit` releases the scheduler's owned heap
+// `Scheduler.deinit` releases the scheduler's owned heap
 // + fd resources, closing the documented bounded leaks (kq fd / List backings).
 // Verified by a tracking `GPA`: deinit drives the live allocation count DOWN,
 // and resets the kqueue fd to -1.
@@ -12,7 +12,7 @@
 // List backings, and CLOSES the kqueue fd (resetting `kq` to -1). The Fibers
 // were already reaped during `run()`. (The unified `context.io.async` layer's
 // Futures are NOT scheduler-tracked — they leak with the closure-env residual
-// below; the bespoke `go`/`Task`/`task_allocs` path was retired in Phase 5.)
+// below.)
 //
 // WHAT IT PROVES (the contract; numbers below are the snapshot):
 //   - `freed by deinit: N` — live allocations reclaimed by `deinit` (> 0).

@@ -1,10 +1,10 @@
-// Inferred-set widening rejection (ERR step E1.4b). When a named caller
-// (`-> !A`) `try`s a bare-`!` callee, the callee's WHOLE-PROGRAM-CONVERGED
-// inferred set must be a subset of A. Before the SCC pass this was a
-// false-negative (the bare-`!` placeholder was empty, so the check trivially
-// passed); now the converged tags are checked. `deep`'s converged set is
-// {Foo} (raised transitively through `via`), which is not in A = {Bar}.
-// The positive case lives in `examples/223-inferred-error-sets.sx`.
+// Inferred-set widening rejection. When a named caller (`-> !A`) `try`s a
+// bare-`!` callee, the callee's WHOLE-PROGRAM-CONVERGED inferred set must
+// be a subset of A. The check reads the SCC-converged tags: an empty
+// bare-`!` placeholder would pass it trivially as a false negative.
+// `deep`'s converged set is {Foo} (raised transitively through `via`),
+// which is not in A = {Bar}. The positive case lives in
+// `examples/223-inferred-error-sets.sx`.
 
 #import "modules/std.sx";
 

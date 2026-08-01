@@ -769,8 +769,8 @@ pub const Parser = struct {
                 } });
             }
             // Empty parens `()` with no `->` is the void/unit type:
-            // `a :: () -> () { }` is equivalent to `-> void`. (`() -> R` was the
-            // zero-param function type handled by the arrow branch above.)
+            // `a :: () -> () { }` is equivalent to `-> void`. (`() -> R` is the
+            // zero-param function type, handled by the arrow branch above.)
             if (param_types.items.len == 0) {
                 return try self.createNode(start, .{ .type_expr = .{ .name = "void" } });
             }
@@ -1571,11 +1571,10 @@ pub const Parser = struct {
 
             // Every protocol method must declare its receiver EXPLICITLY as the
             // first parameter — `self: *Self` (or `self: Self`) — matching how
-            // `impl` methods and ordinary methods are written. This removes the
-            // old implicit-receiver ambiguity (was the first listed param the
-            // receiver, or an extra arg?). The receiver is validated and then
-            // stripped here, so downstream lowering sees only the EXTRA-arg
-            // params, exactly as it did under the implicit form.
+            // `impl` methods and ordinary methods are written, so no listed
+            // param is ambiguous between receiver and extra arg. The receiver
+            // is validated and then stripped here, so downstream lowering sees
+            // only the EXTRA-arg params.
             if (param_names.items.len == 0 or !std.mem.eql(u8, param_names.items[0], "self")) {
                 return self.fail("protocol method must declare its receiver as the first parameter: `self: *Self` (or `self: Self`)");
             }
@@ -1881,7 +1880,7 @@ pub const Parser = struct {
                 self.advance(); // consume `:`
                 const field_type = try self.parseTypeExpr();
 
-                // M2.2 — optional `#property[(modifier, modifier, ...)]`
+                // Optional `#property[(modifier, modifier, ...)]`
                 // directive after the field type. Synthesizes Obj-C
                 // getter/setter dispatch at access sites.
                 var is_property = false;
@@ -1903,8 +1902,7 @@ pub const Parser = struct {
                             self.advance();
                             // Optional argument: getter("name") / setter("name")
                             // — parsed but stored as part of the modifier string
-                            // for now (M2.2 first pass; full attribute handling
-                            // arrives with M4 ARC wiring).
+                            // — the ARC wiring does not read it.
                             if (self.current.tag == .l_paren) {
                                 self.advance();
                                 if (self.current.tag != .string_literal) {
@@ -1931,10 +1929,10 @@ pub const Parser = struct {
 
             try self.expect(.colon_colon);
 
-            // M2.1(a) — class-level constant `name :: Type = expr;` inside
+            // Class-level constant `name :: Type = expr;` inside
             // a `#objc_class` block. Reframed as a synthesized class method
             // with an expression body (`name :: () -> Type => expr;`) so
-            // the rest of the M1.2 class-synthesis pipeline picks it up:
+            // the class-synthesis pipeline picks it up:
             // a class-method IMP is emitted and registered on the metaclass.
             // Apple's runtime calls the IMP from `[Cls foo]` — there's no
             // runtime-level distinction between a class-level constant and
@@ -2022,7 +2020,7 @@ pub const Parser = struct {
             }
 
             // Optional `#selector("explicit:string")` — explicit Obj-C selector override
-            // (Phase 3.2). Same slot as the JNI descriptor; they're not mutually
+            // Same slot as the JNI descriptor; they're not mutually
             // exclusive at parse time though they belong to different runtimes.
             var sel_override: ?[]const u8 = null;
             if (self.current.tag == .hash_selector) {
@@ -2040,7 +2038,7 @@ pub const Parser = struct {
             // Method body is optional: `;` → declaration (extern or inherited
             // method we just want to call); `{ ... }` → sx-side block body
             // for sx-defined classes; `=> expr;` → expression-body form
-            // (M1.0), lowered as a single-statement block holding `expr`.
+            // Lowered as a single-statement block holding `expr`.
             var body_node: ?*Node = null;
             if (self.current.tag == .l_brace) {
                 // A runtime-class method body's declarations are locals.
@@ -3939,7 +3937,7 @@ pub const Parser = struct {
 
                 const first = try self.parseExpr();
 
-                // A top-level comma was a tuple; now it is an error.
+                // A top-level comma is an error — tuples need the annotated form.
                 if (self.current.tag == .comma) {
                     return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
@@ -4324,7 +4322,6 @@ pub const Parser = struct {
         }
         self.in_for_header = saved_hdr;
 
-        // Migration aid for the pre-multi-iterable syntax.
         if (self.current.tag == .colon) {
             return self.fail("for-loop syntax: the ':' before the capture was removed — write `for xs (x) { }` (index via `for xs, 0.. (x, i)`)");
         }
@@ -5975,8 +5972,8 @@ test "parse minimal main" {
 }
 
 test "parseOptionalExternExport recognizes linkage keywords (unconsumed)" {
-    // Phase 0.1 plumbing: the helper exists and maps the keywords, but no
-    // decl path calls it yet (wired in Phase 1.0). Drive it directly.
+    // The helper maps the keywords; no decl path calls it, so drive it
+    // directly.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     {
@@ -5995,7 +5992,7 @@ test "parseOptionalExternExport recognizes linkage keywords (unconsumed)" {
 
 test "extern/export AST fields default to absent (unconsumed)" {
     // FnDecl.extern_export defaults to .none on a normally-parsed function;
-    // the fn-decl path does not consume the modifier until Phase 1.0.
+    // the fn-decl path does not consume the modifier.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () {}");
@@ -6004,7 +6001,7 @@ test "extern/export AST fields default to absent (unconsumed)" {
     try std.testing.expectEqual(ast.ExternExportModifier.none, fd.extern_export);
 
     // VarDecl.is_extern / extern_name default to absent (no var-decl path
-    // consumes them until Phase 1.2). A struct literal locks field presence +
+    // consumes them). A struct literal locks field presence +
     // defaults without depending on a top-level var form.
     const vd: ast.VarDecl = .{
         .name = "g",
@@ -6486,7 +6483,7 @@ test "parse multi-value named failable `-> (A, B, !Foo)`" {
     try std.testing.expectEqualStrings("ParseErr", fields[2].data.error_type_expr.name.?);
 }
 
-test "parse legacy bare failable `-> T !` is rejected" {
+test "parse bare failable `-> T !` is rejected" {
     const source = "f :: () -> i32 ! { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -6494,7 +6491,7 @@ test "parse legacy bare failable `-> T !` is rejected" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "parse old bare-paren failable `-> (!, i32)` is rejected" {
+test "parse bare-paren failable `-> (!, i32)` is rejected" {
     const source = "f :: () -> (!, i32) { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -6502,7 +6499,7 @@ test "parse old bare-paren failable `-> (!, i32)` is rejected" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "parse old bare-paren failable `-> (i32, !, i64)` is rejected" {
+test "parse bare-paren failable `-> (i32, !, i64)` is rejected" {
     const source = "f :: () -> (i32, !, i64) { 0; }";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -6615,7 +6612,7 @@ test "S4.1 postfix cast binds tighter than unary minus: -x.(i8)" {
     try std.testing.expect(v.data.unary_op.operand.data == .postfix_cast);
 }
 
-test "E4 postfix cast: '.(P, alloc)' parses with the allocator argument; a third element is an error" {
+test "postfix cast: '.(P, alloc)' parses with the allocator argument; a third element is an error" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := x.(P, alloc); }");
@@ -6633,7 +6630,7 @@ test "S4.2c optional-chained cast parses: x?.(i64)" {
     try e02ExpectPrints(arena.allocator(), v, "x?.(i64)");
 }
 
-test "E0.2 try binds tighter than or: try foo() or try boo()" {
+test "try binds tighter than or: try foo() or try boo()" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := try foo() or try boo(); }");
@@ -6643,7 +6640,7 @@ test "E0.2 try binds tighter than or: try foo() or try boo()" {
     try std.testing.expect(v.data.binary_op.rhs.data == .try_expr);
 }
 
-test "E0.2 or is left-associative: a or b or c => (a or b) or c" {
+test "or is left-associative: a or b or c => (a or b) or c" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := try a() or try b() or try c(); }");
@@ -6654,7 +6651,7 @@ test "E0.2 or is left-associative: a or b or c => (a or b) or c" {
     try std.testing.expect(v.data.binary_op.rhs.data == .try_expr);
 }
 
-test "E0.2 try prefix stacks under xx: xx try foo()" {
+test "try prefix stacks under xx: xx try foo()" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := xx try foo(); }");
@@ -6662,7 +6659,7 @@ test "E0.2 try prefix stacks under xx: xx try foo()" {
     try std.testing.expect(v.data.unary_op.operand.data == .try_expr);
 }
 
-test "E0.2 catch no binding, braced body" {
+test "catch no binding, braced body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch { }; }");
@@ -6672,7 +6669,7 @@ test "E0.2 catch no binding, braced body" {
     try std.testing.expect(v.data.catch_expr.body.data == .block);
 }
 
-test "E0.2 catch with binding, block body" {
+test "catch with binding, block body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch (e) { bar(); }; }");
@@ -6681,7 +6678,7 @@ test "E0.2 catch with binding, block body" {
     try std.testing.expect(v.data.catch_expr.body.data == .block);
 }
 
-test "E0.2 catch with binding, bare-expression body" {
+test "catch with binding, bare-expression body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch (e) bar(); }");
@@ -6691,7 +6688,7 @@ test "E0.2 catch with binding, bare-expression body" {
     try std.testing.expect(v.data.catch_expr.body.data == .call);
 }
 
-test "E0.2 catch match-body desugars to match_expr over the binding" {
+test "catch match-body desugars to match_expr over the binding" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := foo() catch (e) == { case .Empty: 0; else: 1; }; }");
@@ -6704,7 +6701,7 @@ test "E0.2 catch match-body desugars to match_expr over the binding" {
     try std.testing.expectEqualStrings("e", v.data.catch_expr.body.data.match_expr.subject.data.identifier.name);
 }
 
-test "E0.2 catch over a parenthesized or-chain" {
+test "catch over a parenthesized or-chain" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := (try foo() or try boo()) catch (e) { }; }");
@@ -6713,7 +6710,7 @@ test "E0.2 catch over a parenthesized or-chain" {
     try std.testing.expect(v.data.catch_expr.operand.data.binary_op.op == .or_op);
 }
 
-test "E0.2 catch without binding and unbraced body is rejected" {
+test "catch without binding and unbraced body is rejected" {
     // No binding (the token after `catch` is not an identifier) and no braces:
     // the no-binding form requires a braced body.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -6722,7 +6719,7 @@ test "E0.2 catch without binding and unbraced body is rejected" {
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "E0.2 raise error.X parses as raise_stmt over a field access" {
+test "raise error.X parses as raise_stmt over a field access" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const s = try e02FirstStmt(arena.allocator(), "f :: () { raise error.BadDigit; }");
@@ -6734,7 +6731,7 @@ test "E0.2 raise error.X parses as raise_stmt over a field access" {
     try std.testing.expectEqualStrings("error", obj.data.identifier.name);
 }
 
-test "E0.2 raise variable form" {
+test "raise variable form" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const s = try e02FirstStmt(arena.allocator(), "f :: () { raise e; }");
@@ -6742,56 +6739,56 @@ test "E0.2 raise variable form" {
     try std.testing.expect(s.data.raise_stmt.tag.data == .identifier);
 }
 
-test "E0.2 raise rejected in expression position" {
+test "raise rejected in expression position" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () { x := 1 + raise error.X; }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "E0.2 raise rejected inside an onfail body" {
+test "raise rejected inside an onfail body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () { onfail { raise error.X; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "E1.3 raise rejected inside a defer body" {
+test "raise rejected inside a defer body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () { defer { raise error.X; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "E1.7 return rejected inside a defer body" {
+test "return rejected inside a defer body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () { defer { return; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "E1.7 try rejected inside an onfail body" {
+test "try rejected inside an onfail body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () { onfail { try g(); } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "E1.7 break rejected inside a defer body (transitive through a loop)" {
+test "break rejected inside a defer body (transitive through a loop)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () { defer { for 0..1 (i) { break; } } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "E1.7 continue rejected inside an onfail body" {
+test "continue rejected inside an onfail body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () { onfail (e) { continue; } }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-test "E1.7 return inside a closure within a cleanup body is allowed" {
+test "return inside a closure within a cleanup body is allowed" {
     // A closure is its own function boundary: parseLambda clears the cleanup
     // flags, so `return` from the closure body is legal even inside `defer`.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -6800,7 +6797,7 @@ test "E1.7 return inside a closure within a cleanup body is allowed" {
     _ = try parser.parse();
 }
 
-test "E1.7 control-flow legal again after the cleanup body (flag restored)" {
+test "control-flow legal after the cleanup body (flag restored)" {
     // The cleanup-body flag must not leak to statements that follow the defer.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -6808,7 +6805,7 @@ test "E1.7 control-flow legal again after the cleanup body (flag restored)" {
     _ = try parser.parse();
 }
 
-test "E0.2 onfail with binding and block body" {
+test "onfail with binding and block body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const s = try e02FirstStmt(arena.allocator(), "f :: () { onfail (e) { close(h); } }");
@@ -6817,7 +6814,7 @@ test "E0.2 onfail with binding and block body" {
     try std.testing.expect(s.data.onfail_stmt.body.data == .block);
 }
 
-test "E0.2 onfail no-binding block vs bare-expression body" {
+test "onfail no-binding block vs bare-expression body" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const block_body = try e02FirstStmt(arena.allocator(), "f :: () { onfail { close(h); } }");
@@ -6831,7 +6828,7 @@ test "E0.2 onfail no-binding block vs bare-expression body" {
     try std.testing.expect(expr_body.data.onfail_stmt.body.data == .call);
 }
 
-test "E0.2 consumer-aware pipe: x |> try f() inserts x into the head call" {
+test "consumer-aware pipe: x |> try f() inserts x into the head call" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> try f(); }");
@@ -6843,7 +6840,7 @@ test "E0.2 consumer-aware pipe: x |> try f() inserts x into the head call" {
     try std.testing.expectEqualStrings("x", call.data.call.args[0].data.identifier.name);
 }
 
-test "E0.2 consumer-aware pipe: x |> f() catch (e) { } preserves the catch" {
+test "consumer-aware pipe: x |> f() catch (e) { } preserves the catch" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> g() catch (e) { }; }");
@@ -6853,7 +6850,7 @@ test "E0.2 consumer-aware pipe: x |> f() catch (e) { } preserves the catch" {
     try std.testing.expectEqual(@as(usize, 1), v.data.catch_expr.operand.data.call.args.len);
 }
 
-test "E0.2 consumer-aware pipe: x |> f() or d feeds only the head call" {
+test "consumer-aware pipe: x |> f() or d feeds only the head call" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> g() or d; }");
@@ -6865,7 +6862,7 @@ test "E0.2 consumer-aware pipe: x |> f() or d feeds only the head call" {
     try std.testing.expectEqualStrings("d", v.data.binary_op.rhs.data.identifier.name);
 }
 
-test "E0.2 plain pipe still works: x |> f(a) => f(x, a)" {
+test "plain pipe still works: x |> f(a) => f(x, a)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := x |> g(a); }");
@@ -6875,7 +6872,7 @@ test "E0.2 plain pipe still works: x |> f(a) => f(x, a)" {
     try std.testing.expectEqualStrings("a", v.data.call.args[1].data.identifier.name);
 }
 
-test "E0.2 round-trip print: try / or precedence / raise / catch / onfail" {
+test "round-trip print: try / or precedence / raise / catch / onfail" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -6890,7 +6887,7 @@ test "E0.2 round-trip print: try / or precedence / raise / catch / onfail" {
     try e02ExpectPrints(a, try e02FirstStmt(a, "f :: () { onfail (e) { close(h); } }"), "onfail (e) { close(h); }");
 }
 
-test "E0.2 round-trip print: catch match-body form" {
+test "round-trip print: catch match-body form" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const a = arena.allocator();
@@ -6900,7 +6897,7 @@ test "E0.2 round-trip print: catch match-body form" {
 
 // ── ERR step E0.3 — coverage consolidation (gaps + integration) ──
 
-test "E0.3 try in statement position (propagate, discard value)" {
+test "try in statement position (propagate, discard value)" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const s = try e02FirstStmt(arena.allocator(), "f :: () { try must_init(); }");
@@ -6908,7 +6905,7 @@ test "E0.3 try in statement position (propagate, discard value)" {
     try std.testing.expect(s.data.try_expr.operand.data == .call);
 }
 
-test "E0.3 try over a parenthesized or-chain: try (foo() or boo())" {
+test "try over a parenthesized or-chain: try (foo() or boo())" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := try (foo() or boo()); }");
@@ -6918,7 +6915,7 @@ test "E0.3 try over a parenthesized or-chain: try (foo() or boo())" {
     try std.testing.expect(v.data.try_expr.operand.data.binary_op.op == .or_op);
 }
 
-test "E0.3 or value-terminator: parse(s) or 0" {
+test "or value-terminator: parse(s) or 0" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const v = try e02FirstValue(arena.allocator(), "f :: () { v := parse(s) or 0; }");
@@ -6927,7 +6924,7 @@ test "E0.3 or value-terminator: parse(s) or 0" {
     try std.testing.expect(v.data.binary_op.rhs.data == .int_literal);
 }
 
-test "E0.3 full failable function parses end-to-end (all E0 forms)" {
+test "full failable function parses end-to-end (every failable form)" {
     const source =
         \\parse :: (s: string) -> (i32, !ParseErr) {
         \\    onfail (e) { cleanup(s); }

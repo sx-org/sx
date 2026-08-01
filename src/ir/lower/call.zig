@@ -366,8 +366,8 @@ fn callableLocalShadow(self: *Lowering, name: []const u8) bool {
 
 /// Indirect call through a local VALUE binding (fn-pointer local, or the
 /// trailing any-binding fallback). Checks arity against the fn-pointer's
-/// signature (review F3 — arg coercion min()-truncates, so a wrong-arity
-/// call would otherwise silently drop args), coerces args to the param
+/// signature (arg coercion min()-truncates, so a wrong-arity call would
+/// otherwise silently drop args), coerces args to the param
 /// types, and prepends the implicit ctx when the pointee signature wants it.
 fn indirectCallThroughLocal(self: *Lowering, name: []const u8, binding: lower.Binding, args: []Ref, span: ast.Span) Ref {
     // Arity: the fn TYPE's params are user-visible (no __sx_ctx slot —
@@ -1001,7 +1001,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
             target = info.optional.child;
         }
     }
-    // Running PARAMETER index (issue 0239 review F1): a spread expands one
+    // Running PARAMETER index (issue 0239): a spread expands one
     // AST arg into N lowered args, so the AST loop index stops matching the
     // callee's parameter positions after any spread. `param_idx` advances by
     // the EXPANDED width, so every post-spread arg is target-typed / coerced
@@ -2572,10 +2572,9 @@ pub fn diagnoseMissingContext(self: *Lowering, what: []const u8) Ref {
 /// allocation including the ones the compiler inserts.
 ///
 /// If `Context` isn't registered (the program doesn't import std.sx),
-/// emits a diagnostic and returns a placeholder. We deliberately do
-/// NOT fall back to a direct libc malloc — that was the silent escape
-/// hatch that bit us through the implicit-context refactor (see the
-/// "Silent unimplemented arms" REJECTED PATTERN in CLAUDE.md).
+/// emits a diagnostic and returns a placeholder. It deliberately does
+/// NOT fall back to a direct libc malloc: that silently escapes the
+/// allocator the program installed.
 pub fn allocViaContext(self: *Lowering, size_ref: Ref) Ref {
     if (!self.implicit_ctx_enabled or self.current_ctx_ref == Ref.none) {
         return self.diagnoseMissingContext("heap allocation");
@@ -4852,7 +4851,7 @@ pub fn expandCallDefaults(
                 if (author_declines) return null;
                 if (sel_author) |sf| break :blk sf.decl;
                 // A callable LOCAL binding shadows the top-level fn (issue
-                // 0217, review F2): the shadowed-out global's defaults must
+                // 0217): the shadowed-out global's defaults must
                 // not expand — their exprs' side effects would run and the
                 // spliced args would reach the local's call_indirect as
                 // phantom extras.
@@ -4902,7 +4901,7 @@ pub fn expandCallDefaults(
             else => return null,
         }
     };
-    // Param slots the written args actually consume (issue 0188 review F2):
+    // Param slots the written args actually consume (issue 0188):
     // a spread arg supplies its operand's WIDTH, not one — a 2-tuple spread
     // into `(a: i64, b: i64 = 99)` supplies BOTH params, so no default may be
     // filled (counting the spread node as one arg filled `b`'s default on top

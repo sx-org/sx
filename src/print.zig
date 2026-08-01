@@ -5,7 +5,7 @@
 //! the error-handling expression/statement node kinds the ERR stream's parser
 //! tests round-trip, and bails loudly (`error.UnsupportedNode`) on anything it
 //! does not yet handle — so an unsupported node can never be silently
-//! mis-printed (CLAUDE.md REJECTED PATTERNS: no silent arms). Later steps
+//! mis-printed (no silent arms). Later steps
 //! extend it as new surface syntax lands.
 
 const std = @import("std");

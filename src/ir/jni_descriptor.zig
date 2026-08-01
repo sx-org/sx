@@ -1,4 +1,4 @@
-// JNI descriptor derivation for #jni_class methods (Phase 2 step 2.8).
+// JNI descriptor derivation for #jni_class methods.
 //
 // Walks sx parameter / return type AST nodes through the standard JNI
 // signature alphabet (JLS §4.3.3 and JNI spec §3.3) to produce the

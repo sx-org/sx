@@ -1023,7 +1023,7 @@ const containsSelf = program_index_mod.typeNodeContainsSelf;
 /// `?[]Self`) is replaced at EVERY level before the type is rebuilt — without
 /// this, `[]Self` would resolve to a real `.slice` named `[]Self` ≠ `[]T` and
 /// the conformance gate would FALSELY reject a correct `[]T` impl (the gap from
-/// the 0178 adversarial review).
+/// issue 0178).
 pub fn resolveProtoTypeSubSelf(self: *Lowering, node: *const Node, concrete_ty: TypeId, proto_src: ?[]const u8) TypeId {
     switch (node.data) {
         .type_expr => |te| {
@@ -1472,7 +1472,7 @@ pub fn refuseNonConformer(self: *Lowering, proto_ty: TypeId, concrete_type_name:
             // never set `self.diagnostics`). Emitting the placeholder here would
             // ship LLVM `undef` with `hasErrors() == false`: a non-conforming
             // erasure reaching codegen silently. That is a compiler-invariant
-            // violation, so trip loudly per CLAUDE.md's "hard tripwire" guidance
+            // violation, so trip loudly per the hard tripwire rule
             // rather than fall through to the placeholder. The normal
             // compilation path always sets `diagnostics`, so this never fires
             // there — it only catches a future caller that forgets to plumb one.

@@ -1,4 +1,4 @@
-// Stream B1 (fibers) B1.3a — the stackful context switch, in pure sx over the
+// The stackful context switch, in pure sx over the
 // `abi(.naked)` primitive. `swap_context(from, to)` saves the callee-saved
 // registers + SP/LR into `*from` and loads them from `*to`, then `ret`s onto
 // `to`'s stack (SP-in ≠ SP-out by design — why it must be `.naked`, not `.c`).

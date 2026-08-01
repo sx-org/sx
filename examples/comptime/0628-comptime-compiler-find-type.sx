@@ -1,4 +1,4 @@
-// Comptime compiler API — read-only reflection readers (Phase 3).
+// Comptime compiler API — read-only reflection readers.
 //
 // `raw_find_type` / `raw_field_count` are bound to the `compiler` library via
 // `intrinsic` (mode `evaluate`), joining the `raw_intern` / `raw_text_of` seed. They are

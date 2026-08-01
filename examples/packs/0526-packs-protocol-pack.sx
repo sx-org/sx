@@ -1,4 +1,4 @@
-// Feature 1 — heterogeneous protocol-constrained variadic pack (binding).
+// Heterogeneous protocol-constrained variadic pack (binding).
 //
 // `..xs: Show` (no `[]`, no `$`) is a pack, not a slice: each call site
 // monomorphizes with the concrete per-position arg types (Decision 1 — a pack

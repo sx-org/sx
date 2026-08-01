@@ -2791,12 +2791,12 @@ Server :: struct {
     // TlsStep onto the same channel; a TlsStep.Closed (clean close_notify)
     // is error.Closed exactly like a plaintext EOF.
     //
-    // CROSS-DIRECTION WANTS (Q3.4, was the T3 limitation): a DATA-phase TLS
+    // CROSS-DIRECTION WANTS: a DATA-phase TLS
     // read may return WantWrite (the session must flush a pending record
     // before it can deliver plaintext) and a write may return WantRead (the
     // session needs a peer message first) — renegotiation / ticket-flush
-    // shaped flows. Both still surface to the callers as error.WouldBlock
-    // (the pause/re-arm contract is unchanged), but the wanted DIRECTION is
+    // shaped flows. Both surface to the callers as error.WouldBlock
+    // (the same pause/re-arm contract), but the wanted DIRECTION is
     // tracked on the Conn so the ready loop drives the OPPOSITE readiness:
     //   read-want-write  → conn_read arms the write watch here (readability
     //     alone can never unstick it); a writable event re-enters the READ

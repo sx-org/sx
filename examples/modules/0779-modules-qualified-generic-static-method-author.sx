@@ -5,10 +5,10 @@
 // b: two fields, sets `y = v+100`). `a.Box(i64).make(7)` and `b.Box(i64).make(9)`
 // must select their OWN module's author.
 //
-// Regression (Phase E4 finding #2, qualified static-method site): the static-head
-// path only handled an IDENTIFIER inner callee (`Box(..)`), so the qualified
-// inner callee `a.Box(..)` (a `.field_access`) was not routed through
-// `qualifiedStructTemplate` — `a.Box(i64).make(7)` resolved to nothing
+// Regression (qualified static-method site): a static-head path that handles
+// only an IDENTIFIER inner callee (`Box(..)`) leaves the qualified inner
+// callee `a.Box(..)` (a `.field_access`) un-routed through
+// `qualifiedStructTemplate`, so `a.Box(i64).make(7)` resolves to nothing
 // (unresolved, exit 1).
 
 #import "modules/std.sx";

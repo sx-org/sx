@@ -1,4 +1,4 @@
-// Stream B1 (fibers) B1.3a-2 — the context-switch STRESS GATE (design §10.7):
+// The context-switch STRESS GATE (design §10.7):
 // explicitly scribble EVERY callee-saved register with a sentinel, switch, and
 // verify every one survived. This is the correctness gate the run/snapshot
 // tests can't be — a switch that drops a register "happens to print right".
@@ -15,8 +15,8 @@
 // sentinels into the same physical registers; when A resumes it checks every reg
 // still holds base_A — which is only possible if `swap_context` saved+restored
 // it. (A single fiber yielding to an idle peer would NOT exercise preservation —
-// the peer must clobber the registers. Validated adversarially: dropping the
-// d8-d15 save/restore makes this report 8 mismatches; dropping x27/x28 reports 2.)
+// the peer must clobber the registers. Dropping the d8-d15 save/restore
+// makes this report 8 mismatches; dropping x27/x28 reports 2.)
 //
 // Honest scope (what a register-sentinel gate does NOT cover, all spec-correct
 // for a call-boundary swap but worth stating): NZCV flags, FPSR, FPCR (rounding
@@ -236,7 +236,7 @@ boot :: (f: *Fiber) {
     f.ctx.regs[11] = xx fib_tramp;   // lr → trampoline
     f.ctx.regs[12] = top;            // sp
     // Zero the FP save slots so the first switch-to loads 0 (not garbage) into
-    // d8-d15 — removes the first-entry foot-gun (adversarial-review note).
+    // d8-d15 — removes the first-entry foot-gun.
     i := 13;
     while i < 21 { f.ctx.regs[i] = 0; i = i + 1; }
     f.mismatches = -1;

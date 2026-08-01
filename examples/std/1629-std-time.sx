@@ -1,4 +1,4 @@
-// std.time (PLAN-HTTPZ S1): the wall clock reads a plausible epoch and
+// std.time the wall clock reads a plausible epoch and
 // the monotonic clock advances and never runs backwards. The `time`
 // alias rides the std.sx namespace tail like its siblings.
 #import "modules/std.sx";

@@ -1,4 +1,4 @@
-// export function (FFI-linkage stream, Phase 2): define an sx function with
+// An `export` function: define an sx function with
 // the bare `export` linkage modifier — external linkage + C ABI + no sx ctx —
 // so a companion C translation unit can call back into it by its plain symbol
 // name. The C side (`#source`) declares `sx_square` as a normal `extern int`

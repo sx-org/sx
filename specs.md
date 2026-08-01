@@ -4849,7 +4849,7 @@ Available categories: `int`, `float`, `bool`, `string`, `void`, `struct`, `enum`
 > silently dead arm. Unknown names and value patterns are pointed
 > compile errors.
 
-Inside a category arm the subject stays an `any` and the matched `type` a runtime `Type` — arms handle the value through the runtime reflection surface (the table-backed builtins, `any` views like `struct_field_value` / `variant_payload` / `any_element`, `raw_make_any`) with ONE compiled body per arm; `xx val` in the `int`/`float` arms width-dispatches over the arm's tag set. An EXACT-tag walk asserts with `val.(T)`. (The old `cast(type, val)` per-type monomorphizing fan-out is removed with `cast`.)
+Inside a category arm the subject stays an `any` and the matched `type` a runtime `Type` — arms handle the value through the runtime reflection surface (the table-backed builtins, `any` views like `struct_field_value` / `variant_payload` / `any_element`, `raw_make_any`) with ONE compiled body per arm; `xx val` in the `int`/`float` arms width-dispatches over the arm's tag set. An EXACT-tag walk asserts with `val.(T)`.
 
 #### Type Switch (`any` subjects)
 
@@ -5681,8 +5681,7 @@ Comptime globals are resolved lazily: the JIT executes only when the value is fi
 
 `#error("message");` emits `message` as a compile-time error and halts
 compilation. It is valid as a top-level item or a statement, and it is THE
-compile-time rejection spelling (the old `compile_error(...)` bare intrinsic
-was consolidated into it).
+compile-time rejection spelling.
 
 The directive fires only when it is reached in **live** code, at every
 level where code goes dead:

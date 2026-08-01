@@ -7,7 +7,7 @@
 // The qualified reference `a.Box(i64)` must report that `a` has no member `Box`,
 // NOT resolve to `b.Box`.
 //
-// Regression (Phase E4 finding #2): before the qualified head path diagnosed the
+// Regression : before the qualified head path diagnosed the
 // missing member, `qualifiedStructTemplate` returned null and the code fell
 // through to the bare global template, silently instantiating `b.Box`
 // (`size=16 x=1 y=2`, exit 0).

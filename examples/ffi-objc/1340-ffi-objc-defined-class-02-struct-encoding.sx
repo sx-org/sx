@@ -1,4 +1,4 @@
-// M1.2 A.1 follow-up — pass-by-value struct args/returns in
+// Pass-by-value struct args/returns in
 // sx-defined `#objc_class` methods.
 //
 // The `{Name=field0field1...}` arm of `appendObjcEncoding` feeds

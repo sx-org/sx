@@ -1,4 +1,4 @@
-// Stream B2 — `context.io.race` tolerates a FAILING racer (PLAN-IO-UNIFY Phase 4).
+// `context.io.race` tolerates a FAILING racer.
 // A `race` is first-SUCCESS-wins: a racer that ends `.failed` is simply not a
 // winner candidate; as long as ANOTHER racer succeeds, `race` returns that winner.
 // Here `a` raises at t=5 and `b` succeeds (42) at t=10, so `b` wins. The failed

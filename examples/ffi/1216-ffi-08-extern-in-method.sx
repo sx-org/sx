@@ -1,4 +1,4 @@
-// Phase 0 baseline (PLAN-FFI.md step 0.8): `extern` C call sites
+// `extern` C call sites
 // embedded inside the major sx surface constructs. None of these
 // touch a new ABI shape — they only verify lowering routes the call
 // through identically regardless of the enclosing context:

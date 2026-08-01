@@ -1,10 +1,10 @@
-// Feature 1 / Step 0.4 — tuple baseline probe (gate for Decision 2:
+// Tuple baseline probe (gate for Decision 2:
 // "tuples are first-class for pack storage").
 //
 // This file is the audit artifact: it exercises every tuple operation the
 // canonical `Combined`/`map` body relies on, EXCEPT the two pack/tuple
-// projection+spread sugars that are themselves Feature 1 work (documented
-// as gaps at the bottom). Everything here RUNS today.
+// projection+spread sugars (documented as gaps at the bottom).
+// Everything here RUNS.
 //
 // Run:  ./zig-out/bin/sx run examples/probes/tuple-baseline.sx
 
@@ -43,20 +43,17 @@ main :: () -> i32 {
     0
 }
 
-// ── GAPS (Feature 1 work — intentionally NOT exercised above) ──────
+// ── GAPS (intentionally NOT exercised above) ──────────────────────
 //
 //   G1. Tuple field projection across elements:
 //         t := .(Listenable{ value=1}, Listenable{ value=2});
 //         v := t.value;        // expected: .(1, 2)   — Decision 3 "tuple.field"
-//       Today: `error: field 'value' not found on type 'tuple'`.
+//       Yields `error: field 'value' not found on type 'tuple'`.
 //       Needed by canonical `self.sources.value`.
 //
 //   G2. Tuple spread into call args:
 //         p := .(10, 20);
 //         add(..p);            // expected: add(10, 20) — Decision 3 "..tuple"
-//       Today: lowers to one `undef` arg → LLVM arity verification failure.
+//       Lowers to one `undef` arg → LLVM arity verification failure.
 //       Needed by canonical `mapper(..sources.value)` and `.(..sources)`.
-//
-// Both are already scheduled: parsing in Phase 1.2 (PackExpansion node covers
-// `.(..pack)` / `..pack.field`), sema in Phase 2.3 ("tuple-spread parallels").
-// No separate Feature 1.5 needed — see Step 0.4 triage in CHECKPOINT-LANG.md.
+

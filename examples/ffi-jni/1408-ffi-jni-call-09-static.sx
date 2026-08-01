@@ -1,7 +1,7 @@
-// Phase 1 step 1.23 (PLAN-FFI.md): `#jni_static_call` lowering.
+// `#jni_static_call` lowering.
 // For static dispatch the `target` arg IS already a `jclass`, so the
 // lowering skips `GetObjectClass` and uses `GetStaticMethodID` +
-// `CallStatic<Type>Method` instead. Today `is_static = true` drops
+// `CallStatic<Type>Method` instead. `is_static = true` drops
 // to `LLVMGetUndef`; the snapshot captures the placeholder. Next
 // commit wires the static dispatch path.
 

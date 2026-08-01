@@ -411,8 +411,7 @@ any_to_string :: (val: any) -> string {
         // array is never loaded as a value, so the O(N) SelectionDAG
         // scalarization that crippled `[65536]u8` (issue 0125) cannot
         // recur. An array's ABI size is exact (no pow2 rounding), so the
-        // element count IS size/elem_size. Output matches the old
-        // `array_to_string` (`[a, b, c]`).
+        // element count IS size/elem_size. The output form is `[a, b, c]`.
         case array: {
             et := struct_field_type(type, 0);
             esz := size_of(et);

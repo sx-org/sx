@@ -20,7 +20,7 @@
 // { return X; }; return Y;` regresses the same way.
 //
 // `maybe()` with zero call-args takes the false branch and
-// should fall through to `return -1;`. Today it loads garbage
+// should fall through to `return -1;`. It loads garbage
 // from the uninitialised slot.
 
 #import "modules/std.sx";

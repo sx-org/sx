@@ -2,7 +2,7 @@
 // error-channel tuple ABI). A `-> (T, !E)` function returns EITHER a value OR
 // an error: `return v;` yields the success tuple `{v, 0}` (the compiler appends
 // the no-error slot), and `raise error.X` yields `{undef, tag}` (value slot
-// undefined, error slot = the tag). Today the result is consumed by
+// undefined, error slot = the tag). The result is consumed by
 // destructuring `v, err := f()` (which extracts both slots); the value-carrying
 // `try` / `catch` consumers land in E2.1b.
 

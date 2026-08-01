@@ -4,8 +4,8 @@
 // Pins that `init` establishes the layer-mode pixel format explicitly:
 // with `target_format` left at the memset value, 0 is
 // MTLPixelFormatInvalid and EVERY pipeline creation fails ("No valid
-// pixelFormats set" — crashed m3te/SxChess on the sim after the G6
-// offscreen work moved create_shader onto the field).
+// pixelFormats set"), which takes down any app that compiles a shader
+// before its first layer exists.
 #import "modules/std.sx";
 #import "modules/std/mem.sx";
 #import "modules/gpu/types.sx";

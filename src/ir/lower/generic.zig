@@ -454,7 +454,7 @@ pub fn resolveTypeArg(self: *Lowering, node: *const Node) TypeId {
     }
     // A bare-paren `(A, B)` is a MULTI-RETURN signature — valid only as a
     // function/closure return type, never as a generic type argument (a
-    // tuple-valued arg uses `Tuple(…)`). Without this it silently resolved to a
+    // tuple-valued arg uses `Tuple(…)`). Without this it silently resolves to a
     // reused tuple TypeId (`List((A, B))` ≡ `List(Tuple(A, B))`), eroding the
     // "multi-return is not a tuple, return-position-only" rule.
     if (self.rejectMultiReturnValueType(node, "generic type argument")) return .unresolved;
@@ -2174,7 +2174,7 @@ pub fn genericInstanceMethod(self: *Lowering, inst_name: []const u8, method: []c
     // INLINE struct method (`Box :: struct { make :: ... }`): selected via the
     // instance's STAMPED author, so the body is the one authored alongside the
     // layout — never the global last-wins `fn_ast_map["Template.method"]` a
-    // 2-flat-hop same-name template's method could win (finding #1).
+    // 2-flat-hop same-name template's method could win.
     if (structMethodFn(author, method)) |fd|
         return .{ .fd = fd, .bindings = bindings, .inst_name = inst_name };
     // IMPL-block method (`impl P for Box { ... }`): registered under the
@@ -2705,7 +2705,7 @@ pub fn findReturnTypeExpr(body: *const Node) ?*const Node {
 /// True when a type-fn's return expression mints a type at comptime and must be
 /// run through the interpreter rather than statically resolved. Two shapes:
 ///   - a call to the metatype `define` constructor — `return define(declare(),
-///     info)`, the one-shot constructor form (now an sx fn over `register_type`,
+///     info)`, the one-shot constructor form (an sx fn over `register_type`,
 ///     caught here as a fast-path before the `fn_ast_map` lookup below); or
 ///   - a call to a NON-generic, bodied, `Type`-returning sx fn (a constructor
 ///     helper that itself ends in `define` / `register_type`).

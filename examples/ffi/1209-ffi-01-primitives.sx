@@ -1,6 +1,6 @@
-// Phase 0 baseline (PLAN-FFI.md step 0.1): every primitive type passed
+// Every primitive type passed
 // in/out of a C `extern` fn via `#import c { #include / #source }`.
-// Locks today's parameter + return ABI so Phase 1's lowering changes
+// Locks the parameter + return ABI so later lowering changes
 // (`#objc_call` / `#jni_call`) can't silently regress us.
 //
 // Note: c_import maps `signed char` to sx `u8` (see c_import.zig:541)

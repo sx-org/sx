@@ -1,4 +1,4 @@
-// Stream B1 (fibers) B1.5a — the M:1 cooperative fiber scheduler core.
+// The M:1 cooperative fiber scheduler core.
 //
 // A `Scheduler` drives any number of `Fiber`s, each running a stackful
 // `body: Closure() -> void` on its own guarded `mmap` stack (the §8.1.1 guard
@@ -29,7 +29,7 @@
 #import "modules/std/fmt.sx";
 #import "modules/std/list.sx";
 c :: #import "modules/std/c.sx";
-// Phase 3 (true cancellation): `suspend_raw` reads the spawned fiber's cancel
+// True cancellation: `suspend_raw` reads the spawned fiber's cancel
 // flag — a `*Atomic(bool)` back-ref to the `Future.canceled` — to decide whether
 // to raise `error.Canceled` on resume. atomic.sx has no naked asm, so it is safe
 // to pull in here (no fib_tramp re-emit).
@@ -108,7 +108,7 @@ Fiber :: struct {
     // Neither `spawn` nor the language rebases the inherited allocator — the
     // snapshot is verbatim, by design.
     dctx: Context;
-    // Phase 3 (true cancellation): back-ref to this fiber's task cancel flag
+    // True cancellation: back-ref to this fiber's task cancel flag
     // (the `Future.canceled` `Atomic(bool)`, erased to `*void`), set from
     // `SpawnOpts.cancel_flag` at `spawn_raw`. `suspend_raw` consults it and
     // raises `IoErr.Canceled` when set, so a cancelled worker abandons its body
@@ -600,7 +600,7 @@ Scheduler :: struct {
 //         s.run();    // the explicit driver loop (stays as today)
 //     }
 //
-// Phase 0 (fibers inherit the spawn-time context) is what makes this reach a
+// (fibers inherit the spawn-time context) is what makes this reach a
 // WORKER: a fiber spawned through `spawn_raw` runs under the pushed context, so
 // its own `context.io.suspend_raw`/`ready` resolve back to THIS scheduler, not
 // the blocking default. The methods are thin adapters over the existing fiber
@@ -610,7 +610,7 @@ impl Io for Scheduler {
     // function pointer (the worker thunk the `async` layer boxes), erased to
     // `*void`; `arg` is its single payload pointer. Returns the `*Fiber` as the
     // opaque handle (the `Future` stashes it in `task`). The fiber inherits this
-    // call's context (Phase 0), so the worker sees this scheduler as `context.io`.
+    // call's context, so the worker sees this scheduler as `context.io`.
     // CONTRACT: `arg` must outlive the fiber's FIRST RUN (i.e. survive until
     // `run`/`poll` schedules it), not merely until `spawn_raw` returns — the fiber
     // dereferences it later, on its own stack. A stack local that dies before the
@@ -628,7 +628,7 @@ impl Io for Scheduler {
             entry_fn : (*void) -> void = xx entry;
             entry_fn(arg);
         });
-        // Stash the cancel-flag back-ref (Phase 3): `suspend_raw` consults it on
+        // Stash the cancel-flag back-ref: `suspend_raw` consults it on
         // this fiber to raise `error.Canceled`. `null` for an uncancellable spawn.
         f.cancel_flag = opts.cancel_flag;
         return xx f;
@@ -636,10 +636,10 @@ impl Io for Scheduler {
 
     // Park the running fiber until a matching `ready`. `-> !` is the cancellation
     // channel the protocol mandates: a suspending impl raises `IoErr.Canceled`
-    // out here when the parked task was cancelled (wired in Phase 3). The M:1
+    // out here when the parked task was cancelled. The M:1
     // impl does not raise yet — it just parks the current fiber.
     suspend_raw :: (self: *Scheduler, park: *ParkToken) -> ! {
-        // Phase 3 (true cancellation), PRE-PARK check: if this fiber's task was
+        // PRE-PARK check: if this fiber's task was
         // already cancelled before it reached this suspend, deliver immediately —
         // do NOT park (a park with no pending waker would deadlock; the cancel's
         // `ready` already fired as a no-op against a not-yet-suspended fiber).
@@ -736,7 +736,7 @@ impl Io for Scheduler {
 
     // Arm a virtual-time timer that re-readies the CURRENT fiber at `deadline_ms`
     // (the caller suspends separately via `suspend_raw`). Does not suspend. Returns
-    // null (a timer-cancel handle is Phase 3). The fired timer wakes the fiber
+    // null (there is no timer-cancel handle). The fired timer wakes the fiber
     // through the same `wake` path the run loop uses.
     arm_timer :: (self: *Scheduler, deadline_ms: i64, park: ParkToken) -> *void {
         // MUST be called from inside a fiber — the timer wakes `self.current`, so a
@@ -1096,13 +1096,13 @@ RaceResult :: ($T: Type) -> Type {
 // `CBlockingIo` the futures are already `.ready`, so the winner scan returns
 // without ever calling `current_park`/`suspend_raw`.
 //
-// TRUE-CANCEL SEMANTIC (Phase 3): each loser was parked mid-suspend when cancelled;
+// TRUE-CANCEL SEMANTIC: each loser was parked mid-suspend when cancelled;
 // `cancel(f)` flips its sticky flag and wakes its worker fiber, whose next
 // `suspend_raw` raises `Canceled` and unwinds the body — its post-suspend work
 // never runs. `race` does NOT join the losers (they unwind on their own next turn),
 // so it returns at winner-time. The winner's value is taken from `f.value`.
 race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
-    // Phase 1 — first winner. Scan for an already-`.ready` future (lowest index
+    // First winner. Scan for an already-`.ready` future (lowest index
     // wins on a same-tick tie → deterministic). If none, register THIS coordinator
     // (`current_park`) as the waiter on every still-`.pending` future's `park`
     // slot and park once via `suspend_raw`; any completion `ready`s us. On wake
@@ -1139,7 +1139,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
         }
     }
 
-    // Phase 2 — build the winner variant. `futures[i].value` carries the CONCRETE
+    // Build the winner variant. `futures[i].value` carries the CONCRETE
     // result type of variant `i` (comptime-cursor tuple indexing), so the matching
     // unrolled arm constructs `RaceResult(T)`'s i-th variant directly. `i` is the
     // comptime cursor; the runtime `if i == winner_idx` selects the one arm.
@@ -1150,7 +1150,7 @@ race :: ufcs (io: Io, futures: $T) -> RaceResult(T) {
         }
     }
 
-    // Phase 3 — cancel every still-IN-FLIGHT loser. With true cancellation a
+    // Cancel every still-IN-FLIGHT loser. With true cancellation a
     // parked loser's next `suspend_raw` raises `Canceled` and unwinds its body;
     // its `park` was cleared above, so its completion `ready`s nobody. No join —
     // `race` returns now. Only `.pending` losers are cancelled: a loser that

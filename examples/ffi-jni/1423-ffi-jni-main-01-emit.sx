@@ -1,4 +1,4 @@
-// `#jni_main` pipeline slice 2 (PLAN-FFI.md): the compiler renders a
+// `#jni_main` pipeline slice 2 the compiler renders a
 // `.java` source for a `#jni_main #jni_class("...")` declaration, runs
 // `javac` + `d8`, and bundles `classes.dex` into the APK.
 //

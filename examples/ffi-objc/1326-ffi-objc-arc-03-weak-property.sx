@@ -11,7 +11,7 @@
 // be `null` (the target deallocated when its last strong ref
 // dropped, and the weak slot auto-niled).
 //
-// Pre-M4.B: setter just stores the pointer (no storeWeak); getter
+// The setter stores the pointer (no storeWeak); the getter
 // reads the raw pointer (no loadWeakRetained). After target's
 // release, the slot points at freed memory — the read returns the
 // stale pointer (not null). The test catches this by comparing the

@@ -1,4 +1,4 @@
-// Phase 0 baseline (PLAN-FFI.md step 0.4): focused FP-aggregate (HFA)
+// Focused FP-aggregate (HFA)
 // FFI test. All-float / all-double aggregates of ≤4 fields stay as
 // struct values in LLVM and pass through the float register file
 // (AAPCS64 v0..v3, SysV AMD64 xmm0..xmm7). Distinct from the int

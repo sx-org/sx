@@ -1,5 +1,5 @@
 // User file uses xx but only imports the shared types — NOT the impl.
-// The Phase 4 visibility filter should reject the impl from 179-impl-visibility-impl.sx.
+// The visibility filter rejects the impl from 179-impl-visibility-impl.sx.
 #import "modules/std.sx";
 #import "./0410-protocols-impl-visibility-types.sx";
 

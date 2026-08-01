@@ -1,4 +1,4 @@
-// Variadic heterogeneous type packs — Step 2.6: indexing a pack with a
+// Variadic heterogeneous type packs — indexing a pack with a
 // RUNTIME index is a compile error.
 //
 // Per locked Decision 1, a pack is comptime-only and has NO runtime

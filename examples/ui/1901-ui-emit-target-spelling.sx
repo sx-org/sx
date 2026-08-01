@@ -1,4 +1,4 @@
-// The experiment/ui target spelling compiles as written (PLAN-LANG-EXT
+// The experiment/ui target spelling compiles as written (
 // Step 5): trailing blocks + named arguments over the ambient-sink emit
 // model — scope fns, slots, handlers, `place` writing through
 // `context.<field>` directly (issue 0337), and point-free `?Closure` slots

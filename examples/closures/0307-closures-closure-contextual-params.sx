@@ -1,4 +1,4 @@
-// Step 2.5 — contextual typing for closure literals with N (heterogeneous)
+// Contextual typing for closure literals with N (heterogeneous)
 // params. An untyped lambda `(a, b, c) => ...` takes each param's type
 // positionally from the expected `Closure(T0, T1, T2) -> R` signature, in both
 // assignment and argument position. (Resolving only the first param — or

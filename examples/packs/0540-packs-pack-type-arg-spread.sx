@@ -1,4 +1,4 @@
-// Phase 6 — pack-spread in a parameterized-type's arg list:
+// Pack-spread in a parameterized-type's arg list:
 // `Combined($R, ..sources.T)`. Inside a pack-fn, `..sources.T` projects each
 // source's protocol type-arg and spreads them into the generic struct's pack
 // type-param `..$Ts`, so `Combined(i64, ..sources.T)` for a single `VL(i64)`

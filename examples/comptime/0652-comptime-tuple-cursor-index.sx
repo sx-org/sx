@@ -7,7 +7,7 @@
 // lowers exactly like the `.N` field-access path (a `structGet`). A runtime
 // index into a tuple value remains an error (no single element type).
 //
-// (GAP 1 of PLAN-RACE.)
+//
 #import "modules/std.sx";
 
 Box :: struct ($R: Type) { value: R; }

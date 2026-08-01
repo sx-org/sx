@@ -1,4 +1,4 @@
-// std.thread (PLAN-HTTPZ S6): raw threads contend correctly on a Mutex,
+// std.thread raw threads contend correctly on a Mutex,
 // the Pool runs every submitted task exactly once across its workers,
 // a full backlog applies backpressure (submit returns false), and
 // shutdown joins cleanly with queued work finished.

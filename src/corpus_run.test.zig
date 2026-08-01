@@ -149,11 +149,11 @@ fn currentEnviron() std.process.Environ {
 }
 
 /// Socket-heavy categories run with BOUNDED concurrency. The warm object
-/// cache removed the natural compile stagger, so their run phases otherwise
+/// cache leaves no natural compile stagger, so their run phases otherwise
 /// collide inside a few seconds — loopback/kqueue/accept/timeout contention
-/// produced sporadic single-example failures (1674 bind, 1705 timeout case)
-/// that never reproduce solo. Two lanes gives MORE stagger than the old
-/// compile-dominated suite had, without serializing the whole category.
+/// produces sporadic single-example failures (1674 bind, 1705 timeout case)
+/// that never reproduce solo. Two lanes stagger them without serializing
+/// the whole category.
 /// (Io.Semaphore futexes on shared addresses, so it synchronizes across the
 /// workers' separate Io.Threaded instances — same reasoning as
 /// g_build_mutex below.)
@@ -472,7 +472,7 @@ fn tripleOsName(triple: []const u8) ?[]const u8 {
 
 /// True when `value` (a `.build` target shorthand or triple) names the host's
 /// arch AND OS — i.e. an example built for it can actually execute here. A
-/// mismatch routes the example to ir-only mode (Phase 0.1).
+/// mismatch routes the example to ir-only mode.
 fn hostMatchesTarget(value: []const u8) bool {
     const triple = expandTargetShorthand(value);
     const dash = std.mem.indexOfScalar(u8, triple, '-') orelse return false;

@@ -1,12 +1,12 @@
 // Erasing a concrete type to a protocol whose `impl` method introduces its OWN
-// type parameter is a hard error, not a silent SIGABRT. Regression (issue 0176,
-// adversarial-review gap 1): `impl Speaker for Dog { speak :: (self: *Dog, $T:
-// Type) }` has a matching qualified name `Dog.speak`, so the conformance gate
-// would ACCEPT it on name alone — but the thunk's `lazyLowerFunction("Dog.speak")`
+// type parameter is a hard error, not a silent SIGABRT. Regression (issue
+// 0176): `impl Speaker for Dog { speak :: (self: *Dog, $T:
+// Type) }` has a matching qualified name `Dog.speak`, so a name-only
+// conformance gate ACCEPTS it — but the thunk's `lazyLowerFunction("Dog.speak")`
 // bails on `type_params.len > 0` (generics are monomorphized, not registered), so
 // `resolveFuncByName` returns null and the thunk reaches its `else => unreachable`
 // arm: a SILENT SIGABRT (exit 133, no output) at the first dispatch. The gate
-// now mirrors the thunk exactly — a method that introduces its own type params
+// mirrors the thunk exactly — a method that introduces its own type params
 // is a SIGNATURE MISMATCH, reported here at the erasure site (exit 1).
 
 #import "modules/std.sx";

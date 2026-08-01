@@ -1,6 +1,6 @@
 // Atomic($T) compare-exchange: compare_exchange / compare_exchange_weak → LLVM
 // cmpxchg. Result is `?T` — null = SUCCESS; a present value is the ACTUAL current
-// value on failure (for a retry loop). Stream A (atomics) A.2. Single-thread.
+// value on failure (for a retry loop). Single-thread.
 #import "modules/std.sx";
 #import "modules/std/atomic.sx";
 

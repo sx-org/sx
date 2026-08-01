@@ -654,7 +654,7 @@ pub fn fixupMethodReceiver(self: *Lowering, method_args: *std.ArrayList(Ref), fu
                     // a mutating method store through it — a silent write past
                     // the `cannot assign through constant` guard, and a SIGBUS in
                     // an AOT binary. Const receivers fall through to the value
-                    // copy below (pre-0202 behavior): a read-only `*Self` method
+                    // copy below: a read-only `*Self` method
                     // still sees the right value via the copy; a mutating one
                     // harmlessly scribbles the throwaway, never the `.rodata`.
                     const ptr_ty = self.module.types.ptrTo(obj_ty);
@@ -1070,10 +1070,10 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
     // name a user struct (reserved), so they never collide.
     if (self.lowerNumericLimit(fa, span)) |ref| return ref;
 
-    // M1.3 — `obj.class` on any Obj-C-class pointer lowers to
+    // `obj.class` on any Obj-C-class pointer lowers to
     // `object_getClass(obj)`. Sugar; the receiver is opaque so
     // we don't auto-deref. Returns `Class` (alias for *void;
-    // typed Class(T) parameterization is M1.1.b).
+    // there is no typed Class(T) parameterization).
     if (std.mem.eql(u8, fa.field, "class")) {
         const expr_ty = self.inferExprType(fa.object);
         if (self.objc().isObjcClassPointer(expr_ty)) {
@@ -1086,14 +1086,14 @@ pub fn lowerFieldAccess(self: *Lowering, fa: *const ast.FieldAccess, span: ast.S
         }
     }
 
-    // M2.2 — `obj.field` where `field` is declared with `#property`
+    // `obj.field` where `field` is declared with `#property`
     // on a runtime Obj-C class lowers as `[obj field]` (the synthesized
     // getter). Receiver stays opaque — no auto-deref.
     if (self.lookupObjcPropertyOnPointer(fa.object, fa.field)) |prop| {
         return self.lowerObjcPropertyGetter(fa.object, prop, fa.field, span);
     }
 
-    // M1.2 A.3 — `self.field` (or `obj.field`) on a *sx-defined-class
+    // `self.field` (or `obj.field`) on a *sx-defined-class
     // pointer for a plain instance field (NOT a #property) lowers as
     // `object_getIvar(obj, load(__<Cls>_state_ivar))` + struct_gep on
     // the state struct + load. The receiver is the opaque Obj-C id
@@ -2144,8 +2144,7 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
         //
         // `coerceToType` classifies a same-type element as `.no_op`/`.none`
         // and returns `val` unchanged, so this is a no-op for elements already
-        // at `elem_ty` (the common `[N]i64`/`[N]Struct` case). The earlier
-        // slice special-case is now subsumed by this general coercion.
+        // at `elem_ty` (the common `[N]i64`/`[N]Struct` case).
         if (elem_ty != .unresolved) {
             const val_ty = self.builder.getRefType(val);
             if (val_ty != elem_ty) {
@@ -2221,7 +2220,7 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
             // Generic-struct typed-literal head (`Box(i64).[...]`): route
             // through the single layout choke-point (CP-1). A qualified head
             // `a.Box(i64).[...]` selects a's OWN template via the namespace edge
-            // (Counter-1: was the global last-wins map); a bare head selects the
+            // rather than a global last-wins map; a bare head selects the
             // single bare-VISIBLE author.
             switch (self.selectGenericStructCallee(cl.callee, cl.callee.span)) {
                 .template => |t| return self.instantiateGenericStruct(&t, cl.args),
@@ -2254,9 +2253,9 @@ pub fn resolveArrayLiteralType(self: *Lowering, te: *const Node) TypeId {
         // These resolve through the canonical `resolveAstType` compound path
         // (which recurses into the element, so `[N]?T` correctly carries the
         // optional element). Without these arms an `array_type_expr` /
-        // `slice_type_expr` head fell through to `else => .unresolved`, so a
-        // typed `([2]?i64).[ ... ]` lost its `?i64` element type — the null
-        // element then reached LLVM as `const_null(.unresolved)` and panicked
+        // `slice_type_expr` head falls through to `else => .unresolved`, so a
+        // typed `([2]?i64).[ ... ]` loses its `?i64` element type — the null
+        // element reaches LLVM as `const_null(.unresolved)` and panics
         // (issue 0173). `resolveTypeWithBindings` is the lowering-side resolver
         // (carries generic bindings); it delegates to `resolveAstType` for
         // these plain structural shapes.
@@ -2491,8 +2490,8 @@ pub fn lowerSliceExpr(self: *Lowering, se: *const ast.SliceExpr) Ref {
     // A slice base whose type never resolved to a concrete array — an inline
     // array literal (`i64.[1,2,3][0..2]`), a struct-literal array, or an
     // already-poisoned base — must not reach codegen: `emitSubslice` would
-    // call `toLLVMType` on the `.unresolved` element and panic (issue 0225
-    // review MED-1). It is also a temporary with no backing storage, which
+    // call `toLLVMType` on the `.unresolved` element and panic (issue 0225).
+    // It is also a temporary with no backing storage, which
     // specs.md §Subslicing names a compile error. Emit the temporary-array
     // diagnostic (unless an upstream error already fired — avoids a
     // misleading cascade) and return a poison slice; the diagnostic aborts
@@ -4087,7 +4086,7 @@ pub fn asmResultType(self: *Lowering, ae: *const ast.AsmExpr) TypeId {
 /// LLVM emit land in Phases C–E; result-type derivation + the auto-naming rule
 /// move to the expression typer once lowering produces a real value). Always
 /// returns a placeholder Ref so `hasErrors()` aborts the build on whichever
-/// diagnostic fired (CLAUDE.md no-silent-arm).
+/// diagnostic fired.
 pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref {
     const diags = self.diagnostics orelse return self.emitPlaceholder("inline_asm");
 
@@ -4612,10 +4611,10 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // `cmp_eq`/`cmp_ne` against the field's OWN type (so a float field gets
     // fcmp, a string field str_eq, a nested struct recurses, a tagged-union
     // field tag-compares) and AND-reduce (`==`) / OR-reduce (`!=`). This keeps
-    // the buggy `emit_llvm` struct arm (which only ever handled a 2-scalar-field
-    // shape, silently dropped fields 2+, and mis-ICMP'd non-int fields) from
-    // ever seeing a user struct — it now only sees the string/slice/tagged-union
-    // `{ptr,len}` / `{tag,payload}` reductions it was actually written for.
+    // the `emit_llvm` struct arm (which handles only a 2-scalar-field shape,
+    // silently drops fields 2+, and mis-ICMPs non-int fields) from ever seeing
+    // a user struct — it sees only the string/slice/tagged-union `{ptr,len}` /
+    // `{tag,payload}` reductions it is written for.
     // Non-comparable sub-fields (untagged union, fixed array) are rejected with
     // the issue-0233 diagnostic, consistent with rejecting those shapes bare.
     if ((bop.op == .eq or bop.op == .neq) and !ty.isBuiltin()) {

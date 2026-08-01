@@ -2,17 +2,17 @@
 // pointer `*T`, a pointer-to-slice `*[]T`, or a plain struct — is a type
 // error, diagnosed at lowering with a located message.
 //
-// Regression (issue 0183): `expr[i]` on a non-indexable base fell through
-// `lowerIndexExpr` to an `index_get` carrying an `.unresolved` element type,
-// which reached emit_llvm and panicked ("unresolved type reached LLVM
-// emission", exit 134) with no source location. The guard now rejects it
-// cleanly (exit 1). Indexable shapes — `[N]T` / `[]T` / `[*]T` / `string` /
+// Regression (issue 0183): without the guard, `expr[i]` on a non-indexable
+// base falls through `lowerIndexExpr` to an `index_get` carrying an
+// `.unresolved` element type, which reaches emit_llvm and panics
+// ("unresolved type reached LLVM emission", exit 134) with no source
+// location. Indexable shapes — `[N]T` / `[]T` / `[*]T` / `string` /
 // `Vector` / `*[N]T` and the optional-chain forms — are unaffected.
 //
-// Aggregate-ladder update: a COMPTIME-constant index into a struct value
-// (`s[0]`) is now the field itself (tuple parity), so the struct arm below
-// pins the RUNTIME-index rejection — there is no runtime `[ ]` on structs
-// (use `struct_field_value(s, j)`).
+// A COMPTIME-constant index into a struct value (`s[0]`) is the field
+// itself (tuple parity), so the struct arm below pins the RUNTIME-index
+// rejection — there is no runtime `[ ]` on structs (use
+// `struct_field_value(s, j)`).
 //
 // For a single pointer `*T` the message hints at the indexable alternatives
 // (many-pointer `[*]T`, or dereference first); other non-indexable types get

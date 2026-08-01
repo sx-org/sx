@@ -1,4 +1,4 @@
-// Stream B1 (fibers) B1.4c — REAL fd-readiness blocking via kqueue. A fiber can
+// REAL fd-readiness blocking via kqueue. A fiber can
 // `block_on_fd(read_fd, true)`; the scheduler's run loop blocks on `kevent` when
 // nothing else is runnable and wakes that fiber when the kernel reports the fd
 // readable.

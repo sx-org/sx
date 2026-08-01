@@ -38,13 +38,13 @@ pub const Module = struct {
     /// `objc_selector_cache` — kept as an insertion-ordered list of
     /// (class_name, slot_GlobalId) so the constructor that calls
     /// `objc_getClass` per slot at module load is deterministic.
-    /// Used by static method dispatch (Phase 3.1) — every
+    /// Used by static method dispatch — every
     /// `Cls.static_method(...)` against an `#objc_class` alias resolves
     /// the class object through this cache once per module.
     objc_class_cache: std.ArrayList(ObjcClassEntry),
     /// sx-defined Obj-C classes — every `Cls :: #objc_class("Cls") { ... }`
     /// declaration WITHOUT `extern`. Insertion-ordered so the
-    /// class-registration constructors (M1.2 A.4) emit in source order
+    /// class-registration constructors emit in source order
     /// — parent classes register before children, which matters because
     /// `objc_allocateClassPair(super, ...)` resolves `super` by lookup.
     /// Each entry holds a pointer back into the AST so later passes

@@ -486,7 +486,7 @@ pub const CallResolver = struct {
                         // `*Other($T)->string` winner over the `*Box($T)->i64`
                         // receiver-match); typing the call by `fd0p` while
                         // lowering calls the other one misboxes the result
-                        // (issue 0157 review P1). A `*const Node` view of the
+                        // (issue 0157). A `*const Node` view of the
                         // args drives the receiver-aware selection.
                         const sel_args = self.l.alloc.alloc(*const ast.Node, c.args.len + 1) catch
                             return .{ .kind = .unresolved, .return_type = .unresolved };

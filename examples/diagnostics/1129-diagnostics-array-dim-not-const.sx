@@ -7,11 +7,11 @@
 // folds; see examples/0144-types-const-expr-array-dim.sx. Only a dimension with
 // a genuinely runtime operand halts here.)
 //
-// Regression (issue 0083): the stateless resolver printed a non-fatal warning
-// and fabricated length 0, then let compilation continue — producing a 0-byte
-// alloca and corrupt element access. It now yields the `.unresolved` sentinel,
-// which the alias registration surfaces as this diagnostic, aborting the build
-// with a non-zero exit.
+// Regression (issue 0083): a resolver that warns non-fatally and fabricates
+// length 0, letting compilation continue, produces a 0-byte alloca and
+// corrupt element access. The resolver yields the `.unresolved` sentinel
+// instead, which the alias registration surfaces as this diagnostic, aborting
+// the build with a non-zero exit.
 #import "modules/std.sx";
 
 get :: () -> i64 { return 5; }

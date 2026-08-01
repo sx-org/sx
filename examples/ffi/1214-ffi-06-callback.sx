@@ -1,4 +1,4 @@
-// Phase 0 baseline (PLAN-FFI.md step 0.6): sx function passed to C
+// An sx function passed to C
 // as a function pointer; C invokes it; sx-side observable effect.
 // Mirrors the `app->onInputEvent` install pattern in
 // library/modules/platform/android.sx.

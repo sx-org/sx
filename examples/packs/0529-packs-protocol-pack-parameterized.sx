@@ -1,11 +1,11 @@
-// Feature 1 — method calls on a PARAMETERIZED protocol pack (the canonical
+// Method calls on a PARAMETERIZED protocol pack (the canonical
 // shape: `..xs: ValueListenable` where each element conforms with its own
 // type-arg). Calling the protocol method `get()` on `xs[i]` resolves to the
 // concrete element's impl, even though each element binds a different `T`.
 //
-// (Parameterised-protocol impl methods with a concrete source type are now
-// registered as `<Source>.<method>`, so UFCS — and thus `xs[i].get()` —
-// resolves them.)
+// (Parameterised-protocol impl methods with a concrete source type register
+// as `<Source>.<method>`, so UFCS — and thus `xs[i].get()` — resolves
+// them.)
 
 #import "modules/std.sx";
 

@@ -1,4 +1,4 @@
-// Phase 0 baseline (PLAN-FFI.md step 0.9): FFI result chains. The
+// FFI result chains. The
 // shapes that real sx code uses for opaque C handles (MTLBuffer*,
 // AAssetManager*, file pointers, ...) — passing a C-returned
 // pointer into another C call, stashing it in a struct field,

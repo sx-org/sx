@@ -2,8 +2,8 @@
 // the escape hatch's promise ("reinterpret the bits, width be damned") is
 // delivered through a memory slot typed as the larger side — so the result
 // is a genuinely target-typed value in EVERY context (icmp, call args,
-// arithmetic), not just store positions. Regression (issue 0305): the raw
-// SSA passthrough crashed the LLVM verifier at the first value-context use.
+// arithmetic), not just store positions. Regression (issue 0305): a raw
+// SSA passthrough crashes the LLVM verifier at the first value-context use.
 #import "modules/std.sx";
 
 Sizable :: protocol { size :: (self: *Self) -> i64; }

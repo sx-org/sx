@@ -7,11 +7,9 @@
 // expression — the pack-shape spelling used by impl headers like
 // `impl Into(Block) for Closure(..$args) -> $R`.
 //
-// Today's parser only accepts `..$args` in fn parameter lists (1b);
-// the same syntax inside a `Closure(...)` type expression hits
-// `expected type name` at the `..` token. This file pins that
-// rejection. The next commit teaches `parseTypeExpr`'s `Closure(...)`
-// arm + the type-table representation to carry the pack.
+// The parser accepts `..$args` in fn parameter lists only; the same
+// syntax inside a `Closure(...)` type expression hits `expected type
+// name` at the `..` token. This file pins that rejection.
 
 #import "modules/std.sx";
 

@@ -141,12 +141,11 @@ pub const Root = struct {
 };
 
 /// ABI / calling-convention annotation written as the postfix `abi(.x)` form on a
-/// function declaration, function-type literal, or lambda. Subsumes the old
-/// `callconv(...)` spelling.
+/// function declaration, function-type literal, or lambda.
 /// - `.default` — no annotation: the ordinary sx-internal convention (implicit
 ///   context, sx ABI). There is no surface spelling for `.default`; it is the
 ///   value when `abi(...)` is absent.
-/// - `.c` — C ABI / cdecl, no implicit context (what `callconv(.c)` meant).
+/// - `.c` — C ABI / cdecl, no implicit context.
 /// - `.zig` — welded to the real internal Zig type/fn: layout follows the bound
 ///   Zig type, functions dispatch over the comptime host-call bridge. The
 ///   `compiler` library (`design/comptime-compiler-api.md`) binds via `abi(.zig)`.
@@ -187,12 +186,9 @@ pub const FnDecl = struct {
     /// slot. `.none` for an ordinary sx-internal function.
     extern_export: ExternExportModifier = .none,
     /// Optional library reference + symbol-name override for an `extern`/`export`
-    /// function, the optional library + symbol-name override. Both
-    /// optional: `extern` alone resolves the sx name against the default-linked
-    /// libs; `extern LIB` names the source library; `extern "csym"` renames the
-    /// symbol. Required for `extern` to be a behavior-equivalent superset of
-    /// `extern` (Gate A→B) — the migration of 466 `extern` uses across 6 libs
-    /// must preserve each symbol's library. Parsed/consumed in Phase 1.2.
+    /// function. Both optional: `extern` alone resolves the sx name against the
+    /// default-linked libs; `extern LIB` names the source library;
+    /// `extern "csym"` renames the symbol.
     extern_lib: ?[]const u8 = null,
     extern_name: ?[]const u8 = null,
     /// Span of the function's name token, for the reserved-type-name decl
@@ -306,7 +302,7 @@ pub const AsmOperand = struct {
     constraint: []const u8,
     role: Role,
     /// `out_value` → a Type node; `input` → an expression node. (`out_place`
-    /// payload is a write-through place expr — Phase 2, not parsed in A.1.)
+    /// payload is a write-through place expr.)
     payload: *Node,
 
     pub const Role = enum {
@@ -571,7 +567,7 @@ pub const StructDecl = struct {
     /// for an ordinary struct. `.zig` marks a layout-welded binding to the named
     /// `compiler` library's real Zig type — its field offsets are taken from the
     /// bound Zig type (`@offsetOf`) and asserted equal at compiler-build time.
-    /// Parsed in Phase 1; consumed by the binding registry + layout engine later.
+    /// Consumed by the binding registry and the layout engine.
     abi: ABI = .default,
     /// The bound library handle for an `abi(.zig) extern <lib>` welded struct
     /// (e.g. `compiler`); null for an ordinary struct.
@@ -1122,13 +1118,13 @@ pub const RuntimeFieldDecl = struct {
     name: []const u8,
     field_type: *Node, // type_expr node
     /// True iff the declaration carries a `#property[(...)]` directive
-    /// (M2.2). For runtime classes, that means synthesize getter/setter
+    /// For runtime classes, that means synthesize getter/setter
     /// dispatch through `objc_msgSend`; for sx-defined classes it adds
     /// runtime-introspectable property metadata + ARC-aware setter
     /// emission (Month 4 wires the latter).
     is_property: bool = false,
     /// Comma-separated modifier names from `#property(strong, weak, ...)`.
-    /// Stored verbatim; semantic interpretation lands in M4.2.
+    /// Stored verbatim; the semantic interpretation lives downstream.
     property_modifiers: []const []const u8 = &.{},
 };
 

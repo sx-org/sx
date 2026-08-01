@@ -149,7 +149,7 @@ test "lower: bare function values use a pointer-width word on wasm32 (issue 0318
     try std.testing.expect(!diagnostics.hasErrors());
 }
 
-test "lower: instructions carry their AST node's source span (ERR E3.0)" {
+test "lower: instructions carry their AST node's source span" {
     const alloc = std.testing.allocator;
     var module = ir_mod.Module.init(alloc);
     defer module.deinit();
@@ -351,7 +351,7 @@ test "lower: while loop generates header/body/exit blocks" {
     try std.testing.expect(std.mem.indexOf(u8, output, "cond_br") != null);
 }
 
-// M1.2 A.1 — Obj-C type-encoding helper.
+// Obj-C type-encoding helper.
 test "lower: objcTypeEncodingFromSignature emits primitive shapes" {
     const alloc = std.testing.allocator;
     var module = ir_mod.Module.init(alloc);
@@ -424,7 +424,7 @@ test "lower: objcTypeEncodingFromSignature emits pointer shapes" {
     try std.testing.expectEqualStrings("v@:^v", e3);
 }
 
-// M1.2 A.2 — sx-defined #objc_class state struct construction.
+// sx-defined #objc_class state struct construction.
 test "lower: objcDefinedStateStructType collects user-declared fields" {
     const alloc = std.testing.allocator;
     var module = ir_mod.Module.init(alloc);
@@ -935,7 +935,7 @@ test "pack projection: same-name type-arg + method warns (Decision 4)" {
     try std.testing.expectEqual(Lowering.PackProjection{ .method = 0 }, lowering.resolvePackProjection("Shadowy", "value", .value_position));
 }
 
-test "E1.4b converge inferred error sets: empty -> warning, raising -> converged set" {
+test "converge inferred error sets: empty -> warning, raising -> converged set" {
     // The empty-inferred warning isn't user-visible yet (the compile driver
     // only renders diagnostics on failure — a LANG follow-up), so validate the
     // SCC's emission + set computation directly on the DiagnosticList.
@@ -995,7 +995,7 @@ test "E1.4b converge inferred error sets: empty -> warning, raising -> converged
     try std.testing.expect(!raiser_warned);
 }
 
-test "E1.4c noreturn typing: divergence shapes + if-else unification + block propagation" {
+test "noreturn typing: divergence shapes + if-else unification + block propagation" {
     const alloc = std.testing.allocator;
     var module = ir_mod.Module.init(alloc);
     defer module.deinit();
@@ -2066,10 +2066,10 @@ test "lower: match on untagged union subject (payload binding) is diagnosed, not
 
     var lowering = Lowering.init(&module);
     lowering.diagnostics = &diags;
-    // Pre-0163 the capture's payload type leaked out as .unresolved and
-    // panicked at LLVM emission (declareFunction → toLLVMType). The 0222
-    // subject-type gate now subsumes the arm-level union rejection: the whole
-    // match on an untagged-union subject is refused up front — binding or not.
+    // The 0222 subject-type gate subsumes the arm-level union rejection: the
+    // whole match on an untagged-union subject is refused up front — binding or
+    // not. Ungated, the capture's payload type leaks out as .unresolved and
+    // panics at LLVM emission (declareFunction → toLLVMType).
     lowering.lowerFunction(&fd, "main", false);
 
     var found = false;
@@ -2462,11 +2462,11 @@ test "lower: getExprAlloca diagnoses + returns null across a nested-fn boundary,
 }
 
 test "capture: a scope binding shadowing a fn name resolves to .binding, not skipped (issue 0251)" {
-    // The decision `collectCaptures` now makes: at a closure-creation site, a
+    // The decision `collectCaptures` makes: at a closure-creation site, a
     // local/param that shadows a global fn name must be CAPTURED (a `.binding`
-    // result), never skipped as a "function name". The pre-0251 code consulted
-    // the program-wide fn table first, so such a local was dropped and the
-    // closure body read/wrote garbage. `lookupNearest` is the single source of
+    // result), never skipped as a "function name". Consulting the program-wide
+    // fn table first drops such a local, and the closure body then reads/writes
+    // garbage. `lookupNearest` is the single source of
     // truth: `.binding` → capture, `.local_fn`/null → fall through to the
     // fn/type-name skip. A nested local fn (`.local_fn`) is a callable, not a
     // capturable value, so it is correctly NOT captured.
@@ -3074,8 +3074,8 @@ test "lower: assignment to a function-local '::' const gets the constant message
     // A function-local `::` const binds non-alloca (lowerConstDecl), so the
     // assignment lands in the same nonstore_binding arm as captures. It must
     // get the CONSTANT-family message — the capture wording ("capture by
-    // reference with '(*c)'") is nonsense for a const. Pre-0219 the store was
-    // silently dropped, same as the capture shapes.
+    // reference with '(*c)'") is nonsense for a const. Undiagnosed, the store
+    // is silently dropped, same as the capture shapes.
     var five = Node{ .span = span, .data = .{ .int_literal = .{ .value = 5 } } };
     var c_decl = Node{ .span = span, .data = .{ .const_decl = .{ .name = "c", .name_span = span, .type_annotation = null, .value = &five, .is_raw = false } } };
     var c_ident = Node{ .span = span, .data = .{ .identifier = .{ .name = "c" } } };

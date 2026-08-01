@@ -1,4 +1,4 @@
-// Phase 4 (xx-via-Into mechanism): an `impl Into(...) for ...` lives in
+// An `impl Into(...) for ...` lives in
 // a separate file and reaches the xx site through a direct `#import`.
 // The visibility filter accepts the impl because the user file
 // transitively imports the impl's defining module.

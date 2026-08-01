@@ -1,15 +1,15 @@
-// Stream B1 (fibers) — `abi(.naked)` on a GENERIC function emits a correct naked
-// body (regression for an adversarial-review finding).
+// `abi(.naked)` on a GENERIC function emits a correct naked body.
 //
-// A generic function is monomorphized through a different Function-creation path
-// (lower/generic.zig) than a plain decl. That path originally left `is_naked`
-// unset, so a generic `abi(.naked)` instance silently shipped a FRAMED body — it
-// returned 42 but leaked the prologue's stack adjustment (the exact SP-in ≠
-// SP-out corruption the `.naked` ABI exists to avoid). generic.zig (and the
-// sibling pack-expansion path in pack.zig) now set `is_naked` and emit the
-// asm-only naked body. This pins that: the monomorphized `answer__i64` is a
-// proper naked function (no frame), returning 42. aarch64-pinned (the asm body
-// is per-arch); runs end-to-end on a matching host, ir-only elsewhere.
+// A generic function is monomorphized through a different Function-creation
+// path (lower/generic.zig) than a plain decl. Leaving `is_naked` unset on
+// that path ships a FRAMED body for a generic `abi(.naked)` instance — it
+// returns 42 but leaks the prologue's stack adjustment (the exact SP-in ≠
+// SP-out corruption the `.naked` ABI exists to avoid). generic.zig (and
+// the sibling pack-expansion path in pack.zig) set `is_naked` and emit the
+// asm-only naked body. This pins that: the monomorphized `answer__i64` is
+// a proper naked function (no frame), returning 42. aarch64-pinned (the
+// asm body is per-arch); runs end-to-end on a matching host, ir-only
+// elsewhere.
 answer :: ($T: Type) -> i64 abi(.naked) {
     asm volatile {
         #string A

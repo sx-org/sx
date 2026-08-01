@@ -1,4 +1,4 @@
-// FFI plan step 5.1 — `build_block_convert(args: []Type, $ret: Type)
+// `build_block_convert(args: []Type, $ret: Type)
 // -> string` emits the per-shape source body for the generic
 // `Into(Block) for Closure(..$args) -> $R` impl that lands in step
 // 5.2. Per-call-shape monomorphisation of the impl body re-runs the

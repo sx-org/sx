@@ -1,4 +1,4 @@
-// Phase 1 step 1.6 (PLAN-FFI.md): non-void return shapes through
+// Non-void return shapes through
 // `#objc_call`. Each return type triggers a distinct LLVMBuildCall2
 // function-type combination so emit_llvm's per-call-site lowering
 // has to pick the right ABI per call.

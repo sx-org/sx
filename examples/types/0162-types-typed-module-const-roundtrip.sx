@@ -15,7 +15,7 @@
 // Companion to the negative example 1143: the issue-0088 fix rejects a typed
 // const whose initializer mismatches its annotation, and these correctly-typed
 // consts must keep working (no over-rejection) — including const-EXPRESSION
-// initializers, whose type-based validation (attempt 2) must accept a correctly
+// initializers, whose type-based validation must accept a correctly
 // typed expression even though it isn't a literal.
 //
 // `MF`/`MFR` pin the inferExprType promotion: a mixed int+float

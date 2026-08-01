@@ -11,7 +11,7 @@
 // 0764/0774/0706). The static-method head `Box(i64).make(7)` must select `b.Box`
 // (size 8) for BOTH the instantiated type layout and the method body.
 //
-// Regression (Phase E4 finding #1, static-method site): before the static-method
+// Regression (static-method site): before the static-method
 // head consulted the source-keyed visible author, `size_of(Box(i64))` correctly
 // picked the visible `b.Box` (8) but `Box(i64).make(7)` instantiated the global
 // last-wins `c.Box` and runs `c.Box.make`, returning a 16-byte value —

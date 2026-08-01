@@ -1,4 +1,4 @@
-// Stream B1 (fibers) B1.3b — fiber stacks are `mmap`'d with a PROT_NONE GUARD
+// Fiber stacks are `mmap`'d with a PROT_NONE GUARD
 // PAGE at their low end (§8.1.1: a fixed stack without a guard silently
 // corrupts neighbors on overflow — the guard turns overflow into an immediate,
 // loud fault instead). The stack grows DOWN, so the guard sits at the lowest

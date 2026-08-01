@@ -330,7 +330,7 @@ embed_provisioning_profile :: (profile: string, bundle: string) -> bool {
 // `<bundle>/<dest>/`. Creates intermediate dirs as needed. Returns
 // true if `src_dir` doesn't exist (callers can register optional
 // asset trees without failing the build). Shells out to `cp -R`
-// because fs.sx Phase 1A doesn't expose `list_dir` / `walk` yet.
+// because fs.sx exposes no `list_dir` / `walk`.
 copy_asset_dir :: (src: string, dest: string, bundle: string) -> bool {
     src_z := str_to_cstr(src);
     if !exists(src_z) {
@@ -374,7 +374,7 @@ copy_asset_dir :: (src: string, dest: string, bundle: string) -> bool {
 
 // Recursive-copy `<name>.framework` from one of the user's `-F` search
 // paths into `<dest_dir>`. Walks the framework paths in order; first
-// hit wins. Falls back to a `cp -R` subprocess because fs.sx Phase 1A
+// hit wins. Falls back to a `cp -R` subprocess because fs.sx
 // doesn't expose `list_dir` / `walk` yet.
 embed_framework :: (opts: BuildOptions, name: string, dest_dir: string) -> bool {
     subdir := concat(name, ".framework");
@@ -856,7 +856,7 @@ android_bundle_main :: (opts: BuildOptions, binary: string, apk_path: string, bu
 // ── Android helpers ──────────────────────────────────────────────────
 
 // Run `cmd` under a `cd <dir> && ...` shell wrapping. process.run
-// doesn't have a cwd arg in Phase 1A, so we compose it via the shell.
+// has no cwd arg, so it is composed via the shell.
 // Output is folded via `2>&1` so failures hand the user one stream.
 run_in_dir :: (dir: string, cmd: string) -> bool {
     wrapped := concat("cd \"", dir);

@@ -1,7 +1,7 @@
-// Phase 3 step 3.1 (PLAN-FFI.md): static call `Cls.class_method(args)`
+// Static call `Cls.class_method(args)`
 // on an `#objc_class` alias lowers to `objc_msg_send` against the class
 // object (loaded once per module via `objc_getClass` and cached). The
-// selector is derived by the same default mangling as Phase 3.0
+// selector is derived by the same default mangling as the instance form
 // (`stringWithUTF8String_(s)` → "stringWithUTF8String:").
 //
 // Mirrors JNI's static-dispatch surface (`Alias.new(...)` etc.); the

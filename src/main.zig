@@ -576,7 +576,7 @@ fn compile(allocator: std.mem.Allocator, io: std.Io, input_path: []const u8, out
     timer.printAll();
 }
 
-/// Driver-side adapter behind the `link` build-pipeline primitive (Phase 5). The
+/// Driver-side adapter behind the `link` build-pipeline primitive. The
 /// comptime VM can't link itself (it must not depend on `target`), so it
 /// dispatches `link(...)` through a `BuildHooks` whose `ctx` is one of these. The
 /// VM passes the full object list; `target.link` takes (first object, rest), but
@@ -769,7 +769,7 @@ fn compileWithTimer(allocator: std.mem.Allocator, io: std.Io, input_path: []cons
         }
         e.build_config.target_frameworks = fws;
         e.build_config.target_framework_paths = merged_config.framework_paths;
-        // Phase 5: the sx-driven build pipeline reads these via the
+        // The sx-driven build pipeline reads these via the
         // `c_object_paths()` / `link_libraries()` / `build_*()` primitives. Slices
         // reference compileWithTimer locals that outlive the callback.
         e.build_config.c_object_paths = c_obj_paths;

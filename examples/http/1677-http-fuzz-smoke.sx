@@ -1,4 +1,4 @@
-// std.http S3 (PLAN-HTTPZ): BOUNDED, DETERMINISTIC in-process fuzz SMOKE.
+// std.http S3 BOUNDED, DETERMINISTIC in-process fuzz SMOKE.
 //
 // A seeded PRNG throws hundreds of mutated / malformed / random HTTP
 // requests at one live server (driven single-thread via Server.tick) and

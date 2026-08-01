@@ -5,7 +5,7 @@ const lower = @import("lower.zig");
 const Node = ast.Node;
 const Lowering = lower.Lowering;
 
-/// The converged error-analysis facts lowering consumes (PLAN-ARCH A5.1): each
+/// The converged error-analysis facts lowering consumes (: each
 /// pure-failable function's inferred error-tag set, and each bare-`!` closure
 /// SHAPE's inferred set. Backing maps currently live on `Lowering` (the facade
 /// writes `self.l.*`); `facts()` returns a view over them.

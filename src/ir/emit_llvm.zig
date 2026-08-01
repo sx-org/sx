@@ -93,7 +93,7 @@ pub const Jni = struct {
 };
 
 // ── LLVMEmitter ─────────────────────────────────────────────────────────
-// Emits LLVM IR from an IR Module. This is the Phase 3 replacement for
+// Emits LLVM IR from an IR Module. Replaces
 // the AST-based codegen.
 
 pub const LLVMEmitter = struct {
@@ -484,19 +484,19 @@ pub const LLVMEmitter = struct {
             if (self.emission_failed) return;
         }
 
-        // Pass 2.5: Emit Obj-C selector init constructor (Phase 1.5).
+        // Pass 2.5: Emit Obj-C selector init constructor.
         self.ffiCtors().emitObjcSelectorInit();
 
         // Pass 2.5b: Emit Obj-C class-pair registration constructor for
-        // sx-defined classes (M1.2 A.4+). Runs BEFORE the runtime
+        // sx-defined classes. Runs BEFORE the runtime
         // class-cache populator (2.5c) so a sx-defined class is already
         // registered with the Obj-C runtime by the time
-        // `objc_getClass(\"SxFoo\")` runs to populate the Phase 3.1
+        // `objc_getClass(\"SxFoo\")` runs to populate the
         // class-object cache — otherwise the cache slot would store
         // null and `SxFoo.method()` dispatches against null.
         self.ffiCtors().emitObjcDefinedClassInit();
 
-        // Pass 2.5c: Emit Obj-C class-object init constructor (Phase 3.1).
+        // Pass 2.5c: Emit Obj-C class-object init constructor.
         // Same shape as the selector init — populates the per-module
         // cached `Class*` slots via `objc_getClass` at module-init time.
         self.ffiCtors().emitObjcClassInit();
@@ -1496,7 +1496,7 @@ pub const LLVMEmitter = struct {
                 // NO prologue/epilogue/frame. Do NOT request `frame-pointer`
                 // (incompatible with a frameless function). `noinline` keeps the
                 // asm body out of a framed caller; `nounwind` — naked asm never
-                // unwinds. See Function.is_naked / current/PLAN-FIBERS.md.
+                // unwinds. See Function.is_naked.
                 const naked_id = c.LLVMGetEnumAttributeKindForName("naked", 5);
                 c.LLVMAddAttributeAtIndex(llvm_func, func_idx_attr, c.LLVMCreateEnumAttribute(self.context, naked_id, 0));
                 const noinline_id = c.LLVMGetEnumAttributeKindForName("noinline", 8);

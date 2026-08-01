@@ -109,7 +109,7 @@ pub const FfiCtors = struct {
         }
     }
 
-    /// Phase 3.1 companion to `emitObjcSelectorInit`. Walks
+    /// Companion to `emitObjcSelectorInit`. Walks
     /// `module.objc_class_cache` and synthesizes a constructor that
     /// populates each cached `Class*` slot via `objc_getClass(name)`
     /// exactly once at module-init. Registered in `@llvm.global_ctors`
@@ -236,7 +236,7 @@ pub const FfiCtors = struct {
         }
     }
 
-    /// M1.2 A.4 — emit class-pair registration constructor for every
+    /// emit class-pair registration constructor for every
     /// sx-defined `#objc_class` declaration. Same shape as the Phase
     /// 3.1 `emitObjcClassInit` companion: a `@llvm.global_ctors`-
     /// registered constructor that runs at module load AND gets
@@ -246,7 +246,7 @@ pub const FfiCtors = struct {
     /// For each entry in `objc_defined_class_cache`:
     ///   super_cls = objc_getClass("<ParentName>")  // default NSObject
     ///   cls       = objc_allocateClassPair(super_cls, "<ClassName>", 0)
-    ///   class_addIvar(cls, "__sx_state", 8, 3, "^v")     // M1.2 A.4b.i
+    ///   class_addIvar(cls, "__sx_state", 8, 3, "^v")
     ///   objc_registerClassPair(cls)
     ///   g_<ClassName>_state_ivar = class_getInstanceVariable(cls, "__sx_state")
     ///
@@ -293,7 +293,7 @@ pub const FfiCtors = struct {
             const class_name = fcd.name;
 
             // Parent class — pre-resolved Obj-C runtime name from
-            // lower.zig (M2.3 resolveObjcParentName). Stored on the
+            // lower.zig (resolveObjcParentName). Stored on the
             // cache entry so emit_llvm doesn't re-walk
             // runtime_class_map here.
             const parent_name = entry_kv.parent_objc_name;
@@ -322,8 +322,8 @@ pub const FfiCtors = struct {
             };
             _ = c.LLVMBuildCall2(self.e.builder, add_ivar_ty, add_ivar_fn, &ivar_args, 5, "");
 
-            // Class-method registration (M2.1(b)) and the +alloc IMP
-            // (M1.2 A.5) both target the metaclass. Compute it once
+            // Class-method registration and the +alloc IMP
+            // both target the metaclass. Compute it once
             // up-front so all metaclass-bound class_addMethod calls
             // can reference the same LLVM value.
             //
@@ -335,8 +335,8 @@ pub const FfiCtors = struct {
             const metaclass_val = c.LLVMBuildCall2(self.e.builder, obj_get_class_ty, obj_get_class_fn, &ogc_args, 1, "metacls");
 
             // class_addMethod(target, sel_registerName(sel), imp, encoding)
-            // — register each method's IMP trampoline (M1.2 A.4b.iii
-            // + M2.1(b)). Instance methods register on `cls`; class
+            // — register each method's IMP trampoline. Instance
+            // methods register on `cls`; class
             // methods (`is_class`) on the metaclass. Must run BEFORE
             // objc_registerClassPair; the runtime locks the method
             // list at registration time on some SDK versions.
@@ -357,7 +357,7 @@ pub const FfiCtors = struct {
                 _ = c.LLVMBuildCall2(self.e.builder, add_method_ty, add_method_fn, &add_args, 4, "");
             }
 
-            // M2.3 / M3.2 — register `#implements` protocol conformances
+            // Register `#implements` protocol conformances
             // BEFORE objc_registerClassPair. iOS checks
             // `class_conformsToProtocol` when instantiating scene
             // delegates and other protocol-typed callbacks; without
@@ -384,7 +384,7 @@ pub const FfiCtors = struct {
             _ = c.LLVMBuildCall2(self.e.builder, register_ty, register_fn, &reg_args, 1, "");
 
             // Cache the class pointer in `__<Cls>_class` global so the
-            // synthesized -dealloc trampoline (M1.2 A.6) can use it for
+            // synthesized -dealloc trampoline can use it for
             // [super dealloc] dispatch via objc_msgSendSuper2.
             const class_global_name = std.fmt.allocPrint(self.e.alloc, "__{s}_class", .{class_name}) catch continue;
             defer self.e.alloc.free(class_global_name);
@@ -395,7 +395,7 @@ pub const FfiCtors = struct {
                 _ = c.LLVMBuildStore(self.e.builder, cls_val, class_global);
             }
 
-            // M1.2 A.6 — register the synthesized `-dealloc` IMP on the
+            // register the synthesized `-dealloc` IMP on the
             // class itself (instance method). The runtime fires it at
             // refcount-zero; the IMP frees __sx_state and chains to
             // [super dealloc].
@@ -415,7 +415,7 @@ pub const FfiCtors = struct {
                 _ = c.LLVMBuildCall2(self.e.builder, add_method_ty, add_method_fn, &add_args, 4, "");
             }
 
-            // M1.2 A.5 — register the synthesized `+alloc` IMP on the
+            // register the synthesized `+alloc` IMP on the
             // metaclass. Class methods live on the metaclass (every
             // Class object's `isa` points to the metaclass), so we
             // resolve it via `object_getClass(cls)` and `class_addMethod`
@@ -445,7 +445,7 @@ pub const FfiCtors = struct {
 
             // Cache the ivar handle in the per-class global so trampolines
             // can read the __sx_state ivar without re-looking-it-up. The
-            // global is declared by lower.zig (M1.2 A.4b.i) and starts as
+            // global is declared by lower.zig and starts as
             // null; the constructor fills it in here.
             const ivar_global_name = std.fmt.allocPrint(self.e.alloc, "__{s}_state_ivar", .{class_name}) catch continue;
             defer self.e.alloc.free(ivar_global_name);

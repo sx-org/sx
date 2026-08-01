@@ -4,10 +4,10 @@
 // layout) and is the only compare that correctly ignores padding bytes.
 //
 // Regression (issue 0245): a struct-compare arm in `emit_llvm` that handles
-// only a 2-scalar-field shape emits invalid IR for a 1-field struct, has a
-// 3+-field struct SILENTLY compared only fields 0/1 (`S{ 1,2,3} == S{ 1,2,999}`
-// returned true), and any non-scalar field (float / nested struct / string)
-// crashed the LLVM verifier. The compare is now lowered field-wise in
+// only a 2-scalar-field shape emits invalid IR for a 1-field struct, compares
+// a 3+-field struct on fields 0/1 alone (`S{ 1,2,3} == S{ 1,2,999}` yields
+// true), and crashes the LLVM verifier on any non-scalar field (float /
+// nested struct / string). The compare lowers field-wise in
 // src/ir/lower/expr.zig (lowerStructEquality) so every field participates and
 // each field is compared against its own type (float→fcmp, string→str_eq,
 // nested struct→recurse, tagged-union field→tag-only).

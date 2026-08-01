@@ -1,5 +1,5 @@
-// Stream B2 — structured first-wins `race` over `context.io` (PLAN-IO-UNIFY
-// Phase 4). `context.io.race(.(a = fa, b = fb, c = fc))` takes a named tuple of
+// Structured first-wins `race` over `context.io`.
+// `context.io.race(.(a = fa, b = fb, c = fc))` takes a named tuple of
 // already-spawned `*Future(..)` handles (from `context.io.async`), SUSPENDS the
 // calling fiber until the FIRST is `.ready`, and returns a comptime-SYNTHESIZED
 // tagged-union (`RaceResult`) mirroring the tuple's labels — variant NAME = the
@@ -7,7 +7,7 @@
 // DIFFERENT types (i64 / bool / f64), so the minted union is
 // `enum { a: i64; b: bool; c: f64 }` and the winner is matched by label.
 //
-// TRUE cancellation (Phase 3): the workers sleep 10/20/30 ms (deterministic
+// TRUE cancellation: the workers sleep 10/20/30 ms (deterministic
 // virtual clock), so `a` wins at t=10. The losers `b`/`c` are parked mid-`sleep`
 // when cancelled; their next `suspend_raw` raises `Canceled` and unwinds the body,
 // so their POST-SLEEP `rec(...)` NEVER runs and `race` returns at WINNER-time. The

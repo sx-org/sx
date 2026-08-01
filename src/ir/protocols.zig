@@ -1224,7 +1224,7 @@ fn carrierMatches(
             gop.value_ptr.* = std.ArrayList(Lowering.ParamImplEntry).empty;
         } else {
             // Same-file duplicate is an immediate error. Cross-file overlaps
-            // are deferred to the xx resolution site (Phase 5) so the impl
+            // are deferred to the xx resolution site so the impl
             // surface can be richer than any one file's view.
             for (gop.value_ptr.items) |existing| {
                 if (std.mem.eql(u8, existing.defining_module, defining_module)) {

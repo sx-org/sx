@@ -1,4 +1,4 @@
-// Comptime compiler API — type-kind + enum-value reflection readers (Phase 3).
+// Comptime compiler API — type-kind + enum-value reflection readers.
 //
 // Completes the READ side the metatype needs to re-express `type_info(T)` as sx:
 //

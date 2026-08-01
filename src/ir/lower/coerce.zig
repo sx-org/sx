@@ -319,7 +319,7 @@ pub fn tryPackImplMatch(
 /// Look up `Into(dst_ty)` impl for `src_ty` and, if found, monomorphise
 /// the impl's `convert` method and emit a direct call. Returns null when
 /// no impl matches (caller falls back to the built-in result, which is
-/// the unchanged operand — Phase 3 emits no diagnostic for v0).
+/// the unchanged operand emits no diagnostic for v0).
 pub fn tryUserConversion(self: *Lowering, operand: Ref, operand_node: *const Node, src_ty: TypeId, dst_ty: TypeId) ?Ref {
     // Reentrancy guard — pack (src, dst) into a u64.
     const guard_key: u64 = (@as(u64, src_ty.index()) << 32) | @as(u64, dst_ty.index());
@@ -1622,8 +1622,8 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             const unwrapped = self.builder.emit(.{ .optional_unwrap = .{ .operand = val } }, child_ty);
             return self.coerceMode(unwrapped, child_ty, dst_ty, mode);
         },
-        // Optional → bool: there is no implicit presence-test coercion. The
-        // old unwrap-then-narrow ladder silently produced `false` for every
+        // Optional → bool: there is no implicit presence-test coercion. An
+        // unwrap-then-narrow ladder silently produces `false` for every
         // optional (issue 0169). Reject with a fix-it pointing at `!= null`.
         .optional_to_bool_reject => {
             if (self.diagnostics) |d| {

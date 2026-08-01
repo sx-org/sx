@@ -1,4 +1,4 @@
-// std.socket nonblocking surface (PLAN-HTTPZ S2): set_nonblocking via
+// std.socket nonblocking surface set_nonblocking via
 // the C-variadic fcntl, and the typed _nb wrappers' full result
 // algebra — bytes, WouldBlock, Closed — on a unix socketpair, plus
 // accept_nb on a nonblocking TCP listener (WouldBlock with an empty
@@ -52,7 +52,7 @@ main :: () -> i32 {
     if lfd < 0 { print("listener socket failed\n"); return 1; }
     one : i32 = 1;
     socket.setsockopt(lfd, socket.SOL_SOCKET, socket.SO_REUSEADDR, *one, 4);
-    // Per-OS sockaddr_in (PLAN-HTTPZ C3a) — the constructor hides the darwin
+    // Per-OS sockaddr_in — the constructor hides the darwin
     // sin_len / linux layout split; addr is 127.0.0.1 in network order.
     addr := socket.sockaddr_in(PORT, 0x0100007F);
     if socket.bind(lfd, *addr, 16) != 0 { print("bind failed\n"); return 1; }

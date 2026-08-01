@@ -1,4 +1,4 @@
-// Stream B1 (fibers) — `abi(.naked)` emits a naked function end-to-end.
+// `abi(.naked)` emits a naked function end-to-end.
 //
 // An `abi(.naked)` function has no calling-convention prologue/epilogue/frame
 // and no implicit `__sx_ctx`: its body is a single asm block that sets the

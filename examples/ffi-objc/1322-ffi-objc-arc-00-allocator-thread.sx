@@ -1,6 +1,6 @@
 // ffi-objc-arc-00 — M4.0 end-to-end allocator threading regression.
 //
-// Verifies that the per-instance allocator design from M1.2 A.5 + M4.0
+// Verifies that the per-instance allocator design
 // is actually wired:
 //   1. `push .{ allocator = tracker } { SxFoo.alloc(); }` →
 //      the state struct is allocated via tracker (not libc).
@@ -11,7 +11,7 @@
 //   4. The alloc/dealloc deltas around the call pair balance to (+1, +1)
 //      — exactly one sx-defined-class state struct round-trips.
 //
-// Pre-M4.0 the +alloc IMP used libc `malloc` and -dealloc used libc
+// An +alloc IMP on libc `malloc` with -dealloc on libc
 // `free`, both bypassing context.allocator — tracker would have
 // observed (+0, +0) deltas, missing the leak silently.
 //

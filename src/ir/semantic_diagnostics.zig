@@ -314,7 +314,7 @@ pub const UnknownTypeChecker = struct {
             },
             // impl / protocol-default / runtime-class method bodies: each
             // method introduces its own params + locals. A `#jni_main` /
-            // `#objc_class` bodied method is lowered (M1.2), so its reserved
+            // `#objc_class` bodied method is lowered, so its reserved
             // param/local names mis-lower the same as any other.
             .impl_block => |ib| for (ib.methods) |m| self.checkBindingNames(m),
             .open_set_decl => |sd| {
@@ -864,11 +864,11 @@ pub const UnknownTypeChecker = struct {
                 // A TYPED array/slice literal head (`([N]T).[…]` / `([]T).[…]`)
                 // names its element type exactly like a declaration annotation —
                 // validate it through the same unknown-type walk. Without this,
-                // an undefined element name (`([2]?Undefined).[…]`) bypassed the
-                // checker and reached the lowering's forward-ref stub, silently
+                // an undefined element name (`([2]?Undefined).[…]`) bypasses the
+                // checker and reaches the lowering's forward-ref stub, silently
                 // compiling with an empty-struct element instead of erroring
-                // like the `x: [2]?Undefined` declaration path (issues 0173–0175
-                // adversarial review). `checkTypeNodeForUnknown` recurses the
+                // like the `x: [2]?Undefined` declaration path (issues
+                // 0173–0175). `checkTypeNodeForUnknown` recurses the
                 // `[N]?T` / `[]T` head down to its leaf type name and skips
                 // forward-refs (`declared`), generics (`in_scope`), aliases, and
                 // parameterized element types — so only genuinely-undeclared

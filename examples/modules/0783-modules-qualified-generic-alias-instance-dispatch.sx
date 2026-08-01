@@ -4,7 +4,7 @@
 // Two namespaces author a same-name generic `Box($T)` with a DIFFERENT layout and
 // a DIFFERENT `tag`; the alias over `a.Box(i64)` must dispatch `a.Box.tag`.
 //
-// Regression (Phase E4 Counter-2): the alias registration cloned the layout into
+// Regression : the alias registration cloned the layout into
 // a fresh type named `ABox` but did NOT mirror the instance template/bindings/
 // author onto the alias name, so `x.tag()` on an `ABox` receiver resolved to
 // nothing (unresolved). Copying the three instance-map entries to the alias name

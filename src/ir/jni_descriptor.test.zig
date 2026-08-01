@@ -1,4 +1,4 @@
-// Tests for jni_descriptor.zig — Phase 2 step 2.8.
+// Tests for jni_descriptor.zig step 2.8.
 // Table-driven golden test for the primitive / array / *Self JNI
 // signature alphabet. Cross-class references land in 2.9.
 

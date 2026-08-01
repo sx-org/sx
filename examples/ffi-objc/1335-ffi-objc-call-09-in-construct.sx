@@ -1,4 +1,4 @@
-// Phase 1 steps 1.11–1.13 (PLAN-FFI.md): `#objc_call` call sites
+// `#objc_call` call sites
 // embedded inside the sx surface constructs. None touch a new ABI
 // path — the lowering routes the call identically regardless of
 // the enclosing scope, and this test pins that lemma.

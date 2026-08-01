@@ -302,11 +302,10 @@ pub const GenericResolver = struct {
 
         // ONE binding builder: the same `buildTypeBindings` the lowering /
         // monomorphization path uses, so plan-side return typing can't
-        // disagree with the instance actually dispatched. (The previous
-        // local strategies only bound BARE `$T` value params — a structured
-        // param (`[]$T`, `*$T`) never bound, so the planned return type of
-        // e.g. `gfirst(xs: []$T) -> T` was the `T` stub and print's Any
-        // boxing mis-tagged the value.)
+        // disagree with the instance actually dispatched. A builder that binds
+        // only BARE `$T` value params leaves a structured param (`[]$T`, `*$T`)
+        // unbound, so the planned return type of e.g. `gfirst(xs: []$T) -> T`
+        // is the `T` stub and print's Any boxing mis-tags the value.
         var tmp_bindings = self.buildTypeBindings(fd, c.args);
         defer tmp_bindings.deinit();
 
@@ -339,8 +338,7 @@ pub const GenericResolver = struct {
 
 /// Scoped override of `Lowering.type_bindings`: install a binding set for the
 /// duration of a substitution, restoring the prior set on `exit`. Replaces the
-/// manual save/restore the generic-return resolution used (PLAN-ARCH A4.1
-/// "scoped substitution envs").
+/// manual save/restore the generic-return resolution would otherwise need.
 const TypeBindingScope = struct {
     l: *Lowering,
     saved: ?std.StringHashMap(TypeId),

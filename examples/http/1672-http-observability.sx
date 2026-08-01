@@ -1,6 +1,6 @@
-// std.http H4 (PLAN-HTTPZ): explicit errors + observability.
+// std.http H4 explicit errors + observability.
 //
-// Today accept/read/write/parse/timeout/503 faults close a connection
+// Accept/read/write/parse/timeout/503 faults close a connection
 // SILENTLY. H4 adds two opt-in observers, BOTH driven from the loop
 // thread so no cross-thread atomics are needed:
 //   1. a pluggable on_event hook (Config.on_event + on_event_ctx) called

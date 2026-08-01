@@ -3,10 +3,10 @@
 // slot with standard default argument promotion (i8/i16/bool → i32,
 // f32 → f64), NOT packed into an sx slice.
 //
-// Regression (FFI-linkage Part B): the `is_variadic` drop in
-// `declareFunction` + the call-site early-out in `packVariadicCallArgs`
-// were gated on `extern` only, so a migrated variadic `extern` lost
-// its `...` tail and slice-packed the extras (garbage at the C ABI).
+// Regression (FFI-linkage): the `is_variadic` drop in `declareFunction`
+// and the call-site early-out in `packVariadicCallArgs` cover every
+// `extern` shape; gating them narrowly drops the `...` tail and
+// slice-packs the extras (garbage at the C ABI).
 
 #import "modules/std.sx";
 

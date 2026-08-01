@@ -4,7 +4,7 @@
 // resolve promoted members; the lvalue-pointer path (`@v.x`) now resolves them
 // too, via the shared field-lvalue resolver.
 //
-// Regression (issue 0094, attempt 2): lowerExprAsPtr's union branch handled
+// Regression (issue 0094): lowerExprAsPtr's union branch handled
 // only DIRECT union field names, so `@v.x` on a promoted member reported
 // "field 'x' not found on type 'Vec2'" even though `v.x = 41` worked. The
 // over-rejection is gone, and a member that is NOT at offset 0 (`v.y`) resolves

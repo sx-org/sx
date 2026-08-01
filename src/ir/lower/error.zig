@@ -881,7 +881,7 @@ pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) 
         // absorption clear fires once it completes WITHOUT re-raising (a
         // fall-through). A diverging body (`raise` / `return`) keeps /
         // discards the buffer on its own path (ERR E3.2; reconciles
-        // PLAN-ERR §clear-points "cleared before body" with §catch-over-or
+        // §clear-points "cleared before body" with §catch-over-or
         // "frames still in the buffer when the body runs").
         if (!self.currentBlockHasTerminator()) {
             self.emitTraceClear();

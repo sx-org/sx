@@ -209,17 +209,17 @@ pub const ExprTyper = struct {
                         }
                     }
                 }
-                // M1.3 — `obj.class` on an Obj-C-class pointer returns Class (*void).
+                // `obj.class` on an Obj-C-class pointer returns Class (*void).
                 if (std.mem.eql(u8, fa.field, "class")) {
                     if (self.l.objc().isObjcClassPointer(self.l.inferExprType(fa.object))) {
                         return self.l.module.types.ptrTo(.void);
                     }
                 }
-                // M2.2 — `obj.field` for an Obj-C `#property` field returns the field's type.
+                // `obj.field` for an Obj-C `#property` field returns the field's type.
                 if (self.l.lookupObjcPropertyOnPointer(fa.object, fa.field)) |prop| {
                     return self.l.resolveType(prop.field_type);
                 }
-                // M1.2 A.3 — sx-defined class state field returns the field's type.
+                // sx-defined class state field returns the field's type.
                 if (self.l.lookupObjcDefinedStateFieldOnPointer(fa.object, fa.field)) |info| {
                     return info.field_ty;
                 }

@@ -1,4 +1,4 @@
-// std.event (PLAN-HTTPZ S5): the OS-neutral Loop — idle timeout costs
+// std.event the OS-neutral Loop — idle timeout costs
 // nothing, read readiness carries the registration's udata, write
 // interest reports an empty send buffer immediately, EOF is a flag not
 // an errno, and the deadline helpers do monotonic timeout math.

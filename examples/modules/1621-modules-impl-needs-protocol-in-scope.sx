@@ -4,7 +4,7 @@
 // degrades `xx "abc"` here to the reinterpret
 // spill (b.v reads the string's header bytes; pointer targets then
 // segfault — the objc.sx NSString bridge fails exactly this way).
-// Now the build rejects the dead impl at its declaration.
+// The build rejects the dead impl at its declaration.
 #import "modules/std.sx";
 #import "1621-modules-impl-needs-protocol-in-scope/dead_impl.sx";
 

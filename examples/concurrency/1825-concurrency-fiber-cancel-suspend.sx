@@ -1,4 +1,4 @@
-// Stream B2 — TRUE cancellation (PLAN-IO-UNIFY Phase 3). A `cancel` delivered to
+// TRUE cancellation. A `cancel` delivered to
 // a worker that is PARKED at a suspend point makes the worker ABANDON its body:
 // the worker's next `suspend_raw` raises `IoErr.Canceled`, which unwinds out
 // through `try context.io.sleep(..)` and the failable worker, so every line AFTER

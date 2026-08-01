@@ -6,7 +6,7 @@ trace :: #import "modules/std/trace.sx";
 // =====================================================================
 // process.sx — subprocess + environment stdlib (POSIX backend).
 //
-// Scope (Phase 1A): one entry point `run(cmd)` that shells out to
+// Scope: one entry point `run(cmd)` that shells out to
 // /bin/sh, captures stdout, returns exit code + stdout. Plus
 // `env(name)` / `find_executable(name)`. The bundler uses these to
 // invoke `codesign`, `plutil`, `security`, `aapt2`, `javac`, `d8`,

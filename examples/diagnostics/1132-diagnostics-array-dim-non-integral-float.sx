@@ -7,7 +7,7 @@
 // integer" — the SAME `floatToIntExact` judgement the typed local/field/param/
 // const sites use (the count path is the last of the five sites to unify).
 //
-// Regression (F0.4 attempt 8, Agra ruling): the integral-float rule accepts
+// Regression : the integral-float rule accepts
 // `4.0` as a dimension but must keep rejecting `4.5` (it is not an integer).
 #import "modules/std.sx";
 

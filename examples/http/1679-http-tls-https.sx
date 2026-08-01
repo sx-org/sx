@@ -1,4 +1,4 @@
-// std.http Phase T (PLAN-HTTPZ): native HTTPS end-to-end. A real http.Server
+// std.http Phase T native HTTPS end-to-end. A real http.Server
 // with `cfg.tls` set to an mbedTLS provider (TlsServer), driven in ONE thread
 // via Server.tick, serves a request to an in-process mbedTLS CLIENT over a
 // loopback TLS connection — exercising the CONN_TLS_HANDSHAKE state machine,

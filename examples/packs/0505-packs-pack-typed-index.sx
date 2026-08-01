@@ -8,15 +8,9 @@
 // either fail with "field 'X' not found on type 'any'" or silently
 // box/unbox through any.
 //
-// This file pins today's failure: `args[0].x` on a struct-typed
-// call arg trips "field 'x' not found on type 'any'" because the
-// AST-level type inference for `args[0]` returns any.
-//
-// Next commit teaches `lowerIndexExpr` to detect a pack-name base
-// with a comptime-int-literal index and substitute the i-th
-// call-site arg's lowered value directly — propagating the call
-// arg's real type through field access, typed assignments, and
-// further indexing.
+// This file pins the failure: `args[0].x` on a struct-typed call arg
+// trips "field 'x' not found on type 'any'" because the AST-level type
+// inference for `args[0]` returns any.
 
 #import "modules/std.sx";
 

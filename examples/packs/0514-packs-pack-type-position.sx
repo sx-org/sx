@@ -7,13 +7,10 @@
 // - local var annotation: `x : $args[1] = ...`
 // - (later: param types, fn-pointer types, struct field types)
 //
-// Today's parser hits "expected '{'" at the `$args[0]` token in
-// the return type position because the `$<ident>` arm only
-// accepts plain generic names; `[<int>]` after the name isn't
-// recognised. This file pins that rejection. Next commit teaches
-// the parser to accept `$<pack>[<int>]` and adds a new
-// `PackIndexTypeExpr` AST node; `resolveTypeWithBindings`
-// consults the active `pack_arg_types` map.
+// The parser hits "expected '{'" at the `$args[0]` token in the return
+// type position because the `$<ident>` arm accepts plain generic names
+// only; `[<int>]` after the name is not recognised. This file pins that
+// rejection.
 //
 // The body intentionally exercises TWO positions per mono — the
 // return type AND a local annotation — so the parser change has

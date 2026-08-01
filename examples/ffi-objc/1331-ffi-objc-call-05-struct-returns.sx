@@ -1,4 +1,4 @@
-// Phase 1 step 1.7 (PLAN-FFI.md): struct returns through
+// Struct returns through
 // `#objc_call`. emit_llvm's `objc_msg_send` arm hands the IR
 // struct type straight to LLVMBuildCall2; the AArch64 / SysV
 // AMD64 backend handles the register-pair / HFA / byval+sret
@@ -42,7 +42,7 @@ main :: () -> i32 {
         rect := #objc_call(NSRect)(null, "rectValue");
         print("rect  = ({}, {}, {}, {})\n", rect.x, rect.y, rect.width, rect.height);
 
-        // >16 B non-HFA struct returns (sret path) land in Phase 1.8.
+        // >16 B non-HFA struct returns (sret path) live in 1332.
     }
     inline if OS != .macos {
         print("skipped (not macos)\n");

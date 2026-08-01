@@ -2425,7 +2425,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
                 .handled => return,
                 .not_applicable => {},
             }
-            // M2.2 — `obj.field = val` for an Obj-C `#property` field
+            // `obj.field = val` for an Obj-C `#property` field
             // dispatches via objc_msgSend `setField:`. Skip struct-
             // pointer / GEP entirely; receivers are opaque Obj-C ids.
             // Compound ops on properties are deferred (need load-via-
@@ -2436,7 +2436,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
                     return;
                 }
             }
-            // M1.2 A.3 — `self.field [op]= val` on a sx-defined Obj-C
+            // `self.field [op]= val` on a sx-defined Obj-C
             // class instance field (NOT a #property): write through
             // the __sx_state ivar. Handles plain assignment AND
             // compound ops (+=, -=, etc.) via storeOrCompound.
@@ -3629,8 +3629,8 @@ pub fn lowerMultiAssign(self: *Lowering, ma: *const ast.MultiAssign) void {
                 // Resolve the target field via the shared lvalue resolver —
                 // the same one address-of uses — so a missing field emits a
                 // diagnostic instead of defaulting to field 0 / field_ty
-                // .unresolved, which silently corrupted a neighbouring field
-                // (or panicked at LLVM emission).
+                // .unresolved, which silently corrupts a neighbouring field
+                // (or panics at LLVM emission).
                 if (self.fieldLvaluePtr(obj_ptr, obj_ty, fa.field)) |r| {
                     const val_ty = self.builder.getRefType(val);
                     if (!self.checkAssignable(val_ty, r.ty, ma.values[i].span, "assign", fa.field, ma.values[i])) continue;

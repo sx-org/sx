@@ -14,7 +14,7 @@ g_should_call : bool = false;
 
 unused_jni :: (env: *void, act: *Activity) {
     #jni_env(env) {
-        // Today: this fails — sema doesn't know `Activity` as a type, or
+        // This fails — sema doesn't know `Activity` as a type, or
         // the method dispatch doesn't recognize runtime-class members.
         win := act.getWindow();
     }

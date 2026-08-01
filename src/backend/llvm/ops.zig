@@ -2681,13 +2681,13 @@ pub const Ops = struct {
             } else {
                 // UNREACHABLE backend tripwire. A condBr condition must be i1,
                 // an integer, or a pointer. Anything else (a struct — e.g. an
-                // optional `{T,i1}` aggregate — or a float) is now rejected at
+                // optional `{T,i1}` aggregate — or a float) is rejected at
                 // lowering with a located type error: `checkConditionType` in
                 // src/ir/lower/expr.zig gates every condition site (`if` /
                 // `while` / `and` / `or`), and optionals are reduced to their
                 // has_value i1 before reaching here (issue 0164). Folding such a
-                // condition truthy was a silent miscompile (`if opt { }` always
-                // took the present branch); reaching this @panic now means a NEW
+                // condition truthy is a silent miscompile (`if opt { }` always
+                // takes the present branch); reaching this @panic means a
                 // condition site bypassed `checkConditionType` — add the check
                 // there, don't fold truthy.
                 @panic("emitCondBr: non-boolean condition reached condBr — should have been rejected at lowering as a type error (issue 0164; see checkConditionType in src/ir/lower/expr.zig)");

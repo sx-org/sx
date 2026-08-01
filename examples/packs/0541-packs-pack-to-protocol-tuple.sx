@@ -1,4 +1,4 @@
-// Phase 6 — `c.sources = .(..sources)`: materialize a pack into a
+// `c.sources = .(..sources)`: materialize a pack into a
 // protocol-typed tuple field, erasing each concrete pack element to the field's
 // protocol slot. The pack `..sources: VL` holds concrete cells; `.(..sources)`
 // into a `Tuple(..VL(Ts))` field `xx`-erases each to its `VL(Ti)` value.

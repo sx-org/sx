@@ -1,5 +1,5 @@
-// Phase 1 step 1.16 (PLAN-FFI.md): two `#jni_call` sites against the
-// same (class, method, sig) tuple. Today each site emits its own
+// Two `#jni_call` sites against the
+// same (class, method, sig) tuple. Each site emits its own
 // `GetObjectClass` + `GetMethodID` call (no caching yet); after 1.17
 // the lowering collapses to one cached `jmethodID` per unique
 // (class, method, sig).

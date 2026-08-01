@@ -1,4 +1,4 @@
-// Phase 1 step 1.14 (PLAN-FFI.md): `#objc_call` inside an
+// `#objc_call` inside an
 // `inline if OS == .ios { ... }` arm cross-compiles cleanly to
 // Android. The comptime gate must strip the arm BEFORE the
 // `objc_msg_send` lowering runs, otherwise emit_llvm would

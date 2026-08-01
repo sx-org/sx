@@ -4,17 +4,17 @@
 // ordinal.
 //
 // Regression (issue 0281):
-//   Defect 1 — call-shaped construction `Ev.key(5)` stored the ORDINAL (1)
-//   while `match` switched on the explicit tag (0x300 = 768), so a payloadful
-//   match matched no case and fell through to `else`/unreachable (mis-dispatch
-//   / UB). Fixed so construction stores the explicit value: the ordinal now
+//   Defect 1 — a call-shaped construction `Ev.key(5)` that stores the ORDINAL
+//   (1) while `match` switches on the explicit tag (0x300 = 768) makes a
+//   payloadful match match no case and fall through to `else`/unreachable
+//   (mis-dispatch / UB). Construction stores the explicit value; the ordinal
 //   indexes `fields[]` for the payload-type lookup only.
 //
 //   Defect 2 — the struct-literal construction form `Ev.key{ 42 }` with a
-//   SCALAR payload panicked ("unresolved type reached LLVM emission"): the
-//   qualified `Ev.key` field_access wasn't routed to the tagged-enum path, and
-//   even the inferred `.key{ 42 }` form wrapped the scalar in an invalid
-//   `insertvalue i64`. Both now construct the variant with payload 42.
+//   SCALAR payload panics ("unresolved type reached LLVM emission") when the
+//   qualified `Ev.key` field_access is not routed to the tagged-enum path, and
+//   the inferred `.key{ 42 }` form wraps the scalar in an invalid
+//   `insertvalue i64`. Both construct the variant with payload 42.
 //
 // All FOUR paths must agree on the explicit tag encoding: call-shaped
 // construction, struct-literal construction, `match`, and the formatter (0280).

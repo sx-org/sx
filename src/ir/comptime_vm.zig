@@ -73,7 +73,7 @@ const Span = inst_mod.Span;
 /// reads as null.
 /// Because addresses are absolute host pointers, a comptime pointer and an
 /// FFI-returned host pointer are the SAME kind of value: the FFI bridge hands them
-/// to / from real libc with no translation (Phase 4D).
+/// to / from real libc with no translation.
 pub const Addr = u64;
 pub const null_addr: Addr = 0;
 
@@ -87,7 +87,7 @@ pub const Reg = u64;
 /// short-lived). There is NO fixed buffer and NO size cap: the arena grows through
 /// its backing allocator on demand. `Addr` is the allocation's REAL host pointer,
 /// so a comptime pointer and an FFI-returned host pointer are interchangeable —
-/// the FFI bridge passes them to / from libc untouched (Phase 4D).
+/// the FFI bridge passes them to / from libc untouched.
 pub const Machine = struct {
     arena: std.heap.ArenaAllocator,
 
@@ -488,7 +488,7 @@ fn signExtendWord(raw: Reg, sz: usize) Reg {
     return @bitCast((@as(i64, @bitCast(raw)) << shift) >> shift);
 }
 
-// ── BuildOptions target predicates (Phase 5.5) ───────────────────────────────
+// ── BuildOptions target predicates ───────────────────────────────
 // Computed from the `--target` triple, mirroring `compiler_hooks`'s hooks
 // (which mirror `TargetConfig.is{MacOS,IOS,IOSDevice,IOSSimulator}()`).
 
@@ -2033,7 +2033,7 @@ pub const Vm = struct {
     }
 
     /// Service a welded `compiler`-library function natively on comptime memory — the
-    /// comptime compiler-API (Phase 3 of `PLAN-COMPILER-VM.md`). Returns the result
+    /// comptime compiler-API. Returns the result
     /// word, or `null` for an unknown name (caller bails). Reads/writes comptime
     /// memory directly instead of marshaling `Value`s. The seed pair is the
     /// string-pool round-trip:
@@ -2073,7 +2073,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             const id: types.StringId = @enumFromInt(@as(u32, @intCast(raw)));
             return try self.makeStringValue(table, table.getString(id));
         }
-        // ── read-only reflection readers (Phase 3) ──────────────────────────
+        // ── read-only reflection readers ──────────────────────────
         // Type handle = a u32 `TypeId` (a word), exactly like `StringId` — so
         // these mirror intern/text_of's shape: word in, word out, no marshaling.
         if (intr == .raw_find_type) {
@@ -2156,8 +2156,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         if (intr == .build_options) {
             return @as(Reg, null_addr);
         }
-        // `on_build(cb)` — register the build callback (the Phase 5 form, `cb:
-        // (opt: BuildOptions) -> bool`). Like `set_post_link_callback` but a free
+        // `on_build(cb)` — register the build callback (`cb: (opt:
+        // BuildOptions) -> bool`). Like `set_post_link_callback` but a free
         // fn (cb is arg 0, no self) and the callback receives the `BuildOptions`
         // handle when invoked (the `post_link_takes_options` flag drives that).
         if (intr == .on_build) {
@@ -2170,7 +2170,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
             bc.post_link_takes_options = true;
             return @as(Reg, null_addr);
         }
-        // ── build-pipeline metadata queries (Phase 5.2) ─────────────────────
+        // ── build-pipeline metadata queries ─────────────────────
         // Read-only: the compiler answers them from the `BuildConfig` `main.zig`
         // forwards before the post-link callback runs. Each builds a fresh
         // `List(string)` in comptime memory (the result type drives its layout) — no
@@ -2225,7 +2225,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         }
         // `link(objects, output, libraries, frameworks, flags, target)` — the one
         // genuine ACTION: dispatch to the host-installed linker (the VM can't link
-        // itself). Void return (the build callback isn't fallible — Phase 5
+        // itself). Void return (the build callback isn't fallible
         // decision); a link failure bails loudly → hard build error. `ref_types`
         // gives each List(string) arg its concrete type for the comptime reader.
         if (intr == .link) {
@@ -2244,10 +2244,9 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
                 return self.failMsg("comptime link: linking failed");
             return @as(Reg, null_addr); // void
         }
-        // ── BuildOptions accessors (Phase 5.5) ──────────────────────────────
-        // Migrated off `struct #compiler` hooks onto VM-native arms. `self` (the
-        // opaque BuildOptions handle) is args[0] and ignored; the real state lives
-        // on the threaded `BuildConfig`. SETTERS dupe the string arg into the
+        // ── BuildOptions accessors ──────────────────────────────────────────
+        // `self` (the opaque BuildOptions handle) is args[0] and ignored; the
+        // real state lives on the threaded `BuildConfig`. SETTERS dupe the string arg into the
         // PERSISTENT `self.gpa` (the Compilation allocator — NOT the per-eval VM
         // arena, whose bytes die at `Vm.deinit`) so it survives to post-link.
         if (try self.callBuildOptionFn(name, args, frame)) |r| return r;
@@ -2269,7 +2268,7 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         return self.gpa.dupe(u8, view) catch return self.failMsg("comptime BuildOptions setter: out of memory");
     }
 
-    /// VM-native `BuildOptions` accessors (Phase 5.5). Returns null when `name` is
+    /// VM-native `BuildOptions` accessors. Returns null when `name` is
     /// not a BuildOptions accessor (the caller then yields null → "unknown").
     fn callBuildOptionFn(self: *Vm, name: []const u8, args: []const Ref, frame: *Frame) Error!?Reg {
         const table = try self.requireTable();
