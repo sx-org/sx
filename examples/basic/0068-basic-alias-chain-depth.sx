@@ -1,8 +1,5 @@
 // Const and function alias chains resolve at ANY acyclic depth — the walk
 // is bounded by the finite declaration set, not a fixed hop budget.
-// A 16-round fixpoint budget for module-const aliases (head-first declaration
-// order burns one round per hop) and a 9-hop cap for fn aliases both stop short
-// of the chains below, which must still fold/dispatch.
 #import "modules/std.sx";
 
 A00 :: A01;

@@ -2,10 +2,6 @@
 // integer type works when arms mix positive and negated literals: every arm
 // value is lowered against the merge's result type, so the phi operands all
 // share one width.
-//
-// A negated-literal arm (`else: -1`) lowered at a
-// narrower width than the positive arms trips LLVM's
-// "PHI node operands are not the same type as the result".
 
 #import "modules/std.sx";
 

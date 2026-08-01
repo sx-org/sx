@@ -8,7 +8,6 @@
 // `case .x: (e) => expr` alike. A written `;` stays legal in each — it is a
 // separator. A statement that IS a block, and a declaration whose INITIALIZER
 // is block-form, end at that `}` and take nothing after it.
-// Expected: exit 0.
 #import "modules/std.sx"
 
 Color :: enum {

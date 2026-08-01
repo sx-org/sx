@@ -5,18 +5,13 @@
 //
 // Also pinned: each RHS value types against ITS target (the multi-assign
 // twin of single-assign's target-typing preamble) —
-//   - a `null` RHS lowers as the TARGET's optional type, global and local
-//     (typing it against the enclosing fn's return type makes coerceToType
-//     wrap a PRESENT Some(0) into the optional);
-//   - an enum-literal RHS resolves against the enum target's type.
-// The optional global is null-INITIALIZED and set at runtime because a
-// non-null optional-global initializer miscompiles today.
+// - a `null` RHS lowers as the TARGET's optional type, global and local;
+// - an enum-literal RHS resolves against the enum target's type.
 //
-// An INDEX target on a GLOBAL array base must address it in place through
-// `global_addr`: a `lowerExpr` load of the whole array yields a throwaway
-// register copy that the GEP+store then writes into. Also covers a two-index
-// global-array multi-assign and a swap (`g_swap[0], g_swap[1] = g_swap[1],
-// g_swap[0]`, RHS-before-stores), pinning store ordering.
+// An INDEX target on a GLOBAL array base addresses it in place through
+// `global_addr`. Also covers a two-index global-array multi-assign and a swap
+// (`g_swap[0], g_swap[1] = g_swap[1], g_swap[0]`, RHS-before-stores), pinning
+// store ordering.
 
 #import "modules/std.sx";
 

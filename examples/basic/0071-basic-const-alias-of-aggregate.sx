@@ -1,10 +1,7 @@
 // A const alias reaches AGGREGATE targets too — a struct-literal const
 // and an array-literal const alias exactly like a scalar one, at any
-// declaration order and chain depth, and members read through the alias.
-// An alias fixpoint that runs before aggregate consts are registered sees
-// only literal-valued targets, so `ALIAS :: STRUCT_CONST` registers nowhere
-// and every use of the alias reports "unresolved", including through an
-// import.
+// declaration order and chain depth, and members read through the alias,
+// including through an import.
 #import "modules/std.sx";
 
 P :: struct { x: i64; y: i64; }

@@ -1,9 +1,7 @@
 // An explicit call `f(g)` (and the qualified `T.method(g)`) passing a MUTABLE
-// module-global value to a `*T` parameter must pass the global's live address —
+// module-global value to a `*T` parameter passes the global's live address —
 // mutations through the pointer land on the global, not a throwaway copy.
 //
-// An implicit address-of that handles only local allocas lets a global
-// identifier fall through to a loaded copy, so `f(g)` silently mutates nothing.
 // Const globals stay on the copy path (a `*T` into `.rodata` would SIGBUS) —
 // covered by 0058.
 

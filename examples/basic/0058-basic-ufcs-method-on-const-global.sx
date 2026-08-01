@@ -1,11 +1,11 @@
 // A UFCS `*Self` method on an immutable `::` const global must NOT address the
 // const's read-only storage. A mutating method scribbles a throwaway copy (the
 // const is unchanged); a read-only method reads the right value through that
-// copy. Handing a `*T` to the const's `.rodata` would slip past the
-// `cannot assign through constant` guard and SIGBUS in an AOT binary.
+// copy. The const's storage is `.rodata`, which the `cannot assign through
+// constant` guard cannot police once a `*T` to it escapes.
 //
-// Const globals stay on the copy path, unlike
-// mutable globals, whose address the receiver may take.
+// Const globals stay on the copy path, unlike mutable globals, whose address
+// the receiver may take.
 
 Counter :: struct {
     n: i64 = 0;

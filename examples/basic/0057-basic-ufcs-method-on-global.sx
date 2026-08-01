@@ -2,11 +2,7 @@
 // `self: *T`, mutates the GLOBAL's live storage — not a stack copy. Each
 // `g.bump()` increments the same `g`, so after three calls `g.n == 3`.
 //
-// Alloca+storing the receiver of a `*Self` method on
-// a global into a throwaway copy loses mutations through `self` (the global
-// stays 0). Locals and explicit `@g` are unaffected; only the
-// UFCS-on-global path copies. fixupMethodReceiver addresses the
-// global's `global_addr` directly.
+// fixupMethodReceiver addresses the global's `global_addr` directly.
 
 Counter :: struct {
     n: i64 = 0;

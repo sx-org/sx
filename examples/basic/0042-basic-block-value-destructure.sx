@@ -1,7 +1,6 @@
 // A value-position block (`x := { … }`, a call argument, …) parses any
 // statement form in its body — including a destructure decl — and yields its
-// trailing expression as the value. Routing a braced value block through a
-// restricted expression parser rejects destructures with "expected ';'".
+// trailing expression as the value.
 
 #import "modules/std.sx";
 

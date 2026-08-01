@@ -1,8 +1,8 @@
 // Named arguments (specs: Named Arguments): call-site sugar over positional
-// params — positional first then named (N1), bind-by-name any order among
-// named (N2), written-order evaluation with mapping after (N3), named reach
-// into MIDDLE defaults (N6), ufcs receiver + alias resolution, and the
-// composition with bare-fn → ?Closure promotion.
+// params — positional first then named, bind-by-name in any order among the
+// named, written-order evaluation with mapping after, named reach into MIDDLE
+// defaults, ufcs receiver + alias resolution, and the composition with
+// bare-fn → ?Closure promotion.
 #import "modules/std.sx";
 
 f :: (a: i64, b: i64 = 7, c: string = "x") -> i64 { print("{} {} {}\n", a, b, c); a + b }
@@ -31,6 +31,6 @@ main :: () {
     print("{}\n", "ab".wide(width = 4));  // ufcs alias resolves TARGET names
     opt_slot(f2 = hello, tag = "T");      // named + fn→?Closure promotion
     opt_slot(tag = "z", f2 = hello);      // any order among named
-    // N3: written order c, a, b evaluates c-first — mapping happens after.
+    // written order c, a, b evaluates c-first — mapping happens after.
     print("{}\n", sum3(c = ev("c", 1), a = ev("a", 2), b = ev("b", 3)));
 }

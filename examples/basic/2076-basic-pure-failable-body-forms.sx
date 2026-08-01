@@ -8,7 +8,6 @@
 // value-less compound block, a void call, a prefix-bound tail and mixed
 // control flow (both arm orders) — every one of those prints exactly once and
 // leaves its `catch` cold. Defers unwind before the exit on both paths.
-// Expected: exit 0.
 #import "modules/std.sx";
 
 Failed :: error { Nope }

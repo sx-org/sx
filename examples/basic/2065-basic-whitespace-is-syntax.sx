@@ -1,16 +1,15 @@
 // Whitespace is syntax (specs §1), positive side. Two of the three rules decide
 // how four glyphs read, and this file pins the forms they must LEAVE ALONE:
 //
-//   glue    — `(` applies and `[` indexes only when glued to what precedes
-//             them, so every application here is written tight;
-//   spacing — `-` / `*` are infix only when their gaps match, and a prefix
-//             `-` / `*` must be glued to its operand.
+// glue    — `(` applies and `[` indexes only when glued to what precedes
+//           them, so every application here is written tight;
+// spacing — `-` / `*` are infix only when their gaps match, and a prefix
+//           `-` / `*` must be glued to its operand.
 //
 // A `(` that OPENS something instead of continuing something is untouched by
 // the glue rule, and the eight declaration forms below all spell theirs with a
 // space to prove it: fn, ufcs fn, struct type params, protocol type params,
 // generic open-set member, for capture, catch binding, onfail binding.
-// Expected: exit 0.
 #import "modules/std.sx";
 
 // --- the eight whitespace-free declaration forms ---

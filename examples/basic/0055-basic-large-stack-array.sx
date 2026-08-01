@@ -2,13 +2,11 @@
 // emits no initializer store, and element reads GEP the array's storage
 // instead of loading the whole array as a value.
 //
-// Both whole-aggregate shapes — the undef store from `---` and
-// `index_get` on the loaded array value — would scalarize into one
-// SelectionDAG node per element.
+// A whole-aggregate shape — the undef store from `---`, or `index_get` on
+// the loaded array value — scalarizes into one SelectionDAG node per
+// element, so neither appears here.
 //
-// Results print via out/int_to_string: `{}` formatting would pull the
-// any_to_string dispatcher, whose array arms materialize every interned
-// array type BY VALUE.
+// Results print via out/int_to_string.
 
 #import "modules/std.sx";
 
