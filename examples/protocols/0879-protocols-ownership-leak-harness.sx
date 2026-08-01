@@ -1,4 +1,4 @@
-// The E4 leak harness: a full allocator chain — GPA → TrackingAllocator
+// An ownership leak harness: a full allocator chain — GPA → TrackingAllocator
 // → Arena — with owned protocol values built, mutated, freed; arena
 // reset/deinit; the tracker reports ZERO outstanding at the end. Owned
 // erasures pair with their allocator explicitly (`.(P, a)` + `free(p, a)`)

@@ -3,9 +3,7 @@
 // `return X;` statement must lower cleanly. The wrapper fn built
 // by `createComptimeFunction` saves/restores `inline_return_target`
 // so it doesn't inherit a slot belonging to the OUTER caller's
-// basic block. Executing the wrapper with a stale-frame
-// inline-return slot trips a null-pointer store at
-// `storeAtRawPtr`. Prints "inside" then "n=42".
+// basic block. Prints "inside" then "n=42".
 //
 // The pack-fn variant is covered by the mono path; plain comptime fns stay on
 // the inline path, guarded by the `createComptimeFunction` state save/restore.

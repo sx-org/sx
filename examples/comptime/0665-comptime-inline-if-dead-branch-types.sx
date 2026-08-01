@@ -1,12 +1,10 @@
 // A statically-dead `inline if` branch is dropped WHOLE: its type
 // annotations are not resolved, exactly as its statements are not
 // lowered — a type that exists only on another target (or behind a
-// disabled feature const) must not error from a pruned branch. Covers
-// the bool-const, `OS ==` binary, and/or, and `OS == { case }` match
-// forms; the taken branch always runs.
-// The unknown-type checker walked BOTH
-// branches unconditionally, so `x : *Missing` in a dead branch failed
-// the build even though lowering discarded it.
+// disabled feature const) must not error from a pruned branch, so the
+// unknown-type checker walks only the live one. Covers the bool-const,
+// `OS ==` binary, and/or, and `OS == { case }` match forms; the taken
+// branch always runs.
 #import "modules/std.sx";
 
 ENABLED :: false;

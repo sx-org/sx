@@ -7,10 +7,8 @@
 // host memory, emits them as a private global byte array, and
 // rebuilds the aggregate to point at that array.
 //
-// Without that capture the pointer field in the static const comes
-// out as `i0 0` (malformed) — the interp's host-address `.int` value
-// cannot be lowered as `ptr` by `LLVMConstInt` — and the program
-// segfaults at runtime.
+// The capture is what makes the pointer field constant-emittable: the interp's
+// host-address `.int` value has no `ptr` form `LLVMConstInt` can lower.
 #import "modules/std.sx";
 
 build_greeting :: () -> string {

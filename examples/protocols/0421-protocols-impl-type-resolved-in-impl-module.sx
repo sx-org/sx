@@ -6,9 +6,7 @@
 //
 // The impl side is pinned to `fd.body.source_file` (`signatureMismatch`), and
 // impl-method bodies are stamped with their module (`stampImplMethodSources`)
-// so that pin is populated. Resolving the impl side at the ERASURE SITE's
-// source instead trips `resolveNominalLeaf`'s `.not_visible` hard diagnostic
-// ("type 'Q' is not visible") on a perfectly correct impl.
+// so that pin is populated.
 #import "modules/std.sx";
 inner :: #import "0421-protocols-impl-type-resolved-in-impl-module/inner.sx";
 main :: () -> i32 {

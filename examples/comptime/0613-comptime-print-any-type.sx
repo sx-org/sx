@@ -6,13 +6,8 @@
 // At runtime a `Type` value is the aggregate `{ tag=.any, value=tid }`,
 // so the read works and the type's name prints. The comptime interpreter
 // stores a first-class `Type` as a bare `.type_tag`, so the struct_get
-// must mirror that same `{ .any, tid }` layout — otherwise it bails and
-// the `#run` truncates. Reflection over the same `any` (`type_name`,
-// `is_unsigned`) already works; the value-print must match.
-//
-// A struct_get that reads a different layout makes the `#run` print stop
-// silently — `value=` and every later line omitted — while the build still
-// exits 0.
+// mirrors that same `{ .any, tid }` layout — the layout reflection over the
+// same `any` (`type_name`, `is_unsigned`) reads.
 
 #import "modules/std.sx";
 

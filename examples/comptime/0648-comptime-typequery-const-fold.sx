@@ -1,8 +1,6 @@
 // Int-returning type-query builtins (`struct_field_count` / `size_of` / `align_of`)
 // fold as comptime CONSTANTS — usable as an `inline for` bound and an array
-// dimension, exactly like a plain `K :: 3` const. Evaluated as runtime values
-// only, `[struct_field_count(S)]T` and `inline for 0..struct_field_count(S)`
-// are rejected as "not a compile-time integer".
+// dimension, exactly like a plain `K :: 3` const.
 // (This is what lets a `($T) -> Type` builder loop `inline for 0..struct_field_count(T)`
 // to assemble a variant list from a type's members — the `race` result synthesis.)
 #import "modules/std.sx";

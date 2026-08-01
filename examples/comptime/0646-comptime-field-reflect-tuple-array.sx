@@ -1,15 +1,11 @@
 // Comptime field reflection (`struct_field_count` / `struct_field_name` / `struct_field_type`) over
 // ALL aggregate kinds — struct, enum, tuple (positional + named), array, vector.
 //
-// A count switch missing its `.tuple` arm makes
-// `struct_field_count` silently return 0 on tuples and arrays/vectors, and a
-// backend that builds a zero-length name array for those kinds while sizing the
-// GEP at the (sometimes non-zero) count makes `struct_field_name(T, i)` index
-// past a `[0 x string]` global and SEGFAULT. BOTH the name-array build and the
-// GEP sizing are driven from one source of truth (`memberCount`/`memberName`),
-// so they cannot diverge. A member with no name (positional-tuple / array /
-// vector element) reflects as the empty string "" — one slot per member,
-// always in-bounds.
+// BOTH the name-array build and the GEP sizing are driven from one source of
+// truth (`memberCount`/`memberName`), so they cannot diverge and a
+// `struct_field_name(T, i)` read is always in bounds. A member with no name
+// (positional-tuple / array / vector element) reflects as the empty string "" —
+// one slot per member.
 #import "modules/std.sx";
 
 S :: struct { a: i64; b: bool; }

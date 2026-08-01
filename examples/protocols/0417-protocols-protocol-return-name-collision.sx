@@ -9,11 +9,7 @@
 // payload binds a `KeyData` and `.escape` resolves against `Keycode`.
 //
 // `registerProtocolDecl` anchors signature resolution to `pd.source_file`, as
-// the parameterized-protocol and concrete-fn signature paths do; the flat,
-// visibility-unaware `type_bridge` resolver would bind the stdlib
-// `event.Event` struct here.
-//
-// Expect: prints `escape!`, exit 0.
+// the parameterized-protocol and concrete-fn signature paths do.
 
 #import "modules/std.sx";
 

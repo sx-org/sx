@@ -1,12 +1,8 @@
 // `Self` nested inside a SLICE in a protocol-method param resolves
 // correctly: the conformance gate substitutes `Self → T` THROUGH the
 // `[]` wrapper (and the `*Self` receiver), so a correct `[]T` impl is
-// accepted and dispatched — not falsely rejected as `[]Self` ≠ `[]T`.
-//
-// A `Self`-substitution that reaches only the
-// bare leaf and a one-level pointer/optional wrapper resolves `[]Self`
-// to a real slice named `[]Self`, so a correct `[]T` impl is WRONGLY
-// flagged.
+// accepted and dispatched — the substitution reaches inside the wrapper,
+// not just the bare leaf and a one-level pointer/optional.
 #import "modules/std.sx";
 
 P :: protocol vtable {

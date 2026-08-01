@@ -1,8 +1,6 @@
 // A protocol method declared with a real pointer return (`-> *u8`,
 // NOT `-> Self`) returns the raw pointer to the caller without the
-// dispatch path auto-dereferencing it. Without this, a method whose
-// pointee is a single byte gets `sizeof(target)` bytes loaded past
-// it and segfaults.
+// dispatch path auto-dereferencing it.
 
 #import "modules/std.sx";
 

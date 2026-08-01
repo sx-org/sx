@@ -1,16 +1,13 @@
 // Duplicate impl detection — two impls for the same (Source, Target)
 // pair are both visible from the same `xx` site (because both their
-// defining modules are transitively imported). The compiler must
-// emit a "duplicate xx conversion" diagnostic naming both modules,
-// not silently pick one or the other.
+// defining modules are transitively imported). The compiler emits a
+// "duplicate xx conversion" diagnostic naming both modules rather than
+// picking one.
 //
 // Setup:
-//   - 180-impl-duplicate-impl-a.sx: `impl Into(Wrap) for i64` (mul by 10).
-//   - 180-impl-duplicate-impl-b.sx: `impl Into(Wrap) for i64` (add 100).
-//   - Main imports both; the `xx 7 : Wrap` site must error.
-//
-// Expected exit = 1, expected output = the focused diagnostic naming
-// both impl modules.
+//   - 0411-protocols-impl-duplicate-impl-a.sx: `impl Into(Wrap) for i64` (mul by 10).
+//   - 0411-protocols-impl-duplicate-impl-b.sx: `impl Into(Wrap) for i64` (add 100).
+//   - Main imports both; the `xx 7 : Wrap` site errors.
 
 #import "modules/std.sx";
 // `Wrap` is declared in the shared types module; bare-import visibility is

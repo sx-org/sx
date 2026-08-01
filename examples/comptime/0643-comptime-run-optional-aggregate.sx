@@ -1,15 +1,11 @@
 // `#run` of a function returning an OPTIONAL value must bridge the comptime
 // VM register → host Value through the reg→value optional arm.
 //
-// A `#run` whose function returns `?T` / `?i64`
-// fails comptime evaluation with
-//   "reg→value: aggregate shape not bridged yet"
-// if the VM's regToValue bridge covers scalars/structs/slices/tuples but
-// bails on an OPTIONAL-typed result. The bridge reads the optional's
-// has_value flag (at offset sizeof(child)); when set it bridges the payload
-// recursively into a `{ payload, i1=true }` aggregate (the host serializes
-// that to `{T, i1}`), and when clear (or the value is the bare null sentinel)
-// it yields `.null_val` (serialized to a zero `{T, i1}` = absent).
+// The bridge reads the optional's has_value flag (at offset sizeof(child));
+// when set it bridges the payload recursively into a `{ payload, i1=true }`
+// aggregate (the host serializes that to `{T, i1}`), and when clear (or the
+// value is the bare null sentinel) it yields `.null_val` (serialized to a zero
+// `{T, i1}` = absent).
 //
 // Exercises: present `?T` (optional of struct), present `?i64` (optional of
 // scalar), and a NULL-returning `?i64`. The values are read via `!` (unwrap)

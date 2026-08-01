@@ -1,11 +1,9 @@
 // The OWNING erasure of an effectful operand evaluates the expression
 // ONCE. `arr[next()].(P)` lowers the receiver a single time — the
 // side-effectful index runs once, and the copied element is the one that
-// single evaluation picked. Re-lowering the AST for a second address
-// (`xx arr[next()]` running `next()` twice) breaks it. It holds
-// for the postfix
-// owning copy, for every index base shape: a LOCAL array, a module-GLOBAL
-// array, and a STRUCT-FIELD array — and for `?P` destinations.
+// single evaluation picked. It holds for the postfix owning copy, for every
+// index base shape: a LOCAL array, a module-GLOBAL array, and a STRUCT-FIELD
+// array — and for `?P` destinations.
 // Ownership contract: the erased value is an independent COPY — the
 // source element is untouched by mutations through it. Transient
 // write-through lives in `*P` views (pinned in 0829); the by-REF capture

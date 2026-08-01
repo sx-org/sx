@@ -1,10 +1,9 @@
 // A `return` inside an `inline if` (a comptime-folded branch),
 // itself inside an `inline for`, must NOT make the compiler drop the function's
 // trailing statements. The `inline if`/`case` branch sets a "block terminated"
-// flag when its taken arm returns; leaking that flag past the enclosing
-// runtime `if`'s merge block skips the trailing `return -1` and wrongly
-// rejects the function as "produces no value". The runtime-`if` merge resets
-// the flag to the merge's actual reachability.
+// flag when its taken arm returns; the enclosing runtime `if`'s merge resets
+// that flag to the merge's actual reachability, so the trailing `return -1`
+// still lowers.
 #import "modules/std.sx";
 
 // nested inline-if/else with returns, inside an inline-for, under a runtime if:

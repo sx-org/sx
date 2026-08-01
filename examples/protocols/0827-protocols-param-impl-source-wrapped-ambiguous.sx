@@ -5,10 +5,6 @@
 // selecting a global `findByName` last-wins author. `main` flat-imports two
 // `Box` authors and declares none itself, so `impl Into(Marker) for *Box`
 // cannot pick a `Box` and the build exits 1.
-//
-// A source `*Box` falling to the no-author
-// `type_bridge.resolveTemplateSignatureType` wrapper (global last-wins, no
-// diagnostic) registers the collision silently.
 
 #import "modules/std.sx";
 #import "0827-protocols-param-impl-source-wrapped-ambiguous/a.sx";

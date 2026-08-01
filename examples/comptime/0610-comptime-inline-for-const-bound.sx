@@ -3,10 +3,9 @@
 //
 // The inline-for bound folder `evalComptimeInt` delegates to the single shared
 // const-int evaluator (`program_index.evalConstIntExpr`), so the inline-for
-// bound and an array dimension fold the same shapes to the same value. Handling
-// only literals, comptime cursors and `<pack>.len` there fails `inline for 0..M`
-// (M a module const) and `inline for 0..(M + 1)` (a const expression) with
-// "range end is not a compile-time integer".
+// bound and an array dimension fold the same shapes to the same value —
+// `inline for 0..M` (M a module const) and `inline for 0..(M + 1)` (a const
+// expression) included.
 #import "modules/std.sx";
 
 M :: 3;

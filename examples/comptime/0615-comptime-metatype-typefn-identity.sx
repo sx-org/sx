@@ -2,9 +2,8 @@
 // `define(declare("Box"), ...)` must memoize by the instantiation's mangled name, so
 // `Box(i64)` resolved at two INDEPENDENT sites (here: a return type and a
 // parameter type) is ONE `TypeId`. A value built at one site is therefore
-// assignable / matchable at the other — nominal identity. If the minted result
-// were not registered under the mangled instantiation name, the two sites would
-// mint distinct types and `consume(build())` would be a type error.
+// assignable / matchable at the other — nominal identity, which is what makes
+// `consume(build())` type-check.
 #import "modules/std.sx";
 #import "modules/std/meta.sx";
 

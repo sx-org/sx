@@ -4,15 +4,14 @@
 // transitively import the impl's defining module.
 //
 // Setup:
-//   - 179-impl-visibility-impl.sx declares an `impl Into(Wrap) for i64`.
-//   - 179-impl-visibility-user.sx tries `xx 7 : Wrap` but only
+//   - 0410-protocols-impl-visibility-impl.sx declares an `impl Into(Wrap) for i64`.
+//   - 0410-protocols-impl-visibility-user.sx tries `xx 7 : Wrap` but only
 //     imports the shared types — NOT the impl module.
-//   - The xx at the user-file site must produce a "no visible xx
-//     conversion" diagnostic, not silently fall through to whatever
-//     was registered in another module.
+//   - The xx at the user-file site produces a "no visible xx conversion"
+//     diagnostic rather than falling through to whatever was registered in
+//     another module.
 //
-// The diagnostic is the success criterion — the compile error is the
-// expected output. Tests/expected/.txt captures it; .exit is 1.
+// The diagnostic is the pinned result.
 
 #import "modules/std.sx";
 #import "./0410-protocols-impl-visibility-impl.sx";

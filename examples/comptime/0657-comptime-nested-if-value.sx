@@ -4,9 +4,9 @@
 // statement, so a trailing (possibly deeply nested) if-else produces a phi'd
 // value instead of being demoted to a statement whose result is dropped.
 //
-// A `lowerExpr` `.block` arm that lowers the tail without `force_block_value`
-// loses the inner if's value, so `K :: #run { ...; if a {100} else {if b {42}
-// else {0}} }` (a=false, b=true) yields 0 instead of 42.
+// `lowerExpr`'s `.block` arm carries `force_block_value` for exactly this: it
+// is what keeps the inner if's value in `K :: #run { ...; if a {100} else {if b
+// {42} else {0}} }`.
 
 #import "modules/std.sx";
 

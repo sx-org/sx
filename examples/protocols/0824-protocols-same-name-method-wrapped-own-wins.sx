@@ -1,17 +1,15 @@
 // Own-wins: a protocol method-signature names a same-name `Box` under
-// every WRAPPER / COMPOUND form, and each must resolve SOURCE-AWARE (pinned to the
-// protocol's defining module = main), selecting main's OWN `Box { m }` rather than
-// the global last-wins `Box { a }` from the flat-imported `dep.sx`.
+// every WRAPPER / COMPOUND form, and each resolves SOURCE-AWARE (pinned to the
+// protocol's defining module = main), selecting main's OWN `Box { m }` rather
+// than the global last-wins `Box { a }` from the flat-imported `dep.sx`.
 //
-// The reconciled choke-point (resolveRegistrationSigTypeInSource → the recursive
+// The choke-point (resolveRegistrationSigTypeInSource → the recursive
 // source-aware engine) recurses every structural shape and resolves the leaf
-// author own-wins. The sharp cell is the WRAPPED RETURN `() -> *Box`: letting
-// the wrapped sig fall to the no-author `type_bridge.resolveTemplateSignatureType`
-// (global last-wins) types the result as `dep`'s `Box { a }`, so `bp.m` is
-// `field 'm' not found on type 'Box'`. Discriminating returns: `*Box`, `?Box`,
-// `(Box,Box)`, `[2]Box` (each observed by a `.m` access). Routing-only params:
-// `*Box`, `?Box`, `[]Box`, `[2]Box`, `(Box,Box)`, nested `*?[]Box` — all resolved
-// through the same `resolveCompound` recursion at protocol-decl registration.
+// author own-wins — the WRAPPED RETURN `() -> *Box` included. Discriminating
+// returns: `*Box`, `?Box`, `(Box,Box)`, `[2]Box` (each observed by a `.m`
+// access). Routing-only params: `*Box`, `?Box`, `[]Box`, `[2]Box`, `(Box,Box)`,
+// nested `*?[]Box` — all resolved through the same `resolveCompound` recursion
+// at protocol-decl registration.
 
 #import "modules/std.sx";
 #import "0824-protocols-same-name-method-wrapped-own-wins/dep.sx";

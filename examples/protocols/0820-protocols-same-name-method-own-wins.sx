@@ -2,12 +2,8 @@
 // resolves SOURCE-AWARE, pinned to the protocol's defining module. `main`
 // flat-imports `dep.sx` (`Box { a }`) AND authors its OWN `Box { m }`; the
 // protocol `Provider` returns `Box` and the impl builds main's `Box`. Dispatching
-// `p.get()` must type the result as MAIN's `Box`, so `b.m` resolves.
-//
-// Routing the method signature through the no-author
-// `type_bridge.resolveTemplateSignatureType` wrapper (global last-wins) types
-// the return as dep's `Box { a }`, and `b.m` is `field 'm' not found on type
-// 'Box'`. Source-aware, it is main's `Box`, exit 0.
+// `p.get()` types the result as MAIN's `Box`, so `b.m` resolves and the build
+// exits 0.
 
 #import "modules/std.sx";
 #import "0820-protocols-same-name-method-own-wins/dep.sx";

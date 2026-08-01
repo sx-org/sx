@@ -5,9 +5,8 @@
 //
 // A statement-position `-> noreturn` call emits only a `.call`, not a block
 // terminator, so lowering emits `unreachable` for any statement whose value
-// type is `noreturn`. Without it the diverging live branch leaves the
-// function looking value-less and lowering rejects it with
-// "function returns 'i64' but its body produces no value".
+// type is `noreturn` — which is what keeps the diverging function from looking
+// value-less.
 #import "modules/std.sx";
 proc :: #import "modules/std/process.sx";
 

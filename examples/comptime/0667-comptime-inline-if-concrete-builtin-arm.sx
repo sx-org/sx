@@ -1,9 +1,9 @@
 // A CONCRETE builtin arm (`case i64:`, `case u8:`, `case f32:`) matches in
-// an `inline if T ==` static type dispatch: the static fold
-// resolves the primitive spelling exactly like the runtime type switch;
-// without that fold these arms are unreachable and fall to `else:`
-// (`case string:` matches only by doubling as a category name). Both the
-// inline-constraint form and the leading `$T: Type` form.
+// an `inline if T ==` static type dispatch: the static fold resolves the
+// primitive spelling exactly like the runtime type switch, which is what makes
+// these arms reachable rather than falling to `else:` (`case string:` matches
+// by doubling as a category name). Both the inline-constraint form and the
+// leading `$T: Type` form.
 #import "modules/std.sx";
 
 by_inline :: (v: $K) -> i64 {

@@ -33,8 +33,7 @@ describe :: ($T: Type) -> string {
 }
 
 // The TypeInfo VALUE lives in comptime memory — consume it there (#run
-// folds each description to a string constant). Runtime `type_info(tp)`
-// consumption is S3b's const-record path, pinned separately.
+// folds each description to a string constant).
 D_STRUCT  :: #run describe(Padded);
 D_UNION   :: #run describe(Overlay);
 D_I16     :: #run describe(i16);

@@ -2,14 +2,12 @@
 // variant set in a `List(EnumVariant)` via `.append` (which allocates + grows
 // its backing through the comptime `context.allocator`), then mint an enum from
 // the grown backing sliced to its length — `vs.items[0..vs.len]`. The comptime
-// VM evaluates the List growth, the slice, and `define`/`declare` end-to-end.
+// VM evaluates the List growth, the slice, and `define`/`declare` end-to-end,
+// decoding the slice at its live length.
 //
 // A `[*]T` many-pointer (the List's bare `items` field) carries no length, so it
 // must be sliced with `[0..len]` to form a `[]T`; passing `vs.items` bare is a
 // rejected coercion (see the diagnostic example for that path).
-//
-// The List-grown form segfaults in the comptime VM's
-// slice decoder when its slice is decoded from a stale length.
 #import "modules/std.sx";
 #import "modules/std/meta.sx";
 
