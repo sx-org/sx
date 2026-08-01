@@ -64,11 +64,11 @@ test "expr_typer: mixed int+float arithmetic promotes to float, order-independen
     var int_n = node(.{ .int_literal = .{ .value = 2 } });
     var float_n = node(.{ .float_literal = .{ .value = 0.5 } });
 
-    // int LHS, float RHS → f64 (was i64 before the fix).
+    // int LHS, float RHS → f64.
     var add_if = node(.{ .binary_op = .{ .op = .add, .lhs = &int_n, .rhs = &float_n } });
     try std.testing.expectEqual(TypeId.f64, l.inferExprType(&add_if));
 
-    // float LHS, int RHS → f64 (already correct; confirms order-independence).
+    // float LHS, int RHS → f64; the join is order-independent.
     var add_fi = node(.{ .binary_op = .{ .op = .add, .lhs = &float_n, .rhs = &int_n } });
     try std.testing.expectEqual(TypeId.f64, l.inferExprType(&add_fi));
 

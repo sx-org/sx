@@ -38,7 +38,7 @@ and `` obj.`i2 `` both resolve. The exemption covers member *signatures* only: a
 slot), so a reserved-spelled impl method still needs the backtick
 (`` `i2 :: (self) ``), exactly like a free function. See `examples/0158`.
 
-**Statement keywords are member names too (issue 0345, decided 2026-07-22).**
+**Statement keywords are member names too (issue 0345).**
 Every keyword except `inline` — `if`, `push`, `while`, `for`, `case`, `return`,
 `f32`, `f64`, `try`, `defer`, … — may bare-name a struct **field**, a struct
 **method or constant**, a protocol **method**, and an enum/tagged-union
@@ -56,8 +56,8 @@ backtick-only (`` `inline ``); a bare `inline` in member position rejects with
 a targeted escape-hint. In a struct literal, a keyword field name takes only
 the `name = value` form — without the `=`, the token reads as a positional
 expression head, so `.{ if x > 1 then 10 else 20, 2 }` stays an if-expression
-element. Value-binding positions (locals, params, function names) are
-unchanged: keywords stay rejected there.
+element. Value-binding positions (locals, params, function names) reject
+keywords.
 
 **`Tuple(` and `Closure(` are reserved in expression head position.** The
 type constructors `Tuple(...)` and `Closure(...) -> R` parse as TYPE
@@ -655,7 +655,7 @@ n      := u64.max;   // 18446744073709551615 (all-ones)
   `18446744073709551615` (and any unsigned value across all 64 bits), while a
   signed value — including `i64.min` — prints with all its digits. A bit
   reinterpret (`union { u: u64; s: i64 }`) is still a valid way to inspect the
-  raw bits, but is no longer needed merely to print the value.
+  raw bits, but is not needed merely to print the value.
 - **Non-numeric receivers.** `.min` / `.max` on a non-numeric type (`bool`,
   `string`, a pointer, a `struct`, `void`, an `enum`) is a compile error, never
   a silent value.
@@ -900,9 +900,9 @@ type 'T'`) — it is never silently dropped, so a typo or a field removed by an
 no field is instead read as a *positional* element, not an error.)
 
 Named aggregates place `{` directly after the type designator: `Point{ x = 1 }`,
-`List(i64){}`, `mod.Config{ port = 80 }`. The old separator-dot form `Type.{…}`
-is a hard error with a fix-it to the compact spelling. Contextual `.{…}` is
-unchanged.
+`List(i64){}`, `mod.Config{ port = 80 }`. The separator-dot form `Type.{…}`
+is a hard error with a fix-it to the compact spelling. Contextual `.{…}` keeps
+its leading-dot form.
 
 After a completed aggregate, a following block may appear in two forms:
 
@@ -2448,11 +2448,10 @@ Anonymous product types with optional field names. Tuples are first-class values
 
 The tuple TYPE is always written `Tuple(...)`; a tuple VALUE is built with the
 ONE aggregate literal `.{ ... }` against a tuple-typed target — an annotation,
-a typed prefix, a call slot, or a return slot (aggregate ladder Step 1: the old
-`.( )` spelling was removed). An UNTYPED `.{ ... }` is NOT a tuple — it
+a typed prefix, a call slot, or a return slot. An UNTYPED `.{ ... }` is NOT a tuple — it
 self-types as an anonymous structural STRUCT (see "Struct Literals"); tuples
 are explicit-target-only. Bare parentheses `(...)` are **grouping only,
-everywhere** — a comma inside bare parens is a hard error with a migration hint.
+everywhere** — a comma inside bare parens is a hard error naming the tuple spelling.
 
 #### Construction
 ```sx
@@ -3039,7 +3038,7 @@ SxFoo     :: #objc_class("SxFoo")    export { counter: i32; bump :: (self: *Self
 | C type | sx type | Notes |
 |--------|---------|-------|
 | `const char*` (input) | `cstring` | the pointer, verbatim; literals coerce |
-| `const char*` (input, legacy) | `[:0]u8` | compiler extracts `.ptr` at call site |
+| `const char*` (input, sentinel slice) | `[:0]u8` | compiler extracts `.ptr` at call site |
 | `const char*` (return) | `cstring` | the pointer, verbatim; `from_cstring` to view |
 | nullable `const char*` (both directions) | `?cstring` | null pointer = `null` |
 | `char*` (output buffer) | `[*]u8` | raw buffer, no length |
@@ -4930,7 +4929,7 @@ carries no runtime type tag, so a runtime `case protocol:` is a pointed
 compile error rather than a silently dead arm. Inline branches lower in
 statement position (like `inline if OS`), so value-producing arms use
 explicit `return`. A NON-inline type match keeps its runtime tag-switch
-semantics unchanged.
+semantics.
 
 ### While Loop
 ```sx
@@ -5011,8 +5010,7 @@ its own cursor; consequences:
 order — range positions bind the cursor value (i64), collection positions
 bind the element. An empty group is omitted entirely (no parens). Capture
 names shadow outer bindings, like any inner declaration. Use `_` to discard
-a position. The old single-iterable index form `for xs: (x, i)` is gone —
-write `for xs, 0.. (x, i)`.
+a position. An index alongside the elements is written `for xs, 0.. (x, i)`.
 
 **The capture/call rule.** In a for header, the parenthesized group
 immediately before `{` or `=>` is the capture; every earlier top-level paren
@@ -5461,11 +5459,11 @@ sentinel, per the pointer contract.
 - **Access is global and unconditional**: after assembly, `context.field` works in ANY module of the program with no import requirement. Imports gate existence only (an uncompiled module contributes nothing); there is no per-source scoping of context fields.
 - **One flat namespace, loud collisions**: two declarations with the same field name (or colliding with a builtin field) are a hard compile error naming both declaration sites.
 - **Defaults are mandatory and comptime-evaluable**: a declaration without a default — or with one that doesn't fold to a compile-time constant — is a compile error; the default context must be constructible before `main` runs. Defaults fold into `__sx_default_context`. A protocol-typed context field is legal only at a borrow-kind protocol (`#identity` or tagged) — its default folds as the identity erasure of a named instance global; a value/own protocol-typed field is refused at its declaration (an owning constant cannot exist before `main`). `*T = null` is the idiom for handle fields (`?*T = null` where checked absence is wanted); the root `push` in `main` is the idiom for wiring real values.
-- **`push` semantics unchanged**: added fields patch exactly like builtin ones.
+- **`push` semantics**: added fields patch exactly like builtin ones.
 - **Comptime**: `#run` bodies execute under a VM-LOCAL copy of the assembled default context (see Protocols, compile-time execution): an added field's default is readable at comptime; protocol-typed fields reference VM-owned instances whose mutations are execution-local and discarded — comptime code cannot mutate globals (the VM reads globals into VM-local copies and never writes back).
 - **Cost guideline** (not enforced): reads are a constant-offset load and calls share the pusher's slot — the only growth cost is the spread-copy at `push` (and the per-fiber snapshot). Prefer one POINTER per concern (`*Ui`, `*Logger`) over fat inline values; a 2 KB inline field makes every push a 2 KB memcpy. Small inline value fields are fine.
 
-There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`#context_extend logger: *Logger = null;` replaces the old `data: *void` idiom).
+There is no untyped escape slot: a module that wants to carry a payload declares its own typed field (`#context_extend logger: *Logger = null;`).
 
 ---
 
@@ -5597,8 +5595,8 @@ main :: () { rt := shared(10); } // and emitted into the binary
 Two consequences follow, and neither needs an annotation:
 
 - A function nothing runtime-reachable calls is **not emitted**. This is what
-  keeps a build callback out of the binary — not its signature, and no longer
-  any ABI marker.
+  keeps a build callback out of the binary — not its signature, and not an
+  ABI marker.
 - Calling an `evaluate`-only intrinsic from the runtime graph is an error,
   reported with the path from the root that reached it:
 
@@ -6387,7 +6385,8 @@ disambiguated by the token after `catch`:
 | `catch (e) EXPR` | `e` | bare expression (no braces) |
 | `catch (e) == { case ... }` | `e` | match over `e` (sugar for `{ if e == { ... } }`) |
 
-A bare binding (`catch (e) { }`) is a parse error with a migration hint.
+An unparenthesized binding (`catch e { }`) is a parse error with a hint to
+parenthesize it.
 
 ```sx
 v := parse_digit(s) catch (e) {
