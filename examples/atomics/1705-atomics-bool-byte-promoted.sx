@@ -3,8 +3,7 @@
 // sized"), so codegen performs the access in the byte storage type (i8)
 // and trunc/zext's the value at the boundary. (rmw/cmpxchg on a bool is
 // rejected at the sx level — integer-only — so only load/store apply.)
-// An i1 atomic fails LLVM verification; `Future.canceled` reaches this shape
-// through the async layer.
+// `Future.canceled` reaches this shape through the async layer.
 #import "modules/std.sx";
 #import "modules/std/atomic.sx";
 

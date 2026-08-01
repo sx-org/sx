@@ -4,10 +4,8 @@
 // string/slice stay unpacked (the sx-internal is_extern_c_api=false
 // convention, as for block trampolines); a <=16-byte struct RETURN
 // comes back register-coerced and a >16-byte non-HFA return uses the
-// sret hidden out-pointer.
-// An indirect call site built from raw LLVM types delivers the second field of
-// a packed struct arg zeroed and reads garbage for sret returns. Also pins the
-// sret callee body reading its params AFTER the hidden out-pointer slot.
+// sret hidden out-pointer. Also pins the sret callee body reading its params
+// AFTER the hidden out-pointer slot.
 #import "modules/std.sx";
 
 Point :: struct { x: i32; y: i32; }

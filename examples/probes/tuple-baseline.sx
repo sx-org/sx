@@ -4,7 +4,6 @@
 // on, EXCEPT the two pack/tuple projection+spread sugars (listed as gaps at
 // the bottom). Everything here RUNS.
 //
-// Run:  ./zig-out/bin/sx run examples/probes/tuple-baseline.sx
 
 #import "modules/std.sx";
 
@@ -41,7 +40,7 @@ main :: () -> i32 {
     0
 }
 
-// ── GAPS (intentionally NOT exercised above) ──────────────────────
+// ── GAPS (not exercised above) ────────────────────────────────────
 //
 //   G1. Tuple field projection across elements:
 //         t := .(Listenable{ value=1}, Listenable{ value=2});

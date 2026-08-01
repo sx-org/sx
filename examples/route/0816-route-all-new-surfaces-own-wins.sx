@@ -8,10 +8,6 @@
 // MAIN's `Box`. Accessing `w.b.m` therefore typechecks, while `dep_box` uses dep's
 // DISTINCT `Box { a }`.
 //
-// Building the union body in `registerUnionDecl` through the
-// stateless `type_bridge.buildUnionInfo`, whose `findByName` short-circuit binds
-// the global last-wins `Box`, means that if dep's `Box { a }` wins the slot `WrapU.b` is
-// dep's `Box` and `w.b.m` is a hard "field not found" — the wrong nominal.
 // The union field is main's own `Box`, `w.b.m` resolves, exit 0.
 
 #import "modules/std.sx";
