@@ -1280,13 +1280,12 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
             _ = self.diagPackAsValue(val.data.identifier.name, val.span, .return_value);
             return;
         }
-        // Validate a multi-value return against the function's slots: arity, a
-        // bare value where multiple are required, and named-element/slot
-        // agreement. Catches silent garbage (`return 5` for `-> (i64, i64)`) and
-        // silently-wrong named returns (`return b = …, a = …` ignoring names).
-        if (self.builder.func) |fid| {
-            self.validateMultiReturn(val, self.module.functions.items[@intFromEnum(fid)].ret);
-        }
+        // Validate a multi-value return against the slots THIS body returns
+        // through: arity, a bare value where multiple are required, and
+        // named-element/slot agreement. Catches silent garbage (`return 5` for
+        // `-> (i64, i64)`) and silently-wrong named returns (`return b = …,
+        // a = …` ignoring names).
+        if (self.effectiveReturnType()) |slots_ty| self.validateMultiReturn(val, slots_ty);
     }
     // Erasing an rvalue into a tagged value borrows a frame temp, which at a
     // `return` would outlive its frame — the flag is what the erasure path

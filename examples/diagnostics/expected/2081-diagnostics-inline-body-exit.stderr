@@ -1,0 +1,17 @@
+error: `try` is only valid inside a failable function (a return type with `!` or `!Named`)
+  --> examples/diagnostics/2081-diagnostics-inline-body-exit.sx:20:10
+   |
+20 |     v := try fails();
+   |          ^^^^^^^^^^^
+
+error: `raise` is only valid inside a failable function (a return type with `!` or `!Named`)
+  --> examples/diagnostics/2081-diagnostics-inline-body-exit.sx:26:5
+   |
+26 |     raise error.Nope;
+   |     ^^^^^^^^^^^^^^^^^
+
+error: function returns 'i64' but its body produces no value — end it with a trailing expression or an explicit `return`
+  --> examples/diagnostics/2081-diagnostics-inline-body-exit.sx:31:5
+   |
+31 |     if n > 0 { n = n + 1; }
+   |     ^^^^^^^^^^^^^^^^^^^^^^^

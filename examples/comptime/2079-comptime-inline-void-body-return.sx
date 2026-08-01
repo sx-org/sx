@@ -1,0 +1,23 @@
+// A `-> void` callee with a comptime param is INLINED into its caller, and a
+// `return;` in its body is ITS exit, not the caller's. Without an exit of its
+// own the body emitted the caller's `ret` where it stood: `main` was truncated
+// at the call — everything after it silently unreachable — and a diagnostic
+// read the CALLER's return type, refusing the callee's `return;` for carrying
+// no value.
+//
+// The caller returns a distinctive 37 so the exit code alone proves it ran to
+// its own end, and the three lines pin the statements on both sides of the call.
+#import "modules/std.sx";
+
+speak :: ($tag: string) {
+    print("before\n");
+    if true { return; }
+    print("unreached\n");
+}
+
+main :: () -> i32 {
+    speak("a");
+    print("inside\n");
+    print("after\n");
+    37
+}

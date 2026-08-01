@@ -1,0 +1,83 @@
+// Every shape an INLINED comptime body can exit through reaches the same
+// destination: the slot and join the call site installed, never the caller's
+// `ret`. The exit context is installed for the body unconditionally, so none of
+// these shapes has to be recognizable in the AST beforehand — the `#insert`
+// ones are not even parsed until the body is being lowered.
+//
+//   generated   a `return` an `#insert` produced, bare and namespace-qualified
+//   invisible   a `return` inside a `catch` body and inside a declaration's
+//               initializer — containers no pre-scan of the body walked
+//   lambda      a closure formed INSIDE an inlined body emits its OWN return;
+//               only the enclosing body's exit belongs to the inliner
+//   named       a named multi-return whose slot shadows a caller local: the
+//               callee's slots live in their own scope, the caller keeps its
+//   success     a value-carrying failable's trailing value, with no explicit
+//               `return` to assemble the success tag for it
+//   discarded   `return 5;` in a `-> void` body: evaluated, stored nowhere
+//   vm          a body the comptime VM runs whose FIRST written return is in
+//               the arm it does not take — the slot exists on every path
+#import "modules/std.sx";
+fmtns :: #import "modules/std/fmt.sx";
+
+Bad :: error { Nope }
+
+gen :: ($n: i64) -> i64 {
+    #insert "return 40 + 2;";
+}
+
+invisible :: ($tag: string, n: i64) -> i64 {
+    seed := if n > 0 { 10 } else { return 1; };
+    step := recover(n) catch { return seed + 2; };
+    seed + step
+}
+
+recover :: (n: i64) -> (i64, !Bad) {
+    if n > 5 { return n; }
+    raise error.Nope;
+}
+
+lambda :: ($tag: string, n: i64) -> i64 {
+    twice := (v: i64) -> i64 { if v > 0 { return v * 2; } return 0; };
+    if n < 0 { return 0; }
+    twice(n)
+}
+
+pair :: ($tag: string, n: i64) -> (lo: i64, hi: i64) {
+    lo = n;
+    hi = n * 2;
+}
+
+success :: ($tag: string, n: i64) -> (i64, !Bad) {
+    n + 100
+}
+
+discarded :: ($tag: string) {
+    print("discard {}\n", 5);
+    return;
+}
+
+vm_pick :: ($tag: string, n: i64) -> i64 {
+    if n < 0 { return -1; }
+    n * 3
+}
+
+VM_RESULT :: #run vm_pick("vm", 4);
+
+main :: () -> i32 {
+    print("gen {}\n", gen(1));
+    print("qualified {}\n", fmtns.format("q-{}", 7));
+    print("invisible {}\n", invisible("i", 9));
+    print("lambda {}\n", lambda("l", 21));
+
+    lo := 500;
+    hi := 900;
+    p := pair("p", 3);
+    print("named {} {} {} {}\n", p.lo, p.hi, lo, hi);
+
+    v := success("s", 7) catch { return 1; };
+    print("success {}\n", v);
+
+    discarded("d");
+    print("vm {}\n", VM_RESULT);
+    0
+}
