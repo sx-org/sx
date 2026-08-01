@@ -1,6 +1,0 @@
-// Forward-referencing an error set from a fn signature must not panic
-// the compiler (a struct stub adopted by error_set trips the
-// updatePreservingKey kind-stability assert). Expect: exit 0.
-f :: (e: E) -> i32 { return 0; }
-E :: error { Fault }
-main :: () -> i32 { return 0; }

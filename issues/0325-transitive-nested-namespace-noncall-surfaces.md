@@ -1,8 +1,7 @@
 # 0325 — transitive nested namespace aliases on non-call surfaces
 
-> **FOCUSED MATRIX GREEN; ADVERSARIAL REVIEW REOPENED (2026-07-21).** The new
-> full-path selector and examples 0908-0910 pass at opt 0/3, but exact target
-> selection is not yet applied early enough for every typed store and bare
+> The full-path selector and examples 0908-0910 pass at opt 0/3, but exact
+> target selection is not applied early enough for every typed store and bare
 > type-function author. No public syntax/API change is required.
 
 ## Required behavior
@@ -30,9 +29,9 @@ for every surface above. No syntax or public API change is required.
   process-global function-map winner. Qualified full paths select exactly;
   bare own/one-hop authors need the same declaration-carrying result,
   callable aliases included.
-- The first pre-RHS store repair returned only an optional successful target.
+- The pre-RHS store classification yields only an optional successful target.
   Missing, ambiguous, immutable, non-lvalue, and not-applicable paths therefore
-  collapsed together, and invalid qualified targets could still lower
+  collapse together, and an invalid qualified target still lowers
   target-directed `null`, `.variant`, `.{...}`, branch, or multi-assignment
   RHS expressions before the correct LHS diagnostic.
 - Root shadow checks used the process-global global-name table. A global in an

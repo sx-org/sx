@@ -1,7 +1,5 @@
 # 0349 — field write through a by-value for-capture crashes LLVM emission instead of diagnosing
 
-Status: OPEN (found converting ui/router.sx loops to `for`, 2026-07-23)
-
 ## Symptom
 
 By-value captures are immutable, with a shape-aware diagnostic — but
