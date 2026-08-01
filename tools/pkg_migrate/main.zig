@@ -1,5 +1,4 @@
-//! pkg_migrate — syntax-aware migration tool for the sx PACKAGES stream
-//! (plan unit P0.4, current/PLAN-PACKAGES.md).
+//! pkg_migrate — syntax-aware migration tool for sx packages.
 //!
 //! Standalone on purpose: it must not require build.zig wiring, so it embeds
 //! a dedicated minimal scanner (scanner.zig) instead of importing the
@@ -730,7 +729,7 @@ fn cmdQualify(
 }
 
 // ---------------------------------------------------------------------------
-// to-package-dir (report-only in P0.4)
+// to-package-dir (report-only)
 // ---------------------------------------------------------------------------
 
 fn cmdToPackageDir(

@@ -1,8 +1,8 @@
-// Comprehensive pinned suite for `modules/std/json.sx` (writer F2.1 +
-// reader F2.2). Mirrors what 0711 did for std.hash: it LOCKS IN the full
-// round-trip and the complete malformed-input matrix as one coherent
-// pinned example. (0713/0714 stay as the focused writer/reader demos with
-// their heap-discipline narrative; this file is the correctness lock-in.)
+// Comprehensive pinned suite for `modules/std/json.sx` (writer + reader),
+// the counterpart of 0711 for std.hash: it LOCKS IN the full round-trip and
+// the complete malformed-input matrix as one coherent pinned example.
+// (0713/0714 are the focused writer/reader demos with their heap-discipline
+// narrative; this file is the correctness lock-in.)
 //
 //   PART A — ROUND-TRIP. Build a representative document covering EVERY
 //     value kind (nested object + array, a string carrying every escape

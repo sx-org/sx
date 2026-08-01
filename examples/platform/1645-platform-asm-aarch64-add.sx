@@ -1,4 +1,4 @@
-// ASM stream Phase D — inline assembly that RUNS end-to-end. An aarch64 `add`
+// Inline assembly that RUNS end-to-end. An aarch64 `add`
 // with two register-class inputs (`%[a]`, `%[b]`) and a value output (`%[out]`)
 // returned from the function. The `.build` pins aarch64-macOS: on a matching
 // host the runner executes it (exit 42); elsewhere it falls to ir-only mode and

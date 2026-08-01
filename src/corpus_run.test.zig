@@ -1435,7 +1435,7 @@ test "sandbox: a declared output outside .sx-tmp is refused and never deleted" {
     const after = try std.Io.Dir.readFileAlloc(.cwd(), io, canary_abs, a, .limited(MAX_OUTPUT));
     try std.testing.expectEqualSlices(u8, sentinel, after);
 
-    // A sandbox path is still accepted, and cleanup still removes it — plus the
+    // A sandbox path is accepted, and cleanup removes it — plus the
     // intermediates the APK bundler leaves beside it.
     const good = declaredOutputs(.{ .apk = .{ .out = ".sx-tmp/x.apk", .bundle_id = "co.example.x", .expect = &.{} } });
     try std.testing.expect(good.escaped == null);

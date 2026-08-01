@@ -797,7 +797,7 @@ pub const Lowering = struct {
     /// RVALUE into a tagged value there has nothing durable to borrow — the
     /// frame is about to die (spec §6.2).
     in_return_expr: bool = false,
-    param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; list lets Phase 4/5 detect cross-module overlap)
+    param_impl_map: std.StringHashMap(std.ArrayList(ParamImplEntry)), // "Proto\x00<arg_mangled>\x00<src_mangled>" → impl entries (parameterised protocols only; the list lets overlap detection see cross-module duplicates)
     /// One materialized instantiation of a parameterized protocol family, by
     /// its protocol TypeId. The base identity name plus the canonical argument
     /// tuple ARE the instantiation's identity: membership, tables, and

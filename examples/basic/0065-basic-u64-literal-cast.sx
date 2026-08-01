@@ -3,11 +3,9 @@
 // the literal is range-checked against the CAST's target type, not the
 // ambient default `i64`.
 //
-// Regression (issue 0275): the cast operand was lowered before the cast
-// target was applied, so `0xcbf....(u64)` fired the i64 fits-check on the
-// literal ("does not fit in i64") even though the cast to u64 was present. A
-// literal that genuinely overflows the target still errors; only the
-// target-typing was wrong.
+// A literal that genuinely overflows the cast's target still errors.
+//
+// Regression (issue 0275).
 
 #import "modules/std.sx";
 

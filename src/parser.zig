@@ -6310,7 +6310,7 @@ test "parse comptime type-pack is NOT a protocol pack (..$args)" {
     try std.testing.expect(!p.is_pack); // not the protocol-constrained form
 }
 
-// ── Step 1.2 — pack expansion in the four positions ───────────────────
+// ── Pack expansion in the four positions ──────────────────────────────
 // All spread forms reuse `spread_expr` (its operand carries any projection /
 // type-application); closure-sig packs use ClosureTypeExpr.pack_name +
 // pack_projection. Arrow bodies wrap the expression in a block.

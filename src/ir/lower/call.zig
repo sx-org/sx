@@ -2622,8 +2622,7 @@ pub fn callExtern(self: *Lowering, name: []const u8, args: []const Ref, ret_ty: 
 /// slot 0. The returned slice is mutable so callers can pass it
 /// straight into `coerceCallArgs`. Direct callers that built the args
 /// themselves with __sx_ctx already prepended (protocol thunks, FFI
-/// wrappers in Step 4) should NOT call this — they already manage
-/// slot 0.
+/// wrappers) should NOT call this — they already manage slot 0.
 pub fn prependCtxIfNeeded(self: *Lowering, callee: *const Function, args: []Ref) []Ref {
     if (!callee.has_implicit_ctx) return args;
     const new_args = self.alloc.alloc(Ref, args.len + 1) catch return args;

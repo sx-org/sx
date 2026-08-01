@@ -628,10 +628,9 @@ pub fn protocolGlobalInit(self: *Lowering, vd: *const ast.VarDecl, v: *const Nod
 /// constant can never drift positionally from the layout `assembleContext`
 /// produced.
 ///
-/// Used by FFI inbound wrappers (Step 4) and the interp's default-
-/// context call entry (Step 7). Only emitted when the program imports
-/// `std.sx` — without that, Context / Allocator / CAllocator aren't
-/// registered and the global has no purpose.
+/// Used by FFI inbound wrappers and the interp's default-context call entry.
+/// Only emitted when the program imports `std.sx` — without that, Context /
+/// Allocator / CAllocator aren't registered and the global has no purpose.
 pub fn emitDefaultContextGlobal(self: *Lowering) void {
     emitDefaultContextGlobalImpl(self, .final);
 }

@@ -1,10 +1,8 @@
 // Variadic heterogeneous type packs — `..$args` — type-system
 // representation lock-in.
 //
-// Step 1c slice for the pack feature (see
-// ~/.claude/plans/lets-see-options-for-merry-dijkstra.md). Exercises
-// the parser's acceptance of `..$args` inside a `Closure(...)` type
-// expression — the pack-shape spelling used by impl headers like
+// Exercises the parser's acceptance of `..$args` inside a `Closure(...)`
+// type expression — the pack-shape spelling used by impl headers like
 // `impl Into(Block) for Closure(..$args) -> $R`.
 //
 // The parser accepts `..$args` in fn parameter lists only; the same

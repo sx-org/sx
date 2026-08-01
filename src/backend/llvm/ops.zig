@@ -1020,11 +1020,10 @@ pub const Ops = struct {
         self.e.mapRef(result);
     }
 
-    /// Inline assembly (ASM stream Phase D) — the port of Zig's `airAssembly`.
-    /// Handles 0 value outputs (void) and 1 (scalar); multi-output tuples are
-    /// Phase E (lowering bails before reaching here). Builds the LLVM constraint
-    /// string, rewrites the `%[name]` template, then `LLVMGetInlineAsm` +
-    /// `LLVMBuildCall2`.
+    /// Inline assembly — the port of Zig's `airAssembly`. Handles 0 value
+    /// outputs (void) and 1 (scalar); lowering bails on multi-output tuples
+    /// before reaching here. Builds the LLVM constraint string, rewrites the
+    /// `%[name]` template, then `LLVMGetInlineAsm` + `LLVMBuildCall2`.
     pub fn emitInlineAsm(self: Ops, instruction: *const Inst, a: InlineAsm) void {
         const e = self.e;
         const alloc = e.alloc;

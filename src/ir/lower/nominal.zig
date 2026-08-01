@@ -876,11 +876,10 @@ pub fn registerStructDecl(self: *Lowering, sd: *const ast.StructDecl, source_fil
         const tmpl = self.buildGenericStructTemplate(sd, source_file) orelse return;
         self.program_index.struct_template_map.put(tmpl.name, tmpl) catch {};
 
-        // S1.1 (additive): key the template by DeclId in parallel. Nothing
-        // reads this for selection yet; `struct_template_map` stays the live
-        // consumer. A template whose decl is not in the table (comptime /
-        // block-local registration with facts unwired) keeps only the
-        // name-keyed entry.
+        // Key the template by DeclId in parallel; `struct_template_map` is
+        // the selection consumer. A template whose decl is not in the table
+        // (comptime / block-local registration with facts unwired) keeps only
+        // the name-keyed entry.
         if (self.program_index.decl_table) |dt| {
             if (dt.declIdForStructDecl(sd)) |id| {
                 self.program_index.struct_template_by_decl.put(id, tmpl) catch {};

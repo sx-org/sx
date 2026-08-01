@@ -10,7 +10,7 @@
 // tag value (respecting explicit variant values) against the destination enum
 // type, for the scalar global, the array element, and the nested aggregate
 // field. (Explicit-value enums print as `.` because the `{}` formatter indexes
-// variants by position — a separate, pre-existing limitation — so those are
+// variants by position — a separate limitation — so those are
 // asserted by equality, not by their printed name.)
 
 #import "modules/std.sx";

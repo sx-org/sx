@@ -2,7 +2,7 @@
 // name. A backtick raw identifier can legitimately bind a value whose
 // spelling is a reserved numeric type name (`` `f64 ``, `` `i32 ``, `` `u8 ``).
 // Field access on such a value is an ORDINARY field read — the numeric-limit
-// intercept (NL.1 integer `.min`/`.max`, NL.2 float `.epsilon`/… ) must NOT
+// intercept (integer `.min`/`.max`, float `.epsilon`/… ) must NOT
 // hijack it. An adjacent BARE `f64.epsilon` / `i32.max` / `u8.max` — which the
 // parser classifies as a type receiver, not the raw value — STILL folds to the
 // numeric limit. Both behaviors coexist: the raw receiver reads the value, the

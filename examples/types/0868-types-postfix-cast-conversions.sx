@@ -1,5 +1,5 @@
-// Postfix cast `expr.(T)` — the conversion regime (aggregate ladder
-// Step 4, S1). A statically-typed receiver converts through the
+// Postfix cast `expr.(T)` — the conversion regime. A
+// statically-typed receiver converts through the
 // explicit-target `xx` engine: same coercion ladder, same
 // protocol-erasure ownership modes — one engine. "Safe" means
 // WELL-DEFINED, not value-preserving: `1000.(i8)` truncates by

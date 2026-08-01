@@ -204,7 +204,7 @@ test "parser: Tuple(T) is a 1-tuple, Tuple() is empty" {
 
 // `Tuple(..Ts)` reuses the spread/pack machinery (spread_expr field). Checked
 // in a PARAM type position (the inline `(..Ts)` form parses there too — a pack
-// tuple in bare RETURN position is a separate pre-existing parser limitation
+// tuple in bare RETURN position is a separate parser limitation
 // that affects `(..Ts)` and `Tuple(..Ts)` identically).
 test "parser: Tuple(..Ts) pack field is a spread_expr" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

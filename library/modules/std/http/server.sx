@@ -3298,7 +3298,7 @@ Server :: struct {
             else if exv.len > 0 { self.respond_error_close(slot, 417); return false; }
         }
 
-        // Transfer-Encoding is unimplemented (chunked decode is Phase S).
+        // Transfer-Encoding is unimplemented.
         // Treating a TE request as bodyless is a smuggling vector, so we
         // refuse it outright → 501. Detection is by header PRESENCE, not
         // value length: an empty or whitespace-only TE value ("TE:\r\n",

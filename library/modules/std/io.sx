@@ -277,7 +277,7 @@ await :: ufcs (f: *Future($R)) -> ($R, !IoErr) {
             out("io: await — future already has an awaiter (one awaiter per future in the M:1 model)\n");
             c.abort();
         }
-        context.io.suspend_raw(*f.park) catch {};   // Phase 3 propagates Canceled
+        context.io.suspend_raw(*f.park) catch {};   // cancellation surfaces via `f.canceled` below
     }
     // Settle the outcome and COPY the value out BEFORE releasing — `fut_release`
     // may free `f`, after which only the locals below are safe to touch.

@@ -428,7 +428,7 @@ pub const LLVMEmitter = struct {
         // Must precede any DISubprogram (created per function below).
         self.debugInfo().initDebugInfo();
 
-        // Top-level global asm (ASM stream Phase F): append each block verbatim
+        // Top-level global asm: append each block verbatim
         // to the module. Multiple blocks concatenate in source order; LLVM emits
         // them as module-level `module asm`. Symbols they define are reached via
         // lib-less `extern` declarations.

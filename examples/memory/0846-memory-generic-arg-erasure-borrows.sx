@@ -64,7 +64,7 @@ main :: () {
     }
     print("generic: {}/{} ambient {}\n", t2.allocs, t2.deallocs, amb.n);
 
-    // free(s, xx local) — the S4.4 pairing this fix makes trustworthy
+    // free(s, xx local) — the explicit-allocator pairing
     t3 := Tracker{ allocs = 0, deallocs = 0 };
     s : Sizable = ---;
     push .{ allocator = t3 } {

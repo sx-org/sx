@@ -248,8 +248,8 @@ pub fn lowerRoot(self: *Lowering, root: *Node) void {
     if (self.context_structural_error) return;
     // Pass 1b: emit the process-wide default Context global, statically
     // initialised to a CAllocator-backed Allocator value. Used by FFI
-    // wrappers in Step 4 and by the interp's `callWithDefaultContext`
-    // entry. Only fires when the program imports `std.sx` (so Context +
+    // wrappers and by the interp's `callWithDefaultContext` entry.
+    // Only fires when the program imports `std.sx` (so Context +
     // Allocator + CAllocator are all registered).
     self.emitDefaultContextGlobal();
     // Pass 1d: converge inferred (`bare !`) error sets across the whole
@@ -646,8 +646,7 @@ pub fn detectContextDecl(decls: []const *const Node) bool {
 /// dyld / JVM with no `__sx_ctx` arg, so the visible signature must
 /// not include one. Their bodies are still sx code — they
 /// synthesise `&__sx_default_context` at entry and use it as their
-/// own `current_ctx_ref`. Full FFI-wrapper split (a separate
-/// `__sx_<name>_impl` with the ctx param) lands in Step 4 proper.
+/// own `current_ctx_ref`.
 pub fn funcWantsImplicitCtx(self: *const Lowering, fd: *const ast.FnDecl) bool {
     if (!self.implicit_ctx_enabled) return false;
     if (fd.abi == .c) return false;
@@ -818,8 +817,8 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // use site still reports the unresolved name.
     registerConstAliases(self, decls);
     // Pass 0b: reserve every GENUINE same-name NAMED-TYPE shadow's DISTINCT
-    // nominal slot BEFORE the registration loop resolves any fields (E2/F1, and
-    // enum/union). A field / variant type referencing a shadow name —
+    // nominal slot BEFORE the registration loop resolves any fields (struct,
+    // enum and union alike). A field / variant type referencing a shadow name —
     // self (`next: *Box`), or a forward / mutual ref to a shadow declared LATER
     // in the same module (`peer: *Node`) — then binds to its OWN nominal TypeId
     // via `type_decl_tids`, never the global findByName first-author fallback
@@ -2231,7 +2230,7 @@ fn nodeTypeLeafName(node: *const Node) ?[]const u8 {
 fn registerCompositeAlias(self: *Lowering, cd: *const ast.ConstDecl, source: ?[]const u8) void {
     const ty = self.resolveTypeWithBindings(cd.value);
     if (!typeCarriesUnresolved(&self.module.types, ty)) {
-        // MED-4 (TUPLE aliases only): a pre-existing EMPTY-STRUCT entry under
+        // TUPLE aliases only: an EMPTY-STRUCT entry already under
         // the alias's own name means an earlier reference (fn signature /
         // struct field) resolved the name before this registration and bound
         // a never-adopted stub. For a STRUCTURAL TUPLE alias that stub keeps a
@@ -3639,7 +3638,7 @@ pub fn lazyLowerFunction(self: *Lowering, name: []const u8) void {
     }
     // Builtin bodies stay as compiler-handled — no extern stub needed.
     if (fd.body.data == .intrinsic_expr) return;
-    if (fd.type_params.len > 0) return; // generics handled by monomorphization (Step 3.13)
+    if (fd.type_params.len > 0) return; // generics handled by monomorphization
 
     // Defer functions with type-category matches until all types are registered.
     // any_to_string uses `if type == { case slice: ... }` which compiles a switch

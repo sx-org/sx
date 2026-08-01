@@ -276,11 +276,10 @@ pub const CharLiteral = struct {
 };
 
 /// Inline assembly expression: `asm volatile? { "tmpl", <operands…>,
-/// clobbers(.…) }` (ASM stream, design §II.3). A flat `operands` list in source
+/// clobbers(.…) }` (design §II.3). A flat `operands` list in source
 /// order — that order keys the `%N`/`%[name]` indices and the LLVM constraint
 /// string. The result type is derived in Sema from the `out_value` operands
-/// (0→void, 1→T, N→tuple). Parsed in Phase A.1; lowering bails loudly until the
-/// IR op + emit land (Phases C–E).
+/// (0→void, 1→T, N→tuple).
 pub const AsmExpr = struct {
     /// Template: a string-literal / `#string` heredoc node (a comptime string).
     template: *Node,
@@ -650,8 +649,7 @@ pub const TypeExpr = struct {
 };
 
 /// `$<pack_name>[<index>]` in type position. Resolves to the i-th
-/// element type of the active pack binding. Step 3 of the variadic
-/// heterogeneous type packs feature — used in trampoline bodies,
+/// element type of the active pack binding — used in trampoline bodies,
 /// generic conversions, struct fields parameterised over the pack.
 pub const PackIndexTypeExpr = struct {
     pack_name: []const u8,
@@ -659,10 +657,9 @@ pub const PackIndexTypeExpr = struct {
 };
 
 /// `$<pack_name>` (no indexing) in expression position. Evaluates
-/// to a comptime `[]Type` slice — the WHOLE pack as data. Step 4
-/// final slice: lets builder fns walk the pack types and emit
-/// per-position code (the shape step 5's generic Into(Block) needs
-/// for its trampoline body).
+/// to a comptime `[]Type` slice — the WHOLE pack as data. Lets builder
+/// fns walk the pack types and emit per-position code, as a generic
+/// `Into(Block)` trampoline body does.
 pub const ComptimePackRef = struct {
     pack_name: []const u8,
 };
@@ -837,7 +834,7 @@ pub const DerefExpr = struct {
     operand: *Node,
 };
 
-/// Postfix cast `expr.(T)` (aggregate ladder Step 4). Statically-typed
+/// Postfix cast `expr.(T)`. Statically-typed
 /// receivers convert via the explicit-target `xx` engine; type-erased
 /// receivers (`any` / protocol values) are checked assertions. The
 /// optional-chained form `expr?.(T)` maps over the optional receiver:

@@ -720,7 +720,7 @@ qn  := f64.nan;           // a quiet NaN
 - **Type receiver vs. a shadowing value binding.** A numeric-limit access folds
   only when the receiver is a builtin numeric **type name** (`f64.epsilon`,
   `i32.max`, `u8.max`). A backtick raw identifier that binds a *value* whose
-  spelling shadows a type name (F0.6) is an ordinary value: `` `f64.epsilon ``
+  spelling shadows a type name is an ordinary value: `` `f64.epsilon ``
   reads that value's `epsilon` field — it does **not** fold to the limit. This
   holds for **every** value-binding kind — a `` `f64 := … `` local, a module-scope
   global, or a `` `f64 :: … `` module constant — so the fold can never silently
@@ -6250,8 +6250,7 @@ returning two values *and* an error, with no tuple-in-a-wrapper. A single-value
 failable is `-> (T, !)`; an error-only failable is `-> !`. (There is no bare
 `-> T !` spelling — the error channel always rides inside the `(…, !)` list.)
 
-This section is the canonical surface reference. The design rationale,
-trade-offs, and implementation breakdown live in `current/PLAN-ERR.md`.
+This section is the canonical surface reference.
 
 ### Failable signatures
 

@@ -80,7 +80,7 @@ pub const Module = struct {
     /// concrete type instead of a tag (§7.9). The entry lets the VM select
     /// the arm by that type — devirtualizing against the carried impl.
     tagged_dispatch: std.ArrayList(TaggedDispatchEntry),
-    /// Top-level `asm { … }` blocks (ASM stream Phase F), in source order.
+    /// Top-level `asm { … }` blocks, in source order.
     /// Each is verbatim assembly appended to the LLVM module via
     /// `LLVMAppendModuleInlineAsm` at emit time; multiple blocks concatenate.
     global_asm: std.ArrayList([]const u8),

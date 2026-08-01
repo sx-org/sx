@@ -298,8 +298,8 @@ fn walkDecl(b: *Builder, node: *const Node) anyerror!void {
             // An impl's methods hang off the impl's STRUCTURAL identity —
             // protocol name + its type arguments + the structural target —
             // so two impl blocks never share a path. `ib.target_type` alone
-            // is a back-compat display string ("" for non-identifier
-            // targets) and would conflate `impl Into(Alpha) for i64` with
+            // is a display string ("" for non-identifier targets) and would
+            // conflate `impl Into(Alpha) for i64` with
             // `impl Into(Beta) for i64`.
             var seg = std.ArrayList(u8).empty;
             try seg.appendSlice(b.alloc, ib.protocol_name);

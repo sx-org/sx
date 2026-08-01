@@ -1,5 +1,5 @@
 // Float numeric-limit accessors: `f32`/`f64` expose `.min` / `.max` (sibling of
-// the integer `.min`/`.max`, NL.1) plus the float-only `.epsilon`,
+// the integer `.min`/`.max`) plus the float-only `.epsilon`,
 // `.min_positive`, `.true_min`, `.inf`, and `.nan`. Each folds, at compile time,
 // to a constant of the QUERIED float type via the same `lowerNumericLimit`
 // intercept as the integer case (`builder.constFloat` + the `std.math`

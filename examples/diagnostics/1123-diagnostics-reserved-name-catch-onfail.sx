@@ -1,9 +1,8 @@
 // A reserved/builtin type name is rejected as the error-tag binding of a
 // `catch` (`u8`) and of an `onfail` (`i64`). Both are reached through the
-// exhaustive binding-name walk's `catch_expr` / `onfail_stmt` arms. The tag is
-// a scalar, so before the diagnostic these spellings were silently accepted
-// (they never reached the address-of mis-lowering) — the binding must still be
-// rejected at its declaration.
+// exhaustive binding-name walk's `catch_expr` / `onfail_stmt` arms. A scalar
+// tag never reaches the address-of lowering, so the rejection must land at the
+// binding's declaration.
 //
 // Regression (issue 0076). Expected: one error for each
 // binding; exit 1.

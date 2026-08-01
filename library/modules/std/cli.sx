@@ -134,7 +134,7 @@ os_args :: (buf: []string) -> []string {
 // `parse(args, commands, diag)` reads a caller-supplied logical argument
 // vector `[]string` — NOT the process argv. (Mapping process argv ->
 // logical args, e.g. dropping the `sx run prog.sx` prefix, is the
-// consumer's job; see the `os_args` note above and F3.1.) The grammar:
+// consumer's job; see the `os_args` note above.) The grammar:
 //
 //     <group> <command> [--flag VALUE | --bool]... [--json] [-- rest...]
 //

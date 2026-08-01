@@ -578,9 +578,9 @@ pub const ProtocolResolver = struct {
         // `Event` enum vs the stdlib `event.Event` struct pulled in by
         // `modules/std.sx`). This mirrors the parameterized-protocol path
         // (`instantiateParamProtocol`, lower/protocol.zig) and concrete-fn
-        // signatures, which already pin to the defining module. `Self` short-
-        // circuits to `*void` before the leaf, as before. `pd.source_file ==
-        // null` (synthesized decl) falls back to the current context.
+        // signatures, which also pin to the defining module. `Self` short-
+        // circuits to `*void` before the leaf. `pd.source_file == null`
+        // (synthesized decl) falls back to the current context.
         var method_infos = std.ArrayList(ProtocolMethodInfo).empty;
         for (pd.methods) |method| {
             var ptypes = std.ArrayList(TypeId).empty;
@@ -1166,9 +1166,9 @@ fn carrierMatches(
             arg_tys.append(self.l.alloc, t) catch return;
         }
 
-        // Resolve the source type. Parser stores it on `target_type_expr` for
-        // parameterised impls (back-compat `target_type` string is kept for
-        // simple cases but the canonical form is the TypeExpr).
+        // Resolve the source type. The parser stores it on `target_type_expr`
+        // for parameterised impls; `target_type` carries only a display string
+        // for simple cases, so the TypeExpr is canonical.
         const src_ty: TypeId = if (ib.target_type_expr) |te| blk: {
             // Generic/pack impl sources are templates, not concrete nominal
             // leaves. Preserve their binding-aware structural resolver; only

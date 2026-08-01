@@ -1,13 +1,11 @@
 // Variadic heterogeneous type packs — `..$args` — impl matching
 // lock-in.
 //
-// Step 1d slice for the pack feature (see
-// ~/.claude/plans/lets-see-options-for-merry-dijkstra.md). Pins
-// today's concrete-only impl-matching behaviour: a user-declared
-// `impl Into(Block) for Closure(..$args) -> $R` does NOT match
-// any concrete closure source type. The xx cast site hits the
-// existing "no `Into(Block) for <src>` impl" diagnostic even
-// though the pack impl is reachable.
+// Pins the concrete-only impl-matching behaviour: a user-declared
+// `impl Into(Block) for Closure(..$args) -> $R` does NOT match any
+// concrete closure source type. The xx cast site hits the "no
+// `Into(Block) for <src>` impl" diagnostic even though the pack impl
+// is reachable.
 //
 // The `Closure(i32, bool) -> bool` shape is not covered by
 // stdlib's hand-rolled impls (only `Closure() -> void` and

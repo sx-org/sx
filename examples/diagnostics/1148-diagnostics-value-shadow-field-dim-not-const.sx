@@ -6,16 +6,9 @@
 // dimension is rejected with the same diagnostic a plainly-named runtime field
 // read (`b.max`) earns — the backtick spelling changes nothing.
 //
-// Sibling (integer) half of the F0.11-7 fix: the compile-time INTEGER evaluator
-// (`evalConstIntExpr`) misclassified a raw value-shadow receiver as the builtin
-// `<IntType>.min`/`.max` accessor, silently folding 127 and fabricating a
-// 127-element array. The `is_raw` guard now defers it to an ordinary field
-// read, so it surfaces as a non-constant dimension instead of a silent wrong
-// length.
-//
 // Negative companion to 0169 (the FLOAT-field narrowing half, exit 0).
 //
-// Regression (issue 0095 / F0.11-7).
+// Regression (issue 0095).
 #import "modules/std.sx";
 
 DimBox :: struct { max: i64; }

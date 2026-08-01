@@ -2,7 +2,7 @@
 
 // ============================================================
 // Dot-shorthand tests: .identifier(args) unification
-// Tests both tagged enum backward compat and struct static methods
+// Covers both tagged-enum payload construction and struct static methods
 // ============================================================
 
 // --- Type declarations ---
@@ -54,7 +54,7 @@ Result :: enum {
 
 main :: () {
     // ============================================================
-    // SECTION 1: Tagged enum backward compatibility
+    // SECTION 1: Tagged enum payload construction
     // ============================================================
     print("--- tagged enum compat ---\n");
 

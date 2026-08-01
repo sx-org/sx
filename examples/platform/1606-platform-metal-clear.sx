@@ -2,7 +2,6 @@
 // blue each frame, then draw a colored triangle via the GPU protocol —
 // exercises create_shader (MSL compile + pipeline state), create_buffer
 // + update_buffer, set_shader, set_vertex_buffer, and draw_triangles.
-// Step 3b will port the UI renderer to use this same surface.
 //
 // Build for iOS sim:
 //   /Users/agra/projects/sx/zig-out/bin/sx build --target ios-sim \

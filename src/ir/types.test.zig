@@ -121,7 +121,7 @@ test "typeName for builtins" {
     try std.testing.expectEqualStrings("any", table.typeName(.any));
 }
 
-// ── Pack type (Feature 1, Step 2.1) ──────────────────────────────────
+// ── Pack type ────────────────────────────────────────────────────────
 
 test "pack type: construct, element access, intern dedup (N=3)" {
     const alloc = std.testing.allocator;
@@ -289,7 +289,7 @@ test "isUnsignedInt: user-defined arbitrary-width ints" {
     try std.testing.expect(!table.isUnsignedInt(ptr_ty));
 }
 
-// ── Phase D: nominal identity + key-safe mutation ───────────────────────
+// ── Nominal identity + key-safe mutation ────────────────────────────────
 
 test "forward-decl field fill preserves intern key" {
     const alloc = std.testing.allocator;

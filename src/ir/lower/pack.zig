@@ -1488,7 +1488,7 @@ pub fn isPackParam(p: ast.Param) bool {
 /// Resolve `..pack.<name>` against `protocol_name` by position.
 /// No cross-namespace fallback: a value-position name that exists only as a
 /// type-arg (or vice versa) is `.not_found`, letting the caller emit a
-/// position-specific diagnostic (G3, Step 2.7).
+/// position-specific diagnostic.
 pub fn resolvePackProjection(
     self: *Lowering,
     protocol_name: []const u8,

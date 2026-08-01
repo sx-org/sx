@@ -1,4 +1,4 @@
-// ASM stream Phase F — top-level (global) `asm { … }`: a template-only block at
+// Top-level (global) `asm { … }`: a template-only block at
 // module scope, lowered to LLVM `module asm` (LLVMAppendModuleInlineAsm). It
 // defines a symbol that a lib-less `extern` declaration calls into — the
 // import direction reuses the existing C-FFI extern path, no new surface.

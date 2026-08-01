@@ -1209,7 +1209,7 @@ pub fn identifierBindsValue(self: *Lowering, name: []const u8) bool {
 /// `lowerFieldAccess`. Folds the limit to a comptime const of the queried
 /// type via the shared `TypeResolver` logic (no second computor) + the
 /// existing `constInt` / `constFloat` const paths:
-///   - integer `.min`/`.max` → `constInt` (NL.1, via `integerLimitFor`);
+///   - integer `.min`/`.max` → `constInt` (via `integerLimitFor`);
 ///   - float `.min`/`.max`/`.epsilon`/`.min_positive`/`.true_min`/`.inf`/
 ///     `.nan` → `constFloat` (via `floatLimitFor`).
 /// Returns null when the field is not a limit accessor, or the receiver is not
@@ -2353,11 +2353,10 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
         }
     }
     // Comptime-constant index into a STRUCT value — `s[i]` where `i` folds
-    // (aggregate-ladder Step 2/3 access model: exact parity with the tuple
-    // path above — the field itself, typed; a runtime index does NOT apply
-    // to structs, use `struct_field_value(s, j)`). This is what lets a
-    // positional anonymous struct (`t := .{1, 2}`) keep the `t[i]` walks
-    // that tuple literals supported.
+    // (exact parity with the tuple path above — the field itself, typed; a
+    // runtime index does NOT apply to structs, use `struct_field_value(s, j)`).
+    // This is what gives a positional anonymous struct (`t := .{1, 2}`) the
+    // same `t[i]` walks a tuple literal has.
     if (!obj_ty.isBuiltin() and self.module.types.get(obj_ty) == .@"struct") {
         const sinfo = self.module.types.get(obj_ty).@"struct";
         if (self.comptimeIndexOf(ie.index)) |ci| {
@@ -2962,8 +2961,8 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         // Per `Type → .any` mapping in type_bridge, the IR slice
         // type is `[]Any`; the interp stores raw `.type_tag` Values
         // (NOT Any-boxed) so `args[i]` reads back as a Type value
-        // directly. Step 4 final slice — lets builder fns walk the
-        // whole pack at interp time.
+        // directly — this lets builder fns walk the whole pack at
+        // interp time.
         .comptime_pack_ref => |cpr| blk: {
             // `$<name>` is overloaded in expression position:
             //   - Inside a pack-fn mono (or a `tryPackImplMatch`
@@ -3556,13 +3555,12 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
         .null_coalesce => |nc| self.lowerNullCoalesce(&nc),
         .deref_expr => |de| self.lowerDerefExpr(&de),
 
-        // Postfix cast `expr.(T)` (aggregate ladder Step 4). A
-        // statically-typed receiver converts through the explicit-target
-        // `xx` engine — resolve T, lower the operand under it (literals
-        // adopt the target exactly as they do for `x : T = xx v`), then
-        // lowerXX with T as the destination. One engine, not a fourth
-        // cast. A type-erased receiver (`any` / protocol value) is the
-        // CHECKED-assertion regime — S4.2; refused loudly until it lands.
+        // Postfix cast `expr.(T)`. A statically-typed receiver converts
+        // through the explicit-target `xx` engine — resolve T, lower the
+        // operand under it (literals adopt the target exactly as they do
+        // for `x : T = xx v`), then lowerXX with T as the destination. One
+        // engine, not a fourth cast. A type-erased receiver (`any` /
+        // protocol value) is the CHECKED-assertion regime.
         .postfix_cast => |pc| blk: {
             // Optional-chained form `o?.(T)`: chain-null propagates as a
             // null result, the cast/assertion applies to the payload; the
@@ -4079,13 +4077,10 @@ pub fn asmResultType(self: *Lowering, ae: *const ast.AsmExpr) TypeId {
     } });
 }
 
-/// Inline assembly lowering. Phase B (partial): validate the asm shape in the
-/// compile path with specific named diagnostics, THEN bail on the not-yet-
-/// implemented codegen so the user sees the real problem first (the IR op +
-/// LLVM emit land in Phases C–E; result-type derivation + the auto-naming rule
-/// move to the expression typer once lowering produces a real value). Always
-/// returns a placeholder Ref so `hasErrors()` aborts the build on whichever
-/// diagnostic fired.
+/// Inline assembly lowering: validate the asm shape with specific named
+/// diagnostics, THEN bail on the unimplemented codegen so the user sees the
+/// real problem first. Always returns a placeholder Ref so `hasErrors()`
+/// aborts the build on whichever diagnostic fired.
 pub fn lowerAsmExpr(self: *Lowering, ae: *const ast.AsmExpr, span: ast.Span) Ref {
     const diags = self.diagnostics orelse return self.emitPlaceholder("inline_asm");
 

@@ -836,7 +836,7 @@ test "lower: objcPropertyKind defaults + explicit ARC modifiers" {
     try std.testing.expect(lowering.objc().objcPropertyKind(.{ .name = "raw", .field_type = obj_ty, .is_property = true, .property_modifiers = &assign_mods }) == .assign);
 }
 
-// ── Pack projection name resolution (Feature 1, Step 2.2) ────────────
+// ── Pack projection name resolution ──────────────────────────────────
 
 const errors = @import("../errors.zig");
 
@@ -1954,10 +1954,10 @@ test "struct literal: non-aggregate target and uninferable untyped literal diagn
     defer arena.deinit();
     const alloc = arena.allocator();
 
-    // Untyped `.{ }` literals SELF-TYPE now (aggregate ladder Step 1/2) —
-    // targetless locals, global consts, inferred returns, and array
-    // elements all mint anonymous structs, so only the 0161 arm (a bare
-    // literal against a NON-aggregate annotation) still diagnoses here.
+    // Untyped `.{ }` literals SELF-TYPE — targetless locals, global consts,
+    // inferred returns, and array elements all mint anonymous structs, so only
+    // the 0161 arm (a bare literal against a NON-aggregate annotation)
+    // diagnoses here.
     const src =
         \\main :: () {
         \\    x : i64 = .{ a = 1 };

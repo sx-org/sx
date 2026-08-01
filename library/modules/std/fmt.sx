@@ -553,7 +553,7 @@ print :: ($fmt: string, ..$args) {
     #insert "out(result);";
 }
 
-// ── Postfix-assertion runtime (aggregate ladder Step 4) ─────────────────
+// ── Postfix-assertion runtime ───────────────────────────────────────────
 // `av.(T)` on a type-erased receiver is a CHECKED assertion. The compiler
 // rewrites the consumed forms (`try av.(T)`, `av.(T) or d`, `av.(T) catch`)
 // to `__sx_cast_assert` — graceful mismatch via the error channel — and the

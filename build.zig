@@ -36,7 +36,7 @@ pub fn build(b: *std.Build) void {
         .file = b.path("library/vendors/sx_jni_runtime/sx_jni_env_tl.c"),
         .flags = &.{},
     });
-    // ERR E3.1 runtime — `_Thread_local` error return-trace ring buffer.
+    // Error return-trace runtime — `_Thread_local` ring buffer.
     // Same linkage rationale as the JNIEnv* slot above: linked into the
     // compiler so the JIT resolves `sx_trace_*` via dlsym; AOT outputs pick it
     // up via a lower-side auto-injected c_import (gated on needs_trace_runtime).
