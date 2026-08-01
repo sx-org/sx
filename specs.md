@@ -441,7 +441,21 @@ report :: (quiet: bool) -> void {
 The end of the file ends the declaration it lands on, so a file's last
 declaration needs no terminator either. The rule does not reach inside a fixed
 form's own list — a runtime class's members, the entries of `#import c { … }`,
-and a `match` arm each keep the `;` their grammar asks for.
+and the one-line `match` arm bodies (`case .x: break;`,
+`case .x: (e) => expr;`) each keep the `;` their grammar asks for. An arm
+written as a statement list is not one of those: its statements end at a line
+break like any others, and the `;` the last of them still needs before the next
+`case` or `else` is the suppression list below at work, not the match grammar.
+
+```sx
+if c == {
+    case .a:
+        setup()
+        report();     // `case` cannot start a statement — this `;` is required
+    case .b:
+        done()        // the `}` ends it
+}
+```
 
 **`;` is a pure separator.** Ending a statement is all it does. It carries no
 other meaning anywhere in the language: it never discards a value, never decides
@@ -3885,8 +3899,8 @@ c := { f(); x := 1 };  // error: this block is used as a value but produces none
 An EMPTY block is exempt — `{}` is how the void value itself is written, as in
 `.{ {}, 9 }` for a `Tuple(void, i32)`.
 
-A `match` arm's `;` comes from the match grammar rather than the statement one,
-so `case .x: expr;` yields `expr` like any other arm:
+An arm's last expression is the arm's value, with or without the `;` that
+separates it from the next `case`:
 
 ```sx
 classify :: (n: i32) -> i32 {

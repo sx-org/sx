@@ -5719,8 +5719,10 @@ pub const Parser = struct {
     /// or top-level position: an explicit `;`, or the implied one — the line
     /// break where the `;` would have gone, or the end of the file. The `;`
     /// inside a fixed form's member list (a runtime class's members,
-    /// `#import c { … }`'s entries) and a match arm's terminator are separators
-    /// under their own grammar, not statement ends, and keep demanding their `;`.
+    /// `#import c { … }`'s entries) and the one closing a `break` or `=> expr`
+    /// match arm are separators under their own grammar, not statement ends,
+    /// and keep demanding their `;`. A statement-list arm holds ordinary
+    /// statements, which end here like any others.
     fn expectStatementEnd(self: *Parser) !void {
         if (self.current.tag == .semicolon) {
             self.advance();
