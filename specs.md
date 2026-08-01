@@ -555,15 +555,21 @@ ended  :: () -> i64 { 41; }   // the `;` separates; the value is still 41
 **Statements break, expressions chain.** Whether a `}` can be continued is
 decided by what it closes. A statement that IS a block — `if`, `while`, `for`,
 `match`, a `push` body, a bare scope `{ … }` — ends at its `}`, so the line
-below starts a new statement. An expression that merely ENDS in a block — a
-trailing-block call, an aggregate literal, a self-trailing `.{ }` — is still an
-expression, and its postfix chain reads on:
+below starts a new statement unless it opens with a token that cannot start
+one. An expression that merely ENDS in a block — a trailing-block call, an
+aggregate literal, a self-trailing `.{ }` — is still an expression, and its
+postfix chain reads on:
 
 ```sx
 {
     setup();
 }
 .unknown                      // the scope ended; this is the next statement
+
+if ready {
+    setup();
+}
+else { … }                    // `else` cannot start a statement — the `if` chains
 
 c := vstack(1.0) {
     body();
