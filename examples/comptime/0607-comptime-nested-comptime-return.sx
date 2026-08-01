@@ -11,11 +11,8 @@
 // comptime call (`print`) AND a `return X;` statement. Prints
 // "inside" then "n=42".
 //
-// The pack-fn variant of the same bug (filed in the original
-// issue as face 2) is covered where step-2b moved pack-fn
-// calls off the inline path into the mono path. Plain comptime
-// fns stay on the inline path; their fix is the
-// `createComptimeFunction` state save/restore.
+// The pack-fn variant is covered by the mono path; plain comptime fns stay on
+// the inline path, guarded by the `createComptimeFunction` state save/restore.
 
 #import "modules/std.sx";
 

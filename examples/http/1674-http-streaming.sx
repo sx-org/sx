@@ -1,4 +1,4 @@
-// std.http S1 streaming / chunked OUTPUT.
+// std.http: streaming / chunked OUTPUT.
 //
 // A handler streams a LARGE body via Transfer-Encoding: chunked without
 // the server ever buffering the whole body. It opts in with

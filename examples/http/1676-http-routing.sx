@@ -1,4 +1,4 @@
-// std.http_router method+path routing, path params,
+// std.http_router: method+path routing, path params,
 // query/form parsing, and JSON request/response helpers over the std.http
 // server core. Drives a routed live server in ONE thread via Server.tick
 // (1633-style) and asserts:

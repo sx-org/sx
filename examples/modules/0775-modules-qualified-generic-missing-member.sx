@@ -6,11 +6,6 @@
 // `a.sx` authors only `Other` (no `Box`); `b.sx` authors a generic `Box($T)`.
 // The qualified reference `a.Box(i64)` must report that `a` has no member `Box`,
 // NOT resolve to `b.Box`.
-//
-// Regression : before the qualified head path diagnosed the
-// missing member, `qualifiedStructTemplate` returned null and the code fell
-// through to the bare global template, silently instantiating `b.Box`
-// (`size=16 x=1 y=2`, exit 0).
 
 #import "modules/std.sx";
 a :: #import "0775-modules-qualified-generic-missing-member/a.sx";

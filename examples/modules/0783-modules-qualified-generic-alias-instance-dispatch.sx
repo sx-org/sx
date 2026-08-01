@@ -4,11 +4,8 @@
 // Two namespaces author a same-name generic `Box($T)` with a DIFFERENT layout and
 // a DIFFERENT `tag`; the alias over `a.Box(i64)` must dispatch `a.Box.tag`.
 //
-// Regression : the alias registration cloned the layout into
-// a fresh type named `ABox` but did NOT mirror the instance template/bindings/
-// author onto the alias name, so `x.tag()` on an `ABox` receiver resolved to
-// nothing (unresolved). Copying the three instance-map entries to the alias name
-// makes the alias receiver dispatch its author's method.
+// The alias name mirrors the author's instance template, bindings, and author
+// entries; that is what makes an alias receiver dispatch its author's method.
 
 #import "modules/std.sx";
 a :: #import "0783-modules-qualified-generic-alias-instance-dispatch/a.sx";

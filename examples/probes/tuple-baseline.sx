@@ -56,4 +56,3 @@ main :: () -> i32 {
 //         add(..p);            // expected: add(10, 20) — Decision 3 "..tuple"
 //       Lowers to one `undef` arg → LLVM arity verification failure.
 //       Needed by canonical `mapper(..sources.value)` and `.(..sources)`.
-

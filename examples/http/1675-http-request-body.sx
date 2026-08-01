@@ -1,4 +1,4 @@
-// std.http inbound request-body handling the server
+// std.http inbound request-body handling: the server
 // DECODES an inbound `Transfer-Encoding: chunked` request body into
 // Request.body (the handler sees the assembled body), enforces a
 // configurable max_body with EARLY 413 (declared Content-Length over max,

@@ -5,23 +5,22 @@ const lower = @import("lower.zig");
 const Node = ast.Node;
 const Lowering = lower.Lowering;
 
-/// The converged error-analysis facts lowering consumes (: each
-/// pure-failable function's inferred error-tag set, and each bare-`!` closure
-/// SHAPE's inferred set. Backing maps currently live on `Lowering` (the facade
-/// writes `self.l.*`); `facts()` returns a view over them.
+/// The converged error-analysis facts lowering consumes: each pure-failable
+/// function's inferred error-tag set, and each bare-`!` closure SHAPE's
+/// inferred set. The backing maps live on `Lowering` (the facade writes
+/// `self.l.*`); `facts()` returns a view over them.
 pub const ErrorFacts = struct {
     inferred_error_sets: std.StringHashMap([]const u32),
     shape_inferred_sets: std.StringHashMap([]const u32),
 };
 
-/// Whole-program error-set convergence, extracted
-/// from `Lowering`. Owns the fix-point traversals that converge inferred
-/// `!` error sets (`convergeInferredErrorSets`) and bare-`!` closure-shape sets
+/// Whole-program error-set convergence. Owns the fix-point traversals that
+/// converge inferred `!` error sets (`convergeInferredErrorSets`) and bare-`!` closure-shape sets
 /// (`convergeClosureShapeSets`), plus the AST collectors that feed them.
 ///
 /// A `*Lowering` facade (Principle 5, like `CallResolver`/`ProtocolResolver`):
 /// it reads the declaration map (`fn_ast_map`) + tag registry and writes the
-/// `inferred_error_sets` / `shape_inferred_sets` maps that still live on
+/// `inferred_error_sets` / `shape_inferred_sets` maps that live on
 /// `Lowering` (consumers read them there). The per-closure-literal contribution
 /// (`recordClosureShape`) + its type/shape helpers stay in `Lowering`; this
 /// module calls back for that and reaches its own `collectErrorSites` via the

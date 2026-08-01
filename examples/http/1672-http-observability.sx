@@ -1,4 +1,4 @@
-// std.http H4 explicit errors + observability.
+// std.http: explicit errors + observability.
 //
 // Accept/read/write/parse/timeout/503 faults close a connection
 // SILENTLY. H4 adds two opt-in observers, BOTH driven from the loop

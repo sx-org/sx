@@ -1,4 +1,4 @@
-// std.socket nonblocking surface set_nonblocking via
+// std.socket nonblocking surface: set_nonblocking via
 // the C-variadic fcntl, and the typed _nb wrappers' full result
 // algebra — bytes, WouldBlock, Closed — on a unix socketpair, plus
 // accept_nb on a nonblocking TCP listener (WouldBlock with an empty

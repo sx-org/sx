@@ -15,26 +15,12 @@ const Module = mod_mod.Module;
 const lower = @import("../lower.zig");
 const Lowering = lower.Lowering;
 
-/// Emit a C-ABI exported function for every bodied method on a
-/// `#jni_main #jni_class("...")` declaration. The symbol name follows
-/// JNI's name-mangling convention so Android's JNI runtime can resolve
-/// `private native sx_<method>(...)` (declared in the bundled
-/// classes.dex by `jni_java_emit`) without an explicit `RegisterNatives`
-/// call — i.e. `Java_<pkg-mangled>_<Class>_sx_1<method-mangled>`.
-///
-/// Param ABI: prepended `(env: *void, self: *void)` (JNIEnv* + jobject
-/// receiver), followed by the user-declared params with pointer types
-/// type-erased to `*void` (JNI carries jobjects, not sx-typed handles —
-/// future work can keep richer typing inside the body when needed).
 /// Eagerly lower bodied instance methods on every sx-defined
-/// `#objc_class`. The Obj-C runtime invokes these via the IMP
-/// pointers wired up there — no sx-side call path triggers
-/// lazy lowering, so we walk the cache and force-lower here.
-/// `lowerFunction` sets `current_runtime_class` automatically based
-/// on the qualified name, so `*Self` substitutions in the body
-/// resolve correctly After the bodies are lowered,
-/// `emitObjcDefinedClassImps` wraps each with a C-ABI trampoline
-///
+/// `#objc_class`. The Obj-C runtime invokes these through the IMP
+/// pointers `emitObjcDefinedClassImps` installs — no sx-side call path
+/// triggers lazy lowering, so this walks the cache and force-lowers.
+/// `lowerFunction` sets `current_runtime_class` from the qualified name,
+/// so `*Self` substitutions in the body resolve correctly.
 pub fn lowerObjcDefinedClassMethods(self: *Lowering) void {
     for (self.module.objc_defined_class_cache.items) |entry| {
         const fcd = entry.decl;
@@ -694,7 +680,7 @@ pub fn emitObjcDefinedClassImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl
     params.append(self.alloc, .{ .name = self.module.types.internString("_cmd"), .ty = ptr_void }) catch return;
 
     // Set current_runtime_class so *Self in user-param resolution
-    // resolves to *<Cls>State Save+restore.
+    // resolves to *<Cls>State; saved and restored around the body.
     const saved_fc = self.current_runtime_class;
     self.current_runtime_class = fcd;
     defer self.current_runtime_class = saved_fc;
@@ -1059,10 +1045,9 @@ pub fn emitObjcDefinedClassStaticImp(self: *Lowering, fcd: *const ast.RuntimeCla
 ///   [super dealloc]   // objc_msgSendSuper2(&super, sel_dealloc)
 ///   ret void
 ///
-/// The state struct's first field is the allocator captured at
-/// +alloc time Reading it back lets -dealloc free
-/// through the same allocator the instance was constructed with —
-/// the per-instance allocator design.
+/// The state struct's first field is the allocator captured at +alloc time.
+/// Reading it back lets -dealloc free through the same allocator the
+/// instance was constructed with.
 pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeClassDecl) void {
     const saved_func = self.builder.func;
     const saved_block = self.builder.current_block;

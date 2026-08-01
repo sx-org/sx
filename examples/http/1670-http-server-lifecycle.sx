@@ -1,4 +1,4 @@
-// std.http H2 memory lifecycle / leak gate.
+// std.http: memory lifecycle / leak gate.
 //
 // Server.init allocates the conns array, each connection's read buffer
 // (grown lazily), and — in pooled mode — the PoolState struct, its
