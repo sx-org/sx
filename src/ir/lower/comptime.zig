@@ -1407,60 +1407,55 @@ fn lowerComptimeCallArgsMode(
 
     // Lower the body — capture return value for functions with return type
     const ret_ty = self.resolveReturnType(fd);
+    const demand = self.bodyDemand(ret_ty);
     if (ret_ty != .void) {
-        // Detect whether the body might use `return X;` statements.
-        // If so, set up the inline-return slot AND a dedicated
-        // "return-done" basic block so each `return X;` stores to
-        // the slot and branches to ret_done. After the body lowers,
-        // we switch to ret_done and load. Pure tail-expression
-        // bodies (arrow form, or a block whose last stmt is an
-        // expression) skip the slot+block — keeps the common
-        // `format`/`#insert`-style path unchanged.
-        const has_return = fnBodyHasReturn(fd.body);
-        if (has_return) {
+        // A `return X;` in the body — and a PURE-failable body's implicit error
+        // tail, which is one too — needs the inline-return slot AND a dedicated
+        // "return-done" basic block: each exit stores to the slot and branches
+        // to ret_done, and the load after the body picks the value up. A body
+        // with neither skips the slot+block and hands its tail value straight
+        // back — the common `format`/`#insert`-style path.
+        if (fnBodyHasReturn(fd.body) or demand == .error_only) {
             const ret_slot = self.builder.alloca(ret_ty);
             const ret_done_bb = self.freshBlock("ct.ret_done");
             const saved_iri = self.inline_return_target;
             self.inline_return_target = .{ .slot = ret_slot, .ret_ty = ret_ty, .done_bb = ret_done_bb };
             defer self.inline_return_target = saved_iri;
 
-            // Lower body. Tail-expression bodies (rare here since
-            // has_return == true) produce a tail value we still
-            // route through the slot so the load in ret_done picks
-            // it up. Block-statement bodies whose last stmt is
-            // `return X;` already br to ret_done from inside
-            // lowerReturn.
-            if (self.lowerBlockValue(fd.body)) |val| {
-                if (!self.currentBlockHasTerminator()) {
-                    const v_ty = self.builder.getRefType(val);
-                    // Issue 0191: same returnable check as the regular body
-                    // path — no bit-weld into the inline return slot.
-                    const coerced = if (v_ty != ret_ty and self.checkReturnable(val, v_ty, ret_ty, fd.body.span))
-                        self.coerceToType(val, v_ty, ret_ty)
-                    else
-                        val;
-                    self.builder.store(ret_slot, coerced);
-                    self.builder.br(ret_done_bb, &.{});
-                }
-            } else if (!self.currentBlockHasTerminator()) {
-                // Body fell through without producing a tail value
-                // AND without branching to ret_done — this only
-                // happens for bodies whose last stmt is a void
-                // statement (e.g. side-effecting). Slot is
-                // uninitialised on this path; safer to br anyway
-                // so the CFG is well-formed. The load in ret_done
-                // will read uninit, which is the same garbage
-                // behaviour the regular fn-body lowering would
-                // produce for a missing return.
-                self.builder.br(ret_done_bb, &.{});
+            switch (self.lowerDemandedBody(fd.body, demand)) {
+                // The error tail already stored the coerced tag and branched.
+                .error_channel, .terminated => {},
+                .value => |val| {
+                    if (!self.currentBlockHasTerminator()) {
+                        const v_ty = self.builder.getRefType(val);
+                        // Issue 0191: same returnable check as the regular body
+                        // path — no bit-weld into the inline return slot.
+                        const coerced = if (v_ty != ret_ty and self.checkReturnable(val, v_ty, ret_ty, fd.body.span))
+                            self.coerceToType(val, v_ty, ret_ty)
+                        else
+                            val;
+                        self.builder.store(ret_slot, coerced);
+                        self.builder.br(ret_done_bb, &.{});
+                    }
+                },
+                .no_value, .poisoned => {
+                    if (!self.currentBlockHasTerminator()) {
+                        // A pure-failable body that fell through SUCCEEDED: the
+                        // error slot carries 0, exactly as a real function's
+                        // success exit does. Any other body reaching here ends
+                        // in a void statement and leaves the slot alone.
+                        if (demand == .error_only) self.builder.store(ret_slot, self.builder.constInt(0, ret_ty));
+                        self.builder.br(ret_done_bb, &.{});
+                    }
+                },
             }
 
             self.builder.switchToBlock(ret_done_bb);
             return self.builder.load(ret_slot, ret_ty);
-        } else {
-            if (self.lowerBlockValue(fd.body)) |val| {
-                return val;
-            }
+        }
+        switch (self.lowerDemandedBody(fd.body, demand)) {
+            .value => |val| return val,
+            else => {},
         }
     } else {
         self.lowerBlock(fd.body);
