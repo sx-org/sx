@@ -1,4 +1,4 @@
-// The emit UI library as a package (revision §13.2).
+// The emit UI library as a package.
 //
 // One product story: an ambient child list plus an explicit terminal `.emit()`.
 // There is no interception here — a child written WITHOUT `.emit()` is an
@@ -7,7 +7,6 @@
 //
 // `emit.View` is its own open set, sharing no geometry, render surface or
 // components with `ui/fluent` or `ui/compose`.
-// Expected: exit 0.
 #import "modules/std.sx";
 #import "modules/ui/emit.sx";
 

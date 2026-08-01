@@ -12,11 +12,9 @@
 // was negative-controlled on aarch64 (examples/1808). Prints three fields:
 // "<gp_mismatch> <xmm_mismatch> <P|F>"  — expected "0 0 P".
 //
-// VALIDATED: built with `--target x86_64-windows-gnu --self-contained` and run
-// on a Windows 7 x64 VM (UTM) -> printed "0 0 P" (every GP + XMM callee-saved
-// survived). Pinned x86_64-windows-gnu: ir-only on a non-Windows host (the .ir
-// locks the Win64-ABI lowering); runs end-to-end on a Windows x86_64 runner.
-// Adversarially reviewed (no critical/minor bugs) before the VM run.
+// Pinned x86_64-windows-gnu: ir-only on a non-Windows host, where the `.ir`
+// locks the Win64-ABI lowering; on a Windows x86_64 runner it runs end-to-end
+// and prints "0 0 P" — every GP and XMM callee-saved register survived.
 
 kernel32 :: #library "kernel32";
 GetStdHandle :: (n: u32) -> *void extern;

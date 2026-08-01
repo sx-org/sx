@@ -1,4 +1,4 @@
-// The fluent UI library as a package (revision §13.1).
+// The fluent UI library as a package.
 //
 // One import of the facade is the whole API: the library re-exports its own
 // names, because an import publishes nothing on its own. A container's children
@@ -8,7 +8,6 @@
 // `fluent.View` is the library's own open set. It shares no geometry, no render
 // surface and no components with any other UI library: a component of another
 // library is not a member of this set, whatever the two declare.
-// Expected: exit 0.
 #import "modules/std.sx";
 #import "modules/ui/fluent.sx";
 

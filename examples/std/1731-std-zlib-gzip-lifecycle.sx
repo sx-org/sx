@@ -1,5 +1,5 @@
-// Public zlib/gzip lifecycle + checksum coverage the earlier examples left
-// pending: zlib.Encoder/Decoder init/reset/write/finish round-trips, level
+// Public zlib/gzip lifecycle + checksum coverage: zlib.Encoder/Decoder
+// init/reset/write/finish round-trips, level
 // and bound behavior, u32 checksum vectors (empty, known, incremental,
 // boundary seed), and public checksum-failure on corrupted input — all under
 // a net-zero GPA gate.
