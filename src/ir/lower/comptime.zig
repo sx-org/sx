@@ -1411,8 +1411,12 @@ fn lowerComptimeCallArgsMode(
     const ret_ty = self.resolveReturnType(fd);
     const demand = self.bodyDemand(ret_ty);
     if (demand == .none) {
-        // Nothing to hand back to the call site.
+        // Nothing to hand back to the call site. A `-> noreturn` body has
+        // already closed the block it was inlined into, so there is no live
+        // position left to put the placeholder in — emitting one there lands
+        // an instruction after the terminator.
         self.lowerBlock(fd.body);
+        if (self.currentBlockHasTerminator()) return .none;
         return self.builder.constInt(0, .void);
     }
     // A `return X;` in the body — and a PURE-failable body's implicit error

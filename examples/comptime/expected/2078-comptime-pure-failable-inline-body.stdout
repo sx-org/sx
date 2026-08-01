@@ -21,3 +21,4 @@ tick ct-ret-mixed
 ct-ret-error e
 caught ct-ret-error
 caught ct-ret-raise
+stop ct-stop

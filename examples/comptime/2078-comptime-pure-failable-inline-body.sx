@@ -8,8 +8,15 @@
 // to hand its raw tail value back as the call's error tag, so `catch` fired on
 // success) and a body that has one (whose slot was left undefined when control
 // fell off the end). Defers run before either exit.
-// Expected: exit 0.
+//
+// A `-> noreturn` callee is the third shape reaching the same sink: nothing is
+// demanded of its tail, and its body closes the block it was inlined into. The
+// call site therefore has no live position left to hold a result — a
+// placeholder emitted there lands after the terminator and the module fails to
+// verify ("Terminator found in the middle of a basic block").
+// Expected: exit 0, from the inlined `proc.exit(0)` rather than a return.
 #import "modules/std.sx";
+proc :: #import "modules/std/process.sx";
 
 Failed :: error { Nope }
 
@@ -107,6 +114,13 @@ ct_ret_mixed :: ($label: string, b: bool) -> !Failed {
     if b { fails() } else { tick(label) }
 }
 
+// ── A `-> noreturn` callee at the same sink ────────────────────────────
+
+ct_stop :: ($label: string) -> noreturn {
+    print("stop {}\n", label);
+    proc.exit(0);
+}
+
 main :: () -> i32 {
     ct_value("ct-value") catch { print("NOT REACHED ct-value\n"); }
     ct_wide("ct-wide") catch { print("NOT REACHED ct-wide\n"); }
@@ -126,5 +140,8 @@ main :: () -> i32 {
     ct_ret_mixed("ct-ret-mixed", false) catch { print("NOT REACHED ct-ret-mixed\n"); }
     ct_ret_error("e", 1) catch { print("caught ct-ret-error\n"); }
     ct_ret_raise("f", -1) catch { print("caught ct-ret-raise\n"); }
-    0
+
+    // The body runs, then diverges — so this is main's tail, and there is no
+    // trailing value after it.
+    ct_stop("ct-stop");
 }
