@@ -1,0 +1,77 @@
+// The vendored SQLite is built with SQLITE_ENABLE_FTS5, so full-text
+// search needs no binding surface of its own — the virtual table is
+// created, queried and ranked through plain SQL. Pins the round trip:
+// MATCH selects the indexed row, bm25 scores the hits best-first, and a
+// term absent from the corpus selects nothing.
+#import "modules/std.sx";
+sq :: #import "vendors/sqlite/sqlite.sx";
+
+Hit :: struct {
+    rowid: i64;
+    score: f64;
+}
+
+// Up to `out.len` hits for `query`, best-ranked first — fts5's `rank`
+// is bm25, which scores a better match more negative.
+match_hits :: (db: *sq.Sqlite, query: string, out: []Hit) -> (i64, !) {
+    st := try db.prepare("SELECT rowid, bm25(docs) FROM docs WHERE docs MATCH ?1 ORDER BY rank");
+    defer st.finalize();
+    try st.bind_text(1, query);
+    n : i64 = 0;
+    while n < out.len {
+        rc := try st.step();
+        if rc != sq.SQLITE_ROW { break; }
+        out[n] = Hit{ rowid = st.column_int64(0), score = st.column_double(1) };
+        n += 1;
+    }
+    return n;
+}
+
+// The title of the first row matching `query` ("" when none does).
+match_title :: (db: *sq.Sqlite, query: string) -> (string, !) {
+    st := try db.prepare("SELECT title FROM docs WHERE docs MATCH ?1");
+    defer st.finalize();
+    try st.bind_text(1, query);
+    rc := try st.step();
+    if rc != sq.SQLITE_ROW { return ""; }
+    return st.column_text(0);
+}
+
+main :: () -> i32 {
+    db := sq.Sqlite.open(":memory:") catch { print("open failed\n"); return 1; };
+    defer db.close();
+
+    db.exec("CREATE VIRTUAL TABLE docs USING fts5(title, body)") catch {
+        print("create virtual table failed: {}\n", db.errmsg());
+        return 1;
+    };
+    db.exec("INSERT INTO docs(title, body) VALUES
+        ('sx modules', 'packs and modules compose without a build system'),
+        ('vendored sqlite', 'the amalgamation compiles once and indexes text'),
+        ('full text search', 'the index tokenizes text and ranks text matches')") catch {
+        print("insert failed: {}\n", db.errmsg());
+        return 1;
+    };
+
+    title := match_title(*db, "amalgamation") catch { print("title query failed: {}\n", db.errmsg()); return 1; };
+    if title != "vendored sqlite" {
+        print("unexpected match for 'amalgamation': {}\n", title);
+        return 1;
+    }
+    print("match 'amalgamation': {}\n", title);
+
+    hits : [4]Hit = ---;
+    n := match_hits(*db, "text", hits[..]) catch { print("ranked query failed: {}\n", db.errmsg()); return 1; };
+    if n != 2 {
+        print("unexpected hit count for 'text': {}\n", n);
+        return 1;
+    }
+    print("match 'text': {} rows, top rowid {}\n", n, hits[0].rowid);
+    print("bm25 negative and best first: {}\n", hits[0].score < 0.0 and hits[0].score <= hits[1].score);
+
+    miss := match_hits(*db, "monomorphization", hits[..]) catch { print("miss query failed: {}\n", db.errmsg()); return 1; };
+    print("rows for an absent term: {}\n", miss);
+
+    print("vendored sqlite {} fts5 ok\n", sq.sqlite_version());
+    0
+}

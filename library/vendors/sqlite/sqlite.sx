@@ -27,10 +27,14 @@
 //     meaningful with user-defined functions (callbacks, above);
 //   * varargs APIs (sqlite3_config, db_config, log, mprintf) —
 //     configuration happens via the unit's compile-time defines;
-//   * UTF-16 variants (we are UTF-8 only), the VFS layer,
-//     sessions/snapshots/vtabs/loadable
+//   * UTF-16 variants (we are UTF-8 only), the VFS layer, the
+//     vtab-authoring API, sessions/snapshots/loadable
 //     extensions (not compiled in), deprecated API (compiled out via
 //     SQLITE_OMIT_DEPRECATED).
+//
+// FTS5 is compiled in (SQLITE_ENABLE_FTS5) and driven entirely from
+// SQL — CREATE VIRTUAL TABLE ... USING fts5, MATCH, bm25() — so it
+// adds no binding surface here.
 //
 // FFI type choices: handles cross as `usize` (`sqlite3*`,
 // `sqlite3_stmt*`, `sqlite3_blob*`, `sqlite3_backup*` are opaque and
@@ -59,6 +63,7 @@ sqlib :: #import c {
     #define "SQLITE_OMIT_SHARED_CACHE";
     #define "SQLITE_LIKE_DOESNT_MATCH_BLOBS";
     #define "SQLITE_ENABLE_COLUMN_METADATA";
+    #define "SQLITE_ENABLE_FTS5";
     #flags  "-O2";
     #source "c/sqlite3.c";
 };
