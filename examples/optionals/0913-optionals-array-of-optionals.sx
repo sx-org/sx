@@ -4,10 +4,9 @@
 // and an absent one absent. Covers a scalar payload (`?i64`), a struct payload
 // (`?Pt`), write-then-read, and direct-use of the indexed value (`??`, `if`).
 //
-// Regression (issue 0168): the positional struct-literal path treated array
-// targets as having no named fields and skipped per-element coercion, storing a
-// bare `T`/`null` into a `{T,i1}` slot — corrupting the array (a present
-// element read back as absent; indexing it segfaulted).
+// The positional struct-literal path coerces per element even for an array
+// target: a bare `T`/`null` stored into a `{T,i1}` slot corrupts the array.
+// Regression (issue 0168).
 #import "modules/std.sx";
 
 Pt :: struct { x: i64; y: i64; }

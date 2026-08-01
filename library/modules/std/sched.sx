@@ -829,7 +829,7 @@ T
 // the scheduler's prior `swap_context`), so the body runs once; but inside it
 // the closure loads `[Fiber+8] == regs[1] == &fib_dispatch` as its "first
 // capture" and re-invokes `fib_dispatch` forever → stack overflow → bus error
-// (issue 0193 Bug A, observed only on the go/wait/sleep capstone 1817).
+// (issue 0193, reached through the go/wait/sleep capstone 1817).
 // `abi(.c)` rather than `export "fib_dispatch"`: both pin the C ABI, but this fn
 // is reached ONLY by address through the trampoline (`xx fib_dispatch` resolves
 // regardless of linkage), never by an external name — so it needs the convention,

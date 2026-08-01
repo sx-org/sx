@@ -1,12 +1,12 @@
 // std.http — an over-cap flood must not clobber an in-flight response.
 //
-// Regression: while a slot was CONN_WRITING (response draining, write watch
-// armed), a client flooding pipelined bytes past read_buf_cap made read_more
-// fire respond_error_close(413/431) — which serialized a SECOND response
-// over c.out_buf: the partially sent buffer leaks, out_len shrinks
-// below out_sent, and the wire stream was cut mid-body with error bytes.
+// While a slot is CONN_WRITING (response draining, write watch armed), a
+// client flooding pipelined bytes past read_buf_cap must not make read_more
+// fire respond_error_close(413/431): serializing a SECOND response over
+// c.out_buf leaks the partially sent buffer, shrinks out_len below out_sent,
+// and cuts the wire stream mid-body with error bytes.
 //
-// The fix: at the buffer cap with a response in flight, the server STOPS
+// Instead: at the buffer cap with a response in flight, the server STOPS
 // READING (drops the read watch, discards the over-cap bytes) and sets
 // close_after — the in-flight response finishes byte-exact, then the
 // connection closes. No second response is ever serialized over a draining

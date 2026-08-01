@@ -2160,9 +2160,9 @@ pub const Lowering = struct {
     /// Get the alloca Ref for an expression, if it's a simple variable reference.
     /// Returns null for complex expressions (field access, function calls, etc.)
     /// An alloca reached only ACROSS a nested-fn boundary is an enclosing
-    /// function's storage — dead in this function's SSA context (issue 0250
-    /// fold: the indexed-read fast path / lvalue helpers segfaulted through
-    /// it). Diagnose and return null; every caller's null path lowers the
+    /// function's storage — dead in this function's SSA context, and the
+    /// indexed-read fast path / lvalue helpers dereference it (issue 0250).
+    /// Diagnose and return null; every caller's null path lowers the
     /// expression through the identifier machinery, which is boundary-guarded
     /// (the duplicate diagnostic is suppressed via `diag_enclosing_seen`).
     pub fn getExprAlloca(self: *Lowering, node: *const Node) ?Ref {

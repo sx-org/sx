@@ -100,9 +100,7 @@ pub fn getSelRegisterNameFid(self: *Lowering) FuncId {
 /// Lower `#objc_call(T)(recv, "sel:", args...)` to:
 ///   %sel = call ptr @sel_registerName(<"sel:">)
 ///   %ret = call <ABI(T)> @objc_msgSend(recv, %sel, args...)
-/// For the (void return, no extra args) form is
-/// fully wired. Extra arities + non-void returns will land in
-/// subsequent phase-1 steps.
+/// Only the (void return, no extra args) form is wired.
 pub fn lowerFfiIntrinsicCall(self: *Lowering, fic: *const ast.FfiIntrinsicCall) Ref {
     if (fic.kind == .jni_call or fic.kind == .jni_static_call) {
         return self.lowerJniCall(fic);

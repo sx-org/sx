@@ -27,12 +27,12 @@
 //   B (accept #3, pool + stream_request_body): the SECOND data-bearing read
 //     (the body tail) injects the mode-R drain — the CONN_BODY pump must
 //     also retry on writability. Red today: the body stalls to eviction.
-//   H (accept #4, review F1): the want surfaces AFTER the request is fully
+//   H (accept #4): the want surfaces AFTER the request is fully
 //     read — the read that would return WouldBlock returns WantWrite
 //     instead, so the request DISPATCHES (slow pooled handler) with the
 //     want unresolved. The server must drop the cross-armed watch at
 //     dispatch (reading parks; a level-triggered writable would spin the
-//     loop for the whole handler run and the request was never served).
+//     loop for the whole handler run and starve the request).
 //   + net-zero GPA gate across the whole run.
 #import "modules/std.sx";
 #import "modules/std/http/tls.sx";   // TlsConn, TlsAcceptor, TlsStep (flat)
@@ -351,10 +351,10 @@ run :: (acc: *FakeAcceptor) -> i32 {
     if !read_response(*srv, c3, *rbuf[0], 4096, "got-12") { srv.close(); return 15; }
     socket.close(c3);
 
-    // ── H (review F1): the want is UNRESOLVED at dispatch. The server
-    // must drop the cross-armed watch when reading parks for the handler
-    // (red: the writable spun the loop for the handler's whole runtime and
-    // the request was never served at all). ──
+    // ── H: the want is UNRESOLVED at dispatch. The server must drop the
+    // cross-armed watch when reading parks for the handler — otherwise the
+    // writable spins the loop for the handler's whole runtime and the
+    // request never gets served. ──
     c4 := dial();
     if c4 < 0 { return 6; }
     req_h := "GET /h HTTP/1.1\r\nHost: t\r\n\r\n";

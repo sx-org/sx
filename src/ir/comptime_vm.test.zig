@@ -654,9 +654,8 @@ test "comptime_vm exec: non-pointer optional wrap/unwrap/has_value/coalesce" {
 }
 
 test "comptime_vm exec: a negative i32 stored and reloaded stays negative (sign-extend)" {
-    // Regression (failable cluster): a scalar `.int` is i64. Storing an
-    // i32 -1 writes 0xFFFFFFFF; the load must SIGN-extend (not zero-extend, which
-    // would read +4294967295 and make `< 0` false — the bug that hid `raise`).
+    // A scalar `.int` is i64. Storing an i32 -1 writes 0xFFFFFFFF; the load
+    // must SIGN-extend — zero-extending reads +4294967295 and makes `< 0` false.
     const alloc = std.testing.allocator;
     var table = types.TypeTable.init(alloc);
     defer table.deinit();
@@ -883,7 +882,7 @@ test "comptime_vm exec: f32 store/load round-trips through 4-byte memory" {
     defer table.deinit();
     const f32ptr = table.intern(.{ .pointer = .{ .pointee = .f32 } });
 
-    // p := alloca f32; *p = 1.0; return int(load p)   → 1 (was 0 under the bug)
+    // p := alloca f32; *p = 1.0; return int(load p)   → 1
     var fb = Fb.init(alloc, &.{}, .i64);
     defer fb.deinit();
     const b0 = fb.block(&.{});

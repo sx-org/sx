@@ -41,7 +41,7 @@ main :: () -> i32 {
     b3 : S3 = .{ a = 1, b = 2, c = 3 };
     c3 : S3 = .{ a = 1, b = 2, c = 999 };
     report("s3 eq", a3 == b3);          // true
-    report("s3 c-differs", a3 == c3);   // false (was silently true)
+    report("s3 c-differs", a3 == c3);   // false
     report("s3 neq", a3 != c3);         // true
 
     // 5-field: every field participates.

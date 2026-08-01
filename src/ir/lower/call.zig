@@ -1376,9 +1376,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 if (arity_fd) |fd| {
                     // A leftover slice/array-spread placeholder into a callee
                     // with NO variadic slot to consume it: diagnose the spread
-                    // itself (issue 0239 part 1) — the arity error alone
-                    // miscounted it as one arg, and a count that happened to
-                    // line up emitted undef for the slot.
+                    // itself (issue 0239) — an arity error alone counts the
+                    // placeholder as one arg, and a count that happens to line
+                    // up emits undef for the slot.
                     if (!fnDeclHasVariadicParam(fd)) {
                         var buf: [160]u8 = undefined;
                         const what = std.fmt.bufPrint(&buf, "'{s}'", .{id.name}) catch id.name;

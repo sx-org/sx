@@ -2,9 +2,8 @@
 // (and every compiler temp) must not grow the stack per iteration, so
 // million-iteration loops run in constant stack. Covers body locals,
 // nested loops (the inner loop's hidden index slot), and element reads.
-// Regression (issue 0109): allocas were emitted at their use site, so each
-// iteration re-executed them — LLVM only reclaims allocas at `ret`, and
-// these loops segfaulted on stack exhaustion.
+// LLVM only reclaims allocas at `ret`, so a per-iteration alloca exhausts
+// the stack. Regression (issue 0109).
 
 #import "modules/std.sx";
 

@@ -837,7 +837,7 @@ pub fn diagTryNotFailable(self: *Lowering, span: ast.Span) void {
 /// locally, so — unlike `try` / `raise` — it needs no failable *enclosing*
 /// function. Value-carrying LHS (binding the success value / a
 /// value-producing body unifying with the success tuple) needs the
-/// error-channel tuple ABI and lands in E2 — bail loudly here.
+/// error-channel tuple ABI, which is unimplemented — bail loudly here.
 pub fn lowerCatch(self: *Lowering, ce_in: *const ast.CatchExpr, span: ast.Span) Ref {
     // A direct assertion operand (`av.(T) catch …`) desugars to the
     // failable runtime call; the ordinary paths below consume it.

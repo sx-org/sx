@@ -17,11 +17,11 @@ main :: () -> i32 {
     a := 0; b := 0;
 
     f1 :: () -> i64 { return x + 1; }     // bare read of enclosing local
-    f2 :: () -> i64 { return arr[0]; }    // indexed read (segfaulted pre-fold)
-    f3 :: () { arr[1] = 99; }             // indexed write (Bus error pre-fold)
-    f4 :: () { pt.v = 77; }               // field write (Bus error pre-fold)
-    f5 :: () -> i64 { return g(); }       // enclosing closure-value call (dead env pre-fold)
-    f6 :: () { a, b = 7, 8; }             // multi-assign write (silent no-op pre-fold)
+    f2 :: () -> i64 { return arr[0]; }    // indexed read
+    f3 :: () { arr[1] = 99; }             // indexed write
+    f4 :: () { pt.v = 77; }               // field write
+    f5 :: () -> i64 { return g(); }       // enclosing closure-value call
+    f6 :: () { a, b = 7, 8; }             // multi-assign write
 
     print("{}\n", f1());
     print("{}\n", f2());

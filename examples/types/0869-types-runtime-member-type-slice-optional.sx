@@ -4,8 +4,7 @@
 // child (one table row each, index 0). The master member-type tables and
 // the static type-position fold answer from the same TypeTable query, so
 // the two can never diverge (pinned by the parity lines).
-// Regression (issue 0300): a runtime SLICE tag had a null master-table row
-// and struct_field_type segfaulted; optionals had the same gap.
+// Regression (issue 0300).
 #import "modules/std.sx";
 
 Pair :: struct { a: i32; b: f64; }

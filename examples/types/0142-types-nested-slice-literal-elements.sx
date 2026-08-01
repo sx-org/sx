@@ -2,11 +2,10 @@
 // slices type (`[][]i64`) materializes each inner `[N]T` literal as a real `[]T`
 // slice, so indexing the inner slice in the callee reads element contents
 // correctly — for both the local-bound form and the direct-call-argument form.
-// Regression (issue 0085): inner literals were appended as raw `[N]T` arrays
-// under an element type of `[]T`, so the outer aggregate's elements were arrays
-// where slice {ptr,len} headers were expected; indexing the inner slice read a
-// garbage pointer and segfaulted. The per-element array->slice materialization
-// recurses with the nesting, so every level coerces.
+// The per-element array->slice materialization recurses with the nesting, so
+// every level coerces: a raw `[N]T` left under an element type of `[]T` gives
+// the outer aggregate array elements where slice {ptr,len} headers belong.
+// Regression (issue 0085).
 #import "modules/std.sx";
 
 sum_nested :: (xss: [][]i64) -> i64 {

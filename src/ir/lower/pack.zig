@@ -1030,7 +1030,7 @@ pub fn lowerPackFnCallNamed(
     // boundary. It is NEVER coerced to a leftover outer `target_type`, so
     // clear it: otherwise an `xx <expr>` pack arg (whose result type IS
     // `target_type`) would cast to the stale target — e.g. `format("…", xx i)`
-    // inside a `-> string` fn mis-typed the arg as `string`, monomorphizing
+    // inside a `-> string` fn types the arg as `string`, monomorphizing
     // `__pack_string` and ABI-coercing the 4-byte int as a 16-byte fat
     // pointer → memory corruption.
     const saved_pack_tt = self.target_type;

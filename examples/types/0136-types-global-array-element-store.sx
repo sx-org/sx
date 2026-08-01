@@ -3,9 +3,8 @@
 // Covers constant index, variable index, and a cross-function store, on a
 // scalar global array, a struct-element global array (element-stride), and a
 // nested-array global (recursive lvalue).
-// Regression (issue 0079): global-array element stores were silently dropped
-// (read returned the initializer) because the indexed lvalue base loaded the
-// global by value into a temp instead of addressing the global's storage.
+// The indexed lvalue base addresses the global's storage; loading it by
+// value into a temp would drop the store. Regression (issue 0079).
 
 #import "modules/std.sx";
 

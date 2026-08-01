@@ -14,8 +14,8 @@ Overlay :: union { f: f32; i: i32; }
 Vec2 :: union { data: [2]f32; struct { x, y: f32; }; }
 
 main :: () {
-    // Single-member literal — the bug case. Reads back the value, and a
-    // type-punning read of the other member sees the same bytes.
+    // Single-member literal. Reads back the value, and a type-punning read
+    // of the other member sees the same bytes.
     b : Overlay = .{ f = 3.14 };
     print("b.f={} b.i={}\n", b.f, b.i);
 

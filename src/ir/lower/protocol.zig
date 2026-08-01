@@ -1594,8 +1594,8 @@ pub fn emitProtocolDispatch(self: *Lowering, receiver: Ref, proto_info: Protocol
 
     // Arity is exact: a protocol signature has no defaults, packs, or
     // variadics, so the user-arg count must equal its parameter list
-    // (issue 0131: extra args were silently dropped here; missing args
-    // left the thunk reading garbage).
+    // — an extra arg would be dropped and a missing one would leave the
+    // thunk reading garbage (issue 0131).
     if (args.len != mi.param_types.len) {
         if (self.diagnostics) |d| {
             const s: []const u8 = if (mi.param_types.len == 1) "" else "s";

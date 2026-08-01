@@ -6,8 +6,7 @@
 // slice-spread rejection covers the DECL path — a NON-variadic top-level fn
 // has no variadic slot to consume the spread, so it must diagnose (never
 // emit undef, even when the placeholder count happens to match the arity).
-// Regression (issues 0188 + 0239): extras were silently dropped, missing
-// args read garbage, and a slice spread reached the call op as undef.
+// Regression (issues 0188 + 0239).
 #import "modules/std.sx";
 
 S :: struct { cb: Closure(i64) -> i64; }

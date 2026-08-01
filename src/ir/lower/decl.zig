@@ -801,9 +801,8 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     if (decls.len == 0) return;
     registerLiteralModuleConsts(self, decls);
     // Pass 0a': const ALIASES of consts (`B :: A`, chains of any depth /
-    // declaration order). A bare-identifier RHS was never registered, so
-    // `B` failed as "unresolved" at every value use — while the expression
-    // spelling `B :: A + 0` worked (issue 0296). Register the alias with its
+    // declaration order). A bare-identifier RHS registers here, exactly as
+    // the expression spelling `B :: A + 0` does (issue 0296). Register it with its
     // TARGET's type (the typer reads `ty`, so a placeholder would break
     // `if B` on a bool chain); the value node stays the identifier —
     // `emitModuleConst`'s expression arm lowers it through the target.

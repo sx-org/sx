@@ -1,13 +1,12 @@
 // Enum-valued value-carrying failables, two paths the bare-success fix (issue
 // 0097) does not itself cover. Regression (issue 0097).
 //
-//   F1 — EXPLICIT full failable tuple return `return (.v, error.X)`. The bug was
-//   the inverse of 0097: narrowing the return target to the value type for ALL
-//   value-failables broke the explicit-tuple form (the trailing error element no
-//   longer resolved against the error set → `.unresolved` field → LLVM-emit
-//   panic). The target must stay the FULL failable tuple for an explicit tuple
-//   literal of full arity, and narrow to the value type only for a BARE value.
-//   This pins both branches in one fn: bare-value success + explicit-tuple error.
+//   F1 — EXPLICIT full failable tuple return `return (.v, error.X)`. The
+//   return target stays the FULL failable tuple for an explicit tuple literal
+//   of full arity, and narrows to the value type only for a BARE value —
+//   otherwise the trailing error element does not resolve against the error
+//   set. This pins both branches in one fn: bare-value success +
+//   explicit-tuple error.
 //
 //   F2 — COMPTIME-PARAM ($n) value-failable. The body is INLINED at the call
 //   site (lowerComptimeCall), so the success return takes the inline-return path,

@@ -15,13 +15,10 @@
 // contexts). This file exercises the narrowing path 0161 does not: a FLOAT
 // field flowing into an integer binding.
 //
-// Regression (issue 0095 / F0.11-7): the compile-time float evaluator's
-// field-access arm misclassified a raw value-shadow receiver as the builtin
-// numeric-limit accessor, so `` `f64.epsilon `` newly errored under the
-// narrowing rule with the BUILTIN value (2.22e-16) instead of reading the
-// field. The fix mirrors the `is_raw` guard the sibling `isFloatValuedExpr`
-// already applies, so the const-folding cluster agrees: a raw receiver is a
-// field read, only a bare type receiver folds a limit.
+// The compile-time float evaluator's field-access arm carries the same
+// `is_raw` guard as `isFloatValuedExpr`, so the whole const-folding cluster
+// agrees: a raw receiver is a field read, only a bare type receiver folds a
+// limit. Regression (issue 0095).
 #import "modules/std.sx";
 
 FBox :: struct { epsilon: f64; }

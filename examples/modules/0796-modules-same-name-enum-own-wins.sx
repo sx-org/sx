@@ -8,7 +8,7 @@
 // A stateless `type_bridge.resolveInlineEnum` `findByName`
 // short-circuit interns ONE global last-wins `Dir`, collapsing `main`'s `Dir`
 // and dep's `Dir` to a single nominal — `.north` resolves against whichever
-// author won the global slot, silently wrong with no diagnostic.
+// author holds the global slot, with no diagnostic to catch it.
 
 #import "modules/std.sx";
 #import "0796-modules-same-name-enum-own-wins/dep.sx";

@@ -15,9 +15,9 @@
 // path the load reads uninitialised stack memory.
 //
 // Pack-fn `..$args` is the shortest repro because `args.len`
-// gives a comptime-feeling test for the condition. The bug is
-// actually shape-agnostic — any comptime body with `if cond
-// { return X; }; return Y;` regresses the same way.
+// gives a comptime-feeling test for the condition. The shape is
+// incidental — any comptime body with `if cond { return X; };
+// return Y;` exercises the same path.
 //
 // `maybe()` with zero call-args takes the false branch and
 // should fall through to `return -1;`. It loads garbage

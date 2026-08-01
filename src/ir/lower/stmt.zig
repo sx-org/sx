@@ -1317,7 +1317,7 @@ pub fn lowerReturn(self: *Lowering, rs: *const ast.ReturnStmt, span: ast.Span) v
     // produce a value (a phi'd merge), not be demoted to a statement whose result
     // is dropped. Force value-mode so `return if c { 7 } else { return -1; }`
     // lowers the live `{7}` arm into the merge phi instead of collapsing to a
-    // void statement-`if` that returns 0 (issue 0269 Bug A). The ambient flag is
+    // void statement-`if` that returns 0 (issue 0269). The ambient flag is
     // unreliable here — a trailing arm's `produces_value` leaks up through the
     // parser (`last_stmt_produces_value`), so a diverging vs live arm alone would
     // flip it. A void return carries no value, so leave the flag clear for it (a
@@ -2391,8 +2391,7 @@ pub fn lowerAssignment(self: *Lowering, asgn: *const ast.Assignment) void {
                     }
                 } else if (std.mem.eql(u8, id.name, "_")) {
                     // `_ = expr;` is the discard idiom — plain assign only.
-                    // A compound `_ OP= expr` has no current value to read
-                    // and was silently accepted (0216 review fold 3).
+                    // A compound `_ OP= expr` has no current value to read.
                     if (asgn.op != .assign) {
                         if (self.diagnostics) |d|
                             d.addFmt(.err, asgn.target.span, "cannot use compound assignment on '_' — the discard has no value to read; only '_ = expr' is allowed", .{});

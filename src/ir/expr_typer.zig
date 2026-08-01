@@ -534,8 +534,8 @@ pub const ExprTyper = struct {
                 // classification lowering gates on, plus the union/optional
                 // intercepts). A scalar ambient target (an enclosing fn's int
                 // return type leaking into a call arg) must not type the
-                // literal — that mistyped `$T` bindings before the literal
-                // ever lowered.
+                // literal — it would mistype `$T` bindings before the literal
+                // ever lowers.
                 if (self.l.target_type) |tt| {
                     const usable = if (tt.isBuiltin())
                         tt == .string

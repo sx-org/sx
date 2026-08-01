@@ -1,8 +1,7 @@
 // `defer` runs on EVERY exit from the loop body's scope — fall-through,
 // `break`, and `continue` alike (LIFO, including entries from nested blocks
 // between the loop and the jump). Covers `for` ranges and `while`.
-// Regression (issue 0108): break/continue emitted a bare branch and the
-// breaking iteration's defers were silently skipped.
+// Regression (issue 0108).
 
 #import "modules/std.sx";
 

@@ -12,17 +12,13 @@
 // The optional global is null-INITIALIZED and set at runtime because a
 // non-null optional-global initializer miscompiles today (issue 0234).
 //
-// Regression (issue 0218): lowerMultiAssign's ident-target arm had no global
-// fallback — `g_total, a = 40, 50;` compiled but never wrote `g_total`.
+// Regression (issues 0218 and 0249).
 //
-// Regression (issue 0249): lowerMultiAssign's INDEX-target arm addressed a
-// GLOBAL array base via `lowerExpr` (a load of the whole array into a
-// register), so `g_arr[1], a = 77, 4;` GEP+stored into that throwaway copy and
-// the write was silently dropped — the read-back showed the original value.
-// Single-assign already took the in-place `global_addr` path. Also covers a
-// two-index global-array multi-assign and a swap (`g_swap[0], g_swap[1] =
-// g_swap[1], g_swap[0]`, RHS-before-stores) so the fix can't regress into
-// store-then-read ordering.
+// An INDEX target on a GLOBAL array base must address it in place through
+// `global_addr`: a `lowerExpr` load of the whole array yields a throwaway
+// register copy that the GEP+store then writes into. Also covers a two-index
+// global-array multi-assign and a swap (`g_swap[0], g_swap[1] = g_swap[1],
+// g_swap[0]`, RHS-before-stores), pinning store ordering.
 
 #import "modules/std.sx";
 

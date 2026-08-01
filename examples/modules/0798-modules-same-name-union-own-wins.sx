@@ -8,7 +8,7 @@
 // A stateless `type_bridge.resolveInlineUnion` `findByName`
 // short-circuit interns ONE global last-wins `Pair`, collapsing `main`'s `Pair`
 // and dep's `Pair` to a single nominal — `p.m` resolves against whichever
-// author won the global slot, silently wrong with no diagnostic.
+// author holds the global slot, with no diagnostic to catch it.
 
 #import "modules/std.sx";
 #import "0798-modules-same-name-union-own-wins/dep.sx";

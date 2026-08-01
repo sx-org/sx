@@ -3,9 +3,8 @@
 // carries the target's TYPE and folds wherever the target folds:
 // value uses, typed consts, array dimensions, runtime `if`
 // conditions, and `inline if` branch elimination.
-// Regression (issue 0296): a bare-identifier RHS was never registered
-// as a module const, so `B` failed as "unresolved" at every value use
-// while the expression spelling `B :: A + 0` worked.
+// A bare-identifier RHS registers as a module const exactly as an
+// expression spelling (`B :: A + 0`) does. Regression (issue 0296).
 #import "modules/std.sx";
 
 C :: B;             // forward chain, declared before its targets

@@ -1,7 +1,7 @@
 // `build_block_convert(args: []Type, $ret: Type)
 // -> string` emits the per-shape source body for the generic
-// `Into(Block) for Closure(..$args) -> $R` impl that lands in step
-// 5.2. Per-call-shape monomorphisation of the impl body re-runs the
+// `Into(Block) for Closure(..$args) -> $R` impl.
+// Per-call-shape monomorphisation of the impl body re-runs the
 // builder with concrete types bound, so each closure shape gets its
 // own dedicated `__invoke` trampoline + Block literal.
 //

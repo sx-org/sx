@@ -19,8 +19,8 @@ const isTypeCategoryMatch = Lowering.isTypeCategoryMatch;
 // ── Flow-sensitive narrowing (issue 0179) ───────────────────────
 //
 // `?T` only converts to a concrete `T` when the value is PROVEN present —
-// otherwise the implicit unwrap silently yields the zero payload of a null
-// optional (the bug). These helpers recognize the `!= null` / `== null`
+// otherwise the implicit unwrap yields the zero payload of a null optional.
+// These helpers recognize the `!= null` / `== null`
 // guard shapes and record which local names a branch / guard proves present;
 // `lowerIdentifier` tags the loaded `Ref` of a narrowed name into
 // `narrowed_refs`, and `coerceMode`'s `.optional_unwrap` arm only unwraps a
@@ -349,7 +349,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     // whole value-`if`; issue 0269). A live arm whose type isn't statically
     // inferable (e.g. a block whose tail reads a block-local — `if c { a := 1;
     // a + 6 }`) leaves `result_type == .unresolved` here; it is resolved from the
-    // arm's ACTUAL lowered value below (Bug B) and the merge phi patched to match.
+    // arm's ACTUAL lowered value below and the merge phi patched to match.
     var result_type: TypeId = if (is_value) blk: {
         var t: TypeId = .unresolved;
         if (!then_div) t = self.inferExprType(ie.then_branch);
@@ -416,7 +416,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     // BOTH arms diverge (merge unreachable), or the live arm(s) are void blocks
     // (`result_type == .void`). An `.unresolved` result is NOT valueless — it is
     // a live arm we simply couldn't type statically (resolved after lowering);
-    // demoting it would `alloca void` a real value (Bug B).
+    // demoting it would `alloca void` a real value.
     if (is_value and ((then_div and else_div) or result_type == .void or result_type == .noreturn)) {
         is_value = false;
         result_type = .void;
@@ -486,7 +486,7 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
         if (!then_diverged) {
             const v_ty = self.builder.getRefType(v);
             // A live arm whose type we could NOT infer statically RESOLVES the
-            // merge type: adopt its actual value type and patch the phi (Bug B).
+            // merge type: adopt its actual value type and patch the phi.
             // Otherwise coerce the value into the already-known merge type.
             if (result_type == .unresolved and v_ty != .void and v_ty != .unresolved) {
                 result_type = v_ty;
@@ -1547,9 +1547,9 @@ pub fn lowerMatch(self: *Lowering, me: *const ast.MatchExpr, demand: lower_stmt.
                 }
                 // A specific type — builtin (`case i64:`), user-named, or
                 // a composite type expression — through the full resolver,
-                // which diagnoses unknown names. (Issue 0315: builtins
-                // resolved through findByName's user-type map here, got
-                // zero tags, and the arm was silently dead.)
+                // which diagnoses unknown names. findByName's user-type map
+                // alone yields zero tags for a builtin, and so a dead arm
+                // (issue 0315).
                 const ty = self.resolveTypeArg(pat);
                 if (ty == .unresolved) break :blk_tv &.{}; // resolveTypeArg diagnosed
                 const tv = self.alloc.alloc(u64, 1) catch unreachable;

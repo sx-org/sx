@@ -7,8 +7,8 @@ const doc_mod = @import("document.zig");
 // `textDocument/didOpen` handler uses) over EVERY `.sx` file in the example +
 // issue corpora, in process. The contract is simply: analysis must complete
 // without a panic/abort for any file. A panic aborts the whole test binary —
-// that is the loud CI signal that some new AST node shape crashes the analyzer
-// (the bug class fixed at `sema.zig`'s `resolveTypeNode`). Files
+// that is the loud CI signal that some AST node shape crashes the analyzer.
+// Files
 // that merely fail to parse or sema cleanly are fine: `analyzeDocument` records
 // a null index and returns, which counts as a clean (non-crashing) outcome.
 //
@@ -49,8 +49,8 @@ fn sweepDirectory(alloc: std.mem.Allocator, io: std.Io, dir: []const u8) !usize 
     // while `issues/` is flat (`issues/*.sx`). Sweep the files directly under
     // `dir` AND those one level down in each category subdir (skipping the
     // `expected/` snapshot dirs). Companion fixture dirs nested deeper
-    // (`<cat>/<NNNN-...>/lib.sx`) are intentionally not swept — matching the
-    // pre-reorg behavior where imported companions were never analyzed directly.
+    // (`<cat>/<NNNN-...>/lib.sx`) are intentionally not swept: an imported
+    // companion is reached through its importer, never analyzed directly.
     var total = try sweepFilesIn(alloc, io, &store, dir, verbose);
 
     var d = std.Io.Dir.openDirAbsolute(io, dir, .{ .iterate = true }) catch return total;

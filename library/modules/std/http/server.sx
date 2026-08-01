@@ -4205,7 +4205,7 @@ Server :: struct {
         scratch : [4096]u8 = ---;
         while true {
             nq, re := socket.read_nb(c.fd, *scratch[0], 4096);
-            if re == error.WouldBlock { return; }   // drained for now
+            if re == error.WouldBlock { return; }   // the socket is drained
             if re {                                 // EOF / reset: done
                 self.conn_close(slot);
                 return;
