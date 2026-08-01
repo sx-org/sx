@@ -515,10 +515,9 @@ test "emit: type conversion toLLVMType" {
     _ = emitter.toLLVMType(.noreturn);
 }
 
-// ── A7.1 scaffolding: ABI param coercion ────────────────────────────
+// ── ABI param coercion ──────────────────────────────────────────────
 // Lock the C-ABI struct-coercion buckets (abiCoerceParamType / needsByval),
-// which feed callconv(.c) / #extern signatures, before they move to
-// src/backend/llvm/abi.zig in A7.1 sub-step 2.
+// which feed callconv(.c) / #extern signatures.
 
 const llvm = @import("../llvm_api.zig");
 const cc = llvm.c;

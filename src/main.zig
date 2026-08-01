@@ -607,8 +607,7 @@ const BuildHooksCtx = struct {
         flags: []const []const u8,
         target: []const u8,
     ) anyerror!void {
-        _ = target; // the triple is already encoded in base_config (CLI-derived);
-        // explicit-triple reconciliation is a P5.4 concern when sx owns the config.
+        _ = target; // the triple is already encoded in base_config (CLI-derived).
         const self: *BuildHooksCtx = @ptrCast(@alignCast(ctx_opaque));
         if (objects.len == 0) return error.NoObjects;
         var cfg = self.base_config;

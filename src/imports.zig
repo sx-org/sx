@@ -482,7 +482,7 @@ pub const ModuleCache = std.StringHashMap(ResolvedModule);
 
 /// A named top-level declaration the resolver may select, kept as the raw AST
 /// node pointer (NOT pre-classified — a `const_decl` whose value is a function
-/// stays a `.const_decl`; classification is a later phase's job). `impl_block`
+/// stays a `.const_decl`). `impl_block`
 /// is deliberately absent: it has no `declName` and is deduped by node identity
 /// (`mergeFlat`), so it never enters the scalar index.
 pub const RawDeclRef = union(enum) {
@@ -545,7 +545,7 @@ pub const NamespaceTarget = struct {
     target_module_path: []const u8,
     own_decls: []const *Node,
     /// The `DeclId` of each member in `own_decls`, in slice order. Filled by
-    /// `buildDeclTable` (empty until then). Lets a member be addressed by stable
+    /// `buildDeclTable`. Lets a member be addressed by stable
     /// id without re-deriving it from the node pointer.
     member_ids: []const DeclId = &.{},
     /// The alias declaration's own visibility (`private ns :: #import "…"`).

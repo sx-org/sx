@@ -1871,8 +1871,8 @@ pub const Lowering = struct {
         // (E1): the nominal author is selected over the ONE graph-walk collector
         // and resolved against the source-keyed caches, not the global
         // `findByName` first-match / global alias map. Other node kinds (inline
-        // type decls, error types) still route through type_bridge, which reads
-        // the global compat maps (cut over in a later phase).
+        // type decls, error types) route through type_bridge, which reads the
+        // global compat maps.
         switch (node.data) {
             .type_expr => |te| {
                 // Qualified namespace type (including nested aliases): prove

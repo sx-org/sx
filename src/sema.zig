@@ -1452,8 +1452,7 @@ pub const Analyzer = struct {
             },
             .asm_expr => |ae| {
                 // Walk the template and each operand payload (input exprs;
-                // out_value type exprs are leaves). Result-type derivation is
-                // Phase B; lowering bails until then.
+                // out_value type exprs are leaves).
                 try self.analyzeNode(ae.template);
                 for (ae.operands) |op| try self.analyzeNode(op.payload);
             },

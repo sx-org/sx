@@ -1054,13 +1054,10 @@ test "noreturn typing: divergence shapes + if-else unification + block propagati
 }
 
 // ── A4.2 test-first scaffolding: protocol-decl registration ──────────
-// Lock `registerProtocolDecl`'s method-table output (consumed by protocol
-// dispatch + impl planning) before the protocol/impl lookup moves to
-// `src/ir/protocols.zig`. Public surface only (registerProtocolDecl +
-// getProtocolInfo are pub) — the impl-lookup / conversion plan tests land
-// with the registry in sub-step 2 (as A4.1's internal tests landed with
-// GenericResolver). Arena: a non-parameterized protocol dupes its method
-// infos via the module allocator and never frees them.
+// Lock `registerProtocolDecl`'s method-table output, consumed by protocol
+// dispatch + impl planning. Public surface only (registerProtocolDecl +
+// getProtocolInfo are pub). Arena: a non-parameterized protocol dupes its
+// method infos via the module allocator and never frees them.
 
 test "protocols: registerProtocolDecl builds the dispatch method table" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -1110,13 +1107,10 @@ test "protocols: registerProtocolDecl builds the dispatch method table" {
 }
 
 // ── A4.3 test-first scaffolding: coercion planning ───────────────────
-// Lock the one coercion-plan decision reachable via the existing public
-// surface — the optional wrap/flatten rule — before coercion planning moves to
-// `src/ir/conversions.zig`. The lowerXX / coerceToType / coerceOrErase /
-// buildProtocolErasure decisions are private + emission-bound, so their
-// CoercionPlan unit tests land with the extracted module in sub-step 2 (as the
-// generics/protocols plan tests landed with their modules); behavior is locked
-// here by the new `.ir` snapshots.
+// Lock the one coercion-plan decision reachable via the public surface — the
+// optional wrap/flatten rule. The lowerXX / coerceToType / coerceOrErase /
+// buildProtocolErasure decisions are private + emission-bound; the `.ir`
+// snapshots lock their behavior.
 
 test "conversions: optionalOfFlattened wraps once, flattening a nested optional" {
     const alloc = std.testing.allocator;

@@ -3088,8 +3088,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     }
 
     /// How a value of type `ty` is held: a register word (scalar/pointer, ≤8
-    /// bytes) or by-address in comptime memory (struct). Anything else is not ported
-    /// yet (slice/string/any/optional/enum/union/array/tuple/vector — sub-step 4+).
+    /// bytes) or by-address in comptime memory (struct). Anything else is
+    /// unsupported (slice/string/any/optional/enum/union/array/tuple/vector).
     const Kind = enum { word, aggregate, unsupported };
 
     fn kindOf(table: *const types.TypeTable, ty: TypeId) Kind {

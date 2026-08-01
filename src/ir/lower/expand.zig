@@ -198,7 +198,7 @@ const Expansion = struct {
     /// Register every driver the program's declaration lists hold, so the
     /// contribution ledger is complete before the first fold. A driver reached
     /// only through a branch-local `#import` registers when that branch is
-    /// selected — until then its contributions are covered by the driver whose
+    /// selected; otherwise its contributions are covered by the driver whose
     /// body holds the import.
     fn registerDrivers(ex: *Expansion, decls: []const *Node) void {
         var seen = std.AutoHashMap(*const Node, void).init(ex.self.alloc);

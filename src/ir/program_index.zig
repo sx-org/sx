@@ -871,11 +871,8 @@ pub const ContextFieldDecl = struct {
 };
 
 /// Single lowering access point for declaration-name / import / visibility
-/// facts. The architecture stream extracts
-/// these out of the `Lowering` state bag incrementally. `Lowering` embeds one
-/// `ProgramIndex` by value and reaches every moved fact through
-/// `self.program_index.<field>`; later phases hand collaborator modules a
-/// `*ProgramIndex` instead of `*Lowering`.
+/// facts. `Lowering` embeds one `ProgramIndex` by value and reaches every
+/// fact through `self.program_index.<field>`.
 ///
 /// OWNS the declaration maps below. BORROWS `module_scopes` / `import_graph` /
 /// `flat_import_graph` / `module_decls` / `namespace_edges` / `decl_table`
@@ -963,8 +960,7 @@ pub const ProgramIndex = struct {
     // The source-partitioned analogues of `type_alias_map` / `module_const_map`
     // / `global_names`, keyed `source path → name → X`. Written by the same scan
     // (`scanDecls` in lower.zig), keyed by the registering decl's source. The
-    // global maps above stay the ONLY readers for now; the read-side cutover to
-    // `selectedAuthor.source` lands in a later phase. These maps OWN their inner
+    // global maps above are the ONLY readers. These maps OWN their inner
     // per-source maps and free them in `deinit`.
     /// Type alias name → target TypeId, partitioned by declaring source.
     type_aliases_by_source: std.StringHashMap(std.StringHashMap(TypeId)),

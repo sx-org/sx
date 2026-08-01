@@ -179,8 +179,7 @@ pub const FnDecl = struct {
     /// in the postfix slot after `extern`/`export`. `.default` = unannotated.
     /// `.zig` marks a function bound to the comptime `compiler` library — its
     /// signature is welded to the real internal Zig fn and it dispatches over the
-    /// host-call bridge at comptime (consumed by the binding registry + host-call
-    /// bridge in later phases).
+    /// host-call bridge at comptime.
     abi: ABI = .default,
     /// Postfix linkage modifier (`extern`/`export`) written before the `abi(...)`
     /// slot. `.none` for an ordinary sx-internal function.
