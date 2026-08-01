@@ -1,7 +1,6 @@
-# pkg_migrate — syntax-aware migration tool (PACKAGES P0.4)
+# pkg_migrate — syntax-aware migration tool
 
-Standalone Zig program for the sx PACKAGES migration
-(`current/PLAN-PACKAGES.md`, unit P0.4). Deliberately **not** wired into
+Standalone Zig program for the sx packages migration. It is **not** wired into
 `build.zig` — it runs directly:
 
 ```sh
@@ -18,9 +17,9 @@ makes every subcommand syntax-aware rather than grep. Conversely, anything
 the compiler would see as an identifier the scanner surfaces as one: an
 unknown directive like `#private` lexes (as in the real lexer) as `#` plus
 the ordinary identifier `private`, and `1package` as the number `1` plus the
-identifier `package`. Per the
-plan's hard rule, no subcommand performs blind global substitution: every
-rewrite is an exact token span and every occurrence is reported.
+identifier `package`. No subcommand performs blind global
+substitution: every rewrite is an exact token span and every occurrence is
+reported.
 
 ## Subcommands
 
@@ -60,8 +59,8 @@ zig run tools/pkg_migrate/main.zig -- qualify --map map.txt [--apply] <files/dir
 ```
 
 Converts flat uses of mapped names to qualified uses per `name=alias` lines
-(`helper=util` rewrites `helper(3)` to `util.helper(3)`). Deliberately
-conservative — it reports instead of guessing:
+(`helper=util` rewrites `helper(3)` to `util.helper(3)`). It is conservative:
+it reports instead of guessing.
 
 - **Ambiguous mapping** (same name mapped to two aliases): refuses to rewrite
   anything, lists the ambiguous names, exit 2.
@@ -77,7 +76,7 @@ conservative — it reports instead of guessing:
 
 Only clear `call` and plain `use` positions are rewritten.
 
-### to-package-dir (report-only in P0.4)
+### to-package-dir (report-only)
 
 ```sh
 zig run tools/pkg_migrate/main.zig -- to-package-dir --name demo <files...>
@@ -89,7 +88,7 @@ declaration inserted (and where), which already declare it, and which
 conflict. `--apply` is intentionally rejected; apply the plan via
 `insert-package --apply`.
 
-### inventory (the D9 collision inventory)
+### inventory (the collision inventory)
 
 ```sh
 zig run tools/pkg_migrate/main.zig -- inventory library examples issues tests
@@ -100,10 +99,8 @@ Scans for uses of `package`, `import`, `private`, and `intrinsic` as
 targets, member accesses — excluding comments/strings/heredocs, and reports
 exact `file:line:col` spans, the source line, a positional category, plus
 per-word and per-category summaries. Backtick-escaped occurrences are
-flagged `(backticked)`. This report feeds the D9 decision
-(`current/PLAN-PACKAGES.md` §D9); the reviewed 2026-07-11 run over
-`library/ examples/ issues/ tests/` is committed as
-`tools/pkg_migrate/d9-inventory-2026-07-11.txt`.
+flagged `(backticked)`. The run over `library/ examples/ issues/ tests/` is
+committed as `tools/pkg_migrate/d9-inventory-2026-07-11.txt`.
 
 ## Exit codes
 
@@ -142,13 +139,12 @@ Positional, from token neighbors: `decl-const` (`name ::`), `decl-local`
   prefixes, decimal with an optional `.digits` fraction, `_` separators) —
   NOT by identifier-continue. The real lexer has no exponent syntax, so
   `1e9` lexes as the number `1` plus the identifier `e9`, and `1package`
-  exposes the identifier `package`; the scanner deliberately matches both.
+  exposes the identifier `package`; the scanner matches both.
 - `inventory` reports *every* identifier occurrence of the four words,
-  including deliberate future-syntax fixtures that use `package alpha;`
-  on purpose. Deciding what to migrate vs preserve is D9's call,
-  not the tool's.
+  including fixtures that use `package alpha;` as future syntax. What to
+  migrate and what to preserve is the caller's decision, not the tool's.
 
-## Verification (all run 2026-07-11, all green)
+## Checks
 
 Scanner unit tests (19 tests — comment/string/char/heredoc opacity, escapes,
 backticks, numeric-grammar termination (`1package`/`1e9`/`0xg` expose their
@@ -186,10 +182,10 @@ zig run tools/pkg_migrate/main.zig -- to-package-dir --name demo tools/pkg_migra
 # string/comment/heredoc occurrences excluded; backtick flagged (0)
 zig run tools/pkg_migrate/main.zig -- inventory tools/pkg_migrate/testdata/inventory
 
-# the real D9 inventory (0)
+# the committed inventory (0)
 zig run tools/pkg_migrate/main.zig -- inventory library examples issues tests
 ```
 
-`--apply` was additionally verified on a scratch copy for insert-package,
-rewrite-imports, and qualify: files rewritten byte-exactly as previewed, and
-each command is idempotent on a second run (exit 0, no further changes).
+`--apply` rewrites files byte-exactly as previewed for insert-package,
+rewrite-imports and qualify, and each command is idempotent on a second run
+(exit 0, no further changes).

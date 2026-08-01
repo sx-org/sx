@@ -167,9 +167,9 @@ buildCompilerInstance(const char *filename,
         return nullptr;
     }
 
-    // LLVM 21+: setInvocation() was removed — the invocation is constructor-
-    // injected instead. createDiagnostics(DiagnosticConsumer*) still exists as
-    // the convenience overload (it builds a default VFS internally).
+    // The invocation is constructor-injected.
+    // createDiagnostics(DiagnosticConsumer*) is the convenience overload; it
+    // builds a default VFS internally.
     auto CI = std::make_unique<clang::CompilerInstance>(std::move(invocation));
     CI->createDiagnostics(new clang::IgnoringDiagConsumer());
     return CI;

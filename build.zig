@@ -27,7 +27,7 @@ pub fn build(b: *std.Build) void {
         .file = b.path("llvm_shim.c"),
         .flags = &.{b.fmt("-I{s}", .{include_dir})},
     });
-    // FFI step 2.16c runtime — `_Thread_local`-backed JNIEnv* slot.
+    // The `_Thread_local`-backed JNIEnv* slot.
     // Linked into sx-the-compiler so the JIT process-symbol generator
     // can resolve `sx_jni_env_tl_get` / `sx_jni_env_tl_set` without the
     // user importing the runtime module. AOT outputs pick up the same
@@ -81,16 +81,16 @@ pub fn build(b: *std.Build) void {
             // the C++ dirs sorted AFTER it — and libstdc++'s `<cstdlib>` does
             // `#include_next <stdlib.h>`, which only searches dirs LATER than the
             // including C++ header. `-I` places the C++ dirs before `/usr/include`
-            // so that `#include_next` resolves the C headers there. (Verified:
-            // 0 libc++ symbols, libstdc++ `std::__cxx11::` ABI in the object.)
+            // so that `#include_next` resolves the C headers there: the object
+            // carries the libstdc++ `std::__cxx11::` ABI and no libc++ symbols.
             "-nostdinc++",
             b.fmt("-I/usr/include/c++/{s}", .{gxxver}),
             b.fmt("-I/usr/include/{s}-linux-gnu/c++/{s}", .{ host_arch, gxxver }),
         }) catch @panic("OOM");
     }
     // clang_shim.cpp is ALWAYS compiled with `zig c++` into a standalone object,
-    // then linked into `mod` — one compile path for every host. We deliberately
-    // do NOT feed the .cpp to the module: a C++ source in a linked module puts the
+    // then linked into `mod` — one compile path for every host. The .cpp must not
+    // be fed to the module: a C++ source in a linked module puts the
     // whole compilation into zig's libc++ mode (force-links `-lc++` and prepends
     // zig's bundled `libcxx/include` as an explicit `-isystem` ahead of ours,
     // which not even `-nostdinc++` dislodges). That's fine on macOS — Homebrew
@@ -100,7 +100,7 @@ pub fn build(b: *std.Build) void {
     // undefined-symbol link errors. A standalone `zig c++` compile is not in
     // libc++ mode, so the Linux `-nostdinc++` + system libstdc++ `-isystem` flags
     // (appended to cpp_flags above) take effect and the object matches
-    // libclang-cpp's ABI (verified: 0 `__1` refs). macOS, lacking those flags,
+    // libclang-cpp's ABI, with no `__1` symbols. macOS, lacking those flags,
     // gets zig's default libc++ — matching Homebrew. Same mechanism, both hosts.
     {
         const cc = b.addSystemCommand(&.{ b.graph.zig_exe, "c++" });
@@ -202,8 +202,8 @@ pub fn build(b: *std.Build) void {
         // macOS (Homebrew LLVM): compiled with Clang, needs libc++
         if (target_os == .linux) {
             // Link the REAL system libstdc++ to match apt's libclang-cpp and the
-            // clang_shim object (both libstdc++). We deliberately do NOT use
-            // `linkSystemLibrary("stdc++")`: zig special-cases C++ stdlib names
+            // clang_shim object (both libstdc++). `linkSystemLibrary("stdc++")`
+            // does not work here: zig special-cases C++ stdlib names
             // (`isLibCxxLibName`) and silently rewrites that into its OWN libc++
             // (`-lc++`) — the wrong ABI, and it never links the real lib. So pull
             // the .so in by path (the `g++ -print-file-name` symlink → .so.6).
@@ -220,8 +220,8 @@ pub fn build(b: *std.Build) void {
         // against libstdc++ above, links the same one — no std:: ABI split).
         if (target_os == .linux) {
             // Link the REAL system libstdc++ to match apt's libclang-cpp and the
-            // clang_shim object (both libstdc++). We deliberately do NOT use
-            // `linkSystemLibrary("stdc++")`: zig special-cases C++ stdlib names
+            // clang_shim object (both libstdc++). `linkSystemLibrary("stdc++")`
+            // does not work here: zig special-cases C++ stdlib names
             // (`isLibCxxLibName`) and silently rewrites that into its OWN libc++
             // (`-lc++`) — the wrong ABI, and it never links the real lib. So pull
             // the .so in by path (the `g++ -print-file-name` symlink → .so.6).

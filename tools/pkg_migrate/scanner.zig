@@ -1,6 +1,6 @@
 //! Minimal syntax-aware scanner for sx source, dedicated to the pkg_migrate
 //! tool. It is NOT the compiler lexer — it cannot be, because this tool
-//! is deliberately unwired from build.zig — but it mirrors the exact lexical
+//! is unwired from build.zig — but it mirrors the exact lexical
 //! surface of `src/lexer.zig` that matters for migration correctness:
 //!
 //!   - `//` line comments (sx has no block comments) — emitted as tokens so
@@ -16,7 +16,7 @@
 //!     list the real lexer recognizes; see `directive_whitelist` below). A
 //!     non-whitelisted `#word` (e.g. `#private`) is NOT swallowed as a
 //!     directive: like the real lexer, the `#` is emitted alone and `word`
-//!     lexes as an ordinary identifier — so it stays visible to the D9
+//!     lexes as an ordinary identifier — so it stays visible to the
 //!     inventory and to qualify/rewrite logic,
 //!   - identifiers ([A-Za-z_][A-Za-z0-9_]*) and numbers terminated by the
 //!     real lexer's numeric grammar (so `0x1f` never yields a phantom
@@ -74,7 +74,7 @@ pub const ScanResult = struct {
 /// these `#word` forms; for any other `#word` it emits an invalid `#` token
 /// and then lexes `word` as an ordinary identifier. The scanner mirrors that
 /// exactly so a hypothetical `#private` / `#package` in source surfaces the
-/// identifiers `private` / `package` — visible to the D9 inventory — instead
+/// identifiers `private` / `package` — visible to the inventory — instead
 /// of being silently swallowed as one unknown-directive token.
 const directive_whitelist = [_][]const u8{
     "#import",
@@ -123,7 +123,7 @@ fn isWhitelistedDirective(word: []const u8) bool {
 
 /// Tokenize `source`. Never fails on malformed input: unterminated literals
 /// become `.invalid` tokens that consume to EOF (mirroring src/lexer.zig) and
-/// produce a warning, so deliberately-broken fixtures under issues/ still scan.
+/// produce a warning, so the broken fixtures under issues/ still scan.
 pub fn scan(allocator: std.mem.Allocator, source: []const u8) !ScanResult {
     var tokens: std.ArrayList(Token) = .empty;
     var warnings: std.ArrayList(Warning) = .empty;
@@ -286,7 +286,7 @@ pub fn scan(allocator: std.mem.Allocator, source: []const u8) !ScanResult {
         // compiler would expose as an identifier the scanner exposes too:
         // `1package` yields identifier `package`, `0xg` yields `g`. Note the
         // real lexer has NO exponent grammar — `1e9` is int `1` followed by
-        // identifier `e9` — and the scanner deliberately matches that.
+        // identifier `e9` — and the scanner matches that.
         if (isDigit(c)) {
             const start = i;
             i += 1;

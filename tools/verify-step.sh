@@ -1,10 +1,6 @@
 #!/bin/bash
-# tools/verify-step.sh
-#
-# Single-command verification gate run after every plan step.
-# Per the mem.sx implementation plan, ~/projects/game must remain
-# buildable + runnable on all 3 platforms (macOS host, iOS sim,
-# Android device) at every step boundary.
+# Single-command verification gate: ~/projects/game must stay buildable and
+# runnable on all 3 platforms (macOS host, iOS sim, Android device).
 #
 # Exits 0 if all gates pass; non-zero on any failure.
 # Screenshots saved to /tmp/sx-game-{macos,iossim,android}.png.

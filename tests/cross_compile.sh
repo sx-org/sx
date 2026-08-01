@@ -6,8 +6,8 @@
 # Compile correctness only — these examples can't be executed on the host
 # (iOS Obj-C runtime / Android NDK).
 #
-# Tuple list starts empty and grows as Phase 0 / 1 / 2 / 3 of the FFI plan
-# add cross-only examples. Skips with a warning (still exits 0) when the
+# The tuple list names every cross-only example. Skips with a warning
+# (still exits 0) when the
 # required toolchain isn't installed, so contributors without the iOS SDK
 # or Android NDK aren't blocked.
 #
@@ -28,7 +28,7 @@ mkdir -p "$TMP_DIR"
 TUPLES=(
     "android|examples/1336-ffi-objc-call-10-os-gate.sx"
     "android|examples/1401-ffi-jni-call-02-void.sx"
-    # Step 1.24: verify the inverse OS gate — `inline if OS == .android
+    # The inverse OS gate: `inline if OS == .android
     # { #jni_call(...) }` must strip its body before lowering on iOS so
     # emit_llvm doesn't try to use libjvm symbols the iOS SDK lacks.
     "ios-sim|examples/1401-ffi-jni-call-02-void.sx"
@@ -38,7 +38,7 @@ TUPLES=(
     "android|examples/1423-ffi-jni-main-01-emit.sx"
     # `super.method(args)` dispatch: lowers to JNI CallNonvirtualVoidMethod
     # against the parent class (Activity by default). Compile-only check
-    # — runtime correctness is verified by on-device chess deploy.
+    # — an on-device deploy covers runtime correctness.
     "android|examples/1424-ffi-jni-main-02-super.sx"
     # `Alias.new(args)` constructor dispatch: lowers to FindClass +
     # GetMethodID("<init>") + NewObject. Compile-only — runtime via chess.

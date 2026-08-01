@@ -1,7 +1,7 @@
-# Fuzzing std.http (PLAN-HTTPZ S3)
+# Fuzzing std.http
 
 The HTTP/1.1 request parser (`library/modules/std/http.sx` —
-`try_serve_one`, the H1 hardening block, the S2 `decode_chunked`
+`try_serve_one`, the H1 hardening block, the `decode_chunked`
 decoder) must NEVER crash, panic, abort, hang, double-free, or leak on
 hostile input. It may only ever respond (400/413/431/501/504/…) or
 cleanly close the connection.
@@ -49,11 +49,10 @@ long-running fuzzer. To fuzz harder, OUTSIDE the corpus:
 2. **A future libFuzzer / AFL target.** The strongest harness feeds raw
    bytes straight into a parser entry point (`decode_chunked`,
    `try_serve_one`) with NO socket, so the fuzzer drives the state machine
-   directly at millions of execs/sec. sx has **no libFuzzer integration
-   today**, so this lives as a separate CI job (a small C/Zig driver that
+   directly at millions of execs/sec. sx has **no libFuzzer integration**, so this lives as a separate CI job (a small C/Zig driver that
    dlopen's an `extern "c"`-exported sx parser shim, or a native rewrite
    of the decode loop), never in `examples/`. When built, wire it into CI
-   alongside the load/stress suite (S4).
+   alongside the load/stress suite.
 
 **If any fuzz run finds a crash / hang / leak, that is a REAL parser
 bug.** The failing `SEED` + iteration + the exact triggering bytes are

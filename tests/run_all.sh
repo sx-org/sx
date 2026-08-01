@@ -1,13 +1,9 @@
 #!/bin/bash
 # Every check in one place — "is the baseline healthy?".
 #
-# Exists because the checks NOT wired into a routine command are exactly the ones
-# that rot. All three of these were broken and nobody noticed:
-#   - debug_stepping_smoke.sh sat behind a stale type name and never reached lldb;
-#   - run_resolver_target.sh lost its sources in the corpus reorg and asserted
-#     nothing (17 missing-source) while 9 cases had silently started passing;
-#   - non-Debug builds could not link at all, because only Debug is ever built.
-# A script nobody runs is not a test.
+# A check not wired into a routine command rots unnoticed, so every one of them
+# runs from here: the debug-stepping smoke, the resolver-target harness, and a
+# non-Debug link.
 #
 # Usage:
 #   ./tests/run_all.sh            # everything that runs unattended

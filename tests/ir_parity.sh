@@ -1,13 +1,6 @@
 #!/bin/bash
-# IR Parity Test — Compares output of the old pipeline vs the IR pipeline.
-#
-# For each example, this script:
-#   1. Compiles and runs with the old pipeline (sx run)
-#   2. Compiles and runs with the IR pipeline (sx ir-run, once wired)
-#   3. Compares stdout output
-#
-# For now (Step 3.9 initial), it tests that the IR pipeline can at least
-# produce LLVM IR without crashing (via sx ir-dump → lower → emit).
+# Asserts that every example lowers to LLVM IR without crashing, via
+# `sx ir-dump` → lower → emit.
 #
 # Usage:
 #   bash tests/ir_parity.sh           # Test all examples
@@ -36,7 +29,7 @@ examples=$(ls "$ROOT_DIR"/examples/*.sx 2>/dev/null | sort)
 for example in $examples; do
     name=$(basename "$example" .sx)
 
-    # Test: ir-dump should not crash
+    # ir-dump must not crash.
     if output=$("$SX" ir-dump "$example" 2>&1); then
         # Check that output is non-empty (lowering produced something)
         if [ -n "$output" ]; then
