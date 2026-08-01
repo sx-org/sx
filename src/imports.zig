@@ -308,7 +308,7 @@ pub const ResolvedModule = struct {
 
     /// Add a declaration authored in this file. Updates scope + own_decls +
     /// the global flat decl list; dedups by name through `seen_list` (which
-    /// already holds names previously appended via `mergeFlat`, so an
+    /// already holds the names `mergeFlat` appended, so an
     /// authored decl that collides with a transitively-imported one stays
     /// out of the global list while still entering `own_decls` for
     /// importer-visibility purposes).
@@ -654,13 +654,10 @@ pub fn buildImportFacts(
     return .{ .decls = decls, .ns_edges = ns_edges };
 }
 
-// ── DeclTable: a stable DeclId for every declaration (Fork C S1, additive) ──
+// ── DeclTable: a stable DeclId for every declaration ──
 //
 // `buildDeclTable` lifts every `RawDeclRef` the import facts hold into a stable
-// `DeclId` carrying source + name + AST node identity + span + `DeclKind`. It is
-// built in PARALLEL with the old maps and nothing in lowering consumes it for
-// selection yet (S4 makes it the fact-store key), so generated IR + bytes are
-// unchanged by construction.
+// `DeclId` carrying source + name + AST node identity + span + `DeclKind`.
 
 /// The taxonomy of a declaration, mirroring the `RawDeclRef` variants so a
 /// `DeclTable` row carries its kind without re-switching on the AST node.
@@ -1026,8 +1023,8 @@ pub fn resolveImports(
     var decl_list = std.ArrayList(*Node).empty;
     var own_decl_list = std.ArrayList(*Node).empty;
     // Name set spanning every decl already appended to `decl_list` — used
-    // by `mergeFlat` to dedupe across diamond imports now that `mod.scope`
-    // is non-transitive and can no longer serve as the dedup key.
+    // by `mergeFlat` to dedupe across diamond imports; `mod.scope` is
+    // non-transitive and cannot serve as the dedup key.
     var seen_in_list = std.StringHashMap(void).init(allocator);
     // Node-identity set for the same purpose, covering anonymous decls
     // (impl blocks) that carry no name to dedupe on.

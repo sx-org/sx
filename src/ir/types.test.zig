@@ -440,7 +440,7 @@ test "phase D: same display-name distinct nominal ids" {
     try std.testing.expect(es1 != es2);
 }
 
-test "phase D: internNominal(.,0) is byte-identical to legacy intern (old==new)" {
+test "phase D: internNominal(.,0) interns identically to intern" {
     const alloc = std.testing.allocator;
     var table = TypeTable.init(alloc);
     defer table.deinit();
@@ -457,8 +457,8 @@ test "phase D: internNominal(.,0) is byte-identical to legacy intern (old==new)"
         .{ .error_set = .{ .name = table.internString("Err"), .tags = &tags } },
     };
     for (cases) |info| {
-        const old = table.intern(info); // legacy structural path
-        const new = table.internNominal(info, 0); // new API, structural id
+        const old = table.intern(info); // structural path
+        const new = table.internNominal(info, 0); // nominal API, id 0 == structural
         try std.testing.expectEqual(old, new);
     }
 }

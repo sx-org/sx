@@ -155,9 +155,7 @@ fn primitiveChar(name: []const u8) ?u8 {
 /// Whether emit_llvm's `jni_msg_send` lowering can dispatch a Call<T>Method
 /// for this return type. Anything outside this set falls into the `else`
 /// arm of the switches in `emit_llvm.zig` and would silently produce
-/// `LLVMGetUndef` — a footgun that previously shipped (chess Android touch
-/// went undef because `MotionEvent.getX() -> f32` wasn't in the switch).
-/// Pointer-typed returns route through `CallObjectMethod`.
+/// `LLVMGetUndef`. Pointer-typed returns route through `CallObjectMethod`.
 pub fn isJniReturnTypeSupported(table: *const types.TypeTable, ret_ty: TypeId) bool {
     return switch (ret_ty) {
         .void, .bool, .i32, .i64, .f32, .f64 => true,

@@ -35,9 +35,8 @@ pub const Compilation = struct {
     /// Namespace import edges (`importer → alias → NamespaceTarget`), built by
     /// `imports.buildImportFacts`. Borrowed by `ProgramIndex.namespace_edges`.
     namespace_edges: imports.NamespaceEdges,
-    /// Stable `DeclId` for every declaration (Fork C S1), built by
-    /// `imports.buildDeclTable` in parallel with the import facts. Borrowed by
-    /// `ProgramIndex.decl_table`.
+    /// Stable `DeclId` for every declaration, built by
+    /// `imports.buildDeclTable`. Borrowed by `ProgramIndex.decl_table`.
     decl_table: imports.DeclTable,
     /// Every module resolution reached, keyed by canonical path — including the
     /// backends imported inside an unselected module-scope `inline if` branch.
@@ -133,23 +132,17 @@ pub const Compilation = struct {
         }
 
         // Raw import facts (the unified-resolver store): scalar per-module
-        // raw-decl index + namespace edges, built from the SAME modules. Nothing
-        // consumes these yet — they are borrowed by `ProgramIndex` for later
-        // phases (and the LSP). Built without IR lowering. A build failure here
-        // (allocation) is the Phase A deliverable failing — propagate it rather
-        // than leaving the borrowed views silently empty/stale.
+        // raw-decl index + namespace edges, built from the SAME modules without
+        // IR lowering and borrowed by `ProgramIndex` (and the LSP). Propagate a
+        // build failure rather than leaving the borrowed views empty/stale.
         const facts = try imports.buildImportFacts(self.allocator, self.file_path, mod, cache);
         self.module_decls = facts.decls;
         self.namespace_edges = facts.ns_edges;
 
-        // DeclTable (Fork C S1): a stable DeclId for every declaration, built in
-        // parallel from the SAME modules. Additive — nothing consumes it for
-        // selection yet, so generated IR + bytes are unchanged. Updates
-        // `namespace_edges` in place to record each target's member ids.
+        // A stable DeclId for every declaration, built from the SAME modules.
+        // Updates `namespace_edges` in place to record each target's member ids.
         self.decl_table = try imports.buildDeclTable(self.allocator, self.file_path, mod, cache, &self.module_decls, &self.namespace_edges);
 
-        // (import_sources ↔ diagnostics wiring + main-file seed now done before
-        // resolution, above, so mid-resolution parse errors render correctly.)
 
         // Build a root node from the resolved module's decls
         const new_root = try self.allocator.create(Node);
@@ -205,19 +198,17 @@ pub const Compilation = struct {
         return try self.invokeByFuncId(fid, pass_options);
     }
 
-    /// Re-enter the evaluator and call a previously-resolved function id. The
+    /// Re-enter the evaluator and call an already-resolved function id. The
     /// post-link build callback, captured at `#run` time (by `on_build` /
     /// `set_post_link_callback`). `pass_options` passes the opaque `BuildOptions`
     /// handle as the callback's arg (the `on_build(cb)` form, `cb: (opt:
-    /// BuildOptions) -> bool`); false for the legacy no-arg form.
+    /// BuildOptions) -> bool`); false for the no-arg form.
     pub fn invokeByFuncId(self: *Compilation, id: ir.FuncId, pass_options: bool) !ir.Value {
         const mod = self.ir_module orelse return error.NoIRModule;
-        // The build driver (post-link callback) runs on the comptime VM — NOT
-        // the legacy interp. The driver allocates Lists, which the legacy interp
-        // cannot grow at comptime (issue 0141: `struct_get: base has no fields`);
-        // the VM can. There is **no fallback**: a side-effecting post-link
-        // callback can't safely re-run on a second evaluator (double execution),
-        // so a VM bail is a hard build error. The bail reason is in
+        // The build driver (post-link callback) runs on the comptime VM. There
+        // is **no fallback**: a side-effecting post-link callback can't safely
+        // re-run on a second evaluator (double execution), so a VM bail is a
+        // hard build error. The bail reason is in
         // `comptime_vm.last_bail_reason` (surfaced by `main.printInterpBailDiag`).
         const build_config = if (self.ir_emitter) |*e| &e.build_config else null;
         const evaluation = ir.comptime_vm.runBuildCallback(self.allocator, mod, id, build_config, &self.import_sources, pass_options, null);
@@ -249,8 +240,8 @@ pub const Compilation = struct {
         return null;
     }
 
-    /// Get the post-link callback function id (set via `on_build(fn)` or the
-    /// legacy `set_post_link_callback(fn)`), if any.
+    /// Get the post-link callback function id (set via `on_build(fn)` or
+    /// `set_post_link_callback(fn)`), if any.
     pub fn getPostLinkCallback(self: *Compilation) ?ir.FuncId {
         if (self.ir_emitter) |*e| return e.build_config.post_link_callback_fn;
         return null;

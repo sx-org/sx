@@ -100,10 +100,9 @@ test "ProgramIndex declaration maps round-trip (A1.1b)" {
     try std.testing.expectEqualStrings("list_len", idx.ufcs_alias_map.get("len").?);
 }
 
-// E0 (R5 §#4): the source-keyed caches partition by declaring source, so the
-// SAME name authored in two different modules lands two DISTINCT entries under
-// two source keys — never last-wins. The legacy global maps stay single-keyed
-// by name (one entry per name), so the compat readers are untouched.
+// The source-keyed caches partition by declaring source, so the SAME name
+// authored in two different modules lands two DISTINCT entries under two source
+// keys — never last-wins. The global maps stay single-keyed by name.
 test "ProgramIndex source-keyed caches partition same-name authors by source" {
     var idx = ProgramIndex.init(std.testing.allocator);
     defer idx.deinit();
@@ -132,9 +131,9 @@ test "ProgramIndex source-keyed caches partition same-name authors by source" {
     try std.testing.expect(idx.globals_by_source.get("a.sx").?.get("g").?.id == inst.GlobalId.fromIndex(0));
     try std.testing.expect(idx.globals_by_source.get("b.sx").?.get("g").?.id == inst.GlobalId.fromIndex(1));
 
-    // Compat readers: the legacy global maps stay keyed by NAME alone, so a
-    // same-name author is last-wins there — exactly ONE entry for `Foo` / `K`,
-    // unchanged by the source-keyed writes above.
+    // The global maps stay keyed by NAME alone, so a same-name author is
+    // last-wins there — exactly ONE entry for `Foo` / `K`, independent of the
+    // source-keyed writes above.
     idx.type_alias_map.put("Foo", .i64) catch unreachable;
     idx.type_alias_map.put("Foo", .f64) catch unreachable;
     try std.testing.expectEqual(@as(u32, 1), idx.type_alias_map.count());

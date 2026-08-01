@@ -379,9 +379,9 @@ pub fn lowerFailableSuccessReturn(self: *Lowering, ref: Ref, ret_ty: TypeId, spa
     }
     const n_vals = fields.len - 1;
     if (n_vals == 1) {
-        // Issue 0191: an un-coercible success value used to be bit-welded
-        // into the declared value slot (a 16-byte string into an i64 slot
-        // even corrupted the error tag — a phantom `catch` on success).
+        // Issue 0191: an un-coercible success value must not be bit-welded
+        // into the declared value slot — a 16-byte string into an i64 slot
+        // corrupts the error tag, giving a phantom `catch` on success.
         const cv = if (self.checkReturnable(ref, val_ty, fields[0], span))
             self.coerceToType(ref, val_ty, fields[0])
         else
@@ -608,7 +608,7 @@ pub fn diagRaiseNotFailable(self: *Lowering, span: ast.Span) void {
 /// True if `node`'s value is failable — a `try` (the result is its
 /// operand's success value, but the expression itself routes an error) or
 /// any expression whose type carries an error channel (a bare failable
-/// call). Used to detect failable `or` chains (deferred to E1.4b).
+/// call). Used to detect failable `or` chains.
 pub fn exprIsFailable(self: *Lowering, node: *const Node) bool {
     if (node.data == .try_expr) return true;
     return self.errorChannelOf(self.inferExprType(node)) != null;

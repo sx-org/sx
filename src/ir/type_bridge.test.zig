@@ -93,7 +93,7 @@ test "resolveAstType: threaded alias_map resolves named alias" {
     try std.testing.expectEqual(@as(usize, 0), empty_info.@"struct".fields.len);
 
     // With an explicit alias map (threaded, not borrowed via a TypeTable field),
-    // a previously-unseen name resolves to the alias target instead of a stub.
+    // an unseen name resolves to the alias target instead of a stub.
     var aliases = std.StringHashMap(TypeId).init(alloc);
     defer aliases.deinit();
     try aliases.put("ShaderHandle", .u32);

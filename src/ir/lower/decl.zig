@@ -516,7 +516,6 @@ pub fn lowerDeferredTypeFns(self: *Lowering) void {
 }
 
 /// Lower a list of top-level declarations (used by irComptimeEval — non-lazy path).
-/// This preserves the old behavior for comptime evaluation contexts.
 pub fn lowerDecls(self: *Lowering, decls: []const *const Node) void {
     for (decls) |decl| {
         self.setCurrentSourceFile(decl.source_file);
@@ -841,7 +840,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // decls — NOT `nameHasMultipleTypeAuthors` (the raw import facts, which
     // over-count one file reached via two un-normalized import spellings, e.g.
     // `math/matrix44` pulled in twice) — keeps a single-real-decl name on the
-    // legacy id-0 path, byte-identical. ALL authors of a genuine shadow
+    // id-0 path. ALL authors of a genuine shadow
     // reserve, in declaration order: the FIRST at id 0, the rest at fresh
     // nonzero ids, matching the per-decl registration order so the
     // first-author-keeps-0 assignment holds.
@@ -1269,7 +1268,7 @@ pub fn scanDecls(self: *Lowering, all_decls: []const *const Node) void {
     // Pass 2c: the const-alias fixpoint again. Its pass-0a' run can only see
     // the LITERAL consts pass 0 registers; an aggregate const (`C :: S{…}`,
     // `A :: .[…]`) does not reach `module_const_map` until pass 1/2, so an
-    // alias of one (`D :: C`) had no registered target back then. Re-running
+    // alias of one (`D :: C`) has no registered target at that point. Re-running
     // here closes over those. Idempotent — the fixpoint skips a name already
     // registered — so aliases resolved in pass 0a' keep their exact binding.
     registerConstAliases(self, decls);
@@ -1351,9 +1350,8 @@ pub fn registerTypedModuleConst(self: *Lowering, cd: *const ast.ConstDecl) void 
     if (!self.typedConstInitFits(cd.value, ty)) {
         // A non-integral compile-time float into an integer const is the
         // same implicit-narrowing failure as a typed local/field/param —
-        // report it with the unified wording (integral floats now FOLD here,
-        // so the old generic "initializer is a float literal/expression"
-        // message is stale). Every other mismatch keeps the generic wording.
+        // report it with the unified wording (an integral float FOLDS here).
+        // Every other mismatch takes the generic wording.
         if (self.isIntEx(ty) and isFloat(self.inferExprType(cd.value))) {
             if (program_index_mod.evalConstFloatExpr(cd.value, self)) |fv| {
                 self.diagNonIntegralNarrow(cd.value.span, fv, ty);
@@ -2533,12 +2531,12 @@ pub const TypeHeadResolution = union(enum) {
     /// MAIN file the `UnknownTypeChecker` is the diagnostic authority (it owns
     /// scope context + value-param hints, and a valid unbound generic leaf
     /// like `-> T` on a template legitimately lands here), so the leaf keeps
-    /// the legacy stub there and defers the diagnostic to the checker.
+    /// the empty-struct stub there and defers the diagnostic to the checker.
     undeclared,
     /// `name` IS a registered named type, but it is reachable from the
     /// querying module ONLY through a namespaced import (or over more than one
     /// flat hop) — not bare-visible over the single-hop direct flat-import set
-    /// (the type analog of Phase B's bare-call tightening, F1). The user must
+    /// (the type analog of the bare-call visibility rule). The user must
     /// qualify it (`ns.Type`) or `#import` the declaring module directly.
     /// `resolveNominalLeaf` surfaces the "not visible" diagnostic and returns
     /// the `.unresolved` poison sentinel — NEVER the global `findByName` match
@@ -2712,11 +2710,11 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
     return tid;
 }
 
-/// THE source-aware bare TYPE leaf (R5 §E, E1). The type-position analogue
+/// THE source-aware bare TYPE leaf. The type-position analogue
 /// of `selectCallableAuthor`: resolve a bare type name `name` referenced
 /// from `from` by selecting its nominal author over the ONE graph-walk
 /// collector (`resolver.collectVisibleAuthors`) and reading the alias from the
-/// source-keyed cache (`type_aliases_by_source`, E0's write side) keyed by the
+/// source-keyed cache (`type_aliases_by_source`) keyed by the
 /// selected author's OWN source — never the global `findByName` first-match
 /// nor the global `type_alias_map`.
 ///
@@ -2724,15 +2722,9 @@ fn resolvePendingAliasType(self: *Lowering, author: resolver_mod.RawAuthor, alia
 /// bypasses the builtin classifier and resolves only through the nominal
 /// author / alias path.
 ///
-/// E1 is single-author: `collectVisibleAuthors` returns ≤1 author, so the
-/// selection is unambiguous and resolution is byte-identical to the legacy
-/// leaf. Same-name shadows (≥2 authors) and the `.ambiguous` outcome (0105)
-/// land in E2; the per-author `nominal_id` TypeId that makes a shadow
-/// representable also lands then (today a registered named type resolves to
-/// its unique `findByName` match, which IS the single author's TypeId).
 /// Generic / parameterized-protocol / Vector / type-function heads never
 /// reach this leaf — `resolveTypeWithBindings` owns those above the leaf
-/// switch, so they stay legacy.
+/// switch.
 pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, raw: bool) TypeHeadResolution {
     const table = &self.module.types;
     // Builtin primitive keyword / arbitrary-width int — unless a raw escape
@@ -2743,8 +2735,8 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
     // Structural string-forms that reach the leaf as a literal type-expr
     // name (`[:0]u8` → string, `[*]T`, `*T`, `?T`) carry NO nominal author —
     // they are wrappers, not declarations, so source-keying does not apply.
-    // Resolve them through the stateless namer exactly as the legacy leaf
-    // did; only the bare nominal name below cuts over to the collector.
+    // Resolve them through the stateless namer; only the bare nominal name
+    // below goes through the collector.
     if (name.len > 0 and (name[0] == '[' or name[0] == '*' or name[0] == '?')) {
         return .{ .resolved = self.typeResolver().resolveName(name, raw) };
     }
@@ -2780,8 +2772,8 @@ pub fn selectNominalLeaf(self: *Lowering, name: []const u8, from: []const u8, ra
         if (registered) |existing| return .{ .resolved = existing };
     }
     // Import facts unwired (registration / comptime host with no module_decls
-    // or flat graph): there is no querying context to gate against — preserve
-    // the legacy resolution (registered → existing; else forward-alias /
+    // or flat graph): there is no querying context to gate against — take the
+    // ungated resolution (registered → existing; else forward-alias /
     // undeclared).
     if (self.program_index.module_decls == null or self.program_index.flat_import_graph == null) {
         if (registered) |existing| return .{ .resolved = existing };
@@ -2960,8 +2952,8 @@ fn constWrappedNamedTypeRef(cd: *const ast.ConstDecl) ?resolver_mod.RawDeclRef {
 
 /// The per-decl nominal TypeId of a NAMED-type `RawDeclRef` author, or null
 /// when its slot is not registered yet (a forward / self reference resolved
-/// mid-registration → the caller yields the legacy empty-struct stub). A
-/// STRUCT resolves first through its `type_decl_tids` nominal identity (E2)
+/// mid-registration → the caller yields the empty-struct stub). A
+/// STRUCT resolves first through its `type_decl_tids` nominal identity
 /// keyed by the raw-facts decl pointer, so two same-name struct authors in
 /// different sources resolve to their OWN distinct TypeIds. A
 /// `type_decl_tids` MISS falls back to the global `findByName` — correct for a
@@ -2974,18 +2966,18 @@ fn constWrappedNamedTypeRef(cd: *const ast.ConstDecl) ?resolver_mod.RawDeclRef {
 /// keyed by the raw-facts decl pointer, with the `findByName` fallback for a
 /// single author registered before its slot lands. Error-set and nullary
 /// protocol declarations likewise prefer their per-decl slots; runtime
-/// classes retain the legacy name lookup.
+/// classes use the name lookup.
 pub fn namedRefTid(self: *Lowering, ref: resolver_mod.RawDeclRef, name: []const u8) ?TypeId {
     const table = &self.module.types;
     return switch (ref) {
         .struct_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
         .enum_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
         .union_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
-        // Error sets now carry per-decl nominal identity (issue 0134), so prefer
+        // Error sets carry per-decl nominal identity (issue 0134), so prefer
         // the own author's reserved TypeId over the name-keyed first-author
         // `findByName` — mirroring the struct/enum/union arms above. A set that
         // was not decl-registered (no `type_decl_tids` entry) falls back to the
-        // name lookup, byte-identical to pre-0134.
+        // name lookup.
         .error_set_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
         .protocol_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
         .open_set_decl => |d| (table.type_decl_tids.get(@ptrCast(d)) orelse table.findByName(table.internString(name))),
@@ -3059,10 +3051,10 @@ pub fn localTypeInAnySource(self: *Lowering, name: []const u8) bool {
 /// so it emits "unknown type" and poisons with `.unresolved` (never a silent
 /// 0-field struct). In the MAIN file the checker owns the diagnostic (and a
 /// valid unbound generic leaf legitimately reaches here), so the leaf keeps
-/// the legacy stub. `.not_visible` / `.ambiguous` surface their own loud
+/// the empty-struct stub. `.not_visible` / `.ambiguous` surface their own loud
 /// diagnostic + `.unresolved`. When the source context is unwired
 /// (`current_source_file` null — comptime / registration callers), there is no
-/// querying module to collect from, so fall open to the legacy namer.
+/// querying module to collect from, so fall open to the stateless namer.
 pub fn resolveNominalLeaf(self: *Lowering, name: []const u8, raw: bool, span: ?ast.Span) TypeId {
     const from = self.current_source_file orelse
         return self.typeResolver().resolveName(name, raw);
@@ -3082,7 +3074,7 @@ pub fn resolveNominalLeaf(self: *Lowering, name: []const u8, raw: bool, span: ?a
             // the canonical "unknown type" (with scope context + value-param
             // hints) and `hasErrors` halts before the stub reaches codegen,
             // and a valid unbound generic leaf (`-> T` on a template) also
-            // lands here — so keep the legacy stub and do NOT double-report.
+            // lands here — so keep the empty-struct stub and do NOT double-report.
             // A NON-main (imported / library) module is checker-trusted, so
             // this leaf is the sole guard: emit + poison with `.unresolved`.
             const is_main = if (self.main_file) |mf| std.mem.eql(u8, from, mf) else true;
@@ -3154,11 +3146,6 @@ pub const VisibleStructAuthor = struct {
     source: []const u8,
 };
 
-/// The `fn_decl` of struct `sd`'s method named `method`, or null when `sd`
-/// declares no such method. Used to source-pin a static-method head's body to
-/// the bare-visible author's own method (`b.Box.make`), bypassing the name-keyed
-/// last-wins `fn_ast_map` ("Box.make") that a 2-flat-hop same-name template's
-/// method would otherwise win (E4 #1, static-method site).
 /// The suffix that distinguishes a `#set` accessor's EFFECTIVE method name from
 /// the read name it shares with a same-name `#get`. `$` can never appear in an
 /// sx identifier (it is the comptime-param sigil), so `len$set` is an

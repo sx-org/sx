@@ -63,10 +63,8 @@ pub const CoercionResolver = struct {
         // same literal-only blessing as `cstring` (its bytes are a terminated
         // constant; the emitted value is the DATA POINTER). A non-literal
         // string may be an unterminated view — same rejection as cstring.
-        // Previously this pair fell to `.none` and passed the 16-byte
-        // {ptr,len} header through by ABI accident (first field lands in the
-        // first register); the issue-0191 guard now rejects that weld, so the
-        // legitimate literal case needs this modeled arm.
+        // The pair needs this modeled arm: the issue-0191 guard rejects a
+        // `.none` weld of the 16-byte {ptr,len} header into a pointer.
         if (src_ty == .string and !dst_ty.isBuiltin()) {
             const di = self.l.module.types.get(dst_ty);
             if (di == .many_pointer and (di.many_pointer.element == .u8 or di.many_pointer.element == .i8)) {
@@ -95,8 +93,7 @@ pub const CoercionResolver = struct {
         // Tuple → Tuple, same arity. A STRUCT source of the same arity
         // coerces element-wise too — an untyped `.{ }` literal self-types as
         // an anonymous struct, and its values flow into tuple slots (a catch
-        // fallback for a multi-value failable, a tuple-typed field) exactly
-        // as the old `.( )` tuple literal did.
+        // fallback for a multi-value failable, a tuple-typed field).
         if (!src_ty.isBuiltin() and !dst_ty.isBuiltin()) {
             const si = self.l.module.types.get(src_ty);
             const di = self.l.module.types.get(dst_ty);

@@ -700,9 +700,9 @@ pub fn buildProtocolErasure(self: *Lowering, operand: Ref, operand_node: *const 
     var heap_copy = false;
 
     // Ownership classes split the conversion-mode arms: an #identity
-    // target BORROWS lvalues/pointers (E2); a value/own target OWNS its
-    // ctx, so the old borrow arms are the DEMAND error — only the rvalue
-    // owning copy remains implicit. (The explicit owning spelling is the
+    // target BORROWS lvalues/pointers; a value/own target OWNS its ctx, so a
+    // borrow into it is the DEMAND error — only the rvalue owning copy is
+    // implicit. (The explicit owning spelling is the
     // postfix `.(P)` / `.(P, alloc)` — lowerOwningErasure.)
     const dst_identity = self.protocolIsIdentity(dst_ty);
     // A tagged value is a borrow in every spelling, so it takes the identity
@@ -1328,7 +1328,7 @@ pub fn functionSignatureType(self: *Lowering, fid: inst_mod.FuncId) ?TypeId {
     return self.module.types.functionTypeCC(param_ids.items, f.ret, f.call_conv);
 }
 
-/// A bare-function VALUE is carried in the legacy integer-word IR type
+/// A bare-function VALUE is carried in an integer-word IR type
 /// (`func_ref` typed `i64`/`isize` — issue 0237), which is not the value's
 /// TYPE: it must never leak into a user-facing message (issue 0338: "cannot
 /// coerce a value of type 'i64'" for a fn name), and it must never be what a
@@ -1590,7 +1590,7 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
         },
         // Anonymous/positional STRUCT → tuple of the same arity, element-wise
         // (the untyped `.{ }` literal is an anon struct; its values flow into
-        // tuple slots exactly as the old `.( )` tuple literal did).
+        // tuple slots).
         .struct_to_tuple => {
             const si = self.module.types.get(src_ty);
             const di = self.module.types.get(dst_ty);
@@ -1603,10 +1603,10 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
             return self.builder.emit(.{ .tuple_init = .{ .fields = self.alloc.dupe(Ref, elems.items) catch unreachable } }, dst_ty);
         },
         // Optional → Concrete unwrapping — ONLY when the value is PROVEN
-        // present by flow narrowing (issue 0179). An un-narrowed `?T` flowing
-        // into a concrete slot used to unwrap UNCONDITIONALLY, yielding the
-        // zero payload of a null optional with no diagnostic (silent
-        // miscompile across the whole `?T → concrete` family). Per spec the
+        // present by flow narrowing (issue 0179). Unwrapping an un-narrowed
+        // `?T` unconditionally would yield the zero payload of a null optional
+        // with no diagnostic — a silent miscompile across the whole
+        // `?T → concrete` family. Per spec the
         // only legal extractions are `!` / `??` / binding / match / a `!= null`
         // guard; reject everything else loudly. `lowerIdentifier` tags the
         // loaded `Ref` of a guard-narrowed local into `narrowed_refs`.
@@ -1749,12 +1749,10 @@ pub fn coerceMode(self: *Lowering, val: Ref, src_ty: TypeId, dst_ty: TypeId, mod
                 // materialize a stack slot and heap-copy it: the erased
                 // protocol value's ctx pointer must outlive this frame.
                 //
-                // Builtins previously skipped this branch entirely (the guard
-                // was `if (!src_ty.isBuiltin())`), leaving `concrete_ptr = val`
-                // — the raw SCALAR — passed to `buildProtocolValue` as the ctx
-                // "pointer". That produced a malformed `insertvalue {ptr,ptr}
-                // undef, <scalar>, 0` and an LLVM verification failure when a
-                // builtin value was erased to a protocol (issue 0279).
+                // Builtins take this branch too: leaving `concrete_ptr = val`
+                // — the raw SCALAR — for `buildProtocolValue` to use as the ctx
+                // "pointer" produces a malformed `insertvalue {ptr,ptr} undef,
+                // <scalar>, 0` and an LLVM verification failure (issue 0279).
                 //
                 // This node-less layer serves call paths that lowered the
                 // arg before its param target was known (UFCS/generic

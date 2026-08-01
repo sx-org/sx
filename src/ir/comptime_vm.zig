@@ -2189,8 +2189,8 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
         }
         // `emit_object() -> string` — ACTION: verify + emit the codegen'd module
         // to its object file and return the path. Dispatches through the
-        // host-installed hook (the VM can't emit itself); the driver no longer
-        // auto-emits (everything is sx-driven via `default_pipeline`).
+        // host-installed hook (the VM can't emit itself); emission is sx-driven
+        // via `default_pipeline`.
         if (intr == .emit_object) {
             if (args.len != 0) return self.failMsg("comptime emit_object: expected no args");
             const bc = self.build_config orelse
@@ -2514,10 +2514,10 @@ fn callCompilerFn(self: *Vm, intr: intrinsics.Id, name: []const u8, args: []cons
     /// builtin the VM doesn't model yet (caller bails).
     fn callBuiltinVm(self: *Vm, bi: inst_mod.BuiltinCall, ins_ty: TypeId, frame: *Frame, ref_types: []const TypeId) Error!?Reg {
         switch (bi.builtin) {
-            // `declare(name)` and `define(handle, info)` are no longer builtins —
-            // they're plain sx in `modules/std/meta.sx` over the compiler-API
-            // primitives `declare_type` / `register_type` (`callCompilerFn`). The
-            // `.declare` / `.define` BuiltinIds and `defineFromInfo` were removed.
+            // `declare(name)` and `define(handle, info)` are plain sx in
+            // `modules/std/meta.sx` over the compiler-API primitives
+            // `declare_type` / `register_type` (`callCompilerFn`).
+            //
             // type_name(x) → the type's name as a string. The arg is a Type value
             // (`.type_value` word = a TypeId) or an Any box (`{tag@0, value@8}` whose
             // tag IS the boxed value's type, unless tag == type_value: then the boxed

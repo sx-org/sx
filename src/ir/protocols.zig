@@ -162,8 +162,8 @@ pub const ProtocolResolver = struct {
     /// Concrete method selected for dispatch through an explicitly declared
     /// protocol impl. Exact bodies/defaults on that impl win. An empty/partial
     /// impl may adopt a uniquely selected body already owned by the SAME
-    /// concrete TypeId (inline or another protocol impl), matching the legacy
-    /// `Type.method` behavior without cross-binding display-name collisions.
+    /// concrete TypeId (inline or another protocol impl), matching
+    /// `Type.method` selection without cross-binding display-name collisions.
     pub fn protocolDispatchMethod(self: ProtocolResolver, proto_ty: ?TypeId, p_name: []const u8, ty: TypeId, method: []const u8) ?ProtocolImplMethod {
         if (self.protocolImplMethod(proto_ty, p_name, ty, method)) |exact| return exact;
         if (!self.l.protocol_impl_decls.contains(self.protocolConcreteKey(proto_ty, p_name, ty))) return null;

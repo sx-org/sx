@@ -10,7 +10,7 @@ const corpus_paths = @import("corpus_paths");
 // per-example directives (AOT, cross-target, bundle/apk smoke tests, ...).
 //
 // This is the sole regression runner — `zig build test` is the only way to run
-// the corpus (the legacy standalone `tests/run_examples.sh` was removed).
+// the corpus.
 //
 // Each example runs in its OWN subprocess (via std.process.run), so a crashing
 // example reports its exit code (or 128+signal, matching a shell's `$?`) instead
@@ -231,7 +231,7 @@ fn dropIrLine(line: []const u8) bool {
 
 /// Apply `s/%([a-z]+)[0-9]+/%\1N/g` to one line — collapse LLVM's auto-suffixed
 /// temporaries (`%tmp17` -> `%tmpN`) so renumbering doesn't desync snapshots.
-/// O0 IR carries DWARF; remove `!dbg` attachments here so the legacy code-shape
+/// O0 IR carries DWARF; remove `!dbg` attachments here so the code-shape
 /// snapshots do not depend on debug metadata numbering or source locations.
 fn appendIrSubst(arena: std.mem.Allocator, out: *std.ArrayList(u8), line: []const u8) !void {
     var i: usize = 0;
@@ -338,7 +338,7 @@ fn nameMatchesFilter(filter: []const u8, rel_path: []const u8) bool {
 }
 
 /// Per-example build/run directives, parsed from an optional `<name>.build`
-/// JSON sidecar (replaces the old standalone `.aot` marker). Output snapshots
+/// JSON sidecar. Output snapshots
 /// (.exit/.stdout/.stderr/.ir) stay separate — they are regenerated data, not
 /// config. An unknown key is `error.UnknownField` (std.json default
 /// `ignore_unknown_fields = false`), surfaced as a loud test failure — never a

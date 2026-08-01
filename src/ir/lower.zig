@@ -546,9 +546,9 @@ pub const Lowering = struct {
     /// records which specific FuncIds have had a real body lowered.
     lowered_fids: std.AutoHashMap(FuncId, void),
     local_fn_counter: u32 = 0, // unique counter for mangling local function names
-    /// Per-declaration nominal identity bookkeeping (E2). The FIRST source to
-    /// register a given top-level type NAME keeps `nominal_id = 0` (structural —
-    /// byte-identical to pre-E2 single-author registration); a later registration
+    /// Per-declaration nominal identity bookkeeping. The FIRST source to
+    /// register a given top-level type NAME keeps `nominal_id = 0` (structural);
+    /// a later registration
     /// of the same name from a DIFFERENT source is a same-name SHADOW and gets a
     /// fresh id from `next_nominal_id`, so the two authors intern to DISTINCT
     /// TypeIds (closing the last-wins collapse). `nominal_name_authors`
@@ -571,8 +571,8 @@ pub const Lowering = struct {
     /// than from the global last-wins `fn_ast_map["Struct.method"]` entry.
     plain_struct_authors: std.AutoHashMap(TypeId, PlainStructAuthor),
     /// Explicit nullary-protocol impl methods, addressed by protocol + nominal
-    /// concrete TypeId + method. The legacy `Type.method` AST map is only a
-    /// compatibility surface and cannot distinguish same-display-name types.
+    /// concrete TypeId + method. The `Type.method` AST map cannot distinguish
+    /// same-display-name types.
     protocol_impl_methods: std.AutoHashMap(ProtocolImplMethodKey, ProtocolImplMethod),
     /// Explicit nullary-protocol impl declarations, including empty/partial
     /// impl bodies. Keeping the pair separate from its methods lets a declared
@@ -605,14 +605,14 @@ pub const Lowering = struct {
     /// The normal scan consults the same guard and therefore remains exactly-
     /// once even for forward/import-after-alias source order (issue 0323).
     registered_protocol_decls: std.AutoHashMap(*const ast.ProtocolDecl, void),
-    /// Runtime protocol metadata keyed by the exact protocol TypeId. The
-    /// legacy name maps remain for parameterized-template discovery and
-    /// source-less unit hosts, but runtime ABI/dispatch never round-trips a
-    /// nominal protocol through its display name.
+    /// Runtime protocol metadata keyed by the exact protocol TypeId. The name
+    /// maps serve parameterized-template discovery and source-less unit hosts,
+    /// but runtime ABI/dispatch never round-trips a nominal protocol through
+    /// its display name.
     protocol_info_by_type: std.AutoHashMap(TypeId, program_index_mod.ProtocolDeclInfo),
     protocol_ast_by_type: std.AutoHashMap(TypeId, *const ast.ProtocolDecl),
-    /// Declaration-name / import / visibility facts (architecture phase A1,
-    /// `ProgramIndex`). Owns `import_flags`; borrows `module_scopes` /
+    /// Declaration-name / import / visibility facts (`ProgramIndex`).
+    /// Owns `import_flags`; borrows `module_scopes` /
     /// `import_graph` from the compilation driver. Reached via
     /// `self.program_index.<field>`; populated by scan/registration code.
     program_index: ProgramIndex,
@@ -1411,9 +1411,9 @@ pub const Lowering = struct {
         }
         if (p.is_variadic) {
             // Two surface forms:
-            //   - legacy `name: ..T` — declared_ty is the element type;
+            //   - `name: ..T` — declared_ty is the element type;
             //     wrap to receive a `[]T` slice.
-            //   - new     `..name: []T` — declared_ty is already the slice
+            //   - `..name: []T` — declared_ty is already the slice
             //     type; use it as-is. Wrapping here would double up to
             //     `[][]T` and downstream LLVM emission crashes when the
             //     caller's argument-marshal pack produces a `[]T` that
@@ -1811,9 +1811,6 @@ pub const Lowering = struct {
         if (TypeResolver.resolveCompound(&self.module.types, node, self)) |t| return t;
         // Generic type-param binding (`$T`, or a bare return-type `T` without
         // the `$` prefix) — owned by TypeResolver via the explicit ResolveEnv.
-        // The parameterized / call / closure / function arms that used to live
-        // here were redundant with the unconditional handling just below (both
-        // read the active bindings through the same resolvers), so they're gone.
         if (TypeResolver.resolveBinding(node, self.resolveEnv())) |t| return t;
         // Even without active type_bindings, handle parameterized types with struct templates
         if (node.data == .parameterized_type_expr) {
@@ -2856,8 +2853,8 @@ pub const Lowering = struct {
 
     /// Diagnose a char literal whose code point cannot be represented in `ty`.
     /// Same range logic as `checkIntLiteralFits`, but a char-specific message:
-    /// the value is a code point the user wants to KEEP, so the fix is a wider
-    /// storage type (u32 holds any Unicode scalar), not truncation. The source
+    /// the value is a code point the user wants to KEEP, so the remedy is a
+    /// wider storage type (u32 holds any Unicode scalar), not truncation. The source
     /// `'raw'` is included so the user sees which literal overflowed. The
     /// constant is still emitted by the caller so lowering continues.
     pub fn checkCharLiteralFits(self: *Lowering, cl: ast.CharLiteral, ty: TypeId, span: ast.Span) void {

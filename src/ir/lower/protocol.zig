@@ -1009,7 +1009,7 @@ fn methodAst(pd: *const ast.ProtocolDecl, name: []const u8) ?ast.ProtocolMethodD
 /// nested inside any compound (`*Self`, `[]Self`, `[2]*Self`, `?[]Self`,
 /// `Box(Self)`, fn/closure types, …). Used to decide whether a node needs
 /// structural `Self`-substitution or can be resolved wholesale. Shared with
-/// the Era-2 erasability classifier.
+/// the erasability classifier.
 const containsSelf = program_index_mod.typeNodeContainsSelf;
 
 /// Resolve a protocol-method type node to a TypeId, substituting any `Self`

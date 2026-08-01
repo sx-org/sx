@@ -20,6 +20,5 @@ const std = @import("std");
 /// different `<lib>` is rejected — `compiler` is the sole comptime bind source.
 pub const lib_name = "compiler";
 
-// The function-export list that used to live here is gone: `ir/intrinsics.zig`
-// is the allow-list now, and it binds by (module, name) rather than by a bare
-// name matched against a second list that nothing kept in sync with the sx.
+// `ir/intrinsics.zig` is the allow-list for compiler-lib exports; it binds by
+// (module, name).

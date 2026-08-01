@@ -543,14 +543,13 @@ pub const Parser = struct {
     /// channel is the last slot. A bare `-> !` (error-only, no value) is parsed
     /// by `parseTypeExpr` as an `error_type_expr` and is unaffected.
     ///
-    /// The legacy trailing-`!`-after-the-value-type spelling (`-> T !`,
-    /// `-> Tuple(A, B) !`) is REJECTED — it was a redundant second spelling of
-    /// `(T, !)` / `(A, B, !)` and is no longer accepted.
+    /// A trailing `!` after the value type (`-> T !`, `-> Tuple(A, B) !`) is
+    /// REJECTED; the error channel is only ever a slot in the parens.
     fn parseFnReturnType(self: *Parser) anyerror!*Node {
         const ty = try self.parseTypeExpr();
 
-        // A trailing `!` after a VALUE return type is the removed legacy
-        // spelling. (`-> !` already parsed to an error_type_expr above, so a
+        // A trailing `!` after a VALUE return type is rejected.
+        // (`-> !` already parsed to an error_type_expr above, so a
         // `!` after one would be a doubled channel — leave that to the normal
         // "unexpected token" path.)
         if (self.current.tag == .bang and ty.data != .error_type_expr) {
@@ -918,9 +917,8 @@ pub const Parser = struct {
                     if (self.current.tag == .int_literal) {
                         const arg_start = self.current.loc.start;
                         const text = self.tokenSlice(self.current);
-                        // Parse the full u64 range (was i64 — values above i64.max
-                        // were previously unrepresentable here) and store the bit
-                        // pattern, matching the main int-literal path.
+                        // Parse the full u64 range and store the bit pattern,
+                        // matching the main int-literal path.
                         const value: i64 = @bitCast(self.parseIntLiteralText(text) orelse {
                             return self.fail("invalid integer literal in type argument");
                         });
@@ -2124,9 +2122,8 @@ pub const Parser = struct {
         self.advance();
 
         // Source-type spelling. For parameterised protocols we accept any TypeExpr
-        // (`Closure(...) -> R`, `*T`, etc.). For nullary protocols we keep the
-        // legacy identifier-only path so existing `impl P for SomeStruct` keeps
-        // working unchanged (the parser doesn't try to over-parse trailing tokens).
+        // (`Closure(...) -> R`, `*T`, etc.). For nullary protocols the source is
+        // an identifier alone, so the parser doesn't over-parse trailing tokens.
         var target_type: []const u8 = "";
         var target_type_expr: ?*Node = null;
         var target_type_params = std.ArrayList(ast.StructTypeParam).empty;
@@ -2134,14 +2131,14 @@ pub const Parser = struct {
         if (protocol_type_args.items.len > 0) {
             // Parameterised protocol — source is a general TypeExpr.
             target_type_expr = try self.parseTypeExpr();
-            // Synthesize a string view of the source for back-compat consumers
+            // Synthesize a string view of the source for name-only consumers
             // (LSP hover, etc.). The semantic key for the impl map uses
             // structural mangling, not this string.
             if (target_type_expr.?.data == .type_expr) {
                 target_type = target_type_expr.?.data.type_expr.name;
             }
         } else {
-            // Legacy nullary-protocol path: single identifier source.
+            // Nullary protocol: single identifier source.
             if (self.current.tag != .identifier and !self.current.tag.isTypeKeyword()) {
                 return self.fail("expected type name after 'for'");
             }
@@ -2311,10 +2308,9 @@ pub const Parser = struct {
                 try self.expect(.comma);
                 if (self.current.tag == .r_paren) break;
             }
-            // Leading `..` marks a variadic param at the binding site
-            // (e.g., `..$args` heterogeneous pack, or future homogeneous
-            // `..args: []$T`). The old `args: ..T` form keeps its marker
-            // after the colon (handled below).
+            // Leading `..` marks a variadic param at the binding site:
+            // `..$args` (heterogeneous comptime pack), `..xs: []T` (slice),
+            // `..xs: P` (protocol-constrained pack).
             var is_variadic = false;
             if (self.current.tag == .dot_dot) {
                 is_variadic = true;
@@ -3341,15 +3337,13 @@ pub const Parser = struct {
             } else if (self.current.tag == .dot) {
                 self.advance();
                 if (self.current.tag == .l_paren and expr.data == .tuple_type_expr) {
-                    // `.( )` is GONE (aggregate ladder Step 1 cutover): the
-                    // one aggregate literal is `.{ … }` — typed construction
-                    // is `Tuple(A, B){ v1, v2 }`. A tuple-TYPE receiver can
-                    // only be the old literal spelling, so it keeps the
-                    // migration message instead of parsing as a cast.
+                    // The one aggregate literal is `.{ … }`; typed construction
+                    // is `Tuple(A, B){ v1, v2 }`. `.(` on a tuple-TYPE receiver
+                    // can only be a tuple literal, so it takes the dedicated
+                    // message instead of parsing as a cast.
                     return self.fail("'.( )' was removed — the aggregate literal is '.{ … }' (typed tuple construction: 'Tuple(A, B){ v1, v2 }')");
                 } else if (self.current.tag == .l_paren) {
-                    // Postfix cast `expr.(T)` (aggregate ladder Step 4) on
-                    // the syntax freed by the Step-1 cutover. One type, plus
+                    // Postfix cast `expr.(T)`. One type, plus
                     // an optional ALLOCATOR expression for the owning
                     // erasure `expr.(P, alloc)` (protocol targets only —
                     // validated at lowering).
@@ -3931,9 +3925,8 @@ pub const Parser = struct {
                 }
 
                 // Bare `(...)` is GROUPING ONLY. Tuple VALUES are written
-                // `.{ … }` with a `Tuple(…)` annotation. A named element, an empty
-                // group, a leading spread, or a top-level comma used to build a
-                // bare-paren `tuple_literal`; that grammar is gone.
+                // `.{ … }` with a `Tuple(…)` annotation, so a named element, an
+                // empty group, a leading spread, or a top-level comma is an error.
                 if (self.current.tag == .identifier and self.peekNext() == .colon) {
                     return self.fail("tuple values use `.{ … }` with a `Tuple(…)` annotation (e.g. `t : Tuple(A, B) = .{a, b}` or `Tuple(A, B){a, b}`)");
                 }
@@ -4520,7 +4513,6 @@ pub const Parser = struct {
         } });
     }
 
-    /// Parse a `.( ... )` tuple value literal. `current` is the `(`.
     /// A token that can only begin a VALUE literal, never a type. Used to give
     /// `Tuple(...)` a precise lowering-time "element is not a type" diagnostic
     /// (instead of a generic parse error) when a literal is supplied as a tuple
@@ -4984,7 +4976,7 @@ pub const Parser = struct {
 
     /// Optional ABI / calling-convention annotation `abi(.c)` / `abi(.zig)` /
     /// `abi(.naked)` in the postfix slot before `extern`/`export`. `.default` when
-    /// absent. Subsumes the old `callconv(...)` spelling.
+    /// absent.
     fn parseOptionalAbi(self: *Parser) anyerror!ast.ABI {
         if (self.current.tag != .kw_abi) return .default;
         self.advance();
@@ -5224,7 +5216,7 @@ pub const Parser = struct {
     /// Prefix shapes that may take a named aggregate body `Type{...}`:
     /// bare type name, qualified type, type application node, or a call that
     /// stands for a parameterized type designator `F(args)` in expression
-    /// position (same shape as `List(i64){}` used to take).
+    /// position (the shape `List(i64){}` takes).
     fn isNamedAggregatePrefix(expr: *const Node) bool {
         return switch (expr.data) {
             // Enum/variant heads (`.key{…}`, `Ev.key{…}`) share the compact
@@ -5482,7 +5474,7 @@ pub const Parser = struct {
         return false;
     }
 
-    /// Separator-dot `Type.{…}` was removed. Point at the `.` and offer the
+    /// Separator-dot `Type.{…}` is invalid. Point at the `.` and offer the
     /// compact `Type{…}` spelling.
     fn failNamedAggregateDot(self: *Parser) error{ParseError} {
         // `current` is `{`; the separator `.` ends at `prev_end`.
@@ -6149,8 +6141,7 @@ test "parse void function with builtin body" {
 
 test "parse void function with extern import" {
     // A postfix `extern LIB` fn import builds an empty-block body +
-    // extern_export = .extern_ + extern_lib. (Phase 8 removed the legacy
-    // prefix `extern` spelling that used to produce this same shape.)
+    // extern_export = .extern_ + extern_lib.
     const source = "InitWindow :: (width: i32, height: i32, title: *u8) -> void extern rl;";
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

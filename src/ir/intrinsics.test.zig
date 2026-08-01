@@ -184,7 +184,7 @@ test "every intrinsic declaration in the library is registered" {
     }
     if (missing != 0) return error.UnregisteredIntrinsicDeclaration;
 
-    // …and the converse: an entry naming a declaration that no longer exists.
+    // …and the converse: an entry naming a declaration that does not exist.
     for (&intrinsics.entries) |*e| {
         var found = false;
         for (declared.items) |name| {

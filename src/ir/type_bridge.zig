@@ -14,9 +14,9 @@ const ModuleConstInfo = program_index_mod.ModuleConstInfo;
 /// The single-source type-alias table (`ProgramIndex.type_alias_map`), threaded
 /// explicitly through every name-resolving entry point so a bare name like
 /// `ShaderHandle` (declared `ShaderHandle :: u32`) resolves to its target
-/// rather than a fresh empty-struct stub. Replaces the old `TypeTable.aliases`
-/// borrow (A2.3): there is no hidden alias state — callers pass the map (or
-/// `null` for contexts that never see aliases, e.g. unit tests).
+/// rather than a fresh empty-struct stub. There is no hidden alias state —
+/// callers pass the map (or `null` for contexts that never see aliases, e.g.
+/// unit tests).
 pub const AliasMap = ?*const std.StringHashMap(TypeId);
 
 /// The module-global constant table (`ProgramIndex.module_const_map`), threaded
@@ -456,12 +456,11 @@ pub fn resolveInlineEnum(ed: *const ast.EnumDecl, table: *TypeTable, inner: anyt
 /// Decode an explicit enum-variant value node (`esc :: '\x1b'`, `quit :: 0x100`)
 /// to its integer, or `null` if it isn't a constant the enum machinery
 /// understands (the caller supplies the positional / power-of-2 fallback).
-/// A `char_literal` value is an integer code point — without this arm it
-/// silently fell through to the ordinal fallback, shipping the wrong tag value
-/// with no diagnostic. (Negated values like `lo :: -1` are intentionally NOT
-/// handled here: they still take the positional fallback, matching prior
-/// behavior — a signed tag value is a separate, pre-existing gap the downstream
-/// `@bitCast`-to-u64 tag path can't yet represent.)
+/// A `char_literal` value is an integer code point — without this arm it falls
+/// through to the ordinal fallback, shipping the wrong tag value with no
+/// diagnostic. (Negated values like `lo :: -1` are deliberately NOT handled
+/// here: they take the positional fallback, because the downstream
+/// `@bitCast`-to-u64 tag path cannot represent a signed tag value.)
 fn enumVariantConst(vv: *const Node) ?i64 {
     return switch (vv.data) {
         .int_literal => |il| il.value,

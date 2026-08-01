@@ -42,9 +42,9 @@ test "analyzeDocument: identifier array dimension folds to the const value (issu
         \\Thing :: struct { buf: [MAX]u8; }
     ;
     const doc = try store.openOrUpdate("main.sx", src, 1);
-    // Pre-fix this aborts inside `resolveTypeNode`: the array `.length` node is
-    // an `identifier` (named const), but the code read `.int_literal`
-    // unconditionally. Reaching the assertions at all proves the crash is gone.
+    // The array `.length` node here is an `identifier` (named const), not an
+    // `.int_literal`; `resolveTypeNode` must handle it rather than abort.
+    // Reaching the assertions at all proves it does.
     try store.analyzeDocument(doc);
 
     const buf_ty = fieldTypeOf(doc, "Thing", "buf") orelse return error.SkipZigTest;

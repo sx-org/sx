@@ -240,10 +240,10 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     const error_only = demand == .error_only;
     // 0270: an `if` used in VALUE position (a value context — `:=`/`=` RHS,
     // call arg, `return`, operand, struct-literal field, array element, index)
-    // MUST have an `else` branch. Without one the expression has no value: the
-    // downstream lowering used to either silently pass `0` (const-folded
-    // condition path) or `alloca void` in the backend. Reject it here with a
-    // located diagnostic BEFORE lowering. Value position is signalled by
+    // MUST have an `else` branch. Without one the expression has no value, so
+    // reject it here with a located diagnostic BEFORE lowering — downstream
+    // would silently pass `0` (const-folded condition path) or `alloca void`
+    // in the backend. Value position is signalled by
     // `force_block_value`; a no-`else` `if` used purely as a STATEMENT (incl. an
     // inline `if c then continue;` guard) is lowered with `force_block_value`
     // clear, so this guard never fires for it. A no-`else` `if` that is the
@@ -322,8 +322,8 @@ pub fn lowerIfExpr(self: *Lowering, ie: *const ast.IfExpr, demand: lower_stmt.Ta
     };
     // A bare `if <expr> { }` (no binding) must have a condition type that can
     // be tested as an i1 (bool/integer/pointer/optional). Anything else — a
-    // struct, float, etc. — used to be folded truthy then `@panic` in the
-    // backend (issue 0164); reject it here with a located type error. With a
+    // struct, float, etc. — is rejected here with a located type error rather
+    // than folded truthy and `@panic`ed in the backend (issue 0164). With a
     // binding (`if v := opt`) the condition is required to be an optional, so
     // the optional reduction below applies and we skip the bare-cond check.
     const cond = if (cond_is_optional)
@@ -728,10 +728,10 @@ pub fn lowerWhile(self: *Lowering, we: *const ast.WhileExpr) Ref {
 
 /// View a `List(T)`-like struct as its backing `items` pointer + element type
 /// + live length, so `for list (x)` iterates the elements. Two shapes:
-///   - CURRENT `List`: `{ items: []T, cap }` — `items` is a `[]T` slice whose
-///     own `.ptr`/`.len` ARE the backing pointer and live count.
-///   - LEGACY: `{ items: [*]T, len, … }` — a many-pointer `items` paired with a
-///     sibling `len` field (kept so a user struct of that shape still iterates).
+///   - `{ items: []T, cap }` — `items` is a `[]T` slice whose own `.ptr`/`.len`
+///     ARE the backing pointer and live count.
+///   - `{ items: [*]T, len, … }` — a many-pointer `items` paired with a sibling
+///     `len` field.
 /// Null for anything that isn't such a struct.
 pub fn listView(self: *Lowering, value: Ref, ty: TypeId) ?struct { data: Ref, data_ty: TypeId, len: Ref } {
     if (ty.isBuiltin()) return null;
@@ -739,7 +739,7 @@ pub fn listView(self: *Lowering, value: Ref, ty: TypeId) ?struct { data: Ref, da
     if (info != .@"struct") return null;
     const items_id = self.module.types.internString("items");
 
-    // Current shape: an `items: []T` slice — view via its `.ptr`/`.len`.
+    // Slice shape: an `items: []T` slice — view via its `.ptr`/`.len`.
     for (info.@"struct".fields, 0..) |f, i| {
         if (f.name == items_id and !f.ty.isBuiltin() and self.module.types.get(f.ty) == .slice) {
             const slice_val = self.builder.emit(.{ .struct_get = .{ .base = value, .field_index = @intCast(i) } }, f.ty);
@@ -753,7 +753,7 @@ pub fn listView(self: *Lowering, value: Ref, ty: TypeId) ?struct { data: Ref, da
         }
     }
 
-    // Legacy shape: `items: [*]T` + a sibling `len` field.
+    // Many-pointer shape: `items: [*]T` + a sibling `len` field.
     const len_id = self.module.types.internString("len");
     var items_idx: ?u32 = null;
     var items_ty: TypeId = .unresolved;

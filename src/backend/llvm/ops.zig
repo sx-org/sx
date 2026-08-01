@@ -1384,8 +1384,8 @@ pub const Ops = struct {
         // a COMPTIME (dead) body — the enclosing `#run`/`::` wrapper whose LLVM is
         // never executed. Such a function has no runtime symbol, so emit `undef`
         // instead of a real `call` (which would leave an undefined reference for the
-        // AOT linker). The comptime VALUE is produced by the interp/VM, not this dead
-        // body. Mirrors the old `compiler_call` → undef.
+        // AOT linker). The comptime VALUE is produced by the VM, not this dead
+        // body.
         if (callee_func.is_intrinsic) {
             self.e.mapRef(c.LLVMGetUndef(self.e.toLLVMType(instruction.ty)));
             return;
@@ -2418,10 +2418,9 @@ pub const Ops = struct {
             self.e.mapRef(result);
         } else if (base_kind == c.LLVMPointerTypeKind) {
             // Many-pointer `[*]T` (or a raw `*T`): the base value IS the data
-            // pointer — GEP by `lo` for the new start, `len = hi - lo`. (issue
-            // 0159: a many-pointer base previously fell to the `else` undef arm,
-            // producing a slice with a garbage length. The caller supplies the
-            // bound via `hi`; no length is read from the unbounded pointer.)
+            // pointer — GEP by `lo` for the new start, `len = hi - lo`. The
+            // caller supplies the bound via `hi`; no length is read from the
+            // unbounded pointer (issue 0159).
             var lo_indices = [_]c.LLVMValueRef{lo};
             const new_ptr = c.LLVMBuildGEP2(self.e.builder, elem_ty, base, &lo_indices, 1, "ss.ptr");
             var new_len = c.LLVMBuildSub(self.e.builder, hi, lo, "ss.len");

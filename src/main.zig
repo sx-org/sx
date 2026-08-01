@@ -590,7 +590,7 @@ const BuildHooksCtx = struct {
     has_jni_main: bool,
 
     /// `emit_object()` — emit the already verified/optimized module to its object file,
-    /// return the path. The compiler no longer auto-emits; the sx driver calls this.
+    /// return the path. The sx driver calls this; the compiler does not emit on its own.
     fn emitObject(ctx_opaque: *anyopaque) anyerror![]const u8 {
         const self: *BuildHooksCtx = @ptrCast(@alignCast(ctx_opaque));
         const e = if (self.comp.ir_emitter) |*p| p else return error.NoEmitter;
@@ -949,7 +949,7 @@ fn saveObjectToCache(obj_buf: sx.llvm_api.c.LLVMMemoryBufferRef, io: std.Io, cac
     // Stage through a PID-UNIQUE temp inside the cache dir, then rename —
     // atomic on POSIX (same directory), so concurrent `--cache` processes
     // (the parallel corpus runner) never observe or clobber a half-written
-    // object. The old fixed `.sx-cache-tmp` staging path raced (issue 0336).
+    // object (issue 0336).
     var tmp_buf: [64]u8 = undefined;
     const tmp = std.fmt.bufPrint(&tmp_buf, ".sx-cache/.tmp-{d}", .{std.c.getpid()}) catch return;
     std.Io.Dir.createDirPath(.cwd(), io, ".sx-cache") catch return;

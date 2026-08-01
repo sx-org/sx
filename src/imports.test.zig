@@ -459,12 +459,11 @@ test "buildImportFacts: same-module duplicate top-level name is diagnosed" {
     try expectTag(m_idx.names.get("foo") orelse return error.MissingFoo, .fn_decl);
 }
 
-// F1: the duplicate-name invariant must also cover NAMESPACE ALIASES. A
+// The duplicate-name invariant also covers NAMESPACE ALIASES. A
 // `dup :: #import "…"` alias colliding with a same-module authored name is a
 // duplicate in EITHER order — `addNamespace` (alias second) and `addOwnDecl`
-// (alias first) each refuse the second author and the site diagnoses it. Before
-// the fix the fn-then-alias order compiled clean (silent first-win in the scalar
-// index). Surviving author is whichever came FIRST.
+// (alias first) each refuse the second author and the site diagnoses it.
+// Surviving author is whichever came FIRST.
 test "buildImportFacts: fn-then-namespace-alias same-module collision is diagnosed" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -553,12 +552,11 @@ test "canonicalizePath: abs + cwd-relative + redundant ./ and .. spellings unify
     try std.testing.expectEqualStrings(canon, try imports.canonicalizePath(alloc, rel_dotted));
 }
 
-// ── DeclTable unit tests (Fork C S1.1) ──
+// ── DeclTable unit tests ──
 
 // Every source / imported / namespaced declaration gets a stable DeclId; the
 // RawDeclRef → DeclId → AST node round-trip holds; a generic struct is keyable
-// by DeclId; and the namespace target records its members' ids. The OLD facts
-// (`module_decls` / `ns_edges`) are untouched — the table is built in parallel.
+// by DeclId; and the namespace target records its members' ids.
 test "buildDeclTable: stable DeclId per decl, round-trip, struct keying, namespace member ids" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

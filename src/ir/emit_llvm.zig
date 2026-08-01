@@ -123,7 +123,7 @@ pub const LLVMEmitter = struct {
     print_emission_diagnostics: bool = true,
     /// Runtime-reachable set + the parent edges that found each function.
     /// Computed once at the top of `emit`; used to report the CALL PATH when a
-    /// compile-time-only function turns out to be reachable from the binary.
+    /// compile-time-only function is reachable from the binary.
     reach: ?@import("reachability.zig").Reachability = null,
 
     // Allocator for temporary bookkeeping
@@ -947,9 +947,8 @@ pub const LLVMEmitter = struct {
 
             const func_id = ir_inst.FuncId.fromIndex(@intCast(i));
             sx_trace_clear();
-            // The comptime VM is the SOLE evaluator (P5.7) — no legacy fallback.
-            // A VM-run `#run` side-effect writes its `print` output directly to
-            // fd 1 via host-FFI (no buffered interp output to flush). A bail is a
+            // The comptime VM is the SOLE evaluator. A `#run` side-effect writes
+            // its `print` output directly to fd 1 via host-FFI. A bail is a
             // build-gating error naming the reason.
             const evaluation = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources, null);
             defer evaluation.destroy();
@@ -1017,9 +1016,9 @@ pub const LLVMEmitter = struct {
 
             // Evaluate comptime initializer if present
             if (global.comptime_func) |func_id| {
-                // The comptime VM is the SOLE evaluator (P5.7) — no legacy
-                // fallback. A bail is ALWAYS a build-gating error naming the
-                // reason; its result Value is materialized by `valueToLLVMConst`.
+                // The comptime VM is the SOLE evaluator. A bail is ALWAYS a
+                // build-gating error naming the reason; its result Value is
+                // materialized by `valueToLLVMConst`.
                 sx_trace_clear();
                 const evaluation = comptime_vm.tryEval(self.alloc, self.ir_mod, func_id, &self.build_config, self.import_sources, null);
                 defer evaluation.destroy();

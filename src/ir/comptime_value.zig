@@ -62,7 +62,7 @@ pub const Value = union(enum) {
 
     /// A pointer to heap-allocated memory, with an optional byte offset.
     pub const HeapPtr = struct {
-        id: u32, // index into the legacy heap (historical)
+        id: u32, // index into the comptime heap
         offset: u32 = 0,
     };
 

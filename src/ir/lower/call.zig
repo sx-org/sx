@@ -343,10 +343,9 @@ fn nameAuthoredOnlyPrivately(self: *Lowering, name: []const u8) bool {
 /// an importer's unrelated module-scope `h` hijacks (or the visibility
 /// gate rejects) an imported module's own `h := ...; h(...)` sites.
 /// A pack-element alias is excluded (the substitution path owns it), as
-/// is a non-callable binding (pre-existing behavior kept: it falls
-/// through to the program-fn paths and the trailing any-binding
-/// indirect-call fallback).
-/// Nearest-scope resolution (review F1): a nested local fn decl at a
+/// is a non-callable binding: it falls through to the program-fn paths and
+/// the trailing any-binding indirect-call fallback.
+/// Nearest-scope resolution: a nested local fn decl at a
 /// NEARER level owns the name — `lookupNearest` walks the chain once,
 /// consulting BOTH per-level namespaces, so an outer callable var never
 /// beats an inner nested fn (and vice versa).
@@ -1439,9 +1438,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 }
             }
             // May be a variable holding a function pointer (non-closure).
-            // Function-typed bindings were dispatched before the program-fn
-            // paths above (issue 0217); this trailing fallback keeps the
-            // pre-existing behavior for every other binding shape.
+            // Function-typed bindings dispatch through the program-fn paths
+            // above (issue 0217); this trailing fallback covers every other
+            // binding shape.
             if (self.scope) |scope| {
                 // A binding reachable only across a nested-fn boundary is an
                 // enclosing local — never a valid indirect-call target here
@@ -1755,7 +1754,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                 gate: {
                     // A qualified call which selected an exact author above has
                     // already returned and must never be re-selected through
-                    // this legacy one-segment gate.
+                    // this one-segment gate.
                     if (qualified_author != null) break :gate;
                     if (fa.object.data != .identifier) break :gate;
                     const oname = fa.object.data.identifier.name;
@@ -2278,9 +2277,9 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
                         // receiver doesn't match. Only when it fails to bind all
                         // its type-params for THIS receiver do we re-select the
                         // receiver-matching author — so a working call is never
-                        // perturbed; the previously-panicking path either finds
-                        // the right candidate or emits a clean diagnostic
-                        // (never an `.unresolved` reaching codegen).
+                        // perturbed, and the mismatching path either finds the
+                        // right candidate or emits a clean diagnostic (never an
+                        // `.unresolved` reaching codegen).
                         // Always resolve the receiver-specific author (not just
                         // on bind-failure): a fully-generic `(x: $T)` last-wins
                         // winner BINDS for any receiver, so a failure-gated
@@ -3343,13 +3342,13 @@ pub fn tryLowerReflectionCall(self: *Lowering, name: []const u8, c: *const ast.C
     // classification covers all 7; it runs before dispatch.
     if (self.reflectionTypeArgGuard(name, c)) |sentinel| return sentinel;
 
-    // `declare(name)` and `define(handle, info)` are now ordinary sx functions
+    // `declare(name)` and `define(handle, info)` are ordinary sx functions
     // (`modules/std/meta.sx`) written over the `intrinsic` primitives
-    // (`declare_type` / `register_type`) — no longer intercepted here.
-    // (`preregisterForwardTypes` still scans for the literal `declare("Name")`
+    // (`declare_type` / `register_type`), so they are not intercepted here.
+    // (`preregisterForwardTypes` scans for the literal `declare("Name")`
     // spelling so a `*Name` self-reference forward-registers before the body
     // lowers; the sx `declare` calls `declare_type`, which returns that slot.
-    // The `.enum(…)` arg to `define` now infers `TypeInfo` from the sx fn's
+    // The `.enum(…)` arg to `define` infers `TypeInfo` from the sx fn's
     // declared param type via the ordinary call path's target-type threading.)
     if (std.mem.eql(u8, name, "type_info")) {
         // Comptime reflection-into-data: reflect a type INTO a `TypeInfo`
@@ -4346,8 +4345,8 @@ fn rejectLeftoverSpreadPlaceholder(self: *Lowering, what: []const u8, args: []co
     return false;
 }
 
-/// True when `fd` declares a variadic param (either surface form — the
-/// legacy `name: ..T`, the slice variadic `..name: []T`, or an extern
+/// True when `fd` declares a variadic param (any surface form —
+/// `name: ..T`, the slice variadic `..name: []T`, or an extern
 /// C `...` tail): its call sites legitimately carry a spread placeholder
 /// into `packVariadicCallArgs`, so the leftover-placeholder rejection
 /// must not fire for it.

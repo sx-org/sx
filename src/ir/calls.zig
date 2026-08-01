@@ -186,7 +186,7 @@ pub const CallResolver = struct {
                 return refl(bare_name, self.l.module.types.findByName(self.l.module.types.internString("TraceFrame")) orelse .unresolved);
             // Bare same-name flat collision (R5 §C): route through the ONE
             // author producer `selectedFreeAuthor` so `plan` types the call as the
-            // SAME author the lowering call-path binds — they can no longer
+            // SAME author the lowering call-path binds — the two cannot
             // disagree. `.ambiguous` / `.none` fall through to the first-wins
             // path below, byte-for-byte; `.not_callable` means the visible
             // author is a value, so the name-keyed function arms below must not
@@ -896,11 +896,11 @@ pub const CallResolver = struct {
             } },
             .not_qualified => self.l.alloc.free(object_path),
         }
-        // Source-less unit/comptime hosts predate import facts and register
-        // namespace functions only under their qualified compatibility key.
-        // Preserve that narrow legacy form without weakening source-backed
-        // programs (where an unknown dotted root remains a value/unresolved
-        // receiver and cannot cross-bind by terminal name).
+        // Source-less unit/comptime hosts carry no import facts and register
+        // namespace functions only under their qualified key. That narrow form
+        // must not weaken source-backed programs (where an unknown dotted root
+        // remains a value/unresolved receiver and cannot cross-bind by
+        // terminal name).
         if (self.l.current_source_file == null and self.l.main_file == null and fa.object.data == .identifier) {
             const qualified = std.fmt.allocPrint(self.l.alloc, "{s}.{s}", .{ fa.object.data.identifier.name, fa.field }) catch
                 @panic("out of memory while classifying source-less qualified call");

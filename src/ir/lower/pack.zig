@@ -382,8 +382,8 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
         return;
     }
     // Find variadic param index. The two surface forms differ in
-    // what `p.type_expr` resolves to: legacy `name: ..T` declares T
-    // (element type), new `..name: []T` declares []T (already a
+    // what `p.type_expr` resolves to: `name: ..T` declares T
+    // (element type), `..name: []T` declares []T (already a
     // slice). Unwrap the latter so the per-element packing below
     // sees T in both cases.
     var variadic_idx: ?usize = null;
@@ -595,11 +595,11 @@ pub fn packVariadicCallArgs(self: *Lowering, fd: *const ast.FnDecl, c: *const as
 /// Slice IR type is `[]Any` (since `Type → .any`); the interp
 /// stores whichever Value the elements actually carry.
 pub fn buildPackSliceValue(self: *Lowering, arg_types: []const TypeId) Ref {
-    // A bare `$<pack>` is a `[]Type` value. Since the dedicated `Type` builtin
-    // (`.type_value`, 8 bytes) replaced the old `Type → .any` (16-byte) mapping,
-    // the slice element is `type_value` — building it as `[]Any` here stored 8-byte
-    // `const_type` words into 16-byte slots, so a `[]Type` reader (8-byte stride)
-    // read `[t0, pad, t1, …]` instead of `[t0, t1, …]` (issue 0143).
+    // A bare `$<pack>` is a `[]Type` value whose element is the dedicated
+    // `Type` builtin (`.type_value`, 8 bytes). Building it as `[]Any` would
+    // store 8-byte `const_type` words into 16-byte slots, so a `[]Type` reader
+    // (8-byte stride) reads `[t0, pad, t1, …]` instead of `[t0, t1, …]`
+    // (issue 0143).
     const ty_slice_ty = self.module.types.sliceOf(.type_value);
     const ty_ptr_ty = self.module.types.ptrTo(.type_value);
 
@@ -1049,7 +1049,7 @@ pub fn lowerPackFnCallNamed(
         if (pack_is_comptime) {
             const it = self.inferExprType(a);
             // The lowered ref is the fallback type source, but a bare fn value
-            // rides in the legacy integer word — take its signature so the
+            // rides in the integer word — take its signature so the
             // element stays callable in the mono (issue 0368).
             pack_arg_types.append(self.alloc, if (it == .unresolved) self.valueTypeOfRef(r, self.builder.getRefType(r)) else it) catch return self.builder.constInt(0, .void);
         } else {

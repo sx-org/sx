@@ -28,12 +28,12 @@ pub const BuildConfig = struct {
 
     /// Post-link callback registered via
     /// `BuildOptions.set_post_link_callback(fn)`. When set, the
-    /// compiler re-enters the IR interpreter after `target.link()`
+    /// compiler re-enters the comptime VM after `target.link()`
     /// and invokes this function with no args. A `false` return is
     /// treated as a build failure.
     post_link_callback_fn: ?FuncId = null,
-    /// True when the post-link callback was registered via `on_build(cb)` (the
-    /// Phase 5 form, `cb: (opt: BuildOptions) -> bool`) rather than the legacy
+    /// True when the post-link callback was registered via `on_build(cb)`
+    /// (`cb: (opt: BuildOptions) -> bool`) rather than via
     /// `set_post_link_callback(cb)` (`cb: () -> bool`). When set, the compiler
     /// invokes the callback with the opaque `BuildOptions` handle as its arg.
     post_link_takes_options: bool = false,
@@ -126,8 +126,8 @@ pub const BuildConfig = struct {
 pub const BuildHooks = struct {
     ctx: *anyopaque,
     /// Verify + emit the codegen'd module to its object file; return the path
-    /// (ctx-owned). The `emit_object()` primitive — an ACTION, since the driver
-    /// no longer auto-emits (everything is sx-driven via `default_pipeline`).
+    /// (ctx-owned). The `emit_object()` primitive — an ACTION: emission is
+    /// sx-driven via `default_pipeline`.
     emit_object: *const fn (ctx: *anyopaque) anyerror![]const u8,
     /// Link `objects` → `output`, with the given `libraries` / `frameworks` /
     /// link `flags` / `target` triple. (`objects` is the full object list; the

@@ -605,9 +605,8 @@ pub const BuiltinId = enum(u16) {
     rt_member_type,
     rt_field_offset,
     rt_variant_value,
-    // (`declare` and `define` are no longer builtins — they're plain sx over the
-    // `declare_type` / `register_type` compiler-API primitives in
-    // `modules/std/meta.sx`.)
+    // (`declare` and `define` are plain sx over the `declare_type` /
+    // `register_type` compiler-API primitives in `modules/std/meta.sx`.)
     // The comptime reflection INVERSE of `define`: read a type's variants
     // (name + payload type) out of the type table and CONSTRUCT the same
     // `.enum(EnumInfo{ variants })` value `define` decodes. Comptime-only

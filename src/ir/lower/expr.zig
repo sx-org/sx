@@ -144,12 +144,11 @@ pub fn lowerStructLiteral(self: *Lowering, sl: *const ast.StructLiteral, span: a
     }
 
     const ty: TypeId = if (sl.struct_name) |name|
-        // Source-aware (E2): a bare struct-literal type name resolves to the
+        // Source-aware: a bare struct-literal type name resolves to the
         // querying source's OWN same-name author, not the global `findByName`
         // first-match — so `Box{...}` in module B builds B's `Box`, never a
         // flat-imported A's. `.undeclared`/`.pending` keep the empty-struct
-        // stub (byte-identical to the legacy `findByName orelse intern`);
-        // `.ambiguous`/`.not_visible` surface their loud diagnostic + poison.
+        // stub; `.ambiguous`/`.not_visible` surface their loud diagnostic + poison.
         self.resolveNominalLeaf(name, false, span)
     else if (sl.type_expr) |te|
         // Generic struct literal: Pair(i32){ ... } — resolve type from type_expr
@@ -760,7 +759,7 @@ pub fn builtinTypeName(ty: TypeId) ?[]const u8 {
 /// struct's own `ptr: *T` as `[*]unresolved` and its `len` as `i64`). For
 /// non-container types with NO matching real member the pseudo typing is
 /// kept as a FALLBACK — `#get len` accessors (e.g. `List.len`) have no
-/// field entry and historically type through it.
+/// field entry and type through it.
 pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
     const is_special_container = ty == .string or (!ty.isBuiltin() and switch (self.module.types.get(ty)) {
         .slice, .array, .vector => true,
@@ -820,7 +819,7 @@ pub fn resolveFieldType(self: *Lowering, ty: TypeId, field: []const u8) TypeId {
     for (struct_fields) |f| {
         if (f.name == field_name_id) return f.ty;
     }
-    // Legacy pseudo-field fallback for non-containers with no matching real
+    // Pseudo-field fallback for non-containers with no matching real
     // member (`#get len` accessors type through here).
     if (std.mem.eql(u8, field, "len")) return .i64;
     if (std.mem.eql(u8, field, "ptr")) {
@@ -1473,7 +1472,7 @@ pub fn getAccessorFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const as
         return if (m.fd.is_get) m.fd else null;
     }
     if (self.hasPlainStructAuthor(ty)) return null;
-    // Legacy fallback for methods supplied outside the inline struct decl.
+    // Fallback for methods supplied outside the inline struct decl.
     const info = self.module.types.get(ty);
     if (info == .@"struct") {
         const sname = self.module.types.getString(info.@"struct".name);
@@ -1536,7 +1535,7 @@ pub fn getSetterFor(self: *Lowering, ty: TypeId, field: []const u8) ?*const ast.
         return if (m.fd.is_set) m.fd else null;
     }
     if (self.hasPlainStructAuthor(ty)) return null;
-    // Legacy fallback for methods supplied outside the inline struct decl.
+    // Fallback for methods supplied outside the inline struct decl.
     const info = self.module.types.get(ty);
     if (info == .@"struct") {
         const sname = self.module.types.getString(info.@"struct".name);
@@ -1695,7 +1694,7 @@ pub fn lowerEnumLiteral(self: *Lowering, el: *const ast.EnumLiteral) Ref {
     }
 
     // The destination must be a known enum / tagged union that carries the
-    // named variant — every other shape used to lower to a silent 0.
+    // named variant; any other shape would lower to a silent 0.
     if (target == .unresolved) {
         // Cascade guard: an unresolved destination usually means the slot's
         // TYPE already failed to resolve and was diagnosed (not-visible /
@@ -2065,11 +2064,10 @@ pub fn lowerArrayLiteral(self: *Lowering, al: *const ast.ArrayLiteral) Ref {
 
     // First, check explicit type annotation on the literal (e.g. Vector(3,f32).[1,2,3]).
     // The prefix slot names the AGGREGATE type; a prefix that resolves to
-    // anything else (scalar `i16.[…]`, struct `Point.[…]`) reads as an
-    // element-type prefix — a second meaning this spelling never had. It
-    // used to be silently ignored (elements fell back to the literal
-    // default, so `i32.[1]` built a `[1]i64`); refuse it instead
-    // (issue 0293).
+    // anything else (scalar `i16.[…]`, struct `Point.[…]`) would read as an
+    // element-type prefix — a second meaning this spelling does not carry.
+    // Silently ignoring it lets elements fall back to the literal default, so
+    // `i32.[1]` builds a `[1]i64`; refuse it instead (issue 0293).
     if (al.type_expr) |te| {
         const resolved = self.resolveArrayLiteralType(te);
         if (resolved != .unresolved) {
@@ -3201,9 +3199,9 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                 }
                 // Type-as-value: a bare function name in a `Type` (`.type_value`)
                 // slot is its FUNCTION TYPE — `const_type(() -> R)` — so it prints
-                // / reflects as the real function type, not a func-ref. For a
-                // genuine `Any` param the old behavior is kept (a formatted
-                // type-name string boxed as Any).
+                // / reflects as the real function type, not a func-ref. A
+                // genuine `Any` param takes a formatted type-name string boxed
+                // as Any.
                 if (self.target_type == .any or self.target_type == .type_value) {
                     const fd_any: ?*const ast.FnDecl = self.program_index.fn_ast_map.get(eff_fn_name) orelse fd_blk: {
                         switch (self.selectCallableAuthor(id.name, self.current_source_file.?, .plain_free)) {
@@ -3313,13 +3311,13 @@ pub fn lowerExpr(self: *Lowering, node: *const Node) Ref {
                             // examples/50-smoke.sx has both shapes.
                         }
                     }
-                    // A bare function value keeps the legacy integer-shaped IR
+                    // A bare function value keeps the integer-shaped IR
                     // used by the async/fiber lowering paths (issue 0237), but
-                    // that word must match the target pointer width. Hard-coding
-                    // i64 made an otherwise exact callback assignment fail on
+                    // that word must match the target pointer width. Hard-coded
+                    // i64 fails an otherwise exact callback assignment on
                     // wasm32: the destination function slot is 4 bytes while the
-                    // synthetic source type claimed 8. Preserve i64 byte-for-
-                    // byte on existing 64-bit targets; use the canonical signed
+                    // synthetic source type claims 8. Keep i64
+                    // on 64-bit targets; use the canonical signed
                     // pointer word on narrower targets.
                     const func_ref_ty: TypeId = if (self.module.types.pointer_size == 8) .i64 else .isize;
                     break :blk self.builder.emit(.{ .func_ref = fid }, func_ref_ty);
@@ -4269,9 +4267,9 @@ pub fn refCapturePointee(self: *Lowering, node: *const Node) ?TypeId {
 ///   • `optional` — the caller emits `optional_has_value`
 /// Everything else (float, void, string, any, type_value, struct/union/tuple/
 /// array/slice/vector/function/closure/protocol/pack) reaches condBr as a
-/// non-comparable aggregate or a value with no truthiness, and previously got
-/// silently folded truthy then `@panic`d in the backend (issue 0164). Such a
-/// condition is a type error — see `checkConditionType`.
+/// non-comparable aggregate or a value with no truthiness, which folds truthy
+/// and `@panic`s in the backend (issue 0164). Such a condition is a type
+/// error — see `checkConditionType`.
 fn isValidConditionType(self: *Lowering, ty: TypeId) bool {
     if (ty == .unresolved) return true; // already-diagnosed elsewhere; don't double-report
     return switch (self.module.types.get(ty)) {
@@ -4373,8 +4371,7 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
     // `{tag, data-pointer}` — the only comparable words are the view
     // address (accidental pointer identity) — so there is no meaningful
     // language-level equality. Unbox to a typed value first, or compare
-    // `type_of(av)` for tag questions. (Supersedes the issue-0199 arm,
-    // which compared the old value-in-payload words.)
+    // `type_of(av)` for tag questions (issue 0199).
     if (bop.op == .eq or bop.op == .neq) {
         const lhs_ty = self.inferExprType(bop.lhs);
         const rhs_ty = self.inferExprType(bop.rhs);
@@ -4544,8 +4541,8 @@ pub fn lowerBinaryOp(self: *Lowering, bop: *const ast.BinaryOp) Ref {
 
     // Auto-unwrap optional operands for arithmetic/comparison — ONLY when the
     // operand is PROVEN present by flow narrowing (issue 0185, the operand-side
-    // sibling of 0179). An un-narrowed `?T` operand used to unwrap
-    // UNCONDITIONALLY, so a null operand silently became its zero payload
+    // sibling of 0179). Unwrapping an un-narrowed `?T` operand
+    // unconditionally turns a null operand into its zero payload
     // (`null + 10` → `10`, no diagnostic). `lowerIdentifier` tags a
     // guard-narrowed local's loaded `Ref` into `narrowed_refs`; an un-narrowed
     // optional operand is rejected loudly (then still unwrapped so the IR stays

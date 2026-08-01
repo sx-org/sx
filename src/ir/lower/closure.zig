@@ -195,11 +195,10 @@ pub fn lowerLambdaTyped(self: *Lowering, lam: *const ast.Lambda, env_storage: En
         //                         block's tail is a discarded statement, not an
         //                         implicit return — only an explicit `-> R`,
         //                         handled above, makes the tail the value).
-        // The old code always used inferExprType(lam.body); for a block body
-        // that mis-inferred — void/noreturn when the value came only from early
-        // `return`s (issue 0187), or `.unresolved` when the tail referenced a
-        // block-local the temp scope never bound (a variant the same fix
-        // subsumes) → LLVM panic.
+        // A block body needs its own inference: plain `inferExprType(lam.body)`
+        // yields void/noreturn when the value comes only from early `return`s
+        // (issue 0187), or `.unresolved` when the tail references a block-local
+        // the temp scope never bound — both panic in LLVM.
         const inferred = if (lam.body.data == .block)
             self.findReturnValueType(lam.body) orelse .void
         else
@@ -626,8 +625,7 @@ pub fn collectCaptures(self: *Lowering, node: *const Node, param_names: *std.Str
             // Lexical scope wins over program-wide fn/type tables (issue 0251,
             // same family as 0217 for call dispatch): a local or param that
             // shadows a global fn/type name is a real value binding and MUST
-            // be captured — skipping it (as the old `fn_ast_map.contains`
-            // check did, before the scope lookup) left the closure body
+            // be captured; skipping it would leave the closure body
             // reading/writing garbage. `lookupNearest` consults BOTH per-level
             // namespaces (value bindings + nested local fns) at the nearest
             // declaring depth, so a shadowing local wins over an outer fn name

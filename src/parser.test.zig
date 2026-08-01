@@ -106,9 +106,8 @@ test "parser: bare extern leaves abi == .default" {
     try std.testing.expectEqual(ast.ABI.default, fd.abi);
 }
 
-// Lock: `abi(.c)` parses standalone (no extern/export) in the postfix slot — the
-// migrated spelling of the old `callconv(.c)` on an ordinary function pointer /
-// fn decl. And `abi(.naked)` parses (naked-asm ABI).
+// Lock: `abi(.c)` parses standalone (no extern/export) in the postfix slot of an
+// ordinary function pointer / fn decl. And `abi(.naked)` parses (naked-asm ABI).
 test "parser: abi(.c) and abi(.naked) parse standalone" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -283,17 +282,17 @@ test "parser: .{ x } shorthand records was_shorthand" {
     try std.testing.expect(fis[0].was_shorthand);
 }
 
-// The legacy bare trailing-`!` spelling `-> T !` was removed — the canonical
-// failable result list is `-> (T, !)`. The bare form is now a parse error.
-test "parser: legacy bare `-> T !` is rejected" {
+// The failable result list is `-> (T, !)`; a bare trailing `!` after the value
+// type is a parse error.
+test "parser: bare `-> T !` is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () -> i64 ! { 0 }");
     try std.testing.expectError(error.ParseError, parser.parse());
 }
 
-// Likewise the legacy `-> Tuple(A, B) !` spelling — write `-> (A, B, !)`.
-test "parser: legacy bare `-> Tuple(A, B) !` is rejected" {
+// Likewise `-> Tuple(A, B) !` — write `-> (A, B, !)`.
+test "parser: bare `-> Tuple(A, B) !` is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () -> Tuple(i64, i32) !ParseErr { 0 }");
@@ -311,8 +310,8 @@ test "parser: -> ! stays a bare error_type_expr" {
     try std.testing.expect(rt.data == .error_type_expr);
 }
 
-// Bare-paren `-> (T, !)` is a SINGLE-value failable return (= `-> T !`): one
-// value slot + a trailing error channel. Parses to a `(T, !)` tuple_type_expr —
+// Bare-paren `-> (T, !)` is a SINGLE-value failable return: one value slot +
+// a trailing error channel. Parses to a `(T, !)` tuple_type_expr —
 // NOT a multi-return signature (only ≥2 value slots are `return_type_expr`).
 test "parser: -> (T, !) is a single-value failable, not multi-return" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -359,8 +358,7 @@ test "parser: bare-paren grouping (a + b) still parses" {
 
 // Regression (issue 0231): a closure-type alias `CB :: Closure(i32) -> i32;`
 // parses. The const-decl RHS routes a `Closure(...)` head through the
-// closure-type parse so the `-> R` tail is consumed (a bare `Closure(i32)`
-// call used to leave `->` dangling → "expected ';'"). Node shape: a
+// closure-type parse so the `-> R` tail is consumed. Node shape: a
 // `const_decl` whose value is a `closure_type_expr` carrying the return type.
 test "parser: closure-type alias in const-decl RHS parses to closure_type_expr" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

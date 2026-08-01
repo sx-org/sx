@@ -52,7 +52,7 @@ pub const UnknownTypeChecker = struct {
     main_file: ?[]const u8,
     /// Source that authors the declaration currently being checked. This is
     /// semantic lookup authority, kept separate from the diagnostic renderer's
-    /// mutable current file so a previously visited facade cannot reclassify a
+    /// mutable current file so an already-visited facade cannot reclassify a
     /// main-file protocol constraint (issue 0328).
     author_source: ?[]const u8 = null,
     /// Declared error-set names (`E :: error { ... }`) gathered across every
@@ -842,12 +842,11 @@ pub const UnknownTypeChecker = struct {
             .struct_literal => |sl| {
                 // A NAMED struct-literal head (`Point{ … }`) names its type
                 // exactly like a declaration annotation — validate it through the
-                // same unknown-type walk. Without this, an undeclared literal type
-                // name (`NoSuchType{ a = 1 }`) bypassed the checker (the main-file
-                // diagnostic authority) and reached `resolveNominalLeaf`'s
-                // `.undeclared` main-file arm, which keeps the legacy empty-struct
-                // stub and defers to THIS checker — so nothing diagnosed it and the
-                // literal silently compiled with a 0-field struct, dropping every
+                // same unknown-type walk. Without it, an undeclared literal type
+                // name (`NoSuchType{ a = 1 }`) reaches `resolveNominalLeaf`'s
+                // `.undeclared` main-file arm, which keeps the empty-struct stub
+                // and defers back to THIS checker — nothing diagnoses it and the
+                // literal silently compiles with a 0-field struct, dropping every
                 // field (issue 0220). `struct_name` is always a bare, non-raw
                 // identifier (the parser only sets it for the simple-name form;
                 // `mod.Type{…}` and `Gen(args){…}` carry `type_expr` instead,

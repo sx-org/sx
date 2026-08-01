@@ -1170,12 +1170,11 @@ pub fn emitObjcDefinedClassDeallocImp(self: *Lowering, fcd: *const ast.RuntimeCl
         };
     }
 
-    // (3) Free state through the captured allocator (M4.0a + M4.0b):
+    // (3) Free state through the captured allocator:
     //       allocator = load struct_gep(state, 0)   ← __sx_allocator field
     //       allocator.dealloc(state)                 ← inline-protocol fn-ptr at field 2
-    // Compare to the old `free(state)` — that ignored the per-instance
-    // allocator and went straight to libc. Now `push Context{ allocator = arena }`
-    // round-trips correctly: arena.alloc on construction, arena.dealloc here.
+    // `push Context{ allocator = arena }` round-trips: arena.alloc on
+    // construction, arena.dealloc here.
     if (self.module.types.findByName(self.module.types.internString("Context")) == null) {
         if (self.diagnostics) |d| {
             d.addFmt(.err, ast.Span{ .start = 0, .end = 0 }, "emitObjcDefinedClassDeallocImp: Context type not found for class '{s}' (compiler bug)", .{fcd.name});

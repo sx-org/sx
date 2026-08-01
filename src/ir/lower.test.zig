@@ -1145,8 +1145,8 @@ test "lower: vectorLaneIndex maps swizzle components, colour aliases, rejects no
     try std.testing.expectEqual(@as(?u32, 2), Lowering.vectorLaneIndex("b"));
     try std.testing.expectEqual(@as(?u32, 3), Lowering.vectorLaneIndex("a"));
     // Any non-lane field is rejected (null) so the read and write paths share
-    // one rule — a non-lane store no longer falls through to an .unresolved
-    // pointee that panics at LLVM emission.
+    // one rule — a non-lane store must not reach an .unresolved pointee that
+    // panics at LLVM emission.
     try std.testing.expectEqual(@as(?u32, null), Lowering.vectorLaneIndex("q"));
     try std.testing.expectEqual(@as(?u32, null), Lowering.vectorLaneIndex("xy"));
     try std.testing.expectEqual(@as(?u32, null), Lowering.vectorLaneIndex("len"));
@@ -1189,8 +1189,9 @@ test "lower: assigning to a missing struct field emits field-not-found, no panic
 
     var lowering = Lowering.init(&module);
     lowering.diagnostics = &diags;
-    // Pre-fix this stored through a pointer-to-`.unresolved` that panicked at LLVM
-    // emission; the fix bails with the read path's field-not-found diagnostic.
+    // An unresolved field target bails with the read path's field-not-found
+    // diagnostic rather than storing through a pointer-to-`.unresolved`, which
+    // panics at LLVM emission.
     lowering.lowerFunction(&fd, "main", false);
 
     var found = false;
@@ -1239,11 +1240,11 @@ test "lower: deref-assign struct literal typed from pointee, not fn return type 
 
     var lowering = Lowering.init(&module);
     lowering.diagnostics = &diags;
-    // Pre-fix the deref-LHS assign arm did not seed target_type, so the
-    // anonymous literal was typed from the AMBIENT target_type — the fn's
-    // return type (i64) — and the store diagnosed "cannot assign 'target'
-    // of type 'T' with a value of type 'i64'" (issue 0215). Post-fix the
-    // literal takes the pointee type T and lowering is diagnostic-free.
+    // The deref-LHS assign arm seeds target_type with the pointee type T, so
+    // the anonymous literal takes T and lowering is diagnostic-free. Typing it
+    // from the AMBIENT target_type — the fn's return type (i64) — would
+    // diagnose "cannot assign 'target' of type 'T' with a value of type 'i64'"
+    // (issue 0215).
     lowering.lowerFunction(&fd, "mk", false);
 
     for (diags.items.items) |d| {
@@ -1266,10 +1267,10 @@ test "lower: assignment to an undeclared identifier is diagnosed, '_' discard st
     const span = ast.Span{ .start = 0, .end = 0 };
 
     // main :: () { totl = 42; cnt += 1; _ = 3; }
-    // `totl` / `cnt` exist nowhere — pre-fix the RHS lowered and the store
-    // was silently DISCARDED (no local slot, failed global lookup had no
-    // else branch). Post-fix each emits an "unresolved ... in assignment"
-    // error; the `_ = expr` discard idiom stays diagnostic-free.
+    // `totl` / `cnt` exist nowhere (no local slot, no visible global), so each
+    // emits an "unresolved ... in assignment" error instead of lowering the RHS
+    // and DISCARDING the store; the `_ = expr` discard idiom stays
+    // diagnostic-free.
     var totl_ident = Node{ .span = span, .data = .{ .identifier = .{ .name = "totl" } } };
     var forty_two = Node{ .span = span, .data = .{ .int_literal = .{ .value = 42 } } };
     var assign_plain = Node{ .span = span, .data = .{ .assignment = .{ .target = &totl_ident, .op = .assign, .value = &forty_two } } };
@@ -1315,11 +1316,10 @@ test "lower: multi-assign to an undeclared identifier is diagnosed, '_' discard 
     const span = ast.Span{ .start = 0, .end = 0 };
 
     // main :: () { totl, _ = 42, 3; }
-    // `totl` exists nowhere — pre-fix the ident-target arm of
-    // lowerMultiAssign only consulted local scope and silently DROPPED the
-    // store on lookup failure (no global fallback, no diagnostic; the
-    // multi-assign sibling of issue 0216). Post-fix it emits an
-    // "unresolved ... in assignment" error; the `_` discard leg stays
+    // `totl` exists nowhere — the ident-target arm of lowerMultiAssign
+    // consults local scope, then globals, and emits an "unresolved ... in
+    // assignment" error rather than DROPPING the store on lookup failure (the
+    // multi-assign sibling of issue 0216); the `_` discard leg stays
     // diagnostic-free.
     var totl_ident = Node{ .span = span, .data = .{ .identifier = .{ .name = "totl" } } };
     var underscore = Node{ .span = span, .data = .{ .identifier = .{ .name = "_" } } };
@@ -1366,11 +1366,10 @@ test "lower: multi-assign un-narrows its ident targets, unrelated names stay nar
     //         y := q + 1;        // 'q' untouched, still narrowed → NO diagnostic
     //     }
     // }
-    // Pre-fix lowerMultiAssign never touched `self.narrowed` (single-assign
-    // removes the target name at its top), so `o + 1` compiled and read a
-    // now-null optional as its payload. Post-fix the IDENT targets are
-    // dropped from the narrowed set before any RHS lowers — 'o' diagnoses,
-    // the unrelated 'q' keeps its narrowing.
+    // lowerMultiAssign drops its IDENT targets from `self.narrowed` before any
+    // RHS lowers (mirroring single-assign, which removes the target name at its
+    // top) — 'o' diagnoses instead of reading a now-null optional as its
+    // payload, and the unrelated 'q' keeps its narrowing.
     var i64_ty_o = Node{ .span = span, .data = .{ .type_expr = .{ .name = "i64", .is_generic = false } } };
     var opt_ty_o = Node{ .span = span, .data = .{ .optional_type_expr = .{ .inner_type = &i64_ty_o } } };
     var five = Node{ .span = span, .data = .{ .int_literal = .{ .value = 5 } } };
@@ -1459,11 +1458,11 @@ test "lower: multi-assign to a GLOBAL array index stores in place via global_add
     lowering.program_index.global_names.put("g", .{ .id = gid, .ty = arr_ty }) catch unreachable;
 
     // main :: () { a := 0; g[1], a = 77, 4; }
-    // Pre-fix lowerMultiAssign's index arm addressed the global base with
-    // `lowerExpr` (a `global_get` load of the WHOLE array into a register); the
-    // GEP+store hit that throwaway copy and the write was silently dropped.
-    // Post-fix the `is_array` branch takes `lowerExprAsPtr` → a `global_addr`,
-    // so the GEP+store target the global's storage in place.
+    // lowerMultiAssign's index arm takes the `is_array` branch —
+    // `lowerExprAsPtr` → a `global_addr` — so the GEP+store target the global's
+    // storage in place. Addressing the base with `lowerExpr` would `global_get`
+    // the WHOLE array into a register and the write would land on that
+    // throwaway copy.
     var zero = Node{ .span = span, .data = .{ .int_literal = .{ .value = 0 } } };
     var a_decl = Node{ .span = span, .data = .{ .var_decl = .{ .name = "a", .name_span = span, .type_annotation = null, .value = &zero } } };
 
@@ -1555,9 +1554,9 @@ test "lower: multi-assign to a missing struct field emits field-not-found, no co
 
     var lowering = Lowering.init(&module);
     lowering.diagnostics = &diags;
-    // Pre-fix the struct-only loop defaulted field_idx 0 / field_ty .unresolved on
-    // a miss, silently storing into field 0 (no diagnostic); the fix resolves the
-    // target via the shared fieldLvaluePtr and bails with field-not-found.
+    // A field miss resolves the target via the shared fieldLvaluePtr and bails
+    // with field-not-found, never defaulting to field_idx 0 / field_ty
+    // .unresolved and storing into field 0 with no diagnostic.
     lowering.lowerFunction(&fd, "main", false);
 
     var found = false;
@@ -1585,11 +1584,11 @@ test "lower: shared resolver types a pointer-typed field GEP as *field_ty, not f
 
     // mutate :: (s: *S, q: *i64) { d := 0; s.p, d = q, 1; }
     // The multi-assign target routes `s.p` through the shared fieldLvaluePtr
-    // resolver. Pre-fix that resolver typed the field GEP with the bare field
-    // value type (`*i64`), so emitStore unwrapped one level to `i64` and
-    // coerceArg's closure auto-promotion stored a 16-byte struct over the
-    // 8-byte field, clobbering the neighbour. The resolver now types the GEP
-    // `*(*i64)` so emitStore stops at the field's own pointer type.
+    // resolver, which types the GEP `*(*i64)` so emitStore stops at the field's
+    // own pointer type. Typing it with the bare field value type (`*i64`) would
+    // let emitStore unwrap one level to `i64` and coerceArg's closure
+    // auto-promotion store a 16-byte struct over the 8-byte field, clobbering
+    // the neighbour.
     var s_pointee = Node{ .span = span, .data = .{ .type_expr = .{ .name = "S", .is_generic = false } } };
     var s_ty = Node{ .span = span, .data = .{ .pointer_type_expr = .{ .pointee_type = &s_pointee } } };
     var q_pointee = Node{ .span = span, .data = .{ .type_expr = .{ .name = "i64", .is_generic = false } } };
@@ -1685,7 +1684,7 @@ fn countRealBodies(module: *ir_mod.Module, name: []const u8) usize {
 // — with two flat authors this is ambiguous; two flat authors make that ambiguous — so it calls a.sx's
 // `use_greet` wrapper, whose own-author call to `greet` binds a.sx's winner.
 // BEFORE the identity-addressable pass, only the winner has a real body — the
-// shadowed author has no slot at all (the pre-fix symptom: one `greet`).
+// shadowed author has no slot at all.
 // `lowerRetainedSameNameAuthors` declares the shadowed author its OWN same-name
 // FuncId and lowers its body there, so BOTH authors carry distinct, non-extern
 // bodies, and `resolveFuncByName` still returns the winner (the name-keyed slot).
@@ -1770,8 +1769,8 @@ test "lower: shadowed same-name author gets its own FuncId + real body (fix-0102
     lowering.lowerRoot(resolved_root);
     try std.testing.expect(!diagnostics.hasErrors());
 
-    // Pre-fix symptom: only the winner `greet` (a.sx) has a real body — lowered
-    // because `main` calls it; the shadowed author (b.sx) was dropped entirely.
+    // Before the identity-addressable pass: only the winner `greet` (a.sx) has
+    // a real body, lowered because `main` calls it.
     try std.testing.expectEqual(@as(usize, 1), countRealBodies(&module, "greet"));
 
     // Identity-addressable pass: the shadowed author gets its OWN FuncId + body.
@@ -1845,13 +1844,13 @@ test "lower: shadowed same-name author gets its own FuncId + real body (fix-0102
     try std.testing.expect(lowering.selectCallableAuthor("nonexistent", b_path, .any_body) == .none);
 }
 
-// E0 (R5 §#4): the scan populates the source-keyed caches partitioned by the
-// registering decl's source. Two namespaced modules each author the SAME alias
-// name `Color` AND the SAME const name `K`; the scan recurses into each
-// namespace's decls (per-source). After lowering, the by-source maps hold TWO
-// distinct entries under the two source keys (not last-wins), while the legacy
-// global maps stay single-keyed by name — the compat readers are unchanged.
-test "lower: scan populates source-keyed caches per declaring source (E0)" {
+// The scan populates the source-keyed caches partitioned by the registering
+// decl's source. Two namespaced modules each author the SAME alias name `Color`
+// AND the SAME const name `K`; the scan recurses into each namespace's decls
+// (per-source). After lowering, the by-source maps hold TWO distinct entries
+// under the two source keys (not last-wins), while the global maps stay
+// single-keyed by name.
+test "lower: scan populates source-keyed caches per declaring source" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -1942,9 +1941,9 @@ test "lower: scan populates source-keyed caches per declaring source (E0)" {
     const k_b = idx.module_consts_by_source.get(b_path).?.get("K").?;
     try std.testing.expect(k_a.value != k_b.value);
 
-    // Compat readers: the legacy global maps stay keyed by NAME alone — a
-    // hashmap key holds exactly one value, so a same-name author is last-wins
-    // there (one entry for `Color` / `K`), unchanged by the by-source writes.
+    // The global maps stay keyed by NAME alone — a hashmap key holds exactly
+    // one value, so a same-name author is last-wins there (one entry for
+    // `Color` / `K`), independent of the by-source writes.
     // The single global `Color` is one of the two source-keyed authors (not a
     // merged/duplicated value).
     const global_color = idx.type_alias_map.get("Color").?;
@@ -1982,10 +1981,9 @@ test "struct literal: non-aggregate target and uninferable untyped literal diagn
     lowering.diagnostics = &diagnostics;
     lowering.lowerRoot(root);
 
-    // Issue 0161: `.{ a = 1 }` against a scalar target used to reach LLVM
-    // emission (`Invalid InsertValueInst operands!`). Issue 0184: an untyped
-    // `.{ 1, 2, 3 }` with no target stayed `.unresolved` and panicked the
-    // backend. Both must be clean located diagnostics from lowering.
+    // `.{ a = 1 }` against a scalar target (issue 0161) and an untyped
+    // `.{ 1, 2, 3 }` with no target (issue 0184) must both be clean located
+    // diagnostics from lowering, never an .unresolved that reaches the backend.
     try std.testing.expect(diagnostics.hasErrors());
     var saw_non_aggregate = false;
     for (diagnostics.items.items) |d| {
@@ -1995,11 +1993,10 @@ test "struct literal: non-aggregate target and uninferable untyped literal diagn
     try std.testing.expect(saw_non_aggregate);
 }
 
-test "struct literal: formerly-silent untyped shapes SELF-TYPE — global const, inferred return, array element (aggregate ladder Step 1)" {
-    // These three shapes used to arrive with a silently-unresolved target
-    // and diagnose "cannot infer" (issue 0184). Untyped `.{ }` literals
-    // self-type as anonymous structs now — pass-1 inference mints the type
-    // — so each compiles with NO diagnostic (corpus pin: 0865).
+test "struct literal: untyped shapes SELF-TYPE — global const, inferred return, array element" {
+    // Untyped `.{ }` literals self-type as anonymous structs — pass-1
+    // inference mints the type — so each of these three shapes compiles with
+    // NO diagnostic (issue 0184; corpus pin: 0865).
     const cases = [_][]const u8{
         \\K :: .{ 1, 2, 3 };
         \\main :: () { k := K; }
@@ -2102,9 +2099,9 @@ test "lower: match on untagged union subject (no binding) is diagnosed, not inva
     const span = ast.Span{ .start = 0, .end = 0 };
 
     // main :: (s: Shape) { r := if s == { case .circle: { } case .rect: { } }; }
-    // NO payload binding — pre-fix this slipped past the arm-level 0163 guard
-    // and reached the backend as a switch on the raw `[8 x i8]` union storage
-    // against `i0` case constants (LLVM verifier failure, no diagnostic).
+    // NO payload binding — slipping past the arm-level 0163 guard reaches the
+    // backend as a switch on the raw `[8 x i8]` union storage against `i0`
+    // case constants (LLVM verifier failure, no diagnostic).
     var shape_type = Node{ .span = span, .data = .{ .type_expr = .{ .name = "Shape", .is_generic = false } } };
     var s_ident = Node{ .span = span, .data = .{ .identifier = .{ .name = "s" } } };
     var pat_a = Node{ .span = span, .data = .{ .enum_literal = .{ .name = "circle" } } };
@@ -2146,8 +2143,8 @@ test "lower: match on a string subject is diagnosed, not invalid IR (issue 0224)
     const span = ast.Span{ .start = 0, .end = 0 };
 
     // main :: (s: string) { r := if s == { case "hi": { } }; }
-    // Pre-fix this reached the backend as `switch ptr` against integer case
-    // constants (LLVM verifier failure, no diagnostic). String subjects are
+    // Undiagnosed, this reaches the backend as `switch ptr` against integer
+    // case constants (LLVM verifier failure). String subjects are
     // not matchable (specs §Pattern Matching: patterns are enum literals,
     // integer/bool literals, and type categories).
     var string_type = Node{ .span = span, .data = .{ .type_expr = .{ .name = "string", .is_generic = false } } };
@@ -2188,11 +2185,10 @@ test "lower: match arms with incompatible result types are diagnosed, not a mixe
     const span = ast.Span{ .start = 0, .end = 0 };
 
     // main :: (s: i64) { r := if s == { case 1: { 1 } case 2: { "hi" } }; }
-    // Pre-fix `inferMatchResultType` took the FIRST decisive arm's type
-    // without unifying, and the raw string arm value fed the merge phi —
-    // an LLVM verifier failure ("PHI node operands are not the same type
-    // as the result!") with no diagnostic. The unification pass now
-    // diagnoses the true mismatch at the offending arm.
+    // The unification pass diagnoses the true mismatch at the offending arm.
+    // Taking the FIRST decisive arm's type without unifying feeds the raw
+    // string arm value to the merge phi — an LLVM verifier failure ("PHI node
+    // operands are not the same type as the result!") with no diagnostic.
     var int_type = Node{ .span = span, .data = .{ .type_expr = .{ .name = "i64", .is_generic = false } } };
     var s_ident = Node{ .span = span, .data = .{ .identifier = .{ .name = "s" } } };
     var pat_a = Node{ .span = span, .data = .{ .int_literal = .{ .value = 1 } } };
@@ -2509,9 +2505,9 @@ test "lower: indexing a scalar pointer diagnoses in write and address-of positio
     // f :: (pc: *i64) { pc[0] = 7; q := @pc[0]; }
     // A bare `*T` is not indexable (specs.md, Pointer Types) — both the WRITE
     // (`pc[0] = 7`) and ADDRESS-OF (`@pc[0]`) index paths must diagnose. The
-    // READ path was already guarded (issue 0183); pre-fix these two arms still
-    // emitted an `index_gep` typed `ptrTo(.unresolved)` that panicked at LLVM
-    // emission ("unresolved type reached LLVM emission", issue 0155).
+    // READ path has its own guard (issue 0183); unguarded, these two arms emit
+    // an `index_gep` typed `ptrTo(.unresolved)` that panics at LLVM emission
+    // ("unresolved type reached LLVM emission", issue 0155).
     var i64_type = Node{ .span = span, .data = .{ .type_expr = .{ .name = "i64", .is_generic = false } } };
     var ptr_i64 = Node{ .span = span, .data = .{ .pointer_type_expr = .{ .pointee_type = &i64_type } } };
 
@@ -2634,9 +2630,9 @@ test "lower: closure-value call with wrong arity is diagnosed, extras not silent
 
     var lowering = Lowering.init(&module);
     lowering.diagnostics = &diags;
-    // Pre-fix the closure-value call path had no arity check: the extra arg
-    // was silently dropped (and a missing arg read garbage). Post-fix the
-    // call diagnoses like a top-level fn call (issue 0188).
+    // The closure-value call path arity-checks like a top-level fn call
+    // (issue 0188); without it an extra arg is silently dropped and a missing
+    // one reads garbage.
     lowering.lowerFunction(&fd, "f", false);
 
     var found = false;
@@ -2765,9 +2761,9 @@ test "type alias: tuple element referencing a LATER-declared alias resolves via 
 
 test "type alias: tuple alias referenced ABOVE its declaration diagnoses instead of an LLVM dump (issue 0196 review)" {
     // `use_it :: (t: NT) …` above `NT :: Tuple(…)`: the fn signature resolves
-    // eagerly at scan and binds a stub that no alias registration ever adopts
-    // — previously an LLVM "call parameter type mismatch" verifier dump. Must
-    // be a clean located diagnostic at the alias decl.
+    // eagerly at scan and binds a stub that no alias registration ever adopts.
+    // That must be a clean located diagnostic at the alias decl, not an LLVM
+    // "call parameter type mismatch" verifier dump.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = arena.allocator();
@@ -2928,7 +2924,7 @@ test "type alias: forward composite elements across all shapes adopt the real el
 test "type alias: generic-instantiation element in a composite RHS instantiates for real (issue 0230)" {
     // `AL :: [2]Box(i64);` must instantiate the generic element for real — a
     // non-empty struct with a real size — NOT an empty size-0 nominal with a
-    // lying size_of (which the eager stateless composite path used to mint).
+    // lying size_of.
     // Uses a locally-declared generic so the bare-lower harness needs no std.
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
@@ -3018,10 +3014,10 @@ test "lower: assignment to a by-value loop capture is diagnosed as immutable, a 
     //     y += 100;                     // legal — NOT diagnosed
     // }
     // The capture `x` is a non-alloca scope binding with no store path
-    // (a per-iteration read-only alias). Pre-fix the compound store fell
-    // through to a silent no-op — it reached neither a container nor the
-    // capture's own copy (issue 0219). Post-fix it emits an "immutable
-    // capture" error; the mutation of the ordinary `y` local stays clean.
+    // (a per-iteration read-only alias), so the compound store emits an
+    // "immutable capture" error rather than falling through to a silent no-op
+    // that reaches neither a container nor the capture's own copy (issue 0219).
+    // The mutation of the ordinary `y` local stays clean.
     var zero = Node{ .span = span, .data = .{ .int_literal = .{ .value = 0 } } };
     var three = Node{ .span = span, .data = .{ .int_literal = .{ .value = 3 } } };
     const iterables = [_]ast.ForIterable{

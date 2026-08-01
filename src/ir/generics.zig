@@ -56,7 +56,7 @@ pub const GenericResolver = struct {
             // DISTINCT monomorph symbols (`struct_to_string__Box` vs
             // `struct_to_string__Box__n1`) instead of one symbol with conflicting
             // signatures. `nominal_id == 0` (the single-author / structural case)
-            // appends nothing — byte-identical to the pre-E2 mangle.
+            // appends nothing.
             .@"struct" => |s| self.mangleNominalName(self.l.module.types.getString(s.name), s.nominal_id),
             .@"union" => |u| self.mangleNominalName(self.l.module.types.getString(u.name), u.nominal_id),
             .tagged_union => |u| self.mangleNominalName(self.l.module.types.getString(u.name), u.nominal_id),
@@ -257,7 +257,7 @@ pub const GenericResolver = struct {
                         // A bare fn NAME has no inferable expression type — it
                         // is a value whose type lives in its declaration. Bind
                         // `$F` to that signature so the instance's param is a
-                        // callable, not the legacy integer word (issue 0367).
+                        // callable, not a bare integer word (issue 0367).
                         const arg_ty = if (inferred == .unresolved)
                             self.l.bareFnNameSignature(args_ast[s2_arg_idx]) orelse inferred
                         else

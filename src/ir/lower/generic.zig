@@ -1236,8 +1236,8 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
     // SYMMETRICALLY so arm order never picks the type (int ⊔ float = the
     // float in BOTH orders, preserving the issue-0226 pinned "f64 payload
     // arm + int-literal arm → f64"). A pair with no safe coercion in either
-    // direction is a true mismatch: diagnose at the offending arm — pre-fix
-    // it reached the backend as a mixed-type phi (LLVM verifier failure, no
+    // direction is a true mismatch: diagnose at the offending arm rather than
+    // let it reach the backend as a mixed-type phi (LLVM verifier failure, no
     // diagnostic).
     var has_null = false;
     var saw_unresolved = false;
@@ -1246,10 +1246,11 @@ pub fn inferMatchResultType(self: *Lowering, me: *const ast.MatchExpr) TypeId {
     for (me.arms) |arm| {
         // A DIVERGING arm (`return`/`raise`/`break`/`continue`, or a `noreturn`
         // expression) never reaches the merge, so it must NOT decide the result
-        // type (issue 0269 match analog): a diverging FIRST arm used to make
-        // `last_node` a void inner block and return `.void` early, collapsing a
-        // real value-`match` (`z := if e == { case .A: { return -9; } case .B:
-        // { 20 } }`) to a void statement that `alloca void`'d. Skip it — the
+        // type (issue 0269 match analog): letting a diverging FIRST arm decide
+        // makes `last_node` a void inner block and returns `.void` early,
+        // collapsing a real value-`match` (`z := if e == { case .A: { return
+        // -9; } case .B: { 20 } }`) to a void statement that `alloca void`s.
+        // Skip it — the
         // match is `noreturn` only if EVERY arm diverges (handled after the
         // loop). `armStaticallyDiverges` peels the match-arm block wrapper.
         if (self.armStaticallyDiverges(arm.body)) {
@@ -1454,10 +1455,10 @@ pub fn isPlainFreeFn(fd: *const ast.FnDecl) bool {
 pub fn resolveValueParamArg(self: *Lowering, arg_node: *const Node, param_name: []const u8, type_name: ?[]const u8) ?i64 {
     // Resolve an ALIASED integer constraint (`$K: Count` where `Count :: u32`,
     // `$K: Small` where `Small :: i8`) to its underlying builtin so the range
-    // gate below treats it exactly like `$K: u32` / `$K: i8` (an
-    // alias previously slipped past `intTypeRange`, so `Box(5_000_000_000)`
-    // with `$K: Count` bound a truncated value). A non-integer / unrecognised
-    // constraint yields null → no range bound (fold only), as before.
+    // gate below treats it exactly like `$K: u32` / `$K: i8`; an alias that
+    // slipped past `intTypeRange` would let `Box(5_000_000_000)` with
+    // `$K: Count` bind a truncated value. A non-integer / unrecognised
+    // constraint yields null → no range bound (fold only).
     const tn_canon: ?[]const u8 = if (type_name) |tn| self.canonicalIntConstraintName(tn) else null;
     if (tn_canon) |tn| {
         if (std.mem.eql(u8, tn, "u32")) {

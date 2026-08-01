@@ -818,12 +818,12 @@ pub fn registerRuntimeClassDecl(self: *Lowering, fcd: *const ast.RuntimeClassDec
     }
 }
 
-/// Issue 0348: the runtime-class registry is name-keyed program-wide, so
-/// two modules declaring the same sx name used to race the slot silently
-/// (last-wins) — the loser's member calls resolved against the winner's
-/// surface. Extern declarations are C-header-like per-module VIEWS of one
-/// runtime class, so same-name externs binding the SAME runtime class now
-/// MERGE into a union surface (every consumer sees the union through the
+/// Issue 0348: the runtime-class registry is name-keyed program-wide, so two
+/// modules declaring the same sx name would race the slot silently (last-wins),
+/// resolving the loser's member calls against the winner's surface. Extern
+/// declarations are C-header-like per-module VIEWS of one runtime class, so
+/// same-name externs binding the SAME runtime class MERGE into a union surface
+/// (every consumer sees the union through the
 /// map). Genuine conflicts diagnose: different runtime bindings, any
 /// sx-defined (export) duplicate, or same-name methods with different
 /// static-ness/arity/selector.

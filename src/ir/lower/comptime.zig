@@ -449,8 +449,8 @@ pub fn evalComptimeInt(self: *Lowering, node: *const Node) ?i64 {
 pub fn lowerComptimeGlobal(self: *Lowering, name: []const u8, expr: *const Node, type_ann: ?*const Node) void {
     // When the user writes `NAME :: #run expr;` with no type annotation,
     // infer the global's type from the comptime expression's return
-    // shape. `resolveType(null)` returns `.i64` for legacy reasons —
-    // good for primitive helpers, silently wrong for anything else.
+    // shape. `resolveType(null)` returns `.i64` — good for primitive
+    // helpers, silently wrong for anything else.
     const expr_ty = self.inferExprType(expr);
     // A failable `#run` (bare, no `catch`/`or`): the comptime function
     // returns the full failable tuple so the #run site can inspect the
@@ -618,12 +618,11 @@ pub fn evalComptimeType(self: *Lowering, expr: *const Node) ?TypeId {
     // self-referential `*Name` payload resolves (the name is a known forward
     // type when the body lowers). Done up-front rather than at declare's
     // lowering because a `*Name` can lower before its `declare` within the same
-    // body. The interp's `declare` returns this same slot; `define` completes it.
+    // body. `declare` returns this same slot; `define` completes it.
     preregisterForwardTypes(self, expr);
     // The wrapper returns a `Type` value → `.type_value` (the dedicated 8-byte
-    // handle). The legacy path reads the result via `asTypeId` regardless, but the
-    // VM path converts `func.ret` — `.type_value` → `.type_tag` (an `.any` return
-    // would box the result and bail at the VM↔legacy boundary).
+    // handle). The VM converts `func.ret` — `.type_value` → `.type_tag`; an
+    // `.any` return would box the result and bail.
     const func_id = self.createComptimeFunction("__ctype", .expansion, expr, .type_value);
     return self.runComptimeTypeFunc(func_id, expr.span);
 }
@@ -673,7 +672,7 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     // already on the list; skip the eval and let `hasErrors()` abort the build.
     if (self.diagnostics) |d| if (d.hasErrors()) return null;
 
-    // The comptime VM is the SOLE evaluator (P5.7) — no legacy fallback. A
+    // The comptime VM is the SOLE evaluator. A
     // type-fn runs on the VM; a bail is ALWAYS a build-gating diagnostic, never a
     // fallback. The VM is hardened against malformed lowering-time IR (it BAILS,
     // never panics; see `comptime_vm.refTy`/`badRef`), and bails BEFORE any table
@@ -702,8 +701,8 @@ pub fn runComptimeTypeFunc(self: *Lowering, func_id: FuncId, span: ast.Span) ?Ty
     return null;
 }
 
-/// Post-check a comptime type-construction result (shared by the VM and legacy
-/// paths). A bare `declare("X")` never completed by a `define(handle, …)` leaves
+/// Post-check a comptime type-construction result. A bare `declare("X")` never
+/// completed by a `define(handle, …)` leaves
 /// a forward `tagged_union` PLACEHOLDER (`defined == false`); sizing /
 /// constructing / emitting it panics at codegen (`verifySizes`: llvm_size !=
 /// ir_size). Reject it loudly here. An *explicitly* defined empty type (an empty
@@ -1864,10 +1863,9 @@ pub fn comptimeValueRefNamed(self: *Lowering, name: []const u8) ?Ref {
 /// source author, NOT the global last-wins `module_const_map`. So a shadowed
 /// `K :: M + 1` folds `M` to the SELECTED author's `M`, coherently whether `K`
 /// is read as a value (`return K`) or used as an array dimension / count
-/// (`[K]u8`). `frame` (keyed by name + author-source, F3) cycle-guards a const
-/// whose value references another const. Single-author → byte-identical to the
-/// legacy fold (the selected `ci` IS the global one and every nested leaf has
-/// exactly one author).
+/// (`[K]u8`). `frame` (keyed by name + author-source) cycle-guards a const
+/// whose value references another const. With a single author the selected `ci`
+/// IS the global one and every nested leaf has exactly one author.
 pub fn foldSourceConstInt(self: *Lowering, name: []const u8, frame: ?*const ConstFoldFrame) ?i64 {
     return switch (self.selectModuleConst(name)) {
         .resolved => |sel| {
@@ -2042,8 +2040,8 @@ const ConstAuthor = union(enum) {
 ///
 /// A main-file body carries a null `current_source_file` (it IS the root), so
 /// the querying module is `main_file` there; a fully unwired index (no source
-/// at all) falls open to the global registration, byte-identical to the legacy
-/// reader for the registration / comptime-host path.
+/// at all) falls open to the global registration, covering the registration /
+/// comptime-host path.
 pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
     const from = self.current_source_file orelse self.main_file orelse {
         if (self.program_index.module_const_map.get(name)) |ci| return .{ .resolved = .{ .info = ci, .source = null } };
@@ -2072,8 +2070,6 @@ pub fn selectModuleConst(self: *Lowering, name: []const u8) ConstAuthor {
     return .none;
 }
 
-/// `<array const>.len` as a compile-time integer — the SELECTED author's
-/// element count (E2/F2 source-aware, like every const fold).
 /// Select the const that carries `name`'s VALUE SHAPE, following an
 /// identifier-RHS alias chain to its terminal target. An alias's registered
 /// value node is the identifier it was declared with, so a shape test against

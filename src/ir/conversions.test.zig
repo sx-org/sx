@@ -155,8 +155,7 @@ test "conversions: unmodeled width-mismatched coercion is flagged unsafe (issue 
 
     // The issue-0191 weld precondition: a 16-byte `string` flowing into an
     // 8-byte `i64` slot has NO modeled coercion — the ladder yields `.none`,
-    // so the passthrough used to bit-reinterpret it. The unsafe-store
-    // predicate must flag it (both directions).
+    // so the unsafe-store predicate must flag it (both directions).
     try std.testing.expectEqual(Plan.none, cr.classify(.string, .i64));
     try std.testing.expect(l.noneReinterpretIsUnsafe(.string, .i64));
     try std.testing.expect(l.noneReinterpretIsUnsafe(.i64, .string));

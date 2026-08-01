@@ -403,8 +403,8 @@ const Expansion = struct {
         }
     }
 
-    /// Every list, rewritten from its slots now that the drain has run. Only
-    /// a driver that parked can have left a slot empty past its pass.
+    /// Every list, rewritten from its slots after the drain. Only a driver
+    /// that parked can have left a slot empty past its pass.
     fn flushLists(ex: *Expansion) void {
         if (!ex.parked_any) return;
         var it = ex.lists.valueIterator();

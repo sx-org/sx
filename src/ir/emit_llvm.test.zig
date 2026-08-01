@@ -1371,8 +1371,8 @@ test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref
     defer emitter.deinit();
     emitter.current_func_idx = fid.index();
 
-    // Happy path: a real arg ref (param 0 / param 1) resolves byte-identically
-    // to its declared IR type — the FFI fast path is unchanged.
+    // Happy path: a real arg ref (param 0 / param 1) resolves to its declared
+    // IR type.
     try std.testing.expectEqual(TypeId.i64, emitter.argIRTypeOrFail(Ref.fromIndex(0)));
     try std.testing.expectEqual(TypeId.f64, emitter.argIRTypeOrFail(Ref.fromIndex(1)));
 
@@ -1380,13 +1380,13 @@ test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref
     const bogus = Ref.fromIndex(100_000);
     try std.testing.expectEqual(@as(?TypeId, null), emitter.getRefIRType(bogus));
 
-    // Fail-before: the old `getRefIRType(arg) orelse .void` would silently
-    // yield `.void` here — a real, load-bearing type that downstream ABI
-    // coercion treats as a legitimate (void-typed) extern argument.
+    // A `getRefIRType(arg) orelse .void` default silently yields `.void` here —
+    // a real, load-bearing type that downstream ABI coercion treats as a
+    // legitimate (void-typed) extern argument.
     try std.testing.expectEqual(TypeId.void, emitter.getRefIRType(bogus) orelse TypeId.void);
 
-    // Pass-after: the helper returns the dedicated `.unresolved` sentinel,
-    // never `.void`, so the failure cannot masquerade as a real type.
+    // The helper returns the dedicated `.unresolved` sentinel, never `.void`,
+    // so the failure cannot masquerade as a real type.
     try std.testing.expectEqual(TypeId.unresolved, emitter.argIRTypeOrFail(bogus));
     try std.testing.expect(emitter.argIRTypeOrFail(bogus) != .void);
 }
@@ -1395,9 +1395,9 @@ test "emit: argIRTypeOrFail surfaces .unresolved for an unresolvable FFI arg ref
 // `reflectArgRepr` backs the `type_name` / `type_eq` reflection builtins, which read
 // their `Type` arg as a boxed `Any` aggregate (`.any` → extract value field) or a bare
 // i64 TypeId index. A ref it cannot resolve is a codegen invariant violation; it must
-// surface `.unresolved` (which the emit site hard-panics on) instead of the old silent
-// `getRefIRType(arg) orelse .i64` default that would mis-classify a boxed arg as bare
-// and read the wrong value with no diagnostic.
+// surface `.unresolved` (which the emit site hard-panics on) instead of a silent
+// `.i64` default that would mis-classify a boxed arg as bare and read the wrong
+// value with no diagnostic.
 test "emit: reflectArgRepr surfaces .unresolved for an unresolvable reflection arg ref (issue 0075)" {
     const alloc = std.testing.allocator;
     var module = Module.init(alloc);
@@ -1421,7 +1421,6 @@ test "emit: reflectArgRepr surfaces .unresolved for an unresolvable reflection a
 
     // Happy path: a boxed `.any` Type arg classifies as `.boxed` (extract value
     // field); a bare `.i64` TypeId arg classifies as `.bare` (use directly).
-    // These decisions are byte-identical to the pre-fix `== .any` gate.
     try std.testing.expectEqual(LLVMEmitter.ReflectArgRepr.boxed, emitter.reflectArgRepr(Ref.fromIndex(0)));
     try std.testing.expectEqual(LLVMEmitter.ReflectArgRepr.bare, emitter.reflectArgRepr(Ref.fromIndex(1)));
 
@@ -1429,13 +1428,13 @@ test "emit: reflectArgRepr surfaces .unresolved for an unresolvable reflection a
     const bogus = Ref.fromIndex(100_000);
     try std.testing.expectEqual(@as(?TypeId, null), emitter.getRefIRType(bogus));
 
-    // Fail-before: the old `getRefIRType(arg) orelse .i64` would silently yield
-    // `.i64` here — which `!= .any`, so the reflection arm would treat a failed
-    // lookup as a bare i64 and read the wrong value with no diagnostic.
+    // A `getRefIRType(arg) orelse .i64` default silently yields `.i64` here —
+    // which `!= .any`, so the reflection arm would treat a failed lookup as a
+    // bare i64 and read the wrong value with no diagnostic.
     try std.testing.expectEqual(TypeId.i64, emitter.getRefIRType(bogus) orelse TypeId.i64);
     try std.testing.expect((emitter.getRefIRType(bogus) orelse TypeId.i64) != .any);
 
-    // Pass-after: the classifier returns the dedicated `.unresolved` variant,
+    // The classifier returns the dedicated `.unresolved` variant,
     // never `.bare`, so the emit site trips its hard panic instead of silently
     // reading the wrong value.
     try std.testing.expectEqual(LLVMEmitter.ReflectArgRepr.unresolved, emitter.reflectArgRepr(bogus));

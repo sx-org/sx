@@ -54,9 +54,9 @@ fn provenRemove(set: *ProvenSet, name: []const u8) void {
 /// proven-null set). Both are keyed by NAME, so they are scoped via
 /// `shadow_undo`: every declaration statement records the prior state of
 /// its name (see `declareName`) and `scopeExit` restores it when the
-/// enclosing lexical scope ends — a record never outlives its variable
-/// (issue 0210: a stale record used to poison a later same-name `:=` in a
-/// sibling scope).
+/// enclosing lexical scope ends — a record never outlives its variable, so a
+/// stale one cannot poison a later same-name `:=` in a sibling scope
+/// (issue 0210).
 const FlowCtx = struct {
     bindings: std.StringHashMap([]const u8),
     err_vars: std.StringHashMap(void),

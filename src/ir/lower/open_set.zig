@@ -696,7 +696,7 @@ fn reportNonConformance(
 
 /// Record every OTHER set this member holds by value. Those edges are what makes
 /// growth transitive: a member of `R` holding a `Q` grows when `Q` grows, so `R`
-/// has to be laid out again — and re-checked, since the member may no longer fit.
+/// has to be laid out again — and re-checked, since the member may not fit.
 fn recordDependencies(
     self: *Lowering,
     sd: *const ast.StructDecl,
