@@ -2434,8 +2434,8 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
     // recognizes `[N]T` array, `[]T` slice, `[*]T` many-pointer, `Vector`,
     // `string`, and `ptrToArrayElem` handled `*[N]T` above; an `.unresolved`
     // element means the base is a single pointer `*T` / a struct (non-indexable
-    // by design), or a pointer-to-slice `*[]T` (indexable per spec, not yet
-    // implemented — issue 0242). Emitting an `index_get` with `.unresolved`
+    // by design), or a pointer-to-slice `*[]T` (indexable per spec,
+    // unimplemented — issue 0242). Emitting an `index_get` with `.unresolved`
     // would slip past lowering and panic in emit_llvm ("unresolved type
     // reached LLVM emission", issue 0183). Diagnose (see diagNonIndexable) and
     // return a placeholder so hasErrors() aborts before codegen.
@@ -2453,8 +2453,7 @@ pub fn lowerIndexExpr(self: *Lowering, ie: *const ast.IndexExpr) Ref {
 /// getElementType(..)`; an `.unresolved` result means the base is a shape
 /// those resolvers don't index — a single pointer `*T` or a struct
 /// (non-indexable by design, specs.md Pointer Types), or a pointer-to-slice
-/// `*[]T` (indexable per spec but not yet implemented — tracked as issue
-/// 0242; it lands here until that lands). Emitting an `index_get`/`index_gep`
+/// `*[]T` (indexable per spec but unimplemented — issue 0242; it lands here). Emitting an `index_get`/`index_gep`
 /// whose element type is `.unresolved` would slip past lowering and panic at
 /// LLVM emission ("unresolved type reached LLVM emission" — issues 0183 read,
 /// 0155 write/address-of/lvalue). The caller must bail with a placeholder

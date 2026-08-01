@@ -14,9 +14,9 @@
 //   - a deep recursive chain (64 frames) suspended at the bottom and resumed —
 //     every frame's stack-local is verified on the unwind.
 //
-// What it does NOT yet do (B1.3a-2): EXPLICITLY scribble every callee-saved GP
-// (x19-x28) + FP (d8-d15) register with sentinels and check them in asm — the
-// full §10.7 gate. This harness exercises preservation indirectly (via
+// It does NOT explicitly scribble every callee-saved GP (x19-x28) + FP
+// (d8-d15) register with sentinels and check them in asm — the full §10.7
+// gate. This harness exercises preservation indirectly (via
 // compiler-allocated live values), which catches a broken SP/LR or a dropped
 // callee-saved, but not a single specific register the allocator didn't use.
 //

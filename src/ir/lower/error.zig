@@ -50,8 +50,7 @@ pub fn getTraceFids(self: *Lowering) struct { push: FuncId, clear: FuncId } {
 /// Error return-traces are emitted in debug-ish builds and skipped in
 /// release (ERR E3.2 build-mode gating). `sx run` defaults to `-O0`
 /// (`.none`), the common dev path; `.default`/`.aggressive` are release.
-/// The spec's `--release-traces` opt-in + a `BuildOptions.error_traces`
-/// accessor are a later refinement; for now the opt level is the gate.
+/// The opt level is the gate.
 pub fn tracesEnabled(self: *Lowering) bool {
     const tc = self.target_config orelse return true; // no target → treat as debug
     return tc.opt_level == .none or tc.opt_level == .less;

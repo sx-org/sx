@@ -6,9 +6,7 @@
 // runtime cost — but make runtime-class and call-site declarations
 // read closer to Objective-C source.
 //
-// `Class(T)` parameterization (phantom T, `#extends`-aware
-// covariance) is deferred to a follow-up; for now plain `Class`
-// is the only form and assignments are not checked against the
+// Plain `Class` is the only form; assignments are not checked against the
 // referent's class hierarchy.
 
 #import "modules/std.sx";

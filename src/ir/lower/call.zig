@@ -1172,8 +1172,7 @@ pub fn lowerCall(self: *Lowering, c_in: *const ast.Call) Ref {
         // Concrete lvalue → `#identity` protocol param: erase NODE-AWARE so
         // the lvalue BORROWS (`free(t, gpa)` aliases gpa) — the node-less
         // coerceCallArgs layer would misread the lvalue as an rvalue and
-        // refuse. value/own params keep the node-less owning copy until the
-        // ownership cutover.
+        // refuse. value/own params keep the node-less owning copy.
         if (ai < param_types.len) {
             if (protocolArgErasure(self, arg, param_types[ai])) |r| {
                 args.append(self.alloc, r) catch unreachable;

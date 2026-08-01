@@ -3293,8 +3293,7 @@ pub fn lowerPush(self: *Lowering, ps: *const ast.PushStmt) void {
             // NODE-AWARE so an lvalue BORROWS (`push .{ allocator = gpa }`
             // aliases `gpa`) — the node-less path would misread the lvalue
             // as an rvalue and refuse. Other fields keep the node-less
-            // coercion (value/own protocol fields own their copy until the
-            // ownership cutover).
+            // coercion (value/own protocol fields own their copy).
             const fl_pi = self.getProtocolInfo(fl.ty);
             const store_val = if (fval_ty != fl.ty and fval_ty != .void and fl.ty != .void)
                 (if (fl_pi != null and fl_pi.?.ownership == .identity)
@@ -3685,7 +3684,7 @@ pub fn lowerDestructureDecl(self: *Lowering, dd: *const ast.DestructureDecl) voi
     if (ty.isBuiltin()) return;
     const ti = self.module.types.get(ty);
     // A STRUCT RHS destructures field-wise like a tuple — `a, b := .{10, 20}`
-    // is the post-cutover spelling (an untyped `.{ }` self-types as an
+    // is the spelling (an untyped `.{ }` self-types as an
     // anonymous positional struct), and any struct value destructures in
     // declaration order (tuple parity).
     if (ti == .@"struct") {

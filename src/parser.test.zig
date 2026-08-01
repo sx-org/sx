@@ -234,8 +234,8 @@ test "parser: bare Tuple (no paren) is an identifier, not a tuple type" {
     try std.testing.expect(root.data.root.decls[0].data == .fn_decl);
 }
 
-// `.( )` is GONE (aggregate ladder Step 1 cutover) — a plain parse error.
-test "parser: .(a, b) is rejected after the cutover" {
+// `.( )` is a plain parse error.
+test "parser: .(a, b) is rejected" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     var parser = Parser.init(arena.allocator(), "f :: () { x := .(1, 2); }");

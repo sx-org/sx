@@ -13,8 +13,7 @@
 //     `set_vertex_buffer` rebinds the VBO against this VAO each time.
 //   - `set_vertex_constants(slot=1, data, 64)` is treated as the 4x4
 //     projection matrix and uploaded via `glUniformMatrix4fv(uProj)`,
-//     matching the renderer.sx shader contract. Other slots are no-ops
-//     for now.
+//     matching the renderer.sx shader contract. Other slots are no-ops.
 //   - `set_texture(slot=0, tex)` binds texture unit 0 and sets
 //     `uniform sampler2D uTex` to 0. Other slots are no-ops.
 //   - The shader sources passed to `create_shader(vsrc, fsrc)` must be

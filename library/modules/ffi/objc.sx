@@ -22,10 +22,8 @@
 //   Class — a class object pointer
 //   SEL   — a registered selector
 //
-// `Class(T)` parameterization (phantom-typed, with `#extends`-aware
-// covariance) is a follow-up — needs compiler-level type-check support.
-// For now, `Class` alone is the only form; assignments are not checked
-// against the referent's class hierarchy.
+// `Class` alone is the only form; assignments are not checked against the
+// referent's class hierarchy.
 id    :: *void;
 Class :: *void;
 SEL   :: *void;

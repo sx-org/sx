@@ -197,7 +197,7 @@ pub const TypeLowering = struct {
             },
             .protocol => {
                 // Protocol values: { ctx: *void, vtable_or_fn_ptrs... }
-                // For now, use opaque ptr
+                // Represented as an opaque ptr.
                 return self.e.cached_ptr;
             },
             .usize, .isize => if (self.e.target_config.isWasm32()) self.e.cached_i32 else self.e.cached_i64,

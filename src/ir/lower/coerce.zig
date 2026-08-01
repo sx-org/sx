@@ -820,7 +820,7 @@ pub fn protocolIsIdentity(self: *Lowering, ty: TypeId) bool {
     return pi.ownership == .identity;
 }
 
-/// The ownership-cutover DEMAND diagnostic: a value/own protocol value
+/// The DEMAND diagnostic: a value/own protocol value
 /// always OWNS its ctx, so erasing an lvalue (or a pointer to concrete
 /// storage) implicitly — or with `xx`, the conversion operator — would
 /// silently heap-copy it. Demand the explicit spelling instead.

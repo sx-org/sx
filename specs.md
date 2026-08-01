@@ -3125,8 +3125,8 @@ ordinary OWN declaration of the aliasing file, so it is visible to that
 file's direct flat importers like any other declaration (this is how a
 facade re-exports another module's generic struct). Each hop of an alias
 chain resolves with the visibility of the file that declares THAT hop,
-not the use site's. Not yet supported: a qualified head whose namespace
-member is itself an alias (`ns.BoxAlias(..)`).
+not the use site's. A qualified head whose namespace member is itself an
+alias (`ns.BoxAlias(..)`) is unsupported.
 
 ### Function Aliases
 
@@ -5886,7 +5886,7 @@ Collision rules mirror ordinary declarations:
   locally to disambiguate.
 - **One level only** — carry does not chain: a flat import of a flat import
   does not surface the inner file's aliases. (The bare `alias.fn()` call path
-  does not yet enforce this gate — issue 0114 tracks the tightening.)
+  does not enforce this gate — issue 0114.)
 
 `#import c { ... }` aliases (`tc :: #import c { ... }`) carry the same way.
 

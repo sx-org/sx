@@ -689,8 +689,8 @@ pub fn fnPtrTypeWantsCtx(self: *const Lowering, ty: TypeId) bool {
 // one without the other lets a ns-only author miss `*_by_source` and leak
 // past the source-aware bare-TYPE gate. No raw `.put`/`.remove` to the
 // three maps exists outside these helpers (grep-checkable — mirrors the
-// no-raw-`TypeTable.update` discipline). The global map stays the only
-// READER for now; the per-source cache feeds the gate. A null source
+// no-raw-`TypeTable.update` discipline). The global map is the only
+// READER; the per-source cache feeds the gate. A null source
 // (unreachable for a scanned top-level decl post-import-resolution) falls
 // back to the main file; if even that is absent only the by-source write is
 // skipped — the global map is always written.

@@ -1528,12 +1528,9 @@ pub fn bindComptimeValueParams(
             .@"enum" => self.bindEnumValueParam(param.name, constraint_ty, info.@"enum", arg_node, int_store),
             .tagged_union => self.bindTaggedUnionValueParam(param.name, constraint_ty, info.tagged_union, arg_node, int_store, ref_store),
             // Other constraint kinds (`type`-metatype params, generic type
-            // params, structs/arrays) are not bound here. struct/array
-            // aggregate value params are not yet wired (no literal-shape repro
-            // in the corpus drives them); when one lands, add a `.@"struct"` /
-            // `.array` arm that lowers the literal to an aggregate const and
-            // writes `ref_store`. Until then we leave the param to whatever
-            // downstream resolution already applies — never a silent default.
+            // params, structs/arrays) are not bound here. The param falls to
+            // whatever downstream resolution already applies — never a silent
+            // default.
             else => {},
         }
     }

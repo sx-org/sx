@@ -298,7 +298,6 @@ pub const Compilation = struct {
         const root = self.resolved_root orelse self.root orelse return ir.Module.init(self.allocator);
 
         var module = ir.Module.init(self.allocator);
-        //TODO: find a better place for this
         if (self.target_config.isWasm32()) {
             module.types.pointer_size = 4;
         }

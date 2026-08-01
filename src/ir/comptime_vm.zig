@@ -750,8 +750,8 @@ pub const Vm = struct {
     }
 
     /// Convert a static `ConstantValue` (a global's `init_val`) to a Reg. Scalars
-    /// only for now (float regs hold f64 bits — storage narrows f32); aggregate /
-    /// string / vtable / func_ref bail loudly (add when a real global_get needs it).
+    /// only (float regs hold f64 bits — storage narrows f32); aggregate /
+    /// string / vtable / func_ref bail loudly.
     fn constToReg(self: *Vm, cv: inst_mod.ConstantValue, ty: TypeId) Error!Reg {
         const table = try self.requireTable();
         if (kindOf(table, ty) == .aggregate) {
@@ -1593,7 +1593,7 @@ pub const Vm = struct {
                 return error.Unsupported;
             },
 
-            // Not yet ported (memory, aggregates, calls, …): bail loudly with the
+            // Unsupported ops (memory, aggregates, calls, …): bail loudly with the
             // op name — never a silent default.
             else => {
                 self.detail = @tagName(ins.op);

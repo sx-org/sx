@@ -23,7 +23,7 @@
 //   convention) is a CONSUMER concern handled later (distribution P3.1),
 //   NOT here.
 //
-// Platform: macOS only for now, via the C runtime's `_NSGetArgv()`
+// Platform: macOS only, via the C runtime's `_NSGetArgv()`
 // (char***) and `_NSGetArgc()` (int*). On any other OS the accessors bail
 // loudly (message + `EX_UNAVAILABLE` exit via `process.exit`) rather than
 // returning a silent empty.

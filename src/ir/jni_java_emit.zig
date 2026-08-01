@@ -168,7 +168,7 @@ pub fn emitJavaSource(
     for (fcd.members) |m| switch (m) {
         .method => |md| {
             if (md.body == null) continue;
-            if (md.is_static) continue; // TODO: static native handling
+            if (md.is_static) continue; // static natives are not emitted
             try emitOverride(allocator, &buf, md, opts);
         },
         else => {},
@@ -330,8 +330,8 @@ fn emitJavaType(
                     return;
                 }
             }
-            // Unknown alias — pass through dotted as best-effort. Sema
-            // should catch this earlier; tolerate for now.
+            // Unknown alias — passed through dotted as best-effort; sema
+            // catches this earlier.
             try appendDotted(allocator, buf, target_name);
         },
         else => return EmitError.UnsupportedType,

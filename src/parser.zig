@@ -1271,7 +1271,7 @@ pub const Parser = struct {
         // Optional welded-binding annotation: `struct abi(.zig) extern <lib> { … }`.
         // `abi(...)` (the ABI/layout selector) sits before the `extern` linkage
         // keyword, mirroring the fn-decl slot order; the library handle follows.
-        // Parse-only for now — no layout/registry semantics yet.
+        // Parse-only — no layout/registry semantics.
         const struct_abi = try self.parseOptionalAbi();
         const struct_extern = self.parseOptionalExternExport();
         // The `{ … }` below is unconditional, so nothing here can end — the tail
@@ -2157,7 +2157,7 @@ pub const Parser = struct {
                     }
                     const param_name = self.tokenSlice(self.current);
                     self.advance();
-                    // Optional constraint — for now just use Type
+                    // Optional constraint — always `Type`.
                     const constraint = try self.createNode(self.current.loc.start, .{ .type_expr = .{ .name = "Type" } });
                     try target_type_params.append(self.allocator, .{ .name = param_name, .constraint = constraint });
                 }
@@ -3883,9 +3883,9 @@ pub const Parser = struct {
                     try self.expect(.r_bracket);
                     return try self.createNode(start, .{ .array_literal = .{ .elements = try elements.toOwnedSlice(self.allocator) } });
                 }
-                // `.( )` is GONE (aggregate ladder Step 1 cutover): the one
-                // aggregate literal is `.{ … }`. (The freed syntax is
-                // reserved for the Step-4 postfix cast.)
+                // `.( )` is not an aggregate literal: the one aggregate
+                // literal is `.{ … }`. The spelling is reserved for the
+                // postfix cast.
                 if (self.current.tag == .l_paren) {
                     return self.fail("'.( )' was removed — the aggregate literal is '.{ … }' (an untyped '.{ … }' self-types as an anonymous struct; annotate with 'Tuple(…)' for a tuple)");
                 }
